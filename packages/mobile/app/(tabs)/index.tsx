@@ -73,7 +73,7 @@ export default function TodayScreen() {
 
   const { refreshing, onRefresh } = useRefresh({
     refresh: async () => {
-      await dashboardQuery.refetch();
+      await Promise.all([dashboardQuery.refetch(), anomalyQuery.refetch()]);
     },
     invalidate: null,
   });

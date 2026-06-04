@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockRouterPush = vi.fn();
 const mockDashboardRefetch = vi.fn(() => Promise.resolve());
+const mockAnomalyRefetch = vi.fn(() => Promise.resolve());
 const mockInvalidate = vi.fn();
 const mockUseRefresh = vi.fn((_options: unknown) => ({
   refreshing: false,
@@ -39,6 +40,7 @@ vi.mock("../../lib/trpc", () => ({
           isLoading: false,
           isError: false,
           error: null,
+          refetch: mockAnomalyRefetch,
         }),
       },
     },
@@ -107,6 +109,8 @@ vi.mock("../../theme", () => ({
 describe("TodayScreen independent loading states", () => {
   beforeEach(() => {
     mockDashboardLoading = false;
+    mockDashboardRefetch.mockClear();
+    mockAnomalyRefetch.mockClear();
     mockDashboardData = {
       readiness: {
         score: 85,
@@ -268,7 +272,7 @@ describe("TodayScreen independent loading states", () => {
     );
   });
 
-  it("refreshes only the dashboard query when pull-to-refresh runs", async () => {
+  it("refreshes dashboard and anomaly queries when pull-to-refresh runs", async () => {
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);
 
@@ -283,6 +287,7 @@ describe("TodayScreen independent loading states", () => {
     await refreshOptions.refresh();
 
     expect(mockDashboardRefetch).toHaveBeenCalledOnce();
+    expect(mockAnomalyRefetch).toHaveBeenCalledOnce();
     expect(mockInvalidate).not.toHaveBeenCalled();
   });
 
