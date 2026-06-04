@@ -7,6 +7,50 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-06-04: Stryker CI aborted on broken review-app agent symlinks
+
+### Symptoms
+
+- PR `1247` failed `Test / Stryker (0)` before mutation testing completed.
+- The downstream `Test / Mutation Testing` aggregate check failed because the
+  Stryker shard failed.
+
+### Evidence
+
+- Failed run: `26967699960`, job `79574620588`.
+- First fatal log line:
+  `ERROR Stryker Unexpected error occurred while running Stryker Error: ENOENT:
+  no such file or directory, copyfile
+  '/home/runner/work/dofek/dofek/deploy/review-apps/CLAUDE.md' ->
+  '/home/runner/work/dofek/dofek/.stryker-tmp/.../deploy/review-apps/CLAUDE.md'`.
+- `deploy/review-apps/CLAUDE.md` and `deploy/review-apps/GEMINI.md` were tracked
+  symlinks to `AGENTS.md`, but `deploy/review-apps/AGENTS.md` no longer existed.
+
+### Root Cause
+
+- Retired review-app infrastructure left behind broken agent-doc symlinks.
+  Stryker copies the repository into a sandbox before running mutants, and its
+  copy step aborted when it tried to follow the missing symlink target.
+
+### Fix or Mitigation
+
+- Removed the stale `deploy/review-apps/CLAUDE.md` and
+  `deploy/review-apps/GEMINI.md` symlinks. The directory has no `AGENTS.md`, so
+  no same-directory agent-doc mirrors are required there.
+
+### Validation
+
+- The exact CI command now passes locally:
+  `pnpm exec stryker run stryker.ci.config.json --mutate "src/jobs/process-sync-job.ts:83-91,src/jobs/process-sync-job.ts:197-200"`.
+- `pnpm lint`, root `pnpm tsc --noEmit`, server `pnpm tsc --noEmit`, and web
+  `pnpm tsc --noEmit` pass.
+
+### Remaining Risk
+
+- None known for this failure mode. If Stryker later aborts on another broken
+  symlink, remove the stale symlink or restore its valid target based on whether
+  the owning directory still has active agent guidance.
+
 ## 2026-06-04: Garmin Rate Limits Still Reported to Sentry
 
 ### Symptoms
