@@ -253,15 +253,19 @@ describe("mobileDashboard.dashboard", () => {
     execute.mockResolvedValueOnce([]);
     execute.mockResolvedValueOnce([]);
 
+    const sensorStore = makeSensorStore([{ metric_date: "2026-03-28", daily_load: 0 }]);
     const caller = createCaller({
       db: { execute },
       userId: "user-1",
       timezone: "UTC",
-      sensorStore: makeSensorStore([{ metric_date: "2026-03-28", daily_load: 0 }]),
+      sensorStore,
     });
     const result = await caller.dashboard({ endDate: "2026-03-28" });
 
     expect(result.strain.dailyStrain).toBe(0);
+    const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    expect(queryText).toContain("analytics.daily_activity_load");
+    expect(queryText).not.toContain("analytics.activity_summary");
   });
 
   it("does not compute anomalies in the dashboard critical path", async () => {

@@ -138,10 +138,11 @@ describe("sleepNeedRouter", () => {
     });
 
     it("returns default baseline (480 min) when no data", async () => {
+      const sensorStore = makeMockSensorStore([]);
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
-        sensorStore: makeMockSensorStore([]),
+        sensorStore,
       });
       const result = await caller.calculate({ endDate: "2026-03-15" });
 
@@ -155,6 +156,9 @@ describe("sleepNeedRouter", () => {
         expect(night.actualMinutes).toBeNull();
       }
       expect(result.canRecommend).toBe(false);
+      const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+      expect(queryText).toContain("analytics.daily_activity_load");
+      expect(queryText).not.toContain("analytics.activity_summary");
     });
 
     it("computes baseline from good recovery nights when >= 7 good nights", async () => {

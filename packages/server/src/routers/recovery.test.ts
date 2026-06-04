@@ -402,16 +402,20 @@ describe("recoveryRouter.workloadRatio", () => {
   }
 
   it("returns empty timeSeries and zero strain when no data", async () => {
+    const sensorStore = makeSensorStore([]);
     const caller = createCaller({
       db: { execute: vi.fn() },
       userId: "user-1",
-      sensorStore: makeSensorStore([]),
+      sensorStore,
     });
     const result = await caller.workloadRatio({});
 
     expect(result.timeSeries).toEqual([]);
     expect(result.displayedStrain).toBe(0);
     expect(result.displayedDate).toBeNull();
+    const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    expect(queryText).toContain("analytics.daily_activity_load");
+    expect(queryText).not.toContain("analytics.activity_summary");
   });
 
   it("maps SQL rows to WorkloadRatioRow format with rounding", async () => {
@@ -1294,7 +1298,7 @@ describe("recoveryRouter.readinessScore", () => {
 
 describe("recoveryRouter.strainTarget", () => {
   // Sets up a strainTarget caller. PG mocks: readinessRows, then optional sleepRows.
-  // CH mock: loads (now in analytics.activity_summary).
+  // CH mock: loads from analytics.daily_activity_load.
   function setup({
     readinessRows = [],
     sleepRows,
@@ -1327,6 +1331,22 @@ describe("recoveryRouter.strainTarget", () => {
     expect(result.currentStrain).toBe(0);
     expect(result.progressPercent).toBe(0);
     expect(result.explanation).toBeTruthy();
+  });
+
+  it("reads daily loads from the compact activity load read model", async () => {
+    const executeMock = vi.fn().mockResolvedValueOnce([]);
+    const sensorStore = makeSensorStore([[], []]);
+    const caller = createCaller({
+      db: { execute: executeMock },
+      userId: "user-1",
+      sensorStore,
+    });
+
+    await caller.strainTarget({ endDate: "2026-03-28" });
+
+    const queryText = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
+    expect(queryText).toContain("analytics.daily_activity_load");
+    expect(queryText).not.toContain("analytics.activity_summary");
   });
 
   it("computes readiness from daily metrics and returns strain target", async () => {
