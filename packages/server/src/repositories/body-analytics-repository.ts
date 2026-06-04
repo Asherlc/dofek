@@ -215,6 +215,10 @@ export function ewmaSmooth(values: number[], alpha: number): number[] {
 /** Data access and analytics for body weight/composition trends. */
 export class BodyAnalyticsRepository extends BaseRepository {
   readonly #bodyStore: BodyClickHouseStore;
+  readonly #bodyWeightRowsCache = new Map<
+    string,
+    Promise<Awaited<ReturnType<typeof fetchBodyWeightRows>>>
+  >();
 
   constructor(
     db: Pick<Database, "execute">,
@@ -236,14 +240,7 @@ export class BodyAnalyticsRepository extends BaseRepository {
    * real trend. Similar to MacroFactor / Happy Scale approach.
    */
   async getSmoothedWeight(days: number, endDate: string): Promise<SmoothedWeightRow[]> {
-    const rows = await fetchBodyWeightRows(
-      this.#bodyStore,
-      this.userId,
-      this.timezone,
-      endDate,
-      days,
-      { accessWindow: this.accessWindow },
-    );
+    const rows = await this.#fetchBodyWeightRows(days, endDate, false);
 
     const data = rows
       .map((row) => ({
@@ -261,14 +258,7 @@ export class BodyAnalyticsRepository extends BaseRepository {
    * from measurements that have both weight and body fat data.
    */
   async getRecomposition(days: number, endDate: string): Promise<BodyRecompositionRow[]> {
-    const rows = await fetchBodyWeightRows(
-      this.#bodyStore,
-      this.userId,
-      this.timezone,
-      endDate,
-      days,
-      { requireBodyFat: true, accessWindow: this.accessWindow },
-    );
+    const rows = await this.#fetchBodyWeightRows(days, endDate, true);
 
     const data = rows
       .map((row) => ({
@@ -286,9 +276,7 @@ export class BodyAnalyticsRepository extends BaseRepository {
    * Current weekly and 4-week rates, plus overall trend direction.
    */
   async getWeightTrend(): Promise<WeightRateOfChange> {
-    const rows = await fetchBodyWeightRows(this.#bodyStore, this.userId, this.timezone, "now", 35, {
-      accessWindow: this.accessWindow,
-    });
+    const rows = await this.#fetchBodyWeightRows(35, "now", false);
 
     const weights = rows.map((row) => Number(row.weight_kg)).filter(isPositiveWeight);
     return this.#computeWeightTrend(weights);
@@ -303,14 +291,7 @@ export class BodyAnalyticsRepository extends BaseRepository {
     endDate: string,
     goalWeightKg: number | null,
   ): Promise<WeightPrediction> {
-    const rows = await fetchBodyWeightRows(
-      this.#bodyStore,
-      this.userId,
-      this.timezone,
-      endDate,
-      days,
-      { accessWindow: this.accessWindow },
-    );
+    const rows = await this.#fetchBodyWeightRows(days, endDate, false);
 
     const data = rows
       .map((row) => ({
@@ -323,6 +304,30 @@ export class BodyAnalyticsRepository extends BaseRepository {
   }
 
   // ── Private computation methods ─────────────────────────────────
+
+  #fetchBodyWeightRows(
+    days: number,
+    endDate: string,
+    requireBodyFat: boolean,
+  ): Promise<Awaited<ReturnType<typeof fetchBodyWeightRows>>> {
+    const cacheKey = JSON.stringify({ days, endDate, requireBodyFat });
+    const cachedRows = this.#bodyWeightRowsCache.get(cacheKey);
+    if (cachedRows) return cachedRows;
+
+    const rowsPromise = fetchBodyWeightRows(
+      this.#bodyStore,
+      this.userId,
+      this.timezone,
+      endDate,
+      days,
+      { requireBodyFat, accessWindow: this.accessWindow },
+    ).catch((error: unknown) => {
+      this.#bodyWeightRowsCache.delete(cacheKey);
+      throw error;
+    });
+    this.#bodyWeightRowsCache.set(cacheKey, rowsPromise);
+    return rowsPromise;
+  }
 
   #computeSmoothedWeight(data: { date: string; rawWeight: number }[]): SmoothedWeightRow[] {
     if (data.length === 0) return [];
