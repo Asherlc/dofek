@@ -375,6 +375,8 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
     expect(sql).toContain("{% if is_incremental() %}");
     expect(sql).toContain("existing_dates AS");
+    expect(sql).toContain("latest_materialized_refreshed_at");
+    expect(normalizedSql).toContain("recovery_inputs.refreshed_at > existing_dates.latest_materialized_refreshed_at");
     expect(normalizedSql).toContain("existing_dates.latest_materialized_date - INTERVAL 60 DAY");
     expect(sql).toContain("ref('daily_recovery_inputs')");
     expect(sql).toContain("hrv_score");
@@ -391,7 +393,9 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
     expect(sql).toContain("{% if is_incremental() %}");
     expect(sql).toContain("existing_dates AS");
+    expect(normalizedSql).toContain("existing_dates.latest_materialized_date - INTERVAL 54 DAY");
     expect(normalizedSql).toContain("existing_dates.latest_materialized_date - INTERVAL 27 DAY");
+    expect(sql).toContain("output_min_date");
     expect(sql).toContain("ref('daily_activity_load')");
     expect(sql).toContain("acute_load_7d");
     expect(sql).toContain("chronic_load_28d");

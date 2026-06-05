@@ -13,7 +13,7 @@ existing_weeks AS (
     SELECT
         user_id,
         max(week_start) AS latest_materialized_week_start
-    FROM {{ this }} FINAL
+    FROM {{ this }}
     GROUP BY user_id
 ),
 {% endif %}

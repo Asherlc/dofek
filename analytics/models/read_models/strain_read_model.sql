@@ -13,7 +13,7 @@ existing_dates AS (
     SELECT
         user_id,
         max(date) AS latest_materialized_date
-    FROM {{ this }} FINAL
+    FROM {{ this }}
     GROUP BY user_id
 ),
 {% endif %}
@@ -46,11 +46,20 @@ date_bounds AS (
             activity_users.first_activity_date,
             greatest(
                 activity_users.first_activity_date,
+                existing_dates.latest_materialized_date - INTERVAL 54 DAY
+            )
+        ) AS calculation_min_date,
+        if(
+            existing_dates.latest_materialized_date IS NULL,
+            activity_users.first_activity_date,
+            greatest(
+                activity_users.first_activity_date,
                 existing_dates.latest_materialized_date - INTERVAL 27 DAY
             )
-        ) AS min_date,
+        ) AS output_min_date,
         {% else %}
-        activity_users.first_activity_date AS min_date,
+        activity_users.first_activity_date AS calculation_min_date,
+        activity_users.first_activity_date AS output_min_date,
         {% endif %}
         greatest(activity_users.latest_activity_date, today()) AS max_date
     FROM activity_users
@@ -63,10 +72,10 @@ date_bounds AS (
 date_series AS (
     SELECT
         user_id,
-        min_date + INTERVAL date_offset DAY AS date
+        calculation_min_date + INTERVAL date_offset DAY AS date
     FROM date_bounds
     ARRAY JOIN range(
-        toUInt32(dateDiff('day', min_date, max_date) + 1)
+        toUInt32(dateDiff('day', calculation_min_date, max_date) + 1)
     ) AS date_offset
 ),
 
@@ -105,14 +114,21 @@ refresh_clock AS (
 )
 
 SELECT
-    CAST(user_id, 'UUID') AS user_id,
-    CAST(date, 'Date') AS date,
-    daily_load,
-    least(21, round(2.775 * log(1 + greatest(daily_load, 0)), 1)) AS strain,
-    acute_load_7d,
-    chronic_load_28d,
-    if(chronic_load_28d > 0 AND chronic_count = 28, acute_load_7d / chronic_load_28d, NULL) AS workload_ratio,
+    CAST(with_windows.user_id, 'UUID') AS user_id,
+    CAST(with_windows.date, 'Date') AS date,
+    with_windows.daily_load AS daily_load,
+    least(21, round(2.775 * log(1 + greatest(with_windows.daily_load, 0)), 1)) AS strain,
+    with_windows.acute_load_7d AS acute_load_7d,
+    with_windows.chronic_load_28d AS chronic_load_28d,
+    if(
+        with_windows.chronic_load_28d > 0 AND with_windows.chronic_count = 28,
+        with_windows.acute_load_7d / with_windows.chronic_load_28d,
+        NULL
+    ) AS workload_ratio,
     refresh_clock.refresh_version AS refresh_version,
     refresh_clock.refreshed_at AS refreshed_at
 FROM with_windows
+INNER JOIN date_bounds
+    ON date_bounds.user_id = with_windows.user_id
 CROSS JOIN refresh_clock
+WHERE with_windows.date >= date_bounds.output_min_date

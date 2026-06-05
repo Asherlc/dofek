@@ -12,8 +12,9 @@ WITH {% if is_incremental() %}
 existing_dates AS (
     SELECT
         user_id,
-        max(date) AS latest_materialized_date
-    FROM {{ this }} FINAL
+        max(date) AS latest_materialized_date,
+        max(refreshed_at) AS latest_materialized_refreshed_at
+    FROM {{ this }}
     GROUP BY user_id
 ),
 {% endif %}
@@ -35,7 +36,8 @@ recovery_inputs AS (
         hrv_mean_60d,
         hrv_sd_60d,
         rhr_mean_60d,
-        rhr_sd_60d
+        rhr_sd_60d,
+        refreshed_at
     FROM {{ ref('daily_recovery_inputs') }} FINAL
 ),
 
@@ -62,6 +64,7 @@ recovery_inputs_to_materialize AS (
     LEFT JOIN existing_dates
         ON existing_dates.user_id = recovery_inputs.user_id
     WHERE existing_dates.user_id IS NULL
+        OR recovery_inputs.refreshed_at > existing_dates.latest_materialized_refreshed_at
         OR recovery_inputs.date >= existing_dates.latest_materialized_date - INTERVAL 60 DAY
     {% endif %}
 ),
