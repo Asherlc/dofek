@@ -369,9 +369,13 @@ describe("production analytics read-model build", () => {
 
   it("materializes the recovery serving read model from daily recovery inputs", () => {
     const sql = readModel("recovery_read_model");
+    const normalizedSql = compactWhitespace(sql);
 
     expect(sql).toContain("materialized='incremental'");
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
+    expect(sql).toContain("{% if is_incremental() %}");
+    expect(sql).toContain("existing_dates AS");
+    expect(normalizedSql).toContain("existing_dates.latest_materialized_date - INTERVAL 60 DAY");
     expect(sql).toContain("ref('daily_recovery_inputs')");
     expect(sql).toContain("hrv_score");
     expect(sql).toContain("resting_hr_score");
@@ -381,9 +385,13 @@ describe("production analytics read-model build", () => {
 
   it("materializes the strain serving read model from activity load rows", () => {
     const sql = readModel("strain_read_model");
+    const normalizedSql = compactWhitespace(sql);
 
     expect(sql).toContain("materialized='incremental'");
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
+    expect(sql).toContain("{% if is_incremental() %}");
+    expect(sql).toContain("existing_dates AS");
+    expect(normalizedSql).toContain("existing_dates.latest_materialized_date - INTERVAL 27 DAY");
     expect(sql).toContain("ref('daily_activity_load')");
     expect(sql).toContain("acute_load_7d");
     expect(sql).toContain("chronic_load_28d");
@@ -412,14 +420,19 @@ describe("production analytics read-model build", () => {
 
   it("materializes the healthspan serving read model from compact inputs", () => {
     const sql = readModel("healthspan_read_model");
+    const normalizedSql = compactWhitespace(sql);
 
     expect(sql).toContain("materialized='incremental'");
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
+    expect(sql).toContain("{% if is_incremental() %}");
+    expect(sql).toContain("existing_weeks AS");
+    expect(normalizedSql).toContain("existing_weeks.latest_materialized_week_start - INTERVAL 26 WEEK");
     expect(sql).toContain("ref('healthspan_activity_zone_minutes')");
     expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
     expect(sql).toContain("ref('activity_vo2max_estimate')");
     expect(sql).toContain("toMonday(toDate(started_at)) AS week_start");
     expect(sql).not.toContain("activity_date");
+    expect(sql).toContain("argMax(vo2max, started_at) AS latest_vo2max");
     expect(sql).toContain("avg_sleep_min");
     expect(sql).toContain("weekly_aerobic_min");
     expect(sql).toContain("weekly_high_intensity_min");

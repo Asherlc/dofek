@@ -8,7 +8,17 @@
     }
 ) }}
 
-WITH sleep_by_week AS (
+WITH {% if is_incremental() %}
+existing_weeks AS (
+    SELECT
+        user_id,
+        max(week_start) AS latest_materialized_week_start
+    FROM {{ this }} FINAL
+    GROUP BY user_id
+),
+{% endif %}
+
+sleep_by_week AS (
     SELECT
         user_id,
         toMonday(toDate(started_at)) AS week_start,
@@ -74,7 +84,7 @@ vo2_by_week AS (
     SELECT
         user_id,
         toMonday(toDate(started_at)) AS week_start,
-        avg(vo2max) AS latest_vo2max
+        argMax(vo2max, started_at) AS latest_vo2max
     FROM {{ ref('activity_vo2max_estimate') }} FINAL
     WHERE is_deleted = 0
     GROUP BY user_id, toMonday(toDate(started_at))
@@ -127,6 +137,19 @@ week_keys AS (
     FROM body_by_week
 ),
 
+week_keys_to_materialize AS (
+    SELECT
+        week_keys.user_id AS user_id,
+        week_keys.week_start AS week_start
+    FROM week_keys
+    {% if is_incremental() %}
+    LEFT JOIN existing_weeks
+        ON existing_weeks.user_id = week_keys.user_id
+    WHERE existing_weeks.user_id IS null
+        OR week_keys.week_start >= existing_weeks.latest_materialized_week_start - INTERVAL 26 WEEK
+    {% endif %}
+),
+
 refresh_clock AS (
     SELECT
         toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
@@ -134,8 +157,8 @@ refresh_clock AS (
 )
 
 SELECT
-    CAST(week_keys.user_id, 'UUID') AS user_id,
-    CAST(week_keys.week_start, 'Date') AS week_start,
+    CAST(week_keys_to_materialize.user_id, 'UUID') AS user_id,
+    CAST(week_keys_to_materialize.week_start, 'Date') AS week_start,
     sleep_by_week.avg_sleep_min AS avg_sleep_min,
     sleep_by_week.bedtime_stddev_min AS bedtime_stddev_min,
     resting_by_week.avg_resting_hr AS avg_resting_hr,
@@ -154,26 +177,26 @@ SELECT
     body_by_week.body_fat_pct AS body_fat_pct,
     refresh_clock.refresh_version AS refresh_version,
     refresh_clock.refreshed_at AS refreshed_at
-FROM week_keys
+FROM week_keys_to_materialize
 LEFT JOIN sleep_by_week
-    ON sleep_by_week.user_id = week_keys.user_id
-    AND sleep_by_week.week_start = week_keys.week_start
+    ON sleep_by_week.user_id = week_keys_to_materialize.user_id
+    AND sleep_by_week.week_start = week_keys_to_materialize.week_start
 LEFT JOIN resting_by_week
-    ON resting_by_week.user_id = week_keys.user_id
-    AND resting_by_week.week_start = week_keys.week_start
+    ON resting_by_week.user_id = week_keys_to_materialize.user_id
+    AND resting_by_week.week_start = week_keys_to_materialize.week_start
 LEFT JOIN daily_metrics_by_week
-    ON daily_metrics_by_week.user_id = week_keys.user_id
-    AND daily_metrics_by_week.week_start = week_keys.week_start
+    ON daily_metrics_by_week.user_id = week_keys_to_materialize.user_id
+    AND daily_metrics_by_week.week_start = week_keys_to_materialize.week_start
 LEFT JOIN zone_minutes_by_week
-    ON zone_minutes_by_week.user_id = week_keys.user_id
-    AND zone_minutes_by_week.week_start = week_keys.week_start
+    ON zone_minutes_by_week.user_id = week_keys_to_materialize.user_id
+    AND zone_minutes_by_week.week_start = week_keys_to_materialize.week_start
 LEFT JOIN strength_by_week
-    ON strength_by_week.user_id = week_keys.user_id
-    AND strength_by_week.week_start = week_keys.week_start
+    ON strength_by_week.user_id = week_keys_to_materialize.user_id
+    AND strength_by_week.week_start = week_keys_to_materialize.week_start
 LEFT JOIN vo2_by_week
-    ON vo2_by_week.user_id = week_keys.user_id
-    AND vo2_by_week.week_start = week_keys.week_start
+    ON vo2_by_week.user_id = week_keys_to_materialize.user_id
+    AND vo2_by_week.week_start = week_keys_to_materialize.week_start
 LEFT JOIN body_by_week
-    ON body_by_week.user_id = week_keys.user_id
-    AND body_by_week.week_start = week_keys.week_start
+    ON body_by_week.user_id = week_keys_to_materialize.user_id
+    AND body_by_week.week_start = week_keys_to_materialize.week_start
 CROSS JOIN refresh_clock

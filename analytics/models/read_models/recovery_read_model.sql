@@ -8,7 +8,17 @@
     }
 ) }}
 
-WITH recovery_inputs AS (
+WITH {% if is_incremental() %}
+existing_dates AS (
+    SELECT
+        user_id,
+        max(date) AS latest_materialized_date
+    FROM {{ this }} FINAL
+    GROUP BY user_id
+),
+{% endif %}
+
+recovery_inputs AS (
     SELECT
         user_id,
         date,
@@ -27,6 +37,33 @@ WITH recovery_inputs AS (
         rhr_mean_60d,
         rhr_sd_60d
     FROM {{ ref('daily_recovery_inputs') }} FINAL
+),
+
+recovery_inputs_to_materialize AS (
+    SELECT
+        recovery_inputs.user_id AS user_id,
+        recovery_inputs.date AS date,
+        recovery_inputs.hrv AS hrv,
+        recovery_inputs.resting_hr AS resting_hr,
+        recovery_inputs.respiratory_rate AS respiratory_rate,
+        recovery_inputs.efficiency_pct AS efficiency_pct,
+        recovery_inputs.hrv_mean_30d AS hrv_mean_30d,
+        recovery_inputs.hrv_sd_30d AS hrv_sd_30d,
+        recovery_inputs.rhr_mean_30d AS rhr_mean_30d,
+        recovery_inputs.rhr_sd_30d AS rhr_sd_30d,
+        recovery_inputs.rr_mean_30d AS rr_mean_30d,
+        recovery_inputs.rr_sd_30d AS rr_sd_30d,
+        recovery_inputs.hrv_mean_60d AS hrv_mean_60d,
+        recovery_inputs.hrv_sd_60d AS hrv_sd_60d,
+        recovery_inputs.rhr_mean_60d AS rhr_mean_60d,
+        recovery_inputs.rhr_sd_60d AS rhr_sd_60d
+    FROM recovery_inputs
+    {% if is_incremental() %}
+    LEFT JOIN existing_dates
+        ON existing_dates.user_id = recovery_inputs.user_id
+    WHERE existing_dates.user_id IS NULL
+        OR recovery_inputs.date >= existing_dates.latest_materialized_date - INTERVAL 60 DAY
+    {% endif %}
 ),
 
 scored AS (
@@ -52,7 +89,7 @@ scored AS (
             least(100, greatest(0, round(efficiency_pct))),
             62
         ) AS sleep_score
-    FROM recovery_inputs
+    FROM recovery_inputs_to_materialize
 ),
 
 sigmoid_inputs AS (

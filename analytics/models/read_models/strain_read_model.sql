@@ -8,7 +8,17 @@
     }
 ) }}
 
-WITH activity_load AS (
+WITH {% if is_incremental() %}
+existing_dates AS (
+    SELECT
+        user_id,
+        max(date) AS latest_materialized_date
+    FROM {{ this }} FINAL
+    GROUP BY user_id
+),
+{% endif %}
+
+activity_load AS (
     SELECT
         user_id,
         toDate(started_at) AS date,
@@ -18,13 +28,36 @@ WITH activity_load AS (
     GROUP BY user_id, toDate(started_at)
 ),
 
-date_bounds AS (
+activity_users AS (
     SELECT
         user_id,
-        min(date) AS min_date,
-        greatest(max(date), today()) AS max_date
+        min(date) AS first_activity_date,
+        max(date) AS latest_activity_date
     FROM activity_load
     GROUP BY user_id
+),
+
+date_bounds AS (
+    SELECT
+        activity_users.user_id AS user_id,
+        {% if is_incremental() %}
+        if(
+            existing_dates.latest_materialized_date IS NULL,
+            activity_users.first_activity_date,
+            greatest(
+                activity_users.first_activity_date,
+                existing_dates.latest_materialized_date - INTERVAL 27 DAY
+            )
+        ) AS min_date,
+        {% else %}
+        activity_users.first_activity_date AS min_date,
+        {% endif %}
+        greatest(activity_users.latest_activity_date, today()) AS max_date
+    FROM activity_users
+    {% if is_incremental() %}
+    LEFT JOIN existing_dates
+        ON existing_dates.user_id = activity_users.user_id
+    {% endif %}
 ),
 
 date_series AS (

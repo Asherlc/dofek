@@ -10141,6 +10141,11 @@ new incremental tables are populated.
 - Remaining risk: Post-deploy Axiom/Sentry checks should confirm request
   latency improves and that the UTC daily bucketing in the strain read model is
   acceptable for route-facing workload displays.
+- Follow-Up Work: Run post-deploy Axiom and Sentry checks for the affected
+  dashboard routes, verify `analytics.recovery_read_model` and
+  `analytics.healthspan_read_model` remain stable under scheduled dbt builds,
+  and add a short-term dashboard latency alert if route-facing latency remains
+  above the pre-read-model baseline.
 
 ### 2026-06-04 Mobile WHOOP BLE tRPC non-JSON response
 
