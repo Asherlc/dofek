@@ -418,6 +418,8 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("ref('healthspan_activity_zone_minutes')");
     expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
     expect(sql).toContain("ref('activity_vo2max_estimate')");
+    expect(sql).toContain("toMonday(toDate(started_at)) AS week_start");
+    expect(sql).not.toContain("activity_date");
     expect(sql).toContain("avg_sleep_min");
     expect(sql).toContain("weekly_aerobic_min");
     expect(sql).toContain("weekly_high_intensity_min");
