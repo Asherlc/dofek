@@ -273,7 +273,7 @@ export const recoveryRouter = router({
       const rows = await sensorStore.query(
         workloadRowSchema,
         `SELECT
-          toString(strain.date) AS date,
+          toString(toDate(toTimeZone(toDateTime(strain.date), {timezone:String}))) AS date,
           strain.daily_load AS daily_load,
           strain.acute_load_7d AS acute_load,
           strain.chronic_load_28d AS chronic_load,
@@ -285,6 +285,7 @@ export const recoveryRouter = router({
         ORDER BY date ASC`,
         {
           userId: ctx.userId,
+          timezone: ctx.timezone,
           endDate: input.endDate,
           outputWindowStart: dateWindowStartString(input.endDate, input.days),
         },

@@ -10061,6 +10061,28 @@ new incremental tables are populated.
   read-model results, but they should no longer fail because the table is
   missing.
 
+### 2026-06-04 provider stats dbt table still using legacy object
+
+- Symptoms: Sentry issue `DOFEK-SERVER-36` continued reporting production
+  `sync.providerStats` errors after the initial serving-table migration fix.
+- User impact: Provider inventory requests failed; Sentry reported zero
+  directly identified impacted users on the latest event.
+- Evidence: The latest Sentry event at `2026-06-04T22:30:30.645Z` failed with
+  `Unknown expression or function identifier is_deleted` while querying
+  `analytics.provider_stats FINAL ... AND is_deleted = 0`.
+- Root cause: `analytics.provider_stats` had moved to a dbt-owned incremental
+  model with `is_deleted`, `refresh_version`, and `refreshed_at`, but the
+  production-safe dbt selection and deploy-time serving-table migration omitted
+  it. The existing production object could therefore remain the legacy
+  ClickHouse view/table shape while the API queried the dbt table contract.
+- Fix / mitigation: Added `provider_stats` to `DBT_SAFE_MODELS`, updated
+  `0024_create_dbt_serving_read_model_tables` for fresh installs, and added
+  `0025_recreate_provider_stats_dbt_table` to drop the live legacy
+  `analytics.provider_stats` object before creating the dbt-owned
+  ReplacingMergeTree table with the full serving schema.
+- Remaining risk: Requests made before the first analytics build after deploy
+  may see empty provider counts, but they should not fail on a stale schema.
+
 ### 2026-06-04 PostgreSQL idle pool client crash
 
 - Symptoms: Sentry issue `DOFEK-SERVER-2M` reported fatal uncaught
@@ -10119,3 +10141,35 @@ new incremental tables are populated.
 - Remaining risk: Post-deploy Axiom/Sentry checks should confirm request
   latency improves and that the UTC daily bucketing in the strain read model is
   acceptable for route-facing workload displays.
+
+### 2026-06-04 Mobile WHOOP BLE tRPC non-JSON response
+
+- Symptoms: Sentry issue `DOFEK-MOBILE-B` reported production mobile
+  `SyntaxError: JSON Parse error: Unexpected character: p` from tRPC response
+  parsing. The latest events at investigation time were on
+  `2026-06-04T22:40:02Z`.
+- User impact: Sentry reported one impacted user and over 1,300 occurrences.
+  Recent events repeated roughly every 30 seconds, matching the WHOOP BLE
+  periodic drain loop retrying retained samples.
+- Evidence: Events were tagged with `source` values
+  `whoop-ble-imu-upload` and `whoop-ble-realtime-upload`, both from
+  `packages/mobile/lib/background-whoop-ble-sync.ts`. tRPC client code parses
+  responses with `response.json()`, so a body starting with `p` indicates a
+  non-JSON HTTP response before tRPC could deserialize an error envelope. A
+  1.47 MiB unauthenticated production probe to
+  `/api/trpc/inertialMeasurementUnitSync.pushSamples?batch=1` reached Express
+  and returned JSON `401`, so the normal production path was not rejecting
+  500-sample WHOOP batches on request size alone.
+- Root cause: The exact upstream body remains unknown because the mobile
+  transport discarded it behind the JSON parse error. The confirmed failure
+  mode is a non-JSON response reaching the mobile tRPC client during WHOOP BLE
+  background uploads.
+- Fix / mitigation: Added a mobile tRPC fetch wrapper that detects non-JSON
+  responses before `response.json()`, throws an error containing the tRPC path,
+  HTTP status, and a short body preview, and preserves JSON responses
+  unchanged. Future Sentry events should show the real response body/status
+  instead of only `Unexpected character: p`.
+- Remaining risk: This is diagnostic mitigation, not a server-side root-cause
+  fix. If the next event body shows a stable upstream error, fix that
+  upstream cause directly and keep the diagnostic wrapper so future transport
+  regressions remain observable.

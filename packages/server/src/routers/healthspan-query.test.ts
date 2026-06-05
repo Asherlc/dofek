@@ -127,4 +127,59 @@ describe("fetchHealthspanRawData", () => {
       ],
     });
   });
+
+  it("does not leak partial weeks for limited access windows", async () => {
+    const query = vi.fn().mockResolvedValue([]);
+    const ctx = makeFetchContext({
+      accessWindow: {
+        kind: "limited",
+        paid: false,
+        reason: "free_signup_week",
+        startDate: "2026-03-05",
+        endDateExclusive: "2026-03-12",
+      },
+      sensorStore: makeSensorStore({ query }),
+    });
+
+    await fetchHealthspanRawData(ctx, "2026-03-15", 14);
+
+    const queryText = query.mock.calls[0]?.[1];
+    expect(queryText).toContain("healthspan.week_start >= toDate({accessStartDate:String})");
+    expect(queryText).toContain(
+      "healthspan.week_start + INTERVAL 7 DAY <= toDate({accessEndDateExclusive:String})",
+    );
+    expect(queryText).not.toContain("toMonday(toDate({accessStartDate:String}))");
+    expect(query.mock.calls[0]?.[2]).toMatchObject({
+      accessStartDate: "2026-03-05",
+      accessEndDateExclusive: "2026-03-12",
+    });
+  });
+
+  it("counts missing activity weeks as zero for weekly activity averages", async () => {
+    const query = vi.fn().mockResolvedValue([
+      {
+        week_start: "2026-03-03",
+        ...makeRawHealthspanRow({
+          weekly_aerobic_min: 120,
+          weekly_high_intensity_min: 30,
+          sessions_per_week: 3,
+        }),
+      },
+      {
+        week_start: "2026-03-10",
+        ...makeRawHealthspanRow(),
+      },
+    ]);
+    const ctx = makeFetchContext({
+      sensorStore: makeSensorStore({ query }),
+    });
+
+    const row = await fetchHealthspanRawData(ctx, "2026-03-15", 14);
+
+    expect(row).toMatchObject({
+      weekly_aerobic_min: 60,
+      weekly_high_intensity_min: 15,
+      sessions_per_week: 1.5,
+    });
+  });
 });

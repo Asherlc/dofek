@@ -415,7 +415,24 @@ describe("recoveryRouter.workloadRatio", () => {
     expect(result.displayedDate).toBeNull();
     const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
     expect(queryText).toContain("analytics.strain_read_model AS strain FINAL");
+    expect(queryText).toContain("toDate(toTimeZone(toDateTime(strain.date), {timezone:String}))");
     expect(queryText).not.toContain("analytics.activity_summary");
+  });
+
+  it("passes the user timezone when reading strain read-model dates", async () => {
+    const sensorStore = makeSensorStore([]);
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "America/Los_Angeles",
+      sensorStore,
+    });
+
+    await caller.workloadRatio({ endDate: "2026-03-15" });
+
+    expect(vi.mocked(sensorStore.query).mock.calls[0]?.[2]).toMatchObject({
+      timezone: "America/Los_Angeles",
+    });
   });
 
   it("maps SQL rows to WorkloadRatioRow format with rounding", async () => {

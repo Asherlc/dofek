@@ -62,7 +62,7 @@ ORDER BY (user_id, week_start)`;
 
 export function createMigration(): ClickHouseMigration {
   return {
-    id: "0025_create_named_dashboard_read_model_tables",
+    id: "0026_create_named_dashboard_read_model_tables",
     statements: [recoveryReadModelTableSql, strainReadModelTableSql, healthspanReadModelTableSql],
   };
 }

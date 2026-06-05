@@ -158,7 +158,24 @@ describe("sleepNeedRouter", () => {
       expect(result.canRecommend).toBe(false);
       const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
       expect(queryText).toContain("analytics.strain_read_model FINAL");
+      expect(queryText).toContain("toDate(toTimeZone(toDateTime(date), {timezone:String}))");
       expect(queryText).not.toContain("analytics.activity_summary");
+    });
+
+    it("passes the user timezone when selecting yesterday's strain load", async () => {
+      const sensorStore = makeMockSensorStore([[{ load: 0 }], []]);
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "America/Los_Angeles",
+        sensorStore,
+      });
+
+      await caller.calculate({ endDate: "2026-03-15" });
+
+      expect(vi.mocked(sensorStore.query).mock.calls[0]?.[2]).toMatchObject({
+        timezone: "America/Los_Angeles",
+      });
     });
 
     it("computes baseline from good recovery nights when >= 7 good nights", async () => {

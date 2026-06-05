@@ -169,9 +169,10 @@ export const sleepNeedRouter = router({
           coalesce(sum(daily_load), 0) AS load
         FROM analytics.strain_read_model FINAL
         WHERE user_id = {userId:UUID}
-          AND date = toDate({endDate:String}) - INTERVAL 1 DAY
+          AND toDate(toTimeZone(toDateTime(date), {timezone:String})) =
+            toDate({endDate:String}) - INTERVAL 1 DAY
         `,
-        { userId: ctx.userId, endDate: input.endDate },
+        { userId: ctx.userId, timezone: ctx.timezone, endDate: input.endDate },
       );
       const yesterdayLoadFromCh = loadRows[0]?.load ?? 0;
 

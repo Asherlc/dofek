@@ -21,6 +21,8 @@ import * as nonSensorReadModelsAsViewsMigration from "./clickhouse-migrations/00
 import * as incrementalRestingHeartRateMigration from "./clickhouse-migrations/0021_incremental_resting_heart_rate.ts";
 import * as incrementalActivitySummaryMigration from "./clickhouse-migrations/0022_incremental_activity_summary.ts";
 import * as incrementalActivityVo2MaxEstimateMigration from "./clickhouse-migrations/0023_incremental_activity_vo2max_estimate.ts";
+import * as recreateProviderStatsDbtTableMigration from "./clickhouse-migrations/0025_recreate_provider_stats_dbt_table.ts";
+import * as createNamedDashboardReadModelTablesMigration from "./clickhouse-migrations/0026_create_named_dashboard_read_model_tables.ts";
 import { clickHouseMigrationFileNames } from "./clickhouse-migrations/registry.ts";
 import { runClickHouseMigrationStatement } from "./clickhouse-migrations/statement-runner.ts";
 import {
@@ -56,7 +58,8 @@ describe("buildClickHouseMigrationStatements", () => {
       "0022_incremental_activity_summary.ts",
       "0023_incremental_activity_vo2max_estimate.ts",
       "0024_create_dbt_serving_read_model_tables.ts",
-      "0025_create_named_dashboard_read_model_tables.ts",
+      "0025_recreate_provider_stats_dbt_table.ts",
+      "0026_create_named_dashboard_read_model_tables.ts",
     ]);
   });
 
@@ -151,6 +154,29 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(statementSql).toContain("ENGINE = ReplacingMergeTree(refresh_version)");
     expect(statementSql).toContain("ORDER BY (user_id, started_at, activity_id, method)");
     expect(statementSql).not.toContain("CREATE MATERIALIZED VIEW");
+  });
+
+  it("keeps provider stats live repair cleanup and table creation in its migration file", () => {
+    const statements = recreateProviderStatsDbtTableMigration.createMigration().statements;
+
+    expect(statements).toHaveLength(3);
+    expect(statements[0]).toBe("DROP TABLE IF EXISTS analytics.provider_stats");
+    expect(statements[1]).toBe("DROP VIEW IF EXISTS analytics.provider_stats");
+    expect(statements[2]).toContain("CREATE TABLE IF NOT EXISTS analytics.provider_stats");
+    expect(statements[2]).toContain("is_deleted UInt8");
+    expect(statements[2]).toContain("ENGINE = ReplacingMergeTree(refresh_version)");
+    expect(statements[2]).toContain("ORDER BY (user_id, provider_id)");
+  });
+
+  it("keeps named dashboard read model table creation in its migration file", () => {
+    const statements = createNamedDashboardReadModelTablesMigration.createMigration().statements;
+    const statementSql = statements.join("\n");
+
+    expect(statements).toHaveLength(3);
+    expect(statementSql).toContain("CREATE TABLE IF NOT EXISTS analytics.recovery_read_model");
+    expect(statementSql).toContain("CREATE TABLE IF NOT EXISTS analytics.strain_read_model");
+    expect(statementSql).toContain("CREATE TABLE IF NOT EXISTS analytics.healthspan_read_model");
+    expect(statementSql).toContain("ENGINE = ReplacingMergeTree(refresh_version)");
   });
 
   it("renders the shared ReplacingMergeTree table engine helper", () => {
@@ -366,7 +392,7 @@ describe("runClickHouseMigrations", () => {
 
     const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
-    expect(count).toBe(25);
+    expect(count).toBe(26);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(

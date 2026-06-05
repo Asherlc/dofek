@@ -66,8 +66,8 @@ function latestNonNullValue<TKey extends keyof HealthspanReadModelRow>(
 function accessWindowClause(ctx: HealthspanRawDataContext): string {
   if (ctx.accessWindow.kind === "full") return "";
   return `
-    AND healthspan.week_start >= toMonday(toDate({accessStartDate:String}))
-    AND healthspan.week_start < toMonday(toDate({accessEndDateExclusive:String}))`;
+    AND healthspan.week_start >= toDate({accessStartDate:String})
+    AND healthspan.week_start + INTERVAL 7 DAY <= toDate({accessEndDateExclusive:String})`;
 }
 
 function accessWindowParams(ctx: HealthspanRawDataContext): Record<string, string> {
@@ -76,6 +76,15 @@ function accessWindowParams(ctx: HealthspanRawDataContext): Record<string, strin
     accessStartDate: ctx.accessWindow.startDate,
     accessEndDateExclusive: ctx.accessWindow.endDateExclusive,
   };
+}
+
+function weeklyActivityAverage(rows: HealthspanReadModelRow[], key: keyof HealthspanReadModelRow) {
+  if (!rows.some((row) => typeof row[key] === "number")) return null;
+  const total = rows.reduce((sum, row) => {
+    const value = row[key];
+    return sum + (typeof value === "number" ? value : 0);
+  }, 0);
+  return total / rows.length;
 }
 
 /**
@@ -128,9 +137,9 @@ export async function fetchHealthspanRawData(
     avg_resting_hr: average(sortedRows.map((row) => row.avg_resting_hr)),
     avg_steps: average(sortedRows.map((row) => row.avg_steps)),
     latest_vo2max: latestNonNullValue(sortedRows, "latest_vo2max"),
-    weekly_aerobic_min: average(sortedRows.map((row) => row.weekly_aerobic_min)),
-    weekly_high_intensity_min: average(sortedRows.map((row) => row.weekly_high_intensity_min)),
-    sessions_per_week: average(sortedRows.map((row) => row.sessions_per_week)),
+    weekly_aerobic_min: weeklyActivityAverage(sortedRows, "weekly_aerobic_min"),
+    weekly_high_intensity_min: weeklyActivityAverage(sortedRows, "weekly_high_intensity_min"),
+    sessions_per_week: weeklyActivityAverage(sortedRows, "sessions_per_week"),
     weight_kg: latestNonNullValue(sortedRows, "weight_kg"),
     body_fat_pct: latestNonNullValue(sortedRows, "body_fat_pct"),
     weekly_history: sortedRows.map((row) => ({

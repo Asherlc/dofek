@@ -19,7 +19,10 @@ describe("clickHouseMigrations", () => {
       ),
     );
     expect(clickHouseMigrationFileNames).toContain(
-      "0025_create_named_dashboard_read_model_tables.ts",
+      "0026_create_named_dashboard_read_model_tables.ts",
+    );
+    expect(statements).toContainEqual(
+      expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.provider_stats"),
     );
     expect(statements).toContainEqual(
       expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.recovery_read_model"),

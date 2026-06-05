@@ -30,7 +30,13 @@ the named dashboard serving read models. They build on compact ingredient
 models such as `daily_recovery_inputs`, `daily_activity_load`, and
 `healthspan_activity_zone_minutes` so dashboard, recovery, stress,
 sleep-need, and healthspan routes do not recompute broad windows at request
-time.
+time. `provider_stats` materializes provider record counts for the sync
+provider inventory route so the API does not compute all-provider counts on
+request.
+`daily_recovery_inputs`, `daily_activity_load`, and
+`healthspan_activity_zone_minutes` are compact serving read models over daily
+metrics, sleep, activity summaries, and bounded activity samples for dashboard,
+recovery, stress, sleep-need, and healthspan routes.
 
 Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `deduped_sensor`, `activity_source_records`, `activity_duplicate_matches`,
@@ -38,11 +44,11 @@ Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `sleep_heart_rate_sample`, `resting_heart_rate_sleep_window`,
 `daily_recovery_inputs`, `recovery_read_model`, `activity_sensor_sample`, `activity_location_sample`,
 `activity_sensor_summary_rows`, `activity_location_summary_rows`,
-`activity_summary_rows`, `activity_vo2max_estimate`, `daily_activity_load`,
-`strain_read_model`, `healthspan_activity_zone_minutes`, and
-`healthspan_read_model`. The sample-stage and sample-intermediate
-models use dbt's `microbatch` incremental strategy with `recorded_at` as the
-event time, daily batches, and short lookbacks so
+`activity_summary_rows`, `activity_vo2max_estimate`, `provider_stats`,
+`daily_activity_load`, `strain_read_model`, `healthspan_activity_zone_minutes`,
+and `healthspan_read_model`. The sample-stage and sample-intermediate models
+use dbt's `microbatch` incremental strategy with `recorded_at` as the event
+time, daily batches, and short lookbacks so
 ClickHouse processes bounded sample-time windows instead of one large
 activity/window query. `deduped_activities` and `deduped_activity_members`
 materialize canonical activity identity once, but incremental runs only rebuild
@@ -56,4 +62,5 @@ and `max_threads=1` to keep the offline aggregate work out of web/API requests.
 final API responses. `recovery_read_model`, `strain_read_model`, and
 `healthspan_read_model` are the final route-facing dashboard models; the
 lower-level recovery, activity-load, and zone-minute models remain internal
-ingredients.
+ingredients. `provider_stats` remains the route-facing provider inventory model
+so request paths do not recompute provider counts from raw source tables.

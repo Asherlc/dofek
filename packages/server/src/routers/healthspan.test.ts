@@ -493,11 +493,9 @@ describe("fetchHealthspanRawData", () => {
     const queryText = query.mock.calls[0]?.[1];
     expect(queryText).toContain("healthspan.week_start > toMonday(toDate({windowStart:String}))");
     expect(queryText).toContain("healthspan.week_start <= toMonday(toDate({endDate:String}))");
+    expect(queryText).toContain("healthspan.week_start >= toDate({accessStartDate:String})");
     expect(queryText).toContain(
-      "healthspan.week_start >= toMonday(toDate({accessStartDate:String}))",
-    );
-    expect(queryText).toContain(
-      "healthspan.week_start < toMonday(toDate({accessEndDateExclusive:String}))",
+      "healthspan.week_start + INTERVAL 7 DAY <= toDate({accessEndDateExclusive:String})",
     );
     expect(query.mock.calls[0]?.[2]).toMatchObject({
       windowStart: "2026-03-01",
