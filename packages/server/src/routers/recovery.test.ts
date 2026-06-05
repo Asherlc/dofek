@@ -414,8 +414,25 @@ describe("recoveryRouter.workloadRatio", () => {
     expect(result.displayedStrain).toBe(0);
     expect(result.displayedDate).toBeNull();
     const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
-    expect(queryText).toContain("analytics.daily_activity_load");
+    expect(queryText).toContain("analytics.strain_read_model AS strain FINAL");
+    expect(queryText).toContain("toDate(toTimeZone(toDateTime(strain.date), {timezone:String}))");
     expect(queryText).not.toContain("analytics.activity_summary");
+  });
+
+  it("passes the user timezone when reading strain read-model dates", async () => {
+    const sensorStore = makeSensorStore([]);
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "America/Los_Angeles",
+      sensorStore,
+    });
+
+    await caller.workloadRatio({ endDate: "2026-03-15" });
+
+    expect(vi.mocked(sensorStore.query).mock.calls[0]?.[2]).toMatchObject({
+      timezone: "America/Los_Angeles",
+    });
   });
 
   it("maps SQL rows to WorkloadRatioRow format with rounding", async () => {
@@ -717,7 +734,7 @@ describe("recoveryRouter.readinessScore", () => {
     expect(result).toEqual([]);
     const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
     const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
-    expect(queryText).toContain("analytics.daily_recovery_inputs");
+    expect(queryText).toContain("analytics.recovery_read_model AS recovery_inputs FINAL");
     expect(queryText).not.toContain("fitness.v_daily_metrics");
     expect(queryText).not.toContain("analytics.v_sleep");
     expect(queryText).not.toContain("accessStartDate");
@@ -1308,7 +1325,7 @@ describe("recoveryRouter.readinessScore", () => {
 
 describe("recoveryRouter.strainTarget", () => {
   // Sets up a strainTarget caller. PG mocks: readinessRows, then optional sleepRows.
-  // CH mock: loads from analytics.daily_activity_load.
+  // CH mock: loads from analytics.strain_read_model.
   function setup({
     readinessRows = [],
     sleepRows,
@@ -1355,7 +1372,9 @@ describe("recoveryRouter.strainTarget", () => {
     await caller.strainTarget({ endDate: "2026-03-28" });
 
     const queryText = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
-    expect(queryText).toContain("analytics.daily_activity_load");
+    expect(queryText).toContain("analytics.strain_read_model AS strain FINAL");
+    expect(queryText).toContain("toString(strain.date) AS date");
+    expect(queryText).toContain("strain.date >= toDate({windowStart:String})");
     expect(queryText).not.toContain("analytics.activity_summary");
   });
 

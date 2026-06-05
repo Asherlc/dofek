@@ -118,7 +118,7 @@ describe("Router transformation logic", () => {
 
     const queryText = query.mock.calls.find(
       ([, sqlText]) =>
-        typeof sqlText === "string" && sqlText.includes("analytics.daily_recovery_inputs"),
+        typeof sqlText === "string" && sqlText.includes("analytics.recovery_read_model"),
     )?.[1];
     expect(queryText).toEqual(expect.any(String));
     expect(queryText).not.toContain("fitness.v_daily_metrics");

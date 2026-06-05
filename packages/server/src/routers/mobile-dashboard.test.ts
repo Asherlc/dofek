@@ -252,7 +252,7 @@ describe("mobileDashboard.dashboard", () => {
 
     expect(result.strain.dailyStrain).toBe(0);
     const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
-    expect(queryText).toContain("analytics.daily_activity_load");
+    expect(queryText).toContain("analytics.strain_read_model FINAL");
     expect(queryText).not.toContain("analytics.activity_summary");
   });
 

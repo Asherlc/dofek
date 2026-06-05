@@ -167,9 +167,10 @@ export const sleepNeedRouter = router({
         z.object({ load: z.coerce.number() }),
         `SELECT
           coalesce(sum(daily_load), 0) AS load
-        FROM analytics.daily_activity_load
+        FROM analytics.strain_read_model FINAL
         WHERE user_id = {userId:UUID}
-          AND toDate(toTimeZone(started_at, {timezone:String})) = toDate({endDate:String}) - INTERVAL 1 DAY
+          AND toDate(toTimeZone(toDateTime(date), {timezone:String})) =
+            toDate({endDate:String}) - INTERVAL 1 DAY
         `,
         { userId: ctx.userId, timezone: ctx.timezone, endDate: input.endDate },
       );

@@ -263,7 +263,6 @@ export const recoveryRouter = router({
     .input(z.object({ days: z.number().default(90), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<WorkloadRatioResult> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "recovery.workloadRatio");
-      const queryDays = input.days + 28;
       const workloadRowSchema = z.object({
         date: z.string(),
         daily_load: z.coerce.number(),
@@ -273,51 +272,21 @@ export const recoveryRouter = router({
       });
       const rows = await sensorStore.query(
         workloadRowSchema,
-        `WITH activity_load AS (
-          SELECT
-            toDate(toTimeZone(started_at, {timezone:String})) AS date,
-            sum(daily_load) AS daily_load
-          FROM analytics.daily_activity_load
-          WHERE user_id = {userId:UUID}
-            AND toDate(toTimeZone(started_at, {timezone:String})) >= toDate({windowStart:String})
-          GROUP BY toDate(toTimeZone(started_at, {timezone:String}))
-        ),
-        date_series AS (
-          SELECT toDate({windowStart:String}) + INTERVAL number DAY AS date
-          FROM numbers(toUInt64({totalDays:Int32}) + 1)
-        ),
-        daily AS (
-          SELECT
-            ds.date AS date,
-            coalesce(al.daily_load, 0) AS daily_load
-          FROM date_series ds
-          LEFT JOIN activity_load al ON al.date = ds.date
-        ),
-        with_windows AS (
-          SELECT
-            date,
-            daily_load,
-            sum(daily_load) OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS acute_load,
-            avg(daily_load) OVER (ORDER BY date ROWS BETWEEN 27 PRECEDING AND CURRENT ROW) AS chronic_load_avg,
-            count() OVER (ORDER BY date ROWS BETWEEN 27 PRECEDING AND CURRENT ROW) AS chronic_count
-          FROM daily
-        )
-        SELECT
-          toString(with_windows.date) AS date,
-          with_windows.daily_load AS daily_load,
-          with_windows.acute_load AS acute_load,
-          with_windows.chronic_load_avg * 7 AS chronic_load,
-          if(with_windows.chronic_load_avg > 0 AND with_windows.chronic_count = 28,
-             with_windows.acute_load / (with_windows.chronic_load_avg * 7),
-             NULL) AS workload_ratio
-        FROM with_windows
-        WHERE with_windows.date > toDate({outputWindowStart:String})
+        `SELECT
+          toString(toDate(toTimeZone(toDateTime(strain.date), {timezone:String}))) AS date,
+          strain.daily_load AS daily_load,
+          strain.acute_load_7d AS acute_load,
+          strain.chronic_load_28d AS chronic_load,
+          strain.workload_ratio AS workload_ratio
+        FROM analytics.strain_read_model AS strain FINAL
+        WHERE strain.user_id = {userId:UUID}
+          AND strain.date > toDate({outputWindowStart:String})
+          AND strain.date <= toDate({endDate:String})
         ORDER BY date ASC`,
         {
           userId: ctx.userId,
           timezone: ctx.timezone,
-          windowStart: dateWindowStartString(input.endDate, queryDays),
-          totalDays: queryDays,
+          endDate: input.endDate,
           outputWindowStart: dateWindowStartString(input.endDate, input.days),
         },
       );
@@ -473,7 +442,7 @@ export const recoveryRouter = router({
           rr_mean_30d,
           rr_sd_30d,
           efficiency_pct
-        FROM analytics.daily_recovery_inputs AS recovery_inputs
+        FROM analytics.recovery_read_model AS recovery_inputs FINAL
         WHERE recovery_inputs.user_id = {userId:UUID}
           AND recovery_inputs.date > toDate({windowStart:String})
           AND recovery_inputs.date <= toDate({endDate:String})
@@ -620,24 +589,24 @@ export const recoveryRouter = router({
         `,
       );
 
-      // Get daily loads for ACWR from the compact ClickHouse activity-load read model.
+      // Get daily loads for ACWR from the compact ClickHouse strain read model.
       const loads = await sensorStore.query(
         z.object({
           date: z.string(),
           daily_load: z.coerce.number(),
         }),
         `SELECT
-          toString(toDate(toTimeZone(started_at, {timezone:String}))) AS date,
-          sum(daily_load) AS daily_load
-        FROM analytics.daily_activity_load
-        WHERE user_id = {userId:UUID}
-          AND toDate(toTimeZone(started_at, {timezone:String})) >= toDate({windowStart:String})
-        GROUP BY toDate(toTimeZone(started_at, {timezone:String}))
+          toString(strain.date) AS date,
+          strain.daily_load AS daily_load
+        FROM analytics.strain_read_model AS strain FINAL
+        WHERE strain.user_id = {userId:UUID}
+          AND strain.date >= toDate({windowStart:String})
+          AND strain.date <= toDate({endDate:String})
         ORDER BY date ASC`,
         {
           userId: ctx.userId,
-          timezone: ctx.timezone,
           windowStart: dateWindowStartString(input.endDate, input.days),
+          endDate: input.endDate,
         },
       );
 

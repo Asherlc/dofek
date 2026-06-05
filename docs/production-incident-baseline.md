@@ -10120,6 +10120,33 @@ new incremental tables are populated.
   or otherwise pre-aggregate the coverage buckets; simply increasing the
   database memory limit would leave the request-time scan pattern in place.
 
+### 2026-06-04 dashboard metrics still slow without route-facing read models
+
+- Symptoms: Dashboard and related recovery, strain, and healthspan API calls
+  still did too much request-time aggregation after the first serving-model
+  rollout.
+- User impact: Dashboard cards could load slowly or time out when routes fanned
+  out across ClickHouse ingredient models or PostgreSQL views instead of compact
+  route-facing tables.
+- Evidence: Route code still queried ingredient models such as
+  `analytics.daily_recovery_inputs`, `analytics.daily_activity_load`, and
+  healthspan source views directly from API handlers.
+- Root cause: The serving layer had intermediate dbt models, but no named
+  dashboard read models for the API contracts the UI actually needs.
+- Fix / mitigation: Added dbt-owned incremental ClickHouse models
+  `analytics.recovery_read_model`, `analytics.strain_read_model`, and
+  `analytics.healthspan_read_model`, added deploy-time empty table creation,
+  and switched the affected server routes/repositories to read those compact
+  models.
+- Remaining risk: Post-deploy Axiom/Sentry checks should confirm request
+  latency improves and that the UTC daily bucketing in the strain read model is
+  acceptable for route-facing workload displays.
+- Follow-Up Work: Run post-deploy Axiom and Sentry checks for the affected
+  dashboard routes, verify `analytics.recovery_read_model` and
+  `analytics.healthspan_read_model` remain stable under scheduled dbt builds,
+  and add a short-term dashboard latency alert if route-facing latency remains
+  above the pre-read-model baseline.
+
 ### 2026-06-04 Mobile WHOOP BLE tRPC non-JSON response
 
 - Symptoms: Sentry issue `DOFEK-MOBILE-B` reported production mobile

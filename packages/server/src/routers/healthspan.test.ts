@@ -5,7 +5,13 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; userId: string | null; timezone: string; sensorStore?: unknown }>()
+    .context<{
+      accessWindow: typeof fullAccessWindow;
+      db: unknown;
+      userId: string | null;
+      timezone: string;
+      sensorStore?: unknown;
+    }>()
     .create();
   return {
     router: trpc.router,
@@ -384,97 +390,52 @@ function makeSensorStore(overrides: Partial<ActivitySensorStore>): ActivitySenso
   };
 }
 
-function makeRawHealthspanRow(overrides: Partial<HealthspanRawRow> = {}): HealthspanRawRow {
+function makeHealthspanReadModelRows(rows: HealthspanRawRow[]) {
+  return rows.flatMap((row, rowIndex) => {
+    const historyRows =
+      row.weekly_history && row.weekly_history.length > 0
+        ? row.weekly_history
+        : [
+            {
+              week_start: `2026-03-${String(rowIndex + 2).padStart(2, "0")}`,
+              avg_rhr: row.avg_resting_hr,
+              avg_steps: row.avg_steps,
+              avg_vo2max: row.latest_vo2max,
+            },
+          ];
+
+    return historyRows.map((historyRow) => ({
+      week_start: historyRow.week_start,
+      avg_sleep_min: row.avg_sleep_min,
+      bedtime_stddev_min: row.bedtime_stddev_min,
+      avg_resting_hr: historyRow.avg_rhr,
+      avg_steps: historyRow.avg_steps,
+      latest_vo2max: historyRow.avg_vo2max,
+      weekly_aerobic_min: row.weekly_aerobic_min,
+      weekly_high_intensity_min: row.weekly_high_intensity_min,
+      sessions_per_week: row.sessions_per_week,
+      weight_kg: row.weight_kg,
+      body_fat_pct: row.body_fat_pct,
+    }));
+  });
+}
+
+function makeHealthspanCallerContext(rows: HealthspanRawRow[]) {
   return {
-    avg_sleep_min: null,
-    bedtime_stddev_min: null,
-    avg_resting_hr: null,
-    avg_steps: null,
-    latest_vo2max: null,
-    weekly_aerobic_min: null,
-    weekly_high_intensity_min: null,
-    sessions_per_week: null,
-    weight_kg: null,
-    body_fat_pct: null,
-    weekly_history: null,
-    ...overrides,
+    accessWindow: fullAccessWindow,
+    db: { execute: vi.fn() },
+    userId: "user-1",
+    timezone: "UTC",
+    sensorStore: makeSensorStore({
+      query: vi.fn().mockResolvedValue(makeHealthspanReadModelRows(rows)),
+    }),
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function collectSqlParameterValues(value: unknown): unknown[] {
-  if (Array.isArray(value)) {
-    return value.flatMap(collectSqlParameterValues);
-  }
-  if (!isRecord(value)) {
-    return [value];
-  }
-
-  if ("value" in value) {
-    return [];
-  }
-
-  const queryChunks = value.queryChunks;
-  if (Array.isArray(queryChunks)) {
-    return queryChunks.flatMap(collectSqlParameterValues);
-  }
-
-  return [];
-}
-
-function collectSqlText(value: unknown): string {
-  if (Array.isArray(value)) {
-    return value.map(collectSqlText).join("");
-  }
-  if (!isRecord(value)) {
-    return "";
-  }
-
-  if ("value" in value) {
-    const chunkValue = value.value;
-    if (typeof chunkValue === "string") {
-      return chunkValue;
-    }
-    if (Array.isArray(chunkValue)) {
-      return chunkValue.filter((item): item is string => typeof item === "string").join("");
-    }
-    return "";
-  }
-
-  const queryChunks = value.queryChunks;
-  if (Array.isArray(queryChunks)) {
-    return queryChunks.map(collectSqlText).join("");
-  }
-
-  return "";
-}
-
-function findSqlCall(calls: unknown[][], text: string): unknown {
-  return calls.map(([query]) => query).find((query) => collectSqlText(query).includes(text));
-}
-
-function expectSqlParamsToContainNumber(values: unknown[], expected: number): void {
-  expect(
-    values.some(
-      (value) => typeof value === "number" && Math.abs(value - expected) < Number.EPSILON,
-    ),
-  ).toBe(true);
-}
-
-function countSqlNumberParams(values: unknown[], expected: number): number {
-  return values.filter(
-    (value) => typeof value === "number" && Math.abs(value - expected) < Number.EPSILON,
-  ).length;
 }
 
 function makeFetchContext(
   overrides: Partial<Parameters<typeof fetchHealthspanRawData>[0]>,
 ): Parameters<typeof fetchHealthspanRawData>[0] {
   return {
-    db: { execute: vi.fn().mockResolvedValue([makeRawHealthspanRow()]) },
     userId: "user-1",
     timezone: "UTC",
     accessWindow: fullAccessWindow,
@@ -483,133 +444,40 @@ function makeFetchContext(
 }
 
 describe("fetchHealthspanRawData", () => {
-  it("passes derived sleep, body, and zone metrics into the aggregate query", async () => {
-    const execute = vi
-      .fn()
-      .mockResolvedValueOnce([{ weekly_exercise_min: null }])
-      .mockResolvedValueOnce([makeRawHealthspanRow()]);
-    const query = vi.fn(async (_schema: unknown, queryText: string) => {
-      if (queryText.includes("analytics.resting_heart_rate_sleep_window")) {
-        return [{ date: "2026-03-02", resting_hr: 48 }];
-      }
-      if (queryText.includes("analytics.healthspan_activity_zone_minutes")) {
-        return [{ aerobic_minutes: 140, high_intensity_minutes: 70 }];
-      }
-      if (queryText.includes("analytics.v_body_measurement")) {
-        return [
-          { recorded_at: "2026-03-01 08:00:00", weight_kg: null, body_fat_pct: 21 },
-          { recorded_at: "2026-03-02 08:00:00", weight_kg: 80, body_fat_pct: null },
-          { recorded_at: "2026-03-03 08:00:00", weight_kg: 77, body_fat_pct: null },
-        ];
-      }
-      if (queryText.includes("analytics.v_sleep")) {
-        return [
-          {
-            date: "2026-03-01",
-            started_at: "2026-03-01T12:00:00.000Z",
-            duration_minutes: 420,
-            deep_minutes: null,
-            rem_minutes: null,
-            light_minutes: null,
-            awake_minutes: null,
-            efficiency_pct: null,
-          },
-          {
-            date: "2026-03-02",
-            started_at: "2026-03-02T13:00:00.000Z",
-            duration_minutes: null,
-            deep_minutes: null,
-            rem_minutes: null,
-            light_minutes: null,
-            awake_minutes: null,
-            efficiency_pct: null,
-          },
-          {
-            date: "2026-03-03",
-            started_at: "2026-03-03T00:30:00.000Z",
-            duration_minutes: 480,
-            deep_minutes: null,
-            rem_minutes: null,
-            light_minutes: null,
-            awake_minutes: null,
-            efficiency_pct: null,
-          },
-          {
-            date: "2026-03-04",
-            started_at: "not-a-date",
-            duration_minutes: 600,
-            deep_minutes: null,
-            rem_minutes: null,
-            light_minutes: null,
-            awake_minutes: null,
-            efficiency_pct: null,
-          },
-        ];
-      }
-      return [];
-    });
-    const sensorStore = makeSensorStore({
-      query,
-      getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
-    });
+  it("reads compact weekly rows from the Healthspan read model", async () => {
+    const query = vi.fn().mockResolvedValue([
+      {
+        week_start: "2026-03-03",
+        avg_sleep_min: 420,
+        bedtime_stddev_min: 20,
+        avg_resting_hr: 55,
+        avg_steps: 8000,
+        latest_vo2max: 42,
+        weekly_aerobic_min: 120,
+        weekly_high_intensity_min: 30,
+        sessions_per_week: 2,
+        weight_kg: 80,
+        body_fat_pct: 20,
+      },
+    ]);
     const ctx = makeFetchContext({
-      db: { execute },
-      sensorStore,
+      sensorStore: makeSensorStore({ query }),
     });
 
-    await fetchHealthspanRawData(ctx, "2026-03-15", 14);
+    const result = await fetchHealthspanRawData(ctx, "2026-03-15", 14);
 
-    expect(query).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.stringContaining("analytics.healthspan_activity_zone_minutes"),
-      expect.objectContaining({
-        windowStart: "2026-03-01 00:00:00",
-        windowEndExclusive: "2026-03-16 00:00:00",
-      }),
+    expect(query.mock.calls[0]?.[1]).toContain(
+      "analytics.healthspan_read_model AS healthspan FINAL",
     );
-    const aggregateSql = findSqlCall(execute.mock.calls, "metrics_agg");
-    const sqlValues = collectSqlParameterValues(aggregateSql);
-    expectSqlParamsToContainNumber(sqlValues, 500);
-    expectSqlParamsToContainNumber(sqlValues, Math.sqrt(115_800));
-    expectSqlParamsToContainNumber(sqlValues, 70);
-    expectSqlParamsToContainNumber(sqlValues, 35);
-    expectSqlParamsToContainNumber(sqlValues, 77);
-    expectSqlParamsToContainNumber(sqlValues, 21);
+    expect(query.mock.calls[0]?.[1]).not.toContain("analytics.healthspan_activity_zone_minutes");
+    expect(result?.weekly_history).toEqual([
+      { week_start: "2026-03-03", avg_rhr: 55, avg_steps: 8000, avg_vo2max: 42 },
+    ]);
   });
 
-  it("uses device-reported exercise minutes as the aerobic activity floor", async () => {
-    const execute = vi
-      .fn()
-      .mockResolvedValueOnce([{ weekly_exercise_min: 112 }])
-      .mockResolvedValueOnce([makeRawHealthspanRow()]);
-    const query = vi.fn(async (_schema: unknown, queryText: string) => {
-      if (queryText.includes("analytics.healthspan_activity_zone_minutes")) {
-        return [{ aerobic_minutes: 0, high_intensity_minutes: 0 }];
-      }
-      return [];
-    });
+  it("bounds the Healthspan read model by end date and access window", async () => {
+    const query = vi.fn().mockResolvedValue([]);
     const ctx = makeFetchContext({
-      db: { execute },
-      sensorStore: makeSensorStore({
-        query,
-        getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
-      }),
-    });
-
-    await fetchHealthspanRawData(ctx, "2026-03-15", 14);
-
-    const aggregateSql = findSqlCall(execute.mock.calls, "metrics_agg");
-    const sqlValues = collectSqlParameterValues(aggregateSql);
-    expectSqlParamsToContainNumber(sqlValues, 112);
-  });
-
-  it("bounds Healthspan SQL reads by end date and access window", async () => {
-    const execute = vi
-      .fn()
-      .mockResolvedValueOnce([{ weekly_exercise_min: null }])
-      .mockResolvedValueOnce([makeRawHealthspanRow()]);
-    const ctx = makeFetchContext({
-      db: { execute },
       accessWindow: {
         kind: "limited",
         paid: false,
@@ -617,118 +485,30 @@ describe("fetchHealthspanRawData", () => {
         startDate: "2026-03-05",
         endDateExclusive: "2026-03-12",
       },
+      sensorStore: makeSensorStore({ query }),
     });
 
     await fetchHealthspanRawData(ctx, "2026-03-15", 14);
 
-    const weeklyExerciseSql = findSqlCall(execute.mock.calls, "weekly_exercise_min");
-    expect(collectSqlText(weeklyExerciseSql)).toContain("AND date <= ");
-    expect(collectSqlText(weeklyExerciseSql)).toContain("AND date >= ");
-    expect(collectSqlText(weeklyExerciseSql)).toContain("AND date < ");
-
-    const aggregateSqlText = collectSqlText(findSqlCall(execute.mock.calls, "metrics_agg"));
-    expect(aggregateSqlText).toContain("AND date <= ");
-    expect(aggregateSqlText).toContain("AND date >= ");
-    expect(aggregateSqlText).toContain("AND date < ");
-    expect(aggregateSqlText).toContain("AND started_at < ");
-    expect(aggregateSqlText).toContain("AND started_at::date >= ");
-    expect(aggregateSqlText).toContain("AND started_at::date < ");
-  });
-
-  it("keeps activity zone read-model bounds in the ClickHouse query", async () => {
-    const query = vi.fn().mockResolvedValue([]);
-    const ctx = makeFetchContext({
-      sensorStore: makeSensorStore({
-        query,
-        getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
-      }),
-    });
-
-    await fetchHealthspanRawData(ctx, "2026-03-15", 14);
-
-    const zoneQuery = query.mock.calls.find(
-      ([, queryText]) =>
-        typeof queryText === "string" &&
-        queryText.includes("analytics.healthspan_activity_zone_minutes"),
-    )?.[1];
-    expect(zoneQuery).toEqual(expect.any(String));
-    expect(query).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.stringContaining("analytics.healthspan_activity_zone_minutes"),
-      expect.objectContaining({
-        windowStart: "2026-03-01 00:00:00",
-        windowEndExclusive: "2026-03-16 00:00:00",
-      }),
+    const queryText = query.mock.calls[0]?.[1];
+    expect(queryText).toContain("healthspan.week_start > toMonday(toDate({windowStart:String}))");
+    expect(queryText).toContain("healthspan.week_start <= toMonday(toDate({endDate:String}))");
+    expect(queryText).toContain("healthspan.week_start >= toDate({accessStartDate:String})");
+    expect(queryText).toContain(
+      "healthspan.week_start + INTERVAL 7 DAY <= toDate({accessEndDateExclusive:String})",
     );
-    expect(zoneQuery).toMatch(/AND\s+started_at\s*>\s*toDateTime\(\{windowStart:String\}\)/);
-    expect(zoneQuery).toMatch(/AND\s+started_at\s*<\s*toDateTime\(\{windowEndExclusive:String\}\)/);
+    expect(query.mock.calls[0]?.[2]).toMatchObject({
+      windowStart: "2026-03-01",
+      endDate: "2026-03-15",
+      accessStartDate: "2026-03-05",
+      accessEndDateExclusive: "2026-03-12",
+    });
   });
 
-  it("merges VO2 max estimates into sorted weekly history", async () => {
-    const execute = vi.fn().mockResolvedValue([
-      makeRawHealthspanRow({
-        weekly_history: [
-          { week_start: "2026-03-16", avg_rhr: 55, avg_steps: 10_000, avg_vo2max: null },
-        ],
-      }),
-    ]);
-    const getVo2MaxEstimates = vi.fn().mockResolvedValue([
-      {
-        activity_id: "activity-1",
-        activity_date: "2026-03-03",
-        method: "cycling_power",
-        vo2max: 40,
-      },
-      {
-        activity_id: "activity-2",
-        activity_date: "2026-03-05",
-        method: "submaximal_acsm",
-        vo2max: 50,
-      },
-      {
-        activity_id: "activity-3",
-        activity_date: "2026-03-17",
-        method: "submaximal_acsm",
-        vo2max: 60,
-      },
-    ]);
-    const ctx = makeFetchContext({
-      db: { execute },
-      sensorStore: makeSensorStore({ getVo2MaxEstimates }),
-    });
+  it("returns null without a sensor store", async () => {
+    const result = await fetchHealthspanRawData(makeFetchContext({}), "2026-03-15", 14);
 
-    const result = await fetchHealthspanRawData(ctx, "2026-03-20", 21);
-
-    expect(result?.latest_vo2max).toBe(50);
-    expect(result?.weekly_history).toEqual([
-      { week_start: "2026-03-02", avg_rhr: null, avg_steps: null, avg_vo2max: 45 },
-      { week_start: "2026-03-16", avg_rhr: 55, avg_steps: 10_000, avg_vo2max: 60 },
-    ]);
-  });
-
-  it("keeps missing weekly history as null when no VO2 max estimates exist", async () => {
-    const execute = vi.fn().mockResolvedValue([makeRawHealthspanRow({ weekly_history: null })]);
-    const ctx = makeFetchContext({
-      db: { execute },
-      sensorStore: makeSensorStore({ getVo2MaxEstimates: vi.fn().mockResolvedValue([]) }),
-    });
-
-    const result = await fetchHealthspanRawData(ctx, "2026-03-20", 21);
-
-    expect(result?.weekly_history).toBeNull();
-  });
-
-  it("uses null sensor metrics and zero zone minutes without a sensor store", async () => {
-    const execute = vi.fn().mockResolvedValue([makeRawHealthspanRow()]);
-    const ctx = makeFetchContext({
-      db: { execute },
-    });
-
-    await fetchHealthspanRawData(ctx, "2026-03-15", 14);
-
-    const sqlValues = collectSqlParameterValues(execute.mock.calls[1]?.[0]);
-    expect(sqlValues).not.toContain(undefined);
-    expect(countSqlNumberParams(sqlValues, 0)).toBeGreaterThanOrEqual(2);
+    expect(result).toBeNull();
   });
 });
 
@@ -736,9 +516,11 @@ describe("healthspanRouter", () => {
   describe("score", () => {
     it("returns null score when no data", async () => {
       const caller = createCaller({
+        accessWindow: fullAccessWindow,
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeSensorStore({ query: vi.fn().mockResolvedValue([]) }),
       });
       const result = await caller.score({ weeks: 12, endDate: "2026-03-15" });
 
@@ -764,11 +546,7 @@ describe("healthspanRouter", () => {
           weekly_history: [],
         },
       ];
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        timezone: "UTC",
-      });
+      const caller = createCaller(makeHealthspanCallerContext(rows));
       const result = await caller.score({ weeks: 12, endDate: "2026-03-15" });
 
       expect(result.metrics).toHaveLength(9);
@@ -809,21 +587,21 @@ describe("healthspanRouter", () => {
       expect(result.healthspanScore).toBe(Math.round(totalScore / metricsWithData.length));
     });
 
-    it("uses sensor-store VO2 max estimates for the current value and weekly history", async () => {
+    it("uses read-model VO2 max estimates for the current value and weekly history", async () => {
       const rows = [
         {
           avg_sleep_min: 480,
           bedtime_stddev_min: 20,
           avg_resting_hr: 55,
           avg_steps: 10000,
-          latest_vo2max: null,
+          latest_vo2max: 45,
           weekly_aerobic_min: 200,
           weekly_high_intensity_min: 80,
           sessions_per_week: 3,
           weight_kg: 75,
           body_fat_pct: 15,
           weekly_history: [
-            { week_start: "2026-03-09", avg_rhr: 55, avg_steps: 10000, avg_vo2max: null },
+            { week_start: "2026-03-09", avg_rhr: 55, avg_steps: 10000, avg_vo2max: 45 },
           ],
         },
       ];
@@ -841,21 +619,23 @@ describe("healthspanRouter", () => {
           vo2max: 50,
         },
       ]);
-      const execute = vi.fn().mockResolvedValue(rows);
+      const query = vi.fn().mockResolvedValue(makeHealthspanReadModelRows(rows));
       const caller = createCaller({
-        db: { execute },
+        accessWindow: fullAccessWindow,
+        db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
-        sensorStore: makeSensorStore({ getVo2MaxEstimates }),
+        sensorStore: makeSensorStore({ getVo2MaxEstimates, query }),
       });
 
       const result = await caller.score({ weeks: 12, endDate: "2026-03-15" });
 
       const vo2 = result.metrics.find((metric) => metric.name === "VO2 Max");
-      const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
-      expect(queryJson).not.toContain("derived_vo2max_estimates");
+      const queryText = query.mock.calls[0]?.[1];
+      expect(queryText).not.toContain("derived_vo2max_estimates");
       expect(vo2?.value).toBe(45);
-      expect(getVo2MaxEstimates).toHaveBeenCalledWith("2026-03-15", 84, "user-1", "UTC");
+      expect(queryText).toContain("analytics.healthspan_read_model");
+      expect(getVo2MaxEstimates).not.toHaveBeenCalled();
       expect(result.history[0]?.score).toBe(
         Math.round((scoreRestingHr(55) + scoreSteps(10000) + scoreVo2Max(45)) / 3),
       );
@@ -877,11 +657,7 @@ describe("healthspanRouter", () => {
           weekly_history: null,
         },
       ];
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        timezone: "UTC",
-      });
+      const caller = createCaller(makeHealthspanCallerContext(rows));
       const result = await caller.score({ weeks: 12, endDate: "2026-03-15" });
 
       expect(result.healthspanScore).toBeNull();
@@ -908,11 +684,7 @@ describe("healthspanRouter", () => {
           weekly_history: null,
         },
       ];
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        timezone: "UTC",
-      });
+      const caller = createCaller(makeHealthspanCallerContext(rows));
       const result = await caller.score({ weeks: 12, endDate: "2026-03-15" });
 
       // Only 2 metrics have real data — below minimum threshold
@@ -937,11 +709,7 @@ describe("healthspanRouter", () => {
           weekly_history: null,
         },
       ];
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        timezone: "UTC",
-      });
+      const caller = createCaller(makeHealthspanCallerContext(rows));
       const result = await caller.score({ weeks: 12, endDate: "2026-03-15" });
 
       // 3 metrics with real data: sleep duration (100), sleep consistency (78), resting HR (90)
@@ -965,11 +733,7 @@ describe("healthspanRouter", () => {
           weekly_history: null,
         },
       ];
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        timezone: "UTC",
-      });
+      const caller = createCaller(makeHealthspanCallerContext(rows));
       const result = await caller.score({ weeks: 12, endDate: "2026-03-15" });
 
       const sleepDur = result.metrics.find((m) => m.name === "Sleep Duration");
@@ -1006,11 +770,7 @@ describe("healthspanRouter", () => {
           ],
         },
       ];
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        timezone: "UTC",
-      });
+      const caller = createCaller(makeHealthspanCallerContext(rows));
       const result = await caller.score({ weeks: 12, endDate: "2026-03-15" });
       expect(result.trend).toBe("improving");
     });
@@ -1036,11 +796,7 @@ describe("healthspanRouter", () => {
           ],
         },
       ];
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        timezone: "UTC",
-      });
+      const caller = createCaller(makeHealthspanCallerContext(rows));
       const result = await caller.score({ weeks: 12, endDate: "2026-03-15" });
       expect(result.trend).toBe("declining");
     });
@@ -1066,11 +822,7 @@ describe("healthspanRouter", () => {
           ],
         },
       ];
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        timezone: "UTC",
-      });
+      const caller = createCaller(makeHealthspanCallerContext(rows));
       const result = await caller.score({ weeks: 12, endDate: "2026-03-15" });
       expect(result.trend).toBe("stable");
     });
@@ -1095,11 +847,7 @@ describe("healthspanRouter", () => {
           ],
         },
       ];
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        timezone: "UTC",
-      });
+      const caller = createCaller(makeHealthspanCallerContext(rows));
       const result = await caller.score({ weeks: 12, endDate: "2026-03-15" });
       expect(result.trend).toBeNull();
     });
@@ -1122,11 +870,7 @@ describe("healthspanRouter", () => {
           ],
         },
       ];
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        timezone: "UTC",
-      });
+      const caller = createCaller(makeHealthspanCallerContext(rows));
       const result = await caller.score({ weeks: 12, endDate: "2026-03-15" });
 
       expect(result.history).toHaveLength(1);
@@ -1153,11 +897,7 @@ describe("healthspanRouter", () => {
           weekly_history: null,
         },
       ];
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        timezone: "UTC",
-      });
+      const caller = createCaller(makeHealthspanCallerContext(rows));
       const result = await caller.score({ weeks: 12, endDate: "2026-03-15" });
 
       const lean = result.metrics.find((m) => m.name === "Lean Body Mass");

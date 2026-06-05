@@ -25,8 +25,14 @@ over `analytics.activity_summary_rows FINAL`; the expensive activity/sample
 joins belong in incremental dbt models, not in web/API requests. Complex
 offline ClickHouse models can set dbt `query_settings` locally and use
 `max_threads=1` so offline builds do not compete with request traffic.
-`provider_stats` materializes provider record counts for the sync provider
-inventory route so the API does not compute all-provider counts on request.
+`recovery_read_model`, `strain_read_model`, and `healthspan_read_model` are
+the named dashboard serving read models. They build on compact ingredient
+models such as `daily_recovery_inputs`, `daily_activity_load`, and
+`healthspan_activity_zone_minutes` so dashboard, recovery, stress,
+sleep-need, and healthspan routes do not recompute broad windows at request
+time. `provider_stats` materializes provider record counts for the sync
+provider inventory route so the API does not compute all-provider counts on
+request.
 `daily_recovery_inputs`, `daily_activity_load`, and
 `healthspan_activity_zone_minutes` are compact serving read models over daily
 metrics, sleep, activity summaries, and bounded activity samples for dashboard,
@@ -36,12 +42,13 @@ Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `deduped_sensor`, `activity_source_records`, `activity_duplicate_matches`,
 `activity_duplicate_groups`, `deduped_activities`, `deduped_activity_members`,
 `sleep_heart_rate_sample`, `resting_heart_rate_sleep_window`,
-`daily_recovery_inputs`, `activity_sensor_sample`, `activity_location_sample`,
+`daily_recovery_inputs`, `recovery_read_model`, `activity_sensor_sample`, `activity_location_sample`,
 `activity_sensor_summary_rows`, `activity_location_summary_rows`,
 `activity_summary_rows`, `activity_vo2max_estimate`, `provider_stats`,
-`daily_activity_load`, and `healthspan_activity_zone_minutes`. The sample-stage
-and sample-intermediate models use dbt's `microbatch` incremental strategy with
-`recorded_at` as the event time, daily batches, and short lookbacks so
+`daily_activity_load`, `strain_read_model`, `healthspan_activity_zone_minutes`,
+and `healthspan_read_model`. The sample-stage and sample-intermediate models
+use dbt's `microbatch` incremental strategy with `recorded_at` as the event
+time, daily batches, and short lookbacks so
 ClickHouse processes bounded sample-time windows instead of one large
 activity/window query. `deduped_activities` and `deduped_activity_members`
 materialize canonical activity identity once, but incremental runs only rebuild
@@ -52,7 +59,8 @@ aggregate, and activity summary models use dirty keys from those intermediates
 and `max_threads=1` to keep the offline aggregate work out of web/API requests.
 `activity_vo2max_estimate` also uses dirty activity/user keys and
 `max_threads=1`; it materializes reusable per-activity VO2 max estimates, not
-final API responses. `daily_recovery_inputs`, `daily_activity_load`, and
-`healthspan_activity_zone_minutes` materialize serving inputs so request paths
-do not recompute provider inventory, recovery baselines, training load, or zone
-minutes from raw samples.
+final API responses. `recovery_read_model`, `strain_read_model`, and
+`healthspan_read_model` are the final route-facing dashboard models; the
+lower-level recovery, activity-load, and zone-minute models remain internal
+ingredients. `provider_stats` remains the route-facing provider inventory model
+so request paths do not recompute provider counts from raw source tables.
