@@ -24,6 +24,14 @@ ssh dofek-server 'docker exec $(docker ps --format "{{.Names}}" | grep -E "dofek
 
 Healthy looks like `active = t`, `wal_status = 'reserved'`, non-null `restart_lsn`. Broken looks like `active = f`, `wal_status IN ('lost', 'unreserved')`, empty `restart_lsn`.
 
+For repeat slot-loss incidents, also capture the WAL budget and lag:
+
+```bash
+ssh dofek-server 'docker exec $(docker ps --format "{{.Names}}" | grep -E "^dofek_db" | head -1) bash -lc "psql -U \$POSTGRES_USER -d \$POSTGRES_DB -P pager=off -c \"SHOW max_slot_wal_keep_size; SELECT slot_name, active, wal_status, safe_wal_size, pg_size_pretty(safe_wal_size) AS safe_wal_size_pretty, pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn)) AS retained_lag FROM pg_replication_slots ORDER BY slot_name;\""' 
+```
+
+If `retained_lag` exceeds `max_slot_wal_keep_size`, the lost slot is explained by a PeerDB outage or write burst outlasting the configured WAL budget. Treat that as a recurring durability problem, not just a mirror-resync task.
+
 The three Dofek slots:
 
 - `peerflow_slot_dofek_metric_stream_analytics` — feeds `postgres_fitness.metric_stream`.
@@ -121,3 +129,10 @@ For each broken flow:
 - Add an alert for `pg_replication_slots.wal_status IN ('lost', 'unreserved')`.
 - Add a heartbeat that compares Postgres `fitness.activity` row count to `postgres_fitness.activity FINAL` row count and alarms if they diverge.
 - Record the incident in `docs/production-incident-baseline.md` with timestamps, evidence, root cause, and follow-up actions.
+
+If this is not the first lost-slot incident, do not stop at recreating the mirror. Record the observed `max_slot_wal_keep_size`, slot lag, and the first PeerDB fatal line, then propose one of:
+
+- Increase the bounded WAL budget if the host disk budget can absorb it.
+- Set `max_slot_wal_keep_size=-1` only if disk monitoring and slot-lag alerting are already reliable enough to prevent filling the data volume.
+- Replace or supplement PeerDB for high-volume `metric_stream` with a bounded direct backfill/catch-up path that can restore recent rows without relying on an old logical slot.
+- Add a scheduled CDC health check/alert using `scripts/check-clickhouse-cdc.ts` or an equivalent monitor, because dashboard correctness depends on this mirror freshness.

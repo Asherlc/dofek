@@ -42,6 +42,270 @@
       "sourceType": "github",
       "skillPath": "skills/caveman-stats/SKILL.md",
       "computedHash": "47ce2de3d6cb39a75047b5c962e4eb3da15594e7397c94103e9a104d42626553"
+    },
+    "chdb-datastore": {
+      "source": "clickhouse/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/chdb-datastore/SKILL.md",
+      "computedHash": "8a652156aa260f4d01a14a15ec703c4b9c7b3bafb5824fa12e65089e096b17ba"
+    },
+    "chdb-sql": {
+      "source": "clickhouse/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/chdb-sql/SKILL.md",
+      "computedHash": "6eece2c3948e1c6178dff37d4e83be21c261111386a63b4de4adae494f3f65d1"
+    },
+    "clickhouse-architecture-advisor": {
+      "source": "clickhouse/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/clickhouse-architecture-advisor/SKILL.md",
+      "computedHash": "5cecc53a1aa47ff41f84b7f984c1242d70af09b8bbce4f52d423dd5a06f5ae0b"
+    },
+    "clickhouse-best-practices": {
+      "source": "clickhouse/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/clickhouse-best-practices/SKILL.md",
+      "computedHash": "4523a31bd5911ec70b68533d7d15bc445bca2e77b1bd6f649d5a36d52bdcc099"
+    },
+    "clickhouse-js-node-coding": {
+      "source": "clickhouse/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/clickhouse-js-node-coding/SKILL.md",
+      "computedHash": "8e87bf6ce52d48d605897edf17e6cca377cd9f6c55c1624e210be0ae0a80e103"
+    },
+    "clickhouse-js-node-troubleshooting": {
+      "source": "clickhouse/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/clickhouse-js-node-troubleshooting/SKILL.md",
+      "computedHash": "18dcebb208d257ccf5cfaabaee0b115583193362f77b554945cf686592417bcb"
+    },
+    "clickhousectl-cloud-deploy": {
+      "source": "clickhouse/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/clickhousectl-cloud-deploy/SKILL.md",
+      "computedHash": "94ce3179d4370b76383c9d376f1185b7e8ea25a78693130835b2a5899ed83945"
+    },
+    "clickhousectl-local-dev": {
+      "source": "clickhouse/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/clickhousectl-local-dev/SKILL.md",
+      "computedHash": "0a99c55a718d504fd5473d34c75da22a44179d4f33a8c5dc279b5963d3c6cbbd"
+    },
+    "iris-development": {
+      "source": "redis/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/iris-development/SKILL.md",
+      "computedHash": "677663bc77ea89c1ba7de7ced05a2d0f16bbe7b5e75efa47a10a40091eeb039d"
+    },
+    "redis-clustering": {
+      "source": "redis/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/redis-clustering/SKILL.md",
+      "computedHash": "089487d9a5eecc17c00880bf6a06dc1bf9f6cdb44b86235788667fcd74ea3e9f"
+    },
+    "redis-connections": {
+      "source": "redis/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/redis-connections/SKILL.md",
+      "computedHash": "3755d60acb0c484a44c4bef547340cc889e7f803f5dcedcd3bf767878b12c428"
+    },
+    "redis-core": {
+      "source": "redis/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/redis-core/SKILL.md",
+      "computedHash": "5b342de2555699d1785335711883711ff6ef7e213a1ea57d6bf693184a5c8683"
+    },
+    "redis-observability": {
+      "source": "redis/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/redis-observability/SKILL.md",
+      "computedHash": "29a9044c3e72ab9ea7145efe917584e3c2f3739b64d8a68e7c77fc6f4a70b1cb"
+    },
+    "redis-query-engine": {
+      "source": "redis/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/redis-query-engine/SKILL.md",
+      "computedHash": "9ed8dab7ce9aa5ec42dd563c7a0c2f50792fbf7c819ff221c4839b68a36215a8"
+    },
+    "redis-security": {
+      "source": "redis/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/redis-security/SKILL.md",
+      "computedHash": "8ed04a12265b088c75a6d415db576e051b920bd2f8dd37357636b0144b3118a6"
+    },
+    "redis-semantic-cache": {
+      "source": "redis/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/redis-semantic-cache/SKILL.md",
+      "computedHash": "2096d785b796e7bf7ad8902f9798133aa7f40c21435c5e6d5beeb05c3de29145"
+    },
+    "redis-vector-search": {
+      "source": "redis/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/redis-vector-search/SKILL.md",
+      "computedHash": "2646c61374641845a5fa81b76319d60a4556a229e79eed54fc6f0faf376cddce"
+    },
+    "sentry-browser-sdk": {
+      "source": "getsentry/sentry-for-ai",
+      "sourceType": "github",
+      "skillPath": "skills/sentry-browser-sdk/SKILL.md",
+      "computedHash": "e3673cf79c5c517f1a4bff46fdfc5103824d5f519ea6135aaeb575108a45b5aa"
+    },
+    "sentry-cloudflare-sdk": {
+      "source": "getsentry/sentry-for-ai",
+      "sourceType": "github",
+      "skillPath": "skills/sentry-cloudflare-sdk/SKILL.md",
+      "computedHash": "4397959df2b59afa15ca7c4f678848d5344612158f75c018bcb01539b315bd55"
+    },
+    "sentry-cocoa-sdk": {
+      "source": "getsentry/sentry-for-ai",
+      "sourceType": "github",
+      "skillPath": "skills/sentry-cocoa-sdk/SKILL.md",
+      "computedHash": "159bf7d2a770bf95875ca1c6561b4cb12fef03d5ec6cbc482c6a420971c443af"
+    },
+    "sentry-code-review": {
+      "source": "getsentry/sentry-for-ai",
+      "sourceType": "github",
+      "skillPath": "skills/sentry-code-review/SKILL.md",
+      "computedHash": "3f2134bdeffc92ac7cd1d8561f056006cd1908ea87590182cefefdab441ed472"
+    },
+    "sentry-create-alert": {
+      "source": "getsentry/sentry-for-ai",
+      "sourceType": "github",
+      "skillPath": "skills/sentry-create-alert/SKILL.md",
+      "computedHash": "05f78a17a70f3e38d283fef4f97b013024a01093ef436b96df12d51e2f1a7b00"
+    },
+    "sentry-feature-setup": {
+      "source": "getsentry/sentry-for-ai",
+      "sourceType": "github",
+      "skillPath": "skills/sentry-feature-setup/SKILL.md",
+      "computedHash": "3c97d88fd29c67cc6cc1e4d19ae39a91a475749fa3f71714d7ed9cdba307f3a9"
+    },
+    "sentry-fix-issues": {
+      "source": "getsentry/sentry-for-ai",
+      "sourceType": "github",
+      "skillPath": "skills/sentry-fix-issues/SKILL.md",
+      "computedHash": "0ef2103f20d698acc56d856a07a372a0a68cb02bad654d0dacb4e2ffe87e98b5"
+    },
+    "sentry-flutter-sdk": {
+      "source": "getsentry/sentry-for-ai",
+      "sourceType": "github",
+      "skillPath": "skills/sentry-flutter-sdk/SKILL.md",
+      "computedHash": "2efdf0b1d74d367b7cf07702231d78b839846e5f69136bfe0a99b94d811255ec"
+    },
+    "sentry-instrumentation-guide": {
+      "source": "getsentry/sentry-for-ai",
+      "sourceType": "github",
+      "skillPath": "skills/sentry-instrumentation-guide/SKILL.md",
+      "computedHash": "757bf2bf8453182517125a882b9b66b49e246e006170949a5a4310cd5a931efa"
+    },
+    "sentry-node-sdk": {
+      "source": "getsentry/sentry-for-ai",
+      "sourceType": "github",
+      "skillPath": "skills/sentry-node-sdk/SKILL.md",
+      "computedHash": "8a1381ed04503d0aa71e7a3138cc1e68762c780fefb84e6cf9793140289090ed"
+    },
+    "sentry-otel-exporter-setup": {
+      "source": "getsentry/sentry-for-ai",
+      "sourceType": "github",
+      "skillPath": "skills/sentry-otel-exporter-setup/SKILL.md",
+      "computedHash": "621384dc6f606bc5a028cc1194b3cdbb1e44de6fcaa608cb5566e01a4b89f5a1"
+    },
+    "sentry-pr-code-review": {
+      "source": "getsentry/sentry-for-ai",
+      "sourceType": "github",
+      "skillPath": "skills/sentry-pr-code-review/SKILL.md",
+      "computedHash": "50d60bad66edd86ebda5302b67fb2980396b942fb125f70858f103c5a7692eb7"
+    },
+    "sentry-python-sdk": {
+      "source": "getsentry/sentry-for-ai",
+      "sourceType": "github",
+      "skillPath": "skills/sentry-python-sdk/SKILL.md",
+      "computedHash": "aa14751471a8bc62d3a248f4f6826f257a8d39be75e7147757e84975b5d3e776"
+    },
+    "sentry-react-native-sdk": {
+      "source": "getsentry/sentry-for-ai",
+      "sourceType": "github",
+      "skillPath": "skills/sentry-react-native-sdk/SKILL.md",
+      "computedHash": "c8ce0f403afb9ff21ac61670f9f2d9fbb66b804859747b9df70367c58fdaeb3b"
+    },
+    "sentry-react-router-framework-sdk": {
+      "source": "getsentry/sentry-for-ai",
+      "sourceType": "github",
+      "skillPath": "skills/sentry-react-router-framework-sdk/SKILL.md",
+      "computedHash": "e116c9b07c2c669a3399ef2a7bfa34db93bab6b5d99d2f5fabf91b47a1617418"
+    },
+    "sentry-react-sdk": {
+      "source": "getsentry/sentry-for-ai",
+      "sourceType": "github",
+      "skillPath": "skills/sentry-react-sdk/SKILL.md",
+      "computedHash": "f97fb5d2ce1543f1c7c31a04023175ecf1bd950a193792c3b999428af9ce7ca0"
+    },
+    "sentry-sdk-setup": {
+      "source": "getsentry/sentry-for-ai",
+      "sourceType": "github",
+      "skillPath": "skills/sentry-sdk-setup/SKILL.md",
+      "computedHash": "a471d03591daf5371c3dacc00532d957c14f7ae7f4120b7305ad3b148ccefbb2"
+    },
+    "sentry-sdk-skill-creator": {
+      "source": "getsentry/sentry-for-ai",
+      "sourceType": "github",
+      "skillPath": "skills/sentry-sdk-skill-creator/SKILL.md",
+      "computedHash": "d67401477ab99da29eccf7309b41b1948879b7ccdabacf6e6ae7a87732756f3f"
+    },
+    "sentry-sdk-upgrade": {
+      "source": "getsentry/sentry-for-ai",
+      "sourceType": "github",
+      "skillPath": "skills/sentry-sdk-upgrade/SKILL.md",
+      "computedHash": "ef1881ddfe80380e6814cc2dcd072c6c238783ebc3985acc46d3141b2c3fdf6b"
+    },
+    "sentry-setup-ai-monitoring": {
+      "source": "getsentry/sentry-for-ai",
+      "sourceType": "github",
+      "skillPath": "skills/sentry-setup-ai-monitoring/SKILL.md",
+      "computedHash": "12995e57245f0f98bdad2a279ed8483ccbfa283eeb3195598b861a587514c6e6"
+    },
+    "sentry-span-streaming": {
+      "source": "getsentry/sentry-for-ai",
+      "sourceType": "github",
+      "skillPath": "skills/sentry-span-streaming/SKILL.md",
+      "computedHash": "00ec62198ca9c5b1d1a4be286d0752fc1159c25eaac17c85071a1401313bb92c"
+    },
+    "sentry-svelte-sdk": {
+      "source": "getsentry/sentry-for-ai",
+      "sourceType": "github",
+      "skillPath": "skills/sentry-svelte-sdk/SKILL.md",
+      "computedHash": "7b534f841456f2bb3dab813c2b0de58752dfcf144a5eb828f01c3b354b36d6c2"
+    },
+    "sentry-tanstack-start-sdk": {
+      "source": "getsentry/sentry-for-ai",
+      "sourceType": "github",
+      "skillPath": "skills/sentry-tanstack-start-sdk/SKILL.md",
+      "computedHash": "e08396b47f0ff52abe6a4602b4f3af47d8de6a9d889b3cd6a9ff210b884c2dc4"
+    },
+    "sentry-workflow": {
+      "source": "getsentry/sentry-for-ai",
+      "sourceType": "github",
+      "skillPath": "skills/sentry-workflow/SKILL.md",
+      "computedHash": "00a62d74aa26a9007d74532ab405b16684386e59c4121a5496f0059206683c6e"
+    },
+    "stripe-best-practices": {
+      "source": "stripe/agent-toolkit",
+      "sourceType": "github",
+      "skillPath": "skills/stripe-best-practices/SKILL.md",
+      "computedHash": "966d0ce005fb82e1a63ead1ec8c5546a9088c0d8f103f88c382c4cda810857cc"
+    },
+    "stripe-projects": {
+      "source": "stripe/agent-toolkit",
+      "sourceType": "github",
+      "skillPath": "skills/stripe-projects/SKILL.md",
+      "computedHash": "63da9119cf20b5c5b722d7a6d49d4f7d984a10f29f5d44a68e59839e4da9b68f"
+    },
+    "upgrade-stripe": {
+      "source": "stripe/agent-toolkit",
+      "sourceType": "github",
+      "skillPath": "skills/upgrade-stripe/SKILL.md",
+      "computedHash": "a0f0bf709f65ba8d7aa8d55322d030e6b3f16756cb6f0be80463395306305ef3"
     }
   }
 }
