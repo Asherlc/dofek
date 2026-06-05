@@ -7,6 +7,64 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-06-05: Dashboard Strain And Sleep Empty From ClickHouse Null Join Defaults
+
+### Symptoms
+
+The dashboard daily summary showed no strain and no sleep data even though the
+production app was accepting recent wearable uploads.
+
+### User Impact
+
+ClickHouse-backed dashboard strain and sleep cards appeared empty. Recovery data
+could still render because `analytics.daily_recovery` already had materialized
+rows.
+
+### Evidence
+
+Production services were healthy on Oracle (`dofek_web` 2/2,
+`dofek_clickhouse` 1/1, `dofek_analytics-worker` 1/1), but
+`analytics-worker` repeatedly failed the `analytics.daily_strain` dbt model with
+ClickHouse code 69: `range` would produce 4,294,922,424 array elements.
+`analytics.daily_strain` and `analytics.daily_sleep` were empty, while
+`analytics.daily_activity_load` had 17 rows for the active user from
+`2026-05-28` through `2026-05-31`, and `analytics.v_sleep` had 88 rows through
+`2026-06-05`. Reproducing the `daily_strain` CTE showed
+`calculation_min_date=2149-04-14` and `max_date=2026-06-05`; with
+`join_use_nulls=1`, the same CTE produced the expected
+`calculation_min_date=2026-05-28`, `max_date=2026-06-05`, and a 9-day window.
+The analogous `daily_sleep` read-only CTE produced 86 non-nap rows through
+`2026-06-04` with `join_use_nulls=1`.
+
+### Root Cause
+
+The `daily_sleep` and `daily_strain` incremental dbt models left-joined an empty
+`existing_dates` relation without `join_use_nulls=1`. ClickHouse filled missing
+joined `Date` values with `1970-01-01` instead of `NULL`; `daily_sleep` filtered
+all source rows out, while `daily_strain` subtracted an interval from the
+sentinel date, wrapped to year 2149, and generated an invalid negative calendar
+range.
+
+### Fix or Mitigation
+
+Add `join_use_nulls=1` to both `analytics.daily_sleep` and
+`analytics.daily_strain` model query settings so fresh empty incremental tables
+preserve null joined values and materialize source rows correctly.
+
+### Validation
+
+Focused regression test `pnpm vitest run
+analytics/models/read_models/read_model_microbatch.sql.test.ts` passes.
+`pnpm lint:analytics-policy` passes. `pnpm lint:analytics-sql` passes after
+starting local Compose dependencies with `pnpm compose:up`.
+
+### Remaining Risk
+
+Production tables stay empty until the fix is deployed and the analytics worker
+successfully rebuilds the affected models. After rollout, verify
+`analytics.daily_sleep` and `analytics.daily_strain` have current rows and the
+dashboard no longer shows empty states.
+
 ## 2026-06-04: Stryker CI aborted on broken review-app agent symlinks
 
 ### Symptoms
