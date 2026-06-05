@@ -189,22 +189,24 @@ export const mobileDashboardRouter = router({
               daily_load: z.coerce.number(),
             }),
             `SELECT
-            toString(date) AS metric_date,
-            daily_load
-          FROM analytics.daily_strain FINAL
-          WHERE user_id = {userId:UUID}
-            AND date > toDate({endDate:String}) - {days:UInt32}
-            AND date <= toDate({endDate:String})
-          ORDER BY date DESC`,
-            { userId: ctx.userId, endDate, days: dashboardDays },
+            toString(strain.date) AS metric_date,
+            strain.daily_load
+          FROM analytics.daily_strain AS strain FINAL
+          WHERE strain.user_id = {userId:UUID}
+            AND strain.date > toDate({endDate:String}) - {days:UInt32}
+            AND strain.date <= toDate({endDate:String})
+            ${accessWindowDateClause("strain.date")}
+          ORDER BY strain.date DESC`,
+            { userId: ctx.userId, endDate, days: dashboardDays, ...accessWindowDateParams },
           ),
           sensorStore.query(
             z.object({ load: z.coerce.number() }),
-            `SELECT coalesce(daily_load, 0) AS load
-          FROM analytics.daily_strain FINAL
-          WHERE user_id = {userId:UUID}
-            AND date = toDate({endDate:String}) - 1`,
-            { userId: ctx.userId, endDate },
+            `SELECT coalesce(strain.daily_load, 0) AS load
+          FROM analytics.daily_strain AS strain FINAL
+          WHERE strain.user_id = {userId:UUID}
+            AND strain.date = toDate({endDate:String}) - 1
+            ${accessWindowDateClause("strain.date")}`,
+            { userId: ctx.userId, endDate, ...accessWindowDateParams },
           ),
         ]),
       );

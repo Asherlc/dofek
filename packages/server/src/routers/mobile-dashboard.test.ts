@@ -13,6 +13,7 @@ vi.mock("../trpc.ts", async () => {
       db: unknown;
       userId: string | null;
       timezone?: string;
+      accessWindow?: import("../billing/entitlement.ts").AccessWindow;
       sensorStore?: import("../repositories/activity-repository.ts").ActivitySensorStore;
     }>()
     .create();
@@ -252,8 +253,44 @@ describe("mobileDashboard.dashboard", () => {
 
     expect(result.strain.dailyStrain).toBe(0);
     const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
-    expect(queryText).toContain("analytics.daily_strain FINAL");
+    expect(queryText).toContain("analytics.daily_strain AS strain FINAL");
     expect(queryText).not.toContain("analytics.activity_summary");
+  });
+
+  it("passes limited access windows to dashboard strain queries", async () => {
+    const execute = vi.fn();
+    execute.mockResolvedValueOnce([metricRow({ date: "2026-03-28" })]);
+    execute.mockResolvedValueOnce([]);
+
+    const sensorStore = makeSensorStore([{ metric_date: "2026-03-28", daily_load: 50 }], 50);
+    const caller = createCaller({
+      db: { execute },
+      userId: "user-1",
+      timezone: "UTC",
+      accessWindow: {
+        kind: "limited",
+        startDate: "2026-03-20",
+        endDateExclusive: "2026-03-29",
+      },
+      sensorStore,
+    });
+
+    await caller.dashboard({ endDate: "2026-03-28" });
+
+    const strainQueryCalls = vi
+      .mocked(sensorStore.query)
+      .mock.calls.filter((call) => String(call[1]).includes("analytics.daily_strain"));
+    expect(strainQueryCalls).toHaveLength(2);
+    for (const queryCall of strainQueryCalls) {
+      expect(String(queryCall[1])).toContain("strain.date >= toDate({accessStartDate:String})");
+      expect(String(queryCall[1])).toContain(
+        "strain.date < toDate({accessEndDateExclusive:String})",
+      );
+      expect(queryCall[2]).toMatchObject({
+        accessStartDate: "2026-03-20",
+        accessEndDateExclusive: "2026-03-29",
+      });
+    }
   });
 
   it("computes daily strain from today's raw activity load", async () => {

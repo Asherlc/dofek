@@ -270,6 +270,11 @@ export const recoveryRouter = router({
         chronic_load: z.coerce.number(),
         workload_ratio: z.coerce.number().nullable(),
       });
+      const accessWindowClause =
+        ctx.accessWindow?.kind === "limited"
+          ? `AND strain.date >= toDate({accessStartDate:String})
+          AND strain.date < toDate({accessEndDateExclusive:String})`
+          : "";
       const rows = await sensorStore.query(
         workloadRowSchema,
         `SELECT
@@ -282,12 +287,19 @@ export const recoveryRouter = router({
         WHERE strain.user_id = {userId:UUID}
           AND strain.date > toDate({outputWindowStart:String})
           AND strain.date <= toDate({endDate:String})
+          ${accessWindowClause}
         ORDER BY date ASC`,
         {
           userId: ctx.userId,
           timezone: ctx.timezone,
           endDate: input.endDate,
           outputWindowStart: dateWindowStartString(input.endDate, input.days),
+          ...(ctx.accessWindow?.kind === "limited"
+            ? {
+                accessStartDate: ctx.accessWindow.startDate,
+                accessEndDateExclusive: ctx.accessWindow.endDateExclusive,
+              }
+            : {}),
         },
       );
 
@@ -590,6 +602,11 @@ export const recoveryRouter = router({
       );
 
       // Get daily loads for ACWR from the compact ClickHouse strain read model.
+      const accessWindowClause =
+        ctx.accessWindow?.kind === "limited"
+          ? `AND strain.date >= toDate({accessStartDate:String})
+          AND strain.date < toDate({accessEndDateExclusive:String})`
+          : "";
       const loads = await sensorStore.query(
         z.object({
           date: z.string(),
@@ -602,11 +619,18 @@ export const recoveryRouter = router({
         WHERE strain.user_id = {userId:UUID}
           AND strain.date >= toDate({windowStart:String})
           AND strain.date <= toDate({endDate:String})
+          ${accessWindowClause}
         ORDER BY date ASC`,
         {
           userId: ctx.userId,
           windowStart: dateWindowStartString(input.endDate, input.days),
           endDate: input.endDate,
+          ...(ctx.accessWindow?.kind === "limited"
+            ? {
+                accessStartDate: ctx.accessWindow.startDate,
+                accessEndDateExclusive: ctx.accessWindow.endDateExclusive,
+              }
+            : {}),
         },
       );
 

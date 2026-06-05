@@ -435,6 +435,32 @@ describe("recoveryRouter.workloadRatio", () => {
     });
   });
 
+  it("passes limited access windows to workload ratio strain queries", async () => {
+    const sensorStore = makeSensorStore([]);
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      accessWindow: {
+        kind: "limited",
+        startDate: "2026-03-10",
+        endDateExclusive: "2026-03-20",
+      },
+      sensorStore,
+    });
+
+    await caller.workloadRatio({ endDate: "2026-03-28" });
+
+    const queryText = String(vi.mocked(sensorStore.query).mock.calls[0]?.[1]);
+    const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
+    expect(queryText).toContain("strain.date >= toDate({accessStartDate:String})");
+    expect(queryText).toContain("strain.date < toDate({accessEndDateExclusive:String})");
+    expect(queryParams).toMatchObject({
+      accessStartDate: "2026-03-10",
+      accessEndDateExclusive: "2026-03-20",
+    });
+  });
+
   it("maps SQL rows to WorkloadRatioRow format with rounding", async () => {
     const rows = [
       {
@@ -1376,6 +1402,32 @@ describe("recoveryRouter.strainTarget", () => {
     expect(queryText).toContain("toString(strain.date) AS date");
     expect(queryText).toContain("strain.date >= toDate({windowStart:String})");
     expect(queryText).not.toContain("analytics.activity_summary");
+  });
+
+  it("passes limited access windows to strain target daily-load queries", async () => {
+    const executeMock = vi.fn().mockResolvedValueOnce([]);
+    const sensorStore = makeSensorStore([[], []]);
+    const caller = createCaller({
+      db: { execute: executeMock },
+      userId: "user-1",
+      accessWindow: {
+        kind: "limited",
+        startDate: "2026-03-10",
+        endDateExclusive: "2026-03-20",
+      },
+      sensorStore,
+    });
+
+    await caller.strainTarget({ endDate: "2026-03-28" });
+
+    const queryText = String(vi.mocked(sensorStore.query).mock.calls[1]?.[1]);
+    const queryParams = vi.mocked(sensorStore.query).mock.calls[1]?.[2];
+    expect(queryText).toContain("strain.date >= toDate({accessStartDate:String})");
+    expect(queryText).toContain("strain.date < toDate({accessEndDateExclusive:String})");
+    expect(queryParams).toMatchObject({
+      accessStartDate: "2026-03-10",
+      accessEndDateExclusive: "2026-03-20",
+    });
   });
 
   it("computes readiness from daily metrics and returns strain target", async () => {

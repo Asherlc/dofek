@@ -12,7 +12,7 @@
       "command": "sh",
       "args": [
         "-lc",
-        "eval \"$(axiom config export --force 2>/dev/null | grep '^export AXIOM_')\"; exec npx -y mcp-server-axiom"
+        "set -e; axiom_env=\"$(axiom config export --force)\"; eval \"$(printf '%s\\n' \"$axiom_env\" | grep '^export AXIOM_')\"; : \"${AXIOM_TOKEN:?Missing AXIOM_TOKEN}\"; : \"${AXIOM_URL:?Missing AXIOM_URL}\"; : \"${AXIOM_ORG_ID:?Missing AXIOM_ORG_ID}\"; exec npx -y mcp-server-axiom"
       ]
     }
   }
