@@ -40,7 +40,7 @@ sleep_source AS (
         {% if is_incremental() %}
         AND (
             existing_dates.user_id IS NULL
-            OR toDate(sleep.started_at - INTERVAL 6 HOUR) >= existing_dates.latest_materialized_date
+            OR toDate(sleep.started_at - INTERVAL 6 HOUR) >= existing_dates.latest_materialized_date - INTERVAL 7 DAY
         )
         {% endif %}
 ),

@@ -395,7 +395,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("{% if is_incremental() %}");
     expect(sql).toContain("existing_dates AS");
     expect(normalizedSql).toContain(
-      "toDate(sleep.started_at - INTERVAL 6 HOUR) >= existing_dates.latest_materialized_date",
+      "toDate(sleep.started_at - INTERVAL 6 HOUR) >= existing_dates.latest_materialized_date - INTERVAL 7 DAY",
     );
     expect(sql).toContain("analytics.v_sleep");
     expect(normalizedSql).toContain("PARTITION BY user_id, date");
