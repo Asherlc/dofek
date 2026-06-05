@@ -427,6 +427,43 @@ describe("mobileDashboard.dashboard", () => {
     expect(queryTexts.some((queryText) => queryText.includes("analytics.v_sleep"))).toBe(false);
   });
 
+  it("qualifies serving model date filters so ClickHouse does not compare string aliases to dates", async () => {
+    const execute = vi.fn();
+    execute.mockResolvedValueOnce([metricRow({ date: "2026-03-28" })]);
+    execute.mockResolvedValueOnce([]);
+
+    const sensorStore = makeSensorStore(
+      [],
+      0,
+      [sleepBaselineRow("2026-03-28", 480, 80)],
+      [],
+      [metricRow({ date: "2026-03-28" })],
+    );
+    const caller = createCaller({
+      db: { execute },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore,
+    });
+
+    await caller.dashboard({ endDate: "2026-03-28" });
+
+    const recoveryQueryText = String(
+      vi
+        .mocked(sensorStore.query)
+        .mock.calls.find((call) => String(call[1]).includes("analytics.daily_recovery"))?.[1],
+    );
+    const sleepQueryText = String(
+      vi
+        .mocked(sensorStore.query)
+        .mock.calls.find((call) => String(call[1]).includes("analytics.daily_sleep"))?.[1],
+    );
+    expect(recoveryQueryText).toContain("recovery.date > toDate({endDate:String})");
+    expect(recoveryQueryText).toContain("recovery.date <= toDate({endDate:String})");
+    expect(sleepQueryText).toContain("sleep.date > toDate({endDate:String})");
+    expect(sleepQueryText).toContain("sleep.date <= toDate({endDate:String})");
+  });
+
   it("logs dashboard timing breakdowns for performance diagnosis", async () => {
     vi.mocked(logger.info).mockClear();
     const execute = vi.fn();

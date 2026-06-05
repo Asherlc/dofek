@@ -167,10 +167,10 @@ export const mobileDashboardRouter = router({
       };
 
       const dashboardDays = 90;
-      const accessWindowDateClause =
+      const accessWindowDateClause = (dateColumn: string): string =>
         accessWindow.kind === "limited"
-          ? `AND date >= toDate({accessStartDate:String})
-            AND date < toDate({accessEndDateExclusive:String})`
+          ? `AND ${dateColumn} >= toDate({accessStartDate:String})
+            AND ${dateColumn} < toDate({accessEndDateExclusive:String})`
           : "";
       const accessWindowDateParams =
         accessWindow.kind === "limited"
@@ -224,12 +224,12 @@ export const mobileDashboardRouter = router({
             resting_hr_score,
             sleep_score,
             respiratory_rate_score
-          FROM analytics.daily_recovery FINAL
-          WHERE user_id = {userId:UUID}
-            AND date > toDate({endDate:String}) - {days:UInt32}
-            AND date <= toDate({endDate:String})
-            ${accessWindowDateClause}
-          ORDER BY date DESC`,
+          FROM analytics.daily_recovery AS recovery FINAL
+          WHERE recovery.user_id = {userId:UUID}
+            AND recovery.date > toDate({endDate:String}) - {days:UInt32}
+            AND recovery.date <= toDate({endDate:String})
+            ${accessWindowDateClause("recovery.date")}
+          ORDER BY recovery.date DESC`,
           { userId: ctx.userId, endDate, days: dashboardDays, ...accessWindowDateParams },
         ),
       );
@@ -243,12 +243,12 @@ export const mobileDashboardRouter = router({
             rem_minutes,
             light_minutes,
             awake_minutes
-          FROM analytics.daily_sleep FINAL
-          WHERE user_id = {userId:UUID}
-            AND date > toDate({endDate:String}) - {days:UInt32}
-            AND date <= toDate({endDate:String})
-            ${accessWindowDateClause}
-          ORDER BY date ASC`,
+          FROM analytics.daily_sleep AS sleep FINAL
+          WHERE sleep.user_id = {userId:UUID}
+            AND sleep.date > toDate({endDate:String}) - {days:UInt32}
+            AND sleep.date <= toDate({endDate:String})
+            ${accessWindowDateClause("sleep.date")}
+          ORDER BY sleep.date ASC`,
           { userId: ctx.userId, endDate, days: dashboardDays, ...accessWindowDateParams },
         ),
       );
