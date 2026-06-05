@@ -37,6 +37,15 @@ type SleepTestRow = {
   efficiency_pct?: number | null;
 };
 
+type RecoverySummaryTestRow = {
+  date: string;
+  hrv?: number | null;
+  hrv_score?: number | null;
+  resting_hr_score?: number | null;
+  sleep_score?: number | null;
+  respiratory_rate_score?: number | null;
+};
+
 function sleepRowsForClickHouse(rows: SleepTestRow[]) {
   return rows.map((row) => ({
     date: row.date,
@@ -64,16 +73,21 @@ function makeSensorStore(
   dailyLoads: Array<{ metric_date: string; daily_load: number }> = [],
   yesterdayLoad = 0,
   baselineSleepRows: SleepTestRow[] = [],
-  lastNightSleepRows: SleepTestRow[] = baselineSleepRows,
+  _lastNightSleepRows: SleepTestRow[] = baselineSleepRows,
+  recoveryRows: RecoverySummaryTestRow[] = [],
 ): SensorStore {
-  const query = vi.fn();
-  query.mockResolvedValueOnce(dailyLoads);
-  query.mockResolvedValueOnce([{ load: yesterdayLoad }]);
-  query.mockResolvedValueOnce([]);
-  query.mockResolvedValueOnce(sleepRowsForClickHouse(baselineSleepRows));
-  query.mockResolvedValueOnce(sleepRowsForClickHouse(lastNightSleepRows));
-  query.mockResolvedValueOnce(sleepRowsForClickHouse(baselineSleepRows));
-  query.mockResolvedValue([]);
+  const query = vi.fn(async (_schema: unknown, queryText: unknown) => {
+    const querySql = String(queryText);
+    if (querySql.includes("analytics.daily_strain") && querySql.includes("coalesce")) {
+      return [{ load: yesterdayLoad }];
+    }
+    if (querySql.includes("analytics.daily_strain")) return dailyLoads;
+    if (querySql.includes("analytics.daily_recovery")) return recoveryRows;
+    if (querySql.includes("analytics.daily_sleep")) {
+      return sleepRowsForClickHouse(baselineSleepRows);
+    }
+    return [];
+  });
   return {
     query,
     getActivitySummaries: vi.fn().mockResolvedValue([]),
@@ -85,6 +99,7 @@ function makeSensorStore(
     getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
     getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
     getPaceCurveRows: vi.fn().mockResolvedValue([]),
+    refreshBodyMeasurements: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -125,10 +140,7 @@ vi.mock("../logger.ts", () => ({
 }));
 
 import { logger } from "../logger.ts";
-import {
-  computeComponentScores,
-  computeReadinessScore,
-} from "../repositories/training-recommendation.ts";
+import { computeReadinessScore } from "../repositories/training-recommendation.ts";
 import { isRecent, mobileDashboardRouter } from "./mobile-dashboard.ts";
 
 const createCaller = createTestCallerFactory(mobileDashboardRouter);
@@ -153,59 +165,47 @@ describe("mobileDashboard.dashboard", () => {
     expect(isRecent("2026-03-29", "2026-03-28")).toBe(false);
   });
 
-  it("passes derived resting heart rate into readiness scoring", async () => {
+  it("passes precomputed readiness component scores into readiness scoring", async () => {
     const execute = vi.fn();
-    execute.mockResolvedValueOnce([
-      metricRow({
+    const recoveryRows = [
+      {
         date: "2026-03-28",
         hrv: 64,
-        resting_hr: 52,
-        respiratory_rate: 14,
-        hrv_mean_30d: 58,
-        hrv_sd_30d: 5,
-        rhr_mean_30d: 55,
-        rhr_sd_30d: 4,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
-      }),
-    ]);
-    execute.mockResolvedValueOnce([]);
-    execute.mockResolvedValueOnce([]);
+        hrv_score: 72,
+        resting_hr_score: 68,
+        sleep_score: 80,
+        respiratory_rate_score: 74,
+      },
+    ];
 
     const caller = createCaller({
       db: { execute },
       userId: "user-1",
       timezone: "UTC",
-      sensorStore: makeSensorStore(),
+      sensorStore: makeSensorStore([], 0, [], [], recoveryRows),
     });
 
     const result = await caller.dashboard({ endDate: "2026-03-28" });
 
-    expect(computeComponentScores).toHaveBeenCalledWith(
-      expect.objectContaining({
-        date: "2026-03-28",
-        hrv: 64,
-        resting_hr: 52,
-        respiratory_rate: 14,
-        hrv_mean_30d: 58,
-        hrv_sd_30d: 5,
-        rhr_mean_30d: 55,
-        rhr_sd_30d: 4,
-        rr_mean_30d: 15,
-        rr_sd_30d: 1,
-      }),
-      null,
+    expect(computeReadinessScore).toHaveBeenCalledWith(
+      {
+        hrvScore: 72,
+        restingHrScore: 68,
+        sleepScore: 80,
+        respiratoryRateScore: 74,
+      },
+      expect.any(Object),
+      true,
     );
-    expect(computeReadinessScore).toHaveBeenCalled();
     expect(result.readiness).toEqual(
       expect.objectContaining({
         score: 62,
         date: "2026-03-28",
         components: {
-          hrvScore: 62,
-          restingHrScore: 62,
-          sleepScore: 62,
-          respiratoryRateScore: 62,
+          hrvScore: 72,
+          restingHrScore: 68,
+          sleepScore: 80,
+          respiratoryRateScore: 74,
         },
       }),
     );
@@ -252,7 +252,7 @@ describe("mobileDashboard.dashboard", () => {
 
     expect(result.strain.dailyStrain).toBe(0);
     const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
-    expect(queryText).toContain("analytics.strain_read_model FINAL");
+    expect(queryText).toContain("analytics.daily_strain FINAL");
     expect(queryText).not.toContain("analytics.activity_summary");
   });
 
@@ -327,13 +327,15 @@ describe("mobileDashboard.dashboard", () => {
       sleepBaselineRow("2026-03-21", 600, 80),
       sleepBaselineRow("2026-03-20", 630, 80),
     ];
-    execute.mockResolvedValueOnce(hrvRowsAfterSleep(baselineSleepRows));
+    const recoveryRows = hrvRowsAfterSleep(baselineSleepRows).filter(
+      (row) => row.date <= "2026-03-28",
+    );
 
     const caller = createCaller({
       db: { execute },
       userId: "user-1",
       timezone: "UTC",
-      sensorStore: makeSensorStore([], 50, baselineSleepRows, lastNightSleepRows),
+      sensorStore: makeSensorStore([], 50, baselineSleepRows, lastNightSleepRows, recoveryRows),
     });
 
     const result = await caller.dashboard({ endDate: "2026-03-28" });
@@ -385,9 +387,9 @@ describe("mobileDashboard.dashboard", () => {
       sleepBaselineRow("2026-03-21", 600, 80),
       sleepBaselineRow("2026-03-20", 630, 80),
     ];
-    execute.mockResolvedValueOnce(hrvRowsAfterSleep(sleepRows));
+    const recoveryRows = hrvRowsAfterSleep(sleepRows).filter((row) => row.date <= "2026-03-28");
 
-    const sensorStore = makeSensorStore([], 50, sleepRows);
+    const sensorStore = makeSensorStore([], 50, sleepRows, sleepRows, recoveryRows);
     const caller = createCaller({
       db: { execute },
       userId: "user-1",
@@ -399,10 +401,30 @@ describe("mobileDashboard.dashboard", () => {
 
     const sleepQueryCallCount = vi
       .mocked(sensorStore.query)
-      .mock.calls.filter((call) => String(call[1]).includes("analytics.v_sleep")).length;
+      .mock.calls.filter((call) => String(call[1]).includes("analytics.daily_sleep")).length;
     expect(sleepQueryCallCount).toBe(1);
     expect(result.sleep?.lastNight?.date).toBe("2026-03-28");
     expect(result.sleepNeed?.canRecommend).toBe(true);
+  });
+
+  it("reads sleep circle data from the daily sleep summary instead of the live sleep view", async () => {
+    const execute = vi.fn();
+    execute.mockResolvedValueOnce([metricRow({ date: "2026-03-28" })]);
+    execute.mockResolvedValueOnce([]);
+
+    const sensorStore = makeSensorStore([], 0, [sleepBaselineRow("2026-03-28", 480, 80)]);
+    const caller = createCaller({
+      db: { execute },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore,
+    });
+
+    await caller.dashboard({ endDate: "2026-03-28" });
+
+    const queryTexts = vi.mocked(sensorStore.query).mock.calls.map((call) => String(call[1]));
+    expect(queryTexts.some((queryText) => queryText.includes("analytics.daily_sleep"))).toBe(true);
+    expect(queryTexts.some((queryText) => queryText.includes("analytics.v_sleep"))).toBe(false);
   });
 
   it("logs dashboard timing breakdowns for performance diagnosis", async () => {
@@ -440,13 +462,15 @@ describe("mobileDashboard.dashboard", () => {
       sleepBaselineRow("2026-03-19", 1000, null),
       sleepBaselineRow("2026-03-18", 1000, 10),
     ];
-    execute.mockResolvedValueOnce(hrvRowsAfterSleep(baselineSleepRows));
+    const recoveryRows = hrvRowsAfterSleep(baselineSleepRows).filter(
+      (row) => row.date <= "2026-03-28",
+    );
 
     const caller = createCaller({
       db: { execute },
       userId: "user-1",
       timezone: "UTC",
-      sensorStore: makeSensorStore([], 0, baselineSleepRows),
+      sensorStore: makeSensorStore([], 0, baselineSleepRows, baselineSleepRows, recoveryRows),
     });
 
     const result = await caller.dashboard({ endDate: "2026-03-28" });

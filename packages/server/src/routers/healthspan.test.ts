@@ -466,9 +466,7 @@ describe("fetchHealthspanRawData", () => {
 
     const result = await fetchHealthspanRawData(ctx, "2026-03-15", 14);
 
-    expect(query.mock.calls[0]?.[1]).toContain(
-      "analytics.healthspan_read_model AS healthspan FINAL",
-    );
+    expect(query.mock.calls[0]?.[1]).toContain("analytics.weekly_healthspan AS healthspan FINAL");
     expect(query.mock.calls[0]?.[1]).not.toContain("analytics.healthspan_activity_zone_minutes");
     expect(result?.weekly_history).toEqual([
       { week_start: "2026-03-03", avg_rhr: 55, avg_steps: 8000, avg_vo2max: 42 },
@@ -634,7 +632,7 @@ describe("healthspanRouter", () => {
       const queryText = query.mock.calls[0]?.[1];
       expect(queryText).not.toContain("derived_vo2max_estimates");
       expect(vo2?.value).toBe(45);
-      expect(queryText).toContain("analytics.healthspan_read_model");
+      expect(queryText).toContain("analytics.weekly_healthspan");
       expect(getVo2MaxEstimates).not.toHaveBeenCalled();
       expect(result.history[0]?.score).toBe(
         Math.round((scoreRestingHr(55) + scoreSteps(10000) + scoreVo2Max(45)) / 3),

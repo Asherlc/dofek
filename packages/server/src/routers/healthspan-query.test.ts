@@ -66,7 +66,7 @@ describe("fetchHealthspanRawData", () => {
     await fetchHealthspanRawData(ctx, "2026-03-15", 14);
 
     const queryText = query.mock.calls[0]?.[1];
-    expect(queryText).toContain("analytics.healthspan_read_model");
+    expect(queryText).toContain("analytics.weekly_healthspan");
     expect(queryText).not.toContain("analytics.healthspan_activity_zone_minutes");
     expect(queryText).not.toContain("analytics.v_sleep");
     expect(queryText).not.toContain("fitness.v_daily_metrics");

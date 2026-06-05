@@ -176,7 +176,7 @@ describe("stressRouter", () => {
       sensorStore: {
         ...makeMockSensorStore([]),
         query: vi.fn(async (_schema: unknown, query: string) => {
-          if (query.includes("analytics.recovery_read_model")) return rows;
+          if (query.includes("analytics.daily_recovery")) return rows;
           return [];
         }),
       },

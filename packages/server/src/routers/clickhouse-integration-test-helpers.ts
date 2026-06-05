@@ -295,15 +295,16 @@ const analyticsBuildOrder = [
   "analytics.provider_stats",
   "analytics.deduped_activities",
   "analytics.resting_heart_rate_sleep_window",
+  "analytics.daily_sleep",
   "analytics.daily_recovery_inputs",
-  "analytics.recovery_read_model",
+  "analytics.daily_recovery",
   "analytics.deduped_location",
   "analytics.activity_sensor_sample",
   "analytics.activity_summary",
   "analytics.daily_activity_load",
-  "analytics.strain_read_model",
+  "analytics.daily_strain",
   "analytics.healthspan_activity_zone_minutes",
-  "analytics.healthspan_read_model",
+  "analytics.weekly_healthspan",
   "analytics.activity_trend_daily",
 ] as const;
 
@@ -388,6 +389,19 @@ resting_hr Nullable(Int32),
 refresh_version UInt64,
 is_deleted UInt8,
 refreshed_at DateTime64(9)`,
+    daily_sleep: `user_id UUID,
+date Date,
+provider_id String,
+started_at DateTime64(6, 'UTC'),
+ended_at Nullable(DateTime64(6, 'UTC')),
+duration_minutes Nullable(Int32),
+deep_minutes Nullable(Int32),
+rem_minutes Nullable(Int32),
+light_minutes Nullable(Int32),
+awake_minutes Nullable(Int32),
+efficiency_pct Nullable(Float64),
+refresh_version UInt64,
+refreshed_at DateTime64(9)`,
     daily_recovery_inputs: `user_id UUID,
 date Date,
 hrv Nullable(Float32),
@@ -406,7 +420,7 @@ rhr_mean_60d Nullable(Float64),
 rhr_sd_60d Nullable(Float64),
 refresh_version UInt64,
 refreshed_at DateTime64(9)`,
-    recovery_read_model: `user_id UUID,
+    daily_recovery: `user_id UUID,
 date Date,
 hrv Nullable(Float64),
 resting_hr Nullable(Float64),
@@ -567,7 +581,7 @@ ended_at DateTime64(6, 'UTC'),
 daily_load Nullable(Float64),
 refresh_version UInt64,
 refreshed_at DateTime64(9)`,
-    strain_read_model: `user_id UUID,
+    daily_strain: `user_id UUID,
 date Date,
 daily_load Float64,
 strain Float64,
@@ -585,7 +599,7 @@ high_intensity_minutes Float64,
 is_deleted UInt8,
 refresh_version UInt64,
 refreshed_at DateTime64(9)`,
-    healthspan_read_model: `user_id UUID,
+    weekly_healthspan: `user_id UUID,
 week_start Date,
 avg_sleep_min Nullable(Float64),
 bedtime_stddev_min Nullable(Float64),
@@ -625,12 +639,13 @@ activity_count UInt64`,
   const engine =
     shortViewName === "deduped_activities" ||
     shortViewName === "activity_sensor_sample" ||
+    shortViewName === "daily_sleep" ||
     shortViewName === "daily_recovery_inputs" ||
-    shortViewName === "recovery_read_model" ||
+    shortViewName === "daily_recovery" ||
     shortViewName === "daily_activity_load" ||
-    shortViewName === "strain_read_model" ||
+    shortViewName === "daily_strain" ||
     shortViewName === "healthspan_activity_zone_minutes" ||
-    shortViewName === "healthspan_read_model" ||
+    shortViewName === "weekly_healthspan" ||
     shortViewName === "provider_stats"
       ? "ReplacingMergeTree(refresh_version)"
       : "MergeTree";
@@ -639,16 +654,16 @@ activity_count UInt64`,
       ? "(user_id, activity_id)"
       : shortViewName === "activity_sensor_sample"
         ? "(user_id, activity_id, recorded_date, channel, recorded_at)"
-        : shortViewName === "daily_recovery_inputs"
+        : shortViewName === "daily_sleep" || shortViewName === "daily_recovery_inputs"
           ? "(user_id, date)"
-          : shortViewName === "recovery_read_model"
+          : shortViewName === "daily_recovery"
             ? "(user_id, date)"
             : shortViewName === "daily_activity_load" ||
                 shortViewName === "healthspan_activity_zone_minutes"
               ? "(user_id, activity_id)"
-              : shortViewName === "strain_read_model"
+              : shortViewName === "daily_strain"
                 ? "(user_id, date)"
-                : shortViewName === "healthspan_read_model"
+                : shortViewName === "weekly_healthspan"
                   ? "(user_id, week_start)"
                   : shortViewName === "provider_stats"
                     ? "(user_id, provider_id)"
@@ -949,6 +964,51 @@ SELECT
   refresh_clock.refreshed_at AS refreshed_at
 FROM inputs_with_baselines
 CROSS JOIN refresh_clock`;
+}
+
+function buildTestDailySleepSelectSql(databases: IsolatedClickHouseDatabases): string {
+  return `WITH ranked_sleep AS (
+  SELECT
+    user_id,
+    toDate(started_at - INTERVAL 6 HOUR) AS date,
+    provider_id,
+    started_at,
+    ended_at,
+    duration_minutes,
+    deep_minutes,
+    rem_minutes,
+    light_minutes,
+    awake_minutes,
+    efficiency_pct,
+    row_number() OVER (
+      PARTITION BY user_id, toDate(started_at - INTERVAL 6 HOUR)
+      ORDER BY duration_minutes DESC NULLS LAST, started_at DESC
+    ) AS row_number
+  FROM ${databases.analytics}.v_sleep
+  WHERE is_nap = false
+),
+refresh_clock AS (
+  SELECT
+    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+    now64(9) AS refreshed_at
+)
+SELECT
+  CAST(ranked_sleep.user_id, 'UUID') AS user_id,
+  CAST(ranked_sleep.date, 'Date') AS date,
+  ranked_sleep.provider_id AS provider_id,
+  ranked_sleep.started_at AS started_at,
+  ranked_sleep.ended_at AS ended_at,
+  ranked_sleep.duration_minutes AS duration_minutes,
+  ranked_sleep.deep_minutes AS deep_minutes,
+  ranked_sleep.rem_minutes AS rem_minutes,
+  ranked_sleep.light_minutes AS light_minutes,
+  ranked_sleep.awake_minutes AS awake_minutes,
+  ranked_sleep.efficiency_pct AS efficiency_pct,
+  refresh_clock.refresh_version AS refresh_version,
+  refresh_clock.refreshed_at AS refreshed_at
+FROM ranked_sleep
+CROSS JOIN refresh_clock
+WHERE ranked_sleep.row_number = 1`;
 }
 
 function buildTestDailyActivityLoadSelectSql(databases: IsolatedClickHouseDatabases): string {
@@ -1514,7 +1574,15 @@ ${buildTestDailyRecoveryInputsSelectSql({
 })}`,
   });
   await client.command({
-    query: `CREATE VIEW IF NOT EXISTS analytics.recovery_read_model
+    query: `CREATE VIEW IF NOT EXISTS analytics.daily_sleep
+AS
+${buildTestDailySleepSelectSql({
+  analytics: "analytics",
+  postgresFitness: "postgres_fitness",
+})}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.daily_recovery
 AS
 ${buildTestRecoveryReadModelSelectSql({
   analytics: "analytics",
@@ -1530,7 +1598,7 @@ ${buildTestDailyActivityLoadSelectSql({
 })}`,
   });
   await client.command({
-    query: `CREATE VIEW IF NOT EXISTS analytics.strain_read_model
+    query: `CREATE VIEW IF NOT EXISTS analytics.daily_strain
 AS
 ${buildTestStrainReadModelSelectSql({
   analytics: "analytics",
@@ -1546,7 +1614,7 @@ ${buildTestHealthspanActivityZoneMinutesSelectSql({
 })}`,
   });
   await client.command({
-    query: `CREATE VIEW IF NOT EXISTS analytics.healthspan_read_model
+    query: `CREATE VIEW IF NOT EXISTS analytics.weekly_healthspan
 AS
 ${buildTestHealthspanReadModelSelectSql({
   analytics: "analytics",

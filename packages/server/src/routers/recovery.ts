@@ -278,7 +278,7 @@ export const recoveryRouter = router({
           strain.acute_load_7d AS acute_load,
           strain.chronic_load_28d AS chronic_load,
           strain.workload_ratio AS workload_ratio
-        FROM analytics.strain_read_model AS strain FINAL
+        FROM analytics.daily_strain AS strain FINAL
         WHERE strain.user_id = {userId:UUID}
           AND strain.date > toDate({outputWindowStart:String})
           AND strain.date <= toDate({endDate:String})
@@ -442,7 +442,7 @@ export const recoveryRouter = router({
           rr_mean_30d,
           rr_sd_30d,
           efficiency_pct
-        FROM analytics.recovery_read_model AS recovery_inputs FINAL
+        FROM analytics.daily_recovery AS recovery_inputs FINAL
         WHERE recovery_inputs.user_id = {userId:UUID}
           AND recovery_inputs.date > toDate({windowStart:String})
           AND recovery_inputs.date <= toDate({endDate:String})
@@ -598,7 +598,7 @@ export const recoveryRouter = router({
         `SELECT
           toString(strain.date) AS date,
           strain.daily_load AS daily_load
-        FROM analytics.strain_read_model AS strain FINAL
+        FROM analytics.daily_strain AS strain FINAL
         WHERE strain.user_id = {userId:UUID}
           AND strain.date >= toDate({windowStart:String})
           AND strain.date <= toDate({endDate:String})

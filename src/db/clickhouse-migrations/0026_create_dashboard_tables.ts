@@ -1,6 +1,6 @@
 import type { ClickHouseMigration } from "./types.ts";
 
-const recoveryReadModelTableSql = `CREATE TABLE IF NOT EXISTS analytics.recovery_read_model (
+const dailyRecoveryTableSql = `CREATE TABLE IF NOT EXISTS analytics.daily_recovery (
   user_id UUID,
   date Date,
   hrv Nullable(Float64),
@@ -27,7 +27,7 @@ const recoveryReadModelTableSql = `CREATE TABLE IF NOT EXISTS analytics.recovery
 ENGINE = ReplacingMergeTree(refresh_version)
 ORDER BY (user_id, date)`;
 
-const strainReadModelTableSql = `CREATE TABLE IF NOT EXISTS analytics.strain_read_model (
+const dailyStrainTableSql = `CREATE TABLE IF NOT EXISTS analytics.daily_strain (
   user_id UUID,
   date Date,
   daily_load Float64,
@@ -41,7 +41,7 @@ const strainReadModelTableSql = `CREATE TABLE IF NOT EXISTS analytics.strain_rea
 ENGINE = ReplacingMergeTree(refresh_version)
 ORDER BY (user_id, date)`;
 
-const healthspanReadModelTableSql = `CREATE TABLE IF NOT EXISTS analytics.healthspan_read_model (
+const weeklyHealthspanTableSql = `CREATE TABLE IF NOT EXISTS analytics.weekly_healthspan (
   user_id UUID,
   week_start Date,
   avg_sleep_min Nullable(Float64),
@@ -62,7 +62,7 @@ ORDER BY (user_id, week_start)`;
 
 export function createMigration(): ClickHouseMigration {
   return {
-    id: "0026_create_named_dashboard_read_model_tables",
-    statements: [recoveryReadModelTableSql, strainReadModelTableSql, healthspanReadModelTableSql],
+    id: "0026_create_dashboard_tables",
+    statements: [dailyRecoveryTableSql, dailyStrainTableSql, weeklyHealthspanTableSql],
   };
 }

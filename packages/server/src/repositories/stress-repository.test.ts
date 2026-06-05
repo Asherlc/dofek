@@ -50,7 +50,7 @@ describe("StressRepository", () => {
       await repo.getStressScores(90, "2024-01-15");
 
       const queryText = sensorStore.query.mock.calls[0]?.[1];
-      expect(queryText).toContain("analytics.recovery_read_model AS recovery_inputs FINAL");
+      expect(queryText).toContain("analytics.daily_recovery AS recovery_inputs FINAL");
       expect(queryText).not.toContain("fitness.v_daily_metrics");
       expect(queryText).not.toContain("analytics.v_sleep");
     });
