@@ -1453,11 +1453,24 @@ describe("recoveryRouter.strainTarget", () => {
 
     await caller.strainTarget({ endDate: "2026-03-28" });
 
+    const recoveryQueryCall = queryMock.mock.calls.find((call) =>
+      String(call[1]).includes("analytics.daily_recovery"),
+    );
     const queryTexts = queryMock.mock.calls.map((call) => String(call[1]));
     expect(executeMock).not.toHaveBeenCalled();
+    expect(recoveryQueryCall?.[2]).toMatchObject({
+      userId: "user-1",
+      windowStart: "2026-02-26",
+      endDate: "2026-03-28",
+    });
+    expect(recoveryQueryCall?.[2]).not.toHaveProperty("accessStartDate");
+    expect(recoveryQueryCall?.[2]).not.toHaveProperty("accessEndDateExclusive");
     expect(queryTexts.some((queryText) => queryText.includes("analytics.daily_recovery"))).toBe(
       true,
     );
+    expect(
+      queryTexts.find((queryText) => queryText.includes("analytics.daily_recovery")),
+    ).not.toContain("accessStartDate");
     expect(queryTexts.some((queryText) => queryText.includes("analytics.v_sleep"))).toBe(false);
   });
 
@@ -1477,6 +1490,15 @@ describe("recoveryRouter.strainTarget", () => {
 
     await caller.strainTarget({ endDate: "2026-03-28" });
 
+    const recoveryQueryText = String(vi.mocked(sensorStore.query).mock.calls[0]?.[1]);
+    const recoveryQueryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
+    expect(recoveryQueryText).toContain("recovery.date >= toDate({accessStartDate:String})");
+    expect(recoveryQueryText).toContain("recovery.date < toDate({accessEndDateExclusive:String})");
+    expect(recoveryQueryParams).toMatchObject({
+      accessStartDate: "2026-03-10",
+      accessEndDateExclusive: "2026-03-20",
+    });
+
     const queryText = String(vi.mocked(sensorStore.query).mock.calls[1]?.[1]);
     const queryParams = vi.mocked(sensorStore.query).mock.calls[1]?.[2];
     expect(queryText).toContain("strain.date >= toDate({accessStartDate:String})");
@@ -1487,21 +1509,26 @@ describe("recoveryRouter.strainTarget", () => {
     });
   });
 
-  it("computes readiness from daily metrics and returns strain target", async () => {
-    const caller = setup({
-      readinessRows: [
-        {
-          date: "2026-03-22",
-          resting_hr: 55,
-          hrv: 60,
-          spo2_avg: 98,
-          respiratory_rate_avg: 14,
-        },
-      ],
-      sleepRows: [{ efficiency_pct: 90 }],
+  it("computes readiness from daily recovery component scores", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      sensorStore: makeSensorStore([
+        [
+          {
+            date: "2026-03-22",
+            hrv_score: 82,
+            resting_hr_score: 74,
+            sleep_score: 88,
+            respiratory_rate_score: 80,
+          },
+        ],
+        [],
+      ]),
     });
     const result = await caller.strainTarget({});
 
+    expect(result.readinessScore).toBe(81);
     expect(typeof result.targetStrain).toBe("number");
     expect(typeof result.currentStrain).toBe("number");
     expect(typeof result.progressPercent).toBe("number");
