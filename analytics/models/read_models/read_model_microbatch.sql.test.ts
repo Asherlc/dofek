@@ -392,10 +392,13 @@ describe("production analytics read-model build", () => {
 
     expect(sql).toContain("materialized='incremental'");
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
-    expect(sql).toContain("analytics.v_sleep");
+    expect(sql).toContain("{% if is_incremental() %}");
+    expect(sql).toContain("existing_dates AS");
     expect(normalizedSql).toContain(
-      "PARTITION BY user_id, toDate(started_at - INTERVAL 6 HOUR)",
+      "toDate(sleep.started_at - INTERVAL 6 HOUR) >= existing_dates.latest_materialized_date",
     );
+    expect(sql).toContain("analytics.v_sleep");
+    expect(normalizedSql).toContain("PARTITION BY user_id, date");
     expect(normalizedSql).toContain("ORDER BY duration_minutes DESC NULLS LAST, started_at DESC");
     expect(sql).toContain("WHERE ranked_sleep.row_number = 1");
     expect(sql).not.toContain("source('postgres_fitness', 'metric_stream')");

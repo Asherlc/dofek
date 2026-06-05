@@ -8,10 +8,47 @@
     }
 ) }}
 
-WITH ranked_sleep AS (
+WITH {% if is_incremental() %}
+existing_dates AS (
     SELECT
         user_id,
-        toDate(started_at - INTERVAL 6 HOUR) AS date,
+        max(date) AS latest_materialized_date
+    FROM {{ this }}
+    GROUP BY user_id
+),
+{% endif %}
+
+sleep_source AS (
+    SELECT
+        sleep.user_id AS user_id,
+        toDate(sleep.started_at - INTERVAL 6 HOUR) AS date,
+        sleep.provider_id AS provider_id,
+        sleep.started_at AS started_at,
+        sleep.ended_at AS ended_at,
+        sleep.duration_minutes AS duration_minutes,
+        sleep.deep_minutes AS deep_minutes,
+        sleep.rem_minutes AS rem_minutes,
+        sleep.light_minutes AS light_minutes,
+        sleep.awake_minutes AS awake_minutes,
+        sleep.efficiency_pct AS efficiency_pct
+    FROM analytics.v_sleep AS sleep
+    {% if is_incremental() %}
+    LEFT JOIN existing_dates
+        ON existing_dates.user_id = sleep.user_id
+    {% endif %}
+    WHERE sleep.is_nap = FALSE
+        {% if is_incremental() %}
+        AND (
+            existing_dates.user_id IS NULL
+            OR toDate(sleep.started_at - INTERVAL 6 HOUR) >= existing_dates.latest_materialized_date
+        )
+        {% endif %}
+),
+
+ranked_sleep AS (
+    SELECT
+        user_id,
+        date,
         provider_id,
         started_at,
         ended_at,
@@ -22,11 +59,10 @@ WITH ranked_sleep AS (
         awake_minutes,
         efficiency_pct,
         row_number() OVER (
-            PARTITION BY user_id, toDate(started_at - INTERVAL 6 HOUR)
+            PARTITION BY user_id, date
             ORDER BY duration_minutes DESC NULLS LAST, started_at DESC
         ) AS row_number
-    FROM analytics.v_sleep
-    WHERE is_nap = FALSE
+    FROM sleep_source
 ),
 
 refresh_clock AS (
