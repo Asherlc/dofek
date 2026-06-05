@@ -392,6 +392,7 @@ describe("production analytics read-model build", () => {
 
     expect(sql).toContain("materialized='incremental'");
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
+    expect(sql).toContain("'join_use_nulls': 1");
     expect(sql).toContain("{% if is_incremental() %}");
     expect(sql).toContain("existing_dates AS");
     expect(normalizedSql).toContain(
@@ -411,6 +412,7 @@ describe("production analytics read-model build", () => {
 
     expect(sql).toContain("materialized='incremental'");
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
+    expect(sql).toContain("'join_use_nulls': 1");
     expect(sql).toContain("{% if is_incremental() %}");
     expect(sql).toContain("existing_dates AS");
     expect(normalizedSql).toContain("existing_dates.latest_materialized_date - INTERVAL 54 DAY");
