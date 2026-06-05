@@ -7,6 +7,13 @@
     "codegraph": {
       "command": "codegraph",
       "args": ["serve", "--mcp"]
+    },
+    "axiom": {
+      "command": "sh",
+      "args": [
+        "-lc",
+        "eval \"$(axiom config export --force 2>/dev/null | grep '^export AXIOM_')\"; exec npx -y mcp-server-axiom"
+      ]
     }
   }
 }
