@@ -22,11 +22,7 @@ import {
 } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
-import {
-  fetchLatestSleepNight,
-  fetchSleepNights,
-} from "../repositories/clickhouse-sleep-repository.ts";
-import { fetchRestingHeartRateValuesCte } from "../repositories/resting-heart-rate-query.ts";
+import { fetchSleepNights } from "../repositories/clickhouse-sleep-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 function requireSensorStore(
@@ -143,6 +139,14 @@ export interface StrainTargetResult {
   workloadRatio?: number | null;
   readinessScore?: number;
 }
+
+const strainTargetReadinessRowSchema = z.object({
+  date: dateStringSchema,
+  hrv_score: z.coerce.number().nullable(),
+  resting_hr_score: z.coerce.number().nullable(),
+  sleep_score: z.coerce.number().nullable(),
+  respiratory_rate_score: z.coerce.number().nullable(),
+});
 
 export const recoveryRouter = router({
   /**
@@ -556,49 +560,37 @@ export const recoveryRouter = router({
     .input(z.object({ days: z.number().default(30), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<StrainTargetResult> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "recovery.strainTarget");
-      const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
-        sensorStore,
-        userId: ctx.userId,
-        timezone: ctx.timezone,
-        endDate: input.endDate,
-        days: input.days,
-      });
-      // Get readiness score
-      const readinessRows = await executeWithSchema(
-        ctx.db,
-        z.object({
-          date: dateStringSchema,
-          resting_hr: z.number().nullable(),
-          hrv: z.number().nullable(),
-          spo2_avg: z.number().nullable(),
-          respiratory_rate_avg: z.number().nullable(),
-        }),
-        sql`
-	          WITH ${restingHeartRateCte},
-            metric_dates AS (
-            SELECT dm.date
-            FROM fitness.v_daily_metrics dm
-            WHERE dm.user_id = ${ctx.userId}
-              AND dm.date > ${dateWindowStart(input.endDate, input.days)}
-              AND dm.date <= ${dateWindowEnd(input.endDate)}
-              ${dateAccessPredicate(ctx.accessWindow, sql`dm.date`)}
-            UNION
-	            SELECT drhr.date
-	            FROM resting_heart_rate drhr
-	            WHERE drhr.date > ${dateWindowStart(input.endDate, input.days)}
-	              AND drhr.date <= ${dateWindowEnd(input.endDate)}
-	              ${dateAccessPredicate(ctx.accessWindow, sql`drhr.date`)}
-          )
-          SELECT dates.date, drhr.resting_hr, dm.hrv, dm.spo2_avg, dm.respiratory_rate_avg
-          FROM metric_dates dates
-          LEFT JOIN fitness.v_daily_metrics dm
-            ON dm.user_id = ${ctx.userId}
-           AND dm.date = dates.date
-	          LEFT JOIN resting_heart_rate drhr
-	            ON drhr.date = dates.date
-          ORDER BY dates.date DESC
-          LIMIT 1
-        `,
+      const recoveryAccessWindowClause =
+        ctx.accessWindow?.kind === "limited"
+          ? `AND recovery.date >= toDate({accessStartDate:String})
+          AND recovery.date < toDate({accessEndDateExclusive:String})`
+          : "";
+      const readinessRows = await sensorStore.query(
+        strainTargetReadinessRowSchema,
+        `SELECT
+          toString(recovery.date) AS date,
+          recovery.hrv_score AS hrv_score,
+          recovery.resting_hr_score AS resting_hr_score,
+          recovery.sleep_score AS sleep_score,
+          recovery.respiratory_rate_score AS respiratory_rate_score
+        FROM analytics.daily_recovery AS recovery FINAL
+        WHERE recovery.user_id = {userId:UUID}
+          AND recovery.date > toDate({windowStart:String})
+          AND recovery.date <= toDate({endDate:String})
+          ${recoveryAccessWindowClause}
+        ORDER BY recovery.date DESC
+        LIMIT 1`,
+        {
+          userId: ctx.userId,
+          windowStart: dateWindowStartString(input.endDate, input.days),
+          endDate: input.endDate,
+          ...(ctx.accessWindow?.kind === "limited"
+            ? {
+                accessStartDate: ctx.accessWindow.startDate,
+                accessEndDateExclusive: ctx.accessWindow.endDateExclusive,
+              }
+            : {}),
+        },
       );
 
       // Get daily loads for ACWR from the compact ClickHouse strain read model.
@@ -639,28 +631,11 @@ export const recoveryRouter = router({
       const readinessMetrics = readinessRows[0];
       if (readinessMetrics) {
         const params = getEffectiveParams(await loadPersonalizedParams(ctx.db, ctx.userId));
-        const latestSleep = await fetchLatestSleepNight({
-          sensorStore,
-          userId: ctx.userId,
-          timezone: ctx.timezone,
-          endDate: input.endDate,
-          accessWindow: ctx.accessWindow,
-        });
-
-        // Use sleep efficiency as a proxy for sleep score, default 62 for others
-        const sleepEff = latestSleep?.efficiency_pct ?? null;
-        const sleepScore = sleepEff != null ? Math.max(0, Math.min(100, Math.round(sleepEff))) : 62;
         const components: ReadinessComponents = {
-          hrvScore:
-            readinessMetrics.hrv != null
-              ? Math.max(0, Math.min(100, Math.round(readinessMetrics.hrv)))
-              : 62,
-          restingHrScore:
-            readinessMetrics.resting_hr != null
-              ? Math.max(0, Math.min(100, 120 - readinessMetrics.resting_hr))
-              : 62,
-          sleepScore,
-          respiratoryRateScore: 62,
+          hrvScore: Math.round(readinessMetrics.hrv_score ?? 62),
+          restingHrScore: Math.round(readinessMetrics.resting_hr_score ?? 62),
+          sleepScore: Math.round(readinessMetrics.sleep_score ?? 62),
+          respiratoryRateScore: Math.round(readinessMetrics.respiratory_rate_score ?? 62),
         };
         const weights = params.readinessWeights;
         const score = new ReadinessScore(components, weights);

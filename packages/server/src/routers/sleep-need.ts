@@ -13,7 +13,7 @@ import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import {
   type ClickHouseSleepNight,
-  fetchLatestSleepNight,
+  fetchDailySleepPerformanceNights,
   fetchSleepNights,
 } from "../repositories/clickhouse-sleep-repository.ts";
 import { StressRepository } from "../repositories/stress-repository.ts";
@@ -303,16 +303,16 @@ export const sleepNeedRouter = router({
   performance: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<SleepPerformanceInfo | null> => {
-      // Get last night's sleep
       const tz = ctx.timezone ?? "UTC";
       const sensorStore = requireSensorStore(ctx.sensorStore, "sleepNeed.performance");
-      const lastSleep = await fetchLatestSleepNight({
+      const sleepRows = await fetchDailySleepPerformanceNights({
         sensorStore,
         userId: ctx.userId,
-        timezone: tz,
         endDate: input.endDate,
+        days: 90,
         accessWindow: ctx.accessWindow,
       });
+      const lastSleep = sleepRows.at(-1) ?? null;
       if (!lastSleep || lastSleep.duration_minutes == null) {
         return null;
       }
@@ -320,16 +320,8 @@ export const sleepNeedRouter = router({
       const actualMinutes = lastSleep.duration_minutes;
       const efficiency = lastSleep.efficiency_pct ?? 85;
 
-      const baselineRows = await fetchSleepNights({
-        sensorStore,
-        userId: ctx.userId,
-        timezone: tz,
-        endDate: input.endDate,
-        days: 90,
-        accessWindow: ctx.accessWindow,
-        order: "asc",
-      });
-      const durations = baselineRows
+      const durations = sleepRows
+        .filter((row) => row.date !== lastSleep.date)
         .map((row) => row.duration_minutes)
         .filter((duration): duration is number => duration != null);
       const neededMinutes =
@@ -337,14 +329,7 @@ export const sleepNeedRouter = router({
           ? durations.reduce((sum, duration) => sum + duration, 0) / durations.length
           : 480;
 
-      const sleepRowsByDate = new Map(
-        [...baselineRows, lastSleep].map((sleepRow) => [sleepRow.date, sleepRow]),
-      );
-      const consistency = computeLatestSleepConsistency(
-        [...sleepRowsByDate.values()],
-        lastSleep.date,
-        tz,
-      );
+      const consistency = computeLatestSleepConsistency(sleepRows, lastSleep.date, tz);
       const stressResult = await new StressRepository(
         ctx.db,
         ctx.userId,

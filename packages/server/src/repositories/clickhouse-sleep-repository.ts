@@ -40,6 +40,29 @@ export interface FetchSleepNightsInput {
   limit?: number;
 }
 
+const dailySleepPerformanceRowSchema = z.object({
+  date: z.string(),
+  provider_id: z.string().nullable(),
+  started_at: z.string(),
+  ended_at: z.string().nullable(),
+  duration_minutes: nullableNumberSchema,
+  deep_minutes: nullableNumberSchema,
+  rem_minutes: nullableNumberSchema,
+  light_minutes: nullableNumberSchema,
+  awake_minutes: nullableNumberSchema,
+  efficiency_pct: nullableNumberSchema,
+});
+
+export type DailySleepPerformanceNight = z.infer<typeof dailySleepPerformanceRowSchema>;
+
+export interface FetchDailySleepPerformanceNightsInput {
+  sensorStore: Pick<ActivitySensorStore, "query">;
+  userId: string;
+  endDate: string;
+  days: number;
+  accessWindow?: AccessWindow;
+}
+
 function accessWindowClause(accessWindow: AccessWindow | undefined): string {
   if (!accessWindow || accessWindow.kind === "full") return "";
   return `
@@ -53,6 +76,12 @@ function accessWindowParams(accessWindow: AccessWindow | undefined): Record<stri
     accessStartDate: accessWindow.startDate,
     accessEndDateExclusive: accessWindow.endDateExclusive,
   };
+}
+
+function dateAccessWindowClause(accessWindow: AccessWindow | undefined): string {
+  if (!accessWindow || accessWindow.kind === "full") return "";
+  return `AND sleep.date >= toDate({accessStartDate:String})
+          AND sleep.date < toDate({accessEndDateExclusive:String})`;
 }
 
 export async function fetchSleepNights(
@@ -108,6 +137,38 @@ export async function fetchSleepNights(
     },
   );
   return rows.map((row) => clickHouseSleepNightSchema.parse(row));
+}
+
+export async function fetchDailySleepPerformanceNights(
+  input: FetchDailySleepPerformanceNightsInput,
+): Promise<DailySleepPerformanceNight[]> {
+  const rows = await input.sensorStore.query(
+    dailySleepPerformanceRowSchema,
+    `SELECT
+      toString(sleep.date) AS date,
+      sleep.provider_id AS provider_id,
+      formatDateTime(sleep.started_at, '%FT%TZ', 'UTC') AS started_at,
+      if(isNull(sleep.ended_at), NULL, formatDateTime(sleep.ended_at, '%FT%TZ', 'UTC')) AS ended_at,
+      sleep.duration_minutes AS duration_minutes,
+      sleep.deep_minutes AS deep_minutes,
+      sleep.rem_minutes AS rem_minutes,
+      sleep.light_minutes AS light_minutes,
+      sleep.awake_minutes AS awake_minutes,
+      sleep.efficiency_pct AS efficiency_pct
+    FROM analytics.daily_sleep AS sleep FINAL
+    WHERE sleep.user_id = {userId:UUID}
+      AND sleep.date >= toDate({endDate:String}) - {days:UInt32}
+      AND sleep.date <= toDate({endDate:String})
+      ${dateAccessWindowClause(input.accessWindow)}
+    ORDER BY sleep.date ASC`,
+    {
+      userId: input.userId,
+      endDate: input.endDate,
+      days: input.days,
+      ...accessWindowParams(input.accessWindow),
+    },
+  );
+  return rows.map((row) => dailySleepPerformanceRowSchema.parse(row));
 }
 
 export async function fetchLatestSleepNight(input: {
