@@ -53,8 +53,9 @@ describe("production analytics read-model build", () => {
       "deduped_activity_members",
       "sleep_heart_rate_sample",
       "resting_heart_rate_sleep_window",
+      "daily_sleep",
       "daily_recovery_inputs",
-      "recovery_read_model",
+      "daily_recovery",
       "activity_sensor_sample",
       "activity_location_sample",
       "activity_sensor_summary_rows",
@@ -63,9 +64,9 @@ describe("production analytics read-model build", () => {
       "activity_vo2max_estimate",
       "provider_stats",
       "daily_activity_load",
-      "strain_read_model",
+      "daily_strain",
       "healthspan_activity_zone_minutes",
-      "healthspan_read_model",
+      "weekly_healthspan",
     ]);
   });
 
@@ -367,8 +368,8 @@ describe("production analytics read-model build", () => {
     expect(sql).not.toContain("ref('deduped_sensor')");
   });
 
-  it("materializes the recovery serving read model from daily recovery inputs", () => {
-    const sql = readModel("recovery_read_model");
+  it("materializes the daily recovery model from daily recovery inputs", () => {
+    const sql = readModel("daily_recovery");
     const normalizedSql = compactWhitespace(sql);
 
     expect(sql).toContain("materialized='incremental'");
@@ -385,8 +386,27 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("respiratory_rate_score");
   });
 
-  it("materializes the strain serving read model from activity load rows", () => {
-    const sql = readModel("strain_read_model");
+  it("materializes one daily sleep row per user from the ClickHouse sleep view", () => {
+    const sql = readModel("daily_sleep");
+    const normalizedSql = compactWhitespace(sql);
+
+    expect(sql).toContain("materialized='incremental'");
+    expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
+    expect(sql).toContain("{% if is_incremental() %}");
+    expect(sql).toContain("existing_dates AS");
+    expect(normalizedSql).toContain(
+      "toDate(sleep.started_at - INTERVAL 6 HOUR) >= existing_dates.latest_materialized_date - INTERVAL 7 DAY",
+    );
+    expect(sql).toContain("analytics.v_sleep");
+    expect(normalizedSql).toContain("PARTITION BY user_id, date");
+    expect(normalizedSql).toContain("ORDER BY duration_minutes DESC NULLS LAST, started_at DESC");
+    expect(sql).toContain("WHERE ranked_sleep.row_number = 1");
+    expect(sql).not.toContain("source('postgres_fitness', 'metric_stream')");
+    expect(sql).not.toContain("ref('deduped_sensor')");
+  });
+
+  it("materializes the daily strain model from activity load rows", () => {
+    const sql = readModel("daily_strain");
     const normalizedSql = compactWhitespace(sql);
 
     expect(sql).toContain("materialized='incremental'");
@@ -422,8 +442,8 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).toContain("sensor_samples.user_id = activity_metadata.user_id");
   });
 
-  it("materializes the healthspan serving read model from compact inputs", () => {
-    const sql = readModel("healthspan_read_model");
+  it("materializes the weekly healthspan model from compact inputs", () => {
+    const sql = readModel("weekly_healthspan");
     const normalizedSql = compactWhitespace(sql);
 
     expect(sql).toContain("materialized='incremental'");

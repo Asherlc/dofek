@@ -117,8 +117,7 @@ describe("Router transformation logic", () => {
     await caller.scores({ days: 30, endDate: "2026-03-24" });
 
     const queryText = query.mock.calls.find(
-      ([, sqlText]) =>
-        typeof sqlText === "string" && sqlText.includes("analytics.recovery_read_model"),
+      ([, sqlText]) => typeof sqlText === "string" && sqlText.includes("analytics.daily_recovery"),
     )?.[1];
     expect(queryText).toEqual(expect.any(String));
     expect(queryText).not.toContain("fitness.v_daily_metrics");

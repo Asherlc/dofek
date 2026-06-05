@@ -111,7 +111,7 @@ export async function fetchHealthspanRawData(
       sessions_per_week,
       weight_kg,
       body_fat_pct
-    FROM analytics.healthspan_read_model AS healthspan FINAL
+    FROM analytics.weekly_healthspan AS healthspan FINAL
     WHERE healthspan.user_id = {userId:UUID}
       AND healthspan.week_start > toMonday(toDate({windowStart:String}))
       AND healthspan.week_start <= toMonday(toDate({endDate:String}))

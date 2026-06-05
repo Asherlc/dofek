@@ -22,13 +22,13 @@ const testAnalyticsViewNames = [
   "analytics.deduped_sensor",
   "analytics.resting_heart_rate_sleep_window",
   "analytics.daily_recovery_inputs",
-  "analytics.recovery_read_model",
+  "analytics.daily_recovery",
   "analytics.deduped_location",
   "analytics.activity_summary",
   "analytics.daily_activity_load",
-  "analytics.strain_read_model",
+  "analytics.daily_strain",
   "analytics.healthspan_activity_zone_minutes",
-  "analytics.healthspan_read_model",
+  "analytics.weekly_healthspan",
   "analytics.activity_trend_daily",
 ];
 
@@ -140,7 +140,7 @@ describe("clickhouse integration test helpers", () => {
       setupCommands.some(
         (command) =>
           command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
-          command.includes(".recovery_read_model"),
+          command.includes(".daily_recovery"),
       ),
     ).toBe(true);
     expect(
@@ -154,7 +154,7 @@ describe("clickhouse integration test helpers", () => {
       setupCommands.some(
         (command) =>
           command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
-          command.includes(".strain_read_model"),
+          command.includes(".daily_strain"),
       ),
     ).toBe(true);
     expect(
@@ -168,7 +168,7 @@ describe("clickhouse integration test helpers", () => {
       setupCommands.some(
         (command) =>
           command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
-          command.includes(".healthspan_read_model"),
+          command.includes(".weekly_healthspan"),
       ),
     ).toBe(true);
 
@@ -323,7 +323,7 @@ describe("clickhouse integration test helpers", () => {
       commands.some(
         (command) =>
           command.includes("INSERT INTO analytics_test_") &&
-          command.includes(".recovery_read_model") &&
+          command.includes(".daily_recovery") &&
           command.includes(".daily_recovery_inputs"),
       ),
     ).toBe(true);
@@ -345,7 +345,7 @@ describe("clickhouse integration test helpers", () => {
       commands.some(
         (command) =>
           command.includes("INSERT INTO analytics_test_") &&
-          command.includes(".strain_read_model") &&
+          command.includes(".daily_strain") &&
           command.includes(".daily_activity_load"),
       ),
     ).toBe(true);
@@ -361,7 +361,7 @@ describe("clickhouse integration test helpers", () => {
       commands.some(
         (command) =>
           command.includes("INSERT INTO analytics_test_") &&
-          command.includes(".healthspan_read_model") &&
+          command.includes(".weekly_healthspan") &&
           command.includes(".v_daily_metrics"),
       ),
     ).toBe(true);
