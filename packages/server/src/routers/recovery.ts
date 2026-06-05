@@ -596,12 +596,12 @@ export const recoveryRouter = router({
           daily_load: z.coerce.number(),
         }),
         `SELECT
-          toString(date) AS date,
-          daily_load
-        FROM analytics.strain_read_model FINAL
-        WHERE user_id = {userId:UUID}
-          AND date >= toDate({windowStart:String})
-          AND date <= toDate({endDate:String})
+          toString(strain.date) AS date,
+          strain.daily_load AS daily_load
+        FROM analytics.strain_read_model AS strain FINAL
+        WHERE strain.user_id = {userId:UUID}
+          AND strain.date >= toDate({windowStart:String})
+          AND strain.date <= toDate({endDate:String})
         ORDER BY date ASC`,
         {
           userId: ctx.userId,

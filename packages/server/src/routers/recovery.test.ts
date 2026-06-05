@@ -1372,7 +1372,9 @@ describe("recoveryRouter.strainTarget", () => {
     await caller.strainTarget({ endDate: "2026-03-28" });
 
     const queryText = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
-    expect(queryText).toContain("analytics.strain_read_model FINAL");
+    expect(queryText).toContain("analytics.strain_read_model AS strain FINAL");
+    expect(queryText).toContain("toString(strain.date) AS date");
+    expect(queryText).toContain("strain.date >= toDate({windowStart:String})");
     expect(queryText).not.toContain("analytics.activity_summary");
   });
 
