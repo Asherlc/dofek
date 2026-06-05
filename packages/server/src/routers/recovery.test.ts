@@ -1404,6 +1404,63 @@ describe("recoveryRouter.strainTarget", () => {
     expect(queryText).not.toContain("analytics.activity_summary");
   });
 
+  it("reads readiness from the daily recovery summary without Postgres metric assembly", async () => {
+    const executeMock = vi.fn().mockResolvedValueOnce([
+      {
+        date: "2026-03-28",
+        resting_hr: 55,
+        hrv: 60,
+        spo2_avg: 98,
+        respiratory_rate_avg: 14,
+      },
+    ]);
+    const queryMock = vi.fn(async (_schema: unknown, queryText: unknown) => {
+      const querySql = String(queryText);
+      if (querySql.includes("analytics.daily_recovery")) {
+        return [
+          {
+            date: "2026-03-28",
+            hrv_score: 82,
+            resting_hr_score: 74,
+            sleep_score: 88,
+            respiratory_rate_score: 80,
+          },
+        ];
+      }
+      if (querySql.includes("analytics.daily_strain")) {
+        return [{ date: "2026-03-28", daily_load: 50 }];
+      }
+      return [];
+    });
+    const sensorStore: SensorStore = {
+      query: queryMock,
+      getActivitySummaries: vi.fn().mockResolvedValue([]),
+      getStream: vi.fn().mockResolvedValue([]),
+      getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+      getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+      getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+      getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+      getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+      getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+      getPaceCurveRows: vi.fn().mockResolvedValue([]),
+      refreshBodyMeasurements: vi.fn().mockResolvedValue(undefined),
+    };
+    const caller = createCaller({
+      db: { execute: executeMock },
+      userId: "user-1",
+      sensorStore,
+    });
+
+    await caller.strainTarget({ endDate: "2026-03-28" });
+
+    const queryTexts = queryMock.mock.calls.map((call) => String(call[1]));
+    expect(executeMock).not.toHaveBeenCalled();
+    expect(queryTexts.some((queryText) => queryText.includes("analytics.daily_recovery"))).toBe(
+      true,
+    );
+    expect(queryTexts.some((queryText) => queryText.includes("analytics.v_sleep"))).toBe(false);
+  });
+
   it("passes limited access windows to strain target daily-load queries", async () => {
     const executeMock = vi.fn().mockResolvedValueOnce([]);
     const sensorStore = makeSensorStore([[], []]);

@@ -109,14 +109,13 @@ function createCalculateCaller(rows: SleepNeedFixtureRow[]) {
 }
 
 function createPerformanceCaller(rows: SleepNeedFixtureRow[]) {
-  const latestRow = rows[0];
+  const sleepRows = [...rows].sort((leftRow, rightRow) =>
+    leftRow.date.localeCompare(rightRow.date),
+  );
   return createCaller({
     db: { execute: vi.fn() },
     userId: "user-1",
-    sensorStore: makeMockSensorStore([
-      latestRow ? toClickHouseSleepRows([latestRow]) : [],
-      toClickHouseSleepRows(rows.slice(1)),
-    ]),
+    sensorStore: makeMockSensorStore([toClickHouseSleepRows(sleepRows), []]),
   });
 }
 
@@ -580,6 +579,27 @@ describe("sleepNeedRouter", () => {
       expect(result?.score).toBeLessThanOrEqual(100);
       expect(["Excellent", "Good", "Fair", "Poor"]).toContain(result?.tier);
       expect(result?.recommendedBedtime).toMatch(/^\d{2}:\d{2}$/);
+    });
+
+    it("reads dashboard sleep performance from the daily sleep summary once", async () => {
+      const rows = [
+        { date: "2026-03-14", duration_minutes: 450, efficiency_pct: 92 },
+        { date: "2026-03-01", duration_minutes: 480 },
+      ];
+      const sensorStore = makeMockSensorStore([toClickHouseSleepRows(rows), []]);
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-1",
+        sensorStore,
+      });
+
+      await caller.performance({ endDate: "2026-03-15" });
+
+      const queryTexts = vi.mocked(sensorStore.query).mock.calls.map((call) => String(call[1]));
+      expect(
+        queryTexts.filter((queryText) => queryText.includes("analytics.daily_sleep")),
+      ).toHaveLength(1);
+      expect(queryTexts.some((queryText) => queryText.includes("analytics.v_sleep"))).toBe(false);
     });
 
     it("uses the historical sleep average for provider-backed rows", async () => {
