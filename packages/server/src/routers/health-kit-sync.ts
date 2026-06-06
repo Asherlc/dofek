@@ -108,7 +108,12 @@ export const healthKitSyncRouter = router({
       }
 
       try {
-        inserted += await processMetricStream(ctx.db, ctx.userId, metricStreamSamples);
+        inserted += await processMetricStream(
+          ctx.db,
+          ctx.userId,
+          metricStreamSamples,
+          ctx.metricStreamPublisher,
+        );
         if (metricStreamSamples.length > 0) {
           const bounds = computeBoundsFromIsoTimestamps(
             metricStreamSamples.map((s) => s.startDate),

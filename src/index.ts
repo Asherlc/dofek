@@ -232,7 +232,7 @@ export async function handleImportCommand(args: string[]): Promise<number> {
   return 1;
 }
 
-async function main() {
+export async function main() {
   const command = process.argv[2] ?? "sync";
 
   if (command === "sync") {

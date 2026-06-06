@@ -21,6 +21,7 @@ import {
 } from "dofek/jobs/queues";
 import { sql } from "drizzle-orm";
 import express from "express";
+import type { MetricStreamEventPublisher } from "../../../src/metric-stream/redpanda-producer.ts";
 import { isAdmin } from "./auth/admin.ts";
 import { getSessionIdFromRequest } from "./auth/cookies.ts";
 import { validateSession } from "./auth/session.ts";
@@ -54,9 +55,14 @@ function getSingleHeaderValue(value: string | string[] | undefined): string | un
 }
 
 /** Create the Express app with all routes. */
+export interface CreateAppOptions {
+  metricStreamPublisher?: MetricStreamEventPublisher;
+}
+
 export function createApp(
   db: import("dofek/db").Database,
   sensorStore?: import("./repositories/activity-repository.ts").ActivitySensorStore,
+  options: CreateAppOptions = {},
 ): express.Express {
   initSentry();
   const app = express();
@@ -67,7 +73,7 @@ export function createApp(
     res.json({ status: "ok" });
   });
 
-  setupRoutes(app, db, limitedSensorStore);
+  setupRoutes(app, db, limitedSensorStore, options);
   // Sentry error handler must be after all routes
   app.use(sentryErrorHandler());
   return app;
@@ -77,6 +83,7 @@ function setupRoutes(
   app: express.Express,
   db: import("dofek/db").Database,
   sensorStore: import("./repositories/activity-repository.ts").ActivitySensorStore | undefined,
+  options: CreateAppOptions,
 ) {
   // ── Compression + Cookies ──
   // Z_SYNC_FLUSH ensures compressed chunks are flushed to the client immediately,
@@ -194,6 +201,7 @@ function setupRoutes(
         return {
           db,
           sensorStore,
+          metricStreamPublisher: options.metricStreamPublisher,
           userId: session?.userId ?? null,
           timezone,
           appVersion,

@@ -99,6 +99,16 @@ vi.mock("./providers/apple-health/import.ts", () => ({
   importAppleHealthFile: mockImportAppleHealthFile,
 }));
 
+const mockRunMetricStreamPostgresSinkFromEnv = vi.fn(async () => undefined);
+vi.mock("./metric-stream/postgres-sink.ts", () => ({
+  runMetricStreamPostgresSinkFromEnv: mockRunMetricStreamPostgresSinkFromEnv,
+}));
+
+const mockRunMetricStreamClickHouseSinkFromEnv = vi.fn(async () => undefined);
+vi.mock("./metric-stream/clickhouse-sink.ts", () => ({
+  runMetricStreamClickHouseSinkFromEnv: mockRunMetricStreamClickHouseSinkFromEnv,
+}));
+
 // Prevent main()'s auto-call from exiting the process (same pattern as worker.test.ts)
 function noOpExit(): never {
   throw new Error("process.exit called in test");
@@ -112,7 +122,9 @@ process.argv = ["node", "test", "__test_noop__"];
 
 const suppressRejection = () => {};
 process.on("unhandledRejection", suppressRejection);
-const { handleSyncCommand, handleAuthCommand, handleImportCommand } = await import("./index.ts");
+const { handleSyncCommand, handleAuthCommand, handleImportCommand, main } = await import(
+  "./index.ts"
+);
 await new Promise((resolve) => setTimeout(resolve, 0));
 process.off("unhandledRejection", suppressRejection);
 
@@ -902,5 +914,33 @@ describe("handleImportCommand", () => {
     expect(code).toBe(0);
     // With zero errors, no individual error messages should be logged
     expect(mockLoggerError).not.toHaveBeenCalled();
+  });
+});
+
+describe("main", () => {
+  const savedArgvForMain = process.argv;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("runs the Postgres metric stream sink command", async () => {
+    process.argv = ["node", "index.ts", "metric-stream-postgres-sink"];
+
+    await main();
+
+    expect(mockRunMetricStreamPostgresSinkFromEnv).toHaveBeenCalledOnce();
+    expect(mockRunMetricStreamClickHouseSinkFromEnv).not.toHaveBeenCalled();
+    process.argv = savedArgvForMain;
+  });
+
+  it("runs the ClickHouse metric stream sink command", async () => {
+    process.argv = ["node", "index.ts", "metric-stream-clickhouse-sink"];
+
+    await main();
+
+    expect(mockRunMetricStreamClickHouseSinkFromEnv).toHaveBeenCalledOnce();
+    expect(mockRunMetricStreamPostgresSinkFromEnv).not.toHaveBeenCalled();
+    process.argv = savedArgvForMain;
   });
 });

@@ -87,4 +87,22 @@ describe("createKafkaMetricStreamEventPublisherFromEnv", () => {
       }),
     ).toThrow("METRIC_STREAM_TOPIC is required");
   });
+
+  it("rejects broker lists that only contain separators and whitespace", () => {
+    expect(() =>
+      createKafkaMetricStreamEventPublisherFromEnv({
+        METRIC_STREAM_TOPIC: "metric-stream-v1",
+        REDPANDA_BROKERS: " , ",
+      }),
+    ).toThrow("REDPANDA_BROKERS must contain at least one broker");
+  });
+
+  it("trims broker lists and returns a publisher for valid env", () => {
+    const publisher = createKafkaMetricStreamEventPublisherFromEnv({
+      METRIC_STREAM_TOPIC: "metric-stream-v1",
+      REDPANDA_BROKERS: " redpanda:9092 , redpanda:9093 ",
+    });
+
+    expect(publisher).toBeInstanceOf(KafkaMetricStreamEventPublisher);
+  });
 });

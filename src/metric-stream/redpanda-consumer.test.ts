@@ -1,6 +1,29 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createMetricStreamEvent } from "./events.ts";
-import { runMetricStreamEventConsumer } from "./redpanda-consumer.ts";
+import {
+  createKafkaMetricStreamConsumerFromEnv,
+  runMetricStreamEventConsumer,
+} from "./redpanda-consumer.ts";
+
+const kafkaConsumerConnect = vi.hoisted(() => vi.fn(async () => undefined));
+const kafkaConsumerSubscribe = vi.hoisted(() => vi.fn(async () => undefined));
+const kafkaConsumerRun = vi.hoisted(() => vi.fn(async () => undefined));
+const kafkaConsumerFactory = vi.hoisted(() =>
+  vi.fn(() => ({
+    connect: kafkaConsumerConnect,
+    subscribe: kafkaConsumerSubscribe,
+    run: kafkaConsumerRun,
+  })),
+);
+const kafkaConstructor = vi.hoisted(() =>
+  vi.fn(() => ({
+    consumer: kafkaConsumerFactory,
+  })),
+);
+
+vi.mock("kafkajs", () => ({
+  Kafka: kafkaConstructor,
+}));
 
 const event = createMetricStreamEvent({
   id: "10000000-0000-4000-8000-000000000001",
@@ -89,5 +112,107 @@ describe("runMetricStreamEventConsumer", () => {
     ).rejects.toThrow("sink failed");
 
     expect(resolveOffset).not.toHaveBeenCalled();
+  });
+
+  it("skips tombstone messages and does not call the handler for empty batches", async () => {
+    const resolveOffset = vi.fn();
+    const handleEvents = vi.fn(async () => undefined);
+    const commitOffsetsIfNecessary = vi.fn(async () => undefined);
+    const heartbeat = vi.fn(async () => undefined);
+    const consumer = {
+      connect: vi.fn(async () => undefined),
+      subscribe: vi.fn(async () => undefined),
+      run: vi.fn(async (options) => {
+        expect(options.eachBatchAutoResolve).toBe(false);
+        await options.eachBatch({
+          batch: {
+            messages: [{ offset: "13", value: null }],
+          },
+          commitOffsetsIfNecessary,
+          heartbeat,
+          resolveOffset,
+        });
+      }),
+    };
+
+    await runMetricStreamEventConsumer({
+      consumer,
+      handleEvents,
+      topic: "metric-stream-v1",
+    });
+
+    expect(handleEvents).not.toHaveBeenCalled();
+    expect(resolveOffset).toHaveBeenCalledWith("13");
+    expect(heartbeat).toHaveBeenCalledOnce();
+    expect(commitOffsetsIfNecessary).toHaveBeenCalledOnce();
+  });
+});
+
+describe("createKafkaMetricStreamConsumerFromEnv", () => {
+  beforeEach(() => {
+    kafkaConstructor.mockClear();
+    kafkaConsumerFactory.mockClear();
+    kafkaConsumerConnect.mockClear();
+    kafkaConsumerSubscribe.mockClear();
+    kafkaConsumerRun.mockClear();
+  });
+
+  it("requires Redpanda brokers", () => {
+    expect(() =>
+      createKafkaMetricStreamConsumerFromEnv("metric-stream-postgres-sink", {
+        METRIC_STREAM_TOPIC: "metric-stream-v1",
+      }),
+    ).toThrow("REDPANDA_BROKERS is required");
+  });
+
+  it("requires a metric stream topic", () => {
+    expect(() =>
+      createKafkaMetricStreamConsumerFromEnv("metric-stream-postgres-sink", {
+        REDPANDA_BROKERS: "redpanda:9092",
+      }),
+    ).toThrow("METRIC_STREAM_TOPIC is required");
+  });
+
+  it("rejects broker lists that only contain separators and whitespace", () => {
+    expect(() =>
+      createKafkaMetricStreamConsumerFromEnv("metric-stream-postgres-sink", {
+        METRIC_STREAM_TOPIC: "metric-stream-v1",
+        REDPANDA_BROKERS: " , ",
+      }),
+    ).toThrow("REDPANDA_BROKERS must contain at least one broker");
+  });
+
+  it("trims broker lists and adapts KafkaJS consumer methods", async () => {
+    const { consumer, topic } = createKafkaMetricStreamConsumerFromEnv(
+      "metric-stream-postgres-sink",
+      {
+        METRIC_STREAM_TOPIC: "metric-stream-v1",
+        REDPANDA_BROKERS: " redpanda:9092 , redpanda:9093 ",
+      },
+    );
+
+    expect(topic).toBe("metric-stream-v1");
+    expect(kafkaConstructor).toHaveBeenCalledWith({
+      brokers: ["redpanda:9092", "redpanda:9093"],
+      clientId: "metric-stream-postgres-sink",
+    });
+    expect(kafkaConsumerFactory).toHaveBeenCalledWith({ groupId: "metric-stream-postgres-sink" });
+
+    await consumer.connect();
+    await consumer.subscribe({ topic: "metric-stream-v1", fromBeginning: false });
+    await consumer.run({
+      eachBatchAutoResolve: false,
+      eachBatch: async () => undefined,
+    });
+
+    expect(kafkaConsumerConnect).toHaveBeenCalledOnce();
+    expect(kafkaConsumerSubscribe).toHaveBeenCalledWith({
+      topic: "metric-stream-v1",
+      fromBeginning: false,
+    });
+    expect(kafkaConsumerRun).toHaveBeenCalledWith({
+      eachBatchAutoResolve: false,
+      eachBatch: expect.any(Function),
+    });
   });
 });

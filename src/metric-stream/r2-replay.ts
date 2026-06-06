@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export interface MetricStreamArchiveObjectKey {
   date: string;
   firstOffset: number;
@@ -9,6 +11,14 @@ export interface MetricStreamArchiveObjectKey {
 
 const ARCHIVE_KEY_PATTERN =
   /^metric-stream\/v1\/date=(\d{4}-\d{2}-\d{2})\/hour=(\d{2})\/(.+)-(\d+)-(\d+)-(\d+)\.jsonl\.gz$/;
+const archiveKeyCaptureSchema = z.tuple([
+  z.string(),
+  z.string(),
+  z.string(),
+  z.string(),
+  z.string(),
+  z.string(),
+]);
 
 export function parseMetricStreamArchiveObjectKey(key: string): MetricStreamArchiveObjectKey {
   const match = ARCHIVE_KEY_PATTERN.exec(key);
@@ -16,11 +26,8 @@ export function parseMetricStreamArchiveObjectKey(key: string): MetricStreamArch
     throw new Error(`Invalid metric-stream archive key: ${key}`);
   }
 
-  const [, date, hour, topic, partitionValue, firstOffsetValue, lastOffsetValue] = match;
-  if (!date || !hour || !topic || !partitionValue || !firstOffsetValue || !lastOffsetValue) {
-    throw new Error(`Invalid metric-stream archive key: ${key}`);
-  }
-
+  const [date, hour, topic, partitionValue, firstOffsetValue, lastOffsetValue] =
+    archiveKeyCaptureSchema.parse(match.slice(1));
   return {
     date,
     hour,
