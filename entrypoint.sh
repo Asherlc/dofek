@@ -65,16 +65,9 @@ case "${1:-sync}" in
     ;;
   cdc-health)
     interval_seconds="${CDC_HEALTH_INTERVAL_SECONDS:-300}"
-    retry_delay_seconds="${CDC_HEALTH_RETRY_DELAY_SECONDS:-300}"
     case "$interval_seconds" in
       '' | 0 | *[!0-9]*)
         echo "cdc-health: CDC_HEALTH_INTERVAL_SECONDS must be a positive integer, got '$interval_seconds'" >&2
-        exit 1
-        ;;
-    esac
-    case "$retry_delay_seconds" in
-      '' | 0 | *[!0-9]*)
-        echo "cdc-health: CDC_HEALTH_RETRY_DELAY_SECONDS must be a positive integer, got '$retry_delay_seconds'" >&2
         exit 1
         ;;
     esac
@@ -83,8 +76,8 @@ case "${1:-sync}" in
         sleep "$interval_seconds"
       else
         status="$?"
-        echo "cdc-health: check failed with exit status $status; retrying in ${retry_delay_seconds}s" >&2
-        sleep "$retry_delay_seconds"
+        echo "cdc-health: check failed with exit status $status" >&2
+        exit "$status"
       fi
     done
     ;;

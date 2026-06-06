@@ -331,7 +331,9 @@ const isDirectExecution =
   import.meta.url.endsWith(process.argv[1].replace(/.*\//, ""));
 
 if (isDirectExecution) {
-  main().catch((error: unknown) => {
+  main().catch(async (error: unknown) => {
+    Sentry.captureException(error);
+    await Sentry.close(2_000);
     console.error(`[metric-stream-catch-up] ${error}`);
     process.exit(1);
   });

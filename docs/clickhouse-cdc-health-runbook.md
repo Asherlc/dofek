@@ -83,14 +83,14 @@ step.
 Dry-run the planned windows first:
 
 ```bash
-pnpm catch-up:metric-stream -- --start 2026-06-03T21:57:00Z --end 2026-06-05T23:59:59Z
+pnpm catch-up:metric-stream -- --start 2026-06-03T21:57:00Z --end 2026-06-06T00:00:00Z
 ```
 
 Execute only after verifying the source window and the expected affected user or
 activity:
 
 ```bash
-pnpm catch-up:metric-stream -- --start 2026-06-03T21:57:00Z --end 2026-06-05T23:59:59Z --execute
+pnpm catch-up:metric-stream -- --start 2026-06-03T21:57:00Z --end 2026-06-06T00:00:00Z --execute
 ```
 
 If the range is large, keep the default one-hour windows or set
