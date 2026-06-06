@@ -133,6 +133,7 @@ describe("insertMetricStreamEventsIntoPostgres", () => {
     }
     const compiledQuery = compileSqlQuery(firstCall[0]);
     expect(compiledQuery.sql).toContain("NULL");
+    expect(compiledQuery.sql).not.toMatch(/,\s*::uuid/);
     expect(compiledQuery.sql).not.toContain("ST_GeomFromGeoJSON");
     expect(compiledQuery.sql).not.toContain("ARRAY[");
     expect(compiledQuery.sql).not.toContain("::jsonb");

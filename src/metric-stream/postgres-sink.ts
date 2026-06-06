@@ -35,6 +35,13 @@ function vectorValueSql(value: MetricStreamEventV1["vector"]): SQLWrapper {
   )}]`;
 }
 
+function nullableUuidValueSql(value: string | null | undefined): SQLWrapper {
+  if (value === null || value === undefined) {
+    return sql`NULL`;
+  }
+  return sql`${value}::uuid`;
+}
+
 function metricStreamEventPostgresValues(event: MetricStreamEventV1): SQLWrapper {
   return sql`(
     ${event.id}::uuid,
@@ -45,7 +52,7 @@ function metricStreamEventPostgresValues(event: MetricStreamEventV1): SQLWrapper
     ${event.deviceId},
     ${event.sourceType},
     ${event.channel},
-    ${event.activityId}::uuid,
+    ${nullableUuidValueSql(event.activityId)},
     ${event.scalar},
     ${vectorValueSql(event.vector)},
     ${geometryValueSql(event)},
