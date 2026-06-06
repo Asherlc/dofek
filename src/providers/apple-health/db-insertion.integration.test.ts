@@ -111,53 +111,41 @@ describe("db-insertion deduplication (integration)", () => {
 
   describe("insertWithDuplicateDiag — safety net dedup", () => {
     it("deduplicates and retries when batch has duplicate conflict keys", async () => {
-      const time1 = new Date("2025-01-15T08:00:00Z");
-      const time2 = new Date("2025-01-15T08:00:00Z"); // same timestamp = same externalId
-
-      const rows: (typeof schema.metricStream.$inferInsert)[] = [
+      const rows: (typeof schema.dailyMetrics.$inferInsert)[] = [
         {
           userId: schema.TEST_USER_ID,
           providerId: PROVIDER_ID,
-          externalId: "dup-test-key",
-          recordedAt: time1,
-          channel: "body_weight",
-          sourceType: "file",
-          scalar: 80,
-          deviceId: "Scale A",
+          date: "2025-01-15",
+          sourceName: "Apple Watch",
+          steps: 80,
         },
         {
           userId: schema.TEST_USER_ID,
           providerId: PROVIDER_ID,
-          externalId: "dup-test-key", // duplicate conflict key
-          recordedAt: time2,
-          channel: "body_weight",
-          sourceType: "file",
-          scalar: 81,
-          deviceId: "Scale B",
+          date: "2025-01-15",
+          sourceName: "Apple Watch",
+          steps: 81,
         },
       ];
 
       // insertWithDuplicateDiag should deduplicate and retry instead of crashing
       await insertWithDuplicateDiag(
-        "metric_stream",
-        (row) =>
-          `${row.userId}:${row.providerId}:${row.externalId}:${row.channel}:${row.recordedAt?.toISOString()}`,
+        "daily_metrics",
+        (row) => `${row.userId}:${row.providerId}:${row.date}:${row.sourceName ?? "no-source"}`,
         rows,
         (batch) =>
           ctx.db
-            .insert(schema.metricStream)
+            .insert(schema.dailyMetrics)
             .values(batch)
             .onConflictDoUpdate({
               target: [
-                schema.metricStream.userId,
-                schema.metricStream.providerId,
-                schema.metricStream.externalId,
-                schema.metricStream.channel,
-                schema.metricStream.recordedAt,
+                schema.dailyMetrics.userId,
+                schema.dailyMetrics.date,
+                schema.dailyMetrics.providerId,
+                schema.dailyMetrics.sourceName,
               ],
               set: {
-                scalar: sql`excluded.scalar`,
-                deviceId: sql`excluded.device_id`,
+                steps: sql`excluded.steps`,
               },
             }),
       );
@@ -165,11 +153,11 @@ describe("db-insertion deduplication (integration)", () => {
       // Should have inserted the deduplicated row (last one wins)
       const result = await ctx.db
         .select()
-        .from(schema.metricStream)
-        .where(eq(schema.metricStream.externalId, "dup-test-key"));
+        .from(schema.dailyMetrics)
+        .where(eq(schema.dailyMetrics.date, "2025-01-15"));
 
       expect(result).toHaveLength(1);
-      expect(Number(result[0]?.scalar)).toBe(81); // last duplicate wins
+      expect(result[0]?.steps).toBe(81); // last duplicate wins
     });
   });
 

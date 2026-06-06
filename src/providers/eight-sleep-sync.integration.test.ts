@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { dailyMetrics, metricStream, oauthToken, sleepSession, userProfile } from "../db/schema.ts";
+import { dailyMetrics, oauthToken, sleepSession, userProfile } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -556,16 +556,6 @@ describe("EightSleepProvider.sync() (integration)", () => {
       date: day,
       steps: 1234,
     });
-    await ctx.db.insert(metricStream).values({
-      userId: secondUserId,
-      providerId: "eight-sleep",
-      externalId: temperatureExternalId,
-      recordedAt: new Date("2026-03-28T23:00:00Z"),
-      sourceType: "api",
-      channel: "body_temperature",
-      scalar: 31.2,
-    });
-
     server.use(
       ...eightSleepHandlers([
         fakeTrendDay({
@@ -593,11 +583,6 @@ describe("EightSleepProvider.sync() (integration)", () => {
     expect(providerDailyRows.filter((row) => row.userId === secondUserId)).toHaveLength(1);
     expect(providerDailyRows.filter((row) => row.userId === currentUserId)).toHaveLength(1);
 
-    const temperatureRows = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.externalId, temperatureExternalId));
-    expect(temperatureRows.filter((row) => row.userId === secondUserId)).toHaveLength(1);
     const publishedTemperatureRows = publishedMetricStreamBatches
       .flat()
       .filter((row) => row.externalId === temperatureExternalId);
