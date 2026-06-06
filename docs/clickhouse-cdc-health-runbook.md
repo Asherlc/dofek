@@ -13,12 +13,12 @@ It fails on:
 - Any required PeerDB slot with `wal_status = 'lost'`.
 - Any required PeerDB slot with `restart_lsn IS NULL`.
 - Any required PeerDB slot that is inactive.
-- Retained WAL for a required slot at or above 12 GiB.
+- Retained WAL for a required slot at or above 48 GiB.
 - Active mirrored tables with rows but stale `_peerdb_synced_at`.
 
 It warns on:
 
-- Retained WAL at or above 8 GiB.
+- Retained WAL at or above 32 GiB.
 - Empty mirrors, which can be valid in staging.
 
 Run it locally with production secrets:
@@ -32,10 +32,11 @@ operational incidents, and blocking unrelated deploys on existing CDC health
 makes recovery harder.
 
 The durability control is the production WAL and PeerDB work-unit budget:
-Postgres allows six logical slots/senders and caps each slot at 16 GiB, while
+Postgres allows six logical slots/senders and caps each slot at 64 GiB, while
 PeerDB mirrors use 100,000-row CDC batches and single-worker 100,000-row initial
-snapshot partitions. The check is only a manual validation that this budget has
-not already been exhausted.
+snapshot partitions. The production `cdc-health` service runs this check every
+five minutes and reports failures to logs/Sentry; local runs are still useful
+when actively triaging an incident.
 
 ## Triage
 
@@ -69,6 +70,39 @@ ORDER BY slot_name;
 If `wal_status = 'lost'`, retries and container restarts cannot recover the slot.
 Recreate the affected mirror from a fresh slot and then backfill or resnapshot
 the affected ClickHouse destination tables.
+
+## Bounded Metric-Stream Catch-Up
+
+For `dofek_metric_stream_analytics`, repair the recent missing ClickHouse rows
+from Postgres directly before considering a full `metric_stream` resnapshot. The
+catch-up path inserts non-IMU rows from `fitness.metric_stream` into
+`postgres_fitness.metric_stream` for an explicit half-open UTC window, skips ids
+already present in ClickHouse, and leaves PeerDB slot recreation as a separate
+step.
+
+Dry-run the planned windows first:
+
+```bash
+pnpm catch-up:metric-stream -- --start 2026-06-03T21:57:00Z --end 2026-06-05T23:59:59Z
+```
+
+Execute only after verifying the source window and the expected affected user or
+activity:
+
+```bash
+pnpm catch-up:metric-stream -- --start 2026-06-03T21:57:00Z --end 2026-06-05T23:59:59Z --execute
+```
+
+If the range is large, keep the default one-hour windows or set
+`--window-minutes` lower. Increase `--max-windows` only after confirming the
+range is intentionally broad.
+
+After catch-up, run the bounded analytics build so the route-facing tables
+consume the repaired rows:
+
+```bash
+dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select sensor_scalar_sample deduped_sensor activity_sensor_sample activity_summary_rows daily_activity_load daily_strain
+```
 
 ## Recovery
 

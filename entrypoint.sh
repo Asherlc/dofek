@@ -63,6 +63,31 @@ case "${1:-sync}" in
       fi
     done
     ;;
+  cdc-health)
+    interval_seconds="${CDC_HEALTH_INTERVAL_SECONDS:-300}"
+    retry_delay_seconds="${CDC_HEALTH_RETRY_DELAY_SECONDS:-300}"
+    case "$interval_seconds" in
+      '' | 0 | *[!0-9]*)
+        echo "cdc-health: CDC_HEALTH_INTERVAL_SECONDS must be a positive integer, got '$interval_seconds'" >&2
+        exit 1
+        ;;
+    esac
+    case "$retry_delay_seconds" in
+      '' | 0 | *[!0-9]*)
+        echo "cdc-health: CDC_HEALTH_RETRY_DELAY_SECONDS must be a positive integer, got '$retry_delay_seconds'" >&2
+        exit 1
+        ;;
+    esac
+    while true; do
+      if $NODE scripts/check-clickhouse-cdc.ts; then
+        sleep "$interval_seconds"
+      else
+        status="$?"
+        echo "cdc-health: check failed with exit status $status; retrying in ${retry_delay_seconds}s" >&2
+        sleep "$retry_delay_seconds"
+      fi
+    done
+    ;;
   seed)
     exec $NODE scripts/seed-dev-db.ts
     ;;
@@ -70,7 +95,7 @@ case "${1:-sync}" in
     exec $NODE scripts/seed-review-clickhouse.ts
     ;;
   *)
-    echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', 'migrate', 'analytics', 'analytics-worker', 'seed', or 'review-seed-clickhouse')" >&2
+    echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', 'migrate', 'analytics', 'analytics-worker', 'cdc-health', 'seed', or 'review-seed-clickhouse')" >&2
     exit 1
     ;;
 esac

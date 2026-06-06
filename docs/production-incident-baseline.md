@@ -10287,11 +10287,20 @@ new incremental tables are populated.
   This is a repeat failure mode: the bounded 16GB WAL retention cap prevents
   disk exhaustion, but it is not enough to preserve a high-volume metric-stream
   slot through the observed PeerDB outage/write burst.
-- Fix / mitigation: Not remediated in this investigation. The direct fix is to
-  recreate/resync the `dofek_metric_stream_analytics` PeerDB flow and then run
-  the bounded dbt analytics build so `sensor_scalar_sample`, `deduped_sensor`,
-  `activity_sensor_sample`, `activity_summary_rows`, `daily_activity_load`, and
-  `daily_strain` repopulate from current metric rows.
+- Fix / mitigation: Code changes prepared a bounded prevention and repair path:
+  production Postgres slot WAL retention is raised from 16GB to 64GB, CDC health
+  thresholds now warn at 32GB and fail at 48GB, a production `cdc-health` swarm
+  service continuously runs `scripts/check-clickhouse-cdc.ts`, PeerDB
+  worker/staging memory limits are raised, and
+  `scripts/catch-up-clickhouse-metric-stream.ts` can direct-insert explicit
+  non-IMU `fitness.metric_stream` windows into
+  `postgres_fitness.metric_stream` without a full metric-stream resnapshot.
+  Production still requires deploying these changes, recreating/resyncing the
+  `dofek_metric_stream_analytics` PeerDB flow, running the bounded catch-up for
+  the missing window, and then running the bounded dbt analytics build so
+  `sensor_scalar_sample`, `deduped_sensor`, `activity_sensor_sample`,
+  `activity_summary_rows`, `daily_activity_load`, and `daily_strain` repopulate
+  from current metric rows.
 - Remaining risk: The slot is lost, so it cannot recover by waiting or
   restarting PeerDB alone. Resync can be expensive; verify mirror counts and
   read-model freshness after remediation, and add/verify alerting for
