@@ -6,7 +6,6 @@ import {
   type MetricStreamSourceRow,
   writeMetricStreamBatch,
 } from "../../db/metric-stream-writer.ts";
-import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
 import { NUTRIENT_ID_MAP } from "../../db/nutrient-columns.ts";
 import {
   activity,
@@ -21,6 +20,7 @@ import {
 import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { logger } from "../../logger.ts";
+import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
 import type { HealthRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
 import type { HealthWorkout } from "./workouts.ts";
@@ -462,32 +462,34 @@ async function aggregateMetricRecordsToDailyMetrics(
   if (!userId) {
     throw new Error("apple-health import requires user context");
   }
-  const groupedRecords = new Map<string, { total: number; count: number; sourceName: string }>();
+  const groupedRecords = new Map<
+    string,
+    { date: string; total: number; count: number; sourceName: string }
+  >();
 
   for (const record of records) {
     if (record.type !== type) continue;
     const date = dateToString(record.startDate);
-    const key = `${date}\0${record.sourceName}`;
+    const sourceName = record.sourceName ?? "unknown";
+    const key = `${date}\0${sourceName}`;
     const grouped = groupedRecords.get(key) ?? {
+      date,
       total: 0,
       count: 0,
-      sourceName: record.sourceName,
+      sourceName,
     };
     grouped.total += record.value * valueScale;
     grouped.count++;
     groupedRecords.set(key, grouped);
   }
 
-  const rows = [...groupedRecords.entries()].map(([key, grouped]) => {
-    const [date] = key.split("\0");
-    return {
-      date,
-      providerId,
-      userId,
-      sourceName: grouped.sourceName,
-      [column]: grouped.total / grouped.count,
-    };
-  });
+  const rows = [...groupedRecords.values()].map((grouped) => ({
+    date: grouped.date,
+    providerId,
+    userId,
+    sourceName: grouped.sourceName,
+    [column]: grouped.total / grouped.count,
+  }));
   if (rows.length === 0) return;
 
   const set =

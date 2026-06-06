@@ -1,17 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
-import type { MetricStreamInsert } from "./metric-stream-writer.ts";
-import {
-  metricStreamConflictTarget,
-  sourceRowToMetricStream,
-  writeMetricStream,
-  writeMetricStreamBatch,
-} from "./metric-stream-writer.ts";
-import { metricStream } from "./schema.ts";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { sourceRowToMetricStream, writeMetricStreamBatch } from "./metric-stream-writer.ts";
 import { runWithTokenUser } from "./token-user-context.ts";
 
-const mockPublishRows = vi.fn(async (rows: readonly unknown[]) =>
-  rows.map((_, index) => ({
+const mockPublishRows = vi.fn(async (rows: readonly { recordedAt: Date | string }[]) =>
+  rows.map((row, index) => ({
+    version: 1,
     id: `10000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+    recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
   })),
 );
 
@@ -20,6 +15,10 @@ vi.mock("../metric-stream/redpanda-producer.ts", () => ({
     publishRows: mockPublishRows,
   })),
 }));
+
+beforeEach(() => {
+  mockPublishRows.mockClear();
+});
 
 // ── sourceRowToMetricStream ────────────────────────────────
 
@@ -224,101 +223,6 @@ describe("sourceRowToMetricStream", () => {
   });
 });
 
-// ── writeMetricStream ──────────────────────────────────────
-
-describe("writeMetricStream", () => {
-  it("returns 0 for empty input", async () => {
-    const insertBatch = vi.fn();
-    const count = await writeMetricStream(insertBatch, []);
-    expect(count).toBe(0);
-    expect(insertBatch).not.toHaveBeenCalled();
-  });
-
-  it("inserts rows in batches", async () => {
-    const insertedBatches: MetricStreamInsert[][] = [];
-    const insertBatch = vi.fn(async (batch: MetricStreamInsert[]) => {
-      insertedBatches.push(batch);
-    });
-
-    const rows: MetricStreamInsert[] = Array.from({ length: 7 }, (_, index) => ({
-      recordedAt: new Date(),
-      providerId: "test",
-      externalId: `sample-${index}`,
-      sourceType: "api",
-      channel: "heart_rate",
-      scalar: index,
-    }));
-
-    const count = await writeMetricStream(insertBatch, rows, 3);
-
-    expect(count).toBe(7);
-    expect(insertedBatches).toHaveLength(3); // 3 + 3 + 1
-    expect(insertedBatches[0]).toHaveLength(3);
-    expect(insertedBatches[1]).toHaveLength(3);
-    expect(insertedBatches[2]).toHaveLength(1);
-  });
-
-  it("uses a conservative default batch size", async () => {
-    const insertedBatches: MetricStreamInsert[][] = [];
-    const insertBatch = vi.fn(async (batch: MetricStreamInsert[]) => {
-      insertedBatches.push(batch);
-    });
-
-    const rows: MetricStreamInsert[] = Array.from({ length: 1001 }, (_, index) => ({
-      recordedAt: new Date(),
-      providerId: "test",
-      externalId: `sample-${index}`,
-      sourceType: "api",
-      channel: "heart_rate",
-      scalar: index,
-    }));
-
-    const count = await writeMetricStream(insertBatch, rows);
-
-    expect(count).toBe(1001);
-    expect(insertedBatches).toHaveLength(2);
-    expect(insertedBatches[0]).toHaveLength(1000);
-    expect(insertedBatches[1]).toHaveLength(1);
-  });
-
-  it("rejects rows without external IDs", async () => {
-    const insertBatch = vi.fn();
-    const rows: MetricStreamInsert[] = [
-      {
-        recordedAt: new Date("2026-03-30T12:00:00Z"),
-        providerId: "test",
-        sourceType: "api",
-        channel: "heart_rate",
-        scalar: 72,
-      },
-    ];
-
-    await expect(writeMetricStream(insertBatch, rows)).rejects.toThrow(
-      "metric_stream ingestion rows require externalId for idempotency",
-    );
-    expect(insertBatch).not.toHaveBeenCalled();
-  });
-
-  it("rejects rows with whitespace-only external IDs", async () => {
-    const insertBatch = vi.fn();
-    const rows: MetricStreamInsert[] = [
-      {
-        recordedAt: new Date("2026-03-30T12:00:00Z"),
-        providerId: "test",
-        externalId: "   ",
-        sourceType: "api",
-        channel: "heart_rate",
-        scalar: 72,
-      },
-    ];
-
-    await expect(writeMetricStream(insertBatch, rows)).rejects.toThrow(
-      "metric_stream ingestion rows require externalId for idempotency",
-    );
-    expect(insertBatch).not.toHaveBeenCalled();
-  });
-});
-
 // ── writeMetricStreamBatch ─────────────────────────────────
 
 describe("writeMetricStreamBatch", () => {
@@ -361,6 +265,26 @@ describe("writeMetricStreamBatch", () => {
     ]);
   });
 
+  it("publishes rows in batches", async () => {
+    const db = { insert: vi.fn() };
+    const rows = Array.from({ length: 7 }, (_, index) => ({
+      recordedAt: new Date(`2026-03-30T12:00:0${index}Z`),
+      userId: "00000000-0000-0000-0000-000000000001",
+      providerId: "test",
+      externalId: `sample-${index}`,
+      heartRate: index,
+    }));
+
+    const count = await writeMetricStreamBatch(db, rows, "api", 3);
+
+    expect(count).toBe(7);
+    expect(mockPublishRows).toHaveBeenCalledTimes(3);
+    expect(mockPublishRows.mock.calls[0]?.[0]).toHaveLength(3);
+    expect(mockPublishRows.mock.calls[1]?.[0]).toHaveLength(3);
+    expect(mockPublishRows.mock.calls[2]?.[0]).toHaveLength(1);
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
   it("fails fast when neither the row nor token context provides a user ID", async () => {
     const db = { insert: vi.fn() };
 
@@ -379,19 +303,5 @@ describe("writeMetricStreamBatch", () => {
       ),
     ).rejects.toThrow("metric_stream ingestion rows require userId");
     expect(db.insert).not.toHaveBeenCalled();
-  });
-});
-
-// ── metricStreamConflictTarget ─────────────────────────────
-
-describe("metricStreamConflictTarget", () => {
-  it("uses the provider sample identity as the duplicate key", () => {
-    expect(metricStreamConflictTarget(metricStream)).toEqual([
-      metricStream.userId,
-      metricStream.providerId,
-      metricStream.externalId,
-      metricStream.channel,
-      metricStream.recordedAt,
-    ]);
   });
 });

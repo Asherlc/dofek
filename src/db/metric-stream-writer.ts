@@ -8,9 +8,7 @@ import type { SyncDatabase } from "./index.ts";
 import { DRIZZLE_FIELD_TO_CHANNEL, LOCATION } from "./sensor-channels.ts";
 import { getTokenUserId } from "./token-user-context.ts";
 
-type MetricStreamTable = typeof import("./schema.ts").metricStream;
-
-export type MetricStreamInsert = InferInsertModel<MetricStreamTable>;
+export type MetricStreamInsert = InferInsertModel<typeof import("./schema.ts").metricStream>;
 type MetricStreamPublishRow = MetricStreamInsert & MetricStreamRowInput;
 
 export interface MetricStreamSourceRow {
@@ -57,31 +55,6 @@ function metricStreamExternalId(row: MetricStreamSourceRow, channel: string): st
   return `${row.providerId}:${activitySegment}:${sourceSegment}:${channel}:${row.recordedAt.toISOString()}`;
 }
 
-/**
- * Callback that receives a batch of rows for legacy direct inserts.
- * Provider ingestion should publish through Redpanda via writeMetricStreamBatch().
- */
-export type BatchInsertFn = (batch: MetricStreamInsert[]) => Promise<void>;
-
-export function metricStreamConflictTarget(table: MetricStreamTable) {
-  return [table.userId, table.providerId, table.externalId, table.channel, table.recordedAt];
-}
-
-/**
- * Create the default batch insert function using a Drizzle DB instance.
- */
-export function createBatchInsert(db: Pick<SyncDatabase, "insert">): BatchInsertFn {
-  return async (batch) => {
-    const { metricStream: table } = await import("./schema.ts");
-    await db
-      .insert(table)
-      .values(batch)
-      .onConflictDoNothing({
-        target: metricStreamConflictTarget(table),
-      });
-  };
-}
-
 function requireMetricStreamUserId(row: MetricStreamInsert): string {
   const userId = row.userId ?? getTokenUserId();
   if (!hasExternalId(userId)) {
@@ -121,27 +94,6 @@ function toPublishRow(row: MetricStreamInsert): MetricStreamPublishRow {
     userId: requireMetricStreamUserId(row),
     metadata: metricStreamMetadata(row.metadata),
   };
-}
-
-/**
- * Batch-insert metric stream rows.
- */
-export async function writeMetricStream(
-  insertBatch: BatchInsertFn,
-  rows: MetricStreamInsert[],
-  batchSize = DEFAULT_BATCH_SIZE,
-): Promise<number> {
-  if (rows.length === 0) return 0;
-
-  const rowWithoutExternalId = rows.find((row) => !hasExternalId(row.externalId));
-  if (rowWithoutExternalId) {
-    throw new Error("metric_stream ingestion rows require externalId for idempotency");
-  }
-
-  for (let offset = 0; offset < rows.length; offset += batchSize) {
-    await insertBatch(rows.slice(offset, offset + batchSize));
-  }
-  return rows.length;
 }
 
 /**

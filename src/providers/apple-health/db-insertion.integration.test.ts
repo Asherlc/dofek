@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as schema from "../../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
 import { runWithTokenUser } from "../../db/token-user-context.ts";
+import type { MetricStreamEventV1, MetricStreamRowInput } from "../../metric-stream/events.ts";
 import {
   aggregateSkinTempToDailyMetrics,
   aggregateSpO2ToDailyMetrics,
@@ -196,18 +197,37 @@ describe("db-insertion deduplication (integration)", () => {
         healthRecord("HKQuantityTypeIdentifierStepCount", 123, recordedAt, "count"),
       ];
 
-      const count = await upsertMetricStreamBatch(ctx.db, PROVIDER_ID, records);
+      const publishedRows: MetricStreamRowInput[] = [];
+      const count = await upsertMetricStreamBatch(ctx.db, PROVIDER_ID, records, {
+        publishRows: async (rows): Promise<MetricStreamEventV1[]> => {
+          publishedRows.push(...rows);
+          return rows.map((row, index) => ({
+            version: 1,
+            id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+            recordedAt:
+              row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+            userId: row.userId,
+            providerId: row.providerId,
+            externalId: row.externalId ?? null,
+            deviceId: row.deviceId ?? null,
+            sourceType: row.sourceType,
+            channel: row.channel,
+            activityId: row.activityId ?? null,
+            scalar: row.scalar ?? null,
+            vector: row.vector ?? null,
+            point: row.point ?? null,
+            metadata: row.metadata ?? null,
+          }));
+        },
+      });
 
       expect(count).toBe(7);
 
-      const rows = await ctx.db
-        .select({
-          channel: schema.metricStream.channel,
-          scalar: schema.metricStream.scalar,
-          deviceId: schema.metricStream.deviceId,
-        })
-        .from(schema.metricStream)
-        .where(sql`${schema.metricStream.recordedAt} = ${recordedAt.toISOString()}::timestamptz`);
+      const rows = publishedRows.map((row) => ({
+        channel: row.channel,
+        scalar: row.scalar,
+        deviceId: row.deviceId,
+      }));
 
       expect(rows).toHaveLength(7);
       expect(rows).toEqual(
