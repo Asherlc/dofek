@@ -333,16 +333,17 @@ describe("PeerDB ClickHouse CDC setup", () => {
                 {
                   name: "dofek_fitness_raw_analytics",
                   raw_analytics_mirror_config:
-                    "activity sleep_session sleep_stage daily_metrics provider provider_priority device_priority user_profile",
+                    "peerdb_raw_analytics_publication activity sleep_session sleep_stage daily_metrics provider provider_priority device_priority user_profile",
                 },
                 {
                   name: "dofek_provider_inventory_raw_analytics",
                   raw_analytics_mirror_config:
-                    "food_entry health_event lab_panel lab_result journal_entry",
+                    "peerdb_raw_analytics_publication food_entry health_event lab_panel lab_result journal_entry",
                 },
                 {
                   name: "dofek_sensor_priority_raw_analytics",
-                  raw_analytics_mirror_config: "sensor_provider_priority sensor_device_priority",
+                  raw_analytics_mirror_config:
+                    "peerdb_raw_analytics_publication sensor_provider_priority sensor_device_priority",
                 },
               ],
             };
@@ -665,16 +666,17 @@ describe("PeerDB ClickHouse CDC setup", () => {
                 {
                   name: "dofek_fitness_raw_analytics",
                   raw_analytics_mirror_config:
-                    "activity sleep_session sleep_stage daily_metrics provider provider_priority device_priority",
+                    "peerdb_raw_analytics_publication activity sleep_session sleep_stage daily_metrics provider provider_priority device_priority",
                 },
                 {
                   name: "dofek_provider_inventory_raw_analytics",
                   raw_analytics_mirror_config:
-                    "food_entry health_event lab_panel lab_result journal_entry",
+                    "peerdb_raw_analytics_publication food_entry health_event lab_panel lab_result journal_entry",
                 },
                 {
                   name: "dofek_sensor_priority_raw_analytics",
-                  raw_analytics_mirror_config: "sensor_provider_priority sensor_device_priority",
+                  raw_analytics_mirror_config:
+                    "peerdb_raw_analytics_publication sensor_provider_priority sensor_device_priority",
                 },
               ],
             };
@@ -735,7 +737,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
                 {
                   name: "dofek_fitness_raw_analytics",
                   raw_analytics_mirror_config:
-                    "activity sleep_session sleep_stage daily_metrics provider provider_priority device_priority user_profile_archive",
+                    "peerdb_raw_analytics_publication activity sleep_session sleep_stage daily_metrics provider provider_priority device_priority user_profile_archive",
                 },
               ],
             };
@@ -769,6 +771,61 @@ describe("PeerDB ClickHouse CDC setup", () => {
     expect(clickHouseCommands).toContain("TRUNCATE TABLE IF EXISTS postgres_fitness.user_profile");
   });
 
+  it("recreates raw analytics mirrors when existing mappings use an obsolete publication", async () => {
+    const peerDbQueries: string[] = [];
+    const clickHouseCommands: string[] = [];
+    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
+
+    await setupClickHouseCdc({
+      peerDbClient: {
+        async query(queryText) {
+          const query = String(queryText);
+          if (query.includes("obsolete_metric_stream_mirror_name")) {
+            return { rows: [] };
+          }
+          if (query.includes("raw_analytics_mirror_config")) {
+            return {
+              rows: [
+                {
+                  name: "dofek_fitness_raw_analytics",
+                  raw_analytics_mirror_config:
+                    "peerdb_metric_stream_publication activity sleep_session sleep_stage daily_metrics provider provider_priority device_priority user_profile",
+                },
+              ],
+            };
+          }
+          if (query.includes("existing_mirror_name")) {
+            return { rows: [] };
+          }
+          peerDbQueries.push(query);
+          return {};
+        },
+      },
+      sourcePostgresClient: {
+        async query() {},
+      },
+      clickHouseClient: createTestClickHouseClient(clickHouseCommands),
+      templateSql,
+      templateValues: {
+        clickHouseHost: "clickhouse",
+        clickHouseCredential: "clickhouse-fixture",
+        clickHousePort: 9000,
+        clickHouseUser: "default",
+        postgresDatabase: "health",
+        postgresHost: "db",
+        postgresCredential: "fixture",
+        postgresPort: 5432,
+        postgresUser: "health",
+      },
+    });
+
+    expect(peerDbQueries[0]).toBe("DROP MIRROR dofek_fitness_raw_analytics");
+    expect(clickHouseCommands).toContain("TRUNCATE TABLE IF EXISTS postgres_fitness.activity");
+    expect(peerDbQueries).toContainEqual(
+      expect.stringContaining("CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics"),
+    );
+  });
+
   it("recreates absent raw analytics mirrors without initial copy when destination rows already exist", async () => {
     const peerDbQueries: string[] = [];
     const clickHouseCommands: string[] = [];
@@ -787,7 +844,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
                 {
                   name: "dofek_provider_inventory_raw_analytics",
                   raw_analytics_mirror_config:
-                    "food_entry health_event lab_panel lab_result journal_entry",
+                    "peerdb_raw_analytics_publication food_entry health_event lab_panel lab_result journal_entry",
                 },
               ],
             };
@@ -853,7 +910,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
                 {
                   name: "dofek_provider_inventory_raw_analytics",
                   raw_analytics_mirror_config:
-                    "food_entry health_event lab_panel lab_result journal_entry",
+                    "peerdb_raw_analytics_publication food_entry health_event lab_panel lab_result journal_entry",
                 },
               ],
             };

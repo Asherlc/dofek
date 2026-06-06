@@ -310,7 +310,13 @@ export class ZwiftProvider implements SyncProvider {
                       lat: s.lat,
                       lng: s.lng,
                     }));
-                    await writeMetricStreamBatch(db, metricRows, SOURCE_TYPE_API);
+                    await writeMetricStreamBatch(
+                      db,
+                      metricRows,
+                      SOURCE_TYPE_API,
+                      undefined,
+                      options?.metricStreamPublisher,
+                    );
                   }
                 } catch (streamErr) {
                   // Non-fatal: log but continue

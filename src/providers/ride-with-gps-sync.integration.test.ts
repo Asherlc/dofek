@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { activity, oauthToken } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
@@ -14,23 +14,7 @@ import {
   type RideWithGpsSyncItem,
   type RideWithGpsSyncResponse,
 } from "./ride-with-gps.ts";
-
-const { publishedMetricStreamBatches } = vi.hoisted<{
-  publishedMetricStreamBatches: Record<string, unknown>[][];
-}>(() => ({ publishedMetricStreamBatches: [] }));
-
-vi.mock("../metric-stream/redpanda-producer.ts", () => ({
-  getDefaultMetricStreamEventPublisher: async () => ({
-    publishRows: async (rows: readonly Record<string, unknown>[]) => {
-      publishedMetricStreamBatches.push([...rows]);
-      return rows.map((row, index) => ({
-        version: 1,
-        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
-      }));
-    },
-  }),
-}));
+import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 
 // ============================================================
 // Fake RideWithGPS API responses
@@ -120,6 +104,7 @@ function rwgpsHandlers(
 }
 
 const server = setupServer();
+const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 // ============================================================
 // Tests
@@ -137,7 +122,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
   }, 60_000);
 
   beforeEach(() => {
-    publishedMetricStreamBatches.length = 0;
+    metricStreamCapture.publishedMetricStreamRows.length = 0;
   });
 
   afterEach(() => {
@@ -173,7 +158,9 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
 
     const provider = new RideWithGpsProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(ctx.db, since, {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.provider).toBe("ride-with-gps");
     expect(result.recordsSynced).toBe(2);
@@ -197,7 +184,9 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     expect(run.activityType).toBe("running");
 
     // Verify metric stream events (10 track points per trip)
-    const metrics = publishedMetricStreamBatches.flat().filter((row) => row.activityId === ride.id);
+    const metrics = metricStreamCapture.publishedMetricStreamRows.filter(
+      (row) => row.activityId === ride.id,
+    );
 
     const heartRateSamples = metrics.filter((sample) => sample.channel === "heart_rate");
     const powerSamples = metrics.filter((sample) => sample.channel === "power");
@@ -226,8 +215,12 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     server.use(...rwgpsHandlers(syncResp, trips));
 
     const provider = new RideWithGpsProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
+    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     const rows = await ctx.db
       .select()
@@ -292,7 +285,9 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     server.use(...rwgpsHandlers(syncResp, new Map()));
 
     const provider = new RideWithGpsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // No trips synced since the only item was a route
     expect(result.recordsSynced).toBe(0);
@@ -303,7 +298,9 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "ride-with-gps"));
 
     const provider = new RideWithGpsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens found for RideWithGPS");
@@ -323,7 +320,9 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     server.use(...rwgpsHandlers(syncResp, new Map()));
 
     const provider = new RideWithGpsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("7001");
@@ -353,7 +352,9 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     server.use(...rwgpsHandlers(syncResp, trips));
 
     const provider = new RideWithGpsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.recordsSynced).toBe(1);
 
@@ -361,9 +362,9 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     const activities = await ctx.db.select().from(activity).where(eq(activity.externalId, "8001"));
     expect(activities).toHaveLength(1);
 
-    const metrics = publishedMetricStreamBatches
-      .flat()
-      .filter((row) => row.activityId === activities[0]?.id);
+    const metrics = metricStreamCapture.publishedMetricStreamRows.filter(
+      (row) => row.activityId === activities[0]?.id,
+    );
     expect(metrics).toHaveLength(0);
   });
 
@@ -382,7 +383,9 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     );
 
     const provider = new RideWithGpsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);
@@ -417,7 +420,9 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     );
 
     const provider = new RideWithGpsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // Delete of non-existent trip should not error
     expect(result.errors).toHaveLength(0);
@@ -461,7 +466,9 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     );
 
     const provider = new RideWithGpsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBe(1);
@@ -491,7 +498,9 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     });
 
     const provider = new RideWithGpsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("refresh");
@@ -525,7 +534,9 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     );
 
     const provider = new RideWithGpsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBe(0);

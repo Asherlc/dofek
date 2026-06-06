@@ -203,6 +203,14 @@ describe("WithingsProvider.sync() — unit tests", () => {
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
+    expect(publishedMetricStreamBatches.flat()).toContainEqual(
+      expect.objectContaining({
+        providerId: "withings",
+        externalId: "1001",
+        channel: "body_weight",
+        scalar: 72.5,
+      }),
+    );
   });
 
   it("handles pagination when more > 0", async () => {

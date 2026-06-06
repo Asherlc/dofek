@@ -1,5 +1,6 @@
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
+import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
 
 /**
  * OAuth 1.0 3-legged flow (e.g. FatSecret).
@@ -133,6 +134,8 @@ export interface SyncOptions {
   userId?: string;
   /** Provider-owned checkpoint state for retryable job resumes */
   checkpoint?: SyncCheckpointStore;
+  /** Optional publisher override for metric-stream writers. */
+  metricStreamPublisher?: MetricStreamEventPublisher;
 }
 
 /**

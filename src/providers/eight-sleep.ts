@@ -269,6 +269,8 @@ export class EightSleepProvider implements SyncProvider {
                   },
                 ],
                 SOURCE_TYPE_API,
+                undefined,
+                options?.metricStreamPublisher,
               );
               count++;
             } catch (err) {
@@ -310,7 +312,13 @@ export class EightSleepProvider implements SyncProvider {
               recordedAt: s.recordedAt,
               heartRate: s.heartRate,
             }));
-            await writeMetricStreamBatch(db, metricRows, SOURCE_TYPE_API);
+            await writeMetricStreamBatch(
+              db,
+              metricRows,
+              SOURCE_TYPE_API,
+              undefined,
+              options?.metricStreamPublisher,
+            );
             totalRecords += samples.length;
           }
 

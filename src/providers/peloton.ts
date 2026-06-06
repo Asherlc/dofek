@@ -710,7 +710,13 @@ export class PelotonProvider implements SyncProvider {
                   });
                 }
 
-                await writeMetricStreamBatch(db, rows, SOURCE_TYPE_API);
+                await writeMetricStreamBatch(
+                  db,
+                  rows,
+                  SOURCE_TYPE_API,
+                  undefined,
+                  options?.metricStreamPublisher,
+                );
 
                 streamCount += rows.length;
               }

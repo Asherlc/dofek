@@ -42,7 +42,7 @@ serving copy for metric-stream samples and is rebuildable from R2.
 | Service | Purpose |
 | --- | --- |
 | `redpanda` | Kafka-compatible hot ingest log. |
-| `metric-stream-clickhouse-sink` | Consumes `metric-stream-v1` and writes rows to `postgres_fitness.metric_stream`. |
+| `metric-stream-clickhouse-sink` | Consumes non-IMU `metric-stream-v1` events and writes rows to `postgres_fitness.metric_stream`. |
 | `metric-stream-r2-archive` | Redpanda Connect pipeline that writes immutable batches to R2. |
 | `analytics-worker` | Rebuilds dbt-owned ClickHouse analytics read models from ClickHouse source tables. |
 
@@ -114,7 +114,8 @@ documents Cloudflare R2 support through custom endpoint and path-style settings.
 
 ## Freshness Checks
 
-Run concrete freshness checks from the production host:
+Run concrete freshness checks from a production Swarm manager host. The
+`docker service` commands below require manager access:
 
 ```bash
 docker service ps dofek_redpanda --no-trunc
@@ -141,6 +142,28 @@ Check archive service logs for recent R2 write failures:
 
 ```bash
 docker service logs --since 15m dofek_metric-stream-r2-archive
+```
+
+Check newest R2 archive object age:
+
+```bash
+aws s3api list-objects-v2 \
+  --endpoint-url "$R2_ENDPOINT" \
+  --bucket "$METRIC_STREAM_R2_BUCKET" \
+  --prefix metric-stream/v1/ \
+  --query 'sort_by(Contents,&LastModified)[-1].{Key:Key,LastModified:LastModified}' \
+  --output table
+```
+
+Check newest dbt analytics rows that depend on metric stream:
+
+```bash
+docker exec -i "$(docker ps --filter name=dofek_clickhouse -q | head -n1)" \
+  sh -lc 'clickhouse-client --password "$CLICKHOUSE_PASSWORD" --query "
+    select '\''analytics.daily_activity_load'\'' as model, max(date) as newest_row from analytics.daily_activity_load
+    union all
+    select '\''analytics.daily_strain'\'' as model, max(date) as newest_row from analytics.daily_strain
+  "'
 ```
 
 The freshness checks must cover:

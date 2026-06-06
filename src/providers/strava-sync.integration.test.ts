@@ -1,30 +1,14 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { activity } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import type { StravaActivity, StravaDetailedActivity, StravaStreamSet } from "./strava.ts";
 import { StravaProvider } from "./strava.ts";
-
-const { publishedMetricStreamBatches } = vi.hoisted<{
-  publishedMetricStreamBatches: Record<string, unknown>[][];
-}>(() => ({ publishedMetricStreamBatches: [] }));
-
-vi.mock("../metric-stream/redpanda-producer.ts", () => ({
-  getDefaultMetricStreamEventPublisher: async () => ({
-    publishRows: async (rows: readonly Record<string, unknown>[]) => {
-      publishedMetricStreamBatches.push([...rows]);
-      return rows.map((row, index) => ({
-        version: 1,
-        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
-      }));
-    },
-  }),
-}));
+import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 
 function fakeActivity(overrides: Partial<StravaActivity> = {}): StravaActivity {
   return {
@@ -147,6 +131,7 @@ function stravaHandlers(
 }
 
 const server = setupServer();
+const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 describe("StravaProvider.sync() (integration)", () => {
   let ctx: TestContext;
@@ -160,7 +145,7 @@ describe("StravaProvider.sync() (integration)", () => {
   }, 60_000);
 
   beforeEach(() => {
-    publishedMetricStreamBatches.length = 0;
+    metricStreamCapture.publishedMetricStreamRows.length = 0;
   });
 
   afterEach(() => {
@@ -194,7 +179,9 @@ describe("StravaProvider.sync() (integration)", () => {
 
     const provider = new StravaProvider(globalThis.fetch, 0);
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(ctx.db, since, {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.provider).toBe("strava");
     expect(result.recordsSynced).toBe(2);
@@ -214,7 +201,9 @@ describe("StravaProvider.sync() (integration)", () => {
     expect(run.activityType).toBe("running");
 
     // Verify metric stream events
-    const metrics = publishedMetricStreamBatches.flat().filter((row) => row.activityId === ride.id);
+    const metrics = metricStreamCapture.publishedMetricStreamRows.filter(
+      (row) => row.activityId === ride.id,
+    );
     const heartRateSamples = metrics.filter((sample) => sample.channel === "heart_rate");
     const powerSamples = metrics.filter((sample) => sample.channel === "power");
     expect(heartRateSamples).toHaveLength(3);
@@ -236,8 +225,12 @@ describe("StravaProvider.sync() (integration)", () => {
     server.use(...stravaHandlers(activities));
 
     const provider = new StravaProvider(globalThis.fetch, 0);
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
+    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "strava"));
     const countOf1001 = rows.filter((r) => r.externalId === "1001").length;
@@ -255,7 +248,9 @@ describe("StravaProvider.sync() (integration)", () => {
     server.use(...stravaHandlers([]));
 
     const provider = new StravaProvider(globalThis.fetch, 0);
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "strava");
@@ -275,7 +270,9 @@ describe("StravaProvider.sync() (integration)", () => {
     server.use(...stravaHandlers(activities, { streamsError: true }));
 
     const provider = new StravaProvider(globalThis.fetch, 0);
-    const result = await provider.sync(ctx.db, new Date("2026-04-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-04-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // Activity should still be inserted
     expect(result.recordsSynced).toBe(1);
@@ -303,7 +300,9 @@ describe("StravaProvider.sync() (integration)", () => {
     server.use(...stravaHandlers(activities, { rateLimited: true }));
 
     const provider = new StravaProvider(globalThis.fetch, 0);
-    const result = await provider.sync(ctx.db, new Date("2026-05-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-05-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // Should report rate limit error
     expect(
@@ -316,7 +315,9 @@ describe("StravaProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "strava"));
 
     const provider = new StravaProvider(globalThis.fetch, 0);
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens found");

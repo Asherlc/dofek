@@ -598,7 +598,10 @@ async function reconcileRawAnalyticsMirrors(
     }
 
     const mirrorConfigTokens = readMirrorConfigTokens(mirrorConfig);
-    if (tableNames.some((tableName) => !mirrorConfigTokens.has(tableName))) {
+    if (
+      !mirrorConfigTokens.has(analyticsPublicationName) ||
+      tableNames.some((tableName) => !mirrorConfigTokens.has(tableName))
+    ) {
       await peerDbClient.query(`DROP MIRROR ${mirrorName}`);
       await truncateClickHouseDestinationTables(clickHouseClient, tableNames);
     }

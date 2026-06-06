@@ -24,23 +24,7 @@ import {
   parseFitbitWeightLog,
 } from "./fitbit/parsers.ts";
 import { FitbitProvider, fitbitOAuthConfig } from "./fitbit/provider.ts";
-
-const { publishedMetricStreamBatches } = vi.hoisted<{
-  publishedMetricStreamBatches: Record<string, unknown>[][];
-}>(() => ({ publishedMetricStreamBatches: [] }));
-
-vi.mock("../metric-stream/redpanda-producer.ts", () => ({
-  getDefaultMetricStreamEventPublisher: async () => ({
-    publishRows: async (rows: readonly Record<string, unknown>[]) => {
-      publishedMetricStreamBatches.push([...rows]);
-      return rows.map((row, index) => ({
-        version: 1,
-        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
-      }));
-    },
-  }),
-}));
+import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 
 function fakeActivity(overrides: Partial<FitbitActivity> = {}): FitbitActivity {
   return {
@@ -176,6 +160,7 @@ function fitbitHandlers(opts?: {
 }
 
 const server = setupServer();
+const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 describe("FitbitProvider.sync() (integration)", () => {
   let ctx: TestContext;
@@ -189,7 +174,7 @@ describe("FitbitProvider.sync() (integration)", () => {
   }, 60_000);
 
   beforeEach(() => {
-    publishedMetricStreamBatches.length = 0;
+    metricStreamCapture.publishedMetricStreamRows.length = 0;
   });
 
   afterEach(() => {
@@ -231,7 +216,9 @@ describe("FitbitProvider.sync() (integration)", () => {
     );
 
     const provider = new FitbitProvider();
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(ctx.db, since, {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.provider).toBe("fitbit");
     expect(result.errors).toHaveLength(0);
@@ -282,7 +269,7 @@ describe("FitbitProvider.sync() (integration)", () => {
     expect(firstDaily.flightsClimbed).toBe(12);
 
     // Verify weight
-    const weightRows = publishedMetricStreamBatches.flat();
+    const weightRows = metricStreamCapture.publishedMetricStreamRows;
     const bodyRows = weightRows.filter((row) => row.externalId === "7001");
     expect(bodyRows.length).toBeGreaterThanOrEqual(2);
 
@@ -311,8 +298,8 @@ describe("FitbitProvider.sync() (integration)", () => {
     );
 
     const provider = new FitbitProvider();
-    await provider.sync(ctx.db, since);
-    await provider.sync(ctx.db, since);
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
 
     const activityRows = await ctx.db
       .select()
@@ -340,7 +327,9 @@ describe("FitbitProvider.sync() (integration)", () => {
     server.use(...fitbitHandlers());
 
     const provider = new FitbitProvider();
-    await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+    await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "fitbit");
@@ -352,7 +341,9 @@ describe("FitbitProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "fitbit"));
 
     const provider = new FitbitProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens found");
@@ -822,7 +813,9 @@ describe("FitbitProvider.sync() — weight error paths (integration)", () => {
     weightServer.use(...fitbitWeightErrorHandlers({ weightError: true }));
 
     const provider = new FitbitProvider();
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(ctx.db, since, {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // The weight fetch returns 429, caught at lines 632-636
     const weightError = result.errors.find((e) => e.message.includes("weight"));

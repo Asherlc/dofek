@@ -259,7 +259,13 @@ export async function syncHeartRate(context: SyncStepContext, since: Date): Prom
           heartRate: hr.bpm,
         }));
 
-        await writeMetricStreamBatch(db, rows, SOURCE_TYPE_API);
+        await writeMetricStreamBatch(
+          db,
+          rows,
+          SOURCE_TYPE_API,
+          undefined,
+          options?.metricStreamPublisher,
+        );
 
         return { recordCount: rows.length, result: rows.length };
       },

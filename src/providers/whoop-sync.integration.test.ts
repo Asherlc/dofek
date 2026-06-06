@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { WhoopClient } from "whoop-whoop/client";
 import type {
   WhoopHrValue,
@@ -21,24 +21,8 @@ import {
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
+import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 import { WhoopProvider } from "./whoop/provider.ts";
-
-const { publishedMetricStreamBatches } = vi.hoisted<{
-  publishedMetricStreamBatches: Record<string, unknown>[][];
-}>(() => ({ publishedMetricStreamBatches: [] }));
-
-vi.mock("../metric-stream/redpanda-producer.ts", () => ({
-  getDefaultMetricStreamEventPublisher: async () => ({
-    publishRows: async (rows: readonly Record<string, unknown>[]) => {
-      publishedMetricStreamBatches.push([...rows]);
-      return rows.map((row, index) => ({
-        version: 1,
-        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
-      }));
-    },
-  }),
-}));
 
 // ============================================================
 // Fake WHOOP internal API cycle response
@@ -233,6 +217,7 @@ function whoopHandlers(
 }
 
 const server = setupServer();
+const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 describe("WhoopProvider.sync() (integration)", () => {
   let ctx: TestContext;
@@ -251,7 +236,7 @@ describe("WhoopProvider.sync() (integration)", () => {
   }, 60_000);
 
   beforeEach(() => {
-    publishedMetricStreamBatches.length = 0;
+    metricStreamCapture.publishedMetricStreamRows.length = 0;
   });
 
   afterEach(() => {
@@ -267,7 +252,9 @@ describe("WhoopProvider.sync() (integration)", () => {
     const cycles = [fakeCycle()];
     server.use(...whoopHandlers(cycles));
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(0);
 
@@ -305,7 +292,9 @@ describe("WhoopProvider.sync() (integration)", () => {
     ];
     server.use(...whoopHandlers(cycles));
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(0);
 
@@ -331,7 +320,9 @@ describe("WhoopProvider.sync() (integration)", () => {
     ];
     server.use(...whoopHandlers(cycles, { stepValues }));
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(0);
 
@@ -350,7 +341,9 @@ describe("WhoopProvider.sync() (integration)", () => {
     const cycles = [fakeCycle()];
     server.use(...whoopHandlers(cycles));
     const provider = new WhoopProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     const rows = await ctx.db
       .select()
@@ -412,7 +405,9 @@ describe("WhoopProvider.sync() (integration)", () => {
     });
 
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(
       result.errors.filter((syncError) => syncError.message.includes("sleep_stages")),
@@ -437,7 +432,9 @@ describe("WhoopProvider.sync() (integration)", () => {
     const cycles = [fakeCycle()];
     server.use(...whoopHandlers(cycles));
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(0);
 
@@ -490,7 +487,9 @@ describe("WhoopProvider.sync() (integration)", () => {
 
     server.use(...whoopHandlers([twoWorkoutCycle]));
     const provider = new WhoopProvider();
-    await provider.sync(ctx.db, new Date("2026-03-04T00:00:00Z"));
+    await provider.sync(ctx.db, new Date("2026-03-04T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "whoop"));
 
@@ -507,11 +506,13 @@ describe("WhoopProvider.sync() (integration)", () => {
     const hrValues = fakeHrValues(50, new Date("2026-03-01T10:00:00Z").getTime());
     server.use(...whoopHandlers([], { hrValues }));
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(0);
 
-    const rows = publishedMetricStreamBatches.flat();
+    const rows = metricStreamCapture.publishedMetricStreamRows;
     const withHr = rows.filter((sample) => sample.channel === "heart_rate");
     expect(withHr.length).toBeGreaterThanOrEqual(50);
   });
@@ -538,8 +539,12 @@ describe("WhoopProvider.sync() (integration)", () => {
 
     server.use(...whoopHandlers(cycles));
     const provider = new WhoopProvider();
-    await provider.sync(ctx.db, new Date("2026-03-07T00:00:00Z"));
-    await provider.sync(ctx.db, new Date("2026-03-07T00:00:00Z"));
+    await provider.sync(ctx.db, new Date("2026-03-07T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
+    await provider.sync(ctx.db, new Date("2026-03-07T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     const rows = await ctx.db
       .select()
@@ -570,7 +575,9 @@ describe("WhoopProvider.sync() (integration)", () => {
     );
 
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // Should succeed using stored userId, not fail with "user 0" error
     expect(result.errors).toHaveLength(0);
@@ -587,7 +594,9 @@ describe("WhoopProvider.sync() (integration)", () => {
 
     server.use(...whoopHandlers([fakeCycle()]));
     const provider = new WhoopProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // After sync, the scopes should still contain the userId
     const { loadTokens: load } = await import("../db/tokens.ts");
@@ -601,7 +610,9 @@ describe("WhoopProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "whoop"));
 
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("not connected");
@@ -658,7 +669,9 @@ describe("WhoopProvider.sync() (integration)", () => {
     );
 
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-28T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-28T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(0);
 
@@ -678,7 +691,9 @@ describe("WhoopProvider.sync() (integration)", () => {
   it("handles auth failure gracefully", async () => {
     server.use(...whoopHandlers([], { authError: true }));
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toMatch(/refresh failed|auth/i);
@@ -700,7 +715,9 @@ describe("WhoopProvider.sync() (integration)", () => {
 
     server.use(...whoopHandlers([cycle]));
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // Should have synced recovery + sleep even if workout failed
     expect(result.recordsSynced).toBeGreaterThan(0);
@@ -739,7 +756,9 @@ describe("WhoopProvider.sync() (integration)", () => {
     );
 
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-28T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-28T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // Should have an hr_stream error
     const hrError = result.errors.find((e) => e.message.includes("hr_stream"));
@@ -776,7 +795,9 @@ describe("WhoopProvider.sync() (integration)", () => {
     );
 
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-28T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-28T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // Should have a journal error
     const journalError = result.errors.find((e) => e.message.includes("journal"));

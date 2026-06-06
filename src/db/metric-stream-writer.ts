@@ -74,10 +74,18 @@ function isJsonValue(value: unknown): value is JsonValue {
       if (Array.isArray(value)) {
         return value.every(isJsonValue);
       }
+      if (!isPlainObject(value)) {
+        return false;
+      }
       return Object.values(value).every(isJsonValue);
     default:
       return false;
   }
+}
+
+function isPlainObject(value: object): value is Record<string, unknown> {
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 function metricStreamMetadata(value: unknown): JsonValue | undefined {
@@ -156,6 +164,10 @@ export async function writeMetricStreamBatch(
   batchSize = DEFAULT_BATCH_SIZE,
   publisher?: MetricStreamEventPublisher,
 ): Promise<number> {
+  if (!Number.isInteger(batchSize) || batchSize <= 0) {
+    throw new Error("metric_stream ingestion batchSize must be a positive integer");
+  }
+
   const rows = metricRows.flatMap((row) => sourceRowToMetricStream(row, sourceType));
   if (rows.length === 0) return 0;
 

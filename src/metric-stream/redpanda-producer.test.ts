@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createKafkaMetricStreamEventPublisherFromEnv,
+  getDefaultMetricStreamEventPublisher,
   KafkaMetricStreamEventPublisher,
   type KafkaProducerLike,
   type KafkaProducerSendInput,
@@ -147,5 +148,36 @@ describe("createKafkaMetricStreamEventPublisherFromEnv", () => {
     });
     expect(kafkaProducerFactory).toHaveBeenCalledOnce();
     expect(kafkaProducerConnect).toHaveBeenCalledOnce();
+  });
+});
+
+describe("getDefaultMetricStreamEventPublisher", () => {
+  it("does not permanently cache failed publisher initialization", async () => {
+    const originalTopic = process.env.METRIC_STREAM_TOPIC;
+    const originalBrokers = process.env.REDPANDA_BROKERS;
+
+    delete process.env.METRIC_STREAM_TOPIC;
+    process.env.REDPANDA_BROKERS = "redpanda:9092";
+    await expect(getDefaultMetricStreamEventPublisher()).rejects.toThrow(
+      "METRIC_STREAM_TOPIC is required",
+    );
+
+    process.env.METRIC_STREAM_TOPIC = "metric-stream-v1";
+    kafkaProducerConnect.mockClear();
+    await expect(getDefaultMetricStreamEventPublisher()).resolves.toBeInstanceOf(
+      KafkaMetricStreamEventPublisher,
+    );
+    expect(kafkaProducerConnect).toHaveBeenCalledOnce();
+
+    if (originalTopic === undefined) {
+      delete process.env.METRIC_STREAM_TOPIC;
+    } else {
+      process.env.METRIC_STREAM_TOPIC = originalTopic;
+    }
+    if (originalBrokers === undefined) {
+      delete process.env.REDPANDA_BROKERS;
+    } else {
+      process.env.REDPANDA_BROKERS = originalBrokers;
+    }
   });
 });

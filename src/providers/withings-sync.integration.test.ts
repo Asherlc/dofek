@@ -1,29 +1,13 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
+import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 import type { WithingsMeasureGroup } from "./withings.ts";
 import { WithingsProvider } from "./withings.ts";
-
-const { publishedMetricStreamBatches } = vi.hoisted<{
-  publishedMetricStreamBatches: Record<string, unknown>[][];
-}>(() => ({ publishedMetricStreamBatches: [] }));
-
-vi.mock("../metric-stream/redpanda-producer.ts", () => ({
-  getDefaultMetricStreamEventPublisher: async () => ({
-    publishRows: async (rows: readonly Record<string, unknown>[]) => {
-      publishedMetricStreamBatches.push([...rows]);
-      return rows.map((row, index) => ({
-        version: 1,
-        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
-      }));
-    },
-  }),
-}));
 
 // Withings measure type constants
 const MEAS_WEIGHT = 1;
@@ -103,6 +87,7 @@ function withingsHandlers(opts?: { measureGroups?: WithingsMeasureGroup[]; hasMo
 }
 
 const server = setupServer();
+const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 describe("WithingsProvider.sync() (integration)", () => {
   let ctx: TestContext;
@@ -116,7 +101,7 @@ describe("WithingsProvider.sync() (integration)", () => {
   }, 60_000);
 
   beforeEach(() => {
-    publishedMetricStreamBatches.length = 0;
+    metricStreamCapture.publishedMetricStreamRows.length = 0;
   });
 
   afterEach(() => {
@@ -145,13 +130,15 @@ describe("WithingsProvider.sync() (integration)", () => {
     const provider = new WithingsProvider();
 
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(ctx.db, since, {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.provider).toBe("withings");
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBe(2);
 
-    const rows = publishedMetricStreamBatches.flat();
+    const rows = metricStreamCapture.publishedMetricStreamRows;
     expect(new Set(rows.map((row) => row.externalId))).toEqual(new Set(["8001", "8002"]));
 
     const weightEntry = rows.find(
@@ -210,12 +197,14 @@ describe("WithingsProvider.sync() (integration)", () => {
     const provider = new WithingsProvider();
 
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(ctx.db, since, {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // Only the real measurement should be synced
     expect(result.recordsSynced).toBe(1);
 
-    const rows = publishedMetricStreamBatches.flat();
+    const rows = metricStreamCapture.publishedMetricStreamRows;
     expect(new Set(rows.map((row) => row.externalId))).toEqual(new Set(["8010"]));
     expect(rows[0]?.externalId).toBe("8010");
   });
@@ -237,10 +226,10 @@ describe("WithingsProvider.sync() (integration)", () => {
     const provider = new WithingsProvider();
 
     const since = new Date("2026-02-01T00:00:00Z");
-    await provider.sync(ctx.db, since);
-    await provider.sync(ctx.db, since);
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
 
-    const rows = publishedMetricStreamBatches.flat();
+    const rows = metricStreamCapture.publishedMetricStreamRows;
     const countOf8020 = rows.filter(
       (row) => row.externalId === "8020" && row.channel === "body_weight",
     ).length;
@@ -258,7 +247,9 @@ describe("WithingsProvider.sync() (integration)", () => {
     server.use(...withingsHandlers());
 
     const provider = new WithingsProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "withings");
@@ -270,7 +261,9 @@ describe("WithingsProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "withings"));
 
     const provider = new WithingsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens found");
@@ -299,7 +292,9 @@ describe("WithingsProvider.sync() (integration)", () => {
     );
 
     const provider = new WithingsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // Both should succeed (this verifies the happy path through the insert logic)
     expect(result.recordsSynced).toBe(2);
@@ -324,7 +319,9 @@ describe("WithingsProvider.sync() (integration)", () => {
     );
 
     const provider = new WithingsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // The outer catch should capture the error
     expect(result.errors).toHaveLength(1);

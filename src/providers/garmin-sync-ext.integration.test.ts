@@ -1,26 +1,12 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { activity, dailyMetrics, oauthToken, sleepSession, userSettings } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { GarminProvider } from "./garmin.ts";
+import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 
-const { publishedMetricStreamBatches } = vi.hoisted<{
-  publishedMetricStreamBatches: Record<string, unknown>[][];
-}>(() => ({ publishedMetricStreamBatches: [] }));
-
-vi.mock("../metric-stream/redpanda-producer.ts", () => ({
-  getDefaultMetricStreamEventPublisher: async () => ({
-    publishRows: async (rows: readonly Record<string, unknown>[]) => {
-      publishedMetricStreamBatches.push([...rows]);
-      return rows.map((row, index) => ({
-        version: 1,
-        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
-      }));
-    },
-  }),
-}));
+const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 // ============================================================
 // Internal API token helpers
@@ -392,7 +378,7 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
   }, 60_000);
 
   beforeEach(() => {
-    publishedMetricStreamBatches.length = 0;
+    metricStreamCapture.publishedMetricStreamRows.length = 0;
   });
 
   afterAll(async () => {
@@ -422,7 +408,9 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     );
 
     const since = new Date("2026-03-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(ctx.db, since, {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.provider).toBe("garmin");
 
@@ -443,7 +431,7 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     expect(ride.activityType).toBe("cycling");
 
     // Verify metric stream events from activity detail
-    const metrics = publishedMetricStreamBatches.flat();
+    const metrics = metricStreamCapture.publishedMetricStreamRows;
     // 2 activities x 2 samples each = 4 heart-rate samples from activity detail
     const activityMetrics = metrics.filter((sample) => {
       return sample.activityId !== null && sample.channel === "heart_rate";
@@ -469,7 +457,7 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
 
     // Narrow range: just March 1
     const since = new Date("2026-03-01T00:00:00Z");
-    await provider.sync(ctx.db, since);
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
 
     const sleepRows = await ctx.db
       .select()
@@ -506,7 +494,7 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     );
 
     const since = new Date("2026-03-01T00:00:00Z");
-    await provider.sync(ctx.db, since);
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
 
     const dailyRows = await ctx.db
       .select()
@@ -542,7 +530,7 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     );
 
     const since = new Date("2026-03-01T00:00:00Z");
-    await provider.sync(ctx.db, since);
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
 
     const dailyRows = await ctx.db
       .select()
@@ -574,9 +562,9 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     );
 
     const since = new Date("2026-03-01T00:00:00Z");
-    await provider.sync(ctx.db, since);
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
 
-    const stressMetrics = publishedMetricStreamBatches.flat();
+    const stressMetrics = metricStreamCapture.publishedMetricStreamRows;
 
     // fakeStressData has 4 entries, but -1 is filtered → 3 valid stress samples
     const stressSamples = stressMetrics.filter((sample) => sample.channel === "stress");
@@ -597,9 +585,9 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     );
 
     const since = new Date("2026-03-01T00:00:00Z");
-    await provider.sync(ctx.db, since);
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
 
-    const hrMetrics = publishedMetricStreamBatches.flat();
+    const hrMetrics = metricStreamCapture.publishedMetricStreamRows;
 
     // fakeHeartRateData has 4 entries, null filtered → 3 valid HR samples
     const hrSamples = hrMetrics.filter((sample) => sample.channel === "heart_rate");
@@ -621,7 +609,9 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
       }),
     );
 
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // Should not have auth errors — tokens refreshed via exchange
     const authErrors = result.errors.filter(
@@ -652,7 +642,9 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
       }),
     );
 
-    await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+    await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // Verify cursor was saved
     const cursorRows = await ctx.db
@@ -683,7 +675,9 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
       }),
     );
 
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // Should have a Connect API authentication error
     const authErrors = result.errors.filter((e) =>
@@ -709,7 +703,7 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     );
 
     const since = new Date("2026-03-01T00:00:00Z");
-    await provider.sync(ctx.db, since);
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
 
     // Activity should still be inserted even if detail fails
     const activityRows = await ctx.db
@@ -719,9 +713,9 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     expect(activityRows).toHaveLength(1);
 
     // No metric stream events for this activity (detail failed)
-    const metrics = publishedMetricStreamBatches
-      .flat()
-      .filter((row) => row.activityId === activityRows[0]?.id);
+    const metrics = metricStreamCapture.publishedMetricStreamRows.filter(
+      (row) => row.activityId === activityRows[0]?.id,
+    );
     expect(metrics).toHaveLength(0);
   });
 
@@ -740,7 +734,7 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     );
 
     const since = new Date("2026-03-01T00:00:00Z");
-    await provider.sync(ctx.db, since);
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
 
     // No daily metrics should be inserted for privacy-protected days
     const dailyRows = await ctx.db
@@ -754,7 +748,9 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "garmin"));
 
     const provider = new GarminProvider(createConnectMockFetch());
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens found");

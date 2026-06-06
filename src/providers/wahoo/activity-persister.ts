@@ -6,6 +6,7 @@ import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
 import { parseFitFile } from "../../fit/parser.ts";
 import { fitRecordsToSensorSamples as fitRecordsToMetricStream } from "../../fit/records.ts";
 import { logger } from "../../logger.ts";
+import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
 import type { SyncError } from "../types.ts";
 import type { WahooClient } from "./client.ts";
 import type { ParsedCardioActivity } from "./parsers.ts";
@@ -20,11 +21,21 @@ export class WahooActivityPersister {
   readonly #providerId: string;
   readonly #client: WahooClient;
   readonly #db: SyncDatabase;
+  readonly #metricStreamPublisher?: MetricStreamEventPublisher;
+  readonly #userId?: string;
 
-  constructor(providerId: string, client: WahooClient, db: SyncDatabase) {
+  constructor(
+    providerId: string,
+    client: WahooClient,
+    db: SyncDatabase,
+    metricStreamPublisher?: MetricStreamEventPublisher,
+    userId?: string,
+  ) {
     this.#providerId = providerId;
     this.#client = client;
     this.#db = db;
+    this.#metricStreamPublisher = metricStreamPublisher;
+    this.#userId = userId;
   }
 
   async persist(
@@ -72,14 +83,20 @@ export class WahooActivityPersister {
             this.#providerId,
             activityId,
             parsed.activityType,
-          );
+          ).map((row) => ({ ...row, userId: this.#userId }));
 
           if (metricRows.length > 0) {
             if (options?.deleteExistingSamples) {
               await this.#db.delete(metricStream).where(eq(metricStream.activityId, activityId));
             }
 
-            await writeMetricStreamBatch(this.#db, metricRows, SOURCE_TYPE_FILE);
+            await writeMetricStreamBatch(
+              this.#db,
+              metricRows,
+              SOURCE_TYPE_FILE,
+              undefined,
+              this.#metricStreamPublisher,
+            );
             const logMessage = options?.formatLogMessage
               ? options.formatLogMessage(metricRows.length, parsed.externalId)
               : `[wahoo] Inserted ${metricRows.length} metric stream rows for workout ${parsed.externalId}`;

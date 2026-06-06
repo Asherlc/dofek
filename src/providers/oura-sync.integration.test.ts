@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { activity, dailyMetrics, healthEvent, sleepSession } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
@@ -24,23 +24,7 @@ import type {
   OuraVO2Max,
   OuraWorkout,
 } from "./oura/schemas.ts";
-
-const { publishedMetricStreamBatches } = vi.hoisted<{
-  publishedMetricStreamBatches: Record<string, unknown>[][];
-}>(() => ({ publishedMetricStreamBatches: [] }));
-
-vi.mock("../metric-stream/redpanda-producer.ts", () => ({
-  getDefaultMetricStreamEventPublisher: async () => ({
-    publishRows: async (rows: readonly Record<string, unknown>[]) => {
-      publishedMetricStreamBatches.push([...rows]);
-      return rows.map((row, index) => ({
-        version: 1,
-        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
-      }));
-    },
-  }),
-}));
+import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 
 function fakeSleepDoc(overrides: Partial<OuraSleepDocument> = {}): OuraSleepDocument {
   return {
@@ -323,6 +307,7 @@ function ouraHandlers(opts?: MockFetchOptions) {
 }
 
 const server = setupServer();
+const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 describe("OuraProvider.sync() (integration)", () => {
   let ctx: TestContext;
@@ -336,7 +321,7 @@ describe("OuraProvider.sync() (integration)", () => {
   }, 60_000);
 
   beforeEach(() => {
-    publishedMetricStreamBatches.length = 0;
+    metricStreamCapture.publishedMetricStreamRows.length = 0;
   });
 
   afterEach(() => {
@@ -380,7 +365,9 @@ describe("OuraProvider.sync() (integration)", () => {
     );
 
     const provider = new OuraProvider();
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(ctx.db, since, {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.provider).toBe("oura");
     expect(result.errors).toHaveLength(0);
@@ -412,7 +399,7 @@ describe("OuraProvider.sync() (integration)", () => {
     expect(session?.activityType).toBe("meditation");
 
     // Verify heart rate metric stream events
-    const hrRows = publishedMetricStreamBatches.flat();
+    const hrRows = metricStreamCapture.publishedMetricStreamRows;
     const heartRateSamples = hrRows.filter((sample) => sample.channel === "heart_rate");
     expect(heartRateSamples.length).toBeGreaterThanOrEqual(1);
     expect(heartRateSamples[0]?.scalar).toBe(62);
@@ -472,7 +459,9 @@ describe("OuraProvider.sync() (integration)", () => {
     );
 
     const provider = new OuraProvider();
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(ctx.db, since, {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(0);
 
@@ -507,8 +496,8 @@ describe("OuraProvider.sync() (integration)", () => {
     );
 
     const provider = new OuraProvider();
-    await provider.sync(ctx.db, since);
-    await provider.sync(ctx.db, since);
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
 
     const sleepRows = await ctx.db
       .select()
@@ -536,7 +525,9 @@ describe("OuraProvider.sync() (integration)", () => {
     server.use(...ouraHandlers());
 
     const provider = new OuraProvider();
-    await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+    await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "oura");
@@ -548,7 +539,9 @@ describe("OuraProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "oura"));
 
     const provider = new OuraProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens found");
@@ -663,7 +656,9 @@ describe("OuraProvider.sync() — error paths (integration)", () => {
     errorServer.use(...ouraErrorHandlers({ sleepError: true }));
 
     const provider = new OuraProvider();
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(ctx.db, since, {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     const sleepError = result.errors.find((e) => e.message.includes("sleep"));
     expect(sleepError).toBeDefined();

@@ -3,30 +3,14 @@ import { resolve } from "node:path";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { activity } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
+import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 import type { WahooWorkout } from "./wahoo/client.ts";
 import { WahooProvider } from "./wahoo/provider.ts";
-
-const { publishedMetricStreamBatches } = vi.hoisted<{
-  publishedMetricStreamBatches: Record<string, unknown>[][];
-}>(() => ({ publishedMetricStreamBatches: [] }));
-
-vi.mock("../metric-stream/redpanda-producer.ts", () => ({
-  getDefaultMetricStreamEventPublisher: async () => ({
-    publishRows: async (rows: readonly Record<string, unknown>[]) => {
-      publishedMetricStreamBatches.push([...rows]);
-      return rows.map((row, index) => ({
-        version: 1,
-        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
-      }));
-    },
-  }),
-}));
 
 // Fake Wahoo API responses
 function fakeWorkout(overrides: Partial<WahooWorkout> = {}): WahooWorkout {
@@ -96,6 +80,7 @@ function wahooHandlers(workouts: WahooWorkout[], opts?: { fitFileError?: boolean
 }
 
 const server = setupServer();
+const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 describe("WahooProvider.sync() (integration)", () => {
   let ctx: TestContext;
@@ -109,7 +94,7 @@ describe("WahooProvider.sync() (integration)", () => {
   }, 60_000);
 
   beforeEach(() => {
-    publishedMetricStreamBatches.length = 0;
+    metricStreamCapture.publishedMetricStreamRows.length = 0;
   });
 
   afterEach(() => {
@@ -139,7 +124,10 @@ describe("WahooProvider.sync() (integration)", () => {
 
     const provider = new WahooProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(ctx.db, since, {
+      metricStreamPublisher: metricStreamCapture.publisher,
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
 
     expect(result.provider).toBe("wahoo");
     expect(result.recordsSynced).toBe(2);
@@ -172,10 +160,16 @@ describe("WahooProvider.sync() (integration)", () => {
     server.use(...wahooHandlers(workouts));
 
     const provider = new WahooProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
 
     // Sync again — should upsert, not duplicate
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "wahoo"));
 
@@ -195,7 +189,10 @@ describe("WahooProvider.sync() (integration)", () => {
     server.use(...wahooHandlers([]));
 
     const provider = new WahooProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
 
     // Verify token was refreshed in DB
     const { loadTokens } = await import("../db/tokens.ts");
@@ -216,7 +213,10 @@ describe("WahooProvider.sync() (integration)", () => {
     server.use(...wahooHandlers(workouts));
 
     const provider = new WahooProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
@@ -229,9 +229,9 @@ describe("WahooProvider.sync() (integration)", () => {
     if (!firstActivity) throw new Error("expected activity");
     const activityId = firstActivity.id;
 
-    const metrics = publishedMetricStreamBatches
-      .flat()
-      .filter((row) => row.activityId === activityId);
+    const metrics = metricStreamCapture.publishedMetricStreamRows.filter(
+      (row) => row.activityId === activityId,
+    );
 
     // test.fit has 3229 source samples; metric stream count should be at least that many events.
     expect(metrics.length).toBeGreaterThanOrEqual(3229);
@@ -255,7 +255,10 @@ describe("WahooProvider.sync() (integration)", () => {
     server.use(...wahooHandlers(workouts, { fitFileError: true }));
 
     const provider = new WahooProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-04-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-04-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
 
     // Activity should still be inserted
     expect(result.recordsSynced).toBe(1);
@@ -277,7 +280,10 @@ describe("WahooProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "wahoo"));
 
     const provider = new WahooProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens found");

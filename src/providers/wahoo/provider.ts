@@ -112,7 +112,7 @@ export class WahooProvider implements WebhookProvider {
   async syncWebhookEvent(
     db: SyncDatabase,
     event: WebhookEvent,
-    _options?: SyncOptions,
+    options?: SyncOptions,
   ): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
@@ -164,7 +164,13 @@ export class WahooProvider implements WebhookProvider {
 
     const parsed = parseWorkoutSummary(workout);
     const client = new WahooClient("", this.#fetchFn);
-    const persister = new WahooActivityPersister(this.id, client, db);
+    const persister = new WahooActivityPersister(
+      this.id,
+      client,
+      db,
+      options?.metricStreamPublisher,
+      options?.userId,
+    );
     const result = await persister.persist(parsed, {
       deleteExistingSamples: true,
       formatLogMessage: (rowCount, externalId) =>
@@ -277,7 +283,13 @@ export class WahooProvider implements WebhookProvider {
     }
 
     const client = new WahooClient(tokens.accessToken, this.#fetchFn);
-    const persister = new WahooActivityPersister(this.id, client, db);
+    const persister = new WahooActivityPersister(
+      this.id,
+      client,
+      db,
+      options?.metricStreamPublisher,
+      options?.userId,
+    );
 
     // Paginate through all workouts
     let page = 1;

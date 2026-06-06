@@ -3,9 +3,12 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as schema from "../../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
+import { runWithTokenUser } from "../../db/token-user-context.ts";
+import type { MetricStreamRowInput } from "../../metric-stream/events.ts";
+import { createCapturingMetricStreamPublisher } from "../test-helpers.ts";
 import {
   buildPanelMap,
   type FhirDiagnosticReport,
@@ -19,53 +22,7 @@ import { enrichWorkoutFromStats, type HealthWorkout } from "./workouts.ts";
 
 const APPLE_HEALTH_PROVIDER_ID = "apple_health";
 
-interface PublishedMetricStreamRow {
-  recordedAt: Date | string;
-  userId: string;
-  providerId: string;
-  externalId?: string | null;
-  deviceId?: string | null;
-  sourceType: string;
-  channel: string;
-  activityId?: string | null;
-  scalar?: number | null;
-  vector?: number[] | null;
-  point?: string | null;
-  metadata?: unknown;
-}
-
-const { publishedMetricStreamRows } = vi.hoisted<{
-  publishedMetricStreamRows: PublishedMetricStreamRow[];
-}>(() => ({ publishedMetricStreamRows: [] }));
-
-vi.mock("../../db/token-user-context.ts", () => ({
-  getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
-  runWithTokenUser: async <T>(_: string, callback: () => Promise<T>) => callback(),
-}));
-
-vi.mock("../../metric-stream/redpanda-producer.ts", () => ({
-  getDefaultMetricStreamEventPublisher: async () => ({
-    publishRows: async (rows: readonly PublishedMetricStreamRow[]) => {
-      publishedMetricStreamRows.push(...rows);
-      return rows.map((row, index) => ({
-        version: 1,
-        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
-        userId: row.userId,
-        providerId: row.providerId,
-        externalId: row.externalId ?? null,
-        deviceId: row.deviceId ?? null,
-        sourceType: row.sourceType,
-        channel: row.channel,
-        activityId: row.activityId ?? null,
-        scalar: row.scalar ?? null,
-        vector: row.vector ?? null,
-        point: row.point ?? null,
-        metadata: row.metadata ?? null,
-      }));
-    },
-  }),
-}));
+type PublishedMetricStreamRow = MetricStreamRowInput;
 
 function numericScalar(row: PublishedMetricStreamRow | undefined): number {
   const value = row?.scalar;
@@ -785,6 +742,8 @@ describe("importAppleHealthFile — full DB integration", () => {
   let ctx: TestContext;
   let tmpDir: string;
   let zipPath: string;
+  let publishedMetricStreamRows: PublishedMetricStreamRow[];
+  const metricStreamCapture = createCapturingMetricStreamPublisher();
 
   beforeAll(async () => {
     ctx = await setupTestDatabase();
@@ -809,9 +768,12 @@ describe("importAppleHealthFile — full DB integration", () => {
 
   it("imports from a .zip and publishes metric stream events", async () => {
     const since = new Date("2024-01-01");
-    publishedMetricStreamRows.length = 0;
+    metricStreamCapture.publishedMetricStreamRows.length = 0;
 
-    const result = await importAppleHealthFile(ctx.db, zipPath, since, () => {});
+    const result = await runWithTokenUser("00000000-0000-0000-0000-000000000001", () =>
+      importAppleHealthFile(ctx.db, zipPath, since, () => {}, metricStreamCapture.publisher),
+    );
+    publishedMetricStreamRows = metricStreamCapture.publishedMetricStreamRows;
 
     expect(result.provider).toBe("apple_health");
     expect(result.recordsSynced).toBeGreaterThan(0);
@@ -957,7 +919,9 @@ describe("importAppleHealthFile — full DB integration", () => {
 
     // Re-import with an XML file (non-zip path to avoid clinical records branch)
     const xmlPath = join(tmpDir, "export.xml");
-    await importAppleHealthFile(ctx.db, xmlPath, since, () => {});
+    await runWithTokenUser("00000000-0000-0000-0000-000000000001", () =>
+      importAppleHealthFile(ctx.db, xmlPath, since, () => {}, metricStreamCapture.publisher),
+    );
 
     // Count after — should be same due to upsert/conflict handling
     const sleepAfter = await ctx.db.select().from(schema.sleepSession);

@@ -62,7 +62,12 @@ export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublish
 let defaultMetricStreamPublisherPromise: Promise<MetricStreamEventPublisher> | undefined;
 
 export function getDefaultMetricStreamEventPublisher(): Promise<MetricStreamEventPublisher> {
-  defaultMetricStreamPublisherPromise ??= createKafkaMetricStreamEventPublisherFromEnv();
+  defaultMetricStreamPublisherPromise ??= createKafkaMetricStreamEventPublisherFromEnv().catch(
+    (error: unknown) => {
+      defaultMetricStreamPublisherPromise = undefined;
+      throw error;
+    },
+  );
   return defaultMetricStreamPublisherPromise;
 }
 

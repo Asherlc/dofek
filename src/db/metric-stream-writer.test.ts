@@ -386,6 +386,68 @@ describe("writeMetricStreamBatch", () => {
     expect(mockPublishRows).not.toHaveBeenCalled();
   });
 
+  it("rejects non-plain metadata objects", async () => {
+    const db = { insert: vi.fn() };
+
+    await expect(
+      writeMetricStreamBatch(
+        db,
+        [
+          {
+            recordedAt: new Date("2026-03-30T12:00:00Z"),
+            userId: "00000000-0000-0000-0000-000000000001",
+            providerId: "gps",
+            externalId: "gps-sample-4",
+            lat: 40.7128,
+            lng: -74.006,
+            raw: new Date("2026-03-30T12:00:00Z"),
+          },
+        ],
+        "api",
+      ),
+    ).rejects.toThrow("metric_stream ingestion metadata must be JSON serializable");
+
+    await expect(
+      writeMetricStreamBatch(
+        db,
+        [
+          {
+            recordedAt: new Date("2026-03-30T12:00:00Z"),
+            userId: "00000000-0000-0000-0000-000000000001",
+            providerId: "gps",
+            externalId: "gps-sample-5",
+            lat: 40.7128,
+            lng: -74.006,
+            raw: new Map([["label", "not-json"]]),
+          },
+        ],
+        "api",
+      ),
+    ).rejects.toThrow("metric_stream ingestion metadata must be JSON serializable");
+    expect(mockPublishRows).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-positive batch sizes", async () => {
+    const db = { insert: vi.fn() };
+    const rows = [
+      {
+        recordedAt: new Date("2026-03-30T12:00:00Z"),
+        userId: "00000000-0000-0000-0000-000000000001",
+        providerId: "test",
+        externalId: "sample-1",
+        heartRate: 72,
+      },
+    ];
+
+    await expect(writeMetricStreamBatch(db, rows, "api", 0)).rejects.toThrow(
+      "metric_stream ingestion batchSize must be a positive integer",
+    );
+    await expect(writeMetricStreamBatch(db, rows, "api", -1)).rejects.toThrow(
+      "metric_stream ingestion batchSize must be a positive integer",
+    );
+    expect(mockPublishRows).not.toHaveBeenCalled();
+  });
+
   it("fails fast when neither the row nor token context provides a user ID", async () => {
     const db = { insert: vi.fn() };
     const previousTestTokenUserId = process.env.TEST_TOKEN_USER_ID;

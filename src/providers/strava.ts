@@ -705,7 +705,13 @@ export class StravaProvider implements WebhookProvider {
       if (metricRows.length > 0) {
         // Delete existing sensor rows then re-insert.
         await db.delete(metricStream).where(eq(metricStream.activityId, activityId));
-        await writeMetricStreamBatch(db, metricRows, SOURCE_TYPE_API);
+        await writeMetricStreamBatch(
+          db,
+          metricRows,
+          SOURCE_TYPE_API,
+          undefined,
+          options?.metricStreamPublisher,
+        );
         logger.info(
           `[strava] Webhook: inserted ${metricRows.length} metric stream rows for activity ${event.objectId}`,
         );
@@ -876,7 +882,13 @@ export class StravaProvider implements WebhookProvider {
             );
 
             if (metricRows.length > 0) {
-              await writeMetricStreamBatch(db, metricRows, SOURCE_TYPE_API);
+              await writeMetricStreamBatch(
+                db,
+                metricRows,
+                SOURCE_TYPE_API,
+                undefined,
+                options?.metricStreamPublisher,
+              );
               logger.info(
                 `[strava] Inserted ${metricRows.length} metric stream rows for activity ${act.externalId}`,
               );

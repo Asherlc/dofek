@@ -119,7 +119,7 @@ describe("whoopBleSyncRouter", () => {
       });
 
       expect(result).toEqual({ inserted: 2 });
-      expect(JSON.stringify(mockDb.execute.mock.calls)).not.toContain("fitness.metric_stream");
+      expect(mockDb.execute).toHaveBeenCalledTimes(1);
       expect(metricStreamPublisher.publishRows).toHaveBeenCalledWith([
         expect.objectContaining({
           providerId: "whoop_ble",

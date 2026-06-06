@@ -216,6 +216,7 @@ export async function upsertBodyMeasurementBatch(
   db: SyncDatabase,
   providerId: string,
   records: HealthRecord[],
+  publisher?: MetricStreamEventPublisher,
 ): Promise<number> {
   // Group by timestamp to combine BP systolic + diastolic into one row
   const byTime = new Map<string, HealthRecord[]>();
@@ -280,7 +281,7 @@ export async function upsertBodyMeasurementBatch(
   }
   const uniqueRows = [...dedupMap.values()];
 
-  await writeMetricStreamBatch(db, uniqueRows, SOURCE_TYPE_FILE);
+  await writeMetricStreamBatch(db, uniqueRows, SOURCE_TYPE_FILE, undefined, publisher);
   return uniqueRows.length;
 }
 
@@ -671,6 +672,7 @@ export async function upsertWorkoutBatch(
   db: SyncDatabase,
   providerId: string,
   workouts: HealthWorkout[],
+  publisher?: MetricStreamEventPublisher,
 ): Promise<number> {
   // Deduplicate by externalId — Apple Health can export duplicate workouts
   // from multiple sources (Apple Watch + iPhone) with the same start time.
@@ -749,7 +751,7 @@ export async function upsertWorkoutBatch(
   }
 
   // GPS route points are stored as metric_stream location samples with scalar metadata.
-  await writeMetricStreamBatch(db, allGpsRows, SOURCE_TYPE_FILE);
+  await writeMetricStreamBatch(db, allGpsRows, SOURCE_TYPE_FILE, undefined, publisher);
 
   return activityResults.length;
 }

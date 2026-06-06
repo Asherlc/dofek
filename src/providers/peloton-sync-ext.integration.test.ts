@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { activity } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
@@ -13,25 +13,10 @@ import {
   parseAuth0FormHtml,
   pelotonAutomatedLogin,
 } from "./peloton.ts";
+import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 
 const server = setupServer();
-
-const { publishedMetricStreamBatches } = vi.hoisted<{
-  publishedMetricStreamBatches: Record<string, unknown>[][];
-}>(() => ({ publishedMetricStreamBatches: [] }));
-
-vi.mock("../metric-stream/redpanda-producer.ts", () => ({
-  getDefaultMetricStreamEventPublisher: async () => ({
-    publishRows: async (rows: readonly Record<string, unknown>[]) => {
-      publishedMetricStreamBatches.push([...rows]);
-      return rows.map((row, index) => ({
-        version: 1,
-        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
-      }));
-    },
-  }),
-}));
+const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 // ============================================================
 // Helpers
@@ -111,7 +96,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
   }, 60_000);
 
   beforeEach(() => {
-    publishedMetricStreamBatches.length = 0;
+    metricStreamCapture.publishedMetricStreamRows.length = 0;
   });
 
   afterEach(() => {
@@ -186,7 +171,9 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     );
 
     const provider = new PelotonProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-03-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2024-03-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(0);
     // Should have fetched page 1 but stopped there (not page 2)
@@ -241,7 +228,9 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     );
 
     const provider = new PelotonProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // Performance graph was called
     expect(callCount).toBe(1);
@@ -294,7 +283,9 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     );
 
     const provider = new PelotonProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(0);
 
@@ -309,9 +300,9 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     // No metric stream events for this activity (empty metrics)
     const activityId = rows[0]?.id;
     if (activityId) {
-      const streams = publishedMetricStreamBatches
-        .flat()
-        .filter((row) => row.activityId === activityId);
+      const streams = metricStreamCapture.publishedMetricStreamRows.filter(
+        (row) => row.activityId === activityId,
+      );
       expect(streams).toHaveLength(0);
     }
   });
@@ -376,7 +367,9 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     );
 
     const provider = new PelotonProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(0);
 
@@ -389,9 +382,9 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
 
     const activityId = activityRows[0]?.id;
     if (activityId) {
-      const streams = publishedMetricStreamBatches
-        .flat()
-        .filter((row) => row.activityId === activityId);
+      const streams = metricStreamCapture.publishedMetricStreamRows.filter(
+        (row) => row.activityId === activityId,
+      );
       const heartRateSamples = streams.filter((sample) => sample.channel === "heart_rate");
       const powerSamples = streams.filter((sample) => sample.channel === "power");
       expect(heartRateSamples).toHaveLength(largeSampleCount);
@@ -450,8 +443,8 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     const since = new Date("2024-01-01T00:00:00Z");
 
     // Sync twice
-    await provider.sync(ctx.db, since);
-    await provider.sync(ctx.db, since);
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
 
     // Redpanda is an append log, so both sync attempts publish their raw events.
     const activityRows = await ctx.db
@@ -460,9 +453,9 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
       .where(eq(activity.externalId, "ext-resync-workout"));
     const activityId = activityRows[0]?.id;
     if (activityId) {
-      const streams = publishedMetricStreamBatches
-        .flat()
-        .filter((row) => row.activityId === activityId);
+      const streams = metricStreamCapture.publishedMetricStreamRows.filter(
+        (row) => row.activityId === activityId,
+      );
       const heartRateSamples = streams.filter((sample) => sample.channel === "heart_rate");
       expect(heartRateSamples).toHaveLength(4);
     }
@@ -521,7 +514,9 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     );
 
     const provider = new PelotonProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(0);
 
