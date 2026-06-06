@@ -62,6 +62,26 @@ resnapshot as appropriate. Do not treat monitor quieting as data recovery.
 - Owner: Asher. Deadline: before resolving `DOFEK-SERVER-3B`. Verify
   `postgres_fitness.metric_stream` freshness and downstream analytics rows.
 
+### June 6 Follow-Up: Strain Still Zero
+
+The dashboard strain remained `0` after the monitor fix because the data repair
+had not run yet. Production `pg_replication_slots` still showed
+`peerflow_slot_dofek_metric_stream_analytics` as `active=f`,
+`wal_status=lost`, empty `restart_lsn`, and about `47GB` retained lag against a
+`64GB` `max_slot_wal_keep_size`. The `cdc-health` service was still reporting
+`postgres_fitness.metric_stream last synced at
+2026-06-03 21:57:38.000000000`. Scheduled `analytics-worker` dbt builds were
+succeeding, including `analytics.daily_activity_load` and
+`analytics.daily_strain`, but they were rebuilding from stale mirror input:
+ClickHouse `analytics.daily_strain` was refreshed on June 6 with latest
+`daily_load=0`. Postgres source still had about `3,059,776` non-IMU
+`fitness.metric_stream` rows after the mirror gap and `25` activities since
+June 3. A dry run of `scripts/catch-up-clickhouse-metric-stream.ts` planned
+`57` one-hour windows for
+`[2026-06-03T21:57:38Z, 2026-06-06T06:00:00Z)`. No write-side repair was run
+during this check; catch-up can repair the selected historical window, but the
+lost PeerDB slot still requires mirror recreation or resync for future rows.
+
 ## 2026-06-05: Dashboard Strain And Sleep Empty From ClickHouse Null Join Defaults
 
 ### Symptoms

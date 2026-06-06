@@ -269,6 +269,113 @@ services:
           cpus: "1.00"
           memory: 13G
 
+  redpanda:
+    image: redpandadata/redpanda:v26.1.9
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --overprovisioned
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=internal://0.0.0.0:9092
+      - --advertise-kafka-addr=internal://redpanda:9092
+      - --rpc-addr=0.0.0.0:33145
+      - --advertise-rpc-addr=redpanda:33145
+    volumes:
+      - /mnt/dofek-data/redpanda:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health --brokers redpanda:9092 | grep -q Healthy"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 1500M
+
+  metric-stream-postgres-sink:
+    image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
+    command: ["metric-stream-postgres-sink"]
+    env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://health:${POSTGRES_PASSWORD}@db:5432/health
+      REDPANDA_BROKERS: ${REDPANDA_BROKERS:?REDPANDA_BROKERS is required}
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_TOPIC:?METRIC_STREAM_TOPIC is required}
+      OTEL_SERVICE_NAME: dofek-metric-stream-postgres-sink
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${DEPLOY_ENVIRONMENT:-production}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://collector:4318/v1/logs
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f metric-stream-postgres-sink || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 300M
+      update_config:
+        order: stop-first
+        failure_action: rollback
+
+  metric-stream-clickhouse-sink:
+    image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
+    command: ["metric-stream-clickhouse-sink"]
+    env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
+    environment:
+      NODE_ENV: production
+      CLICKHOUSE_URL: http://default:${CLICKHOUSE_PASSWORD_ENCODED:?CLICKHOUSE_PASSWORD_ENCODED is required}@clickhouse:8123
+      REDPANDA_BROKERS: ${REDPANDA_BROKERS:?REDPANDA_BROKERS is required}
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_TOPIC:?METRIC_STREAM_TOPIC is required}
+      OTEL_SERVICE_NAME: dofek-metric-stream-clickhouse-sink
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${DEPLOY_ENVIRONMENT:-production}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://collector:4318/v1/logs
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f metric-stream-clickhouse-sink || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 300M
+      update_config:
+        order: stop-first
+        failure_action: rollback
+
+  metric-stream-r2-archive:
+    image: docker.redpanda.com/redpandadata/connect:4.94.1
+    command: ["run", "/connect/metric-stream-r2-archive.connect.yml"]
+    environment:
+      REDPANDA_BROKERS: ${REDPANDA_BROKERS:?REDPANDA_BROKERS is required}
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_TOPIC:?METRIC_STREAM_TOPIC is required}
+      METRIC_STREAM_R2_BUCKET: ${METRIC_STREAM_R2_BUCKET:?METRIC_STREAM_R2_BUCKET is required}
+      R2_ENDPOINT: ${R2_ENDPOINT:?R2_ENDPOINT is required}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?R2_ACCESS_KEY_ID is required}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?R2_SECRET_ACCESS_KEY is required}
+    configs:
+      - source: metric_stream_r2_archive_config
+        target: /connect/metric-stream-r2-archive.connect.yml
+        mode: 0444
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+      update_config:
+        order: stop-first
+        failure_action: rollback
+
   peerdb-catalog:
     image: postgres:18-alpine
     environment:
@@ -642,3 +749,5 @@ configs:
   # and the collector rolls onto it — same convention as netdata_db_limits_v2.
   otel_collector_config:
     file: ./otel-collector-config.yaml
+  metric_stream_r2_archive_config:
+    file: ./redpanda/metric-stream-r2-archive.connect.yml

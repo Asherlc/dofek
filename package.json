@@ -165,6 +165,7 @@
     "eight-sleep-client": "workspace:*",
     "fit-file-parser": "2.3.3",
     "garmin-connect": "workspace:*",
+    "kafkajs": "2.2.4",
     "nodemailer": "8.0.6",
     "pg": "8.16.0",
     "postgres": "3.4.8",

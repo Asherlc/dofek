@@ -17,6 +17,8 @@ import {
   type SyncJobData,
 } from "./jobs/queues.ts";
 import { logger } from "./logger.ts";
+import { runMetricStreamClickHouseSinkFromEnv } from "./metric-stream/clickhouse-sink.ts";
+import { runMetricStreamPostgresSinkFromEnv } from "./metric-stream/postgres-sink.ts";
 import { getAllProviders, getEnabledSyncProviders } from "./providers/index.ts";
 
 async function resolveCliUserId(db: ReturnType<typeof createDatabaseFromEnv>): Promise<string> {
@@ -245,7 +247,19 @@ async function main() {
     process.exit(await handleImportCommand(process.argv));
   }
 
-  logger.error(`Unknown command: ${command}\nUsage: health-data <sync|auth|import>`);
+  if (command === "metric-stream-postgres-sink") {
+    await runMetricStreamPostgresSinkFromEnv();
+    return;
+  }
+
+  if (command === "metric-stream-clickhouse-sink") {
+    await runMetricStreamClickHouseSinkFromEnv();
+    return;
+  }
+
+  logger.error(
+    `Unknown command: ${command}\nUsage: health-data <sync|auth|import|metric-stream-postgres-sink|metric-stream-clickhouse-sink>`,
+  );
   process.exit(1);
 }
 

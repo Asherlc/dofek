@@ -7,6 +7,11 @@ export interface ClickHouseCommandClient {
     clickhouse_settings?: Record<string, string | number | boolean>;
     query_params?: Record<string, unknown>;
   }): Promise<unknown>;
+  insert?(options: {
+    table: string;
+    values: readonly object[];
+    format: "JSONEachRow";
+  }): Promise<unknown>;
   query?<TRow extends object>(options: {
     query: string;
     format: "JSONEachRow";

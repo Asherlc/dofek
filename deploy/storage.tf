@@ -22,6 +22,12 @@ resource "cloudflare_r2_bucket" "db_backups" {
   location   = "WEUR"
 }
 
+resource "cloudflare_r2_bucket" "metric_stream_archive" {
+  account_id = var.cloudflare_account_id
+  name       = "dofek-metric-stream-archive"
+  location   = "WEUR"
+}
+
 resource "cloudflare_r2_bucket" "exports" {
   account_id = var.cloudflare_account_id
   name       = "dofek-exports"
