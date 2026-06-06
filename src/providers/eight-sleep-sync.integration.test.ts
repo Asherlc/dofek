@@ -1,12 +1,37 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { dailyMetrics, metricStream, oauthToken, sleepSession, userProfile } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { EightSleepProvider } from "./eight-sleep.ts";
+
+const { publishedMetricStreamBatches } = vi.hoisted<{
+  publishedMetricStreamBatches: PublishedMetricStreamRow[][];
+}>(() => ({ publishedMetricStreamBatches: [] }));
+
+vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: async () => ({
+    publishRows: async (rows: readonly PublishedMetricStreamRow[]) => {
+      publishedMetricStreamBatches.push([...rows]);
+      return rows.map((row, index) => ({
+        version: 1,
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+      }));
+    },
+  }),
+}));
+
+interface PublishedMetricStreamRow {
+  channel?: string;
+  externalId?: string | null;
+  scalar?: number | null;
+  recordedAt: Date;
+  [key: string]: unknown;
+}
 
 // ============================================================
 // Fake Eight Sleep API responses
@@ -101,7 +126,6 @@ const server = setupServer();
 async function clearEightSleepRows(ctx: TestContext) {
   await ctx.db.delete(sleepSession).where(eq(sleepSession.providerId, "eight-sleep"));
   await ctx.db.delete(dailyMetrics).where(eq(dailyMetrics.providerId, "eight-sleep"));
-  await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "eight-sleep"));
 }
 
 async function saveValidEightSleepTokens(ctx: TestContext) {
@@ -121,6 +145,10 @@ describe("EightSleepProvider.sync() (integration)", () => {
     server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "eight-sleep", "Eight Sleep");
   }, 60_000);
+
+  beforeEach(() => {
+    publishedMetricStreamBatches.length = 0;
+  });
 
   afterEach(() => {
     server.resetHandlers();
@@ -196,11 +224,8 @@ describe("EightSleepProvider.sync() (integration)", () => {
     expect(daily1.hrv).toBeCloseTo(45);
     expect(daily1.respiratoryRateAvg).toBeCloseTo(15.5);
 
-    const temperatureRows = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "eight-sleep"));
-    const bodyTemperatureRows = temperatureRows.filter((row) => row.channel === "body_temperature");
+    const streamRows = publishedMetricStreamBatches.flat();
+    const bodyTemperatureRows = streamRows.filter((row) => row.channel === "body_temperature");
     expect(bodyTemperatureRows).toHaveLength(2);
 
     const temp1 = bodyTemperatureRows.find((r) => r.externalId === "eightsleep-temp-2026-03-01");
@@ -208,13 +233,9 @@ describe("EightSleepProvider.sync() (integration)", () => {
     expect(temp1.scalar).toBeCloseTo(33.5);
 
     // Verify HR metric stream
-    const hrRows = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "eight-sleep"));
-    const heartRateRows = hrRows.filter((row) => row.channel === "heart_rate");
+    const heartRateRows = streamRows.filter((row) => row.channel === "heart_rate");
     expect(heartRateRows).toHaveLength(5); // 3 from day 1 + 2 from day 2
-    expect(heartRateRows.every((r) => r.scalar !== null && r.scalar > 0)).toBe(true);
+    expect(heartRateRows.every((row) => row.scalar != null && row.scalar > 0)).toBe(true);
   });
 
   it("skips processing days", async () => {
@@ -228,7 +249,6 @@ describe("EightSleepProvider.sync() (integration)", () => {
     // Clear existing data
     await ctx.db.delete(sleepSession).where(eq(sleepSession.providerId, "eight-sleep"));
     await ctx.db.delete(dailyMetrics).where(eq(dailyMetrics.providerId, "eight-sleep"));
-    await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "eight-sleep"));
 
     const days = [
       fakeTrendDay({ day: "2026-03-10", processing: true }),
@@ -307,7 +327,6 @@ describe("EightSleepProvider.sync() (integration)", () => {
     // Clear existing data
     await ctx.db.delete(sleepSession).where(eq(sleepSession.providerId, "eight-sleep"));
     await ctx.db.delete(dailyMetrics).where(eq(dailyMetrics.providerId, "eight-sleep"));
-    await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "eight-sleep"));
 
     const days = [
       fakeTrendDay({
@@ -469,14 +488,13 @@ describe("EightSleepProvider.sync() (integration)", () => {
     const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
-    const temperatureRows = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "eight-sleep"));
+    const temperatureRows = publishedMetricStreamBatches.flat();
     expect(temperatureRows).toHaveLength(1);
-    expect(temperatureRows[0]?.channel).toBe("body_temperature");
-    expect(temperatureRows[0]?.scalar).toBeCloseTo(33.4);
-    expect(temperatureRows[0]?.recordedAt.toISOString()).toBe("2026-03-26T00:00:00.000Z");
+    const temperatureRow = temperatureRows[0];
+    if (!temperatureRow) throw new Error("expected temperature row");
+    expect(temperatureRow.channel).toBe("body_temperature");
+    expect(temperatureRow.scalar).toBeCloseTo(33.4);
+    expect(temperatureRow.recordedAt.toISOString()).toBe("2026-03-26T00:00:00.000Z");
   });
 
   it("skips temperature and heart-rate streams when optional source fields are absent", async () => {
@@ -497,10 +515,7 @@ describe("EightSleepProvider.sync() (integration)", () => {
     const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
 
     expect(result.errors).toHaveLength(0);
-    const streamRows = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "eight-sleep"));
+    const streamRows = publishedMetricStreamBatches.flat();
     expect(streamRows).toHaveLength(0);
   });
 
@@ -583,6 +598,9 @@ describe("EightSleepProvider.sync() (integration)", () => {
       .from(metricStream)
       .where(eq(metricStream.externalId, temperatureExternalId));
     expect(temperatureRows.filter((row) => row.userId === secondUserId)).toHaveLength(1);
-    expect(temperatureRows.filter((row) => row.userId === currentUserId)).toHaveLength(1);
+    const publishedTemperatureRows = publishedMetricStreamBatches
+      .flat()
+      .filter((row) => row.externalId === temperatureExternalId);
+    expect(publishedTemperatureRows.filter((row) => row.userId === currentUserId)).toHaveLength(1);
   });
 });

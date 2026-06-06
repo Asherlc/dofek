@@ -1,13 +1,30 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, metricStream } from "../db/schema.ts";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { activity } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import type { StravaActivity, StravaDetailedActivity, StravaStreamSet } from "./strava.ts";
 import { StravaProvider } from "./strava.ts";
+
+const { publishedMetricStreamBatches } = vi.hoisted<{
+  publishedMetricStreamBatches: Record<string, unknown>[][];
+}>(() => ({ publishedMetricStreamBatches: [] }));
+
+vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: async () => ({
+    publishRows: async (rows: readonly Record<string, unknown>[]) => {
+      publishedMetricStreamBatches.push([...rows]);
+      return rows.map((row, index) => ({
+        version: 1,
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+      }));
+    },
+  }),
+}));
 
 function fakeActivity(overrides: Partial<StravaActivity> = {}): StravaActivity {
   return {
@@ -142,6 +159,10 @@ describe("StravaProvider.sync() (integration)", () => {
     await ensureProvider(ctx.db, "strava", "Strava", "https://www.strava.com/api/v3");
   }, 60_000);
 
+  beforeEach(() => {
+    publishedMetricStreamBatches.length = 0;
+  });
+
   afterEach(() => {
     server.resetHandlers();
   });
@@ -151,7 +172,7 @@ describe("StravaProvider.sync() (integration)", () => {
     if (ctx) await ctx.cleanup();
   });
 
-  it("syncs activities with streams into activity and metric_stream", async () => {
+  it("syncs activities with streams into activity and Redpanda metric stream events", async () => {
     await saveTokens(ctx.db, "strava", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",
@@ -192,11 +213,8 @@ describe("StravaProvider.sync() (integration)", () => {
     if (!run) throw new Error("expected activity 1002");
     expect(run.activityType).toBe("running");
 
-    // Verify metric_stream rows
-    const metrics = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.activityId, ride.id));
+    // Verify metric stream events
+    const metrics = publishedMetricStreamBatches.flat().filter((row) => row.activityId === ride.id);
     const heartRateSamples = metrics.filter((sample) => sample.channel === "heart_rate");
     const powerSamples = metrics.filter((sample) => sample.channel === "power");
     expect(heartRateSamples).toHaveLength(3);

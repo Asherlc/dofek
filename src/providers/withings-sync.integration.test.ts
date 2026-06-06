@@ -1,13 +1,29 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { metricStream } from "../db/schema.ts";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import type { WithingsMeasureGroup } from "./withings.ts";
 import { WithingsProvider } from "./withings.ts";
+
+const { publishedMetricStreamBatches } = vi.hoisted<{
+  publishedMetricStreamBatches: Record<string, unknown>[][];
+}>(() => ({ publishedMetricStreamBatches: [] }));
+
+vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: async () => ({
+    publishRows: async (rows: readonly Record<string, unknown>[]) => {
+      publishedMetricStreamBatches.push([...rows]);
+      return rows.map((row, index) => ({
+        version: 1,
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+      }));
+    },
+  }),
+}));
 
 // Withings measure type constants
 const MEAS_WEIGHT = 1;
@@ -99,6 +115,10 @@ describe("WithingsProvider.sync() (integration)", () => {
     await ensureProvider(ctx.db, "withings", "Withings", "https://wbsapi.withings.net");
   }, 60_000);
 
+  beforeEach(() => {
+    publishedMetricStreamBatches.length = 0;
+  });
+
   afterEach(() => {
     server.resetHandlers();
   });
@@ -131,10 +151,7 @@ describe("WithingsProvider.sync() (integration)", () => {
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBe(2);
 
-    const rows = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "withings"));
+    const rows = publishedMetricStreamBatches.flat();
     expect(new Set(rows.map((row) => row.externalId))).toEqual(new Set(["8001", "8002"]));
 
     const weightEntry = rows.find(
@@ -175,9 +192,6 @@ describe("WithingsProvider.sync() (integration)", () => {
       scopes: "user.metrics",
     });
 
-    // Clear previous data
-    await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "withings"));
-
     server.use(
       ...withingsHandlers({
         measureGroups: [
@@ -201,24 +215,18 @@ describe("WithingsProvider.sync() (integration)", () => {
     // Only the real measurement should be synced
     expect(result.recordsSynced).toBe(1);
 
-    const rows = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "withings"));
+    const rows = publishedMetricStreamBatches.flat();
     expect(new Set(rows.map((row) => row.externalId))).toEqual(new Set(["8010"]));
     expect(rows[0]?.externalId).toBe("8010");
   });
 
-  it("upserts on re-sync (no duplicates)", async () => {
+  it("publishes measurement events on each re-sync", async () => {
     await saveTokens(ctx.db, "withings", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",
       expiresAt: new Date("2027-01-01T00:00:00Z"),
       scopes: "user.metrics",
     });
-
-    // Clear previous data
-    await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "withings"));
 
     server.use(
       ...withingsHandlers({
@@ -232,14 +240,11 @@ describe("WithingsProvider.sync() (integration)", () => {
     await provider.sync(ctx.db, since);
     await provider.sync(ctx.db, since);
 
-    const rows = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "withings"));
+    const rows = publishedMetricStreamBatches.flat();
     const countOf8020 = rows.filter(
       (row) => row.externalId === "8020" && row.channel === "body_weight",
     ).length;
-    expect(countOf8020).toBe(1);
+    expect(countOf8020).toBe(2);
   });
 
   it("refreshes expired tokens and saves new ones", async () => {
@@ -279,9 +284,6 @@ describe("WithingsProvider.sync() (integration)", () => {
       expiresAt: new Date("2027-01-01T00:00:00Z"),
       scopes: "user.metrics",
     });
-
-    // Clear previous data
-    await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "withings"));
 
     server.use(
       http.post("https://wbsapi.withings.net/measure", () => {

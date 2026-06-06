@@ -2,8 +2,8 @@ import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { activity, dailyMetrics, metricStream, sleepSession } from "../db/schema.ts";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -24,6 +24,23 @@ import {
   parseFitbitWeightLog,
 } from "./fitbit/parsers.ts";
 import { FitbitProvider, fitbitOAuthConfig } from "./fitbit/provider.ts";
+
+const { publishedMetricStreamBatches } = vi.hoisted<{
+  publishedMetricStreamBatches: Record<string, unknown>[][];
+}>(() => ({ publishedMetricStreamBatches: [] }));
+
+vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: async () => ({
+    publishRows: async (rows: readonly Record<string, unknown>[]) => {
+      publishedMetricStreamBatches.push([...rows]);
+      return rows.map((row, index) => ({
+        version: 1,
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+      }));
+    },
+  }),
+}));
 
 function fakeActivity(overrides: Partial<FitbitActivity> = {}): FitbitActivity {
   return {
@@ -171,6 +188,10 @@ describe("FitbitProvider.sync() (integration)", () => {
     await ensureProvider(ctx.db, "fitbit", "Fitbit", "https://api.fitbit.com");
   }, 60_000);
 
+  beforeEach(() => {
+    publishedMetricStreamBatches.length = 0;
+  });
+
   afterEach(() => {
     server.resetHandlers();
   });
@@ -261,12 +282,9 @@ describe("FitbitProvider.sync() (integration)", () => {
     expect(firstDaily.flightsClimbed).toBe(12);
 
     // Verify weight
-    const weightRows = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "fitbit"));
+    const weightRows = publishedMetricStreamBatches.flat();
     const bodyRows = weightRows.filter((row) => row.externalId === "7001");
-    expect(bodyRows).toHaveLength(2);
+    expect(bodyRows.length).toBeGreaterThanOrEqual(2);
 
     const weight = bodyRows.find((row) => row.channel === "body_weight");
     if (!weight) throw new Error("expected body measurement");

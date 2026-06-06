@@ -1,12 +1,29 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, metricStream, oauthToken } from "../db/schema.ts";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { activity, oauthToken } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { WgerProvider } from "./wger.ts";
+
+const { publishedMetricStreamBatches } = vi.hoisted<{
+  publishedMetricStreamBatches: Record<string, unknown>[][];
+}>(() => ({ publishedMetricStreamBatches: [] }));
+
+vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: async () => ({
+    publishRows: async (rows: readonly Record<string, unknown>[]) => {
+      publishedMetricStreamBatches.push([...rows]);
+      return rows.map((row, index) => ({
+        version: 1,
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+      }));
+    },
+  }),
+}));
 
 // ============================================================
 // Fake Wger API responses
@@ -105,6 +122,10 @@ describe("WgerProvider.sync() (integration)", () => {
     await ensureProvider(ctx.db, "wger", "Wger", "https://wger.de/api/v2");
   }, 60_000);
 
+  beforeEach(() => {
+    publishedMetricStreamBatches.length = 0;
+  });
+
   afterEach(() => {
     server.resetHandlers();
   });
@@ -114,7 +135,7 @@ describe("WgerProvider.sync() (integration)", () => {
     if (ctx) await ctx.cleanup();
   });
 
-  it("syncs workout sessions into activity and weight entries into metric_stream", async () => {
+  it("syncs workout sessions into activity and weight entries into Redpanda metric stream events", async () => {
     await saveTokens(ctx.db, "wger", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",
@@ -157,10 +178,7 @@ describe("WgerProvider.sync() (integration)", () => {
     if (!session2) throw new Error("expected session 102");
     expect(session2.name).toBe("Leg day");
 
-    const weightRows = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "wger"));
+    const weightRows = publishedMetricStreamBatches.flat();
     expect(weightRows).toHaveLength(2);
 
     const weight1 = weightRows.find((r) => r.externalId === "201" && r.channel === "body_weight");
@@ -188,7 +206,7 @@ describe("WgerProvider.sync() (integration)", () => {
     const provider = new WgerProvider();
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
-    // Sync again — should upsert, not duplicate
+    // Sync again — Redpanda appends raw events for each sync.
     await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
 
     const activityRows = await ctx.db
@@ -198,14 +216,11 @@ describe("WgerProvider.sync() (integration)", () => {
     const countOf101 = activityRows.filter((r) => r.externalId === "101").length;
     expect(countOf101).toBe(1);
 
-    const weightRows = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "wger"));
+    const weightRows = publishedMetricStreamBatches.flat();
     const countOf203 = weightRows.filter(
       (r) => r.externalId === "203" && r.channel === "body_weight",
     ).length;
-    expect(countOf203).toBe(1);
+    expect(countOf203).toBe(2);
 
     // Verify the weight row was retained across the repeated sync.
     const updatedWeight = weightRows.find(
@@ -350,7 +365,6 @@ describe("WgerProvider.sync() (integration)", () => {
       expiresAt: new Date("2027-01-01T00:00:00Z"),
       scopes: "read",
     });
-    await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "wger"));
 
     server.use(
       http.get("https://wger.de/api/v2/workoutsession/*", () => {
@@ -368,11 +382,7 @@ describe("WgerProvider.sync() (integration)", () => {
     expect(result.errors.map((error) => error.message)).toContainEqual(
       expect.stringContaining("metric_stream: Wger API error (503)"),
     );
-    const weightRows = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "wger"));
-    expect(weightRows).toHaveLength(0);
+    expect(publishedMetricStreamBatches.flat()).toHaveLength(0);
   });
 
   it("stops pagination when session date is before since", async () => {

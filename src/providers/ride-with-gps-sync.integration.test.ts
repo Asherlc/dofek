@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, metricStream, oauthToken } from "../db/schema.ts";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { activity, oauthToken } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { isEncryptedCredentialValue } from "../security/credential-encryption.ts";
@@ -14,6 +14,23 @@ import {
   type RideWithGpsSyncItem,
   type RideWithGpsSyncResponse,
 } from "./ride-with-gps.ts";
+
+const { publishedMetricStreamBatches } = vi.hoisted<{
+  publishedMetricStreamBatches: Record<string, unknown>[][];
+}>(() => ({ publishedMetricStreamBatches: [] }));
+
+vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: async () => ({
+    publishRows: async (rows: readonly Record<string, unknown>[]) => {
+      publishedMetricStreamBatches.push([...rows]);
+      return rows.map((row, index) => ({
+        version: 1,
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+      }));
+    },
+  }),
+}));
 
 // ============================================================
 // Fake RideWithGPS API responses
@@ -119,6 +136,10 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     await ensureProvider(ctx.db, "ride-with-gps", "RideWithGPS", "https://ridewithgps.com");
   }, 60_000);
 
+  beforeEach(() => {
+    publishedMetricStreamBatches.length = 0;
+  });
+
   afterEach(() => {
     server.resetHandlers();
   });
@@ -128,7 +149,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     if (ctx) await ctx.cleanup();
   });
 
-  it("syncs trips into activity and metric_stream", async () => {
+  it("syncs trips into activity and Redpanda metric stream events", async () => {
     await saveTokens(ctx.db, "ride-with-gps", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",
@@ -175,11 +196,8 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     if (!run) throw new Error("expected trip 5002");
     expect(run.activityType).toBe("running");
 
-    // Verify metric_stream rows (10 track points per trip)
-    const metrics = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.activityId, ride.id));
+    // Verify metric stream events (10 track points per trip)
+    const metrics = publishedMetricStreamBatches.flat().filter((row) => row.activityId === ride.id);
 
     const heartRateSamples = metrics.filter((sample) => sample.channel === "heart_rate");
     const powerSamples = metrics.filter((sample) => sample.channel === "power");
@@ -339,14 +357,13 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
 
     expect(result.recordsSynced).toBe(1);
 
-    // Activity should exist but no metric_stream rows (no timestamps)
+    // Activity should exist but no metric stream events (no timestamps)
     const activities = await ctx.db.select().from(activity).where(eq(activity.externalId, "8001"));
     expect(activities).toHaveLength(1);
 
-    const metrics = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.activityId, activities[0]?.id ?? ""));
+    const metrics = publishedMetricStreamBatches
+      .flat()
+      .filter((row) => row.activityId === activities[0]?.id);
     expect(metrics).toHaveLength(0);
   });
 

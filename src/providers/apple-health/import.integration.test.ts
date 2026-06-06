@@ -3,7 +3,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import * as schema from "../../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
 import {
@@ -18,6 +18,62 @@ import { streamHealthExport } from "./streaming.ts";
 import { enrichWorkoutFromStats, type HealthWorkout } from "./workouts.ts";
 
 const APPLE_HEALTH_PROVIDER_ID = "apple_health";
+
+interface PublishedMetricStreamRow {
+  recordedAt: Date | string;
+  userId: string;
+  providerId: string;
+  externalId?: string | null;
+  deviceId?: string | null;
+  sourceType: string;
+  channel: string;
+  activityId?: string | null;
+  scalar?: number | null;
+  vector?: number[] | null;
+  point?: string | null;
+  metadata?: unknown;
+}
+
+const { publishedMetricStreamRows } = vi.hoisted<{
+  publishedMetricStreamRows: PublishedMetricStreamRow[];
+}>(() => ({ publishedMetricStreamRows: [] }));
+
+vi.mock("../../db/token-user-context.ts", () => ({
+  getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
+  runWithTokenUser: async <T>(_: string, callback: () => Promise<T>) => callback(),
+}));
+
+vi.mock("../../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: async () => ({
+    publishRows: async (rows: readonly PublishedMetricStreamRow[]) => {
+      publishedMetricStreamRows.push(...rows);
+      return rows.map((row, index) => ({
+        version: 1,
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+        userId: row.userId,
+        providerId: row.providerId,
+        externalId: row.externalId ?? null,
+        deviceId: row.deviceId ?? null,
+        sourceType: row.sourceType,
+        channel: row.channel,
+        activityId: row.activityId ?? null,
+        scalar: row.scalar ?? null,
+        vector: row.vector ?? null,
+        point: row.point ?? null,
+        metadata: row.metadata ?? null,
+      }));
+    },
+  }),
+}));
+
+function numericScalar(row: PublishedMetricStreamRow | undefined): number {
+  const value = row?.scalar;
+  if (typeof value !== "number") {
+    throw new Error("Expected metric stream row with numeric scalar");
+  }
+  return value;
+}
 
 // ============================================================
 // streamHealthExport — tests with minimal XML files
@@ -751,46 +807,52 @@ describe("importAppleHealthFile — full DB integration", () => {
     if (ctx) await ctx.cleanup();
   });
 
-  it("imports from a .zip and inserts into all tables", async () => {
+  it("imports from a .zip and publishes metric stream events", async () => {
     const since = new Date("2024-01-01");
+    publishedMetricStreamRows.length = 0;
+
     const result = await importAppleHealthFile(ctx.db, zipPath, since, () => {});
 
     expect(result.provider).toBe("apple_health");
     expect(result.recordsSynced).toBeGreaterThan(0);
     expect(result.errors.map((error) => error.message)).toEqual([]);
+    expect(publishedMetricStreamRows.length).toBeGreaterThan(0);
   }, 60_000);
 
-  it("creates metric_stream rows for HR, SpO2, and blood glucose", async () => {
-    const rows = await ctx.db.select().from(schema.metricStream);
-    const hrRows = rows.filter((r) => r.channel === "heart_rate" && r.activityId === null);
+  it("publishes metric stream events for heart rate, oxygen saturation, and blood glucose", async () => {
+    const rows = publishedMetricStreamRows;
+    const hrRows = rows.filter(
+      (row) =>
+        row.channel === "heart_rate" && (row.activityId === null || row.activityId === undefined),
+    );
     expect(hrRows.length).toBeGreaterThanOrEqual(2);
     expect(hrRows.some((r) => r.scalar === 72)).toBe(true);
     expect(hrRows.some((r) => r.scalar === 85)).toBe(true);
 
     const spo2Rows = rows.filter((r) => r.channel === "spo2");
     expect(spo2Rows.length).toBeGreaterThanOrEqual(1);
-    expect(spo2Rows[0]?.scalar).toBeCloseTo(0.97);
+    expect(numericScalar(spo2Rows[0])).toBeCloseTo(0.97);
 
     const bgRows = rows.filter((r) => r.channel === "blood_glucose");
     expect(bgRows.length).toBeGreaterThanOrEqual(1);
-    expect(bgRows[0]?.scalar).toBeCloseTo(5.4);
+    expect(numericScalar(bgRows[0])).toBeCloseTo(5.4);
   });
 
-  it("creates metric_stream body channels with weight, body fat, and BP", async () => {
-    const rows = await ctx.db.select().from(schema.metricStream);
+  it("publishes body measurement metric stream channels", async () => {
+    const rows = publishedMetricStreamRows;
     // Weight+body fat share a timestamp so should be grouped
     const weightRow = rows.find((row) => row.channel === "body_weight");
     expect(weightRow).toBeDefined();
-    expect(weightRow?.scalar).toBeCloseTo(72.5);
+    expect(numericScalar(weightRow)).toBeCloseTo(72.5);
     const bodyFatRow = rows.find((row) => row.channel === "body_fat_percentage");
-    expect(bodyFatRow?.scalar).toBeCloseTo(21.5); // 0.215 * 100
+    expect(numericScalar(bodyFatRow)).toBeCloseTo(21.5); // 0.215 * 100
     expect(bodyFatRow?.externalId).toBe(weightRow?.externalId);
 
     // BP at 09:00
     const systolicRow = rows.find((row) => row.channel === "systolic_blood_pressure");
-    expect(systolicRow?.scalar).toBe(120);
+    expect(numericScalar(systolicRow)).toBe(120);
     const diastolicRow = rows.find((row) => row.channel === "diastolic_blood_pressure");
-    expect(diastolicRow?.scalar).toBe(80);
+    expect(numericScalar(diastolicRow)).toBe(80);
     expect(diastolicRow?.externalId).toBe(systolicRow?.externalId);
   });
 
@@ -848,7 +910,7 @@ describe("importAppleHealthFile — full DB integration", () => {
     expect(session?.sleepType).toBeNull();
   });
 
-  it("creates activity rows for workouts with GPS in metric_stream", async () => {
+  it("creates activity rows for workouts and publishes GPS metric stream events", async () => {
     const activities = await ctx.db.select().from(schema.activity);
     const run = activities.find((a) => a.activityType === "running");
     expect(run).toBeDefined();
@@ -861,7 +923,7 @@ describe("importAppleHealthFile — full DB integration", () => {
       maxHeartRate: 175,
     });
 
-    const allMetrics = await ctx.db.select().from(schema.metricStream);
+    const allMetrics = publishedMetricStreamRows;
     const gpsRows = allMetrics.filter(
       (metricRow) => metricRow.activityId === run?.id && metricRow.channel === "location",
     );
@@ -872,7 +934,8 @@ describe("importAppleHealthFile — full DB integration", () => {
     );
     expect(
       speedRows.some(
-        (metricRow) => metricRow.scalar !== null && Math.abs(metricRow.scalar - 3.5) < 0.1,
+        (metricRow) =>
+          typeof metricRow.scalar === "number" && Math.abs(metricRow.scalar - 3.5) < 0.1,
       ),
     ).toBe(true);
   });
@@ -891,9 +954,6 @@ describe("importAppleHealthFile — full DB integration", () => {
     // Count before
     const sleepBefore = await ctx.db.select().from(schema.sleepSession);
     const activitiesBefore = await ctx.db.select().from(schema.activity);
-    const bodyBefore = (await ctx.db.select().from(schema.metricStream)).filter(
-      (row) => row.channel.startsWith("body_") || row.channel.includes("blood_pressure"),
-    );
 
     // Re-import with an XML file (non-zip path to avoid clinical records branch)
     const xmlPath = join(tmpDir, "export.xml");
@@ -902,13 +962,9 @@ describe("importAppleHealthFile — full DB integration", () => {
     // Count after — should be same due to upsert/conflict handling
     const sleepAfter = await ctx.db.select().from(schema.sleepSession);
     const activitiesAfter = await ctx.db.select().from(schema.activity);
-    const bodyAfter = (await ctx.db.select().from(schema.metricStream)).filter(
-      (row) => row.channel.startsWith("body_") || row.channel.includes("blood_pressure"),
-    );
 
     expect(sleepAfter.length).toBe(sleepBefore.length);
     expect(activitiesAfter.length).toBe(activitiesBefore.length);
-    expect(bodyAfter.length).toBe(bodyBefore.length);
   }, 60_000);
 });
 

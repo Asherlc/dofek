@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, dailyMetrics, healthEvent, metricStream, sleepSession } from "../db/schema.ts";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { activity, dailyMetrics, healthEvent, sleepSession } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -24,6 +24,23 @@ import type {
   OuraVO2Max,
   OuraWorkout,
 } from "./oura/schemas.ts";
+
+const { publishedMetricStreamBatches } = vi.hoisted<{
+  publishedMetricStreamBatches: Record<string, unknown>[][];
+}>(() => ({ publishedMetricStreamBatches: [] }));
+
+vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: async () => ({
+    publishRows: async (rows: readonly Record<string, unknown>[]) => {
+      publishedMetricStreamBatches.push([...rows]);
+      return rows.map((row, index) => ({
+        version: 1,
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+      }));
+    },
+  }),
+}));
 
 function fakeSleepDoc(overrides: Partial<OuraSleepDocument> = {}): OuraSleepDocument {
   return {
@@ -318,6 +335,10 @@ describe("OuraProvider.sync() (integration)", () => {
     await ensureProvider(ctx.db, "oura", "Oura", "https://api.ouraring.com");
   }, 60_000);
 
+  beforeEach(() => {
+    publishedMetricStreamBatches.length = 0;
+  });
+
   afterEach(() => {
     server.resetHandlers();
   });
@@ -390,11 +411,8 @@ describe("OuraProvider.sync() (integration)", () => {
     expect(session).toBeDefined();
     expect(session?.activityType).toBe("meditation");
 
-    // Verify heart rate → metric_stream
-    const hrRows = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "oura"));
+    // Verify heart rate metric stream events
+    const hrRows = publishedMetricStreamBatches.flat();
     const heartRateSamples = hrRows.filter((sample) => sample.channel === "heart_rate");
     expect(heartRateSamples.length).toBeGreaterThanOrEqual(1);
     expect(heartRateSamples[0]?.scalar).toBe(62);

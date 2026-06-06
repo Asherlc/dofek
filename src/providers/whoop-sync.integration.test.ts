@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { WhoopClient } from "whoop-whoop/client";
 import type {
   WhoopHrValue,
@@ -14,7 +14,6 @@ import {
   activity,
   dailyMetrics,
   journalEntry,
-  metricStream,
   sleepSession,
   sleepStage,
   TEST_USER_ID,
@@ -23,6 +22,23 @@ import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { WhoopProvider } from "./whoop/provider.ts";
+
+const { publishedMetricStreamBatches } = vi.hoisted<{
+  publishedMetricStreamBatches: Record<string, unknown>[][];
+}>(() => ({ publishedMetricStreamBatches: [] }));
+
+vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: async () => ({
+    publishRows: async (rows: readonly Record<string, unknown>[]) => {
+      publishedMetricStreamBatches.push([...rows]);
+      return rows.map((row, index) => ({
+        version: 1,
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+      }));
+    },
+  }),
+}));
 
 // ============================================================
 // Fake WHOOP internal API cycle response
@@ -233,6 +249,10 @@ describe("WhoopProvider.sync() (integration)", () => {
       scopes: "",
     });
   }, 60_000);
+
+  beforeEach(() => {
+    publishedMetricStreamBatches.length = 0;
+  });
 
   afterEach(() => {
     server.resetHandlers();
@@ -483,7 +503,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     expect(ride.activityType).toBe("cycling");
   });
 
-  it("syncs HR stream into metric_stream", async () => {
+  it("syncs HR stream into Redpanda metric stream events", async () => {
     const hrValues = fakeHrValues(50, new Date("2026-03-01T10:00:00Z").getTime());
     server.use(...whoopHandlers([], { hrValues }));
     const provider = new WhoopProvider();
@@ -491,11 +511,7 @@ describe("WhoopProvider.sync() (integration)", () => {
 
     expect(result.errors).toHaveLength(0);
 
-    const rows = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "whoop"));
-
+    const rows = publishedMetricStreamBatches.flat();
     const withHr = rows.filter((sample) => sample.channel === "heart_rate");
     expect(withHr.length).toBeGreaterThanOrEqual(50);
   });

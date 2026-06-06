@@ -1,12 +1,29 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, metricStream } from "../db/schema.ts";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { activity } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { type PelotonPerformanceGraph, PelotonProvider, type PelotonWorkout } from "./peloton.ts";
+
+const { publishedMetricStreamBatches } = vi.hoisted<{
+  publishedMetricStreamBatches: Record<string, unknown>[][];
+}>(() => ({ publishedMetricStreamBatches: [] }));
+
+vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: async () => ({
+    publishRows: async (rows: readonly Record<string, unknown>[]) => {
+      publishedMetricStreamBatches.push([...rows]);
+      return rows.map((row, index) => ({
+        version: 1,
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+      }));
+    },
+  }),
+}));
 
 // ============================================================
 // Fake Peloton API responses
@@ -208,30 +225,33 @@ describe("PelotonProvider.sync() (integration)", () => {
     expect(run.activityType).toBe("running");
   });
 
-  it("inserts metric_stream rows from performance graph", async () => {
-    const rows = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "peloton"));
+  it("publishes metric stream events from performance graph", async () => {
+    const rows = publishedMetricStreamBatches.flat().filter((row) => row.providerId === "peloton");
 
     // 2 workouts × 3 samples × 3 channels (heart_rate, power, cadence) = 18 rows
     expect(rows).toHaveLength(18);
 
     const workout1Start = new Date(1709280000 * 1000);
     const firstHeartRateRow = rows.find(
-      (row) => row.channel === "heart_rate" && row.recordedAt.getTime() === workout1Start.getTime(),
+      (row) =>
+        row.channel === "heart_rate" &&
+        new Date(String(row.recordedAt)).getTime() === workout1Start.getTime(),
     );
     if (!firstHeartRateRow) {
       throw new Error("expected heart-rate metric stream at workout start time");
     }
     expect(firstHeartRateRow.scalar).toBe(130);
     const firstPowerRow = rows.find(
-      (row) => row.channel === "power" && row.recordedAt.getTime() === workout1Start.getTime(),
+      (row) =>
+        row.channel === "power" &&
+        new Date(String(row.recordedAt)).getTime() === workout1Start.getTime(),
     );
     if (!firstPowerRow) throw new Error("expected power metric stream at workout start time");
     expect(firstPowerRow.scalar).toBe(180);
     const firstCadenceRow = rows.find(
-      (row) => row.channel === "cadence" && row.recordedAt.getTime() === workout1Start.getTime(),
+      (row) =>
+        row.channel === "cadence" &&
+        new Date(String(row.recordedAt)).getTime() === workout1Start.getTime(),
     );
     if (!firstCadenceRow) throw new Error("expected cadence metric stream at workout start time");
     expect(firstCadenceRow.scalar).toBe(80);
@@ -496,10 +516,9 @@ describe("PelotonProvider.sync() (integration)", () => {
     )[0]?.id;
     if (!activityId) throw new Error("expected workout-no-pedaling activity");
 
-    const streams = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.activityId, activityId));
+    const streams = publishedMetricStreamBatches
+      .flat()
+      .filter((row) => row.activityId === activityId);
 
     expect(streams.length).toBeGreaterThan(0);
     const heartRateSamples = streams.filter((stream) => stream.channel === "heart_rate");
@@ -535,10 +554,9 @@ describe("PelotonProvider.sync() (integration)", () => {
     )[0]?.id;
     if (!activityId) throw new Error("expected workout-with-pedaling activity");
 
-    const streams = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.activityId, activityId));
+    const streams = publishedMetricStreamBatches
+      .flat()
+      .filter((row) => row.activityId === activityId);
 
     expect(streams.length).toBeGreaterThan(0);
     const heartRateSamples = streams.filter((stream) => stream.channel === "heart_rate");

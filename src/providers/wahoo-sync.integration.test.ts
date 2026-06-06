@@ -3,13 +3,30 @@ import { resolve } from "node:path";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, metricStream } from "../db/schema.ts";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { activity } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import type { WahooWorkout } from "./wahoo/client.ts";
 import { WahooProvider } from "./wahoo/provider.ts";
+
+const { publishedMetricStreamBatches } = vi.hoisted<{
+  publishedMetricStreamBatches: Record<string, unknown>[][];
+}>(() => ({ publishedMetricStreamBatches: [] }));
+
+vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: async () => ({
+    publishRows: async (rows: readonly Record<string, unknown>[]) => {
+      publishedMetricStreamBatches.push([...rows]);
+      return rows.map((row, index) => ({
+        version: 1,
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+      }));
+    },
+  }),
+}));
 
 // Fake Wahoo API responses
 function fakeWorkout(overrides: Partial<WahooWorkout> = {}): WahooWorkout {
@@ -90,6 +107,10 @@ describe("WahooProvider.sync() (integration)", () => {
     server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "wahoo", "Wahoo", "https://api.wahooligan.com");
   }, 60_000);
+
+  beforeEach(() => {
+    publishedMetricStreamBatches.length = 0;
+  });
 
   afterEach(() => {
     server.resetHandlers();
@@ -182,7 +203,7 @@ describe("WahooProvider.sync() (integration)", () => {
     expect(tokens?.accessToken).toBe("refreshed-token");
   });
 
-  it("downloads FIT files and inserts metric_stream records", async () => {
+  it("downloads FIT files and publishes Redpanda metric stream events", async () => {
     await saveTokens(ctx.db, "wahoo", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",
@@ -200,7 +221,7 @@ describe("WahooProvider.sync() (integration)", () => {
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
 
-    // Verify metric_stream rows linked to the cardio_activity
+    // Verify metric stream events linked to the cardio_activity
     const activities = await ctx.db.select().from(activity).where(eq(activity.externalId, "2001"));
 
     expect(activities).toHaveLength(1);
@@ -208,12 +229,11 @@ describe("WahooProvider.sync() (integration)", () => {
     if (!firstActivity) throw new Error("expected activity");
     const activityId = firstActivity.id;
 
-    const metrics = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.activityId, activityId));
+    const metrics = publishedMetricStreamBatches
+      .flat()
+      .filter((row) => row.activityId === activityId);
 
-    // test.fit has 3229 source samples; metric_stream count should be at least that many rows.
+    // test.fit has 3229 source samples; metric stream count should be at least that many events.
     expect(metrics.length).toBeGreaterThanOrEqual(3229);
     // Verify records have actual speed channel data from test.fit.
     const speedSamples = metrics.filter((sample) => sample.channel === "speed");

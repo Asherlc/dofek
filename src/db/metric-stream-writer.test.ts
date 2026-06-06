@@ -285,7 +285,62 @@ describe("writeMetricStreamBatch", () => {
     expect(db.insert).not.toHaveBeenCalled();
   });
 
-  it("fails fast when neither the row nor token context provides a user ID", async () => {
+  it("does not publish an empty trailing batch when row count matches the batch size", async () => {
+    const db = { insert: vi.fn() };
+    const rows = Array.from({ length: 6 }, (_, index) => ({
+      recordedAt: new Date(`2026-03-30T12:00:0${index}Z`),
+      userId: "00000000-0000-0000-0000-000000000001",
+      providerId: "test",
+      externalId: `sample-${index}`,
+      heartRate: index,
+    }));
+
+    const count = await writeMetricStreamBatch(db, rows, "api", 3);
+
+    expect(count).toBe(6);
+    expect(mockPublishRows).toHaveBeenCalledTimes(2);
+    expect(mockPublishRows.mock.calls[0]?.[0]).toHaveLength(3);
+    expect(mockPublishRows.mock.calls[1]?.[0]).toHaveLength(3);
+    expect(mockPublishRows.mock.calls.some((call) => call[0].length === 0)).toBe(false);
+  });
+
+  it("publishes nested JSON metadata for location rows", async () => {
+    const db = { insert: vi.fn() };
+
+    const count = await writeMetricStreamBatch(
+      db,
+      [
+        {
+          recordedAt: new Date("2026-03-30T12:00:00Z"),
+          userId: "00000000-0000-0000-0000-000000000001",
+          providerId: "gps",
+          externalId: "gps-sample-1",
+          lat: 40.7128,
+          lng: -74.006,
+          raw: {
+            label: "good",
+            values: [1, true, null, { nested: "ok" }],
+          },
+        },
+      ],
+      "api",
+    );
+
+    expect(count).toBe(1);
+    expect(mockPublishRows.mock.calls[0]?.[0]).toEqual([
+      expect.objectContaining({
+        channel: "location",
+        metadata: {
+          raw: {
+            label: "good",
+            values: [1, true, null, { nested: "ok" }],
+          },
+        },
+      }),
+    ]);
+  });
+
+  it("rejects non-JSON values nested in metadata arrays", async () => {
     const db = { insert: vi.fn() };
 
     await expect(
@@ -294,14 +349,70 @@ describe("writeMetricStreamBatch", () => {
         [
           {
             recordedAt: new Date("2026-03-30T12:00:00Z"),
-            providerId: "withings",
-            externalId: "withings-measure-2",
-            weightKg: 72.5,
+            userId: "00000000-0000-0000-0000-000000000001",
+            providerId: "gps",
+            externalId: "gps-sample-2",
+            lat: 40.7128,
+            lng: -74.006,
+            raw: [1, Symbol("not-json")],
           },
         ],
         "api",
       ),
-    ).rejects.toThrow("metric_stream ingestion rows require userId");
+    ).rejects.toThrow("metric_stream ingestion metadata must be JSON serializable");
+    expect(mockPublishRows).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-JSON values nested in metadata objects", async () => {
+    const db = { insert: vi.fn() };
+
+    await expect(
+      writeMetricStreamBatch(
+        db,
+        [
+          {
+            recordedAt: new Date("2026-03-30T12:00:00Z"),
+            userId: "00000000-0000-0000-0000-000000000001",
+            providerId: "gps",
+            externalId: "gps-sample-3",
+            lat: 40.7128,
+            lng: -74.006,
+            raw: { ok: "yes", bad: Symbol("not-json") },
+          },
+        ],
+        "api",
+      ),
+    ).rejects.toThrow("metric_stream ingestion metadata must be JSON serializable");
+    expect(mockPublishRows).not.toHaveBeenCalled();
+  });
+
+  it("fails fast when neither the row nor token context provides a user ID", async () => {
+    const db = { insert: vi.fn() };
+    const previousTestTokenUserId = process.env.TEST_TOKEN_USER_ID;
+    delete process.env.TEST_TOKEN_USER_ID;
+
+    try {
+      await expect(
+        writeMetricStreamBatch(
+          db,
+          [
+            {
+              recordedAt: new Date("2026-03-30T12:00:00Z"),
+              providerId: "withings",
+              externalId: "withings-measure-2",
+              weightKg: 72.5,
+            },
+          ],
+          "api",
+        ),
+      ).rejects.toThrow("metric_stream ingestion rows require userId");
+    } finally {
+      if (previousTestTokenUserId === undefined) {
+        delete process.env.TEST_TOKEN_USER_ID;
+      } else {
+        process.env.TEST_TOKEN_USER_ID = previousTestTokenUserId;
+      }
+    }
     expect(db.insert).not.toHaveBeenCalled();
   });
 });

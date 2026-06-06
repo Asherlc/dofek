@@ -2,12 +2,29 @@ import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, dailyMetrics, metricStream } from "../db/schema.ts";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { activity, dailyMetrics } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { ZwiftProvider } from "./zwift.ts";
+
+const { publishedMetricStreamBatches } = vi.hoisted<{
+  publishedMetricStreamBatches: Record<string, unknown>[][];
+}>(() => ({ publishedMetricStreamBatches: [] }));
+
+vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: async () => ({
+    publishRows: async (rows: readonly Record<string, unknown>[]) => {
+      publishedMetricStreamBatches.push([...rows]);
+      return rows.map((row, index) => ({
+        version: 1,
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+      }));
+    },
+  }),
+}));
 
 // ============================================================
 // Fake Zwift API data builders
@@ -215,6 +232,10 @@ describe("ZwiftProvider.sync() (integration)", () => {
     await ensureProvider(ctx.db, "zwift", "Zwift", "https://us-or-rly101.zwift.com");
   }, 60_000);
 
+  beforeEach(() => {
+    publishedMetricStreamBatches.length = 0;
+  });
+
   afterEach(() => {
     server.resetHandlers();
   });
@@ -275,11 +296,8 @@ describe("ZwiftProvider.sync() (integration)", () => {
     if (!run) throw new Error("expected activity 100002");
     expect(run.activityType).toBe("running");
 
-    // Verify metric_stream rows were inserted from fitness data
-    const metrics = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "zwift"));
+    // Verify metric stream events were published from fitness data
+    const metrics = publishedMetricStreamBatches.flat();
     // 2 activities x 3 heart-rate samples each = 6
     const heartRateSamples = metrics.filter((sample) => sample.channel === "heart_rate");
     expect(heartRateSamples.length).toBe(6);

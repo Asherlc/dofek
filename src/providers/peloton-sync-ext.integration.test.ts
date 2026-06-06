@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, metricStream } from "../db/schema.ts";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { activity } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -15,6 +15,23 @@ import {
 } from "./peloton.ts";
 
 const server = setupServer();
+
+const { publishedMetricStreamBatches } = vi.hoisted<{
+  publishedMetricStreamBatches: Record<string, unknown>[][];
+}>(() => ({ publishedMetricStreamBatches: [] }));
+
+vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: async () => ({
+    publishRows: async (rows: readonly Record<string, unknown>[]) => {
+      publishedMetricStreamBatches.push([...rows]);
+      return rows.map((row, index) => ({
+        version: 1,
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+      }));
+    },
+  }),
+}));
 
 // ============================================================
 // Helpers
@@ -92,6 +109,10 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "peloton", "Peloton", "https://api.onepeloton.com");
   }, 60_000);
+
+  beforeEach(() => {
+    publishedMetricStreamBatches.length = 0;
+  });
 
   afterEach(() => {
     server.resetHandlers();
@@ -285,13 +306,12 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.activityType).toBe("meditation");
 
-    // No metric_stream rows for this activity (empty metrics)
+    // No metric stream events for this activity (empty metrics)
     const activityId = rows[0]?.id;
     if (activityId) {
-      const streams = await ctx.db
-        .select()
-        .from(metricStream)
-        .where(eq(metricStream.activityId, activityId));
+      const streams = publishedMetricStreamBatches
+        .flat()
+        .filter((row) => row.activityId === activityId);
       expect(streams).toHaveLength(0);
     }
   });
@@ -360,7 +380,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
 
     expect(result.errors).toHaveLength(0);
 
-    // Each sample has heart_rate and power, so we should store 1200 metric_stream rows.
+    // Each sample has heart_rate and power, so we should publish 1200 metric stream events.
     const activityRows = await ctx.db
       .select()
       .from(activity)
@@ -369,10 +389,9 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
 
     const activityId = activityRows[0]?.id;
     if (activityId) {
-      const streams = await ctx.db
-        .select()
-        .from(metricStream)
-        .where(eq(metricStream.activityId, activityId));
+      const streams = publishedMetricStreamBatches
+        .flat()
+        .filter((row) => row.activityId === activityId);
       const heartRateSamples = streams.filter((sample) => sample.channel === "heart_rate");
       const powerSamples = streams.filter((sample) => sample.channel === "power");
       expect(heartRateSamples).toHaveLength(largeSampleCount);
@@ -380,7 +399,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     }
   });
 
-  it("deletes old metric_stream rows on re-sync before inserting new ones", async () => {
+  it("publishes metric stream events on each re-sync", async () => {
     await saveTokens(ctx.db, "peloton", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",
@@ -434,19 +453,18 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     await provider.sync(ctx.db, since);
     await provider.sync(ctx.db, since);
 
-    // Should have exactly 2 heart-rate metric_stream rows (not 4)
+    // Redpanda is an append log, so both sync attempts publish their raw events.
     const activityRows = await ctx.db
       .select()
       .from(activity)
       .where(eq(activity.externalId, "ext-resync-workout"));
     const activityId = activityRows[0]?.id;
     if (activityId) {
-      const streams = await ctx.db
-        .select()
-        .from(metricStream)
-        .where(eq(metricStream.activityId, activityId));
+      const streams = publishedMetricStreamBatches
+        .flat()
+        .filter((row) => row.activityId === activityId);
       const heartRateSamples = streams.filter((sample) => sample.channel === "heart_rate");
-      expect(heartRateSamples).toHaveLength(2);
+      expect(heartRateSamples).toHaveLength(4);
     }
   });
 
