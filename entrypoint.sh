@@ -76,8 +76,8 @@ case "${1:-sync}" in
         sleep "$interval_seconds"
       else
         status="$?"
-        echo "cdc-health: check failed with exit status $status" >&2
-        exit "$status"
+        echo "cdc-health: check failed with exit status $status; retrying in ${interval_seconds}s" >&2
+        sleep "$interval_seconds"
       fi
     done
     ;;
