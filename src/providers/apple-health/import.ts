@@ -200,9 +200,7 @@ export async function runImport(
           nutritionRecords.length > 0 ? upsertNutritionBatch(db, providerId, nutritionRecords) : 0,
           unrouted.length > 0 ? upsertHealthEventBatch(db, providerId, unrouted) : 0,
         ]);
-        if (metricRecords.length > 0) {
-          dailyAggregateMetricRecords.push(...metricRecords);
-        }
+        dailyAggregateMetricRecords.push(...metricRecords);
         for (const c of results) recordsSynced += c;
       },
       onSleepBatch: async (records) => {

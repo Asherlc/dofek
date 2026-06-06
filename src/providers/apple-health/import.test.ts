@@ -597,6 +597,95 @@ describe("runImport (control-flow mutation killers)", () => {
     expect(aggregateSkinTempToDailyMetrics).toHaveBeenCalledTimes(1);
   });
 
+  it("aggregates only metric records collected across multiple record batches", async () => {
+    vi.resetModules();
+
+    const firstMetricRecord = { type: "metric.type", marker: "first" };
+    const secondMetricRecord = { type: "metric.type", marker: "second" };
+    const bodyRecord = { type: "body.type", marker: "body" };
+    const upsertMetricStreamBatch = vi.fn().mockResolvedValue(1);
+    const upsertBodyMeasurementBatch = vi.fn().mockResolvedValue(1);
+    const aggregateSpO2ToDailyMetrics = vi.fn().mockResolvedValue(undefined);
+    const aggregateSkinTempToDailyMetrics = vi.fn().mockResolvedValue(undefined);
+
+    vi.doMock("./db-insertion.ts", () => ({
+      METRIC_STREAM_TYPES: { "metric.type": true },
+      BODY_MEASUREMENT_TYPES: new Set(["body.type"]),
+      DAILY_METRIC_TYPES: new Set(["daily.type"]),
+      NUTRITION_TYPES: { "nutrition.type": true },
+      ALL_ROUTED_TYPES: new Set(["metric.type", "body.type", "daily.type", "nutrition.type"]),
+      upsertMetricStreamBatch,
+      upsertBodyMeasurementBatch,
+      upsertDailyMetricsBatch: vi.fn().mockResolvedValue(0),
+      upsertNutritionBatch: vi.fn().mockResolvedValue(0),
+      upsertHealthEventBatch: vi.fn().mockResolvedValue(0),
+      upsertSleepBatch: vi.fn().mockResolvedValue(0),
+      upsertWorkoutBatch: vi.fn().mockResolvedValue(0),
+      aggregateSpO2ToDailyMetrics,
+      aggregateSkinTempToDailyMetrics,
+    }));
+
+    vi.doMock("./streaming.ts", () => ({
+      streamHealthExport: vi.fn(
+        async (
+          _xmlPath: string,
+          _since: Date,
+          handlers: {
+            onRecordBatch: (records: Array<{ type: string; marker: string }>) => Promise<void>;
+          },
+        ) => {
+          await handlers.onRecordBatch([firstMetricRecord]);
+          await handlers.onRecordBatch([bodyRecord]);
+          await handlers.onRecordBatch([secondMetricRecord]);
+          return { recordCount: 3, workoutCount: 0, sleepCount: 0, categoryCount: 0 };
+        },
+      ),
+    }));
+
+    const { runImport: mockedRunImport } = await import("./import.ts");
+    const db = createRunImportDbForMockedStreaming();
+    const result = await mockedRunImport(
+      db,
+      "apple_health",
+      "/tmp/stream.xml",
+      new Date("2026-03-01T00:00:00Z"),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(3);
+
+    expect(upsertMetricStreamBatch).toHaveBeenCalledTimes(2);
+    expect(upsertMetricStreamBatch).toHaveBeenCalledWith(
+      db,
+      "apple_health",
+      [firstMetricRecord],
+      undefined,
+    );
+    expect(upsertMetricStreamBatch).toHaveBeenCalledWith(
+      db,
+      "apple_health",
+      [secondMetricRecord],
+      undefined,
+    );
+    expect(upsertBodyMeasurementBatch).toHaveBeenCalledTimes(1);
+    expect(upsertBodyMeasurementBatch).toHaveBeenCalledWith(
+      db,
+      "apple_health",
+      [bodyRecord],
+      undefined,
+    );
+    expect(aggregateSpO2ToDailyMetrics).toHaveBeenCalledTimes(1);
+    expect(aggregateSpO2ToDailyMetrics).toHaveBeenCalledWith(db, "apple_health", [
+      firstMetricRecord,
+      secondMetricRecord,
+    ]);
+    expect(aggregateSkinTempToDailyMetrics).toHaveBeenCalledTimes(1);
+    expect(aggregateSkinTempToDailyMetrics).toHaveBeenCalledWith(db, "apple_health", [
+      firstMetricRecord,
+      secondMetricRecord,
+    ]);
+  });
+
   it("skips empty record buckets and does not call unrelated upsert handlers", async () => {
     vi.resetModules();
 
@@ -655,6 +744,64 @@ describe("runImport (control-flow mutation killers)", () => {
     expect(upsertDailyMetricsBatch).not.toHaveBeenCalled();
     expect(upsertNutritionBatch).not.toHaveBeenCalled();
     expect(upsertHealthEventBatch).not.toHaveBeenCalled();
+  });
+
+  it("does not run daily metric aggregation when streamed records contain no metric records", async () => {
+    vi.resetModules();
+
+    const upsertMetricStreamBatch = vi.fn().mockResolvedValue(1);
+    const upsertBodyMeasurementBatch = vi.fn().mockResolvedValue(2);
+    const aggregateSpO2ToDailyMetrics = vi.fn().mockResolvedValue(undefined);
+    const aggregateSkinTempToDailyMetrics = vi.fn().mockResolvedValue(undefined);
+
+    vi.doMock("./db-insertion.ts", () => ({
+      METRIC_STREAM_TYPES: { "metric.type": true },
+      BODY_MEASUREMENT_TYPES: new Set(["body.type"]),
+      DAILY_METRIC_TYPES: new Set(["daily.type"]),
+      NUTRITION_TYPES: { "nutrition.type": true },
+      ALL_ROUTED_TYPES: new Set(["metric.type", "body.type", "daily.type", "nutrition.type"]),
+      upsertMetricStreamBatch,
+      upsertBodyMeasurementBatch,
+      upsertDailyMetricsBatch: vi.fn().mockResolvedValue(0),
+      upsertNutritionBatch: vi.fn().mockResolvedValue(0),
+      upsertHealthEventBatch: vi.fn().mockResolvedValue(0),
+      upsertSleepBatch: vi.fn().mockResolvedValue(0),
+      upsertWorkoutBatch: vi.fn().mockResolvedValue(0),
+      aggregateSpO2ToDailyMetrics,
+      aggregateSkinTempToDailyMetrics,
+    }));
+
+    vi.doMock("./streaming.ts", () => ({
+      streamHealthExport: vi.fn(
+        async (
+          _xmlPath: string,
+          _since: Date,
+          handlers: {
+            onRecordBatch: (records: Array<{ type: string }>) => Promise<void>;
+          },
+        ) => {
+          await handlers.onRecordBatch([{ type: "body.type" }]);
+          return { recordCount: 1, workoutCount: 0, sleepCount: 0, categoryCount: 0 };
+        },
+      ),
+    }));
+
+    const { runImport: mockedRunImport } = await import("./import.ts");
+    const db = createRunImportDbForMockedStreaming();
+    const result = await mockedRunImport(
+      db,
+      "apple_health",
+      "/tmp/stream.xml",
+      new Date("2026-03-01T00:00:00Z"),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(2);
+
+    expect(upsertMetricStreamBatch).not.toHaveBeenCalled();
+    expect(upsertBodyMeasurementBatch).toHaveBeenCalledTimes(1);
+    expect(aggregateSpO2ToDailyMetrics).not.toHaveBeenCalled();
+    expect(aggregateSkinTempToDailyMetrics).not.toHaveBeenCalled();
   });
 });
 
