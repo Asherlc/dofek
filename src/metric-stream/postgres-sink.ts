@@ -79,7 +79,14 @@ export async function insertMetricStreamEventsIntoPostgres(
       metadata
     )
     VALUES ${sql.join(parsedEvents.map(metricStreamEventPostgresValues), sql`, `)}
-    ON CONFLICT (id, recorded_at) DO NOTHING`,
+    ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE
+      SET scalar = EXCLUDED.scalar,
+          vector = EXCLUDED.vector,
+          point = EXCLUDED.point,
+          metadata = EXCLUDED.metadata,
+          device_id = EXCLUDED.device_id,
+          source_type = EXCLUDED.source_type,
+          activity_id = EXCLUDED.activity_id`,
   );
 
   return parsedEvents.length;

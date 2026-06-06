@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
-const { mockInvalidateByPrefix } = vi.hoisted(() => ({
+const { mockInvalidateByPrefix, mockMetricStreamPublishRows } = vi.hoisted(() => ({
   mockInvalidateByPrefix: vi.fn().mockResolvedValue(undefined),
+  mockMetricStreamPublishRows: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("dofek/sync-metrics", () => ({
@@ -21,6 +22,12 @@ vi.mock("dofek/lib/cache", () => ({
 
 vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
+}));
+
+vi.mock("../../../../src/metric-stream/redpanda-producer.ts", () => ({
+  createKafkaMetricStreamEventPublisherFromEnv: () => ({
+    publishRows: mockMetricStreamPublishRows,
+  }),
 }));
 
 vi.mock("../trpc.ts", async () => {
@@ -79,6 +86,8 @@ describe("healthKitSyncRouter", () => {
     vi.mocked(healthKitRecordsTotal.add).mockClear();
     vi.mocked(healthKitPushTotal.add).mockClear();
     mockInvalidateByPrefix.mockClear();
+    mockMetricStreamPublishRows.mockReset();
+    mockMetricStreamPublishRows.mockResolvedValue([]);
   });
 
   describe("pushQuantitySamples", () => {
@@ -345,7 +354,7 @@ describe("healthKitSyncRouter", () => {
       expect(serialized).not.toContain("5552.349998360692");
     });
 
-    it("rounds float heart rate before inserting into metric_stream", async () => {
+    it("rounds float heart rate before publishing metric_stream events", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -363,15 +372,12 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      // Find the metric_stream INSERT
-      const metricInsertCall = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return serialized.includes("fitness.metric_stream") && serialized.includes("heart_rate");
-      });
-      expect(metricInsertCall).toBeDefined();
-      const serialized = JSON.stringify(metricInsertCall?.[0]);
-      expect(serialized).toContain("81");
-      expect(serialized).not.toContain("80.89823150634766");
+      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith([
+        expect.objectContaining({
+          channel: "heart_rate",
+          scalar: 81,
+        }),
+      ]);
     });
 
     it("does not round real-valued columns (active_energy_kcal, distance_km)", async () => {
@@ -428,12 +434,13 @@ describe("healthKitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(1);
-      const serialized = serializeMetricStreamInsertCalls(execute);
-      expect(serialized).toContain("external_id");
-      expect(serialized).toContain("hk:hr1");
-      expect(serialized).toContain(
-        "ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE",
-      );
+      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith([
+        expect.objectContaining({
+          externalId: "hk:hr1",
+          channel: "heart_rate",
+          scalar: 120,
+        }),
+      ]);
     });
 
     it("does not update metric_stream rows after inserting heart-rate metrics", async () => {
@@ -645,8 +652,7 @@ describe("healthKitSyncRouter", () => {
       const execute = vi.fn();
       // ensureProvider succeeds
       execute.mockResolvedValueOnce([]);
-      // metric_stream insert fails
-      execute.mockRejectedValueOnce(new Error("Metric stream DB error"));
+      mockMetricStreamPublishRows.mockRejectedValueOnce(new Error("Metric stream Redpanda error"));
 
       const caller = createCaller({
         db: { execute },
@@ -3044,7 +3050,7 @@ describe("healthKitSyncRouter", () => {
   });
 
   describe("pushQuantitySamples - metric stream JSON and batch mutations", () => {
-    it("stores source metadata in metric_stream columns", async () => {
+    it("stores source metadata in metric_stream events", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -3064,14 +3070,12 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      const metricInsert = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return serialized.includes("fitness.metric_stream") && serialized.includes("INSERT");
-      });
-      expect(metricInsert).toBeDefined();
-      const serialized = JSON.stringify(metricInsert?.[0]);
-      expect(serialized).toContain("heart_rate");
-      expect(serialized).toContain("Apple Watch");
+      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith([
+        expect.objectContaining({
+          channel: "heart_rate",
+          deviceId: "Apple Watch",
+        }),
+      ]);
     });
   });
 

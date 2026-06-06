@@ -27,7 +27,7 @@ Assumption: "r3" means Cloudflare R2. Self-managed Redpanda tiered storage appea
 ## Invariants
 
 - No dual writes from providers to both Postgres and Redpanda.
-- Do not switch production metric-stream writers to Redpanda-first until the Postgres sink, ClickHouse sink, and R2 archive path are deployed and validated.
+- Do not switch additional production metric-stream writers to Redpanda-first until the Postgres sink, ClickHouse sink, and R2 archive path are deployed and validated. HealthKit quantity metric-stream samples now use the Redpanda writer boundary.
 - No empty-string absent values.
 - Redpanda/R2 message schema is versioned and validated with Zod at every runtime boundary.
 - Consumers are idempotent. Replaying the same batch must not duplicate rows.
@@ -44,7 +44,7 @@ Files:
 - Add `src/metric-stream/redpanda-producer.test.ts`
 - Add `src/metric-stream/write-metric-stream.ts`
 - Add `src/metric-stream/write-metric-stream.test.ts`
-- Do not update production direct writers in this phase.
+- Update `packages/server/src/routers/health-kit-sync-processors.ts` to use the Redpanda writer boundary for HealthKit quantity metric-stream samples.
 
 Tasks:
 
@@ -53,12 +53,12 @@ Tasks:
 3. Add a Zod parser for producer input and consumer input.
 4. Add `writeMetricStreamRows()` as the single production API for inserting metric-stream rows.
 5. Unit-test that `writeMetricStreamRows()` publishes Redpanda events and does not write directly to Postgres when Redpanda publishing succeeds.
-6. Leave existing production writers on Postgres until Phase 5 cutover.
+6. Leave non-HealthKit production writers on Postgres until Phase 5 cutover.
 
 Validation:
 
 - `pnpm vitest run src/metric-stream/write-metric-stream.test.ts`
-- Existing HealthKit unit/integration tests remain unchanged in this phase.
+- Existing HealthKit router tests use a mocked metric-stream publisher for unit coverage.
 
 ## Phase 2: Postgres Sink
 
@@ -143,8 +143,7 @@ Files:
 
 - Update `deploy/stack.yml`
 - Update `deploy/README.md`
-- Update direct writers after sinks and archive are live:
-  - `packages/server/src/routers/health-kit-sync-processors.ts`
+- Update remaining direct writers after sinks and archive are live:
   - `packages/server/src/routers/activity-recording.ts`
   - `src/providers/strava.ts`
   - `src/providers/ride-with-gps.ts`

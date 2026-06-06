@@ -9,13 +9,14 @@ Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle C
 - **Compute**: Production runs on an OCI Ampere A1 ARM64 host provisioned by `deploy/oracle-free/` and addressed through the `ORACLE_SERVER_HOST` GitHub Actions variable. The server runs `dockerd` initialized as a single-node swarm manager and has no deploy scripts or secrets on disk.
 - **Storage**:
   - **PostgreSQL**: Managed via TimescaleDB with PostGIS enabled for geospatial metric data.
-  - **ClickHouse**: Runs in the swarm as the stored analytics read-model service for heavy activity stream reads. The raw `metric_stream` copy is managed through tracked ClickHouse migrations and chunk-range backfill. See [docs/clickhouse-metric-stream.md](../docs/clickhouse-metric-stream.md).
-  - **PeerDB**: Runs internally in the swarm as the Postgres-to-ClickHouse CDC service. It replicates `metric_stream` and raw fitness tables into `postgres_fitness.*` for analytics read models.
+  - **ClickHouse**: Runs in the swarm as the stored analytics read-model service for heavy activity stream reads. The raw `metric_stream` copy is populated by the Redpanda ClickHouse sink for Redpanda-first sources and remains compatible with tracked ClickHouse migrations and chunk-range backfills. See [docs/clickhouse-metric-stream.md](../docs/clickhouse-metric-stream.md).
+  - **Redpanda**: Runs internally in the swarm as the hot ingest log for high-volume `metric_stream` events. Postgres and ClickHouse sink services consume the topic, and Redpanda Connect archives it to R2.
+  - **PeerDB**: Runs internally in the swarm as the Postgres-to-ClickHouse CDC service for lower-volume raw fitness tables into `postgres_fitness.*`. The old `metric_stream` PeerDB mirror remains useful during shadow validation and bounded incident recovery until fully retired.
   - **Volume**: Production uses the OCI data volume mounted at `/mnt/dofek-data`.
   - **DB data path**: The `db` service bind-mounts Postgres data to `/mnt/dofek-data/postgres`.
   - **Databasus state path**: The `databasus` service bind-mounts its internal state to `/mnt/dofek-data/databasus` so backup schedules and storage config survive Docker volume churn.
   - **CloudBeaver state path**: The `cloudbeaver` service bind-mounts its workspace to `/mnt/dofek-data/cloudbeaver`, including the Terraform-synced preconfigured Postgres and ClickHouse datasource file.
-  - **S3 (R2)**: Cloudflare R2 buckets for training data (`dofek-training-data`), OTA updates (`dofek-ota`), Storybook (`dofek-storybook`), and DB backups (`dofek-db-backups`).
+  - **S3 (R2)**: Cloudflare R2 buckets for training data (`dofek-training-data`), OTA updates (`dofek-ota`), Storybook (`dofek-storybook`), DB backups (`dofek-db-backups`), and canonical metric-stream replay archives (`dofek-metric-stream-archive`).
 - **Networking**:
   - **Firewall**: OCI security lists allow production SSH/HTTP/HTTPS.
   - **DNS**: Cloudflare manages multiple zones: `dofek.fit`, `dofek.live`, and subdomains on `asherlc.com`.
@@ -38,7 +39,7 @@ Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle C
 - `cloud-init.yml`: Installs Docker CE, configures Docker log rotation (10m, 3 files), and idempotently runs `docker swarm init`. No deploy helpers, no Infisical CLI.
 
 ### Swarm Stack (`stack.yml`)
-- Single file defining all services: `web`, `worker`, `analytics-worker`, `cdc-health`, `training-export-worker`, `traefik`, `db`, `clickhouse`, `redis`, `collector`, `ota`, `databasus`, `cloudbeaver`, `pgadmin`, `portainer`, `netdata`.
+- Single file defining all services: `web`, `worker`, `analytics-worker`, `cdc-health`, `training-export-worker`, `traefik`, `db`, `clickhouse`, `redpanda`, `metric-stream-postgres-sink`, `metric-stream-clickhouse-sink`, `metric-stream-r2-archive`, `redis`, `collector`, `ota`, `databasus`, `cloudbeaver`, `pgadmin`, `portainer`, `netdata`.
 - Traefik consumes the swarm provider and routes traffic from labels declared on stack services.
 - Zero-downtime updates for `web` and `worker` are configured via `deploy.update_config` (`order: start-first`, `failure_action: rollback`, healthcheck-gated `monitor` window).
 - The `default` overlay network is declared `attachable: true` so CI can run one-shot migration containers on it from a remote Docker context.
@@ -48,6 +49,7 @@ Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle C
 - All production entrypoint modes that run dbt use `--threads 1 --select $DBT_SAFE_MODELS` to avoid concurrent or unsafe ClickHouse model builds on the single-node host. `analytics-worker` also has a 0.5 CPU Swarm limit and currently runs the dbt-native microbatched `sensor_scalar_sample` and `deduped_sensor` models plus the dirty-keyed dashboard serving models every 15 minutes. `analytics.activity_summary` is served from the incremental `analytics.activity_summary_rows` table through a thin view, and `analytics.daily_recovery`, `analytics.daily_strain`, `analytics.daily_sleep`, and `analytics.weekly_healthspan` are the named route-facing models for dashboard recovery, strain, sleep, and healthspan reads. Failed dbt runs sleep before retrying instead of exiting into an immediate Swarm restart loop. The `cdc-health` service runs `scripts/check-clickhouse-cdc.ts` every five minutes so PeerDB slot loss and stale mirrors are continuously reported instead of being discovered only during dashboard debugging.
 - Netdata has a 768 MiB container memory limit and a checked-in `deploy/netdata/netdata.conf` that bounds dbengine retention to two tiers: one day of per-second data capped at 96 MiB and seven days of per-minute data capped at 128 MiB. The stack mounts this file as a Docker Swarm config, so changing it must also rotate the config key in `deploy/stack.yml` (for example `netdata_db_limits_v2`).
 - PeerDB uses an internal catalog Postgres service, Temporal, worker services, and a private MinIO staging bucket. Its persistent catalog and staging data live under `/mnt/dofek-data/peerdb-catalog` and `/mnt/dofek-data/peerdb-minio`. The catalog uses the PostgreSQL 18 image layout: mount the host directory at `/var/lib/postgresql`, not `/var/lib/postgresql/data`, so the image can manage its versioned data directory. Production mirrors use 100,000-row CDC batches and single-worker 100,000-row initial snapshot partitions so PeerDB can stay inside its fixed memory limits at the cost of slower catch-up.
+- Redpanda stores hot `metric_stream` ingest data under `/mnt/dofek-data/redpanda`. Redpanda local retention is not the long-term source of truth; Redpanda Connect writes the `metric-stream-v1` topic to the `dofek-metric-stream-archive` R2 bucket for canonical replay. The Postgres and ClickHouse sink services must be healthy before any Redpanda-first writer is considered deployed safely.
 - `metric_stream` storage controls (Timescale hypertable + compression) are managed via `docs/metric-stream-timescaledb-runbook.md` and `drizzle/0006_metric_stream_timescale_policies.sql`. The `cdc-health` service alerts on PeerDB slot lag at 16 GiB and fails the check at 32 GiB so operators have headroom before Postgres reaches the 64 GiB per-slot WAL cap.
 - Slack is forced to HTTP mode in production via `SLACK_MODE=http` on the `web` service. This avoids Socket Mode multi-consumer overlap during rolling deploys when `web` has multiple replicas.
 - Management UIs use a local Authentik proxy outpost service (`authentik-proxy`) and shared Traefik middleware (`management-auth`). See [docs/management-ui-auth.md](../docs/management-ui-auth.md).
@@ -136,6 +138,8 @@ CI (main) -> build dofek + dofek-ml (same tag)
       - Must include `POSTGRES_PASSWORD`; PeerDB's catalog database and internal MinIO stage use this existing secret.
       - Must include `PEERDB_UI_NEXTAUTH_SECRET` as a dedicated high-entropy PeerDB UI session-signing secret.
       - Must include `AUTHENTIK_OUTPOST_TOKEN` for the local management UI proxy outpost.
+      - Must include `REDPANDA_BROKERS` and `METRIC_STREAM_TOPIC` for metric-stream producer and sink services.
+      - Must include `METRIC_STREAM_R2_BUCKET`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` for the Redpanda Connect R2 archive.
       - Optional: `CREDENTIAL_ENCRYPTION_KEY_NAMESPACE` (default `dofek`) and `CREDENTIAL_ENCRYPTION_KEY_NAME` (default `provider-credentials`).
    2. Point Docker CLI at the remote daemon with `DOCKER_HOST=ssh://ubuntu@<host>`.
    3. Login to GHCR on the CI runner.

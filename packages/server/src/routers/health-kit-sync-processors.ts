@@ -5,6 +5,11 @@ import {
   BODY_MEASUREMENT_COLUMN_TO_CHANNEL,
   SOURCE_TYPE_API,
 } from "../../../../src/db/sensor-channels.ts";
+import {
+  createKafkaMetricStreamEventPublisherFromEnv,
+  type MetricStreamEventPublisher,
+} from "../../../../src/metric-stream/redpanda-producer.ts";
+import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
 import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
@@ -251,13 +256,15 @@ export async function processDailyMetrics(
 
 /** Process metric streams */
 export async function processMetricStream(
-  db: Database,
+  _db: Database,
   userId: string,
   samples: HealthKitSample[],
+  publisher: MetricStreamEventPublisher = createKafkaMetricStreamEventPublisherFromEnv(),
 ): Promise<number> {
   let inserted = 0;
   for (let i = 0; i < samples.length; i += BATCH_SIZE) {
     const batch = samples.slice(i, i + BATCH_SIZE);
+    const rows = [];
     for (const sample of batch) {
       const mapping = metricStreamTypes[sample.type];
       if (!mapping) continue;
@@ -266,25 +273,19 @@ export async function processMetricStream(
         ? Math.round(sample.value)
         : sample.value;
       const externalId = `hk:${sample.uuid}`;
-      await db.execute(
-        sql`INSERT INTO fitness.metric_stream (recorded_at, user_id, provider_id, external_id, device_id, source_type, channel, scalar)
-            VALUES (
-              ${sample.startDate}::timestamptz,
-              ${userId},
-              ${PROVIDER_ID},
-              ${externalId},
-              ${sample.sourceName ?? null},
-              ${"api"},
-              ${mapping.column},
-              ${metricValue}::real
-            )
-            ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE
-            SET scalar = EXCLUDED.scalar,
-                device_id = EXCLUDED.device_id,
-                source_type = EXCLUDED.source_type`,
-      );
+      rows.push({
+        recordedAt: sample.startDate,
+        userId,
+        providerId: PROVIDER_ID,
+        externalId,
+        deviceId: sample.sourceName ?? null,
+        sourceType: "api",
+        channel: mapping.column,
+        scalar: metricValue,
+      });
       inserted++;
     }
+    await writeMetricStreamRows({ publisher, rows });
   }
   return inserted;
 }

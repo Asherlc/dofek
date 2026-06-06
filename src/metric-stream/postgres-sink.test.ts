@@ -23,7 +23,7 @@ const event = {
 } satisfies MetricStreamEventV1;
 
 describe("insertMetricStreamEventsIntoPostgres", () => {
-  it("inserts metric-stream events with retry-safe conflict handling", async () => {
+  it("upserts metric-stream events by the provider natural key for retry-safe syncs", async () => {
     const execute = vi.fn<PostgresMetricStreamSinkDatabase["execute"]>(async () => []);
 
     const inserted = await insertMetricStreamEventsIntoPostgres({ execute }, [event]);
@@ -36,7 +36,10 @@ describe("insertMetricStreamEventsIntoPostgres", () => {
     }
     const query = JSON.stringify(firstCall[0]);
     expect(query).toContain("INSERT INTO fitness.metric_stream");
-    expect(query).toContain("ON CONFLICT (id, recorded_at) DO NOTHING");
+    expect(query).toContain(
+      "ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE",
+    );
+    expect(query).toContain("scalar = EXCLUDED.scalar");
     expect(query).toContain("10000000-0000-4000-8000-000000000001");
   });
 

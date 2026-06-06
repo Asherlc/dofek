@@ -1,8 +1,10 @@
 # Metric Stream Redpanda and R2 Runbook
 
-Use this after the Redpanda metric-stream replay path is deployed. Until then,
-`fitness.metric_stream` still writes through Postgres and PeerDB still mirrors
-non-IMU rows into ClickHouse.
+Use this for the Redpanda metric-stream replay path. HealthKit quantity
+metric-stream samples publish through Redpanda first. Other providers may still
+write directly to Postgres until their individual writer cutovers are complete.
+PeerDB may still mirror non-IMU Postgres rows into ClickHouse during shadow
+validation and bounded recovery.
 
 ## Purpose
 
@@ -183,8 +185,10 @@ Do not switch production writers to Redpanda-first until all checks pass:
 7. Recent Redpanda-sourced ClickHouse rows match PeerDB-sourced rows over a
    bounded recent window.
 
-Only after this checklist passes should provider and mobile metric-stream
-writers move from direct Postgres writes to `writeMetricStreamRows()`.
+Only after this checklist passes should additional provider and mobile
+metric-stream writers move from direct Postgres writes to
+`writeMetricStreamRows()`. HealthKit quantity metric-stream samples already use
+that writer boundary.
 
 ## Incident Triage
 

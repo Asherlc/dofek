@@ -108,6 +108,12 @@ const redisPort = await resolvePort({
   service: "redis",
   privatePort: "6379",
 });
+const redpandaPort = await resolvePort({
+  env: existingEnv,
+  key: "REDPANDA_PORT",
+  service: "redpanda",
+  privatePort: "19092",
+});
 
 const dotenv = [
   `POSTGRES_PASSWORD=${dotenvEscape(postgresPassword)}`,
@@ -116,9 +122,13 @@ const dotenv = [
   `CLICKHOUSE_HTTP_PORT=${clickHouseHttpPort}`,
   `CLICKHOUSE_NATIVE_PORT=${clickHouseNativePort}`,
   `REDIS_PORT=${redisPort}`,
+  `REDPANDA_PORT=${redpandaPort}`,
   `DATABASE_URL=postgres://health:${postgresPasswordUrlEncoded}@127.0.0.1:${databasePort}/health`,
   `CLICKHOUSE_URL=http://default:${clickHousePasswordUrlEncoded}@127.0.0.1:${clickHouseHttpPort}`,
   `REDIS_URL=redis://127.0.0.1:${redisPort}`,
+  `REDPANDA_BROKERS=127.0.0.1:${redpandaPort}`,
+  `METRIC_STREAM_TOPIC=metric-stream-v1`,
+  `METRIC_STREAM_R2_BUCKET=dofek-metric-stream-archive`,
   "",
 ].join("\n");
 
