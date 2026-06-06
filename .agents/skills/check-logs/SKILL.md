@@ -40,20 +40,8 @@ If the Axiom MCP server is not connected, fall back to step 2.
 
 If Axiom isn't available, SSH into the server and read Docker logs directly.
 
-**Server:** Use the production SSH alias from `deploy/README.md`: `ssh dofek-server`. Production is the OCI host in the GitHub Actions `ORACLE_SERVER_HOST` variable and logs in as `ubuntu` with `~/.ssh/id_ed25519_infisical`. Do not use retired Hetzner/root aliases such as `dofek`, `root@157.90.25.125`, or raw IPs from old incident notes.
-**Stack:** Docker Swarm stack `dofek`.
-
-If `ssh dofek-server` times out or connects to the wrong host, compare the local
-alias to the GitHub variable before debugging the server:
-
-```bash
-gh variable list --repo asherlc/dofek --json name,value \
-  | jq -r '.[] | select(.name=="ORACLE_SERVER_HOST") | .value'
-ssh -G dofek-server | grep -E '^(hostname|user|identityfile) '
-```
-
-The alias should resolve to `User ubuntu`, the `ORACLE_SERVER_HOST` value, and
-`~/.ssh/id_ed25519_infisical`.
+**Server:** SSH to your production server (e.g., `ssh root@<SERVER_IP>` or use alias `ssh dofek` if configured)
+**Compose project:** `/opt/dofek`
 
 Container names and what they handle:
 - `dofek-web-1` — Express API server (OAuth, file uploads, tRPC, sync triggers)
@@ -63,17 +51,19 @@ Container names and what they handle:
 
 ```bash
 # Recent logs from the web server (filter out noisy polling endpoints)
-ssh dofek-server 'docker service logs --since 24h dofek_web 2>&1 | grep -iv "syncStatus\|providers" | tail -100'
+ssh <SERVER> 'docker logs dofek-web-1 --since 24h 2>&1 | grep -iv "syncStatus\|providers" | tail -100'
 
 # Worker logs (Apple Health import, sync jobs)
-ssh dofek-server 'docker service logs --since 24h dofek_worker 2>&1 | tail -100'
+ssh <SERVER> 'docker logs dofek-worker --since 24h 2>&1 | tail -100'
 
 # Search for specific errors
-ssh dofek-server 'docker service logs --since 24h dofek_web 2>&1 | grep -i "error\|fail\|<SEARCH_TERM>"'
+ssh <SERVER> 'docker logs dofek-web-1 --since 24h 2>&1 | grep -i "error\|fail\|<SEARCH_TERM>"'
 
 # Follow logs in real-time
-ssh dofek-server 'docker service logs --follow dofek_web 2>&1'
+ssh <SERVER> 'docker logs dofek-web-1 -f 2>&1'
 ```
+
+Replace `<SERVER>` with your production server address (e.g., `root@159.69.3.40` or the configured SSH alias).
 
 ### 3. In-app system logs
 
