@@ -59,6 +59,13 @@ export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublish
   }
 }
 
+let defaultMetricStreamPublisherPromise: Promise<MetricStreamEventPublisher> | undefined;
+
+export function getDefaultMetricStreamEventPublisher(): Promise<MetricStreamEventPublisher> {
+  defaultMetricStreamPublisherPromise ??= createKafkaMetricStreamEventPublisherFromEnv();
+  return defaultMetricStreamPublisherPromise;
+}
+
 function readRequiredEnvironmentValue(
   env: NodeJS.ProcessEnv,
   key: "METRIC_STREAM_TOPIC" | "REDPANDA_BROKERS",

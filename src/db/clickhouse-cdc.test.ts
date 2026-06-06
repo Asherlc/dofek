@@ -41,15 +41,10 @@ function credentialedUrl(
 
 function isPeerDbMirrorReconciliationQuery(queryText: string): boolean {
   return (
-    queryText.includes("metric_stream_analytics_point_exclude_position") ||
-    queryText.includes("legacy_metric_stream_cdc_mirror_exists") ||
+    queryText.includes("obsolete_metric_stream_mirror_name") ||
     queryText.includes("raw_analytics_mirror_config") ||
     queryText.includes("existing_mirror_name")
   );
-}
-
-function normalizeSql(queryText: string): string {
-  return queryText.replace(/\s+/g, " ").trim();
 }
 
 function createTestClickHouseClient(
@@ -217,74 +212,17 @@ describe("PeerDB ClickHouse CDC setup", () => {
     });
 
     expect(clickHouseCommands).not.toContain("CREATE DATABASE IF NOT EXISTS peerdb");
-    expect(clickHouseCommands).toContain(
-      "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_synced_at DateTime64(9) DEFAULT now()",
-    );
-    expect(clickHouseCommands).toContain(
-      "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS vector Array(Float32)",
-    );
-    expect(clickHouseCommands).toContain(
-      "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS metadata String",
-    );
     for (const rawAnalyticsTable of rawAnalyticsTables) {
       expect(clickHouseCommands).toContain(
         `ALTER TABLE postgres_fitness.${rawAnalyticsTable} ADD COLUMN IF NOT EXISTS _peerdb_synced_at DateTime64(9) DEFAULT now()`,
       );
     }
-    expect(sourcePostgresQueries).toHaveLength(2);
+    expect(sourcePostgresQueries).toHaveLength(1);
     expect(sourcePostgresQueries[0]).toContain("CREATE PUBLICATION");
     expect(sourcePostgresQueries[0]).toContain("ALTER PUBLICATION");
     for (const rawAnalyticsTable of rawAnalyticsTables) {
       expect(sourcePostgresQueries[0]).toContain(`('${rawAnalyticsTable}')`);
     }
-    const metricStreamPublicationQueryText = sourcePostgresQueries.at(1);
-    expect(metricStreamPublicationQueryText).toBeDefined();
-    if (metricStreamPublicationQueryText === undefined) {
-      throw new Error("Expected metric_stream publication setup query");
-    }
-    const metricStreamPublicationQuery = normalizeSql(metricStreamPublicationQueryText);
-    expect(metricStreamPublicationQuery).toContain(
-      normalizeSql(`
-        SELECT chunks.chunk_schema, chunks.chunk_name
-        FROM timescaledb_information.chunks AS chunks
-        JOIN pg_class chunk_class
-          ON chunk_class.relname = chunks.chunk_name
-        JOIN pg_namespace chunk_namespace
-          ON chunk_namespace.oid = chunk_class.relnamespace
-         AND chunk_namespace.nspname = chunks.chunk_schema
-        CROSS JOIN pg_publication publication
-        LEFT JOIN pg_publication_rel publication_entry
-          ON publication_entry.prpubid = publication.oid
-         AND publication_entry.prrelid = chunk_class.oid
-        WHERE chunks.hypertable_schema = 'fitness'
-          AND chunks.hypertable_name = 'metric_stream'
-          AND publication.pubname = 'peerdb_metric_stream_no_imu'
-          AND publication_entry.prrelid IS NULL
-      `),
-    );
-    expect(metricStreamPublicationQuery).toContain(
-      "ALTER PUBLICATION peerdb_metric_stream_no_imu ADD TABLE %I.%I WHERE (channel <> %L)",
-    );
-    expect(metricStreamPublicationQuery).toContain(
-      "SELECT fitness.ensure_metric_stream_peerdb_publication_chunks();",
-    );
-    expect(metricStreamPublicationQuery).toContain(
-      normalizeSql(`
-        SELECT job_id, schedule_interval, scheduled
-        INTO existing_job_id, existing_schedule_interval, existing_scheduled
-        FROM timescaledb_information.jobs
-        WHERE proc_schema = 'fitness'
-          AND proc_name = 'ensure_metric_stream_peerdb_publication_chunks'
-        ORDER BY job_id
-        LIMIT 1;
-      `),
-    );
-    expect(metricStreamPublicationQuery).toContain(
-      "PERFORM public.add_job( 'fitness.ensure_metric_stream_peerdb_publication_chunks'::regproc, INTERVAL '1 hour', job_name => 'ensure_metric_stream_peerdb_publication_chunks' );",
-    );
-    expect(metricStreamPublicationQuery).toContain(
-      "PERFORM public.alter_job( existing_job_id, schedule_interval => INTERVAL '1 hour', scheduled => true, job_name => 'ensure_metric_stream_peerdb_publication_chunks' );",
-    );
     expect(peerDbQueries).toEqual(["host = 'db', password = 'pa''ss\\word'"]);
   });
 
@@ -314,7 +252,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
     ).rejects.toThrow("Unknown PeerDB SQL template placeholder: MISSING_VALUE");
   });
 
-  it("renders the checked-in metric stream CDC template", async () => {
+  it("renders the checked-in raw analytics CDC template", async () => {
     const peerDbQueries: string[] = [];
     const sourcePostgresQueries: string[] = [];
     const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
@@ -349,31 +287,23 @@ describe("PeerDB ClickHouse CDC setup", () => {
       },
     });
 
-    expect(peerDbQueries).toHaveLength(6);
+    expect(peerDbQueries).toHaveLength(5);
     expect(peerDbQueries[0]).toContain("CREATE PEER IF NOT EXISTS dofek_postgres");
     expect(peerDbQueries[1]).toContain(
       "CREATE PEER IF NOT EXISTS dofek_clickhouse_postgres_fitness",
     );
-    expect(peerDbQueries[2]).toContain("CREATE MIRROR IF NOT EXISTS dofek_metric_stream_analytics");
-    expect(peerDbQueries[3]).toContain("CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics");
-    expect(peerDbQueries[4]).toContain(
+    expect(peerDbQueries[2]).toContain("CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics");
+    expect(peerDbQueries[3]).toContain(
       "CREATE MIRROR IF NOT EXISTS dofek_provider_inventory_raw_analytics",
     );
-    expect(peerDbQueries[5]).toContain(
+    expect(peerDbQueries[4]).toContain(
       "CREATE MIRROR IF NOT EXISTS dofek_sensor_priority_raw_analytics",
     );
     expect(peerDbQueries[1]).toContain("database = 'postgres_fitness'");
     expect(peerDbQueries[2]).toContain("TO dofek_clickhouse_postgres_fitness");
-    expect(peerDbQueries[2]).toContain(
-      "exclude: [device_id, source_type, vector, point, metadata]",
-    );
-    expect(peerDbQueries[2]).not.toContain("latitude");
-    expect(peerDbQueries[2]).not.toContain("longitude");
-    expect(peerDbQueries[2]).toContain("max_batch_size = 100000");
     expect(peerDbQueries[3]).toContain("TO dofek_clickhouse_postgres_fitness");
     expect(peerDbQueries[4]).toContain("TO dofek_clickhouse_postgres_fitness");
-    expect(peerDbQueries[5]).toContain("TO dofek_clickhouse_postgres_fitness");
-    const rawMirrorSql = `${peerDbQueries[3]}\n${peerDbQueries[4]}\n${peerDbQueries[5]}`;
+    const rawMirrorSql = `${peerDbQueries[2]}\n${peerDbQueries[3]}\n${peerDbQueries[4]}`;
     for (const rawAnalyticsTable of rawAnalyticsTables) {
       expect(rawMirrorSql).toContain(`from: fitness.${rawAnalyticsTable}`);
       expect(rawMirrorSql).toContain(`to: ${rawAnalyticsTable}`);
@@ -383,7 +313,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
     expect(rawMirrorSql).toContain("snapshot_max_parallel_workers = 1");
     expect(rawMirrorSql).toContain("snapshot_num_tables_in_parallel = 1");
     expect(peerDbQueries.join("\n")).not.toContain("{{");
-    expect(sourcePostgresQueries.join("\n")).toContain("peerdb_metric_stream_publication");
+    expect(sourcePostgresQueries.join("\n")).toContain("peerdb_raw_analytics_publication");
   });
 
   it("does not resubmit mirrors that already exist in PeerDB", async () => {
@@ -394,12 +324,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       peerDbClient: {
         async query(queryText) {
           const query = String(queryText);
-          if (query.includes("metric_stream_analytics_point_exclude_position")) {
-            return {
-              rows: [{ metric_stream_analytics_point_exclude_position: 1 }],
-            };
-          }
-          if (query.includes("legacy_metric_stream_cdc_mirror_exists")) {
+          if (query.includes("obsolete_metric_stream_mirror_name")) {
             return { rows: [] };
           }
           if (query.includes("raw_analytics_mirror_config")) {
@@ -425,7 +350,6 @@ describe("PeerDB ClickHouse CDC setup", () => {
           if (query.includes("existing_mirror_name")) {
             return {
               rows: [
-                { existing_mirror_name: "dofek_metric_stream_analytics" },
                 { existing_mirror_name: "dofek_fitness_raw_analytics" },
                 { existing_mirror_name: "dofek_provider_inventory_raw_analytics" },
                 { existing_mirror_name: "dofek_sensor_priority_raw_analytics" },
@@ -470,12 +394,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
         peerDbClient: {
           async query(queryText) {
             const query = String(queryText);
-            if (query.includes("metric_stream_analytics_point_exclude_position")) {
-              return {
-                rows: [{ metric_stream_analytics_point_exclude_position: 1 }],
-              };
-            }
-            if (query.includes("legacy_metric_stream_cdc_mirror_exists")) {
+            if (query.includes("obsolete_metric_stream_mirror_name")) {
               return { rows: [] };
             }
             if (query.includes("raw_analytics_mirror_config")) {
@@ -519,9 +438,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
             return { rows: [] };
           }
           peerDbQueries.push(query);
-          if (query.includes("CREATE MIRROR IF NOT EXISTS dofek_metric_stream_analytics")) {
+          if (query.includes("CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics")) {
             throw new Error(
-              'unable to submit job: "status: AlreadyExists, message: "workflow already exists for flow: dofek_metric_stream_analytics""',
+              'unable to submit job: "status: AlreadyExists, message: "workflow already exists for flow: dofek_fitness_raw_analytics""',
             );
           }
           return {};
@@ -546,9 +465,6 @@ describe("PeerDB ClickHouse CDC setup", () => {
     });
 
     expect(peerDbQueries).toContainEqual(
-      expect.stringContaining("CREATE MIRROR IF NOT EXISTS dofek_metric_stream_analytics"),
-    );
-    expect(peerDbQueries).toContainEqual(
       expect.stringContaining("CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics"),
     );
   });
@@ -566,7 +482,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
               return { rows: [] };
             }
             peerDbQueries.push(query);
-            if (query.includes("CREATE MIRROR IF NOT EXISTS dofek_metric_stream_analytics")) {
+            if (query.includes("CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics")) {
               throw new Error("PeerDB connection reset");
             }
             return {};
@@ -592,10 +508,10 @@ describe("PeerDB ClickHouse CDC setup", () => {
     ).rejects.toThrow("PeerDB connection reset");
 
     expect(peerDbQueries).toContainEqual(
-      expect.stringContaining("CREATE MIRROR IF NOT EXISTS dofek_metric_stream_analytics"),
+      expect.stringContaining("CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics"),
     );
     expect(peerDbQueries).not.toContainEqual(
-      expect.stringContaining("CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics"),
+      expect.stringContaining("CREATE MIRROR IF NOT EXISTS dofek_provider_inventory_raw_analytics"),
     );
   });
 
@@ -610,9 +526,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
             if (isPeerDbMirrorReconciliationQuery(query)) {
               return { rows: [] };
             }
-            if (query.includes("CREATE MIRROR IF NOT EXISTS dofek_metric_stream_analytics")) {
+            if (query.includes("CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics")) {
               throw new Error(
-                'unable to submit job: "status: AlreadyExists, message: "workflow already exists for flow: dofek_fitness_raw_analytics""',
+                'unable to submit job: "status: AlreadyExists, message: "workflow already exists for flow: dofek_provider_inventory_raw_analytics""',
               );
             }
             return {};
@@ -635,50 +551,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
           postgresUser: "health",
         },
       }),
-    ).rejects.toThrow("workflow already exists for flow: dofek_fitness_raw_analytics");
-  });
-
-  it("recreates the metric stream analytics mirror when the existing mirror still includes point", async () => {
-    const peerDbQueries: string[] = [];
-    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
-
-    await setupClickHouseCdc({
-      peerDbClient: {
-        async query(queryText) {
-          const query = String(queryText);
-          if (isPeerDbMirrorReconciliationQuery(query)) {
-            return {
-              rows: query.includes("metric_stream_analytics_point_exclude_position")
-                ? [{ metric_stream_analytics_point_exclude_position: 0 }]
-                : [],
-            };
-          }
-          peerDbQueries.push(query);
-          return {};
-        },
-      },
-      sourcePostgresClient: {
-        async query() {},
-      },
-      clickHouseClient: createTestClickHouseClient(),
-      templateSql,
-      templateValues: {
-        clickHouseHost: "clickhouse",
-        clickHouseCredential: "clickhouse-fixture",
-        clickHousePort: 9000,
-        clickHouseUser: "default",
-        postgresDatabase: "health",
-        postgresHost: "db",
-        postgresCredential: "fixture",
-        postgresPort: 5432,
-        postgresUser: "health",
-      },
-    });
-
-    expect(peerDbQueries[0]).toBe("DROP MIRROR dofek_metric_stream_analytics");
-    expect(peerDbQueries).toContainEqual(
-      expect.stringContaining("CREATE MIRROR IF NOT EXISTS dofek_metric_stream_analytics"),
-    );
+    ).rejects.toThrow("workflow already exists for flow: dofek_provider_inventory_raw_analytics");
   });
 
   it("drops the obsolete metric stream CDC mirror before creating current mirrors", async () => {
@@ -689,14 +562,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
       peerDbClient: {
         async query(queryText) {
           const query = String(queryText);
-          if (query.includes("metric_stream_analytics_point_exclude_position")) {
+          if (query.includes("obsolete_metric_stream_mirror_name")) {
             return {
-              rows: [{ metric_stream_analytics_point_exclude_position: 1 }],
-            };
-          }
-          if (query.includes("legacy_metric_stream_cdc_mirror_exists")) {
-            return {
-              rows: [{ legacy_metric_stream_cdc_mirror_exists: 1 }],
+              rows: [{ obsolete_metric_stream_mirror_name: "dofek_metric_stream_cdc" }],
             };
           }
           if (query.includes("raw_analytics_mirror_config")) {
@@ -745,12 +613,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       peerDbClient: {
         async query(queryText) {
           const query = String(queryText);
-          if (query.includes("metric_stream_analytics_point_exclude_position")) {
-            return {
-              rows: [{ metric_stream_analytics_point_exclude_position: 1 }],
-            };
-          }
-          if (query.includes("legacy_metric_stream_cdc_mirror_exists")) {
+          if (query.includes("obsolete_metric_stream_mirror_name")) {
             return { rows: [] };
           }
           if (query.includes("raw_analytics_mirror_config")) {
@@ -820,12 +683,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       peerDbClient: {
         async query(queryText) {
           const query = String(queryText);
-          if (query.includes("metric_stream_analytics_point_exclude_position")) {
-            return {
-              rows: [{ metric_stream_analytics_point_exclude_position: 1 }],
-            };
-          }
-          if (query.includes("legacy_metric_stream_cdc_mirror_exists")) {
+          if (query.includes("obsolete_metric_stream_mirror_name")) {
             return { rows: [] };
           }
           if (query.includes("raw_analytics_mirror_config")) {
@@ -877,12 +735,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       peerDbClient: {
         async query(queryText) {
           const query = String(queryText);
-          if (query.includes("metric_stream_analytics_point_exclude_position")) {
-            return {
-              rows: [{ metric_stream_analytics_point_exclude_position: 1 }],
-            };
-          }
-          if (query.includes("legacy_metric_stream_cdc_mirror_exists")) {
+          if (query.includes("obsolete_metric_stream_mirror_name")) {
             return { rows: [] };
           }
           if (query.includes("raw_analytics_mirror_config")) {
@@ -948,12 +801,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       peerDbClient: {
         async query(queryText) {
           const query = String(queryText);
-          if (query.includes("metric_stream_analytics_point_exclude_position")) {
-            return {
-              rows: [{ metric_stream_analytics_point_exclude_position: 1 }],
-            };
-          }
-          if (query.includes("legacy_metric_stream_cdc_mirror_exists")) {
+          if (query.includes("obsolete_metric_stream_mirror_name")) {
             return { rows: [] };
           }
           if (query.includes("raw_analytics_mirror_config")) {
@@ -1173,55 +1021,31 @@ describe("PeerDB ClickHouse CDC setup", () => {
     expect(clickHouseClientMocks.command).not.toHaveBeenCalledWith({
       query: "CREATE DATABASE IF NOT EXISTS peerdb",
     });
-    expect(clickHouseClientMocks.command).toHaveBeenCalledWith({
-      query: expect.stringContaining(
-        "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_synced_at",
-      ),
-    });
-    expect(clickHouseClientMocks.command).toHaveBeenCalledWith({
-      query: expect.stringContaining(
-        "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_is_deleted",
-      ),
-    });
-    expect(clickHouseClientMocks.command).toHaveBeenCalledWith({
-      query: expect.stringContaining(
-        "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_version",
-      ),
-    });
     const peerDbQueries = peerDbClientMocks.query.mock.calls
       .map(([queryText]) => String(queryText))
       .filter((queryText) => !isPeerDbMirrorReconciliationQuery(queryText));
-    expect(peerDbQueries).toHaveLength(8);
-    expect(peerDbQueries[0]).toContain("peerdb_metric_stream_publication");
-    expect(peerDbQueries[1]).toContain("peerdb_metric_stream_no_imu");
-    expect(peerDbQueries[1]).toContain("WHERE (channel <> 'imu')");
-    expect(peerDbQueries[2]).toContain("host = 'postgres.example'");
-    expect(peerDbQueries[2]).toContain("port = 6543");
-    expect(peerDbQueries[2]).toContain("password = 'pg''credential'");
-    expect(peerDbQueries[3]).toContain("database = 'postgres_fitness'");
-    expect(peerDbQueries[3]).toContain("host = 'clickhouse.example'");
-    expect(peerDbQueries[3]).toContain("password = 'click\\credential'");
-    expect(peerDbQueries[4]).toContain("CREATE MIRROR IF NOT EXISTS dofek_metric_stream_analytics");
-    expect(peerDbQueries[4]).toContain("dofek_clickhouse_postgres_fitness");
+    expect(peerDbQueries).toHaveLength(6);
+    expect(peerDbQueries[0]).toContain("peerdb_raw_analytics_publication");
+    expect(peerDbQueries[1]).toContain("host = 'postgres.example'");
+    expect(peerDbQueries[1]).toContain("port = 6543");
+    expect(peerDbQueries[1]).toContain("password = 'pg''credential'");
+    expect(peerDbQueries[2]).toContain("database = 'postgres_fitness'");
+    expect(peerDbQueries[2]).toContain("host = 'clickhouse.example'");
+    expect(peerDbQueries[2]).toContain("password = 'click\\credential'");
+    expect(peerDbQueries[3]).toContain("CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics");
+    expect(peerDbQueries[3]).toContain("dofek_clickhouse_postgres_fitness");
+    expect(peerDbQueries[3]).toContain("max_batch_size = 100000");
+    expect(peerDbQueries[3]).toContain("snapshot_num_rows_per_partition = 100000");
+    expect(peerDbQueries[3]).toContain("snapshot_max_parallel_workers = 1");
+    expect(peerDbQueries[3]).toContain("snapshot_num_tables_in_parallel = 1");
     expect(peerDbQueries[4]).toContain(
-      "exclude: [device_id, source_type, vector, point, metadata]",
-    );
-    expect(peerDbQueries[4]).toContain("publication_name = 'peerdb_metric_stream_no_imu'");
-    expect(peerDbQueries[4]).toContain("max_batch_size = 100000");
-    expect(peerDbQueries[5]).toContain("CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics");
-    expect(peerDbQueries[5]).toContain("dofek_clickhouse_postgres_fitness");
-    expect(peerDbQueries[5]).toContain("max_batch_size = 100000");
-    expect(peerDbQueries[5]).toContain("snapshot_num_rows_per_partition = 100000");
-    expect(peerDbQueries[5]).toContain("snapshot_max_parallel_workers = 1");
-    expect(peerDbQueries[5]).toContain("snapshot_num_tables_in_parallel = 1");
-    expect(peerDbQueries[6]).toContain(
       "CREATE MIRROR IF NOT EXISTS dofek_provider_inventory_raw_analytics",
     );
-    expect(peerDbQueries[6]).toContain("dofek_clickhouse_postgres_fitness");
-    expect(peerDbQueries[7]).toContain(
+    expect(peerDbQueries[4]).toContain("dofek_clickhouse_postgres_fitness");
+    expect(peerDbQueries[5]).toContain(
       "CREATE MIRROR IF NOT EXISTS dofek_sensor_priority_raw_analytics",
     );
-    expect(peerDbQueries[7]).toContain("dofek_clickhouse_postgres_fitness");
+    expect(peerDbQueries[5]).toContain("dofek_clickhouse_postgres_fitness");
     expect(peerDbQueries.join("\n")).not.toContain("{{");
     expect(peerDbClientMocks.end).toHaveBeenCalledTimes(2);
     expect(clickHouseClientMocks.close).toHaveBeenCalledTimes(1);
@@ -1249,8 +1073,8 @@ describe("PeerDB ClickHouse CDC setup", () => {
     const peerDbQueries = peerDbClientMocks.query.mock.calls
       .map(([queryText]) => String(queryText))
       .filter((queryText) => !isPeerDbMirrorReconciliationQuery(queryText));
-    const peerDbQueryPostgres = String(peerDbQueries[2]);
-    const peerDbQueryClickhousePostgresFitness = String(peerDbQueries[3]);
+    const peerDbQueryPostgres = String(peerDbQueries[1]);
+    const peerDbQueryClickhousePostgresFitness = String(peerDbQueries[2]);
     expect(peerDbQueryPostgres).toContain("host = 'db'");
     expect(peerDbQueryPostgres).toContain("port = 5432");
     expect(peerDbQueryClickhousePostgresFitness).toContain("host = 'clickhouse'");
@@ -1284,8 +1108,8 @@ describe("PeerDB ClickHouse CDC setup", () => {
     const peerDbQueries = peerDbClientMocks.query.mock.calls
       .map(([queryText]) => String(queryText))
       .filter((queryText) => !isPeerDbMirrorReconciliationQuery(queryText));
-    const peerDbQueryPostgres = String(peerDbQueries[2]);
-    const peerDbQueryClickhousePostgresFitness = String(peerDbQueries[3]);
+    const peerDbQueryPostgres = String(peerDbQueries[1]);
+    const peerDbQueryClickhousePostgresFitness = String(peerDbQueries[2]);
     expect(peerDbQueryPostgres).toContain("host = 'postgres.internal'");
     expect(peerDbQueryPostgres).toContain("port = 6545");
     expect(peerDbQueryClickhousePostgresFitness).toContain("host = 'clickhouse.internal'");

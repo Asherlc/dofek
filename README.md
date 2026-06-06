@@ -46,7 +46,7 @@ If you are starting cold and do not want to hunt through agent notes, begin here
 └─────────────┘                            └───────────┘
 ```
 
-Each data source is a **provider plugin** that implements a simple interface. The sync runner orchestrates all enabled providers. Raw app data lands in a `fitness` Postgres schema. High-volume HealthKit `metric_stream` samples publish to Redpanda first, then sink into Postgres and ClickHouse; Redpanda Connect archives the same topic to Cloudflare R2 for long-term replay. Other raw fitness tables still use PeerDB as the internal Postgres-to-ClickHouse CDC path into `postgres_fitness.*`. ClickHouse maintains stored analytics read models for heavy activity stream reads. Incremental dbt models under `analytics/models/` define derived ClickHouse analytics tables such as `analytics.deduped_sensor` and `analytics.resting_heart_rate_sleep_window` outside the web/API request path. Derived rows are not written back to Postgres. The web dashboard provides sync controls, provider health monitoring, insights, and data exploration. A companion iOS app (Expo + React Native) provides native HealthKit integration and on-the-go access. Nutrition logging on web and iOS supports natural-language AI meal input that can split one message into multiple food items. Long-running sync jobs are processed by BullMQ workers backed by Redis. In production, the `worker` container registers repeatable scheduled sync jobs in BullMQ, and the `analytics-worker` container runs the production-safe subset of dbt analytics builds every 15 minutes with a bounded retry delay; the `sync` mode remains available for manual one-shot runs. `analytics.sensor_scalar_sample`, `analytics.deduped_sensor`, `analytics.sleep_heart_rate_sample`, `analytics.activity_sensor_sample`, and `analytics.activity_location_sample` run as bounded `recorded_at` microbatch models; `analytics.resting_heart_rate_sleep_window`, the activity aggregate intermediates, and `analytics.activity_summary_rows` use dirty-key incremental models over those bounded inputs.
+Each data source is a **provider plugin** that implements a simple interface. The sync runner orchestrates all enabled providers. Raw app data lands in a `fitness` Postgres schema, except high-volume `metric_stream` samples, which publish to Redpanda first. Redpanda Connect archives the topic to Cloudflare R2 for long-term replay, and the ClickHouse sink writes the analytics copy in `postgres_fitness.metric_stream`; there is no normal Postgres sink for metric-stream samples. Other raw fitness tables still use PeerDB as the internal Postgres-to-ClickHouse CDC path into `postgres_fitness.*`. ClickHouse maintains stored analytics read models for heavy activity stream reads. Incremental dbt models under `analytics/models/` define derived ClickHouse analytics tables such as `analytics.deduped_sensor` and `analytics.resting_heart_rate_sleep_window` outside the web/API request path. Derived rows are not written back to Postgres. The web dashboard provides sync controls, provider health monitoring, insights, and data exploration. A companion iOS app (Expo + React Native) provides native HealthKit integration and on-the-go access. Nutrition logging on web and iOS supports natural-language AI meal input that can split one message into multiple food items. Long-running sync jobs are processed by BullMQ workers backed by Redis. In production, the `worker` container registers repeatable scheduled sync jobs in BullMQ, and the `analytics-worker` container runs the production-safe subset of dbt analytics builds every 15 minutes with a bounded retry delay; the `sync` mode remains available for manual one-shot runs. `analytics.sensor_scalar_sample`, `analytics.deduped_sensor`, `analytics.sleep_heart_rate_sample`, `analytics.activity_sensor_sample`, and `analytics.activity_location_sample` run as bounded `recorded_at` microbatch models; `analytics.resting_heart_rate_sleep_window`, the activity aggregate intermediates, and `analytics.activity_summary_rows` use dirty-key incremental models over those bounded inputs.
 
 ## Quick Start
 
@@ -143,8 +143,8 @@ Target strain is separate from current strain. It uses readiness and recent trai
 # Postgres + ClickHouse + Redis (required for any dev workflow)
 pnpm compose:up
 
-# PeerDB CDC stack — required for the API server, since its boot path waits
-# for postgres_fitness.metric_stream and analytics views in ClickHouse.
+# PeerDB CDC stack — required for non-metric-stream Postgres mirrors and
+# analytics views in ClickHouse. Metric stream rows now arrive through Redpanda.
 docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.peerdb.yml up -d
 # (The peerdb-temporal-init container auto-registers the MirrorName Temporal
 # search attribute that PeerDB workflows depend on. It exits after running.)
@@ -152,14 +152,14 @@ docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.pee
 
 # Apply Postgres + ClickHouse migrations to a fresh DB (idempotent).
 pnpm setup-db
-# Configure the PeerDB metric_stream mirror (postgres_fitness.metric_stream).
+# Configure PeerDB mirrors for Postgres-backed app tables.
 pnpm clickhouse-cdc
 
 # Optional local Redpanda/R2 replay stack. This starts Redpanda, local MinIO,
 # Redpanda Connect archive, and sink containers using the server image target.
 docker compose --env-file .env.local --profile metric-stream up -d \
   redpanda metric-stream-minio metric-stream-r2-archive \
-  metric-stream-postgres-sink metric-stream-clickhouse-sink
+  metric-stream-clickhouse-sink
 
 pnpm test                       # run tests
 pnpm test:watch                 # run tests in watch mode

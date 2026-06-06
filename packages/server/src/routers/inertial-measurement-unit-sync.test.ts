@@ -7,7 +7,9 @@ vi.mock("../logger.ts", () => ({
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
-  const trpc = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  const trpc = initTRPC
+    .context<{ db: unknown; metricStreamPublisher?: unknown; userId: string | null }>()
+    .create();
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
@@ -20,43 +22,19 @@ import { inertialMeasurementUnitSyncRouter } from "./inertial-measurement-unit-s
 const createCaller = createTestCallerFactory(inertialMeasurementUnitSyncRouter);
 
 function makeExecute() {
-  return vi.fn(async (statement: unknown) => {
-    const sqlParts = getSqlParts(statement);
-    if (!sqlParts.some((part) => String(part).includes("INSERT INTO fitness.metric_stream"))) {
-      return [];
-    }
-
-    const insertedCount = sqlParts.filter((part) => part === "accel" || part === "imu").length;
-    return Array.from({ length: insertedCount }, (_, index) => ({ id: `metric-${index}` }));
-  });
+  return vi.fn(async () => []);
 }
 
-function flattenSqlChunk(chunk: unknown): Array<string | number> {
-  if (typeof chunk === "string" || typeof chunk === "number") {
-    return [chunk];
-  }
-  if (Array.isArray(chunk)) {
-    return chunk.flatMap((item) => flattenSqlChunk(item));
-  }
-  if (typeof chunk !== "object" || chunk === null) {
-    return [];
-  }
-
-  const queryChunks = Reflect.get(chunk, "queryChunks");
-  if (Array.isArray(queryChunks)) {
-    return queryChunks.flatMap((item) => flattenSqlChunk(item));
-  }
-
-  const value = Reflect.get(chunk, "value");
-  if (Array.isArray(value)) {
-    return value.flatMap((item) => flattenSqlChunk(item));
-  }
-
-  return [];
+function makeMetricStreamPublisher() {
+  return {
+    publishRows: vi.fn(async (rows: readonly unknown[]) =>
+      rows.map((_, index) => ({ id: `event-${index}` })),
+    ),
+  };
 }
 
-function getSqlParts(statement: unknown): Array<string | number> {
-  return flattenSqlChunk(statement);
+function getPublishedRows(publisher: ReturnType<typeof makeMetricStreamPublisher>): unknown[] {
+  return publisher.publishRows.mock.calls.flatMap((call) => [...call[0]]);
 }
 
 function makeSample(
@@ -81,9 +59,14 @@ function makeSample(
 
 describe("inertialMeasurementUnitSyncRouter", () => {
   describe("pushSamples", () => {
-    it("inserts samples with correct SQL", async () => {
+    it("publishes accel samples", async () => {
       const execute = makeExecute();
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const metricStreamPublisher = makeMetricStreamPublisher();
+      const caller = createCaller({
+        db: { execute },
+        metricStreamPublisher,
+        userId: "user-1",
+      });
 
       const result = await caller.pushSamples({
         deviceId: "iPhone 15 Pro",
@@ -92,13 +75,63 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(2);
-      // 1 ensureProvider + 1 metric_stream batch insert
-      expect(execute).toHaveBeenCalledTimes(2);
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(metricStreamPublisher.publishRows).toHaveBeenCalledTimes(1);
+      expect(getPublishedRows(metricStreamPublisher)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            providerId: "apple_motion",
+            externalId: "apple_motion:iPhone 15 Pro:accel:2026-03-25T10:00:00.020Z",
+            channel: "accel",
+            vector: [0.012, -0.981, 0.043],
+          }),
+          expect.objectContaining({
+            externalId: "apple_motion:iPhone 15 Pro:accel:2026-03-25T10:00:00.040Z",
+            vector: [0.015, -0.981, 0.043],
+          }),
+        ]),
+      );
+    });
+
+    it("publishes samples through Redpanda without inserting metric stream rows into Postgres", async () => {
+      const execute = vi.fn(async () => []);
+      const metricStreamPublisher = {
+        publishRows: vi.fn(async (rows: readonly unknown[]) =>
+          rows.map((_, index) => ({ id: `event-${index}` })),
+        ),
+      };
+      const caller = createCaller({
+        db: { execute },
+        metricStreamPublisher,
+        userId: "00000000-0000-0000-0000-000000000001",
+      });
+
+      const result = await caller.pushSamples({
+        deviceId: "iPhone 15 Pro",
+        deviceType: "iphone",
+        samples: [makeSample()],
+      });
+
+      expect(result.inserted).toBe(1);
+      expect(JSON.stringify(execute.mock.calls)).not.toContain("fitness.metric_stream");
+      expect(metricStreamPublisher.publishRows).toHaveBeenCalledWith([
+        expect.objectContaining({
+          userId: "00000000-0000-0000-0000-000000000001",
+          providerId: "apple_motion",
+          channel: "accel",
+          vector: [0.012, -0.981, 0.043],
+        }),
+      ]);
     });
 
     it("writes deterministic external IDs and treats duplicate samples as no-ops", async () => {
       const execute = makeExecute();
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const metricStreamPublisher = makeMetricStreamPublisher();
+      const caller = createCaller({
+        db: { execute },
+        metricStreamPublisher,
+        userId: "user-1",
+      });
 
       await caller.pushSamples({
         deviceId: "iPhone 15 Pro",
@@ -106,18 +139,11 @@ describe("inertialMeasurementUnitSyncRouter", () => {
         samples: [makeSample({ timestamp: "2026-03-25T10:00:00.020+00:00" })],
       });
 
-      const insertStatement = execute.mock.calls[1]?.[0];
-      const sqlParts = getSqlParts(insertStatement);
-
-      expect(sqlParts.some((part) => String(part).includes("external_id"))).toBe(true);
-      expect(sqlParts).toContain("apple_motion:iPhone 15 Pro:accel:2026-03-25T10:00:00.020Z");
-      expect(
-        sqlParts.some((part) =>
-          String(part).includes(
-            "ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO NOTHING",
-          ),
-        ),
-      ).toBe(true);
+      expect(getPublishedRows(metricStreamPublisher)).toContainEqual(
+        expect.objectContaining({
+          externalId: "apple_motion:iPhone 15 Pro:accel:2026-03-25T10:00:00.020Z",
+        }),
+      );
     });
 
     it("handles empty samples array by returning zero inserted", async () => {
@@ -142,7 +168,10 @@ describe("inertialMeasurementUnitSyncRouter", () => {
 
     it("returns zero inserted when duplicate IMU rows no-op", async () => {
       const execute = vi.fn().mockResolvedValue([]);
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const metricStreamPublisher = {
+        publishRows: vi.fn(async () => []),
+      };
+      const caller = createCaller({ db: { execute }, metricStreamPublisher, userId: "user-1" });
 
       const result = await caller.pushSamples({
         deviceId: "iPhone 15 Pro",
@@ -220,7 +249,12 @@ describe("inertialMeasurementUnitSyncRouter", () => {
     it("batches large sample arrays into multiple INSERT statements", async () => {
       const startTimestamp = new Date("2026-03-25T10:00:00.020Z");
       const execute = makeExecute();
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const metricStreamPublisher = makeMetricStreamPublisher();
+      const caller = createCaller({
+        db: { execute },
+        metricStreamPublisher,
+        userId: "user-1",
+      });
 
       const samples = Array.from({ length: 7500 }, (_, index) =>
         makeSample({
@@ -235,13 +269,20 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(7500);
-      // 1 ensureProvider + 2 metric_stream batch inserts = 3
-      expect(execute).toHaveBeenCalledTimes(3);
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(metricStreamPublisher.publishRows).toHaveBeenCalledTimes(2);
+      expect(metricStreamPublisher.publishRows.mock.calls[0]?.[0]).toHaveLength(5000);
+      expect(metricStreamPublisher.publishRows.mock.calls[1]?.[0]).toHaveLength(2500);
     });
 
     it("accepts samples with optional gyroscope fields", async () => {
       const execute = makeExecute();
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const metricStreamPublisher = makeMetricStreamPublisher();
+      const caller = createCaller({
+        db: { execute },
+        metricStreamPublisher,
+        userId: "user-1",
+      });
 
       const result = await caller.pushSamples({
         deviceId: "WHOOP Strap",
@@ -256,19 +297,24 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(1);
-      expect(execute).toHaveBeenCalledTimes(2);
-
-      const insertStatement = execute.mock.calls[1]?.[0];
-      const sqlParts = getSqlParts(insertStatement);
-
-      expect(sqlParts).toContain("imu");
-      expect(sqlParts).toContain("2026-03-25T10:00:00.020Z");
-      expect(sqlParts).toEqual(expect.arrayContaining([0.012, -0.981, 0.043, 0.15, -0.22, 0.08]));
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(getPublishedRows(metricStreamPublisher)).toContainEqual(
+        expect.objectContaining({
+          channel: "imu",
+          recordedAt: "2026-03-25T10:00:00.020Z",
+          vector: [0.012, -0.981, 0.043, 0.15, -0.22, 0.08],
+        }),
+      );
     });
 
     it("accepts a mix of samples with and without gyroscope", async () => {
       const execute = makeExecute();
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const metricStreamPublisher = makeMetricStreamPublisher();
+      const caller = createCaller({
+        db: { execute },
+        metricStreamPublisher,
+        userId: "user-1",
+      });
 
       const result = await caller.pushSamples({
         deviceId: "Apple Watch",
@@ -285,14 +331,17 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(2);
-      expect(execute).toHaveBeenCalledTimes(2);
-
-      const insertStatement = execute.mock.calls[1]?.[0];
-      const sqlParts = getSqlParts(insertStatement);
-
-      expect(sqlParts.filter((part) => part === "accel")).toHaveLength(1);
-      expect(sqlParts.filter((part) => part === "imu")).toHaveLength(1);
-      expect(sqlParts).toEqual(expect.arrayContaining([0.1, 0.2, 0.3]));
+      expect(execute).toHaveBeenCalledTimes(1);
+      const publishedRows = getPublishedRows(metricStreamPublisher);
+      expect(publishedRows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ channel: "accel", vector: [0.012, -0.981, 0.043] }),
+          expect.objectContaining({
+            channel: "imu",
+            vector: [0.012, -0.981, 0.043, 0.1, 0.2, 0.3],
+          }),
+        ]),
+      );
       expect(logger.info).toHaveBeenCalledWith(
         "IMU samples pushed",
         expect.objectContaining({
@@ -312,7 +361,12 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       [{ gyroscopeZ: 0.6 }, [0, 0, 0.6]],
     ] as const)("treats a partial gyroscope sample as a 6-axis imu vector", async (overrides, expectedGyroValues) => {
       const execute = makeExecute();
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const metricStreamPublisher = makeMetricStreamPublisher();
+      const caller = createCaller({
+        db: { execute },
+        metricStreamPublisher,
+        userId: "user-1",
+      });
 
       await caller.pushSamples({
         deviceId: "Apple Watch",
@@ -320,16 +374,23 @@ describe("inertialMeasurementUnitSyncRouter", () => {
         samples: [makeSample(overrides)],
       });
 
-      const insertStatement = execute.mock.calls[1]?.[0];
-      const sqlParts = getSqlParts(insertStatement);
-
-      expect(sqlParts).toContain("imu");
-      expect(sqlParts).toEqual(expect.arrayContaining(expectedGyroValues));
+      const [publishedRow] = getPublishedRows(metricStreamPublisher);
+      expect(publishedRow).toEqual(
+        expect.objectContaining({
+          channel: "imu",
+          vector: [0.012, -0.981, 0.043, ...expectedGyroValues],
+        }),
+      );
     });
 
     it("logs the full timestamp range for successful pushes", async () => {
       const execute = makeExecute();
-      const caller = createCaller({ db: { execute }, userId: "user-1" });
+      const metricStreamPublisher = makeMetricStreamPublisher();
+      const caller = createCaller({
+        db: { execute },
+        metricStreamPublisher,
+        userId: "user-1",
+      });
 
       await caller.pushSamples({
         deviceId: "Apple Watch",

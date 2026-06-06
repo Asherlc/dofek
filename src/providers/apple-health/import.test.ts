@@ -9,6 +9,12 @@ vi.mock("../../db/token-user-context.ts", () => ({
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
 
+vi.mock("../../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: async () => ({
+    publishRows: async (rows: readonly unknown[]) => rows,
+  }),
+}));
+
 import type { SyncDatabase } from "../../db/index.ts";
 import { logger } from "../../logger.ts";
 import {
@@ -587,6 +593,8 @@ describe("runImport (control-flow mutation killers)", () => {
     expect(upsertHealthEventBatch).toHaveBeenCalledTimes(1);
     expect(upsertSleepBatch).toHaveBeenCalledTimes(1);
     expect(upsertWorkoutBatch).toHaveBeenCalledTimes(1);
+    expect(aggregateSpO2ToDailyMetrics).toHaveBeenCalledTimes(1);
+    expect(aggregateSkinTempToDailyMetrics).toHaveBeenCalledTimes(1);
   });
 
   it("skips empty record buckets and does not call unrelated upsert handlers", async () => {

@@ -2,20 +2,21 @@
 
 ## Goal
 
-Make `metric_stream` durable enough to rebuild Postgres and ClickHouse after CDC, database, or ClickHouse failures.
+Make `metric_stream` durable enough to rebuild ClickHouse after CDC,
+database, or ClickHouse failures. This plan is historical; the current cutover
+removed the normal Postgres metric-stream sink.
 
 The target architecture is:
 
 1. Providers and mobile imports write metric samples to a Redpanda topic first.
-2. Postgres `fitness.metric_stream` consumes from Redpanda and remains the relational app copy.
-3. ClickHouse consumes from Redpanda and remains the analytics serving copy.
-4. A Redpanda Connect pipeline writes immutable batches to Cloudflare R2 so the Redpanda topic can be replayed long term even if local Redpanda retention or disks fail.
+2. ClickHouse consumes from Redpanda and remains the analytics serving copy.
+3. A Redpanda Connect pipeline writes immutable batches to Cloudflare R2 so the Redpanda topic can be replayed long term even if local Redpanda retention or disks fail.
 
 Assumption: "r3" means Cloudflare R2. Self-managed Redpanda tiered storage appears to require Redpanda Enterprise, so this plan uses Redpanda Connect `aws_s3` output to archive the topic to R2 instead of depending on Redpanda tiered storage. If Redpanda Enterprise or Redpanda Cloud is available, the Connect archive pipeline can be replaced by Redpanda tiered storage after a separate approval.
 
 ## Current Context
 
-- `src/db/peerdb/metric-stream-cdc.sql` mirrors `fitness.metric_stream` into `postgres_fitness.metric_stream` through PeerDB.
+- Earlier versions mirrored `fitness.metric_stream` into `postgres_fitness.metric_stream` through PeerDB.
 - `src/db/clickhouse-cdc.ts` creates the filtered `peerdb_metric_stream_no_imu` publication.
 - `deploy/stack.yml` runs `db`, `clickhouse`, `peerdb-flow-worker`, `cdc-health`, and `analytics-worker`.
 - `deploy/storage.tf` already creates R2 buckets for exports, DB backups, OTA, Storybook, and training data.
@@ -27,12 +28,12 @@ Assumption: "r3" means Cloudflare R2. Self-managed Redpanda tiered storage appea
 ## Invariants
 
 - No dual writes from providers to both Postgres and Redpanda.
-- Do not switch additional production metric-stream writers to Redpanda-first until the Postgres sink, ClickHouse sink, and R2 archive path are deployed and validated. HealthKit quantity metric-stream samples now use the Redpanda writer boundary.
+- Production metric-stream writers now use Redpanda-first publishing; do not add a normal Postgres sink.
 - No empty-string absent values.
 - Redpanda/R2 message schema is versioned and validated with Zod at every runtime boundary.
 - Consumers are idempotent. Replaying the same batch must not duplicate rows.
 - ClickHouse analytics must continue reading deduped ClickHouse read models, not raw Postgres.
-- Postgres remains canonical for users, providers, activities, tokens, settings, food, and other app state. This plan only changes `fitness.metric_stream`.
+- Postgres remains canonical for users, providers, activities, tokens, settings, food, and other app state. This plan only changes metric-stream samples.
 - Any R2 object containing canonical replay data must have no lifecycle deletion rule.
 
 ## Phase 1: Core Event Model and Producer
@@ -53,29 +54,30 @@ Tasks:
 3. Add a Zod parser for producer input and consumer input.
 4. Add `writeMetricStreamRows()` as the single production API for inserting metric-stream rows.
 5. Unit-test that `writeMetricStreamRows()` publishes Redpanda events and does not write directly to Postgres when Redpanda publishing succeeds.
-6. Leave non-HealthKit production writers on Postgres until Phase 5 cutover.
+6. Superseded: all production metric-stream writers now publish through Redpanda.
 
 Validation:
 
 - `pnpm vitest run src/metric-stream/write-metric-stream.test.ts`
 - Existing HealthKit router tests use a mocked metric-stream publisher for unit coverage.
 
-## Phase 2: Postgres Sink
+## Phase 2: Postgres Sink (superseded)
+
+This phase was superseded by the full Redpanda cutover: metric-stream samples no
+longer feed into Postgres as a normal storage path. R2 is the long-term replay
+archive and ClickHouse is the analytics serving copy.
 
 Files:
 
-- Add `src/metric-stream/postgres-sink.ts`
-- Add `src/metric-stream/postgres-sink.test.ts`
-- Update `src/index.ts` to add command `metric-stream-postgres-sink`
-- Update `deploy/stack.yml` to add service `metric-stream-postgres-sink`
+- Remove the dedicated Postgres sink module and service.
+- Keep ClickHouse and R2 consumers healthy.
 
 Tasks:
 
-1. Consume `metric-stream-v1` from Redpanda with consumer group `metric-stream-postgres-sink`.
-2. Insert into `fitness.metric_stream` in batches.
-3. Use `ON CONFLICT (id, recorded_at) DO NOTHING` or the actual existing primary/unique key after confirming the table definition.
-4. Commit Redpanda offsets only after the Postgres transaction commits.
-5. Surface unexpected errors to Sentry and exit loudly on missing env vars.
+1. Publish providers to `metric-stream-v1`.
+2. Archive the stream to R2 with immutable object keys.
+3. Sink the stream to ClickHouse for analytics.
+4. Do not add a normal Postgres `fitness.metric_stream` sink.
 
 Validation:
 
@@ -128,14 +130,14 @@ Tasks:
    `metric-stream/v1/date=YYYY-MM-DD/hour=HH/<topic>-<partition>-<firstOffset>-<lastOffset>.jsonl.gz`
 3. Use Redpanda Connect metadata and object naming to preserve topic, partition, and offset range.
 4. Rely on Redpanda Connect back pressure and output acknowledgement semantics so offsets are not advanced before R2 writes succeed.
-5. Add replay script that reads a bounded R2 prefix and replays to Redpanda, Postgres, or ClickHouse explicitly selected by CLI flag.
-6. Add health script that checks Redpanda consumer lag, newest R2 archive object, Postgres freshness, ClickHouse freshness, and sink error counters.
+5. Add replay script that reads a bounded R2 prefix and replays to Redpanda or ClickHouse explicitly selected by CLI flag.
+6. Add health script that checks Redpanda consumer lag, newest R2 archive object, ClickHouse freshness, and sink error counters.
 
 Validation:
 
 - Unit test object key parsing, checksum validation, and bounded replay filtering.
 - Dry-run `scripts/replay-metric-stream-from-r2.ts` against fixture R2-compatible local mock.
-- Production smoke check must show archive freshness within one batch interval before any PeerDB metric-stream mirror is disabled.
+- Production smoke check must show archive freshness within one batch interval before any new metric-stream writer is deployed.
 
 ## Phase 5: Production Infra
 
@@ -175,7 +177,6 @@ Validation:
 - `terraform -chdir=deploy plan` for R2 bucket change.
 - Production health script reports:
   - Redpanda reachable.
-  - Postgres sink lag under threshold.
   - ClickHouse sink lag under threshold.
   - R2 archive object fresh.
   - `analytics.daily_strain` has recent non-zero candidate inputs when user data exists.
@@ -192,7 +193,7 @@ Files:
 
 Tasks:
 
-1. Stop new reliance on the PeerDB metric-stream mirror only after Redpanda, Postgres sink, ClickHouse sink, and Redpanda Connect R2 archive have passed shadow validation.
+1. Stop new reliance on the PeerDB metric-stream mirror only after Redpanda, ClickHouse sink, and Redpanda Connect R2 archive have passed validation.
 2. Remove metric-stream from PeerDB health expectations.
 3. Keep PeerDB for lower-volume Postgres-to-ClickHouse tables if still useful.
 4. Add incident-baseline entry summarizing the architectural fix and replay validation.
@@ -200,7 +201,7 @@ Tasks:
 Validation:
 
 - A bounded R2 replay into a temporary ClickHouse table recreates the same row count/checksum for a recent hour.
-- Postgres and ClickHouse can be rebuilt for a bounded range from R2 archive without reading the original production Postgres table.
+- ClickHouse can be rebuilt for a bounded range from R2 archive without reading the original production Postgres table.
 
 ## Rollback
 

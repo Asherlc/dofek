@@ -99,11 +99,6 @@ vi.mock("./providers/apple-health/import.ts", () => ({
   importAppleHealthFile: mockImportAppleHealthFile,
 }));
 
-const mockRunMetricStreamPostgresSinkFromEnv = vi.fn(async () => undefined);
-vi.mock("./metric-stream/postgres-sink.ts", () => ({
-  runMetricStreamPostgresSinkFromEnv: mockRunMetricStreamPostgresSinkFromEnv,
-}));
-
 const mockRunMetricStreamClickHouseSinkFromEnv = vi.fn(async () => undefined);
 vi.mock("./metric-stream/clickhouse-sink.ts", () => ({
   runMetricStreamClickHouseSinkFromEnv: mockRunMetricStreamClickHouseSinkFromEnv,
@@ -924,13 +919,15 @@ describe("main", () => {
     vi.clearAllMocks();
   });
 
-  it("runs the Postgres metric stream sink command", async () => {
+  it("rejects the removed Postgres metric stream sink command", async () => {
     process.argv = ["node", "index.ts", "metric-stream-postgres-sink"];
 
-    await main();
+    await expect(main()).rejects.toThrow("process.exit called in test");
 
-    expect(mockRunMetricStreamPostgresSinkFromEnv).toHaveBeenCalledOnce();
     expect(mockRunMetricStreamClickHouseSinkFromEnv).not.toHaveBeenCalled();
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      expect.stringContaining("Unknown command: metric-stream-postgres-sink"),
+    );
     process.argv = savedArgvForMain;
   });
 
@@ -940,7 +937,6 @@ describe("main", () => {
     await main();
 
     expect(mockRunMetricStreamClickHouseSinkFromEnv).toHaveBeenCalledOnce();
-    expect(mockRunMetricStreamPostgresSinkFromEnv).not.toHaveBeenCalled();
     process.argv = savedArgvForMain;
   });
 });

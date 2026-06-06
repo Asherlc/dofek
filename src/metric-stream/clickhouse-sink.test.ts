@@ -94,6 +94,15 @@ describe("insertMetricStreamEventsIntoClickHouse", () => {
     expect(row._peerdb_version).toBe(0);
   });
 
+  it("normalizes EWKT point events into the GeoJSON string ClickHouse read models expect", () => {
+    const row = mapMetricStreamEventToClickHouseRow({
+      ...heartRateEvent,
+      point: "SRID=4326;POINT(-122.4 37.8)",
+    });
+
+    expect(row.point).toBe('{"type":"Point","coordinates":[-122.4,37.8]}');
+  });
+
   it("maps omitted optional fields into null ClickHouse values", () => {
     const row = mapMetricStreamEventToClickHouseRow({
       version: 1,

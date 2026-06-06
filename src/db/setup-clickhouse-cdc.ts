@@ -4,7 +4,7 @@ import { setupClickHouseCdcFromEnv } from "./clickhouse-cdc.ts";
 
 export async function main(): Promise<void> {
   await setupClickHouseCdcFromEnv();
-  logger.info("[clickhouse-cdc] PeerDB metric_stream CDC mirror is configured");
+  logger.info("[clickhouse-cdc] PeerDB raw analytics CDC mirrors are configured");
 }
 
 const isDirectRun =

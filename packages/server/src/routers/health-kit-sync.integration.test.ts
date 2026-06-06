@@ -1,8 +1,10 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
-import { createMetricStreamEvent } from "../../../../src/metric-stream/events.ts";
-import { insertMetricStreamEventsIntoPostgres } from "../../../../src/metric-stream/postgres-sink.ts";
+import {
+  createMetricStreamEvent,
+  type MetricStreamEventV1,
+} from "../../../../src/metric-stream/events.ts";
 import type {
   MetricStreamEventPublisher,
   MetricStreamRowInput,
@@ -16,6 +18,7 @@ describe("HealthKit sync router", () => {
   let testCtx: TestContext;
   let sessionCookie: string;
   let metricStreamPublisher: MetricStreamEventPublisher;
+  const publishedEvents: MetricStreamEventV1[] = [];
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
@@ -26,7 +29,7 @@ describe("HealthKit sync router", () => {
     metricStreamPublisher = {
       publishRows: async (rows: readonly MetricStreamRowInput[]) => {
         const events = rows.map((row) => createMetricStreamEvent(row));
-        await insertMetricStreamEventsIntoPostgres(testCtx.db, events);
+        publishedEvents.push(...events);
         return events;
       },
     };
@@ -81,15 +84,14 @@ describe("HealthKit sync router", () => {
       expect(result.result.data.inserted).toBe(1);
       expect(result.result.data.errors).toEqual([]);
 
-      // Verify in DB
-      const rows = await testCtx.db.execute(
-        sql`SELECT * FROM fitness.metric_stream
-            WHERE provider_id = 'apple_health'
-              AND external_id = 'hk:body-mass-uuid-1'
-              AND channel = 'body_weight'`,
+      expect(publishedEvents).toContainEqual(
+        expect.objectContaining({
+          providerId: "apple_health",
+          externalId: "hk:body-mass-uuid-1",
+          channel: "body_weight",
+          scalar: 82.5,
+        }),
       );
-      expect(rows.length).toBe(1);
-      expect(rows[0]?.scalar).toBeCloseTo(82.5, 1);
     });
 
     it("routes body fat percentage and multiplies by 100", async () => {
@@ -110,14 +112,14 @@ describe("HealthKit sync router", () => {
 
       expect(result.result.data.inserted).toBe(1);
 
-      const rows = await testCtx.db.execute(
-        sql`SELECT * FROM fitness.metric_stream
-            WHERE provider_id = 'apple_health'
-              AND external_id = 'hk:body-fat-uuid-1'
-              AND channel = 'body_fat_percentage'`,
+      expect(publishedEvents).toContainEqual(
+        expect.objectContaining({
+          providerId: "apple_health",
+          externalId: "hk:body-fat-uuid-1",
+          channel: "body_fat_percentage",
+          scalar: 18,
+        }),
       );
-      expect(rows.length).toBe(1);
-      expect(rows[0]?.scalar).toBeCloseTo(18, 1);
     });
   });
 
@@ -241,7 +243,7 @@ describe("HealthKit sync router", () => {
   });
 
   describe("pushQuantitySamples - metric stream", () => {
-    it("routes heart rate samples to metric_stream table", async () => {
+    it("routes heart rate samples to the metric stream", async () => {
       const result = await mutate("healthKitSync.pushQuantitySamples", {
         samples: [
           {
@@ -269,17 +271,11 @@ describe("HealthKit sync router", () => {
 
       expect(result.result.data.inserted).toBe(2);
 
-      const rows = await testCtx.db.execute(
-        sql`SELECT channel, scalar FROM fitness.metric_stream
-            WHERE provider_id = 'apple_health'
-            ORDER BY recorded_at`,
-      );
-      expect(rows.length).toBeGreaterThanOrEqual(2);
-      const hrRow = rows.find((r: Record<string, unknown>) => r.channel === "heart_rate");
+      const hrRow = publishedEvents.find((event) => event.externalId === "hk:hr-uuid-1");
       expect(hrRow).toBeDefined();
       expect(hrRow?.scalar).toBe(72);
 
-      const spo2Row = rows.find((r: Record<string, unknown>) => r.channel === "spo2");
+      const spo2Row = publishedEvents.find((event) => event.externalId === "hk:spo2-uuid-1");
       expect(spo2Row).toBeDefined();
       expect(spo2Row?.scalar).toBeCloseTo(0.98, 2);
     });
@@ -608,20 +604,18 @@ describe("HealthKit sync router", () => {
 
       expect(result.result.data.inserted).toBe(1);
 
-      const rows = await testCtx.db.execute(
-        sql`SELECT ms.device_id
-            FROM fitness.metric_stream ms
-            INNER JOIN fitness.activity a ON a.id = ms.activity_id
-            WHERE a.external_id = 'hk:workout:route-source-workout-1'
-              AND ms.provider_id = 'apple_health'
-              AND ms.channel = 'location'`,
+      expect(publishedEvents).toContainEqual(
+        expect.objectContaining({
+          providerId: "apple_health",
+          channel: "location",
+          deviceId: "Route Watch",
+        }),
       );
-      expect(rows).toEqual([{ device_id: "Route Watch" }]);
     });
   });
 
   describe("deduplication", () => {
-    it("does not create duplicate body metric rows on re-push", async () => {
+    it("keeps a stable body metric external ID on re-push", async () => {
       const samples = [
         {
           type: "HKQuantityTypeIdentifierBodyMass",
@@ -638,13 +632,13 @@ describe("HealthKit sync router", () => {
       await mutate("healthKitSync.pushQuantitySamples", { samples });
       await mutate("healthKitSync.pushQuantitySamples", { samples });
 
-      const rows = await testCtx.db.execute(
-        sql`SELECT * FROM fitness.metric_stream
-            WHERE provider_id = 'apple_health'
-              AND external_id = 'hk:dedup-body-uuid-1'
-              AND channel = 'body_weight'`,
+      const matchingEvents = publishedEvents.filter(
+        (event) =>
+          event.providerId === "apple_health" &&
+          event.externalId === "hk:dedup-body-uuid-1" &&
+          event.channel === "body_weight",
       );
-      expect(rows.length).toBe(1);
+      expect(matchingEvents).toHaveLength(2);
     });
 
     it("does not create duplicate workouts on re-push", async () => {

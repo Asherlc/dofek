@@ -8,7 +8,6 @@ import { protectedProcedure, router } from "../trpc.ts";
 import {
   aggregateSkinTempToDailyMetrics,
   aggregateSpO2ToDailyMetrics,
-  computeBoundsFromIsoTimestamps,
   processBodyMeasurements,
   processDailyMetrics,
   processHealthEvents,
@@ -93,7 +92,12 @@ export const healthKitSyncRouter = router({
       const errors: string[] = [];
 
       try {
-        bodyInserted = await processBodyMeasurements(ctx.db, ctx.userId, bodyMeasurements);
+        bodyInserted = await processBodyMeasurements(
+          ctx.db,
+          ctx.userId,
+          bodyMeasurements,
+          ctx.metricStreamPublisher,
+        );
         inserted += bodyInserted;
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -115,27 +119,30 @@ export const healthKitSyncRouter = router({
           ctx.metricStreamPublisher,
         );
         if (metricStreamSamples.length > 0) {
-          const bounds = computeBoundsFromIsoTimestamps(
-            metricStreamSamples.map((s) => s.startDate),
+          const hasSpo2 = metricStreamSamples.some(
+            (s) => s.type === "HKQuantityTypeIdentifierOxygenSaturation",
           );
-
-          // Aggregate SpO2 and skin temperature from metric_stream into daily_metrics
-          if (bounds) {
-            const hasSpo2 = metricStreamSamples.some(
-              (s) => s.type === "HKQuantityTypeIdentifierOxygenSaturation",
+          if (hasSpo2) {
+            await aggregateSpO2ToDailyMetrics(
+              ctx.db,
+              ctx.userId,
+              metricStreamSamples,
+              ctx.timezone,
             );
-            if (hasSpo2) {
-              await aggregateSpO2ToDailyMetrics(ctx.db, ctx.userId, bounds, ctx.timezone);
-            }
-            const skinTempSamples = metricStreamSamples.filter(
-              (s) => s.type === "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
+          }
+          const skinTempSamples = metricStreamSamples.filter(
+            (s) => s.type === "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
+          );
+          if (skinTempSamples.length > 0) {
+            logger.info(
+              `[apple_health] Received ${skinTempSamples.length} skin temperature samples, aggregating to daily_metrics`,
             );
-            if (skinTempSamples.length > 0) {
-              logger.info(
-                `[apple_health] Received ${skinTempSamples.length} skin temperature samples, aggregating to daily_metrics`,
-              );
-              await aggregateSkinTempToDailyMetrics(ctx.db, ctx.userId, bounds, ctx.timezone);
-            }
+            await aggregateSkinTempToDailyMetrics(
+              ctx.db,
+              ctx.userId,
+              metricStreamSamples,
+              ctx.timezone,
+            );
           }
         }
       } catch (error: unknown) {
@@ -213,7 +220,12 @@ export const healthKitSyncRouter = router({
     .input(z.object({ routes: z.array(workoutRouteSchema) }))
     .mutation(async ({ ctx, input }) => {
       await ensureProvider(ctx.db, ctx.userId);
-      const inserted = await processWorkoutRoutes(ctx.db, ctx.userId, input.routes);
+      const inserted = await processWorkoutRoutes(
+        ctx.db,
+        ctx.userId,
+        input.routes,
+        ctx.metricStreamPublisher,
+      );
 
       if (inserted > 0) {
         await queryCache.invalidateByPrefix(`${ctx.userId}:`);

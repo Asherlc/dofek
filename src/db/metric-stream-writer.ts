@@ -1,10 +1,17 @@
 import type { InferInsertModel } from "drizzle-orm";
+import type { JsonValue, MetricStreamRowInput } from "../metric-stream/events.ts";
+import {
+  getDefaultMetricStreamEventPublisher,
+  type MetricStreamEventPublisher,
+} from "../metric-stream/redpanda-producer.ts";
 import type { SyncDatabase } from "./index.ts";
 import { DRIZZLE_FIELD_TO_CHANNEL, LOCATION } from "./sensor-channels.ts";
+import { getTokenUserId } from "./token-user-context.ts";
 
 type MetricStreamTable = typeof import("./schema.ts").metricStream;
 
 export type MetricStreamInsert = InferInsertModel<MetricStreamTable>;
+type MetricStreamPublishRow = MetricStreamInsert & MetricStreamRowInput;
 
 export interface MetricStreamSourceRow {
   recordedAt: Date;
@@ -51,9 +58,8 @@ function metricStreamExternalId(row: MetricStreamSourceRow, channel: string): st
 }
 
 /**
- * Callback that receives a batch of rows to insert.
- * The default implementation uses Drizzle's `db.insert(metricStream).values(batch)`.
- * Tests can supply a lightweight mock without needing the full Drizzle type.
+ * Callback that receives a batch of rows for legacy direct inserts.
+ * Provider ingestion should publish through Redpanda via writeMetricStreamBatch().
  */
 export type BatchInsertFn = (batch: MetricStreamInsert[]) => Promise<void>;
 
@@ -73,6 +79,47 @@ export function createBatchInsert(db: Pick<SyncDatabase, "insert">): BatchInsert
       .onConflictDoNothing({
         target: metricStreamConflictTarget(table),
       });
+  };
+}
+
+function requireMetricStreamUserId(row: MetricStreamInsert): string {
+  const userId = row.userId ?? getTokenUserId();
+  if (!hasExternalId(userId)) {
+    throw new Error("metric_stream ingestion rows require userId");
+  }
+  return userId;
+}
+
+function isJsonValue(value: unknown): value is JsonValue {
+  if (value === null) return true;
+  switch (typeof value) {
+    case "boolean":
+    case "number":
+    case "string":
+      return true;
+    case "object":
+      if (Array.isArray(value)) {
+        return value.every(isJsonValue);
+      }
+      return Object.values(value).every(isJsonValue);
+    default:
+      return false;
+  }
+}
+
+function metricStreamMetadata(value: unknown): JsonValue | undefined {
+  if (value === undefined) return undefined;
+  if (!isJsonValue(value)) {
+    throw new Error("metric_stream ingestion metadata must be JSON serializable");
+  }
+  return value;
+}
+
+function toPublishRow(row: MetricStreamInsert): MetricStreamPublishRow {
+  return {
+    ...row,
+    userId: requireMetricStreamUserId(row),
+    metadata: metricStreamMetadata(row.metadata),
   };
 }
 
@@ -151,14 +198,29 @@ export function sourceRowToMetricStream(
  * and batch-inserts them.
  */
 export async function writeMetricStreamBatch(
-  db: Pick<SyncDatabase, "insert">,
+  _db: Pick<SyncDatabase, "insert">,
   metricRows: MetricStreamSourceRow[],
   sourceType: string,
   batchSize = DEFAULT_BATCH_SIZE,
+  publisher?: MetricStreamEventPublisher,
 ): Promise<number> {
   const rows = metricRows.flatMap((row) => sourceRowToMetricStream(row, sourceType));
   if (rows.length === 0) return 0;
 
-  const insertBatch = createBatchInsert(db);
-  return writeMetricStream(insertBatch, rows, batchSize);
+  const rowWithoutExternalId = rows.find((row) => !hasExternalId(row.externalId));
+  if (rowWithoutExternalId) {
+    throw new Error("metric_stream ingestion rows require externalId for idempotency");
+  }
+
+  const resolvedPublisher = publisher ?? (await getDefaultMetricStreamEventPublisher());
+  const publishRows = rows.map(toPublishRow);
+
+  let published = 0;
+  for (let offset = 0; offset < publishRows.length; offset += batchSize) {
+    const events = await resolvedPublisher.publishRows(
+      publishRows.slice(offset, offset + batchSize),
+    );
+    published += events.length;
+  }
+  return published;
 }

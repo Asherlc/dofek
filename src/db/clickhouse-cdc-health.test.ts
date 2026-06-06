@@ -55,7 +55,6 @@ class FakeClickHouseClient implements CdcHealthClickHouseClient {
 
 const slotNames = [
   "peerflow_slot_dofek_fitness_raw_analytics",
-  "peerflow_slot_dofek_metric_stream_analytics",
   "peerflow_slot_dofek_provider_inventory_raw_analytics",
   "peerflow_slot_dofek_sensor_priority_raw_analytics",
 ] as const;
@@ -75,11 +74,6 @@ function healthyFreshnessRows(
   latestPeerDbSyncedAt = "2026-06-03 19:30:00.000000000",
 ): FreshnessRow[] {
   return [
-    {
-      latest_peerdb_synced_at: latestPeerDbSyncedAt,
-      row_count: "10",
-      table_name: "metric_stream",
-    },
     {
       latest_peerdb_synced_at: latestPeerDbSyncedAt,
       row_count: "10",
@@ -123,16 +117,12 @@ describe("checkClickHouseCdcHealth", () => {
     });
 
     expect(report.issues).toEqual([]);
-    expect(report.slotCount).toBe(4);
-    expect(report.mirrorCount).toBe(3);
-    expect(postgresClient.queryTexts[0]).toContain("'peerflow_slot_dofek_metric_stream_analytics'");
+    expect(report.slotCount).toBe(3);
+    expect(report.mirrorCount).toBe(2);
     expect(clickHouseClient.queryOptions).toEqual([
       {
         format: "JSONEachRow",
         query:
-          "SELECT 'metric_stream' AS table_name, count() AS row_count, " +
-          "max(_peerdb_synced_at) AS latest_peerdb_synced_at FROM " +
-          "postgres_fitness.metric_stream WHERE _peerdb_is_deleted = 0 UNION ALL " +
           "SELECT 'sleep_session' AS table_name, count() AS row_count, " +
           "max(_peerdb_synced_at) AS latest_peerdb_synced_at FROM " +
           "postgres_fitness.sleep_session WHERE _peerdb_is_deleted = 0",
@@ -150,8 +140,8 @@ describe("checkClickHouseCdcHealth", () => {
     expect(report.issues).toContainEqual({
       severity: "failure",
       message:
-        "ClickHouse mirror postgres_fitness.metric_stream last synced at " +
-        "1970-01-01 00:00:00, older than 120 minutes",
+        "ClickHouse mirror postgres_fitness.sleep_session last synced at " +
+        "1970-01-01 00:00:00, older than 2160 minutes",
     });
   });
 
@@ -219,7 +209,7 @@ describe("checkClickHouseCdcHealth", () => {
   it("warns before retained WAL reaches the failure threshold", async () => {
     const slotRows = withSlotOverride(
       healthySlotRows(),
-      "peerflow_slot_dofek_metric_stream_analytics",
+      "peerflow_slot_dofek_fitness_raw_analytics",
       {
         retained_wal_bytes: String(16 * 1024 * 1024 * 1024),
       },
@@ -230,7 +220,7 @@ describe("checkClickHouseCdcHealth", () => {
     expect(report.issues).toContainEqual({
       severity: "warning",
       message:
-        "PeerDB replication slot peerflow_slot_dofek_metric_stream_analytics retains " +
+        "PeerDB replication slot peerflow_slot_dofek_fitness_raw_analytics retains " +
         "17179869184 WAL bytes, above warning threshold 17179869184",
     });
     expect(() => assertClickHouseCdcHealth(report)).not.toThrow();
@@ -239,7 +229,7 @@ describe("checkClickHouseCdcHealth", () => {
   it("fails before retained WAL reaches the Postgres lost-slot cap", async () => {
     const slotRows = withSlotOverride(
       healthySlotRows(),
-      "peerflow_slot_dofek_metric_stream_analytics",
+      "peerflow_slot_dofek_fitness_raw_analytics",
       {
         retained_wal_bytes: String(32 * 1024 * 1024 * 1024),
       },
@@ -250,7 +240,7 @@ describe("checkClickHouseCdcHealth", () => {
     expect(report.issues).toContainEqual({
       severity: "failure",
       message:
-        "PeerDB replication slot peerflow_slot_dofek_metric_stream_analytics retains " +
+        "PeerDB replication slot peerflow_slot_dofek_fitness_raw_analytics retains " +
         "34359738368 WAL bytes, above failure threshold 34359738368",
     });
   });
@@ -266,7 +256,7 @@ describe("checkClickHouseCdcHealth", () => {
         {
           latest_peerdb_synced_at: "2026-06-03 19:30:00",
           row_count: 10,
-          table_name: "metric_stream",
+          table_name: "sleep_session",
         },
       ]),
       now: new Date("2026-06-03T20:00:00.000Z"),
@@ -278,14 +268,14 @@ describe("checkClickHouseCdcHealth", () => {
   it("fails when an active ClickHouse mirror has not synced recently", async () => {
     const report = await checkHealth(
       healthySlotRows(),
-      healthyFreshnessRows("2026-06-03 16:00:00.000000000"),
+      healthyFreshnessRows("2026-06-01 16:00:00.000000000"),
     );
 
     expect(report.issues).toContainEqual({
       severity: "failure",
       message:
-        "ClickHouse mirror postgres_fitness.metric_stream last synced at " +
-        "2026-06-03 16:00:00.000000000, older than 120 minutes",
+        "ClickHouse mirror postgres_fitness.sleep_session last synced at " +
+        "2026-06-01 16:00:00.000000000, older than 2160 minutes",
     });
   });
 
@@ -303,14 +293,14 @@ describe("checkClickHouseCdcHealth", () => {
       {
         latest_peerdb_synced_at: "not-a-date",
         row_count: "10",
-        table_name: "metric_stream",
+        table_name: "sleep_session",
       },
     ]);
 
     expect(report.issues).toContainEqual({
       severity: "failure",
       message:
-        "ClickHouse mirror postgres_fitness.metric_stream returned an unparseable " +
+        "ClickHouse mirror postgres_fitness.sleep_session returned an unparseable " +
         "_peerdb_synced_at value: not-a-date",
     });
   });
@@ -320,14 +310,14 @@ describe("checkClickHouseCdcHealth", () => {
       {
         latest_peerdb_synced_at: null,
         row_count: "0",
-        table_name: "metric_stream",
+        table_name: "sleep_session",
       },
     ]);
 
     expect(report.issues).toEqual([
       {
         severity: "warning",
-        message: "ClickHouse mirror postgres_fitness.metric_stream has no synced rows",
+        message: "ClickHouse mirror postgres_fitness.sleep_session has no synced rows",
       },
     ]);
     expect(() => assertClickHouseCdcHealth(report)).not.toThrow();
@@ -355,7 +345,7 @@ describe("checkClickHouseCdcHealth", () => {
         {
           latest_peerdb_synced_at: "not-a-date",
           row_count: "10",
-          table_name: "metric_stream",
+          table_name: "sleep_session",
         },
       ],
     );
@@ -363,7 +353,7 @@ describe("checkClickHouseCdcHealth", () => {
     expect(() => assertClickHouseCdcHealth(report)).toThrow(
       "ClickHouse CDC health check failed:\n" +
         "- PeerDB replication slot peerflow_slot_dofek_fitness_raw_analytics is inactive\n" +
-        "- ClickHouse mirror postgres_fitness.metric_stream returned an unparseable " +
+        "- ClickHouse mirror postgres_fitness.sleep_session returned an unparseable " +
         "_peerdb_synced_at value: not-a-date",
     );
   });

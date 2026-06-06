@@ -4,8 +4,22 @@ import {
   metricStreamConflictTarget,
   sourceRowToMetricStream,
   writeMetricStream,
+  writeMetricStreamBatch,
 } from "./metric-stream-writer.ts";
 import { metricStream } from "./schema.ts";
+import { runWithTokenUser } from "./token-user-context.ts";
+
+const mockPublishRows = vi.fn(async (rows: readonly unknown[]) =>
+  rows.map((_, index) => ({
+    id: `10000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+  })),
+);
+
+vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: vi.fn(async () => ({
+    publishRows: mockPublishRows,
+  })),
+}));
 
 // ── sourceRowToMetricStream ────────────────────────────────
 
@@ -302,6 +316,69 @@ describe("writeMetricStream", () => {
       "metric_stream ingestion rows require externalId for idempotency",
     );
     expect(insertBatch).not.toHaveBeenCalled();
+  });
+});
+
+// ── writeMetricStreamBatch ─────────────────────────────────
+
+describe("writeMetricStreamBatch", () => {
+  it("publishes fanned-out provider rows to Redpanda without inserting into Postgres", async () => {
+    const db = { insert: vi.fn() };
+
+    const count = await runWithTokenUser("00000000-0000-0000-0000-000000000001", () =>
+      writeMetricStreamBatch(
+        db,
+        [
+          {
+            recordedAt: new Date("2026-03-30T12:00:00Z"),
+            providerId: "withings",
+            externalId: "withings-measure-1",
+            weightKg: 72.5,
+            bodyFatPct: 18.4,
+          },
+        ],
+        "api",
+      ),
+    );
+
+    expect(count).toBe(2);
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(mockPublishRows).toHaveBeenCalledWith([
+      expect.objectContaining({
+        userId: "00000000-0000-0000-0000-000000000001",
+        providerId: "withings",
+        externalId: "withings-measure-1",
+        channel: "body_weight",
+        scalar: 72.5,
+      }),
+      expect.objectContaining({
+        userId: "00000000-0000-0000-0000-000000000001",
+        providerId: "withings",
+        externalId: "withings-measure-1",
+        channel: "body_fat_percentage",
+        scalar: 18.4,
+      }),
+    ]);
+  });
+
+  it("fails fast when neither the row nor token context provides a user ID", async () => {
+    const db = { insert: vi.fn() };
+
+    await expect(
+      writeMetricStreamBatch(
+        db,
+        [
+          {
+            recordedAt: new Date("2026-03-30T12:00:00Z"),
+            providerId: "withings",
+            externalId: "withings-measure-2",
+            weightKg: 72.5,
+          },
+        ],
+        "api",
+      ),
+    ).rejects.toThrow("metric_stream ingestion rows require userId");
+    expect(db.insert).not.toHaveBeenCalled();
   });
 });
 

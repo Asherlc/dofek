@@ -32,7 +32,7 @@ export const whoopBleSyncRouter = router({
   pushRealtimeData: protectedProcedure
     .input(pushRealtimeDataInput)
     .mutation(async ({ ctx, input }) => {
-      const repository = new WhoopBleSyncRepository(ctx.db, ctx.userId);
+      const repository = new WhoopBleSyncRepository(ctx.db, ctx.userId, ctx.metricStreamPublisher);
 
       if (input.samples.length === 0) {
         await repository.ensureProvider();

@@ -193,6 +193,10 @@ export async function runImport(
           nutritionRecords.length > 0 ? upsertNutritionBatch(db, providerId, nutritionRecords) : 0,
           unrouted.length > 0 ? upsertHealthEventBatch(db, providerId, unrouted) : 0,
         ]);
+        if (metricRecords.length > 0) {
+          await aggregateSpO2ToDailyMetrics(db, providerId, metricRecords);
+          await aggregateSkinTempToDailyMetrics(db, providerId, metricRecords);
+        }
         for (const c of results) recordsSynced += c;
       },
       onSleepBatch: async (records) => {
@@ -223,10 +227,6 @@ export async function runImport(
         recordsSynced += rows.length;
       },
     });
-
-    // Aggregate SpO2 and skin temperature from metric_stream into daily_metrics
-    await aggregateSpO2ToDailyMetrics(db, providerId, since);
-    await aggregateSkinTempToDailyMetrics(db, providerId, since);
 
     logger.info(
       `[apple_health] Parsed ${counts.recordCount} records, ` +

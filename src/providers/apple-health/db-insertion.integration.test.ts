@@ -2,6 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as schema from "../../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
+import { runWithTokenUser } from "../../db/token-user-context.ts";
 import {
   aggregateSkinTempToDailyMetrics,
   aggregateSpO2ToDailyMetrics,
@@ -379,39 +380,29 @@ describe("db-insertion deduplication (integration)", () => {
   });
 
   describe("aggregateSpO2ToDailyMetrics", () => {
-    it("aggregates SpO2 fractions from metric_stream into daily_metrics as percentage", async () => {
-      // Insert SpO2 readings as fractions (0-1) into metric_stream
-      await ctx.db.insert(schema.metricStream).values([
-        {
-          providerId: PROVIDER_ID,
-          userId: schema.TEST_USER_ID,
-          recordedAt: new Date("2025-08-01T08:00:00Z"),
-          channel: "spo2",
-          scalar: 0.96,
-          sourceType: "api",
-          deviceId: "Apple Watch",
-        },
-        {
-          providerId: PROVIDER_ID,
-          userId: schema.TEST_USER_ID,
-          recordedAt: new Date("2025-08-01T14:00:00Z"),
-          channel: "spo2",
-          scalar: 0.98,
-          sourceType: "api",
-          deviceId: "Apple Watch",
-        },
-        {
-          providerId: PROVIDER_ID,
-          userId: schema.TEST_USER_ID,
-          recordedAt: new Date("2025-08-01T20:00:00Z"),
-          channel: "spo2",
-          scalar: 0.97,
-          sourceType: "api",
-          deviceId: "Apple Watch",
-        },
-      ]);
-
-      await aggregateSpO2ToDailyMetrics(ctx.db, PROVIDER_ID, new Date("2025-08-01T00:00:00Z"));
+    it("aggregates SpO2 fractions from records into daily_metrics as percentage", async () => {
+      await runWithTokenUser(schema.TEST_USER_ID, () =>
+        aggregateSpO2ToDailyMetrics(ctx.db, PROVIDER_ID, [
+          healthRecord(
+            "HKQuantityTypeIdentifierOxygenSaturation",
+            0.96,
+            new Date("2025-08-01T08:00:00Z"),
+            "%",
+          ),
+          healthRecord(
+            "HKQuantityTypeIdentifierOxygenSaturation",
+            0.98,
+            new Date("2025-08-01T14:00:00Z"),
+            "%",
+          ),
+          healthRecord(
+            "HKQuantityTypeIdentifierOxygenSaturation",
+            0.97,
+            new Date("2025-08-01T20:00:00Z"),
+            "%",
+          ),
+        ]),
+      );
 
       const rows = await ctx.db
         .select({ spo2Avg: schema.dailyMetrics.spo2Avg })
@@ -425,30 +416,23 @@ describe("db-insertion deduplication (integration)", () => {
   });
 
   describe("aggregateSkinTempToDailyMetrics", () => {
-    it("aggregates wrist temperature from metric_stream into daily_metrics", async () => {
-      // Insert skin temperature readings into metric_stream
-      await ctx.db.insert(schema.metricStream).values([
-        {
-          providerId: PROVIDER_ID,
-          userId: schema.TEST_USER_ID,
-          recordedAt: new Date("2025-08-02T02:00:00Z"),
-          channel: "skin_temperature",
-          scalar: 33.2,
-          sourceType: "api",
-          deviceId: "Apple Watch",
-        },
-        {
-          providerId: PROVIDER_ID,
-          userId: schema.TEST_USER_ID,
-          recordedAt: new Date("2025-08-02T04:00:00Z"),
-          channel: "skin_temperature",
-          scalar: 33.6,
-          sourceType: "api",
-          deviceId: "Apple Watch",
-        },
-      ]);
-
-      await aggregateSkinTempToDailyMetrics(ctx.db, PROVIDER_ID, new Date("2025-08-02T00:00:00Z"));
+    it("aggregates wrist temperature from records into daily_metrics", async () => {
+      await runWithTokenUser(schema.TEST_USER_ID, () =>
+        aggregateSkinTempToDailyMetrics(ctx.db, PROVIDER_ID, [
+          healthRecord(
+            "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
+            33.2,
+            new Date("2025-08-02T02:00:00Z"),
+            "degC",
+          ),
+          healthRecord(
+            "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
+            33.6,
+            new Date("2025-08-02T04:00:00Z"),
+            "degC",
+          ),
+        ]),
+      );
 
       const rows = await ctx.db
         .select({ skinTempC: schema.dailyMetrics.skinTempC })

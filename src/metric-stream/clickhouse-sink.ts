@@ -34,6 +34,20 @@ function isClickHouseReplicatedEvent(event: MetricStreamEventV1): boolean {
   return event.channel !== "imu";
 }
 
+function normalizePointForClickHouse(point: string | null | undefined): string | null {
+  if (!point) return null;
+
+  const ewktMatch = /^SRID=4326;POINT\((-?\d+(?:\.\d+)?) (-?\d+(?:\.\d+)?)\)$/.exec(point);
+  if (!ewktMatch) return point;
+
+  const longitude = Number(ewktMatch[1]);
+  const latitude = Number(ewktMatch[2]);
+  return JSON.stringify({
+    type: "Point",
+    coordinates: [longitude, latitude],
+  });
+}
+
 export function mapMetricStreamEventToClickHouseRow(
   event: MetricStreamEventV1,
 ): ClickHouseMetricStreamRow {
@@ -47,7 +61,7 @@ export function mapMetricStreamEventToClickHouseRow(
     channel: event.channel,
     activity_id: event.activityId ?? null,
     scalar: event.scalar ?? null,
-    point: event.point ?? null,
+    point: normalizePointForClickHouse(event.point),
     id: event.id,
     _peerdb_synced_at: new Date().toISOString(),
     _peerdb_is_deleted: 0,

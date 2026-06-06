@@ -6,6 +6,7 @@ import {
   type MetricStreamSourceRow,
   writeMetricStreamBatch,
 } from "../../db/metric-stream-writer.ts";
+import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
 import { NUTRIENT_ID_MAP } from "../../db/nutrient-columns.ts";
 import {
   activity,
@@ -18,6 +19,7 @@ import {
   sleepStage,
 } from "../../db/schema.ts";
 import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
+import { getTokenUserId } from "../../db/token-user-context.ts";
 import { logger } from "../../logger.ts";
 import type { HealthRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
@@ -167,6 +169,7 @@ export async function upsertMetricStreamBatch(
   db: SyncDatabase,
   providerId: string,
   records: HealthRecord[],
+  publisher?: MetricStreamEventPublisher,
 ): Promise<number> {
   const rows: MetricStreamSourceRow[] = [];
   for (const record of records) {
@@ -204,8 +207,8 @@ export async function upsertMetricStreamBatch(
     }
   }
 
-  // Metric rows now write directly to metric_stream.
-  await writeMetricStreamBatch(db, rows, SOURCE_TYPE_FILE);
+  // Metric rows publish to the Redpanda metric stream; ClickHouse and R2 consume from there.
+  await writeMetricStreamBatch(db, rows, SOURCE_TYPE_FILE, undefined, publisher);
   return rows.length;
 }
 
@@ -447,62 +450,102 @@ export async function upsertDailyMetricsBatch(
   return insertRows.length;
 }
 
+async function aggregateMetricRecordsToDailyMetrics(
+  db: SyncDatabase,
+  providerId: string,
+  records: readonly HealthRecord[],
+  type: string,
+  column: "skinTempC" | "spo2Avg",
+  valueScale: number,
+): Promise<void> {
+  const userId = getTokenUserId();
+  if (!userId) {
+    throw new Error("apple-health import requires user context");
+  }
+  const groupedRecords = new Map<string, { total: number; count: number; sourceName: string }>();
+
+  for (const record of records) {
+    if (record.type !== type) continue;
+    const date = dateToString(record.startDate);
+    const key = `${date}\0${record.sourceName}`;
+    const grouped = groupedRecords.get(key) ?? {
+      total: 0,
+      count: 0,
+      sourceName: record.sourceName,
+    };
+    grouped.total += record.value * valueScale;
+    grouped.count++;
+    groupedRecords.set(key, grouped);
+  }
+
+  const rows = [...groupedRecords.entries()].map(([key, grouped]) => {
+    const [date] = key.split("\0");
+    return {
+      date,
+      providerId,
+      userId,
+      sourceName: grouped.sourceName,
+      [column]: grouped.total / grouped.count,
+    };
+  });
+  if (rows.length === 0) return;
+
+  const set =
+    column === "spo2Avg"
+      ? { spo2Avg: sql`EXCLUDED.spo2_avg` }
+      : { skinTempC: sql`EXCLUDED.skin_temp_c` };
+
+  await db
+    .insert(dailyMetrics)
+    .values(rows)
+    .onConflictDoUpdate({
+      target: [
+        dailyMetrics.userId,
+        dailyMetrics.date,
+        dailyMetrics.providerId,
+        dailyMetrics.sourceName,
+      ],
+      set,
+    });
+}
+
 /**
- * Aggregate SpO2 readings from metric_stream into daily_metrics.spo2_avg.
- * Apple Health stores SpO2 as fractions (0-1) in metric_stream; this converts
- * the daily average to a percentage (0-100) for consistency with other providers
- * (WHOOP, Oura, Garmin) that report SpO2 as a percentage.
+ * Aggregate SpO2 readings from Apple Health metric records into daily_metrics.spo2_avg.
+ * Apple Health stores SpO2 as fractions (0-1); this converts the daily average
+ * to a percentage (0-100) for consistency with providers that report SpO2 as a percentage.
  */
 export async function aggregateSpO2ToDailyMetrics(
   db: SyncDatabase,
   providerId: string,
-  since: Date,
+  records: readonly HealthRecord[],
 ): Promise<void> {
-  await db.execute(
-    sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, source_name, spo2_avg)
-        SELECT
-          (recorded_at AT TIME ZONE 'UTC')::date AS date,
-          provider_id,
-          user_id,
-          device_id AS source_name,
-          AVG(scalar) * 100 AS spo2_avg
-        FROM fitness.metric_stream
-        WHERE provider_id = ${providerId}
-          AND channel = 'spo2'
-          AND scalar IS NOT NULL
-          AND recorded_at >= ${since.toISOString()}::timestamptz
-        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, device_id
-        ON CONFLICT (user_id, date, provider_id, source_name) DO UPDATE SET
-          spo2_avg = EXCLUDED.spo2_avg`,
+  await aggregateMetricRecordsToDailyMetrics(
+    db,
+    providerId,
+    records,
+    "HKQuantityTypeIdentifierOxygenSaturation",
+    "spo2Avg",
+    100,
   );
 }
 
 /**
- * Aggregate wrist temperature readings from metric_stream into daily_metrics.skin_temp_c.
+ * Aggregate wrist temperature readings from Apple Health metric records into daily_metrics.skin_temp_c.
  * Apple Watch reports sleeping wrist temperature in °C; this computes the daily
  * average and stores it alongside other daily metrics.
  */
 export async function aggregateSkinTempToDailyMetrics(
   db: SyncDatabase,
   providerId: string,
-  since: Date,
+  records: readonly HealthRecord[],
 ): Promise<void> {
-  await db.execute(
-    sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, source_name, skin_temp_c)
-        SELECT
-          (recorded_at AT TIME ZONE 'UTC')::date AS date,
-          provider_id,
-          user_id,
-          device_id AS source_name,
-          AVG(scalar) AS skin_temp_c
-        FROM fitness.metric_stream
-        WHERE provider_id = ${providerId}
-          AND channel = 'skin_temperature'
-          AND scalar IS NOT NULL
-          AND recorded_at >= ${since.toISOString()}::timestamptz
-        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, device_id
-        ON CONFLICT (user_id, date, provider_id, source_name) DO UPDATE SET
-          skin_temp_c = EXCLUDED.skin_temp_c`,
+  await aggregateMetricRecordsToDailyMetrics(
+    db,
+    providerId,
+    records,
+    "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
+    "skinTempC",
+    1,
   );
 }
 

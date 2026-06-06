@@ -1,10 +1,9 @@
 # Metric Stream Redpanda and R2 Runbook
 
-Use this for the Redpanda metric-stream replay path. HealthKit quantity
-metric-stream samples publish through Redpanda first. Other providers may still
-write directly to Postgres until their individual writer cutovers are complete.
-PeerDB may still mirror non-IMU Postgres rows into ClickHouse during shadow
-validation and bounded recovery.
+Use this for the Redpanda metric-stream replay path. Metric-stream samples from
+provider syncs, imports, mobile recording, IMU, and WHOOP BLE publish through
+Redpanda first. Redpanda Connect archives the event log to Cloudflare R2 for
+long-term replay, and the ClickHouse sink writes the analytics copy.
 
 ## Purpose
 
@@ -12,19 +11,19 @@ validation and bounded recovery.
 replication slot is not durable enough for this table because a lost slot can
 leave ClickHouse stale even while Postgres still has fresh source rows.
 
-The target durable path is:
+The durable path is:
 
 ```text
 provider/mobile import
   -> Redpanda topic metric-stream-v1
-  -> Postgres sink -> fitness.metric_stream
   -> ClickHouse sink -> postgres_fitness.metric_stream
   -> Redpanda Connect archive -> Cloudflare R2
 ```
 
 R2 is the long-term replay store for metric-stream events. Postgres remains the
-relational app copy, and ClickHouse remains the analytics serving copy. Both are
-rebuildable from Redpanda/R2 for bounded ranges after the cutover is complete.
+canonical store for relational app state such as users, providers, activities,
+tokens, settings, food, and manually entered data. ClickHouse is the analytics
+serving copy for metric-stream samples and is rebuildable from R2.
 
 ## Canonical Storage Policy
 
@@ -34,7 +33,7 @@ rebuildable from Redpanda/R2 for bounded ranges after the cutover is complete.
 - Redpanda local retention is a buffering and operations setting, not the
   long-term source of truth.
 - Postgres remains canonical for users, providers, activities, tokens, settings,
-  food, and other app state. This runbook only changes metric-stream samples.
+  food, and other app state. Do not add a normal metric-stream Postgres sink.
 - If Redpanda self-managed tiered storage is later enabled, verify the license
   first. Redpanda documents self-managed tiered storage as Enterprise-gated.
 
@@ -43,8 +42,7 @@ rebuildable from Redpanda/R2 for bounded ranges after the cutover is complete.
 | Service | Purpose |
 | --- | --- |
 | `redpanda` | Kafka-compatible hot ingest log. |
-| `metric-stream-postgres-sink` | Consumes `metric-stream-v1` and writes `fitness.metric_stream`. |
-| `metric-stream-clickhouse-sink` | Consumes `metric-stream-v1` and writes non-IMU rows to `postgres_fitness.metric_stream`. |
+| `metric-stream-clickhouse-sink` | Consumes `metric-stream-v1` and writes rows to `postgres_fitness.metric_stream`. |
 | `metric-stream-r2-archive` | Redpanda Connect pipeline that writes immutable batches to R2. |
 | `analytics-worker` | Rebuilds dbt-owned ClickHouse analytics read models from ClickHouse source tables. |
 
@@ -120,7 +118,6 @@ Run concrete freshness checks from the production host:
 
 ```bash
 docker service ps dofek_redpanda --no-trunc
-docker service ps dofek_metric-stream-postgres-sink --no-trunc
 docker service ps dofek_metric-stream-clickhouse-sink --no-trunc
 docker service ps dofek_metric-stream-r2-archive --no-trunc
 ```
@@ -129,15 +126,8 @@ Check Redpanda consumer lag for each durable consumer group:
 
 ```bash
 docker exec "$(docker ps --filter name=dofek_redpanda -q | head -n1)" \
-  rpk group describe metric-stream-postgres-sink metric-stream-clickhouse-sink metric-stream-r2-archive \
+  rpk group describe metric-stream-clickhouse-sink metric-stream-r2-archive \
   --brokers redpanda:9092
-```
-
-Check Postgres freshness:
-
-```bash
-docker exec -i "$(docker ps --filter name=dofek_db -q | head -n1)" \
-  sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select max(recorded_at) from fitness.metric_stream"'
 ```
 
 Check ClickHouse freshness:
@@ -156,17 +146,15 @@ docker service logs --since 15m dofek_metric-stream-r2-archive
 The freshness checks must cover:
 
 - Redpanda broker reachability.
-- `metric-stream-postgres-sink` consumer lag.
 - `metric-stream-clickhouse-sink` consumer lag.
 - `metric-stream-r2-archive` consumer lag.
 - Newest R2 archive object age.
-- Newest `fitness.metric_stream.recorded_at` in Postgres.
 - Newest `postgres_fitness.metric_stream.recorded_at` in ClickHouse.
 - Newest dbt analytics rows that depend on metric stream, especially
   `analytics.daily_activity_load` and `analytics.daily_strain`.
 
-Treat R2 archive staleness as a production durability incident. Do not cut over
-writers to Redpanda-first unless the R2 archive is fresh.
+Treat R2 archive staleness as a production durability incident. Do not deploy
+new metric-stream writers unless the R2 archive is fresh.
 
 ## Replay
 
@@ -175,9 +163,8 @@ unbounded archive replay.
 
 R2 replay automation is not shipped yet. Until
 `scripts/replay-metric-stream-from-r2.ts` exists, do not use R2 replay as an
-incident mitigation path. Use the existing bounded ClickHouse repair runbooks and
-scripts for ClickHouse-only repair, or implement the replay script before
-cutting over any additional metric-stream writers to Redpanda-first.
+incident mitigation path. Use existing bounded ClickHouse repair runbooks for
+ClickHouse-only repair, or implement the replay script first.
 
 After any bounded ClickHouse repair, rebuild the dependent analytics models:
 
@@ -188,36 +175,24 @@ dbt build --project-dir analytics --profiles-dir analytics --threads 1 \
 
 ## Cutover Checklist
 
-Do not switch production writers to Redpanda-first until all checks pass:
+Before deploying new metric-stream writer changes, verify:
 
 1. `redpanda` is healthy.
-2. Postgres sink can insert duplicate events idempotently.
-3. ClickHouse sink can insert duplicate events idempotently.
-4. Redpanda Connect archive writes fresh R2 objects.
-5. A bounded R2 replay into a temporary ClickHouse table matches row counts and
+2. ClickHouse sink can insert duplicate events idempotently.
+3. Redpanda Connect archive writes fresh R2 objects.
+4. A bounded R2 replay into a temporary ClickHouse table matches row counts and
    checksums from the original archive.
-6. PeerDB metric-stream CDC remains active during shadow validation.
-7. Recent Redpanda-sourced ClickHouse rows match PeerDB-sourced rows over a
-   bounded recent window.
 
-Only after this checklist passes should additional provider and mobile
-metric-stream writers move from direct Postgres writes to
-`writeMetricStreamRows()`. HealthKit quantity metric-stream samples already use
-that writer boundary.
+Metric-stream writers should use `writeMetricStreamBatch()` or
+`writeMetricStreamRows()` so they publish Redpanda events and do not write raw
+samples to Postgres.
 
 ## Incident Triage
 
 If strain, activity load, or other metric-stream analytics go stale:
 
 1. Check Redpanda sink lag and archive freshness.
-2. Check Postgres freshness:
-
-   ```sql
-   SELECT max(recorded_at)
-   FROM fitness.metric_stream;
-   ```
-
-3. Check ClickHouse freshness:
+2. Check ClickHouse freshness:
 
    ```sql
    SELECT max(recorded_at)
@@ -225,11 +200,11 @@ If strain, activity load, or other metric-stream analytics go stale:
    WHERE _peerdb_is_deleted = 0;
    ```
 
-4. If Redpanda and R2 are fresh but ClickHouse is stale, replay the bounded
+3. If Redpanda and R2 are fresh but ClickHouse is stale, replay the bounded
    affected R2 prefix to ClickHouse and rebuild dependent dbt models.
-5. If R2 is stale, treat it as a canonical backup failure. Fix the archive
+4. If R2 is stale, treat it as a canonical backup failure. Fix the archive
    service before continuing ingestion cutover.
-6. Record the incident in `docs/production-incident-baseline.md`.
+5. Record the incident in `docs/production-incident-baseline.md`.
 
 ## References
 

@@ -81,9 +81,6 @@ case "${1:-sync}" in
       fi
     done
     ;;
-  metric-stream-postgres-sink)
-    exec $NODE src/index.ts metric-stream-postgres-sink
-    ;;
   metric-stream-clickhouse-sink)
     exec $NODE src/index.ts metric-stream-clickhouse-sink
     ;;
@@ -94,7 +91,7 @@ case "${1:-sync}" in
     exec $NODE scripts/seed-review-clickhouse.ts
     ;;
   *)
-    echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', 'migrate', 'analytics', 'analytics-worker', 'cdc-health', 'metric-stream-postgres-sink', 'metric-stream-clickhouse-sink', 'seed', or 'review-seed-clickhouse')" >&2
+    echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', 'migrate', 'analytics', 'analytics-worker', 'cdc-health', 'metric-stream-clickhouse-sink', 'seed', or 'review-seed-clickhouse')" >&2
     exit 1
     ;;
 esac
