@@ -556,6 +556,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
 
   it("drops the obsolete metric stream CDC mirror before creating current mirrors", async () => {
     const peerDbQueries: string[] = [];
+    let obsoleteMirrorLookupQuery: string | null = null;
     const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
 
     await setupClickHouseCdc({
@@ -563,6 +564,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
         async query(queryText) {
           const query = String(queryText);
           if (query.includes("obsolete_metric_stream_mirror_name")) {
+            obsoleteMirrorLookupQuery = query;
             return {
               rows: [{ obsolete_metric_stream_mirror_name: "dofek_metric_stream_cdc" }],
             };
@@ -595,6 +597,8 @@ describe("PeerDB ClickHouse CDC setup", () => {
       },
     });
 
+    expect(obsoleteMirrorLookupQuery).toContain("('dofek_metric_stream_analytics')");
+    expect(obsoleteMirrorLookupQuery).toContain("('dofek_metric_stream_cdc')");
     const legacyMirrorDropIndex = peerDbQueries.indexOf("DROP MIRROR dofek_metric_stream_cdc");
     const currentMirrorCreateIndex = peerDbQueries.findIndex((query) =>
       query.includes("CREATE MIRROR IF NOT EXISTS dofek_sensor_priority_raw_analytics"),
@@ -602,6 +606,45 @@ describe("PeerDB ClickHouse CDC setup", () => {
     expect(legacyMirrorDropIndex).toBeGreaterThanOrEqual(0);
     expect(currentMirrorCreateIndex).toBeGreaterThanOrEqual(0);
     expect(legacyMirrorDropIndex).toBeLessThan(currentMirrorCreateIndex);
+  });
+
+  it("fails when obsolete metric stream mirror rows are malformed", async () => {
+    const peerDbQueries: string[] = [];
+    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
+
+    await expect(
+      setupClickHouseCdc({
+        peerDbClient: {
+          async query(queryText) {
+            const query = String(queryText);
+            if (query.includes("obsolete_metric_stream_mirror_name")) {
+              return {
+                rows: [{ obsolete_metric_stream_mirror_name: null }],
+              };
+            }
+            peerDbQueries.push(query);
+            return {};
+          },
+        },
+        sourcePostgresClient: {
+          async query() {},
+        },
+        clickHouseClient: createTestClickHouseClient(),
+        templateSql,
+        templateValues: {
+          clickHouseHost: "clickhouse",
+          clickHouseCredential: "clickhouse-fixture",
+          clickHousePort: 9000,
+          clickHouseUser: "default",
+          postgresDatabase: "health",
+          postgresHost: "db",
+          postgresCredential: "fixture",
+          postgresPort: 5432,
+          postgresUser: "health",
+        },
+      }),
+    ).rejects.toThrow("Unable to read obsolete metric stream PeerDB mirror name");
+    expect(peerDbQueries).not.toContain("DROP MIRROR null");
   });
 
   it("recreates raw analytics mirrors when existing mappings are missing source tables", async () => {
