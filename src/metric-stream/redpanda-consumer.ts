@@ -1,4 +1,6 @@
+import { captureException } from "@sentry/node";
 import { Kafka } from "kafkajs";
+import { logger } from "../logger.ts";
 import { type MetricStreamEventV1, metricStreamEventV1Schema } from "./events.ts";
 
 export interface MetricStreamKafkaMessage {
@@ -34,7 +36,25 @@ function parseMetricStreamMessage(message: MetricStreamKafkaMessage): MetricStre
   if (!message.value) {
     return null;
   }
-  return metricStreamEventV1Schema.parse(JSON.parse(message.value.toString("utf8")));
+  try {
+    return metricStreamEventV1Schema.parse(JSON.parse(message.value.toString("utf8")));
+  } catch (error) {
+    const messageText = error instanceof Error ? error.message : String(error);
+    logger.error(
+      `[metric-stream] Skipping malformed Redpanda message at offset ${message.offset}: ${messageText}`,
+    );
+    captureException(error, {
+      extra: {
+        offset: message.offset,
+        valueBytes: message.value.byteLength,
+      },
+      tags: {
+        metricStreamConsumer: "redpanda",
+        metricStreamFailure: "malformed-message",
+      },
+    });
+    return null;
+  }
 }
 
 export async function runMetricStreamEventConsumer(
@@ -89,7 +109,7 @@ export function createKafkaMetricStreamConsumerFromEnv(
 
   const kafka = new Kafka({
     brokers,
-    clientId: groupId,
+    clientId: "dofek-metric-stream-consumer",
   });
   const kafkaConsumer = kafka.consumer({ groupId });
 

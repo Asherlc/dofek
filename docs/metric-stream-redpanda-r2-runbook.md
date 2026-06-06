@@ -74,7 +74,9 @@ metric-stream/v1/date=YYYY-MM-DD/hour=HH/<topic>-<partition>-<first-offset>-<las
 Each object contains newline-delimited JSON events. Every event must validate
 against `MetricStreamEventV1` from `src/metric-stream/events.ts`.
 
-Required event fields:
+Event fields:
+
+Required:
 
 - `version`
 - `id`
@@ -83,6 +85,9 @@ Required event fields:
 - `providerId`
 - `sourceType`
 - `channel`
+
+Optional:
+
 - `externalId`
 - `deviceId`
 - `activityId`
@@ -111,13 +116,44 @@ documents Cloudflare R2 support through custom endpoint and path-style settings.
 
 ## Freshness Checks
 
-Run the health script once implemented:
+Run concrete freshness checks from the production host:
 
 ```bash
-pnpm tsx scripts/check-metric-stream-replay-health.ts
+docker service ps dofek_redpanda --no-trunc
+docker service ps dofek_metric-stream-postgres-sink --no-trunc
+docker service ps dofek_metric-stream-clickhouse-sink --no-trunc
+docker service ps dofek_metric-stream-r2-archive --no-trunc
 ```
 
-The script must check:
+Check Redpanda consumer lag for each durable consumer group:
+
+```bash
+docker exec "$(docker ps --filter name=dofek_redpanda -q | head -n1)" \
+  rpk group describe metric-stream-postgres-sink metric-stream-clickhouse-sink metric-stream-r2-archive \
+  --brokers redpanda:9092
+```
+
+Check Postgres freshness:
+
+```bash
+docker exec -i "$(docker ps --filter name=dofek_db -q | head -n1)" \
+  sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select max(recorded_at) from fitness.metric_stream"'
+```
+
+Check ClickHouse freshness:
+
+```bash
+docker exec -i "$(docker ps --filter name=dofek_clickhouse -q | head -n1)" \
+  sh -lc 'clickhouse-client --password "$CLICKHOUSE_PASSWORD" --query "select max(recorded_at) from postgres_fitness.metric_stream"'
+```
+
+Check archive service logs for recent R2 write failures:
+
+```bash
+docker service logs --since 15m dofek_metric-stream-r2-archive
+```
+
+The freshness checks must cover:
 
 - Redpanda broker reachability.
 - `metric-stream-postgres-sink` consumer lag.
@@ -137,34 +173,13 @@ writers to Redpanda-first unless the R2 archive is fresh.
 Replay must always be bounded by time or explicit R2 prefix. Do not run an
 unbounded archive replay.
 
-Dry-run a bounded replay:
+R2 replay automation is not shipped yet. Until
+`scripts/replay-metric-stream-from-r2.ts` exists, do not use R2 replay as an
+incident mitigation path. Use the existing bounded ClickHouse repair runbooks and
+scripts for ClickHouse-only repair, or implement the replay script before
+cutting over any additional metric-stream writers to Redpanda-first.
 
-```bash
-pnpm tsx scripts/replay-metric-stream-from-r2.ts \
-  --prefix metric-stream/v1/date=2026-06-06/hour=15/ \
-  --target redpanda \
-  --dry-run
-```
-
-Replay to Redpanda:
-
-```bash
-pnpm tsx scripts/replay-metric-stream-from-r2.ts \
-  --prefix metric-stream/v1/date=2026-06-06/hour=15/ \
-  --target redpanda \
-  --execute
-```
-
-Replay directly to ClickHouse only for bounded incident repair:
-
-```bash
-pnpm tsx scripts/replay-metric-stream-from-r2.ts \
-  --prefix metric-stream/v1/date=2026-06-06/hour=15/ \
-  --target clickhouse \
-  --execute
-```
-
-After replaying to ClickHouse, rebuild the dependent analytics models:
+After any bounded ClickHouse repair, rebuild the dependent analytics models:
 
 ```bash
 dbt build --project-dir analytics --profiles-dir analytics --threads 1 \

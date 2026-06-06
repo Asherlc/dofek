@@ -72,7 +72,7 @@ describe("insertMetricStreamEventsIntoPostgres", () => {
         ...event,
         id: "10000000-0000-4000-8000-000000000002",
         vector: [1, 2, 3],
-        point: '{"type":"Point","coordinates":[-122.4,37.8]}',
+        point: "SRID=4326;POINT(-122.4 37.8)",
         metadata: { source: "test" },
       },
     ]);
@@ -82,17 +82,11 @@ describe("insertMetricStreamEventsIntoPostgres", () => {
       throw new Error("expected SQL execution");
     }
     const compiledQuery = compileSqlQuery(firstCall[0]);
-    expect(compiledQuery.sql).toContain("ST_GeomFromGeoJSON");
+    expect(compiledQuery.sql).toContain("ST_GeomFromEWKT");
     expect(compiledQuery.sql).toContain("ARRAY[");
     expect(compiledQuery.sql).toContain("::jsonb");
     expect(compiledQuery.params).toEqual(
-      expect.arrayContaining([
-        1,
-        2,
-        3,
-        '{"type":"Point","coordinates":[-122.4,37.8]}',
-        '{"source":"test"}',
-      ]),
+      expect.arrayContaining([1, 2, 3, "SRID=4326;POINT(-122.4 37.8)", '{"source":"test"}']),
     );
     expect(compiledQuery.params).toContain('{"source":"test"}');
   });

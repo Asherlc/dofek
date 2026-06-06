@@ -20,7 +20,7 @@ output:
     endpoint: ${R2_ENDPOINT}
     force_path_style_urls: true
     path: >-
-      metric-stream/v1/date=${! json("recordedAt").string().slice(0, 10) }/hour=${! json("recordedAt").string().slice(11, 13) }/${! meta("kafka_topic") }-${! meta("kafka_partition") }-${! meta("kafka_offset") }-${! meta("kafka_offset") }.jsonl.gz
+      metric-stream/v1/date=${! json("recordedAt").string().slice(0, 10) }/hour=${! json("recordedAt").string().slice(11, 13) }/${! meta("kafka_topic") }-${! meta("kafka_partition") }-${! meta("kafka_offset").from(0) }-${! meta("kafka_offset").from(batch_size() - 1) }.jsonl.gz
     credentials:
       id: ${R2_ACCESS_KEY_ID}
       secret: ${R2_SECRET_ACCESS_KEY}

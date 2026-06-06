@@ -9,9 +9,9 @@ describe("parseMetricStreamArchiveObjectKey", () => {
       ),
     ).toEqual({
       date: "2026-06-06",
-      firstOffset: 100,
+      firstOffset: 100n,
       hour: "15",
-      lastOffset: 199,
+      lastOffset: 199n,
       partition: 2,
       topic: "metric-stream-v1",
     });
@@ -45,10 +45,25 @@ describe("parseMetricStreamArchiveObjectKey", () => {
         "metric-stream/v1/date=2026-06-06/hour=15/metric-stream-backfill-v1-12-1-2.jsonl.gz",
       ),
     ).toMatchObject({
-      firstOffset: 1,
-      lastOffset: 2,
+      firstOffset: 1n,
+      lastOffset: 2n,
       partition: 12,
       topic: "metric-stream-backfill-v1",
+    });
+  });
+
+  it("preserves offsets above Number.MAX_SAFE_INTEGER", () => {
+    expect(
+      parseMetricStreamArchiveObjectKey(
+        "metric-stream/v1/date=2026-06-06/hour=15/metric-stream-v1-2-9007199254740993-9007199254741999.jsonl.gz",
+      ),
+    ).toEqual({
+      date: "2026-06-06",
+      firstOffset: 9007199254740993n,
+      hour: "15",
+      lastOffset: 9007199254741999n,
+      partition: 2,
+      topic: "metric-stream-v1",
     });
   });
 });

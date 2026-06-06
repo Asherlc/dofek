@@ -1,5 +1,5 @@
 import { type ClickHouseClient, createClickHouseClientFromEnv } from "../db/clickhouse.ts";
-import { type MetricStreamEventV1, metricStreamEventV1Schema } from "./events.ts";
+import type { MetricStreamEventV1 } from "./events.ts";
 import {
   createKafkaMetricStreamConsumerFromEnv,
   runMetricStreamEventConsumer,
@@ -37,19 +37,18 @@ function isClickHouseReplicatedEvent(event: MetricStreamEventV1): boolean {
 export function mapMetricStreamEventToClickHouseRow(
   event: MetricStreamEventV1,
 ): ClickHouseMetricStreamRow {
-  const parsedEvent = metricStreamEventV1Schema.parse(event);
   return {
-    recorded_at: parsedEvent.recordedAt,
-    user_id: parsedEvent.userId,
-    provider_id: parsedEvent.providerId,
-    external_id: parsedEvent.externalId ?? null,
-    device_id: parsedEvent.deviceId ?? null,
-    source_type: parsedEvent.sourceType,
-    channel: parsedEvent.channel,
-    activity_id: parsedEvent.activityId ?? null,
-    scalar: parsedEvent.scalar ?? null,
-    point: parsedEvent.point ?? null,
-    id: parsedEvent.id,
+    recorded_at: event.recordedAt,
+    user_id: event.userId,
+    provider_id: event.providerId,
+    external_id: event.externalId ?? null,
+    device_id: event.deviceId ?? null,
+    source_type: event.sourceType,
+    channel: event.channel,
+    activity_id: event.activityId ?? null,
+    scalar: event.scalar ?? null,
+    point: event.point ?? null,
+    id: event.id,
     _peerdb_synced_at: new Date().toISOString(),
     _peerdb_is_deleted: 0,
     _peerdb_version: 0,
@@ -60,10 +59,7 @@ export async function insertMetricStreamEventsIntoClickHouse(
   client: ClickHouseMetricStreamInsertClient,
   events: readonly MetricStreamEventV1[],
 ): Promise<number> {
-  const rows = events
-    .map((event) => metricStreamEventV1Schema.parse(event))
-    .filter(isClickHouseReplicatedEvent)
-    .map(mapMetricStreamEventToClickHouseRow);
+  const rows = events.filter(isClickHouseReplicatedEvent).map(mapMetricStreamEventToClickHouseRow);
 
   if (rows.length === 0) {
     return 0;

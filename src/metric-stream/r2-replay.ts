@@ -2,9 +2,9 @@ import { z } from "zod";
 
 export interface MetricStreamArchiveObjectKey {
   date: string;
-  firstOffset: number;
+  firstOffset: bigint;
   hour: string;
-  lastOffset: number;
+  lastOffset: bigint;
   partition: number;
   topic: string;
 }
@@ -33,7 +33,7 @@ export function parseMetricStreamArchiveObjectKey(key: string): MetricStreamArch
     hour,
     topic,
     partition: Number.parseInt(partitionValue, 10),
-    firstOffset: Number.parseInt(firstOffsetValue, 10),
-    lastOffset: Number.parseInt(lastOffsetValue, 10),
+    firstOffset: BigInt(firstOffsetValue),
+    lastOffset: BigInt(lastOffsetValue),
   };
 }

@@ -1,7 +1,7 @@
 import type { SQLWrapper } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { createDatabaseFromEnv } from "../db/index.ts";
-import { type MetricStreamEventV1, metricStreamEventV1Schema } from "./events.ts";
+import type { MetricStreamEventV1 } from "./events.ts";
 import {
   createKafkaMetricStreamConsumerFromEnv,
   runMetricStreamEventConsumer,
@@ -15,7 +15,7 @@ function geometryValueSql(event: MetricStreamEventV1): SQLWrapper {
   if (event.point === null || event.point === undefined) {
     return sql`NULL`;
   }
-  return sql`ST_GeomFromGeoJSON(${event.point})`;
+  return sql`ST_GeomFromEWKT(${event.point})`;
 }
 
 function jsonValueSql(value: MetricStreamEventV1["metadata"]): SQLWrapper {
@@ -64,8 +64,7 @@ export async function insertMetricStreamEventsIntoPostgres(
   db: PostgresMetricStreamSinkDatabase,
   events: readonly MetricStreamEventV1[],
 ): Promise<number> {
-  const parsedEvents = events.map((event) => metricStreamEventV1Schema.parse(event));
-  if (parsedEvents.length === 0) {
+  if (events.length === 0) {
     return 0;
   }
 
@@ -85,7 +84,7 @@ export async function insertMetricStreamEventsIntoPostgres(
       point,
       metadata
     )
-    VALUES ${sql.join(parsedEvents.map(metricStreamEventPostgresValues), sql`, `)}
+    VALUES ${sql.join(events.map(metricStreamEventPostgresValues), sql`, `)}
     ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE
       SET scalar = EXCLUDED.scalar,
           vector = EXCLUDED.vector,
@@ -96,7 +95,7 @@ export async function insertMetricStreamEventsIntoPostgres(
           activity_id = EXCLUDED.activity_id`,
   );
 
-  return parsedEvents.length;
+  return events.length;
 }
 
 export async function runMetricStreamPostgresSinkFromEnv(): Promise<void> {

@@ -5,6 +5,7 @@ import {
   BODY_MEASUREMENT_COLUMN_TO_CHANNEL,
   SOURCE_TYPE_API,
 } from "../../../../src/db/sensor-channels.ts";
+import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
 import {
   createKafkaMetricStreamEventPublisherFromEnv,
   type MetricStreamEventPublisher,
@@ -254,17 +255,25 @@ export async function processDailyMetrics(
   return samples.length;
 }
 
+let defaultMetricStreamPublisherPromise: Promise<MetricStreamEventPublisher> | undefined;
+
+function getDefaultMetricStreamPublisher(): Promise<MetricStreamEventPublisher> {
+  defaultMetricStreamPublisherPromise ??= createKafkaMetricStreamEventPublisherFromEnv();
+  return defaultMetricStreamPublisherPromise;
+}
+
 /** Process metric streams */
 export async function processMetricStream(
   _db: Database,
   userId: string,
   samples: HealthKitSample[],
-  publisher: MetricStreamEventPublisher = createKafkaMetricStreamEventPublisherFromEnv(),
+  publisher?: MetricStreamEventPublisher,
 ): Promise<number> {
+  const resolvedPublisher = publisher ?? (await getDefaultMetricStreamPublisher());
   let inserted = 0;
   for (let i = 0; i < samples.length; i += BATCH_SIZE) {
     const batch = samples.slice(i, i + BATCH_SIZE);
-    const rows = [];
+    const rows: MetricStreamRowInput[] = [];
     for (const sample of batch) {
       const mapping = metricStreamTypes[sample.type];
       if (!mapping) continue;
@@ -285,7 +294,7 @@ export async function processMetricStream(
       });
       inserted++;
     }
-    await writeMetricStreamRows({ publisher, rows });
+    await writeMetricStreamRows({ publisher: resolvedPublisher, rows });
   }
   return inserted;
 }

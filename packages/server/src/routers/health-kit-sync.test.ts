@@ -25,7 +25,7 @@ vi.mock("@sentry/node", () => ({
 }));
 
 vi.mock("../../../../src/metric-stream/redpanda-producer.ts", () => ({
-  createKafkaMetricStreamEventPublisherFromEnv: () => ({
+  createKafkaMetricStreamEventPublisherFromEnv: async () => ({
     publishRows: mockMetricStreamPublishRows,
   }),
 }));

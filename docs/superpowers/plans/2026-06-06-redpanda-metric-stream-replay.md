@@ -125,7 +125,7 @@ Tasks:
 
 1. Create dedicated bucket `dofek-metric-stream-archive` in R2.
 2. Configure Redpanda Connect to consume `metric-stream-v1` and write immutable gzip-compressed JSONL batches to:
-   `metric-stream/v1/date=YYYY-MM-DD/hour=HH/<first-offset>-<last-offset>.jsonl.gz`
+   `metric-stream/v1/date=YYYY-MM-DD/hour=HH/<topic>-<partition>-<firstOffset>-<lastOffset>.jsonl.gz`
 3. Use Redpanda Connect metadata and object naming to preserve topic, partition, and offset range.
 4. Rely on Redpanda Connect back pressure and output acknowledgement semantics so offsets are not advanced before R2 writes succeed.
 5. Add replay script that reads a bounded R2 prefix and replays to Redpanda, Postgres, or ClickHouse explicitly selected by CLI flag.

@@ -5,6 +5,8 @@ import {
   runMetricStreamEventConsumer,
 } from "./redpanda-consumer.ts";
 
+const captureException = vi.hoisted(() => vi.fn());
+const loggerError = vi.hoisted(() => vi.fn());
 const kafkaConsumerConnect = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaConsumerSubscribe = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaConsumerRun = vi.hoisted(() => vi.fn(async () => undefined));
@@ -23,6 +25,14 @@ const kafkaConstructor = vi.hoisted(() =>
 
 vi.mock("kafkajs", () => ({
   Kafka: kafkaConstructor,
+}));
+vi.mock("@sentry/node", () => ({
+  captureException,
+}));
+vi.mock("../logger.ts", () => ({
+  logger: {
+    error: loggerError,
+  },
 }));
 
 const event = createMetricStreamEvent({
@@ -146,6 +156,41 @@ describe("runMetricStreamEventConsumer", () => {
     expect(heartbeat).toHaveBeenCalledOnce();
     expect(commitOffsetsIfNecessary).toHaveBeenCalledOnce();
   });
+
+  it("reports malformed messages and still commits the batch offset", async () => {
+    const resolveOffset = vi.fn();
+    const handleEvents = vi.fn(async () => undefined);
+    const commitOffsetsIfNecessary = vi.fn(async () => undefined);
+    const heartbeat = vi.fn(async () => undefined);
+    const consumer = {
+      connect: vi.fn(async () => undefined),
+      subscribe: vi.fn(async () => undefined),
+      run: vi.fn(async (options) => {
+        await options.eachBatch({
+          batch: {
+            messages: [{ offset: "14", value: Buffer.from("{not-json") }],
+          },
+          commitOffsetsIfNecessary,
+          heartbeat,
+          resolveOffset,
+        });
+      }),
+    };
+
+    await runMetricStreamEventConsumer({
+      consumer,
+      handleEvents,
+      topic: "metric-stream-v1",
+    });
+
+    expect(handleEvents).not.toHaveBeenCalled();
+    expect(loggerError).toHaveBeenCalledWith(
+      expect.stringContaining("Skipping malformed Redpanda message at offset 14"),
+    );
+    expect(captureException).toHaveBeenCalledOnce();
+    expect(resolveOffset).toHaveBeenCalledWith("14");
+    expect(commitOffsetsIfNecessary).toHaveBeenCalledOnce();
+  });
 });
 
 describe("createKafkaMetricStreamConsumerFromEnv", () => {
@@ -194,7 +239,7 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
     expect(topic).toBe("metric-stream-v1");
     expect(kafkaConstructor).toHaveBeenCalledWith({
       brokers: ["redpanda:9092", "redpanda:9093"],
-      clientId: "metric-stream-postgres-sink",
+      clientId: "dofek-metric-stream-consumer",
     });
     expect(kafkaConsumerFactory).toHaveBeenCalledWith({ groupId: "metric-stream-postgres-sink" });
 

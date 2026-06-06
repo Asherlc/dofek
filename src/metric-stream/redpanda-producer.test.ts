@@ -6,6 +6,28 @@ import {
   type KafkaProducerSendInput,
 } from "./redpanda-producer.ts";
 
+const kafkaProducerConnect = vi.hoisted(() => vi.fn(async () => undefined));
+const kafkaProducerDisconnect = vi.hoisted(() => vi.fn(async () => undefined));
+const kafkaProducerSend = vi.hoisted(() =>
+  vi.fn(async (_input: KafkaProducerSendInput) => undefined),
+);
+const kafkaProducerFactory = vi.hoisted(() =>
+  vi.fn(() => ({
+    connect: kafkaProducerConnect,
+    disconnect: kafkaProducerDisconnect,
+    send: kafkaProducerSend,
+  })),
+);
+const kafkaConstructor = vi.hoisted(() =>
+  vi.fn(() => ({
+    producer: kafkaProducerFactory,
+  })),
+);
+
+vi.mock("kafkajs", () => ({
+  Kafka: kafkaConstructor,
+}));
+
 const metricStreamRow = {
   recordedAt: "2026-06-06T12:00:00-07:00",
   userId: "00000000-0000-0000-0000-000000000001",
@@ -18,9 +40,11 @@ const metricStreamRow = {
 };
 
 function makeProducer() {
+  const connect = vi.fn(async () => undefined);
+  const disconnect = vi.fn(async () => undefined);
   const send = vi.fn(async (_input: KafkaProducerSendInput) => undefined);
-  const producer: KafkaProducerLike = { send };
-  return { producer, send };
+  const producer: KafkaProducerLike = { connect, disconnect, send };
+  return { connect, disconnect, producer, send };
 }
 
 describe("KafkaMetricStreamEventPublisher", () => {
@@ -56,6 +80,15 @@ describe("KafkaMetricStreamEventPublisher", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it("disconnects the KafkaJS producer when disposed", async () => {
+    const { disconnect, producer } = makeProducer();
+    const publisher = new KafkaMetricStreamEventPublisher(producer, "metric-stream-v1");
+
+    await publisher.disconnect();
+
+    expect(disconnect).toHaveBeenCalledOnce();
+  });
+
   it("rejects empty strings for absent text values", async () => {
     const { producer } = makeProducer();
     const publisher = new KafkaMetricStreamEventPublisher(producer, "metric-stream-v1");
@@ -72,37 +105,47 @@ describe("KafkaMetricStreamEventPublisher", () => {
 });
 
 describe("createKafkaMetricStreamEventPublisherFromEnv", () => {
-  it("requires Redpanda brokers", () => {
-    expect(() =>
+  it("requires Redpanda brokers", async () => {
+    await expect(
       createKafkaMetricStreamEventPublisherFromEnv({
         METRIC_STREAM_TOPIC: "metric-stream-v1",
       }),
-    ).toThrow("REDPANDA_BROKERS is required");
+    ).rejects.toThrow("REDPANDA_BROKERS is required");
   });
 
-  it("requires a metric stream topic", () => {
-    expect(() =>
+  it("requires a metric stream topic", async () => {
+    await expect(
       createKafkaMetricStreamEventPublisherFromEnv({
         REDPANDA_BROKERS: "redpanda:9092",
       }),
-    ).toThrow("METRIC_STREAM_TOPIC is required");
+    ).rejects.toThrow("METRIC_STREAM_TOPIC is required");
   });
 
-  it("rejects broker lists that only contain separators and whitespace", () => {
-    expect(() =>
+  it("rejects broker lists that only contain separators and whitespace", async () => {
+    await expect(
       createKafkaMetricStreamEventPublisherFromEnv({
         METRIC_STREAM_TOPIC: "metric-stream-v1",
         REDPANDA_BROKERS: " , ",
       }),
-    ).toThrow("REDPANDA_BROKERS must contain at least one broker");
+    ).rejects.toThrow("REDPANDA_BROKERS must contain at least one broker");
   });
 
-  it("trims broker lists and returns a publisher for valid env", () => {
-    const publisher = createKafkaMetricStreamEventPublisherFromEnv({
+  it("trims broker lists, connects the producer, and returns a publisher for valid env", async () => {
+    kafkaConstructor.mockClear();
+    kafkaProducerFactory.mockClear();
+    kafkaProducerConnect.mockClear();
+
+    const publisher = await createKafkaMetricStreamEventPublisherFromEnv({
       METRIC_STREAM_TOPIC: "metric-stream-v1",
       REDPANDA_BROKERS: " redpanda:9092 , redpanda:9093 ",
     });
 
     expect(publisher).toBeInstanceOf(KafkaMetricStreamEventPublisher);
+    expect(kafkaConstructor).toHaveBeenCalledWith({
+      brokers: ["redpanda:9092", "redpanda:9093"],
+      clientId: "dofek-metric-stream-producer",
+    });
+    expect(kafkaProducerFactory).toHaveBeenCalledOnce();
+    expect(kafkaProducerConnect).toHaveBeenCalledOnce();
   });
 });

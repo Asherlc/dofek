@@ -16,6 +16,8 @@ export interface KafkaProducerSendInput {
 }
 
 export interface KafkaProducerLike {
+  connect(): Promise<void>;
+  disconnect(): Promise<void>;
   send(input: KafkaProducerSendInput): Promise<unknown>;
 }
 
@@ -51,6 +53,10 @@ export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublish
 
     return events;
   }
+
+  async disconnect(): Promise<void> {
+    await this.#producer.disconnect();
+  }
 }
 
 function readRequiredEnvironmentValue(
@@ -64,9 +70,9 @@ function readRequiredEnvironmentValue(
   return value;
 }
 
-export function createKafkaMetricStreamEventPublisherFromEnv(
+export async function createKafkaMetricStreamEventPublisherFromEnv(
   env: NodeJS.ProcessEnv = process.env,
-): KafkaMetricStreamEventPublisher {
+): Promise<KafkaMetricStreamEventPublisher> {
   const topic = readRequiredEnvironmentValue(env, "METRIC_STREAM_TOPIC");
   const brokers = readRequiredEnvironmentValue(env, "REDPANDA_BROKERS")
     .split(",")
@@ -81,5 +87,7 @@ export function createKafkaMetricStreamEventPublisherFromEnv(
     clientId: "dofek-metric-stream-producer",
   });
 
-  return new KafkaMetricStreamEventPublisher(kafka.producer(), topic);
+  const producer = kafka.producer();
+  await producer.connect();
+  return new KafkaMetricStreamEventPublisher(producer, topic);
 }
