@@ -1,11 +1,34 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import { mapStravaActivityType, StravaClient, StravaProvider } from "./strava.ts";
+
+const { publishedMetricStreamBatches } = vi.hoisted<{
+  publishedMetricStreamBatches: Record<string, unknown>[][];
+}>(() => ({
+  publishedMetricStreamBatches: [],
+}));
+
+vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: async () => ({
+    publishRows: async (rows: readonly Record<string, unknown>[]) => {
+      publishedMetricStreamBatches.push([...rows]);
+      return rows.map((row, index) => ({
+        version: 1,
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+      }));
+    },
+  }),
+}));
 
 vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "user-1",
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
+
+beforeEach(() => {
+  publishedMetricStreamBatches.length = 0;
+});
 
 // ============================================================
 // Tests targeting uncovered sync paths in strava.ts
@@ -922,10 +945,8 @@ describe("StravaProvider.sync — additional coverage", () => {
       return Promise.resolve(Response.json([]));
     });
 
-    const metricBatchSizes: number[] = [];
     const insertValuesMock = vi.fn().mockImplementation((payload: unknown) => {
       if (Array.isArray(payload)) {
-        metricBatchSizes.push(payload.length);
         return {
           onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
           onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
@@ -958,7 +979,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
 
     expect(result.recordsSynced).toBe(1);
-    expect(metricBatchSizes).toEqual([]);
+    expect(publishedMetricStreamBatches.map((batch) => batch.length)).toEqual([]);
     expect(result.errors).toHaveLength(0);
   });
 
@@ -997,10 +1018,8 @@ describe("StravaProvider.sync — additional coverage", () => {
       return Promise.resolve(Response.json([]));
     });
 
-    const metricBatchSizes: number[] = [];
     const insertValuesMock = vi.fn().mockImplementation((payload: unknown) => {
       if (Array.isArray(payload)) {
-        metricBatchSizes.push(payload.length);
         return {
           onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
           onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
@@ -1033,7 +1052,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
 
     expect(result.recordsSynced).toBe(1);
-    expect(metricBatchSizes).toEqual([1000, 1]);
+    expect(publishedMetricStreamBatches.map((batch) => batch.length)).toEqual([1000, 1]);
     expect(result.errors).toHaveLength(0);
   });
 

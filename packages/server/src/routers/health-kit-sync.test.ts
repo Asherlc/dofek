@@ -1,10 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
-const { mockInvalidateByPrefix, mockMetricStreamPublishRows } = vi.hoisted(() => ({
-  mockInvalidateByPrefix: vi.fn().mockResolvedValue(undefined),
-  mockMetricStreamPublishRows: vi.fn().mockResolvedValue([]),
-}));
+const { mockInvalidateByPrefix, mockMetricStreamPublishRows, publishedMetricStreamRows } =
+  vi.hoisted<{
+    mockInvalidateByPrefix: ReturnType<typeof vi.fn>;
+    mockMetricStreamPublishRows: ReturnType<typeof vi.fn>;
+    publishedMetricStreamRows: unknown[][];
+  }>(() => ({
+    mockInvalidateByPrefix: vi.fn().mockResolvedValue(undefined),
+    mockMetricStreamPublishRows: vi.fn(),
+    publishedMetricStreamRows: [],
+  }));
+
+function mockPublishedMetricStreamEvents(rows: readonly unknown[]) {
+  return rows.map((_, index) => ({
+    version: 1,
+    id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+    recordedAt: "2024-01-15T10:00:00.000Z",
+  }));
+}
 
 vi.mock("dofek/sync-metrics", () => ({
   healthKitRecordsTotal: { add: vi.fn() },
@@ -26,6 +40,9 @@ vi.mock("@sentry/node", () => ({
 
 vi.mock("../../../../src/metric-stream/redpanda-producer.ts", () => ({
   createKafkaMetricStreamEventPublisherFromEnv: async () => ({
+    publishRows: mockMetricStreamPublishRows,
+  }),
+  getDefaultMetricStreamEventPublisher: async () => ({
     publishRows: mockMetricStreamPublishRows,
   }),
 }));
@@ -72,13 +89,9 @@ function makeSample(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function serializeMetricStreamInsertCalls(execute: { mock: { calls: unknown[][] } }): string {
-  const metricStreamInsertCalls = execute.mock.calls.filter((call) => {
-    const serialized = JSON.stringify(call[0]);
-    return serialized.includes("INSERT INTO fitness.metric_stream");
-  });
-  expect(metricStreamInsertCalls.length).toBeGreaterThan(0);
-  return metricStreamInsertCalls.map((call) => JSON.stringify(call[0])).join("\n");
+function serializePublishedMetricStreamRows(): string {
+  expect(publishedMetricStreamRows.length).toBeGreaterThan(0);
+  return publishedMetricStreamRows.map((rows) => JSON.stringify(rows)).join("\n");
 }
 
 describe("healthKitSyncRouter", () => {
@@ -86,8 +99,12 @@ describe("healthKitSyncRouter", () => {
     vi.mocked(healthKitRecordsTotal.add).mockClear();
     vi.mocked(healthKitPushTotal.add).mockClear();
     mockInvalidateByPrefix.mockClear();
+    publishedMetricStreamRows.length = 0;
     mockMetricStreamPublishRows.mockReset();
-    mockMetricStreamPublishRows.mockResolvedValue([]);
+    mockMetricStreamPublishRows.mockImplementation(async (rows: readonly unknown[]) => {
+      publishedMetricStreamRows.push([...rows]);
+      return mockPublishedMetricStreamEvents(rows);
+    });
   });
 
   describe("pushQuantitySamples", () => {
@@ -213,14 +230,9 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      const sqlCall = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return serialized.includes("metric_stream") && serialized.includes("body_fat_percentage");
-      });
-      expect(sqlCall).toBeDefined();
-      const serialized = JSON.stringify(sqlCall?.[0]);
+      const serialized = serializePublishedMetricStreamRows();
       // 0.18 * 100 = 18 — must NOT contain the un-transformed value 0.18 or the wrong-direction 0.0018
-      expect(serialized).toContain(",18,");
+      expect(serialized).toContain('"scalar":18');
       expect(serialized).not.toContain("0.0018");
       expect(serialized).not.toContain("0.18");
     });
@@ -626,11 +638,8 @@ describe("healthKitSyncRouter", () => {
     });
 
     it("reports errors when processing fails", async () => {
-      const execute = vi.fn();
-      // ensureProvider succeeds
-      execute.mockResolvedValueOnce([]);
-      // body measurements fail
-      execute.mockRejectedValueOnce(new Error("DB connection failed"));
+      const execute = vi.fn().mockResolvedValue([]);
+      mockMetricStreamPublishRows.mockRejectedValueOnce(new Error("Redpanda publish failed"));
 
       const caller = createCaller({
         db: { execute },
@@ -1317,13 +1326,9 @@ describe("healthKitSyncRouter", () => {
 
   describe("pushWorkoutRoutes", () => {
     it("inserts route location as a point metric with associated altitude and speed metrics", async () => {
-      const execute = vi.fn().mockImplementation((query: unknown) => {
-        const serialized = JSON.stringify(query);
-        if (serialized.includes("SELECT id, external_id")) {
-          return [{ id: "activity-123", external_id: "hk:workout:w-route-1" }];
-        }
-        return [];
-      });
+      const execute = vi
+        .fn()
+        .mockResolvedValue([{ id: "activity-123", external_id: "hk:workout:w-route-1" }]);
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
@@ -1360,16 +1365,13 @@ describe("healthKitSyncRouter", () => {
 
       // One location point plus separate altitude and speed metrics.
       expect(result.inserted).toBe(3);
-      const serialized = serializeMetricStreamInsertCalls(execute);
+      const serialized = serializePublishedMetricStreamRows();
       expect(serialized).toContain('"location"');
-      expect(serialized).toContain("external_id");
+      expect(serialized).toContain("externalId");
       expect(serialized).toContain("hk:workout:w-route-1:location:2024-01-15T10:00:00.000Z");
       expect(serialized).toContain("hk:workout:w-route-1:altitude:2024-01-15T10:00:00.000Z");
       expect(serialized).toContain("hk:workout:w-route-1:speed:2024-01-15T10:00:00.000Z");
-      expect(serialized).toContain(
-        "ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE",
-      );
-      expect(serialized).toContain("ST_SetSRID");
+      expect(serialized).toContain("SRID=4326;POINT(-74.006 40.7128)");
       expect(serialized).toContain("Apple Watch");
       expect(serialized).toContain("horizontal_accuracy_m");
       expect(serialized).not.toContain('"lat"');
@@ -1398,13 +1400,9 @@ describe("healthKitSyncRouter", () => {
     });
 
     it("skips null optional channels (altitude, speed, horizontalAccuracy)", async () => {
-      const execute = vi.fn().mockImplementation((query: unknown) => {
-        const serialized = JSON.stringify(query);
-        if (serialized.includes("SELECT id, external_id")) {
-          return [{ id: "activity-456", external_id: "hk:workout:w-minimal" }];
-        }
-        return [];
-      });
+      const execute = vi
+        .fn()
+        .mockResolvedValue([{ id: "activity-456", external_id: "hk:workout:w-minimal" }]);
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
@@ -1422,7 +1420,7 @@ describe("healthKitSyncRouter", () => {
 
       // Only the location point should be inserted (no altitude or speed metrics).
       expect(result.inserted).toBe(1);
-      const serialized = serializeMetricStreamInsertCalls(execute);
+      const serialized = serializePublishedMetricStreamRows();
       expect(serialized).toContain('"location"');
       expect(serialized).not.toContain('"altitude"');
       expect(serialized).not.toContain('"gps_accuracy"');
@@ -1444,13 +1442,9 @@ describe("healthKitSyncRouter", () => {
     });
 
     it("stores horizontal accuracy as location metadata", async () => {
-      const execute = vi.fn().mockImplementation((query: unknown) => {
-        const serialized = JSON.stringify(query);
-        if (serialized.includes("SELECT id, external_id")) {
-          return [{ id: "activity-round", external_id: "hk:workout:w-round" }];
-        }
-        return [];
-      });
+      const execute = vi
+        .fn()
+        .mockResolvedValue([{ id: "activity-round", external_id: "hk:workout:w-round" }]);
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
@@ -1474,7 +1468,7 @@ describe("healthKitSyncRouter", () => {
       });
 
       // Find the batched insert and verify Core Location horizontal accuracy stays metadata.
-      const serialized = serializeMetricStreamInsertCalls(execute);
+      const serialized = serializePublishedMetricStreamRows();
       expect(serialized).toContain("horizontal_accuracy_m");
       expect(serialized).toContain("4.7");
       expect(serialized).not.toContain('"gps_accuracy"');
@@ -3098,12 +3092,7 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      const bodyInsert = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return serialized.includes("metric_stream") && serialized.includes("INSERT");
-      });
-      expect(bodyInsert).toBeDefined();
-      const serialized = JSON.stringify(bodyInsert?.[0]);
+      const serialized = serializePublishedMetricStreamRows();
       expect(serialized).toContain("hk:body-ext-id");
       expect(serialized).toContain("body_weight");
       expect(serialized).not.toContain("body_measurement");
@@ -3128,19 +3117,14 @@ describe("healthKitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(1);
-      const bodyInsert = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return serialized.includes("metric_stream") && serialized.includes("body_mass_index");
-      });
-      expect(bodyInsert).toBeDefined();
+      expect(serializePublishedMetricStreamRows()).toContain("body_mass_index");
     });
   });
 
   describe("pushQuantitySamples - error status in metrics", () => {
     it("reports error status in healthKitPushTotal when errors exist", async () => {
-      const execute = vi.fn();
-      execute.mockResolvedValueOnce([]); // ensureProvider
-      execute.mockRejectedValueOnce(new Error("fail")); // body measurement error
+      const execute = vi.fn().mockResolvedValue([]);
+      mockMetricStreamPublishRows.mockRejectedValueOnce(new Error("fail"));
 
       const caller = createCaller({
         db: { execute },
@@ -3165,9 +3149,8 @@ describe("healthKitSyncRouter", () => {
     });
 
     it("handles non-Error objects in catch blocks", async () => {
-      const execute = vi.fn();
-      execute.mockResolvedValueOnce([]); // ensureProvider
-      execute.mockRejectedValueOnce("string error"); // non-Error rejection
+      const execute = vi.fn().mockResolvedValue([]);
+      mockMetricStreamPublishRows.mockRejectedValueOnce("string error");
 
       const caller = createCaller({
         db: { execute },

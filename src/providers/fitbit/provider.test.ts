@@ -17,6 +17,34 @@ import type {
 } from "./client.ts";
 import { FitbitProvider, fitbitOAuthConfig } from "./provider.ts";
 
+const { publishedMetricStreamBatches } = vi.hoisted<{
+  publishedMetricStreamBatches: Record<string, unknown>[][];
+}>(() => ({
+  publishedMetricStreamBatches: [],
+}));
+
+vi.mock("../../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: async () => ({
+    publishRows: async (rows: readonly Record<string, unknown>[]) => {
+      publishedMetricStreamBatches.push([...rows]);
+      return rows.map((row, index) => ({
+        version: 1,
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+      }));
+    },
+  }),
+}));
+
+vi.mock("../../db/token-user-context.ts", () => ({
+  getTokenUserId: () => "user-1",
+  runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
+}));
+
+afterEach(() => {
+  publishedMetricStreamBatches.length = 0;
+});
+
 // ============================================================
 // Mock external dependencies (for sync/webhook tests)
 // ============================================================
@@ -117,24 +145,6 @@ function expectConflictSetContainsKey(
     return key in set;
   });
   expect(setMatched).toBe(true);
-}
-
-function expectDoNothingConflictTarget(
-  db: ReturnType<typeof createMockDb>,
-  expectedTarget: ReadonlyArray<unknown>,
-): void {
-  const targetMatched = db.onConflictDoNothing.mock.calls.some((callArgs) => {
-    const [arg] = callArgs;
-    if (typeof arg !== "object" || arg === null || !("target" in arg)) {
-      return false;
-    }
-    const target = Reflect.get(arg, "target");
-    if (!Array.isArray(target) || target.length !== expectedTarget.length) {
-      return false;
-    }
-    return target.every((column, index) => column === expectedTarget[index]);
-  });
-  expect(targetMatched).toBe(true);
 }
 
 function expectReasonableDuration(durationMilliseconds: number): void {
@@ -717,13 +727,13 @@ describe("FitbitProvider", () => {
         ],
         "steps",
       );
-      expectDoNothingConflictTarget(db, [
-        metricStreamTable.userId,
-        metricStreamTable.providerId,
-        metricStreamTable.externalId,
-        metricStreamTable.channel,
-        metricStreamTable.recordedAt,
-      ]);
+      expect(publishedMetricStreamBatches.flat()).toContainEqual(
+        expect.objectContaining({
+          providerId: "fitbit",
+          externalId: "55555",
+          channel: "body_weight",
+        }),
+      );
     });
 
     it("captures per-record insert errors without aborting the whole sync", async () => {
@@ -771,14 +781,15 @@ describe("FitbitProvider", () => {
       );
       expect(dailyRow.steps).toBe(12345);
 
-      const weightRow = findValuesCall(
-        db,
-        (value) =>
-          value.providerId === "fitbit" &&
-          value.externalId === "55555" &&
-          value.channel === "body_weight",
-      );
-      expect(weightRow.scalar).toBe(82.5);
+      const weightRow = publishedMetricStreamBatches
+        .flat()
+        .find(
+          (value) =>
+            value.providerId === "fitbit" &&
+            value.externalId === "55555" &&
+            value.channel === "body_weight",
+        );
+      expect(weightRow).toMatchObject({ scalar: 82.5 });
     });
 
     it("returns a reasonable duration when token resolution fails", async () => {
@@ -830,14 +841,15 @@ describe("FitbitProvider", () => {
       );
       expect(dailyRow.steps).toBe(12345);
 
-      const weightRow = findValuesCall(
-        db,
-        (value) =>
-          value.providerId === "fitbit" &&
-          value.externalId === "55555" &&
-          value.channel === "body_weight",
-      );
-      expect(weightRow.scalar).toBe(82.5);
+      const weightRow = publishedMetricStreamBatches
+        .flat()
+        .find(
+          (value) =>
+            value.providerId === "fitbit" &&
+            value.externalId === "55555" &&
+            value.channel === "body_weight",
+        );
+      expect(weightRow).toMatchObject({ scalar: 82.5 });
     });
 
     it("paginates activity sync by increasing offset", async () => {
@@ -1234,26 +1246,21 @@ describe("FitbitProvider", () => {
       expect(db.delete).toHaveBeenCalledWith(metricStreamTable);
       expect(db.where).toHaveBeenCalled();
 
-      const weightValues = findValuesCall(
-        db,
-        (v) => v.externalId === "55555" && v.providerId === "fitbit" && v.channel === "body_weight",
+      const publishedRows = publishedMetricStreamBatches.flat();
+      const weightValues = publishedRows.find(
+        (value) =>
+          value.externalId === "55555" &&
+          value.providerId === "fitbit" &&
+          value.channel === "body_weight",
       );
-      expect(weightValues.scalar).toBe(82.5);
-      const bodyFatValues = findValuesCall(
-        db,
-        (v) =>
-          v.externalId === "55555" &&
-          v.providerId === "fitbit" &&
-          v.channel === "body_fat_percentage",
+      expect(weightValues).toMatchObject({ scalar: 82.5 });
+      const bodyFatValues = publishedRows.find(
+        (value) =>
+          value.externalId === "55555" &&
+          value.providerId === "fitbit" &&
+          value.channel === "body_fat_percentage",
       );
-      expect(bodyFatValues.scalar).toBe(18.5);
-      expectDoNothingConflictTarget(db, [
-        metricStreamTable.userId,
-        metricStreamTable.providerId,
-        metricStreamTable.externalId,
-        metricStreamTable.channel,
-        metricStreamTable.recordedAt,
-      ]);
+      expect(bodyFatValues).toMatchObject({ scalar: 18.5 });
     });
 
     it("returns empty result for unknown objectType", async () => {

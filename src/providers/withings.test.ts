@@ -1,5 +1,5 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "user-1",
@@ -14,6 +14,20 @@ import {
   type WithingsMeasureGroup,
   WithingsProvider,
 } from "./withings.ts";
+
+const { mockMetricStreamPublishRows, publishedMetricStreamBatches } = vi.hoisted<{
+  mockMetricStreamPublishRows: ReturnType<typeof vi.fn>;
+  publishedMetricStreamBatches: Record<string, unknown>[][];
+}>(() => ({
+  mockMetricStreamPublishRows: vi.fn(),
+  publishedMetricStreamBatches: [],
+}));
+
+vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: async () => ({
+    publishRows: mockMetricStreamPublishRows,
+  }),
+}));
 
 // ============================================================
 // Pure parsing unit tests
@@ -109,6 +123,22 @@ function createMockDb(options: Parameters<typeof createMockDatabase>[0] = {}) {
 
 describe("WithingsProvider.sync() — unit tests", () => {
   const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    publishedMetricStreamBatches.length = 0;
+    mockMetricStreamPublishRows.mockReset();
+    mockMetricStreamPublishRows.mockImplementation(
+      async (rows: readonly Record<string, unknown>[]) => {
+        publishedMetricStreamBatches.push([...rows]);
+        return rows.map((row, index) => ({
+          version: 1,
+          id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+          recordedAt:
+            row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+        }));
+      },
+    );
+  });
 
   afterEach(() => {
     process.env = { ...originalEnv };
@@ -296,9 +326,8 @@ describe("WithingsProvider.sync() — unit tests", () => {
           scopes: "user.metrics",
         },
       ],
-      insertError: new Error("DB constraint violation"),
-      insertErrorAfterCalls: 1, // Skip ensureProvider upsert
     });
+    mockMetricStreamPublishRows.mockRejectedValueOnce(new Error("Redpanda publish failed"));
 
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return Response.json({
@@ -320,10 +349,9 @@ describe("WithingsProvider.sync() — unit tests", () => {
 
     const provider = new WithingsProvider(mockFetch);
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
-    // The insert error is caught per-measurement, so we get 0 synced and 1 error
     expect(result.recordsSynced).toBe(0);
     expect(result.errors.length).toBeGreaterThan(0);
-    expect(result.errors[0]?.message).toContain("DB constraint violation");
+    expect(result.errors[0]?.message).toContain("Redpanda publish failed");
   });
 
   it("catches API error in outer withSyncLog catch", async () => {

@@ -1,5 +1,5 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WhoopClient } from "whoop-whoop/client";
 import type {
   WhoopHrValue,
@@ -18,6 +18,25 @@ import {
   parseWorkout,
 } from "./whoop/parsing.ts";
 import { WhoopProvider } from "./whoop/provider.ts";
+
+const { publishedMetricStreamBatches } = vi.hoisted<{
+  publishedMetricStreamBatches: Record<string, unknown>[][];
+}>(() => ({
+  publishedMetricStreamBatches: [],
+}));
+
+vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: async () => ({
+    publishRows: async (rows: readonly Record<string, unknown>[]) => {
+      publishedMetricStreamBatches.push([...rows]);
+      return rows.map((row, index) => ({
+        version: 1,
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+      }));
+    },
+  }),
+}));
 
 // ============================================================
 // Mocks for sync tests
@@ -39,6 +58,15 @@ vi.mock("../db/tokens.ts", () => ({
   loadTokens: vi.fn(),
   saveTokens: vi.fn(),
 }));
+
+vi.mock("../db/token-user-context.ts", () => ({
+  getTokenUserId: () => "user-1",
+  runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
+}));
+
+beforeEach(() => {
+  publishedMetricStreamBatches.length = 0;
+});
 
 function makeChainableMock(resolvedValue: unknown = []) {
   const selectFn = vi.fn();
@@ -1828,11 +1856,8 @@ describe("WhoopProvider.sync() — HR stream sync", () => {
     expect(result.provider).toBe("whoop");
     expect(result.recordsSynced).toBeGreaterThanOrEqual(3);
 
-    // Verify metric_stream batch insert with correct HR values
-    const valuesCallArgs = getValuesCallArgs(db);
-    const hrBatch = findValuesBatch(
-      valuesCallArgs,
-      (arr) => arr[0]?.channel === "heart_rate" && typeof arr[0]?.scalar === "number",
+    const hrBatch = publishedMetricStreamBatches.find(
+      (batch) => batch[0]?.channel === "heart_rate" && typeof batch[0]?.scalar === "number",
     );
     expect(hrBatch).toBeDefined();
     expect(hrBatch).toHaveLength(3);
@@ -1881,13 +1906,8 @@ describe("WhoopProvider.sync() — HR stream sync", () => {
     expect(result.provider).toBe("whoop");
     expect(result.recordsSynced).toBeGreaterThanOrEqual(750);
 
-    // Find all HR batch inserts (arrays of heart_rate sensor rows)
-    const valuesCallArgs = getValuesCallArgs(db);
-    const hrBatches = valuesCallArgs.filter(
-      (arg) =>
-        isRecordArray(arg) &&
-        arg[0]?.channel === "heart_rate" &&
-        typeof arg[0]?.scalar === "number",
+    const hrBatches = publishedMetricStreamBatches.filter(
+      (batch) => batch[0]?.channel === "heart_rate" && typeof batch[0]?.scalar === "number",
     );
 
     expect(hrBatches.length).toBeGreaterThanOrEqual(1);

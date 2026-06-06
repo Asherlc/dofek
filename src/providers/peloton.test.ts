@@ -1,5 +1,5 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   mapFitnessDiscipline,
   PelotonClient,
@@ -17,6 +17,29 @@ vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "user-1",
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
+
+const { publishedMetricStreamBatches } = vi.hoisted<{
+  publishedMetricStreamBatches: Record<string, unknown>[][];
+}>(() => ({
+  publishedMetricStreamBatches: [],
+}));
+
+vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: async () => ({
+    publishRows: async (rows: readonly Record<string, unknown>[]) => {
+      publishedMetricStreamBatches.push([...rows]);
+      return rows.map((row, index) => ({
+        version: 1,
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+      }));
+    },
+  }),
+}));
+
+beforeEach(() => {
+  publishedMetricStreamBatches.length = 0;
+});
 
 // ============================================================
 // Sample API responses
@@ -1148,8 +1171,7 @@ describe("PelotonProvider.sync — metric stream deletion and insertion", () => 
 
     expect(result.errors).toHaveLength(0);
     expect(mockDb.delete).toHaveBeenCalledTimes(1);
-    const insertCalls = mockDb.insert.mock.calls.length;
-    expect(insertCalls).toBeGreaterThanOrEqual(4);
+    expect(publishedMetricStreamBatches.map((batch) => batch.length)).toEqual([600]);
     expect(result.recordsSynced).toBe(601);
   });
 
