@@ -24,6 +24,14 @@ ssh dofek-server 'docker exec $(docker ps --format "{{.Names}}" | grep -E "dofek
 
 Healthy looks like `active = t`, `wal_status = 'reserved'`, non-null `restart_lsn`. Broken looks like `active = f`, `wal_status IN ('lost', 'unreserved')`, empty `restart_lsn`.
 
+For repeat slot-loss incidents, also capture the WAL budget and lag:
+
+```bash
+ssh dofek-server 'docker exec $(docker ps --format "{{.Names}}" | grep -E "^dofek_db" | head -1) bash -lc "psql -U \$POSTGRES_USER -d \$POSTGRES_DB -P pager=off -c \"SHOW max_slot_wal_keep_size; SELECT slot_name, active, wal_status, safe_wal_size, pg_size_pretty(safe_wal_size) AS safe_wal_size_pretty, pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn)) AS retained_lag FROM pg_replication_slots ORDER BY slot_name;\""' 
+```
+
+If `retained_lag` exceeds `max_slot_wal_keep_size`, the lost slot is explained by a PeerDB outage or write burst outlasting the configured WAL budget. Treat that as a recurring durability problem, not just a mirror-resync task.
+
 The three Dofek slots:
 
 - `peerflow_slot_dofek_metric_stream_analytics` — feeds `postgres_fitness.metric_stream`.
@@ -111,13 +119,34 @@ For each broken flow:
    - Take an initial snapshot of the source tables into the ClickHouse mirror.
    - Resume CDC from the new slot's start LSN.
 
-3. For the `metric_stream` flow specifically, the migration in PR #1128 already direct-backfills `postgres_fitness.metric_stream` from Postgres independent of CDC, so a fresh snapshot for that flow is mostly redundant — but it's still needed to seed the new slot.
+3. For the `metric_stream` flow specifically, prefer the bounded catch-up script
+   before a full `metric_stream` resnapshot when the missing range is known:
+
+   ```bash
+   pnpm catch-up:metric-stream -- --start <utc-start> --end <utc-end> --execute
+   ```
+
+   This direct-inserts non-IMU `fitness.metric_stream` rows into
+   `postgres_fitness.metric_stream` for an explicit half-open window and skips
+   ids already present in ClickHouse. It repairs recent analytics input but does
+   not recreate the lost PeerDB slot; the mirror still needs a fresh slot.
 
 4. Verify the mirrors fill in (`count(*)` matches Postgres within tolerance) and that `analytics.v_activity` / `analytics.deduped_sensor` repopulate within ~1 refresh interval.
 
 ## 7) Prevent the next occurrence
 
-- Raise `max_slot_wal_keep_size` (or set `-1` = unlimited) before any large migration that holds the slot back.
-- Add an alert for `pg_replication_slots.wal_status IN ('lost', 'unreserved')`.
+- Production currently caps each slot at `max_slot_wal_keep_size=64GB`.
+  Investigate before increasing it again; unlimited (`-1`) requires reliable
+  disk monitoring and slot-lag alerting.
+- Keep the `cdc-health` service running so `pg_replication_slots.wal_status IN
+  ('lost', 'unreserved')`, inactive slots, stale mirrors, and high retained-WAL
+  thresholds are continuously surfaced to logs/Sentry.
 - Add a heartbeat that compares Postgres `fitness.activity` row count to `postgres_fitness.activity FINAL` row count and alarms if they diverge.
 - Record the incident in `docs/production-incident-baseline.md` with timestamps, evidence, root cause, and follow-up actions.
+
+If this is not the first lost-slot incident, do not stop at recreating the mirror. Record the observed `max_slot_wal_keep_size`, slot lag, and the first PeerDB fatal line, then propose one of:
+
+- Increase the bounded WAL budget if the host disk budget can absorb it.
+- Set `max_slot_wal_keep_size=-1` only if disk monitoring and slot-lag alerting are already reliable enough to prevent filling the data volume.
+- Replace or supplement PeerDB for high-volume `metric_stream` with a bounded direct backfill/catch-up path that can restore recent rows without relying on an old logical slot.
+- Add a scheduled CDC health check/alert using `scripts/check-clickhouse-cdc.ts` or an equivalent monitor, because dashboard correctness depends on this mirror freshness.

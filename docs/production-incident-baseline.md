@@ -10236,3 +10236,75 @@ new incremental tables are populated.
   fix. If the next event body shows a stable upstream error, fix that
   upstream cause directly and keep the diagnostic wrapper so future transport
   regressions remain observable.
+
+### 2026-06-05 Local production SSH alias pointed at retired Hetzner host
+
+- Symptoms: Local production SSH probes using `ssh dofek-server` timed out while
+  trying to connect to `157.90.25.125:22`.
+- User impact: Production itself was not confirmed impacted; the failure blocked
+  read-only production debugging from this workspace.
+- Evidence: `deploy/README.md` and `deploy/AGENTS.md` identify production as
+  the OCI host addressed by the GitHub Actions `ORACLE_SERVER_HOST` variable
+  with `ssh_user: ubuntu`. `gh variable list --repo asherlc/dofek` showed
+  `ORACLE_SERVER_HOST=146.235.223.161`, while local `~/.ssh/config` still had
+  `Host dofek-server`, `HostName 157.90.25.125`, and `User root`.
+- Root cause: The local SSH alias was stale after the OCI cutover and still
+  targeted the retired Hetzner production host.
+- Fix / mitigation: Updated local `~/.ssh/config` to
+  `ubuntu@146.235.223.161` with `~/.ssh/id_ed25519_infisical`, verified
+  `ssh dofek-server 'hostname && whoami && docker info --format "{{.Swarm.LocalNodeState}}"'`
+  returned `dofek`, `ubuntu`, and `active`, and updated the `check-logs` skill
+  with the `ORACLE_SERVER_HOST` comparison workflow.
+- Remaining risk: Future host cutovers can stale local aliases again; agents
+  should compare `ssh -G dofek-server` against the GitHub variable before
+  treating SSH timeouts as server health evidence.
+
+### 2026-06-05 Daily strain zero because metric_stream CDC slot was lost
+
+- Symptoms: Dashboard daily strain showed `0` for June 5 even though recent
+  activity rows existed. `analytics.daily_strain` had June 5 and June 4 rows,
+  but `daily_load=0`, while `analytics.daily_activity_load` had no rows after
+  May 31.
+- User impact: ClickHouse-backed activity strain/load views underreported recent
+  activity load, including today's dashboard strain.
+- Evidence: Postgres source had HR data in the latest activity window: for the
+  June 5 rock-climbing window, `fitness.metric_stream` contained 306
+  `heart_rate` samples, 513 `rr_interval_ms` samples, and other sensor rows by
+  user/time. The ClickHouse mirror had no rows in that same window, and
+  `postgres_fitness.metric_stream FINAL` showed non-IMU mirrored rows stopping
+  at `2026-06-03 21:57:06Z`. Postgres replication slots showed
+  `peerflow_slot_dofek_metric_stream_analytics` as `active=f`,
+  `wal_status=lost`, with empty `restart_lsn`. PeerDB logs contained the fatal
+  line `can no longer access replication slot
+  "peerflow_slot_dofek_metric_stream_analytics" (SQLSTATE 55000)`.
+  Production had `max_slot_wal_keep_size=16GB`, while the lost slot's
+  retained lag from current WAL to `confirmed_flush_lsn` was about `43GB`,
+  exceeding the configured WAL budget.
+- Root cause: The PeerDB metric-stream replication slot was lost, so recent
+  Postgres `fitness.metric_stream` rows stopped flowing into
+  ClickHouse `postgres_fitness.metric_stream`. The dbt read models were current
+  and successful, but were rebuilding from stale metric-stream mirror input.
+  This is a repeat failure mode: the bounded 16GB WAL retention cap prevents
+  disk exhaustion, but it is not enough to preserve a high-volume metric-stream
+  slot through the observed PeerDB outage/write burst.
+- Fix / mitigation: Code changes prepared a bounded prevention and repair path:
+  production Postgres slot WAL retention is raised from 16GB to 64GB, CDC health
+  thresholds now warn at 32GB and fail at 48GB, a production `cdc-health` swarm
+  service continuously runs `scripts/check-clickhouse-cdc.ts`, PeerDB
+  worker/staging memory limits are raised, and
+  `scripts/catch-up-clickhouse-metric-stream.ts` can direct-insert explicit
+  non-IMU `fitness.metric_stream` windows into
+  `postgres_fitness.metric_stream` without a full metric-stream resnapshot.
+  Production still requires deploying these changes, recreating/resyncing the
+  `dofek_metric_stream_analytics` PeerDB flow, running the bounded catch-up for
+  the missing window, and then running the bounded dbt analytics build so
+  `sensor_scalar_sample`, `deduped_sensor`, `activity_sensor_sample`,
+  `activity_summary_rows`, `daily_activity_load`, and `daily_strain` repopulate
+  from current metric rows.
+- Remaining risk: The slot is lost, so it cannot recover by waiting or
+  restarting PeerDB alone. Resync can be expensive; verify mirror counts and
+  read-model freshness after remediation, and add/verify alerting for
+  `pg_replication_slots.wal_status IN ('lost', 'unreserved')`. The recurring
+  fix needs a larger monitored WAL budget, a separate bounded metric-stream
+  catch-up path, or both; otherwise future high-volume gaps can invalidate the
+  slot again.

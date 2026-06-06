@@ -145,6 +145,34 @@ services:
         order: stop-first
         failure_action: rollback
 
+  cdc-health:
+    image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
+    command: ["cdc-health"]
+    env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://health:${POSTGRES_PASSWORD}@db:5432/health
+      CLICKHOUSE_URL: http://default:${CLICKHOUSE_PASSWORD_ENCODED:?CLICKHOUSE_PASSWORD_ENCODED is required}@clickhouse:8123
+      CDC_HEALTH_INTERVAL_SECONDS: ${CDC_HEALTH_INTERVAL_SECONDS:-300}
+      OTEL_SERVICE_NAME: dofek-cdc-health
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${DEPLOY_ENVIRONMENT:-production}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://collector:4318/v1/logs
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f cdc-health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.10"
+          memory: 200M
+      update_config:
+        order: stop-first
+        failure_action: rollback
+
   training-export-worker:
     image: ghcr.io/asherlc/dofek-ml:${IMAGE_TAG:-latest}
     environment:
@@ -181,12 +209,12 @@ services:
       - -c
       - max_wal_senders=6
       - -c
-      # Cap WAL retained for any single replication slot at 16GB. This keeps
+      # Cap WAL retained for any single replication slot at 64GB. This keeps
       # logical slots from filling the data volume while giving PeerDB enough
-      # catch-up budget for the lag observed during the 2026-06-03 lost-slot
+      # catch-up budget for the 43GB lag observed during the 2026-06-05 lost-slot
       # incident. The extra slots/senders leave room to recreate mirrors during
       # recovery without first deleting a required production slot.
-      - max_slot_wal_keep_size=16GB
+      - max_slot_wal_keep_size=64GB
     ports:
       - "127.0.0.1:5432:5432"
     environment:
@@ -317,7 +345,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 200M
+          memory: 512M
 
   peerdb-flow-api:
     image: ghcr.io/peerdb-io/flow-api:stable-v0.36.19
@@ -344,7 +372,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 128M
+          memory: 256M
 
   peerdb-flow-snapshot-worker:
     image: ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.36.19
@@ -352,7 +380,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 512M
 
   peerdb-flow-worker:
     image: ghcr.io/peerdb-io/flow-worker:stable-v0.36.19
@@ -360,7 +388,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 500M
+          memory: 1G
 
   peerdb:
     image: ghcr.io/peerdb-io/peerdb-server:stable-v0.36.19
