@@ -45,8 +45,8 @@ const expectedSlotNames = [
 ] as const;
 
 const defaultThresholds: CdcHealthThresholds = {
-  retainedWalWarningBytes: 32 * 1024 * 1024 * 1024,
-  retainedWalFailureBytes: 48 * 1024 * 1024 * 1024,
+  retainedWalWarningBytes: 16 * 1024 * 1024 * 1024,
+  retainedWalFailureBytes: 32 * 1024 * 1024 * 1024,
 };
 
 const defaultMirrorFreshnessChecks: readonly MirrorFreshnessCheck[] = [

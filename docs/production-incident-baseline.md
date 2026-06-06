@@ -7,6 +7,52 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-06-06: Metric Stream CDC Lost Slot Reported By Sentry
+
+### Symptoms
+
+Sentry issue `DOFEK-SERVER-3B` reported `ClickHouse CDC health check failed`
+from the production `cdc-health` service.
+
+### User Impact
+
+No Sentry users were impacted directly, but ClickHouse sensor analytics that
+depend on `postgres_fitness.metric_stream` could miss rows after
+`2026-06-03 21:57:38 UTC`.
+
+### Evidence
+
+Sentry recorded 9 production events from `2026-06-06T03:33:27Z` through
+`2026-06-06T03:37:46Z`. The health check reported
+`peerflow_slot_dofek_metric_stream_analytics is lost` and
+`postgres_fitness.metric_stream last synced at 2026-06-03 21:57:38.000000000`.
+Production Postgres showed that slot inactive with `wal_status = lost` and
+`confirmed_flush_lsn = 36/437517D0`; the other three PeerDB slots were active
+and reserved. PeerDB's first fatal flow-worker line was
+`ERROR: can no longer access replication slot "peerflow_slot_dofek_metric_stream_analytics" (SQLSTATE 55000)`
+at `2026-06-06T03:33:42Z`.
+
+### Root Cause
+
+The high-volume `metric_stream` PeerDB flow was already left on a fresh slot
+without a full destination resnapshot during the June 3 lost-slot recovery. The
+new `cdc-health` service correctly detected that remaining broken mirror after
+deployment, but the monitor process exited on each failed check, causing Swarm
+to restart it repeatedly and amplify Sentry events.
+
+### Fix or Mitigation
+
+Lowered CDC retained-WAL thresholds to warn at 16 GiB and fail at 32 GiB,
+leaving headroom before Postgres reaches the 64 GiB per-slot WAL cap. Changed
+the `cdc-health` entrypoint to report failures to logs/Sentry and sleep until
+the next configured interval instead of exiting into a tight Swarm restart loop.
+
+### Remaining Risk
+
+The existing lost `metric_stream` slot still requires PeerDB-side recovery:
+recreate the mirror slot and run bounded metric-stream catch-up or a full
+resnapshot as appropriate. Do not treat monitor quieting as data recovery.
+
 ## 2026-06-05: Dashboard Strain And Sleep Empty From ClickHouse Null Join Defaults
 
 ### Symptoms

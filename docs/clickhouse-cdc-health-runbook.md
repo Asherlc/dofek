@@ -13,12 +13,12 @@ It fails on:
 - Any required PeerDB slot with `wal_status = 'lost'`.
 - Any required PeerDB slot with `restart_lsn IS NULL`.
 - Any required PeerDB slot that is inactive.
-- Retained WAL for a required slot at or above 48 GiB.
+- Retained WAL for a required slot at or above 32 GiB.
 - Active mirrored tables with rows but stale `_peerdb_synced_at`.
 
 It warns on:
 
-- Retained WAL at or above 32 GiB.
+- Retained WAL at or above 16 GiB.
 - Empty mirrors, which can be valid in staging.
 
 Run it locally with production secrets:
@@ -35,8 +35,9 @@ The durability control is the production WAL and PeerDB work-unit budget:
 Postgres allows six logical slots/senders and caps each slot at 64 GiB, while
 PeerDB mirrors use 100,000-row CDC batches and single-worker 100,000-row initial
 snapshot partitions. The production `cdc-health` service runs this check every
-five minutes and reports failures to logs/Sentry; local runs are still useful
-when actively triaging an incident.
+five minutes and reports failures to logs/Sentry without crash-looping the
+monitor container; local runs are still useful when actively triaging an
+incident.
 
 ## Triage
 

@@ -221,7 +221,7 @@ describe("checkClickHouseCdcHealth", () => {
       healthySlotRows(),
       "peerflow_slot_dofek_metric_stream_analytics",
       {
-        retained_wal_bytes: String(32 * 1024 * 1024 * 1024),
+        retained_wal_bytes: String(16 * 1024 * 1024 * 1024),
       },
     );
 
@@ -231,7 +231,7 @@ describe("checkClickHouseCdcHealth", () => {
       severity: "warning",
       message:
         "PeerDB replication slot peerflow_slot_dofek_metric_stream_analytics retains " +
-        "34359738368 WAL bytes, above warning threshold 34359738368",
+        "17179869184 WAL bytes, above warning threshold 17179869184",
     });
     expect(() => assertClickHouseCdcHealth(report)).not.toThrow();
   });
@@ -241,7 +241,7 @@ describe("checkClickHouseCdcHealth", () => {
       healthySlotRows(),
       "peerflow_slot_dofek_metric_stream_analytics",
       {
-        retained_wal_bytes: String(48 * 1024 * 1024 * 1024),
+        retained_wal_bytes: String(32 * 1024 * 1024 * 1024),
       },
     );
 
@@ -251,7 +251,7 @@ describe("checkClickHouseCdcHealth", () => {
       severity: "failure",
       message:
         "PeerDB replication slot peerflow_slot_dofek_metric_stream_analytics retains " +
-        "51539607552 WAL bytes, above failure threshold 51539607552",
+        "34359738368 WAL bytes, above failure threshold 34359738368",
     });
   });
 
