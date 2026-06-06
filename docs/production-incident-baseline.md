@@ -53,6 +53,15 @@ The existing lost `metric_stream` slot still requires PeerDB-side recovery:
 recreate the mirror slot and run bounded metric-stream catch-up or a full
 resnapshot as appropriate. Do not treat monitor quieting as data recovery.
 
+### Follow-Up Work
+
+- Owner: Asher. Deadline: before resolving `DOFEK-SERVER-3B`. Recreate the
+  `dofek_metric_stream_analytics` PeerDB mirror slot.
+- Owner: Asher. Deadline: before resolving `DOFEK-SERVER-3B`. Run bounded
+  metric-stream catch-up or a full resnapshot for the affected window.
+- Owner: Asher. Deadline: before resolving `DOFEK-SERVER-3B`. Verify
+  `postgres_fitness.metric_stream` freshness and downstream analytics rows.
+
 ## 2026-06-05: Dashboard Strain And Sleep Empty From ClickHouse Null Join Defaults
 
 ### Symptoms

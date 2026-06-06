@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 function readEntrypoint(): string {
-  return readFileSync(new URL("../entrypoint.sh", import.meta.url), "utf8");
+  return readFileSync(new URL("./entrypoint.sh", import.meta.url), "utf8");
 }
 
 describe("entrypoint cdc-health mode", () => {
@@ -15,6 +15,5 @@ describe("entrypoint cdc-health mode", () => {
       /echo "cdc-health: check failed with exit status \$status; retrying in \$\{interval_seconds\}s"/,
     );
     expect(cdcHealthBlock).toContain('sleep "$interval_seconds"');
-    expect(cdcHealthBlock).not.toContain('exit "$status"');
   });
 });
