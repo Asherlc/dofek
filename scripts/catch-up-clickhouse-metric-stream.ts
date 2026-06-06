@@ -194,7 +194,7 @@ SELECT
   metric_stream.scalar,
   if(
     isNull(metric_stream.point) OR assumeNotNull(metric_stream.point) = '',
-    '',
+    NULL,
     (
       SELECT concat(
         '{"type":"Point","coordinates":[',

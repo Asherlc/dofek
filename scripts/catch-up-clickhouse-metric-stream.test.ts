@@ -88,6 +88,9 @@ describe("buildMetricStreamCatchUpStatement", () => {
     expect(sql).toContain("FROM postgres_fitness.metric_stream FINAL");
     expect(sql).toContain("metric_stream.channel != 'imu'");
     expect(sql).toContain("existing_metric_stream.id IS NULL");
+    expect(sql).toContain(
+      "isNull(metric_stream.point) OR assumeNotNull(metric_stream.point) = '',\n    NULL,",
+    );
     expect(sql).toContain("toDateTime64('2026-06-05 00:00:00.000', 6, 'UTC')");
     expect(sql).toContain("toDateTime64('2026-06-05 01:00:00.000', 6, 'UTC')");
     expect(sql).toContain("_peerdb_synced_at");
