@@ -110,7 +110,6 @@ async function upsertDailyAverageFromSamples(
   }
 
   for (const [key, grouped] of groupedSamples) {
-    if (grouped.count === 0) continue;
     const [date] = key.split("\0");
     const average = grouped.total / grouped.count;
     await db.execute(

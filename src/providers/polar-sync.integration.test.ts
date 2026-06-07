@@ -307,6 +307,24 @@ describe("PolarProvider.sync() (integration)", () => {
     expect(march5.hrv).toBeNull();
   });
 
+  it("syncs successfully when optional sync options are omitted", async () => {
+    await saveTokens(ctx.db, "polar", {
+      accessToken: "valid-polar-token",
+      refreshToken: "valid-polar-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "accesslink.read_all",
+    });
+
+    server.use(...polarHandlers());
+
+    const provider = new PolarProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    expect(result.provider).toBe("polar");
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(0);
+  });
+
   it("upserts on re-sync (no duplicates)", async () => {
     await saveTokens(ctx.db, "polar", {
       accessToken: "valid-polar-token",

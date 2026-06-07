@@ -2411,6 +2411,95 @@ describe("healthKitSyncRouter", () => {
       expect(mockAggregateSkinTempToDailyMetrics).not.toHaveBeenCalled();
     });
 
+    it("uses the user timezone when grouping SpO2 samples into daily metrics", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "America/Los_Angeles",
+      });
+
+      await caller.pushQuantitySamples({
+        samples: [
+          makeSample({
+            type: "HKQuantityTypeIdentifierOxygenSaturation",
+            value: 0.97,
+            startDate: "2024-01-15T04:00:00.000Z",
+            endDate: "2024-01-15T04:00:05.000Z",
+            uuid: "spo2-timezone",
+          }),
+        ],
+      });
+
+      const serializedExecuteCalls = JSON.stringify(execute.mock.calls);
+      expect(serializedExecuteCalls).toContain("2024-01-14");
+      expect(serializedExecuteCalls).not.toContain("2024-01-15");
+    });
+
+    it("falls back to the timestamp date when timezone date parts are incomplete", async () => {
+      const incompleteDateParts: Intl.DateTimeFormatPart[] = [
+        { type: "month", value: "01" },
+        { type: "day", value: "14" },
+      ];
+      const dateTimeFormatSpy = vi
+        .spyOn(Intl.DateTimeFormat.prototype, "formatToParts")
+        .mockReturnValue(incompleteDateParts);
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "America/Los_Angeles",
+      });
+
+      try {
+        await caller.pushQuantitySamples({
+          samples: [
+            makeSample({
+              type: "HKQuantityTypeIdentifierOxygenSaturation",
+              value: 0.97,
+              startDate: "2024-01-15T04:00:00.000Z",
+              endDate: "2024-01-15T04:00:05.000Z",
+              uuid: "spo2-missing-date-part",
+            }),
+          ],
+        });
+      } finally {
+        dateTimeFormatSpy.mockRestore();
+      }
+
+      const serializedExecuteCalls = JSON.stringify(execute.mock.calls);
+      expect(serializedExecuteCalls).toContain("2024-01-15");
+      expect(serializedExecuteCalls).not.toContain("undefined-01-14");
+    });
+
+    it("excludes non-SpO2 metric samples from SpO2 daily averages", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.pushQuantitySamples({
+        samples: [
+          makeSample({
+            type: "HKQuantityTypeIdentifierOxygenSaturation",
+            value: 0.97,
+            uuid: "spo2-filter",
+          }),
+          makeSample({
+            type: "HKQuantityTypeIdentifierHeartRate",
+            value: 72,
+            uuid: "heart-rate-filter",
+          }),
+        ],
+      });
+
+      const serializedExecuteCalls = JSON.stringify(execute.mock.calls);
+      expect(serializedExecuteCalls).toContain("97");
+      expect(serializedExecuteCalls).not.toContain("3648.5");
+    });
+
     it("runs SpO2 aggregation when oxygen saturation is mixed with other metric samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
