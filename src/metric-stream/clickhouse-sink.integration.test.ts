@@ -43,7 +43,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
 
   it("inserts events whose recordedAt carries a UTC Z suffix", async () => {
     // recordedAt is canonical ISO-8601 with a trailing Z; ClickHouse rejects it
-    // unless the insert parses datetimes with best_effort.
+    // unless the insert parses each datetime value with best_effort.
     const event = createMetricStreamEvent({
       id: testEventId,
       recordedAt: "2026-06-07T14:36:12.000Z",
