@@ -1221,7 +1221,6 @@ describe("Router coverage", () => {
             bodyMeasurements: number;
             foodEntries: number;
             healthEvents: number;
-            metricStream: number;
             nutritionDaily: number;
             labPanels: number;
             labResults: number;
@@ -1235,7 +1234,6 @@ describe("Router coverage", () => {
         expect(testProvider.activities).toBeGreaterThan(0);
         expect(testProvider.dailyMetrics).toBeGreaterThan(0);
         expect(testProvider.sleepSessions).toBeGreaterThan(0);
-        expect(testProvider.metricStream).toBeGreaterThan(0);
       }
     });
 

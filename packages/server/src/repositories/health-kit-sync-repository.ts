@@ -6,6 +6,12 @@ import {
   BODY_MEASUREMENT_COLUMN_TO_CHANNEL,
   SOURCE_TYPE_API,
 } from "../../../../src/db/sensor-channels.ts";
+import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
+import {
+  getDefaultMetricStreamEventPublisher,
+  type MetricStreamEventPublisher,
+} from "../../../../src/metric-stream/redpanda-producer.ts";
+import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { workoutActivityTypeMap } from "../routers/health-kit-sync-schemas.ts";
 
@@ -405,10 +411,20 @@ export function aggregateDailyMetricSamples(
 export class HealthKitSyncRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
+  readonly #metricStreamPublisher?: MetricStreamEventPublisher;
 
-  constructor(db: Pick<Database, "execute">, userId: string) {
+  constructor(
+    db: Pick<Database, "execute">,
+    userId: string,
+    metricStreamPublisher?: MetricStreamEventPublisher,
+  ) {
     this.#db = db;
     this.#userId = userId;
+    this.#metricStreamPublisher = metricStreamPublisher;
+  }
+
+  async #publisher(): Promise<MetricStreamEventPublisher> {
+    return this.#metricStreamPublisher ?? getDefaultMetricStreamEventPublisher();
   }
 
   /** Ensure the apple_health provider row exists */
@@ -425,6 +441,7 @@ export class HealthKitSyncRepository {
     let inserted = 0;
     for (let index = 0; index < samples.length; index += BATCH_SIZE) {
       const batch = samples.slice(index, index + BATCH_SIZE);
+      const rows: MetricStreamRowInput[] = [];
       for (const sample of batch) {
         const mapping = bodyMeasurementTypes[sample.type];
         if (!mapping) continue;
@@ -437,25 +454,22 @@ export class HealthKitSyncRepository {
           );
         }
 
-        await this.#db.execute(
-          sql`INSERT INTO fitness.metric_stream
-                (recorded_at, user_id, provider_id, external_id, device_id, source_type, channel, scalar)
-              VALUES (
-                ${sample.startDate}::timestamptz,
-                ${this.#userId},
-                ${PROVIDER_ID},
-                ${externalId},
-                ${sample.sourceName},
-                ${SOURCE_TYPE_API},
-                ${channel},
-                ${value}
-              )
-              ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE
-                SET scalar = excluded.scalar,
-                    device_id = excluded.device_id,
-                    source_type = excluded.source_type`,
-        );
-        inserted++;
+        rows.push({
+          recordedAt: sample.startDate,
+          userId: this.#userId,
+          providerId: PROVIDER_ID,
+          externalId,
+          deviceId: sample.sourceName,
+          sourceType: SOURCE_TYPE_API,
+          channel,
+          scalar: value,
+        });
+      }
+
+      if (rows.length > 0) {
+        const publisher = await this.#publisher();
+        const result = await writeMetricStreamRows({ publisher, rows });
+        inserted += result.published;
       }
     }
     return inserted;
@@ -542,6 +556,7 @@ export class HealthKitSyncRepository {
     let inserted = 0;
     for (let index = 0; index < samples.length; index += BATCH_SIZE) {
       const batch = samples.slice(index, index + BATCH_SIZE);
+      const rows: MetricStreamRowInput[] = [];
       for (const sample of batch) {
         const mapping = metricStreamTypes[sample.type];
         if (!mapping) continue;
@@ -550,24 +565,22 @@ export class HealthKitSyncRepository {
           ? Math.round(sample.value)
           : sample.value;
         const externalId = `hk:${sample.uuid}`;
-        await this.#db.execute(
-          sql`INSERT INTO fitness.metric_stream (recorded_at, user_id, provider_id, external_id, device_id, source_type, channel, scalar)
-              VALUES (
-                ${sample.startDate}::timestamptz,
-                ${this.#userId},
-                ${PROVIDER_ID},
-                ${externalId},
-                ${sample.sourceName ?? null},
-                ${"api"},
-                ${mapping.column},
-                ${metricValue}::real
-              )
-              ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE
-              SET scalar = EXCLUDED.scalar,
-                  device_id = EXCLUDED.device_id,
-                  source_type = EXCLUDED.source_type`,
-        );
-        inserted++;
+        rows.push({
+          recordedAt: sample.startDate,
+          userId: this.#userId,
+          providerId: PROVIDER_ID,
+          externalId,
+          deviceId: sample.sourceName,
+          sourceType: SOURCE_TYPE_API,
+          channel: mapping.column,
+          scalar: metricValue,
+        });
+      }
+
+      if (rows.length > 0) {
+        const publisher = await this.#publisher();
+        const result = await writeMetricStreamRows({ publisher, rows });
+        inserted += result.published;
       }
     }
     return inserted;

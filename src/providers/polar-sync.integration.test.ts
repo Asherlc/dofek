@@ -13,6 +13,9 @@ import type {
   PolarNightlyRecharge,
   PolarSleep,
 } from "./polar/types.ts";
+import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
+
+const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 function fakePolarExercise(overrides: Partial<PolarExercise> = {}): PolarExercise {
   return {
@@ -168,6 +171,7 @@ describe("PolarProvider.sync() (integration)", () => {
 
   afterEach(() => {
     server.resetHandlers();
+    metricStreamCapture.publishedMetricStreamRows.length = 0;
   });
 
   afterAll(async () => {
@@ -205,7 +209,9 @@ describe("PolarProvider.sync() (integration)", () => {
 
     const provider = new PolarProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(ctx.db, since, {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.provider).toBe("polar");
     expect(result.errors).toHaveLength(0);
@@ -285,7 +291,9 @@ describe("PolarProvider.sync() (integration)", () => {
 
     const provider = new PolarProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(ctx.db, since, {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(0);
 
@@ -297,6 +305,24 @@ describe("PolarProvider.sync() (integration)", () => {
     if (!march5) throw new Error("expected daily metrics for 2026-03-05");
     expect(march5.steps).toBe(8500);
     expect(march5.hrv).toBeNull();
+  });
+
+  it("syncs successfully when optional sync options are omitted", async () => {
+    await saveTokens(ctx.db, "polar", {
+      accessToken: "valid-polar-token",
+      refreshToken: "valid-polar-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "accesslink.read_all",
+    });
+
+    server.use(...polarHandlers());
+
+    const provider = new PolarProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+
+    expect(result.provider).toBe("polar");
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(0);
   });
 
   it("upserts on re-sync (no duplicates)", async () => {
@@ -318,8 +344,8 @@ describe("PolarProvider.sync() (integration)", () => {
 
     const provider = new PolarProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    await provider.sync(ctx.db, since);
-    await provider.sync(ctx.db, since);
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
 
     const activityRows = await ctx.db
       .select()
@@ -357,7 +383,7 @@ describe("PolarProvider.sync() (integration)", () => {
 
     const provider = new PolarProvider();
     const since = new Date("2026-03-01T00:00:00Z");
-    await provider.sync(ctx.db, since);
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
 
     const activityRows = await ctx.db
       .select()
@@ -372,7 +398,9 @@ describe("PolarProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "polar"));
 
     const provider = new PolarProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens found");
@@ -447,7 +475,9 @@ describe("PolarProvider.sync() — daily_activity error paths (integration)", ()
     errorServer.use(...polarCoverageHandlers({ dailyActivityError: true }));
 
     const provider = new PolarProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // The daily_activity fetch fails with 500, which throws inside withSyncLog
     // The outer catch at lines 542-546 should catch it
@@ -479,7 +509,9 @@ describe("PolarProvider.sync() — daily_activity error paths (integration)", ()
     );
 
     const provider = new PolarProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // Should succeed
     expect(result.errors).toHaveLength(0);

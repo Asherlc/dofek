@@ -157,6 +157,7 @@ export class PolarProvider implements WebhookProvider {
       providerName: this.name,
       fetchFn: this.#fetchFn,
       userId: options?.userId,
+      metricStreamPublisher: options?.metricStreamPublisher,
     });
 
     const result = await syncService.run(since);

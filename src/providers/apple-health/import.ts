@@ -19,6 +19,7 @@ import {
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { ensureProvider } from "../../db/tokens.ts";
 import { logger } from "../../logger.ts";
+import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
 import type { SyncError, SyncResult } from "../types.ts";
 import { getStringAttrs } from "./dates.ts";
 import {
@@ -126,6 +127,7 @@ export async function runImport(
   xmlPath: string,
   since: Date,
   onProgress?: (info: ProgressInfo) => void,
+  publisher?: MetricStreamEventPublisher,
 ): Promise<SyncResult> {
   const start = Date.now();
   const errors: SyncError[] = [];
@@ -168,6 +170,7 @@ export async function runImport(
         ),
       );
 
+    const dailyAggregateMetricRecords: HealthRecord[] = [];
     const counts = await streamHealthExport(xmlPath, since, {
       onProgress,
       onRecordBatch: async (records) => {
@@ -187,12 +190,17 @@ export async function runImport(
 
         // Run all table inserts in parallel -- they target independent tables
         const results = await Promise.all([
-          metricRecords.length > 0 ? upsertMetricStreamBatch(db, providerId, metricRecords) : 0,
-          bodyRecords.length > 0 ? upsertBodyMeasurementBatch(db, providerId, bodyRecords) : 0,
+          metricRecords.length > 0
+            ? upsertMetricStreamBatch(db, providerId, metricRecords, publisher)
+            : 0,
+          bodyRecords.length > 0
+            ? upsertBodyMeasurementBatch(db, providerId, bodyRecords, publisher)
+            : 0,
           dailyRecords.length > 0 ? upsertDailyMetricsBatch(db, providerId, dailyRecords) : 0,
           nutritionRecords.length > 0 ? upsertNutritionBatch(db, providerId, nutritionRecords) : 0,
           unrouted.length > 0 ? upsertHealthEventBatch(db, providerId, unrouted) : 0,
         ]);
+        dailyAggregateMetricRecords.push(...metricRecords);
         for (const c of results) recordsSynced += c;
       },
       onSleepBatch: async (records) => {
@@ -200,7 +208,7 @@ export async function runImport(
         recordsSynced += sleepCount;
       },
       onWorkoutBatch: async (workouts) => {
-        const workoutCount = await upsertWorkoutBatch(db, providerId, workouts);
+        const workoutCount = await upsertWorkoutBatch(db, providerId, workouts, publisher);
         recordsSynced += workoutCount;
       },
       onCategoryBatch: async (records) => {
@@ -224,9 +232,10 @@ export async function runImport(
       },
     });
 
-    // Aggregate SpO2 and skin temperature from metric_stream into daily_metrics
-    await aggregateSpO2ToDailyMetrics(db, providerId, since);
-    await aggregateSkinTempToDailyMetrics(db, providerId, since);
+    if (dailyAggregateMetricRecords.length > 0) {
+      await aggregateSpO2ToDailyMetrics(db, providerId, dailyAggregateMetricRecords);
+      await aggregateSkinTempToDailyMetrics(db, providerId, dailyAggregateMetricRecords);
+    }
 
     logger.info(
       `[apple_health] Parsed ${counts.recordCount} records, ` +
@@ -251,6 +260,7 @@ export async function importAppleHealthFile(
   filePath: string,
   since: Date,
   onProgress?: (info: ProgressInfo) => void,
+  publisher?: MetricStreamEventPublisher,
 ): Promise<SyncResult> {
   await ensureProvider(db, "apple_health", "Apple Health");
 
@@ -270,7 +280,7 @@ export async function importAppleHealthFile(
   const progressFn = onProgress ?? defaultConsoleProgress;
 
   logger.info(`[apple_health] Importing from ${xmlPath} (since ${since.toISOString()})`);
-  const result = await runImport(db, "apple_health", xmlPath, since, progressFn);
+  const result = await runImport(db, "apple_health", xmlPath, since, progressFn, publisher);
 
   // Import clinical records (lab results) from zip
   if (filePath.endsWith(".zip")) {

@@ -31,7 +31,7 @@ describe("setup-clickhouse-cdc main()", () => {
 
     expect(mockSetupClickHouseCdcFromEnv).toHaveBeenCalledTimes(1);
     expect(mockLogger.info).toHaveBeenCalledWith(
-      "[clickhouse-cdc] PeerDB metric_stream CDC mirror is configured",
+      "[clickhouse-cdc] PeerDB raw analytics CDC mirrors are configured",
     );
   });
 

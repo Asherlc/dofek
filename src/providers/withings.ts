@@ -487,6 +487,8 @@ export class WithingsProvider implements WebhookProvider {
                     },
                   ],
                   SOURCE_TYPE_API,
+                  undefined,
+                  options?.metricStreamPublisher,
                 );
                 count++;
               } catch (err) {

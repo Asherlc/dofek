@@ -111,7 +111,7 @@ runcmd:
   # missing, even for services scaled to zero by stack.oracle.yml (their bind
   # mounts are still declared in stack.yml). Keep this list in sync with the
   # /mnt/dofek-data/* paths in deploy/stack.yml.
-  - mkdir -p /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/redis /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio
+  - mkdir -p /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/redpanda /mnt/dofek-data/redis /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio
 
   # The timescaledb-ha (Postgres) image runs as uid/gid 1000 and cannot chown
   # its own data directory, so it hangs/fails on a root-owned bind mount with

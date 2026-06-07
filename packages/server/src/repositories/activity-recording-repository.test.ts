@@ -3,6 +3,14 @@ import type { SaveActivityInput } from "./activity-recording-repository.ts";
 import { ActivityRecordingRepository } from "./activity-recording-repository.ts";
 
 describe("ActivityRecordingRepository", () => {
+  function makePublisher() {
+    return {
+      publishRows: vi.fn(async (rows: readonly unknown[]) =>
+        rows.map((_, index) => ({ id: `event-${index}` })),
+      ),
+    };
+  }
+
   function makeRepository(executeResults?: Record<string, unknown>[][]) {
     const execute = vi.fn();
     if (executeResults) {
@@ -15,8 +23,13 @@ describe("ActivityRecordingRepository", () => {
       execute.mockResolvedValueOnce([{ id: "activity-123" }]); // INSERT RETURNING
     }
     const db = { execute };
-    const repository = new ActivityRecordingRepository(db, "user-1");
-    return { repository, execute };
+    const publisher = makePublisher();
+    const repository = new ActivityRecordingRepository(
+      db,
+      "00000000-0000-0000-0000-000000000001",
+      publisher,
+    );
+    return { repository, execute, publisher };
   }
 
   function makeInput(overrides: Partial<SaveActivityInput> = {}): SaveActivityInput {
@@ -64,7 +77,7 @@ describe("ActivityRecordingRepository", () => {
       );
     });
 
-    it("batch-inserts GPS samples", async () => {
+    it("publishes GPS samples", async () => {
       const samples = Array.from({ length: 3 }, (_, index) => ({
         recordedAt: `2024-06-15T08:0${index}:00Z`,
         lat: 32.0 + index * 0.001,
@@ -74,27 +87,31 @@ describe("ActivityRecordingRepository", () => {
         speed: 3.5,
       }));
 
-      const { repository, execute } = makeRepository([
+      const { repository, execute, publisher } = makeRepository([
         [], // ensureProvider
         [{ id: "activity-456" }], // INSERT RETURNING
-        [], // metric_stream: location
-        [], // metric_stream: altitude
-        [], // metric_stream: speed
       ]);
 
       const activityId = await repository.saveActivity(makeInput({ samples }));
       expect(activityId).toBe("activity-456");
-      // ensureProvider + INSERT activity + location, altitude, speed metric_stream batches
-      expect(execute).toHaveBeenCalledTimes(5);
-      const serialized = JSON.stringify(execute.mock.calls);
-      expect(serialized).toContain("location");
-      expect(serialized).toContain("ST_SetSRID");
-      expect(serialized).toContain("horizontal_accuracy_m");
-      expect(serialized).not.toContain("latitude");
-      expect(serialized).not.toContain("longitude");
+      expect(execute).toHaveBeenCalledTimes(2);
+      expect(publisher.publishRows).toHaveBeenCalledTimes(1);
+      const publishedRows = publisher.publishRows.mock.calls[0]?.[0] ?? [];
+      expect(publishedRows).toHaveLength(9);
+      expect(publishedRows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            channel: "location",
+            point: "SRID=4326;POINT(34 32)",
+            metadata: { horizontal_accuracy_m: 5 },
+          }),
+          expect.objectContaining({ channel: "altitude", scalar: 100 }),
+          expect.objectContaining({ channel: "speed", scalar: 3.5 }),
+        ]),
+      );
     });
 
-    it("handles samples exceeding batch size with multiple batches", async () => {
+    it("handles samples exceeding batch size with multiple publish batches", async () => {
       // Create 501 samples to trigger 2 batches (500 + 1)
       const samples = Array.from({ length: 501 }, (_, index) => ({
         recordedAt: `2024-06-15T08:00:00.${String(index).padStart(3, "0")}Z`,
@@ -105,24 +122,20 @@ describe("ActivityRecordingRepository", () => {
         speed: 3.5,
       }));
 
-      const { repository, execute } = makeRepository([
+      const { repository, execute, publisher } = makeRepository([
         [], // ensureProvider
         [{ id: "activity-789" }], // INSERT RETURNING
-        [], // batch 1: metric_stream location
-        [], // batch 1: metric_stream altitude
-        [], // batch 1: metric_stream speed
-        [], // batch 2: metric_stream location
-        [], // batch 2: metric_stream altitude
-        [], // batch 2: metric_stream speed
       ]);
 
       const activityId = await repository.saveActivity(makeInput({ samples }));
       expect(activityId).toBe("activity-789");
-      // ensureProvider + INSERT activity + 2 batches × 3 metric_stream value groups
-      expect(execute).toHaveBeenCalledTimes(8);
+      expect(execute).toHaveBeenCalledTimes(2);
+      expect(publisher.publishRows).toHaveBeenCalledTimes(2);
+      expect(publisher.publishRows.mock.calls[0]?.[0]).toHaveLength(1500);
+      expect(publisher.publishRows.mock.calls[1]?.[0]).toHaveLength(3);
     });
 
-    it("creates exactly 1 batch for 500 samples (boundary)", async () => {
+    it("creates exactly 1 publish batch for 500 samples (boundary)", async () => {
       const samples = Array.from({ length: 500 }, (_, index) => ({
         recordedAt: `2024-06-15T08:00:00.${String(index).padStart(3, "0")}Z`,
         lat: 32.0,
@@ -132,17 +145,15 @@ describe("ActivityRecordingRepository", () => {
         speed: 3.5,
       }));
 
-      const { repository, execute } = makeRepository([
+      const { repository, execute, publisher } = makeRepository([
         [], // ensureProvider
         [{ id: "activity-batch" }], // INSERT RETURNING
-        [], // metric_stream: location
-        [], // metric_stream: altitude
-        [], // metric_stream: speed
       ]);
 
       await repository.saveActivity(makeInput({ samples }));
-      // ensureProvider + INSERT activity + location, altitude, speed metric_stream batches
-      expect(execute).toHaveBeenCalledTimes(5);
+      expect(execute).toHaveBeenCalledTimes(2);
+      expect(publisher.publishRows).toHaveBeenCalledTimes(1);
+      expect(publisher.publishRows.mock.calls[0]?.[0]).toHaveLength(1500);
     });
 
     it("handles samples with null values", async () => {
@@ -157,15 +168,134 @@ describe("ActivityRecordingRepository", () => {
         },
       ];
 
-      const { repository, execute } = makeRepository([
+      const { repository, execute, publisher } = makeRepository([
         [], // ensureProvider
         [{ id: "activity-null" }], // INSERT RETURNING
       ]);
 
       const activityId = await repository.saveActivity(makeInput({ samples }));
       expect(activityId).toBe("activity-null");
-      // ensureProvider + INSERT activity (all GPS values null, no metric_stream inserts)
       expect(execute).toHaveBeenCalledTimes(2);
+      expect(publisher.publishRows).not.toHaveBeenCalled();
+    });
+
+    it("does not publish location rows unless both coordinates are present", async () => {
+      const samples = [
+        {
+          recordedAt: "2024-06-15T08:00:00Z",
+          lat: 32,
+          lng: null,
+          gpsAccuracy: null,
+          altitude: null,
+          speed: null,
+        },
+        {
+          recordedAt: "2024-06-15T08:01:00Z",
+          lat: null,
+          lng: 34,
+          gpsAccuracy: null,
+          altitude: null,
+          speed: null,
+        },
+      ];
+
+      const { repository, publisher } = makeRepository([
+        [], // ensureProvider
+        [{ id: "activity-partial-gps" }], // INSERT RETURNING
+      ]);
+
+      await repository.saveActivity(makeInput({ samples }));
+      expect(publisher.publishRows).not.toHaveBeenCalled();
+    });
+
+    it("leaves GPS metadata unset when accuracy is absent", async () => {
+      const samples = [
+        {
+          recordedAt: "2024-06-15T08:00:00Z",
+          lat: 32,
+          lng: 34,
+          gpsAccuracy: null,
+          altitude: null,
+          speed: null,
+        },
+      ];
+
+      const { repository, publisher } = makeRepository([
+        [], // ensureProvider
+        [{ id: "activity-no-accuracy" }], // INSERT RETURNING
+      ]);
+
+      await repository.saveActivity(makeInput({ samples }));
+      const publishedRows = publisher.publishRows.mock.calls[0]?.[0] ?? [];
+      expect(publishedRows).toHaveLength(1);
+      expect(publishedRows[0]).toEqual(
+        expect.objectContaining({
+          channel: "location",
+          metadata: undefined,
+        }),
+      );
+    });
+
+    it("ignores scalar sample fields that are not numbers", async () => {
+      const samples: SaveActivityInput["samples"] = JSON.parse(`[
+        {
+          "recordedAt": "2024-06-15T08:00:00Z",
+          "lat": 32,
+          "lng": 34,
+          "gpsAccuracy": null,
+          "altitude": "100",
+          "speed": "fast"
+        }
+      ]`);
+
+      const { repository, publisher } = makeRepository([
+        [], // ensureProvider
+        [{ id: "activity-non-number-scalars" }], // INSERT RETURNING
+      ]);
+
+      await repository.saveActivity(makeInput({ samples }));
+      const publishedRows = publisher.publishRows.mock.calls[0]?.[0] ?? [];
+      expect(publishedRows).toHaveLength(1);
+      expect(publishedRows).toEqual([expect.objectContaining({ channel: "location" })]);
+    });
+
+    it("publishes GPS samples through Redpanda without inserting metric stream rows into Postgres", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: "activity-456" }]);
+      const publisher = makePublisher();
+      const repository = new ActivityRecordingRepository(
+        { execute },
+        "00000000-0000-0000-0000-000000000001",
+        publisher,
+      );
+
+      await repository.saveActivity(
+        makeInput({
+          samples: [
+            {
+              recordedAt: "2024-06-15T08:00:00Z",
+              lat: 32,
+              lng: 34,
+              gpsAccuracy: 5,
+              altitude: 100,
+              speed: 3.5,
+            },
+          ],
+        }),
+      );
+
+      expect(execute).toHaveBeenCalledTimes(2);
+      expect(JSON.stringify(execute.mock.calls)).not.toContain("fitness.metric_stream");
+      expect(publisher.publishRows).toHaveBeenCalledWith([
+        expect.objectContaining({
+          channel: "location",
+          point: "SRID=4326;POINT(34 32)",
+        }),
+        expect.objectContaining({ channel: "altitude", scalar: 100 }),
+        expect.objectContaining({ channel: "speed", scalar: 3.5 }),
+      ]);
     });
   });
 });

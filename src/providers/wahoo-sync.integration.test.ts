@@ -3,11 +3,12 @@ import { resolve } from "node:path";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, metricStream } from "../db/schema.ts";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { activity } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
+import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 import type { WahooWorkout } from "./wahoo/client.ts";
 import { WahooProvider } from "./wahoo/provider.ts";
 
@@ -79,6 +80,7 @@ function wahooHandlers(workouts: WahooWorkout[], opts?: { fitFileError?: boolean
 }
 
 const server = setupServer();
+const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 describe("WahooProvider.sync() (integration)", () => {
   let ctx: TestContext;
@@ -90,6 +92,10 @@ describe("WahooProvider.sync() (integration)", () => {
     server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "wahoo", "Wahoo", "https://api.wahooligan.com");
   }, 60_000);
+
+  beforeEach(() => {
+    metricStreamCapture.publishedMetricStreamRows.length = 0;
+  });
 
   afterEach(() => {
     server.resetHandlers();
@@ -118,7 +124,10 @@ describe("WahooProvider.sync() (integration)", () => {
 
     const provider = new WahooProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(ctx.db, since, {
+      metricStreamPublisher: metricStreamCapture.publisher,
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
 
     expect(result.provider).toBe("wahoo");
     expect(result.recordsSynced).toBe(2);
@@ -151,10 +160,16 @@ describe("WahooProvider.sync() (integration)", () => {
     server.use(...wahooHandlers(workouts));
 
     const provider = new WahooProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
 
     // Sync again — should upsert, not duplicate
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "wahoo"));
 
@@ -174,7 +189,10 @@ describe("WahooProvider.sync() (integration)", () => {
     server.use(...wahooHandlers([]));
 
     const provider = new WahooProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
 
     // Verify token was refreshed in DB
     const { loadTokens } = await import("../db/tokens.ts");
@@ -182,7 +200,7 @@ describe("WahooProvider.sync() (integration)", () => {
     expect(tokens?.accessToken).toBe("refreshed-token");
   });
 
-  it("downloads FIT files and inserts metric_stream records", async () => {
+  it("downloads FIT files and publishes Redpanda metric stream events", async () => {
     await saveTokens(ctx.db, "wahoo", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",
@@ -195,12 +213,15 @@ describe("WahooProvider.sync() (integration)", () => {
     server.use(...wahooHandlers(workouts));
 
     const provider = new WahooProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
 
-    // Verify metric_stream rows linked to the cardio_activity
+    // Verify metric stream events linked to the cardio_activity
     const activities = await ctx.db.select().from(activity).where(eq(activity.externalId, "2001"));
 
     expect(activities).toHaveLength(1);
@@ -208,12 +229,11 @@ describe("WahooProvider.sync() (integration)", () => {
     if (!firstActivity) throw new Error("expected activity");
     const activityId = firstActivity.id;
 
-    const metrics = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.activityId, activityId));
+    const metrics = metricStreamCapture.publishedMetricStreamRows.filter(
+      (row) => row.activityId === activityId,
+    );
 
-    // test.fit has 3229 source samples; metric_stream count should be at least that many rows.
+    // test.fit has 3229 source samples; metric stream count should be at least that many events.
     expect(metrics.length).toBeGreaterThanOrEqual(3229);
     // Verify records have actual speed channel data from test.fit.
     const speedSamples = metrics.filter((sample) => sample.channel === "speed");
@@ -235,7 +255,10 @@ describe("WahooProvider.sync() (integration)", () => {
     server.use(...wahooHandlers(workouts, { fitFileError: true }));
 
     const provider = new WahooProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-04-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-04-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
 
     // Activity should still be inserted
     expect(result.recordsSynced).toBe(1);
@@ -257,7 +280,10 @@ describe("WahooProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "wahoo"));
 
     const provider = new WahooProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens found");

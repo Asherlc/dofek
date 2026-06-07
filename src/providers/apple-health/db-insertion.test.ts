@@ -21,6 +21,32 @@ import { type HealthRecord, parseRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
 import type { HealthWorkout } from "./workouts.ts";
 
+const { metricStreamCapture } = vi.hoisted<{
+  metricStreamCapture: { current: { values: Record<string, unknown>[][] } | null };
+}>(() => ({
+  metricStreamCapture: {
+    current: null,
+  },
+}));
+
+vi.mock("../../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: async () => ({
+    publishRows: async (rows: readonly Record<string, unknown>[]) => {
+      metricStreamCapture.current?.values.push([...rows]);
+      return rows.map((row, index) => ({
+        version: 1,
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+      }));
+    },
+  }),
+}));
+
+vi.mock("../../db/token-user-context.ts", () => ({
+  getTokenUserId: () => "user-1",
+  runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
+}));
+
 // ---------------------------------------------------------------------------
 // Mock DB helper
 // ---------------------------------------------------------------------------
@@ -34,6 +60,7 @@ function createMockDb(returningData: Record<string, unknown>[] = []): {
   capture: MockInsertCapture;
 } {
   const capture: MockInsertCapture = { values: [] };
+  metricStreamCapture.current = capture;
 
   function makeChainable(): Promise<undefined> {
     return Object.assign(Promise.resolve(undefined), {

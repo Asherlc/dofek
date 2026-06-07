@@ -402,6 +402,7 @@ export class GarminProvider implements SyncProvider {
       scopedUserId,
       checkpoint,
       options?.checkpoint,
+      options?.metricStreamPublisher,
     );
 
     // Save sync cursor
@@ -424,6 +425,7 @@ export class GarminProvider implements SyncProvider {
     userId?: string,
     checkpoint: GarminSyncCheckpoint = { phase: "activities" },
     checkpointStore?: SyncCheckpointStore,
+    metricStreamPublisher?: SyncOptions["metricStreamPublisher"],
   ): Promise<number> {
     const scopedUserId = resolveScopedUserId(userId);
     let client: GarminConnectClient;
@@ -456,7 +458,12 @@ export class GarminProvider implements SyncProvider {
           this.id,
           "activities",
           async () => {
-            const activitiesCount = await this.#syncConnectActivities(db, client, scopedUserId);
+            const activitiesCount = await this.#syncConnectActivities(
+              db,
+              client,
+              scopedUserId,
+              metricStreamPublisher,
+            );
             return { recordCount: activitiesCount, result: activitiesCount };
           },
           scopedUserId,
@@ -546,6 +553,7 @@ export class GarminProvider implements SyncProvider {
               client,
               datesForPhase(dates, checkpoint, "stress"),
               checkpointStore,
+              metricStreamPublisher,
             );
             return { recordCount: stressCount, result: stressCount };
           },
@@ -575,6 +583,7 @@ export class GarminProvider implements SyncProvider {
               client,
               datesForPhase(dates, checkpoint, "heart_rate"),
               checkpointStore,
+              metricStreamPublisher,
             );
             return { recordCount: heartRateCount, result: heartRateCount };
           },
@@ -602,6 +611,7 @@ export class GarminProvider implements SyncProvider {
     db: SyncDatabase,
     client: GarminConnectClient,
     userId: string,
+    metricStreamPublisher?: SyncOptions["metricStreamPublisher"],
   ): Promise<number> {
     // Fetch recent activities (paginated, most recent first)
     const activities = await client.getActivities(0, 50);
@@ -684,7 +694,13 @@ export class GarminProvider implements SyncProvider {
             temperature:
               sample.directAirTemperature !== null ? sample.directAirTemperature : undefined,
           };
-          await writeMetricStreamBatch(db, [metricRow], SOURCE_TYPE_API);
+          await writeMetricStreamBatch(
+            db,
+            [metricRow],
+            SOURCE_TYPE_API,
+            undefined,
+            metricStreamPublisher,
+          );
         }
       } catch (error) {
         // Activity detail is non-critical — don't fail the sync, but track errors
@@ -845,6 +861,7 @@ export class GarminProvider implements SyncProvider {
     client: GarminConnectClient,
     dates: string[],
     checkpointStore?: SyncCheckpointStore,
+    metricStreamPublisher?: SyncOptions["metricStreamPublisher"],
   ): Promise<number> {
     let count = 0;
     const tracker = new SyncErrorTracker("stress");
@@ -859,7 +876,13 @@ export class GarminProvider implements SyncProvider {
           providerId: this.id,
           stress: sample.stressLevel,
         }));
-        await writeMetricStreamBatch(db, stressRows, SOURCE_TYPE_API);
+        await writeMetricStreamBatch(
+          db,
+          stressRows,
+          SOURCE_TYPE_API,
+          undefined,
+          metricStreamPublisher,
+        );
 
         count += stressRows.length;
       } catch (error) {
@@ -877,6 +900,7 @@ export class GarminProvider implements SyncProvider {
     client: GarminConnectClient,
     dates: string[],
     checkpointStore?: SyncCheckpointStore,
+    metricStreamPublisher?: SyncOptions["metricStreamPublisher"],
   ): Promise<number> {
     let count = 0;
     const tracker = new SyncErrorTracker("heart_rate");
@@ -891,7 +915,7 @@ export class GarminProvider implements SyncProvider {
           providerId: this.id,
           heartRate: sample.heartRate,
         }));
-        await writeMetricStreamBatch(db, hrRows, SOURCE_TYPE_API);
+        await writeMetricStreamBatch(db, hrRows, SOURCE_TYPE_API, undefined, metricStreamPublisher);
 
         count += hrRows.length;
       } catch (error) {

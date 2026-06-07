@@ -516,7 +516,13 @@ export class RideWithGpsProvider implements SyncProvider {
           power: point.power,
         }));
         // metricRows still use the legacy shape; convert and insert into metric_stream.
-        await writeMetricStreamBatch(db, metricRows, SOURCE_TYPE_API);
+        await writeMetricStreamBatch(
+          db,
+          metricRows,
+          SOURCE_TYPE_API,
+          undefined,
+          options?.metricStreamPublisher,
+        );
 
         recordsSynced++;
       } catch (err) {

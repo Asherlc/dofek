@@ -1,11 +1,24 @@
-import { describe, expect, it, vi } from "vitest";
-import type { MetricStreamInsert } from "./metric-stream-writer.ts";
-import {
-  metricStreamConflictTarget,
-  sourceRowToMetricStream,
-  writeMetricStream,
-} from "./metric-stream-writer.ts";
-import { metricStream } from "./schema.ts";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { sourceRowToMetricStream, writeMetricStreamBatch } from "./metric-stream-writer.ts";
+import { runWithTokenUser } from "./token-user-context.ts";
+
+const mockPublishRows = vi.fn(async (rows: readonly { recordedAt: Date | string }[]) =>
+  rows.map((row, index) => ({
+    version: 1,
+    id: `10000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+    recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+  })),
+);
+
+vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: vi.fn(async () => ({
+    publishRows: mockPublishRows,
+  })),
+}));
+
+beforeEach(() => {
+  mockPublishRows.mockClear();
+});
 
 // ── sourceRowToMetricStream ────────────────────────────────
 
@@ -210,111 +223,258 @@ describe("sourceRowToMetricStream", () => {
   });
 });
 
-// ── writeMetricStream ──────────────────────────────────────
+// ── writeMetricStreamBatch ─────────────────────────────────
 
-describe("writeMetricStream", () => {
-  it("returns 0 for empty input", async () => {
-    const insertBatch = vi.fn();
-    const count = await writeMetricStream(insertBatch, []);
-    expect(count).toBe(0);
-    expect(insertBatch).not.toHaveBeenCalled();
+describe("writeMetricStreamBatch", () => {
+  it("publishes fanned-out provider rows to Redpanda without inserting into Postgres", async () => {
+    const db = { insert: vi.fn() };
+
+    const count = await runWithTokenUser("00000000-0000-0000-0000-000000000001", () =>
+      writeMetricStreamBatch(
+        db,
+        [
+          {
+            recordedAt: new Date("2026-03-30T12:00:00Z"),
+            providerId: "withings",
+            externalId: "withings-measure-1",
+            weightKg: 72.5,
+            bodyFatPct: 18.4,
+          },
+        ],
+        "api",
+      ),
+    );
+
+    expect(count).toBe(2);
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(mockPublishRows).toHaveBeenCalledWith([
+      expect.objectContaining({
+        userId: "00000000-0000-0000-0000-000000000001",
+        providerId: "withings",
+        externalId: "withings-measure-1",
+        channel: "body_weight",
+        scalar: 72.5,
+      }),
+      expect.objectContaining({
+        userId: "00000000-0000-0000-0000-000000000001",
+        providerId: "withings",
+        externalId: "withings-measure-1",
+        channel: "body_fat_percentage",
+        scalar: 18.4,
+      }),
+    ]);
   });
 
-  it("inserts rows in batches", async () => {
-    const insertedBatches: MetricStreamInsert[][] = [];
-    const insertBatch = vi.fn(async (batch: MetricStreamInsert[]) => {
-      insertedBatches.push(batch);
-    });
-
-    const rows: MetricStreamInsert[] = Array.from({ length: 7 }, (_, index) => ({
-      recordedAt: new Date(),
+  it("publishes rows in batches", async () => {
+    const db = { insert: vi.fn() };
+    const rows = Array.from({ length: 7 }, (_, index) => ({
+      recordedAt: new Date(`2026-03-30T12:00:0${index}Z`),
+      userId: "00000000-0000-0000-0000-000000000001",
       providerId: "test",
       externalId: `sample-${index}`,
-      sourceType: "api",
-      channel: "heart_rate",
-      scalar: index,
+      heartRate: index,
     }));
 
-    const count = await writeMetricStream(insertBatch, rows, 3);
+    const count = await writeMetricStreamBatch(db, rows, "api", 3);
 
     expect(count).toBe(7);
-    expect(insertedBatches).toHaveLength(3); // 3 + 3 + 1
-    expect(insertedBatches[0]).toHaveLength(3);
-    expect(insertedBatches[1]).toHaveLength(3);
-    expect(insertedBatches[2]).toHaveLength(1);
+    expect(mockPublishRows).toHaveBeenCalledTimes(3);
+    expect(mockPublishRows.mock.calls[0]?.[0]).toHaveLength(3);
+    expect(mockPublishRows.mock.calls[1]?.[0]).toHaveLength(3);
+    expect(mockPublishRows.mock.calls[2]?.[0]).toHaveLength(1);
+    expect(db.insert).not.toHaveBeenCalled();
   });
 
-  it("uses a conservative default batch size", async () => {
-    const insertedBatches: MetricStreamInsert[][] = [];
-    const insertBatch = vi.fn(async (batch: MetricStreamInsert[]) => {
-      insertedBatches.push(batch);
-    });
-
-    const rows: MetricStreamInsert[] = Array.from({ length: 1001 }, (_, index) => ({
-      recordedAt: new Date(),
+  it("does not publish an empty trailing batch when row count matches the batch size", async () => {
+    const db = { insert: vi.fn() };
+    const rows = Array.from({ length: 6 }, (_, index) => ({
+      recordedAt: new Date(`2026-03-30T12:00:0${index}Z`),
+      userId: "00000000-0000-0000-0000-000000000001",
       providerId: "test",
       externalId: `sample-${index}`,
-      sourceType: "api",
-      channel: "heart_rate",
-      scalar: index,
+      heartRate: index,
     }));
 
-    const count = await writeMetricStream(insertBatch, rows);
+    const count = await writeMetricStreamBatch(db, rows, "api", 3);
 
-    expect(count).toBe(1001);
-    expect(insertedBatches).toHaveLength(2);
-    expect(insertedBatches[0]).toHaveLength(1000);
-    expect(insertedBatches[1]).toHaveLength(1);
+    expect(count).toBe(6);
+    expect(mockPublishRows).toHaveBeenCalledTimes(2);
+    expect(mockPublishRows.mock.calls[0]?.[0]).toHaveLength(3);
+    expect(mockPublishRows.mock.calls[1]?.[0]).toHaveLength(3);
+    expect(mockPublishRows.mock.calls.some((call) => call[0].length === 0)).toBe(false);
   });
 
-  it("rejects rows without external IDs", async () => {
-    const insertBatch = vi.fn();
-    const rows: MetricStreamInsert[] = [
-      {
-        recordedAt: new Date("2026-03-30T12:00:00Z"),
-        providerId: "test",
-        sourceType: "api",
-        channel: "heart_rate",
-        scalar: 72,
-      },
-    ];
+  it("publishes nested JSON metadata for location rows", async () => {
+    const db = { insert: vi.fn() };
 
-    await expect(writeMetricStream(insertBatch, rows)).rejects.toThrow(
-      "metric_stream ingestion rows require externalId for idempotency",
+    const count = await writeMetricStreamBatch(
+      db,
+      [
+        {
+          recordedAt: new Date("2026-03-30T12:00:00Z"),
+          userId: "00000000-0000-0000-0000-000000000001",
+          providerId: "gps",
+          externalId: "gps-sample-1",
+          lat: 40.7128,
+          lng: -74.006,
+          raw: {
+            label: "good",
+            values: [1, true, null, { nested: "ok" }],
+          },
+        },
+      ],
+      "api",
     );
-    expect(insertBatch).not.toHaveBeenCalled();
-  });
 
-  it("rejects rows with whitespace-only external IDs", async () => {
-    const insertBatch = vi.fn();
-    const rows: MetricStreamInsert[] = [
-      {
-        recordedAt: new Date("2026-03-30T12:00:00Z"),
-        providerId: "test",
-        externalId: "   ",
-        sourceType: "api",
-        channel: "heart_rate",
-        scalar: 72,
-      },
-    ];
-
-    await expect(writeMetricStream(insertBatch, rows)).rejects.toThrow(
-      "metric_stream ingestion rows require externalId for idempotency",
-    );
-    expect(insertBatch).not.toHaveBeenCalled();
-  });
-});
-
-// ── metricStreamConflictTarget ─────────────────────────────
-
-describe("metricStreamConflictTarget", () => {
-  it("uses the provider sample identity as the duplicate key", () => {
-    expect(metricStreamConflictTarget(metricStream)).toEqual([
-      metricStream.userId,
-      metricStream.providerId,
-      metricStream.externalId,
-      metricStream.channel,
-      metricStream.recordedAt,
+    expect(count).toBe(1);
+    expect(mockPublishRows.mock.calls[0]?.[0]).toEqual([
+      expect.objectContaining({
+        channel: "location",
+        metadata: {
+          raw: {
+            label: "good",
+            values: [1, true, null, { nested: "ok" }],
+          },
+        },
+      }),
     ]);
+  });
+
+  it("rejects non-JSON values nested in metadata arrays", async () => {
+    const db = { insert: vi.fn() };
+
+    await expect(
+      writeMetricStreamBatch(
+        db,
+        [
+          {
+            recordedAt: new Date("2026-03-30T12:00:00Z"),
+            userId: "00000000-0000-0000-0000-000000000001",
+            providerId: "gps",
+            externalId: "gps-sample-2",
+            lat: 40.7128,
+            lng: -74.006,
+            raw: [1, Symbol("not-json")],
+          },
+        ],
+        "api",
+      ),
+    ).rejects.toThrow("metric_stream ingestion metadata must be JSON serializable");
+    expect(mockPublishRows).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-JSON values nested in metadata objects", async () => {
+    const db = { insert: vi.fn() };
+
+    await expect(
+      writeMetricStreamBatch(
+        db,
+        [
+          {
+            recordedAt: new Date("2026-03-30T12:00:00Z"),
+            userId: "00000000-0000-0000-0000-000000000001",
+            providerId: "gps",
+            externalId: "gps-sample-3",
+            lat: 40.7128,
+            lng: -74.006,
+            raw: { ok: "yes", bad: Symbol("not-json") },
+          },
+        ],
+        "api",
+      ),
+    ).rejects.toThrow("metric_stream ingestion metadata must be JSON serializable");
+    expect(mockPublishRows).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-plain metadata objects", async () => {
+    const db = { insert: vi.fn() };
+
+    await expect(
+      writeMetricStreamBatch(
+        db,
+        [
+          {
+            recordedAt: new Date("2026-03-30T12:00:00Z"),
+            userId: "00000000-0000-0000-0000-000000000001",
+            providerId: "gps",
+            externalId: "gps-sample-4",
+            lat: 40.7128,
+            lng: -74.006,
+            raw: new Date("2026-03-30T12:00:00Z"),
+          },
+        ],
+        "api",
+      ),
+    ).rejects.toThrow("metric_stream ingestion metadata must be JSON serializable");
+
+    await expect(
+      writeMetricStreamBatch(
+        db,
+        [
+          {
+            recordedAt: new Date("2026-03-30T12:00:00Z"),
+            userId: "00000000-0000-0000-0000-000000000001",
+            providerId: "gps",
+            externalId: "gps-sample-5",
+            lat: 40.7128,
+            lng: -74.006,
+            raw: new Map([["label", "not-json"]]),
+          },
+        ],
+        "api",
+      ),
+    ).rejects.toThrow("metric_stream ingestion metadata must be JSON serializable");
+    expect(mockPublishRows).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-positive batch sizes", async () => {
+    const db = { insert: vi.fn() };
+    const rows = [
+      {
+        recordedAt: new Date("2026-03-30T12:00:00Z"),
+        userId: "00000000-0000-0000-0000-000000000001",
+        providerId: "test",
+        externalId: "sample-1",
+        heartRate: 72,
+      },
+    ];
+
+    await expect(writeMetricStreamBatch(db, rows, "api", 0)).rejects.toThrow(
+      "metric_stream ingestion batchSize must be a positive integer",
+    );
+    await expect(writeMetricStreamBatch(db, rows, "api", -1)).rejects.toThrow(
+      "metric_stream ingestion batchSize must be a positive integer",
+    );
+    expect(mockPublishRows).not.toHaveBeenCalled();
+  });
+
+  it("fails fast when neither the row nor token context provides a user ID", async () => {
+    const db = { insert: vi.fn() };
+    const previousTestTokenUserId = process.env.TEST_TOKEN_USER_ID;
+    delete process.env.TEST_TOKEN_USER_ID;
+
+    try {
+      await expect(
+        writeMetricStreamBatch(
+          db,
+          [
+            {
+              recordedAt: new Date("2026-03-30T12:00:00Z"),
+              providerId: "withings",
+              externalId: "withings-measure-2",
+              weightKg: 72.5,
+            },
+          ],
+          "api",
+        ),
+      ).rejects.toThrow("metric_stream ingestion rows require userId");
+    } finally {
+      if (previousTestTokenUserId === undefined) {
+        delete process.env.TEST_TOKEN_USER_ID;
+      } else {
+        process.env.TEST_TOKEN_USER_ID = previousTestTokenUserId;
+      }
+    }
+    expect(db.insert).not.toHaveBeenCalled();
   });
 });

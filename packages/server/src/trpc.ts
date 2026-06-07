@@ -5,6 +5,7 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import { middlewareMarker } from "@trpc/server/unstable-core-do-not-import";
 import type { Database } from "dofek/db";
 import { queryCache } from "dofek/lib/cache";
+import type { MetricStreamEventPublisher } from "../../../src/metric-stream/redpanda-producer.ts";
 import type { AccessWindow } from "./billing/entitlement.ts";
 import {
   cacheHitsTotal,
@@ -20,6 +21,7 @@ import type { ActivitySensorStore } from "./repositories/activity-repository.ts"
 export interface Context {
   db: Database;
   sensorStore?: ActivitySensorStore;
+  metricStreamPublisher?: MetricStreamEventPublisher;
   userId: string | null;
   /** IANA timezone from client (e.g. "America/Los_Angeles"). Falls back to "UTC". */
   timezone: string;

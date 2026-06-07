@@ -1,16 +1,12 @@
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import {
-  activity,
-  dailyMetrics,
-  metricStream,
-  oauthToken,
-  sleepSession,
-  userSettings,
-} from "../db/schema.ts";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { activity, dailyMetrics, oauthToken, sleepSession, userSettings } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { GarminProvider } from "./garmin.ts";
+import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
+
+const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 // ============================================================
 // Internal API token helpers
@@ -381,6 +377,10 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     await ensureProvider(ctx.db, "garmin", "Garmin Connect");
   }, 60_000);
 
+  beforeEach(() => {
+    metricStreamCapture.publishedMetricStreamRows.length = 0;
+  });
+
   afterAll(async () => {
     if (ctx) await ctx.cleanup();
   });
@@ -408,7 +408,9 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     );
 
     const since = new Date("2026-03-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(ctx.db, since, {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.provider).toBe("garmin");
 
@@ -428,11 +430,8 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     if (!ride) throw new Error("expected activity 50002");
     expect(ride.activityType).toBe("cycling");
 
-    // Verify metric_stream rows from activity detail
-    const metrics = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "garmin"));
+    // Verify metric stream events from activity detail
+    const metrics = metricStreamCapture.publishedMetricStreamRows;
     // 2 activities x 2 samples each = 4 heart-rate samples from activity detail
     const activityMetrics = metrics.filter((sample) => {
       return sample.activityId !== null && sample.channel === "heart_rate";
@@ -458,7 +457,7 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
 
     // Narrow range: just March 1
     const since = new Date("2026-03-01T00:00:00Z");
-    await provider.sync(ctx.db, since);
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
 
     const sleepRows = await ctx.db
       .select()
@@ -495,7 +494,7 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     );
 
     const since = new Date("2026-03-01T00:00:00Z");
-    await provider.sync(ctx.db, since);
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
 
     const dailyRows = await ctx.db
       .select()
@@ -531,7 +530,7 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     );
 
     const since = new Date("2026-03-01T00:00:00Z");
-    await provider.sync(ctx.db, since);
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
 
     const dailyRows = await ctx.db
       .select()
@@ -547,11 +546,10 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     expect(march1.hrv).toBeNull();
   });
 
-  it("syncs stress time-series into metric_stream", async () => {
+  it("syncs stress time-series into Redpanda metric stream events", async () => {
     await saveTokens(ctx.db, "garmin", makeInternalTokenSet());
 
-    // Clear metric streams and sync cursor so date range starts from `since`
-    await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "garmin"));
+    // Clear sync cursor so date range starts from `since`
     await ctx.db.delete(userSettings).where(eq(userSettings.key, "garmin_sync_cursor"));
 
     const provider = new GarminProvider(
@@ -564,21 +562,17 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     );
 
     const since = new Date("2026-03-01T00:00:00Z");
-    await provider.sync(ctx.db, since);
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
 
-    const stressMetrics = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "garmin"));
+    const stressMetrics = metricStreamCapture.publishedMetricStreamRows;
 
     // fakeStressData has 4 entries, but -1 is filtered → 3 valid stress samples
     const stressSamples = stressMetrics.filter((sample) => sample.channel === "stress");
     expect(stressSamples.length).toBeGreaterThanOrEqual(3);
   });
 
-  it("syncs heart rate time-series into metric_stream", async () => {
+  it("syncs heart rate time-series into Redpanda metric stream events", async () => {
     await saveTokens(ctx.db, "garmin", makeInternalTokenSet());
-    await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "garmin"));
     await ctx.db.delete(userSettings).where(eq(userSettings.key, "garmin_sync_cursor"));
 
     const provider = new GarminProvider(
@@ -591,12 +585,9 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     );
 
     const since = new Date("2026-03-01T00:00:00Z");
-    await provider.sync(ctx.db, since);
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
 
-    const hrMetrics = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "garmin"));
+    const hrMetrics = metricStreamCapture.publishedMetricStreamRows;
 
     // fakeHeartRateData has 4 entries, null filtered → 3 valid HR samples
     const hrSamples = hrMetrics.filter((sample) => sample.channel === "heart_rate");
@@ -618,7 +609,9 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
       }),
     );
 
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // Should not have auth errors — tokens refreshed via exchange
     const authErrors = result.errors.filter(
@@ -649,7 +642,9 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
       }),
     );
 
-    await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+    await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // Verify cursor was saved
     const cursorRows = await ctx.db
@@ -680,7 +675,9 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
       }),
     );
 
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // Should have a Connect API authentication error
     const authErrors = result.errors.filter((e) =>
@@ -693,7 +690,6 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     await saveTokens(ctx.db, "garmin", makeInternalTokenSet());
 
     // Clear existing activities
-    await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "garmin"));
     await ctx.db.delete(activity).where(eq(activity.providerId, "garmin"));
 
     const provider = new GarminProvider(
@@ -707,7 +703,7 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     );
 
     const since = new Date("2026-03-01T00:00:00Z");
-    await provider.sync(ctx.db, since);
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
 
     // Activity should still be inserted even if detail fails
     const activityRows = await ctx.db
@@ -716,11 +712,10 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
       .where(eq(activity.externalId, "60001"));
     expect(activityRows).toHaveLength(1);
 
-    // No metric_stream rows for this activity (detail failed)
-    const metrics = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.activityId, activityRows[0]?.id ?? ""));
+    // No metric stream events for this activity (detail failed)
+    const metrics = metricStreamCapture.publishedMetricStreamRows.filter(
+      (row) => row.activityId === activityRows[0]?.id,
+    );
     expect(metrics).toHaveLength(0);
   });
 
@@ -739,7 +734,7 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     );
 
     const since = new Date("2026-03-01T00:00:00Z");
-    await provider.sync(ctx.db, since);
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
 
     // No daily metrics should be inserted for privacy-protected days
     const dailyRows = await ctx.db
@@ -753,7 +748,9 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "garmin"));
 
     const provider = new GarminProvider(createConnectMockFetch());
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens found");

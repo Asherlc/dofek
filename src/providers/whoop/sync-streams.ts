@@ -39,7 +39,13 @@ export async function syncWhoopHeartRateStream(
             recordedAt: row.recordedAt,
             heartRate: row.heartRate,
           }));
-          await writeMetricStreamBatch(db, metricRows, SOURCE_TYPE_API);
+          await writeMetricStreamBatch(
+            db,
+            metricRows,
+            SOURCE_TYPE_API,
+            undefined,
+            options?.metricStreamPublisher,
+          );
 
           totalRecords += parsed.length;
           windowStart = windowEnd;

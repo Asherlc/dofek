@@ -1,16 +1,16 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
-import { z } from "zod";
 import { SOURCE_TYPE_API } from "../../../../src/db/sensor-channels.ts";
+import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
+import {
+  getDefaultMetricStreamEventPublisher,
+  type MetricStreamEventPublisher,
+} from "../../../../src/metric-stream/redpanda-producer.ts";
+import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
 import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
-import { executeWithSchema } from "../lib/typed-sql.ts";
 
 const PROVIDER_ID = "apple_motion";
 const INSERT_BATCH_SIZE = 5000;
-
-const insertedMetricStreamRowSchema = z.object({
-  id: z.string(),
-});
 
 export interface InertialMeasurementUnitSample {
   timestamp: string;
@@ -25,10 +25,20 @@ export interface InertialMeasurementUnitSample {
 export class InertialMeasurementUnitSyncRepository {
   readonly #database: Pick<Database, "execute">;
   readonly #userId: string;
+  readonly #metricStreamPublisher?: MetricStreamEventPublisher;
 
-  constructor(database: Pick<Database, "execute">, userId: string) {
+  constructor(
+    database: Pick<Database, "execute">,
+    userId: string,
+    metricStreamPublisher?: MetricStreamEventPublisher,
+  ) {
     this.#database = database;
     this.#userId = userId;
+    this.#metricStreamPublisher = metricStreamPublisher;
+  }
+
+  async #publisher(): Promise<MetricStreamEventPublisher> {
+    return this.#metricStreamPublisher ?? getDefaultMetricStreamEventPublisher();
   }
 
   async ensureProvider(): Promise<void> {
@@ -51,28 +61,37 @@ export class InertialMeasurementUnitSyncRepository {
     for (let offset = 0; offset < samples.length; offset += INSERT_BATCH_SIZE) {
       const batch = samples.slice(offset, offset + INSERT_BATCH_SIZE);
 
-      const sensorValuesClauses = batch.map((sample) => {
+      const rows: MetricStreamRowInput[] = batch.map((sample) => {
         const sampleHasGyro =
           sample.gyroscopeX != null || sample.gyroscopeY != null || sample.gyroscopeZ != null;
         const channel = sampleHasGyro ? "imu" : "accel";
         const recordedAt = canonicalizeTimestampForExternalId(sample.timestamp);
         const externalId = `${PROVIDER_ID}:${deviceId}:${channel}:${recordedAt}`;
         const vector = sampleHasGyro
-          ? sql`ARRAY[${sample.x}, ${sample.y}, ${sample.z}, ${sample.gyroscopeX ?? 0}, ${sample.gyroscopeY ?? 0}, ${sample.gyroscopeZ ?? 0}]::real[]`
-          : sql`ARRAY[${sample.x}, ${sample.y}, ${sample.z}]::real[]`;
-        return sql`(${sample.timestamp}::timestamptz, ${this.#userId}::uuid, ${PROVIDER_ID}, ${externalId}, ${deviceId}, ${SOURCE_TYPE_API}, ${channel}, ${vector})`;
+          ? [
+              sample.x,
+              sample.y,
+              sample.z,
+              sample.gyroscopeX ?? 0,
+              sample.gyroscopeY ?? 0,
+              sample.gyroscopeZ ?? 0,
+            ]
+          : [sample.x, sample.y, sample.z];
+        return {
+          recordedAt: sample.timestamp,
+          userId: this.#userId,
+          providerId: PROVIDER_ID,
+          externalId,
+          deviceId,
+          sourceType: SOURCE_TYPE_API,
+          channel,
+          vector,
+        };
       });
-      const insertedRows = await executeWithSchema(
-        this.#database,
-        insertedMetricStreamRowSchema,
-        sql`INSERT INTO fitness.metric_stream
-            (recorded_at, user_id, provider_id, external_id, device_id, source_type, channel, vector)
-            VALUES ${sql.join(sensorValuesClauses, sql`, `)}
-            ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO NOTHING
-            RETURNING id`,
-      );
 
-      totalInserted += insertedRows.length;
+      const publisher = await this.#publisher();
+      const result = await writeMetricStreamRows({ publisher, rows });
+      totalInserted += result.published;
     }
 
     return totalInserted;

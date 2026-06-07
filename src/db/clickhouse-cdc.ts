@@ -53,9 +53,8 @@ interface RuntimeConfig {
   templateValues: PeerDbSqlTemplateValues;
 }
 
-const analyticsPublicationName = "peerdb_metric_stream_publication";
+const analyticsPublicationName = "peerdb_raw_analytics_publication";
 const analyticsSourceTables = [
-  "metric_stream",
   "activity",
   "sleep_session",
   "sleep_stage",
@@ -77,7 +76,7 @@ const rawAnalyticsMirrorNames = [
   "dofek_provider_inventory_raw_analytics",
   "dofek_sensor_priority_raw_analytics",
 ] as const;
-const managedMirrorNames = ["dofek_metric_stream_analytics", ...rawAnalyticsMirrorNames] as const;
+const managedMirrorNames = rawAnalyticsMirrorNames;
 const existingManagedMirrorQueryResultSchema = z.object({
   rows: z.array(
     z.object({
@@ -118,8 +117,10 @@ const peerDbMetadataColumns = [
   "_peerdb_is_deleted Int8 DEFAULT 0",
   "_peerdb_version Int64 DEFAULT 0",
 ] as const;
-const metricStreamLegacyPayloadColumns = ["vector Array(Float32)", "metadata String"] as const;
-const legacyMetricStreamCdcMirrorName = "dofek_metric_stream_cdc";
+const obsoleteMetricStreamMirrorNames = [
+  "dofek_metric_stream_analytics",
+  "dofek_metric_stream_cdc",
+] as const;
 
 function readQueryRows(queryResult: unknown): Array<Record<string, unknown>> {
   if (typeof queryResult !== "object" || queryResult === null || !("rows" in queryResult)) {
@@ -171,6 +172,24 @@ function readErrorMessage(error: unknown): string | null {
 
 function readMirrorConfigTokens(mirrorConfig: string): Set<string> {
   return new Set(mirrorConfig.split(/[^A-Za-z0-9_]+/).filter((token) => token.length > 0));
+}
+
+function mirrorConfigMatchesRawAnalyticsTables(
+  mirrorConfigTokens: Set<string>,
+  tableNames: readonly string[],
+): boolean {
+  if (!mirrorConfigTokens.has(analyticsPublicationName)) {
+    return false;
+  }
+
+  const expectedTableNames = new Set(tableNames);
+  if (tableNames.some((tableName) => !mirrorConfigTokens.has(tableName))) {
+    return false;
+  }
+
+  return analyticsSourceTables.every(
+    (tableName) => expectedTableNames.has(tableName) || !mirrorConfigTokens.has(tableName),
+  );
 }
 
 function peerDbStringLiteral(value: string): string {
@@ -486,102 +505,6 @@ async function ensureAnalyticsPublication(client: SourcePostgresClient): Promise
   `);
 }
 
-async function ensureMetricStreamNoImuPublication(client: SourcePostgresClient): Promise<void> {
-  // Dedicated publication for the metric_stream analytics CDC mirror, with
-  // a row filter that drops IMU samples at the source. IMU is ~92% of
-  // metric_stream write volume and isn't consumed by analytics; filtering
-  // at the publication keeps PeerDB from decoding/staging/discarding events
-  // it doesn't want. TimescaleDB stores rows in physical chunks, so each
-  // chunk also needs to be attached to the publication.
-  await client.query(`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_publication WHERE pubname = 'peerdb_metric_stream_no_imu'
-      ) THEN
-        CREATE PUBLICATION peerdb_metric_stream_no_imu
-        FOR TABLE fitness.metric_stream WHERE (channel <> 'imu')
-        WITH (publish_via_partition_root = true);
-      END IF;
-    END
-    $$;
-
-    CREATE OR REPLACE FUNCTION fitness.ensure_metric_stream_peerdb_publication_chunks(
-      job_id integer DEFAULT NULL,
-      config jsonb DEFAULT NULL
-    )
-    RETURNS void
-    LANGUAGE plpgsql
-    AS $$
-    DECLARE
-      missing_chunk record;
-    BEGIN
-      FOR missing_chunk IN
-        SELECT chunks.chunk_schema, chunks.chunk_name
-        FROM timescaledb_information.chunks AS chunks
-        JOIN pg_class chunk_class
-          ON chunk_class.relname = chunks.chunk_name
-        JOIN pg_namespace chunk_namespace
-          ON chunk_namespace.oid = chunk_class.relnamespace
-         AND chunk_namespace.nspname = chunks.chunk_schema
-        CROSS JOIN pg_publication publication
-        LEFT JOIN pg_publication_rel publication_entry
-          ON publication_entry.prpubid = publication.oid
-         AND publication_entry.prrelid = chunk_class.oid
-        WHERE chunks.hypertable_schema = 'fitness'
-          AND chunks.hypertable_name = 'metric_stream'
-          AND publication.pubname = 'peerdb_metric_stream_no_imu'
-          AND publication_entry.prrelid IS NULL
-      LOOP
-        EXECUTE format(
-          'ALTER PUBLICATION peerdb_metric_stream_no_imu ADD TABLE %I.%I WHERE (channel <> %L)',
-          missing_chunk.chunk_schema,
-          missing_chunk.chunk_name,
-          'imu'
-        );
-      END LOOP;
-    END
-    $$;
-
-    SELECT fitness.ensure_metric_stream_peerdb_publication_chunks();
-
-    DO $$
-    DECLARE
-      existing_job_id integer;
-      existing_schedule_interval interval;
-      existing_scheduled boolean;
-    BEGIN
-      SELECT job_id, schedule_interval, scheduled
-      INTO existing_job_id, existing_schedule_interval, existing_scheduled
-      FROM timescaledb_information.jobs
-      WHERE proc_schema = 'fitness'
-        AND proc_name = 'ensure_metric_stream_peerdb_publication_chunks'
-      ORDER BY job_id
-      LIMIT 1;
-
-      IF existing_job_id IS NULL THEN
-        PERFORM public.add_job(
-          'fitness.ensure_metric_stream_peerdb_publication_chunks'::regproc,
-          INTERVAL '1 hour',
-          job_name => 'ensure_metric_stream_peerdb_publication_chunks'
-        );
-      ELSE
-        IF existing_schedule_interval IS DISTINCT FROM INTERVAL '1 hour'
-          OR existing_scheduled IS DISTINCT FROM true
-        THEN
-          PERFORM public.alter_job(
-            existing_job_id,
-            schedule_interval => INTERVAL '1 hour',
-            scheduled => true,
-            job_name => 'ensure_metric_stream_peerdb_publication_chunks'
-          );
-        END IF;
-      END IF;
-    END
-    $$;
-  `);
-}
-
 async function ensureAnalyticsPeerDbColumns(client: ClickHouseCommandClient): Promise<void> {
   for (const tableName of analyticsSourceTables) {
     for (const metadataColumn of peerDbMetadataColumns) {
@@ -590,49 +513,26 @@ async function ensureAnalyticsPeerDbColumns(client: ClickHouseCommandClient): Pr
       });
     }
   }
-  for (const legacyPayloadColumn of metricStreamLegacyPayloadColumns) {
-    await client.command({
-      query: `ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS ${legacyPayloadColumn}`,
-    });
-  }
 }
 
-async function reconcileMetricStreamAnalyticsMirror(peerDbClient: PeerDbClient): Promise<void> {
+async function dropObsoleteMetricStreamPeerDbMirrors(peerDbClient: PeerDbClient): Promise<void> {
+  const obsoleteMirrorRows = obsoleteMetricStreamMirrorNames
+    .map((mirrorName) => `(${peerDbStringLiteral(mirrorName)})`)
+    .join(", ");
   const result = await peerDbClient.query(`
-    SELECT position('point' in encode(config_proto, 'escape'))
-      AS metric_stream_analytics_point_exclude_position
+    SELECT flows.name AS obsolete_metric_stream_mirror_name
     FROM public.flows
-    WHERE name = 'dofek_metric_stream_analytics'
+    JOIN (VALUES ${obsoleteMirrorRows}) AS obsolete_mirrors(name)
+      ON obsolete_mirrors.name = flows.name
   `);
-  const [mirrorRow] = readQueryRows(result);
-  if (!mirrorRow) {
-    return;
-  }
 
-  const pointExcludePosition = readInteger(
-    mirrorRow.metric_stream_analytics_point_exclude_position,
-  );
-  if (pointExcludePosition === null) {
-    throw new Error("Unable to read PeerDB metric stream analytics mirror configuration");
+  for (const mirrorRow of readQueryRows(result)) {
+    const mirrorName = mirrorRow.obsolete_metric_stream_mirror_name;
+    if (typeof mirrorName !== "string") {
+      throw new Error("Unable to read obsolete metric stream PeerDB mirror name");
+    }
+    await peerDbClient.query(`DROP MIRROR ${mirrorName}`);
   }
-
-  if (pointExcludePosition === 0) {
-    await peerDbClient.query("DROP MIRROR dofek_metric_stream_analytics");
-  }
-}
-
-async function dropLegacyMetricStreamCdcMirror(peerDbClient: PeerDbClient): Promise<void> {
-  const result = await peerDbClient.query(`
-    SELECT 1 AS legacy_metric_stream_cdc_mirror_exists
-    FROM public.flows
-    WHERE name = ${peerDbStringLiteral(legacyMetricStreamCdcMirrorName)}
-  `);
-  const [mirrorRow] = readQueryRows(result);
-  if (!mirrorRow) {
-    return;
-  }
-
-  await peerDbClient.query(`DROP MIRROR ${legacyMetricStreamCdcMirrorName}`);
 }
 
 async function truncateClickHouseDestinationTables(
@@ -716,7 +616,7 @@ async function reconcileRawAnalyticsMirrors(
     }
 
     const mirrorConfigTokens = readMirrorConfigTokens(mirrorConfig);
-    if (tableNames.some((tableName) => !mirrorConfigTokens.has(tableName))) {
+    if (!mirrorConfigMatchesRawAnalyticsTables(mirrorConfigTokens, tableNames)) {
       await peerDbClient.query(`DROP MIRROR ${mirrorName}`);
       await truncateClickHouseDestinationTables(clickHouseClient, tableNames);
     }
@@ -728,9 +628,7 @@ async function reconcileRawAnalyticsMirrors(
 export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Promise<void> {
   await ensureAnalyticsPeerDbColumns(options.clickHouseClient);
   await ensureAnalyticsPublication(options.sourcePostgresClient);
-  await ensureMetricStreamNoImuPublication(options.sourcePostgresClient);
-  await reconcileMetricStreamAnalyticsMirror(options.peerDbClient);
-  await dropLegacyMetricStreamCdcMirror(options.peerDbClient);
+  await dropObsoleteMetricStreamPeerDbMirrors(options.peerDbClient);
   const rawAnalyticsInitialCopyValues = await reconcileRawAnalyticsMirrors(
     options.peerDbClient,
     options.clickHouseClient,

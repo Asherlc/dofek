@@ -295,6 +295,8 @@ export class WgerProvider implements SyncProvider {
                     },
                   ],
                   SOURCE_TYPE_API,
+                  undefined,
+                  options?.metricStreamPublisher,
                 );
                 count++;
               } catch (err) {
