@@ -120,7 +120,7 @@ export const healthKitSyncRouter = router({
         );
         if (metricStreamSamples.length > 0) {
           const hasSpo2 = metricStreamSamples.some(
-            (sample) => sample.type === "HKQuantityTypeIdentifierOxygenSaturation",
+            (s) => s.type === "HKQuantityTypeIdentifierOxygenSaturation",
           );
           if (hasSpo2) {
             await aggregateSpO2ToDailyMetrics(
@@ -131,7 +131,7 @@ export const healthKitSyncRouter = router({
             );
           }
           const skinTempSamples = metricStreamSamples.filter(
-            (sample) => sample.type === "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
+            (s) => s.type === "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
           );
           if (skinTempSamples.length > 0) {
             logger.info(

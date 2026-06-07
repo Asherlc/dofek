@@ -125,6 +125,24 @@ services:
       wait
       "
 
+  metric-stream-postgres-sink:
+    build:
+      context: .
+      target: server
+    profiles: ["metric-stream"]
+    restart: unless-stopped
+    command: ["metric-stream-postgres-sink"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://health:${POSTGRES_PASSWORD:-health}@db:5432/health
+      REDPANDA_BROKERS: redpanda:9092
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_TOPIC:-metric-stream-v1}
+    depends_on:
+      db:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+
   metric-stream-clickhouse-sink:
     build:
       context: .

@@ -40,6 +40,11 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
   are lost, inactive, or retaining dangerous WAL, and when active ClickHouse
   mirrors have stale `_peerdb_synced_at` values.
   - Usage: `pnpm check:clickhouse-cdc`
+- `backfill-metric-stream-to-redpanda.ts`: One-time bounded historical publisher
+  from `fitness.metric_stream` to Redpanda `metric-stream-v1`.
+  - Requires `DATABASE_URL`, `REDPANDA_BROKERS`, and `METRIC_STREAM_TOPIC`.
+  - Usage:
+    `./scripts/with-env.sh pnpm tsx scripts/backfill-metric-stream-to-redpanda.ts --start 2024-01-01T00:00:00Z --end 2024-02-01T00:00:00Z`
 
 ## Reverse Engineering (WHOOP)
 

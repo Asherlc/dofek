@@ -113,7 +113,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(1);
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(execute.mock.calls)).not.toContain("fitness.metric_stream");
       expect(metricStreamPublisher.publishRows).toHaveBeenCalledWith([
         expect.objectContaining({
           userId: "00000000-0000-0000-0000-000000000001",

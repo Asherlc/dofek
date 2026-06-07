@@ -67,7 +67,7 @@ vi.mock("../metric-stream/redpanda-producer.ts", () => ({
 }));
 
 vi.mock("../db/token-user-context.ts", () => ({
-  getTokenUserId: () => "user-1",
+  getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
 
@@ -1743,9 +1743,9 @@ describe("OuraProvider.sync()", () => {
     const second = hrRows.find((r) => r.channel === "heart_rate" && r.scalar === 85);
     expect(first?.scalar).toBe(72);
     expect(first?.providerId).toBe("oura");
-    expect(first?.recordedAt).toEqual(new Date("2026-03-01T10:00:00+00:00"));
+    expect(first?.recordedAt).toBe("2026-03-01T10:00:00.000Z");
     expect(second?.scalar).toBe(85);
-    expect(second?.recordedAt).toEqual(new Date("2026-03-01T10:05:00+00:00"));
+    expect(second?.recordedAt).toBe("2026-03-01T10:05:00.000Z");
   });
 
   it("chunks heart rate fetches into 30-day windows", async () => {

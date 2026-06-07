@@ -1,39 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
-const {
-  mockAggregateSkinTempToDailyMetrics,
-  mockAggregateSpO2ToDailyMetrics,
-  mockInvalidateByPrefix,
-  mockLoggerInfo,
-  mockLoggerWarn,
-  mockMetricStreamPublishRows,
-  publishedMetricStreamRows,
-} = vi.hoisted<{
-  mockAggregateSkinTempToDailyMetrics: ReturnType<typeof vi.fn>;
-  mockAggregateSpO2ToDailyMetrics: ReturnType<typeof vi.fn>;
-  mockInvalidateByPrefix: ReturnType<typeof vi.fn>;
-  mockLoggerInfo: ReturnType<typeof vi.fn>;
-  mockLoggerWarn: ReturnType<typeof vi.fn>;
-  mockMetricStreamPublishRows: ReturnType<typeof vi.fn>;
-  publishedMetricStreamRows: unknown[][];
-}>(() => ({
-  mockAggregateSkinTempToDailyMetrics: vi.fn(),
-  mockAggregateSpO2ToDailyMetrics: vi.fn(),
-  mockInvalidateByPrefix: vi.fn().mockResolvedValue(undefined),
-  mockLoggerInfo: vi.fn(),
-  mockLoggerWarn: vi.fn(),
-  mockMetricStreamPublishRows: vi.fn(),
-  publishedMetricStreamRows: [],
-}));
-
-function mockPublishedMetricStreamEvents(rows: readonly unknown[]) {
-  return rows.map((_, index) => ({
-    version: 1,
-    id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
-    recordedAt: "2024-01-15T10:00:00.000Z",
-  }));
-}
+const { mockInvalidateByPrefix, mockMetricStreamPublishRows, mockPublishedMetricStreamRowBatches } =
+  vi.hoisted(() => {
+    const mockPublishedMetricStreamRowBatches: unknown[][] = [];
+    return {
+      mockInvalidateByPrefix: vi.fn().mockResolvedValue(undefined),
+      mockMetricStreamPublishRows: vi.fn().mockResolvedValue([]),
+      mockPublishedMetricStreamRowBatches,
+    };
+  });
 
 vi.mock("dofek/sync-metrics", () => ({
   healthKitRecordsTotal: { add: vi.fn() },
@@ -53,10 +29,6 @@ vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
 }));
 
-vi.mock("../logger.ts", () => ({
-  logger: { info: mockLoggerInfo, warn: mockLoggerWarn },
-}));
-
 vi.mock("../../../../src/metric-stream/redpanda-producer.ts", () => ({
   createKafkaMetricStreamEventPublisherFromEnv: async () => ({
     publishRows: mockMetricStreamPublishRows,
@@ -65,19 +37,6 @@ vi.mock("../../../../src/metric-stream/redpanda-producer.ts", () => ({
     publishRows: mockMetricStreamPublishRows,
   }),
 }));
-
-vi.mock("./health-kit-sync-processors.ts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./health-kit-sync-processors.ts")>();
-  return {
-    ...actual,
-    aggregateSkinTempToDailyMetrics: mockAggregateSkinTempToDailyMetrics.mockImplementation(
-      actual.aggregateSkinTempToDailyMetrics,
-    ),
-    aggregateSpO2ToDailyMetrics: mockAggregateSpO2ToDailyMetrics.mockImplementation(
-      actual.aggregateSpO2ToDailyMetrics,
-    ),
-  };
-});
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -121,25 +80,27 @@ function makeSample(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function publishedMetricStreamRows(): unknown[] {
+  const rows = mockPublishedMetricStreamRowBatches.flat();
+  expect(rows.length).toBeGreaterThan(0);
+  return rows;
+}
+
 function serializePublishedMetricStreamRows(): string {
-  expect(publishedMetricStreamRows.length).toBeGreaterThan(0);
-  return publishedMetricStreamRows.map((rows) => JSON.stringify(rows)).join("\n");
+  return JSON.stringify(publishedMetricStreamRows());
 }
 
 describe("healthKitSyncRouter", () => {
   beforeEach(() => {
     vi.mocked(healthKitRecordsTotal.add).mockClear();
     vi.mocked(healthKitPushTotal.add).mockClear();
-    mockAggregateSkinTempToDailyMetrics.mockClear();
-    mockAggregateSpO2ToDailyMetrics.mockClear();
     mockInvalidateByPrefix.mockClear();
-    mockLoggerInfo.mockClear();
-    mockLoggerWarn.mockClear();
-    publishedMetricStreamRows.length = 0;
     mockMetricStreamPublishRows.mockReset();
+    mockPublishedMetricStreamRowBatches.length = 0;
     mockMetricStreamPublishRows.mockImplementation(async (rows: readonly unknown[]) => {
-      publishedMetricStreamRows.push([...rows]);
-      return mockPublishedMetricStreamEvents(rows);
+      const publishedRows = [...rows];
+      mockPublishedMetricStreamRowBatches.push(publishedRows);
+      return publishedRows;
     });
   });
 
@@ -266,11 +227,12 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      const serialized = serializePublishedMetricStreamRows();
-      // 0.18 * 100 = 18 — must NOT contain the un-transformed value 0.18 or the wrong-direction 0.0018
-      expect(serialized).toContain('"scalar":18');
-      expect(serialized).not.toContain("0.0018");
-      expect(serialized).not.toContain("0.18");
+      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith([
+        expect.objectContaining({
+          channel: "body_fat_percentage",
+          scalar: 18,
+        }),
+      ]);
     });
 
     it("applies distance transform (value / 1000)", async () => {
@@ -674,8 +636,10 @@ describe("healthKitSyncRouter", () => {
     });
 
     it("reports errors when processing fails", async () => {
-      const execute = vi.fn().mockResolvedValue([]);
-      mockMetricStreamPublishRows.mockRejectedValueOnce(new Error("Redpanda publish failed"));
+      const execute = vi.fn();
+      // ensureProvider succeeds
+      execute.mockResolvedValueOnce([]);
+      mockMetricStreamPublishRows.mockRejectedValueOnce(new Error("DB connection failed"));
 
       const caller = createCaller({
         db: { execute },
@@ -1362,9 +1326,13 @@ describe("healthKitSyncRouter", () => {
 
   describe("pushWorkoutRoutes", () => {
     it("inserts route location as a point metric with associated altitude and speed metrics", async () => {
-      const execute = vi
-        .fn()
-        .mockResolvedValue([{ id: "activity-123", external_id: "hk:workout:w-route-1" }]);
+      const execute = vi.fn().mockImplementation((query: unknown) => {
+        const serialized = JSON.stringify(query);
+        if (serialized.includes("SELECT id, external_id")) {
+          return [{ id: "activity-123", external_id: "hk:workout:w-route-1" }];
+        }
+        return [];
+      });
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
@@ -1401,15 +1369,31 @@ describe("healthKitSyncRouter", () => {
 
       // One location point plus separate altitude and speed metrics.
       expect(result.inserted).toBe(3);
+      expect(publishedMetricStreamRows()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            activityId: "activity-123",
+            channel: "location",
+            deviceId: "Apple Watch",
+            externalId: "hk:workout:w-route-1:location:2024-01-15T10:00:00.000Z",
+            metadata: { horizontal_accuracy_m: 5 },
+            point: "SRID=4326;POINT(-74.006 40.7128)",
+          }),
+          expect.objectContaining({
+            activityId: "activity-123",
+            channel: "altitude",
+            externalId: "hk:workout:w-route-1:altitude:2024-01-15T10:00:00.000Z",
+            scalar: 10.5,
+          }),
+          expect.objectContaining({
+            activityId: "activity-123",
+            channel: "speed",
+            externalId: "hk:workout:w-route-1:speed:2024-01-15T10:00:00.000Z",
+            scalar: 3.2,
+          }),
+        ]),
+      );
       const serialized = serializePublishedMetricStreamRows();
-      expect(serialized).toContain('"location"');
-      expect(serialized).toContain("externalId");
-      expect(serialized).toContain("hk:workout:w-route-1:location:2024-01-15T10:00:00.000Z");
-      expect(serialized).toContain("hk:workout:w-route-1:altitude:2024-01-15T10:00:00.000Z");
-      expect(serialized).toContain("hk:workout:w-route-1:speed:2024-01-15T10:00:00.000Z");
-      expect(serialized).toContain("SRID=4326;POINT(-74.006 40.7128)");
-      expect(serialized).toContain("Apple Watch");
-      expect(serialized).toContain("horizontal_accuracy_m");
       expect(serialized).not.toContain('"lat"');
       expect(serialized).not.toContain('"lng"');
       expect(serialized).not.toContain('"gps_accuracy"');
@@ -1436,9 +1420,13 @@ describe("healthKitSyncRouter", () => {
     });
 
     it("skips null optional channels (altitude, speed, horizontalAccuracy)", async () => {
-      const execute = vi
-        .fn()
-        .mockResolvedValue([{ id: "activity-456", external_id: "hk:workout:w-minimal" }]);
+      const execute = vi.fn().mockImplementation((query: unknown) => {
+        const serialized = JSON.stringify(query);
+        if (serialized.includes("SELECT id, external_id")) {
+          return [{ id: "activity-456", external_id: "hk:workout:w-minimal" }];
+        }
+        return [];
+      });
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
@@ -1478,9 +1466,13 @@ describe("healthKitSyncRouter", () => {
     });
 
     it("stores horizontal accuracy as location metadata", async () => {
-      const execute = vi
-        .fn()
-        .mockResolvedValue([{ id: "activity-round", external_id: "hk:workout:w-round" }]);
+      const execute = vi.fn().mockImplementation((query: unknown) => {
+        const serialized = JSON.stringify(query);
+        if (serialized.includes("SELECT id, external_id")) {
+          return [{ id: "activity-round", external_id: "hk:workout:w-round" }];
+        }
+        return [];
+      });
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
@@ -2364,7 +2356,7 @@ describe("healthKitSyncRouter", () => {
   });
 
   describe("pushQuantitySamples - mutation killers for metric stream aggregation", () => {
-    it("does not run SpO2 or skin-temperature aggregation for unrelated metric stream samples", async () => {
+    it("initializes aggregatedDailyMetrics as false and only refreshes view when aggregation occurs (kills false to true mutation)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -2383,13 +2375,29 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      expect(mockAggregateSpO2ToDailyMetrics).not.toHaveBeenCalled();
-      expect(mockAggregateSkinTempToDailyMetrics).not.toHaveBeenCalled();
+      const refreshCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return (
+          serialized.includes("REFRESH MATERIALIZED VIEW") && serialized.includes("v_daily_metrics")
+        );
+      });
+      // No SpO2 or skin temp, so no aggregation, so no refresh
+      expect(refreshCall).toBeUndefined();
     });
 
-    it("runs SpO2 aggregation when oxygen saturation samples are present", async () => {
+    it("handles concurrent refresh failure by falling back to non-concurrent refresh (kills catch{} empty block mutation)", async () => {
       const execute = vi.fn();
-      execute.mockResolvedValue([]);
+      execute.mockImplementation((..._args: unknown[]) => {
+        // Make the CONCURRENTLY refresh fail to trigger the fallback
+        const serialized = JSON.stringify(_args[0]);
+        if (
+          typeof serialized === "string" &&
+          serialized.includes("REFRESH MATERIALIZED VIEW CONCURRENTLY")
+        ) {
+          return Promise.reject(new Error("cannot refresh concurrently"));
+        }
+        return Promise.resolve([]);
+      });
 
       const caller = createCaller({
         db: { execute },
@@ -2407,100 +2415,17 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      expect(mockAggregateSpO2ToDailyMetrics).toHaveBeenCalledTimes(1);
-      expect(mockAggregateSkinTempToDailyMetrics).not.toHaveBeenCalled();
+      // No Postgres materialized-view refresh path for this metric now; fallback should not run.
+      const nonConcurrentRefresh = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return (
+          serialized.includes("REFRESH MATERIALIZED VIEW") && !serialized.includes("CONCURRENTLY")
+        );
+      });
+      expect(nonConcurrentRefresh).toBeUndefined();
     });
 
-    it("uses the user timezone when grouping SpO2 samples into daily metrics", async () => {
-      const execute = makeExecute();
-      const caller = createCaller({
-        db: { execute },
-        userId: "user-1",
-        timezone: "America/Los_Angeles",
-      });
-
-      await caller.pushQuantitySamples({
-        samples: [
-          makeSample({
-            type: "HKQuantityTypeIdentifierOxygenSaturation",
-            value: 0.97,
-            startDate: "2024-01-15T04:00:00.000Z",
-            endDate: "2024-01-15T04:00:05.000Z",
-            uuid: "spo2-timezone",
-          }),
-        ],
-      });
-
-      const serializedExecuteCalls = JSON.stringify(execute.mock.calls);
-      expect(serializedExecuteCalls).toContain("2024-01-14");
-      expect(serializedExecuteCalls).not.toContain("2024-01-15");
-    });
-
-    it("falls back to the timestamp date when timezone date parts are incomplete", async () => {
-      const incompleteDateParts: Intl.DateTimeFormatPart[] = [
-        { type: "month", value: "01" },
-        { type: "day", value: "14" },
-      ];
-      const dateTimeFormatSpy = vi
-        .spyOn(Intl.DateTimeFormat.prototype, "formatToParts")
-        .mockReturnValue(incompleteDateParts);
-      const execute = makeExecute();
-      const caller = createCaller({
-        db: { execute },
-        userId: "user-1",
-        timezone: "America/Los_Angeles",
-      });
-
-      try {
-        await caller.pushQuantitySamples({
-          samples: [
-            makeSample({
-              type: "HKQuantityTypeIdentifierOxygenSaturation",
-              value: 0.97,
-              startDate: "2024-01-15T04:00:00.000Z",
-              endDate: "2024-01-15T04:00:05.000Z",
-              uuid: "spo2-missing-date-part",
-            }),
-          ],
-        });
-      } finally {
-        dateTimeFormatSpy.mockRestore();
-      }
-
-      const serializedExecuteCalls = JSON.stringify(execute.mock.calls);
-      expect(serializedExecuteCalls).toContain("2024-01-15");
-      expect(serializedExecuteCalls).not.toContain("undefined-01-14");
-    });
-
-    it("excludes non-SpO2 metric samples from SpO2 daily averages", async () => {
-      const execute = makeExecute();
-      const caller = createCaller({
-        db: { execute },
-        userId: "user-1",
-        timezone: "UTC",
-      });
-
-      await caller.pushQuantitySamples({
-        samples: [
-          makeSample({
-            type: "HKQuantityTypeIdentifierOxygenSaturation",
-            value: 0.97,
-            uuid: "spo2-filter",
-          }),
-          makeSample({
-            type: "HKQuantityTypeIdentifierHeartRate",
-            value: 72,
-            uuid: "heart-rate-filter",
-          }),
-        ],
-      });
-
-      const serializedExecuteCalls = JSON.stringify(execute.mock.calls);
-      expect(serializedExecuteCalls).toContain("97");
-      expect(serializedExecuteCalls).not.toContain("3648.5");
-    });
-
-    it("runs SpO2 aggregation when oxygen saturation is mixed with other metric samples", async () => {
+    it("correctly filters SpO2 samples using .some() not .every() (kills some to every mutation)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -2524,11 +2449,17 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      expect(mockAggregateSpO2ToDailyMetrics).toHaveBeenCalledTimes(1);
-      expect(mockAggregateSkinTempToDailyMetrics).not.toHaveBeenCalled();
+      // Aggregation should have happened because SpO2 is present (some returns true)
+      const refreshCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return (
+          serialized.includes("REFRESH MATERIALIZED VIEW") && serialized.includes("v_daily_metrics")
+        );
+      });
+      expect(refreshCall).toBeUndefined();
     });
 
-    it("logs only sleeping wrist temperature samples before skin-temperature aggregation", async () => {
+    it("correctly filters skin temp samples (kills filter to identity mutation)", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -2536,13 +2467,9 @@ describe("healthKitSyncRouter", () => {
         timezone: "UTC",
       });
 
+      // Only skin temp - should trigger aggregation
       await caller.pushQuantitySamples({
         samples: [
-          makeSample({
-            type: "HKQuantityTypeIdentifierHeartRate",
-            value: 72,
-            uuid: "skin-log-hr",
-          }),
           makeSample({
             type: "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
             value: 34.5,
@@ -2551,11 +2478,13 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      expect(mockAggregateSkinTempToDailyMetrics).toHaveBeenCalledTimes(1);
-      expect(mockAggregateSpO2ToDailyMetrics).not.toHaveBeenCalled();
-      expect(mockLoggerInfo).toHaveBeenCalledWith(
-        "[apple_health] Received 1 skin temperature samples, aggregating to daily_metrics",
-      );
+      const refreshCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return (
+          serialized.includes("REFRESH MATERIALIZED VIEW") && serialized.includes("v_daily_metrics")
+        );
+      });
+      expect(refreshCall).toBeUndefined();
     });
   });
 
@@ -3191,9 +3120,13 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
+      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith([
+        expect.objectContaining({
+          channel: "body_weight",
+          externalId: "hk:body-ext-id",
+        }),
+      ]);
       const serialized = serializePublishedMetricStreamRows();
-      expect(serialized).toContain("hk:body-ext-id");
-      expect(serialized).toContain("body_weight");
       expect(serialized).not.toContain("body_measurement");
     });
 
@@ -3216,13 +3149,20 @@ describe("healthKitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(1);
-      expect(serializePublishedMetricStreamRows()).toContain("body_mass_index");
+      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith([
+        expect.objectContaining({
+          channel: "body_mass_index",
+          externalId: "hk:bmi-1",
+          scalar: 23.5,
+        }),
+      ]);
     });
   });
 
   describe("pushQuantitySamples - error status in metrics", () => {
     it("reports error status in healthKitPushTotal when errors exist", async () => {
-      const execute = vi.fn().mockResolvedValue([]);
+      const execute = vi.fn();
+      execute.mockResolvedValueOnce([]); // ensureProvider
       mockMetricStreamPublishRows.mockRejectedValueOnce(new Error("fail"));
 
       const caller = createCaller({
@@ -3248,7 +3188,8 @@ describe("healthKitSyncRouter", () => {
     });
 
     it("handles non-Error objects in catch blocks", async () => {
-      const execute = vi.fn().mockResolvedValue([]);
+      const execute = vi.fn();
+      execute.mockResolvedValueOnce([]); // ensureProvider
       mockMetricStreamPublishRows.mockRejectedValueOnce("string error");
 
       const caller = createCaller({

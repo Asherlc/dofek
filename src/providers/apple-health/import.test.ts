@@ -4,16 +4,62 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
+const { metricStreamReplacementCalls, replaceMetricStreamBatchCalls } = vi.hoisted<{
+  metricStreamReplacementCalls: Array<{ scope: unknown; rows: unknown[] }>;
+  replaceMetricStreamBatchCalls: Array<{
+    scope: unknown;
+    metricRows: unknown[];
+    sourceType: unknown;
+  }>;
+}>(() => ({
+  metricStreamReplacementCalls: [],
+  replaceMetricStreamBatchCalls: [],
+}));
+
 vi.mock("../../db/token-user-context.ts", () => ({
-  getTokenUserId: () => "user-1",
+  getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
 
 vi.mock("../../metric-stream/redpanda-producer.ts", () => ({
   getDefaultMetricStreamEventPublisher: async () => ({
     publishRows: async (rows: readonly unknown[]) => rows,
+    replaceRows: async (_scope: unknown, rows: readonly unknown[]) => {
+      metricStreamReplacementCalls.push({ scope: _scope, rows: [...rows] });
+      return {
+        deleted: {
+          version: 1,
+          eventType: "metric_stream_deleted",
+          scope: _scope,
+          partitionKey: "test-partition",
+        },
+        rows,
+      };
+    },
   }),
 }));
+
+vi.mock("../../db/metric-stream-writer.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../db/metric-stream-writer.ts")>();
+  return {
+    ...actual,
+    replaceMetricStreamBatch: async (
+      db: Parameters<typeof actual.replaceMetricStreamBatch>[0],
+      scope: Parameters<typeof actual.replaceMetricStreamBatch>[1],
+      metricRows: Parameters<typeof actual.replaceMetricStreamBatch>[2],
+      sourceType: Parameters<typeof actual.replaceMetricStreamBatch>[3],
+      publisher?: Parameters<typeof actual.replaceMetricStreamBatch>[4],
+    ) => {
+      replaceMetricStreamBatchCalls.push({ scope, metricRows: [...metricRows], sourceType });
+      return actual.replaceMetricStreamBatch(db, scope, metricRows, sourceType, publisher);
+    },
+  };
+});
+
+afterEach(() => {
+  metricStreamReplacementCalls.length = 0;
+  replaceMetricStreamBatchCalls.length = 0;
+});
 
 import type { SyncDatabase } from "../../db/index.ts";
 import { logger } from "../../logger.ts";
@@ -294,6 +340,23 @@ describe("importAppleHealthFile", () => {
     expect(result.provider).toBe("apple_health");
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
+    expect(metricStreamReplacementCalls).toContainEqual({
+      scope: {
+        userId: "00000000-0000-0000-0000-000000000001",
+        providerId: "apple_health",
+        recordedAtStart: new Date("2024-01-01"),
+      },
+      rows: [],
+    });
+    expect(replaceMetricStreamBatchCalls).toContainEqual({
+      scope: {
+        userId: "00000000-0000-0000-0000-000000000001",
+        providerId: "apple_health",
+        recordedAtStart: new Date("2024-01-01"),
+      },
+      metricRows: [],
+      sourceType: "file",
+    });
   });
 
   it("does not import clinical records when path is not a zip", async () => {
@@ -659,12 +722,14 @@ describe("runImport (control-flow mutation killers)", () => {
       db,
       "apple_health",
       [firstMetricRecord],
+      expect.objectContaining({ providerId: "apple_health" }),
       undefined,
     );
     expect(upsertMetricStreamBatch).toHaveBeenCalledWith(
       db,
       "apple_health",
       [secondMetricRecord],
+      expect.objectContaining({ providerId: "apple_health" }),
       undefined,
     );
     expect(upsertBodyMeasurementBatch).toHaveBeenCalledTimes(1);
@@ -672,6 +737,7 @@ describe("runImport (control-flow mutation killers)", () => {
       db,
       "apple_health",
       [bodyRecord],
+      expect.objectContaining({ providerId: "apple_health" }),
       undefined,
     );
     expect(aggregateSpO2ToDailyMetrics).toHaveBeenCalledTimes(1);

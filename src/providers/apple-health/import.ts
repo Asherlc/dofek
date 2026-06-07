@@ -5,6 +5,7 @@ import { and, eq, gte, sql } from "drizzle-orm";
 import sax from "sax";
 import yauzl from "yauzl";
 import type { SyncDatabase } from "../../db/index.ts";
+import { replaceMetricStreamBatch } from "../../db/metric-stream-writer.ts";
 import {
   allergyIntolerance,
   condition,
@@ -14,8 +15,8 @@ import {
   labPanel,
   labResult,
   medication,
-  metricStream,
 } from "../../db/schema.ts";
+import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { ensureProvider } from "../../db/tokens.ts";
 import { logger } from "../../logger.ts";
@@ -127,7 +128,7 @@ export async function runImport(
   xmlPath: string,
   since: Date,
   onProgress?: (info: ProgressInfo) => void,
-  publisher?: MetricStreamEventPublisher,
+  metricStreamPublisher?: MetricStreamEventPublisher,
 ): Promise<SyncResult> {
   const start = Date.now();
   const errors: SyncError[] = [];
@@ -142,15 +143,18 @@ export async function runImport(
     // create duplicates (metric_stream has no uniqueness constraint) and additive
     // daily metric upserts don't double-count across re-imports.
     const sinceDate = sql`${since.toISOString().slice(0, 10)}::date`;
-    await db
-      .delete(metricStream)
-      .where(
-        and(
-          eq(metricStream.userId, scopedUserId),
-          eq(metricStream.providerId, providerId),
-          gte(metricStream.recordedAt, since),
-        ),
-      );
+    const metricStreamReplacementScope = {
+      userId: scopedUserId,
+      providerId,
+      recordedAtStart: since,
+    };
+    await replaceMetricStreamBatch(
+      db,
+      metricStreamReplacementScope,
+      [],
+      SOURCE_TYPE_FILE,
+      metricStreamPublisher,
+    );
     await db
       .delete(dailyMetrics)
       .where(
@@ -191,10 +195,22 @@ export async function runImport(
         // Run all table inserts in parallel -- they target independent tables
         const results = await Promise.all([
           metricRecords.length > 0
-            ? upsertMetricStreamBatch(db, providerId, metricRecords, publisher)
+            ? upsertMetricStreamBatch(
+                db,
+                providerId,
+                metricRecords,
+                metricStreamReplacementScope,
+                metricStreamPublisher,
+              )
             : 0,
           bodyRecords.length > 0
-            ? upsertBodyMeasurementBatch(db, providerId, bodyRecords, publisher)
+            ? upsertBodyMeasurementBatch(
+                db,
+                providerId,
+                bodyRecords,
+                metricStreamReplacementScope,
+                metricStreamPublisher,
+              )
             : 0,
           dailyRecords.length > 0 ? upsertDailyMetricsBatch(db, providerId, dailyRecords) : 0,
           nutritionRecords.length > 0 ? upsertNutritionBatch(db, providerId, nutritionRecords) : 0,
@@ -208,7 +224,13 @@ export async function runImport(
         recordsSynced += sleepCount;
       },
       onWorkoutBatch: async (workouts) => {
-        const workoutCount = await upsertWorkoutBatch(db, providerId, workouts, publisher);
+        const workoutCount = await upsertWorkoutBatch(
+          db,
+          providerId,
+          workouts,
+          metricStreamReplacementScope,
+          metricStreamPublisher,
+        );
         recordsSynced += workoutCount;
       },
       onCategoryBatch: async (records) => {
@@ -260,7 +282,7 @@ export async function importAppleHealthFile(
   filePath: string,
   since: Date,
   onProgress?: (info: ProgressInfo) => void,
-  publisher?: MetricStreamEventPublisher,
+  metricStreamPublisher?: MetricStreamEventPublisher,
 ): Promise<SyncResult> {
   await ensureProvider(db, "apple_health", "Apple Health");
 
@@ -280,7 +302,14 @@ export async function importAppleHealthFile(
   const progressFn = onProgress ?? defaultConsoleProgress;
 
   logger.info(`[apple_health] Importing from ${xmlPath} (since ${since.toISOString()})`);
-  const result = await runImport(db, "apple_health", xmlPath, since, progressFn, publisher);
+  const result = await runImport(
+    db,
+    "apple_health",
+    xmlPath,
+    since,
+    progressFn,
+    metricStreamPublisher,
+  );
 
   // Import clinical records (lab results) from zip
   if (filePath.endsWith(".zip")) {

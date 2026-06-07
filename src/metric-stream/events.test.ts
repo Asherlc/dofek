@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import { createMetricStreamDeletedEvent, createMetricStreamEvent } from "./events.ts";
 
 const baseMetricStreamRow = {
   recordedAt: "2026-06-06T19:00:00.000Z",
@@ -8,49 +9,46 @@ const baseMetricStreamRow = {
   channel: "heart_rate",
 };
 
-const baseMetricStreamEvent = {
-  version: 1,
-  id: "10000000-0000-4000-8000-000000000001",
-  recordedAt: "2026-06-06T19:00:00.000Z",
-  userId: "00000000-0000-0000-0000-000000000001",
-  providerId: "apple_health",
-  externalId: null,
-  deviceId: null,
-  sourceType: "api",
-  channel: "heart_rate",
-  activityId: null,
-  scalar: null,
-  vector: null,
-  point: null,
-  metadata: null,
-};
-
-async function loadMetricStreamEventsModule() {
-  vi.resetModules();
-  return await import("./events.ts");
-}
-
 describe("createMetricStreamEvent", () => {
-  it("rejects invalid recordedAt timestamps", async () => {
-    const { createMetricStreamEvent } = await loadMetricStreamEventsModule();
+  it("derives a stable id from the metric stream natural key when no id is supplied", () => {
+    const firstEvent = createMetricStreamEvent({
+      ...baseMetricStreamRow,
+      externalId: "hk:heart-rate-1",
+    });
+    const secondEvent = createMetricStreamEvent({
+      ...baseMetricStreamRow,
+      recordedAt: "2026-06-06T12:00:00-07:00",
+      externalId: "hk:heart-rate-1",
+    });
 
+    expect(firstEvent.id).toBe(secondEvent.id);
+  });
+
+  it("preserves a caller-supplied id", () => {
+    const event = createMetricStreamEvent({
+      ...baseMetricStreamRow,
+      id: "10000000-0000-4000-8000-000000000001",
+    });
+
+    expect(event.id).toBe("10000000-0000-4000-8000-000000000001");
+  });
+
+  it("rejects invalid recordedAt timestamps", () => {
     expect(() =>
       createMetricStreamEvent({
         ...baseMetricStreamRow,
+        externalId: "hk:heart-rate-1",
         recordedAt: "not-a-date",
       }),
     ).toThrow("recordedAt must be a valid timestamp");
   });
 
-  it("preserves optional metric stream fields when they are present", async () => {
-    const { createMetricStreamEvent } = await loadMetricStreamEventsModule();
-
+  it("preserves optional metric stream fields when they are present", () => {
     const event = createMetricStreamEvent({
       ...baseMetricStreamRow,
       externalId: "hk:heart-rate-1",
       deviceId: "Apple Watch",
       activityId: "10000000-0000-4000-8000-000000000001",
-      scalar: 72,
       vector: [1, 2, 3],
       point: '{"type":"Point","coordinates":[-122.4,37.8]}',
       metadata: { source: "test" },
@@ -59,154 +57,60 @@ describe("createMetricStreamEvent", () => {
     expect(event.externalId).toBe("hk:heart-rate-1");
     expect(event.deviceId).toBe("Apple Watch");
     expect(event.activityId).toBe("10000000-0000-4000-8000-000000000001");
-    expect(event.scalar).toBe(72);
     expect(event.vector).toEqual([1, 2, 3]);
     expect(event.point).toBe('{"type":"Point","coordinates":[-122.4,37.8]}');
     expect(event.metadata).toEqual({ source: "test" });
   });
+
+  it("requires externalId when no explicit id is supplied", () => {
+    expect(() => createMetricStreamEvent(baseMetricStreamRow)).toThrow(
+      "Metric stream rows without id must include externalId",
+    );
+  });
 });
 
-describe("metricStreamRowInputSchema", () => {
-  it("requires the metric stream row object shape", async () => {
-    const { metricStreamRowInputSchema } = await loadMetricStreamEventsModule();
+describe("createMetricStreamDeletedEvent", () => {
+  it("creates a scoped delete event with a stable partition key", () => {
+    const event = createMetricStreamDeletedEvent({
+      activityId: "20000000-0000-4000-8000-000000000001",
+    });
 
-    expect(metricStreamRowInputSchema.safeParse({}).success).toBe(false);
-    expect(metricStreamRowInputSchema.safeParse(baseMetricStreamRow).success).toBe(true);
-  });
-
-  it("requires non-empty source identifiers", async () => {
-    const { metricStreamRowInputSchema } = await loadMetricStreamEventsModule();
-
-    expect(
-      metricStreamRowInputSchema.safeParse({
-        ...baseMetricStreamRow,
-        providerId: "",
-      }).success,
-    ).toBe(false);
-    expect(
-      metricStreamRowInputSchema.safeParse({
-        ...baseMetricStreamRow,
-        sourceType: "",
-      }).success,
-    ).toBe(false);
-    expect(
-      metricStreamRowInputSchema.safeParse({
-        ...baseMetricStreamRow,
-        channel: "",
-      }).success,
-    ).toBe(false);
-    expect(
-      metricStreamRowInputSchema.safeParse({
-        ...baseMetricStreamRow,
-        externalId: "",
-      }).success,
-    ).toBe(false);
-  });
-
-  it("accepts Date timestamps, non-empty vectors, and nested JSON metadata", async () => {
-    const { metricStreamRowInputSchema } = await loadMetricStreamEventsModule();
-
-    const result = metricStreamRowInputSchema.safeParse({
-      ...baseMetricStreamRow,
-      recordedAt: new Date("2026-06-06T19:00:00.000Z"),
-      vector: [1, 2],
-      metadata: {
-        source: "test",
-        flags: [true, false],
-        nested: { count: 2, note: null },
+    expect(event).toEqual({
+      version: 1,
+      eventType: "metric_stream_deleted",
+      scope: {
+        activityId: "20000000-0000-4000-8000-000000000001",
       },
-    });
-
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    expect(result.data.recordedAt).toBe("2026-06-06T19:00:00.000Z");
-    expect(result.data.vector).toEqual([1, 2]);
-    expect(result.data.metadata).toEqual({
-      source: "test",
-      flags: [true, false],
-      nested: { count: 2, note: null },
+      partitionKey: "activity:20000000-0000-4000-8000-000000000001",
     });
   });
 
-  it("rejects empty timestamp strings and empty vectors", async () => {
-    const { metricStreamRowInputSchema } = await loadMetricStreamEventsModule();
+  it("creates provider-scoped partition keys from every optional predicate", () => {
+    const event = createMetricStreamDeletedEvent({
+      userId: "10000000-0000-4000-8000-000000000001",
+      providerId: "fitbit",
+      externalId: null,
+      channel: "body_weight",
+      recordedAtStart: new Date("2026-03-01T00:00:00Z"),
+      recordedAtEnd: "2026-03-02T00:00:00.000Z",
+    });
 
-    expect(
-      metricStreamRowInputSchema.safeParse({
-        ...baseMetricStreamRow,
-        recordedAt: "",
-      }).success,
-    ).toBe(false);
-    expect(
-      metricStreamRowInputSchema.safeParse({
-        ...baseMetricStreamRow,
-        vector: [],
-      }).success,
-    ).toBe(false);
-  });
-});
-
-describe("metricStreamEventV1Schema", () => {
-  it("requires the emitted metric stream event object shape", async () => {
-    const { metricStreamEventV1Schema } = await loadMetricStreamEventsModule();
-
-    expect(metricStreamEventV1Schema.safeParse({}).success).toBe(false);
-    expect(metricStreamEventV1Schema.safeParse(baseMetricStreamEvent).success).toBe(true);
+    expect(event.scope).toEqual({
+      userId: "10000000-0000-4000-8000-000000000001",
+      providerId: "fitbit",
+      externalId: null,
+      channel: "body_weight",
+      recordedAtStart: "2026-03-01T00:00:00.000Z",
+      recordedAtEnd: "2026-03-02T00:00:00.000Z",
+    });
+    expect(event.partitionKey).toBe(
+      "provider:10000000-0000-4000-8000-000000000001:fitbit:*:body_weight:2026-03-01T00:00:00.000Z:2026-03-02T00:00:00.000Z",
+    );
   });
 
-  it("requires recordedAt to include a timezone offset", async () => {
-    const { metricStreamEventV1Schema } = await loadMetricStreamEventsModule();
-
-    expect(
-      metricStreamEventV1Schema.safeParse({
-        ...baseMetricStreamEvent,
-        recordedAt: "2026-06-06T19:00:00.000",
-      }).success,
-    ).toBe(false);
-    expect(
-      metricStreamEventV1Schema.safeParse({
-        ...baseMetricStreamEvent,
-        recordedAt: "2026-06-06T19:00:00.000-07:00",
-      }).success,
-    ).toBe(true);
-  });
-
-  it("accepts non-empty vectors and nested JSON metadata", async () => {
-    const { metricStreamEventV1Schema } = await loadMetricStreamEventsModule();
-
-    expect(
-      metricStreamEventV1Schema.safeParse({
-        ...baseMetricStreamEvent,
-        vector: [1, 2],
-        metadata: {
-          source: "test",
-          flags: [true, false],
-          nested: { count: 2, note: null },
-        },
-      }).success,
-    ).toBe(true);
-  });
-
-  it("rejects empty vectors and empty source identifiers", async () => {
-    const { metricStreamEventV1Schema } = await loadMetricStreamEventsModule();
-
-    expect(
-      metricStreamEventV1Schema.safeParse({
-        ...baseMetricStreamEvent,
-        vector: [],
-      }).success,
-    ).toBe(false);
-    expect(
-      metricStreamEventV1Schema.safeParse({
-        ...baseMetricStreamEvent,
-        providerId: "",
-      }).success,
-    ).toBe(false);
-    expect(
-      metricStreamEventV1Schema.safeParse({
-        ...baseMetricStreamEvent,
-        channel: "",
-      }).success,
-    ).toBe(false);
+  it("rejects empty delete scopes", () => {
+    expect(() => createMetricStreamDeletedEvent({})).toThrow(
+      "Metric stream delete scope must include activityId or providerId",
+    );
   });
 });

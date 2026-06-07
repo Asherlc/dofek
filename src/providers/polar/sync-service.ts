@@ -2,8 +2,8 @@ import { eq } from "drizzle-orm";
 import type { TokenSet } from "../../auth/oauth.ts";
 import { refreshAccessToken } from "../../auth/oauth.ts";
 import type { SyncDatabase } from "../../db/index.ts";
-import { writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";
-import { activity, dailyMetrics, metricStream, sleepSession, sleepStage } from "../../db/schema.ts";
+import { replaceMetricStreamBatch } from "../../db/metric-stream-writer.ts";
+import { activity, dailyMetrics, sleepSession, sleepStage } from "../../db/schema.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "../../db/tokens.ts";
@@ -224,12 +224,11 @@ export class PolarSyncService {
 
       if (sampleRows.length === 0) return;
 
-      await this.#db.delete(metricStream).where(eq(metricStream.activityId, activityId));
-      await writeMetricStreamBatch(
+      await replaceMetricStreamBatch(
         this.#db,
+        { activityId },
         sampleRows,
         SOURCE_TYPE_API,
-        undefined,
         this.#metricStreamPublisher,
       );
       logger.info(

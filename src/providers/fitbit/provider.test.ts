@@ -17,10 +17,12 @@ import type {
 } from "./client.ts";
 import { FitbitProvider, fitbitOAuthConfig } from "./provider.ts";
 
-const { publishedMetricStreamBatches } = vi.hoisted<{
+const { publishedMetricStreamBatches, replacementScopes } = vi.hoisted<{
   publishedMetricStreamBatches: Record<string, unknown>[][];
+  replacementScopes: unknown[];
 }>(() => ({
   publishedMetricStreamBatches: [],
+  replacementScopes: [],
 }));
 
 vi.mock("../../metric-stream/redpanda-producer.ts", () => ({
@@ -33,16 +35,35 @@ vi.mock("../../metric-stream/redpanda-producer.ts", () => ({
         recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
       }));
     },
+    replaceRows: async (_scope: unknown, rows: readonly Record<string, unknown>[]) => {
+      replacementScopes.push(_scope);
+      publishedMetricStreamBatches.push([...rows]);
+      return {
+        deleted: {
+          version: 1,
+          eventType: "metric_stream_deleted",
+          scope: _scope,
+          partitionKey: "test-partition",
+        },
+        rows: rows.map((row, index) => ({
+          version: 1,
+          id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+          recordedAt:
+            row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+        })),
+      };
+    },
   }),
 }));
 
 vi.mock("../../db/token-user-context.ts", () => ({
-  getTokenUserId: () => "user-1",
+  getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
 
 afterEach(() => {
   publishedMetricStreamBatches.length = 0;
+  replacementScopes.length = 0;
 });
 
 // ============================================================
@@ -83,7 +104,7 @@ function createMockDb() {
     values: vi.fn(),
     onConflictDoUpdate: vi.fn(),
     onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
-    returning: vi.fn().mockResolvedValue([{ id: "mock-activity-id" }]),
+    returning: vi.fn().mockResolvedValue([{ id: "10000000-0000-4000-8000-000000000001" }]),
     where: vi.fn().mockResolvedValue(undefined),
   };
 
@@ -154,6 +175,28 @@ function expectReasonableDuration(durationMilliseconds: number): void {
 
 const recordSchema = z.record(z.string(), z.unknown());
 
+const sampleTcx = `<?xml version="1.0" encoding="UTF-8"?>
+<TrainingCenterDatabase>
+  <Activities>
+    <Activity Sport="Running">
+      <Lap StartTime="2026-03-01T08:30:00Z">
+        <Track>
+          <Trackpoint>
+            <Time>2026-03-01T08:30:00Z</Time>
+            <Position>
+              <LatitudeDegrees>40.7128</LatitudeDegrees>
+              <LongitudeDegrees>-74.006</LongitudeDegrees>
+            </Position>
+            <AltitudeMeters>10.5</AltitudeMeters>
+            <HeartRateBpm><Value>155</Value></HeartRateBpm>
+            <Cadence>80</Cadence>
+          </Trackpoint>
+        </Track>
+      </Lap>
+    </Activity>
+  </Activities>
+</TrainingCenterDatabase>`;
+
 function findValuesCall(
   db: ReturnType<typeof createMockDb>,
   predicate: (val: Record<string, unknown>) => boolean,
@@ -219,7 +262,7 @@ function createMockApiFetch(data: MockFitbitApiData = {}): typeof globalThis.fet
       return Response.json({ weight: data.weight ?? [] });
     }
     if (urlStr.endsWith(".tcx")) {
-      return new Response("<TrainingCenterDatabase></TrainingCenterDatabase>", {
+      return new Response(sampleTcx, {
         status: 200,
         headers: { "Content-Type": "application/xml" },
       });
@@ -734,6 +777,10 @@ describe("FitbitProvider", () => {
           channel: "body_weight",
         }),
       );
+      expect(replacementScopes).toContainEqual({
+        activityId: "10000000-0000-4000-8000-000000000001",
+      });
+      expect(replacementScopes).toContainEqual({ providerId: "fitbit", externalId: "55555" });
     });
 
     it("captures per-record insert errors without aborting the whole sync", async () => {
@@ -1243,8 +1290,7 @@ describe("FitbitProvider", () => {
       expect(result.errors).toHaveLength(0);
       expect(result.recordsSynced).toBe(1);
       expectReasonableDuration(result.duration);
-      expect(db.delete).toHaveBeenCalledWith(metricStreamTable);
-      expect(db.where).toHaveBeenCalled();
+      expect(db.delete).not.toHaveBeenCalledWith(metricStreamTable);
 
       const publishedRows = publishedMetricStreamBatches.flat();
       const weightValues = publishedRows.find(
@@ -1261,6 +1307,7 @@ describe("FitbitProvider", () => {
           value.channel === "body_fat_percentage",
       );
       expect(bodyFatValues).toMatchObject({ scalar: 18.5 });
+      expect(replacementScopes).toContainEqual({ providerId: "fitbit", externalId: "55555" });
     });
 
     it("returns empty result for unknown objectType", async () => {

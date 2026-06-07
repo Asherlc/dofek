@@ -22,7 +22,12 @@ import type { SleepAnalysisRecord } from "./sleep.ts";
 import type { HealthWorkout } from "./workouts.ts";
 
 const { metricStreamCapture } = vi.hoisted<{
-  metricStreamCapture: { current: { values: Record<string, unknown>[][] } | null };
+  metricStreamCapture: {
+    current: {
+      values: Record<string, unknown>[][];
+      partitionKeys: Array<string | undefined>;
+    } | null;
+  };
 }>(() => ({
   metricStreamCapture: {
     current: null,
@@ -31,19 +36,37 @@ const { metricStreamCapture } = vi.hoisted<{
 
 vi.mock("../../metric-stream/redpanda-producer.ts", () => ({
   getDefaultMetricStreamEventPublisher: async () => ({
-    publishRows: async (rows: readonly Record<string, unknown>[]) => {
+    publishRows: async (rows: readonly Record<string, unknown>[], partitionKey?: string) => {
       metricStreamCapture.current?.values.push([...rows]);
+      metricStreamCapture.current?.partitionKeys.push(partitionKey);
       return rows.map((row, index) => ({
         version: 1,
         id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
         recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
       }));
     },
+    replaceRows: async (_scope: unknown, rows: readonly Record<string, unknown>[]) => {
+      metricStreamCapture.current?.values.push([...rows]);
+      return {
+        deleted: {
+          version: 1,
+          eventType: "metric_stream_deleted",
+          scope: _scope,
+          partitionKey: "test-partition",
+        },
+        rows: rows.map((row, index) => ({
+          version: 1,
+          id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+          recordedAt:
+            row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+        })),
+      };
+    },
   }),
 }));
 
 vi.mock("../../db/token-user-context.ts", () => ({
-  getTokenUserId: () => "user-1",
+  getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
 
@@ -53,13 +76,14 @@ vi.mock("../../db/token-user-context.ts", () => ({
 
 interface MockInsertCapture {
   values: Record<string, unknown>[][];
+  partitionKeys: Array<string | undefined>;
 }
 
 function createMockDb(returningData: Record<string, unknown>[] = []): {
   db: SyncDatabase;
   capture: MockInsertCapture;
 } {
-  const capture: MockInsertCapture = { values: [] };
+  const capture: MockInsertCapture = { values: [], partitionKeys: [] };
   metricStreamCapture.current = capture;
 
   function makeChainable(): Promise<undefined> {
@@ -138,6 +162,18 @@ function makeSleep(overrides: Partial<SleepAnalysisRecord> = {}): SleepAnalysisR
     durationMinutes: 480,
     ...overrides,
   };
+}
+
+function expectedProviderPartitionKey(providerId: string, recordedAtStart: Date): string {
+  return [
+    "provider",
+    "00000000-0000-0000-0000-000000000001",
+    providerId,
+    "*",
+    "*",
+    recordedAtStart.toISOString(),
+    "*",
+  ].join(":");
 }
 
 // ---------------------------------------------------------------------------
@@ -301,7 +337,7 @@ describe("upsertMetricStreamBatch", () => {
     await upsertMetricStreamBatch(db, "p1", records);
     expect(capture.values[0]?.[0]).toMatchObject({
       deviceId: "My Watch",
-      recordedAt: date,
+      recordedAt: date.toISOString(),
     });
   });
 
@@ -366,6 +402,32 @@ describe("upsertMetricStreamBatch", () => {
       channel: "skin_temperature",
       scalar: 33.4,
     });
+  });
+
+  it("publishes records with the replacement scope partition key", async () => {
+    const { db, capture } = createMockDb();
+    const recordedAtStart = new Date("2024-01-01T00:00:00Z");
+    const records = [
+      makeRecord({
+        type: "HKQuantityTypeIdentifierHeartRate",
+        value: 72,
+      }),
+    ];
+
+    await upsertMetricStreamBatch(db, "p1", records, {
+      userId: "00000000-0000-0000-0000-000000000001",
+      providerId: "p1",
+      recordedAtStart,
+    });
+
+    expect(capture.partitionKeys).toContain(expectedProviderPartitionKey("p1", recordedAtStart));
+    expect(capture.values.flat()).toContainEqual(
+      expect.objectContaining({
+        providerId: "p1",
+        channel: "heart_rate",
+        scalar: 72,
+      }),
+    );
   });
 });
 
@@ -586,6 +648,27 @@ describe("upsertBodyMeasurementBatch", () => {
     await upsertBodyMeasurementBatch(db, "p1", records);
     expect(capture.values).toHaveLength(1);
     expect(capture.values[0]).toHaveLength(600);
+  });
+
+  it("publishes body measurements with the replacement scope partition key", async () => {
+    const { db, capture } = createMockDb();
+    const recordedAtStart = new Date("2024-01-01T00:00:00Z");
+    const records = [makeRecord({ type: "HKQuantityTypeIdentifierBodyMass", value: 72.5 })];
+
+    await upsertBodyMeasurementBatch(db, "p1", records, {
+      userId: "00000000-0000-0000-0000-000000000001",
+      providerId: "p1",
+      recordedAtStart,
+    });
+
+    expect(capture.partitionKeys).toContain(expectedProviderPartitionKey("p1", recordedAtStart));
+    expect(capture.values.flat()).toContainEqual(
+      expect.objectContaining({
+        providerId: "p1",
+        channel: "body_weight",
+        scalar: 72.5,
+      }),
+    );
   });
 });
 
@@ -1299,7 +1382,7 @@ describe("upsertHealthEventBatch", () => {
 describe("upsertWorkoutBatch", () => {
   it("deduplicates workouts with the same startDate", async () => {
     const sharedStart = new Date("2024-06-01T08:00:00Z");
-    const { db } = createMockDb([{ id: "act-1" }]);
+    const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
 
     const workouts = [
       makeWorkout({ startDate: sharedStart, sourceName: "Apple Watch" }),
@@ -1311,7 +1394,10 @@ describe("upsertWorkoutBatch", () => {
   });
 
   it("preserves unique workouts while deduplicating", async () => {
-    const { db } = createMockDb([{ id: "act-1" }, { id: "act-2" }]);
+    const { db } = createMockDb([
+      { id: "10000000-0000-4000-8000-000000000001" },
+      { id: "10000000-0000-4000-8000-000000000002" },
+    ]);
 
     const workouts = [
       makeWorkout({ startDate: new Date("2024-06-01T08:00:00Z") }),
@@ -1326,7 +1412,7 @@ describe("upsertWorkoutBatch", () => {
   it("builds correct insert row fields", async () => {
     const start = new Date("2024-06-01T08:00:00Z");
     const end = new Date("2024-06-01T08:30:00Z");
-    const { db, capture } = createMockDb([{ id: "act-1" }]);
+    const { db, capture } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
 
     await upsertWorkoutBatch(db, "p1", [
       makeWorkout({ startDate: start, endDate: end, activityType: "cycling", sourceName: "Wahoo" }),
@@ -1343,7 +1429,8 @@ describe("upsertWorkoutBatch", () => {
   });
 
   it("inserts GPS route locations for workouts", async () => {
-    const { db, capture } = createMockDb([{ id: "act-1" }]);
+    const activityId = "10000000-0000-4000-8000-000000000001";
+    const { db, capture } = createMockDb([{ id: activityId }]);
     const location = {
       date: new Date("2024-06-01T08:00:00Z"),
       lat: 40.7128,
@@ -1353,7 +1440,7 @@ describe("upsertWorkoutBatch", () => {
       horizontalAccuracy: 5.2,
     };
 
-    await runWithTokenUser("user-1", () =>
+    await runWithTokenUser("00000000-0000-0000-0000-000000000001", () =>
       upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [location] })]),
     );
 
@@ -1362,7 +1449,7 @@ describe("upsertWorkoutBatch", () => {
     expect(capture.values[1]).toContainEqual(
       expect.objectContaining({
         providerId: "p1",
-        activityId: "act-1",
+        activityId,
         channel: "location",
         point: "SRID=4326;POINT(-74.006 40.7128)",
         metadata: { horizontal_accuracy_m: 5.2 },
@@ -1371,7 +1458,7 @@ describe("upsertWorkoutBatch", () => {
     expect(capture.values[1]).toContainEqual(
       expect.objectContaining({
         providerId: "p1",
-        activityId: "act-1",
+        activityId,
         channel: "altitude",
         scalar: 10.5,
       }),
@@ -1379,7 +1466,7 @@ describe("upsertWorkoutBatch", () => {
     expect(capture.values[1]).toContainEqual(
       expect.objectContaining({
         providerId: "p1",
-        activityId: "act-1",
+        activityId,
         channel: "speed",
         scalar: 3.5,
       }),
@@ -1387,7 +1474,7 @@ describe("upsertWorkoutBatch", () => {
   });
 
   it("skips GPS insert when no route locations", async () => {
-    const { db, capture } = createMockDb([{ id: "act-1" }]);
+    const { db, capture } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
 
     await upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [] })]);
 
@@ -1396,14 +1483,14 @@ describe("upsertWorkoutBatch", () => {
   });
 
   it("handles undefined horizontalAccuracy in GPS", async () => {
-    const { db, capture } = createMockDb([{ id: "act-1" }]);
+    const { db, capture } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
     const loc = {
       date: new Date("2024-06-01T08:00:00Z"),
       lat: 40.7128,
       lng: -74.006,
     };
 
-    await runWithTokenUser("user-1", () =>
+    await runWithTokenUser("00000000-0000-0000-0000-000000000001", () =>
       upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [loc] })]),
     );
 
@@ -1412,7 +1499,7 @@ describe("upsertWorkoutBatch", () => {
   });
 
   it("populates raw JSONB with workout metrics", async () => {
-    const { db, capture } = createMockDb([{ id: "act-1" }]);
+    const { db, capture } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
 
     await upsertWorkoutBatch(db, "p1", [
       makeWorkout({
@@ -1436,7 +1523,7 @@ describe("upsertWorkoutBatch", () => {
   });
 
   it("omits undefined optional fields from raw JSONB", async () => {
-    const { db, capture } = createMockDb([{ id: "act-1" }]);
+    const { db, capture } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
 
     await upsertWorkoutBatch(db, "p1", [makeWorkout()]);
 
@@ -1451,7 +1538,7 @@ describe("upsertWorkoutBatch", () => {
   });
 
   it("does not update existing heart-rate metric_stream rows after workout insert", async () => {
-    const { db } = createMockDb([{ id: "act-1" }]);
+    const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
 
     await upsertWorkoutBatch(db, "p1", [makeWorkout()]);
 
@@ -1468,6 +1555,35 @@ describe("upsertWorkoutBatch", () => {
     const { db } = createMockDb();
     const count = await upsertWorkoutBatch(db, "p1", []);
     expect(count).toBe(0);
+  });
+
+  it("publishes route locations with the replacement scope partition key", async () => {
+    const activityId = "10000000-0000-4000-8000-000000000001";
+    const { db, capture } = createMockDb([{ id: activityId }]);
+    const recordedAtStart = new Date("2024-01-01T00:00:00Z");
+    const location = {
+      date: new Date("2024-06-01T08:00:00Z"),
+      lat: 40.7128,
+      lng: -74.006,
+    };
+
+    await runWithTokenUser("00000000-0000-0000-0000-000000000001", () =>
+      upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [location] })], {
+        userId: "00000000-0000-0000-0000-000000000001",
+        providerId: "p1",
+        recordedAtStart,
+      }),
+    );
+
+    expect(capture.partitionKeys).toContain(expectedProviderPartitionKey("p1", recordedAtStart));
+    expect(capture.values.flat()).toContainEqual(
+      expect.objectContaining({
+        providerId: "p1",
+        activityId,
+        channel: "location",
+        point: "SRID=4326;POINT(-74.006 40.7128)",
+      }),
+    );
   });
 });
 

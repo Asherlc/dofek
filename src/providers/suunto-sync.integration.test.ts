@@ -1,12 +1,15 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { activity, oauthToken } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { SuuntoProvider } from "./suunto.ts";
+import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 
 // ============================================================
 // Fake Suunto API responses
@@ -49,7 +52,13 @@ function fakeWorkout(overrides: FakeWorkoutOverrides = {}) {
   };
 }
 
-function suuntoHandlers(workouts: Array<ReturnType<typeof fakeWorkout>>) {
+const FIT_FIXTURE_PATH = resolve(import.meta.dirname, "../fit/fixtures/test.fit");
+const fitFileBuffer = readFileSync(FIT_FIXTURE_PATH);
+
+function suuntoHandlers(
+  workouts: Array<ReturnType<typeof fakeWorkout>>,
+  opts?: { fitFile?: boolean },
+) {
   return [
     // Token refresh
     http.post("https://cloudapi-oauth.suunto.com/oauth/token", () => {
@@ -67,14 +76,16 @@ function suuntoHandlers(workouts: Array<ReturnType<typeof fakeWorkout>>) {
 
     // FIT file export for GPS + time-series data
     http.get("https://cloudapi.suunto.com/v2/workout/exportFit/:workoutKey", () => {
-      // Return a minimal valid FIT file header (14 bytes) that parseFitFile will accept
-      // In practice the FIT download may fail gracefully — non-fatal error
-      return new HttpResponse(null, { status: 404 });
+      if (!opts?.fitFile) {
+        return new HttpResponse(null, { status: 404 });
+      }
+      return new HttpResponse(fitFileBuffer);
     }),
   ];
 }
 
 const server = setupServer();
+const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 describe("SuuntoProvider.sync() (integration)", () => {
   let ctx: TestContext;
@@ -87,6 +98,11 @@ describe("SuuntoProvider.sync() (integration)", () => {
     server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "suunto", "Suunto", "https://cloudapi.suunto.com");
   }, 60_000);
+
+  beforeEach(() => {
+    metricStreamCapture.publishedMetricStreamRows.length = 0;
+    metricStreamCapture.deletedMetricStreamScopes.length = 0;
+  });
 
   afterEach(() => {
     server.resetHandlers();
@@ -125,7 +141,9 @@ describe("SuuntoProvider.sync() (integration)", () => {
     server.use(...suuntoHandlers(workouts));
 
     const provider = new SuuntoProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.provider).toBe("suunto");
     expect(result.recordsSynced).toBe(2);
@@ -143,6 +161,35 @@ describe("SuuntoProvider.sync() (integration)", () => {
     const running = rows.find((r) => r.externalId === "suunto-w2");
     if (!running) throw new Error("expected workout suunto-w2");
     expect(running.activityType).toBe("running");
+  });
+
+  it("publishes FIT samples through scoped Redpanda replacement", async () => {
+    await saveTokens(ctx.db, "suunto", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "workout",
+    });
+
+    const workouts = [fakeWorkout({ workoutKey: "suunto-w-fit" })];
+
+    server.use(...suuntoHandlers(workouts, { fitFile: true }));
+
+    const provider = new SuuntoProvider();
+    const result = await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
+
+    expect(result.errors).toHaveLength(0);
+    const rows = await ctx.db
+      .select()
+      .from(activity)
+      .where(eq(activity.externalId, "suunto-w-fit"));
+    expect(rows).toHaveLength(1);
+    const activityId = rows[0]?.id;
+    if (!activityId) throw new Error("expected activity id");
+    expect(metricStreamCapture.publishedMetricStreamRows.length).toBeGreaterThan(0);
+    expect(metricStreamCapture.deletedMetricStreamScopes).toContainEqual({ activityId });
   });
 
   it("upserts on re-sync (no duplicates)", async () => {

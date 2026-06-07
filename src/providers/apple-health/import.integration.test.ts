@@ -769,6 +769,7 @@ describe("importAppleHealthFile — full DB integration", () => {
   it("imports from a .zip and publishes metric stream events", async () => {
     const since = new Date("2024-01-01");
     metricStreamCapture.publishedMetricStreamRows.length = 0;
+    metricStreamCapture.deletedMetricStreamScopes.length = 0;
 
     const result = await runWithTokenUser("00000000-0000-0000-0000-000000000001", () =>
       importAppleHealthFile(ctx.db, zipPath, since, () => {}, metricStreamCapture.publisher),
@@ -779,6 +780,11 @@ describe("importAppleHealthFile — full DB integration", () => {
     expect(result.recordsSynced).toBeGreaterThan(0);
     expect(result.errors.map((error) => error.message)).toEqual([]);
     expect(publishedMetricStreamRows.length).toBeGreaterThan(0);
+    expect(metricStreamCapture.deletedMetricStreamScopes).toContainEqual({
+      userId: "00000000-0000-0000-0000-000000000001",
+      providerId: "apple_health",
+      recordedAtStart: since,
+    });
   }, 60_000);
 
   it("publishes metric stream events for heart rate, oxygen saturation, and blood glucose", async () => {
