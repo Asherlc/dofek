@@ -39,7 +39,7 @@ Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle C
 - `cloud-init.yml`: Installs Docker CE, configures Docker log rotation (10m, 3 files), and idempotently runs `docker swarm init`. No deploy helpers, no Infisical CLI.
 
 ### Swarm Stack (`stack.yml`)
-- Single file defining all services: `web`, `worker`, `analytics-worker`, `cdc-health`, `training-export-worker`, `traefik`, `db`, `clickhouse`, `redpanda`, `metric-stream-postgres-sink`, `metric-stream-clickhouse-sink`, `metric-stream-r2-archive`, `redis`, `collector`, `ota`, `databasus`, `cloudbeaver`, `pgadmin`, `portainer`, `netdata`.
+- Single file defining all services: `web`, `worker`, `analytics-worker`, `cdc-health`, `training-export-worker`, `traefik`, `db`, `clickhouse`, `redpanda`, `metric-stream-clickhouse-sink`, `metric-stream-r2-archive`, `redis`, `collector`, `ota`, `databasus`, `cloudbeaver`, `pgadmin`, `portainer`, `netdata`.
 - Traefik consumes the swarm provider and routes traffic from labels declared on stack services.
 - Zero-downtime updates for `web` and `worker` are configured via `deploy.update_config` (`order: start-first`, `failure_action: rollback`, healthcheck-gated `monitor` window).
 - The `default` overlay network is declared `attachable: true` so CI can run one-shot migration containers on it from a remote Docker context.

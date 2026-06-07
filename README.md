@@ -159,7 +159,7 @@ pnpm clickhouse-cdc
 # Redpanda Connect archive, and sink containers using the server image target.
 docker compose --env-file .env.local --profile metric-stream up -d \
   redpanda metric-stream-minio metric-stream-r2-archive \
-  metric-stream-postgres-sink metric-stream-clickhouse-sink
+  metric-stream-clickhouse-sink
 
 pnpm test                       # run tests
 pnpm test:watch                 # run tests in watch mode

@@ -919,18 +919,6 @@ describe("main", () => {
     vi.clearAllMocks();
   });
 
-  it("rejects the removed Postgres metric stream sink command", async () => {
-    process.argv = ["node", "index.ts", "metric-stream-postgres-sink"];
-
-    await expect(main()).rejects.toThrow("process.exit called in test");
-
-    expect(mockRunMetricStreamClickHouseSinkFromEnv).not.toHaveBeenCalled();
-    expect(mockLoggerError).toHaveBeenCalledWith(
-      expect.stringContaining("Unknown command: metric-stream-postgres-sink"),
-    );
-    process.argv = savedArgvForMain;
-  });
-
   it("runs the ClickHouse metric stream sink command", async () => {
     process.argv = ["node", "index.ts", "metric-stream-clickhouse-sink"];
 

@@ -242,7 +242,7 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
 
   it("requires Redpanda brokers", () => {
     expect(() =>
-      createKafkaMetricStreamConsumerFromEnv("metric-stream-postgres-sink", {
+      createKafkaMetricStreamConsumerFromEnv("metric-stream-clickhouse-sink", {
         METRIC_STREAM_TOPIC: "metric-stream-v1",
       }),
     ).toThrow("REDPANDA_BROKERS is required");
@@ -250,7 +250,7 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
 
   it("requires a metric stream topic", () => {
     expect(() =>
-      createKafkaMetricStreamConsumerFromEnv("metric-stream-postgres-sink", {
+      createKafkaMetricStreamConsumerFromEnv("metric-stream-clickhouse-sink", {
         REDPANDA_BROKERS: "redpanda:9092",
       }),
     ).toThrow("METRIC_STREAM_TOPIC is required");
@@ -258,7 +258,7 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
 
   it("rejects broker lists that only contain separators and whitespace", () => {
     expect(() =>
-      createKafkaMetricStreamConsumerFromEnv("metric-stream-postgres-sink", {
+      createKafkaMetricStreamConsumerFromEnv("metric-stream-clickhouse-sink", {
         METRIC_STREAM_TOPIC: "metric-stream-v1",
         REDPANDA_BROKERS: " , ",
       }),
@@ -267,7 +267,7 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
 
   it("trims broker lists and adapts KafkaJS consumer methods", async () => {
     const { consumer, topic } = createKafkaMetricStreamConsumerFromEnv(
-      "metric-stream-postgres-sink",
+      "metric-stream-clickhouse-sink",
       {
         METRIC_STREAM_TOPIC: "metric-stream-v1",
         REDPANDA_BROKERS: " redpanda:9092 , redpanda:9093 ",
@@ -279,7 +279,7 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
       brokers: ["redpanda:9092", "redpanda:9093"],
       clientId: "dofek-metric-stream-consumer",
     });
-    expect(kafkaConsumerFactory).toHaveBeenCalledWith({ groupId: "metric-stream-postgres-sink" });
+    expect(kafkaConsumerFactory).toHaveBeenCalledWith({ groupId: "metric-stream-clickhouse-sink" });
 
     await consumer.connect();
     await consumer.subscribe({ topic: "metric-stream-v1", fromBeginning: false });
