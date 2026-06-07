@@ -174,6 +174,24 @@ function readMirrorConfigTokens(mirrorConfig: string): Set<string> {
   return new Set(mirrorConfig.split(/[^A-Za-z0-9_]+/).filter((token) => token.length > 0));
 }
 
+function mirrorConfigMatchesRawAnalyticsTables(
+  mirrorConfigTokens: Set<string>,
+  tableNames: readonly string[],
+): boolean {
+  if (!mirrorConfigTokens.has(analyticsPublicationName)) {
+    return false;
+  }
+
+  const expectedTableNames = new Set(tableNames);
+  if (tableNames.some((tableName) => !mirrorConfigTokens.has(tableName))) {
+    return false;
+  }
+
+  return analyticsSourceTables.every(
+    (tableName) => expectedTableNames.has(tableName) || !mirrorConfigTokens.has(tableName),
+  );
+}
+
 function peerDbStringLiteral(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
 }
@@ -598,10 +616,7 @@ async function reconcileRawAnalyticsMirrors(
     }
 
     const mirrorConfigTokens = readMirrorConfigTokens(mirrorConfig);
-    if (
-      !mirrorConfigTokens.has(analyticsPublicationName) ||
-      tableNames.some((tableName) => !mirrorConfigTokens.has(tableName))
-    ) {
+    if (!mirrorConfigMatchesRawAnalyticsTables(mirrorConfigTokens, tableNames)) {
       await peerDbClient.query(`DROP MIRROR ${mirrorName}`);
       await truncateClickHouseDestinationTables(clickHouseClient, tableNames);
     }

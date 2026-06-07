@@ -156,28 +156,30 @@ describe("getDefaultMetricStreamEventPublisher", () => {
     const originalTopic = process.env.METRIC_STREAM_TOPIC;
     const originalBrokers = process.env.REDPANDA_BROKERS;
 
-    delete process.env.METRIC_STREAM_TOPIC;
-    process.env.REDPANDA_BROKERS = "redpanda:9092";
-    await expect(getDefaultMetricStreamEventPublisher()).rejects.toThrow(
-      "METRIC_STREAM_TOPIC is required",
-    );
-
-    process.env.METRIC_STREAM_TOPIC = "metric-stream-v1";
-    kafkaProducerConnect.mockClear();
-    await expect(getDefaultMetricStreamEventPublisher()).resolves.toBeInstanceOf(
-      KafkaMetricStreamEventPublisher,
-    );
-    expect(kafkaProducerConnect).toHaveBeenCalledOnce();
-
-    if (originalTopic === undefined) {
+    try {
       delete process.env.METRIC_STREAM_TOPIC;
-    } else {
-      process.env.METRIC_STREAM_TOPIC = originalTopic;
-    }
-    if (originalBrokers === undefined) {
-      delete process.env.REDPANDA_BROKERS;
-    } else {
-      process.env.REDPANDA_BROKERS = originalBrokers;
+      process.env.REDPANDA_BROKERS = "redpanda:9092";
+      await expect(getDefaultMetricStreamEventPublisher()).rejects.toThrow(
+        "METRIC_STREAM_TOPIC is required",
+      );
+
+      process.env.METRIC_STREAM_TOPIC = "metric-stream-v1";
+      kafkaProducerConnect.mockClear();
+      await expect(getDefaultMetricStreamEventPublisher()).resolves.toBeInstanceOf(
+        KafkaMetricStreamEventPublisher,
+      );
+      expect(kafkaProducerConnect).toHaveBeenCalledOnce();
+    } finally {
+      if (originalTopic === undefined) {
+        delete process.env.METRIC_STREAM_TOPIC;
+      } else {
+        process.env.METRIC_STREAM_TOPIC = originalTopic;
+      }
+      if (originalBrokers === undefined) {
+        delete process.env.REDPANDA_BROKERS;
+      } else {
+        process.env.REDPANDA_BROKERS = originalBrokers;
+      }
     }
   });
 });

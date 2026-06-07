@@ -279,6 +279,41 @@ describe("FitbitProvider.sync() (integration)", () => {
     expect(bodyRows.find((row) => row.channel === "body_fat_percentage")?.scalar).toBeCloseTo(18.3);
   });
 
+  it("publishes webhook body updates through the injected metric stream publisher", async () => {
+    await saveTokens(ctx.db, "fitbit", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "activity heartrate sleep weight",
+    });
+
+    server.use(
+      ...fitbitHandlers({
+        weightLogs: fakeWeightLogs(),
+      }),
+    );
+
+    const provider = new FitbitProvider();
+    const result = await provider.syncWebhookEvent(
+      ctx.db,
+      {
+        ownerExternalId: "fitbit-user-1",
+        eventType: "update",
+        objectType: "body",
+        metadata: { date: "2026-03-01" },
+      },
+      { metricStreamPublisher: metricStreamCapture.publisher },
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(metricStreamCapture.publishedMetricStreamRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ channel: "body_weight", scalar: 82.5 }),
+        expect.objectContaining({ channel: "body_fat_percentage", scalar: 18.3 }),
+      ]),
+    );
+  });
+
   it("upserts on re-sync (no duplicates)", async () => {
     await saveTokens(ctx.db, "fitbit", {
       accessToken: "valid-token",
