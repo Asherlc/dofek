@@ -369,6 +369,16 @@ jobs:
           done
           REMOTE
 
+      - name: Reset paused rollouts
+        run: |
+          for service in $(docker service ls --filter "name=${STACK_NAME}_" --format '{{.Name}}'); do
+            update_state="$(docker service inspect "$service" --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{end}}')"
+            if [ "$update_state" = "paused" ]; then
+              echo "Resetting paused service: $service"
+              docker service update --force "$service"
+            fi
+          done
+
       - name: Apply stack config before migrations
         env:
           DEPLOY_IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
