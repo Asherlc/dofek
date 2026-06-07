@@ -1,10 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
-const { mockInvalidateByPrefix, mockMetricStreamPublishRows } = vi.hoisted(() => ({
-  mockInvalidateByPrefix: vi.fn().mockResolvedValue(undefined),
-  mockMetricStreamPublishRows: vi.fn().mockResolvedValue([]),
-}));
+const { mockInvalidateByPrefix, mockMetricStreamPublishRows, mockPublishedMetricStreamRowBatches } =
+  vi.hoisted(() => {
+    const mockPublishedMetricStreamRowBatches: unknown[][] = [];
+    return {
+      mockInvalidateByPrefix: vi.fn().mockResolvedValue(undefined),
+      mockMetricStreamPublishRows: vi.fn().mockResolvedValue([]),
+      mockPublishedMetricStreamRowBatches,
+    };
+  });
 
 vi.mock("dofek/sync-metrics", () => ({
   healthKitRecordsTotal: { add: vi.fn() },
@@ -26,6 +31,9 @@ vi.mock("@sentry/node", () => ({
 
 vi.mock("../../../../src/metric-stream/redpanda-producer.ts", () => ({
   createKafkaMetricStreamEventPublisherFromEnv: async () => ({
+    publishRows: mockMetricStreamPublishRows,
+  }),
+  getDefaultMetricStreamEventPublisher: async () => ({
     publishRows: mockMetricStreamPublishRows,
   }),
 }));
@@ -72,13 +80,14 @@ function makeSample(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function serializeMetricStreamInsertCalls(execute: { mock: { calls: unknown[][] } }): string {
-  const metricStreamInsertCalls = execute.mock.calls.filter((call) => {
-    const serialized = JSON.stringify(call[0]);
-    return serialized.includes("INSERT INTO fitness.metric_stream");
-  });
-  expect(metricStreamInsertCalls.length).toBeGreaterThan(0);
-  return metricStreamInsertCalls.map((call) => JSON.stringify(call[0])).join("\n");
+function publishedMetricStreamRows(): unknown[] {
+  const rows = mockPublishedMetricStreamRowBatches.flat();
+  expect(rows.length).toBeGreaterThan(0);
+  return rows;
+}
+
+function serializePublishedMetricStreamRows(): string {
+  return JSON.stringify(publishedMetricStreamRows());
 }
 
 describe("healthKitSyncRouter", () => {
@@ -87,7 +96,12 @@ describe("healthKitSyncRouter", () => {
     vi.mocked(healthKitPushTotal.add).mockClear();
     mockInvalidateByPrefix.mockClear();
     mockMetricStreamPublishRows.mockReset();
-    mockMetricStreamPublishRows.mockResolvedValue([]);
+    mockPublishedMetricStreamRowBatches.length = 0;
+    mockMetricStreamPublishRows.mockImplementation(async (rows: readonly unknown[]) => {
+      const publishedRows = [...rows];
+      mockPublishedMetricStreamRowBatches.push(publishedRows);
+      return publishedRows;
+    });
   });
 
   describe("pushQuantitySamples", () => {
@@ -213,16 +227,12 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      const sqlCall = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return serialized.includes("metric_stream") && serialized.includes("body_fat_percentage");
-      });
-      expect(sqlCall).toBeDefined();
-      const serialized = JSON.stringify(sqlCall?.[0]);
-      // 0.18 * 100 = 18 — must NOT contain the un-transformed value 0.18 or the wrong-direction 0.0018
-      expect(serialized).toContain(",18,");
-      expect(serialized).not.toContain("0.0018");
-      expect(serialized).not.toContain("0.18");
+      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith([
+        expect.objectContaining({
+          channel: "body_fat_percentage",
+          scalar: 18,
+        }),
+      ]);
     });
 
     it("applies distance transform (value / 1000)", async () => {
@@ -629,8 +639,7 @@ describe("healthKitSyncRouter", () => {
       const execute = vi.fn();
       // ensureProvider succeeds
       execute.mockResolvedValueOnce([]);
-      // body measurements fail
-      execute.mockRejectedValueOnce(new Error("DB connection failed"));
+      mockMetricStreamPublishRows.mockRejectedValueOnce(new Error("DB connection failed"));
 
       const caller = createCaller({
         db: { execute },
@@ -1360,18 +1369,31 @@ describe("healthKitSyncRouter", () => {
 
       // One location point plus separate altitude and speed metrics.
       expect(result.inserted).toBe(3);
-      const serialized = serializeMetricStreamInsertCalls(execute);
-      expect(serialized).toContain('"location"');
-      expect(serialized).toContain("external_id");
-      expect(serialized).toContain("hk:workout:w-route-1:location:2024-01-15T10:00:00.000Z");
-      expect(serialized).toContain("hk:workout:w-route-1:altitude:2024-01-15T10:00:00.000Z");
-      expect(serialized).toContain("hk:workout:w-route-1:speed:2024-01-15T10:00:00.000Z");
-      expect(serialized).toContain(
-        "ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE",
+      expect(publishedMetricStreamRows()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            activityId: "activity-123",
+            channel: "location",
+            deviceId: "Apple Watch",
+            externalId: "hk:workout:w-route-1:location:2024-01-15T10:00:00.000Z",
+            metadata: { horizontal_accuracy_m: 5 },
+            point: "SRID=4326;POINT(-74.006 40.7128)",
+          }),
+          expect.objectContaining({
+            activityId: "activity-123",
+            channel: "altitude",
+            externalId: "hk:workout:w-route-1:altitude:2024-01-15T10:00:00.000Z",
+            scalar: 10.5,
+          }),
+          expect.objectContaining({
+            activityId: "activity-123",
+            channel: "speed",
+            externalId: "hk:workout:w-route-1:speed:2024-01-15T10:00:00.000Z",
+            scalar: 3.2,
+          }),
+        ]),
       );
-      expect(serialized).toContain("ST_SetSRID");
-      expect(serialized).toContain("Apple Watch");
-      expect(serialized).toContain("horizontal_accuracy_m");
+      const serialized = serializePublishedMetricStreamRows();
       expect(serialized).not.toContain('"lat"');
       expect(serialized).not.toContain('"lng"');
       expect(serialized).not.toContain('"gps_accuracy"');
@@ -1422,7 +1444,7 @@ describe("healthKitSyncRouter", () => {
 
       // Only the location point should be inserted (no altitude or speed metrics).
       expect(result.inserted).toBe(1);
-      const serialized = serializeMetricStreamInsertCalls(execute);
+      const serialized = serializePublishedMetricStreamRows();
       expect(serialized).toContain('"location"');
       expect(serialized).not.toContain('"altitude"');
       expect(serialized).not.toContain('"gps_accuracy"');
@@ -1474,7 +1496,7 @@ describe("healthKitSyncRouter", () => {
       });
 
       // Find the batched insert and verify Core Location horizontal accuracy stays metadata.
-      const serialized = serializeMetricStreamInsertCalls(execute);
+      const serialized = serializePublishedMetricStreamRows();
       expect(serialized).toContain("horizontal_accuracy_m");
       expect(serialized).toContain("4.7");
       expect(serialized).not.toContain('"gps_accuracy"');
@@ -3098,14 +3120,13 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      const bodyInsert = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return serialized.includes("metric_stream") && serialized.includes("INSERT");
-      });
-      expect(bodyInsert).toBeDefined();
-      const serialized = JSON.stringify(bodyInsert?.[0]);
-      expect(serialized).toContain("hk:body-ext-id");
-      expect(serialized).toContain("body_weight");
+      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith([
+        expect.objectContaining({
+          channel: "body_weight",
+          externalId: "hk:body-ext-id",
+        }),
+      ]);
+      const serialized = serializePublishedMetricStreamRows();
       expect(serialized).not.toContain("body_measurement");
     });
 
@@ -3128,11 +3149,13 @@ describe("healthKitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(1);
-      const bodyInsert = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return serialized.includes("metric_stream") && serialized.includes("body_mass_index");
-      });
-      expect(bodyInsert).toBeDefined();
+      expect(mockMetricStreamPublishRows).toHaveBeenCalledWith([
+        expect.objectContaining({
+          channel: "body_mass_index",
+          externalId: "hk:bmi-1",
+          scalar: 23.5,
+        }),
+      ]);
     });
   });
 
@@ -3140,7 +3163,7 @@ describe("healthKitSyncRouter", () => {
     it("reports error status in healthKitPushTotal when errors exist", async () => {
       const execute = vi.fn();
       execute.mockResolvedValueOnce([]); // ensureProvider
-      execute.mockRejectedValueOnce(new Error("fail")); // body measurement error
+      mockMetricStreamPublishRows.mockRejectedValueOnce(new Error("fail"));
 
       const caller = createCaller({
         db: { execute },
@@ -3167,7 +3190,7 @@ describe("healthKitSyncRouter", () => {
     it("handles non-Error objects in catch blocks", async () => {
       const execute = vi.fn();
       execute.mockResolvedValueOnce([]); // ensureProvider
-      execute.mockRejectedValueOnce("string error"); // non-Error rejection
+      mockMetricStreamPublishRows.mockRejectedValueOnce("string error");
 
       const caller = createCaller({
         db: { execute },

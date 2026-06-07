@@ -14,7 +14,7 @@ import {
 } from "./peloton.ts";
 
 vi.mock("../db/token-user-context.ts", () => ({
-  getTokenUserId: () => "user-1",
+  getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
 
@@ -33,6 +33,23 @@ vi.mock("../metric-stream/redpanda-producer.ts", () => ({
         id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
         recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
       }));
+    },
+    replaceRows: async (_scope: unknown, rows: readonly Record<string, unknown>[]) => {
+      publishedMetricStreamBatches.push([...rows]);
+      return {
+        deleted: {
+          version: 1,
+          eventType: "metric_stream_deleted",
+          partitionKey: "test",
+          scope: _scope,
+        },
+        rows: rows.map((row, index) => ({
+          version: 1,
+          id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+          recordedAt:
+            row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+        })),
+      };
     },
   }),
 }));
@@ -890,7 +907,7 @@ function createMockDb(tokenRows: object[] = [VALID_TOKEN]) {
       values: vi.fn().mockImplementation(() => {
         return Object.assign(Promise.resolve(), {
           onConflictDoUpdate: vi.fn().mockReturnValue({
-            returning: vi.fn().mockResolvedValue([{ id: "act-uuid" }]),
+            returning: vi.fn().mockResolvedValue([{ id: "10000000-0000-4000-8000-000000000001" }]),
           }),
           onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
         });
@@ -925,7 +942,7 @@ describe("PelotonProvider.sync — happy path", () => {
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThan(0);
     expect(mockDb.insert).toHaveBeenCalled();
-    expect(mockDb.delete).toHaveBeenCalled();
+    expect(mockDb.delete).not.toHaveBeenCalled();
   });
 });
 
@@ -1170,7 +1187,7 @@ describe("PelotonProvider.sync — metric stream deletion and insertion", () => 
     const result = await provider.sync(mockDb, since);
 
     expect(result.errors).toHaveLength(0);
-    expect(mockDb.delete).toHaveBeenCalledTimes(1);
+    expect(mockDb.delete).not.toHaveBeenCalled();
     expect(publishedMetricStreamBatches.map((batch) => batch.length)).toEqual([600]);
     expect(result.recordsSynced).toBe(601);
   });

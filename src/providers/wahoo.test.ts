@@ -764,7 +764,7 @@ afterEach(() => {
 // syncWebhookEvent tests
 // ============================================================
 
-function makeWahooInsertMock(returnId = "act-uuid") {
+function makeWahooInsertMock(returnId = "10000000-0000-4000-8000-000000000001") {
   return vi.fn().mockReturnValue({
     values: vi.fn().mockReturnValue({
       onConflictDoUpdate: vi.fn().mockReturnValue({
@@ -1013,9 +1013,9 @@ describe("WahooProvider.syncWebhookEvent", () => {
       laps: [],
       events: [],
     });
-    const dualWriteSpy = vi
-      .spyOn(metricStreamWriterModule, "writeMetricStreamBatch")
-      .mockResolvedValue(0);
+    const replaceMetricStreamSpy = vi
+      .spyOn(metricStreamWriterModule, "replaceMetricStreamBatch")
+      .mockResolvedValue(1);
     const loggerInfoSpy = vi
       .spyOn(loggerModule.logger, "info")
       .mockImplementation(() => loggerModule.logger);
@@ -1076,8 +1076,8 @@ describe("WahooProvider.syncWebhookEvent", () => {
 
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
-    expect(whereSpy).toHaveBeenCalledTimes(1);
-    expect(dualWriteSpy).toHaveBeenCalledTimes(1);
+    expect(whereSpy).not.toHaveBeenCalled();
+    expect(replaceMetricStreamSpy).toHaveBeenCalledTimes(1);
     expect(loggerInfoSpy).toHaveBeenCalledWith(
       "[wahoo] Webhook: inserted 1 metric stream rows for workout 42",
     );
@@ -1202,7 +1202,7 @@ describe("WahooProvider.sync", () => {
       .mockImplementation(() => loggerModule.logger);
     const mockDb = {
       select: vi.fn(),
-      insert: makeWahooInsertMock("activity-sync-1"),
+      insert: makeWahooInsertMock("10000000-0000-4000-8000-000000000002"),
       delete: vi.fn(),
       execute: vi.fn(),
     };

@@ -22,7 +22,7 @@ vi.mock("../metric-stream/redpanda-producer.ts", () => ({
 }));
 
 vi.mock("../db/token-user-context.ts", () => ({
-  getTokenUserId: () => "user-1",
+  getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
 
@@ -192,7 +192,7 @@ describe("StravaProvider.sync", () => {
       insert: vi.fn().mockReturnValue({
         values: vi.fn().mockReturnValue({
           onConflictDoUpdate: vi.fn().mockReturnValue({
-            returning: vi.fn().mockResolvedValue([{ id: "act-1" }]),
+            returning: vi.fn().mockResolvedValue([{ id: "10000000-0000-4000-8000-000000000001" }]),
           }),
           onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
         }),
@@ -268,7 +268,7 @@ function createMockDb(tokenRows = [VALID_TOKEN]): SyncDatabase {
       values: vi.fn().mockImplementation(() => {
         return Object.assign(Promise.resolve(), {
           onConflictDoUpdate: vi.fn().mockReturnValue({
-            returning: vi.fn().mockResolvedValue([{ id: "act-uuid" }]),
+            returning: vi.fn().mockResolvedValue([{ id: "10000000-0000-4000-8000-000000000002" }]),
           }),
           onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
         });
@@ -395,7 +395,7 @@ describe("StravaProvider.sync — additional coverage", () => {
         onConflictDoUpdate: vi.fn().mockImplementation((config: unknown) => {
           upsertConfigs.push(config);
           return {
-            returning: vi.fn().mockResolvedValue([{ id: "activity-row-id" }]),
+            returning: vi.fn().mockResolvedValue([{ id: "10000000-0000-4000-8000-000000000003" }]),
           };
         }),
         onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
@@ -568,7 +568,9 @@ describe("StravaProvider.sync — additional coverage", () => {
         values: vi.fn().mockImplementation(() => {
           return Object.assign(Promise.resolve(), {
             onConflictDoUpdate: vi.fn().mockReturnValue({
-              returning: vi.fn().mockResolvedValue([{ id: `act-uuid-${Math.random()}` }]),
+              returning: vi
+                .fn()
+                .mockResolvedValue([{ id: "10000000-0000-4000-8000-000000000004" }]),
             }),
             onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
           });
@@ -778,7 +780,9 @@ describe("StravaProvider.sync — additional coverage", () => {
         values: vi.fn().mockImplementation(() => {
           return Object.assign(Promise.resolve(), {
             onConflictDoUpdate: vi.fn().mockReturnValue({
-              returning: vi.fn().mockResolvedValue([{ id: `act-uuid-${Math.random()}` }]),
+              returning: vi
+                .fn()
+                .mockResolvedValue([{ id: "10000000-0000-4000-8000-000000000004" }]),
             }),
             onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
           });
@@ -954,7 +958,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       }
       return {
         onConflictDoUpdate: vi.fn().mockReturnValue({
-          returning: vi.fn().mockResolvedValue([{ id: "activity-row-id" }]),
+          returning: vi.fn().mockResolvedValue([{ id: "10000000-0000-4000-8000-000000000003" }]),
         }),
         onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
       };
@@ -1027,7 +1031,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       }
       return {
         onConflictDoUpdate: vi.fn().mockReturnValue({
-          returning: vi.fn().mockResolvedValue([{ id: "activity-row-id" }]),
+          returning: vi.fn().mockResolvedValue([{ id: "10000000-0000-4000-8000-000000000003" }]),
         }),
         onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
       };
@@ -1146,7 +1150,9 @@ describe("StravaProvider.sync — additional coverage", () => {
         values: vi.fn().mockImplementation(() => {
           return Object.assign(Promise.resolve(), {
             onConflictDoUpdate: vi.fn().mockReturnValue({
-              returning: vi.fn().mockResolvedValue([{ id: `act-uuid-${Math.random()}` }]),
+              returning: vi
+                .fn()
+                .mockResolvedValue([{ id: "10000000-0000-4000-8000-000000000004" }]),
             }),
             onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
           });
