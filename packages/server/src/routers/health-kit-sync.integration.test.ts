@@ -29,7 +29,7 @@ describe("HealthKit sync router", () => {
           await testCtx.db.execute(
             sql`INSERT INTO fitness.metric_stream (
               id, recorded_at, user_id, provider_id, external_id, device_id,
-              source_type, channel, scalar, metadata
+              source_type, channel, activity_id, scalar, vector, point, metadata
             ) VALUES (
               ${event.id}::uuid,
               ${event.recordedAt}::timestamptz,
@@ -39,14 +39,39 @@ describe("HealthKit sync router", () => {
               ${event.deviceId},
               ${event.sourceType},
               ${event.channel},
+              ${
+                event.activityId === null || event.activityId === undefined
+                  ? sql`NULL`
+                  : sql`${event.activityId}::uuid`
+              },
               ${event.scalar},
+              ${
+                event.vector === null || event.vector === undefined
+                  ? sql`NULL`
+                  : sql`ARRAY[${sql.join(
+                      event.vector.map((component) => sql`${component}::real`),
+                      sql`, `,
+                    )}]`
+              },
+              ${
+                event.point === null || event.point === undefined
+                  ? sql`NULL`
+                  : sql`ST_GeomFromEWKT(${event.point})`
+              },
               ${
                 event.metadata === null || event.metadata === undefined
                   ? sql`NULL`
                   : sql`${JSON.stringify(event.metadata)}::jsonb`
               }
             )
-            ON CONFLICT (id, recorded_at) DO UPDATE SET scalar = EXCLUDED.scalar`,
+            ON CONFLICT (id, recorded_at) DO UPDATE
+              SET scalar = EXCLUDED.scalar,
+                  vector = EXCLUDED.vector,
+                  point = EXCLUDED.point,
+                  metadata = EXCLUDED.metadata,
+                  device_id = EXCLUDED.device_id,
+                  source_type = EXCLUDED.source_type,
+                  activity_id = EXCLUDED.activity_id`,
           );
         }
         return events;
