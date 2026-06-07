@@ -10420,3 +10420,36 @@ new incremental tables are populated.
   fix needs a larger monitored WAL budget, a separate bounded metric-stream
   catch-up path, or both; otherwise future high-volume gaps can invalidate the
   slot again.
+
+### 2026-06-07 Redpanda failed to start because host bind path was missing
+
+- Symptoms: Sentry issue `DOFEK-SERVER-3E` reported
+  `KafkaJSNumberOfRetriesExceeded: Connection error: getaddrinfo ENOTFOUND redpanda`
+  from production provider syncs. The metric-stream ClickHouse sink also
+  repeatedly crashed with the same KafkaJS broker lookup error.
+- User impact: Metric-stream events could not publish to Redpanda, so new
+  provider sensor samples from affected syncs were not delivered to the
+  ClickHouse/R2 metric-stream path.
+- Evidence: Sentry showed four production occurrences between
+  `2026-06-07T03:30:08Z` and `2026-06-07T03:35:57Z`, tagged with providers
+  `withings` and `strava`. Axiom `dofek-logs` confirmed
+  `dofek-metric-stream-clickhouse-sink` logging KafkaJS `ENOTFOUND redpanda`
+  retries. `docker service ps dofek_redpanda --no-trunc` showed the first fatal
+  Swarm line:
+  `invalid mount config for type "bind": bind source path does not exist: /mnt/dofek-data/redpanda`.
+- Root cause: The production host did not have `/mnt/dofek-data/redpanda`, so
+  Swarm rejected every Redpanda task before the broker could start. The
+  Redpanda directory existed in `deploy/oracle-free/cloud-init.yml` for newly
+  provisioned hosts, but the running host predated that directory and the deploy
+  workflow's host bind-mount validation list omitted Redpanda.
+- Fix / mitigation: Added `/mnt/dofek-data/redpanda` to
+  `.github/workflows/deploy-web-stack.yml` host bind-mount validation so future
+  deploys fail before `docker stack deploy` when the Redpanda data directory is
+  absent.
+- Remaining risk: The running production host still needs the missing
+  `/mnt/dofek-data/redpanda` directory created through the approved
+  infrastructure/operator path, followed by a stack redeploy or service update
+  that lets `dofek_redpanda` start and the sink/archive services reconnect.
+  After recovery, verify Redpanda health, ClickHouse sink lag, R2 archive
+  freshness, and newest `postgres_fitness.metric_stream.recorded_at` in
+  ClickHouse.
