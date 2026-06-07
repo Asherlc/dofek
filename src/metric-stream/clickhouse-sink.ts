@@ -16,6 +16,7 @@ export interface ClickHouseMetricStreamInsertClient {
     table: "postgres_fitness.metric_stream";
     values: readonly ClickHouseMetricStreamRow[];
     format: "JSONEachRow";
+    clickhouse_settings?: Record<string, string | number | boolean>;
   }): Promise<unknown>;
 }
 
@@ -89,6 +90,9 @@ export async function insertMetricStreamEventsIntoClickHouse(
     table: "postgres_fitness.metric_stream",
     values: rows,
     format: "JSONEachRow",
+    // recorded_at / _peerdb_synced_at are ISO-8601 strings with a trailing Z;
+    // ClickHouse only accepts that offset format with best_effort datetime parsing.
+    clickhouse_settings: { date_time_input_format: "best_effort" },
   });
 
   return rows.length;

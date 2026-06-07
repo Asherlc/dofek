@@ -47,6 +47,7 @@ describe("insertMetricStreamEventsIntoClickHouse", () => {
     expect(insert).toHaveBeenCalledWith({
       table: "postgres_fitness.metric_stream",
       format: "JSONEachRow",
+      clickhouse_settings: { date_time_input_format: "best_effort" },
       values: [
         expect.objectContaining({
           id: heartRateEvent.id,
@@ -149,6 +150,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
       table: "postgres_fitness.metric_stream",
       values: [expect.objectContaining({ id: heartRateEvent.id })],
       format: "JSONEachRow",
+      clickhouse_settings: { date_time_input_format: "best_effort" },
     });
   });
 
@@ -175,11 +177,13 @@ describe("applyMetricStreamEventsToClickHouse", () => {
       table: "postgres_fitness.metric_stream",
       values: [expect.objectContaining({ id: heartRateEvent.id })],
       format: "JSONEachRow",
+      clickhouse_settings: { date_time_input_format: "best_effort" },
     });
     expect(insert).toHaveBeenNthCalledWith(2, {
       table: "postgres_fitness.metric_stream",
       values: [expect.objectContaining({ id: secondHeartRateEvent.id })],
       format: "JSONEachRow",
+      clickhouse_settings: { date_time_input_format: "best_effort" },
     });
     expect(command).toHaveBeenCalledOnce();
   });
