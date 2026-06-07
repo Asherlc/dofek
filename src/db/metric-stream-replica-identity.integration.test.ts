@@ -13,7 +13,9 @@ describe("metric_stream replica identity migration", () => {
   let container: Awaited<ReturnType<GenericContainer["start"]>> | undefined;
 
   beforeAll(async () => {
-    container = await new GenericContainer("timescale/timescaledb-ha:pg18.3-ts2.26.4-all")
+    container = await new GenericContainer(
+      "mirror.gcr.io/timescale/timescaledb-ha:pg18.3-ts2.26.4-all",
+    )
       .withEnvironment({
         POSTGRES_DB: "test",
         POSTGRES_USER: "test",
