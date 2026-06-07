@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMetricStreamDeletedEvent, type MetricStreamEventV1 } from "./events.ts";
 import {
   applyMetricStreamEventsToPostgres,
+  deleteMetricStreamScopeFromPostgres,
   insertMetricStreamEventsIntoPostgres,
   type PostgresMetricStreamSinkDatabase,
 } from "./postgres-sink.ts";
@@ -36,6 +37,10 @@ function compileSqlQuery(query: Parameters<PostgresMetricStreamSinkDatabase["exe
     throw new Error("expected SQL query");
   }
   return dialect.sqlToQuery(query);
+}
+
+function normalizeSql(query: string): string {
+  return query.replace(/\s+/g, " ").trim();
 }
 
 afterEach(() => {
@@ -102,6 +107,7 @@ describe("insertMetricStreamEventsIntoPostgres", () => {
       deviceId: "Apple Watch",
       sourceType: "api",
       channel: "heart_rate",
+      scalar: 72,
     } satisfies MetricStreamEventV1;
 
     await insertMetricStreamEventsIntoPostgres({ execute }, [eventWithoutOptionalValues]);
@@ -111,7 +117,9 @@ describe("insertMetricStreamEventsIntoPostgres", () => {
       throw new Error("expected SQL execution");
     }
     const compiledQuery = compileSqlQuery(firstCall[0]);
-    expect(compiledQuery.sql).toContain("NULL");
+    expect(normalizeSql(compiledQuery.sql)).toBe(
+      "INSERT INTO fitness.metric_stream ( id, recorded_at, user_id, provider_id, external_id, device_id, source_type, channel, activity_id, scalar, vector, point, metadata ) VALUES ( $1::uuid, $2::timestamptz, $3::uuid, $4, $5, $6, $7, $8, NULL, $9, NULL, NULL, NULL ) ON CONFLICT (id, recorded_at) DO UPDATE SET scalar = EXCLUDED.scalar, vector = EXCLUDED.vector, point = EXCLUDED.point, metadata = EXCLUDED.metadata, device_id = EXCLUDED.device_id, source_type = EXCLUDED.source_type, activity_id = EXCLUDED.activity_id",
+    );
     expect(compiledQuery.params).not.toContain(undefined);
   });
 
@@ -125,7 +133,9 @@ describe("insertMetricStreamEventsIntoPostgres", () => {
       throw new Error("expected SQL execution");
     }
     const compiledQuery = compileSqlQuery(firstCall[0]);
-    expect(compiledQuery.sql).toContain("NULL");
+    expect(normalizeSql(compiledQuery.sql)).toBe(
+      "INSERT INTO fitness.metric_stream ( id, recorded_at, user_id, provider_id, external_id, device_id, source_type, channel, activity_id, scalar, vector, point, metadata ) VALUES ( $1::uuid, $2::timestamptz, $3::uuid, $4, $5, $6, $7, $8, NULL, $9, NULL, NULL, NULL ) ON CONFLICT (id, recorded_at) DO UPDATE SET scalar = EXCLUDED.scalar, vector = EXCLUDED.vector, point = EXCLUDED.point, metadata = EXCLUDED.metadata, device_id = EXCLUDED.device_id, source_type = EXCLUDED.source_type, activity_id = EXCLUDED.activity_id",
+    );
     expect(compiledQuery.sql).not.toMatch(/,\s*::uuid/);
     expect(compiledQuery.sql).not.toContain("ST_GeomFromGeoJSON");
     expect(compiledQuery.sql).not.toContain("ARRAY[");
@@ -163,6 +173,82 @@ describe("applyMetricStreamEventsToPostgres", () => {
     const insertCall = execute.mock.calls[1];
     if (!insertCall) throw new Error("expected insert SQL execution");
     expect(JSON.stringify(insertCall[0])).toContain("INSERT INTO fitness.metric_stream");
+  });
+
+  it("flushes row batches around delete events without carrying rows across scopes", async () => {
+    const execute = vi.fn<PostgresMetricStreamSinkDatabase["execute"]>(async () => []);
+
+    const applied = await applyMetricStreamEventsToPostgres({ execute }, [
+      { ...event, id: "10000000-0000-4000-8000-000000000002", externalId: "row-before-delete" },
+      createMetricStreamDeletedEvent({
+        activityId: "20000000-0000-4000-8000-000000000001",
+      }),
+      { ...event, id: "10000000-0000-4000-8000-000000000003", externalId: "row-after-delete" },
+    ]);
+
+    expect(applied).toBe(2);
+    expect(execute).toHaveBeenCalledTimes(3);
+
+    const firstInsertCall = execute.mock.calls[0];
+    const deleteCall = execute.mock.calls[1];
+    const secondInsertCall = execute.mock.calls[2];
+    if (!firstInsertCall || !deleteCall || !secondInsertCall) {
+      throw new Error("expected insert, delete, insert SQL executions");
+    }
+    expect(compileSqlQuery(firstInsertCall[0]).params).toContain("row-before-delete");
+    expect(normalizeSql(compileSqlQuery(deleteCall[0]).sql)).toBe(
+      "DELETE FROM fitness.metric_stream WHERE activity_id = $1::uuid",
+    );
+    const secondInsertQuery = compileSqlQuery(secondInsertCall[0]);
+    expect(secondInsertQuery.params).toContain("row-after-delete");
+    expect(secondInsertQuery.params).not.toContain("row-before-delete");
+  });
+});
+
+describe("deleteMetricStreamScopeFromPostgres", () => {
+  it("renders every supported delete scope predicate", async () => {
+    const execute = vi.fn<PostgresMetricStreamSinkDatabase["execute"]>(async () => []);
+
+    await deleteMetricStreamScopeFromPostgres(
+      { execute },
+      {
+        userId: "00000000-0000-0000-0000-000000000001",
+        providerId: "apple_health",
+        externalId: null,
+        channel: "heart_rate",
+        activityId: "20000000-0000-4000-8000-000000000001",
+        recordedAtStart: "2026-06-01T00:00:00.000Z",
+        recordedAtEnd: "2026-06-02T00:00:00.000Z",
+      },
+    );
+
+    const firstCall = execute.mock.calls[0];
+    if (!firstCall) {
+      throw new Error("expected delete SQL execution");
+    }
+    const compiledQuery = compileSqlQuery(firstCall[0]);
+    expect(normalizeSql(compiledQuery.sql)).toBe(
+      "DELETE FROM fitness.metric_stream WHERE user_id = $1::uuid AND provider_id = $2 AND external_id = $3 AND channel = $4 AND activity_id = $5::uuid AND recorded_at >= $6::timestamptz AND recorded_at < $7::timestamptz",
+    );
+    expect(compiledQuery.params).toEqual([
+      "00000000-0000-0000-0000-000000000001",
+      "apple_health",
+      null,
+      "heart_rate",
+      "20000000-0000-4000-8000-000000000001",
+      "2026-06-01T00:00:00.000Z",
+      "2026-06-02T00:00:00.000Z",
+    ]);
+  });
+
+  it("fails before executing SQL when a delete scope has no usable predicates", async () => {
+    const execute = vi.fn<PostgresMetricStreamSinkDatabase["execute"]>(async () => []);
+
+    await expect(
+      deleteMetricStreamScopeFromPostgres({ execute }, { providerId: "" }),
+    ).rejects.toThrow("Metric stream delete scope produced no Postgres conditions");
+
+    expect(execute).not.toHaveBeenCalled();
   });
 });
 

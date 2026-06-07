@@ -8,6 +8,7 @@
 import { vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import {
+  createMetricStreamDeletedEvent,
   createMetricStreamEvent,
   type MetricStreamEventV1,
   type MetricStreamRowInput,
@@ -55,16 +56,31 @@ export interface MockDatabaseResult {
 export interface CapturingMetricStreamPublisher {
   publisher: MetricStreamEventPublisher;
   publishedMetricStreamRows: MetricStreamRowInput[];
+  deletedMetricStreamScopes: Parameters<
+    NonNullable<MetricStreamEventPublisher["replaceRows"]>
+  >[0][];
 }
 
 export function createCapturingMetricStreamPublisher(): CapturingMetricStreamPublisher {
   const publishedMetricStreamRows: MetricStreamRowInput[] = [];
+  const deletedMetricStreamScopes: Parameters<
+    NonNullable<MetricStreamEventPublisher["replaceRows"]>
+  >[0][] = [];
   return {
     publishedMetricStreamRows,
+    deletedMetricStreamScopes,
     publisher: {
       async publishRows(rows: readonly MetricStreamRowInput[]): Promise<MetricStreamEventV1[]> {
         publishedMetricStreamRows.push(...rows);
         return rows.map((row) => createMetricStreamEvent(row));
+      },
+      async replaceRows(scope, rows) {
+        publishedMetricStreamRows.push(...rows);
+        deletedMetricStreamScopes.push(scope);
+        return {
+          deleted: createMetricStreamDeletedEvent(scope),
+          rows: rows.map((row) => createMetricStreamEvent(row)),
+        };
       },
     },
   };
