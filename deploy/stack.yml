@@ -285,7 +285,7 @@ services:
       - --rpc-addr=0.0.0.0:33145
       - --advertise-rpc-addr=redpanda:33145
     volumes:
-      - /mnt/dofek-data/redpanda:/var/lib/redpanda/data
+      - redpanda_data:/var/lib/redpanda/data
     healthcheck:
       test: ["CMD-SHELL", "rpk cluster health --brokers redpanda:9092 | grep -q Healthy"]
       interval: 10s
@@ -700,6 +700,7 @@ volumes:
   netdata_config:
   netdata_lib:
   netdata_cache:
+  redpanda_data:
 
 networks:
   # attachable so CI can run one-shot migration containers on the overlay

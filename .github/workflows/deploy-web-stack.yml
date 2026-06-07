@@ -361,7 +361,7 @@ jobs:
 
           ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "${SSH_USER}@${server_host}" 'bash -se' <<'REMOTE'
           set -euo pipefail
-          for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/redpanda /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio; do
+          for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio; do
             if [ ! -d "$path" ]; then
               echo "::error::Required host bind mount path is missing: $path"
               exit 1
