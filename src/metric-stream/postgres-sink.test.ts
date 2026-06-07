@@ -1,8 +1,9 @@
 import { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { MetricStreamEventV1 } from "./events.ts";
+import { createMetricStreamDeletedEvent, type MetricStreamEventV1 } from "./events.ts";
 import {
+  applyMetricStreamEventsToPostgres,
   insertMetricStreamEventsIntoPostgres,
   type PostgresMetricStreamSinkDatabase,
 } from "./postgres-sink.ts";
@@ -44,7 +45,7 @@ afterEach(() => {
 });
 
 describe("insertMetricStreamEventsIntoPostgres", () => {
-  it("upserts metric-stream events by the provider natural key for retry-safe syncs", async () => {
+  it("upserts metric-stream events by event id for replay-safe syncs", async () => {
     const execute = vi.fn<PostgresMetricStreamSinkDatabase["execute"]>(async () => []);
 
     const inserted = await insertMetricStreamEventsIntoPostgres({ execute }, [event]);
@@ -57,9 +58,7 @@ describe("insertMetricStreamEventsIntoPostgres", () => {
     }
     const query = JSON.stringify(firstCall[0]);
     expect(query).toContain("INSERT INTO fitness.metric_stream");
-    expect(query).toContain(
-      "ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE",
-    );
+    expect(query).toContain("ON CONFLICT (id, recorded_at) DO UPDATE");
     expect(query).toContain("scalar = EXCLUDED.scalar");
     expect(query).toContain("10000000-0000-4000-8000-000000000001");
   });
@@ -140,6 +139,30 @@ describe("insertMetricStreamEventsIntoPostgres", () => {
 
     expect(inserted).toBe(0);
     expect(execute).not.toHaveBeenCalled();
+  });
+});
+
+describe("applyMetricStreamEventsToPostgres", () => {
+  it("applies scoped delete events before replacement row events", async () => {
+    const execute = vi.fn<PostgresMetricStreamSinkDatabase["execute"]>(async () => []);
+
+    const applied = await applyMetricStreamEventsToPostgres({ execute }, [
+      createMetricStreamDeletedEvent({
+        activityId: "20000000-0000-4000-8000-000000000001",
+      }),
+      { ...event, activityId: "20000000-0000-4000-8000-000000000001" },
+    ]);
+
+    expect(applied).toBe(1);
+    expect(execute).toHaveBeenCalledTimes(2);
+    const deleteCall = execute.mock.calls[0];
+    if (!deleteCall) throw new Error("expected delete SQL execution");
+    const deleteQuery = compileSqlQuery(deleteCall[0]);
+    expect(deleteQuery.sql).toContain("DELETE FROM fitness.metric_stream");
+    expect(deleteQuery.sql).toContain("activity_id");
+    const insertCall = execute.mock.calls[1];
+    if (!insertCall) throw new Error("expected insert SQL execution");
+    expect(JSON.stringify(insertCall[0])).toContain("INSERT INTO fitness.metric_stream");
   });
 });
 

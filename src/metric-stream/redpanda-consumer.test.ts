@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createMetricStreamEvent } from "./events.ts";
+import { createMetricStreamDeletedEvent, createMetricStreamEvent } from "./events.ts";
 import {
   createKafkaMetricStreamConsumerFromEnv,
   runMetricStreamEventConsumer,
@@ -86,6 +86,44 @@ describe("runMetricStreamEventConsumer", () => {
     expect(handleEvents).toHaveBeenCalledWith([event]);
     expect(resolveOffset).toHaveBeenCalledWith("12");
     expect(commitOffsetsIfNecessary).toHaveBeenCalled();
+  });
+
+  it("passes delete events to sinks in Redpanda batch order", async () => {
+    const deleteEvent = createMetricStreamDeletedEvent({
+      activityId: "20000000-0000-4000-8000-000000000001",
+    });
+    const handleEvents = vi.fn(async () => undefined);
+    const consumer = {
+      connect: vi.fn(async () => undefined),
+      subscribe: vi.fn(async () => undefined),
+      run: vi.fn(async (options) => {
+        await options.eachBatch({
+          batch: {
+            messages: [
+              {
+                offset: "20",
+                value: Buffer.from(JSON.stringify(deleteEvent)),
+              },
+              {
+                offset: "21",
+                value: Buffer.from(JSON.stringify(event)),
+              },
+            ],
+          },
+          commitOffsetsIfNecessary: vi.fn(async () => undefined),
+          heartbeat: vi.fn(async () => undefined),
+          resolveOffset: vi.fn(),
+        });
+      }),
+    };
+
+    await runMetricStreamEventConsumer({
+      consumer,
+      handleEvents,
+      topic: "metric-stream-v1",
+    });
+
+    expect(handleEvents).toHaveBeenCalledWith([deleteEvent, event]);
   });
 
   it("does not resolve offsets when the handler fails", async () => {

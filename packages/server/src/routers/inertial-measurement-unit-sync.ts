@@ -26,7 +26,11 @@ const pushSamplesInput = z.object({
 
 export const inertialMeasurementUnitSyncRouter = router({
   pushSamples: protectedProcedure.input(pushSamplesInput).mutation(async ({ ctx, input }) => {
-    const repository = new InertialMeasurementUnitSyncRepository(ctx.db, ctx.userId);
+    const repository = new InertialMeasurementUnitSyncRepository(
+      ctx.db,
+      ctx.userId,
+      ctx.metricStreamPublisher,
+    );
 
     if (input.samples.length === 0) {
       await repository.ensureProvider();

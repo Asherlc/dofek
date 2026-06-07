@@ -5,6 +5,7 @@ import { and, eq, gte, sql } from "drizzle-orm";
 import sax from "sax";
 import yauzl from "yauzl";
 import type { SyncDatabase } from "../../db/index.ts";
+import { replaceMetricStreamBatch } from "../../db/metric-stream-writer.ts";
 import {
   allergyIntolerance,
   condition,
@@ -14,8 +15,8 @@ import {
   labPanel,
   labResult,
   medication,
-  metricStream,
 } from "../../db/schema.ts";
+import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { ensureProvider } from "../../db/tokens.ts";
 import { logger } from "../../logger.ts";
@@ -140,15 +141,12 @@ export async function runImport(
     // create duplicates (metric_stream has no uniqueness constraint) and additive
     // daily metric upserts don't double-count across re-imports.
     const sinceDate = sql`${since.toISOString().slice(0, 10)}::date`;
-    await db
-      .delete(metricStream)
-      .where(
-        and(
-          eq(metricStream.userId, scopedUserId),
-          eq(metricStream.providerId, providerId),
-          gte(metricStream.recordedAt, since),
-        ),
-      );
+    const metricStreamReplacementScope = {
+      userId: scopedUserId,
+      providerId,
+      recordedAtStart: since,
+    };
+    await replaceMetricStreamBatch(db, metricStreamReplacementScope, [], SOURCE_TYPE_FILE);
     await db
       .delete(dailyMetrics)
       .where(
@@ -187,8 +185,12 @@ export async function runImport(
 
         // Run all table inserts in parallel -- they target independent tables
         const results = await Promise.all([
-          metricRecords.length > 0 ? upsertMetricStreamBatch(db, providerId, metricRecords) : 0,
-          bodyRecords.length > 0 ? upsertBodyMeasurementBatch(db, providerId, bodyRecords) : 0,
+          metricRecords.length > 0
+            ? upsertMetricStreamBatch(db, providerId, metricRecords, metricStreamReplacementScope)
+            : 0,
+          bodyRecords.length > 0
+            ? upsertBodyMeasurementBatch(db, providerId, bodyRecords, metricStreamReplacementScope)
+            : 0,
           dailyRecords.length > 0 ? upsertDailyMetricsBatch(db, providerId, dailyRecords) : 0,
           nutritionRecords.length > 0 ? upsertNutritionBatch(db, providerId, nutritionRecords) : 0,
           unrouted.length > 0 ? upsertHealthEventBatch(db, providerId, unrouted) : 0,
@@ -200,7 +202,12 @@ export async function runImport(
         recordsSynced += sleepCount;
       },
       onWorkoutBatch: async (workouts) => {
-        const workoutCount = await upsertWorkoutBatch(db, providerId, workouts);
+        const workoutCount = await upsertWorkoutBatch(
+          db,
+          providerId,
+          workouts,
+          metricStreamReplacementScope,
+        );
         recordsSynced += workoutCount;
       },
       onCategoryBatch: async (records) => {

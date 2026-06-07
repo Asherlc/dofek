@@ -11,8 +11,8 @@ import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
-import { activity, metricStream, userSettings } from "../db/schema.ts";
+import { replaceMetricStreamBatch } from "../db/metric-stream-writer.ts";
+import { activity, userSettings } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
@@ -496,9 +496,6 @@ export class RideWithGpsProvider implements SyncProvider {
         const activityId = activityRow?.id;
         if (!activityId) continue;
 
-        // Delete old metric_stream rows for this activity, then re-insert
-        await db.delete(metricStream).where(eq(metricStream.activityId, activityId));
-
         // Parse and batch-insert track points
         const trackPoints = parseTrackPoints(trip.track_points ?? []);
         const indoor = isIndoorCycling(parsed.activityType);
@@ -516,7 +513,7 @@ export class RideWithGpsProvider implements SyncProvider {
           power: point.power,
         }));
         // metricRows still use the legacy shape; convert and insert into metric_stream.
-        await writeMetricStreamBatch(db, metricRows, SOURCE_TYPE_API);
+        await replaceMetricStreamBatch(db, { activityId }, metricRows, SOURCE_TYPE_API);
 
         recordsSynced++;
       } catch (err) {

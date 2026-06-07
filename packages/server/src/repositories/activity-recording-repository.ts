@@ -1,6 +1,12 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
+import {
+  getDefaultMetricStreamEventPublisher,
+  type MetricStreamEventPublisher,
+} from "../../../../src/metric-stream/redpanda-producer.ts";
+import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
 import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 
@@ -34,10 +40,20 @@ export interface SaveActivityInput {
 export class ActivityRecordingRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
+  readonly #metricStreamPublisher?: MetricStreamEventPublisher;
 
-  constructor(db: Pick<Database, "execute">, userId: string) {
+  constructor(
+    db: Pick<Database, "execute">,
+    userId: string,
+    metricStreamPublisher?: MetricStreamEventPublisher,
+  ) {
     this.#db = db;
     this.#userId = userId;
+    this.#metricStreamPublisher = metricStreamPublisher;
+  }
+
+  async #publisher(): Promise<MetricStreamEventPublisher> {
+    return this.#metricStreamPublisher ?? getDefaultMetricStreamEventPublisher();
   }
 
   /** Ensure the "dofek" provider row exists. */
@@ -88,72 +104,57 @@ export class ActivityRecordingRepository {
     if (!row) throw new Error("Failed to insert activity");
     const activityId = row.id;
 
-    // Batch-insert GPS samples into metric_stream
     for (let index = 0; index < input.samples.length; index += BATCH_SIZE) {
       const batch = input.samples.slice(index, index + BATCH_SIZE);
 
       if (batch.length === 0) continue;
 
-      const locationValues = batch
-        .filter((sample) => sample.lat != null && sample.lng != null)
-        .map((sample) => {
+      const rows: MetricStreamRowInput[] = [];
+      for (const sample of batch) {
+        if (sample.lat != null && sample.lng != null) {
           const metadata =
-            sample.gpsAccuracy == null
-              ? null
-              : JSON.stringify({ horizontal_accuracy_m: sample.gpsAccuracy });
+            sample.gpsAccuracy == null ? undefined : { horizontal_accuracy_m: sample.gpsAccuracy };
           const recordedAt = canonicalizeTimestampForExternalId(sample.recordedAt);
           const sampleExternalId = `${externalId}:location:${recordedAt}`;
-          return sql`(
-            ${sample.recordedAt}::timestamptz,
-            ${this.#userId}::uuid,
-            ${activityId}::uuid,
-            ${PROVIDER_ID},
-            ${sampleExternalId},
-            ${input.sourceName},
-            ${"api"},
-            ${"location"},
-            ST_SetSRID(ST_MakePoint(${sample.lng}, ${sample.lat}), 4326),
-            ${metadata}::jsonb
-          )`;
-        });
-      if (locationValues.length > 0) {
-        await this.#db.execute(
-          sql`INSERT INTO fitness.metric_stream
-              (recorded_at, user_id, activity_id, provider_id, external_id, device_id, source_type, channel, point, metadata)
-              VALUES ${sql.join(locationValues, sql`, `)}
-              ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE
-              SET activity_id = EXCLUDED.activity_id,
-                  device_id = EXCLUDED.device_id,
-                  source_type = EXCLUDED.source_type,
-                  point = EXCLUDED.point,
-                  metadata = EXCLUDED.metadata`,
-        );
-      }
-
-      const channelMapping: Array<{ channel: string; key: keyof GpsSample }> = [
-        { channel: "altitude", key: "altitude" },
-        { channel: "speed", key: "speed" },
-      ];
-      for (const { channel, key } of channelMapping) {
-        const channelValues = batch
-          .filter((sample) => sample[key] != null)
-          .map((sample) => {
-            const recordedAt = canonicalizeTimestampForExternalId(sample.recordedAt);
-            const sampleExternalId = `${externalId}:${channel}:${recordedAt}`;
-            return sql`(${sample.recordedAt}::timestamptz, ${this.#userId}::uuid, ${activityId}::uuid, ${PROVIDER_ID}, ${sampleExternalId}, ${input.sourceName}, ${"api"}, ${channel}, ${sample[key]}::real)`;
+          rows.push({
+            recordedAt: sample.recordedAt,
+            userId: this.#userId,
+            activityId,
+            providerId: PROVIDER_ID,
+            externalId: sampleExternalId,
+            deviceId: input.sourceName,
+            sourceType: "api",
+            channel: "location",
+            point: `SRID=4326;POINT(${sample.lng} ${sample.lat})`,
+            metadata,
           });
-        if (channelValues.length > 0) {
-          await this.#db.execute(
-            sql`INSERT INTO fitness.metric_stream
-                (recorded_at, user_id, activity_id, provider_id, external_id, device_id, source_type, channel, scalar)
-                VALUES ${sql.join(channelValues, sql`, `)}
-                ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE
-                SET activity_id = EXCLUDED.activity_id,
-                    device_id = EXCLUDED.device_id,
-                    source_type = EXCLUDED.source_type,
-                    scalar = EXCLUDED.scalar`,
-          );
         }
+
+        const channelMapping: Array<{ channel: string; key: keyof GpsSample }> = [
+          { channel: "altitude", key: "altitude" },
+          { channel: "speed", key: "speed" },
+        ];
+        for (const { channel, key } of channelMapping) {
+          const value = sample[key];
+          if (value == null || typeof value !== "number") continue;
+          const recordedAt = canonicalizeTimestampForExternalId(sample.recordedAt);
+          const sampleExternalId = `${externalId}:${channel}:${recordedAt}`;
+          rows.push({
+            recordedAt: sample.recordedAt,
+            userId: this.#userId,
+            activityId,
+            providerId: PROVIDER_ID,
+            externalId: sampleExternalId,
+            deviceId: input.sourceName,
+            sourceType: "api",
+            channel,
+            scalar: value,
+          });
+        }
+      }
+      if (rows.length > 0) {
+        const publisher = await this.#publisher();
+        await writeMetricStreamRows({ publisher, rows });
       }
     }
 

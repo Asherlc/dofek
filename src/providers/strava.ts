@@ -15,8 +15,12 @@ import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { type MetricStreamSourceRow, writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
-import { activity, metricStream } from "../db/schema.ts";
+import {
+  type MetricStreamSourceRow,
+  replaceMetricStreamBatch,
+  writeMetricStreamBatch,
+} from "../db/metric-stream-writer.ts";
+import { activity } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { logger } from "../logger.ts";
@@ -637,7 +641,7 @@ export class StravaProvider implements WebhookProvider {
         .returning({ id: activity.id });
       const deletedRow = deleted[0];
       if (deletedRow) {
-        await db.delete(metricStream).where(eq(metricStream.activityId, deletedRow.id));
+        await replaceMetricStreamBatch(db, { activityId: deletedRow.id }, [], SOURCE_TYPE_API);
         logger.info(
           `[strava] Deleted activity ${event.objectId} via webhook for user ${scopedUserId}`,
         );
@@ -704,8 +708,7 @@ export class StravaProvider implements WebhookProvider {
 
       if (metricRows.length > 0) {
         // Delete existing sensor rows then re-insert.
-        await db.delete(metricStream).where(eq(metricStream.activityId, activityId));
-        await writeMetricStreamBatch(db, metricRows, SOURCE_TYPE_API);
+        await replaceMetricStreamBatch(db, { activityId }, metricRows, SOURCE_TYPE_API);
         logger.info(
           `[strava] Webhook: inserted ${metricRows.length} metric stream rows for activity ${event.objectId}`,
         );

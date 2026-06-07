@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  applyMetricStreamEventsToClickHouse,
   insertMetricStreamEventsIntoClickHouse,
   mapMetricStreamEventToClickHouseRow,
 } from "./clickhouse-sink.ts";
-import type { MetricStreamEventV1 } from "./events.ts";
+import { createMetricStreamDeletedEvent, type MetricStreamEventV1 } from "./events.ts";
 import type { RunMetricStreamEventConsumerOptions } from "./redpanda-consumer.ts";
 
 const heartRateEvent = {
@@ -94,6 +95,15 @@ describe("insertMetricStreamEventsIntoClickHouse", () => {
     expect(row._peerdb_version).toBe(0);
   });
 
+  it("normalizes EWKT point events into the GeoJSON string ClickHouse read models expect", () => {
+    const row = mapMetricStreamEventToClickHouseRow({
+      ...heartRateEvent,
+      point: "SRID=4326;POINT(-122.4 37.8)",
+    });
+
+    expect(row.point).toBe('{"type":"Point","coordinates":[-122.4,37.8]}');
+  });
+
   it("maps omitted optional fields into null ClickHouse values", () => {
     const row = mapMetricStreamEventToClickHouseRow({
       version: 1,
@@ -110,6 +120,33 @@ describe("insertMetricStreamEventsIntoClickHouse", () => {
     expect(row.activity_id).toBeNull();
     expect(row.scalar).toBeNull();
     expect(row.point).toBeNull();
+  });
+});
+
+describe("applyMetricStreamEventsToClickHouse", () => {
+  it("marks matching ClickHouse rows deleted before inserting replacement rows", async () => {
+    const command = vi.fn(async () => undefined);
+    const insert = vi.fn(async () => undefined);
+
+    const applied = await applyMetricStreamEventsToClickHouse({ command, insert }, [
+      createMetricStreamDeletedEvent({
+        activityId: "20000000-0000-4000-8000-000000000001",
+      }),
+      { ...heartRateEvent, activityId: "20000000-0000-4000-8000-000000000001" },
+    ]);
+
+    expect(applied).toBe(1);
+    expect(command).toHaveBeenCalledWith({
+      query: expect.stringContaining("ALTER TABLE postgres_fitness.metric_stream UPDATE"),
+      query_params: expect.objectContaining({
+        activity_id: "20000000-0000-4000-8000-000000000001",
+      }),
+    });
+    expect(insert).toHaveBeenCalledWith({
+      table: "postgres_fitness.metric_stream",
+      values: [expect.objectContaining({ id: heartRateEvent.id })],
+      format: "JSONEachRow",
+    });
   });
 });
 

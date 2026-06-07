@@ -1,16 +1,16 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
-import { z } from "zod";
 import { RR_INTERVAL_MS } from "../../../../src/db/sensor-channels.ts";
+import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
+import {
+  getDefaultMetricStreamEventPublisher,
+  type MetricStreamEventPublisher,
+} from "../../../../src/metric-stream/redpanda-producer.ts";
+import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
 import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
-import { executeWithSchema } from "../lib/typed-sql.ts";
 
 const PROVIDER_ID = "whoop_ble";
 const INSERT_BATCH_SIZE = 2000;
-
-const insertedMetricStreamRowSchema = z.object({
-  id: z.string(),
-});
 
 export interface WhoopBleRealtimeDataSample {
   timestamp: string;
@@ -24,10 +24,20 @@ export interface WhoopBleRealtimeDataSample {
 export class WhoopBleSyncRepository {
   readonly #database: Pick<Database, "execute">;
   readonly #userId: string;
+  readonly #metricStreamPublisher?: MetricStreamEventPublisher;
 
-  constructor(database: Pick<Database, "execute">, userId: string) {
+  constructor(
+    database: Pick<Database, "execute">,
+    userId: string,
+    metricStreamPublisher?: MetricStreamEventPublisher,
+  ) {
     this.#database = database;
     this.#userId = userId;
+    this.#metricStreamPublisher = metricStreamPublisher;
+  }
+
+  async #publisher(): Promise<MetricStreamEventPublisher> {
+    return this.#metricStreamPublisher ?? getDefaultMetricStreamEventPublisher();
   }
 
   async ensureProvider(): Promise<void> {
@@ -48,24 +58,22 @@ export class WhoopBleSyncRepository {
 
     for (let offset = 0; offset < samples.length; offset += INSERT_BATCH_SIZE) {
       const batch = samples.slice(offset, offset + INSERT_BATCH_SIZE);
+      const rows: MetricStreamRowInput[] = [];
 
       const beatIntervalSamples = batch.filter((sample) => sample.rrIntervalMs > 0);
-      if (beatIntervalSamples.length > 0) {
-        const beatIntervalValues = beatIntervalSamples.map((sample) => {
-          const recordedAt = canonicalizeTimestampForExternalId(sample.timestamp);
-          const externalId = `${PROVIDER_ID}:${deviceId}:${RR_INTERVAL_MS}:${recordedAt}`;
-          return sql`(${sample.timestamp}::timestamptz, ${this.#userId}::uuid, ${PROVIDER_ID}, ${externalId}, ${deviceId}, ${"ble"}, ${RR_INTERVAL_MS}, ${sample.rrIntervalMs}::real)`;
+      for (const sample of beatIntervalSamples) {
+        const recordedAt = canonicalizeTimestampForExternalId(sample.timestamp);
+        const externalId = `${PROVIDER_ID}:${deviceId}:${RR_INTERVAL_MS}:${recordedAt}`;
+        rows.push({
+          recordedAt: sample.timestamp,
+          userId: this.#userId,
+          providerId: PROVIDER_ID,
+          externalId,
+          deviceId,
+          sourceType: "ble",
+          channel: RR_INTERVAL_MS,
+          scalar: sample.rrIntervalMs,
         });
-        const insertedRows = await executeWithSchema(
-          this.#database,
-          insertedMetricStreamRowSchema,
-          sql`INSERT INTO fitness.metric_stream
-              (recorded_at, user_id, provider_id, external_id, device_id, source_type, channel, scalar)
-              VALUES ${sql.join(beatIntervalValues, sql`, `)}
-              ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO NOTHING
-              RETURNING id`,
-        );
-        totalInserted += insertedRows.length;
       }
 
       const orientationSamples = batch.filter(
@@ -75,22 +83,25 @@ export class WhoopBleSyncRepository {
           sample.quaternionY !== 0 ||
           sample.quaternionZ !== 0,
       );
-      if (orientationSamples.length > 0) {
-        const orientationSensorValues = orientationSamples.map((sample) => {
-          const recordedAt = canonicalizeTimestampForExternalId(sample.timestamp);
-          const externalId = `${PROVIDER_ID}:${deviceId}:orientation:${recordedAt}`;
-          return sql`(${sample.timestamp}::timestamptz, ${this.#userId}::uuid, ${PROVIDER_ID}, ${externalId}, ${deviceId}, ${"ble"}, ${"orientation"}, ARRAY[${sample.quaternionW}, ${sample.quaternionX}, ${sample.quaternionY}, ${sample.quaternionZ}]::real[])`;
+      for (const sample of orientationSamples) {
+        const recordedAt = canonicalizeTimestampForExternalId(sample.timestamp);
+        const externalId = `${PROVIDER_ID}:${deviceId}:orientation:${recordedAt}`;
+        rows.push({
+          recordedAt: sample.timestamp,
+          userId: this.#userId,
+          providerId: PROVIDER_ID,
+          externalId,
+          deviceId,
+          sourceType: "ble",
+          channel: "orientation",
+          vector: [sample.quaternionW, sample.quaternionX, sample.quaternionY, sample.quaternionZ],
         });
-        const insertedRows = await executeWithSchema(
-          this.#database,
-          insertedMetricStreamRowSchema,
-          sql`INSERT INTO fitness.metric_stream
-              (recorded_at, user_id, provider_id, external_id, device_id, source_type, channel, vector)
-              VALUES ${sql.join(orientationSensorValues, sql`, `)}
-              ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO NOTHING
-              RETURNING id`,
-        );
-        totalInserted += insertedRows.length;
+      }
+
+      if (rows.length > 0) {
+        const publisher = await this.#publisher();
+        const result = await writeMetricStreamRows({ publisher, rows });
+        totalInserted += result.published;
       }
     }
 

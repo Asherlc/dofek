@@ -5,6 +5,7 @@ import type { SyncDatabase } from "../../db/index.ts";
 import {
   type MetricStreamSourceRow,
   writeMetricStreamBatch,
+  writeMetricStreamBatchForScope,
 } from "../../db/metric-stream-writer.ts";
 import { NUTRIENT_ID_MAP } from "../../db/nutrient-columns.ts";
 import {
@@ -19,6 +20,7 @@ import {
 } from "../../db/schema.ts";
 import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
 import { logger } from "../../logger.ts";
+import type { MetricStreamDeleteScopeInput } from "../../metric-stream/events.ts";
 import type { HealthRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
 import type { HealthWorkout } from "./workouts.ts";
@@ -167,6 +169,7 @@ export async function upsertMetricStreamBatch(
   db: SyncDatabase,
   providerId: string,
   records: HealthRecord[],
+  replacementScope?: MetricStreamDeleteScopeInput,
 ): Promise<number> {
   const rows: MetricStreamSourceRow[] = [];
   for (const record of records) {
@@ -204,8 +207,11 @@ export async function upsertMetricStreamBatch(
     }
   }
 
-  // Metric rows now write directly to metric_stream.
-  await writeMetricStreamBatch(db, rows, SOURCE_TYPE_FILE);
+  if (replacementScope) {
+    await writeMetricStreamBatchForScope(db, replacementScope, rows, SOURCE_TYPE_FILE);
+  } else {
+    await writeMetricStreamBatch(db, rows, SOURCE_TYPE_FILE);
+  }
   return rows.length;
 }
 
@@ -213,6 +219,7 @@ export async function upsertBodyMeasurementBatch(
   db: SyncDatabase,
   providerId: string,
   records: HealthRecord[],
+  replacementScope?: MetricStreamDeleteScopeInput,
 ): Promise<number> {
   // Group by timestamp to combine BP systolic + diastolic into one row
   const byTime = new Map<string, HealthRecord[]>();
@@ -277,7 +284,11 @@ export async function upsertBodyMeasurementBatch(
   }
   const uniqueRows = [...dedupMap.values()];
 
-  await writeMetricStreamBatch(db, uniqueRows, SOURCE_TYPE_FILE);
+  if (replacementScope) {
+    await writeMetricStreamBatchForScope(db, replacementScope, uniqueRows, SOURCE_TYPE_FILE);
+  } else {
+    await writeMetricStreamBatch(db, uniqueRows, SOURCE_TYPE_FILE);
+  }
   return uniqueRows.length;
 }
 
@@ -626,6 +637,7 @@ export async function upsertWorkoutBatch(
   db: SyncDatabase,
   providerId: string,
   workouts: HealthWorkout[],
+  replacementScope?: MetricStreamDeleteScopeInput,
 ): Promise<number> {
   // Deduplicate by externalId — Apple Health can export duplicate workouts
   // from multiple sources (Apple Watch + iPhone) with the same start time.
@@ -703,8 +715,11 @@ export async function upsertWorkoutBatch(
     }
   }
 
-  // GPS route points are stored as metric_stream location samples with scalar metadata.
-  await writeMetricStreamBatch(db, allGpsRows, SOURCE_TYPE_FILE);
+  if (replacementScope) {
+    await writeMetricStreamBatchForScope(db, replacementScope, allGpsRows, SOURCE_TYPE_FILE);
+  } else {
+    await writeMetricStreamBatch(db, allGpsRows, SOURCE_TYPE_FILE);
+  }
 
   return activityResults.length;
 }

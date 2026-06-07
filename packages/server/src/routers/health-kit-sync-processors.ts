@@ -7,7 +7,7 @@ import {
 } from "../../../../src/db/sensor-channels.ts";
 import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
 import {
-  createKafkaMetricStreamEventPublisherFromEnv,
+  getDefaultMetricStreamEventPublisher,
   type MetricStreamEventPublisher,
 } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
@@ -67,15 +67,85 @@ export function computeBoundsFromIsoTimestamps(
   };
 }
 
-/** Process body measurement samples */
-export async function processBodyMeasurements(
+function dateInTimezone(timestamp: string, timezone: string): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return extractDate(timestamp);
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+  if (!year || !month || !day) return extractDate(timestamp);
+  return `${year}-${month}-${day}`;
+}
+
+async function upsertDailyAverageFromSamples(
   db: Database,
   userId: string,
   samples: HealthKitSample[],
+  sampleType: string,
+  column: "skin_temp_c" | "spo2_avg",
+  valueScale: number,
+  timezone: string,
+): Promise<void> {
+  const groupedSamples = new Map<string, { total: number; count: number; sourceName: string }>();
+
+  for (const sample of samples) {
+    if (sample.type !== sampleType) continue;
+    const date = dateInTimezone(sample.startDate, timezone);
+    const key = `${date}\0${sample.sourceName}`;
+    const grouped = groupedSamples.get(key) ?? {
+      total: 0,
+      count: 0,
+      sourceName: sample.sourceName,
+    };
+    grouped.total += sample.value * valueScale;
+    grouped.count++;
+    groupedSamples.set(key, grouped);
+  }
+
+  for (const [key, grouped] of groupedSamples) {
+    if (grouped.count === 0) continue;
+    const [date] = key.split("\0");
+    const average = grouped.total / grouped.count;
+    await db.execute(
+      sql`INSERT INTO fitness.daily_metrics (
+            date,
+            provider_id,
+            user_id,
+            source_name,
+            ${sql.identifier(column)}
+          )
+          VALUES (
+            ${date}::date,
+            ${PROVIDER_ID},
+            ${userId},
+            ${grouped.sourceName},
+            ${average}
+          )
+          ON CONFLICT (user_id, date, provider_id, source_name) DO UPDATE SET
+            ${sql.identifier(column)} = EXCLUDED.${sql.identifier(column)}`,
+    );
+  }
+}
+
+/** Process body measurement samples */
+export async function processBodyMeasurements(
+  _db: Database,
+  userId: string,
+  samples: HealthKitSample[],
+  publisher?: MetricStreamEventPublisher,
 ): Promise<number> {
+  const resolvedPublisher = publisher ?? (await getDefaultMetricStreamEventPublisher());
   let inserted = 0;
   for (let i = 0; i < samples.length; i += BATCH_SIZE) {
     const batch = samples.slice(i, i + BATCH_SIZE);
+    const rows: MetricStreamRowInput[] = [];
     for (const sample of batch) {
       const mapping = bodyMeasurementTypes[sample.type];
       if (!mapping) continue;
@@ -86,26 +156,19 @@ export async function processBodyMeasurements(
         throw new Error(`Missing metric_stream channel mapping for body column: ${mapping.column}`);
       }
 
-      await db.execute(
-        sql`INSERT INTO fitness.metric_stream
-              (recorded_at, user_id, provider_id, external_id, device_id, source_type, channel, scalar)
-            VALUES (
-              ${sample.startDate}::timestamptz,
-              ${userId},
-              ${PROVIDER_ID},
-              ${externalId},
-              ${sample.sourceName},
-              ${SOURCE_TYPE_API},
-              ${channel},
-              ${value}
-            )
-            ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE
-              SET scalar = excluded.scalar,
-                  device_id = excluded.device_id,
-                  source_type = excluded.source_type`,
-      );
+      rows.push({
+        recordedAt: sample.startDate,
+        userId,
+        providerId: PROVIDER_ID,
+        externalId,
+        deviceId: sample.sourceName,
+        sourceType: SOURCE_TYPE_API,
+        channel,
+        scalar: value,
+      });
       inserted++;
     }
+    await writeMetricStreamRows({ publisher: resolvedPublisher, rows });
   }
   return inserted;
 }
@@ -255,13 +318,6 @@ export async function processDailyMetrics(
   return samples.length;
 }
 
-let defaultMetricStreamPublisherPromise: Promise<MetricStreamEventPublisher> | undefined;
-
-function getDefaultMetricStreamPublisher(): Promise<MetricStreamEventPublisher> {
-  defaultMetricStreamPublisherPromise ??= createKafkaMetricStreamEventPublisherFromEnv();
-  return defaultMetricStreamPublisherPromise;
-}
-
 /** Process metric streams */
 export async function processMetricStream(
   _db: Database,
@@ -269,7 +325,7 @@ export async function processMetricStream(
   samples: HealthKitSample[],
   publisher?: MetricStreamEventPublisher,
 ): Promise<number> {
-  const resolvedPublisher = publisher ?? (await getDefaultMetricStreamPublisher());
+  const resolvedPublisher = publisher ?? (await getDefaultMetricStreamEventPublisher());
   let inserted = 0;
   for (let i = 0; i < samples.length; i += BATCH_SIZE) {
     const batch = samples.slice(i, i + BATCH_SIZE);
@@ -373,7 +429,9 @@ export async function processWorkoutRoutes(
   db: Database,
   userId: string,
   routes: WorkoutRoute[],
+  publisher?: MetricStreamEventPublisher,
 ): Promise<number> {
+  const resolvedPublisher = publisher ?? (await getDefaultMetricStreamEventPublisher());
   let inserted = 0;
 
   // Resolve all workoutUuid → activityId mappings in one query to avoid N+1
@@ -419,24 +477,15 @@ export async function processWorkoutRoutes(
       continue;
     }
 
-    // Batch metric_stream inserts to reduce DB round-trips.
-    const pendingValues: ReturnType<typeof sql>[] = [];
-    const flushPendingValues = async () => {
-      if (pendingValues.length === 0) return;
-      await db.execute(
-        sql`INSERT INTO fitness.metric_stream
-              (recorded_at, user_id, provider_id, external_id, activity_id, device_id, source_type, channel, scalar, point, metadata)
-            VALUES ${sql.join(pendingValues, sql`, `)}
-            ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE
-            SET activity_id = EXCLUDED.activity_id,
-                device_id = EXCLUDED.device_id,
-                source_type = EXCLUDED.source_type,
-                scalar = EXCLUDED.scalar,
-                point = EXCLUDED.point,
-                metadata = EXCLUDED.metadata`,
-      );
-      inserted += pendingValues.length;
-      pendingValues.length = 0;
+    const pendingRows: MetricStreamRowInput[] = [];
+    const flushPendingRows = async () => {
+      if (pendingRows.length === 0) return;
+      const events = await writeMetricStreamRows({
+        publisher: resolvedPublisher,
+        rows: pendingRows,
+      });
+      inserted += events.published;
+      pendingRows.length = 0;
     };
 
     for (const location of route.locations) {
@@ -444,26 +493,24 @@ export async function processWorkoutRoutes(
       const locationMetadata =
         location.horizontalAccuracy == null
           ? null
-          : JSON.stringify({ horizontal_accuracy_m: location.horizontalAccuracy });
+          : { horizontal_accuracy_m: location.horizontalAccuracy };
       const locationExternalId = `${externalId}:location:${recordedAt}`;
-      pendingValues.push(
-        sql`(
-          ${location.date}::timestamptz,
-          ${userId},
-          ${PROVIDER_ID},
-          ${locationExternalId},
-          ${activityId}::uuid,
-          ${route.sourceName ?? null},
-          ${"api"},
-          ${"location"},
-          NULL::real,
-          ST_SetSRID(ST_MakePoint(${location.lng}, ${location.lat}), 4326),
-          ${locationMetadata}::jsonb
-        )`,
-      );
+      pendingRows.push({
+        recordedAt: location.date,
+        userId,
+        providerId: PROVIDER_ID,
+        externalId: locationExternalId,
+        activityId,
+        deviceId: route.sourceName ?? null,
+        sourceType: "api",
+        channel: "location",
+        scalar: null,
+        point: `SRID=4326;POINT(${location.lng} ${location.lat})`,
+        metadata: locationMetadata,
+      });
 
-      if (pendingValues.length >= BATCH_SIZE) {
-        await flushPendingValues();
+      if (pendingRows.length >= BATCH_SIZE) {
+        await flushPendingRows();
       }
 
       for (const { channel, getValue, round } of ROUTE_CHANNELS) {
@@ -472,29 +519,27 @@ export async function processWorkoutRoutes(
 
         const scalar = round ? Math.round(value) : value;
         const scalarExternalId = `${externalId}:${channel}:${recordedAt}`;
-        pendingValues.push(
-          sql`(
-            ${location.date}::timestamptz,
-            ${userId},
-            ${PROVIDER_ID},
-            ${scalarExternalId},
-            ${activityId}::uuid,
-            ${route.sourceName ?? null},
-            ${"api"},
-            ${channel},
-            ${scalar}::real,
-            NULL,
-            NULL::jsonb
-          )`,
-        );
+        pendingRows.push({
+          recordedAt: location.date,
+          userId,
+          providerId: PROVIDER_ID,
+          externalId: scalarExternalId,
+          activityId,
+          deviceId: route.sourceName ?? null,
+          sourceType: "api",
+          channel,
+          scalar,
+          point: null,
+          metadata: null,
+        });
 
-        if (pendingValues.length >= BATCH_SIZE) {
-          await flushPendingValues();
+        if (pendingRows.length >= BATCH_SIZE) {
+          await flushPendingRows();
         }
       }
     }
 
-    await flushPendingValues();
+    await flushPendingRows();
   }
 
   return inserted;
@@ -509,26 +554,17 @@ export async function processWorkoutRoutes(
 export async function aggregateSpO2ToDailyMetrics(
   db: Database,
   userId: string,
-  bounds: { startAt: string; endAt: string },
+  samples: HealthKitSample[],
   timezone: string,
 ): Promise<void> {
-  await db.execute(
-    sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, source_name, spo2_avg)
-        SELECT
-          (recorded_at AT TIME ZONE ${timezone})::date AS date,
-          provider_id,
-          user_id,
-          device_id AS source_name,
-          AVG(scalar) * 100 AS spo2_avg
-        FROM fitness.metric_stream
-        WHERE provider_id = ${PROVIDER_ID}
-          AND user_id = ${userId}
-          AND channel = 'spo2'
-          AND recorded_at >= ${bounds.startAt}::timestamptz
-          AND recorded_at <= ${bounds.endAt}::timestamptz
-        GROUP BY 1, provider_id, user_id, device_id
-        ON CONFLICT (user_id, date, provider_id, source_name) DO UPDATE SET
-          spo2_avg = EXCLUDED.spo2_avg`,
+  await upsertDailyAverageFromSamples(
+    db,
+    userId,
+    samples,
+    "HKQuantityTypeIdentifierOxygenSaturation",
+    "spo2_avg",
+    100,
+    timezone,
   );
 }
 
@@ -540,25 +576,16 @@ export async function aggregateSpO2ToDailyMetrics(
 export async function aggregateSkinTempToDailyMetrics(
   db: Database,
   userId: string,
-  bounds: { startAt: string; endAt: string },
+  samples: HealthKitSample[],
   timezone: string,
 ): Promise<void> {
-  await db.execute(
-    sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, source_name, skin_temp_c)
-        SELECT
-          (recorded_at AT TIME ZONE ${timezone})::date AS date,
-          provider_id,
-          user_id,
-          device_id AS source_name,
-          AVG(scalar) AS skin_temp_c
-        FROM fitness.metric_stream
-        WHERE provider_id = ${PROVIDER_ID}
-          AND user_id = ${userId}
-          AND channel = 'skin_temperature'
-          AND recorded_at >= ${bounds.startAt}::timestamptz
-          AND recorded_at <= ${bounds.endAt}::timestamptz
-        GROUP BY 1, provider_id, user_id, device_id
-        ON CONFLICT (user_id, date, provider_id, source_name) DO UPDATE SET
-          skin_temp_c = EXCLUDED.skin_temp_c`,
+  await upsertDailyAverageFromSamples(
+    db,
+    userId,
+    samples,
+    "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
+    "skin_temp_c",
+    1,
+    timezone,
   );
 }

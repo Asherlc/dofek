@@ -1,6 +1,9 @@
 import { Kafka } from "kafkajs";
 import {
+  createMetricStreamDeletedEvent,
   createMetricStreamEvent,
+  type MetricStreamDeletedEventV1,
+  type MetricStreamDeleteScopeInput,
   type MetricStreamEventV1,
   type MetricStreamRowInput,
 } from "./events.ts";
@@ -22,7 +25,19 @@ export interface KafkaProducerLike {
 }
 
 export interface MetricStreamEventPublisher {
-  publishRows(rows: readonly MetricStreamRowInput[]): Promise<MetricStreamEventV1[]>;
+  publishRows(
+    rows: readonly MetricStreamRowInput[],
+    partitionKey?: string,
+  ): Promise<MetricStreamEventV1[]>;
+  replaceRows?(
+    scope: MetricStreamDeleteScopeInput,
+    rows: readonly MetricStreamRowInput[],
+  ): Promise<MetricStreamReplacementPublishResult>;
+}
+
+export interface MetricStreamReplacementPublishResult {
+  deleted: MetricStreamDeletedEventV1;
+  rows: MetricStreamEventV1[];
 }
 
 export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublisher {
@@ -37,7 +52,10 @@ export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublish
     this.#topic = topic;
   }
 
-  async publishRows(rows: readonly MetricStreamRowInput[]): Promise<MetricStreamEventV1[]> {
+  async publishRows(
+    rows: readonly MetricStreamRowInput[],
+    partitionKey?: string,
+  ): Promise<MetricStreamEventV1[]> {
     const events = rows.map((row) => createMetricStreamEvent(row));
     if (events.length === 0) {
       return [];
@@ -46,7 +64,7 @@ export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublish
     await this.#producer.send({
       topic: this.#topic,
       messages: events.map((event) => ({
-        key: event.id,
+        key: partitionKey ?? event.id,
         value: JSON.stringify(event),
       })),
     });
@@ -54,9 +72,40 @@ export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublish
     return events;
   }
 
+  async replaceRows(
+    scope: MetricStreamDeleteScopeInput,
+    rows: readonly MetricStreamRowInput[],
+  ): Promise<MetricStreamReplacementPublishResult> {
+    const deleted = createMetricStreamDeletedEvent(scope);
+    const events = rows.map((row) => createMetricStreamEvent(row));
+
+    await this.#producer.send({
+      topic: this.#topic,
+      messages: [
+        {
+          key: deleted.partitionKey,
+          value: JSON.stringify(deleted),
+        },
+        ...events.map((event) => ({
+          key: deleted.partitionKey,
+          value: JSON.stringify(event),
+        })),
+      ],
+    });
+
+    return { deleted, rows: events };
+  }
+
   async disconnect(): Promise<void> {
     await this.#producer.disconnect();
   }
+}
+
+let defaultMetricStreamPublisherPromise: Promise<MetricStreamEventPublisher> | undefined;
+
+export function getDefaultMetricStreamEventPublisher(): Promise<MetricStreamEventPublisher> {
+  defaultMetricStreamPublisherPromise ??= createKafkaMetricStreamEventPublisherFromEnv();
+  return defaultMetricStreamPublisherPromise;
 }
 
 function readRequiredEnvironmentValue(

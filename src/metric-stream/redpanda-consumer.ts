@@ -1,7 +1,7 @@
 import { captureException } from "@sentry/node";
 import { Kafka } from "kafkajs";
 import { logger } from "../logger.ts";
-import { type MetricStreamEventV1, metricStreamEventV1Schema } from "./events.ts";
+import { type MetricStreamRedpandaEvent, metricStreamRedpandaEventSchema } from "./events.ts";
 
 export interface MetricStreamKafkaMessage {
   offset: string;
@@ -28,16 +28,18 @@ export interface MetricStreamConsumerLike {
 
 export interface RunMetricStreamEventConsumerOptions {
   consumer: MetricStreamConsumerLike;
-  handleEvents(events: MetricStreamEventV1[]): Promise<void>;
+  handleEvents(events: MetricStreamRedpandaEvent[]): Promise<void>;
   topic: string;
 }
 
-function parseMetricStreamMessage(message: MetricStreamKafkaMessage): MetricStreamEventV1 | null {
+function parseMetricStreamMessage(
+  message: MetricStreamKafkaMessage,
+): MetricStreamRedpandaEvent | null {
   if (!message.value) {
     return null;
   }
   try {
-    return metricStreamEventV1Schema.parse(JSON.parse(message.value.toString("utf8")));
+    return metricStreamRedpandaEventSchema.parse(JSON.parse(message.value.toString("utf8")));
   } catch (error) {
     const messageText = error instanceof Error ? error.message : String(error);
     logger.error(

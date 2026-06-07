@@ -1,6 +1,5 @@
 import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import type { CanonicalActivityType } from "@dofek/training/training";
-import { and as sqlAnd, eq as sqlEq } from "drizzle-orm";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import {
@@ -11,8 +10,8 @@ import {
 } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
-import { activity, metricStream } from "../db/schema.ts";
+import { replaceMetricStreamBatch } from "../db/metric-stream-writer.ts";
+import { activity } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
@@ -686,16 +685,6 @@ export class PelotonProvider implements SyncProvider {
                 0;
 
               if (sampleCount > 0 && activityId) {
-                // Delete existing metric_stream rows for this activity to avoid duplicates
-                await db
-                  .delete(metricStream)
-                  .where(
-                    sqlAnd(
-                      sqlEq(metricStream.activityId, activityId),
-                      sqlEq(metricStream.providerId, this.id),
-                    ),
-                  );
-
                 const rows = [];
                 for (let i = 0; i < sampleCount; i++) {
                   const recordedAt = new Date(startedAt.getTime() + i * everyN * 1000);
@@ -710,7 +699,7 @@ export class PelotonProvider implements SyncProvider {
                   });
                 }
 
-                await writeMetricStreamBatch(db, rows, SOURCE_TYPE_API);
+                await replaceMetricStreamBatch(db, { activityId }, rows, SOURCE_TYPE_API);
 
                 streamCount += rows.length;
               }

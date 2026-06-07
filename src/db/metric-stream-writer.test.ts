@@ -2,10 +2,38 @@ import { describe, expect, it, vi } from "vitest";
 import type { MetricStreamInsert } from "./metric-stream-writer.ts";
 import {
   metricStreamConflictTarget,
+  replaceMetricStreamBatch,
   sourceRowToMetricStream,
   writeMetricStream,
+  writeMetricStreamBatch,
+  writeMetricStreamBatchForScope,
 } from "./metric-stream-writer.ts";
 import { metricStream } from "./schema.ts";
+import { runWithTokenUser } from "./token-user-context.ts";
+
+const mockPublishRows = vi.fn(async (rows: readonly unknown[]) =>
+  rows.map((_, index) => ({
+    id: `10000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+  })),
+);
+const mockReplaceRows = vi.fn(async (_scope: unknown, rows: readonly unknown[]) => ({
+  deleted: {
+    version: 1,
+    eventType: "metric_stream_deleted",
+    scope: _scope,
+    partitionKey: "activity:20000000-0000-4000-8000-000000000001",
+  },
+  rows: rows.map((_, index) => ({
+    id: `10000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+  })),
+}));
+
+vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: vi.fn(async () => ({
+    publishRows: mockPublishRows,
+    replaceRows: mockReplaceRows,
+  })),
+}));
 
 // ── sourceRowToMetricStream ────────────────────────────────
 
@@ -302,6 +330,148 @@ describe("writeMetricStream", () => {
       "metric_stream ingestion rows require externalId for idempotency",
     );
     expect(insertBatch).not.toHaveBeenCalled();
+  });
+});
+
+// ── writeMetricStreamBatch ─────────────────────────────────
+
+describe("writeMetricStreamBatch", () => {
+  it("publishes fanned-out provider rows to Redpanda without inserting into Postgres", async () => {
+    const db = { insert: vi.fn() };
+
+    const count = await runWithTokenUser("00000000-0000-0000-0000-000000000001", () =>
+      writeMetricStreamBatch(
+        db,
+        [
+          {
+            recordedAt: new Date("2026-03-30T12:00:00Z"),
+            providerId: "withings",
+            externalId: "withings-measure-1",
+            weightKg: 72.5,
+            bodyFatPct: 18.4,
+          },
+        ],
+        "api",
+      ),
+    );
+
+    expect(count).toBe(2);
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(mockPublishRows).toHaveBeenCalledWith([
+      expect.objectContaining({
+        userId: "00000000-0000-0000-0000-000000000001",
+        providerId: "withings",
+        externalId: "withings-measure-1",
+        channel: "body_weight",
+        scalar: 72.5,
+      }),
+      expect.objectContaining({
+        userId: "00000000-0000-0000-0000-000000000001",
+        providerId: "withings",
+        externalId: "withings-measure-1",
+        channel: "body_fat_percentage",
+        scalar: 18.4,
+      }),
+    ]);
+  });
+
+  it("fails fast when neither the row nor token context provides a user ID", async () => {
+    const db = { insert: vi.fn() };
+
+    await expect(
+      writeMetricStreamBatch(
+        db,
+        [
+          {
+            recordedAt: new Date("2026-03-30T12:00:00Z"),
+            providerId: "withings",
+            externalId: "withings-measure-2",
+            weightKg: 72.5,
+          },
+        ],
+        "api",
+      ),
+    ).rejects.toThrow("metric_stream ingestion rows require userId");
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+});
+
+// ── replaceMetricStreamBatch ───────────────────────────────
+
+describe("replaceMetricStreamBatch", () => {
+  it("publishes a scoped Redpanda replacement instead of deleting directly from Postgres", async () => {
+    const db = { insert: vi.fn(), delete: vi.fn() };
+
+    const count = await runWithTokenUser("00000000-0000-0000-0000-000000000001", () =>
+      replaceMetricStreamBatch(
+        db,
+        { activityId: "20000000-0000-4000-8000-000000000001" },
+        [
+          {
+            recordedAt: new Date("2026-03-30T12:00:00Z"),
+            providerId: "wahoo",
+            externalId: "sample-1",
+            activityId: "20000000-0000-4000-8000-000000000001",
+            heartRate: 142,
+          },
+        ],
+        "file",
+      ),
+    );
+
+    expect(count).toBe(1);
+    expect(db.delete).not.toHaveBeenCalled();
+    expect(db.insert).not.toHaveBeenCalled();
+    expect(mockReplaceRows).toHaveBeenCalledWith(
+      { activityId: "20000000-0000-4000-8000-000000000001" },
+      [
+        expect.objectContaining({
+          userId: "00000000-0000-0000-0000-000000000001",
+          providerId: "wahoo",
+          externalId: "sample-1",
+          activityId: "20000000-0000-4000-8000-000000000001",
+          channel: "heart_rate",
+          scalar: 142,
+        }),
+      ],
+    );
+  });
+});
+
+describe("writeMetricStreamBatchForScope", () => {
+  it("publishes rows with the delete scope partition key", async () => {
+    const db = { insert: vi.fn() };
+
+    const count = await runWithTokenUser("00000000-0000-0000-0000-000000000001", () =>
+      writeMetricStreamBatchForScope(
+        db,
+        {
+          userId: "00000000-0000-0000-0000-000000000001",
+          providerId: "apple_health",
+          recordedAtStart: "2026-03-30T00:00:00.000Z",
+        },
+        [
+          {
+            recordedAt: new Date("2026-03-30T12:00:00Z"),
+            providerId: "apple_health",
+            externalId: "sample-1",
+            heartRate: 142,
+          },
+        ],
+        "file",
+      ),
+    );
+
+    expect(count).toBe(1);
+    expect(mockPublishRows).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          channel: "heart_rate",
+          scalar: 142,
+        }),
+      ],
+      "provider:00000000-0000-0000-0000-000000000001:apple_health:*:*:2026-03-30T00:00:00.000Z:*",
+    );
   });
 });
 

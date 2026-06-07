@@ -99,6 +99,17 @@ Optional:
 Use `null` for absent optional values. Do not write empty strings as absent
 values.
 
+Delete events use the same topic and schema version with
+`eventType: "metric_stream_deleted"`. They carry a bounded `scope` such as an
+`activityId` or `{ userId, providerId, recordedAtStart }`, plus a `partitionKey`.
+Replacement writers must publish the delete event and replacement row events on
+that same partition key so Redpanda preserves delete-before-insert order.
+
+The Postgres sink applies delete events as `DELETE FROM fitness.metric_stream`
+for the scoped rows. The ClickHouse sink applies delete events by marking
+matching `postgres_fitness.metric_stream` rows with `_peerdb_is_deleted = 1`
+before inserting replacement row events.
+
 ## Redpanda Connect Archive Expectations
 
 The archive service should use Redpanda Connect with:
@@ -168,16 +179,44 @@ The freshness checks must cover:
 Treat R2 archive staleness as a production durability incident. Do not cut over
 writers to Redpanda-first unless the R2 archive is fresh.
 
+## Historical Postgres Backfill
+
+Use the one-time Postgres-to-Redpanda backfill to port existing
+`fitness.metric_stream` rows into `metric-stream-v1`:
+
+```bash
+./scripts/with-env.sh pnpm tsx scripts/backfill-metric-stream-to-redpanda.ts \
+  --start 2024-01-01T00:00:00Z \
+  --end 2024-02-01T00:00:00Z \
+  --batch-size 5000
+```
+
+The script requires a bounded `--start` and `--end`, reads Postgres with keyset
+pagination over `(recorded_at, id)`, preserves the original Postgres `id`, and
+publishes through the versioned Redpanda producer. Run it in bounded windows and
+do not use `OFFSET`-based ad hoc SQL for this migration.
+
+Do not run the historical backfill until all durable consumers are healthy:
+
+1. `metric-stream-postgres-sink` is running and idempotent by event id.
+2. `metric-stream-clickhouse-sink` is running.
+3. `metric-stream-r2-archive` is writing fresh R2 objects.
+4. Redpanda consumer lag is acceptable for all metric-stream groups.
+
+Provider replacement syncs must not directly delete `fitness.metric_stream`.
+Use the scoped replacement publisher path so Postgres, ClickHouse, and R2 see
+the same delete/replacement sequence.
+
 ## Replay
 
 Replay must always be bounded by time or explicit R2 prefix. Do not run an
 unbounded archive replay.
 
-R2 replay automation is not shipped yet. Until
-`scripts/replay-metric-stream-from-r2.ts` exists, do not use R2 replay as an
-incident mitigation path. Use the existing bounded ClickHouse repair runbooks and
-scripts for ClickHouse-only repair, or implement the replay script before
-cutting over any additional metric-stream writers to Redpanda-first.
+R2 replay automation is not shipped yet. Until `scripts/replay-metric-stream-from-r2.ts`
+exists, do not use R2 replay as an incident mitigation path. Use the existing
+bounded ClickHouse repair runbooks and scripts for ClickHouse-only repair, or
+implement the replay script before cutting over any additional metric-stream
+writers to Redpanda-first.
 
 After any bounded ClickHouse repair, rebuild the dependent analytics models:
 

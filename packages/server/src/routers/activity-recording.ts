@@ -23,7 +23,11 @@ const saveActivitySchema = z.object({
 
 export const activityRecordingRouter = router({
   save: protectedProcedure.input(saveActivitySchema).mutation(async ({ ctx, input }) => {
-    const repository = new ActivityRecordingRepository(ctx.db, ctx.userId);
+    const repository = new ActivityRecordingRepository(
+      ctx.db,
+      ctx.userId,
+      ctx.metricStreamPublisher,
+    );
     const activityId = await repository.saveActivity(input);
     return { activityId };
   }),
