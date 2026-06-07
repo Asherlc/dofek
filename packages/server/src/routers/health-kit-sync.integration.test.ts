@@ -1,12 +1,11 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
-import { createMetricStreamEvent } from "../../../../src/metric-stream/events.ts";
-import { insertMetricStreamEventsIntoPostgres } from "../../../../src/metric-stream/postgres-sink.ts";
-import type {
-  MetricStreamEventPublisher,
-  MetricStreamRowInput,
-} from "../../../../src/metric-stream/redpanda-producer.ts";
+import {
+  createMetricStreamEvent,
+  type MetricStreamRowInput,
+} from "../../../../src/metric-stream/events.ts";
+import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
 
@@ -26,7 +25,30 @@ describe("HealthKit sync router", () => {
     metricStreamPublisher = {
       publishRows: async (rows: readonly MetricStreamRowInput[]) => {
         const events = rows.map((row) => createMetricStreamEvent(row));
-        await insertMetricStreamEventsIntoPostgres(testCtx.db, events);
+        for (const event of events) {
+          await testCtx.db.execute(
+            sql`INSERT INTO fitness.metric_stream (
+              id, recorded_at, user_id, provider_id, external_id, device_id,
+              source_type, channel, scalar, metadata
+            ) VALUES (
+              ${event.id}::uuid,
+              ${event.recordedAt}::timestamptz,
+              ${event.userId}::uuid,
+              ${event.providerId},
+              ${event.externalId},
+              ${event.deviceId},
+              ${event.sourceType},
+              ${event.channel},
+              ${event.scalar},
+              ${
+                event.metadata === null || event.metadata === undefined
+                  ? sql`NULL`
+                  : sql`${JSON.stringify(event.metadata)}::jsonb`
+              }
+            )
+            ON CONFLICT (id, recorded_at) DO UPDATE SET scalar = EXCLUDED.scalar`,
+          );
+        }
         return events;
       },
     };
