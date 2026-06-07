@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createMetricStreamEvent } from "./events.ts";
+import { createMetricStreamDeletedEvent, createMetricStreamEvent } from "./events.ts";
 import {
   createKafkaMetricStreamConsumerFromEnv,
   runMetricStreamEventConsumer,
@@ -86,6 +86,44 @@ describe("runMetricStreamEventConsumer", () => {
     expect(handleEvents).toHaveBeenCalledWith([event]);
     expect(resolveOffset).toHaveBeenCalledWith("12");
     expect(commitOffsetsIfNecessary).toHaveBeenCalled();
+  });
+
+  it("passes delete events to sinks in Redpanda batch order", async () => {
+    const deleteEvent = createMetricStreamDeletedEvent({
+      activityId: "20000000-0000-4000-8000-000000000001",
+    });
+    const handleEvents = vi.fn(async () => undefined);
+    const consumer = {
+      connect: vi.fn(async () => undefined),
+      subscribe: vi.fn(async () => undefined),
+      run: vi.fn(async (options) => {
+        await options.eachBatch({
+          batch: {
+            messages: [
+              {
+                offset: "20",
+                value: Buffer.from(JSON.stringify(deleteEvent)),
+              },
+              {
+                offset: "21",
+                value: Buffer.from(JSON.stringify(event)),
+              },
+            ],
+          },
+          commitOffsetsIfNecessary: vi.fn(async () => undefined),
+          heartbeat: vi.fn(async () => undefined),
+          resolveOffset: vi.fn(),
+        });
+      }),
+    };
+
+    await runMetricStreamEventConsumer({
+      consumer,
+      handleEvents,
+      topic: "metric-stream-v1",
+    });
+
+    expect(handleEvents).toHaveBeenCalledWith([deleteEvent, event]);
   });
 
   it("does not resolve offsets when the handler fails", async () => {
@@ -204,7 +242,7 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
 
   it("requires Redpanda brokers", () => {
     expect(() =>
-      createKafkaMetricStreamConsumerFromEnv("metric-stream-test-consumer", {
+      createKafkaMetricStreamConsumerFromEnv("metric-stream-postgres-sink", {
         METRIC_STREAM_TOPIC: "metric-stream-v1",
       }),
     ).toThrow("REDPANDA_BROKERS is required");
@@ -212,7 +250,7 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
 
   it("requires a metric stream topic", () => {
     expect(() =>
-      createKafkaMetricStreamConsumerFromEnv("metric-stream-test-consumer", {
+      createKafkaMetricStreamConsumerFromEnv("metric-stream-postgres-sink", {
         REDPANDA_BROKERS: "redpanda:9092",
       }),
     ).toThrow("METRIC_STREAM_TOPIC is required");
@@ -220,7 +258,7 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
 
   it("rejects broker lists that only contain separators and whitespace", () => {
     expect(() =>
-      createKafkaMetricStreamConsumerFromEnv("metric-stream-test-consumer", {
+      createKafkaMetricStreamConsumerFromEnv("metric-stream-postgres-sink", {
         METRIC_STREAM_TOPIC: "metric-stream-v1",
         REDPANDA_BROKERS: " , ",
       }),
@@ -229,7 +267,7 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
 
   it("trims broker lists and adapts KafkaJS consumer methods", async () => {
     const { consumer, topic } = createKafkaMetricStreamConsumerFromEnv(
-      "metric-stream-test-consumer",
+      "metric-stream-postgres-sink",
       {
         METRIC_STREAM_TOPIC: "metric-stream-v1",
         REDPANDA_BROKERS: " redpanda:9092 , redpanda:9093 ",
@@ -241,7 +279,7 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
       brokers: ["redpanda:9092", "redpanda:9093"],
       clientId: "dofek-metric-stream-consumer",
     });
-    expect(kafkaConsumerFactory).toHaveBeenCalledWith({ groupId: "metric-stream-test-consumer" });
+    expect(kafkaConsumerFactory).toHaveBeenCalledWith({ groupId: "metric-stream-postgres-sink" });
 
     await consumer.connect();
     await consumer.subscribe({ topic: "metric-stream-v1", fromBeginning: false });

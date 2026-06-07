@@ -60,7 +60,7 @@ vi.mock("../db/tokens.ts", () => ({
 }));
 
 vi.mock("../db/token-user-context.ts", () => ({
-  getTokenUserId: () => "user-1",
+  getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
 
@@ -665,7 +665,9 @@ describe("WhoopProvider.sync() — token resolution", () => {
 
     const provider = new WhoopProvider();
     const db = makeChainableMock();
-    const result = await provider.sync(db, new Date("2026-03-01"), { userId: "test-user-123" });
+    const result = await provider.sync(db, new Date("2026-03-01"), {
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
 
     expect(result.provider).toBe("whoop");
     expect(result.errors.length).toBeGreaterThan(0);
@@ -683,7 +685,9 @@ describe("WhoopProvider.sync() — token resolution", () => {
 
     const provider = new WhoopProvider();
     const db = makeChainableMock();
-    const result = await provider.sync(db, new Date("2026-03-01"), { userId: "test-user-123" });
+    const result = await provider.sync(db, new Date("2026-03-01"), {
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
 
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("not connected");
@@ -716,7 +720,9 @@ describe("WhoopProvider.sync() — token resolution", () => {
 
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    const result = await provider.sync(db, new Date("2026-03-01"), { userId: "test-user-123" });
+    const result = await provider.sync(db, new Date("2026-03-01"), {
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
 
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("user ID not found");
@@ -735,7 +741,9 @@ describe("WhoopProvider.sync() — token resolution", () => {
     const mockFetch = makeSyncMockFetch({ cycles: [] });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    const result = await provider.sync(db, new Date("2026-03-01"), { userId: "test-user-123" });
+    const result = await provider.sync(db, new Date("2026-03-01"), {
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
 
     expect(result.provider).toBe("whoop");
     // saveTokens should have been called with userId:12345 in scopes
@@ -758,7 +766,9 @@ describe("WhoopProvider.sync() — cycles error", () => {
     const mockFetch = makeSyncMockFetch({ cyclesError: true });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    const result = await provider.sync(db, new Date("2026-03-01"), { userId: "test-user-123" });
+    const result = await provider.sync(db, new Date("2026-03-01"), {
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
 
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("getCycles");
@@ -808,7 +818,9 @@ describe("WhoopProvider.sync() — recovery sync", () => {
     const db = makeChainableMock();
     // Make onConflictDoUpdate resolve properly for recovery insert chain
     db.onConflictDoUpdate = vi.fn().mockResolvedValue([]);
-    const result = await provider.sync(db, new Date("2026-03-01"), { userId: "test-user-123" });
+    const result = await provider.sync(db, new Date("2026-03-01"), {
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
 
     expect(result.provider).toBe("whoop");
     // The sync completes (recovery/sleep/workouts/hr/journal phases all run)
@@ -854,7 +866,9 @@ describe("WhoopProvider.sync() — recovery sync", () => {
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
     db.onConflictDoUpdate = vi.fn().mockResolvedValue([]);
-    const result = await provider.sync(db, new Date("2026-03-01"), { userId: "test-user-123" });
+    const result = await provider.sync(db, new Date("2026-03-01"), {
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
 
     expect(result.provider).toBe("whoop");
   });
@@ -891,7 +905,9 @@ describe("WhoopProvider.sync() — recovery sync", () => {
     });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    const result = await provider.sync(db, new Date("2026-03-01"), { userId: "test-user-123" });
+    const result = await provider.sync(db, new Date("2026-03-01"), {
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
 
     expect(result.provider).toBe("whoop");
   });
@@ -1596,7 +1612,9 @@ describe("WhoopProvider.sync() — sleep sync", () => {
     const db = makeChainableMock();
     db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
     db.returning = vi.fn().mockResolvedValue([]);
-    const result = await provider.sync(db, new Date("2026-03-01"), { userId: "test-user-123" });
+    const result = await provider.sync(db, new Date("2026-03-01"), {
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
 
     expect(result.provider).toBe("whoop");
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
@@ -1646,7 +1664,9 @@ describe("WhoopProvider.sync() — sleep sync", () => {
     db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
     db.returning = vi.fn().mockResolvedValue([]);
 
-    await provider.sync(db, new Date("2026-03-01"), { userId: "test-user-123" });
+    await provider.sync(db, new Date("2026-03-01"), {
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
   });
 
   it("skips incomplete (non-complete state) sleep records", async () => {
@@ -1863,7 +1883,7 @@ describe("WhoopProvider.sync() — HR stream sync", () => {
     expect(hrBatch).toHaveLength(3);
     expect(hrBatch?.[0]?.providerId).toBe("whoop");
     expect(hrBatch?.[0]?.scalar).toBe(72);
-    expect(hrBatch?.[0]?.recordedAt).toEqual(new Date(1709251200000));
+    expect(hrBatch?.[0]?.recordedAt).toBe("2024-03-01T00:00:00.000Z");
     expect(hrBatch?.[1]?.scalar).toBe(75);
     expect(hrBatch?.[2]?.scalar).toBe(78);
 
@@ -1977,7 +1997,9 @@ describe("WhoopProvider.sync() — journal sync", () => {
     });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    const result = await provider.sync(db, new Date("2026-03-01"), { userId: "test-user-123" });
+    const result = await provider.sync(db, new Date("2026-03-01"), {
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
 
     expect(result.provider).toBe("whoop");
     // Journal phase should produce 2 records (2 answers)
@@ -1997,13 +2019,13 @@ describe("WhoopProvider.sync() — journal sync", () => {
     expect(caffeineInsert?.date).toBe("2026-03-01");
     expect(caffeineInsert?.answerNumeric).toBe(2);
     expect(caffeineInsert?.impactScore).toBe(0.3);
-    expect(caffeineInsert?.userId).toBe("test-user-123");
+    expect(caffeineInsert?.userId).toBe("00000000-0000-0000-0000-000000000001");
 
     const alcoholInsert = findValuesRecord(valuesCallArgs, (rec) => rec.questionSlug === "alcohol");
     expect(alcoholInsert).toBeDefined();
     expect(alcoholInsert?.answerText).toBe("none");
     expect(alcoholInsert?.impactScore).toBe(-0.1);
-    expect(alcoholInsert?.userId).toBe("test-user-123");
+    expect(alcoholInsert?.userId).toBe("00000000-0000-0000-0000-000000000001");
 
     // Verify journalQuestion inserts with correct category, dataType, and displayName
     const caffeineQuestion = findValuesRecord(
@@ -2076,7 +2098,9 @@ describe("WhoopProvider.sync() — journal sync", () => {
     const db = makeChainableMock();
     db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
     db.returning = vi.fn().mockResolvedValue([]);
-    const result = await provider.sync(db, new Date("2026-03-01"), { userId: "test-user-123" });
+    const result = await provider.sync(db, new Date("2026-03-01"), {
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
 
     expect(result.provider).toBe("whoop");
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);

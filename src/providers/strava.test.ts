@@ -22,10 +22,12 @@ vi.mock("../db/token-user-context.ts", () => ({
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
 
-const { publishedMetricStreamBatches } = vi.hoisted<{
-  publishedMetricStreamBatches: Record<string, unknown>[][];
+const { publishedMetricStreamBatches, publishedMetricStreamReplacements } = vi.hoisted<{
+  publishedMetricStreamBatches: unknown[][];
+  publishedMetricStreamReplacements: Array<{ scope: unknown; rows: unknown[] }>;
 }>(() => ({
   publishedMetricStreamBatches: [],
+  publishedMetricStreamReplacements: [],
 }));
 
 vi.mock("../metric-stream/redpanda-producer.ts", () => ({
@@ -38,11 +40,30 @@ vi.mock("../metric-stream/redpanda-producer.ts", () => ({
         recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
       }));
     },
+    replaceRows: async (_scope: unknown, rows: readonly Record<string, unknown>[]) => {
+      publishedMetricStreamReplacements.push({ scope: _scope, rows: [...rows] });
+      publishedMetricStreamBatches.push([...rows]);
+      return {
+        deleted: {
+          version: 1,
+          eventType: "metric_stream_deleted",
+          partitionKey: "test",
+          scope: _scope,
+        },
+        rows: rows.map((row, index) => ({
+          version: 1,
+          id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+          recordedAt:
+            row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+        })),
+      };
+    },
   }),
 }));
 
 beforeEach(() => {
   publishedMetricStreamBatches.length = 0;
+  publishedMetricStreamReplacements.length = 0;
 });
 
 const sampleActivity: StravaActivity = {
@@ -841,7 +862,7 @@ describe("StravaProvider.getUserIdentity()", () => {
 // syncWebhookEvent tests
 // ============================================================
 
-function makeStravaInsertMock(returnId = "act-uuid") {
+function makeStravaInsertMock(returnId = "10000000-0000-4000-8000-000000000001") {
   return vi.fn().mockReturnValue({
     values: vi.fn().mockReturnValue({
       onConflictDoUpdate: vi.fn().mockReturnValue({
@@ -906,7 +927,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
         objectType: "athlete",
         objectId: "456",
       },
-      { userId: "test-user" },
+      { userId: "00000000-0000-0000-0000-000000000001" },
     );
 
     expect(result.provider).toBe("strava");
@@ -931,7 +952,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
         eventType: "create",
         objectType: "activity",
       },
-      { userId: "test-user" },
+      { userId: "00000000-0000-0000-0000-000000000001" },
     );
 
     expect(result.recordsSynced).toBe(0);
@@ -942,7 +963,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
     const provider = new StravaProvider(async () => new Response(), 0);
     const mockDelete = vi.fn().mockReturnValue({
       where: vi.fn().mockReturnValue({
-        returning: vi.fn().mockResolvedValue([{ id: "deleted-act-id" }]),
+        returning: vi.fn().mockResolvedValue([{ id: "10000000-0000-4000-8000-000000000002" }]),
       }),
     });
 
@@ -961,13 +982,19 @@ describe("StravaProvider.syncWebhookEvent", () => {
         objectType: "activity",
         objectId: "99999",
       },
-      { userId: "test-user" },
+      { userId: "00000000-0000-0000-0000-000000000001" },
     );
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(0);
-    // Should call delete twice: once for activity, once for metric_stream
-    expect(mockDelete).toHaveBeenCalledTimes(2);
+    expect(mockDelete).toHaveBeenCalledTimes(1);
+    expect(publishedMetricStreamReplacements).toEqual([
+      {
+        scope: { activityId: "10000000-0000-4000-8000-000000000002" },
+        rows: [],
+      },
+    ]);
+    expect(publishedMetricStreamBatches).toEqual([[]]);
   });
 
   it("handles delete event when activity not found", async () => {
@@ -993,7 +1020,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
         objectType: "activity",
         objectId: "nonexistent",
       },
-      { userId: "test-user" },
+      { userId: "00000000-0000-0000-0000-000000000001" },
     );
 
     expect(result.recordsSynced).toBe(0);
@@ -1019,7 +1046,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
         objectType: "activity",
         objectId: "12345",
       },
-      { userId: "test-user" },
+      { userId: "00000000-0000-0000-0000-000000000001" },
     );
 
     expect(result.errors).toHaveLength(1);
@@ -1077,7 +1104,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
         objectType: "activity",
         objectId: "12345678",
       },
-      { userId: "test-user" },
+      { userId: "00000000-0000-0000-0000-000000000001" },
     );
 
     expect(result.provider).toBe("strava");
@@ -1085,6 +1112,23 @@ describe("StravaProvider.syncWebhookEvent", () => {
     expect(result.errors).toHaveLength(0);
     // insert called for: activity upsert, then metric_stream batch
     expect(mockInsert).toHaveBeenCalled();
+    expect(publishedMetricStreamReplacements).toEqual([
+      {
+        scope: { activityId: "10000000-0000-4000-8000-000000000001" },
+        rows: [
+          expect.objectContaining({
+            activityId: "10000000-0000-4000-8000-000000000001",
+            providerId: "strava",
+            channel: "heart_rate",
+          }),
+          expect.objectContaining({
+            activityId: "10000000-0000-4000-8000-000000000001",
+            providerId: "strava",
+            channel: "heart_rate",
+          }),
+        ],
+      },
+    ]);
   });
 
   it("handles stream fetch 404 as non-fatal", async () => {
@@ -1124,7 +1168,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
         objectType: "activity",
         objectId: "12345678",
       },
-      { userId: "test-user" },
+      { userId: "00000000-0000-0000-0000-000000000001" },
     );
 
     // Activity still synced, no errors from 404 streams
@@ -1167,7 +1211,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
         objectType: "activity",
         objectId: "12345678",
       },
-      { userId: "test-user" },
+      { userId: "00000000-0000-0000-0000-000000000001" },
     );
 
     expect(result.recordsSynced).toBe(1);
@@ -1213,7 +1257,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
         objectType: "activity",
         objectId: "12345678",
       },
-      { userId: "test-user" },
+      { userId: "00000000-0000-0000-0000-000000000001" },
     );
 
     // recordsSynced is 1 (activity itself counted), but no stream insert
@@ -1502,11 +1546,9 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
     const mockDelete = vi.fn().mockReturnValue({
       where: mockDeleteWhere,
     });
-    mockDeleteWhere
-      .mockReturnValueOnce({
-        returning: vi.fn().mockResolvedValue([{ id: "activity-1" }]),
-      })
-      .mockReturnValueOnce({});
+    mockDeleteWhere.mockReturnValueOnce({
+      returning: vi.fn().mockResolvedValue([{ id: "10000000-0000-4000-8000-000000000003" }]),
+    });
     const mockDb = {
       select: vi.fn(),
       insert: vi.fn(),
@@ -1523,17 +1565,22 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
         objectType: "activity",
         objectId: "999",
       },
-      { userId: "user-123" },
+      { userId: "00000000-0000-0000-0000-000000000001" },
     );
     expect(result.provider).toBe("strava");
     expect(result.recordsSynced).toBe(0);
 
-    // Verify delete was called for both activity and metric_stream tables
-    expect(mockDelete).toHaveBeenCalledTimes(2);
+    expect(mockDelete).toHaveBeenCalledTimes(1);
     const whereCalls = mockDeleteWhere.mock.calls;
-    expect(whereCalls).toHaveLength(2);
+    expect(whereCalls).toHaveLength(1);
     expect(whereCalls[0]?.[0]).toBeDefined();
-    expect(whereCalls[1]?.[0]).toBeDefined();
+    expect(publishedMetricStreamReplacements).toEqual([
+      {
+        scope: { activityId: "10000000-0000-4000-8000-000000000003" },
+        rows: [],
+      },
+    ]);
+    expect(publishedMetricStreamBatches).toEqual([[]]);
   });
 
   it("syncWebhookEvent falls back to token user context when options.userId is missing", async () => {

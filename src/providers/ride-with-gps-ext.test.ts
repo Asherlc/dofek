@@ -26,6 +26,23 @@ vi.mock("../metric-stream/redpanda-producer.ts", () => ({
         recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
       }));
     },
+    replaceRows: async (_scope: unknown, rows: readonly Record<string, unknown>[]) => {
+      publishedMetricStreamBatches.push([...rows]);
+      return {
+        deleted: {
+          version: 1,
+          eventType: "metric_stream_deleted",
+          partitionKey: "test",
+          scope: _scope,
+        },
+        rows: rows.map((row, index) => ({
+          version: 1,
+          id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+          recordedAt:
+            row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+        })),
+      };
+    },
   }),
 }));
 
@@ -40,7 +57,7 @@ vi.mock("../db/tokens.ts", () => ({
 }));
 
 vi.mock("../db/token-user-context.ts", () => ({
-  getTokenUserId: () => "user-1",
+  getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
 
@@ -566,8 +583,8 @@ function createSyncMockDb(
   opts: {
     syncCursor?: string | null;
     settingsValue?: unknown;
-    activityId?: number;
-    returningRows?: Array<{ id?: number }>;
+    activityId?: string;
+    returningRows?: Array<{ id?: string }>;
   } = {},
 ) {
   const selectResult =
@@ -576,7 +593,7 @@ function createSyncMockDb(
       : opts.syncCursor
         ? [{ value: { cursor: opts.syncCursor } }]
         : [];
-  const activityId = opts.activityId ?? 1;
+  const activityId = opts.activityId ?? "10000000-0000-4000-8000-000000000001";
   const returningRows = opts.returningRows ?? [{ id: activityId }];
 
   const onConflictResult = Object.create(null);
@@ -873,13 +890,13 @@ describe("RideWithGpsProvider — sync", () => {
     };
 
     const provider = new RideWithGpsProvider(mockFetch);
-    const db = createSyncMockDb({ activityId: 7 });
+    const db = createSyncMockDb({ activityId: "10000000-0000-4000-8000-000000000007" });
     const result = await provider.sync(db, new Date("2026-03-01"));
 
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
     expect(db.insert).toHaveBeenCalled();
-    expect(db.delete).toHaveBeenCalled();
+    expect(db.delete).not.toHaveBeenCalled();
 
     const valuesMock = db.insert.mock.results[0]?.value.values;
     const onConflictDoUpdateMock = valuesMock.mock.results[0]?.value.onConflictDoUpdate;
@@ -927,25 +944,25 @@ describe("RideWithGpsProvider — sync", () => {
     expect(sensorInsertArg).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          activityId: 7,
+          activityId: "10000000-0000-4000-8000-000000000007",
           providerId: "ride-with-gps",
           channel: "location",
           point: "SRID=4326;POINT(-122.6 45.5)",
         }),
         expect.objectContaining({
-          activityId: 7,
+          activityId: "10000000-0000-4000-8000-000000000007",
           providerId: "ride-with-gps",
           channel: "speed",
           scalar: 25 / 3.6,
         }),
         expect.objectContaining({
-          activityId: 7,
+          activityId: "10000000-0000-4000-8000-000000000007",
           providerId: "ride-with-gps",
           channel: "heart_rate",
           scalar: 140,
         }),
         expect.objectContaining({
-          activityId: 7,
+          activityId: "10000000-0000-4000-8000-000000000007",
           providerId: "ride-with-gps",
           channel: "power",
           scalar: 200,
@@ -953,7 +970,7 @@ describe("RideWithGpsProvider — sync", () => {
       ]),
     );
     expect(sensorInsertArg[0]).toMatchObject({
-      activityId: 7,
+      activityId: "10000000-0000-4000-8000-000000000007",
       providerId: "ride-with-gps",
       sourceType: "api",
     });
@@ -1053,13 +1070,13 @@ describe("RideWithGpsProvider — sync", () => {
     };
 
     const provider = new RideWithGpsProvider(mockFetch);
-    const db = createSyncMockDb({ activityId: 11 });
+    const db = createSyncMockDb({ activityId: "10000000-0000-4000-8000-000000000011" });
     const result = await provider.sync(db, new Date("2026-03-01"));
 
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
 
-    expect(publishedMetricStreamBatches.map((batch) => batch.length)).toEqual([1000, 1000, 2]);
+    expect(publishedMetricStreamBatches.map((batch) => batch.length)).toEqual([2002]);
   });
 
   it("handles deleted trip items", async () => {

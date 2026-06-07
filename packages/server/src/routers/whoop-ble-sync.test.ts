@@ -40,10 +40,7 @@ function getPublishedRows(publisher: ReturnType<typeof makeMetricStreamPublisher
   return publisher.publishRows.mock.calls.flatMap((call) => [...call[0]]);
 }
 
-function makeCtx(
-  database = makeMockDb(),
-  metricStreamPublisher: ReturnType<typeof makeMetricStreamPublisher> = makeMetricStreamPublisher(),
-) {
+function makeCtx(database = makeMockDb(), metricStreamPublisher = makeMetricStreamPublisher()) {
   return {
     db: database,
     metricStreamPublisher,
@@ -54,11 +51,13 @@ function makeCtx(
 
 describe("whoopBleSyncRouter", () => {
   let mockDb: ReturnType<typeof makeMockDb>;
+  let metricStreamPublisher: ReturnType<typeof makeMetricStreamPublisher>;
   let ctx: ReturnType<typeof makeCtx>;
 
   beforeEach(() => {
     mockDb = makeMockDb();
-    ctx = makeCtx(mockDb);
+    metricStreamPublisher = makeMetricStreamPublisher();
+    ctx = makeCtx(mockDb, metricStreamPublisher);
   });
 
   describe("pushRealtimeData", () => {
@@ -90,18 +89,14 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      // First db.execute call is the provider upsert (before any data inserts)
-      expect(mockDb.execute).toHaveBeenCalled();
       expect(mockDb.execute).toHaveBeenCalledTimes(1);
+      expect(metricStreamPublisher.publishRows).toHaveBeenCalledTimes(1);
+      expect(mockDb.execute.mock.invocationCallOrder[0]).toBeLessThan(
+        metricStreamPublisher.publishRows.mock.invocationCallOrder[0] ?? 0,
+      );
     });
 
     it("publishes realtime data through Redpanda without inserting metric stream rows into Postgres", async () => {
-      const metricStreamPublisher = {
-        publishRows: vi.fn(async (rows: readonly unknown[]) =>
-          rows.map((_, index) => ({ id: `event-${index}` })),
-        ),
-      };
-      ctx = makeCtx(mockDb, metricStreamPublisher);
       const trpcCaller = caller(ctx);
 
       const result = await trpcCaller.pushRealtimeData({
@@ -120,6 +115,7 @@ describe("whoopBleSyncRouter", () => {
 
       expect(result).toEqual({ inserted: 2 });
       expect(mockDb.execute).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(mockDb.execute.mock.calls)).not.toContain("fitness.metric_stream");
       expect(metricStreamPublisher.publishRows).toHaveBeenCalledWith([
         expect.objectContaining({
           providerId: "whoop_ble",
@@ -135,8 +131,6 @@ describe("whoopBleSyncRouter", () => {
     });
 
     it("stores R-R intervals without requiring or inserting device heart rate", async () => {
-      const metricStreamPublisher = makeMetricStreamPublisher();
-      ctx = makeCtx(mockDb, metricStreamPublisher);
       const trpcCaller = caller(ctx);
       await trpcCaller.pushRealtimeData({
         deviceId: "WHOOP Strap",
@@ -154,13 +148,15 @@ describe("whoopBleSyncRouter", () => {
 
       expect(mockDb.execute).toHaveBeenCalledTimes(1);
       expect(getPublishedRows(metricStreamPublisher)).toEqual([
-        expect.objectContaining({ channel: "rr_interval_ms", scalar: 812 }),
+        expect.objectContaining({
+          channel: "rr_interval_ms",
+          scalar: 812,
+        }),
       ]);
+      expect(JSON.stringify(getPublishedRows(metricStreamPublisher))).not.toContain("heart_rate");
     });
 
     it("writes deterministic external IDs and treats duplicate realtime samples as no-ops", async () => {
-      const metricStreamPublisher = makeMetricStreamPublisher();
-      ctx = makeCtx(mockDb, metricStreamPublisher);
       const trpcCaller = caller(ctx);
       await trpcCaller.pushRealtimeData({
         deviceId: "WHOOP Strap",
@@ -176,7 +172,9 @@ describe("whoopBleSyncRouter", () => {
         ],
       });
 
-      expect(getPublishedRows(metricStreamPublisher)).toEqual(
+      const publishedRows = getPublishedRows(metricStreamPublisher);
+
+      expect(publishedRows).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             externalId: "whoop_ble:WHOOP Strap:rr_interval_ms:2026-03-30T12:00:00.000Z",
@@ -189,8 +187,6 @@ describe("whoopBleSyncRouter", () => {
     });
 
     it("ignores legacy heartRate fields instead of storing device-derived HR", async () => {
-      const metricStreamPublisher = makeMetricStreamPublisher();
-      ctx = makeCtx(mockDb, metricStreamPublisher);
       const trpcCaller = caller(ctx);
       const legacySample = {
         timestamp: "2026-03-30T12:00:00.000Z",
@@ -207,14 +203,17 @@ describe("whoopBleSyncRouter", () => {
         samples: [legacySample],
       });
 
-      expect(getPublishedRows(metricStreamPublisher)).toEqual([
-        expect.objectContaining({ channel: "rr_interval_ms", scalar: 812 }),
+      const publishedRows = getPublishedRows(metricStreamPublisher);
+      expect(publishedRows).toEqual([
+        expect.objectContaining({
+          channel: "rr_interval_ms",
+          scalar: 812,
+        }),
       ]);
+      expect(JSON.stringify(publishedRows)).not.toContain("heart_rate");
     });
 
-    it("publishes orientation data", async () => {
-      const metricStreamPublisher = makeMetricStreamPublisher();
-      ctx = makeCtx(mockDb, metricStreamPublisher);
+    it("inserts orientation data into metric_stream", async () => {
       const trpcCaller = caller(ctx);
       const result = await trpcCaller.pushRealtimeData({
         deviceId: "WHOOP Strap",
@@ -237,6 +236,7 @@ describe("whoopBleSyncRouter", () => {
       });
 
       expect(result).toEqual({ inserted: 2 });
+
       expect(getPublishedRows(metricStreamPublisher)).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -270,11 +270,12 @@ describe("whoopBleSyncRouter", () => {
       });
 
       expect(mockDb.execute).toHaveBeenCalledTimes(1);
+      expect(getPublishedRows(metricStreamPublisher)).toEqual([
+        expect.objectContaining({ channel: "rr_interval_ms" }),
+      ]);
     });
 
     it("inserts R-R interval samples when samples include rrIntervalMs", async () => {
-      const metricStreamPublisher = makeMetricStreamPublisher();
-      ctx = makeCtx(mockDb, metricStreamPublisher);
       const trpcCaller = caller(ctx);
       await trpcCaller.pushRealtimeData({
         deviceId: "WHOOP Strap",
@@ -291,6 +292,7 @@ describe("whoopBleSyncRouter", () => {
       });
 
       expect(mockDb.execute).toHaveBeenCalledTimes(1);
+
       expect(getPublishedRows(metricStreamPublisher)).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -319,6 +321,9 @@ describe("whoopBleSyncRouter", () => {
       });
 
       expect(mockDb.execute).toHaveBeenCalledTimes(1);
+      expect(getPublishedRows(metricStreamPublisher)).toEqual([
+        expect.objectContaining({ channel: "orientation", vector: [0, 0.5, 0, 0] }),
+      ]);
     });
 
     it("inserts orientation when only quaternionY is non-zero", async () => {
@@ -337,6 +342,9 @@ describe("whoopBleSyncRouter", () => {
       });
 
       expect(mockDb.execute).toHaveBeenCalledTimes(1);
+      expect(getPublishedRows(metricStreamPublisher)).toEqual([
+        expect.objectContaining({ channel: "orientation", vector: [0, 0, 0.5, 0] }),
+      ]);
     });
 
     it("inserts orientation when only quaternionZ is non-zero", async () => {
@@ -355,6 +363,9 @@ describe("whoopBleSyncRouter", () => {
       });
 
       expect(mockDb.execute).toHaveBeenCalledTimes(1);
+      expect(getPublishedRows(metricStreamPublisher)).toEqual([
+        expect.objectContaining({ channel: "orientation", vector: [0, 0, 0, 0.5] }),
+      ]);
     });
 
     it("logs timestamps and sample count on successful push", async () => {
@@ -428,10 +439,7 @@ describe("whoopBleSyncRouter", () => {
     });
 
     it("returns zero inserted when duplicate realtime rows no-op", async () => {
-      mockDb.execute.mockResolvedValue([]);
-      const metricStreamPublisher = makeMetricStreamPublisher();
       metricStreamPublisher.publishRows.mockResolvedValue([]);
-      ctx = makeCtx(mockDb, metricStreamPublisher);
       const trpcCaller = caller(ctx);
 
       const result = await trpcCaller.pushRealtimeData({
@@ -449,6 +457,7 @@ describe("whoopBleSyncRouter", () => {
       });
 
       expect(result).toEqual({ inserted: 0 });
+      expect(mockDb.execute).toHaveBeenCalledTimes(1);
     });
 
     it("rejects invalid R-R interval values", async () => {
@@ -534,8 +543,6 @@ describe("whoopBleSyncRouter", () => {
     });
 
     it("handles batch splitting for large sample arrays", async () => {
-      const metricStreamPublisher = makeMetricStreamPublisher();
-      ctx = makeCtx(mockDb, metricStreamPublisher);
       const trpcCaller = caller(ctx);
       // Create 2500 samples (exceeds INSERT_BATCH_SIZE of 2000)
       const samples = Array.from({ length: 2500 }, (_, index) => ({

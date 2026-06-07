@@ -1,7 +1,6 @@
-import { and, eq, inArray } from "drizzle-orm";
 import type { SyncDatabase } from "../../db/index.ts";
-import { writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";
-import { activity, dailyMetrics, metricStream, sleepSession } from "../../db/schema.ts";
+import { replaceMetricStreamBatch } from "../../db/metric-stream-writer.ts";
+import { activity, dailyMetrics, sleepSession } from "../../db/schema.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { logger } from "../../logger.ts";
 import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
@@ -16,8 +15,6 @@ import type {
 } from "./parsers.ts";
 
 const PROVIDER_ID = "fitbit";
-const FITBIT_BODY_CHANNELS = ["body_weight", "body_fat_percentage"] as const;
-
 export async function persistActivity(
   db: SyncDatabase,
   parsed: ParsedFitbitActivity,
@@ -59,12 +56,11 @@ export async function persistActivity(
       const sampleRows = tcxToSensorSamples(trackpoints, PROVIDER_ID, activityId);
 
       if (sampleRows.length > 0) {
-        await db.delete(metricStream).where(eq(metricStream.activityId, activityId));
-        await writeMetricStreamBatch(
+        await replaceMetricStreamBatch(
           db,
+          { activityId },
           sampleRows,
           SOURCE_TYPE_API,
-          undefined,
           metricStreamPublisher,
         );
         logger.info(
@@ -152,18 +148,9 @@ export async function persistBodyMeasurement(
   parsed: ParsedFitbitBodyMeasurement,
   metricStreamPublisher?: MetricStreamEventPublisher,
 ): Promise<void> {
-  await db
-    .delete(metricStream)
-    .where(
-      and(
-        eq(metricStream.providerId, PROVIDER_ID),
-        eq(metricStream.externalId, parsed.externalId),
-        inArray(metricStream.channel, FITBIT_BODY_CHANNELS),
-      ),
-    );
-
-  await writeMetricStreamBatch(
+  await replaceMetricStreamBatch(
     db,
+    { providerId: PROVIDER_ID, externalId: parsed.externalId },
     [
       {
         providerId: PROVIDER_ID,
@@ -174,7 +161,6 @@ export async function persistBodyMeasurement(
       },
     ],
     SOURCE_TYPE_API,
-    undefined,
     metricStreamPublisher,
   );
 }

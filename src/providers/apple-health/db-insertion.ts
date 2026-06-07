@@ -5,6 +5,7 @@ import type { SyncDatabase } from "../../db/index.ts";
 import {
   type MetricStreamSourceRow,
   writeMetricStreamBatch,
+  writeMetricStreamBatchForScope,
 } from "../../db/metric-stream-writer.ts";
 import { NUTRIENT_ID_MAP } from "../../db/nutrient-columns.ts";
 import {
@@ -20,6 +21,7 @@ import {
 import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { logger } from "../../logger.ts";
+import type { MetricStreamDeleteScopeInput } from "../../metric-stream/events.ts";
 import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
 import type { HealthRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
@@ -169,6 +171,7 @@ export async function upsertMetricStreamBatch(
   db: SyncDatabase,
   providerId: string,
   records: HealthRecord[],
+  replacementScope?: MetricStreamDeleteScopeInput,
   publisher?: MetricStreamEventPublisher,
 ): Promise<number> {
   const rows: MetricStreamSourceRow[] = [];
@@ -207,8 +210,11 @@ export async function upsertMetricStreamBatch(
     }
   }
 
-  // Metric rows publish to the Redpanda metric stream; ClickHouse and R2 consume from there.
-  await writeMetricStreamBatch(db, rows, SOURCE_TYPE_FILE, undefined, publisher);
+  if (replacementScope) {
+    await writeMetricStreamBatchForScope(db, replacementScope, rows, SOURCE_TYPE_FILE, publisher);
+  } else {
+    await writeMetricStreamBatch(db, rows, SOURCE_TYPE_FILE, undefined, publisher);
+  }
   return rows.length;
 }
 
@@ -216,6 +222,7 @@ export async function upsertBodyMeasurementBatch(
   db: SyncDatabase,
   providerId: string,
   records: HealthRecord[],
+  replacementScope?: MetricStreamDeleteScopeInput,
   publisher?: MetricStreamEventPublisher,
 ): Promise<number> {
   // Group by timestamp to combine BP systolic + diastolic into one row
@@ -281,7 +288,17 @@ export async function upsertBodyMeasurementBatch(
   }
   const uniqueRows = [...dedupMap.values()];
 
-  await writeMetricStreamBatch(db, uniqueRows, SOURCE_TYPE_FILE, undefined, publisher);
+  if (replacementScope) {
+    await writeMetricStreamBatchForScope(
+      db,
+      replacementScope,
+      uniqueRows,
+      SOURCE_TYPE_FILE,
+      publisher,
+    );
+  } else {
+    await writeMetricStreamBatch(db, uniqueRows, SOURCE_TYPE_FILE, undefined, publisher);
+  }
   return uniqueRows.length;
 }
 
@@ -672,6 +689,7 @@ export async function upsertWorkoutBatch(
   db: SyncDatabase,
   providerId: string,
   workouts: HealthWorkout[],
+  replacementScope?: MetricStreamDeleteScopeInput,
   publisher?: MetricStreamEventPublisher,
 ): Promise<number> {
   // Deduplicate by externalId — Apple Health can export duplicate workouts
@@ -750,8 +768,17 @@ export async function upsertWorkoutBatch(
     }
   }
 
-  // GPS route points are stored as metric_stream location samples with scalar metadata.
-  await writeMetricStreamBatch(db, allGpsRows, SOURCE_TYPE_FILE, undefined, publisher);
+  if (replacementScope) {
+    await writeMetricStreamBatchForScope(
+      db,
+      replacementScope,
+      allGpsRows,
+      SOURCE_TYPE_FILE,
+      publisher,
+    );
+  } else {
+    await writeMetricStreamBatch(db, allGpsRows, SOURCE_TYPE_FILE, undefined, publisher);
+  }
 
   return activityResults.length;
 }

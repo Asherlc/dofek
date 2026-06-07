@@ -1,12 +1,15 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { activity, dailyMetrics, oauthToken, sleepSession } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { CorosProvider } from "./coros.ts";
+import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 
 // ============================================================
 // Fake COROS API responses
@@ -30,6 +33,7 @@ interface FakeCorosWorkout {
   maxPower?: number;
   totalAscent?: number;
   totalDescent?: number;
+  fitUrl?: string;
 }
 
 function fakeWorkout(overrides: Partial<FakeCorosWorkout> = {}): FakeCorosWorkout {
@@ -50,6 +54,9 @@ function fakeWorkout(overrides: Partial<FakeCorosWorkout> = {}): FakeCorosWorkou
     ...overrides,
   };
 }
+
+const FIT_FIXTURE_PATH = resolve(import.meta.dirname, "../fit/fixtures/test.fit");
+const fitFileBuffer = readFileSync(FIT_FIXTURE_PATH);
 
 interface FakeCorosDailyData {
   date: string;
@@ -124,10 +131,15 @@ function corosHandlers(
         result: "0000",
       });
     }),
+
+    http.get("https://cdn.coros.com/fit/:fileName", () => {
+      return new HttpResponse(fitFileBuffer);
+    }),
   ];
 }
 
 const server = setupServer();
+const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 describe("CorosProvider.sync() (integration)", () => {
   let ctx: TestContext;
@@ -139,6 +151,11 @@ describe("CorosProvider.sync() (integration)", () => {
     server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "coros", "COROS", "https://open.coros.com");
   }, 60_000);
+
+  beforeEach(() => {
+    metricStreamCapture.publishedMetricStreamRows.length = 0;
+    metricStreamCapture.deletedMetricStreamScopes.length = 0;
+  });
 
   afterEach(() => {
     server.resetHandlers();
@@ -165,7 +182,9 @@ describe("CorosProvider.sync() (integration)", () => {
     server.use(...corosHandlers(workouts, []));
 
     const provider = new CorosProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.provider).toBe("coros");
     expect(result.errors).toHaveLength(0);
@@ -181,6 +200,38 @@ describe("CorosProvider.sync() (integration)", () => {
     const ride = rows.find((r) => r.externalId === "coros-w-1002");
     if (!ride) throw new Error("expected workout coros-w-1002");
     expect(ride.activityType).toBe("cycling");
+  });
+
+  it("publishes FIT samples through scoped Redpanda replacement", async () => {
+    await saveTokens(ctx.db, "coros", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: null,
+    });
+
+    const workouts = [
+      fakeWorkout({
+        labelId: "coros-w-fit",
+        mode: 9,
+        fitUrl: "https://cdn.coros.com/fit/test.fit",
+      }),
+    ];
+
+    server.use(...corosHandlers(workouts, []));
+
+    const provider = new CorosProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
+
+    expect(result.errors).toHaveLength(0);
+    const rows = await ctx.db.select().from(activity).where(eq(activity.externalId, "coros-w-fit"));
+    expect(rows).toHaveLength(1);
+    const activityId = rows[0]?.id;
+    if (!activityId) throw new Error("expected activity id");
+    expect(metricStreamCapture.publishedMetricStreamRows.length).toBeGreaterThan(0);
+    expect(metricStreamCapture.deletedMetricStreamScopes).toContainEqual({ activityId });
   });
 
   it("syncs daily data into daily_metrics table", async () => {

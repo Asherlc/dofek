@@ -1,14 +1,13 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import type { CanonicalActivityType } from "@dofek/training/training";
-import { eq } from "drizzle-orm";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
-import { activity, metricStream } from "../db/schema.ts";
+import { replaceMetricStreamBatch } from "../db/metric-stream-writer.ts";
+import { activity } from "../db/schema.ts";
 import { SOURCE_TYPE_FILE } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
@@ -333,7 +332,7 @@ export class SuuntoProvider implements WebhookProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options: SyncOptions = {}): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -425,8 +424,13 @@ export class SuuntoProvider implements WebhookProvider {
                     );
 
                     if (metricRows.length > 0) {
-                      await db.delete(metricStream).where(eq(metricStream.activityId, activityId));
-                      await writeMetricStreamBatch(db, metricRows, SOURCE_TYPE_FILE);
+                      await replaceMetricStreamBatch(
+                        db,
+                        { activityId },
+                        metricRows,
+                        SOURCE_TYPE_FILE,
+                        options.metricStreamPublisher,
+                      );
                       logger.info(
                         `[suunto] Inserted ${metricRows.length} metric stream rows for workout ${parsed.externalId}`,
                       );

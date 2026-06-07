@@ -297,6 +297,34 @@ services:
         limits:
           memory: 1500M
 
+  metric-stream-postgres-sink:
+    image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
+    command: ["metric-stream-postgres-sink"]
+    env_file: ${INFISICAL_ENV_FILE:?INFISICAL_ENV_FILE is required}
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://health:${POSTGRES_PASSWORD}@db:5432/health
+      REDPANDA_BROKERS: ${REDPANDA_BROKERS:?REDPANDA_BROKERS is required}
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_TOPIC:?METRIC_STREAM_TOPIC is required}
+      OTEL_SERVICE_NAME: dofek-metric-stream-postgres-sink
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${DEPLOY_ENVIRONMENT:-production}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://collector:4318/v1/logs
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f metric-stream-postgres-sink || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 300M
+      update_config:
+        order: stop-first
+        failure_action: rollback
+
   metric-stream-clickhouse-sink:
     image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
     command: ["metric-stream-clickhouse-sink"]

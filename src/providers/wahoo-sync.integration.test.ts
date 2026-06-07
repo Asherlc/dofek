@@ -95,6 +95,7 @@ describe("WahooProvider.sync() (integration)", () => {
 
   beforeEach(() => {
     metricStreamCapture.publishedMetricStreamRows.length = 0;
+    metricStreamCapture.deletedMetricStreamScopes.length = 0;
   });
 
   afterEach(() => {

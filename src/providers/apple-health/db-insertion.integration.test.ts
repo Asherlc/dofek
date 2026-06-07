@@ -186,7 +186,7 @@ describe("db-insertion deduplication (integration)", () => {
       ];
 
       const publishedRows: MetricStreamRowInput[] = [];
-      const count = await upsertMetricStreamBatch(ctx.db, PROVIDER_ID, records, {
+      const count = await upsertMetricStreamBatch(ctx.db, PROVIDER_ID, records, undefined, {
         publishRows: async (rows): Promise<MetricStreamEventV1[]> => {
           publishedRows.push(...rows);
           return rows.map((row, index) => ({

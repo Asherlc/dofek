@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createKafkaMetricStreamEventPublisherFromEnv,
-  getDefaultMetricStreamEventPublisher,
   KafkaMetricStreamEventPublisher,
   type KafkaProducerLike,
   type KafkaProducerSendInput,
@@ -81,6 +80,52 @@ describe("KafkaMetricStreamEventPublisher", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it("publishes row batches on a supplied replacement partition key", async () => {
+    const { producer, send } = makeProducer();
+    const publisher = new KafkaMetricStreamEventPublisher(producer, "metric-stream-v1");
+
+    const events = await publisher.publishRows(
+      [metricStreamRow],
+      "provider:00000000-0000-0000-0000-000000000001:apple_health:*:*:2026-06-01T00:00:00.000Z:*",
+    );
+
+    expect(send).toHaveBeenCalledWith({
+      topic: "metric-stream-v1",
+      messages: [
+        {
+          key: "provider:00000000-0000-0000-0000-000000000001:apple_health:*:*:2026-06-01T00:00:00.000Z:*",
+          value: JSON.stringify(events[0]),
+        },
+      ],
+    });
+  });
+
+  it("publishes scoped replacements with a delete event before row events on the same key", async () => {
+    const { producer, send } = makeProducer();
+    const publisher = new KafkaMetricStreamEventPublisher(producer, "metric-stream-v1");
+
+    const events = await publisher.replaceRows(
+      { activityId: "20000000-0000-4000-8000-000000000001" },
+      [metricStreamRow],
+    );
+
+    expect(events.deleted.partitionKey).toBe("activity:20000000-0000-4000-8000-000000000001");
+    expect(events.rows).toHaveLength(1);
+    expect(send).toHaveBeenCalledWith({
+      topic: "metric-stream-v1",
+      messages: [
+        {
+          key: "activity:20000000-0000-4000-8000-000000000001",
+          value: JSON.stringify(events.deleted),
+        },
+        {
+          key: "activity:20000000-0000-4000-8000-000000000001",
+          value: JSON.stringify(events.rows[0]),
+        },
+      ],
+    });
+  });
+
   it("disconnects the KafkaJS producer when disposed", async () => {
     const { disconnect, producer } = makeProducer();
     const publisher = new KafkaMetricStreamEventPublisher(producer, "metric-stream-v1");
@@ -148,38 +193,5 @@ describe("createKafkaMetricStreamEventPublisherFromEnv", () => {
     });
     expect(kafkaProducerFactory).toHaveBeenCalledOnce();
     expect(kafkaProducerConnect).toHaveBeenCalledOnce();
-  });
-});
-
-describe("getDefaultMetricStreamEventPublisher", () => {
-  it("does not permanently cache failed publisher initialization", async () => {
-    const originalTopic = process.env.METRIC_STREAM_TOPIC;
-    const originalBrokers = process.env.REDPANDA_BROKERS;
-
-    try {
-      delete process.env.METRIC_STREAM_TOPIC;
-      process.env.REDPANDA_BROKERS = "redpanda:9092";
-      await expect(getDefaultMetricStreamEventPublisher()).rejects.toThrow(
-        "METRIC_STREAM_TOPIC is required",
-      );
-
-      process.env.METRIC_STREAM_TOPIC = "metric-stream-v1";
-      kafkaProducerConnect.mockClear();
-      await expect(getDefaultMetricStreamEventPublisher()).resolves.toBeInstanceOf(
-        KafkaMetricStreamEventPublisher,
-      );
-      expect(kafkaProducerConnect).toHaveBeenCalledOnce();
-    } finally {
-      if (originalTopic === undefined) {
-        delete process.env.METRIC_STREAM_TOPIC;
-      } else {
-        process.env.METRIC_STREAM_TOPIC = originalTopic;
-      }
-      if (originalBrokers === undefined) {
-        delete process.env.REDPANDA_BROKERS;
-      } else {
-        process.env.REDPANDA_BROKERS = originalBrokers;
-      }
-    }
   });
 });

@@ -1,15 +1,22 @@
 import type { InferInsertModel } from "drizzle-orm";
-import type { JsonValue, MetricStreamRowInput } from "../metric-stream/events.ts";
+import {
+  createMetricStreamDeletedEvent,
+  type MetricStreamDeleteScopeInput,
+  type MetricStreamRowInput,
+  metricStreamRowInputSchema,
+} from "../metric-stream/events.ts";
 import {
   getDefaultMetricStreamEventPublisher,
   type MetricStreamEventPublisher,
+  type MetricStreamReplacementPublishResult,
 } from "../metric-stream/redpanda-producer.ts";
 import type { SyncDatabase } from "./index.ts";
 import { DRIZZLE_FIELD_TO_CHANNEL, LOCATION } from "./sensor-channels.ts";
 import { getTokenUserId } from "./token-user-context.ts";
 
-export type MetricStreamInsert = InferInsertModel<typeof import("./schema.ts").metricStream>;
-type MetricStreamPublishRow = MetricStreamInsert & MetricStreamRowInput;
+type MetricStreamTable = typeof import("./schema.ts").metricStream;
+
+export type MetricStreamInsert = InferInsertModel<MetricStreamTable>;
 
 export interface MetricStreamSourceRow {
   recordedAt: Date;
@@ -55,6 +62,32 @@ function metricStreamExternalId(row: MetricStreamSourceRow, channel: string): st
   return `${row.providerId}:${activitySegment}:${sourceSegment}:${channel}:${row.recordedAt.toISOString()}`;
 }
 
+/**
+ * Callback that receives a batch of rows to insert.
+ * The default implementation uses Drizzle's `db.insert(metricStream).values(batch)`.
+ * Tests can supply a lightweight mock without needing the full Drizzle type.
+ */
+export type BatchInsertFn = (batch: MetricStreamInsert[]) => Promise<void>;
+
+export function metricStreamConflictTarget(table: MetricStreamTable) {
+  return [table.userId, table.providerId, table.externalId, table.channel, table.recordedAt];
+}
+
+/**
+ * Create the default batch insert function using a Drizzle DB instance.
+ */
+export function createBatchInsert(db: Pick<SyncDatabase, "insert">): BatchInsertFn {
+  return async (batch) => {
+    const { metricStream: table } = await import("./schema.ts");
+    await db
+      .insert(table)
+      .values(batch)
+      .onConflictDoNothing({
+        target: metricStreamConflictTarget(table),
+      });
+  };
+}
+
 function requireMetricStreamUserId(row: MetricStreamInsert): string {
   const userId = row.userId ?? getTokenUserId();
   if (!hasExternalId(userId)) {
@@ -63,45 +96,54 @@ function requireMetricStreamUserId(row: MetricStreamInsert): string {
   return userId;
 }
 
-function isJsonValue(value: unknown): value is JsonValue {
-  if (value === null) return true;
-  switch (typeof value) {
-    case "boolean":
-    case "number":
-    case "string":
-      return true;
-    case "object":
-      if (Array.isArray(value)) {
-        return value.every(isJsonValue);
-      }
-      if (!isPlainObject(value)) {
-        return false;
-      }
-      return Object.values(value).every(isJsonValue);
-    default:
-      return false;
-  }
-}
-
-function isPlainObject(value: object): value is Record<string, unknown> {
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
-
-function metricStreamMetadata(value: unknown): JsonValue | undefined {
-  if (value === undefined) return undefined;
-  if (!isJsonValue(value)) {
-    throw new Error("metric_stream ingestion metadata must be JSON serializable");
-  }
-  return value;
-}
-
-function toPublishRow(row: MetricStreamInsert): MetricStreamPublishRow {
-  return {
+function toPublishRow(row: MetricStreamInsert): MetricStreamRowInput {
+  return metricStreamRowInputSchema.parse({
     ...row,
     userId: requireMetricStreamUserId(row),
-    metadata: metricStreamMetadata(row.metadata),
-  };
+  });
+}
+
+interface ReplacementCapableMetricStreamPublisher extends MetricStreamEventPublisher {
+  replaceRows(
+    scope: MetricStreamDeleteScopeInput,
+    rows: readonly MetricStreamRowInput[],
+  ): Promise<MetricStreamReplacementPublishResult>;
+}
+
+function hasReplacementPublisher(
+  publisher: MetricStreamEventPublisher,
+): publisher is ReplacementCapableMetricStreamPublisher {
+  return typeof publisher.replaceRows === "function";
+}
+
+function requireReplacementPublisher(
+  publisher: MetricStreamEventPublisher,
+): ReplacementCapableMetricStreamPublisher {
+  if (!hasReplacementPublisher(publisher)) {
+    throw new Error("Metric stream publisher does not support scoped replacement");
+  }
+  return publisher;
+}
+
+/**
+ * Batch-insert metric stream rows.
+ */
+export async function writeMetricStream(
+  insertBatch: BatchInsertFn,
+  rows: MetricStreamInsert[],
+  batchSize = DEFAULT_BATCH_SIZE,
+): Promise<number> {
+  if (rows.length === 0) return 0;
+
+  const rowWithoutExternalId = rows.find((row) => !hasExternalId(row.externalId));
+  if (rowWithoutExternalId) {
+    throw new Error("metric_stream ingestion rows require externalId for idempotency");
+  }
+
+  for (let offset = 0; offset < rows.length; offset += batchSize) {
+    await insertBatch(rows.slice(offset, offset + batchSize));
+  }
+  return rows.length;
 }
 
 /**
@@ -164,10 +206,6 @@ export async function writeMetricStreamBatch(
   batchSize = DEFAULT_BATCH_SIZE,
   publisher?: MetricStreamEventPublisher,
 ): Promise<number> {
-  if (!Number.isInteger(batchSize) || batchSize <= 0) {
-    throw new Error("metric_stream ingestion batchSize must be a positive integer");
-  }
-
   const rows = metricRows.flatMap((row) => sourceRowToMetricStream(row, sourceType));
   if (rows.length === 0) return 0;
 
@@ -187,4 +225,45 @@ export async function writeMetricStreamBatch(
     published += events.length;
   }
   return published;
+}
+
+export async function writeMetricStreamBatchForScope(
+  _db: Pick<SyncDatabase, "insert">,
+  scope: MetricStreamDeleteScopeInput,
+  metricRows: MetricStreamSourceRow[],
+  sourceType: string,
+  publisher?: MetricStreamEventPublisher,
+): Promise<number> {
+  const rows = metricRows.flatMap((row) => sourceRowToMetricStream(row, sourceType));
+  if (rows.length === 0) return 0;
+
+  const rowWithoutExternalId = rows.find((row) => !hasExternalId(row.externalId));
+  if (rowWithoutExternalId) {
+    throw new Error("metric_stream ingestion rows require externalId for idempotency");
+  }
+
+  const resolvedPublisher = publisher ?? (await getDefaultMetricStreamEventPublisher());
+  const partitionKey = createMetricStreamDeletedEvent(scope).partitionKey;
+  const events = await resolvedPublisher.publishRows(rows.map(toPublishRow), partitionKey);
+  return events.length;
+}
+
+export async function replaceMetricStreamBatch(
+  _db: Pick<SyncDatabase, "insert">,
+  scope: MetricStreamDeleteScopeInput,
+  metricRows: MetricStreamSourceRow[],
+  sourceType: string,
+  publisher?: MetricStreamEventPublisher,
+): Promise<number> {
+  const rows = metricRows.flatMap((row) => sourceRowToMetricStream(row, sourceType));
+  const rowWithoutExternalId = rows.find((row) => !hasExternalId(row.externalId));
+  if (rowWithoutExternalId) {
+    throw new Error("metric_stream ingestion rows require externalId for idempotency");
+  }
+
+  const resolvedPublisher = requireReplacementPublisher(
+    publisher ?? (await getDefaultMetricStreamEventPublisher()),
+  );
+  const result = await resolvedPublisher.replaceRows(scope, rows.map(toPublishRow));
+  return result.rows.length;
 }
