@@ -1,9 +1,4 @@
-import { describe, expect, it } from "vitest";
-import {
-  createMetricStreamEvent,
-  metricStreamEventV1Schema,
-  metricStreamRowInputSchema,
-} from "./events.ts";
+import { describe, expect, it, vi } from "vitest";
 
 const baseMetricStreamRow = {
   recordedAt: "2026-06-06T19:00:00.000Z",
@@ -30,8 +25,15 @@ const baseMetricStreamEvent = {
   metadata: null,
 };
 
+async function loadMetricStreamEventsModule() {
+  vi.resetModules();
+  return await import("./events.ts");
+}
+
 describe("createMetricStreamEvent", () => {
-  it("rejects invalid recordedAt timestamps", () => {
+  it("rejects invalid recordedAt timestamps", async () => {
+    const { createMetricStreamEvent } = await loadMetricStreamEventsModule();
+
     expect(() =>
       createMetricStreamEvent({
         ...baseMetricStreamRow,
@@ -40,7 +42,9 @@ describe("createMetricStreamEvent", () => {
     ).toThrow("recordedAt must be a valid timestamp");
   });
 
-  it("preserves optional metric stream fields when they are present", () => {
+  it("preserves optional metric stream fields when they are present", async () => {
+    const { createMetricStreamEvent } = await loadMetricStreamEventsModule();
+
     const event = createMetricStreamEvent({
       ...baseMetricStreamRow,
       externalId: "hk:heart-rate-1",
@@ -63,12 +67,16 @@ describe("createMetricStreamEvent", () => {
 });
 
 describe("metricStreamRowInputSchema", () => {
-  it("requires the metric stream row object shape", () => {
+  it("requires the metric stream row object shape", async () => {
+    const { metricStreamRowInputSchema } = await loadMetricStreamEventsModule();
+
     expect(metricStreamRowInputSchema.safeParse({}).success).toBe(false);
     expect(metricStreamRowInputSchema.safeParse(baseMetricStreamRow).success).toBe(true);
   });
 
-  it("requires non-empty source identifiers", () => {
+  it("requires non-empty source identifiers", async () => {
+    const { metricStreamRowInputSchema } = await loadMetricStreamEventsModule();
+
     expect(
       metricStreamRowInputSchema.safeParse({
         ...baseMetricStreamRow,
@@ -95,7 +103,9 @@ describe("metricStreamRowInputSchema", () => {
     ).toBe(false);
   });
 
-  it("accepts Date timestamps, non-empty vectors, and nested JSON metadata", () => {
+  it("accepts Date timestamps, non-empty vectors, and nested JSON metadata", async () => {
+    const { metricStreamRowInputSchema } = await loadMetricStreamEventsModule();
+
     const result = metricStreamRowInputSchema.safeParse({
       ...baseMetricStreamRow,
       recordedAt: new Date("2026-06-06T19:00:00.000Z"),
@@ -118,7 +128,9 @@ describe("metricStreamRowInputSchema", () => {
     });
   });
 
-  it("rejects empty timestamp strings and empty vectors", () => {
+  it("rejects empty timestamp strings and empty vectors", async () => {
+    const { metricStreamRowInputSchema } = await loadMetricStreamEventsModule();
+
     expect(
       metricStreamRowInputSchema.safeParse({
         ...baseMetricStreamRow,
@@ -135,12 +147,16 @@ describe("metricStreamRowInputSchema", () => {
 });
 
 describe("metricStreamEventV1Schema", () => {
-  it("requires the emitted metric stream event object shape", () => {
+  it("requires the emitted metric stream event object shape", async () => {
+    const { metricStreamEventV1Schema } = await loadMetricStreamEventsModule();
+
     expect(metricStreamEventV1Schema.safeParse({}).success).toBe(false);
     expect(metricStreamEventV1Schema.safeParse(baseMetricStreamEvent).success).toBe(true);
   });
 
-  it("requires recordedAt to include a timezone offset", () => {
+  it("requires recordedAt to include a timezone offset", async () => {
+    const { metricStreamEventV1Schema } = await loadMetricStreamEventsModule();
+
     expect(
       metricStreamEventV1Schema.safeParse({
         ...baseMetricStreamEvent,
@@ -155,7 +171,9 @@ describe("metricStreamEventV1Schema", () => {
     ).toBe(true);
   });
 
-  it("accepts non-empty vectors and nested JSON metadata", () => {
+  it("accepts non-empty vectors and nested JSON metadata", async () => {
+    const { metricStreamEventV1Schema } = await loadMetricStreamEventsModule();
+
     expect(
       metricStreamEventV1Schema.safeParse({
         ...baseMetricStreamEvent,
@@ -169,7 +187,9 @@ describe("metricStreamEventV1Schema", () => {
     ).toBe(true);
   });
 
-  it("rejects empty vectors and empty source identifiers", () => {
+  it("rejects empty vectors and empty source identifiers", async () => {
+    const { metricStreamEventV1Schema } = await loadMetricStreamEventsModule();
+
     expect(
       metricStreamEventV1Schema.safeParse({
         ...baseMetricStreamEvent,
