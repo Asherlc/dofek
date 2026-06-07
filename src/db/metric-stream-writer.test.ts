@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { MetricStreamInsert } from "./metric-stream-writer.ts";
 import {
+  createBatchInsert,
   metricStreamConflictTarget,
   replaceMetricStreamBatch,
   sourceRowToMetricStream,
@@ -272,6 +273,27 @@ describe("writeMetricStream", () => {
     expect(insertedBatches[2]).toHaveLength(1);
   });
 
+  it("does not insert an empty trailing batch when rows evenly divide by batch size", async () => {
+    const insertedBatches: MetricStreamInsert[][] = [];
+    const insertBatch = vi.fn(async (batch: MetricStreamInsert[]) => {
+      insertedBatches.push(batch);
+    });
+
+    const rows: MetricStreamInsert[] = Array.from({ length: 4 }, (_, index) => ({
+      recordedAt: new Date("2026-03-30T12:00:00Z"),
+      providerId: "test",
+      externalId: `sample-${index}`,
+      sourceType: "api",
+      channel: "heart_rate",
+      scalar: index,
+    }));
+
+    const count = await writeMetricStream(insertBatch, rows, 2);
+
+    expect(count).toBe(4);
+    expect(insertedBatches).toEqual([rows.slice(0, 2), rows.slice(2, 4)]);
+  });
+
   it("uses a conservative default batch size", async () => {
     const insertedBatches: MetricStreamInsert[][] = [];
     const insertBatch = vi.fn(async (batch: MetricStreamInsert[]) => {
@@ -377,22 +399,34 @@ describe("writeMetricStreamBatch", () => {
 
   it("fails fast when neither the row nor token context provides a user ID", async () => {
     const db = { insert: vi.fn() };
+    const originalTestTokenUserId = process.env.TEST_TOKEN_USER_ID;
+    delete process.env.TEST_TOKEN_USER_ID;
 
-    await expect(
-      writeMetricStreamBatch(
-        db,
-        [
-          {
-            recordedAt: new Date("2026-03-30T12:00:00Z"),
-            providerId: "withings",
-            externalId: "withings-measure-2",
-            weightKg: 72.5,
-          },
-        ],
-        "api",
-      ),
-    ).rejects.toThrow("metric_stream ingestion rows require userId");
-    expect(db.insert).not.toHaveBeenCalled();
+    try {
+      await runWithTokenUser("", async () => {
+        await expect(
+          writeMetricStreamBatch(
+            db,
+            [
+              {
+                recordedAt: new Date("2026-03-30T12:00:00Z"),
+                providerId: "withings",
+                externalId: "withings-measure-2",
+                weightKg: 72.5,
+              },
+            ],
+            "api",
+          ),
+        ).rejects.toThrow("metric_stream ingestion rows require userId");
+      });
+      expect(db.insert).not.toHaveBeenCalled();
+    } finally {
+      if (originalTestTokenUserId === undefined) {
+        delete process.env.TEST_TOKEN_USER_ID;
+      } else {
+        process.env.TEST_TOKEN_USER_ID = originalTestTokenUserId;
+      }
+    }
   });
 });
 
@@ -435,6 +469,58 @@ describe("replaceMetricStreamBatch", () => {
         }),
       ],
     );
+  });
+
+  it("fails with a clear error when the publisher cannot replace rows", async () => {
+    const db = { insert: vi.fn() };
+
+    await expect(
+      replaceMetricStreamBatch(
+        db,
+        { activityId: "20000000-0000-4000-8000-000000000001" },
+        [
+          {
+            recordedAt: new Date("2026-03-30T12:00:00Z"),
+            providerId: "wahoo",
+            externalId: "sample-1",
+            activityId: "20000000-0000-4000-8000-000000000001",
+            heartRate: 142,
+          },
+        ],
+        "file",
+        {
+          publishRows: async () => [],
+        },
+      ),
+    ).rejects.toThrow("Metric stream publisher does not support scoped replacement");
+  });
+});
+
+describe("createBatchInsert", () => {
+  it("inserts with the metric stream conflict target", async () => {
+    const rows: MetricStreamInsert[] = [
+      {
+        recordedAt: new Date("2026-03-30T12:00:00Z"),
+        userId: "00000000-0000-0000-0000-000000000001",
+        providerId: "test",
+        externalId: "sample-1",
+        sourceType: "api",
+        channel: "heart_rate",
+        scalar: 72,
+      },
+    ];
+    const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
+    const values = vi.fn().mockReturnValue({ onConflictDoNothing });
+    const insert = vi.fn().mockReturnValue({ values });
+
+    const insertBatch = createBatchInsert({ insert });
+    await insertBatch(rows);
+
+    expect(insert).toHaveBeenCalledWith(metricStream);
+    expect(values).toHaveBeenCalledWith(rows);
+    expect(onConflictDoNothing).toHaveBeenCalledWith({
+      target: metricStreamConflictTarget(metricStream),
+    });
   });
 });
 

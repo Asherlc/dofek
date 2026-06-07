@@ -22,10 +22,12 @@ vi.mock("../db/token-user-context.ts", () => ({
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
 
-const { publishedMetricStreamBatches } = vi.hoisted<{
-  publishedMetricStreamBatches: Record<string, unknown>[][];
+const { publishedMetricStreamBatches, publishedMetricStreamReplacements } = vi.hoisted<{
+  publishedMetricStreamBatches: unknown[][];
+  publishedMetricStreamReplacements: Array<{ scope: unknown; rows: unknown[] }>;
 }>(() => ({
   publishedMetricStreamBatches: [],
+  publishedMetricStreamReplacements: [],
 }));
 
 vi.mock("../metric-stream/redpanda-producer.ts", () => ({
@@ -39,6 +41,7 @@ vi.mock("../metric-stream/redpanda-producer.ts", () => ({
       }));
     },
     replaceRows: async (_scope: unknown, rows: readonly Record<string, unknown>[]) => {
+      publishedMetricStreamReplacements.push({ scope: _scope, rows: [...rows] });
       publishedMetricStreamBatches.push([...rows]);
       return {
         deleted: {
@@ -60,6 +63,7 @@ vi.mock("../metric-stream/redpanda-producer.ts", () => ({
 
 beforeEach(() => {
   publishedMetricStreamBatches.length = 0;
+  publishedMetricStreamReplacements.length = 0;
 });
 
 const sampleActivity: StravaActivity = {
@@ -984,6 +988,12 @@ describe("StravaProvider.syncWebhookEvent", () => {
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(0);
     expect(mockDelete).toHaveBeenCalledTimes(1);
+    expect(publishedMetricStreamReplacements).toEqual([
+      {
+        scope: { activityId: "10000000-0000-4000-8000-000000000002" },
+        rows: [],
+      },
+    ]);
     expect(publishedMetricStreamBatches).toEqual([[]]);
   });
 
@@ -1102,6 +1112,23 @@ describe("StravaProvider.syncWebhookEvent", () => {
     expect(result.errors).toHaveLength(0);
     // insert called for: activity upsert, then metric_stream batch
     expect(mockInsert).toHaveBeenCalled();
+    expect(publishedMetricStreamReplacements).toEqual([
+      {
+        scope: { activityId: "10000000-0000-4000-8000-000000000001" },
+        rows: [
+          expect.objectContaining({
+            activityId: "10000000-0000-4000-8000-000000000001",
+            providerId: "strava",
+            channel: "heart_rate",
+          }),
+          expect.objectContaining({
+            activityId: "10000000-0000-4000-8000-000000000001",
+            providerId: "strava",
+            channel: "heart_rate",
+          }),
+        ],
+      },
+    ]);
   });
 
   it("handles stream fetch 404 as non-fatal", async () => {
@@ -1547,6 +1574,12 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
     const whereCalls = mockDeleteWhere.mock.calls;
     expect(whereCalls).toHaveLength(1);
     expect(whereCalls[0]?.[0]).toBeDefined();
+    expect(publishedMetricStreamReplacements).toEqual([
+      {
+        scope: { activityId: "10000000-0000-4000-8000-000000000003" },
+        rows: [],
+      },
+    ]);
     expect(publishedMetricStreamBatches).toEqual([[]]);
   });
 

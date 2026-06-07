@@ -22,7 +22,12 @@ import type { SleepAnalysisRecord } from "./sleep.ts";
 import type { HealthWorkout } from "./workouts.ts";
 
 const { metricStreamCapture } = vi.hoisted<{
-  metricStreamCapture: { current: { values: Record<string, unknown>[][] } | null };
+  metricStreamCapture: {
+    current: {
+      values: Record<string, unknown>[][];
+      partitionKeys: Array<string | undefined>;
+    } | null;
+  };
 }>(() => ({
   metricStreamCapture: {
     current: null,
@@ -31,8 +36,9 @@ const { metricStreamCapture } = vi.hoisted<{
 
 vi.mock("../../metric-stream/redpanda-producer.ts", () => ({
   getDefaultMetricStreamEventPublisher: async () => ({
-    publishRows: async (rows: readonly Record<string, unknown>[]) => {
+    publishRows: async (rows: readonly Record<string, unknown>[], partitionKey?: string) => {
       metricStreamCapture.current?.values.push([...rows]);
+      metricStreamCapture.current?.partitionKeys.push(partitionKey);
       return rows.map((row, index) => ({
         version: 1,
         id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
@@ -70,13 +76,14 @@ vi.mock("../../db/token-user-context.ts", () => ({
 
 interface MockInsertCapture {
   values: Record<string, unknown>[][];
+  partitionKeys: Array<string | undefined>;
 }
 
 function createMockDb(returningData: Record<string, unknown>[] = []): {
   db: SyncDatabase;
   capture: MockInsertCapture;
 } {
-  const capture: MockInsertCapture = { values: [] };
+  const capture: MockInsertCapture = { values: [], partitionKeys: [] };
   metricStreamCapture.current = capture;
 
   function makeChainable(): Promise<undefined> {
@@ -155,6 +162,18 @@ function makeSleep(overrides: Partial<SleepAnalysisRecord> = {}): SleepAnalysisR
     durationMinutes: 480,
     ...overrides,
   };
+}
+
+function expectedProviderPartitionKey(providerId: string, recordedAtStart: Date): string {
+  return [
+    "provider",
+    "00000000-0000-0000-0000-000000000001",
+    providerId,
+    "*",
+    "*",
+    recordedAtStart.toISOString(),
+    "*",
+  ].join(":");
 }
 
 // ---------------------------------------------------------------------------
@@ -384,6 +403,32 @@ describe("upsertMetricStreamBatch", () => {
       scalar: 33.4,
     });
   });
+
+  it("publishes records with the replacement scope partition key", async () => {
+    const { db, capture } = createMockDb();
+    const recordedAtStart = new Date("2024-01-01T00:00:00Z");
+    const records = [
+      makeRecord({
+        type: "HKQuantityTypeIdentifierHeartRate",
+        value: 72,
+      }),
+    ];
+
+    await upsertMetricStreamBatch(db, "p1", records, {
+      userId: "00000000-0000-0000-0000-000000000001",
+      providerId: "p1",
+      recordedAtStart,
+    });
+
+    expect(capture.partitionKeys).toContain(expectedProviderPartitionKey("p1", recordedAtStart));
+    expect(capture.values.flat()).toContainEqual(
+      expect.objectContaining({
+        providerId: "p1",
+        channel: "heart_rate",
+        scalar: 72,
+      }),
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -603,6 +648,27 @@ describe("upsertBodyMeasurementBatch", () => {
     await upsertBodyMeasurementBatch(db, "p1", records);
     expect(capture.values).toHaveLength(1);
     expect(capture.values[0]).toHaveLength(600);
+  });
+
+  it("publishes body measurements with the replacement scope partition key", async () => {
+    const { db, capture } = createMockDb();
+    const recordedAtStart = new Date("2024-01-01T00:00:00Z");
+    const records = [makeRecord({ type: "HKQuantityTypeIdentifierBodyMass", value: 72.5 })];
+
+    await upsertBodyMeasurementBatch(db, "p1", records, {
+      userId: "00000000-0000-0000-0000-000000000001",
+      providerId: "p1",
+      recordedAtStart,
+    });
+
+    expect(capture.partitionKeys).toContain(expectedProviderPartitionKey("p1", recordedAtStart));
+    expect(capture.values.flat()).toContainEqual(
+      expect.objectContaining({
+        providerId: "p1",
+        channel: "body_weight",
+        scalar: 72.5,
+      }),
+    );
   });
 });
 
@@ -1489,6 +1555,35 @@ describe("upsertWorkoutBatch", () => {
     const { db } = createMockDb();
     const count = await upsertWorkoutBatch(db, "p1", []);
     expect(count).toBe(0);
+  });
+
+  it("publishes route locations with the replacement scope partition key", async () => {
+    const activityId = "10000000-0000-4000-8000-000000000001";
+    const { db, capture } = createMockDb([{ id: activityId }]);
+    const recordedAtStart = new Date("2024-01-01T00:00:00Z");
+    const location = {
+      date: new Date("2024-06-01T08:00:00Z"),
+      lat: 40.7128,
+      lng: -74.006,
+    };
+
+    await runWithTokenUser("00000000-0000-0000-0000-000000000001", () =>
+      upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [location] })], {
+        userId: "00000000-0000-0000-0000-000000000001",
+        providerId: "p1",
+        recordedAtStart,
+      }),
+    );
+
+    expect(capture.partitionKeys).toContain(expectedProviderPartitionKey("p1", recordedAtStart));
+    expect(capture.values.flat()).toContainEqual(
+      expect.objectContaining({
+        providerId: "p1",
+        activityId,
+        channel: "location",
+        point: "SRID=4326;POINT(-74.006 40.7128)",
+      }),
+    );
   });
 });
 
