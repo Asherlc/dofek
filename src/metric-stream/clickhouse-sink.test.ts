@@ -3,6 +3,7 @@ import {
   applyMetricStreamEventsToClickHouse,
   insertMetricStreamEventsIntoClickHouse,
   mapMetricStreamEventToClickHouseRow,
+  markMetricStreamScopeDeletedInClickHouse,
 } from "./clickhouse-sink.ts";
 import { createMetricStreamDeletedEvent, type MetricStreamEventV1 } from "./events.ts";
 import type { RunMetricStreamEventConsumerOptions } from "./redpanda-consumer.ts";
@@ -137,16 +138,102 @@ describe("applyMetricStreamEventsToClickHouse", () => {
 
     expect(applied).toBe(1);
     expect(command).toHaveBeenCalledWith({
-      query: expect.stringContaining("ALTER TABLE postgres_fitness.metric_stream UPDATE"),
-      query_params: expect.objectContaining({
+      query:
+        "ALTER TABLE postgres_fitness.metric_stream UPDATE _peerdb_is_deleted = 1, _peerdb_version = {peerdb_version:Int64} WHERE toString(activity_id) = {activity_id:String}",
+      query_params: {
+        peerdb_version: expect.any(Number),
         activity_id: "20000000-0000-4000-8000-000000000001",
-      }),
+      },
     });
     expect(insert).toHaveBeenCalledWith({
       table: "postgres_fitness.metric_stream",
       values: [expect.objectContaining({ id: heartRateEvent.id })],
       format: "JSONEachRow",
     });
+  });
+
+  it("flushes row batches on both sides of a replacement delete", async () => {
+    const command = vi.fn(async () => undefined);
+    const insert = vi.fn(async () => undefined);
+    const secondHeartRateEvent = {
+      ...heartRateEvent,
+      id: "10000000-0000-4000-8000-000000000004",
+      recordedAt: "2026-06-06T19:01:00.000Z",
+    } satisfies MetricStreamEventV1;
+
+    const applied = await applyMetricStreamEventsToClickHouse({ command, insert }, [
+      heartRateEvent,
+      createMetricStreamDeletedEvent({
+        activityId: "20000000-0000-4000-8000-000000000001",
+      }),
+      secondHeartRateEvent,
+    ]);
+
+    expect(applied).toBe(2);
+    expect(insert).toHaveBeenCalledTimes(2);
+    expect(insert).toHaveBeenNthCalledWith(1, {
+      table: "postgres_fitness.metric_stream",
+      values: [expect.objectContaining({ id: heartRateEvent.id })],
+      format: "JSONEachRow",
+    });
+    expect(insert).toHaveBeenNthCalledWith(2, {
+      table: "postgres_fitness.metric_stream",
+      values: [expect.objectContaining({ id: secondHeartRateEvent.id })],
+      format: "JSONEachRow",
+    });
+    expect(command).toHaveBeenCalledOnce();
+  });
+
+  it("renders every supported replacement scope predicate into the ClickHouse mutation", async () => {
+    const command = vi.fn(async () => undefined);
+    const insert = vi.fn(async () => undefined);
+
+    await applyMetricStreamEventsToClickHouse({ command, insert }, [
+      createMetricStreamDeletedEvent({
+        userId: "10000000-0000-4000-8000-000000000001",
+        providerId: "fitbit",
+        externalId: null,
+        channel: "body_weight",
+        activityId: "20000000-0000-4000-8000-000000000001",
+        recordedAtStart: "2026-03-01T00:00:00.000Z",
+        recordedAtEnd: "2026-03-02T00:00:00.000Z",
+      }),
+    ]);
+
+    expect(insert).not.toHaveBeenCalled();
+    expect(command).toHaveBeenCalledWith({
+      query:
+        "ALTER TABLE postgres_fitness.metric_stream UPDATE _peerdb_is_deleted = 1, _peerdb_version = {peerdb_version:Int64} WHERE toString(user_id) = {user_id:String} AND provider_id = {provider_id:String} AND external_id = {external_id:String} AND channel = {channel:String} AND toString(activity_id) = {activity_id:String} AND recorded_at >= parseDateTime64BestEffort({recorded_at_start:String}) AND recorded_at < parseDateTime64BestEffort({recorded_at_end:String})",
+      query_params: {
+        peerdb_version: expect.any(Number),
+        user_id: "10000000-0000-4000-8000-000000000001",
+        provider_id: "fitbit",
+        external_id: null,
+        channel: "body_weight",
+        activity_id: "20000000-0000-4000-8000-000000000001",
+        recorded_at_start: "2026-03-01T00:00:00.000Z",
+        recorded_at_end: "2026-03-02T00:00:00.000Z",
+      },
+    });
+  });
+
+  it("rejects replacement delete scopes that produce no ClickHouse conditions", async () => {
+    await expect(
+      markMetricStreamScopeDeletedInClickHouse(
+        { command: vi.fn(async () => undefined), insert: vi.fn(async () => undefined) },
+        {},
+      ),
+    ).rejects.toThrow("Metric stream delete scope produced no ClickHouse conditions");
+  });
+
+  it("requires a command-capable client before applying replacement deletes", async () => {
+    await expect(
+      applyMetricStreamEventsToClickHouse({ insert: vi.fn(async () => undefined) }, [
+        createMetricStreamDeletedEvent({
+          activityId: "20000000-0000-4000-8000-000000000001",
+        }),
+      ]),
+    ).rejects.toThrow("ClickHouse metric-stream replacement requires a command-capable client");
   });
 });
 

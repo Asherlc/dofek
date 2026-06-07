@@ -321,7 +321,7 @@ export class CorosProvider implements WebhookProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options: SyncOptions = {}): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -396,6 +396,7 @@ export class CorosProvider implements WebhookProvider {
                       { activityId },
                       metricRows,
                       SOURCE_TYPE_FILE,
+                      options.metricStreamPublisher,
                     );
                     logger.info(
                       `[coros] Inserted ${metricRows.length} metric stream rows for workout ${parsed.externalId}`,

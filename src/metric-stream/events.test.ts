@@ -85,6 +85,29 @@ describe("createMetricStreamDeletedEvent", () => {
     });
   });
 
+  it("creates provider-scoped partition keys from every optional predicate", () => {
+    const event = createMetricStreamDeletedEvent({
+      userId: "10000000-0000-4000-8000-000000000001",
+      providerId: "fitbit",
+      externalId: null,
+      channel: "body_weight",
+      recordedAtStart: new Date("2026-03-01T00:00:00Z"),
+      recordedAtEnd: "2026-03-02T00:00:00.000Z",
+    });
+
+    expect(event.scope).toEqual({
+      userId: "10000000-0000-4000-8000-000000000001",
+      providerId: "fitbit",
+      externalId: null,
+      channel: "body_weight",
+      recordedAtStart: "2026-03-01T00:00:00.000Z",
+      recordedAtEnd: "2026-03-02T00:00:00.000Z",
+    });
+    expect(event.partitionKey).toBe(
+      "provider:10000000-0000-4000-8000-000000000001:fitbit:*:body_weight:2026-03-01T00:00:00.000Z:2026-03-02T00:00:00.000Z",
+    );
+  });
+
   it("rejects empty delete scopes", () => {
     expect(() => createMetricStreamDeletedEvent({})).toThrow(
       "Metric stream delete scope must include activityId or providerId",

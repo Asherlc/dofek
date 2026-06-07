@@ -175,6 +175,7 @@ describe("FitbitProvider.sync() (integration)", () => {
 
   beforeEach(() => {
     metricStreamCapture.publishedMetricStreamRows.length = 0;
+    metricStreamCapture.deletedMetricStreamScopes.length = 0;
   });
 
   afterEach(() => {
@@ -277,6 +278,10 @@ describe("FitbitProvider.sync() (integration)", () => {
     if (!weight) throw new Error("expected body measurement");
     expect(weight.scalar).toBeCloseTo(82.5);
     expect(bodyRows.find((row) => row.channel === "body_fat_percentage")?.scalar).toBeCloseTo(18.3);
+    expect(metricStreamCapture.deletedMetricStreamScopes).toContainEqual({
+      providerId: "fitbit",
+      externalId: "7001",
+    });
   });
 
   it("publishes webhook body updates through the injected metric stream publisher", async () => {
@@ -312,6 +317,10 @@ describe("FitbitProvider.sync() (integration)", () => {
         expect.objectContaining({ channel: "body_fat_percentage", scalar: 18.3 }),
       ]),
     );
+    expect(metricStreamCapture.deletedMetricStreamScopes).toContainEqual({
+      providerId: "fitbit",
+      externalId: "7001",
+    });
   });
 
   it("upserts on re-sync (no duplicates)", async () => {

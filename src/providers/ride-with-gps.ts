@@ -389,7 +389,7 @@ export class RideWithGpsProvider implements SyncProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(db: SyncDatabase, since: Date, options: SyncOptions = {}): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -513,7 +513,13 @@ export class RideWithGpsProvider implements SyncProvider {
           power: point.power,
         }));
         // metricRows still use the legacy shape; convert and insert into metric_stream.
-        await replaceMetricStreamBatch(db, { activityId }, metricRows, SOURCE_TYPE_API);
+        await replaceMetricStreamBatch(
+          db,
+          { activityId },
+          metricRows,
+          SOURCE_TYPE_API,
+          options.metricStreamPublisher,
+        );
 
         recordsSynced++;
       } catch (err) {

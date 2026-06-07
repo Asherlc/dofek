@@ -1078,6 +1078,18 @@ describe("WahooProvider.syncWebhookEvent", () => {
     expect(result.errors).toHaveLength(0);
     expect(whereSpy).not.toHaveBeenCalled();
     expect(replaceMetricStreamSpy).toHaveBeenCalledTimes(1);
+    expect(replaceMetricStreamSpy).toHaveBeenCalledWith(
+      mockDb,
+      { activityId: "10000000-0000-4000-8000-000000000001" },
+      expect.arrayContaining([
+        expect.objectContaining({
+          activityId: "10000000-0000-4000-8000-000000000001",
+          providerId: "wahoo",
+        }),
+      ]),
+      "file",
+      undefined,
+    );
     expect(loggerInfoSpy).toHaveBeenCalledWith(
       "[wahoo] Webhook: inserted 1 metric stream rows for workout 42",
     );

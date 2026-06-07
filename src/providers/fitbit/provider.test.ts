@@ -17,10 +17,12 @@ import type {
 } from "./client.ts";
 import { FitbitProvider, fitbitOAuthConfig } from "./provider.ts";
 
-const { publishedMetricStreamBatches } = vi.hoisted<{
+const { publishedMetricStreamBatches, replacementScopes } = vi.hoisted<{
   publishedMetricStreamBatches: Record<string, unknown>[][];
+  replacementScopes: unknown[];
 }>(() => ({
   publishedMetricStreamBatches: [],
+  replacementScopes: [],
 }));
 
 vi.mock("../../metric-stream/redpanda-producer.ts", () => ({
@@ -34,6 +36,7 @@ vi.mock("../../metric-stream/redpanda-producer.ts", () => ({
       }));
     },
     replaceRows: async (_scope: unknown, rows: readonly Record<string, unknown>[]) => {
+      replacementScopes.push(_scope);
       publishedMetricStreamBatches.push([...rows]);
       return {
         deleted: {
@@ -60,6 +63,7 @@ vi.mock("../../db/token-user-context.ts", () => ({
 
 afterEach(() => {
   publishedMetricStreamBatches.length = 0;
+  replacementScopes.length = 0;
 });
 
 // ============================================================
@@ -171,6 +175,28 @@ function expectReasonableDuration(durationMilliseconds: number): void {
 
 const recordSchema = z.record(z.string(), z.unknown());
 
+const sampleTcx = `<?xml version="1.0" encoding="UTF-8"?>
+<TrainingCenterDatabase>
+  <Activities>
+    <Activity Sport="Running">
+      <Lap StartTime="2026-03-01T08:30:00Z">
+        <Track>
+          <Trackpoint>
+            <Time>2026-03-01T08:30:00Z</Time>
+            <Position>
+              <LatitudeDegrees>40.7128</LatitudeDegrees>
+              <LongitudeDegrees>-74.006</LongitudeDegrees>
+            </Position>
+            <AltitudeMeters>10.5</AltitudeMeters>
+            <HeartRateBpm><Value>155</Value></HeartRateBpm>
+            <Cadence>80</Cadence>
+          </Trackpoint>
+        </Track>
+      </Lap>
+    </Activity>
+  </Activities>
+</TrainingCenterDatabase>`;
+
 function findValuesCall(
   db: ReturnType<typeof createMockDb>,
   predicate: (val: Record<string, unknown>) => boolean,
@@ -236,7 +262,7 @@ function createMockApiFetch(data: MockFitbitApiData = {}): typeof globalThis.fet
       return Response.json({ weight: data.weight ?? [] });
     }
     if (urlStr.endsWith(".tcx")) {
-      return new Response("<TrainingCenterDatabase></TrainingCenterDatabase>", {
+      return new Response(sampleTcx, {
         status: 200,
         headers: { "Content-Type": "application/xml" },
       });
@@ -751,6 +777,10 @@ describe("FitbitProvider", () => {
           channel: "body_weight",
         }),
       );
+      expect(replacementScopes).toContainEqual({
+        activityId: "10000000-0000-4000-8000-000000000001",
+      });
+      expect(replacementScopes).toContainEqual({ providerId: "fitbit", externalId: "55555" });
     });
 
     it("captures per-record insert errors without aborting the whole sync", async () => {
@@ -1277,6 +1307,7 @@ describe("FitbitProvider", () => {
           value.channel === "body_fat_percentage",
       );
       expect(bodyFatValues).toMatchObject({ scalar: 18.5 });
+      expect(replacementScopes).toContainEqual({ providerId: "fitbit", externalId: "55555" });
     });
 
     it("returns empty result for unknown objectType", async () => {

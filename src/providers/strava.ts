@@ -610,7 +610,7 @@ export class StravaProvider implements WebhookProvider {
   async syncWebhookEvent(
     db: SyncDatabase,
     event: WebhookEvent,
-    options?: SyncOptions,
+    options: SyncOptions = {},
   ): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
@@ -621,7 +621,7 @@ export class StravaProvider implements WebhookProvider {
     }
 
     const activityExternalId = Number(event.objectId);
-    const scopedUserId = options?.userId ?? getTokenUserId();
+    const scopedUserId = options.userId ?? getTokenUserId();
 
     if (!scopedUserId) {
       throw new Error(`[strava] Cannot sync webhook event: no userId provided or in context`);
@@ -641,7 +641,13 @@ export class StravaProvider implements WebhookProvider {
         .returning({ id: activity.id });
       const deletedRow = deleted[0];
       if (deletedRow) {
-        await replaceMetricStreamBatch(db, { activityId: deletedRow.id }, [], SOURCE_TYPE_API);
+        await replaceMetricStreamBatch(
+          db,
+          { activityId: deletedRow.id },
+          [],
+          SOURCE_TYPE_API,
+          options.metricStreamPublisher,
+        );
         logger.info(
           `[strava] Deleted activity ${event.objectId} via webhook for user ${scopedUserId}`,
         );
@@ -708,7 +714,13 @@ export class StravaProvider implements WebhookProvider {
 
       if (metricRows.length > 0) {
         // Delete existing sensor rows then re-insert.
-        await replaceMetricStreamBatch(db, { activityId }, metricRows, SOURCE_TYPE_API);
+        await replaceMetricStreamBatch(
+          db,
+          { activityId },
+          metricRows,
+          SOURCE_TYPE_API,
+          options.metricStreamPublisher,
+        );
         logger.info(
           `[strava] Webhook: inserted ${metricRows.length} metric stream rows for activity ${event.objectId}`,
         );
@@ -729,12 +741,8 @@ export class StravaProvider implements WebhookProvider {
     return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
   }
 
-  async sync(
-    db: SyncDatabase,
-    since: Date,
-    options?: import("./types.ts").SyncOptions,
-  ): Promise<SyncResult> {
-    const onProgress = options?.onProgress;
+  async sync(db: SyncDatabase, since: Date, options: SyncOptions = {}): Promise<SyncResult> {
+    const onProgress = options.onProgress;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -879,7 +887,13 @@ export class StravaProvider implements WebhookProvider {
             );
 
             if (metricRows.length > 0) {
-              await writeMetricStreamBatch(db, metricRows, SOURCE_TYPE_API);
+              await writeMetricStreamBatch(
+                db,
+                metricRows,
+                SOURCE_TYPE_API,
+                undefined,
+                options.metricStreamPublisher,
+              );
               logger.info(
                 `[strava] Inserted ${metricRows.length} metric stream rows for activity ${act.externalId}`,
               );
