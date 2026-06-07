@@ -25,55 +25,60 @@ describe("HealthKit sync router", () => {
     metricStreamPublisher = {
       publishRows: async (rows: readonly MetricStreamRowInput[]) => {
         const events = rows.map((row) => createMetricStreamEvent(row));
-        for (const event of events) {
-          await testCtx.db.execute(
-            sql`INSERT INTO fitness.metric_stream (
-              id, recorded_at, user_id, provider_id, external_id, device_id,
-              source_type, channel, activity_id, scalar, vector, point, metadata
-            ) VALUES (
-              ${event.id}::uuid,
-              ${event.recordedAt}::timestamptz,
-              ${event.userId}::uuid,
-              ${event.providerId},
-              ${event.externalId},
-              ${event.deviceId},
-              ${event.sourceType},
-              ${event.channel},
-              ${
-                event.activityId === null || event.activityId === undefined
-                  ? sql`NULL`
-                  : sql`${event.activityId}::uuid`
-              },
-              ${event.scalar},
-              ${
-                event.vector === null || event.vector === undefined
-                  ? sql`NULL`
-                  : sql`ARRAY[${sql.join(
-                      event.vector.map((component) => sql`${component}::real`),
-                      sql`, `,
-                    )}]`
-              },
-              ${
-                event.point === null || event.point === undefined
-                  ? sql`NULL`
-                  : sql`ST_GeomFromEWKT(${event.point})`
-              },
-              ${
-                event.metadata === null || event.metadata === undefined
-                  ? sql`NULL`
-                  : sql`${JSON.stringify(event.metadata)}::jsonb`
-              }
-            )
-            ON CONFLICT (id, recorded_at) DO UPDATE
-              SET scalar = EXCLUDED.scalar,
-                  vector = EXCLUDED.vector,
-                  point = EXCLUDED.point,
-                  metadata = EXCLUDED.metadata,
-                  device_id = EXCLUDED.device_id,
-                  source_type = EXCLUDED.source_type,
-                  activity_id = EXCLUDED.activity_id`,
-          );
+        if (events.length === 0) {
+          return events;
         }
+        const valueTuples = events.map(
+          (event) => sql`(
+            ${event.id}::uuid,
+            ${event.recordedAt}::timestamptz,
+            ${event.userId}::uuid,
+            ${event.providerId},
+            ${event.externalId},
+            ${event.deviceId},
+            ${event.sourceType},
+            ${event.channel},
+            ${
+              event.activityId === null || event.activityId === undefined
+                ? sql`NULL`
+                : sql`${event.activityId}::uuid`
+            },
+            ${event.scalar},
+            ${
+              event.vector === null || event.vector === undefined
+                ? sql`NULL`
+                : sql`ARRAY[${sql.join(
+                    event.vector.map((component) => sql`${component}::real`),
+                    sql`, `,
+                  )}]`
+            },
+            ${
+              event.point === null || event.point === undefined
+                ? sql`NULL`
+                : sql`ST_GeomFromEWKT(${event.point})`
+            },
+            ${
+              event.metadata === null || event.metadata === undefined
+                ? sql`NULL`
+                : sql`${JSON.stringify(event.metadata)}::jsonb`
+            }
+          )`,
+        );
+        await testCtx.db.execute(
+          sql`INSERT INTO fitness.metric_stream (
+            id, recorded_at, user_id, provider_id, external_id, device_id,
+            source_type, channel, activity_id, scalar, vector, point, metadata
+          )
+          VALUES ${sql.join(valueTuples, sql`, `)}
+          ON CONFLICT (id, recorded_at) DO UPDATE
+            SET scalar = EXCLUDED.scalar,
+                vector = EXCLUDED.vector,
+                point = EXCLUDED.point,
+                metadata = EXCLUDED.metadata,
+                device_id = EXCLUDED.device_id,
+                source_type = EXCLUDED.source_type,
+                activity_id = EXCLUDED.activity_id`,
+        );
         return events;
       },
     };

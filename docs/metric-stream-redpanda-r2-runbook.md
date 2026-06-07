@@ -23,7 +23,7 @@ provider/mobile import
 
 R2 is the long-term replay store for metric-stream events, and ClickHouse is the
 analytics serving copy; both are rebuildable from Redpanda/R2 for bounded ranges.
-Metric-stream samples are no longer sinked back into `fitness.metric_stream` from
+Metric-stream samples are no longer written back into `fitness.metric_stream` from
 Redpanda — the project is moving off the Postgres metric stream. Any existing
 `fitness.metric_stream` rows are legacy data written by direct provider paths that
 have not yet been cut over; the canonical analytics copy is ClickHouse. Postgres
