@@ -83,6 +83,7 @@ export class EightSleepProvider implements SyncProvider {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
+    const syncOptions = options ?? {};
 
     await ensureProvider(db, this.id, this.name);
 
@@ -177,7 +178,7 @@ export class EightSleepProvider implements SyncProvider {
           }
           return { recordCount: count, result: count };
         },
-        options?.userId,
+        syncOptions.userId,
       );
       recordsSynced += sleepCount;
     } catch (err) {
@@ -233,7 +234,7 @@ export class EightSleepProvider implements SyncProvider {
           }
           return { recordCount: count, result: count };
         },
-        options?.userId,
+        syncOptions.userId,
       );
       recordsSynced += dailyCount;
     } catch (err) {
@@ -269,6 +270,8 @@ export class EightSleepProvider implements SyncProvider {
                   },
                 ],
                 SOURCE_TYPE_API,
+                undefined,
+                syncOptions.metricStreamPublisher,
               );
               count++;
             } catch (err) {
@@ -281,7 +284,7 @@ export class EightSleepProvider implements SyncProvider {
           }
           return { recordCount: count, result: count };
         },
-        options?.userId,
+        syncOptions.userId,
       );
       recordsSynced += bodyCount;
     } catch (err) {
@@ -305,18 +308,24 @@ export class EightSleepProvider implements SyncProvider {
             const samples = parseEightSleepHeartRateSamples(day.sessions);
             if (samples.length === 0) continue;
 
-            const metricRows = samples.map((s) => ({
+            const metricRows = samples.map((sample) => ({
               providerId: this.id,
-              recordedAt: s.recordedAt,
-              heartRate: s.heartRate,
+              recordedAt: sample.recordedAt,
+              heartRate: sample.heartRate,
             }));
-            await writeMetricStreamBatch(db, metricRows, SOURCE_TYPE_API);
+            await writeMetricStreamBatch(
+              db,
+              metricRows,
+              SOURCE_TYPE_API,
+              undefined,
+              syncOptions.metricStreamPublisher,
+            );
             totalRecords += samples.length;
           }
 
           return { recordCount: totalRecords, result: totalRecords };
         },
-        options?.userId,
+        syncOptions.userId,
       );
       recordsSynced += hrCount;
     } catch (err) {

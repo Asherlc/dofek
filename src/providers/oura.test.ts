@@ -47,6 +47,34 @@ import {
   ouraWorkoutSchema,
 } from "./oura/schemas.ts";
 
+const { publishedMetricStreamBatches } = vi.hoisted<{
+  publishedMetricStreamBatches: Record<string, unknown>[][];
+}>(() => ({
+  publishedMetricStreamBatches: [],
+}));
+
+vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: async () => ({
+    publishRows: async (rows: readonly Record<string, unknown>[]) => {
+      publishedMetricStreamBatches.push([...rows]);
+      return rows.map((row, index) => ({
+        version: 1,
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+      }));
+    },
+  }),
+}));
+
+vi.mock("../db/token-user-context.ts", () => ({
+  getTokenUserId: () => "user-1",
+  runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
+}));
+
+afterEach(() => {
+  publishedMetricStreamBatches.length = 0;
+});
+
 // ============================================================
 // Mock external dependencies (for sync tests)
 // ============================================================
@@ -1710,10 +1738,7 @@ describe("OuraProvider.sync()", () => {
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThanOrEqual(2);
 
-    // Verify HR rows are written to metric_stream with heart_rate channel.
-    const hrRows = findBatchValuesCall(db, (arr) =>
-      arr.some((r) => r.channel === "heart_rate" && r.scalar === 72),
-    );
+    const hrRows = publishedMetricStreamBatches.flat();
     const first = hrRows.find((r) => r.channel === "heart_rate" && r.scalar === 72);
     const second = hrRows.find((r) => r.channel === "heart_rate" && r.scalar === 85);
     expect(first?.scalar).toBe(72);

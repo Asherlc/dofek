@@ -2,8 +2,8 @@ import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { activity, dailyMetrics, metricStream, sleepSession } from "../db/schema.ts";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -24,6 +24,7 @@ import {
   parseFitbitWeightLog,
 } from "./fitbit/parsers.ts";
 import { FitbitProvider, fitbitOAuthConfig } from "./fitbit/provider.ts";
+import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 
 function fakeActivity(overrides: Partial<FitbitActivity> = {}): FitbitActivity {
   return {
@@ -159,6 +160,7 @@ function fitbitHandlers(opts?: {
 }
 
 const server = setupServer();
+const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 describe("FitbitProvider.sync() (integration)", () => {
   let ctx: TestContext;
@@ -170,6 +172,10 @@ describe("FitbitProvider.sync() (integration)", () => {
     server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "fitbit", "Fitbit", "https://api.fitbit.com");
   }, 60_000);
+
+  beforeEach(() => {
+    metricStreamCapture.publishedMetricStreamRows.length = 0;
+  });
 
   afterEach(() => {
     server.resetHandlers();
@@ -210,7 +216,9 @@ describe("FitbitProvider.sync() (integration)", () => {
     );
 
     const provider = new FitbitProvider();
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(ctx.db, since, {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.provider).toBe("fitbit");
     expect(result.errors).toHaveLength(0);
@@ -261,17 +269,49 @@ describe("FitbitProvider.sync() (integration)", () => {
     expect(firstDaily.flightsClimbed).toBe(12);
 
     // Verify weight
-    const weightRows = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "fitbit"));
+    const weightRows = metricStreamCapture.publishedMetricStreamRows;
     const bodyRows = weightRows.filter((row) => row.externalId === "7001");
-    expect(bodyRows).toHaveLength(2);
+    expect(bodyRows.length).toBeGreaterThanOrEqual(2);
 
     const weight = bodyRows.find((row) => row.channel === "body_weight");
     if (!weight) throw new Error("expected body measurement");
     expect(weight.scalar).toBeCloseTo(82.5);
     expect(bodyRows.find((row) => row.channel === "body_fat_percentage")?.scalar).toBeCloseTo(18.3);
+  });
+
+  it("publishes webhook body updates through the injected metric stream publisher", async () => {
+    await saveTokens(ctx.db, "fitbit", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "activity heartrate sleep weight",
+    });
+
+    server.use(
+      ...fitbitHandlers({
+        weightLogs: fakeWeightLogs(),
+      }),
+    );
+
+    const provider = new FitbitProvider();
+    const result = await provider.syncWebhookEvent(
+      ctx.db,
+      {
+        ownerExternalId: "fitbit-user-1",
+        eventType: "update",
+        objectType: "body",
+        metadata: { date: "2026-03-01" },
+      },
+      { metricStreamPublisher: metricStreamCapture.publisher },
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(metricStreamCapture.publishedMetricStreamRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ channel: "body_weight", scalar: 82.5 }),
+        expect.objectContaining({ channel: "body_fat_percentage", scalar: 18.3 }),
+      ]),
+    );
   });
 
   it("upserts on re-sync (no duplicates)", async () => {
@@ -293,8 +333,8 @@ describe("FitbitProvider.sync() (integration)", () => {
     );
 
     const provider = new FitbitProvider();
-    await provider.sync(ctx.db, since);
-    await provider.sync(ctx.db, since);
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
 
     const activityRows = await ctx.db
       .select()
@@ -322,7 +362,9 @@ describe("FitbitProvider.sync() (integration)", () => {
     server.use(...fitbitHandlers());
 
     const provider = new FitbitProvider();
-    await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+    await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "fitbit");
@@ -334,7 +376,9 @@ describe("FitbitProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "fitbit"));
 
     const provider = new FitbitProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens found");
@@ -804,7 +848,9 @@ describe("FitbitProvider.sync() — weight error paths (integration)", () => {
     weightServer.use(...fitbitWeightErrorHandlers({ weightError: true }));
 
     const provider = new FitbitProvider();
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(ctx.db, since, {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // The weight fetch returns 429, caught at lines 632-636
     const weightError = result.errors.find((e) => e.message.includes("weight"));

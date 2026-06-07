@@ -1,11 +1,12 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { activity, metricStream, oauthToken } from "../db/schema.ts";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { activity, oauthToken } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
+import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 import { WgerProvider } from "./wger.ts";
 
 // ============================================================
@@ -93,6 +94,7 @@ function wgerHandlers(
 }
 
 const server = setupServer();
+const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 describe("WgerProvider.sync() (integration)", () => {
   let ctx: TestContext;
@@ -105,6 +107,10 @@ describe("WgerProvider.sync() (integration)", () => {
     await ensureProvider(ctx.db, "wger", "Wger", "https://wger.de/api/v2");
   }, 60_000);
 
+  beforeEach(() => {
+    metricStreamCapture.publishedMetricStreamRows.length = 0;
+  });
+
   afterEach(() => {
     server.resetHandlers();
   });
@@ -114,7 +120,7 @@ describe("WgerProvider.sync() (integration)", () => {
     if (ctx) await ctx.cleanup();
   });
 
-  it("syncs workout sessions into activity and weight entries into metric_stream", async () => {
+  it("syncs workout sessions into activity and weight entries into Redpanda metric stream events", async () => {
     await saveTokens(ctx.db, "wger", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",
@@ -135,7 +141,9 @@ describe("WgerProvider.sync() (integration)", () => {
 
     const provider = new WgerProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(ctx.db, since, {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.provider).toBe("wger");
     expect(result.recordsSynced).toBe(4); // 2 sessions + 2 weights
@@ -157,10 +165,7 @@ describe("WgerProvider.sync() (integration)", () => {
     if (!session2) throw new Error("expected session 102");
     expect(session2.name).toBe("Leg day");
 
-    const weightRows = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "wger"));
+    const weightRows = metricStreamCapture.publishedMetricStreamRows;
     expect(weightRows).toHaveLength(2);
 
     const weight1 = weightRows.find((r) => r.externalId === "201" && r.channel === "body_weight");
@@ -186,10 +191,14 @@ describe("WgerProvider.sync() (integration)", () => {
     server.use(...wgerHandlers(sessions, weights));
 
     const provider = new WgerProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
-    // Sync again — should upsert, not duplicate
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    // Sync again — Redpanda appends raw events for each sync.
+    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     const activityRows = await ctx.db
       .select()
@@ -198,14 +207,11 @@ describe("WgerProvider.sync() (integration)", () => {
     const countOf101 = activityRows.filter((r) => r.externalId === "101").length;
     expect(countOf101).toBe(1);
 
-    const weightRows = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "wger"));
+    const weightRows = metricStreamCapture.publishedMetricStreamRows;
     const countOf203 = weightRows.filter(
       (r) => r.externalId === "203" && r.channel === "body_weight",
     ).length;
-    expect(countOf203).toBe(1);
+    expect(countOf203).toBe(2);
 
     // Verify the weight row was retained across the repeated sync.
     const updatedWeight = weightRows.find(
@@ -226,7 +232,9 @@ describe("WgerProvider.sync() (integration)", () => {
     server.use(...wgerHandlers([], []));
 
     const provider = new WgerProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // Verify token was refreshed in DB
     const { loadTokens } = await import("../db/tokens.ts");
@@ -269,7 +277,9 @@ describe("WgerProvider.sync() (integration)", () => {
     );
 
     const provider = new WgerProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBe(2);
@@ -300,7 +310,9 @@ describe("WgerProvider.sync() (integration)", () => {
     );
 
     const provider = new WgerProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(0);
     expect(seenHeaders).toEqual([
@@ -330,7 +342,9 @@ describe("WgerProvider.sync() (integration)", () => {
     );
 
     const provider = new WgerProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors.map((error) => error.message)).toContainEqual(
@@ -350,7 +364,6 @@ describe("WgerProvider.sync() (integration)", () => {
       expiresAt: new Date("2027-01-01T00:00:00Z"),
       scopes: "read",
     });
-    await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "wger"));
 
     server.use(
       http.get("https://wger.de/api/v2/workoutsession/*", () => {
@@ -362,17 +375,15 @@ describe("WgerProvider.sync() (integration)", () => {
     );
 
     const provider = new WgerProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors.map((error) => error.message)).toContainEqual(
       expect.stringContaining("metric_stream: Wger API error (503)"),
     );
-    const weightRows = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "wger"));
-    expect(weightRows).toHaveLength(0);
+    expect(metricStreamCapture.publishedMetricStreamRows).toHaveLength(0);
   });
 
   it("stops pagination when session date is before since", async () => {
@@ -391,7 +402,9 @@ describe("WgerProvider.sync() (integration)", () => {
     server.use(...wgerHandlers(sessions, []));
 
     const provider = new WgerProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-01-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-01-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // Only the first session should be synced
     expect(result.recordsSynced).toBe(1);
@@ -401,7 +414,9 @@ describe("WgerProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "wger"));
 
     const provider = new WgerProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens");

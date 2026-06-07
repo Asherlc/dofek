@@ -17,6 +17,25 @@ vi.mock("../db/token-user-context.ts", () => ({
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
 
+const { publishedMetricStreamBatches } = vi.hoisted<{
+  publishedMetricStreamBatches: Record<string, unknown>[][];
+}>(() => ({
+  publishedMetricStreamBatches: [],
+}));
+
+vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: async () => ({
+    publishRows: async (rows: readonly Record<string, unknown>[]) => {
+      publishedMetricStreamBatches.push([...rows]);
+      return rows.map((row, index) => ({
+        version: 1,
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+      }));
+    },
+  }),
+}));
+
 // ============================================================
 // Hoisted mocks (must be before vi.mock calls)
 // ============================================================
@@ -491,6 +510,7 @@ describe("GarminProvider.sync()", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    publishedMetricStreamBatches.length = 0;
     provider = new GarminProvider();
     db = createMockDb();
 
@@ -633,8 +653,8 @@ describe("GarminProvider.sync()", () => {
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
 
-    const sensorRows = db.values.mock.calls
-      .flatMap((call) => (Array.isArray(call[0]) ? call[0] : [call[0]]))
+    const sensorRows = publishedMetricStreamBatches
+      .flat()
       .filter((row) => row?.providerId === "garmin" && typeof row?.channel === "string");
 
     expect(sensorRows).toHaveLength(8);
@@ -892,8 +912,8 @@ describe("GarminProvider.sync()", () => {
 
     expect(result.recordsSynced).toBe(2);
 
-    const stressCall = db.values.mock.calls
-      .flatMap((call) => (Array.isArray(call[0]) ? call[0] : [call[0]]))
+    const stressCall = publishedMetricStreamBatches
+      .flat()
       .find((row) => row?.channel === "stress" && row?.scalar === 35);
     if (!stressCall) throw new Error("expected stress insert");
     expect(stressCall.providerId).toBe("garmin");
@@ -912,8 +932,8 @@ describe("GarminProvider.sync()", () => {
 
     expect(result.recordsSynced).toBe(2);
 
-    const hrCall = db.values.mock.calls
-      .flatMap((call) => (Array.isArray(call[0]) ? call[0] : [call[0]]))
+    const hrCall = publishedMetricStreamBatches
+      .flat()
       .find((row) => row?.channel === "heart_rate" && row?.scalar === 72);
     if (!hrCall) throw new Error("expected heart rate insert");
     expect(hrCall.providerId).toBe("garmin");

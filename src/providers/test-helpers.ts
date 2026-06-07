@@ -7,6 +7,12 @@
  */
 import { vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
+import {
+  createMetricStreamEvent,
+  type MetricStreamEventV1,
+  type MetricStreamRowInput,
+} from "../metric-stream/events.ts";
+import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
 
 /**
  * Options for configuring the mock database behavior.
@@ -44,6 +50,24 @@ export interface MockDatabaseSpies {
 export interface MockDatabaseResult {
   db: SyncDatabase;
   spies: MockDatabaseSpies;
+}
+
+export interface CapturingMetricStreamPublisher {
+  publisher: MetricStreamEventPublisher;
+  publishedMetricStreamRows: MetricStreamRowInput[];
+}
+
+export function createCapturingMetricStreamPublisher(): CapturingMetricStreamPublisher {
+  const publishedMetricStreamRows: MetricStreamRowInput[] = [];
+  return {
+    publishedMetricStreamRows,
+    publisher: {
+      async publishRows(rows: readonly MetricStreamRowInput[]): Promise<MetricStreamEventV1[]> {
+        publishedMetricStreamRows.push(...rows);
+        return rows.map((row) => createMetricStreamEvent(row));
+      },
+    },
+  };
 }
 
 /**

@@ -39,7 +39,6 @@ interface CheckClickHouseCdcHealthOptions {
 
 const expectedSlotNames = [
   "peerflow_slot_dofek_fitness_raw_analytics",
-  "peerflow_slot_dofek_metric_stream_analytics",
   "peerflow_slot_dofek_provider_inventory_raw_analytics",
   "peerflow_slot_dofek_sensor_priority_raw_analytics",
 ] as const;
@@ -50,7 +49,6 @@ const defaultThresholds: CdcHealthThresholds = {
 };
 
 const defaultMirrorFreshnessChecks: readonly MirrorFreshnessCheck[] = [
-  { tableName: "metric_stream", maxAgeMilliseconds: 2 * 60 * 60 * 1000 },
   { tableName: "sleep_session", maxAgeMilliseconds: 36 * 60 * 60 * 1000 },
 ];
 

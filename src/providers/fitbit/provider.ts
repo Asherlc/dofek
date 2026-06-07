@@ -225,7 +225,13 @@ export class FitbitProvider implements WebhookProvider {
             for (const raw of response.activities) {
               const parsed = parseFitbitActivity(raw);
               try {
-                const { errors: activityErrors } = await persistActivity(db, parsed, raw, client);
+                const { errors: activityErrors } = await persistActivity(
+                  db,
+                  parsed,
+                  raw,
+                  client,
+                  options?.metricStreamPublisher,
+                );
                 errors.push(...activityErrors);
                 count++;
               } catch (err) {
@@ -356,7 +362,7 @@ export class FitbitProvider implements WebhookProvider {
               for (const raw of response.weight) {
                 const parsed = parseFitbitWeightLog(raw);
                 try {
-                  await persistBodyMeasurement(db, parsed);
+                  await persistBodyMeasurement(db, parsed, options?.metricStreamPublisher);
                   count++;
                 } catch (err) {
                   errors.push({
@@ -430,7 +436,13 @@ export class FitbitProvider implements WebhookProvider {
                 for (const raw of response.activities) {
                   const parsed = parseFitbitActivity(raw);
                   try {
-                    const { errors: activityErrors } = await persistActivity(db, parsed, raw);
+                    const { errors: activityErrors } = await persistActivity(
+                      db,
+                      parsed,
+                      raw,
+                      client,
+                      options?.metricStreamPublisher,
+                    );
                     errors.push(...activityErrors);
                     count++;
                   } catch (err) {
@@ -540,7 +552,7 @@ export class FitbitProvider implements WebhookProvider {
               for (const raw of response.weight) {
                 const parsed = parseFitbitWeightLog(raw);
                 try {
-                  await persistBodyMeasurement(db, parsed);
+                  await persistBodyMeasurement(db, parsed, options?.metricStreamPublisher);
                   count++;
                 } catch (err) {
                   errors.push({

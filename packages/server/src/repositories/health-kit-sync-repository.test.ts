@@ -11,6 +11,18 @@ import {
   type SleepSample,
 } from "./health-kit-sync-repository.ts";
 
+function makeMetricStreamPublisher() {
+  return {
+    publishRows: vi.fn(async (rows: readonly unknown[]) =>
+      rows.map((_, index) => ({ id: `event-${index}` })),
+    ),
+  };
+}
+
+function getPublishedRows(publisher: ReturnType<typeof makeMetricStreamPublisher>): unknown[] {
+  return publisher.publishRows.mock.calls.flatMap((call) => [...call[0]]);
+}
+
 // ---------------------------------------------------------------------------
 // Pure helper functions
 // ---------------------------------------------------------------------------
@@ -1021,8 +1033,9 @@ describe("HealthKitSyncRepository", () => {
   function makeRepository() {
     const execute = vi.fn().mockResolvedValue([]);
     const db = { execute };
-    const repository = new HealthKitSyncRepository(db, "user-1");
-    return { repository, execute };
+    const publisher = makeMetricStreamPublisher();
+    const repository = new HealthKitSyncRepository(db, "user-1", publisher);
+    return { repository, execute, publisher };
   }
 
   function makeSample(overrides: Partial<HealthKitSample> = {}): HealthKitSample {
@@ -1054,8 +1067,8 @@ describe("HealthKitSyncRepository", () => {
       expect(result).toBe(0);
     });
 
-    it("inserts body measurement samples", async () => {
-      const { repository, execute } = makeRepository();
+    it("publishes body measurement samples", async () => {
+      const { repository, execute, publisher } = makeRepository();
       const samples = [
         makeSample({
           type: "HKQuantityTypeIdentifierBodyMass",
@@ -1065,10 +1078,15 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processBodyMeasurements(samples);
       expect(result).toBe(1);
-      expect(execute).toHaveBeenCalledTimes(1);
-      const metricQueryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
-      expect(metricQueryJson).toContain("metric_stream");
-      expect(metricQueryJson).toContain("body_weight");
+      expect(execute).not.toHaveBeenCalled();
+      expect(getPublishedRows(publisher)).toEqual([
+        expect.objectContaining({
+          providerId: "apple_health",
+          externalId: "hk:bm-1",
+          channel: "body_weight",
+          scalar: 75.5,
+        }),
+      ]);
     });
 
     it("skips samples with unknown type", async () => {
@@ -1085,7 +1103,7 @@ describe("HealthKitSyncRepository", () => {
     });
 
     it("applies body fat percentage transform (value * 100)", async () => {
-      const { repository, execute } = makeRepository();
+      const { repository, execute, publisher } = makeRepository();
       const samples = [
         makeSample({
           type: "HKQuantityTypeIdentifierBodyFatPercentage",
@@ -1095,14 +1113,14 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processBodyMeasurements(samples);
       expect(result).toBe(1);
-      expect(execute).toHaveBeenCalledTimes(1);
-      // The transformed value (0.185 * 100 = 18.5) is used in the SQL
-      const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
-      expect(queryJson).toContain("18.5");
+      expect(execute).not.toHaveBeenCalled();
+      expect(getPublishedRows(publisher)).toEqual([
+        expect.objectContaining({ channel: "body_fat_percentage", scalar: 18.5 }),
+      ]);
     });
 
-    it("inserts BMI without transform", async () => {
-      const { repository, execute } = makeRepository();
+    it("publishes BMI without transform", async () => {
+      const { repository, execute, publisher } = makeRepository();
       const samples = [
         makeSample({
           type: "HKQuantityTypeIdentifierBodyMassIndex",
@@ -1112,11 +1130,14 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processBodyMeasurements(samples);
       expect(result).toBe(1);
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute).not.toHaveBeenCalled();
+      expect(getPublishedRows(publisher)).toEqual([
+        expect.objectContaining({ channel: "body_mass_index", scalar: 23.4 }),
+      ]);
     });
 
-    it("inserts height without transform", async () => {
-      const { repository, execute } = makeRepository();
+    it("publishes height without transform", async () => {
+      const { repository, execute, publisher } = makeRepository();
       const samples = [
         makeSample({
           type: "HKQuantityTypeIdentifierHeight",
@@ -1126,11 +1147,14 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processBodyMeasurements(samples);
       expect(result).toBe(1);
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute).not.toHaveBeenCalled();
+      expect(getPublishedRows(publisher)).toEqual([
+        expect.objectContaining({ channel: "height", scalar: 175.5 }),
+      ]);
     });
 
     it("processes multiple body measurement samples in batch", async () => {
-      const { repository, execute } = makeRepository();
+      const { repository, execute, publisher } = makeRepository();
       const samples = [
         makeSample({
           type: "HKQuantityTypeIdentifierBodyMass",
@@ -1145,7 +1169,8 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processBodyMeasurements(samples);
       expect(result).toBe(2);
-      expect(execute).toHaveBeenCalledTimes(2);
+      expect(execute).not.toHaveBeenCalled();
+      expect(getPublishedRows(publisher)).toHaveLength(2);
     });
   });
 
@@ -1187,8 +1212,8 @@ describe("HealthKitSyncRepository", () => {
       expect(result).toBe(0);
     });
 
-    it("inserts metric stream samples", async () => {
-      const { repository, execute } = makeRepository();
+    it("publishes metric stream samples", async () => {
+      const { repository, execute, publisher } = makeRepository();
       const samples = [
         makeSample({
           type: "HKQuantityTypeIdentifierHeartRate",
@@ -1198,11 +1223,14 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processMetricStream(samples);
       expect(result).toBe(1);
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute).not.toHaveBeenCalled();
+      expect(getPublishedRows(publisher)).toEqual([
+        expect.objectContaining({ channel: "heart_rate", scalar: 72 }),
+      ]);
     });
 
-    it("writes external IDs and conflict handling for retry-safe metric stream samples", async () => {
-      const { repository, execute } = makeRepository();
+    it("writes external IDs for retry-safe metric stream samples", async () => {
+      const { repository, publisher } = makeRepository();
       const samples = [
         makeSample({
           type: "HKQuantityTypeIdentifierHeartRate",
@@ -1213,12 +1241,9 @@ describe("HealthKitSyncRepository", () => {
 
       await repository.processMetricStream(samples);
 
-      const serializedQuery = JSON.stringify(execute.mock.calls[0]?.[0]);
-      expect(serializedQuery).toContain("external_id");
-      expect(serializedQuery).toContain("hk:hr-idempotent");
-      expect(serializedQuery).toContain(
-        "ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE",
-      );
+      expect(getPublishedRows(publisher)).toEqual([
+        expect.objectContaining({ externalId: "hk:hr-idempotent" }),
+      ]);
     });
 
     it("skips samples with unmapped type", async () => {
@@ -1235,7 +1260,7 @@ describe("HealthKitSyncRepository", () => {
     });
 
     it("rounds integer metric stream columns (heart_rate)", async () => {
-      const { repository, execute } = makeRepository();
+      const { repository, publisher } = makeRepository();
       const samples = [
         makeSample({
           type: "HKQuantityTypeIdentifierHeartRate",
@@ -1245,13 +1270,13 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processMetricStream(samples);
       expect(result).toBe(1);
-      // heart_rate is in INTEGER_METRIC_STREAM_COLUMNS so it should be Math.round(72.7) = 73
-      const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
-      expect(queryJson).toContain("73");
+      expect(getPublishedRows(publisher)).toEqual([
+        expect.objectContaining({ channel: "heart_rate", scalar: 73 }),
+      ]);
     });
 
-    it("inserts non-integer metric stream columns without rounding (spo2)", async () => {
-      const { repository, execute } = makeRepository();
+    it("publishes non-integer metric stream columns without rounding (spo2)", async () => {
+      const { repository, publisher } = makeRepository();
       const samples = [
         makeSample({
           type: "HKQuantityTypeIdentifierOxygenSaturation",
@@ -1261,13 +1286,13 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processMetricStream(samples);
       expect(result).toBe(1);
-      // spo2 is NOT in INTEGER_METRIC_STREAM_COLUMNS, value should be passed as-is
-      const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
-      expect(queryJson).toContain("0.975");
+      expect(getPublishedRows(publisher)).toEqual([
+        expect.objectContaining({ channel: "spo2", scalar: 0.975 }),
+      ]);
     });
 
-    it("inserts respiratory rate without rounding", async () => {
-      const { repository, execute } = makeRepository();
+    it("publishes respiratory rate without rounding", async () => {
+      const { repository, execute, publisher } = makeRepository();
       const samples = [
         makeSample({
           type: "HKQuantityTypeIdentifierRespiratoryRate",
@@ -1277,7 +1302,10 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processMetricStream(samples);
       expect(result).toBe(1);
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute).not.toHaveBeenCalled();
+      expect(getPublishedRows(publisher)).toEqual([
+        expect.objectContaining({ channel: "respiratory_rate", scalar: 14.5 }),
+      ]);
     });
   });
 
@@ -1760,9 +1788,10 @@ describe("deriveSleepSessionsFromStages (mutation-killing)", () => {
 });
 
 describe("HealthKitSyncRepository.processBodyMeasurements (mutation: body fat transform)", () => {
-  it("body fat percentage transform multiplies by 100 (not 10, 1000, or divides)", () => {
+  it("body fat percentage transform multiplies by 100 (not 10, 1000, or divides)", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const publisher = makeMetricStreamPublisher();
+    const repo = new HealthKitSyncRepository({ execute }, "user-1", publisher);
     const samples: HealthKitSample[] = [
       {
         type: "HKQuantityTypeIdentifierBodyFatPercentage",
@@ -1775,10 +1804,11 @@ describe("HealthKitSyncRepository.processBodyMeasurements (mutation: body fat tr
         uuid: "bf-transform",
       },
     ];
-    repo.processBodyMeasurements(samples);
+    await repo.processBodyMeasurements(samples);
     // 0.22 * 100 = 22, not 2.2 or 220
-    const queryJson = JSON.stringify(execute.mock.calls[0]?.[0]);
-    expect(queryJson).toContain("22");
+    expect(getPublishedRows(publisher)).toEqual([
+      expect.objectContaining({ channel: "body_fat_percentage", scalar: 22 }),
+    ]);
   });
 });
 
@@ -1846,7 +1876,8 @@ describe("HealthKitSyncRepository.processHealthEvents (mutation: event count)", 
 describe("HealthKitSyncRepository.processMetricStream (mutation: inserted count)", () => {
   it("only counts samples with valid metric stream mapping", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const publisher = makeMetricStreamPublisher();
+    const repo = new HealthKitSyncRepository({ execute }, "user-1", publisher);
     const samples: HealthKitSample[] = [
       {
         type: "HKQuantityTypeIdentifierHeartRate",
@@ -1880,10 +1911,14 @@ describe("HealthKitSyncRepository.processMetricStream (mutation: inserted count)
       },
     ];
     const result = await repo.processMetricStream(samples);
-    // Only 2 have valid metricStream mapping (HR and SpO2), steps is skipped
     expect(result).toBe(2);
-    // 2 metric_stream inserts (one per mapped sample)
-    expect(execute).toHaveBeenCalledTimes(2);
+    expect(execute).not.toHaveBeenCalled();
+    expect(getPublishedRows(publisher)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ channel: "heart_rate", scalar: 72 }),
+        expect.objectContaining({ channel: "spo2", scalar: 0.98 }),
+      ]),
+    );
   });
 });
 
@@ -2284,7 +2319,8 @@ describe("aggregateDailyMetricSamples (mutation: HRV special path)", () => {
 describe("HealthKitSyncRepository.processBodyMeasurements (mutation: batching)", () => {
   it("processes more than BATCH_SIZE samples correctly", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const repo = new HealthKitSyncRepository({ execute }, "user-1");
+    const publisher = makeMetricStreamPublisher();
+    const repo = new HealthKitSyncRepository({ execute }, "user-1", publisher);
     // BATCH_SIZE is 500, create 501 samples
     const samples: HealthKitSample[] = Array.from({ length: 501 }, (_, index) => ({
       type: "HKQuantityTypeIdentifierBodyMass",
@@ -2298,7 +2334,10 @@ describe("HealthKitSyncRepository.processBodyMeasurements (mutation: batching)",
     }));
     const result = await repo.processBodyMeasurements(samples);
     expect(result).toBe(501);
-    expect(execute).toHaveBeenCalledTimes(501);
+    expect(execute).not.toHaveBeenCalled();
+    expect(publisher.publishRows).toHaveBeenCalledTimes(2);
+    expect(publisher.publishRows.mock.calls[0]?.[0]).toHaveLength(500);
+    expect(publisher.publishRows.mock.calls[1]?.[0]).toHaveLength(1);
   });
 });
 

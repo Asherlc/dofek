@@ -7,6 +7,43 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-06-07: Integration testcontainers pulled TimescaleDB from Docker Hub
+
+### Symptoms
+
+The `Test / Integration Tests` CI job failed on push to `main` for
+`35e0c3724e45ba21d27c1cce4c74a21a51a92f89`. The downstream `Test / Unit &
+Integration Tests`, `Test / Test Gate`, and `CI Gate` jobs failed because the
+integration job did not pass.
+
+### Evidence
+
+The failing command was `pnpm exec vitest run --project integration --coverage`.
+The first fatal line was
+`Error: (HTTP code 500) server error - Get "https://registry-1.docker.io/v2/": net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)`.
+The affected suites were the testcontainers-backed TimescaleDB tests in
+`src/db/metric-stream-location-point-migration.integration.test.ts`,
+`src/db/metric-stream-replica-identity.integration.test.ts`, and
+`src/db/seed-dev-db.integration.test.ts`.
+
+### Root Cause
+
+Those suites created local TimescaleDB containers with the unmirrored
+`timescale/timescaledb-ha:pg18.3-ts2.26.4-all` image, bypassing the workflow's
+existing `mirror.gcr.io` service-container image references and hitting the same
+Docker Hub timeout mode already seen in CI.
+
+### Fix or Mitigation
+
+Changed testcontainers TimescaleDB image references to
+`mirror.gcr.io/timescale/timescaledb-ha:pg18.3-ts2.26.4-all`, including the
+shared DB test helper.
+
+### Remaining Risk
+
+The integration suite still depends on `mirror.gcr.io` availability, matching
+the existing workflow service-container strategy.
+
 ## 2026-06-06: Metric Stream CDC Lost Slot Reported By Sentry
 
 ### Symptoms

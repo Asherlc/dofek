@@ -1,11 +1,11 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { metricStream } from "../db/schema.ts";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
+import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 import type { WithingsMeasureGroup } from "./withings.ts";
 import { WithingsProvider } from "./withings.ts";
 
@@ -87,6 +87,7 @@ function withingsHandlers(opts?: { measureGroups?: WithingsMeasureGroup[]; hasMo
 }
 
 const server = setupServer();
+const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 describe("WithingsProvider.sync() (integration)", () => {
   let ctx: TestContext;
@@ -98,6 +99,10 @@ describe("WithingsProvider.sync() (integration)", () => {
     server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "withings", "Withings", "https://wbsapi.withings.net");
   }, 60_000);
+
+  beforeEach(() => {
+    metricStreamCapture.publishedMetricStreamRows.length = 0;
+  });
 
   afterEach(() => {
     server.resetHandlers();
@@ -125,16 +130,15 @@ describe("WithingsProvider.sync() (integration)", () => {
     const provider = new WithingsProvider();
 
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(ctx.db, since, {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.provider).toBe("withings");
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBe(2);
 
-    const rows = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "withings"));
+    const rows = metricStreamCapture.publishedMetricStreamRows;
     expect(new Set(rows.map((row) => row.externalId))).toEqual(new Set(["8001", "8002"]));
 
     const weightEntry = rows.find(
@@ -175,9 +179,6 @@ describe("WithingsProvider.sync() (integration)", () => {
       scopes: "user.metrics",
     });
 
-    // Clear previous data
-    await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "withings"));
-
     server.use(
       ...withingsHandlers({
         measureGroups: [
@@ -196,29 +197,25 @@ describe("WithingsProvider.sync() (integration)", () => {
     const provider = new WithingsProvider();
 
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(ctx.db, since, {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // Only the real measurement should be synced
     expect(result.recordsSynced).toBe(1);
 
-    const rows = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "withings"));
+    const rows = metricStreamCapture.publishedMetricStreamRows;
     expect(new Set(rows.map((row) => row.externalId))).toEqual(new Set(["8010"]));
     expect(rows[0]?.externalId).toBe("8010");
   });
 
-  it("upserts on re-sync (no duplicates)", async () => {
+  it("publishes measurement events on each re-sync", async () => {
     await saveTokens(ctx.db, "withings", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",
       expiresAt: new Date("2027-01-01T00:00:00Z"),
       scopes: "user.metrics",
     });
-
-    // Clear previous data
-    await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "withings"));
 
     server.use(
       ...withingsHandlers({
@@ -229,17 +226,14 @@ describe("WithingsProvider.sync() (integration)", () => {
     const provider = new WithingsProvider();
 
     const since = new Date("2026-02-01T00:00:00Z");
-    await provider.sync(ctx.db, since);
-    await provider.sync(ctx.db, since);
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
 
-    const rows = await ctx.db
-      .select()
-      .from(metricStream)
-      .where(eq(metricStream.providerId, "withings"));
+    const rows = metricStreamCapture.publishedMetricStreamRows;
     const countOf8020 = rows.filter(
       (row) => row.externalId === "8020" && row.channel === "body_weight",
     ).length;
-    expect(countOf8020).toBe(1);
+    expect(countOf8020).toBe(2);
   });
 
   it("refreshes expired tokens and saves new ones", async () => {
@@ -253,7 +247,9 @@ describe("WithingsProvider.sync() (integration)", () => {
     server.use(...withingsHandlers());
 
     const provider = new WithingsProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "withings");
@@ -265,7 +261,9 @@ describe("WithingsProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "withings"));
 
     const provider = new WithingsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens found");
@@ -279,9 +277,6 @@ describe("WithingsProvider.sync() (integration)", () => {
       expiresAt: new Date("2027-01-01T00:00:00Z"),
       scopes: "user.metrics",
     });
-
-    // Clear previous data
-    await ctx.db.delete(metricStream).where(eq(metricStream.providerId, "withings"));
 
     server.use(
       http.post("https://wbsapi.withings.net/measure", () => {
@@ -297,7 +292,9 @@ describe("WithingsProvider.sync() (integration)", () => {
     );
 
     const provider = new WithingsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // Both should succeed (this verifies the happy path through the insert logic)
     expect(result.recordsSynced).toBe(2);
@@ -322,7 +319,9 @@ describe("WithingsProvider.sync() (integration)", () => {
     );
 
     const provider = new WithingsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
 
     // The outer catch should capture the error
     expect(result.errors).toHaveLength(1);

@@ -3,6 +3,7 @@ import { replaceMetricStreamBatch } from "../../db/metric-stream-writer.ts";
 import { activity, dailyMetrics, sleepSession } from "../../db/schema.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { logger } from "../../logger.ts";
+import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
 import { parseTcx, tcxToSensorSamples } from "../../tcx/parser.ts";
 import type { SyncError } from "../types.ts";
 import type { FitbitActivity, FitbitClient } from "./client.ts";
@@ -19,6 +20,7 @@ export async function persistActivity(
   parsed: ParsedFitbitActivity,
   raw: FitbitActivity,
   client?: FitbitClient,
+  metricStreamPublisher?: MetricStreamEventPublisher,
 ): Promise<{ errors: SyncError[] }> {
   const errors: SyncError[] = [];
 
@@ -54,7 +56,13 @@ export async function persistActivity(
       const sampleRows = tcxToSensorSamples(trackpoints, PROVIDER_ID, activityId);
 
       if (sampleRows.length > 0) {
-        await replaceMetricStreamBatch(db, { activityId }, sampleRows, SOURCE_TYPE_API);
+        await replaceMetricStreamBatch(
+          db,
+          { activityId },
+          sampleRows,
+          SOURCE_TYPE_API,
+          metricStreamPublisher,
+        );
         logger.info(
           `[fitbit] Inserted ${sampleRows.length} metric stream rows for activity ${parsed.externalId}`,
         );
@@ -138,6 +146,7 @@ export async function persistDailyMetrics(
 export async function persistBodyMeasurement(
   db: SyncDatabase,
   parsed: ParsedFitbitBodyMeasurement,
+  metricStreamPublisher?: MetricStreamEventPublisher,
 ): Promise<void> {
   await replaceMetricStreamBatch(
     db,
@@ -152,5 +161,6 @@ export async function persistBodyMeasurement(
       },
     ],
     SOURCE_TYPE_API,
+    metricStreamPublisher,
   );
 }

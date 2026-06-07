@@ -161,6 +161,8 @@ describe("WHOOP sync helpers", () => {
         { providerId: "whoop", recordedAt: new Date("2026-05-01T00:00:06.000Z"), heartRate: 63 },
       ],
       SOURCE_TYPE_API,
+      undefined,
+      undefined,
     );
   });
 

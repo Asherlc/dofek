@@ -19,8 +19,10 @@ import {
   sleepStage,
 } from "../../db/schema.ts";
 import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
+import { getTokenUserId } from "../../db/token-user-context.ts";
 import { logger } from "../../logger.ts";
 import type { MetricStreamDeleteScopeInput } from "../../metric-stream/events.ts";
+import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
 import type { HealthRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
 import type { HealthWorkout } from "./workouts.ts";
@@ -170,6 +172,7 @@ export async function upsertMetricStreamBatch(
   providerId: string,
   records: HealthRecord[],
   replacementScope?: MetricStreamDeleteScopeInput,
+  publisher?: MetricStreamEventPublisher,
 ): Promise<number> {
   const rows: MetricStreamSourceRow[] = [];
   for (const record of records) {
@@ -208,9 +211,9 @@ export async function upsertMetricStreamBatch(
   }
 
   if (replacementScope) {
-    await writeMetricStreamBatchForScope(db, replacementScope, rows, SOURCE_TYPE_FILE);
+    await writeMetricStreamBatchForScope(db, replacementScope, rows, SOURCE_TYPE_FILE, publisher);
   } else {
-    await writeMetricStreamBatch(db, rows, SOURCE_TYPE_FILE);
+    await writeMetricStreamBatch(db, rows, SOURCE_TYPE_FILE, undefined, publisher);
   }
   return rows.length;
 }
@@ -220,6 +223,7 @@ export async function upsertBodyMeasurementBatch(
   providerId: string,
   records: HealthRecord[],
   replacementScope?: MetricStreamDeleteScopeInput,
+  publisher?: MetricStreamEventPublisher,
 ): Promise<number> {
   // Group by timestamp to combine BP systolic + diastolic into one row
   const byTime = new Map<string, HealthRecord[]>();
@@ -285,9 +289,15 @@ export async function upsertBodyMeasurementBatch(
   const uniqueRows = [...dedupMap.values()];
 
   if (replacementScope) {
-    await writeMetricStreamBatchForScope(db, replacementScope, uniqueRows, SOURCE_TYPE_FILE);
+    await writeMetricStreamBatchForScope(
+      db,
+      replacementScope,
+      uniqueRows,
+      SOURCE_TYPE_FILE,
+      publisher,
+    );
   } else {
-    await writeMetricStreamBatch(db, uniqueRows, SOURCE_TYPE_FILE);
+    await writeMetricStreamBatch(db, uniqueRows, SOURCE_TYPE_FILE, undefined, publisher);
   }
   return uniqueRows.length;
 }
@@ -458,62 +468,104 @@ export async function upsertDailyMetricsBatch(
   return insertRows.length;
 }
 
+async function aggregateMetricRecordsToDailyMetrics(
+  db: SyncDatabase,
+  providerId: string,
+  records: readonly HealthRecord[],
+  type: string,
+  column: "skinTempC" | "spo2Avg",
+  valueScale: number,
+): Promise<void> {
+  const userId = getTokenUserId();
+  if (!userId) {
+    throw new Error("apple-health import requires user context");
+  }
+  const groupedRecords = new Map<
+    string,
+    { date: string; total: number; count: number; sourceName: string }
+  >();
+
+  for (const record of records) {
+    if (record.type !== type) continue;
+    const date = dateToString(record.startDate);
+    const sourceName = record.sourceName ?? "unknown";
+    const key = `${date}\0${sourceName}`;
+    const grouped = groupedRecords.get(key) ?? {
+      date,
+      total: 0,
+      count: 0,
+      sourceName,
+    };
+    grouped.total += record.value * valueScale;
+    grouped.count++;
+    groupedRecords.set(key, grouped);
+  }
+
+  const rows = [...groupedRecords.values()].map((grouped) => ({
+    date: grouped.date,
+    providerId,
+    userId,
+    sourceName: grouped.sourceName,
+    [column]: grouped.total / grouped.count,
+  }));
+  if (rows.length === 0) return;
+
+  const set =
+    column === "spo2Avg"
+      ? { spo2Avg: sql`EXCLUDED.spo2_avg` }
+      : { skinTempC: sql`EXCLUDED.skin_temp_c` };
+
+  await db
+    .insert(dailyMetrics)
+    .values(rows)
+    .onConflictDoUpdate({
+      target: [
+        dailyMetrics.userId,
+        dailyMetrics.date,
+        dailyMetrics.providerId,
+        dailyMetrics.sourceName,
+      ],
+      set,
+    });
+}
+
 /**
- * Aggregate SpO2 readings from metric_stream into daily_metrics.spo2_avg.
- * Apple Health stores SpO2 as fractions (0-1) in metric_stream; this converts
- * the daily average to a percentage (0-100) for consistency with other providers
- * (WHOOP, Oura, Garmin) that report SpO2 as a percentage.
+ * Aggregate SpO2 readings from Apple Health metric records into daily_metrics.spo2_avg.
+ * Apple Health stores SpO2 as fractions (0-1); this converts the daily average
+ * to a percentage (0-100) for consistency with providers that report SpO2 as a percentage.
  */
 export async function aggregateSpO2ToDailyMetrics(
   db: SyncDatabase,
   providerId: string,
-  since: Date,
+  records: readonly HealthRecord[],
 ): Promise<void> {
-  await db.execute(
-    sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, source_name, spo2_avg)
-        SELECT
-          (recorded_at AT TIME ZONE 'UTC')::date AS date,
-          provider_id,
-          user_id,
-          device_id AS source_name,
-          AVG(scalar) * 100 AS spo2_avg
-        FROM fitness.metric_stream
-        WHERE provider_id = ${providerId}
-          AND channel = 'spo2'
-          AND scalar IS NOT NULL
-          AND recorded_at >= ${since.toISOString()}::timestamptz
-        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, device_id
-        ON CONFLICT (user_id, date, provider_id, source_name) DO UPDATE SET
-          spo2_avg = EXCLUDED.spo2_avg`,
+  await aggregateMetricRecordsToDailyMetrics(
+    db,
+    providerId,
+    records,
+    "HKQuantityTypeIdentifierOxygenSaturation",
+    "spo2Avg",
+    100,
   );
 }
 
 /**
- * Aggregate wrist temperature readings from metric_stream into daily_metrics.skin_temp_c.
+ * Aggregate wrist temperature readings from Apple Health metric records into daily_metrics.skin_temp_c.
  * Apple Watch reports sleeping wrist temperature in °C; this computes the daily
  * average and stores it alongside other daily metrics.
  */
 export async function aggregateSkinTempToDailyMetrics(
   db: SyncDatabase,
   providerId: string,
-  since: Date,
+  records: readonly HealthRecord[],
 ): Promise<void> {
-  await db.execute(
-    sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, source_name, skin_temp_c)
-        SELECT
-          (recorded_at AT TIME ZONE 'UTC')::date AS date,
-          provider_id,
-          user_id,
-          device_id AS source_name,
-          AVG(scalar) AS skin_temp_c
-        FROM fitness.metric_stream
-        WHERE provider_id = ${providerId}
-          AND channel = 'skin_temperature'
-          AND scalar IS NOT NULL
-          AND recorded_at >= ${since.toISOString()}::timestamptz
-        GROUP BY (recorded_at AT TIME ZONE 'UTC')::date, provider_id, user_id, device_id
-        ON CONFLICT (user_id, date, provider_id, source_name) DO UPDATE SET
-          skin_temp_c = EXCLUDED.skin_temp_c`,
+  await aggregateMetricRecordsToDailyMetrics(
+    db,
+    providerId,
+    records,
+    "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
+    "skinTempC",
+    1,
   );
 }
 
@@ -638,6 +690,7 @@ export async function upsertWorkoutBatch(
   providerId: string,
   workouts: HealthWorkout[],
   replacementScope?: MetricStreamDeleteScopeInput,
+  publisher?: MetricStreamEventPublisher,
 ): Promise<number> {
   // Deduplicate by externalId — Apple Health can export duplicate workouts
   // from multiple sources (Apple Watch + iPhone) with the same start time.
@@ -716,9 +769,15 @@ export async function upsertWorkoutBatch(
   }
 
   if (replacementScope) {
-    await writeMetricStreamBatchForScope(db, replacementScope, allGpsRows, SOURCE_TYPE_FILE);
+    await writeMetricStreamBatchForScope(
+      db,
+      replacementScope,
+      allGpsRows,
+      SOURCE_TYPE_FILE,
+      publisher,
+    );
   } else {
-    await writeMetricStreamBatch(db, allGpsRows, SOURCE_TYPE_FILE);
+    await writeMetricStreamBatch(db, allGpsRows, SOURCE_TYPE_FILE, undefined, publisher);
   }
 
   return activityResults.length;

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   mapActivityType,
   parseTrackPoints,
@@ -9,6 +9,29 @@ import {
   type RideWithGpsTripSummary,
   rideWithGpsOAuthConfig,
 } from "./ride-with-gps.ts";
+
+const { publishedMetricStreamBatches } = vi.hoisted<{
+  publishedMetricStreamBatches: Record<string, unknown>[][];
+}>(() => ({
+  publishedMetricStreamBatches: [],
+}));
+
+vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+  getDefaultMetricStreamEventPublisher: async () => ({
+    publishRows: async (rows: readonly Record<string, unknown>[]) => {
+      publishedMetricStreamBatches.push([...rows]);
+      return rows.map((row, index) => ({
+        version: 1,
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        recordedAt: row.recordedAt instanceof Date ? row.recordedAt.toISOString() : row.recordedAt,
+      }));
+    },
+  }),
+}));
+
+beforeEach(() => {
+  publishedMetricStreamBatches.length = 0;
+});
 
 vi.mock("../db/tokens.ts", () => ({
   loadTokens: vi.fn(),
@@ -866,9 +889,7 @@ describe("RideWithGpsProvider — sync", () => {
       .find(
         (value: unknown) => typeof value === "object" && value !== null && "externalId" in value,
       );
-    const sensorInsertArg = valuesMock.mock.calls
-      .map((call: unknown[]) => call[0])
-      .find((value: unknown) => Array.isArray(value));
+    const sensorInsertArg = publishedMetricStreamBatches.find((batch) => batch.length > 0);
     const raw = activityInsertArg ? Reflect.get(activityInsertArg, "raw") : undefined;
     const rawTrackPoints = raw ? Reflect.get(raw, "track_points") : undefined;
     const firstRawPoint = Array.isArray(rawTrackPoints) ? rawTrackPoints[0] : undefined;
@@ -1038,12 +1059,7 @@ describe("RideWithGpsProvider — sync", () => {
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
 
-    const valuesMock = db.insert.mock.results[0]?.value.values;
-    const metricInsertCalls = valuesMock.mock.calls
-      .map((call: unknown[]) => call[0])
-      .filter((value: unknown) => Array.isArray(value));
-
-    expect(metricInsertCalls.map((batch: unknown[]) => batch.length)).toEqual([1000, 1000, 2]);
+    expect(publishedMetricStreamBatches.map((batch) => batch.length)).toEqual([1000, 1000, 2]);
   });
 
   it("handles deleted trip items", async () => {

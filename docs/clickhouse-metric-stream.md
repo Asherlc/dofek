@@ -1,20 +1,18 @@
 # ClickHouse Metric Stream Projection
 
-`fitness.metric_stream` remains canonical in Postgres/Timescale. ClickHouse
-keeps a native `ReplacingMergeTree` copy of the raw stream and backfills it
-from Postgres by real Timescale chunk ranges. We do not use ClickHouse
-`MaterializedPostgreSQL` for this hypertable because the hypertable root does
-not contain the physical rows; the data live in Timescale chunk tables.
-PeerDB is the CDC path for ongoing Postgres-to-ClickHouse replication.
-`dofek_metric_stream_analytics` replicates into
-`postgres_fitness.metric_stream`, the active analytics source.
+`metric_stream` samples publish to Redpanda first. Redpanda Connect archives the
+topic to Cloudflare R2 for long-term replay, and
+`metric-stream-clickhouse-sink` writes the analytics copy into
+`postgres_fitness.metric_stream`. Postgres is no longer the normal forward
+ingestion path for metric-stream samples, and PeerDB does not mirror
+`fitness.metric_stream`.
 
 ```text
-Postgres/Timescale fitness.metric_stream
+Redpanda metric-stream-v1
         |                         |
-        | chunk-range native backfill | PeerDB CDC mirror
-        |                         |   (dofek_metric_stream_analytics)
+        | R2 archive              | ClickHouse sink
         v                         v
+Cloudflare R2 replay archive
 ClickHouse postgres_fitness.metric_stream
         |
         | dbt microbatch projection by recorded_at
@@ -131,21 +129,14 @@ server profile at
 ClickHouse migrations create and update the databases and read models:
 
 - `postgres_fitness.metric_stream`: a ClickHouse-native `MergeTree` copy of the
-  raw metric stream and the active PeerDB CDC sink for analytics refreshers.
-  Historical/backfilled location rows can have `point Nullable(Point)` for
-  location projections, but current PeerDB metric-stream mirrors exclude
-  `point` because PeerDB sends the Postgres geometry value in a format
-  ClickHouse cannot cast directly into `Nullable(Point)`. As a consequence,
-  new rows arrive with `point = NULL`, so location projections derived from
-  `analytics.deduped_location` (and GPS-derived fields in
-  `analytics.activity_summary`) stop updating for new data until a replacement
-  geometry replication strategy is in place.
+  raw metric stream populated by `metric-stream-clickhouse-sink`. Historical
+  rows may still have been backfilled from Postgres, but new forward rows come
+  from Redpanda events.
 - `postgres_fitness`: app-managed native ClickHouse raw mirrors with PeerDB CDC
-  metadata columns. Besides the activity/sleep/body/daily/metric stream
-  analytics sources, this includes provider inventory mirrors for `food_entry`,
-  `health_event`, `lab_panel`, `lab_result`, and `journal_entry`, plus
-  `sensor_provider_priority` and `sensor_device_priority` for sensor-channel
-  deduplication.
+  metadata columns for lower-volume Postgres-backed raw tables, including
+  activity, sleep, daily metrics, provider inventory, and sensor priority
+  tables. Metric-stream rows use compatible metadata columns but are not a
+  PeerDB mirror.
 - `analytics.v_activity`, `analytics.v_activity_members`, `analytics.v_sleep`,
   `analytics.v_body_measurement`, `analytics.v_daily_metrics`, and
   `analytics.provider_stats`: normal ClickHouse views over the raw mirrors and
@@ -157,7 +148,7 @@ ClickHouse migrations create and update the databases and read models:
 - `analytics.sensor_scalar_sample`: a narrow dbt `microbatch` incremental
   `ReplacingMergeTree` projection of activity sensor scalar channels. It uses
   `recorded_at` as its dbt event time, writes one current row per raw
-  `metric_stream.id`, and collapses PeerDB row versions with `_peerdb_version`
+  `metric_stream.id`, and collapses row versions with `_peerdb_version`
   inside the bounded batch query.
 - `analytics.deduped_sensor`: an activity-agnostic dbt `microbatch`
   incremental `ReplacingMergeTree` table containing the best live scalar sample
@@ -166,9 +157,8 @@ ClickHouse migrations create and update the databases and read models:
   and has no `activity_id`; activity reads join samples to activities by time
   window.
 - `analytics.deduped_location`: a normal view over
-  `postgres_fitness.metric_stream` location rows. While the PeerDB mirror
-  excludes `point`, new rows have `point = NULL` and this view does not advance
-  for new data.
+  `postgres_fitness.metric_stream` location rows. The Redpanda ClickHouse sink
+  converts EWKT point payloads into ClickHouse point-compatible values.
 - `analytics.activity_summary`: a normal view over `analytics.deduped_sensor`,
   `analytics.deduped_location`, and `analytics.v_activity`.
 - `analytics.activity_trend_daily`: a normal view with one activity-linked
@@ -176,8 +166,8 @@ ClickHouse migrations create and update the databases and read models:
   `analytics.deduped_sensor`.
 
 Because `postgres_fitness.metric_stream` is an existing app-managed ClickHouse
-table rather than a table created by PeerDB, it must include PeerDB's CDC
-metadata columns before the analytics mirror is submitted:
+table and several read models expect CDC-compatible metadata, it keeps the
+metadata columns even though PeerDB no longer feeds it:
 `_peerdb_synced_at`, `_peerdb_is_deleted`, and `_peerdb_version`. The deploy CDC
 setup command repairs these columns idempotently with `ALTER TABLE ... ADD
 COLUMN IF NOT EXISTS` before PeerDB validates the mirror.

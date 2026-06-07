@@ -8,6 +8,7 @@ import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "../../db/tokens.ts";
 import { logger } from "../../logger.ts";
+import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
 import { parseTcx, tcxToSensorSamples } from "../../tcx/parser.ts";
 import {
   authFailureReasonFromError,
@@ -31,6 +32,7 @@ interface PolarSyncServiceOptions {
   providerName: string;
   fetchFn: typeof globalThis.fetch;
   userId?: string;
+  metricStreamPublisher?: MetricStreamEventPublisher;
 }
 
 export interface PolarSyncAccumulator {
@@ -44,6 +46,7 @@ export class PolarSyncService {
   readonly #providerName: string;
   readonly #fetchFn: typeof globalThis.fetch;
   readonly #userId?: string;
+  readonly #metricStreamPublisher?: MetricStreamEventPublisher;
   readonly #errors: SyncError[] = [];
   #recordsSynced = 0;
 
@@ -53,6 +56,7 @@ export class PolarSyncService {
     this.#providerName = options.providerName;
     this.#fetchFn = options.fetchFn;
     this.#userId = options.userId;
+    this.#metricStreamPublisher = options.metricStreamPublisher;
   }
 
   async run(since: Date): Promise<PolarSyncAccumulator> {
@@ -220,7 +224,13 @@ export class PolarSyncService {
 
       if (sampleRows.length === 0) return;
 
-      await replaceMetricStreamBatch(this.#db, { activityId }, sampleRows, SOURCE_TYPE_API);
+      await replaceMetricStreamBatch(
+        this.#db,
+        { activityId },
+        sampleRows,
+        SOURCE_TYPE_API,
+        this.#metricStreamPublisher,
+      );
       logger.info(
         `[polar] Inserted ${sampleRows.length} metric stream rows for exercise ${exerciseId}`,
       );
