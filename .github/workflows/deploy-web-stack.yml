@@ -374,8 +374,8 @@ jobs:
           for service in $(docker service ls --filter "name=${STACK_NAME}_" --format '{{.Name}}'); do
             update_state="$(docker service inspect "$service" --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{end}}')"
             if [ "$update_state" = "paused" ]; then
-              echo "Removing paused service: $service (will be recreated by stack deploy)"
-              docker service rm "$service"
+              echo "Resetting paused service: $service"
+              docker service update --force "$service"
             fi
           done
 
@@ -470,10 +470,19 @@ jobs:
               )"
               echo "${service_name} replicas=${replicas} update_state=${update_state:-none}"
               case "$update_state" in
-                rollback_*|paused)
+                rollback_*)
                   docker service ps "$service_name" --no-trunc
                   echo "::error::${service_name} did not finish pre-migration deployment cleanly; update_state=${update_state}"
                   exit 1
+                  ;;
+                paused)
+                  running="${replicas%%/*}"
+                  if [ "$running" -eq 0 ]; then
+                    docker service ps "$service_name" --no-trunc
+                    echo "::error::${service_name} update is paused with no running tasks"
+                    exit 1
+                  fi
+                  echo "::warning::${service_name} update is paused but has running tasks; continuing"
                   ;;
                 updating)
                   pending_service_count="$((pending_service_count + 1))"
@@ -643,10 +652,19 @@ jobs:
               )"
               echo "${service_name} image=${image} replicas=${replicas} update_state=${update_state:-none}"
               case "$update_state" in
-                rollback_*|paused)
+                rollback_*)
                   docker service ps "$service_name" --no-trunc
                   echo "::error::${service_name} did not finish deployment cleanly; update_state=${update_state}"
                   exit 1
+                  ;;
+                paused)
+                  running="${replicas%%/*}"
+                  if [ "$running" -eq 0 ]; then
+                    docker service ps "$service_name" --no-trunc
+                    echo "::error::${service_name} update is paused with no running tasks"
+                    exit 1
+                  fi
+                  echo "::warning::${service_name} update is paused but has running tasks; continuing"
                   ;;
               esac
               if [ "$replicas" = "${desired_replicas}/${desired_replicas}" ] && {
