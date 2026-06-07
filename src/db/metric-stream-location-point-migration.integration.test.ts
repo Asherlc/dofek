@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { runMigrations } from "./migrate.ts";
 
-const testDatabaseImage = "timescale/timescaledb-ha:pg18.3-ts2.26.4-all";
+const testDatabaseImage = "mirror.gcr.io/timescale/timescaledb-ha:pg18.3-ts2.26.4-all";
 const columnRowsSchema = z.array(z.object({ column_name: z.string() }));
 const indexRowsSchema = z.array(z.object({ indexname: z.string() }));
 const channelCountRowsSchema = z.array(z.object({ channel: z.string(), count: z.string() }));
