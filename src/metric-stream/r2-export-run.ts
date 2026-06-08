@@ -139,7 +139,13 @@ function requiredEnv(name: string): string {
   return value;
 }
 
-function createR2ObjectPutter(): (object: MetricStreamArchiveObject) => Promise<void> {
+interface R2ObjectPutter {
+  putObject: (object: MetricStreamArchiveObject) => Promise<void>;
+  /** Tears down the S3 client's keep-alive sockets so the one-shot exits. */
+  close: () => void;
+}
+
+function createR2ObjectPutter(): R2ObjectPutter {
   const bucket = requiredEnv("METRIC_STREAM_R2_BUCKET");
   const client = new S3Client({
     credentials: {
@@ -150,18 +156,31 @@ function createR2ObjectPutter(): (object: MetricStreamArchiveObject) => Promise<
     region: "auto",
   });
 
-  return async (object) => {
-    await client.send(new PutObjectCommand({ Body: object.body, Bucket: bucket, Key: object.key }));
+  return {
+    putObject: async (object) => {
+      await client.send(
+        new PutObjectCommand({ Body: object.body, Bucket: bucket, Key: object.key }),
+      );
+    },
+    close: () => {
+      client.destroy();
+    },
   };
 }
 
 export async function runMetricStreamR2ExportFromEnv(args: readonly string[]): Promise<void> {
   const options = parseMetricStreamR2ExportOptions(args);
   const db = createDatabaseFromEnv();
-  const putObject = createR2ObjectPutter();
+  const putter = createR2ObjectPutter();
 
-  const result = await exportMetricStreamToR2({ ...options, db, putObject });
-  logger.info(`[metric-stream-r2-export] ${JSON.stringify(result)}`);
+  try {
+    const result = await exportMetricStreamToR2({ ...options, db, putObject: putter.putObject });
+    logger.info(`[metric-stream-r2-export] ${JSON.stringify(result)}`);
+  } finally {
+    // Without this the keep-alive sockets keep the event loop alive and the
+    // one-shot container hangs for minutes after the work is done.
+    putter.close();
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

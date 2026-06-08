@@ -22,9 +22,11 @@ interface PutObjectInput {
 // vi.hoisted — which runs before the hoisted vi.mock factories and imports.
 const mocks = vi.hoisted(() => {
   const send = vi.fn();
+  const destroy = vi.fn();
   return {
     send,
-    s3Client: vi.fn(() => ({ send })),
+    destroy,
+    s3Client: vi.fn(() => ({ send, destroy })),
     putObjectCommand: vi.fn((input: PutObjectInput) => ({ command: "put", input })),
     createDatabaseFromEnv: vi.fn(),
   };
@@ -246,6 +248,7 @@ describe("runMetricStreamR2ExportFromEnv", () => {
 
   beforeEach(() => {
     mocks.send.mockReset().mockResolvedValue(undefined);
+    mocks.destroy.mockClear();
     mocks.s3Client.mockClear();
     mocks.putObjectCommand.mockClear();
     mocks.createDatabaseFromEnv.mockReset();
@@ -307,6 +310,28 @@ describe("runMetricStreamR2ExportFromEnv", () => {
     expect(putInput.Bucket).toBe(requiredR2Env.METRIC_STREAM_R2_BUCKET);
     expect(putInput.Key).toMatch(/^metric-stream\/v1\/date=2024-03-01\/hour=10\//);
     expect(Buffer.isBuffer(putInput.Body)).toBe(true);
+    // Sockets must be torn down so the one-shot container exits promptly.
+    expect(mocks.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes the S3 client even when the export fails", async () => {
+    mocks.send.mockRejectedValue(new Error("R2 down"));
+    mocks.createDatabaseFromEnv.mockReturnValue({
+      execute: vi
+        .fn<PostgresMetricStreamBackfillDatabase["execute"]>()
+        .mockResolvedValueOnce([makeDatabaseRow({})])
+        .mockResolvedValueOnce([]),
+    });
+
+    await expect(
+      runMetricStreamR2ExportFromEnv([
+        "--start",
+        "2024-03-01T00:00:00Z",
+        "--end",
+        "2024-03-02T00:00:00Z",
+      ]),
+    ).rejects.toThrow("R2 down");
+    expect(mocks.destroy).toHaveBeenCalledTimes(1);
   });
 
   it("fails loudly when a required R2 env var is missing", async () => {
