@@ -280,7 +280,9 @@ services:
       - --overprovisioned
       - --node-id=0
       - --check=false
-      - --kafka-batch-max-bytes=10485760
+      # NOTE: cluster properties like kafka_batch_max_bytes are NOT valid
+      # `rpk redpanda start` flags — adding e.g. --kafka-batch-max-bytes here
+      # crash-loops the broker. Set them via `rpk cluster config set` instead.
       - --kafka-addr=internal://0.0.0.0:9092
       - --advertise-kafka-addr=internal://redpanda:9092
       - --rpc-addr=0.0.0.0:33145
