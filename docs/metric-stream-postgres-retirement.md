@@ -99,7 +99,7 @@ object-coverage signal (no full scan, no decompress, no dedup needed).
 
 ## P3 — Drop Postgres metric_stream + cleanup
 
-Only after P0–P2 merged + verified, and the historical backfill is complete.
+Only after P0–P2 are merged and verified, and the historical backfill is complete.
 
 1. Retire PeerDB metric_stream CDC mirror (so CH is fed only by Redpanda).
 2. Delete `scripts/backfill-metric-stream-to-redpanda.ts` + its test (one-time

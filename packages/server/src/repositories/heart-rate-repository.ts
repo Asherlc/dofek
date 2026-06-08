@@ -51,7 +51,10 @@ export class HeartRateRepository {
       heartRateRowSchema,
       `SELECT
           provider_id,
-          formatDateTime(minute_bucket, '%Y-%m-%dT%H:%i:%SZ') AS recorded_at,
+          -- minute buckets always have zero sub-seconds; hardcode .000 so the
+          -- ISO-8601 string matches the existing client contract regardless of
+          -- ClickHouse's formatDateTime second-precision behaviour.
+          formatDateTime(minute_bucket, '%Y-%m-%dT%H:%i:%S.000Z') AS recorded_at,
           toInt32(round(avg(scalar))) AS heart_rate
         FROM (
           SELECT
@@ -63,7 +66,11 @@ export class HeartRateRepository {
             AND channel = 'heart_rate'
             AND _peerdb_is_deleted = 0
             AND scalar > 0
-            AND toDate(recorded_at, {timezone:String}) = {date:Date}
+            -- Range over the raw recorded_at so the ORDER BY key can prune,
+            -- instead of wrapping it in toDate(). Bounds are the user's local
+            -- day expressed as UTC instants.
+            AND recorded_at >= toDateTime({date:Date}, {timezone:String})
+            AND recorded_at < toDateTime({date:Date}, {timezone:String}) + INTERVAL 1 DAY
         )
         GROUP BY provider_id, minute_bucket
         ORDER BY provider_id, minute_bucket`,
