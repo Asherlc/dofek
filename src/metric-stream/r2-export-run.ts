@@ -72,16 +72,29 @@ export async function exportMetricStreamToR2(
     }
   };
 
-  for await (const batch of streamMetricStreamBackfillBatches(options.db, options)) {
-    for (const row of batch.rows) {
-      // Backfill rows carry their Postgres id, so createMetricStreamEvent keeps
-      // the existing deterministic id rather than re-deriving it.
-      for (const object of chunker.push(createMetricStreamEvent(row))) {
-        await enqueue(object);
+  // fitness.metric_stream is a TimescaleDB-compressed hypertable with daily
+  // chunks. A single keyset scan over the whole [start, end) range can't prune
+  // chunks, so every batch re-scans (and decompresses) all chunks — O(n^2).
+  // Step the range one UTC day at a time so each keyset query hits a single
+  // chunk (chunk exclusion → ~150x cheaper, no degradation). A (date,hour)
+  // bucket lives within one day, so the shared chunker's per-bucket determinism
+  // is unaffected.
+  for (const dayWindow of stepWindowsByUtcDay(options.start, options.end)) {
+    for await (const batch of streamMetricStreamBackfillBatches(options.db, {
+      batchSize: options.batchSize,
+      end: dayWindow.end,
+      start: dayWindow.start,
+    })) {
+      for (const row of batch.rows) {
+        // Backfill rows carry their Postgres id, so createMetricStreamEvent
+        // keeps the existing deterministic id rather than re-deriving it.
+        for (const object of chunker.push(createMetricStreamEvent(row))) {
+          await enqueue(object);
+        }
       }
+      scanned += batch.rows.length;
+      lastCursor = { id: batch.cursor.id, recordedAt: batch.cursor.recordedAt };
     }
-    scanned += batch.rows.length;
-    lastCursor = { id: batch.cursor.id, recordedAt: batch.cursor.recordedAt };
   }
   for (const object of chunker.flush()) {
     await enqueue(object);
@@ -89,6 +102,26 @@ export async function exportMetricStreamToR2(
   await drain();
 
   return { lastCursor, objects, scanned };
+}
+
+/**
+ * Yield [start, end) split on UTC-day boundaries so each sub-window aligns with
+ * the hypertable's daily chunks. Empty days are cheap (chunk exclusion returns
+ * no chunks), so a wide range with sparse data costs little.
+ */
+export function* stepWindowsByUtcDay(
+  start: Date,
+  end: Date,
+): Generator<{ start: Date; end: Date }> {
+  let cursor = start;
+  while (cursor < end) {
+    const nextMidnight = new Date(
+      Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), cursor.getUTCDate() + 1),
+    );
+    const windowEnd = nextMidnight < end ? nextMidnight : end;
+    yield { end: windowEnd, start: cursor };
+    cursor = windowEnd;
+  }
 }
 
 interface MetricStreamR2ExportCliOptions extends MetricStreamBackfillWindow {

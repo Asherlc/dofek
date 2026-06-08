@@ -7,6 +7,7 @@ import {
   exportMetricStreamToR2,
   parseMetricStreamR2ExportOptions,
   runMetricStreamR2ExportFromEnv,
+  stepWindowsByUtcDay,
 } from "./r2-export-run.ts";
 import { parseMetricStreamArchiveObjectKey } from "./r2-replay.ts";
 
@@ -131,6 +132,50 @@ describe("exportMetricStreamToR2", () => {
       ),
     );
     expect(archivedLines.slice().sort()).toEqual(expectedLines.slice().sort());
+  });
+
+  it("steps multi-day ranges per UTC day so each keyset query is chunk-aligned", async () => {
+    // Two days of data: the exporter must run one keyset stream per day (so the
+    // compressed hypertable can prune chunks), archiving every row exactly once.
+    const day1 = makeDatabaseRow({
+      id: "10000000-0000-4000-8000-000000000001",
+      external_id: "d1",
+      recorded_at: new Date("2024-03-01T10:00:00.000Z"),
+    });
+    const day2 = makeDatabaseRow({
+      id: "10000000-0000-4000-8000-000000000002",
+      external_id: "d2",
+      recorded_at: new Date("2024-03-02T10:00:00.000Z"),
+    });
+    const execute = vi
+      .fn<PostgresMetricStreamBackfillDatabase["execute"]>()
+      .mockResolvedValueOnce([day1]) // 2024-03-01 window
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([day2]) // 2024-03-02 window
+      .mockResolvedValueOnce([]);
+    const putObject = vi.fn<(object: MetricStreamArchiveObject) => Promise<void>>(async () => {});
+
+    const result = await exportMetricStreamToR2({
+      batchSize: 100,
+      concurrency: 8,
+      db: { execute },
+      end: new Date("2024-03-03T00:00:00.000Z"),
+      maxObjectBytes: 10_000,
+      putObject,
+      start: new Date("2024-03-01T00:00:00.000Z"),
+    });
+
+    expect(result.scanned).toBe(2);
+    // One execute call per (day window keyset page): 2 days x (rows + empty).
+    expect(execute).toHaveBeenCalledTimes(4);
+    const archivedIds = putObject.mock.calls
+      .flatMap(([object]) => decompressLines(object.body))
+      .map((line) => JSON.parse(line).id)
+      .sort();
+    expect(archivedIds).toEqual([
+      "10000000-0000-4000-8000-000000000001",
+      "10000000-0000-4000-8000-000000000002",
+    ]);
   });
 
   it("bounds PUT concurrency to the configured limit", async () => {
@@ -346,5 +391,37 @@ describe("runMetricStreamR2ExportFromEnv", () => {
         "2024-03-02T00:00:00Z",
       ]),
     ).rejects.toThrow("METRIC_STREAM_R2_BUCKET environment variable is required");
+  });
+});
+
+describe("stepWindowsByUtcDay", () => {
+  it("splits a multi-day range on UTC midnight boundaries", () => {
+    const windows = [
+      ...stepWindowsByUtcDay(
+        new Date("2024-03-01T10:00:00.000Z"),
+        new Date("2024-03-03T05:00:00.000Z"),
+      ),
+    ];
+    expect(windows).toEqual([
+      { start: new Date("2024-03-01T10:00:00.000Z"), end: new Date("2024-03-02T00:00:00.000Z") },
+      { start: new Date("2024-03-02T00:00:00.000Z"), end: new Date("2024-03-03T00:00:00.000Z") },
+      { start: new Date("2024-03-03T00:00:00.000Z"), end: new Date("2024-03-03T05:00:00.000Z") },
+    ]);
+  });
+
+  it("yields a single window when start and end fall within one UTC day", () => {
+    const windows = [
+      ...stepWindowsByUtcDay(
+        new Date("2024-03-01T00:00:00.000Z"),
+        new Date("2024-03-02T00:00:00.000Z"),
+      ),
+    ];
+    expect(windows).toEqual([
+      { start: new Date("2024-03-01T00:00:00.000Z"), end: new Date("2024-03-02T00:00:00.000Z") },
+    ]);
+  });
+
+  it("yields nothing when start is not before end", () => {
+    expect([...stepWindowsByUtcDay(new Date("2024-03-02"), new Date("2024-03-01"))]).toEqual([]);
   });
 });
