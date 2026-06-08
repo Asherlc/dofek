@@ -228,3 +228,82 @@ describe("buildMetricStreamArchiveObjects", () => {
     );
   });
 });
+
+describe("compareMetricStreamEvents", () => {
+  it("orders an earlier recordedAt before a later one (both directions)", () => {
+    const earlier = createMetricStreamEvent(
+      makeRow({ externalId: "e", recordedAt: "2024-03-01T10:00:00.000Z" }),
+    );
+    const later = createMetricStreamEvent(
+      makeRow({ externalId: "l", recordedAt: "2024-03-01T10:00:01.000Z" }),
+    );
+    expect(compareMetricStreamEvents(earlier, later)).toBeLessThan(0);
+    expect(compareMetricStreamEvents(later, earlier)).toBeGreaterThan(0);
+  });
+
+  it("breaks ties by id when recordedAt is equal (both directions)", () => {
+    // Same recordedAt, different externalId → different deterministic ids.
+    const left = createMetricStreamEvent(
+      makeRow({ externalId: "aaa", recordedAt: "2024-03-01T10:00:00.000Z" }),
+    );
+    const right = createMetricStreamEvent(
+      makeRow({ externalId: "bbb", recordedAt: "2024-03-01T10:00:00.000Z" }),
+    );
+    const [lower, higher] = left.id < right.id ? [left, right] : [right, left];
+    expect(compareMetricStreamEvents(lower, higher)).toBeLessThan(0);
+    expect(compareMetricStreamEvents(higher, lower)).toBeGreaterThan(0);
+  });
+
+  it("returns 0 when recordedAt and id are identical", () => {
+    const event = createMetricStreamEvent(
+      makeRow({ externalId: "x", recordedAt: "2024-03-01T10:00:00.000Z" }),
+    );
+    expect(compareMetricStreamEvents(event, { ...event })).toBe(0);
+  });
+});
+
+describe("MetricStreamArchiveChunker", () => {
+  const options = { topic: ARCHIVE_TOPIC, partition: 0, maxObjectBytes: 10_000 };
+
+  it("emits no object for the first event of a bucket but flushes the prior bucket on a (date,hour) change", () => {
+    const chunker = new MetricStreamArchiveChunker(options);
+    const hour10 = createMetricStreamEvent(
+      makeRow({ externalId: "a", recordedAt: "2024-03-01T10:30:00.000Z" }),
+    );
+    const hour11 = createMetricStreamEvent(
+      makeRow({ externalId: "b", recordedAt: "2024-03-01T11:30:00.000Z" }),
+    );
+
+    expect(chunker.push(hour10)).toEqual([]);
+    const completedOnHourChange = chunker.push(hour11);
+    expect(completedOnHourChange).toHaveLength(1);
+    expect(completedOnHourChange[0]?.key).toContain("date=2024-03-01/hour=10");
+
+    const remaining = chunker.flush();
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]?.key).toContain("date=2024-03-01/hour=11");
+  });
+
+  it("returns no objects when flushed without any events", () => {
+    expect(new MetricStreamArchiveChunker(options).flush()).toEqual([]);
+  });
+
+  it("keys each object with its first and last index within the bucket", () => {
+    const events = Array.from({ length: 4 }, (_, index) =>
+      createMetricStreamEvent(
+        makeRow({ externalId: `evt-${index}`, recordedAt: `2024-03-01T10:00:0${index}.000Z` }),
+      ),
+    );
+    const oneLineBytes = Buffer.byteLength(JSON.stringify(events[0]), "utf8");
+    // Budget for exactly two lines so the four events split 0-1 / 2-3.
+    const objects = buildMetricStreamArchiveObjects(events, {
+      ...options,
+      maxObjectBytes: oneLineBytes * 2 + 1,
+    });
+    const indexRanges = objects.map((object) => {
+      const parsed = parseMetricStreamArchiveObjectKey(object.key);
+      return `${parsed.firstOffset}-${parsed.lastOffset}`;
+    });
+    expect(indexRanges).toEqual(["0-1", "2-3"]);
+  });
+});

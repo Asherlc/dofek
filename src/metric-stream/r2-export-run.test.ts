@@ -1,9 +1,41 @@
 import { gunzipSync } from "node:zlib";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMetricStreamEvent } from "./events.ts";
 import type { PostgresMetricStreamBackfillDatabase } from "./postgres-backfill-source.ts";
 import type { MetricStreamArchiveObject } from "./r2-export.ts";
-import { exportMetricStreamToR2, parseMetricStreamR2ExportOptions } from "./r2-export-run.ts";
+import {
+  exportMetricStreamToR2,
+  parseMetricStreamR2ExportOptions,
+  runMetricStreamR2ExportFromEnv,
+} from "./r2-export-run.ts";
+import { parseMetricStreamArchiveObjectKey } from "./r2-replay.ts";
+
+interface PutObjectInput {
+  Bucket: string;
+  Key: string;
+  Body: Buffer;
+}
+
+// Mock the S3 SDK and the DB factory so the env-reading + client-wiring path
+// (createR2ObjectPutter / run-from-env) is exercised without a real connection.
+// The module under test is imported statically, so the mock fns must come from
+// vi.hoisted — which runs before the hoisted vi.mock factories and imports.
+const mocks = vi.hoisted(() => {
+  const send = vi.fn();
+  return {
+    send,
+    s3Client: vi.fn(() => ({ send })),
+    putObjectCommand: vi.fn((input: PutObjectInput) => ({ command: "put", input })),
+    createDatabaseFromEnv: vi.fn(),
+  };
+});
+vi.mock("@aws-sdk/client-s3", () => ({
+  PutObjectCommand: mocks.putObjectCommand,
+  S3Client: mocks.s3Client,
+}));
+vi.mock("../db/index.ts", () => ({
+  createDatabaseFromEnv: mocks.createDatabaseFromEnv,
+}));
 
 function makeDatabaseRow(overrides: Record<string, unknown>) {
   return {
@@ -67,6 +99,17 @@ describe("exportMetricStreamToR2", () => {
     // we assert every scanned row is archived once and keeps its Postgres id.
     const archivedLines = putObject.mock.calls.flatMap(([object]) => decompressLines(object.body));
     expect(archivedLines).toHaveLength(2);
+    // The single object is keyed for the live single-partition topic under the
+    // event's date/hour — proves the chunker is wired with the archive topic.
+    const [firstCall] = putObject.mock.calls;
+    if (!firstCall) {
+      throw new Error("expected a PUT call");
+    }
+    const parsed = parseMetricStreamArchiveObjectKey(firstCall[0].key);
+    expect(parsed.topic).toBe("metric-stream-v1");
+    expect(parsed.partition).toBe(0);
+    expect(parsed.date).toBe("2024-03-01");
+    expect(parsed.hour).toBe("10");
     const expectedLines = databaseRows.map((row) =>
       JSON.stringify(
         createMetricStreamEvent({
@@ -187,5 +230,92 @@ describe("parseMetricStreamR2ExportOptions", () => {
         "0",
       ]),
     ).toThrow("--concurrency must be a positive integer");
+  });
+});
+
+describe("runMetricStreamR2ExportFromEnv", () => {
+  const requiredR2Env = {
+    METRIC_STREAM_R2_BUCKET: "dofek-metric-stream-archive",
+    R2_ENDPOINT: "https://example.r2.cloudflarestorage.com",
+    R2_ACCESS_KEY_ID: "test-access-key",
+    R2_SECRET_ACCESS_KEY: "test-secret-key",
+  } as const;
+
+  beforeEach(() => {
+    mocks.send.mockReset().mockResolvedValue(undefined);
+    mocks.s3Client.mockClear();
+    mocks.putObjectCommand.mockClear();
+    mocks.createDatabaseFromEnv.mockReset();
+    for (const [key, value] of Object.entries(requiredR2Env)) {
+      vi.stubEnv(key, value);
+    }
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("builds the R2 client from env and PUTs each archive object to the configured bucket", async () => {
+    const execute = vi
+      .fn<PostgresMetricStreamBackfillDatabase["execute"]>()
+      .mockResolvedValueOnce([
+        {
+          id: "10000000-0000-4000-8000-000000000001",
+          recorded_at: new Date("2024-03-01T10:00:00.000Z"),
+          user_id: "00000000-0000-0000-0000-000000000001",
+          provider_id: "apple_health",
+          external_id: "hk:hr-1",
+          device_id: "Apple Watch",
+          source_type: "api",
+          channel: "heart_rate",
+          activity_id: null,
+          scalar: 72,
+          vector: null,
+          point: null,
+          metadata: null,
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    mocks.createDatabaseFromEnv.mockReturnValue({ execute });
+
+    await runMetricStreamR2ExportFromEnv([
+      "--start",
+      "2024-03-01T00:00:00Z",
+      "--end",
+      "2024-03-02T00:00:00Z",
+    ]);
+
+    expect(mocks.s3Client).toHaveBeenCalledWith(
+      expect.objectContaining({
+        endpoint: requiredR2Env.R2_ENDPOINT,
+        region: "auto",
+        credentials: {
+          accessKeyId: requiredR2Env.R2_ACCESS_KEY_ID,
+          secretAccessKey: requiredR2Env.R2_SECRET_ACCESS_KEY,
+        },
+      }),
+    );
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+    const putInput = mocks.putObjectCommand.mock.calls[0]?.[0];
+    if (!putInput) {
+      throw new Error("expected a PutObjectCommand call");
+    }
+    expect(putInput.Bucket).toBe(requiredR2Env.METRIC_STREAM_R2_BUCKET);
+    expect(putInput.Key).toMatch(/^metric-stream\/v1\/date=2024-03-01\/hour=10\//);
+    expect(Buffer.isBuffer(putInput.Body)).toBe(true);
+  });
+
+  it("fails loudly when a required R2 env var is missing", async () => {
+    vi.stubEnv("METRIC_STREAM_R2_BUCKET", "");
+    mocks.createDatabaseFromEnv.mockReturnValue({ execute: vi.fn() });
+
+    await expect(
+      runMetricStreamR2ExportFromEnv([
+        "--start",
+        "2024-03-01T00:00:00Z",
+        "--end",
+        "2024-03-02T00:00:00Z",
+      ]),
+    ).rejects.toThrow("METRIC_STREAM_R2_BUCKET environment variable is required");
   });
 });
