@@ -347,8 +347,13 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.25"
-          memory: 256M
+          # gzip compression is CPU-bound and the redpanda input buffers whole
+          # partition batches in memory; under the historical backfill load the
+          # old 0.25 CPU / 256M limits OOM-killed this task (exit 137) in a
+          # crash loop, stalling the archive and growing topic lag. 1 CPU / 1G
+          # sustains the drain rate with headroom on the host.
+          cpus: "1"
+          memory: 1G
       update_config:
         order: stop-first
         failure_action: rollback
