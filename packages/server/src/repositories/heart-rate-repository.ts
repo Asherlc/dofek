@@ -53,7 +53,7 @@ export class HeartRateRepository {
           provider_id,
           -- minute buckets always have zero sub-seconds; hardcode .000 so the
           -- ISO-8601 string matches the existing client contract regardless of
-          -- ClickHouse's formatDateTime second-precision behaviour.
+          -- ClickHouse's formatDateTime second-precision behavior.
           formatDateTime(minute_bucket, '%Y-%m-%dT%H:%i:%S.000Z') AS recorded_at,
           toInt32(round(avg(scalar))) AS heart_rate
         FROM (
