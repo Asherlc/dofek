@@ -288,7 +288,9 @@ services:
       - --rpc-addr=0.0.0.0:33145
       - --advertise-rpc-addr=redpanda:33145
     volumes:
-      - redpanda_data:/var/lib/redpanda/data
+      # Bind to the large /mnt/dofek-data disk, NOT a default named volume (which
+      # lands on the small root disk and fills during a metric-stream backfill).
+      - /mnt/dofek-data/redpanda:/var/lib/redpanda/data
     healthcheck:
       test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
       interval: 10s
@@ -703,7 +705,6 @@ volumes:
   netdata_config:
   netdata_lib:
   netdata_cache:
-  redpanda_data:
 
 networks:
   # attachable so CI can run one-shot migration containers on the overlay
