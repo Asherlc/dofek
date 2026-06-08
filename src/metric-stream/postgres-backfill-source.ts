@@ -128,6 +128,27 @@ export function parseMetricStreamBackfillWindow(
   return { batchSize, end, start };
 }
 
+/**
+ * Column list selected for every backfill row, shared by the keyset query and
+ * the cursor reader so they stay in lockstep. `recorded_at_cursor` is the
+ * full-precision `::text` rendering used for keyset resumption (see
+ * {@link MetricStreamBackfillCursor}).
+ */
+export const METRIC_STREAM_BACKFILL_COLUMNS = `id::text,
+  recorded_at,
+  recorded_at::text AS recorded_at_cursor,
+  user_id::text,
+  provider_id,
+  external_id,
+  device_id,
+  source_type,
+  channel,
+  activity_id::text,
+  scalar::double precision AS scalar,
+  vector::double precision[] AS vector,
+  ST_AsEWKT(point) AS point,
+  metadata`;
+
 export function buildMetricStreamBackfillQuery(options: {
   start: Date;
   end: Date;
@@ -139,21 +160,7 @@ export function buildMetricStreamBackfillQuery(options: {
       ? sql``
       : sql`AND (recorded_at, id) > (${options.cursor.recordedAt}::timestamptz, ${options.cursor.id}::uuid)`;
 
-  return sql`SELECT
-      id::text,
-      recorded_at,
-      recorded_at::text AS recorded_at_cursor,
-      user_id::text,
-      provider_id,
-      external_id,
-      device_id,
-      source_type,
-      channel,
-      activity_id::text,
-      scalar::double precision AS scalar,
-      vector::double precision[] AS vector,
-      ST_AsEWKT(point) AS point,
-      metadata
+  return sql`SELECT ${sql.raw(METRIC_STREAM_BACKFILL_COLUMNS)}
     FROM fitness.metric_stream
     WHERE recorded_at >= ${options.start.toISOString()}::timestamptz
       AND recorded_at < ${options.end.toISOString()}::timestamptz
@@ -299,4 +306,22 @@ export async function* streamMetricStreamBackfillBatches(
     };
     yield { rows, cursor };
   }
+}
+
+export interface ParsedMetricStreamBackfillRow {
+  input: MetricStreamRowInput;
+  cursor: MetricStreamBackfillCursor;
+}
+
+/**
+ * Parse one raw `fitness.metric_stream` row (selected with
+ * {@link METRIC_STREAM_BACKFILL_COLUMNS}) into the event input plus its
+ * full-precision keyset cursor. Shared by the keyset and cursor readers.
+ */
+export function parseMetricStreamBackfillRow(value: unknown): ParsedMetricStreamBackfillRow {
+  const row = parseBackfillRow(value);
+  return {
+    input: mapBackfillRowToMetricStreamInput(row),
+    cursor: { id: row.id, recordedAt: row.recorded_at_cursor },
+  };
 }

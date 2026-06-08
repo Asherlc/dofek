@@ -1,16 +1,21 @@
 import { pathToFileURL } from "node:url";
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import * as Sentry from "@sentry/node";
-import { createDatabaseFromEnv } from "../db/index.ts";
+import { Client } from "pg";
 import { logger } from "../logger.ts";
 import { createMetricStreamEvent } from "./events.ts";
-import {
-  type MetricStreamBackfillWindow,
-  type PostgresMetricStreamBackfillDatabase,
-  parseMetricStreamBackfillWindow,
-  streamMetricStreamBackfillBatches,
+import type {
+  MetricStreamBackfillBatch,
+  MetricStreamBackfillWindow,
 } from "./postgres-backfill-source.ts";
+import { parseMetricStreamBackfillWindow } from "./postgres-backfill-source.ts";
+import { streamMetricStreamWindowViaCursor } from "./postgres-cursor-source.ts";
 import { MetricStreamArchiveChunker, type MetricStreamArchiveObject } from "./r2-export.ts";
+
+/** Streams one [start, end) window's rows as batches (cursor- or keyset-based). */
+export type MetricStreamWindowReader = (
+  window: MetricStreamBackfillWindow,
+) => AsyncGenerator<MetricStreamBackfillBatch>;
 
 /** The live archive uses a single-partition topic; backfill objects share it. */
 const ARCHIVE_TOPIC = "metric-stream-v1";
@@ -19,7 +24,7 @@ const DEFAULT_MAX_OBJECT_BYTES = 8_000_000;
 const DEFAULT_CONCURRENCY = 16;
 
 export interface MetricStreamR2ExportOptions extends MetricStreamBackfillWindow {
-  db: PostgresMetricStreamBackfillDatabase;
+  streamWindow: MetricStreamWindowReader;
   putObject: (object: MetricStreamArchiveObject) => Promise<void>;
   maxObjectBytes: number;
   concurrency: number;
@@ -73,14 +78,11 @@ export async function exportMetricStreamToR2(
   };
 
   // fitness.metric_stream is a TimescaleDB-compressed hypertable with daily
-  // chunks. A single keyset scan over the whole [start, end) range can't prune
-  // chunks, so every batch re-scans (and decompresses) all chunks — O(n^2).
-  // Step the range one UTC day at a time so each keyset query hits a single
-  // chunk (chunk exclusion → ~150x cheaper, no degradation). A (date,hour)
-  // bucket lives within one day, so the shared chunker's per-bucket determinism
-  // is unaffected.
+  // chunks. Step the range one UTC day at a time so each window's cursor sorts
+  // exactly one chunk (chunk exclusion prunes the rest). A (date,hour) bucket
+  // lives within one day, so the shared chunker's per-bucket determinism holds.
   for (const dayWindow of stepWindowsByUtcDay(options.start, options.end)) {
-    for await (const batch of streamMetricStreamBackfillBatches(options.db, {
+    for await (const batch of options.streamWindow({
       batchSize: options.batchSize,
       end: dayWindow.end,
       start: dayWindow.start,
@@ -203,15 +205,27 @@ function createR2ObjectPutter(): R2ObjectPutter {
 
 export async function runMetricStreamR2ExportFromEnv(args: readonly string[]): Promise<void> {
   const options = parseMetricStreamR2ExportOptions(args);
-  const db = createDatabaseFromEnv();
+  // Validate R2 config (and build the S3 client) before opening Postgres, so a
+  // misconfiguration fails fast without leaving a connection open.
   const putter = createR2ObjectPutter();
-
   try {
-    const result = await exportMetricStreamToR2({ ...options, db, putObject: putter.putObject });
-    logger.info(`[metric-stream-r2-export] ${JSON.stringify(result)}`);
+    // A dedicated client (not a pool) holds the server-side cursor's
+    // transaction open across FETCH pages.
+    const client = new Client({ connectionString: requiredEnv("DATABASE_URL") });
+    await client.connect();
+    try {
+      const result = await exportMetricStreamToR2({
+        ...options,
+        putObject: putter.putObject,
+        streamWindow: (window) => streamMetricStreamWindowViaCursor(client, window),
+      });
+      logger.info(`[metric-stream-r2-export] ${JSON.stringify(result)}`);
+    } finally {
+      await client.end();
+    }
   } finally {
-    // Without this the keep-alive sockets keep the event loop alive and the
-    // one-shot container hangs for minutes after the work is done.
+    // Tear down the S3 client's keep-alive sockets so the one-shot exits
+    // instead of hanging after the work is done.
     putter.close();
   }
 }

@@ -1,10 +1,11 @@
 import { gunzipSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createMetricStreamEvent } from "./events.ts";
-import type { PostgresMetricStreamBackfillDatabase } from "./postgres-backfill-source.ts";
+import { createMetricStreamEvent, type MetricStreamRowInput } from "./events.ts";
+import type { MetricStreamBackfillBatch } from "./postgres-backfill-source.ts";
 import type { MetricStreamArchiveObject } from "./r2-export.ts";
 import {
   exportMetricStreamToR2,
+  type MetricStreamWindowReader,
   parseMetricStreamR2ExportOptions,
   runMetricStreamR2ExportFromEnv,
   stepWindowsByUtcDay,
@@ -17,49 +18,68 @@ interface PutObjectInput {
   Body: Buffer;
 }
 
-// Mock the S3 SDK and the DB factory so the env-reading + client-wiring path
-// (createR2ObjectPutter / run-from-env) is exercised without a real connection.
-// The module under test is imported statically, so the mock fns must come from
-// vi.hoisted — which runs before the hoisted vi.mock factories and imports.
+// Mock the S3 SDK and the pg Client so the env-reading + wiring path
+// (createR2ObjectPutter / run-from-env / cursor) is exercised without real
+// connections. The module under test is imported statically, so the mock fns
+// must come from vi.hoisted (it runs before the hoisted vi.mock factories).
 const mocks = vi.hoisted(() => {
   const send = vi.fn();
   const destroy = vi.fn();
+  const pgQuery = vi.fn();
+  const pgConnect = vi.fn();
+  const pgEnd = vi.fn();
   return {
     send,
     destroy,
+    pgQuery,
+    pgConnect,
+    pgEnd,
     s3Client: vi.fn(() => ({ send, destroy })),
     putObjectCommand: vi.fn((input: PutObjectInput) => ({ command: "put", input })),
-    createDatabaseFromEnv: vi.fn(),
+    pgClient: vi.fn(() => ({ connect: pgConnect, query: pgQuery, end: pgEnd })),
   };
 });
 vi.mock("@aws-sdk/client-s3", () => ({
   PutObjectCommand: mocks.putObjectCommand,
   S3Client: mocks.s3Client,
 }));
-vi.mock("../db/index.ts", () => ({
-  createDatabaseFromEnv: mocks.createDatabaseFromEnv,
-}));
+vi.mock("pg", () => ({ Client: mocks.pgClient }));
 
-function makeDatabaseRow(overrides: Record<string, unknown>) {
-  const row = {
+function makeRowInput(overrides: Partial<MetricStreamRowInput>): MetricStreamRowInput {
+  return {
     id: "10000000-0000-4000-8000-000000000001",
-    recorded_at: new Date("2024-03-01T10:00:00.000Z"),
-    user_id: "00000000-0000-0000-0000-000000000001",
-    provider_id: "apple_health",
-    external_id: "hk:heart-rate-1",
-    device_id: "Apple Watch",
-    source_type: "api",
+    recordedAt: "2024-03-01T10:00:00.000Z",
+    userId: "00000000-0000-0000-0000-000000000001",
+    providerId: "apple_health",
+    externalId: "hk:heart-rate-1",
+    deviceId: "Apple Watch",
+    sourceType: "api",
     channel: "heart_rate",
-    activity_id: null,
     scalar: 72,
-    vector: null,
-    point: null,
-    metadata: null,
     ...overrides,
   };
-  // The real query returns recorded_at::text for the keyset cursor; stub it from
-  // the row's own timestamp.
-  return { ...row, recorded_at_cursor: new Date(row.recorded_at).toISOString() };
+}
+
+function batchOf(rows: MetricStreamRowInput[]): MetricStreamBackfillBatch {
+  const last = rows[rows.length - 1];
+  if (!last) {
+    throw new Error("batchOf needs at least one row");
+  }
+  return { rows, cursor: { id: last.id ?? "missing", recordedAt: String(last.recordedAt) } };
+}
+
+/** A reader that yields the rows mapped to each window's UTC start day. */
+function readerForDays(
+  rowsByDay: Record<string, MetricStreamRowInput[]>,
+): MetricStreamWindowReader {
+  // biome-ignore lint/correctness/useYield: empty days legitimately yield nothing
+  return async function* reader(window) {
+    const day = window.start.toISOString().slice(0, 10);
+    const rows = rowsByDay[day];
+    if (rows && rows.length > 0) {
+      yield batchOf(rows);
+    }
+  };
 }
 
 function decompressLines(body: Buffer): string[] {
@@ -68,29 +88,25 @@ function decompressLines(body: Buffer): string[] {
 
 describe("exportMetricStreamToR2", () => {
   it("archives every scanned row exactly once with the live archive's line format", async () => {
-    const databaseRows = [
-      makeDatabaseRow({ id: "10000000-0000-4000-8000-000000000001", external_id: "a" }),
-      makeDatabaseRow({
+    const rows = [
+      makeRowInput({ id: "10000000-0000-4000-8000-000000000001", externalId: "a" }),
+      makeRowInput({
         id: "10000000-0000-4000-8000-000000000002",
-        external_id: "b",
-        recorded_at: new Date("2024-03-01T10:00:01.000Z"),
+        externalId: "b",
+        recordedAt: "2024-03-01T10:00:01.000Z",
         scalar: 73,
       }),
     ];
-    const execute = vi
-      .fn<PostgresMetricStreamBackfillDatabase["execute"]>()
-      .mockResolvedValueOnce(databaseRows)
-      .mockResolvedValueOnce([]);
     const putObject = vi.fn<(object: MetricStreamArchiveObject) => Promise<void>>(async () => {});
 
     const result = await exportMetricStreamToR2({
       batchSize: 100,
       concurrency: 8,
-      db: { execute },
       end: new Date("2024-03-02T00:00:00.000Z"),
       maxObjectBytes: 10_000,
       putObject,
       start: new Date("2024-03-01T00:00:00.000Z"),
+      streamWindow: readerForDays({ "2024-03-01": rows }),
     });
 
     expect(result.scanned).toBe(2);
@@ -100,13 +116,8 @@ describe("exportMetricStreamToR2", () => {
       recordedAt: "2024-03-01T10:00:01.000Z",
     });
 
-    // Each archived line is exactly the producer's serialized event for that
-    // row (byte-identical archive format is proven in r2-export.test.ts); here
-    // we assert every scanned row is archived once and keeps its Postgres id.
     const archivedLines = putObject.mock.calls.flatMap(([object]) => decompressLines(object.body));
     expect(archivedLines).toHaveLength(2);
-    // The single object is keyed for the live single-partition topic under the
-    // event's date/hour — proves the chunker is wired with the archive topic.
     const [firstCall] = putObject.mock.calls;
     if (!firstCall) {
       throw new Error("expected a PUT call");
@@ -116,58 +127,40 @@ describe("exportMetricStreamToR2", () => {
     expect(parsed.partition).toBe(0);
     expect(parsed.date).toBe("2024-03-01");
     expect(parsed.hour).toBe("10");
-    const expectedLines = databaseRows.map((row) =>
-      JSON.stringify(
-        createMetricStreamEvent({
-          id: row.id,
-          recordedAt: new Date(row.recorded_at).toISOString(),
-          userId: row.user_id,
-          providerId: row.provider_id,
-          externalId: row.external_id,
-          deviceId: row.device_id,
-          sourceType: row.source_type,
-          channel: row.channel,
-          scalar: row.scalar,
-        }),
-      ),
-    );
+    const expectedLines = rows.map((row) => JSON.stringify(createMetricStreamEvent(row)));
     expect(archivedLines.slice().sort()).toEqual(expectedLines.slice().sort());
   });
 
-  it("steps multi-day ranges per UTC day so each keyset query is chunk-aligned", async () => {
-    // Two days of data: the exporter must run one keyset stream per day (so the
-    // compressed hypertable can prune chunks), archiving every row exactly once.
-    const day1 = makeDatabaseRow({
-      id: "10000000-0000-4000-8000-000000000001",
-      external_id: "d1",
-      recorded_at: new Date("2024-03-01T10:00:00.000Z"),
-    });
-    const day2 = makeDatabaseRow({
-      id: "10000000-0000-4000-8000-000000000002",
-      external_id: "d2",
-      recorded_at: new Date("2024-03-02T10:00:00.000Z"),
-    });
-    const execute = vi
-      .fn<PostgresMetricStreamBackfillDatabase["execute"]>()
-      .mockResolvedValueOnce([day1]) // 2024-03-01 window
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([day2]) // 2024-03-02 window
-      .mockResolvedValueOnce([]);
+  it("steps multi-day ranges per UTC day, reading each day once", async () => {
+    const reader = vi.fn(
+      readerForDays({
+        "2024-03-01": [
+          makeRowInput({ id: "10000000-0000-4000-8000-000000000001", externalId: "d1" }),
+        ],
+        "2024-03-02": [
+          makeRowInput({
+            id: "10000000-0000-4000-8000-000000000002",
+            externalId: "d2",
+            recordedAt: "2024-03-02T10:00:00.000Z",
+          }),
+        ],
+      }),
+    );
     const putObject = vi.fn<(object: MetricStreamArchiveObject) => Promise<void>>(async () => {});
 
     const result = await exportMetricStreamToR2({
       batchSize: 100,
       concurrency: 8,
-      db: { execute },
       end: new Date("2024-03-03T00:00:00.000Z"),
       maxObjectBytes: 10_000,
       putObject,
       start: new Date("2024-03-01T00:00:00.000Z"),
+      streamWindow: reader,
     });
 
     expect(result.scanned).toBe(2);
-    // One execute call per (day window keyset page): 2 days x (rows + empty).
-    expect(execute).toHaveBeenCalledTimes(4);
+    // One read per UTC day in [03-01, 03-03): 03-01 and 03-02.
+    expect(reader).toHaveBeenCalledTimes(2);
     const archivedIds = putObject.mock.calls
       .flatMap(([object]) => decompressLines(object.body))
       .map((line) => JSON.parse(line).id)
@@ -179,18 +172,13 @@ describe("exportMetricStreamToR2", () => {
   });
 
   it("bounds PUT concurrency to the configured limit", async () => {
-    const databaseRows = Array.from({ length: 5 }, (_, index) =>
-      makeDatabaseRow({
+    const rows = Array.from({ length: 5 }, (_, index) =>
+      makeRowInput({
         id: `10000000-0000-4000-8000-00000000000${index + 1}`,
-        external_id: `evt-${index}`,
-        recorded_at: new Date(`2024-03-01T1${index}:00:00.000Z`),
+        externalId: `evt-${index}`,
+        recordedAt: `2024-03-01T1${index}:00:00.000Z`,
       }),
     );
-    const execute = vi
-      .fn<PostgresMetricStreamBackfillDatabase["execute"]>()
-      .mockResolvedValueOnce(databaseRows)
-      .mockResolvedValueOnce([]);
-
     let inFlight = 0;
     let maxInFlight = 0;
     const putObject = vi.fn<(object: MetricStreamArchiveObject) => Promise<void>>(async () => {
@@ -203,12 +191,11 @@ describe("exportMetricStreamToR2", () => {
     const result = await exportMetricStreamToR2({
       batchSize: 100,
       concurrency: 2,
-      db: { execute },
       end: new Date("2024-03-02T00:00:00.000Z"),
-      // One object per hour bucket; five hours => five objects.
       maxObjectBytes: 10_000,
       putObject,
       start: new Date("2024-03-01T00:00:00.000Z"),
+      streamWindow: readerForDays({ "2024-03-01": rows }),
     });
 
     expect(result.objects).toBe(5);
@@ -216,10 +203,6 @@ describe("exportMetricStreamToR2", () => {
   });
 
   it("propagates a failed PUT instead of swallowing it", async () => {
-    const execute = vi
-      .fn<PostgresMetricStreamBackfillDatabase["execute"]>()
-      .mockResolvedValueOnce([makeDatabaseRow({})])
-      .mockResolvedValueOnce([]);
     const putObject = vi.fn<(object: MetricStreamArchiveObject) => Promise<void>>(async () => {
       throw new Error("R2 unavailable");
     });
@@ -228,11 +211,11 @@ describe("exportMetricStreamToR2", () => {
       exportMetricStreamToR2({
         batchSize: 100,
         concurrency: 8,
-        db: { execute },
         end: new Date("2024-03-02T00:00:00.000Z"),
         maxObjectBytes: 10_000,
         putObject,
         start: new Date("2024-03-01T00:00:00.000Z"),
+        streamWindow: readerForDays({ "2024-03-01": [makeRowInput({})] }),
       }),
     ).rejects.toThrow("R2 unavailable");
   });
@@ -283,117 +266,6 @@ describe("parseMetricStreamR2ExportOptions", () => {
   });
 });
 
-describe("runMetricStreamR2ExportFromEnv", () => {
-  const requiredR2Env = {
-    METRIC_STREAM_R2_BUCKET: "dofek-metric-stream-archive",
-    R2_ENDPOINT: "https://example.r2.cloudflarestorage.com",
-    R2_ACCESS_KEY_ID: "test-access-key",
-    R2_SECRET_ACCESS_KEY: "test-secret-key",
-  } as const;
-
-  beforeEach(() => {
-    mocks.send.mockReset().mockResolvedValue(undefined);
-    mocks.destroy.mockClear();
-    mocks.s3Client.mockClear();
-    mocks.putObjectCommand.mockClear();
-    mocks.createDatabaseFromEnv.mockReset();
-    for (const [key, value] of Object.entries(requiredR2Env)) {
-      vi.stubEnv(key, value);
-    }
-  });
-
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
-  it("builds the R2 client from env and PUTs each archive object to the configured bucket", async () => {
-    const execute = vi
-      .fn<PostgresMetricStreamBackfillDatabase["execute"]>()
-      .mockResolvedValueOnce([
-        {
-          id: "10000000-0000-4000-8000-000000000001",
-          recorded_at: new Date("2024-03-01T10:00:00.000Z"),
-          recorded_at_cursor: "2024-03-01 10:00:00+00",
-          user_id: "00000000-0000-0000-0000-000000000001",
-          provider_id: "apple_health",
-          external_id: "hk:hr-1",
-          device_id: "Apple Watch",
-          source_type: "api",
-          channel: "heart_rate",
-          activity_id: null,
-          scalar: 72,
-          vector: null,
-          point: null,
-          metadata: null,
-        },
-      ])
-      .mockResolvedValueOnce([]);
-    mocks.createDatabaseFromEnv.mockReturnValue({ execute });
-
-    await runMetricStreamR2ExportFromEnv([
-      "--start",
-      "2024-03-01T00:00:00Z",
-      "--end",
-      "2024-03-02T00:00:00Z",
-    ]);
-
-    expect(mocks.s3Client).toHaveBeenCalledWith(
-      expect.objectContaining({
-        endpoint: requiredR2Env.R2_ENDPOINT,
-        region: "auto",
-        credentials: {
-          accessKeyId: requiredR2Env.R2_ACCESS_KEY_ID,
-          secretAccessKey: requiredR2Env.R2_SECRET_ACCESS_KEY,
-        },
-      }),
-    );
-    expect(mocks.send).toHaveBeenCalledTimes(1);
-    const putInput = mocks.putObjectCommand.mock.calls[0]?.[0];
-    if (!putInput) {
-      throw new Error("expected a PutObjectCommand call");
-    }
-    expect(putInput.Bucket).toBe(requiredR2Env.METRIC_STREAM_R2_BUCKET);
-    expect(putInput.Key).toMatch(/^metric-stream\/v1\/date=2024-03-01\/hour=10\//);
-    expect(Buffer.isBuffer(putInput.Body)).toBe(true);
-    // Sockets must be torn down so the one-shot container exits promptly.
-    expect(mocks.destroy).toHaveBeenCalledTimes(1);
-  });
-
-  it("closes the S3 client even when the export fails", async () => {
-    mocks.send.mockRejectedValue(new Error("R2 down"));
-    mocks.createDatabaseFromEnv.mockReturnValue({
-      execute: vi
-        .fn<PostgresMetricStreamBackfillDatabase["execute"]>()
-        .mockResolvedValueOnce([makeDatabaseRow({})])
-        .mockResolvedValueOnce([]),
-    });
-
-    await expect(
-      runMetricStreamR2ExportFromEnv([
-        "--start",
-        "2024-03-01T00:00:00Z",
-        "--end",
-        "2024-03-02T00:00:00Z",
-      ]),
-    ).rejects.toThrow("R2 down");
-    expect(mocks.destroy).toHaveBeenCalledTimes(1);
-  });
-
-  it("fails loudly when a required R2 env var is missing", async () => {
-    vi.stubEnv("METRIC_STREAM_R2_BUCKET", "");
-    mocks.createDatabaseFromEnv.mockReturnValue({ execute: vi.fn() });
-
-    await expect(
-      runMetricStreamR2ExportFromEnv([
-        "--start",
-        "2024-03-01T00:00:00Z",
-        "--end",
-        "2024-03-02T00:00:00Z",
-      ]),
-    ).rejects.toThrow("METRIC_STREAM_R2_BUCKET environment variable is required");
-  });
-});
-
 describe("stepWindowsByUtcDay", () => {
   it("splits a multi-day range on UTC midnight boundaries", () => {
     const windows = [
@@ -423,5 +295,105 @@ describe("stepWindowsByUtcDay", () => {
 
   it("yields nothing when start is not before end", () => {
     expect([...stepWindowsByUtcDay(new Date("2024-03-02"), new Date("2024-03-01"))]).toEqual([]);
+  });
+});
+
+describe("runMetricStreamR2ExportFromEnv", () => {
+  const requiredEnv = {
+    DATABASE_URL: "postgres://health:secret@db:5432/health",
+    METRIC_STREAM_R2_BUCKET: "dofek-metric-stream-archive",
+    R2_ENDPOINT: "https://example.r2.cloudflarestorage.com",
+    R2_ACCESS_KEY_ID: "test-access-key",
+    R2_SECRET_ACCESS_KEY: "test-secret-key",
+  } as const;
+
+  beforeEach(() => {
+    mocks.send.mockReset().mockResolvedValue(undefined);
+    mocks.destroy.mockClear();
+    mocks.s3Client.mockClear();
+    mocks.putObjectCommand.mockClear();
+    mocks.pgClient.mockClear();
+    mocks.pgConnect.mockReset().mockResolvedValue(undefined);
+    mocks.pgEnd.mockReset().mockResolvedValue(undefined);
+    mocks.pgQuery.mockReset();
+    for (const [key, value] of Object.entries(requiredEnv)) {
+      vi.stubEnv(key, value);
+    }
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("streams via the pg cursor and PUTs each archive object, then closes both clients", async () => {
+    const fetchedRow = {
+      id: "10000000-0000-4000-8000-000000000001",
+      recorded_at: new Date("2026-05-15T10:00:00.000Z"),
+      recorded_at_cursor: "2026-05-15 10:00:00+00",
+      user_id: "00000000-0000-0000-0000-000000000001",
+      provider_id: "apple_health",
+      external_id: "imu-1",
+      device_id: "Apple Watch",
+      source_type: "api",
+      channel: "imu",
+      activity_id: null,
+      scalar: null,
+      vector: [0.1, 0.2, 0.3],
+      point: null,
+      metadata: null,
+    };
+    let fetchCount = 0;
+    mocks.pgQuery.mockImplementation(async (text: string) => {
+      if (text.startsWith("FETCH")) {
+        fetchCount += 1;
+        return { rows: fetchCount === 1 ? [fetchedRow] : [] };
+      }
+      return { rows: [] };
+    });
+
+    await runMetricStreamR2ExportFromEnv([
+      "--start",
+      "2026-05-15T00:00:00Z",
+      "--end",
+      "2026-05-16T00:00:00Z",
+    ]);
+
+    expect(mocks.pgConnect).toHaveBeenCalledTimes(1);
+    expect(mocks.s3Client).toHaveBeenCalledWith(
+      expect.objectContaining({
+        endpoint: requiredEnv.R2_ENDPOINT,
+        region: "auto",
+        credentials: {
+          accessKeyId: requiredEnv.R2_ACCESS_KEY_ID,
+          secretAccessKey: requiredEnv.R2_SECRET_ACCESS_KEY,
+        },
+      }),
+    );
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+    const putInput = mocks.putObjectCommand.mock.calls[0]?.[0];
+    if (!putInput) {
+      throw new Error("expected a PutObjectCommand call");
+    }
+    expect(putInput.Bucket).toBe(requiredEnv.METRIC_STREAM_R2_BUCKET);
+    expect(putInput.Key).toMatch(/^metric-stream\/v1\/date=2026-05-15\/hour=10\//);
+    // Both clients torn down so the one-shot exits.
+    expect(mocks.destroy).toHaveBeenCalledTimes(1);
+    expect(mocks.pgEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails loudly on a missing R2 env var before opening Postgres", async () => {
+    vi.stubEnv("METRIC_STREAM_R2_BUCKET", "");
+
+    await expect(
+      runMetricStreamR2ExportFromEnv([
+        "--start",
+        "2026-05-15T00:00:00Z",
+        "--end",
+        "2026-05-16T00:00:00Z",
+      ]),
+    ).rejects.toThrow("METRIC_STREAM_R2_BUCKET environment variable is required");
+    // R2 config is validated first, so no Postgres connection is opened.
+    expect(mocks.pgClient).not.toHaveBeenCalled();
+    expect(mocks.pgConnect).not.toHaveBeenCalled();
   });
 });
