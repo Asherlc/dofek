@@ -2,10 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
 import { buildClickHouseBootstrapStatementsForNativeMetricStream } from "../../../../src/db/clickhouse-metric-stream-bootstrap.ts";
-import {
-  HeartRateRepository,
-  type MetricStreamClickHouseReader,
-} from "./heart-rate-repository.ts";
+import { HeartRateRepository, type MetricStreamClickHouseReader } from "./heart-rate-repository.ts";
 
 const testUserId = "00000000-0000-0000-0000-0000000000a1";
 
@@ -61,18 +58,90 @@ describe("HeartRateRepository (integration)", () => {
     const supersededId = randomUUID();
     await seed([
       // whoop_ble: two minutes of data
-      { id: randomUUID(), recorded_at: "2026-04-12 10:00:00.000", provider_id: "whoop_ble", channel: "heart_rate", scalar: 72, _peerdb_is_deleted: 0, _peerdb_version: 0 },
-      { id: randomUUID(), recorded_at: "2026-04-12 10:01:00.000", provider_id: "whoop_ble", channel: "heart_rate", scalar: 74, _peerdb_is_deleted: 0, _peerdb_version: 0 },
+      {
+        id: randomUUID(),
+        recorded_at: "2026-04-12 10:00:00.000",
+        provider_id: "whoop_ble",
+        channel: "heart_rate",
+        scalar: 72,
+        _peerdb_is_deleted: 0,
+        _peerdb_version: 0,
+      },
+      {
+        id: randomUUID(),
+        recorded_at: "2026-04-12 10:01:00.000",
+        provider_id: "whoop_ble",
+        channel: "heart_rate",
+        scalar: 74,
+        _peerdb_is_deleted: 0,
+        _peerdb_version: 0,
+      },
       // apple_health: same minute as whoop — must stay a separate source (no priority collapse)
-      { id: randomUUID(), recorded_at: "2026-04-12 10:00:30.000", provider_id: "apple_health", channel: "heart_rate", scalar: 70, _peerdb_is_deleted: 0, _peerdb_version: 0 },
+      {
+        id: randomUUID(),
+        recorded_at: "2026-04-12 10:00:30.000",
+        provider_id: "apple_health",
+        channel: "heart_rate",
+        scalar: 70,
+        _peerdb_is_deleted: 0,
+        _peerdb_version: 0,
+      },
       // version dedup: same id/time, v1 supersedes v0 — FINAL must keep 99, not 50
-      { id: supersededId, recorded_at: "2026-04-12 11:00:00.000", provider_id: "whoop_ble", channel: "heart_rate", scalar: 50, _peerdb_is_deleted: 0, _peerdb_version: 0 },
-      { id: supersededId, recorded_at: "2026-04-12 11:00:00.000", provider_id: "whoop_ble", channel: "heart_rate", scalar: 99, _peerdb_is_deleted: 0, _peerdb_version: 1 },
+      {
+        id: supersededId,
+        recorded_at: "2026-04-12 11:00:00.000",
+        provider_id: "whoop_ble",
+        channel: "heart_rate",
+        scalar: 50,
+        _peerdb_is_deleted: 0,
+        _peerdb_version: 0,
+      },
+      {
+        id: supersededId,
+        recorded_at: "2026-04-12 11:00:00.000",
+        provider_id: "whoop_ble",
+        channel: "heart_rate",
+        scalar: 99,
+        _peerdb_is_deleted: 0,
+        _peerdb_version: 1,
+      },
       // excluded rows
-      { id: randomUUID(), recorded_at: "2026-04-12 12:00:00.000", provider_id: "whoop_ble", channel: "heart_rate", scalar: 88, _peerdb_is_deleted: 1, _peerdb_version: 1 }, // deleted
-      { id: randomUUID(), recorded_at: "2026-04-11 10:00:00.000", provider_id: "whoop_ble", channel: "heart_rate", scalar: 60, _peerdb_is_deleted: 0, _peerdb_version: 0 }, // other day
-      { id: randomUUID(), recorded_at: "2026-04-12 13:00:00.000", provider_id: "whoop_ble", channel: "heart_rate", scalar: 0, _peerdb_is_deleted: 0, _peerdb_version: 0 }, // zero
-      { id: randomUUID(), recorded_at: "2026-04-12 14:00:00.000", provider_id: "whoop_ble", channel: "power", scalar: 200, _peerdb_is_deleted: 0, _peerdb_version: 0 }, // other channel
+      {
+        id: randomUUID(),
+        recorded_at: "2026-04-12 12:00:00.000",
+        provider_id: "whoop_ble",
+        channel: "heart_rate",
+        scalar: 88,
+        _peerdb_is_deleted: 1,
+        _peerdb_version: 1,
+      }, // deleted
+      {
+        id: randomUUID(),
+        recorded_at: "2026-04-11 10:00:00.000",
+        provider_id: "whoop_ble",
+        channel: "heart_rate",
+        scalar: 60,
+        _peerdb_is_deleted: 0,
+        _peerdb_version: 0,
+      }, // other day
+      {
+        id: randomUUID(),
+        recorded_at: "2026-04-12 13:00:00.000",
+        provider_id: "whoop_ble",
+        channel: "heart_rate",
+        scalar: 0,
+        _peerdb_is_deleted: 0,
+        _peerdb_version: 0,
+      }, // zero
+      {
+        id: randomUUID(),
+        recorded_at: "2026-04-12 14:00:00.000",
+        provider_id: "whoop_ble",
+        channel: "power",
+        scalar: 200,
+        _peerdb_is_deleted: 0,
+        _peerdb_version: 0,
+      }, // other channel
     ]);
   }, 120_000);
 
