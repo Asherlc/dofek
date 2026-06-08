@@ -60,7 +60,7 @@ export function tableInfo(dataType: DataType): {
   }
 }
 
-function listColumns(dataType: Exclude<DataType, "bodyMeasurements">): string {
+function listColumns(dataType: Exclude<DataType, "bodyMeasurements" | "metricStream">): string {
   switch (dataType) {
     case "activities":
       return [
@@ -124,18 +124,6 @@ function listColumns(dataType: Exclude<DataType, "bodyMeasurements">): string {
         "start_date",
         "end_date",
         "created_at",
-      ].join(", ");
-    case "metricStream":
-      return [
-        "id",
-        "recorded_at",
-        "provider_id",
-        "external_id",
-        "device_id",
-        "source_type",
-        "channel",
-        "activity_id",
-        "scalar",
       ].join(", ");
     case "nutritionDaily":
       return [
@@ -240,16 +228,19 @@ function isUndefinedTableError(error: unknown): boolean {
 export class ProviderDetailRepository {
   readonly #db: Pick<Database, "execute" | "transaction">;
   readonly #userId: string;
-  readonly #bodyStore: BodyClickHouseStore | undefined;
+  // ClickHouse query runner. Serves the read-models that have moved off
+  // Postgres: body measurements (analytics.v_body_measurement) and the
+  // Redpanda-fed metric stream (postgres_fitness.metric_stream).
+  readonly #clickHouse: BodyClickHouseStore | undefined;
 
   constructor(
     db: Pick<Database, "execute" | "transaction">,
     userId: string,
-    bodyStore?: BodyClickHouseStore,
+    clickHouse?: BodyClickHouseStore,
   ) {
     this.#db = db;
     this.#userId = userId;
-    this.#bodyStore = bodyStore;
+    this.#clickHouse = clickHouse;
   }
 
   /** Paginated records for a provider by data type. */
@@ -263,6 +254,10 @@ export class ProviderDetailRepository {
 
     if (dataType === "bodyMeasurements") {
       return this.#queryBodyRecords(providerId, info, limit, offset);
+    }
+
+    if (dataType === "metricStream") {
+      return this.#queryMetricStreamRecords(providerId, limit, offset);
     }
 
     const query = sql`SELECT ${sql.raw(listColumns(dataType))} FROM ${sql.raw(info.table)}
@@ -288,6 +283,11 @@ export class ProviderDetailRepository {
       return rows[0] ?? null;
     }
 
+    if (dataType === "metricStream") {
+      const rows = await this.#queryMetricStreamRecords(providerId, 1, 0, recordId);
+      return rows[0] ?? null;
+    }
+
     const query = sql`SELECT * FROM ${sql.raw(info.table)}
               WHERE user_id = ${this.#userId}
                 AND provider_id = ${providerId}
@@ -305,13 +305,13 @@ export class ProviderDetailRepository {
     offset: number,
     recordId?: string,
   ): Promise<Record<string, unknown>[]> {
-    if (!this.#bodyStore) {
+    if (!this.#clickHouse) {
       throw new Error(
         "providerDetail body measurements require the ClickHouse body measurement store",
       );
     }
     const recordFilter = recordId ? "AND toString(id) = {recordId:String}" : "";
-    return this.#bodyStore.query(
+    return this.#clickHouse.query(
       genericRowSchema,
       `
         SELECT *
@@ -320,6 +320,53 @@ export class ProviderDetailRepository {
           AND provider_id = {providerId:String}
           ${recordFilter}
         ORDER BY ${info.orderColumn} DESC
+        LIMIT {limit:UInt32}
+        OFFSET {offset:UInt32}
+      `,
+      {
+        userId: this.#userId,
+        providerId,
+        recordId: recordId ?? "",
+        limit,
+        offset,
+      },
+    );
+  }
+
+  /**
+   * Raw metric-stream rows for a provider, read from the Redpanda-fed ClickHouse
+   * mirror (Postgres `fitness.metric_stream` is retired). Version-deduplicated
+   * (`FINAL` + `_peerdb_is_deleted = 0`); recorded_at formatted to ISO-8601 Z.
+   */
+  async #queryMetricStreamRecords(
+    providerId: string,
+    limit: number,
+    offset: number,
+    recordId?: string,
+  ): Promise<Record<string, unknown>[]> {
+    if (!this.#clickHouse) {
+      throw new Error("providerDetail metric stream requires the ClickHouse store");
+    }
+    const recordFilter = recordId ? "AND toString(id) = {recordId:String}" : "";
+    return this.#clickHouse.query(
+      genericRowSchema,
+      `
+        SELECT
+          id,
+          formatDateTime(recorded_at, '%Y-%m-%dT%H:%i:%S.000Z') AS recorded_at,
+          provider_id,
+          external_id,
+          device_id,
+          source_type,
+          channel,
+          activity_id,
+          scalar
+        FROM postgres_fitness.metric_stream FINAL
+        WHERE user_id = {userId:UUID}
+          AND provider_id = {providerId:String}
+          AND _peerdb_is_deleted = 0
+          ${recordFilter}
+        ORDER BY recorded_at DESC
         LIMIT {limit:UInt32}
         OFFSET {offset:UInt32}
       `,
