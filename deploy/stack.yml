@@ -280,6 +280,7 @@ services:
       - --overprovisioned
       - --node-id=0
       - --check=false
+      - --kafka-batch-max-bytes=10485760
       - --kafka-addr=internal://0.0.0.0:9092
       - --advertise-kafka-addr=internal://redpanda:9092
       - --rpc-addr=0.0.0.0:33145
