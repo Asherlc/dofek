@@ -126,6 +126,48 @@ describe("KafkaMetricStreamEventPublisher", () => {
     });
   });
 
+  it("splits oversized publish batches into multiple produce requests", async () => {
+    const { producer, send } = makeProducer();
+    const publisher = new KafkaMetricStreamEventPublisher(producer, "metric-stream-v1");
+
+    // Each event ~500KB of metadata; two together exceed the ~900KB request cap.
+    const bigMetadata = { blob: "x".repeat(500_000) };
+    const rows = [0, 1, 2].map((index) => ({
+      ...metricStreamRow,
+      externalId: `hk:big-${index}`,
+      metadata: bigMetadata,
+    }));
+
+    const events = await publisher.publishRows(rows);
+
+    expect(events).toHaveLength(3);
+    // Cap forces one event per request here (2 x 500KB > 900KB).
+    expect(send.mock.calls.length).toBeGreaterThan(1);
+    const sentMessages = send.mock.calls.flatMap((call) => call[0].messages);
+    expect(sentMessages).toHaveLength(3);
+    expect(sentMessages.map((message) => message.value)).toEqual(
+      events.map((event) => JSON.stringify(event)),
+    );
+  });
+
+  it("keeps the delete event first when a scoped replacement is chunked", async () => {
+    const { producer, send } = makeProducer();
+    const publisher = new KafkaMetricStreamEventPublisher(producer, "metric-stream-v1");
+
+    const bigMetadata = { blob: "x".repeat(500_000) };
+    const rows = [0, 1].map((index) => ({
+      ...metricStreamRow,
+      externalId: `hk:repl-${index}`,
+      metadata: bigMetadata,
+    }));
+
+    await publisher.replaceRows({ activityId: "20000000-0000-4000-8000-000000000001" }, rows);
+
+    expect(send.mock.calls.length).toBeGreaterThan(1);
+    const firstMessage = send.mock.calls[0]?.[0].messages[0];
+    expect(JSON.parse(firstMessage?.value ?? "{}").eventType).toBe("metric_stream_deleted");
+  });
+
   it("disconnects the KafkaJS producer when disposed", async () => {
     const { disconnect, producer } = makeProducer();
     const publisher = new KafkaMetricStreamEventPublisher(producer, "metric-stream-v1");

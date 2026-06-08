@@ -13,6 +13,14 @@ export interface KafkaProducerMessage {
   value: string;
 }
 
+/**
+ * Max bytes per produce request. Kept under Redpanda's 1 MiB default
+ * `kafka_batch_max_bytes` (with headroom for keys + protocol framing) so a
+ * single `producer.send` never trips "message larger than the max message size
+ * the server will accept".
+ */
+const MAX_PRODUCE_REQUEST_BYTES = 900_000;
+
 export interface KafkaProducerSendInput {
   topic: string;
   messages: KafkaProducerMessage[];
@@ -52,6 +60,34 @@ export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublish
     this.#topic = topic;
   }
 
+  /**
+   * Send messages in chunks that each stay under the broker's max request size.
+   * One `producer.send` is one Kafka produce request, and Redpanda rejects
+   * requests over `kafka_batch_max_bytes` (1 MiB default) with "message larger
+   * than the max message size the server will accept". High-rate sources (e.g.
+   * HealthKit IMU sample bursts) and the historical backfill can exceed that, so
+   * split into ordered sub-requests. Chunks preserve input order, so callers
+   * relying on ordering (e.g. a delete before its replacements on the same
+   * partition key) stay correct.
+   */
+  async #sendChunked(messages: readonly KafkaProducerMessage[]): Promise<void> {
+    let chunk: KafkaProducerMessage[] = [];
+    let chunkBytes = 0;
+    for (const message of messages) {
+      const messageBytes = Buffer.byteLength(message.value, "utf8");
+      if (chunk.length > 0 && chunkBytes + messageBytes > MAX_PRODUCE_REQUEST_BYTES) {
+        await this.#producer.send({ topic: this.#topic, messages: chunk });
+        chunk = [];
+        chunkBytes = 0;
+      }
+      chunk.push(message);
+      chunkBytes += messageBytes;
+    }
+    if (chunk.length > 0) {
+      await this.#producer.send({ topic: this.#topic, messages: chunk });
+    }
+  }
+
   async publishRows(
     rows: readonly MetricStreamRowInput[],
     partitionKey?: string,
@@ -61,13 +97,12 @@ export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublish
       return [];
     }
 
-    await this.#producer.send({
-      topic: this.#topic,
-      messages: events.map((event) => ({
+    await this.#sendChunked(
+      events.map((event) => ({
         key: partitionKey ?? event.id,
         value: JSON.stringify(event),
       })),
-    });
+    );
 
     return events;
   }
@@ -79,19 +114,15 @@ export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublish
     const deleted = createMetricStreamDeletedEvent(scope);
     const events = rows.map((row) => createMetricStreamEvent(row));
 
-    await this.#producer.send({
-      topic: this.#topic,
-      messages: [
-        {
-          key: deleted.partitionKey,
-          value: JSON.stringify(deleted),
-        },
-        ...events.map((event) => ({
-          key: deleted.partitionKey,
-          value: JSON.stringify(event),
-        })),
-      ],
-    });
+    // Delete event first, then replacements — all on the same partition key, so
+    // chunking into multiple ordered requests preserves delete-before-insert.
+    await this.#sendChunked([
+      { key: deleted.partitionKey, value: JSON.stringify(deleted) },
+      ...events.map((event) => ({
+        key: deleted.partitionKey,
+        value: JSON.stringify(event),
+      })),
+    ]);
 
     return { deleted, rows: events };
   }
