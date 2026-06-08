@@ -9,6 +9,7 @@ describe("backfillMetricStreamToRedpanda", () => {
       {
         id: "10000000-0000-4000-8000-000000000001",
         recorded_at: new Date("2026-06-06T12:00:00.000Z"),
+        recorded_at_cursor: "2026-06-06 12:00:00+00",
         user_id: "00000000-0000-0000-0000-000000000001",
         provider_id: "apple_health",
         external_id: "hk:heart-rate-1",
@@ -59,7 +60,7 @@ describe("backfillMetricStreamToRedpanda", () => {
       scanned: 1,
       lastCursor: {
         id: "10000000-0000-4000-8000-000000000001",
-        recordedAt: "2026-06-06T12:00:00.000Z",
+        recordedAt: "2026-06-06 12:00:00+00",
       },
     });
     expect(publishRows).toHaveBeenCalledWith([

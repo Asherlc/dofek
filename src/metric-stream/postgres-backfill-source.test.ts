@@ -46,7 +46,7 @@ describe("buildMetricStreamBackfillQuery", () => {
       batchSize: 500,
       cursor: {
         id: "10000000-0000-4000-8000-000000000001",
-        recordedAt: new Date("2026-06-06T01:00:00.000Z"),
+        recordedAt: "2026-06-06 01:00:00.123456+00",
       },
       end: new Date("2026-06-07T00:00:00.000Z"),
       start: new Date("2026-06-06T00:00:00.000Z"),
@@ -69,6 +69,7 @@ describe("streamMetricStreamBackfillBatches", () => {
       {
         id: "10000000-0000-4000-8000-000000000001",
         recorded_at: new Date("2026-06-06T12:00:00.000Z"),
+        recorded_at_cursor: "2026-06-06 12:00:00.123456+00",
         user_id: "00000000-0000-0000-0000-000000000001",
         provider_id: "apple_health",
         external_id: "hk:heart-rate-1",
@@ -117,9 +118,11 @@ describe("streamMetricStreamBackfillBatches", () => {
         metadata: { source: "fixture" },
       },
     ]);
+    // The cursor carries Postgres' full-precision ::text rendering verbatim so
+    // the keyset boundary stays exact (no millisecond truncation).
     expect(batches[0]?.cursor).toEqual({
       id: "10000000-0000-4000-8000-000000000001",
-      recordedAt: new Date("2026-06-06T12:00:00.000Z"),
+      recordedAt: "2026-06-06 12:00:00.123456+00",
     });
     // Stops once a page comes back empty rather than looping forever.
     expect(execute).toHaveBeenCalledTimes(2);

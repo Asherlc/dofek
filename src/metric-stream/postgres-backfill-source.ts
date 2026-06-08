@@ -12,7 +12,15 @@ export interface PostgresMetricStreamBackfillDatabase {
 }
 
 export interface MetricStreamBackfillCursor {
-  recordedAt: Date;
+  /**
+   * The previous row's `recorded_at` as Postgres' own `::text` rendering, at
+   * full (sub-millisecond) precision. Round-tripping through a JS `Date` would
+   * truncate to milliseconds, so a value with microseconds would compare `>` its
+   * own truncation and the keyset would re-read (and loop on) boundary rows.
+   * Passed straight back as `::timestamptz`, Postgres parses its own format
+   * exactly.
+   */
+  recordedAt: string;
   id: string;
 }
 
@@ -30,6 +38,8 @@ export interface MetricStreamBackfillBatch {
 interface PostgresMetricStreamBackfillRow {
   id: string;
   recorded_at: Date | string;
+  /** Full-precision `recorded_at::text` used only for the keyset cursor. */
+  recorded_at_cursor: string;
   user_id: string;
   provider_id: string;
   external_id: string | null;
@@ -43,7 +53,7 @@ interface PostgresMetricStreamBackfillRow {
   metadata: unknown;
 }
 
-const DEFAULT_BATCH_SIZE = 500;
+const DEFAULT_BATCH_SIZE = 5000;
 
 function readOptionValue(
   args: readonly string[],
@@ -127,11 +137,12 @@ export function buildMetricStreamBackfillQuery(options: {
   const cursorClause =
     options.cursor === null
       ? sql``
-      : sql`AND (recorded_at, id) > (${options.cursor.recordedAt.toISOString()}::timestamptz, ${options.cursor.id}::uuid)`;
+      : sql`AND (recorded_at, id) > (${options.cursor.recordedAt}::timestamptz, ${options.cursor.id}::uuid)`;
 
   return sql`SELECT
       id::text,
       recorded_at,
+      recorded_at::text AS recorded_at_cursor,
       user_id::text,
       provider_id,
       external_id,
@@ -202,14 +213,19 @@ function parseBackfillRow(value: unknown): PostgresMetricStreamBackfillRow {
   if (!(recordedAt instanceof Date) && typeof recordedAt !== "string") {
     throw new Error("metric_stream recorded_at must be a timestamp");
   }
+  const recordedAtCursor = value.recorded_at_cursor;
   if (typeof userId !== "string") throw new Error("metric_stream user_id must be a string");
   if (typeof providerId !== "string") throw new Error("metric_stream provider_id must be a string");
   if (typeof sourceType !== "string") throw new Error("metric_stream source_type must be a string");
   if (typeof channel !== "string") throw new Error("metric_stream channel must be a string");
+  if (typeof recordedAtCursor !== "string") {
+    throw new Error("metric_stream recorded_at_cursor must be a string");
+  }
 
   return {
     id,
     recorded_at: recordedAt,
+    recorded_at_cursor: recordedAtCursor,
     user_id: userId,
     provider_id: providerId,
     external_id: nullableString(value.external_id, "metric_stream external_id"),
@@ -279,7 +295,7 @@ export async function* streamMetricStreamBackfillBatches(
 
     cursor = {
       id: lastRow.id,
-      recordedAt: new Date(normalizeRecordedAt(lastRow.recorded_at)),
+      recordedAt: lastRow.recorded_at_cursor,
     };
     yield { rows, cursor };
   }

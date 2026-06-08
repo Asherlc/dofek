@@ -38,7 +38,7 @@ vi.mock("../db/index.ts", () => ({
 }));
 
 function makeDatabaseRow(overrides: Record<string, unknown>) {
-  return {
+  const row = {
     id: "10000000-0000-4000-8000-000000000001",
     recorded_at: new Date("2024-03-01T10:00:00.000Z"),
     user_id: "00000000-0000-0000-0000-000000000001",
@@ -54,6 +54,9 @@ function makeDatabaseRow(overrides: Record<string, unknown>) {
     metadata: null,
     ...overrides,
   };
+  // The real query returns recorded_at::text for the keyset cursor; stub it from
+  // the row's own timestamp.
+  return { ...row, recorded_at_cursor: new Date(row.recorded_at).toISOString() };
 }
 
 function decompressLines(body: Buffer): string[] {
@@ -262,6 +265,7 @@ describe("runMetricStreamR2ExportFromEnv", () => {
         {
           id: "10000000-0000-4000-8000-000000000001",
           recorded_at: new Date("2024-03-01T10:00:00.000Z"),
+          recorded_at_cursor: "2024-03-01 10:00:00+00",
           user_id: "00000000-0000-0000-0000-000000000001",
           provider_id: "apple_health",
           external_id: "hk:hr-1",

@@ -81,7 +81,7 @@ export async function exportMetricStreamToR2(
       }
     }
     scanned += batch.rows.length;
-    lastCursor = { id: batch.cursor.id, recordedAt: batch.cursor.recordedAt.toISOString() };
+    lastCursor = { id: batch.cursor.id, recordedAt: batch.cursor.recordedAt };
   }
   for (const object of chunker.flush()) {
     await enqueue(object);

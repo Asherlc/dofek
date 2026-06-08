@@ -65,6 +65,7 @@ export function compareMetricStreamEvents(
  */
 export class MetricStreamArchiveChunker {
   readonly #options: BuildMetricStreamArchiveOptions;
+  readonly #completedBucketIds = new Set<string>();
   #currentBucket: BucketKey | null = null;
   #currentBucketId: string | null = null;
   #chunkLines: string[] = [];
@@ -87,6 +88,17 @@ export class MetricStreamArchiveChunker {
       const closing = this.#closeChunk();
       if (closing) {
         completed.push(closing);
+      }
+      // Determinism (and dup-free keys) require each (date,hour) bucket to be
+      // fed contiguously, since per-bucket indices restart at 0. Revisiting a
+      // closed bucket would mint colliding keys, so fail loudly instead.
+      if (this.#currentBucketId !== null) {
+        this.#completedBucketIds.add(this.#currentBucketId);
+      }
+      if (this.#completedBucketIds.has(bucketId)) {
+        throw new Error(
+          `metric-stream export received bucket ${bucketId} again after it was closed; events must be fed ordered by (recorded_at, id)`,
+        );
       }
       this.#currentBucket = bucket;
       this.#currentBucketId = bucketId;

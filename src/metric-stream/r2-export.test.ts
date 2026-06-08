@@ -288,6 +288,23 @@ describe("MetricStreamArchiveChunker", () => {
     expect(new MetricStreamArchiveChunker(options).flush()).toEqual([]);
   });
 
+  it("throws if a closed (date,hour) bucket is revisited out of order", () => {
+    const chunker = new MetricStreamArchiveChunker(options);
+    const hour10 = createMetricStreamEvent(
+      makeRow({ externalId: "a", recordedAt: "2024-03-01T10:00:00.000Z" }),
+    );
+    const hour11 = createMetricStreamEvent(
+      makeRow({ externalId: "b", recordedAt: "2024-03-01T11:00:00.000Z" }),
+    );
+    const hour10Again = createMetricStreamEvent(
+      makeRow({ externalId: "c", recordedAt: "2024-03-01T10:30:00.000Z" }),
+    );
+
+    chunker.push(hour10);
+    chunker.push(hour11);
+    expect(() => chunker.push(hour10Again)).toThrow(/again after it was closed/);
+  });
+
   it("keys each object with its first and last index within the bucket", () => {
     const events = Array.from({ length: 4 }, (_, index) =>
       createMetricStreamEvent(

@@ -38,7 +38,7 @@ export async function backfillMetricStreamToRedpanda(
     scanned += batch.rows.length;
     published += result.published;
     batches += 1;
-    lastCursor = { id: batch.cursor.id, recordedAt: batch.cursor.recordedAt.toISOString() };
+    lastCursor = { id: batch.cursor.id, recordedAt: batch.cursor.recordedAt };
   }
 
   return { batches, published, scanned, lastCursor };
