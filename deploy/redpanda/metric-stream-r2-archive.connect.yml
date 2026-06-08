@@ -6,20 +6,6 @@ input:
       - ${METRIC_STREAM_TOPIC}
     consumer_group: metric-stream-r2-archive
 
-pipeline:
-  processors:
-    - mapping: |
-        root = this
-        meta archive_topic = meta("kafka_topic").from(0)
-        meta archive_partition = meta("kafka_partition").from(0)
-        meta archive_first_offset = meta("kafka_offset").from(0)
-        meta archive_last_offset = meta("kafka_offset").from(batch_size() - 1)
-        meta archive_recorded_at = json("recordedAt").from(0)
-    - archive:
-        format: lines
-    - compress:
-        algorithm: gzip
-
 output:
   aws_s3:
     bucket: ${METRIC_STREAM_R2_BUCKET}
@@ -31,3 +17,25 @@ output:
     credentials:
       id: ${R2_ACCESS_KEY_ID}
       secret: ${R2_SECRET_ACCESS_KEY}
+    # Group many events into one R2 object. Without batching the output writes
+    # ~one object per message (one PUT per event), which cannot keep up with
+    # live ingest and leaves the archive permanently behind. The batch is
+    # assembled first, then these processors run on the whole batch so
+    # from(0) / from(batch_size() - 1) capture the real first and last offsets
+    # and `archive` concatenates the batch into a single object.
+    batching:
+      count: 10000
+      period: 30s
+      byte_size: 8388608
+      processors:
+        - mapping: |
+            root = this
+            meta archive_topic = meta("kafka_topic").from(0)
+            meta archive_partition = meta("kafka_partition").from(0)
+            meta archive_first_offset = meta("kafka_offset").from(0)
+            meta archive_last_offset = meta("kafka_offset").from(batch_size() - 1)
+            meta archive_recorded_at = json("recordedAt").from(0)
+        - archive:
+            format: lines
+        - compress:
+            algorithm: gzip
