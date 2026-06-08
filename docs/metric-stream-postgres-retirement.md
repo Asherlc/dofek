@@ -19,7 +19,40 @@ can be dropped.
   retired (redundant with the Redpanda sink; impossible once the PG table is
   gone).
 - **R2 archive:** every channel (incl. `imu`) archived as
-  `metric-stream/v1/date=…/hour=…/*.jsonl.gz`.
+  `metric-stream/v1/date=…/hour=…/*.jsonl.gz`. Only data written *after* the
+  Redpanda cutover is present; the ~423M historical Postgres rows are backfilled
+  separately (see "Historical backfill" below).
+
+## Historical backfill (Postgres → R2 direct export)
+
+The live archive only holds post-cutover data, so the historical
+`fitness.metric_stream` rows must be exported to R2 to make it complete.
+
+Backfilling *through the Redpanda topic* risks duplicate R2 objects: the live
+archiver names objects by Kafka offset range, so any re-published row (e.g. a
+crash-retry) lands under a new offset = a second copy, and R2 has no read-side
+dedup (row-level dedup lives in ClickHouse on the deterministic event id). The
+bounded single-node topic also can't buffer hundreds of GB.
+
+So historical rows are written **straight to R2**, bypassing the topic, by
+`src/metric-stream/r2-export-run.ts`:
+
+- Output is byte-compatible with the live archive: each line is
+  `JSON.stringify(createMetricStreamEvent(row))`, gzipped, partitioned by
+  `date=/hour=`, keyed `metric-stream-v1-0-{first}-{last}.jsonl.gz` (matches
+  `r2-replay.ts`'s `ARCHIVE_KEY_PATTERN`). Parity is unit-tested against the
+  producer's serialization in `r2-export.test.ts`.
+- Object keys are **deterministic** (derived from a (date,hour) bucket's own
+  rows under a byte budget, never from offsets), so re-running a window
+  overwrites the same objects rather than duplicating them — the property that
+  keeps R2 free of duplicate rows under retries.
+- It streams via `MetricStreamArchiveChunker` (one open object in memory) so it
+  runs safely as a one-shot container on the memory-constrained production host.
+- Run window must stay **below the live-stream cutoff** (earliest recordedAt
+  already in the topic/R2) so it never overlaps already-archived data.
+- Operate it with the `Backfill metric_stream to R2` GitHub Actions workflow
+  (`workflow_dispatch`, `--start`/`--end` window), which runs the one-shot on the
+  production swarm exactly like the migration job.
 
 ## Naming decision
 
@@ -102,8 +135,11 @@ object-coverage signal (no full scan, no decompress, no dedup needed).
 Only after P0–P2 are merged and verified, and the historical backfill is complete.
 
 1. Retire PeerDB metric_stream CDC mirror (so CH is fed only by Redpanda).
-2. Delete `scripts/backfill-metric-stream-to-redpanda.ts` + its test (one-time
-   PG→Redpanda migration; source is being dropped).
+2. Delete the one-time backfill code now that the source is being dropped:
+   `scripts/backfill-metric-stream-to-redpanda.ts`,
+   `src/metric-stream/r2-export-run.ts`, `src/metric-stream/r2-export.ts`,
+   `src/metric-stream/postgres-backfill-source.ts`, their tests, and the
+   `Backfill metric_stream to R2` workflow.
 3. Drizzle migration: drop `fitness.metric_stream` (+ remaining views, indexes,
    any leftover triggers). Remove from `schema.ts`.
 4. Remove `MetricStreamSourceRow`/PG-shaped types that only described the PG

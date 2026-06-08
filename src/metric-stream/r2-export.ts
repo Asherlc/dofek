@@ -32,7 +32,14 @@ function bucketOf(event: MetricStreamEventV1): BucketKey {
   return { date: event.recordedAt.slice(0, 10), hour: event.recordedAt.slice(11, 13) };
 }
 
-function compareEvents(left: MetricStreamEventV1, right: MetricStreamEventV1): number {
+function bucketIdOf(bucket: BucketKey): string {
+  return `${bucket.date}/${bucket.hour}`;
+}
+
+export function compareMetricStreamEvents(
+  left: MetricStreamEventV1,
+  right: MetricStreamEventV1,
+): number {
   if (left.recordedAt !== right.recordedAt) {
     return left.recordedAt < right.recordedAt ? -1 : 1;
   }
@@ -42,97 +49,107 @@ function compareEvents(left: MetricStreamEventV1, right: MetricStreamEventV1): n
   return 0;
 }
 
-interface EventBucket {
-  bucket: BucketKey;
-  events: MetricStreamEventV1[];
-}
-
-function groupByBucket(events: readonly MetricStreamEventV1[]): Map<string, EventBucket> {
-  const groups = new Map<string, EventBucket>();
-  for (const event of events) {
-    const bucket = bucketOf(event);
-    const bucketId = `${bucket.date}/${bucket.hour}`;
-    const group = groups.get(bucketId);
-    if (group) {
-      group.events.push(event);
-    } else {
-      groups.set(bucketId, { bucket, events: [event] });
-    }
-  }
-  return groups;
-}
-
-function lineBytes(line: string): number {
-  return Buffer.byteLength(line, "utf8");
-}
-
 /**
- * Split one (date, hour) bucket's events into object-sized chunks. Boundaries
- * depend only on the bucket's own event set (sorted by recordedAt, id) and the
- * byte budget, never on offsets or surrounding windows. So as long as a bucket
- * is fully contained in one export run — guaranteed by day-aligned windows —
- * re-running produces identical keys and content, making PUTs idempotent (an
- * overwrite, never a duplicate object).
+ * Turns an ordered stream of metric-stream events into gzipped JSONL archive
+ * objects without holding more than one object in memory. The chunker must be
+ * fed events grouped by (date, hour) bucket and, within a bucket, in
+ * (recordedAt, id) order — exactly what `ORDER BY recorded_at, id` yields, since
+ * date/hour are a prefix of recordedAt. The historical backfill streams ~423M
+ * rows through one node process on a memory-constrained host, so bounded memory
+ * matters.
+ *
+ * Object boundaries depend only on a bucket's own events under the byte budget,
+ * never on Kafka offsets or surrounding windows. Re-running a day-aligned window
+ * therefore produces identical keys and content, so PUTs overwrite rather than
+ * duplicate — the property that keeps the R2 archive free of duplicate rows.
  */
-function buildBucketObjects(
-  events: readonly MetricStreamEventV1[],
-  bucket: BucketKey,
-  options: BuildMetricStreamArchiveOptions,
-): MetricStreamArchiveObject[] {
-  const sorted = [...events].sort(compareEvents);
-  const objects: MetricStreamArchiveObject[] = [];
+export class MetricStreamArchiveChunker {
+  readonly #options: BuildMetricStreamArchiveOptions;
+  #currentBucket: BucketKey | null = null;
+  #currentBucketId: string | null = null;
+  #chunkLines: string[] = [];
+  #chunkBytes = 0;
+  /** Index of the first event of the open chunk within the current bucket. */
+  #firstIndexInBucket = 0;
+  /** Count of events seen so far in the current bucket (= next event's index). */
+  #nextIndexInBucket = 0;
 
-  let chunkLines: string[] = [];
-  let chunkBytes = 0;
-  let firstIndex = 0;
+  constructor(options: BuildMetricStreamArchiveOptions) {
+    this.#options = options;
+  }
 
-  const flush = (lastIndex: number): void => {
-    if (chunkLines.length === 0) {
-      return;
+  push(event: MetricStreamEventV1): MetricStreamArchiveObject[] {
+    const bucket = bucketOf(event);
+    const bucketId = bucketIdOf(bucket);
+    const completed: MetricStreamArchiveObject[] = [];
+
+    if (bucketId !== this.#currentBucketId) {
+      const closing = this.#closeChunk();
+      if (closing) {
+        completed.push(closing);
+      }
+      this.#currentBucket = bucket;
+      this.#currentBucketId = bucketId;
+      this.#firstIndexInBucket = 0;
+      this.#nextIndexInBucket = 0;
     }
-    const key = `metric-stream/v1/date=${bucket.date}/hour=${bucket.hour}/${options.topic}-${options.partition}-${firstIndex}-${lastIndex}.jsonl.gz`;
-    objects.push({ key, body: gzipSync(chunkLines.join("\n")) });
-    chunkLines = [];
-    chunkBytes = 0;
-  };
 
-  for (let index = 0; index < sorted.length; index += 1) {
-    const line = JSON.stringify(sorted[index]);
-    const bytes = lineBytes(line);
+    const line = JSON.stringify(event);
+    const bytes = Buffer.byteLength(line, "utf8");
     // +1 per existing line for the joining newline. A single line over budget
     // can't be split (one event is atomic), so it gets its own object.
-    if (chunkLines.length > 0 && chunkBytes + bytes + 1 > options.maxObjectBytes) {
-      flush(index - 1);
-      firstIndex = index;
+    if (
+      this.#chunkLines.length > 0 &&
+      this.#chunkBytes + bytes + 1 > this.#options.maxObjectBytes
+    ) {
+      const closing = this.#closeChunk();
+      if (closing) {
+        completed.push(closing);
+      }
+      this.#firstIndexInBucket = this.#nextIndexInBucket;
     }
-    chunkLines.push(line);
-    chunkBytes += bytes + (chunkLines.length > 1 ? 1 : 0);
-  }
-  flush(sorted.length - 1);
 
-  return objects;
+    this.#chunkLines.push(line);
+    this.#chunkBytes += bytes + (this.#chunkLines.length > 1 ? 1 : 0);
+    this.#nextIndexInBucket += 1;
+
+    return completed;
+  }
+
+  flush(): MetricStreamArchiveObject[] {
+    const closing = this.#closeChunk();
+    return closing ? [closing] : [];
+  }
+
+  #closeChunk(): MetricStreamArchiveObject | null {
+    if (this.#chunkLines.length === 0 || this.#currentBucket === null) {
+      return null;
+    }
+    const lastIndex = this.#nextIndexInBucket - 1;
+    const { date, hour } = this.#currentBucket;
+    const { topic, partition } = this.#options;
+    const key = `metric-stream/v1/date=${date}/hour=${hour}/${topic}-${partition}-${this.#firstIndexInBucket}-${lastIndex}.jsonl.gz`;
+    const body = gzipSync(this.#chunkLines.join("\n"));
+    this.#chunkLines = [];
+    this.#chunkBytes = 0;
+    return { key, body };
+  }
 }
 
 /**
- * Convert metric-stream events into gzipped JSONL archive objects matching the
- * live Redpanda→R2 archive layout. Events are grouped by (date, hour); each
- * bucket is chunked to stay under `maxObjectBytes`. Output object order is
- * stable (sorted by date/hour then in-bucket index).
+ * Convenience wrapper that builds all archive objects for an in-memory event
+ * array. Sorts globally by (recordedAt, id) so buckets are contiguous and
+ * in-bucket order is stable, then streams through {@link MetricStreamArchiveChunker}.
  */
 export function buildMetricStreamArchiveObjects(
   events: readonly MetricStreamEventV1[],
   options: BuildMetricStreamArchiveOptions,
 ): MetricStreamArchiveObject[] {
-  const groups = groupByBucket(events);
-  const sortedBucketIds = [...groups.keys()].sort();
-
+  const chunker = new MetricStreamArchiveChunker(options);
   const objects: MetricStreamArchiveObject[] = [];
-  for (const bucketId of sortedBucketIds) {
-    const group = groups.get(bucketId);
-    if (!group) {
-      continue;
-    }
-    objects.push(...buildBucketObjects(group.events, group.bucket, options));
+  for (const event of [...events].sort(compareMetricStreamEvents)) {
+    objects.push(...chunker.push(event));
   }
+  objects.push(...chunker.flush());
   return objects;
 }

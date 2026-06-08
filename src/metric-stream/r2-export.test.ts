@@ -1,7 +1,12 @@
 import { gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { createMetricStreamEvent, type MetricStreamRowInput } from "./events.ts";
-import { buildMetricStreamArchiveObjects } from "./r2-export.ts";
+import {
+  buildMetricStreamArchiveObjects,
+  compareMetricStreamEvents,
+  MetricStreamArchiveChunker,
+  type MetricStreamArchiveObject,
+} from "./r2-export.ts";
 import { parseMetricStreamArchiveObjectKey } from "./r2-replay.ts";
 
 const ARCHIVE_TOPIC = "metric-stream-v1";
@@ -191,5 +196,35 @@ describe("buildMetricStreamArchiveObjects", () => {
 
     const recordedAts = decompressLines(object.body).map(recordedAtOf);
     expect(recordedAts).toEqual([...recordedAts].sort());
+  });
+
+  it("streaming the chunker event-by-event matches the batch builder", () => {
+    // The backfill script feeds ~423M rows through the chunker one at a time so
+    // it never holds a whole hour in memory; the result must equal the in-memory
+    // builder so the byte/key guarantees the tests above prove still hold.
+    const events = Array.from({ length: 50 }, (_, index) =>
+      makeRow({
+        externalId: `evt-${index}`,
+        // Span three hours across two days to exercise bucket transitions.
+        recordedAt: new Date(
+          Date.UTC(2024, 2, 1 + (index % 2), 10 + (index % 3), index % 60),
+        ).toISOString(),
+      }),
+    ).map(createMetricStreamEvent);
+    const options = { topic: ARCHIVE_TOPIC, partition: 0, maxObjectBytes: 350 };
+
+    const batch = buildMetricStreamArchiveObjects(events, options);
+
+    const chunker = new MetricStreamArchiveChunker(options);
+    const streamed: MetricStreamArchiveObject[] = [];
+    for (const event of [...events].sort(compareMetricStreamEvents)) {
+      streamed.push(...chunker.push(event));
+    }
+    streamed.push(...chunker.flush());
+
+    expect(streamed.map((object) => object.key)).toEqual(batch.map((object) => object.key));
+    expect(streamed.map((object) => decompressLines(object.body))).toEqual(
+      batch.map((object) => decompressLines(object.body)),
+    );
   });
 });
