@@ -217,10 +217,17 @@ export async function runMetricStreamR2ExportFromEnv(args: readonly string[]): P
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  runMetricStreamR2ExportFromEnv(process.argv.slice(2)).catch((error: unknown) => {
-    Sentry.captureException(error);
-    const message = error instanceof Error ? error.message : String(error);
-    logger.error(`[metric-stream-r2-export] ${message}`);
-    process.exitCode = 1;
-  });
+  // The result is logged before the promise resolves; exit explicitly so the
+  // one-shot terminates even though the pg Pool's idle sockets would otherwise
+  // keep the event loop alive.
+  runMetricStreamR2ExportFromEnv(process.argv.slice(2))
+    .then(() => {
+      process.exit(0);
+    })
+    .catch((error: unknown) => {
+      Sentry.captureException(error);
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error(`[metric-stream-r2-export] ${message}`);
+      process.exit(1);
+    });
 }
