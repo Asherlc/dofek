@@ -8,6 +8,7 @@ import {
 import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { makeMockSensorStore } from "./test-helpers.ts";
 
 describe("HealthKit sync router", () => {
   let server: ReturnType<import("express").Express["listen"]>;
@@ -83,7 +84,7 @@ describe("HealthKit sync router", () => {
       },
     };
 
-    const app = createApp(testCtx.db, undefined, { metricStreamPublisher });
+    const app = createApp(testCtx.db, makeMockSensorStore(), { metricStreamPublisher });
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();

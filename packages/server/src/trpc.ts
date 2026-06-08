@@ -20,7 +20,7 @@ import type { ActivitySensorStore } from "./repositories/activity-repository.ts"
 
 export interface Context {
   db: Database;
-  sensorStore?: ActivitySensorStore;
+  sensorStore: ActivitySensorStore;
   metricStreamPublisher?: MetricStreamEventPublisher;
   userId: string | null;
   /** IANA timezone from client (e.g. "America/Los_Angeles"). Falls back to "UTC". */

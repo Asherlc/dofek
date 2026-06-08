@@ -60,12 +60,4 @@ describe("heartRateRouter", () => {
     expect(result.find((series) => series.providerId === "whoop_ble")?.samples).toHaveLength(2);
     expect(result.find((series) => series.providerId === "apple_health")?.samples).toHaveLength(1);
   });
-
-  it("dailyBySource returns an empty array when ClickHouse is unavailable", async () => {
-    const { heartRateRouter } = await import("./heart-rate.ts");
-    const createCaller = createTestCallerFactory(heartRateRouter);
-    const caller = createCaller({ db: { execute: vi.fn() }, userId: "user-1", timezone: "UTC" });
-
-    expect(await caller.dailyBySource({ date: "2026-04-12" })).toEqual([]);
-  });
 });

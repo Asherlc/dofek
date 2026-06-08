@@ -19,7 +19,6 @@ export const heartRateRouter = router({
   dailyBySource: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(dateInputSchema)
     .query(async ({ ctx, input }): Promise<HeartRateSourceSeries[]> => {
-      if (!ctx.sensorStore) return [];
       const repo = new HeartRateRepository(ctx.sensorStore, ctx.userId, ctx.timezone);
       return repo.dailyBySource(input.date);
     }),

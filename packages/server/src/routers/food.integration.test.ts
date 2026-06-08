@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
+import { makeMockSensorStore } from "./test-helpers.ts";
 
 describe("Food router", () => {
   const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
@@ -17,7 +18,7 @@ describe("Food router", () => {
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
-    const app = createApp(testCtx.db);
+    const app = createApp(testCtx.db, makeMockSensorStore());
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();
