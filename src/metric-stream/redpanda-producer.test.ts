@@ -150,6 +150,19 @@ describe("KafkaMetricStreamEventPublisher", () => {
     );
   });
 
+  it("throws when a single message exceeds the produce size cap", async () => {
+    const { producer, send } = makeProducer();
+    const publisher = new KafkaMetricStreamEventPublisher(producer, "metric-stream-v1");
+
+    // One event whose JSON alone exceeds the cap — atomic, so unsendable.
+    const oversized = { ...metricStreamRow, metadata: { blob: "x".repeat(1_000_000) } };
+
+    await expect(publisher.publishRows([oversized])).rejects.toThrow(
+      /over the \d+-byte produce limit/,
+    );
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it("keeps the delete event first when a scoped replacement is chunked", async () => {
     const { producer, send } = makeProducer();
     const publisher = new KafkaMetricStreamEventPublisher(producer, "metric-stream-v1");

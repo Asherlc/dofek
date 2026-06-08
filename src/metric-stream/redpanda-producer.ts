@@ -75,6 +75,14 @@ export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublish
     let chunkBytes = 0;
     for (const message of messages) {
       const messageBytes = Buffer.byteLength(message.value, "utf8");
+      if (messageBytes > MAX_PRODUCE_REQUEST_BYTES) {
+        // A single Kafka message is atomic — it can't be split across requests,
+        // so one over the cap can never be published. Fail loudly with the key
+        // and size instead of sending a doomed over-limit produce request.
+        throw new Error(
+          `metric stream message ${message.key} is ${messageBytes} bytes, over the ${MAX_PRODUCE_REQUEST_BYTES}-byte produce limit`,
+        );
+      }
       if (chunk.length > 0 && chunkBytes + messageBytes > MAX_PRODUCE_REQUEST_BYTES) {
         await this.#producer.send({ topic: this.#topic, messages: chunk });
         chunk = [];
