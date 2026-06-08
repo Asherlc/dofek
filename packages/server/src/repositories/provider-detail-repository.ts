@@ -306,9 +306,7 @@ export class ProviderDetailRepository {
     recordId?: string,
   ): Promise<Record<string, unknown>[]> {
     if (!this.#clickHouse) {
-      throw new Error(
-        "providerDetail body measurements require the ClickHouse body measurement store",
-      );
+      throw new Error("providerDetail body measurements require the ClickHouse store");
     }
     const recordFilter = recordId ? "AND toString(id) = {recordId:String}" : "";
     return this.#clickHouse.query(
@@ -353,7 +351,8 @@ export class ProviderDetailRepository {
       `
         SELECT
           id,
-          formatDateTime(recorded_at, '%Y-%m-%dT%H:%i:%S.000Z') AS recorded_at,
+          -- Raw record view: preserve sub-second precision (%f = microseconds).
+          formatDateTime(recorded_at, '%Y-%m-%dT%H:%i:%S.%fZ') AS recorded_at,
           provider_id,
           external_id,
           device_id,

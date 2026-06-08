@@ -154,21 +154,21 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
     expect(rows).toEqual([
       {
         id: supersededId,
-        recorded_at: "2026-04-12T10:10:00.000Z",
+        recorded_at: "2026-04-12T10:10:00.000000Z",
         provider_id: "withings",
         channel: "body_weight",
         scalar: 90,
       },
       {
         id: expect.any(String),
-        recorded_at: "2026-04-12T10:05:00.000Z",
+        recorded_at: "2026-04-12T10:05:00.000000Z",
         provider_id: "withings",
         channel: "body_weight",
         scalar: 80,
       },
       {
         id: expect.any(String),
-        recorded_at: "2026-04-12T10:00:00.000Z",
+        recorded_at: "2026-04-12T10:00:00.000000Z",
         provider_id: "withings",
         channel: "heart_rate",
         scalar: 60,
