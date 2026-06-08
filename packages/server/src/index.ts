@@ -61,12 +61,12 @@ export interface CreateAppOptions {
 
 export function createApp(
   db: import("dofek/db").Database,
-  sensorStore?: import("./repositories/activity-repository.ts").ActivitySensorStore,
+  sensorStore: import("./repositories/activity-repository.ts").ActivitySensorStore,
   options: CreateAppOptions = {},
 ): express.Express {
   initSentry();
   const app = express();
-  const limitedSensorStore = sensorStore ? new LimitedActivitySensorStore(sensorStore) : undefined;
+  const limitedSensorStore = new LimitedActivitySensorStore(sensorStore);
 
   // ── Health check (before ALL middleware and other routes) ──
   app.get("/healthz", (_req, res) => {
@@ -82,7 +82,7 @@ export function createApp(
 function setupRoutes(
   app: express.Express,
   db: import("dofek/db").Database,
-  sensorStore: import("./repositories/activity-repository.ts").ActivitySensorStore | undefined,
+  sensorStore: import("./repositories/activity-repository.ts").ActivitySensorStore,
   options: CreateAppOptions,
 ) {
   // ── Compression + Cookies ──
