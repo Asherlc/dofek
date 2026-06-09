@@ -36,8 +36,11 @@ runs:
         fi
 
         if [ "${RUNNER_OS}" = "macOS" ]; then
-          brew update
-          brew install infisical
+          # Skip `brew update`: it does a heavy full-tap fetch that flakes on
+          # network resets, and modern Homebrew installs formulae via its JSON
+          # API without a prior update. HOMEBREW_NO_AUTO_UPDATE stops the same
+          # update from being triggered implicitly by `brew install`.
+          HOMEBREW_NO_AUTO_UPDATE=1 brew install infisical
           exit 0
         fi
 
