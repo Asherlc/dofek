@@ -187,17 +187,6 @@ const expectedListColumns = {
     "end_date",
     "created_at",
   ],
-  metricStream: [
-    "id",
-    "recorded_at",
-    "provider_id",
-    "external_id",
-    "device_id",
-    "source_type",
-    "channel",
-    "activity_id",
-    "scalar",
-  ],
   nutritionDaily: [
     "date",
     "provider_id",
@@ -244,7 +233,10 @@ const expectedListColumns = {
     "impact_score",
     "created_at",
   ],
-} satisfies Record<Exclude<(typeof dataTypeEnum.options)[number], "bodyMeasurements">, string[]>;
+} satisfies Record<
+  Exclude<(typeof dataTypeEnum.options)[number], "bodyMeasurements" | "metricStream">,
+  string[]
+>;
 
 const expectedListColumnCases = [
   ["activities", expectedListColumns.activities],
@@ -252,7 +244,6 @@ const expectedListColumnCases = [
   ["sleepSessions", expectedListColumns.sleepSessions],
   ["foodEntries", expectedListColumns.foodEntries],
   ["healthEvents", expectedListColumns.healthEvents],
-  ["metricStream", expectedListColumns.metricStream],
   ["nutritionDaily", expectedListColumns.nutritionDaily],
   ["labPanels", expectedListColumns.labPanels],
   ["labResults", expectedListColumns.labResults],
@@ -523,7 +514,9 @@ describe("providerDetailRouter", () => {
     });
 
     it.each(
-      dataTypeEnum.options.filter((dataType) => dataType !== "bodyMeasurements"),
+      dataTypeEnum.options.filter(
+        (dataType) => dataType !== "bodyMeasurements" && dataType !== "metricStream",
+      ),
     )("generates SQL with correct table for %s", async (dataType) => {
       const mockExecute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
@@ -683,7 +676,9 @@ describe("providerDetailRouter", () => {
     });
 
     it.each(
-      dataTypeEnum.options.filter((dataType) => dataType !== "bodyMeasurements"),
+      dataTypeEnum.options.filter(
+        (dataType) => dataType !== "bodyMeasurements" && dataType !== "metricStream",
+      ),
     )("generates SQL with correct table and id column for %s", async (dataType) => {
       const mockExecute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({

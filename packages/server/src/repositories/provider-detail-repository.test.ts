@@ -177,7 +177,7 @@ describe("ProviderDetailRepository", () => {
       const { repo } = makeRepository([]);
 
       await expect(repo.getRecords("withings", "bodyMeasurements", 10, 0)).rejects.toThrow(
-        "providerDetail body measurements require the ClickHouse body measurement store",
+        "providerDetail body measurements require the ClickHouse store",
       );
     });
 
@@ -194,6 +194,34 @@ describe("ProviderDetailRepository", () => {
       expect(query.mock.calls[0]?.[2]).toStrictEqual({
         userId: "user-1",
         providerId: "withings",
+        recordId: "",
+        limit: 10,
+        offset: 5,
+      });
+    });
+
+    it("requires the ClickHouse store for metric stream", async () => {
+      const { repo } = makeRepository([]);
+
+      await expect(repo.getRecords("whoop", "metricStream", 10, 0)).rejects.toThrow(
+        "providerDetail metric stream requires the ClickHouse store",
+      );
+    });
+
+    it("reads deduplicated metric stream rows from ClickHouse with the query parameters", async () => {
+      const { bodyStore, query } = makeBodyStore([]);
+      const { db } = makeRepository([]);
+      const repo = new ProviderDetailRepository(db, "user-1", bodyStore);
+
+      await repo.getRecords("whoop", "metricStream", 10, 5);
+
+      expect(query).toHaveBeenCalledTimes(1);
+      // Reads the deduped Redpanda-fed mirror, not Postgres.
+      expect(query.mock.calls[0]?.[1]).toContain("postgres_fitness.metric_stream FINAL");
+      expect(query.mock.calls[0]?.[1]).toContain("_peerdb_is_deleted = 0");
+      expect(query.mock.calls[0]?.[2]).toStrictEqual({
+        userId: "user-1",
+        providerId: "whoop",
         recordId: "",
         limit: 10,
         offset: 5,
