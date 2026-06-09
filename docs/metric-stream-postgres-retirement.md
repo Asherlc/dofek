@@ -115,20 +115,31 @@ Each reader: failing test first (integration against real CH), then swap query.
 5. Dual-platform: no client query shape change expected (server returns same
    payload); verify web + mobile pages still render.
 
-## P2 — IMU debug pages → R2 coverage
+## P2 — Delete IMU debug pages (resolved: delete, not repoint)
 
-The IMU repo's hot reads are debug-only. Replace raw PG reads with a cheap R2
-object-coverage signal (no full scan, no decompress, no dedup needed).
+The original plan was to repoint the IMU debug reads at an R2 object-coverage
+signal. That turned out to be infeasible: the R2 archive keys are
+`metric-stream/v1/date=…/hour=…/{topic}-{partition}-{first}-{last}.jsonl.gz` —
+partition/offset-scoped, so one object batches **all users and all channels**
+together. The IMU reads are user-scoped and IMU-channel-scoped, so object
+listing (no decompress) cannot reproduce them, and IMU is excluded from
+ClickHouse (`channel !== "imu"`), so there is no fast user/channel-scoped
+source. The pages are debug/observability only, so they were **deleted**
+outright rather than rebuilt on a heavier read path.
 
-1. New read path: list R2 objects under `metric-stream/v1/date=…` (Cloudflare R2
-   S3 API or ClickHouse `s3()` listing of `_path`/`_size`), aggregate by day →
-   presence + bytes. "Receiving" = recent objects; "storing" = bytes/day.
-2. Repoint `inertialMeasurementUnitRouter` (`getDailyHeatmap`,
-   `getCoverageTimeline`, `getSyncStatus`) at the R2-coverage source.
-3. Delete `InertialMeasurementUnitRepository`'s `fitness.metric_stream` queries.
-4. Dual-platform: update web `InertialMeasurementUnitPage.tsx` + mobile
-   `app/inertial-measurement-unit.tsx` only if response shape changes; keep it
-   stable to avoid client churn.
+Done:
+
+1. Deleted the read/debug path: `routers/inertial-measurement-unit.ts`,
+   `repositories/inertial-measurement-unit-repository.ts` (the last
+   `fitness.metric_stream` reader), web `InertialMeasurementUnitPage.tsx` +
+   route, mobile `app/inertial-measurement-unit.tsx`, the settings nav link, and
+   their tests; removed the `inertialMeasurementUnit` router registration.
+2. Kept the **ingest** path (`inertialMeasurementUnitSync`, mobile sync
+   services/adapters) — IMU still flows provider/watch → Redpanda → R2 archive.
+   Raw IMU remains queryable from R2 if observability is ever rebuilt
+   deliberately (on object-content reads or by adding `imu` to the CH sink).
+3. Left the live on-device WHOOP BLE orientation screen (`imu-visualization`)
+   untouched — it reads the native module, not `metric_stream`.
 
 ## P3 — Drop Postgres metric_stream + cleanup
 

@@ -595,17 +595,6 @@ export default function SettingsScreen() {
             style={styles.devToolRow}
             onPress={() => {
               const { router } = require("expo-router");
-              router.push("/inertial-measurement-unit");
-            }}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.devToolLabel}>Accelerometer Status</Text>
-            <Text style={styles.devToolChevron}>›</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.devToolRow}
-            onPress={() => {
-              const { router } = require("expo-router");
               router.push("/imu-visualization");
             }}
             activeOpacity={0.7}

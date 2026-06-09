@@ -22,7 +22,6 @@ import { Route as NutritionRouteImport } from './routes/nutrition'
 import { Route as MonthlyReportRouteImport } from './routes/monthly-report'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as InsightsRouteImport } from './routes/insights'
-import { Route as InertialMeasurementUnitRouteImport } from './routes/inertial-measurement-unit'
 import { Route as HealthReportRouteImport } from './routes/health-report'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as CycleRouteImport } from './routes/cycle'
@@ -114,11 +113,6 @@ const LoginRoute = LoginRouteImport.update({
 const InsightsRoute = InsightsRouteImport.update({
   id: '/insights',
   path: '/insights',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const InertialMeasurementUnitRoute = InertialMeasurementUnitRouteImport.update({
-  id: '/inertial-measurement-unit',
-  path: '/inertial-measurement-unit',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HealthReportRoute = HealthReportRouteImport.update({
@@ -270,7 +264,6 @@ export interface FileRoutesByFullPath {
   '/cycle': typeof CycleRoute
   '/dashboard': typeof DashboardRoute
   '/health-report': typeof HealthReportRoute
-  '/inertial-measurement-unit': typeof InertialMeasurementUnitRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
   '/monthly-report': typeof MonthlyReportRoute
@@ -311,7 +304,6 @@ export interface FileRoutesByTo {
   '/cycle': typeof CycleRoute
   '/dashboard': typeof DashboardRoute
   '/health-report': typeof HealthReportRoute
-  '/inertial-measurement-unit': typeof InertialMeasurementUnitRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
   '/monthly-report': typeof MonthlyReportRoute
@@ -352,7 +344,6 @@ export interface FileRoutesById {
   '/cycle': typeof CycleRoute
   '/dashboard': typeof DashboardRoute
   '/health-report': typeof HealthReportRoute
-  '/inertial-measurement-unit': typeof InertialMeasurementUnitRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
   '/monthly-report': typeof MonthlyReportRoute
@@ -397,7 +388,6 @@ export interface FileRouteTypes {
     | '/cycle'
     | '/dashboard'
     | '/health-report'
-    | '/inertial-measurement-unit'
     | '/insights'
     | '/login'
     | '/monthly-report'
@@ -438,7 +428,6 @@ export interface FileRouteTypes {
     | '/cycle'
     | '/dashboard'
     | '/health-report'
-    | '/inertial-measurement-unit'
     | '/insights'
     | '/login'
     | '/monthly-report'
@@ -478,7 +467,6 @@ export interface FileRouteTypes {
     | '/cycle'
     | '/dashboard'
     | '/health-report'
-    | '/inertial-measurement-unit'
     | '/insights'
     | '/login'
     | '/monthly-report'
@@ -522,7 +510,6 @@ export interface RootRouteChildren {
   CycleRoute: typeof CycleRoute
   DashboardRoute: typeof DashboardRoute
   HealthReportRoute: typeof HealthReportRoute
-  InertialMeasurementUnitRoute: typeof InertialMeasurementUnitRoute
   InsightsRoute: typeof InsightsRoute
   LoginRoute: typeof LoginRoute
   MonthlyReportRoute: typeof MonthlyReportRoute
@@ -630,13 +617,6 @@ declare module '@tanstack/react-router' {
       path: '/insights'
       fullPath: '/insights'
       preLoaderRoute: typeof InsightsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/inertial-measurement-unit': {
-      id: '/inertial-measurement-unit'
-      path: '/inertial-measurement-unit'
-      fullPath: '/inertial-measurement-unit'
-      preLoaderRoute: typeof InertialMeasurementUnitRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/health-report': {
@@ -920,7 +900,6 @@ const rootRouteChildren: RootRouteChildren = {
   CycleRoute: CycleRoute,
   DashboardRoute: DashboardRoute,
   HealthReportRoute: HealthReportRoute,
-  InertialMeasurementUnitRoute: InertialMeasurementUnitRoute,
   InsightsRoute: InsightsRoute,
   LoginRoute: LoginRoute,
   MonthlyReportRoute: MonthlyReportRoute,
