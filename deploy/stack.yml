@@ -288,7 +288,9 @@ services:
       - --rpc-addr=0.0.0.0:33145
       - --advertise-rpc-addr=redpanda:33145
     volumes:
-      - redpanda_data:/var/lib/redpanda/data
+      # Bind to the large /mnt/dofek-data disk, NOT a default named volume (which
+      # lands on the small root disk and fills during a metric-stream backfill).
+      - /mnt/dofek-data/redpanda:/var/lib/redpanda/data
     healthcheck:
       test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
       interval: 10s
@@ -345,8 +347,13 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.25"
-          memory: 256M
+          # gzip compression is CPU-bound and the redpanda input buffers whole
+          # partition batches in memory; under the historical backfill load the
+          # old 0.25 CPU / 256M limits OOM-killed this task (exit 137) in a
+          # crash loop, stalling the archive and growing topic lag. 1 CPU / 1G
+          # sustains the drain rate with headroom on the host.
+          cpus: "1"
+          memory: 1G
       update_config:
         order: stop-first
         failure_action: rollback
@@ -703,7 +710,6 @@ volumes:
   netdata_config:
   netdata_lib:
   netdata_cache:
-  redpanda_data:
 
 networks:
   # attachable so CI can run one-shot migration containers on the overlay
