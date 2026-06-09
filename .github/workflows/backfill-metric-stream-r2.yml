@@ -1,0 +1,148 @@
+name: Backfill metric_stream to R2
+
+# One-shot operator job: streams a window of fitness.metric_stream straight into
+# the R2 archive (metric-stream/v1/date=…/hour=…/*.jsonl.gz), byte-compatible
+# with the live Redpanda→R2 path. Object keys are deterministic, so re-running a
+# window overwrites the same objects rather than duplicating rows — safe to
+# re-run after a failure. Runs as a detached container on the production swarm
+# (Postgres is bound to localhost there), exactly like the migration one-shot.
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: "Window start, inclusive (ISO-8601 UTC, e.g. 2020-06-01T00:00:00Z)"
+        required: true
+      end:
+        description: "Window end, exclusive (ISO-8601 UTC). Keep below the live-stream cutoff to avoid overlapping already-archived data."
+        required: true
+      concurrency:
+        description: "Concurrent R2 PUTs"
+        required: false
+        default: "16"
+      max_object_bytes:
+        description: "Max uncompressed JSONL bytes per R2 object"
+        required: false
+        default: "8000000"
+      batch_size:
+        description: "Postgres keyset page size"
+        required: false
+        default: "5000"
+      image_tag:
+        description: "Image tag to run (e.g. sha-abc1234) — pin explicitly, do not use latest"
+        required: true
+
+concurrency:
+  # Serialize runs against one host; never cancel an in-flight backfill.
+  group: backfill-metric-stream-r2-${{ vars.ORACLE_SERVER_HOST }}
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    name: Export window to R2
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout the workflow + composite actions
+      id-token: write # OIDC for the Infisical secret fetch
+      packages: read # pull the dofek image from GHCR
+    env:
+      SSH_USER: ubuntu
+      DOCKER_HOST: ssh://ubuntu@${{ vars.ORACLE_SERVER_HOST }}
+      DOCKER_SSH_COMMAND: ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10
+      STACK_NAME: dofek
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          # This job never pushes; don't leave the token in the local git config.
+          persist-credentials: false
+
+      - name: Setup SSH
+        uses: ./.github/actions/setup-ssh-host
+        with:
+          host: ${{ vars.ORACLE_SERVER_HOST }}
+          private_key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Export Infisical deploy secrets file via OIDC
+        uses: ./.github/actions/export-infisical-dotenv
+        with:
+          env: prod
+          template: .github/templates/infisical-dotenv.tmpl
+          output_path: ${{ github.workspace }}/.env.prod
+
+      - name: Run R2 export
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          INFISICAL_ENV_FILE: ${{ github.workspace }}/.env.prod
+          EXPORT_START: ${{ inputs.start }}
+          EXPORT_END: ${{ inputs.end }}
+          EXPORT_CONCURRENCY: ${{ inputs.concurrency }}
+          EXPORT_MAX_OBJECT_BYTES: ${{ inputs.max_object_bytes }}
+          EXPORT_BATCH_SIZE: ${{ inputs.batch_size }}
+        run: |
+          export_container="${STACK_NAME}_metric_stream_r2_export_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            timeout 60s docker rm -f "$export_container" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          cleanup
+
+          echo "Starting export container ${export_container} for [${EXPORT_START}, ${EXPORT_END})..."
+          # Detached + short status polls: a multi-hour backfill must not depend on
+          # one long-lived Docker-over-SSH wait staying connected.
+          docker run -d --name "$export_container" --network "${STACK_NAME}_default" \
+            --env-file "$INFISICAL_ENV_FILE" \
+            --env "EXPORT_START=$EXPORT_START" \
+            --env "EXPORT_END=$EXPORT_END" \
+            --env "EXPORT_CONCURRENCY=$EXPORT_CONCURRENCY" \
+            --env "EXPORT_MAX_OBJECT_BYTES=$EXPORT_MAX_OBJECT_BYTES" \
+            --env "EXPORT_BATCH_SIZE=$EXPORT_BATCH_SIZE" \
+            --entrypoint sh \
+            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+            -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; exec node --experimental-transform-types --enable-source-maps --disable-warning=ExperimentalWarning src/metric-stream/r2-export-run.ts --start "$EXPORT_START" --end "$EXPORT_END" --concurrency "$EXPORT_CONCURRENCY" --max-object-bytes "$EXPORT_MAX_OBJECT_BYTES" --batch-size "$EXPORT_BATCH_SIZE"'
+
+          export_timeout_seconds=21600
+          started_at="$(date +%s)"
+          inspect_failures=0
+          max_inspect_failures=10
+          state=""
+          status=""
+          while true; do
+            elapsed="$(($(date +%s) - started_at))"
+            if [ "$elapsed" -ge "$export_timeout_seconds" ]; then
+              echo "::error::R2 export exceeded ${export_timeout_seconds}s"
+              docker logs "$export_container" || true
+              exit 1
+            fi
+
+            set +e
+            inspect="$(docker inspect --format '{{.State.Status}} {{.State.ExitCode}}' "$export_container" 2>&1)"
+            inspect_status=$?
+            set -e
+            if [ "$inspect_status" -ne 0 ]; then
+              inspect_failures="$((inspect_failures + 1))"
+              if [ "$inspect_failures" -ge "$max_inspect_failures" ]; then
+                echo "::error::Could not inspect export container after ${inspect_failures} attempts"
+                printf '%s\n' "$inspect"
+                exit "$inspect_status"
+              fi
+              echo "Inspect attempt ${inspect_failures}/${max_inspect_failures} failed after ${elapsed}s; retrying..."
+              sleep 15
+              continue
+            fi
+            inspect_failures=0
+            state="$(printf '%s\n' "$inspect" | awk '{print $1}')"
+            status="$(printf '%s\n' "$inspect" | awk '{print $2}')"
+            if [ "$state" = "exited" ] || [ "$state" = "dead" ]; then
+              break
+            fi
+            echo "Export container is ${state} after ${elapsed}s..."
+            sleep 60
+          done
+
+          docker logs "$export_container" || true
+          trap - EXIT
+          cleanup
+          if [ "$status" -ne 0 ]; then
+            echo "::error::R2 export failed"
+            exit "$status"
+          fi
+          echo "R2 export window succeeded."

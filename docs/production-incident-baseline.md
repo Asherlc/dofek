@@ -10453,3 +10453,35 @@ new incremental tables are populated.
   After recovery, verify Redpanda health, ClickHouse sink lag, R2 archive
   freshness, and newest `postgres_fitness.metric_stream.recorded_at` in
   ClickHouse.
+
+## 2026-06-08 — Postgres OOM crash from full-scan analytics on metric_stream
+
+- **Symptoms:** `psql` returned `terminating connection because of crash of
+  another server process` then `the database system is in recovery mode`.
+- **User impact:** ~1 second of DB unavailability; transient connection errors
+  for any in-flight app queries. Self-recovered.
+- **Evidence:** `dofek_db` log: `client backend (PID 520401) was terminated by
+  signal 9: Killed` while running `SELECT date_trunc('year', recorded_at), 
+  count(*) ... FROM fitness.metric_stream` (a full-scan GROUP BY over the
+  ~423M-row hypertable). Signal 9 = Linux OOM-killer. Postmaster then logged
+  `terminating any other active server processes` → `automatic recovery in
+  progress` → `redo done ... elapsed: 0.01 s` → `database system is ready to
+  accept connections`. A prior `count(*)` with FILTER had taken 185s.
+- **Root cause:** Unbounded full-scan aggregate queries over the 423M-row
+  `fitness.metric_stream` hypertable on the 23 GB host (shared with Redpanda,
+  ClickHouse, Redis, and the just-raised 1 GB r2-archive limit) exhausted
+  memory; the kernel OOM-killer killed the PG backend, crashing the postmaster.
+- **Fix / mitigation:** None needed — crash recovery replayed a tiny WAL and
+  restored service in 0.01s with no corruption or data loss. Behavioral fix:
+  never run unbounded `count(*)`/`GROUP BY` scans over `metric_stream` on the
+  production box. Use `approximate_row_count('fitness.metric_stream')` and
+  TimescaleDB chunk/catalog metadata (`timescaledb_information.chunks`) for
+  sizing/distribution instead of data scans.
+- **Remaining risk:** The box is memory-constrained (23 GB) for the in-flight
+  Postgres→Redpanda→R2 historical backfill (~423M rows). The backfill producer
+  must be paced (windowed with consumer-lag drain-gates) so the bounded
+  Redpanda topic never fills the 81 GB data disk, and analytics must avoid
+  full scans.
+- **Follow-up:** Run the historical backfill as gated time-windows (see the
+  metric-stream retirement plan), draining the R2 archive consumer between
+  windows; consider raising r2-archive throughput to shorten the ~33h floor.
