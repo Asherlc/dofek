@@ -219,6 +219,8 @@ describe("ProviderDetailRepository", () => {
       // Reads the deduped Redpanda-fed mirror, not Postgres.
       expect(query.mock.calls[0]?.[1]).toContain("postgres_fitness.metric_stream FINAL");
       expect(query.mock.calls[0]?.[1]).toContain("_peerdb_is_deleted = 0");
+      // recorded_at is rendered in UTC so the literal 'Z' suffix is accurate.
+      expect(query.mock.calls[0]?.[1]).toContain("'%Y-%m-%dT%H:%i:%S.%fZ', 'UTC'");
       expect(query.mock.calls[0]?.[2]).toStrictEqual({
         userId: "user-1",
         providerId: "whoop",

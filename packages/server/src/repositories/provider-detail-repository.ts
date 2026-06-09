@@ -352,7 +352,9 @@ export class ProviderDetailRepository {
         SELECT
           id,
           -- Raw record view: preserve sub-second precision (%f = microseconds).
-          formatDateTime(recorded_at, '%Y-%m-%dT%H:%i:%S.%fZ') AS recorded_at,
+          -- Force UTC so the literal 'Z' suffix is accurate regardless of the
+          -- column's or server's timezone.
+          formatDateTime(recorded_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS recorded_at,
           provider_id,
           external_id,
           device_id,
