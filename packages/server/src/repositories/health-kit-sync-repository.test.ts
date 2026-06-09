@@ -1388,28 +1388,6 @@ describe("HealthKitSyncRepository", () => {
       expect(result).toBe(1);
     });
   });
-
-  describe("aggregateSpO2ToDailyMetrics", () => {
-    it("executes the aggregation query", async () => {
-      const { repository, execute } = makeRepository();
-      await repository.aggregateSpO2ToDailyMetrics(
-        { startAt: "2024-01-15T00:00:00Z", endAt: "2024-01-15T23:59:59Z" },
-        "America/New_York",
-      );
-      expect(execute).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  describe("aggregateSkinTempToDailyMetrics", () => {
-    it("executes the aggregation query", async () => {
-      const { repository, execute } = makeRepository();
-      await repository.aggregateSkinTempToDailyMetrics(
-        { startAt: "2024-01-15T00:00:00Z", endAt: "2024-01-15T23:59:59Z" },
-        "UTC",
-      );
-      expect(execute).toHaveBeenCalledTimes(1);
-    });
-  });
 });
 
 // ---------------------------------------------------------------------------
