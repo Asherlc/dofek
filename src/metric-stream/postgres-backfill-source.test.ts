@@ -38,6 +38,27 @@ describe("parseMetricStreamBackfillWindow", () => {
       ]),
     ).toThrow("--start must be before --end");
   });
+
+  it("defaults the batch size to 5000 when --batch-size is omitted", () => {
+    const window = parseMetricStreamBackfillWindow([
+      "--start",
+      "2026-06-06T00:00:00Z",
+      "--end",
+      "2026-06-07T00:00:00Z",
+    ]);
+    expect(window.batchSize).toBe(5000);
+  });
+
+  it("rejects timezone-less timestamps so the window is host-independent", () => {
+    expect(() =>
+      parseMetricStreamBackfillWindow([
+        "--start",
+        "2026-06-06T00:00:00",
+        "--end",
+        "2026-06-07T00:00:00Z",
+      ]),
+    ).toThrow("--start must include a timezone");
+  });
 });
 
 describe("buildMetricStreamBackfillQuery", () => {

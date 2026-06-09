@@ -219,6 +219,22 @@ describe("exportMetricStreamToR2", () => {
       }),
     ).rejects.toThrow("R2 unavailable");
   });
+
+  it("rejects a window not aligned to UTC hour boundaries", async () => {
+    const putObject = vi.fn<(object: MetricStreamArchiveObject) => Promise<void>>(async () => {});
+    await expect(
+      exportMetricStreamToR2({
+        batchSize: 100,
+        concurrency: 8,
+        end: new Date("2024-03-02T00:00:00.000Z"),
+        maxObjectBytes: 10_000,
+        putObject,
+        start: new Date("2024-03-01T10:30:00.000Z"),
+        streamWindow: readerForDays({}),
+      }),
+    ).rejects.toThrow("must be aligned to a UTC hour boundary");
+    expect(putObject).not.toHaveBeenCalled();
+  });
 });
 
 describe("parseMetricStreamR2ExportOptions", () => {

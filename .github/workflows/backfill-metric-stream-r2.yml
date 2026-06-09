@@ -28,9 +28,8 @@ on:
         required: false
         default: "5000"
       image_tag:
-        description: "Image tag to run (defaults to latest)"
-        required: false
-        default: "latest"
+        description: "Image tag to run (e.g. sha-abc1234) — pin explicitly, do not use latest"
+        required: true
 
 concurrency:
   # Serialize runs against one host; never cancel an in-flight backfill.
@@ -42,9 +41,9 @@ jobs:
     name: Export window to R2
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      id-token: write
-      packages: read
+      contents: read # checkout the workflow + composite actions
+      id-token: write # OIDC for the Infisical secret fetch
+      packages: read # pull the dofek image from GHCR
     env:
       SSH_USER: ubuntu
       DOCKER_HOST: ssh://ubuntu@${{ vars.ORACLE_SERVER_HOST }}
@@ -52,6 +51,9 @@ jobs:
       STACK_NAME: dofek
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          # This job never pushes; don't leave the token in the local git config.
+          persist-credentials: false
 
       - name: Setup SSH
         uses: ./.github/actions/setup-ssh-host

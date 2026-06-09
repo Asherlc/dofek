@@ -33,27 +33,37 @@ export async function* streamMetricStreamWindowViaCursor(
   window: MetricStreamBackfillWindow,
 ): AsyncGenerator<MetricStreamBackfillBatch> {
   await client.query("BEGIN");
-  await client.query(`DECLARE ${CURSOR_NAME} NO SCROLL CURSOR FOR ${CURSOR_SELECT}`, [
-    window.start.toISOString(),
-    window.end.toISOString(),
-  ]);
+  let committed = false;
+  try {
+    await client.query(`DECLARE ${CURSOR_NAME} NO SCROLL CURSOR FOR ${CURSOR_SELECT}`, [
+      window.start.toISOString(),
+      window.end.toISOString(),
+    ]);
 
-  // batchSize is a validated positive integer (never user-supplied text), and
-  // FETCH FORWARD cannot be parameterized, so inlining it is safe.
-  const fetchSql = `FETCH FORWARD ${window.batchSize} FROM ${CURSOR_NAME}`;
-  while (true) {
-    const result = await client.query(fetchSql);
-    if (result.rows.length === 0) {
-      break;
+    // batchSize is a validated positive integer (never user-supplied text), and
+    // FETCH FORWARD cannot be parameterized, so inlining it is safe.
+    const fetchSql = `FETCH FORWARD ${window.batchSize} FROM ${CURSOR_NAME}`;
+    while (true) {
+      const result = await client.query(fetchSql);
+      if (result.rows.length === 0) {
+        break;
+      }
+      const parsed = result.rows.map(parseMetricStreamBackfillRow);
+      const lastRow = parsed[parsed.length - 1];
+      if (!lastRow) {
+        break;
+      }
+      yield { rows: parsed.map((row) => row.input), cursor: lastRow.cursor };
     }
-    const parsed = result.rows.map(parseMetricStreamBackfillRow);
-    const lastRow = parsed[parsed.length - 1];
-    if (!lastRow) {
-      break;
+
+    await client.query(`CLOSE ${CURSOR_NAME}`);
+    await client.query("COMMIT");
+    committed = true;
+  } finally {
+    // If the body threw or the consumer abandoned the generator early, end the
+    // transaction explicitly rather than relying on client disconnect.
+    if (!committed) {
+      await client.query("ROLLBACK");
     }
-    yield { rows: parsed.map((row) => row.input), cursor: lastRow.cursor };
   }
-
-  await client.query(`CLOSE ${CURSOR_NAME}`);
-  await client.query("COMMIT");
 }

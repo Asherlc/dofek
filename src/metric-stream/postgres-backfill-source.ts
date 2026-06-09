@@ -68,6 +68,13 @@ function readOptionValue(
 }
 
 function parseTimestampOption(value: string, optionName: string): Date {
+  // Require an explicit timezone. Without one, `new Date(value)` interprets the
+  // string in the host's local timezone, so the same flag would select a
+  // different `timestamptz` window depending on where it runs — causing
+  // gaps/overlaps across reruns.
+  if (!/(?:Z|[+-]\d{2}:?\d{2})$/.test(value)) {
+    throw new Error(`${optionName} must include a timezone (e.g. 2026-06-01T00:00:00Z)`);
+  }
   const parsedDate = new Date(value);
   if (Number.isNaN(parsedDate.getTime())) {
     throw new Error(`${optionName} must be a valid timestamp`);

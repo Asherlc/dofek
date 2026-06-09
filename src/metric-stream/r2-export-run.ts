@@ -45,9 +45,24 @@ export interface MetricStreamR2ExportResult {
  * PUT concurrency keep it safe to run as a one-shot container on the production
  * host.
  */
+function assertUtcHourAligned(date: Date, label: string): void {
+  // The chunker keys each (date,hour) bucket by indices local to this run, so a
+  // window that bisects an hour would key a partial hour differently than a full
+  // export of it — leaving stale objects or overwriting one with a subset on
+  // rerun. Require hour-aligned boundaries so every bucket is exported whole.
+  if (date.getUTCMinutes() !== 0 || date.getUTCSeconds() !== 0 || date.getUTCMilliseconds() !== 0) {
+    throw new Error(
+      `${label} must be aligned to a UTC hour boundary to stay idempotent on rerun (got ${date.toISOString()})`,
+    );
+  }
+}
+
 export async function exportMetricStreamToR2(
   options: MetricStreamR2ExportOptions,
 ): Promise<MetricStreamR2ExportResult> {
+  assertUtcHourAligned(options.start, "--start");
+  assertUtcHourAligned(options.end, "--end");
+
   const chunker = new MetricStreamArchiveChunker({
     topic: ARCHIVE_TOPIC,
     partition: ARCHIVE_PARTITION,
@@ -232,7 +247,7 @@ export async function runMetricStreamR2ExportFromEnv(args: readonly string[]): P
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   // The result is logged before the promise resolves; exit explicitly so the
-  // one-shot terminates even though the pg Pool's idle sockets would otherwise
+  // one-shot terminates even though the pg Client's idle sockets would otherwise
   // keep the event loop alive.
   runMetricStreamR2ExportFromEnv(process.argv.slice(2))
     .then(() => {

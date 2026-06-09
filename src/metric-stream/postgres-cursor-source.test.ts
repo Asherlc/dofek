@@ -80,4 +80,26 @@ describe("streamMetricStreamWindowViaCursor", () => {
     const declareCall = query.mock.calls.find(([text]) => text.startsWith("DECLARE"));
     expect(declareCall?.[1]).toEqual(["2026-05-15T00:00:00.000Z", "2026-05-16T00:00:00.000Z"]);
   });
+
+  it("rolls back (no COMMIT) if a FETCH throws mid-iteration", async () => {
+    const calls: string[] = [];
+    const client: CursorQueryClient = {
+      query: vi.fn(async (text: string) => {
+        calls.push(text.split("\n")[0]?.trim() ?? text);
+        if (text.startsWith("FETCH")) {
+          throw new Error("connection reset");
+        }
+        return { rows: [] };
+      }),
+    };
+
+    const iterator = streamMetricStreamWindowViaCursor(client, {
+      batchSize: 5000,
+      start: new Date("2026-05-15T00:00:00.000Z"),
+      end: new Date("2026-05-16T00:00:00.000Z"),
+    });
+    await expect(iterator.next()).rejects.toThrow("connection reset");
+    expect(calls).toContain("ROLLBACK");
+    expect(calls).not.toContain("COMMIT");
+  });
 });
