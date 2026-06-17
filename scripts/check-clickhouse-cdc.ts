@@ -15,6 +15,48 @@ function requireEnvironmentVariable(environmentVariableName: string): string {
   return value;
 }
 
+function isLocalhost(host: string): boolean {
+  const normalizedHost = host.toLowerCase();
+  return (
+    normalizedHost === "localhost" || normalizedHost === "127.0.0.1" || normalizedHost === "::1"
+  );
+}
+
+function resolvePeerDbHost(databaseUrl: string): string {
+  const peerDbHostOverride = process.env.PEERDB_CDC_HOST;
+  if (peerDbHostOverride !== undefined) {
+    const trimmedOverride = peerDbHostOverride.trim();
+    if (!trimmedOverride) {
+      throw new Error("PEERDB_CDC_HOST must be a non-empty host");
+    }
+    return trimmedOverride;
+  }
+
+  const sourceHost = new URL(databaseUrl).hostname;
+  return isLocalhost(sourceHost) ? "127.0.0.1" : "peerdb";
+}
+
+function resolvePeerDbPort(): number {
+  const rawPort = process.env.PEERDB_CDC_PORT ?? "9900";
+  if (!/^\d+$/.test(rawPort)) {
+    throw new Error("PEERDB_CDC_PORT must be a valid TCP port");
+  }
+  const port = Number.parseInt(rawPort, 10);
+  if (port <= 0 || port > 65_535) {
+    throw new Error("PEERDB_CDC_PORT must be a valid TCP port");
+  }
+  return port;
+}
+
+function buildPeerDbUrl(databaseUrl: string): string {
+  const peerDbUrl = new URL("postgres://peerdb:9900/peerdb");
+  peerDbUrl.hostname = resolvePeerDbHost(databaseUrl);
+  peerDbUrl.port = String(resolvePeerDbPort());
+  peerDbUrl.username = "peerdb";
+  peerDbUrl.password = requireEnvironmentVariable("POSTGRES_PASSWORD");
+  return peerDbUrl.toString();
+}
+
 export async function main(): Promise<void> {
   const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
   if (sentryDsn) {
@@ -22,19 +64,33 @@ export async function main(): Promise<void> {
   }
 
   let postgresClient: Client | null = null;
+  let peerDbClient: Client | null = null;
   let clickHouseClient: ReturnType<typeof createClickHouseClientFromEnv> | null = null;
 
   let exitCode = 0;
   try {
+    const databaseUrl = requireEnvironmentVariable("DATABASE_URL");
     postgresClient = new Client({
-      connectionString: requireEnvironmentVariable("DATABASE_URL"),
+      connectionString: databaseUrl,
+    });
+    peerDbClient = new Client({
+      connectionString: buildPeerDbUrl(databaseUrl),
     });
     clickHouseClient = createClickHouseClientFromEnv();
 
     await postgresClient.connect();
+    await peerDbClient.connect();
     const report = await checkClickHouseCdcHealth({
       postgresClient,
+      peerDbClient,
       clickHouseClient,
+    });
+    Sentry.setContext("clickhouse_cdc_health", {
+      evidence: report.evidence,
+      issues: report.issues,
+      mirrorCount: report.mirrorCount,
+      peerDbMirrorCount: report.peerDbMirrorCount,
+      slotCount: report.slotCount,
     });
 
     for (const issue of report.issues) {
@@ -53,7 +109,7 @@ export async function main(): Promise<void> {
     console.error(`[clickhouse-cdc-health] ${error}`);
     await Sentry.close(2_000);
   } finally {
-    await Promise.all([postgresClient?.end(), clickHouseClient?.close?.()]);
+    await Promise.all([postgresClient?.end(), peerDbClient?.end(), clickHouseClient?.close?.()]);
   }
 
   process.exit(exitCode);

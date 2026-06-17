@@ -4,6 +4,10 @@ export interface PostgresQueryClient {
   query(queryText: string): Promise<unknown>;
 }
 
+export interface PeerDbQueryClient {
+  query(queryText: string): Promise<unknown>;
+}
+
 export interface CdcHealthClickHouseClient {
   query(options: { query: string; format: "JSONEachRow" }): Promise<{ json(): Promise<unknown> }>;
 }
@@ -17,6 +21,8 @@ export interface CdcHealthReport {
   issues: CdcHealthIssue[];
   slotCount: number;
   mirrorCount: number;
+  peerDbMirrorCount: number | null;
+  evidence: CdcHealthEvidence;
 }
 
 export interface CdcHealthThresholds {
@@ -31,6 +37,7 @@ interface MirrorFreshnessCheck {
 
 interface CheckClickHouseCdcHealthOptions {
   postgresClient: PostgresQueryClient;
+  peerDbClient?: PeerDbQueryClient;
   clickHouseClient: CdcHealthClickHouseClient;
   now?: Date;
   thresholds?: Partial<CdcHealthThresholds>;
@@ -41,6 +48,12 @@ const expectedSlotNames = [
   "peerflow_slot_dofek_fitness_raw_analytics",
   "peerflow_slot_dofek_provider_inventory_raw_analytics",
   "peerflow_slot_dofek_sensor_priority_raw_analytics",
+] as const;
+
+const expectedPeerDbMirrorNames = [
+  "dofek_fitness_raw_analytics",
+  "dofek_provider_inventory_raw_analytics",
+  "dofek_sensor_priority_raw_analytics",
 ] as const;
 
 const defaultThresholds: CdcHealthThresholds = {
@@ -59,6 +72,7 @@ const nullableIntegerLikeSchema = z.union([
   z.null(),
 ]);
 const integerLikeSchema = z.union([z.number().int().nonnegative(), numericStringSchema]);
+const nullableStringLikeSchema = z.union([z.string(), z.number(), z.date(), z.null()]);
 
 const postgresReplicationSlotRowsSchema = z.object({
   rows: z.array(
@@ -72,6 +86,17 @@ const postgresReplicationSlotRowsSchema = z.object({
   ),
 });
 
+const peerDbMirrorRowsSchema = z.object({
+  rows: z.array(
+    z.object({
+      name: z.enum(expectedPeerDbMirrorNames),
+      status: nullableStringLikeSchema,
+      updated_at: nullableStringLikeSchema,
+      workflow_id: z.string().nullable(),
+    }),
+  ),
+});
+
 const clickHouseFreshnessRowsSchema = z.array(
   z.object({
     latest_peerdb_synced_at: z.string().nullable(),
@@ -79,6 +104,25 @@ const clickHouseFreshnessRowsSchema = z.array(
     table_name: z.string(),
   }),
 );
+
+export interface CdcHealthReplicationSlotEvidence {
+  active: boolean;
+  retainedWalBytes: string | null;
+  slotName: string;
+  walStatus: string | null;
+}
+
+export interface CdcHealthPeerDbMirrorEvidence {
+  name: string;
+  status: string | null;
+  updatedAt: string | null;
+  workflowId: string | null;
+}
+
+export interface CdcHealthEvidence {
+  peerDbMirrors: CdcHealthPeerDbMirrorEvidence[];
+  replicationSlots: CdcHealthReplicationSlotEvidence[];
+}
 
 function integerLikeToNumber(value: z.infer<typeof integerLikeSchema>): number {
   return typeof value === "number" ? value : Number.parseInt(value, 10);
@@ -91,6 +135,18 @@ function nullableIntegerLikeToNumber(
     return null;
   }
   return integerLikeToNumber(value);
+}
+
+function nullableStringLikeToString(
+  value: z.infer<typeof nullableStringLikeSchema>,
+): string | null {
+  if (value === null) {
+    return null;
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  return String(value);
 }
 
 function parseClickHouseDateTime(value: string): Date | null {
@@ -107,10 +163,28 @@ function parseClickHouseDateTime(value: string): Date | null {
   return Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
 }
 
+function buildExpectedValues(values: readonly string[]): string {
+  return values.map((value) => `('${value}')`).join(", ");
+}
+
 function assertSafeClickHouseTableName(tableName: string): void {
   if (!/^[a-z][a-z0-9_]*$/.test(tableName)) {
     throw new Error(`Unsafe ClickHouse table name: ${tableName}`);
   }
+}
+
+function buildPeerDbMirrorQuery(): string {
+  return `
+    SELECT
+      flows.name,
+      flows.status,
+      flows.updated_at,
+      flows.workflow_id
+    FROM public.flows
+    JOIN (VALUES ${buildExpectedValues(expectedPeerDbMirrorNames)}) AS expected_mirrors(name)
+      ON expected_mirrors.name = flows.name
+    ORDER BY flows.name
+  `;
 }
 
 function buildFreshnessQuery(mirrorFreshnessChecks: readonly MirrorFreshnessCheck[]): string {
@@ -126,6 +200,22 @@ function buildFreshnessQuery(mirrorFreshnessChecks: readonly MirrorFreshnessChec
   });
 
   return tableQueries.join(" UNION ALL ");
+}
+
+function addPeerDbMirrorIssues(
+  issues: CdcHealthIssue[],
+  mirrorRows: z.infer<typeof peerDbMirrorRowsSchema>["rows"],
+): void {
+  const mirrorRowsByName = new Map(mirrorRows.map((mirrorRow) => [mirrorRow.name, mirrorRow]));
+
+  for (const expectedMirrorName of expectedPeerDbMirrorNames) {
+    if (!mirrorRowsByName.has(expectedMirrorName)) {
+      issues.push({
+        severity: "failure",
+        message: `Missing required PeerDB raw mirror ${expectedMirrorName}`,
+      });
+    }
+  }
 }
 
 function addSlotIssues(
@@ -236,12 +326,67 @@ function addMirrorFreshnessIssues(
   }
 }
 
+function buildEvidence(
+  slotRows: z.infer<typeof postgresReplicationSlotRowsSchema>["rows"],
+  mirrorRows: z.infer<typeof peerDbMirrorRowsSchema>["rows"],
+): CdcHealthEvidence {
+  return {
+    peerDbMirrors: mirrorRows.map((mirrorRow) => ({
+      name: mirrorRow.name,
+      status: nullableStringLikeToString(mirrorRow.status),
+      updatedAt: nullableStringLikeToString(mirrorRow.updated_at),
+      workflowId: mirrorRow.workflow_id,
+    })),
+    replicationSlots: slotRows.map((slotRow) => ({
+      active: slotRow.active,
+      retainedWalBytes: nullableStringLikeToString(slotRow.retained_wal_bytes),
+      slotName: slotRow.slot_name,
+      walStatus: slotRow.wal_status,
+    })),
+  };
+}
+
+function formatPeerDbMirrorEvidence(mirror: CdcHealthPeerDbMirrorEvidence): string {
+  const status = mirror.status ?? "unknown";
+  const workflowId = mirror.workflowId ?? "unknown";
+  return `${mirror.name}(status=${status}, workflow=${workflowId})`;
+}
+
+function formatReplicationSlotEvidence(slot: CdcHealthReplicationSlotEvidence): string {
+  const walStatus = slot.walStatus ?? "unknown";
+  const retainedWalBytes = slot.retainedWalBytes ?? "unknown";
+  return `${slot.slotName}(active=${slot.active}, wal_status=${walStatus}, retained_wal_bytes=${retainedWalBytes})`;
+}
+
+export function formatCdcHealthEvidence(evidence: CdcHealthEvidence): string {
+  const mirrorSummary =
+    evidence.peerDbMirrors.length === 0
+      ? "none"
+      : evidence.peerDbMirrors.map(formatPeerDbMirrorEvidence).join(", ");
+  const slotSummary =
+    evidence.replicationSlots.length === 0
+      ? "none"
+      : evidence.replicationSlots.map(formatReplicationSlotEvidence).join(", ");
+
+  return [
+    "CDC health evidence:",
+    `- PeerDB raw mirrors observed: ${mirrorSummary}`,
+    `- Postgres replication slots observed: ${slotSummary}`,
+  ].join("\n");
+}
+
 export async function checkClickHouseCdcHealth(
   options: CheckClickHouseCdcHealthOptions,
 ): Promise<CdcHealthReport> {
   const thresholds = { ...defaultThresholds, ...options.thresholds };
   const mirrorFreshnessChecks = options.mirrorFreshnessChecks ?? defaultMirrorFreshnessChecks;
   const now = options.now ?? new Date();
+  const peerDbClient = options.peerDbClient;
+  const shouldCheckPeerDbMirrors = peerDbClient !== undefined;
+
+  const peerDbMirrorRows = !shouldCheckPeerDbMirrors
+    ? []
+    : peerDbMirrorRowsSchema.parse(await peerDbClient.query(buildPeerDbMirrorQuery())).rows;
 
   const slotQueryResult = await options.postgresClient.query(`
     SELECT
@@ -266,6 +411,9 @@ export async function checkClickHouseCdcHealth(
   const freshnessRows = clickHouseFreshnessRowsSchema.parse(await freshnessQueryResult.json());
 
   const issues: CdcHealthIssue[] = [];
+  if (shouldCheckPeerDbMirrors) {
+    addPeerDbMirrorIssues(issues, peerDbMirrorRows);
+  }
   addSlotIssues(issues, parsedSlotRows, thresholds);
   addMirrorFreshnessIssues(issues, freshnessRows, mirrorFreshnessChecks, now);
 
@@ -273,6 +421,8 @@ export async function checkClickHouseCdcHealth(
     issues,
     slotCount: parsedSlotRows.length,
     mirrorCount: freshnessRows.length,
+    peerDbMirrorCount: shouldCheckPeerDbMirrors ? peerDbMirrorRows.length : null,
+    evidence: buildEvidence(parsedSlotRows, peerDbMirrorRows),
   };
 }
 
@@ -285,6 +435,6 @@ export function assertClickHouseCdcHealth(report: CdcHealthReport): void {
   throw new Error(
     `ClickHouse CDC health check failed:\n${failures
       .map((failure) => `- ${failure.message}`)
-      .join("\n")}`,
+      .join("\n")}\n${formatCdcHealthEvidence(report.evidence)}`,
   );
 }
