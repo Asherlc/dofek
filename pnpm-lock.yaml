@@ -16,6 +16,7 @@ overrides:
   '@slack/bolt>path-to-regexp': 8.4.2
   router>path-to-regexp: 8.4.2
   protobufjs: 8.4.0
+  shell-quote: 1.8.4
   yaml: 2.9.0
 
 patchedDependencies:
@@ -11445,8 +11446,8 @@ packages:
     resolution: {integrity: sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==}
     engines: {node: '>=8'}
 
-  shell-quote@1.8.3:
-    resolution: {integrity: sha512-ObmnIF4hXNg1BqhnHmgbDETF8dLPCggZWBjkQfhZpbszZnYur5DUljTcCHii5LC3J5E0yeO/1LIMyH+UvHQgyw==}
+  shell-quote@1.8.4:
+    resolution: {integrity: sha512-VsC6n6vz1ihYYyZZwX7YZSF5l5x36ca17OC+a69h94YqB7X6XLwf+5MOgynYir2SLFUbl8gIYvBo8K8RoNQ6bQ==}
     engines: {node: '>= 0.4'}
 
   sherif-darwin-arm64@1.11.0:
@@ -22686,7 +22687,7 @@ snapshots:
       debug: 4.4.3(supports-color@8.1.1)
       env-paths: 3.0.0
       semver: 7.8.0
-      shell-quote: 1.8.3
+      shell-quote: 1.8.4
       which: 4.0.0
     transitivePeerDependencies:
       - supports-color
@@ -24743,7 +24744,7 @@ snapshots:
 
   react-devtools-core@6.1.5:
     dependencies:
-      shell-quote: 1.8.3
+      shell-quote: 1.8.4
       ws: 7.5.10
     transitivePeerDependencies:
       - bufferutil
@@ -25334,7 +25335,7 @@ snapshots:
 
   shebang-regex@3.0.0: {}
 
-  shell-quote@1.8.3: {}
+  shell-quote@1.8.4: {}
 
   sherif-darwin-arm64@1.11.0:
     optional: true
