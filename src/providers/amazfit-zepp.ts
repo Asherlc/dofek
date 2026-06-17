@@ -1,14 +1,17 @@
 import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import { captureException } from "@sentry/node";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
 import { dailyMetrics, sleepSession } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
+import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type { SyncError, SyncOptions, SyncProvider, SyncResult } from "./types.ts";
 
 export const AMAZFIT_ZEPP_API_BASE = "https://api-mifit.zepp.com";
+const AMAZFIT_ZEPP_SOURCE_NAME = "Zepp";
 
 const optionalNumber = z.preprocess((value) => {
   if (typeof value === "string" && value.trim() !== "") return Number(value);
@@ -129,6 +132,14 @@ function zeppSleepBoundaryToDate(date: string, boundary: number): Date {
   return dateAtUtcMinute(date, boundary);
 }
 
+function resolveScopedUserId(userId?: string): string {
+  const scopedUserId = userId ?? getTokenUserId();
+  if (!scopedUserId) {
+    throw new Error("amazfit-zepp sync requires a userId");
+  }
+  return scopedUserId;
+}
+
 function parseDailyMetrics(date: string, summary: ZeppSummary): ParsedZeppDailyMetrics | undefined {
   const steps = summary.stp?.ttl;
   const distanceMeters = summary.stp?.dis;
@@ -157,10 +168,13 @@ function parseSleep(date: string, summary: ZeppSummary): ParsedZeppSleep | undef
   const durationMinutes = Math.round((deepMinutes ?? 0) + (lightMinutes ?? 0) + (remMinutes ?? 0));
   if (durationMinutes <= 0 || sleep.st === undefined || sleep.ed === undefined) return undefined;
 
+  const startedAt = zeppSleepBoundaryToDate(date, sleep.st);
+  const endedAt = zeppSleepBoundaryToDate(date, sleep.ed);
+
   return {
-    externalId: `zepp-sleep-${date}`,
-    startedAt: zeppSleepBoundaryToDate(date, sleep.st),
-    endedAt: zeppSleepBoundaryToDate(date, sleep.ed),
+    externalId: `zepp-sleep-${startedAt.toISOString()}-${endedAt.toISOString()}`,
+    startedAt,
+    endedAt,
     durationMinutes,
     deepMinutes: deepMinutes === undefined ? undefined : Math.round(deepMinutes),
     lightMinutes: lightMinutes === undefined ? undefined : Math.round(lightMinutes),
@@ -244,7 +258,7 @@ export class AmazfitZeppProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: this.id });
+    this.#fetchFn = fetchFn;
   }
 
   validate(): string | null {
@@ -257,22 +271,25 @@ export class AmazfitZeppProvider implements SyncProvider {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
+    const { metricStreamPublisher, onProgress, userId } = options ?? {};
+    const scopedUserId = resolveScopedUserId(userId);
 
     await ensureProvider(
       db,
       this.id,
       this.name,
       process.env.ZEPP_API_BASE_URL ?? AMAZFIT_ZEPP_API_BASE,
+      scopedUserId,
     );
 
     const appToken = process.env.ZEPP_APP_TOKEN;
-    const userId = process.env.ZEPP_USER_ID;
-    if (!appToken || !userId) {
+    const zeppUserId = process.env.ZEPP_USER_ID;
+    if (!appToken || !zeppUserId) {
       errors.push({ message: this.validate() ?? "Amazfit/Zepp credentials are not configured" });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new AmazfitZeppClient(appToken, userId, this.#fetchFn);
+    const client = new AmazfitZeppClient(appToken, zeppUserId, this.#fetchFn);
     const sinceDate = formatDate(since);
     const todayDate = formatDate(new Date());
 
@@ -283,9 +300,10 @@ export class AmazfitZeppProvider implements SyncProvider {
         "band_data",
         async () => {
           let synced = 0;
+          onProgress?.(0, "Fetching band data");
           const days = await client.getBandData(sinceDate, todayDate);
 
-          for (const day of days) {
+          for (const [dayIndex, day] of days.entries()) {
             try {
               const parsed = parseZeppBandDay(day);
 
@@ -295,6 +313,8 @@ export class AmazfitZeppProvider implements SyncProvider {
                   .values({
                     date: parsed.dailyMetrics.date,
                     providerId: this.id,
+                    userId: scopedUserId,
+                    sourceName: AMAZFIT_ZEPP_SOURCE_NAME,
                     steps: parsed.dailyMetrics.steps,
                     activeEnergyKcal: parsed.dailyMetrics.activeEnergyKcal,
                     distanceKm: parsed.dailyMetrics.distanceKm,
@@ -307,6 +327,7 @@ export class AmazfitZeppProvider implements SyncProvider {
                       dailyMetrics.sourceName,
                     ],
                     set: {
+                      sourceName: AMAZFIT_ZEPP_SOURCE_NAME,
                       steps: parsed.dailyMetrics.steps,
                       activeEnergyKcal: parsed.dailyMetrics.activeEnergyKcal,
                       distanceKm: parsed.dailyMetrics.distanceKm,
@@ -320,6 +341,7 @@ export class AmazfitZeppProvider implements SyncProvider {
                   .insert(sleepSession)
                   .values({
                     providerId: this.id,
+                    userId: scopedUserId,
                     externalId: parsed.sleep.externalId,
                     startedAt: parsed.sleep.startedAt,
                     endedAt: parsed.sleep.endedAt,
@@ -328,6 +350,7 @@ export class AmazfitZeppProvider implements SyncProvider {
                     lightMinutes: parsed.sleep.lightMinutes,
                     remMinutes: parsed.sleep.remMinutes,
                     awakeMinutes: parsed.sleep.awakeMinutes,
+                    sourceName: AMAZFIT_ZEPP_SOURCE_NAME,
                   })
                   .onConflictDoUpdate({
                     target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
@@ -339,6 +362,7 @@ export class AmazfitZeppProvider implements SyncProvider {
                       lightMinutes: parsed.sleep.lightMinutes,
                       remMinutes: parsed.sleep.remMinutes,
                       awakeMinutes: parsed.sleep.awakeMinutes,
+                      sourceName: AMAZFIT_ZEPP_SOURCE_NAME,
                     },
                   });
                 synced++;
@@ -347,8 +371,10 @@ export class AmazfitZeppProvider implements SyncProvider {
               if (parsed.heartRateSamples.length > 0) {
                 const heartRateRows = parsed.heartRateSamples.map((sample) => ({
                   providerId: this.id,
+                  userId: scopedUserId,
                   externalId: `zepp-heart-rate-${sample.recordedAt.toISOString()}`,
                   recordedAt: sample.recordedAt,
+                  sourceName: AMAZFIT_ZEPP_SOURCE_NAME,
                   heartRate: sample.heartRate,
                 }));
                 synced += await writeMetricStreamBatch(
@@ -356,24 +382,35 @@ export class AmazfitZeppProvider implements SyncProvider {
                   heartRateRows,
                   SOURCE_TYPE_API,
                   undefined,
-                  options?.metricStreamPublisher,
+                  metricStreamPublisher,
                 );
               }
             } catch (error: unknown) {
+              captureException(error, {
+                tags: { provider: this.id, dataType: "band_data", phase: "day" },
+              });
               errors.push({
                 message: error instanceof Error ? error.message : String(error),
                 cause: error,
               });
             }
+            onProgress?.(
+              Math.round(((dayIndex + 1) / days.length) * 100),
+              `${dayIndex + 1}/${days.length} days`,
+            );
           }
+          if (days.length === 0) onProgress?.(100, "0/0 days");
 
           return { recordCount: synced, result: synced };
         },
-        options?.userId,
+        scopedUserId,
       );
       recordsSynced += count;
     } catch (error: unknown) {
       if (error instanceof ProviderRateLimitError) throw error;
+      captureException(error, {
+        tags: { provider: this.id, dataType: "band_data", phase: "sync" },
+      });
       errors.push({
         message: `band_data: ${error instanceof Error ? error.message : String(error)}`,
         cause: error,
