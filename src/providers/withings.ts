@@ -8,7 +8,7 @@ import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
-import { RefreshTokenRevokedError } from "./auth-errors.ts";
+import { ProviderAuthenticationFailedError, RefreshTokenRevokedError } from "./auth-errors.ts";
 import type {
   ProviderAuthSetup,
   SyncError,
@@ -435,7 +435,7 @@ export class WithingsProvider implements WebhookProvider {
   async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
     const tokens = await loadTokens(db, this.id);
     if (!tokens) {
-      throw new Error("No OAuth tokens found for Withings. Run: health-data auth withings");
+      throw new ProviderAuthenticationFailedError(this.name);
     }
 
     if (tokens.expiresAt > new Date()) {

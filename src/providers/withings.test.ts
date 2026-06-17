@@ -154,7 +154,8 @@ describe("WithingsProvider.sync() — unit tests", () => {
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.provider).toBe("withings");
     expect(result.errors.length).toBeGreaterThan(0);
-    expect(result.errors[0]?.message).toContain("No OAuth tokens");
+    expect(result.errors[0]?.message).toBe("Withings authentication failed.");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "authentication_failed" });
   });
 
   it("syncs measurements successfully with valid tokens", async () => {
