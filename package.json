@@ -59,6 +59,7 @@
     "./providers/velohero": "./src/providers/velohero.ts",
     "./providers/bodyspec": "./src/providers/bodyspec.ts",
     "./providers/auto-supplements": "./src/providers/auto-supplements.ts",
+    "./providers/amazfit-zepp": "./src/providers/amazfit-zepp.ts",
     "./db/migrate": "./src/db/migrate.ts",
     "./db/token-user-context": "./src/db/token-user-context.ts",
     "./db/tokens": "./src/db/tokens.ts",

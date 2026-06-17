@@ -71,6 +71,10 @@ async function doRegisterProviders() {
       "auto-supplements",
       () => import("../providers/auto-supplements.ts").then((m) => new m.AutoSupplementsProvider()),
     ],
+    [
+      "amazfit-zepp",
+      () => import("../providers/amazfit-zepp.ts").then((m) => new m.AmazfitZeppProvider()),
+    ],
   ] as const;
 
   for (const [name, loadProvider] of providers) {
