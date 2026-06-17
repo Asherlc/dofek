@@ -14,7 +14,7 @@ describe("Settings router", () => {
   let sessionCookie: string;
 
   beforeAll(async () => {
-    testCtx = await setupTestDatabase();
+    testCtx = await setupTestDatabase({ createRetiredMetricStreamFixture: true });
     await testCtx.db.execute(
       sql`INSERT INTO fitness.user_profile (id, name)
           VALUES (${SETTINGS_TEST_USER_ID}, 'Settings Test User')

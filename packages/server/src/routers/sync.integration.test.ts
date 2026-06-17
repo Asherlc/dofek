@@ -13,7 +13,7 @@ describe("countProviderRecords SQL", () => {
   let testCtx: TestContext;
 
   beforeAll(async () => {
-    testCtx = await setupTestDatabase();
+    testCtx = await setupTestDatabase({ createRetiredMetricStreamFixture: true });
     // Reset search_path to only 'public' — simulates production where
     // the default search_path may not include 'fitness'
     await testCtx.db.execute(sql`SET search_path TO public`);
@@ -44,7 +44,7 @@ describe("triggerSync token lookup SQL", () => {
   const testUserId = "00000000-0000-0000-0000-000000000099";
 
   beforeAll(async () => {
-    testCtx = await setupTestDatabase();
+    testCtx = await setupTestDatabase({ createRetiredMetricStreamFixture: true });
     await testCtx.db.execute(sql`SET search_path TO public`);
 
     // Seed a user, two providers, and one oauth token

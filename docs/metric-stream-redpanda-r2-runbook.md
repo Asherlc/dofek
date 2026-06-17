@@ -1,16 +1,14 @@
 # Metric Stream Redpanda and R2 Runbook
 
 Use this for the Redpanda metric-stream replay path. HealthKit quantity
-metric-stream samples publish through Redpanda first. Other providers may still
-write directly to Postgres until their individual writer cutovers are complete.
-PeerDB may still mirror non-IMU Postgres rows into ClickHouse during shadow
-validation and bounded recovery.
+metric-stream samples and provider metric-stream samples publish through
+Redpanda first. Postgres no longer stores the metric stream.
 
 ## Purpose
 
-`fitness.metric_stream` is high-volume sensor data. A single Postgres logical
-replication slot is not durable enough for this table because a lost slot can
-leave ClickHouse stale even while Postgres still has fresh source rows.
+Metric stream is high-volume sensor data. It is intentionally not stored in
+Postgres; Redpanda is the hot ingest log, R2 is the durable archive, and
+ClickHouse is the analytics serving copy.
 
 The target durable path is:
 
@@ -24,11 +22,9 @@ provider/mobile import
 R2 is the long-term replay store for metric-stream events, and ClickHouse is the
 analytics serving copy; both are rebuildable from Redpanda/R2 for bounded ranges.
 Metric-stream samples are no longer written back into `fitness.metric_stream` from
-Redpanda — the project is moving off the Postgres metric stream. Any existing
-`fitness.metric_stream` rows are legacy data written by direct provider paths that
-have not yet been cut over; the canonical analytics copy is ClickHouse. Postgres
-remains canonical for users, providers, activities, tokens, settings, food, and
-other app state.
+Redpanda. Historical Postgres rows were archived to R2 before the Postgres table
+was retired. Postgres remains canonical for users, providers, activities,
+tokens, settings, food, and other app state.
 
 ## Canonical Storage Policy
 
@@ -172,26 +168,11 @@ writers to Redpanda-first unless the R2 archive is fresh.
 
 ## Historical Postgres Backfill
 
-Use the one-time Postgres-to-Redpanda backfill to port existing
-`fitness.metric_stream` rows into `metric-stream-v1`:
-
-```bash
-./scripts/with-env.sh pnpm tsx scripts/backfill-metric-stream-to-redpanda.ts \
-  --start 2024-01-01T00:00:00Z \
-  --end 2024-02-01T00:00:00Z \
-  --batch-size 5000
-```
-
-The script requires a bounded `--start` and `--end`, reads Postgres with keyset
-pagination over `(recorded_at, id)`, preserves the original Postgres `id`, and
-publishes through the versioned Redpanda producer. Run it in bounded windows and
-do not use `OFFSET`-based ad hoc SQL for this migration.
-
-Do not run the historical backfill until all durable consumers are healthy:
-
-1. `metric-stream-clickhouse-sink` is running and idempotent by event id.
-2. `metric-stream-r2-archive` is writing fresh R2 objects.
-3. Redpanda consumer lag is acceptable for all metric-stream groups.
+The one-time `fitness.metric_stream` to R2 historical backfill has completed and
+the exporter code has been removed. Do not introduce a new Postgres-to-Redpanda
+or Postgres-to-R2 backfill path without a fresh migration plan and explicit
+operator approval. Future repairs should replay bounded R2 prefixes into
+ClickHouse or rebuild ClickHouse analytics from the Redpanda-fed source table.
 
 Provider replacement syncs must use the scoped replacement publisher path so
 ClickHouse and R2 see the same delete/replacement sequence.
@@ -223,14 +204,11 @@ Do not switch production writers to Redpanda-first until all checks pass:
 3. Redpanda Connect archive writes fresh R2 objects.
 4. A bounded R2 replay into a temporary ClickHouse table matches row counts and
    checksums from the original archive.
-5. PeerDB metric-stream CDC remains active during shadow validation.
-6. Recent Redpanda-sourced ClickHouse rows match PeerDB-sourced rows over a
-   bounded recent window.
+5. Recent Redpanda-sourced ClickHouse rows match the corresponding R2 archive
+   rows over a bounded recent window when validating replay behavior.
 
-Only after this checklist passes should additional provider and mobile
-metric-stream writers move from direct Postgres writes to
-`writeMetricStreamRows()`. HealthKit quantity metric-stream samples already use
-that writer boundary.
+All provider and mobile metric-stream writers should use `writeMetricStreamRows()`
+or the scoped replacement helpers.
 
 ## Incident Triage
 

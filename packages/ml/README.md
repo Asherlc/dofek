@@ -3,16 +3,16 @@
 Machine Learning and data export pipeline for Dofek.
 
 ## Features
-- **Training Export**: High-performance export of training data from TimescaleDB/Postgres to Parquet.
-- **Worker**: A BullMQ worker that processes background export jobs.
+- **Training Export**: The old Postgres-backed `metric_stream` export is retired.
+- **Worker**: A BullMQ worker that rejects retired background export jobs with a clear error.
 - **Data Loading**: Utilities for loading exported Parquet data into Python environments.
 - **Training**: Core model training logic.
 
 ## Technical Details
 - **Architecture**:
   - Python-based BullMQ worker (`dofek-ml-worker`).
-  - Integration with Postgres (TimescaleDB) and Redis.
-  - Export to Apache Parquet format using `PyArrow` and `psycopg`.
+  - Integration with Redis for the queue.
+  - Existing Parquet loading utilities remain for R2/ClickHouse-derived training datasets.
 - **Infrastructure**:
   - Containerized with a dedicated `Dockerfile`.
   - Uses `uv` for dependency management.
@@ -21,7 +21,8 @@ Machine Learning and data export pipeline for Dofek.
   - Stored in a directory structure defined by `JOB_FILES_DIR`.
 
 ## Usage
-The worker listens on the `training-export` BullMQ queue.
+The worker listens on the `training-export` BullMQ queue and fails jobs
+explicitly because Postgres `fitness.metric_stream` has been dropped.
 ```bash
-REDIS_URL=redis://localhost:6379 DATABASE_URL=postgres://... python -m dofek_ml.worker
+REDIS_URL=redis://localhost:6379 python -m dofek_ml.worker
 ```

@@ -5,7 +5,6 @@ import type { SyncDatabase } from "../../db/index.ts";
 import {
   activity as activityTable,
   dailyMetrics as dailyMetricsTable,
-  metricStream as metricStreamTable,
   sleepSession as sleepSessionTable,
 } from "../../db/schema.ts";
 import type { WebhookEvent } from "../types.ts";
@@ -1290,7 +1289,7 @@ describe("FitbitProvider", () => {
       expect(result.errors).toHaveLength(0);
       expect(result.recordsSynced).toBe(1);
       expectReasonableDuration(result.duration);
-      expect(db.delete).not.toHaveBeenCalledWith(metricStreamTable);
+      expect(db.delete).not.toHaveBeenCalled();
 
       const publishedRows = publishedMetricStreamBatches.flat();
       const weightValues = publishedRows.find(

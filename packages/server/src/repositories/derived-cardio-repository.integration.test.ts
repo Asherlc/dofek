@@ -13,7 +13,7 @@ afterEach(async () => {
 
 describe("DerivedCardioRepository integration", () => {
   it("derives resting HR from sleep-window heart-rate samples", async () => {
-    testContext = await setupTestDatabase();
+    testContext = await setupTestDatabase({ createRetiredMetricStreamFixture: true });
     const repo = new DerivedCardioRepository(
       testContext.db,
       {
@@ -44,7 +44,7 @@ describe("DerivedCardioRepository integration", () => {
   });
 
   it("returns null when resting HR has fewer than 30 sleep-window samples", async () => {
-    testContext = await setupTestDatabase();
+    testContext = await setupTestDatabase({ createRetiredMetricStreamFixture: true });
     const repo = new DerivedCardioRepository(
       testContext.db,
       {
@@ -70,7 +70,7 @@ describe("DerivedCardioRepository integration", () => {
   });
 
   it("averages all qualifying cycling VO2 max estimates", async () => {
-    testContext = await setupTestDatabase();
+    testContext = await setupTestDatabase({ createRetiredMetricStreamFixture: true });
     const repo = new DerivedCardioRepository(
       testContext.db,
       {

@@ -1,32 +1,29 @@
 # Retiring the Postgres metric stream
 
-Tracks the work to remove `fitness.metric_stream` from Postgres. Metric-stream
-samples now flow provider/mobile → Redpanda → ClickHouse sink + R2 archive;
-Postgres is no longer a metric-stream source or sink. This plan migrates the
-remaining readers off Postgres so the table (and the PeerDB mirror that fed it)
-can be dropped.
+Tracks the completed work to remove `fitness.metric_stream` from Postgres.
+Metric-stream samples now flow provider/mobile → Redpanda → ClickHouse sink +
+R2 archive; Postgres is no longer a metric-stream source or sink.
 
 ## Current state
 
 - **Writers:** off Postgres. `db/metric-stream-writer.ts` only publishes to
   Redpanda (`publishRows`/`replaceRows`); the Postgres sink was removed.
-- **`fitness.metric_stream` (Postgres):** frozen — receives no new rows. Readers
-  below are serving stale data for anything written after the cutover.
+- **`fitness.metric_stream` (Postgres):** retired and dropped. Historical rows
+  were exported to R2 before the destructive migration.
 - **ClickHouse serving copy:** `postgres_fitness.metric_stream`, fed by the
   Redpanda `metric-stream-clickhouse-sink` (non-IMU only). Source for
   `analytics.deduped_sensor` and all downstream dbt sensor models. **Kept.**
-- **PeerDB PG→CH metric_stream mirror:** legacy shadow-validation path. To be
-  retired (redundant with the Redpanda sink; impossible once the PG table is
-  gone).
+- **PeerDB PG→CH metric_stream mirror:** retired. The ClickHouse serving table
+  is fed by Redpanda, not Postgres CDC.
 - **R2 archive:** every channel (incl. `imu`) archived as
   `metric-stream/v1/date=…/hour=…/*.jsonl.gz`. Only data written *after* the
-  Redpanda cutover is present; the ~423M historical Postgres rows are backfilled
-  separately (see "Historical backfill" below).
+  Redpanda cutover is present in the live stream; the historical Postgres rows
+  were backfilled separately (see "Historical backfill" below).
 
 ## Historical backfill (Postgres → R2 direct export)
 
-The live archive only holds post-cutover data, so the historical
-`fitness.metric_stream` rows must be exported to R2 to make it complete.
+The live archive only held post-cutover data, so the historical
+`fitness.metric_stream` rows were exported to R2 before the table was dropped.
 
 Backfilling *through the Redpanda topic* risks duplicate R2 objects: the live
 archiver names objects by Kafka offset range, so any re-published row (e.g. a
@@ -34,8 +31,8 @@ crash-retry) lands under a new offset = a second copy, and R2 has no read-side
 dedup (row-level dedup lives in ClickHouse on the deterministic event id). The
 bounded single-node topic also can't buffer hundreds of GB.
 
-So historical rows are written **straight to R2**, bypassing the topic, by
-`src/metric-stream/r2-export-run.ts`:
+Historical rows were written **straight to R2**, bypassing the topic, by the
+now-removed one-time exporter:
 
 - Output is byte-compatible with the live archive: each line is
   `JSON.stringify(createMetricStreamEvent(row))`, gzipped, partitioned by
@@ -50,9 +47,8 @@ So historical rows are written **straight to R2**, bypassing the topic, by
   runs safely as a one-shot container on the memory-constrained production host.
 - Run window must stay **below the live-stream cutoff** (earliest recordedAt
   already in the topic/R2) so it never overlaps already-archived data.
-- Operate it with the `Backfill metric_stream to R2` GitHub Actions workflow
-  (`workflow_dispatch`, `--start`/`--end` window), which runs the one-shot on the
-  production swarm exactly like the migration job.
+- The `Backfill metric_stream to R2` GitHub Actions workflow and one-time export
+  code were removed after the backfill completed.
 
 ## Naming decision
 
@@ -143,20 +139,15 @@ Done:
 
 ## P3 — Drop Postgres metric_stream + cleanup
 
-Only after P0–P2 are merged and verified, and the historical backfill is complete.
+Done:
 
-1. Retire PeerDB metric_stream CDC mirror (so CH is fed only by Redpanda).
-2. Delete the one-time backfill code now that the source is being dropped:
-   `scripts/backfill-metric-stream-to-redpanda.ts`,
-   `src/metric-stream/r2-export-run.ts`, `src/metric-stream/r2-export.ts`,
-   `src/metric-stream/postgres-backfill-source.ts`, their tests, and the
-   `Backfill metric_stream to R2` workflow.
-3. Drizzle migration: drop `fitness.metric_stream` (+ remaining views, indexes,
-   any leftover triggers). Remove from `schema.ts`.
-4. Remove `MetricStreamSourceRow`/PG-shaped types that only described the PG
-   table; keep the Redpanda event types (`events.ts`).
-5. Docs: update `metric-stream-redpanda-r2-runbook.md` + `schema.md` to reflect
-   the dropped table; regenerate schema diagrams.
+1. Retired the PeerDB metric_stream CDC mirror; ClickHouse is fed by Redpanda.
+2. Deleted one-time backfill/export code after the R2 backfill completed.
+3. Added the Drizzle migration that drops `fitness.metric_stream` and removed
+   the table from `schema.ts`.
+4. Removed Postgres-shaped metric-stream writer/schema code while keeping the
+   Redpanda event types.
+5. Updated docs and regenerated schema diagrams.
 
 ## Validation gates (every P)
 

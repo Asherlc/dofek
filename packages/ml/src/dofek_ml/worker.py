@@ -1,15 +1,14 @@
 """worker.py -- BullMQ worker that processes training export jobs.
 
 Connects directly to Redis and listens on the "training-export" queue.
-When a job arrives, calls export_to_parquet() and reports progress via
-BullMQ's built-in job.updateProgress().
+When a job arrives, it fails explicitly because the Postgres-backed training
+export has been retired.
 
 This replaces the previous architecture where a Node.js BullMQ worker
 spawned Python as a child process and parsed JSON lines from stdout.
 
 Usage:
-    REDIS_URL=redis://localhost:6379 DATABASE_URL=postgres://... \
-    python -m dofek_ml.worker
+    REDIS_URL=redis://localhost:6379 python -m dofek_ml.worker
 """
 
 from __future__ import annotations
@@ -18,17 +17,12 @@ import asyncio
 import logging
 import os
 import signal
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from urllib.parse import urlparse
 
-if TYPE_CHECKING:
-    import concurrent.futures
-
-import psycopg
 from bullmq import Job, Worker
 
-from dofek_ml.export import export_to_parquet
+from dofek_ml.export import POSTGRES_METRIC_STREAM_EXPORT_RETIRED_MESSAGE
 
 logger = logging.getLogger("dofek_ml.worker")
 
@@ -40,11 +34,6 @@ MAX_STALLED_COUNT = 3
 # Keep the dedicated training export worker alive by default.
 # A value <= 0 disables idle shutdown.
 IDLE_TIMEOUT_SECONDS = 0
-
-# Shared volume for export output (matches JOB_FILES_DIR in Node.js)
-JOB_FILES_DIR = Path(os.environ.get("JOB_FILES_DIR", "/tmp/dofek-job-files"))
-TRAINING_EXPORT_DIR = JOB_FILES_DIR / "training-export"
-
 
 def parse_redis_url(url: str) -> dict[str, Any]:
     """Parse a redis:// URL into a connection dict for BullMQ Python."""
@@ -61,59 +50,18 @@ def parse_redis_url(url: str) -> dict[str, Any]:
 async def process_training_export(job: Job, _token: str) -> dict[str, Any]:
     """Process a single training export job.
 
-    Reads since/until from job.data, connects to Postgres, exports to Parquet,
-    and reports progress via BullMQ's job.updateProgress().
+    The Postgres-backed export path was retired with fitness.metric_stream.
     """
     data = job.data or {}
     since = data.get("since")
     until = data.get("until")
 
-    database_url = os.environ.get("DATABASE_URL")
-    if not database_url:
-        raise RuntimeError("DATABASE_URL environment variable is required for training export")
-
     logger.info(
-        "Starting training data export (since=%s, until=%s)",
+        "Rejecting retired Postgres training data export (since=%s, until=%s)",
         since or "all",
         until or "now",
     )
-
-    async def report_progress(info: dict[str, Any]) -> None:
-        await job.updateProgress(info)
-
-    # export_to_parquet is synchronous (uses psycopg sync API + PyArrow),
-    # so run it in a thread to avoid blocking the asyncio event loop.
-    # Capture the running loop here — asyncio.get_event_loop() raises
-    # RuntimeError inside executor threads on Python 3.12+.
-    loop = asyncio.get_running_loop()
-
-    def run_export() -> dict[str, Any]:
-        # Use a synchronous progress callback that schedules the async update
-        progress_futures: list[concurrent.futures.Future[None]] = []
-
-        def sync_progress(info: dict[str, Any]) -> None:
-            future = asyncio.run_coroutine_threadsafe(report_progress(info), loop)
-            progress_futures.append(future)
-
-        with psycopg.connect(database_url) as conn:
-            manifest = export_to_parquet(
-                conn,
-                TRAINING_EXPORT_DIR,
-                since=since,
-                until=until,
-                on_progress=sync_progress,
-            )
-
-        # Wait for all pending progress updates to complete
-        for future in progress_futures:
-            future.result(timeout=5)
-
-        return manifest
-
-    manifest = await loop.run_in_executor(None, run_export)
-
-    logger.info("Export complete: %d total rows", manifest.get("totalRows", 0))
-    return manifest
+    raise RuntimeError(POSTGRES_METRIC_STREAM_EXPORT_RETIRED_MESSAGE)
 
 
 async def run_worker() -> None:

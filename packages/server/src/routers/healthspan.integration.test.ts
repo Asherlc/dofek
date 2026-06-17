@@ -26,7 +26,7 @@ describe("healthspan zone time with variable-interval HR data", () => {
   const RESTING_HR = 50;
 
   beforeAll(async () => {
-    testCtx = await setupTestDatabase();
+    testCtx = await setupTestDatabase({ createRetiredMetricStreamFixture: true });
 
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;

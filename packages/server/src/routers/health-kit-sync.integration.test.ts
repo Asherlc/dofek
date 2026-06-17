@@ -18,7 +18,7 @@ describe("HealthKit sync router", () => {
   let metricStreamPublisher: MetricStreamEventPublisher;
 
   beforeAll(async () => {
-    testCtx = await setupTestDatabase();
+    testCtx = await setupTestDatabase({ createRetiredMetricStreamFixture: true });
 
     const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
     const session = await createSession(testCtx.db, TEST_USER_ID);

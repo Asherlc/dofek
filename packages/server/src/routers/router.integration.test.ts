@@ -28,7 +28,7 @@ describe("Router coverage", () => {
   let sessionCookie: string;
 
   beforeAll(async () => {
-    testCtx = await setupTestDatabase();
+    testCtx = await setupTestDatabase({ createRetiredMetricStreamFixture: true });
 
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;

@@ -19,7 +19,7 @@ describe("tableInfo", () => {
     ["bodyMeasurements", "analytics.v_body_measurement", "recorded_at", "id"],
     ["foodEntries", "fitness.food_entry", "date", "id"],
     ["healthEvents", "fitness.health_event", "start_date", "id"],
-    ["metricStream", "fitness.metric_stream", "recorded_at", "id"],
+    ["metricStream", "postgres_fitness.metric_stream", "recorded_at", "id"],
     ["nutritionDaily", "fitness.v_nutrition_daily", "date", "date"],
     ["labPanels", "fitness.lab_panel", "recorded_at", "id"],
     ["labResults", "fitness.lab_result", "recorded_at", "id"],
@@ -73,12 +73,12 @@ describe("dataTypeEnum", () => {
 // ---------------------------------------------------------------------------
 
 describe("DISCONNECT_CHILD_TABLES", () => {
-  it("contains 12 child tables", () => {
-    expect(DISCONNECT_CHILD_TABLES).toHaveLength(12);
+  it("contains 11 child tables", () => {
+    expect(DISCONNECT_CHILD_TABLES).toHaveLength(11);
   });
 
   it("includes all required child tables", () => {
-    expect(DISCONNECT_CHILD_TABLES).toContain("fitness.metric_stream");
+    expect(DISCONNECT_CHILD_TABLES).not.toContain("fitness.metric_stream");
     expect(DISCONNECT_CHILD_TABLES).not.toContain("fitness.strength_workout");
     expect(DISCONNECT_CHILD_TABLES).not.toContain("fitness.body_measurement");
     expect(DISCONNECT_CHILD_TABLES).not.toContain("fitness.nutrition_daily");
@@ -95,8 +95,8 @@ describe("DISCONNECT_CHILD_TABLES", () => {
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.oauth_token");
   });
 
-  it("starts with fitness.metric_stream (first to delete)", () => {
-    expect(DISCONNECT_CHILD_TABLES[0]).toBe("fitness.metric_stream");
+  it("starts with daily_metrics after Postgres metric_stream retirement", () => {
+    expect(DISCONNECT_CHILD_TABLES[0]).toBe("fitness.daily_metrics");
   });
 
   it("ends with activity then oauth_token (FK order)", () => {
@@ -463,7 +463,7 @@ describe("ProviderDetailRepository", () => {
         idColumn: "id",
       });
       expect(tableInfo("metricStream")).toStrictEqual({
-        table: "fitness.metric_stream",
+        table: "postgres_fitness.metric_stream",
         orderColumn: "recorded_at",
         idColumn: "id",
       });
@@ -548,13 +548,13 @@ describe("ProviderDetailRepository", () => {
 
       await repo.deleteProviderData("test-provider");
       expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
-      expect(txExecute).toHaveBeenCalledTimes(12);
+      expect(txExecute).toHaveBeenCalledTimes(11);
     });
 
     it("DISCONNECT_CHILD_TABLES is an array (not empty array from ArrayDeclaration mutation)", () => {
-      expect(DISCONNECT_CHILD_TABLES.length).toBe(12);
-      expect(DISCONNECT_CHILD_TABLES[0]).toBe("fitness.metric_stream");
-      expect(DISCONNECT_CHILD_TABLES[11]).toBe("fitness.oauth_token");
+      expect(DISCONNECT_CHILD_TABLES.length).toBe(11);
+      expect(DISCONNECT_CHILD_TABLES[0]).toBe("fitness.daily_metrics");
+      expect(DISCONNECT_CHILD_TABLES[10]).toBe("fitness.oauth_token");
     });
 
     it("tableInfo returns three-key objects (not empty objects from ObjectLiteral mutation)", () => {
