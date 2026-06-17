@@ -10485,3 +10485,31 @@ new incremental tables are populated.
 - **Follow-up:** Run the historical backfill as gated time-windows (see the
   metric-stream retirement plan), draining the R2 archive consumer between
   windows; consider raising r2-archive throughput to shorten the ~33h floor.
+
+## 2026-06-17 — Withings sync retried expired-looking token until Sentry noise
+
+- **Symptoms:** Sentry issue `DOFEK-SERVER-22` reported recurring production
+  Withings sync failures with `Error: Withings API error (status 401)` from
+  `WithingsClient.#post` during `getMeas`.
+- **User impact:** Affected Withings sync jobs could not import new body
+  measurements until a later successful token refresh or user reconnect.
+- **Evidence:** Latest Sentry event `1510b6b1aebd4769af3501d29f09c812` occurred
+  at `2026-06-17T20:30:01.296Z` in production, provider tag `withings`, with
+  stack frames `processSyncJob` -> `WithingsProvider.sync` ->
+  `WithingsClient.#post`. The response was an HTTP-successful Withings JSON
+  body with nonzero `status: 401`, not an HTTP 401.
+- **Root cause:** `WithingsProvider.#resolveTokens()` only refreshed when the
+  stored token expiry was in the past. If Withings rejected an unexpired stored
+  access token during an API call, the client threw a generic API error and the
+  sync job failed instead of refreshing with the stored refresh token.
+- **Fix / mitigation:** `WithingsClient` now throws a typed internal API error
+  for nonzero Withings body statuses. `WithingsProvider.sync()` treats body
+  `status: 401` as access-token rejection, refreshes and persists tokens through
+  the existing Withings refresh path, rebuilds the client, and retries the
+  current measurement page once. Non-auth API statuses still surface as
+  `metric_stream` sync errors.
+- **Remaining risk:** If Withings rejects both the access token and refresh
+  token, sync still fails and the existing refresh-token revocation handling
+  deletes stored tokens only for the known Withings invalid-refresh status path.
+- **Follow-up:** If additional Withings auth body statuses appear in Sentry,
+  add them to the typed auth-status predicate with a focused replay test.

@@ -301,7 +301,7 @@ describe("WithingsProvider.sync() (integration)", () => {
     expect(result.errors).toHaveLength(0);
   });
 
-  it("catches outer withSyncLog error and reports it", async () => {
+  it("catches outer withSyncLog error and reports non-auth API errors", async () => {
     await saveTokens(ctx.db, "withings", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",
@@ -312,7 +312,7 @@ describe("WithingsProvider.sync() (integration)", () => {
     server.use(
       http.post("https://wbsapi.withings.net/measure", () => {
         return HttpResponse.json({
-          status: 401, // Non-zero = Withings API error
+          status: 500, // Non-zero = Withings API error
           body: {},
         });
       }),
