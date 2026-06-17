@@ -21,6 +21,7 @@ import { ClickHouseActivitySensorStore } from "../repositories/clickhouse-activi
 interface ClickHouseSyncTestContext {
   addCleanup(cleanup: () => Promise<void>): void;
   connectionString: string;
+  hasRetiredMetricStreamFixture?: boolean;
 }
 
 interface IsolatedClickHouseDatabases {
@@ -1534,6 +1535,7 @@ export async function createClickHouseTestActivitySensorStore(
     await syncClickHouseTestActivitySensorStoreWithClient(
       setupClient,
       testContext.connectionString,
+      testContext.hasRetiredMetricStreamFixture === true,
     );
   } finally {
     await releaseSlot();
@@ -1646,17 +1648,22 @@ async function syncClickHouseTestActivitySensorStoreWithSlot(
   await syncClickHouseTestActivitySensorStoreWithClient(
     handle.setupClient,
     testContext.connectionString,
+    testContext.hasRetiredMetricStreamFixture === true,
   );
 }
 
 async function syncClickHouseTestActivitySensorStoreWithClient(
   client: ClickHouseClient,
   connectionString: string,
+  includeRetiredMetricStreamFixture: boolean,
 ): Promise<void> {
   for (const rawTableSync of rawTableSyncs) {
     await client.command({
       query: `TRUNCATE TABLE postgres_fitness.${rawTableSync.tableName}`,
     });
+    if (rawTableSync.tableName === "metric_stream" && !includeRetiredMetricStreamFixture) {
+      continue;
+    }
     await client.command({
       query: buildRawTableInsertStatement(connectionString, rawTableSync),
     });

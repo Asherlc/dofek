@@ -11,6 +11,7 @@ export type TestDatabase = ReturnType<typeof createDatabase>;
 export interface TestContext {
   db: TestDatabase;
   connectionString: string;
+  hasRetiredMetricStreamFixture: boolean;
   addCleanup: (cleanup: () => Promise<void>) => void;
   cleanup: () => Promise<void>;
 }
@@ -216,6 +217,7 @@ export async function setupTestDatabase(
   return {
     db,
     connectionString,
+    hasRetiredMetricStreamFixture: options.createRetiredMetricStreamFixture === true,
     addCleanup: (cleanup) => {
       cleanupTasks.push(cleanup);
     },
