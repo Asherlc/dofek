@@ -35,6 +35,7 @@ MAX_STALLED_COUNT = 3
 # A value <= 0 disables idle shutdown.
 IDLE_TIMEOUT_SECONDS = 0
 
+
 def parse_redis_url(url: str) -> dict[str, Any]:
     """Parse a redis:// URL into a connection dict for BullMQ Python."""
     parsed = urlparse(url)

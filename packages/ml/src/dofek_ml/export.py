@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
-from collections.abc import Callable
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
 
 POSTGRES_METRIC_STREAM_EXPORT_RETIRED_MESSAGE = (
     "Postgres metric_stream training export has been retired because "
@@ -27,9 +30,7 @@ def export_to_parquet(
 
 def main() -> None:
     """CLI interface retained to report the retired export path clearly."""
-    parser = argparse.ArgumentParser(
-        description="Retired Postgres metric_stream training export"
-    )
+    parser = argparse.ArgumentParser(description="Retired Postgres metric_stream training export")
     parser.add_argument(
         "--database-url",
         default=None,
