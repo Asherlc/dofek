@@ -51,10 +51,6 @@ vi.mock("./process-activity-delete-analytics-job.ts", () => ({
   processActivityDeleteAnalyticsJobSafe: vi.fn(),
 }));
 
-vi.mock("./process-activity-delete-analytics-job.ts", () => ({
-  processActivityDeleteAnalyticsJobSafe: vi.fn(),
-}));
-
 vi.mock("./scheduled-sync.ts", () => ({
   setupScheduledSync: vi.fn(() => Promise.resolve()),
 }));
@@ -403,5 +399,20 @@ describe("worker module", () => {
     expect(createClickHouseClientFromEnv).toHaveBeenCalledOnce();
     expect(createRefitSensorStore).toHaveBeenCalledOnce();
     expect(refreshBodyMeasurementReadModel).toHaveBeenCalledOnce();
+  });
+
+  it("activity-delete-analytics processor delegates to processActivityDeleteAnalyticsJobSafe", async () => {
+    const { processActivityDeleteAnalyticsJobSafe } = await import(
+      "./process-activity-delete-analytics-job.ts"
+    );
+    vi.mocked(processActivityDeleteAnalyticsJobSafe).mockClear();
+
+    await invokeProcessor("activity-delete-analytics-queue", {
+      type: "activity-delete-analytics-refresh",
+      userId: "user-1",
+      activityIds: ["00000000-0000-0000-0000-000000000001"],
+    });
+
+    expect(processActivityDeleteAnalyticsJobSafe).toHaveBeenCalled();
   });
 });

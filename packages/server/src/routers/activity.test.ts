@@ -1,7 +1,7 @@
 import { mapHrZones } from "@dofek/zones/zones";
 import { TRPCError } from "@trpc/server";
 import { queryCache } from "dofek/lib/cache";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityRow } from "../models/activity.ts";
 import { Activity } from "../models/activity.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
@@ -669,10 +669,7 @@ describe("activityRouter", () => {
       });
 
       await caller.bulkDelete({
-        ids: [
-          "00000000-0000-0000-0000-000000000001",
-          "00000000-0000-0000-0000-000000000002",
-        ],
+        ids: ["00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002"],
       });
 
       expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:activity.");

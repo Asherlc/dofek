@@ -240,6 +240,33 @@ describe("queues", () => {
     });
   });
 
+  describe("createActivityDeleteAnalyticsQueue", () => {
+    it("creates a Queue with the activity delete analytics queue name", async () => {
+      const { createActivityDeleteAnalyticsQueue, ACTIVITY_DELETE_ANALYTICS_QUEUE } = await import(
+        "./queues.ts"
+      );
+
+      createActivityDeleteAnalyticsQueue({ host: "test", port: 9999 });
+
+      expect(MockQueue).toHaveBeenCalledWith(ACTIVITY_DELETE_ANALYTICS_QUEUE, {
+        connection: { host: "test", port: 9999 },
+      });
+    });
+
+    it("uses default redis connection when none provided", async () => {
+      process.env.REDIS_URL = "redis://localhost:6379";
+      const { createActivityDeleteAnalyticsQueue, ACTIVITY_DELETE_ANALYTICS_QUEUE } = await import(
+        "./queues.ts"
+      );
+
+      createActivityDeleteAnalyticsQueue();
+
+      expect(MockQueue).toHaveBeenCalledWith(ACTIVITY_DELETE_ANALYTICS_QUEUE, {
+        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
+      });
+    });
+  });
+
   describe("getPostSyncQueue", () => {
     it("reuses the cached post-sync queue", async () => {
       const { getPostSyncQueue, POST_SYNC_QUEUE } = await import("./queues.ts");
@@ -249,6 +276,22 @@ describe("queues", () => {
 
       expect(firstQueue).toBe(secondQueue);
       expect(MockQueue).toHaveBeenCalledWith(POST_SYNC_QUEUE, {
+        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
+      });
+    });
+  });
+
+  describe("getActivityDeleteAnalyticsQueue", () => {
+    it("reuses the cached activity delete analytics queue", async () => {
+      const { getActivityDeleteAnalyticsQueue, ACTIVITY_DELETE_ANALYTICS_QUEUE } = await import(
+        "./queues.ts"
+      );
+
+      const firstQueue = getActivityDeleteAnalyticsQueue();
+      const secondQueue = getActivityDeleteAnalyticsQueue();
+
+      expect(firstQueue).toBe(secondQueue);
+      expect(MockQueue).toHaveBeenCalledWith(ACTIVITY_DELETE_ANALYTICS_QUEUE, {
         connection: expect.objectContaining({ host: "localhost", port: 6379 }),
       });
     });
@@ -312,10 +355,7 @@ describe("queues", () => {
       const queue = createActivityDeleteAnalyticsQueue({ host: "test", port: 9999 });
       await enqueueActivityDeleteAnalyticsRefresh(
         "user-123",
-        [
-          "00000000-0000-0000-0000-000000000001",
-          "00000000-0000-0000-0000-000000000001",
-        ],
+        ["00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000001"],
         queue,
       );
 
@@ -333,6 +373,16 @@ describe("queues", () => {
           backoff: { type: "fixed", delay: 30_000 },
         },
       );
+    });
+
+    it("does not enqueue a job when no activity ids are provided", async () => {
+      const { enqueueActivityDeleteAnalyticsRefresh, createActivityDeleteAnalyticsQueue } =
+        await import("./queues.ts");
+
+      const queue = createActivityDeleteAnalyticsQueue({ host: "test", port: 9999 });
+      await enqueueActivityDeleteAnalyticsRefresh("user-123", [], queue);
+
+      expect(mockQueueAdd).not.toHaveBeenCalled();
     });
   });
 });

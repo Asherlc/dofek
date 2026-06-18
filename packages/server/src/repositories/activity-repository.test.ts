@@ -850,9 +850,7 @@ describe("ActivityRepository", () => {
         { member_activity_id: "other-id" },
       ]);
 
-      await expect(
-        repo.bulkDelete(["activity-id", "activity-id", "other-id"]),
-      ).resolves.toEqual({
+      await expect(repo.bulkDelete(["activity-id", "activity-id", "other-id"])).resolves.toEqual({
         deletedCount: 2,
         memberActivityIds: ["activity-id", "other-id"],
       });

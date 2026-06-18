@@ -1,7 +1,29 @@
-import { spawn } from "node:child_process";
+import { spawn, type SpawnOptions } from "node:child_process";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
 
 export const ACTIVITY_DELETE_DBT_SELECT = "activity_source_records+";
+
+export interface SpawnedProcess {
+  stderr: NodeJS.ReadableStream | null;
+  on(event: "error", listener: (error: Error) => void): this;
+  on(event: "close", listener: (code: number | null) => void): this;
+  emit(event: "error", error: Error): boolean;
+  emit(event: "close", code: number | null): boolean;
+}
+
+export type ActivityReadModelSpawner = (
+  command: string,
+  args: readonly string[],
+  options: Pick<SpawnOptions, "env" | "stdio">,
+) => SpawnedProcess;
+
+function defaultActivityReadModelSpawner(
+  command: string,
+  args: readonly string[],
+  options: Pick<SpawnOptions, "env" | "stdio">,
+): SpawnedProcess {
+  return spawn(command, [...args], options);
+}
 
 export interface WaitForPeerDbActivityDeletesOptions {
   timeoutMs?: number;
@@ -51,7 +73,7 @@ export async function waitForPeerDbActivityDeletes(
 }
 
 export async function runActivityReadModelBuild(
-  spawnImpl: typeof spawn = spawn,
+  spawnImpl: ActivityReadModelSpawner = defaultActivityReadModelSpawner,
 ): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawnImpl(

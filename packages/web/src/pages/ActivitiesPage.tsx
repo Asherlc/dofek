@@ -113,9 +113,7 @@ export function ActivitiesPage() {
           onDeleteSelected={() => setConfirmDelete(true)}
           onConfirmDelete={handleConfirmDelete}
         />
-        {bulkDelete.error ? (
-          <QueryStatePanel error={bulkDelete.error} height={80} />
-        ) : null}
+        {bulkDelete.error ? <QueryStatePanel error={bulkDelete.error} height={80} /> : null}
         {overviewQuery.isLoading ? (
           <QueryStatePanel variant="loading" height={120} />
         ) : overviewQuery.isError ? (
@@ -347,7 +345,11 @@ function ActivityCard({
 
   if (selectMode) {
     return (
-      <button type="button" onClick={onToggleSelected} className={`${cardClassName} w-full text-left`}>
+      <button
+        type="button"
+        onClick={onToggleSelected}
+        className={`${cardClassName} w-full text-left`}
+      >
         {content}
       </button>
     );

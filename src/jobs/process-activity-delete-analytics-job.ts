@@ -1,9 +1,9 @@
 import * as Sentry from "@sentry/node";
-import { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import {
   runActivityReadModelBuild,
   waitForPeerDbActivityDeletes,
 } from "../analytics/activity-read-model-build.ts";
+import { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import { queryCache } from "../lib/cache.ts";
 import { logger } from "../logger.ts";
 import type { ActivityDeleteAnalyticsJobData } from "./queues.ts";
