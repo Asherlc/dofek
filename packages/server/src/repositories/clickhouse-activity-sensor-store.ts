@@ -438,24 +438,26 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
           WHERE total > toUInt64({maxPoints:UInt32})
           GROUP BY sample_bucket
         ),
-        scalar_points AS (
+        selected_scalar_points AS (
           SELECT
-            recorded_at,
-            maxIf(scalar, channel = 'heart_rate') AS heart_rate,
-            maxIf(scalar, channel = 'power') AS power,
-            maxIf(scalar, channel = 'speed') AS speed,
-            maxIf(scalar, channel = 'cadence') AS cadence,
-            maxIf(scalar, channel = 'altitude') AS altitude
-          FROM activity_samples
-          GROUP BY recorded_at
+            sample_times.recorded_at AS recorded_at,
+            maxIf(activity_samples.scalar, activity_samples.channel = 'heart_rate') AS heart_rate,
+            maxIf(activity_samples.scalar, activity_samples.channel = 'power') AS power,
+            maxIf(activity_samples.scalar, activity_samples.channel = 'speed') AS speed,
+            maxIf(activity_samples.scalar, activity_samples.channel = 'cadence') AS cadence,
+            maxIf(activity_samples.scalar, activity_samples.channel = 'altitude') AS altitude
+          FROM sample_times
+          LEFT JOIN activity_samples
+            ON activity_samples.recorded_at = sample_times.recorded_at
+          GROUP BY sample_times.recorded_at
         )
         SELECT
           toString(sample_times.recorded_at) AS recorded_at,
-          scalar_points.heart_rate AS heart_rate,
-          scalar_points.power AS power,
-          scalar_points.speed AS speed,
-          scalar_points.cadence AS cadence,
-          scalar_points.altitude AS altitude,
+          selected_scalar_points.heart_rate AS heart_rate,
+          selected_scalar_points.power AS power,
+          selected_scalar_points.speed AS speed,
+          selected_scalar_points.cadence AS cadence,
+          selected_scalar_points.altitude AS altitude,
           location_samples.lat AS lat,
           location_samples.lng AS lng
         FROM (
@@ -463,8 +465,8 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             sample_times.recorded_at AS recorded_at
           FROM sample_times
         ) AS sample_times
-        LEFT JOIN scalar_points
-          ON scalar_points.recorded_at = sample_times.recorded_at
+        LEFT JOIN selected_scalar_points
+          ON selected_scalar_points.recorded_at = sample_times.recorded_at
         LEFT JOIN location_samples
           ON location_samples.recorded_at = sample_times.recorded_at
         ORDER BY sample_times.recorded_at
