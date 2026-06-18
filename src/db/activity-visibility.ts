@@ -51,8 +51,7 @@ export function scanActiveActivityPredicatePairing(
         !PROVIDER_ABSENT_FILTER.test(line);
       const nextLine = lines[index + 1] ?? "";
       const nextLinePaired =
-        PROVIDER_ABSENT_FILTER.test(line) &&
-        /deleted_at\s+IS\s+(?:NULL|null)/i.test(nextLine);
+        PROVIDER_ABSENT_FILTER.test(line) && /deleted_at\s+IS\s+(?:NULL|null)/i.test(nextLine);
 
       if (PROVIDER_ABSENT_FILTER.test(line) && !sameLinePaired && !nextLinePaired) {
         violations.push(`${relativePath}:${index + 1}`);
