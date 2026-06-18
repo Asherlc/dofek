@@ -49,6 +49,42 @@ describe("Zepp token scopes", () => {
   it("falls back to legacy userId: scopes", () => {
     expect(decodeZeppUserIdFromScopes("userId:legacy-user")).toBe("legacy-user");
   });
+
+  it("returns null for missing scopes", () => {
+    expect(decodeZeppUserIdFromScopes(null)).toBeNull();
+    expect(decodeZeppUserIdFromScopes(undefined)).toBeNull();
+    expect(decodeZeppUserIdFromScopes("")).toBeNull();
+  });
+
+  it("returns null when JSON scopes omit zeppUserId", () => {
+    expect(decodeZeppUserIdFromScopes('{"other":"value"}')).toBeNull();
+  });
+
+  it("returns null when zeppUserId is not a string", () => {
+    expect(decodeZeppUserIdFromScopes('{"zeppUserId":123}')).toBeNull();
+  });
+
+  it("returns null when zeppUserId is empty", () => {
+    expect(decodeZeppUserIdFromScopes('{"zeppUserId":""}')).toBeNull();
+  });
+
+  it("returns null for JSON null literal scopes", () => {
+    expect(decodeZeppUserIdFromScopes("null")).toBeNull();
+  });
+
+  it("returns null for non-object JSON scopes", () => {
+    expect(decodeZeppUserIdFromScopes('"hello"')).toBeNull();
+    expect(decodeZeppUserIdFromScopes("42")).toBeNull();
+  });
+
+  it("requires exact legacy userId: prefix match", () => {
+    expect(decodeZeppUserIdFromScopes("prefix userId:legacy-user")).toBeNull();
+    expect(decodeZeppUserIdFromScopes("userId:legacy-user suffix")).toBeNull();
+  });
+
+  it("returns null for unrelated scope strings", () => {
+    expect(decodeZeppUserIdFromScopes("oauth:google")).toBeNull();
+  });
 });
 
 describe("AmazfitZeppProvider auth", () => {
