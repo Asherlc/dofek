@@ -248,7 +248,7 @@ export class WgerProvider implements SyncProvider {
       });
     }
 
-    // Sync body weight into metric_stream body channels.
+    // Sync body weight into metric stream body channels.
     try {
       const weightCount = await withSyncLog(
         db,

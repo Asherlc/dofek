@@ -453,7 +453,7 @@ describe("healthKitSyncRouter", () => {
       ]);
     });
 
-    it("does not update metric_stream rows after inserting heart-rate metrics", async () => {
+    it("does not touch the retired Postgres metric_stream table after inserting heart-rate metrics", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -467,14 +467,7 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      const linkCall = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return (
-          serialized.includes("UPDATE fitness.metric_stream ss") &&
-          serialized.includes("SET activity_id")
-        );
-      });
-      expect(linkCall).toBeUndefined();
+      expect(JSON.stringify(execute.mock.calls)).not.toContain("fitness.metric_stream");
     });
 
     it("processes health event samples (catch-all)", async () => {
@@ -818,7 +811,7 @@ describe("healthKitSyncRouter", () => {
       expect(result.inserted).toBe(1);
     });
 
-    it("does not update metric_stream rows after workout upsert", async () => {
+    it("does not touch the retired Postgres metric_stream table after workout upsert", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -842,14 +835,7 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      const linkCall = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return (
-          serialized.includes("UPDATE fitness.metric_stream ss") &&
-          serialized.includes("SET activity_id")
-        );
-      });
-      expect(linkCall).toBeUndefined();
+      expect(JSON.stringify(execute.mock.calls)).not.toContain("fitness.metric_stream");
     });
 
     it("maps unknown workout type to other", async () => {
@@ -2611,7 +2597,7 @@ describe("healthKitSyncRouter", () => {
       expect(serialized).toContain("exerciseName");
     });
 
-    it("does not update metric_stream rows after processing workouts", async () => {
+    it("does not touch the retired Postgres metric_stream table after processing workouts", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -2635,17 +2621,10 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      const linkCall = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return (
-          serialized.includes("UPDATE fitness.metric_stream ss") &&
-          serialized.includes("SET activity_id")
-        );
-      });
-      expect(linkCall).toBeUndefined();
+      expect(JSON.stringify(execute.mock.calls)).not.toContain("fitness.metric_stream");
     });
 
-    it("does not update metric_stream rows when no workouts are provided", async () => {
+    it("does not touch the retired Postgres metric_stream table when no workouts are provided", async () => {
       const execute = makeExecute();
       const caller = createCaller({
         db: { execute },
@@ -2655,14 +2634,7 @@ describe("healthKitSyncRouter", () => {
 
       await caller.pushWorkouts({ workouts: [] });
 
-      const linkCall = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return (
-          serialized.includes("UPDATE fitness.metric_stream ss") &&
-          serialized.includes("SET activity_id")
-        );
-      });
-      expect(linkCall).toBeUndefined();
+      expect(JSON.stringify(execute.mock.calls)).not.toContain("fitness.metric_stream");
     });
   });
 

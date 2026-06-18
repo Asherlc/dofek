@@ -62,5 +62,5 @@ export function parseWorkoutList(response: WahooWorkoutListResponse): ParsedWork
 }
 
 // ============================================================
-// FIT record → metric_stream mapping
+// FIT record → metric stream mapping
 // ============================================================

@@ -162,7 +162,7 @@ describe("db-insertion deduplication (integration)", () => {
   });
 
   describe("upsertMetricStreamBatch", () => {
-    it("routes supported quantity records into metric_stream channels", async () => {
+    it("routes supported quantity records into metric stream channels", async () => {
       const recordedAt = new Date("2025-09-01T08:00:00Z");
       const records: HealthRecord[] = [
         healthRecord("HKQuantityTypeIdentifierHeartRate", 62.4, recordedAt, "count/min"),

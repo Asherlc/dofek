@@ -243,7 +243,7 @@ describe("HealthKit sync router", () => {
   });
 
   describe("pushQuantitySamples - metric stream", () => {
-    it("routes heart rate samples to metric_stream table", async () => {
+    it("routes heart rate samples to metric stream", async () => {
       const result = await mutate("healthKitSync.pushQuantitySamples", {
         samples: [
           {

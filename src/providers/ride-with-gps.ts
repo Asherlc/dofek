@@ -208,7 +208,7 @@ export function parseTripToActivity(trip: RideWithGpsTripSummary): ParsedActivit
 export function parseTrackPoints(points: RideWithGpsTrackPoint[]): ParsedTrackPoint[] {
   const result: ParsedTrackPoint[] = [];
   for (const point of points) {
-    // Skip points without a timestamp — can't insert into metric_stream
+    // Skip points without a timestamp — can't publish metric stream samples
     if (point.epochSeconds === undefined) continue;
     // Skip points without coordinates — indoor/GPS-less activities may omit lat/lng
     if (point.latitude === undefined || point.longitude === undefined) continue;
@@ -512,7 +512,7 @@ export class RideWithGpsProvider implements SyncProvider {
           cadence: point.cadence,
           power: point.power,
         }));
-        // metricRows still use the legacy shape; convert and insert into metric_stream.
+        // metricRows still use the legacy shape; convert and publish to metric stream.
         await replaceMetricStreamBatch(
           db,
           { activityId },

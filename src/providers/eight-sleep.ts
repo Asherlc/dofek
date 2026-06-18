@@ -244,7 +244,7 @@ export class EightSleepProvider implements SyncProvider {
       });
     }
 
-    // 3. Sync temperature samples into metric_stream.
+    // 3. Sync temperature samples to metric stream.
     try {
       const bodyCount = await withSyncLog(
         db,

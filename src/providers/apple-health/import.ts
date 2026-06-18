@@ -140,7 +140,7 @@ export async function runImport(
 
   try {
     // Delete existing rows for this provider/time range so re-imports don't
-    // create duplicates (metric_stream has no uniqueness constraint) and additive
+    // create duplicate metric stream samples and additive
     // daily metric upserts don't double-count across re-imports.
     const sinceDate = sql`${since.toISOString().slice(0, 10)}::date`;
     const metricStreamReplacementScope = {

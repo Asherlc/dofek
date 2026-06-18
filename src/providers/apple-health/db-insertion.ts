@@ -61,7 +61,7 @@ export async function insertWithDuplicateDiag<T extends Record<string, unknown>>
   await doInsert(uniqueRows);
 }
 
-// Records that map to metric_stream (granular time-series)
+// Records that map to metric stream channels (granular time-series)
 export const METRIC_STREAM_TYPES: Record<string, string> = {
   HKQuantityTypeIdentifierHeartRate: "heartRate",
   HKQuantityTypeIdentifierOxygenSaturation: "spo2",
@@ -73,7 +73,7 @@ export const METRIC_STREAM_TYPES: Record<string, string> = {
   HKQuantityTypeIdentifierElectrodermalActivity: "electrodermalActivity",
 };
 
-// Records that map to metric_stream body channels.
+// Records that map to metric stream body channels.
 export const BODY_MEASUREMENT_TYPES = new Set([
   "HKQuantityTypeIdentifierBodyMass",
   "HKQuantityTypeIdentifierBodyFatPercentage",

@@ -194,7 +194,7 @@ export function parsePerformanceGraph(
   }));
 }
 
-// Aggregate enrichment removed — all metrics live in metric_stream rows.
+// Aggregate enrichment removed — all metrics live in metric stream events.
 // enrichWorkoutFromGraph() was here but violated the "no duplicate sources of truth" principle.
 
 // ============================================================
@@ -615,7 +615,7 @@ export class PelotonProvider implements SyncProvider {
 
             const parsed = parseWorkout(workout);
 
-            // Upsert the activity first so we have an ID for metric_stream
+            // Upsert the activity first so we have an ID for metric stream events
             let activityId: string | null = null;
             try {
               const [row] = await db
@@ -669,7 +669,7 @@ export class PelotonProvider implements SyncProvider {
               const graph = await client.getPerformanceGraph(workout.id, everyN);
               const series = parsePerformanceGraph(graph, everyN);
 
-              // Insert time-series metric_stream rows linked to the activity
+              // Insert time-series metric stream events linked to the activity
               const hrSeries = series.find((s) => s.slug === "heart_rate");
               // Discard pedaling metrics (power, cadence) when has_pedaling_metrics is false —
               // the user may still have HR data from a chest strap or watch

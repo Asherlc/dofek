@@ -110,7 +110,7 @@ function requireReplacementPublisher(
 }
 
 /**
- * Convert a source row (camelCase keys) into per-channel metric_stream rows.
+ * Convert a source row (camelCase keys) into per-channel metric stream events.
  * Providers produce wide-row objects and this helper fans them out by channel.
  */
 export function sourceRowToMetricStream(
@@ -159,7 +159,7 @@ export function sourceRowToMetricStream(
 }
 
 /**
- * Converts an array of source rows into per-channel metric_stream rows
+ * Converts an array of source rows into per-channel metric stream events
  * and batch-inserts them.
  */
 export async function writeMetricStreamBatch(
