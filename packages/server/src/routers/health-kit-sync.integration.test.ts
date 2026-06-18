@@ -625,7 +625,7 @@ describe("HealthKit sync router", () => {
   });
 
   describe("deduplication", () => {
-    it("does not create duplicate body metric rows on re-push", async () => {
+    it("re-push publishes idempotent body metric stream events", async () => {
       const samples = [
         {
           type: "HKQuantityTypeIdentifierBodyMass",
@@ -648,7 +648,9 @@ describe("HealthKit sync router", () => {
           event.externalId === "hk:dedup-body-uuid-1" &&
           event.channel === "body_weight",
       );
-      expect(dedupEvents.length).toBe(1);
+      // Metric stream ingestion is append-only; ClickHouse dedupes on deterministic event id.
+      expect(dedupEvents.length).toBe(2);
+      expect(new Set(dedupEvents.map((event) => event.id)).size).toBe(1);
     });
 
     it("does not create duplicate workouts on re-push", async () => {
