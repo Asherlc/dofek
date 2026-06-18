@@ -17,6 +17,7 @@ export const ENDURANCE_ACTIVITY_TYPES = [
   "cyclocross",
   "track_cycling",
   "bmx",
+  "hand_cycling",
   "running",
   "swimming",
   "walking",

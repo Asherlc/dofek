@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink, splitLink } from "@trpc/client";
+import { httpBatchLink, httpLink, splitLink } from "@trpc/client";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useMemo, useState } from "react";
@@ -136,13 +136,19 @@ function AuthGate() {
     };
 
     const batchLink = httpBatchLink(commonOptions);
+    const dashboardQueryLink = httpLink(commonOptions);
 
     return trpc.createClient({
       links: [
         splitLink({
           condition: (operation) => operation.type === "mutation",
           true: batchLink,
-          false: batchLink,
+          false: splitLink({
+            condition: (operation) =>
+              operation.type === "query" && operation.path === "mobileDashboard.dashboard",
+            true: dashboardQueryLink,
+            false: batchLink,
+          }),
         }),
       ],
     });

@@ -81,6 +81,43 @@ describe("ActivityList", () => {
     });
   });
 
+  it("toggles selected activities instead of navigating in select mode", () => {
+    const onBulkDelete = vi.fn();
+    renderWithUnits(<ActivityList activities={mockActivities} onBulkDelete={onBulkDelete} />);
+
+    fireEvent.click(screen.getByText("Select"));
+    const row = screen.getByText("Morning Run").closest("tr");
+    if (!row) throw new Error("Row not found");
+    fireEvent.click(row);
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(screen.getByText("1 selected")).toBeDefined();
+  });
+
+  it("confirms bulk delete with selected ids", () => {
+    const onBulkDelete = vi.fn();
+    renderWithUnits(<ActivityList activities={mockActivities} onBulkDelete={onBulkDelete} />);
+
+    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByText("Morning Run"));
+    fireEvent.click(screen.getByText("Delete"));
+    fireEvent.click(screen.getByText("Confirm Delete"));
+
+    expect(onBulkDelete).toHaveBeenCalledWith(["1"]);
+  });
+
+  it("shows bulk delete errors from the server", () => {
+    renderWithUnits(
+      <ActivityList
+        activities={mockActivities}
+        onBulkDelete={vi.fn()}
+        bulkDeleteError="Cannot delete activity."
+      />,
+    );
+
+    expect(screen.getByText("Cannot delete activity.")).toBeDefined();
+  });
+
   it("shows empty state when no activities", () => {
     renderWithUnits(<ActivityList activities={[]} />);
     expect(screen.getByText("No recent activities")).toBeDefined();

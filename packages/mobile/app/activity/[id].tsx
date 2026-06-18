@@ -9,7 +9,7 @@ import type { UnitConverter } from "@dofek/format/units";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { activityMetricColors } from "@dofek/scoring/colors";
 import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
-import { formatActivityTypeLabel, isCyclingActivity } from "@dofek/training/training";
+import { cadenceUnit, formatActivityTypeLabel, isCyclingActivity } from "@dofek/training/training";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
@@ -756,7 +756,7 @@ export default function ActivityDetailScreen() {
   if (activity.avgCadence != null) {
     stats.push({
       label: "Avg Cadence",
-      value: `${Math.round(activity.avgCadence)} rpm`,
+      value: `${Math.round(activity.avgCadence)} ${cadenceUnit(activity.activityType)}`,
     });
   }
 

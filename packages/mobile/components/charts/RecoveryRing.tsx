@@ -36,7 +36,7 @@ export function RecoveryRing({ score, size = 200, strokeWidth = 14, label }: Rec
 
   useEffect(() => {
     animatedOffset.value = withTiming(targetOffset, {
-      duration: duration.chart,
+      duration: duration.countUp,
       easing: Easing.bezier(0.16, 1, 0.3, 1),
     });
   }, [targetOffset, animatedOffset]);
