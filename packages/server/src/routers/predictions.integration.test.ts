@@ -42,6 +42,14 @@ describe("Predictions router (integration)", () => {
     );
 
     const metricStreamSeedRows: ClickHouseMetricStreamSeedRow[] = [];
+    const currentUtcDate = new Date();
+    const currentUtcDateStartMs = Date.UTC(
+      currentUtcDate.getUTCFullYear(),
+      currentUtcDate.getUTCMonth(),
+      currentUtcDate.getUTCDate(),
+    );
+    const dayMs = 24 * 60 * 60 * 1000;
+    const hourMs = 60 * 60 * 1000;
 
     // Insert 120 days of daily metrics (HRV, resting HR)
     for (let i = 120; i >= 0; i--) {
@@ -82,7 +90,7 @@ describe("Predictions router (integration)", () => {
       const restingHeartRate = Math.round(55 - Math.cos(i * 0.3) * 5);
       for (let sampleIndex = 0; sampleIndex < 30; sampleIndex++) {
         const recordedAt = new Date(
-          Date.now() - i * 24 * 60 * 60 * 1000 + (24 + 1) * 60 * 60 * 1000 + sampleIndex * 60_000,
+          currentUtcDateStartMs + (1 - i) * dayMs + 5 * hourMs + sampleIndex * 60_000,
         ).toISOString();
         metricStreamSeedRows.push({
           userId: TEST_USER_ID,
