@@ -1,6 +1,9 @@
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import type { SyncWindow } from "./sync-window.ts";
+import type { SyncRun } from "./sync-run.ts";
+
+export type { SyncRun } from "./sync-run.ts";
+
 import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
 
 export type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
@@ -152,11 +155,9 @@ export interface SyncOptions {
 export interface SyncProvider extends BaseProvider {
   /**
    * Pull data from the provider API and upsert into the database.
-   * @param db - Drizzle database instance
-   * @param window - Time window to sync (start and end bounds)
-   * @param options - Optional sync options (progress callback, userId, etc.)
+   * @param run - Sync invocation context (db, window, and per-run options)
    */
-  sync(db: SyncDatabase, window: SyncWindow, options?: SyncOptions): Promise<SyncResult>;
+  sync(run: SyncRun): Promise<SyncResult>;
 }
 
 /**

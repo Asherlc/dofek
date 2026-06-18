@@ -707,7 +707,7 @@ describe("WhoopClient.listDeveloperWorkouts", () => {
 
 describe("WhoopClient.listDeveloperWorkoutIdsInWindow", () => {
   it("collects workout ids whose start time falls in the window", async () => {
-    const fetchFn = vi.fn(async (input: string | URL) => {
+    const fetchFn: typeof globalThis.fetch = vi.fn(async (input: string | URL) => {
       const url = String(input);
       if (url.includes("/developer/v2/activity/workout")) {
         return {
@@ -732,7 +732,7 @@ describe("WhoopClient.listDeveloperWorkoutIdsInWindow", () => {
       }
       return { ok: false, status: 404, text: async () => "not found" };
     });
-    const client = new WhoopClient(makeToken(), fetchFn as typeof globalThis.fetch);
+    const client = new WhoopClient(makeToken(), fetchFn);
 
     const ids = await client.listDeveloperWorkoutIdsInWindow(
       new Date("2024-01-10T00:00:00Z"),

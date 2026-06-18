@@ -1,8 +1,13 @@
+export type SyncWindowBounds = {
+  since: Date;
+  until: Date;
+};
+
 export class SyncWindow {
   readonly #since: Date;
   readonly #until: Date;
 
-  constructor(since: Date, until: Date) {
+  constructor({ since, until }: SyncWindowBounds) {
     SyncWindow.#validate(since, until);
     this.#since = since;
     this.#until = until;
@@ -30,9 +35,8 @@ export class SyncWindow {
     const minimumStart = SyncWindow.#parseYmdUtcStart(
       SyncWindow.#dateWindowStartString(untilYmd, days),
     );
-    const since =
-      this.#since.getTime() < minimumStart.getTime() ? this.#since : minimumStart;
-    return new SyncWindow(since, this.#until);
+    const since = this.#since.getTime() < minimumStart.getTime() ? this.#since : minimumStart;
+    return new SyncWindow({ since, until: this.#until });
   }
 
   static now(): Date {
@@ -40,7 +44,7 @@ export class SyncWindow {
   }
 
   static full(now = SyncWindow.now()): SyncWindow {
-    return new SyncWindow(new Date(0), now);
+    return new SyncWindow({ since: new Date(0), until: now });
   }
 
   static lastDays(days: number, options?: { untilDate?: string; now?: Date }): SyncWindow {
@@ -48,25 +52,31 @@ export class SyncWindow {
     const untilDate = options?.untilDate ?? SyncWindow.#todayYmd(now);
     const until = SyncWindow.#parseYmdUtcEnd(untilDate);
     const since = SyncWindow.#parseYmdUtcStart(SyncWindow.#dateWindowStartString(untilDate, days));
-    return new SyncWindow(since, until);
+    return new SyncWindow({ since, until });
   }
 
-  static fromDateRange(sinceDate: string, untilDate: string): SyncWindow {
-    return new SyncWindow(
-      SyncWindow.#parseYmdUtcStart(sinceDate),
-      SyncWindow.#parseYmdUtcEnd(untilDate),
-    );
+  static fromDateRange({
+    sinceDate,
+    untilDate,
+  }: {
+    sinceDate: string;
+    untilDate: string;
+  }): SyncWindow {
+    return new SyncWindow({
+      since: SyncWindow.#parseYmdUtcStart(sinceDate),
+      until: SyncWindow.#parseYmdUtcEnd(untilDate),
+    });
   }
 
-  static fromIsoRange(sinceIso: string, untilIso: string): SyncWindow {
+  static fromIsoRange({ sinceIso, untilIso }: { sinceIso: string; untilIso: string }): SyncWindow {
     const since = SyncWindow.#parseIso(sinceIso, "sinceIso");
     const until = SyncWindow.#parseIso(untilIso, "untilIso");
-    return new SyncWindow(since, until);
+    return new SyncWindow({ since, until });
   }
 
   /** Open-ended window from a start bound; end defaults to now. */
-  static fromSince(since: Date, until = SyncWindow.now()): SyncWindow {
-    return new SyncWindow(since, until);
+  static fromSince({ since, until = SyncWindow.now() }: { since: Date; until?: Date }): SyncWindow {
+    return new SyncWindow({ since, until });
   }
 
   static #todayYmd(now: Date): string {

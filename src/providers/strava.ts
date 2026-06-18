@@ -29,6 +29,7 @@ import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { logger } from "../logger.ts";
 import { ProviderAuthorizationFailedError } from "./auth-errors.ts";
+import type { SyncRun } from "./sync-run.ts";
 import type {
   ProviderAuthSetup,
   ProviderIdentity,
@@ -38,7 +39,6 @@ import type {
   WebhookEvent,
   WebhookProvider,
 } from "./types.ts";
-import { SyncWindow } from "./sync-window.ts";
 
 // ============================================================
 // Strava API types
@@ -732,7 +732,8 @@ export class StravaProvider implements WebhookProvider {
     return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
   }
 
-  async sync(db: SyncDatabase, window: SyncWindow, options: SyncOptions = {}): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const onProgress = options.onProgress;
     const start = Date.now();
     const errors: SyncError[] = [];

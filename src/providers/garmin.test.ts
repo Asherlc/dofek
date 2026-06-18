@@ -10,8 +10,9 @@ import {
   INTERNAL_SCOPE_MARKER,
   serializeInternalTokens,
 } from "./garmin.ts";
-import type { SyncOptions } from "./types.ts";
+import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
+import type { SyncOptions } from "./types.ts";
 
 vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
@@ -206,9 +207,7 @@ function createMockDb(): MockDb {
 // Drizzle branded type at compile time, so we widen via bind().
 function syncProvider(provider: GarminProvider, db: MockDb, since: Date, options?: SyncOptions) {
   return Reflect.apply(provider.sync, provider, [
-    db,
-    SyncWindow.fromSince(since),
-    options,
+    new SyncRun({ db, window: SyncWindow.fromSince({ since }), ...options }),
   ]) satisfies Promise<{
     provider: string;
     recordsSynced: number;

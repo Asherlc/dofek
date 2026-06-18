@@ -10,6 +10,8 @@ import {
 } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { AutoSupplementsProvider } from "./auto-supplements.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 // ============================================================
 // Helpers
@@ -85,7 +87,9 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
     // Use a since date that is today so we get exactly 1 day
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
-    const result = await provider.sync(ctx.db, today);
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: today }) }),
+    );
 
     expect(result.provider).toBe("auto-supplements");
     expect(result.errors).toHaveLength(0);
@@ -120,8 +124,12 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
     today.setUTCHours(0, 0, 0, 0);
 
     // Sync twice
-    await provider.sync(ctx.db, today);
-    const result = await provider.sync(ctx.db, today);
+    await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: today }) }),
+    );
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: today }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
 
@@ -138,7 +146,9 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
   it("returns empty result when since is in the future (no dates)", async () => {
     const provider = new AutoSupplementsProvider();
     const future = new Date("2099-01-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, future);
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: future }) }),
+    );
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(0);
@@ -158,7 +168,9 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
     threeDaysAgo.setUTCDate(threeDaysAgo.getUTCDate() - 3);
     threeDaysAgo.setUTCHours(0, 0, 0, 0);
 
-    const result = await provider.sync(ctx.db, threeDaysAgo);
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: threeDaysAgo }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     // Should have entries for multiple supplements across multiple days
@@ -183,7 +195,9 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
     const provider = new AutoSupplementsProvider();
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
-    const result = await provider.sync(ctx.db, today);
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: today }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
 
@@ -210,7 +224,9 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
     const provider = new AutoSupplementsProvider();
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
-    const result = await provider.sync(ctx.db, today);
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: today }) }),
+    );
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(0);

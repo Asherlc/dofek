@@ -2,7 +2,6 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { SyncWindow } from "./sync-window.ts";
 import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
@@ -14,6 +13,8 @@ import type {
   PolarNightlyRecharge,
   PolarSleep,
 } from "./polar/types.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 
 const metricStreamCapture = createCapturingMetricStreamPublisher();
@@ -210,9 +211,13 @@ describe("PolarProvider.sync() (integration)", () => {
 
     const provider = new PolarProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, SyncWindow.fromSince(since), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.provider).toBe("polar");
     expect(result.errors).toHaveLength(0);
@@ -292,9 +297,13 @@ describe("PolarProvider.sync() (integration)", () => {
 
     const provider = new PolarProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, SyncWindow.fromSince(since), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
 
@@ -319,7 +328,12 @@ describe("PolarProvider.sync() (integration)", () => {
     server.use(...polarHandlers());
 
     const provider = new PolarProvider();
-    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.provider).toBe("polar");
     expect(result.errors).toHaveLength(0);
@@ -345,8 +359,20 @@ describe("PolarProvider.sync() (integration)", () => {
 
     const provider = new PolarProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    await provider.sync(ctx.db, SyncWindow.fromSince(since), { metricStreamPublisher: metricStreamCapture.publisher });
-    await provider.sync(ctx.db, SyncWindow.fromSince(since), { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     const activityRows = await ctx.db
       .select()
@@ -384,7 +410,13 @@ describe("PolarProvider.sync() (integration)", () => {
 
     const provider = new PolarProvider();
     const since = new Date("2026-03-01T00:00:00Z");
-    await provider.sync(ctx.db, SyncWindow.fromSince(since), { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     const activityRows = await ctx.db
       .select()
@@ -399,9 +431,13 @@ describe("PolarProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "polar"));
 
     const provider = new PolarProvider();
-    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens found");
@@ -476,9 +512,13 @@ describe("PolarProvider.sync() — daily_activity error paths (integration)", ()
     errorServer.use(...polarCoverageHandlers({ dailyActivityError: true }));
 
     const provider = new PolarProvider();
-    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     // The daily_activity fetch fails with 500, which throws inside withSyncLog
     // The outer catch at lines 542-546 should catch it
@@ -510,9 +550,13 @@ describe("PolarProvider.sync() — daily_activity error paths (integration)", ()
     );
 
     const provider = new PolarProvider();
-    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     // Should succeed
     expect(result.errors).toHaveLength(0);

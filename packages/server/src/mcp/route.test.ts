@@ -737,6 +737,7 @@ describe("createMcpRouter", () => {
         sinceDays: 7,
         sinceIso: expect.any(String),
         targetRefreshWindow: { days: 7, type: "days" },
+        untilIso: expect.any(String),
         userId: "user-id",
       },
       expect.objectContaining({ attempts: expect.any(Number) }),

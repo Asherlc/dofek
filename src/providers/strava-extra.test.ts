@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SyncWindow } from "./sync-window.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { mapStravaActivityType, StravaClient, StravaProvider } from "./strava.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 const { publishedMetricStreamBatches } = vi.hoisted<{
   publishedMetricStreamBatches: Record<string, unknown>[][];
@@ -162,7 +163,9 @@ describe("StravaProvider.sync", () => {
       execute: vi.fn().mockResolvedValue([]),
     };
 
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
     expect(result.provider).toBe("strava");
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("No OAuth tokens");
@@ -214,7 +217,9 @@ describe("StravaProvider.sync", () => {
       execute: vi.fn().mockResolvedValue([]),
     };
 
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
     expect(result.provider).toBe("strava");
     expect(result.errors.some((e) => e.message.includes("rate limit"))).toBe(true);
     expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).not.toHaveBeenCalled();
@@ -352,7 +357,9 @@ describe("StravaProvider.sync — additional coverage", () => {
     const mockDb = createMockDb();
     const provider = new StravaProvider(mockFetch, 0);
 
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
 
     expect(result.provider).toBe("strava");
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
@@ -440,7 +447,9 @@ describe("StravaProvider.sync — additional coverage", () => {
     };
 
     const provider = new StravaProvider(mockFetch, 0);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     expect(activityInsertPayloads).toHaveLength(2);
@@ -490,7 +499,9 @@ describe("StravaProvider.sync — additional coverage", () => {
     const mockDb = createMockDb();
     const provider = new StravaProvider(mockFetch, 0);
 
-    await provider.sync(mockDb, SyncWindow.fromSince(sinceDate));
+    await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: sinceDate }) }),
+    );
 
     expect(capturedUrl).toContain(`after=${expectedEpoch}`);
     // Explicitly confirm the value is in seconds, not milliseconds
@@ -517,7 +528,9 @@ describe("StravaProvider.sync — additional coverage", () => {
     const mockDb = createMockDb();
     const provider = new StravaProvider(mockFetch, 0);
 
-    await provider.sync(mockDb, SyncWindow.fromSince(sinceDate));
+    await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: sinceDate }) }),
+    );
 
     const urlParams = new URL(capturedUrl).searchParams;
     const afterParam = Number(urlParams.get("after"));
@@ -551,7 +564,9 @@ describe("StravaProvider.sync — additional coverage", () => {
     const mockDb = createMockDb();
     const provider = new StravaProvider(mockFetch, 0);
 
-    await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
 
     // Should only call getActivities once since result < perPage
     expect(activitiesCallCount).toBe(1);
@@ -603,7 +618,9 @@ describe("StravaProvider.sync — additional coverage", () => {
     };
 
     const provider = new StravaProvider(mockFetch, 0);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
 
     expect(activitiesCallCount).toBe(2);
     expect(result.recordsSynced).toBe(30);
@@ -632,7 +649,13 @@ describe("StravaProvider.sync — additional coverage", () => {
     const onProgress = vi.fn();
     const provider = new StravaProvider(mockFetch, 0);
 
-    await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")), { onProgress });
+    await provider.sync(
+      new SyncRun({
+        db: mockDb,
+        window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+        onProgress,
+      }),
+    );
 
     expect(onProgress).toHaveBeenCalledWith(0, "1 activities synced");
   });
@@ -654,7 +677,9 @@ describe("StravaProvider.sync — additional coverage", () => {
     const mockDb = createMockDb();
     const provider = new StravaProvider(mockFetch, 0);
 
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
 
     expect(result.provider).toBe("strava");
     expect(result.errors.some((e) => e.message.includes("rate limit"))).toBe(true);
@@ -682,7 +707,9 @@ describe("StravaProvider.sync — additional coverage", () => {
     const mockDb = createMockDb();
     const provider = new StravaProvider(mockFetch, 0);
 
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
 
     // Activity insert happened before streams, so recordsSynced should be 1
     expect(result.recordsSynced).toBe(1);
@@ -703,7 +730,9 @@ describe("StravaProvider.sync — additional coverage", () => {
     const provider = new StravaProvider(mockFetch, 0);
 
     const before = Date.now();
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
     const after = Date.now();
 
     expect(result.duration).toBeGreaterThanOrEqual(0);
@@ -741,7 +770,9 @@ describe("StravaProvider.sync — additional coverage", () => {
     const mockDb = createMockDb([EXPIRED_TOKEN]);
     const provider = new StravaProvider(mockFetch, 0);
 
-    await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
 
     const oauthCall = mockFetch.mock.calls.find(([url]) =>
       String(url).includes("strava.com/oauth/token"),
@@ -763,7 +794,9 @@ describe("StravaProvider.sync — additional coverage", () => {
     const mockDb = createMockDb([VALID_TOKEN]);
     const provider = new StravaProvider(mockFetch, 0);
 
-    await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
 
     const oauthCall = mockFetch.mock.calls.find(([url]) =>
       String(url).includes("strava.com/oauth/token"),
@@ -815,7 +848,9 @@ describe("StravaProvider.sync — additional coverage", () => {
     };
 
     const provider = new StravaProvider(mockFetch, 0);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
 
     // rateLimited breaks out of inner loop and sets hasMore = false
     // so getActivities should only be called once
@@ -840,7 +875,9 @@ describe("StravaProvider.sync — additional coverage", () => {
 
     const mockDb = createMockDb();
     const provider = new StravaProvider(mockFetch, 0);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toBe("Strava authorization failed.");
@@ -859,7 +896,9 @@ describe("StravaProvider.sync — additional coverage", () => {
 
     const mockDb = createMockDb();
     const provider = new StravaProvider(mockFetch, 0);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);
@@ -911,7 +950,9 @@ describe("StravaProvider.sync — additional coverage", () => {
     };
 
     const provider = new StravaProvider(mockFetch, 0);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
 
     expect(returningMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -948,7 +989,9 @@ describe("StravaProvider.sync — additional coverage", () => {
     const mockDb = createMockDb();
     const provider = new StravaProvider(mockFetch, 0);
 
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
 
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
@@ -1002,7 +1045,9 @@ describe("StravaProvider.sync — additional coverage", () => {
     };
 
     const provider = new StravaProvider(mockFetch, 0);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
 
     expect(result.recordsSynced).toBe(1);
     expect(publishedMetricStreamBatches.map((batch) => batch.length)).toEqual([]);
@@ -1075,7 +1120,9 @@ describe("StravaProvider.sync — additional coverage", () => {
     };
 
     const provider = new StravaProvider(mockFetch, 0);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
 
     expect(result.recordsSynced).toBe(1);
     expect(publishedMetricStreamBatches.map((batch) => batch.length)).toEqual([1000, 1]);
@@ -1101,7 +1148,9 @@ describe("StravaProvider.sync — additional coverage", () => {
 
     const mockDb = createMockDb();
     const provider = new StravaProvider(mockFetch, 0);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
 
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(1);
@@ -1127,7 +1176,9 @@ describe("StravaProvider.sync — additional coverage", () => {
 
     const mockDb = createMockDb();
     const provider = new StravaProvider(mockFetch, 0);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
 
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
@@ -1185,7 +1236,9 @@ describe("StravaProvider.sync — additional coverage", () => {
     };
 
     const provider = new StravaProvider(mockFetch, 0);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
 
     // Both activities should be counted even though first streams call failed
     expect(result.recordsSynced).toBe(2);

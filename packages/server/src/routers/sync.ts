@@ -7,6 +7,7 @@ import {
   SYNC_JOB_RETRY_OPTIONS,
   type SyncJobData,
 } from "dofek/jobs/queues";
+import { syncWindowFromTriggerInput, syncWindowToJobData } from "dofek/jobs/sync-window";
 import { queryCache } from "dofek/lib/cache";
 import { ProviderModel } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";
@@ -32,10 +33,6 @@ import {
   toJobId,
   UPLOAD_IMPORT_PROVIDERS,
 } from "./sync-helpers.ts";
-import {
-  syncWindowFromTriggerInput,
-  syncWindowToJobData,
-} from "dofek/jobs/sync-window";
 
 const syncDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD date");
 

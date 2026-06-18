@@ -10,14 +10,8 @@ import { withSyncLog } from "../db/sync-log.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { ProviderStoredIdentityMissingError } from "./auth-errors.ts";
-import type {
-  ProviderAuthSetup,
-  SyncError,
-  SyncOptions,
-  SyncProvider,
-  SyncResult,
-} from "./types.ts";
-import { SyncWindow } from "./sync-window.ts";
+import type { SyncRun } from "./sync-run.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 export const AMAZFIT_ZEPP_API_BASE = "https://api-mifit.zepp.com";
 const AMAZFIT_ZEPP_SOURCE_NAME = "Zepp";
@@ -342,7 +336,8 @@ export class AmazfitZeppProvider implements SyncProvider {
     };
   }
 
-  async sync(db: SyncDatabase, window: SyncWindow, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const since = window.since;
     const start = Date.now();
     const errors: SyncError[] = [];

@@ -1,6 +1,5 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SyncWindow } from "./sync-window.ts";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import {
@@ -47,6 +46,8 @@ import {
   ouraVO2MaxSchema,
   ouraWorkoutSchema,
 } from "./oura/schemas.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 const { publishedMetricStreamBatches } = vi.hoisted<{
   publishedMetricStreamBatches: Record<string, unknown>[][];
@@ -1636,7 +1637,9 @@ describe("OuraProvider.sync()", () => {
     const provider = new OuraProvider(mockFetch);
     const db = createMockDb();
 
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(result.provider).toBe("oura");
     expect(result.errors).toHaveLength(0);
@@ -1672,7 +1675,9 @@ describe("OuraProvider.sync()", () => {
     const provider = new OuraProvider(mockFetch);
     const db = createMockDb();
 
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
@@ -1712,7 +1717,9 @@ describe("OuraProvider.sync()", () => {
     const provider = new OuraProvider(mockFetch);
     const db = createMockDb();
 
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(result.provider).toBe("oura");
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
@@ -1728,7 +1735,9 @@ describe("OuraProvider.sync()", () => {
     const provider = new OuraProvider(mockFetch);
     const db = createMockDb();
 
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
@@ -1756,7 +1765,9 @@ describe("OuraProvider.sync()", () => {
     const provider = new OuraProvider(mockFetch);
     const db = createMockDb();
 
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     const value = findValuesCall(db, (record) => record.externalId === "session-breathing");
@@ -1774,7 +1785,9 @@ describe("OuraProvider.sync()", () => {
     const provider = new OuraProvider(mockFetch);
     const db = createMockDb();
 
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
     vi.useRealTimers();
 
     expect(result.errors).toHaveLength(0);
@@ -1820,7 +1833,9 @@ describe("OuraProvider.sync()", () => {
     const db = createMockDb();
 
     // Sync from Jan 1 to Apr 30 (4 months, > 30 days)
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     // Should make multiple requests for HR due to 30-day window limit
@@ -1841,7 +1856,9 @@ describe("OuraProvider.sync()", () => {
     const provider = new OuraProvider(mockFetch);
     const db = createMockDb();
 
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
@@ -1871,7 +1888,9 @@ describe("OuraProvider.sync()", () => {
     const provider = new OuraProvider(mockFetch);
     const db = createMockDb();
 
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
@@ -1898,7 +1917,9 @@ describe("OuraProvider.sync()", () => {
     const provider = new OuraProvider(mockFetch);
     const db = createMockDb();
 
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
 
@@ -1917,7 +1938,9 @@ describe("OuraProvider.sync()", () => {
     const provider = new OuraProvider(mockFetch);
     const db = createMockDb();
 
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
@@ -1947,7 +1970,9 @@ describe("OuraProvider.sync()", () => {
     const provider = new OuraProvider(mockFetch);
     const db = createMockDb();
 
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThanOrEqual(2);
@@ -1974,7 +1999,9 @@ describe("OuraProvider.sync()", () => {
     const provider = new OuraProvider(mockFetch);
     const db = createMockDb();
 
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
@@ -1992,7 +2019,9 @@ describe("OuraProvider.sync()", () => {
     const provider = new OuraProvider(mockFetch);
     const db = createMockDb();
 
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
@@ -2027,7 +2056,9 @@ describe("OuraProvider.sync()", () => {
     const provider = new OuraProvider(mockFetch);
     const db = createMockDb();
 
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     // daily_metrics phase should produce 1 record (all sources merge by day)
@@ -2068,7 +2099,9 @@ describe("OuraProvider.sync()", () => {
     const provider = new OuraProvider(mockFetch);
     const db = createMockDb();
 
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(result.provider).toBe("oura");
     expect(result.recordsSynced).toBe(0);
@@ -2120,7 +2153,9 @@ describe("OuraProvider.sync()", () => {
     const provider = new OuraProvider(mockFetch);
     const db = createMockDb();
 
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     // Should have errors from the workout phase
     expect(result.errors.length).toBeGreaterThan(0);
@@ -2142,7 +2177,9 @@ describe("OuraProvider.sync()", () => {
     const provider = new OuraProvider(mockFetch);
     const db = createMockDb();
 
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(result.provider).toBe("oura");
     expect(result.errors).toHaveLength(0);
@@ -2186,7 +2223,9 @@ describe("OuraProvider.sync()", () => {
     const provider = new OuraProvider(mockFetch);
     const db = createMockDb();
 
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     // No errors — 401s on optional scopes are silently skipped
     expect(result.errors).toHaveLength(0);

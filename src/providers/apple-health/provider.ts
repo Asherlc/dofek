@@ -1,6 +1,5 @@
-import type { SyncDatabase } from "../../db/index.ts";
+import type { SyncRun } from "../sync-run.ts";
 import type { SyncProvider, SyncResult } from "../types.ts";
-import { SyncWindow } from "../sync-window.ts";
 import { findLatestExport, importAppleHealthFile } from "./import.ts";
 
 export class AppleHealthProvider implements SyncProvider {
@@ -13,7 +12,8 @@ export class AppleHealthProvider implements SyncProvider {
     return null;
   }
 
-  async sync(db: SyncDatabase, window: SyncWindow): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window } = run;
     const since = window.since;
     const filePath = findLatestExport();
     if (!filePath) {

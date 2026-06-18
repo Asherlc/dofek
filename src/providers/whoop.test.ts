@@ -1,6 +1,5 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SyncWindow } from "./sync-window.ts";
 import { WhoopClient } from "whoop-whoop/client";
 import type {
   WhoopHrValue,
@@ -10,6 +9,8 @@ import type {
   WhoopWorkoutRecord,
 } from "whoop-whoop/types";
 import type { SyncDatabase } from "../db/index.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 import { parseJournalResponse } from "./whoop/journal-parsing.ts";
 import {
   parseHeartRateValues,
@@ -666,9 +667,13 @@ describe("WhoopProvider.sync() — token resolution", () => {
 
     const provider = new WhoopProvider();
     const db = makeChainableMock();
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")), {
-      userId: "00000000-0000-0000-0000-000000000001",
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
 
     expect(result.provider).toBe("whoop");
     expect(result.errors.length).toBeGreaterThan(0);
@@ -686,9 +691,13 @@ describe("WhoopProvider.sync() — token resolution", () => {
 
     const provider = new WhoopProvider();
     const db = makeChainableMock();
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")), {
-      userId: "00000000-0000-0000-0000-000000000001",
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
 
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("not connected");
@@ -721,9 +730,13 @@ describe("WhoopProvider.sync() — token resolution", () => {
 
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")), {
-      userId: "00000000-0000-0000-0000-000000000001",
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
 
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("user ID not found");
@@ -742,9 +755,13 @@ describe("WhoopProvider.sync() — token resolution", () => {
     const mockFetch = makeSyncMockFetch({ cycles: [] });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")), {
-      userId: "00000000-0000-0000-0000-000000000001",
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
 
     expect(result.provider).toBe("whoop");
     // saveTokens should have been called with userId:12345 in scopes
@@ -767,9 +784,13 @@ describe("WhoopProvider.sync() — cycles error", () => {
     const mockFetch = makeSyncMockFetch({ cyclesError: true });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")), {
-      userId: "00000000-0000-0000-0000-000000000001",
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
 
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("getCycles");
@@ -819,9 +840,13 @@ describe("WhoopProvider.sync() — recovery sync", () => {
     const db = makeChainableMock();
     // Make onConflictDoUpdate resolve properly for recovery insert chain
     db.onConflictDoUpdate = vi.fn().mockResolvedValue([]);
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")), {
-      userId: "00000000-0000-0000-0000-000000000001",
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
 
     expect(result.provider).toBe("whoop");
     // The sync completes (recovery/sleep/workouts/hr/journal phases all run)
@@ -867,9 +892,13 @@ describe("WhoopProvider.sync() — recovery sync", () => {
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
     db.onConflictDoUpdate = vi.fn().mockResolvedValue([]);
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")), {
-      userId: "00000000-0000-0000-0000-000000000001",
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
 
     expect(result.provider).toBe("whoop");
   });
@@ -906,9 +935,13 @@ describe("WhoopProvider.sync() — recovery sync", () => {
     });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")), {
-      userId: "00000000-0000-0000-0000-000000000001",
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
 
     expect(result.provider).toBe("whoop");
   });
@@ -948,7 +981,9 @@ describe("WhoopProvider.sync() — recovery sync", () => {
     });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(infoSpy).toHaveBeenCalledWith(expect.stringContaining("Skipping unscored recovery"));
     // Should NOT produce a warning for expected unscored cycles
@@ -997,7 +1032,9 @@ describe("WhoopProvider.sync() — recovery sync", () => {
     });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("SCORED recovery with no parseable data"),
@@ -1047,7 +1084,9 @@ describe("WhoopProvider.sync() — workout collection from cycles", () => {
     });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(result.provider).toBe("whoop");
     expect(result.recordsSynced).toBeGreaterThanOrEqual(0);
@@ -1613,9 +1652,13 @@ describe("WhoopProvider.sync() — sleep sync", () => {
     const db = makeChainableMock();
     db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
     db.returning = vi.fn().mockResolvedValue([]);
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")), {
-      userId: "00000000-0000-0000-0000-000000000001",
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
 
     expect(result.provider).toBe("whoop");
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
@@ -1665,9 +1708,13 @@ describe("WhoopProvider.sync() — sleep sync", () => {
     db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
     db.returning = vi.fn().mockResolvedValue([]);
 
-    await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")), {
-      userId: "00000000-0000-0000-0000-000000000001",
-    });
+    await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
   });
 
   it("skips incomplete (non-complete state) sleep records", async () => {
@@ -1698,7 +1745,9 @@ describe("WhoopProvider.sync() — sleep sync", () => {
     const db = makeChainableMock();
     db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
     db.returning = vi.fn().mockResolvedValue([]);
-    await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     const valuesCallArgs = getValuesCallArgs(db);
     const sleepInsert = findValuesRecord(
@@ -1736,7 +1785,9 @@ describe("WhoopProvider.sync() — sleep sync", () => {
     const db = makeChainableMock();
     db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
     db.returning = vi.fn().mockResolvedValue([]);
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(result.provider).toBe("whoop");
     const valuesCallArgs = getValuesCallArgs(db);
@@ -1778,7 +1829,9 @@ describe("WhoopProvider.sync() — sleep sync", () => {
     const db = makeChainableMock();
     db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
     db.returning = vi.fn().mockResolvedValue([]);
-    await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Skipping inline sleep"));
     warnSpy.mockRestore();
@@ -1825,7 +1878,9 @@ describe("WhoopProvider.sync() — sleep sync", () => {
     const db = makeChainableMock();
     db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
     db.returning = vi.fn().mockResolvedValue([]);
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(result.provider).toBe("whoop");
 
@@ -1872,7 +1927,9 @@ describe("WhoopProvider.sync() — HR stream sync", () => {
     db.returning = vi.fn().mockResolvedValue([]);
     // Use a "since" very close to now so that only one HR window is fetched
     const since = new Date(Date.now() - 1000);
-    const result = await provider.sync(db, SyncWindow.fromSince(since));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.provider).toBe("whoop");
     expect(result.recordsSynced).toBeGreaterThanOrEqual(3);
@@ -1922,7 +1979,9 @@ describe("WhoopProvider.sync() — HR stream sync", () => {
     db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
     db.returning = vi.fn().mockResolvedValue([]);
     const since = new Date(Date.now() - 1000);
-    const result = await provider.sync(db, SyncWindow.fromSince(since));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.provider).toBe("whoop");
     expect(result.recordsSynced).toBeGreaterThanOrEqual(750);
@@ -1960,7 +2019,9 @@ describe("WhoopProvider.sync() — HR stream sync", () => {
     db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
     db.returning = vi.fn().mockResolvedValue([]);
     const since = new Date(Date.now() - 1000);
-    const result = await provider.sync(db, SyncWindow.fromSince(since));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.provider).toBe("whoop");
     // No HR batch inserts should have happened
@@ -1998,9 +2059,13 @@ describe("WhoopProvider.sync() — journal sync", () => {
     });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")), {
-      userId: "00000000-0000-0000-0000-000000000001",
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
 
     expect(result.provider).toBe("whoop");
     // Journal phase should produce 2 records (2 answers)
@@ -2099,9 +2164,13 @@ describe("WhoopProvider.sync() — journal sync", () => {
     const db = makeChainableMock();
     db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
     db.returning = vi.fn().mockResolvedValue([]);
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")), {
-      userId: "00000000-0000-0000-0000-000000000001",
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
 
     expect(result.provider).toBe("whoop");
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
@@ -2145,7 +2214,13 @@ describe("WhoopProvider.sync() — journal sync", () => {
     db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
     db.returning = vi.fn().mockResolvedValue([]);
     const customUserId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")), { userId: customUserId });
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+        userId: customUserId,
+      }),
+    );
 
     expect(result.provider).toBe("whoop");
 
@@ -2178,7 +2253,9 @@ describe("WhoopProvider.sync() — journal sync", () => {
     const db = makeChainableMock();
     db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
     db.returning = vi.fn().mockResolvedValue([]);
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(result.provider).toBe("whoop");
     const journalError = result.errors.find((e) => e.message.includes("journal"));
@@ -2302,7 +2379,9 @@ describe("WhoopProvider.sync() — strength sync", () => {
     db.returning.mockResolvedValueOnce([{ id: "workout-uuid-1" }]);
     // select().from().where().limit() for exercise lookup
     db.limit.mockResolvedValueOnce([{ id: "exercise-uuid-1" }]);
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(result.provider).toBe("whoop");
     // Should have synced the strength workout (1 strength record)
@@ -2488,7 +2567,9 @@ describe("WhoopProvider.sync() — strength sync", () => {
     db.onConflictDoUpdate.mockReturnValueOnce(db).mockReturnValueOnce(db);
     db.returning.mockResolvedValueOnce([{ id: "workout-uuid-named" }]);
     db.limit.mockResolvedValueOnce([{ id: "exercise-uuid-named" }]);
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(result.provider).toBe("whoop");
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
@@ -2607,7 +2688,9 @@ describe("WhoopProvider.sync() — strength sync", () => {
     db.onConflictDoUpdate.mockReturnValueOnce(db).mockReturnValueOnce(db);
     // returning() yields empty array → row?.id is undefined → !activityId is true → skip
     db.returning.mockResolvedValueOnce([]);
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(result.provider).toBe("whoop");
     // No set inserts should happen since activityId was not returned
@@ -2661,7 +2744,9 @@ describe("WhoopProvider.sync() — strength sync", () => {
     });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(result.provider).toBe("whoop");
     // No strength-specific errors
@@ -2789,7 +2874,9 @@ describe("WhoopProvider.sync() — strength sync", () => {
     db.returning.mockResolvedValueOnce([{ id: "workout-uuid-cache" }]);
     db.limit.mockResolvedValue([{ id: "exercise-uuid-cache" }]);
 
-    await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     expect(db.select).toHaveBeenCalledWith(expect.objectContaining({ id: expect.anything() }));
     expect(db.select).toHaveBeenCalledTimes(1);
@@ -2892,7 +2979,9 @@ describe("WhoopProvider.sync() — strength sync", () => {
     db.returning.mockResolvedValueOnce([{ id: "workout-uuid-missing" }]);
     db.limit.mockResolvedValueOnce([]);
 
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
 
     const resolveError = result.errors.find((error) =>
       error.message.includes("Could not resolve exercise: Unknown Lift"),

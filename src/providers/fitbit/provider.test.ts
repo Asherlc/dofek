@@ -1,6 +1,5 @@
 import { createHmac } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SyncWindow } from "../sync-window.ts";
 import { z } from "zod";
 import type { SyncDatabase } from "../../db/index.ts";
 import {
@@ -8,6 +7,8 @@ import {
   dailyMetrics as dailyMetricsTable,
   sleepSession as sleepSessionTable,
 } from "../../db/schema.ts";
+import { SyncRun } from "../sync-run.ts";
+import { SyncWindow } from "../sync-window.ts";
 import type { WebhookEvent } from "../types.ts";
 import type {
   FitbitActivity,
@@ -728,7 +729,9 @@ describe("FitbitProvider", () => {
 
       const since = new Date();
       since.setUTCHours(0, 0, 0, 0);
-      const result = await provider.sync(db, SyncWindow.fromSince(since));
+      const result = await provider.sync(
+        new SyncRun({ db: db, window: SyncWindow.fromSince({ since: since }) }),
+      );
 
       expect(result.provider).toBe("fitbit");
       expect(result.errors).toHaveLength(0);
@@ -795,7 +798,9 @@ describe("FitbitProvider", () => {
 
       const since = new Date();
       since.setUTCHours(0, 0, 0, 0);
-      const result = await provider.sync(db, SyncWindow.fromSince(since));
+      const result = await provider.sync(
+        new SyncRun({ db: db, window: SyncWindow.fromSince({ since: since }) }),
+      );
 
       expect(result.provider).toBe("fitbit");
       expect(result.errors.length).toBeGreaterThanOrEqual(1);
@@ -817,7 +822,12 @@ describe("FitbitProvider", () => {
       );
       const db = createMockDb();
 
-      const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01T00:00:00Z")));
+      const result = await provider.sync(
+        new SyncRun({
+          db: db,
+          window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        }),
+      );
       vi.useRealTimers();
 
       expect(result.errors).toHaveLength(0);
@@ -850,7 +860,9 @@ describe("FitbitProvider", () => {
 
       const since = new Date();
       since.setUTCHours(0, 0, 0, 0);
-      const result = await provider.sync(db, SyncWindow.fromSince(since));
+      const result = await provider.sync(
+        new SyncRun({ db: db, window: SyncWindow.fromSince({ since: since }) }),
+      );
 
       expect(result.recordsSynced).toBe(0);
       expect(result.errors.length).toBeGreaterThanOrEqual(1);
@@ -876,7 +888,9 @@ describe("FitbitProvider", () => {
       );
       const db = createMockDb();
 
-      const result = await provider.sync(db, SyncWindow.fromSince(new Date(instant)));
+      const result = await provider.sync(
+        new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date(instant) }) }),
+      );
       vi.useRealTimers();
 
       expect(result.errors).toHaveLength(0);
@@ -953,7 +967,12 @@ describe("FitbitProvider", () => {
 
       const provider = new FitbitProvider(mockFetch);
       const db = createMockDb();
-      const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01T00:00:00Z")));
+      const result = await provider.sync(
+        new SyncRun({
+          db: db,
+          window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        }),
+      );
       vi.useRealTimers();
 
       expect(result.errors).toHaveLength(0);
@@ -1007,7 +1026,12 @@ describe("FitbitProvider", () => {
 
       const provider = new FitbitProvider(mockFetch);
       const db = createMockDb();
-      const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01T00:00:00Z")));
+      const result = await provider.sync(
+        new SyncRun({
+          db: db,
+          window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        }),
+      );
       vi.useRealTimers();
 
       expect(result.errors).toHaveLength(0);

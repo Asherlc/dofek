@@ -10,6 +10,7 @@ import {
   authFailureReasonFromError,
   type ProviderAuthFailureReason,
 } from "../providers/auth-errors.ts";
+import { SyncRun } from "../providers/sync-run.ts";
 import type { SyncCheckpointStore, SyncError } from "../providers/types.ts";
 import {
   syncDuration,
@@ -24,7 +25,6 @@ import {
 } from "./provider-rate-limit-cooldown.ts";
 import type { SyncJobData } from "./queues.ts";
 import { getProviderSyncQueue, SYNC_JOB_RETRY_OPTIONS } from "./queues.ts";
-import { SyncWindow } from "../providers/sync-window.ts";
 import { syncWindowFromJobData } from "./sync-job-window.ts";
 
 /**
@@ -175,17 +175,21 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
     try {
       logger.info(`[worker] Starting ${provider.name}...`);
       const result = await runWithTokenUser(job.data.userId, () =>
-        provider.sync(db, syncWindow, {
-          onProgress: (percentage, message) => {
-            providerStatus[provider.id] = { status: "running", message };
-            job.updateProgress({
-              providers: providerStatus,
-              percentage: computePercentage(completedCount, percentage, totalProviders),
-            });
-          },
-          userId: job.data.userId,
-          checkpoint: createCheckpointStore(job),
-        }),
+        provider.sync(
+          new SyncRun({
+            db,
+            window: syncWindow,
+            onProgress: (percentage, message) => {
+              providerStatus[provider.id] = { status: "running", message };
+              job.updateProgress({
+                providers: providerStatus,
+                percentage: computePercentage(completedCount, percentage, totalProviders),
+              });
+            },
+            userId: job.data.userId,
+            checkpoint: createCheckpointStore(job),
+          }),
+        ),
       );
       const rateLimitError = firstProviderRateLimitError(result.errors);
       if (rateLimitError) {

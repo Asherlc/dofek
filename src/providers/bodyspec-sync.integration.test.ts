@@ -1,12 +1,13 @@
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { SyncWindow } from "./sync-window.ts";
 import { dexaScan, dexaScanRegion } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { BodySpecProvider } from "./bodyspec.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 // ============================================================
 // Fake BodySpec API responses
@@ -246,7 +247,9 @@ describe("BodySpecProvider.sync() (integration)", () => {
     });
 
     // Sync
-    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: new Date("2026-02-01") }) }),
+    );
 
     expect(result.provider).toBe("bodyspec");
     expect(result.recordsSynced).toBe(1);
@@ -288,7 +291,9 @@ describe("BodySpecProvider.sync() (integration)", () => {
       scopes: "read:results",
     });
 
-    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: new Date("2026-02-01") }) }),
+    );
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors.length).toBeGreaterThan(0);
@@ -305,7 +310,9 @@ describe("BodySpecProvider.sync() (integration)", () => {
       scopes: "read:results",
     });
 
-    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-04-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: new Date("2026-04-01") }) }),
+    );
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(0);
@@ -365,7 +372,9 @@ describe("BodySpecProvider.sync() (integration)", () => {
       scopes: "read:results",
     });
 
-    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: new Date("2026-02-01") }) }),
+    );
 
     expect(result.provider).toBe("bodyspec");
     expect(result.recordsSynced).toBe(1);
@@ -440,7 +449,9 @@ describe("BodySpecProvider.sync() (integration)", () => {
       scopes: "read:results",
     });
 
-    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: new Date("2026-02-01") }) }),
+    );
 
     // The 500 error should be captured, not silently swallowed
     expect(result.recordsSynced).toBe(0);

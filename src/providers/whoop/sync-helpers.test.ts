@@ -4,11 +4,11 @@ import type { WhoopCycle, WhoopWorkoutRecord } from "whoop-whoop/types";
 import type { SyncDatabase } from "../../db/index.ts";
 import { writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
+import { SyncWindow } from "../sync-window.ts";
 import { syncWhoopDailyActivity } from "./sync-daily-activity.ts";
 import { syncWhoopSleepSessions, syncWhoopSleepStages } from "./sync-sleep.ts";
 import { syncWhoopHeartRateStream } from "./sync-streams.ts";
 import type { WhoopSyncContext } from "./sync-types.ts";
-import { SyncWindow } from "../sync-window.ts";
 import { syncWhoopWorkouts } from "./sync-workouts.ts";
 
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
@@ -377,7 +377,10 @@ describe("WHOOP sync helpers", () => {
 
     await expect(syncWhoopWorkouts(context)).resolves.toBe(2);
 
-    const absenceWindow = new SyncWindow(context.since, context.windowEnd).withMinimumLookback(30);
+    const absenceWindow = new SyncWindow({
+      since: context.since,
+      until: context.windowEnd,
+    }).withMinimumLookback(30);
     expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
       db.db,
       {
@@ -405,7 +408,10 @@ describe("WHOOP sync helpers", () => {
 
     await expect(syncWhoopWorkouts(context)).resolves.toBe(1);
 
-    const absenceWindow = new SyncWindow(context.since, context.windowEnd).withMinimumLookback(30);
+    const absenceWindow = new SyncWindow({
+      since: context.since,
+      until: context.windowEnd,
+    }).withMinimumLookback(30);
     expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
       db.db,
       expect.objectContaining({

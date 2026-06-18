@@ -14,6 +14,7 @@ import { withSyncLog } from "../db/sync-log.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { ProviderHttpClient } from "./http-client.ts";
+import type { SyncRun } from "./sync-run.ts";
 import type {
   ProviderAuthSetup,
   SyncError,
@@ -22,7 +23,6 @@ import type {
   WebhookEvent,
   WebhookProvider,
 } from "./types.ts";
-import { SyncWindow } from "./sync-window.ts";
 
 // ============================================================
 // Concept2 Logbook API Zod schemas
@@ -376,7 +376,8 @@ export class Concept2Provider implements WebhookProvider {
     });
   }
 
-  async sync(db: SyncDatabase, window: SyncWindow, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;

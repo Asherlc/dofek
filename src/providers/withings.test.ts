@@ -1,5 +1,6 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 
 vi.mock("../db/token-user-context.ts", () => ({
@@ -152,7 +153,9 @@ describe("WithingsProvider.sync() — unit tests", () => {
     const { db: mockDb } = createMockDb();
     const provider = new WithingsProvider();
 
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
     expect(result.provider).toBe("withings");
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toBe("Withings authentication failed.");
@@ -202,7 +205,9 @@ describe("WithingsProvider.sync() — unit tests", () => {
     };
 
     const provider = new WithingsProvider(mockFetch);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
     expect(publishedMetricStreamBatches.flat()).toContainEqual(
@@ -270,7 +275,9 @@ describe("WithingsProvider.sync() — unit tests", () => {
     };
 
     const provider = new WithingsProvider(mockFetch);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
     expect(result.recordsSynced).toBe(2);
     expect(callCount).toBe(2);
   });
@@ -317,7 +324,9 @@ describe("WithingsProvider.sync() — unit tests", () => {
     };
 
     const provider = new WithingsProvider(mockFetch);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
     expect(result.recordsSynced).toBe(0);
   });
 
@@ -358,7 +367,9 @@ describe("WithingsProvider.sync() — unit tests", () => {
     };
 
     const provider = new WithingsProvider(mockFetch);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
     expect(result.recordsSynced).toBe(0);
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("Redpanda publish failed");
@@ -406,7 +417,9 @@ describe("WithingsProvider.sync() — unit tests", () => {
     };
 
     const provider = new WithingsProvider(mockFetch);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
     expect(refreshCallCount).toBe(0);
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("metric_stream");
@@ -481,7 +494,9 @@ describe("WithingsProvider.sync() — unit tests", () => {
     };
 
     const provider = new WithingsProvider(mockFetch);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
 
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
@@ -537,7 +552,9 @@ describe("WithingsProvider.sync() — unit tests", () => {
     };
 
     const provider = new WithingsProvider(mockFetch);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors.length).toBeGreaterThan(0);
@@ -598,7 +615,9 @@ describe("WithingsProvider.sync() — unit tests", () => {
     };
 
     const provider = new WithingsProvider(mockFetch);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
     expect(tokenCallMade).toBe(true);
     expect(result.provider).toBe("withings");
   });
@@ -655,7 +674,12 @@ describe("WithingsProvider.sync() — unit tests", () => {
       };
 
       const provider = new WithingsProvider(mockFetch);
-      await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+      await provider.sync(
+        new SyncRun({
+          db: mockDb,
+          window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+        }),
+      );
       expect(tokenCallMade).toBe(true);
     } finally {
       vi.useRealTimers();
@@ -682,7 +706,9 @@ describe("WithingsProvider.sync() — unit tests", () => {
       Response.json({ status: 503, error: "Invalid Params: invalid refresh token", body: {} });
 
     const provider = new WithingsProvider(mockFetch);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
 
     expect(spies.deleteFn).toHaveBeenCalledOnce();
     expect(spies.deleteWhere).toHaveBeenCalledOnce();
@@ -708,7 +734,9 @@ describe("WithingsProvider.sync() — unit tests", () => {
     });
 
     const provider = new WithingsProvider();
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("No refresh token");
   });
@@ -730,7 +758,9 @@ describe("WithingsProvider.sync() — unit tests", () => {
     });
 
     const provider = new WithingsProvider();
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("WITHINGS_CLIENT_ID");
   });
@@ -779,7 +809,9 @@ describe("WithingsProvider.sync() — temperature measurement", () => {
     };
 
     const provider = new WithingsProvider(mockFetch);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
     expect(result.recordsSynced).toBe(1);
   });
 });
@@ -1068,7 +1100,9 @@ describe("Withings — rate-limit aware fetch wiring", () => {
     });
 
     const provider = new WithingsProvider(rateLimited429);
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
 
     expect(result.errors).toHaveLength(1);
     const cause = result.errors[0]?.cause;

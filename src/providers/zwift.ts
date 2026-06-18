@@ -15,14 +15,8 @@ import {
   ProviderStoredIdentityInvalidError,
   ProviderStoredIdentityMissingError,
 } from "./auth-errors.ts";
-import type {
-  ProviderAuthSetup,
-  SyncError,
-  SyncOptions,
-  SyncProvider,
-  SyncResult,
-} from "./types.ts";
-import { SyncWindow } from "./sync-window.ts";
+import type { SyncRun } from "./sync-run.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Provider implementation
@@ -200,7 +194,8 @@ export class ZwiftProvider implements SyncProvider {
     return /\(401\)|\b401\b|\(403\)|\b403\b|unauthorized|invalid_token/i.test(error.message);
   }
 
-  async sync(db: SyncDatabase, window: SyncWindow, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;

@@ -1,7 +1,6 @@
 import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { captureException } from "@sentry/node";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SyncWindow } from "./sync-window.ts";
 import { runWithTokenUser } from "../db/token-user-context.ts";
 import {
   AmazfitZeppClient,
@@ -12,6 +11,8 @@ import {
   encodeZeppTokenScopes,
   parseZeppBandDay,
 } from "./amazfit-zepp.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 import { createCapturingMetricStreamPublisher, createMockDatabase } from "./test-helpers.ts";
 
 vi.mock("@dofek/provider-http/rate-limit", async (importOriginal) => {
@@ -322,11 +323,15 @@ describe("Amazfit/Zepp provider", () => {
     const provider = new AmazfitZeppProvider(fetchFn);
 
     const result = await runWithTokenUser(TEST_USER_ID, () =>
-      provider.sync(db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00.000Z")), {
-        metricStreamPublisher: metricStreamCapture.publisher,
-        onProgress,
-        userId: TEST_USER_ID,
-      }),
+      provider.sync(
+        new SyncRun({
+          db: db,
+          window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00.000Z") }),
+          metricStreamPublisher: metricStreamCapture.publisher,
+          onProgress,
+          userId: TEST_USER_ID,
+        }),
+      ),
     );
 
     expect(result.errors).toEqual([]);
@@ -406,9 +411,13 @@ describe("Amazfit/Zepp provider", () => {
     const provider = new AmazfitZeppProvider(fetchFn);
 
     const result = await runWithTokenUser(TEST_USER_ID, () =>
-      provider.sync(db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00.000Z")), {
-        userId: TEST_USER_ID,
-      }),
+      provider.sync(
+        new SyncRun({
+          db: db,
+          window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00.000Z") }),
+          userId: TEST_USER_ID,
+        }),
+      ),
     );
 
     expect(result.recordsSynced).toBe(0);
@@ -423,9 +432,13 @@ describe("Amazfit/Zepp provider", () => {
     const fetchFn = vi.fn<typeof globalThis.fetch>();
     const provider = new AmazfitZeppProvider(fetchFn);
 
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00.000Z")), {
-      userId: TEST_USER_ID,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00.000Z") }),
+        userId: TEST_USER_ID,
+      }),
+    );
 
     expect(fetchFn).not.toHaveBeenCalled();
     expect(result.recordsSynced).toBe(0);
@@ -445,9 +458,13 @@ describe("Amazfit/Zepp provider", () => {
     const fetchFn = vi.fn<typeof globalThis.fetch>();
     const provider = new AmazfitZeppProvider(fetchFn);
 
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00.000Z")), {
-      userId: TEST_USER_ID,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00.000Z") }),
+        userId: TEST_USER_ID,
+      }),
+    );
 
     expect(fetchFn).not.toHaveBeenCalled();
     expect(result.errors[0]?.message).toContain("credentials");
@@ -466,9 +483,13 @@ describe("Amazfit/Zepp provider", () => {
     const fetchFn = vi.fn<typeof globalThis.fetch>();
     const provider = new AmazfitZeppProvider(fetchFn);
 
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00.000Z")), {
-      userId: TEST_USER_ID,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00.000Z") }),
+        userId: TEST_USER_ID,
+      }),
+    );
 
     expect(fetchFn).not.toHaveBeenCalled();
     expect(result.errors[0]?.message).toContain("credentials");
@@ -487,9 +508,13 @@ describe("Amazfit/Zepp provider", () => {
     );
     const provider = new AmazfitZeppProvider(fetchFn);
 
-    await provider.sync(db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00.000Z")), {
-      userId: TEST_USER_ID,
-    });
+    await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00.000Z") }),
+        userId: TEST_USER_ID,
+      }),
+    );
 
     expect(String(fetchFn.mock.calls[0]?.[0])).toContain("userid=zepp-user-42");
     expect(fetchFn.mock.calls[0]?.[1]?.headers).toMatchObject({
@@ -516,9 +541,13 @@ describe("Amazfit/Zepp provider", () => {
     );
     const provider = new AmazfitZeppProvider(fetchFn);
 
-    await provider.sync(db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00.000Z")), {
-      userId: TEST_USER_ID,
-    });
+    await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00.000Z") }),
+        userId: TEST_USER_ID,
+      }),
+    );
 
     expect(String(fetchFn.mock.calls[0]?.[0])).toContain("userid=legacy-zepp-user");
     expect(fetchFn.mock.calls[0]?.[1]?.headers).toMatchObject({
@@ -537,9 +566,13 @@ describe("Amazfit/Zepp provider", () => {
       });
     const provider = new AmazfitZeppProvider(fetchFn);
 
-    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00.000Z")), {
-      userId: TEST_USER_ID,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00.000Z") }),
+        userId: TEST_USER_ID,
+      }),
+    );
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toMatchObject([
@@ -562,9 +595,13 @@ describe("Amazfit/Zepp provider", () => {
     const provider = new AmazfitZeppProvider(fetchFn);
 
     await expect(
-      provider.sync(db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00.000Z")), {
-        userId: TEST_USER_ID,
-      }),
+      provider.sync(
+        new SyncRun({
+          db: db,
+          window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00.000Z") }),
+          userId: TEST_USER_ID,
+        }),
+      ),
     ).rejects.toBeInstanceOf(ProviderRateLimitError);
     expect(captureException).not.toHaveBeenCalled();
   });

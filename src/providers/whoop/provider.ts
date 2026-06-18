@@ -4,19 +4,17 @@ import type { WhoopCycle } from "whoop-whoop/types";
 import { z } from "zod";
 import type { OAuthConfig } from "../../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../../auth/oauth.ts";
-import type { SyncDatabase } from "../../db/index.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../../db/tokens.ts";
 import { logger } from "../../logger.ts";
 import { ProviderStoredIdentityMissingError } from "../auth-errors.ts";
+import type { SyncRun } from "../sync-run.ts";
 import type {
   ProviderAuthSetup,
   ProviderIdentity,
   SyncError,
-  SyncOptions,
   SyncProvider,
   SyncResult,
 } from "../types.ts";
-import { SyncWindow } from "../sync-window.ts";
 import { syncWhoopDailyActivity } from "./sync-daily-activity.ts";
 import { syncWhoopJournal } from "./sync-journal.ts";
 import { syncWhoopRecovery } from "./sync-recovery.ts";
@@ -92,7 +90,8 @@ export class WhoopProvider implements SyncProvider {
     };
   }
 
-  async sync(db: SyncDatabase, window: SyncWindow, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;

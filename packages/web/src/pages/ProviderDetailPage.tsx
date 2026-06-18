@@ -1,4 +1,9 @@
-import { formatDateYmd, formatDurationSeconds, formatRelativeTime, formatTime } from "@dofek/format/format";
+import {
+  formatDateYmd,
+  formatDurationSeconds,
+  formatRelativeTime,
+  formatTime,
+} from "@dofek/format/format";
 import { DATA_TYPE_LABELS, type ProviderStats } from "@dofek/providers/provider-stats";
 import {
   parseWhoopWearLocation,
@@ -60,11 +65,7 @@ export function ProviderDetailPage() {
   const [rangeEndDate, setRangeEndDate] = useState(() => formatDateYmd(new Date()));
 
   const runSyncJob = useCallback(
-    async (input: {
-      sinceDays?: number;
-      sinceDate?: string;
-      untilDate?: string;
-    }) => {
+    async (input: { sinceDays?: number; sinceDate?: string; untilDate?: string }) => {
       setSyncStatus("syncing");
       setSyncMessage(null);
       try {

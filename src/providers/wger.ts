@@ -10,14 +10,8 @@ import { activity } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
-import type {
-  ProviderAuthSetup,
-  SyncError,
-  SyncOptions,
-  SyncProvider,
-  SyncResult,
-} from "./types.ts";
-import { SyncWindow } from "./sync-window.ts";
+import type { SyncRun } from "./sync-run.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Wger API types
@@ -152,7 +146,8 @@ export class WgerProvider implements SyncProvider {
     });
   }
 
-  async sync(db: SyncDatabase, window: SyncWindow, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;

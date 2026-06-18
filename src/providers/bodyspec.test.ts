@@ -1,6 +1,5 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SyncWindow } from "./sync-window.ts";
 import {
   type BodySpecBoneDensityResponse,
   type BodySpecCompositionResponse,
@@ -18,6 +17,8 @@ import {
   parseScanInfo,
   parseVisceralFat,
 } from "./bodyspec.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 // ============================================================
 // Mocks for unit-testing sync orchestration
@@ -499,7 +500,12 @@ describe("BodySpecProvider", () => {
     it("returns error when no tokens exist", async () => {
       vi.mocked(loadTokens).mockResolvedValue(null);
       const provider = new BodySpecProvider();
-      const result = await provider.sync(mockDb(), SyncWindow.fromSince(new Date("2025-01-01")));
+      const result = await provider.sync(
+        new SyncRun({
+          db: mockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2025-01-01") }),
+        }),
+      );
       expect(result.provider).toBe("bodyspec");
       expect(result.recordsSynced).toBe(0);
       expect(result.errors).toHaveLength(1);
@@ -532,7 +538,12 @@ describe("BodySpecProvider", () => {
         }),
       );
       const provider = new BodySpecProvider(fetchFn);
-      const result = await provider.sync(mockDb(), SyncWindow.fromSince(new Date("2025-01-01")));
+      const result = await provider.sync(
+        new SyncRun({
+          db: mockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2025-01-01") }),
+        }),
+      );
 
       expect(refreshAccessToken).toHaveBeenCalled();
       expect(saveTokens).toHaveBeenCalled();
@@ -580,7 +591,9 @@ describe("BodySpecProvider", () => {
 
       const db = mockDb();
       const provider = new BodySpecProvider(fetchFn);
-      const result = await provider.sync(db, SyncWindow.fromSince(new Date("2025-01-01")));
+      const result = await provider.sync(
+        new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2025-01-01") }) }),
+      );
 
       expect(result.provider).toBe("bodyspec");
       expect(result.recordsSynced).toBe(1);
@@ -606,7 +619,12 @@ describe("BodySpecProvider", () => {
       );
 
       const provider = new BodySpecProvider(fetchFn);
-      const result = await provider.sync(mockDb(), SyncWindow.fromSince(new Date("2025-06-01")));
+      const result = await provider.sync(
+        new SyncRun({
+          db: mockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2025-06-01") }),
+        }),
+      );
 
       expect(result.recordsSynced).toBe(0);
       expect(result.errors).toHaveLength(0);
@@ -635,7 +653,12 @@ describe("BodySpecProvider", () => {
       });
 
       const provider = new BodySpecProvider(fetchFn);
-      const result = await provider.sync(mockDb(), SyncWindow.fromSince(new Date("2025-01-01")));
+      const result = await provider.sync(
+        new SyncRun({
+          db: mockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2025-01-01") }),
+        }),
+      );
 
       expect(result.recordsSynced).toBe(0);
       expect(result.errors).toHaveLength(0);
@@ -667,7 +690,12 @@ describe("BodySpecProvider", () => {
       });
 
       const provider = new BodySpecProvider(fetchFn);
-      const result = await provider.sync(mockDb(), SyncWindow.fromSince(new Date("2025-01-01")));
+      const result = await provider.sync(
+        new SyncRun({
+          db: mockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2025-01-01") }),
+        }),
+      );
 
       expect(result.recordsSynced).toBe(0);
       expect(result.errors).toHaveLength(1);
@@ -716,7 +744,12 @@ describe("BodySpecProvider", () => {
       });
 
       const provider = new BodySpecProvider(fetchFn);
-      const result = await provider.sync(mockDb(), SyncWindow.fromSince(new Date("2025-01-01")));
+      const result = await provider.sync(
+        new SyncRun({
+          db: mockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2025-01-01") }),
+        }),
+      );
 
       expect(result.recordsSynced).toBe(2);
       expect(listCallCount).toBe(2);
@@ -749,7 +782,9 @@ describe("BodySpecProvider", () => {
 
       const db = mockDb();
       const provider = new BodySpecProvider(fetchFn);
-      const result = await provider.sync(db, SyncWindow.fromSince(new Date("2025-01-01")));
+      const result = await provider.sync(
+        new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2025-01-01") }) }),
+      );
 
       expect(result.recordsSynced).toBe(1);
       expect(result.errors).toHaveLength(0);
@@ -794,7 +829,9 @@ describe("BodySpecProvider", () => {
       };
 
       const provider = new BodySpecProvider(fetchFn);
-      const result = await provider.sync(db, SyncWindow.fromSince(new Date("2025-01-01")));
+      const result = await provider.sync(
+        new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2025-01-01") }) }),
+      );
 
       expect(result.recordsSynced).toBe(0);
     });
@@ -813,7 +850,12 @@ describe("BodySpecProvider", () => {
       vi.mocked(loadTokens).mockResolvedValue(expiredTokens);
 
       const provider = new BodySpecProvider();
-      const result = await provider.sync(mockDb(), SyncWindow.fromSince(new Date("2025-01-01")));
+      const result = await provider.sync(
+        new SyncRun({
+          db: mockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2025-01-01") }),
+        }),
+      );
 
       expect(result.errors).toHaveLength(1);
       const err = result.errors[0];
@@ -832,7 +874,12 @@ describe("BodySpecProvider", () => {
       vi.mocked(loadTokens).mockResolvedValue(expiredTokens);
 
       const provider = new BodySpecProvider();
-      const result = await provider.sync(mockDb(), SyncWindow.fromSince(new Date("2025-01-01")));
+      const result = await provider.sync(
+        new SyncRun({
+          db: mockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2025-01-01") }),
+        }),
+      );
 
       expect(result.errors).toHaveLength(1);
       const err = result.errors[0];
@@ -844,7 +891,12 @@ describe("BodySpecProvider", () => {
     it("returns correct duration in result", async () => {
       vi.mocked(loadTokens).mockResolvedValue(null);
       const provider = new BodySpecProvider();
-      const result = await provider.sync(mockDb(), SyncWindow.fromSince(new Date("2025-01-01")));
+      const result = await provider.sync(
+        new SyncRun({
+          db: mockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2025-01-01") }),
+        }),
+      );
       expect(result.duration).toBeGreaterThanOrEqual(0);
     });
 
@@ -865,7 +917,12 @@ describe("BodySpecProvider", () => {
       );
 
       const provider = new BodySpecProvider(fetchFn);
-      await provider.sync(mockDb(), SyncWindow.fromSince(new Date("2025-01-01")));
+      await provider.sync(
+        new SyncRun({
+          db: mockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2025-01-01") }),
+        }),
+      );
 
       expect(fetchFn).toHaveBeenCalledWith(
         expect.stringContaining("https://app.bodyspec.com/api/v1/users/me/results/"),
@@ -899,7 +956,12 @@ describe("BodySpecProvider", () => {
       });
 
       const provider = new BodySpecProvider(fetchFn);
-      const result = await provider.sync(mockDb(), SyncWindow.fromSince(new Date("2025-01-01")));
+      const result = await provider.sync(
+        new SyncRun({
+          db: mockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2025-01-01") }),
+        }),
+      );
 
       expect(result.errors).toHaveLength(1);
       const err = result.errors[0];
@@ -952,7 +1014,12 @@ describe("BodySpecProvider", () => {
         );
 
       const provider = new BodySpecProvider(fetchFn);
-      const result = await provider.sync(mockDb(), SyncWindow.fromSince(new Date("2025-01-01")));
+      const result = await provider.sync(
+        new SyncRun({
+          db: mockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2025-01-01") }),
+        }),
+      );
 
       expect(result.errors).toHaveLength(1);
       const cause = result.errors[0]?.cause;

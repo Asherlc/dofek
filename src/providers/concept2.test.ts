@@ -1,6 +1,5 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SyncWindow } from "./sync-window.ts";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import {
@@ -10,6 +9,8 @@ import {
   mapConcept2Type,
   parseConcept2Result,
 } from "./concept2.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 import type { WebhookEvent } from "./types.ts";
 
 // ============================================================
@@ -513,7 +514,12 @@ describe("Concept2 — rate-limit aware fetch wiring", () => {
 
   it("provider sync surfaces a 429 as a ProviderRateLimitError tagged 'concept2'", async () => {
     const provider = new Concept2Provider(rateLimitedFetch);
-    const result = await provider.sync(createMockDb(), SyncWindow.fromSince(new Date("2025-01-01")));
+    const result = await provider.sync(
+      new SyncRun({
+        db: createMockDb(),
+        window: SyncWindow.fromSince({ since: new Date("2025-01-01") }),
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     const cause = result.errors[0]?.cause;

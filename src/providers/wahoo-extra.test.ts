@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 
 vi.mock("../db/token-user-context.ts", () => ({
@@ -217,7 +218,9 @@ describe("WahooProvider.sync — token error path", () => {
       execute: vi.fn().mockResolvedValue([]),
     };
 
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
     expect(result.provider).toBe("wahoo");
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("No OAuth tokens");
@@ -339,7 +342,12 @@ describe("WahooProvider.sync — happy path (no FIT file)", () => {
     });
 
     const provider = new WahooProvider(mockFetch);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01T00:00:00Z")));
+    const result = await provider.sync(
+      new SyncRun({
+        db: mockDb,
+        window: SyncWindow.fromSince({ since: new Date("2026-01-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.provider).toBe("wahoo");
     expect(result.recordsSynced).toBe(1);
@@ -370,7 +378,12 @@ describe("WahooProvider.sync — happy path (no FIT file)", () => {
     });
 
     const provider = new WahooProvider(mockFetch);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01T00:00:00Z")));
+    const result = await provider.sync(
+      new SyncRun({
+        db: mockDb,
+        window: SyncWindow.fromSince({ since: new Date("2026-01-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.provider).toBe("wahoo");
     expect(result.recordsSynced).toBe(0);
@@ -422,7 +435,12 @@ describe("WahooProvider.sync — expired token refresh path", () => {
       });
 
     const provider = new WahooProvider(mockFetch);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01T00:00:00Z")));
+    const result = await provider.sync(
+      new SyncRun({
+        db: mockDb,
+        window: SyncWindow.fromSince({ since: new Date("2026-01-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.provider).toBe("wahoo");
     expect(result.errors).toHaveLength(0);
@@ -464,7 +482,12 @@ describe("WahooProvider.sync — expired token refresh path", () => {
 
     const mockFetch = vi.fn();
     const provider = new WahooProvider(mockFetch);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01T00:00:00Z")));
+    const result = await provider.sync(
+      new SyncRun({
+        db: mockDb,
+        window: SyncWindow.fromSince({ since: new Date("2026-01-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No refresh token");
@@ -511,7 +534,12 @@ describe("WahooProvider.sync — since date boundary", () => {
 
     const provider = new WahooProvider(mockFetch);
     // since is after the workout's starts
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01T00:00:00Z")));
+    const result = await provider.sync(
+      new SyncRun({
+        db: mockDb,
+        window: SyncWindow.fromSince({ since: new Date("2026-01-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(0);
@@ -557,7 +585,13 @@ describe("WahooProvider.sync — onProgress callback", () => {
 
     const onProgress = vi.fn();
     const provider = new WahooProvider(mockFetch);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01T00:00:00Z")), { onProgress });
+    const result = await provider.sync(
+      new SyncRun({
+        db: mockDb,
+        window: SyncWindow.fromSince({ since: new Date("2026-01-01T00:00:00Z") }),
+        onProgress,
+      }),
+    );
 
     expect(result.recordsSynced).toBe(1);
     expect(onProgress).toHaveBeenCalledOnce();
@@ -591,7 +625,13 @@ describe("WahooProvider.sync — onProgress callback", () => {
 
     const onProgress = vi.fn();
     const provider = new WahooProvider(mockFetch);
-    await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01T00:00:00Z")), { onProgress });
+    await provider.sync(
+      new SyncRun({
+        db: mockDb,
+        window: SyncWindow.fromSince({ since: new Date("2026-01-01T00:00:00Z") }),
+        onProgress,
+      }),
+    );
 
     expect(onProgress).not.toHaveBeenCalled();
   });
@@ -633,7 +673,12 @@ describe("WahooProvider.sync — FIT file download error", () => {
     });
 
     const provider = new WahooProvider(mockFetch);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01T00:00:00Z")));
+    const result = await provider.sync(
+      new SyncRun({
+        db: mockDb,
+        window: SyncWindow.fromSince({ since: new Date("2026-01-01T00:00:00Z") }),
+      }),
+    );
 
     // Activity is still synced even though FIT download failed
     expect(result.recordsSynced).toBe(1);
@@ -688,7 +733,12 @@ describe("WahooProvider.sync — activity insert error", () => {
     });
 
     const provider = new WahooProvider(mockFetch);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01T00:00:00Z")));
+    const result = await provider.sync(
+      new SyncRun({
+        db: mockDb,
+        window: SyncWindow.fromSince({ since: new Date("2026-01-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);
@@ -752,7 +802,12 @@ describe("WahooProvider.sync — multi-page pagination", () => {
     });
 
     const provider = new WahooProvider(mockFetch);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01T00:00:00Z")));
+    const result = await provider.sync(
+      new SyncRun({
+        db: mockDb,
+        window: SyncWindow.fromSince({ since: new Date("2026-01-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.recordsSynced).toBe(2);
     expect(result.errors).toHaveLength(0);
@@ -789,7 +844,12 @@ describe("WahooProvider.sync — result shape", () => {
     const mockFetch = vi.fn().mockResolvedValue(Response.json(workoutsResponse));
 
     const provider = new WahooProvider(mockFetch);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01T00:00:00Z")));
+    const result = await provider.sync(
+      new SyncRun({
+        db: mockDb,
+        window: SyncWindow.fromSince({ since: new Date("2026-01-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.provider).toBe("wahoo");
     expect(typeof result.duration).toBe("number");
@@ -813,7 +873,12 @@ describe("WahooProvider.sync — result shape", () => {
     const mockFetch = vi.fn().mockResolvedValue(Response.json(workoutsResponse));
 
     const provider = new WahooProvider(mockFetch);
-    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01T00:00:00Z")));
+    const result = await provider.sync(
+      new SyncRun({
+        db: mockDb,
+        window: SyncWindow.fromSince({ since: new Date("2026-01-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.duration).toBeGreaterThanOrEqual(0);
   });

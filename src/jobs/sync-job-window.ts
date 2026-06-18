@@ -1,5 +1,5 @@
-import type { SyncJobData } from "./queues.ts";
 import { SyncWindow } from "../providers/sync-window.ts";
+import type { SyncJobData } from "./queues.ts";
 
 export type SyncWindowTriggerInput = {
   sinceDays?: number;
@@ -15,7 +15,7 @@ export type SyncJobWindowFields = Pick<
 
 export function syncWindowFromTriggerInput(input: SyncWindowTriggerInput): SyncWindow {
   if (input.sinceDate && input.untilDate) {
-    return SyncWindow.fromDateRange(input.sinceDate, input.untilDate);
+    return SyncWindow.fromDateRange({ sinceDate: input.sinceDate, untilDate: input.untilDate });
   }
   if (input.sinceDays != null) {
     return SyncWindow.lastDays(input.sinceDays, {
@@ -28,22 +28,19 @@ export function syncWindowFromTriggerInput(input: SyncWindowTriggerInput): SyncW
 
 export function syncWindowFromJobData(data: SyncJobData, now = SyncWindow.now()): SyncWindow {
   if (data.sinceIso && data.untilIso) {
-    return SyncWindow.fromIsoRange(data.sinceIso, data.untilIso);
+    return SyncWindow.fromIsoRange({ sinceIso: data.sinceIso, untilIso: data.untilIso });
   }
   if (data.sinceIso) {
     const since = new Date(data.sinceIso);
     if (Number.isNaN(since.getTime())) {
       throw new Error(`Invalid sync job sinceIso: ${data.sinceIso}`);
     }
-    return new SyncWindow(since, now);
+    return new SyncWindow({ since: since, until: now });
   }
   return syncWindowFromTriggerInput({ sinceDays: data.sinceDays, now });
 }
 
-export function syncWindowToJobData(
-  window: SyncWindow,
-  sinceDays?: number,
-): SyncJobWindowFields {
+export function syncWindowToJobData(window: SyncWindow, sinceDays?: number): SyncJobWindowFields {
   return {
     sinceDays,
     sinceIso: window.sinceIso,

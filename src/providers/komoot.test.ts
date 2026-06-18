@@ -1,5 +1,6 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 
 vi.mock("../db/token-user-context.ts", () => ({
@@ -191,7 +192,9 @@ describe("KomootProvider", () => {
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
     };
-    const result = await new KomootProvider().sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
+    const result = await new KomootProvider().sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
     expect(result.errors.length).toBeGreaterThan(0);
   });
 });

@@ -3,11 +3,12 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { SyncWindow } from "./sync-window.ts";
 import { activity, dailyMetrics } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 import { ZwiftProvider } from "./zwift.ts";
 
@@ -259,9 +260,13 @@ describe("ZwiftProvider.sync() (integration)", () => {
 
     const provider = new ZwiftProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, SyncWindow.fromSince(since), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.provider).toBe("zwift");
     // 2 activities; power curve data is raw provider-derived data and is not stored as daily metrics.
@@ -317,12 +322,24 @@ describe("ZwiftProvider.sync() (integration)", () => {
 
     const provider = new ZwiftProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    await provider.sync(ctx.db, SyncWindow.fromSince(since), { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     server.resetHandlers();
     server.use(...zwiftHandlers({ activities: zwiftActivities, paginateActivities: true }));
 
-    await provider.sync(ctx.db, SyncWindow.fromSince(since), { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     const activityRows = await ctx.db
       .select()
@@ -343,9 +360,13 @@ describe("ZwiftProvider.sync() (integration)", () => {
     server.use(...zwiftHandlers({ activities: [], paginateActivities: true }));
 
     const provider = new ZwiftProvider();
-    await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     // Verify token was refreshed in DB
     const { loadTokens } = await import("../db/tokens.ts");
@@ -358,9 +379,13 @@ describe("ZwiftProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "zwift"));
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("not connected");
@@ -376,9 +401,13 @@ describe("ZwiftProvider.sync() (integration)", () => {
     });
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("athlete ID not found");
@@ -397,9 +426,13 @@ describe("ZwiftProvider.sync() (integration)", () => {
     server.use(...zwiftHandlers({ activities: [], paginateActivities: true }));
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     // Self-healing should allow sync to proceed without "athlete ID not found" error
     const athleteIdErrors = result.errors.filter((error) =>
@@ -422,9 +455,13 @@ describe("ZwiftProvider.sync() (integration)", () => {
     });
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toBe("Zwift authentication failed.");
@@ -457,9 +494,13 @@ describe("ZwiftProvider.sync() (integration)", () => {
     );
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-01T00:00:00Z")), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     // Activity should still be synced and counted.
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
@@ -502,9 +543,13 @@ describe("ZwiftProvider.sync() (integration)", () => {
 
     const provider = new ZwiftProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, SyncWindow.fromSince(since), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     // Only the first activity should be synced
     const activityRows = await ctx.db
@@ -543,9 +588,13 @@ describe("ZwiftProvider.sync() (integration)", () => {
     );
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     // No activities, no power curve data → 0 records
     expect(result.recordsSynced).toBe(0);
@@ -583,9 +632,13 @@ describe("ZwiftProvider.sync() (integration)", () => {
     );
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-01T00:00:00Z")), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
     // 1 activity; provider VO2 Max and fixed power-curve daily metrics are ignored.
@@ -607,9 +660,13 @@ describe("ZwiftProvider.sync() (integration)", () => {
     server.use(...zwiftHandlers({ activitiesRateLimited: true }));
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);
@@ -642,9 +699,13 @@ describe("ZwiftProvider.sync() (integration)", () => {
     );
 
     const provider = new ZwiftProvider();
-    await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-01T00:00:00Z")), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "zwift");

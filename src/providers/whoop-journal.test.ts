@@ -69,7 +69,7 @@ describe("parseWorkout — fallback paths (no `during` field)", () => {
     expect(parsed?.activityType).toBe("yoga");
   });
 
-  it("uses empty string when both activity_id and id are missing", () => {
+  it("returns null when both activity_id and id are missing", () => {
     const record: WhoopWorkoutRecord = {
       during: "['2026-03-01T10:00:00Z','2026-03-01T10:30:00Z')",
       timezone_offset: "-05:00",
@@ -78,8 +78,7 @@ describe("parseWorkout — fallback paths (no `during` field)", () => {
     };
 
     const parsed = parseWorkout(record);
-    expect(parsed).not.toBeNull();
-    expect(parsed?.externalId).toBe("");
+    expect(parsed).toBeNull();
   });
 
   it("returns undefined calories when kilojoules is 0", () => {

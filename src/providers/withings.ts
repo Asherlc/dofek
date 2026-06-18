@@ -9,16 +9,14 @@ import { withSyncLog } from "../db/sync-log.ts";
 import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
 import { ProviderAuthenticationFailedError, RefreshTokenRevokedError } from "./auth-errors.ts";
+import type { SyncRun } from "./sync-run.ts";
 import type {
   ProviderAuthSetup,
   SyncError,
-  SyncOptions,
   SyncResult,
   WebhookEvent,
   WebhookProvider,
 } from "./types.ts";
-import { SyncWindow } from "./sync-window.ts";
-import { SyncWindow } from "./sync-window.ts";
 
 // ============================================================
 // Withings API types
@@ -448,7 +446,8 @@ export class WithingsProvider implements WebhookProvider {
     return this.#refreshTokens(db, tokens);
   }
 
-  async sync(db: SyncDatabase, window: SyncWindow, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const since = window.since;
     const start = Date.now();
     const errors: SyncError[] = [];

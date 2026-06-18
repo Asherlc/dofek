@@ -27,6 +27,7 @@ import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { isRetryableInfraError } from "../lib/retryable-infra-error.ts";
 import { logger } from "../logger.ts";
 import { ProviderAuthenticationFailedError } from "./auth-errors.ts";
+import type { SyncRun } from "./sync-run.ts";
 import type {
   ProviderAuthSetup,
   SyncCheckpointStore,
@@ -35,7 +36,6 @@ import type {
   SyncProvider,
   SyncResult,
 } from "./types.ts";
-import { SyncWindow } from "./sync-window.ts";
 
 // ============================================================
 // Internal token serialization
@@ -361,7 +361,8 @@ export class GarminProvider implements SyncProvider {
     return refreshed;
   }
 
-  async sync(db: SyncDatabase, window: SyncWindow, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const start = Date.now();
     const errors: SyncError[] = [];
 

@@ -3,9 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import { AccessTokenExpiredError, RefreshTokenRevokedError } from "../providers/auth-errors.ts";
-import type { SyncOptions, SyncProvider, SyncResult } from "../providers/types.ts";
+import type { SyncRun } from "../providers/sync-run.ts";
 import { SyncWindow } from "../providers/sync-window.ts";
-import { syncWindowFromJobData } from "./sync-job-window.ts";
+import type { SyncProvider, SyncResult } from "../providers/types.ts";
 
 const MockJobDataSchema = z.object({
   providerId: z.string().optional(),
@@ -345,12 +345,14 @@ describe("processSyncJob", () => {
     mockGetEnabledSyncProviders.mockReturnValue([retryProvider]);
     await runSyncJob(createMockJob(requeuedData), mockDb);
 
-      expect(retryProvider.sync).toHaveBeenCalledWith(
-      mockDb,
-      expectedWindow,
+    expect(retryProvider.sync).toHaveBeenCalledWith(
       expect.objectContaining({
-        onProgress: expect.any(Function),
-        userId: "user-1",
+        db: mockDb,
+        window: expectedWindow,
+        options: expect.objectContaining({
+          onProgress: expect.any(Function),
+          userId: "user-1",
+        }),
       }),
     );
     vi.useRealTimers();
@@ -709,18 +711,10 @@ describe("processSyncJob", () => {
     const provider = createMockProvider({
       id: "test",
       name: "Test",
-      sync: vi
-        .fn()
-        .mockImplementation(
-          async (
-            _db: SyncDatabase,
-            _window: SyncWindow,
-            options?: { onProgress?: (percentage: number, message: string) => void },
-          ) => {
-            options?.onProgress?.(50, "5/10 activities");
-            return { provider: "test", recordsSynced: 10, errors: [], duration: 100 };
-          },
-        ),
+      sync: vi.fn().mockImplementation(async (run: SyncRun) => {
+        run.options?.onProgress?.(50, "5/10 activities");
+        return { provider: "test", recordsSynced: 10, errors: [], duration: 100 };
+      }),
     });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
 
@@ -778,11 +772,13 @@ describe("processSyncJob", () => {
 
     const expectedWindow = SyncWindow.lastDays(30, { now });
     expect(provider.sync).toHaveBeenCalledWith(
-      mockDb,
-      expectedWindow,
       expect.objectContaining({
-        onProgress: expect.any(Function),
-        userId: "user-1",
+        db: mockDb,
+        window: expectedWindow,
+        options: expect.objectContaining({
+          onProgress: expect.any(Function),
+          userId: "user-1",
+        }),
       }),
     );
   });
@@ -798,9 +794,17 @@ describe("processSyncJob", () => {
     await runSyncJob(createMockJob({ sinceDays: 30, sinceIso }), mockDb);
 
     expect(provider.sync).toHaveBeenCalledWith(
-      mockDb,
-      SyncWindow.fromIsoRange(sinceIso, new Date(now).toISOString()),
-      expect.objectContaining({ onProgress: expect.any(Function), userId: "user-1" }),
+      expect.objectContaining({
+        db: mockDb,
+        window: SyncWindow.fromIsoRange({
+          sinceIso,
+          untilIso: new Date(now).toISOString(),
+        }),
+        options: expect.objectContaining({
+          onProgress: expect.any(Function),
+          userId: "user-1",
+        }),
+      }),
     );
   });
 
@@ -811,15 +815,12 @@ describe("processSyncJob", () => {
     const provider = createMockProvider({
       id: "garmin",
       name: "Garmin",
-      sync: vi
-        .fn()
-        .mockImplementation(
-          async (_db: SyncDatabase, _window: SyncWindow, options?: SyncOptions): Promise<SyncResult> => {
-            observedCheckpoints.push(await options?.checkpoint?.load());
-            await options?.checkpoint?.save(savedCheckpoint);
-            return { provider: "garmin", recordsSynced: 1, errors: [], duration: 10 };
-          },
-        ),
+      sync: vi.fn().mockImplementation(async (run: SyncRun): Promise<SyncResult> => {
+        const options = run.options;
+        observedCheckpoints.push(await options?.checkpoint?.load());
+        await options?.checkpoint?.save(savedCheckpoint);
+        return { provider: "garmin", recordsSynced: 1, errors: [], duration: 10 };
+      }),
     });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
 
@@ -846,9 +847,14 @@ describe("processSyncJob", () => {
     await runSyncJob(createMockJob({}), mockDb);
 
     expect(provider.sync).toHaveBeenCalledWith(
-      mockDb,
-      SyncWindow.full(now),
-      expect.objectContaining({ onProgress: expect.any(Function), userId: "user-1" }),
+      expect.objectContaining({
+        db: mockDb,
+        window: SyncWindow.full(now),
+        options: expect.objectContaining({
+          onProgress: expect.any(Function),
+          userId: "user-1",
+        }),
+      }),
     );
   });
 

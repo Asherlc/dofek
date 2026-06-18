@@ -69,6 +69,21 @@ function isRecord(val: unknown): val is Record<string, unknown> {
   return val !== null && typeof val === "object" && !Array.isArray(val);
 }
 
+function isWhoopDeveloperWorkoutRecord(value: unknown): value is WhoopDeveloperWorkoutRecord {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.id === "string" &&
+    typeof value.start === "string" &&
+    typeof value.end === "string" &&
+    (value.timezone_offset === undefined || typeof value.timezone_offset === "string") &&
+    (value.sport_name === undefined || typeof value.sport_name === "string") &&
+    (value.sport_id === undefined || typeof value.sport_id === "number") &&
+    (value.score_state === undefined || typeof value.score_state === "string")
+  );
+}
+
 /** Safely extract a nested record from an untyped record */
 function getRecord(obj: Record<string, unknown>, key: string): Record<string, unknown> | undefined {
   const val = obj[key];
@@ -448,16 +463,13 @@ export class WhoopClient {
     if (options?.nextToken) {
       params.next_token = options.nextToken;
     }
-    const raw = await this.#get<unknown>(
-      `${WHOOP_API_BASE}/developer/v2/activity/workout`,
-      params,
-    );
+    const raw = await this.#get<unknown>(`${WHOOP_API_BASE}/developer/v2/activity/workout`, params);
     if (isRecord(raw)) {
       const records = raw.records;
       const nextToken = raw.next_token;
       if (Array.isArray(records)) {
         return {
-          records: records as WhoopDeveloperWorkoutRecord[],
+          records: records.filter(isWhoopDeveloperWorkoutRecord),
           next_token: typeof nextToken === "string" ? nextToken : null,
         };
       }

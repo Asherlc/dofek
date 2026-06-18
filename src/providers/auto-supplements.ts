@@ -1,13 +1,12 @@
 import { sql } from "drizzle-orm";
-import type { SyncDatabase } from "../db/index.ts";
 import {
   nutrientAmountEntriesFromLegacyFields,
   nutrientColumnsToValues,
 } from "../db/nutrient-columns.ts";
 import { foodEntry, foodEntryNutrient } from "../db/schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import type { SyncRun } from "./sync-run.ts";
 import type { SyncError, SyncProvider, SyncResult } from "./types.ts";
-import { SyncWindow } from "./sync-window.ts";
 
 // ============================================================
 // Entry builder
@@ -119,7 +118,8 @@ export class AutoSupplementsProvider implements SyncProvider {
     return null;
   }
 
-  async sync(db: SyncDatabase, window: SyncWindow): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window } = run;
     const since = window.since;
     const start = Date.now();
     const errors: SyncError[] = [];

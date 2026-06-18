@@ -1,10 +1,9 @@
 import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
-import type { SyncDatabase } from "../db/index.ts";
 import { dailyMetrics, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
-import type { SyncError, SyncOptions, SyncProvider, SyncResult } from "./types.ts";
-import { SyncWindow } from "./sync-window.ts";
+import type { SyncRun } from "./sync-run.ts";
+import type { SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Ultrahuman Partner API types
@@ -163,7 +162,8 @@ export class UltrahumanProvider implements SyncProvider {
     return null;
   }
 
-  async sync(db: SyncDatabase, window: SyncWindow, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const since = window.since;
     const start = Date.now();
     const errors: SyncError[] = [];

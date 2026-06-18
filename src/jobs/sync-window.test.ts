@@ -5,13 +5,12 @@ import {
   syncWindowFromTriggerInput,
   syncWindowToJobData,
 } from "./sync-job-window.ts";
-import type { SyncJobData } from "./queues.ts";
 
 describe("SyncWindow", () => {
   const now = new Date("2026-06-18T15:00:00.000Z");
 
   it("fromDateRange resolves UTC calendar bounds", () => {
-    const window = SyncWindow.fromDateRange("2026-06-10", "2026-06-17");
+    const window = SyncWindow.fromDateRange({ sinceDate: "2026-06-10", untilDate: "2026-06-17" });
 
     expect(window.since.toISOString()).toBe("2026-06-10T00:00:00.000Z");
     expect(window.until.toISOString()).toBe("2026-06-17T23:59:59.999Z");
@@ -34,14 +33,17 @@ describe("SyncWindow", () => {
   it("fromSince defaults until to now", () => {
     const since = new Date("2026-06-10T00:00:00.000Z");
     const until = new Date("2026-06-18T15:00:00.000Z");
-    const window = SyncWindow.fromSince(since, until);
+    const window = SyncWindow.fromSince({ since: since, until: until });
 
     expect(window.since).toEqual(since);
     expect(window.until).toEqual(until);
   });
 
   it("withMinimumLookback widens the start bound", () => {
-    const window = SyncWindow.fromDateRange("2026-06-15", "2026-06-17").withMinimumLookback(30);
+    const window = SyncWindow.fromDateRange({
+      sinceDate: "2026-06-15",
+      untilDate: "2026-06-17",
+    }).withMinimumLookback(30);
 
     expect(window.since.toISOString()).toBe("2026-05-18T00:00:00.000Z");
     expect(window.until.toISOString()).toBe("2026-06-17T23:59:59.999Z");
@@ -79,7 +81,7 @@ describe("sync job window adapter", () => {
   });
 
   it("syncWindowToJobData encodes custom ranges", () => {
-    const window = SyncWindow.fromDateRange("2026-06-10", "2026-06-17");
+    const window = SyncWindow.fromDateRange({ sinceDate: "2026-06-10", untilDate: "2026-06-17" });
     expect(syncWindowToJobData(window)).toEqual({
       sinceDays: undefined,
       sinceIso: "2026-06-10T00:00:00.000Z",

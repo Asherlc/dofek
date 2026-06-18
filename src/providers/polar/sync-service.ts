@@ -16,8 +16,8 @@ import {
   ProviderAuthorizationFailedError,
   RefreshTokenRevokedError,
 } from "../auth-errors.ts";
+import type { SyncWindow } from "../sync-window.ts";
 import type { SyncError } from "../types.ts";
-import { SyncWindow } from "../sync-window.ts";
 import { PolarClient, PolarNotFoundError, PolarUnauthorizedError } from "./client.ts";
 import { POLAR_API_BASE, polarOAuthConfig } from "./oauth.ts";
 import {
