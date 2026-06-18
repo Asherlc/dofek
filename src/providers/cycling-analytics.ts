@@ -48,7 +48,7 @@ const cyclingAnalyticsRideSchema = z.object({
 type CyclingAnalyticsRide = z.infer<typeof cyclingAnalyticsRideSchema>;
 
 const cyclingAnalyticsRidesResponseSchema = z.object({
-  rides: z.array(cyclingAnalyticsRideSchema).optional().default([]),
+  rides: z.preprocess((value) => value ?? [], z.array(cyclingAnalyticsRideSchema)),
 });
 
 // ============================================================

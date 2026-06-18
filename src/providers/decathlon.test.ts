@@ -148,6 +148,24 @@ describe("DecathlonProvider — rate-limit aware fetch wiring", () => {
     );
   });
 
+  it("treats null data as an empty page", async () => {
+    process.env.DECATHLON_CLIENT_ID = "test-id";
+    process.env.DECATHLON_CLIENT_SECRET = "test-secret";
+
+    const mockFetch: typeof globalThis.fetch = async () => Response.json({ data: null });
+
+    const db = createMockDb();
+    const result = await new DecathlonProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(0);
+  });
+
   it("rejects malformed activity dates at the API boundary", async () => {
     process.env.DECATHLON_CLIENT_ID = "test-id";
     process.env.DECATHLON_CLIENT_SECRET = "test-secret";

@@ -40,7 +40,7 @@ const decathlonActivitySchema = z.object({
 type DecathlonActivity = z.infer<typeof decathlonActivitySchema>;
 
 const decathlonActivitiesResponseSchema = z.object({
-  data: z.array(decathlonActivitySchema).optional().default([]),
+  data: z.preprocess((value) => value ?? [], z.array(decathlonActivitySchema)),
   links: z
     .object({
       next: z.string().optional(),

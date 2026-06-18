@@ -124,6 +124,24 @@ describe("CyclingAnalyticsProvider — rate-limit aware fetch wiring", () => {
     );
   });
 
+  it("treats null rides as an empty page", async () => {
+    process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
+    process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-secret";
+
+    const mockFetch: typeof globalThis.fetch = async () => Response.json({ rides: null });
+
+    const { db } = createMockDatabase();
+    const result = await new CyclingAnalyticsProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(0);
+  });
+
   it("rejects malformed ride dates at the API boundary", async () => {
     process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
     process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-secret";
