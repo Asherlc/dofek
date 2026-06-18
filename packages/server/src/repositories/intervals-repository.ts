@@ -226,6 +226,7 @@ export class IntervalsRepository {
         JOIN fitness.activity a ON a.id = ai.activity_id
         WHERE ai.activity_id = ${activityId}::uuid
           AND a.user_id = ${this.#userId}
+          AND a.provider_absent_at IS NULL
         ORDER BY ai.interval_index
       `,
     );

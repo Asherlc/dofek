@@ -4,6 +4,7 @@ import { ZWIFT_API_BASE, ZWIFT_AUTH_URL, ZwiftClient } from "zwift-client/client
 import { parseZwiftActivity, parseZwiftFitnessData } from "zwift-client/parsing";
 import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
+import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
 import { activity } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
@@ -240,6 +241,8 @@ export class ZwiftProvider implements SyncProvider {
     };
 
     // 1. Sync activities (paginated)
+    const syncWindowEnd = new Date();
+    const presentActivityExternalIds = new Set<string>();
     try {
       const activityCount = await withSyncLog(
         db,
@@ -265,6 +268,7 @@ export class ZwiftProvider implements SyncProvider {
               }
 
               const parsed = parseZwiftActivity(raw);
+              presentActivityExternalIds.add(parsed.externalId);
               try {
                 await db
                   .insert(activity)
@@ -285,6 +289,7 @@ export class ZwiftProvider implements SyncProvider {
                       startedAt: parsed.startedAt,
                       endedAt: parsed.endedAt,
                       raw: parsed.raw,
+                      providerAbsentAt: null,
                     },
                   });
                 count++;
@@ -338,6 +343,13 @@ export class ZwiftProvider implements SyncProvider {
             offset += PAGE_SIZE;
           }
 
+          await reconcileProviderActivityAbsence(db, {
+            providerId: this.id,
+            userId: options?.userId,
+            windowStart: since,
+            windowEnd: syncWindowEnd,
+            presentExternalIds: presentActivityExternalIds,
+          });
           return { recordCount: count, result: count };
         },
         options?.userId,

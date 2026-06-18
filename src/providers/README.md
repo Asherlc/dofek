@@ -16,6 +16,7 @@ This directory contains implementations for various data providers (fitness trac
 - **Validation**: Each provider has a `validate()` method to ensure environment variables (API keys) are present.
 - **UI visibility**: Providers that fail `validate()` are intentionally hidden from the UI until their required config is present.
 - **Data Mapping**: Providers transform vendor-specific JSON into Dofek's internal schema (see `src/db/schema.ts`).
+- **Activity absence tombstones**: Activity syncs that fetch an authoritative provider activity list must call `reconcileProviderActivityAbsence()` for the covered time window. Explicit delete/removed webhook events should call `markProviderActivityAbsent()`. Activity upserts must clear `providerAbsentAt` so restored provider activities become visible again. Do not reconcile when a provider response is partial because of rate limits, auth failures, or other fetch errors.
 
 ## Supported Providers
 

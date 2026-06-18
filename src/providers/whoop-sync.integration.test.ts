@@ -556,6 +556,74 @@ describe("WhoopProvider.sync() (integration)", () => {
     expect(rows).toHaveLength(1);
   });
 
+  it("marks previously synced workouts absent when WHOOP no longer returns them", async () => {
+    await ctx.db
+      .insert(activity)
+      .values({
+        providerId: "whoop",
+        externalId: "whoop-missing-workout-uuid",
+        activityType: "running",
+        startedAt: new Date("2026-03-10T10:00:00Z"),
+      })
+      .onConflictDoUpdate({
+        target: [activity.userId, activity.providerId, activity.externalId],
+        set: {
+          providerAbsentAt: null,
+        },
+      });
+
+    const cycles = [
+      fakeCycle({
+        id: 301,
+        days: ["2026-03-10"],
+        workouts: [
+          {
+            activity_id: "whoop-present-workout-uuid",
+            during: "['2026-03-10T12:00:00Z','2026-03-10T13:00:00Z')",
+            timezone_offset: "-05:00",
+            sport_id: 0,
+            average_heart_rate: 145,
+            max_heart_rate: 175,
+            kilojoules: 2000,
+            percent_recorded: 100,
+            score: 10,
+          },
+        ],
+      }),
+    ];
+
+    server.use(...whoopHandlers(cycles));
+    const provider = new WhoopProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-03-10T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
+
+    expect(result.errors).toHaveLength(0);
+
+    const rows = await ctx.db
+      .select()
+      .from(activity)
+      .where(
+        and(
+          eq(activity.providerId, "whoop"),
+          eq(activity.startedAt, new Date("2026-03-10T10:00:00Z")),
+        ),
+      );
+    const missing = rows.find((row) => row.externalId === "whoop-missing-workout-uuid");
+    const presentRows = await ctx.db
+      .select()
+      .from(activity)
+      .where(
+        and(
+          eq(activity.providerId, "whoop"),
+          eq(activity.externalId, "whoop-present-workout-uuid"),
+        ),
+      );
+
+    expect(missing?.providerAbsentAt).toBeInstanceOf(Date);
+    expect(presentRows[0]?.providerAbsentAt).toBeNull();
+  });
+
   it("uses stored userId from scopes when bootstrap returns no user ID", async () => {
     // Save tokens with userId in scopes (as the auth flow does)
     await saveTokens(ctx.db, "whoop", {

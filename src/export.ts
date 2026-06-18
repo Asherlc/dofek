@@ -44,7 +44,10 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       executeWithSchema(
         db,
         exportRowSchema,
-        sql`SELECT * FROM fitness.activity WHERE user_id = ${userId} ORDER BY started_at`,
+        sql`SELECT * FROM fitness.activity
+            WHERE user_id = ${userId}
+              AND provider_absent_at IS NULL
+            ORDER BY started_at`,
       ),
   },
   {
@@ -56,6 +59,7 @@ const EXPORT_TABLES: ExportTableConfig[] = [
         sql`SELECT ai.* FROM fitness.activity_interval ai
             JOIN fitness.activity a ON a.id = ai.activity_id
             WHERE a.user_id = ${userId}
+              AND a.provider_absent_at IS NULL
             ORDER BY ai.started_at`,
       ),
   },
@@ -117,6 +121,7 @@ const EXPORT_TABLES: ExportTableConfig[] = [
         sql`SELECT ss.* FROM fitness.strength_set ss
             JOIN fitness.activity a ON a.id = ss.activity_id
             WHERE a.user_id = ${userId}
+              AND a.provider_absent_at IS NULL
             ORDER BY a.started_at, ss.exercise_index, ss.set_index`,
       ),
   },

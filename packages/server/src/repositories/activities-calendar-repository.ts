@@ -293,6 +293,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             NULLIF(a.raw->>'calories', '')::numeric AS calories
           FROM fitness.activity a
           WHERE a.user_id = ${this.userId}::uuid
+            AND a.provider_absent_at IS NULL
             AND a.id IN (${activityIdFilter})
             AND a.raw ? 'calories'`,
     );

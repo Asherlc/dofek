@@ -64,6 +64,7 @@ export class WahooActivityPersister {
             startedAt: parsed.startedAt,
             endedAt: parsed.endedAt,
             name: parsed.name,
+            providerAbsentAt: null,
           },
         })
         .returning({ id: activity.id });

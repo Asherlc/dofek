@@ -68,6 +68,7 @@ function makeContext(overrides: Partial<WhoopSyncContext> = {}): WhoopSyncContex
     cycles: [],
     providerId: "whoop",
     since: new Date("2026-05-01T00:00:00.000Z"),
+    windowEnd: new Date("2026-05-02T00:00:00.000Z"),
     options: { userId: "user-1" },
     errors: [],
     ...overrides,

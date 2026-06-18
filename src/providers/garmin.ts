@@ -18,6 +18,7 @@ import { z } from "zod";
 import type { TokenSet } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
+import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
 import { activity, dailyMetrics, sleepSession, sleepStage, userSettings } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
@@ -126,6 +127,7 @@ const GARMIN_SYNC_PHASES: GarminSyncPhase[] = [
   "heart_rate",
   "complete",
 ];
+const GARMIN_ACTIVITY_PAGE_SIZE = 50;
 
 const garminSyncCheckpointSchema = z.object({
   phase: garminSyncPhaseSchema,
@@ -462,6 +464,8 @@ export class GarminProvider implements SyncProvider {
               db,
               client,
               scopedUserId,
+              since,
+              until,
               metricStreamPublisher,
             );
             return { recordCount: activitiesCount, result: activitiesCount };
@@ -611,15 +615,23 @@ export class GarminProvider implements SyncProvider {
     db: SyncDatabase,
     client: GarminConnectClient,
     userId: string,
+    since: Date,
+    until: Date,
     metricStreamPublisher?: SyncOptions["metricStreamPublisher"],
   ): Promise<number> {
     // Fetch recent activities (paginated, most recent first)
-    const activities = await client.getActivities(0, 50);
+    const activities = await client.getActivities(0, GARMIN_ACTIVITY_PAGE_SIZE);
     let count = 0;
     const detailErrors = new SyncErrorTracker("activity_detail");
+    const presentActivityExternalIds = new Set<string>();
+    let oldestFetchedStartedAt: Date | null = null;
 
     for (const raw of activities) {
       const parsed = parseConnectActivity(raw);
+      presentActivityExternalIds.add(parsed.externalId);
+      if (!oldestFetchedStartedAt || parsed.startedAt < oldestFetchedStartedAt) {
+        oldestFetchedStartedAt = parsed.startedAt;
+      }
 
       const connectDeviceName = raw.deviceName ?? null;
 
@@ -644,6 +656,7 @@ export class GarminProvider implements SyncProvider {
             name: parsed.name,
             sourceName: connectDeviceName,
             raw: parsed.raw,
+            providerAbsentAt: null,
           },
         });
 
@@ -711,6 +724,17 @@ export class GarminProvider implements SyncProvider {
     }
 
     // Don't throw for detail errors — activity metadata is still synced
+    await reconcileProviderActivityAbsence(db, {
+      providerId: this.id,
+      userId,
+      windowStart:
+        activities.length >= GARMIN_ACTIVITY_PAGE_SIZE && oldestFetchedStartedAt
+          ? oldestFetchedStartedAt
+          : since,
+      windowEnd: until,
+      presentExternalIds: presentActivityExternalIds,
+    });
+
     return count;
   }
 

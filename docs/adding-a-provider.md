@@ -95,3 +95,4 @@ Run `pnpm test:watch` while developing.
 - **JWT subject caveat**: for OAuth/JWT providers, `sub` may not be the numeric profile ID required by downstream endpoints; canonicalize with a profile lookup when needed.
 - **Error handling**: collect per-record errors in `SyncResult.errors` instead of aborting the whole sync.
 - **Tests stay colocated**: keep unit tests next to the provider file as `<provider>.test.ts`.
+- **Provider activity absence**: If the provider sync fetches an authoritative activity list for a time window, call `reconcileProviderActivityAbsence()` only after that fetch completes successfully. Explicit delete/removed webhook events should call `markProviderActivityAbsent()`. Activity upserts must clear `providerAbsentAt`. Do not reconcile on partial fetches — absence from an incomplete response is not proof the provider removed the activity.

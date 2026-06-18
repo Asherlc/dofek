@@ -1105,7 +1105,7 @@ describe("RideWithGpsProvider — sync", () => {
     const result = await provider.sync(db, new Date("2026-03-01"));
 
     expect(result.errors).toHaveLength(0);
-    expect(db.delete).toHaveBeenCalled();
+    expect(db.execute).toHaveBeenCalled();
   });
 
   it("skips non-trip items", async () => {
@@ -1191,9 +1191,7 @@ describe("RideWithGpsProvider — sync", () => {
 
     const provider = new RideWithGpsProvider(mockFetch);
     const db = createSyncMockDb();
-    db.delete.mockReturnValue({
-      where: vi.fn().mockRejectedValue(new Error("DB error")),
-    });
+    db.execute.mockRejectedValue(new Error("DB error"));
     const result = await provider.sync(db, new Date("2026-03-01"));
 
     expect(result.errors).toHaveLength(1);

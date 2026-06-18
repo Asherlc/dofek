@@ -44,6 +44,7 @@ active_activity AS (
         coalesce(ended_at, started_at + INTERVAL 12 HOUR) AS ended_at
     FROM {{ source('postgres_fitness', 'activity') }} FINAL
     WHERE _peerdb_is_deleted = 0
+        AND provider_absent_at IS null
 ),
 
 sleep_samples AS (

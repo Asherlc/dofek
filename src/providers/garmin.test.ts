@@ -162,6 +162,7 @@ interface MockDb {
   onConflictDoNothing: ReturnType<typeof vi.fn>;
   returning: ReturnType<typeof vi.fn>;
   delete: ReturnType<typeof vi.fn>;
+  execute: ReturnType<typeof vi.fn>;
 }
 
 function createMockDb(): MockDb {
@@ -176,6 +177,7 @@ function createMockDb(): MockDb {
     onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
     returning: vi.fn().mockResolvedValue([{ id: "mock-session-id" }]),
     delete: vi.fn(),
+    execute: vi.fn().mockResolvedValue(undefined),
   };
   // Chain: select/from/where/insert/values all return the mock object itself
   db.select.mockReturnValue(db);

@@ -378,7 +378,7 @@ describe("Concept2Provider", () => {
       expect(result.errors).toHaveLength(0);
     });
 
-    it("deletes activity on delete event", async () => {
+    it("marks activity provider-absent on delete event", async () => {
       const provider = new Concept2Provider();
       const db = createMockDb();
 
@@ -393,7 +393,7 @@ describe("Concept2Provider", () => {
 
       expect(result.provider).toBe("concept2");
       expect(result.recordsSynced).toBe(0);
-      expect(db.deleteFn).toHaveBeenCalled();
+      expect(db.execute).toHaveBeenCalled();
     });
 
     it("returns 0 records when no payload metadata is present", async () => {

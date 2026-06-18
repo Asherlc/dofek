@@ -35,6 +35,7 @@ current_activity AS (
         ended_at
     FROM {{ source('postgres_fitness', 'activity') }} FINAL
     WHERE _peerdb_is_deleted = 0
+        AND provider_absent_at IS null
         AND activity_type IN (
             'cycling',
             'road_cycling',
