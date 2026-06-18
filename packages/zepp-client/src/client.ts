@@ -61,7 +61,7 @@ export async function signInToZepp(
   });
 
   if (registrationResponse.status !== 302 && registrationResponse.status !== 303) {
-    await registrationResponse.text().catch(() => undefined);
+    await registrationResponse.text();
     throw new Error(`Amazfit/Zepp login failed (${registrationResponse.status})`);
   }
 

@@ -1,5 +1,4 @@
-import type { Provider, ProviderAuthSetup } from "./types.ts";
-import { getProviderAuthType } from "./types.ts";
+import type { Provider, ProviderAuthSetup, ProviderAuthType } from "./types.ts";
 
 /**
  * Sync providers that predated the per-user auth requirement and still use
@@ -27,6 +26,13 @@ export function isImportOnlyProvider(provider: Provider): boolean {
 export type PerUserAuthComplianceResult =
   | { ok: true }
   | { ok: false; providerId: string; reason: string };
+
+function getAuthTypeFromSetup(setup: ProviderAuthSetup): ProviderAuthType | "none" {
+  if (setup.automatedLogin) return "credential";
+  if (setup.oauth1Flow) return "oauth1";
+  if (setup.oauthConfig) return "oauth";
+  return "none";
+}
 
 /**
  * Validates that a provider follows the per-user authentication policy.
@@ -70,7 +76,7 @@ export function checkPerUserAuthCompliance(provider: Provider): PerUserAuthCompl
     };
   }
 
-  const authType = getProviderAuthType(provider);
+  const authType = getAuthTypeFromSetup(setup);
   if (authType === "none") {
     return {
       ok: false,

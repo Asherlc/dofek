@@ -93,7 +93,10 @@ async function doRegisterProviders() {
     ],
     [
       "amazfit-zepp",
-      () => import("dofek/providers/amazfit-zepp").then((m) => new m.AmazfitZeppProvider()),
+      () =>
+        import("dofek/providers/amazfit-zepp").then(
+          (amazfitZeppModule) => new amazfitZeppModule.AmazfitZeppProvider(),
+        ),
     ],
     [
       "mapmyfitness",

@@ -5,8 +5,7 @@ import {
   LEGACY_SERVER_SIDE_USER_AUTH_PROVIDER_IDS,
   requiresPerUserConnect,
 } from "./provider-auth-policy.ts";
-import type { Provider, ProviderAuthSetup } from "./types.ts";
-import * as providerTypes from "./types.ts";
+import type { OAuthConfig, Provider, ProviderAuthSetup } from "./types.ts";
 
 const dummyOAuthConfig = {
   clientId: "client",
@@ -103,13 +102,12 @@ describe("checkPerUserAuthCompliance", () => {
     });
   });
 
-  it("rejects when authType is none", () => {
-    vi.spyOn(providerTypes, "getProviderAuthType").mockReturnValue("none");
+  it("rejects when auth setup has no connect flow", () => {
     const provider = stubProvider({
       id: "no-flow-provider",
       name: "No Flow",
       authSetup: (): ProviderAuthSetup => ({
-        oauthConfig: dummyOAuthConfig,
+        oauthConfig: undefined as unknown as OAuthConfig,
         exchangeCode: async () => ({
           accessToken: "token",
           refreshToken: null,

@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ensureProvidersRegistered } from "../jobs/provider-registration.ts";
 import { getAllProviders } from "./index.ts";
 import { checkPerUserAuthCompliance } from "./provider-auth-policy.ts";
@@ -61,6 +61,10 @@ describe("registered provider per-user auth policy", () => {
     vi.stubEnv("OAUTH_REDIRECT_URI", "https://example.com/callback");
   });
 
+  afterAll(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("every registered sync provider satisfies the per-user connect policy", () => {
     const violations = getAllProviders()
       .map((provider) => checkPerUserAuthCompliance(provider))
@@ -79,5 +83,5 @@ describe("registered provider per-user auth policy", () => {
 
 function formatViolations(violations: Array<{ providerId: string; reason: string }>): string {
   if (violations.length === 0) return "";
-  return violations.map((v) => `${v.providerId}: ${v.reason}`).join("\n");
+  return violations.map((violation) => `${violation.providerId}: ${violation.reason}`).join("\n");
 }

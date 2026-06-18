@@ -378,6 +378,11 @@ export class AmazfitZeppProvider implements SyncProvider {
       }
       client = new AmazfitZeppClient(credentials.appToken, credentials.zeppUserId, this.#fetchFn);
     } catch (err) {
+      if (!(err instanceof ProviderStoredIdentityMissingError)) {
+        captureException(err, {
+          tags: { provider: this.id, dataType: "band_data", phase: "credential_resolution" },
+        });
+      }
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }

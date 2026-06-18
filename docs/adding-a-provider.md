@@ -6,7 +6,7 @@ Providers are plugins that pull data from an external API and upsert it into the
 
 **Every new sync provider must authenticate per user.** Users connect their own account via the app UI (Settings → Data Sources). Credentials are stored in `oauth_token` and loaded during sync with `loadTokens(db, providerId, userId)`.
 
-Do **not** build new providers that read user-specific credentials from deployment env vars (for example `MY_PROVIDER_USER_ID`, `MY_PROVIDER_API_TOKEN`, or a shared email address). The only grandfathered exception is `ultrahuman`.
+Do **not** build new providers that read user-specific credentials from deployment env vars (for example `MY_PROVIDER_USER_ID`, `MY_PROVIDER_API_TOKEN`, or a shared email address). Exemptions are listed in `src/providers/provider-auth-policy.ts` — currently `ultrahuman` (legacy server-side env auth) and `auto-supplements` (internal provider with no external account).
 
 Supported connect flows:
 
@@ -57,8 +57,8 @@ export class MyProvider implements SyncProvider {
   authSetup(_options?: { host?: string }): ProviderAuthSetup {
     return {
       oauthConfig: {
-        clientId: process.env.MY_PROVIDER_CLIENT_ID ?? "",
-        clientSecret: process.env.MY_PROVIDER_CLIENT_SECRET ?? "",
+        clientId: process.env.MY_PROVIDER_CLIENT_ID!,
+        clientSecret: process.env.MY_PROVIDER_CLIENT_SECRET,
         authorizeUrl: "https://provider.example.com/oauth/authorize",
         tokenUrl: "https://provider.example.com/oauth/token",
         redirectUri: "",
