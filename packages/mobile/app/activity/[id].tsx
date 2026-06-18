@@ -35,6 +35,9 @@ import Svg, {
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { MuscleGroupBodyDiagram } from "../../components/MuscleGroupBodyDiagram";
 import { RouteMap } from "../../components/RouteMap";
+import { type ActivityExportFormat, downloadActivityExport } from "../../lib/activity-export";
+import { useAuth } from "../../lib/auth-context";
+import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { colors } from "../../theme";
@@ -616,7 +619,9 @@ export default function ActivityDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const units = useUnitConverter();
+  const { serverUrl, sessionToken } = useAuth();
   const trpcUtils = trpc.useUtils();
+  const [exportingFormat, setExportingFormat] = useState<ActivityExportFormat | null>(null);
   const deleteMutation = trpc.activity.delete.useMutation({
     onSuccess: async () => {
       await trpcUtils.activity.list.invalidate();
@@ -701,6 +706,47 @@ export default function ActivityDetailScreen() {
   const hasGps = points.some((p) => p.lat != null && p.lng != null);
   const hasHr = points.some((p) => p.heartRate != null);
   const hasAltitude = points.some((p) => p.altitude != null);
+
+  const handleExport = () => {
+    if (!id || !sessionToken) return;
+
+    const options: Array<{ text: string; format: ActivityExportFormat; disabled?: boolean }> = [
+      { text: "GPX", format: "gpx", disabled: !hasGps },
+      { text: "TCX", format: "tcx", disabled: !hasGps },
+      { text: "CSV", format: "csv" },
+      { text: "FIT", format: "fit" },
+    ];
+
+    Alert.alert("Export Activity", "Choose a file format", [
+      { text: "Cancel", style: "cancel" },
+      ...options.map(({ text, format, disabled }) => ({
+        text: disabled ? `${text} (no GPS)` : text,
+        onPress: disabled
+          ? undefined
+          : () => {
+              void (async () => {
+                setExportingFormat(format);
+                try {
+                  await downloadActivityExport({
+                    activityId: id,
+                    format,
+                    serverUrl,
+                    sessionToken,
+                  });
+                } catch (error) {
+                  captureException(error);
+                  Alert.alert(
+                    "Export Failed",
+                    error instanceof Error ? error.message : "Unable to export activity.",
+                  );
+                } finally {
+                  setExportingFormat(null);
+                }
+              })();
+            },
+      })),
+    ]);
+  };
 
   // Build stats array
   const stats: StatItem[] = [];
@@ -893,6 +939,23 @@ export default function ActivityDetailScreen() {
           )}
         </>
       )}
+
+      {/* Export Activity */}
+      <Pressable
+        onPress={handleExport}
+        disabled={exportingFormat != null || !sessionToken}
+        style={({ pressed }) => [
+          styles.exportButton,
+          pressed && styles.exportButtonPressed,
+          (exportingFormat != null || !sessionToken) && styles.exportButtonDisabled,
+        ]}
+      >
+        <Text style={styles.exportButtonText}>
+          {exportingFormat != null
+            ? `Exporting ${exportingFormat.toUpperCase()}...`
+            : "Export Activity"}
+        </Text>
+      </Pressable>
 
       {/* Delete Activity */}
       <Pressable

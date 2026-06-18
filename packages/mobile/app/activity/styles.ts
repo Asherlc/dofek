@@ -113,6 +113,24 @@ export const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 8,
   },
+  exportButton: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 14,
+    alignItems: "center",
+    marginTop: 16,
+  },
+  exportButtonPressed: {
+    opacity: 0.7,
+  },
+  exportButtonDisabled: {
+    opacity: 0.5,
+  },
+  exportButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.text,
+  },
   deleteButtonPressed: {
     opacity: 0.7,
   },

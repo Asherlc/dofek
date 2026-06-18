@@ -34,6 +34,7 @@ import { LimitedActivitySensorStore } from "./repositories/limited-activity-sens
 import { appRouter } from "./router.ts";
 import { createAuthRouter } from "./routes/auth/index.ts";
 import { createExportRouter } from "./routes/export.ts";
+import { createActivityExportRouter } from "./routes/activity-export.ts";
 import { createStripeWebhookRouter } from "./routes/stripe-webhook.ts";
 import { createUploadRouter } from "./routes/upload.ts";
 import { createWebhookRouter } from "./routes/webhooks.ts";
@@ -163,6 +164,7 @@ function setupRoutes(
   app.use("/api/webhooks", createWebhookRouter({ db, syncQueue }));
   app.use("/api/upload", createUploadRouter({ importQueue, db }));
   app.use("/api/export", createExportRouter({ db, exportQueue }));
+  app.use("/api/activity", createActivityExportRouter({ db, sensorStore }));
   app.use("/api/mcp", createMcpRouter({ db, sensorStore }));
   // ── Seeded-login helper for local dev and preview environments ──
   if (process.env.NODE_ENV !== "production" || process.env.ENABLE_DEV_LOGIN === "true") {
