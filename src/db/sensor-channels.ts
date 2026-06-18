@@ -1,9 +1,8 @@
 /**
  * Sensor sample channel constants.
  *
- * Each channel name identifies a type of measurement stored in the
- * metric_stream table. Scalar channels use the `scalar` column;
- * vector channels use the `vector` (real[]) column.
+ * Each channel name identifies a type of measurement in the metric stream.
+ * Scalar channels use the `scalar` column; vector channels use `vector`.
  */
 
 // ── Scalar channels (single numeric value) ──────────────────
@@ -16,7 +15,7 @@ export const POWER = "power";
 export const CADENCE = "cadence";
 /** Speed in m/s */
 export const SPEED = "speed";
-/** Location point stored in metric_stream.point. */
+/** Location point stored in the metric stream `point` field. */
 export const LOCATION = "location";
 /** Altitude in meters */
 export const ALTITUDE = "altitude";
@@ -109,7 +108,7 @@ export const SOURCE_TYPE_FILE = "file" as const;
 export const SOURCE_TYPE_API = "api" as const;
 
 /**
- * Mapping from Drizzle camelCase field names to metric_stream channel names.
+ * Mapping from Drizzle camelCase field names to metric stream channel names.
  * Used when converting Drizzle insert objects (e.g., from fitRecordsToMetricStream).
  */
 export const DRIZZLE_FIELD_TO_CHANNEL: Record<string, string> = {

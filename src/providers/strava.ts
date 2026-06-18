@@ -174,7 +174,7 @@ export function parseStravaActivityList(
 }
 
 // ============================================================
-// Streams → metric_stream mapping
+// Streams → metric stream mapping
 // ============================================================
 
 export function stravaStreamsToMetricStream(

@@ -213,7 +213,7 @@ describe("whoopBleSyncRouter", () => {
       expect(JSON.stringify(publishedRows)).not.toContain("heart_rate");
     });
 
-    it("inserts orientation data into metric_stream", async () => {
+    it("inserts orientation data into metric stream", async () => {
       const trpcCaller = caller(ctx);
       const result = await trpcCaller.pushRealtimeData({
         deviceId: "WHOOP Strap",
