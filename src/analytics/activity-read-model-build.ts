@@ -1,4 +1,4 @@
-import { spawn, type SpawnOptions } from "node:child_process";
+import { type SpawnOptions, spawn } from "node:child_process";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
 
 export const ACTIVITY_DELETE_DBT_SELECT = "activity_source_records+";
