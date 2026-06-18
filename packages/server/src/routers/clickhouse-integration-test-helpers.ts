@@ -315,6 +315,7 @@ const analyticsBuildOrder = [
   "analytics.daily_recovery_inputs",
   "analytics.daily_recovery",
   "analytics.deduped_location",
+  "analytics.activity_location_sample",
   "analytics.activity_sensor_sample",
   "analytics.activity_location_sample",
   "analytics.activity_summary",

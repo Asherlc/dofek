@@ -70,6 +70,43 @@ describe("ActivityList", () => {
     expect(image.getAttribute("src")).toBe("https://tile.openstreetmap.org/13/1310/3166.png");
   });
 
+  it("allows compact map tile requests to include the page origin as the referrer", () => {
+    renderWithUnits(<ActivityList activities={mockActivities} />);
+    const image = screen.getByAltText("Activity route map summary");
+    expect(image.getAttribute("referrerpolicy")).toBe("origin");
+  });
+
+  it("draws a compact route overlay when an activity has route path points", () => {
+    const mockActivity = mockActivities[0];
+    if (!mockActivity) throw new Error("Missing mock activity");
+
+    renderWithUnits(
+      <ActivityList
+        activities={[
+          {
+            ...mockActivity,
+            location: {
+              centroidLat: 37.7749,
+              centroidLng: -122.4194,
+              tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
+              routePath: [
+                { x: 27.854, y: 37.951 },
+                { x: 29.22, y: 37.088 },
+                { x: 30.585, y: 35.936 },
+              ],
+              distanceMeters: 5000,
+              elevationGainM: 120,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByTestId("activity-route-path").getAttribute("points")).toBe(
+      "27.854,37.951 29.22,37.088 30.585,35.936",
+    );
+  });
+
   it("navigates to activity detail on row click", () => {
     renderWithUnits(<ActivityList activities={mockActivities} />);
     const row = screen.getByText("Morning Run").closest("tr");

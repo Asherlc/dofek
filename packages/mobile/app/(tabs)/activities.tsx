@@ -21,6 +21,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Svg, { Polyline } from "react-native-svg";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
@@ -400,6 +401,7 @@ function ActivityOverview({
 interface ActivityMapTileProps {
   location: {
     tileUrl: string;
+    routePath?: { x: number; y: number }[] | null;
     distanceMeters: number | null;
     elevationGainM: number | null;
   };
@@ -428,6 +430,7 @@ function ActivityMapTile({ location, units }: ActivityMapTileProps) {
           onError={() => setLoadFailed(true)}
         />
       )}
+      {loadFailed ? null : <ActivityRouteOverlay routePath={location.routePath} />}
       <View style={styles.tileOverlay}>
         {location.distanceMeters != null ? (
           <Text style={styles.tileBadge}>
@@ -441,6 +444,38 @@ function ActivityMapTile({ location, units }: ActivityMapTileProps) {
         ) : null}
       </View>
     </View>
+  );
+}
+
+function ActivityRouteOverlay({ routePath }: { routePath?: { x: number; y: number }[] | null }) {
+  if (routePath == null || routePath.length < 2) return null;
+
+  const points = routePath.map((point) => `${point.x},${point.y}`).join(" ");
+  return (
+    <Svg
+      pointerEvents="none"
+      style={styles.routeOverlay}
+      viewBox="0 0 100 100"
+      preserveAspectRatio="none"
+    >
+      <Polyline
+        points={points}
+        fill="none"
+        stroke="#fff"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={6}
+      />
+      <Polyline
+        testID="activity-route-path"
+        points={points}
+        fill="none"
+        stroke={colors.positive}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={3}
+      />
+    </Svg>
   );
 }
 
@@ -726,6 +761,13 @@ const styles = StyleSheet.create({
   tile: {
     width: "100%",
     height: "100%",
+  },
+  routeOverlay: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
   },
   tileFallback: {
     width: "100%",

@@ -7,6 +7,7 @@ import { dateWindowStartString } from "../lib/date-window.ts";
 import { osmTileUrl } from "../lib/osm-tile.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { getActivityRoutePreviews } from "./activity-route-preview.ts";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -16,6 +17,7 @@ export interface ActivityLocation {
   centroidLat: number;
   centroidLng: number;
   tileUrl: string;
+  routePath: { x: number; y: number }[] | null;
   distanceMeters: number | null;
   elevationGainM: number | null;
 }
@@ -169,7 +171,10 @@ export class ActivitiesCalendarRepository extends BaseRepository {
 
     const filteredActivityRows = filterActivityRowsByType(activityRows, input.activityType);
     const activityIds = filteredActivityRows.map((row) => row.id);
-    const caloriesRows = await this.#fetchCaloriesByActivityId(activityIds);
+    const [caloriesRows, routePreviewByActivityId] = await Promise.all([
+      this.#fetchCaloriesByActivityId(activityIds),
+      getActivityRoutePreviews(this.#sensorStore, this.userId, activityIds),
+    ]);
 
     const caloriesByActivityId = new Map(
       caloriesRows.map((row) => [row.id, row.calories] as const),
@@ -204,7 +209,10 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             ? {
                 centroidLat: row.centroid_lat,
                 centroidLng: row.centroid_lng,
-                tileUrl: osmTileUrl(row.centroid_lat, row.centroid_lng),
+                tileUrl:
+                  routePreviewByActivityId.get(row.id)?.tileUrl ??
+                  osmTileUrl(row.centroid_lat, row.centroid_lng),
+                routePath: routePreviewByActivityId.get(row.id)?.routePath ?? null,
                 distanceMeters: row.total_distance,
                 elevationGainM: row.elevation_gain_m,
               }

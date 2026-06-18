@@ -229,6 +229,7 @@ function ActivityOverview({
 interface ActivityMapTileProps {
   location: {
     tileUrl: string;
+    routePath?: { x: number; y: number }[] | null;
     distanceMeters: number | null;
     elevationGainM: number | null;
   };
@@ -250,10 +251,11 @@ function ActivityMapTile({ location, units }: ActivityMapTileProps) {
           alt="Activity location map"
           className="w-full h-full object-cover"
           loading="lazy"
-          referrerPolicy="no-referrer"
+          referrerPolicy="origin"
           onError={() => setLoadFailed(true)}
         />
       )}
+      {loadFailed ? null : <ActivityRouteOverlay routePath={location.routePath} />}
       <div className="absolute bottom-2 left-2 flex flex-wrap gap-1">
         {location.distanceMeters != null ? (
           <span className="bg-black/60 text-white text-[11px] font-semibold px-2 py-0.5 rounded">
@@ -267,6 +269,40 @@ function ActivityMapTile({ location, units }: ActivityMapTileProps) {
         ) : null}
       </div>
     </div>
+  );
+}
+
+function ActivityRouteOverlay({ routePath }: { routePath?: { x: number; y: number }[] | null }) {
+  if (routePath == null || routePath.length < 2) return null;
+
+  const points = routePath.map((point) => `${point.x},${point.y}`).join(" ");
+  return (
+    <svg
+      className="pointer-events-none absolute inset-0 h-full w-full"
+      viewBox="0 0 100 100"
+      preserveAspectRatio="none"
+    >
+      <title>Activity route path</title>
+      <polyline
+        points={points}
+        fill="none"
+        stroke="white"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="6"
+        vectorEffect="non-scaling-stroke"
+      />
+      <polyline
+        data-testid="activity-route-path"
+        points={points}
+        fill="none"
+        stroke="rgb(22 163 74)"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="3"
+        vectorEffect="non-scaling-stroke"
+      />
+    </svg>
   );
 }
 
