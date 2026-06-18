@@ -404,8 +404,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         isProviderAbsent: true,
         providerId: row.provider_id,
         providerAbsentAt: row.provider_absent_at,
-        tombstoneSummary: ActivitySourceAttribution.fromEntries([], []).tombstoneSummary(
-          null,
+        tombstoneSummary: ActivitySourceAttribution.hiddenActivityTombstoneSummary(
           row.provider_id,
           row.provider_absent_at,
         ),

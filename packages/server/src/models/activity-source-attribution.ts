@@ -134,6 +134,17 @@ export class ActivitySourceAttribution {
     return `Removed from ${providerLabel} · ${formatDateTime(providerAbsentAt)}`;
   }
 
+  static hiddenActivityTombstoneSummary(
+    providerId: string,
+    providerAbsentAt: string | null,
+  ): string | null {
+    return new ActivitySourceAttribution([], []).tombstoneSummary(
+      null,
+      providerId,
+      providerAbsentAt,
+    );
+  }
+
   #formatRemovedSources(entries: SourceExternalIdEntry[], lookup: ProviderLookup): string | null {
     if (entries.length === 0) return null;
     return entries

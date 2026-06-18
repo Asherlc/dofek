@@ -1,6 +1,7 @@
 import type { Database } from "dofek/db";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
+import { osmTilePreview, osmTileUrl } from "../lib/osm-tile.ts";
 import { ActivitySourceAttribution } from "../models/activity-source-attribution.ts";
 import { ActivitiesCalendarRepository } from "./activities-calendar-repository.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
@@ -1120,12 +1121,354 @@ describe("ActivitiesCalendarRepository", () => {
       isProviderAbsent: true,
       providerId: "strava",
       providerAbsentAt: "2026-03-05T14:30:00.000Z",
-      tombstoneSummary: ActivitySourceAttribution.fromEntries([], []).tombstoneSummary(
-        null,
+      tombstoneSummary: ActivitySourceAttribution.hiddenActivityTombstoneSummary(
         "strava",
         "2026-03-05T14:30:00.000Z",
       ),
     });
+  });
+
+  it("omits hidden locations when only longitude is present", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [
+        {
+          id: "hidden-longitude-only",
+          name: "Hidden Run",
+          activity_type: "running",
+          started_at: "2026-03-18T07:00:00.000Z",
+          ended_at: "2026-03-18T08:00:00.000Z",
+          duration_min: 60,
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          total_distance: null,
+          elevation_gain_m: null,
+          centroid_lat: null,
+          centroid_lng: null,
+          local_date: "2026-03-18",
+          provider_id: "strava",
+          provider_absent_at: "2026-03-05T14:30:00.000Z",
+          calories: null,
+        },
+      ],
+      [
+        {
+          id: "hidden-longitude-only",
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          total_distance: 5000,
+          elevation_gain_m: 125,
+          centroid_lat: null,
+          centroid_lng: -122.4,
+        },
+      ],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    const result = await repository.getWeekList({
+      weeks: 1,
+      endDate: "2026-03-20",
+      includeProviderAbsent: true,
+    });
+
+    expect(result[0]?.activities[0]?.location).toBeNull();
+  });
+
+  it("uses the route preview tile for hidden outdoor activities when available", async () => {
+    const routePoints = [
+      { lat: 37.7749, lng: -122.4194 },
+      { lat: 37.7752, lng: -122.4188 },
+      { lat: 37.7756, lng: -122.4182 },
+    ];
+    const routePreview = osmTilePreview(routePoints);
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [
+        {
+          id: "hidden-outdoor-route",
+          name: "Hidden Run",
+          activity_type: "running",
+          started_at: "2026-03-18T07:00:00.000Z",
+          ended_at: "2026-03-18T08:00:00.000Z",
+          duration_min: 60,
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          total_distance: null,
+          elevation_gain_m: null,
+          centroid_lat: null,
+          centroid_lng: null,
+          local_date: "2026-03-18",
+          provider_id: "strava",
+          provider_absent_at: "2026-03-05T14:30:00.000Z",
+          calories: null,
+        },
+      ],
+      [
+        {
+          id: "hidden-outdoor-route",
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          total_distance: 5000,
+          elevation_gain_m: 125,
+          centroid_lat: 37.7749,
+          centroid_lng: -122.4194,
+        },
+      ],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      routePoints.map((point) => ({
+        activity_id: "hidden-outdoor-route",
+        lat: point.lat,
+        lng: point.lng,
+      })),
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    const result = await repository.getWeekList({
+      weeks: 1,
+      endDate: "2026-03-20",
+      includeProviderAbsent: true,
+    });
+
+    expect(result[0]?.activities[0]?.location).toEqual({
+      centroidLat: 37.7749,
+      centroidLng: -122.4194,
+      tileUrl: routePreview.tileUrl,
+      routePath: routePreview.routePath,
+      distanceMeters: 5000,
+      elevationGainM: 125,
+    });
+  });
+
+  it("falls back to an osm tile when hidden activities have no route preview", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [
+        {
+          id: "hidden-outdoor-fallback",
+          name: "Hidden Run",
+          activity_type: "running",
+          started_at: "2026-03-18T07:00:00.000Z",
+          ended_at: "2026-03-18T08:00:00.000Z",
+          duration_min: 60,
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          total_distance: null,
+          elevation_gain_m: null,
+          centroid_lat: null,
+          centroid_lng: null,
+          local_date: "2026-03-18",
+          provider_id: "strava",
+          provider_absent_at: "2026-03-05T14:30:00.000Z",
+          calories: null,
+        },
+      ],
+      [
+        {
+          id: "hidden-outdoor-fallback",
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          total_distance: 5000,
+          elevation_gain_m: 125,
+          centroid_lat: 37.8,
+          centroid_lng: -122.4,
+        },
+      ],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    const result = await repository.getWeekList({
+      weeks: 1,
+      endDate: "2026-03-20",
+      includeProviderAbsent: true,
+    });
+
+    expect(result[0]?.activities[0]?.location).toEqual({
+      centroidLat: 37.8,
+      centroidLng: -122.4,
+      tileUrl: osmTileUrl(37.8, -122.4),
+      routePath: null,
+      distanceMeters: 5000,
+      elevationGainM: 125,
+    });
+  });
+
+  it("returns hidden-only days in descending date order", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [
+        {
+          id: "hidden-older",
+          name: "Older Hidden",
+          activity_type: "running",
+          started_at: "2026-03-17T07:00:00.000Z",
+          ended_at: "2026-03-17T08:00:00.000Z",
+          duration_min: 45,
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          total_distance: null,
+          elevation_gain_m: null,
+          centroid_lat: null,
+          centroid_lng: null,
+          local_date: "2026-03-17",
+          provider_id: "strava",
+          provider_absent_at: "2026-03-05T14:30:00.000Z",
+          calories: null,
+        },
+        {
+          id: "hidden-newer",
+          name: "Newer Hidden",
+          activity_type: "running",
+          started_at: "2026-03-18T07:00:00.000Z",
+          ended_at: "2026-03-18T08:00:00.000Z",
+          duration_min: 60,
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          total_distance: null,
+          elevation_gain_m: null,
+          centroid_lat: null,
+          centroid_lng: null,
+          local_date: "2026-03-18",
+          provider_id: "garmin",
+          provider_absent_at: "2026-03-04T14:30:00.000Z",
+          calories: null,
+        },
+      ],
+      [],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    const result = await repository.getWeekList({
+      weeks: 1,
+      endDate: "2026-03-20",
+      includeProviderAbsent: true,
+    });
+
+    expect(result.map((day) => day.date)).toEqual(["2026-03-18", "2026-03-17"]);
+    expect(result[0]?.activities[0]?.tss).toBeNull();
+    expect(result[0]?.activities[0]?.stats).toEqual([
+      { label: "Training Stress Score", value: "—" },
+      { label: "Calories", value: "—" },
+    ]);
+  });
+
+  it("passes the user id to hidden activity enrichment queries", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [
+        {
+          id: "hidden-1",
+          name: "Hidden Ride",
+          activity_type: "cycling",
+          started_at: "2026-03-18T07:00:00.000Z",
+          ended_at: "2026-03-18T08:00:00.000Z",
+          duration_min: 60,
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          total_distance: null,
+          elevation_gain_m: null,
+          centroid_lat: null,
+          centroid_lng: null,
+          local_date: "2026-03-18",
+          provider_id: "strava",
+          provider_absent_at: "2026-03-05T14:30:00.000Z",
+          calories: null,
+        },
+      ],
+      [],
+      [{ max_hr: 180, resting_hr: 55, ftp: 250 }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    await repository.getWeekList({
+      weeks: 1,
+      endDate: "2026-03-20",
+      includeProviderAbsent: true,
+    });
+
+    expect(sensorStore.query).toHaveBeenNthCalledWith(
+      5,
+      expect.anything(),
+      expect.stringContaining("FROM postgres_fitness.user_profile_current"),
+      { userId: "user-1" },
+    );
+  });
+
+  it("does not apply limited access filters when the access window is full", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [
+        {
+          id: "hidden-1",
+          name: "Hidden Ride",
+          activity_type: "cycling",
+          started_at: "2026-03-18T07:00:00.000Z",
+          ended_at: "2026-03-18T08:00:00.000Z",
+          duration_min: 60,
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          total_distance: null,
+          elevation_gain_m: null,
+          centroid_lat: null,
+          centroid_lng: null,
+          local_date: "2026-03-18",
+          provider_id: "strava",
+          provider_absent_at: "2026-03-05T14:30:00.000Z",
+          calories: null,
+        },
+      ],
+      [],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore, {
+      kind: "full",
+      paid: true,
+      reason: "paid_grant",
+    });
+
+    await repository.getWeekList({
+      weeks: 1,
+      endDate: "2026-03-20",
+      includeProviderAbsent: true,
+    });
+
+    const hiddenQueryText = vi.mocked(sensorStore.query).mock.calls[2]?.[1];
+    expect(normalizeSql(hiddenQueryText)).not.toContain("accessStartDate");
+    expect(sensorStore.query).toHaveBeenNthCalledWith(
+      3,
+      expect.anything(),
+      expect.not.stringContaining("accessStartDate"),
+      expect.not.objectContaining({ accessStartDate: expect.anything() }),
+    );
   });
 
   it("omits hidden locations when only one centroid coordinate is present", async () => {

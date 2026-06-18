@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-
 import { ActivitySourceAttribution, type ProviderLookup } from "./activity-source-attribution.ts";
 
 const mockLookup: ProviderLookup = (id: string) => {
@@ -100,6 +99,13 @@ describe("ActivitySourceAttribution", () => {
       /Removed from Strava · Mar 5,/,
     );
     expect(attribution.tombstoneSummary(null, "strava", null)).toBeNull();
+    expect(ActivitySourceAttribution.hiddenActivityTombstoneSummary("strava", null)).toBeNull();
+    expect(
+      ActivitySourceAttribution.hiddenActivityTombstoneSummary(
+        "strava",
+        "2026-03-05T14:30:00.000Z",
+      ),
+    ).toMatch(/Removed from Strava · Mar 5,/);
   });
 
   it("parses ClickHouse active and absent source maps together", () => {
