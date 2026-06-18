@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
 import { POSTGRES_METRIC_STREAM_EXPORT_RETIRED_MESSAGE } from "dofek/jobs/queues";
+import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../logger.ts", () => ({

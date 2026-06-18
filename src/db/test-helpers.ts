@@ -45,6 +45,11 @@ async function createRetiredMetricStreamFixtureTable(client: Client): Promise<vo
       PRIMARY KEY (id, recorded_at)
     )
   `);
+
+  await client.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS metric_stream_provider_external_channel_time_idx
+      ON fitness.metric_stream (user_id, provider_id, external_id, channel, recorded_at)
+  `);
 }
 
 /**
