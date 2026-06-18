@@ -96,6 +96,15 @@ async function request(
   });
 }
 
+function authenticate() {
+  vi.mocked(getSessionIdFromRequest).mockReturnValue("session-id");
+  vi.mocked(validateSession).mockResolvedValue({
+    sessionId: "session-id",
+    userId,
+    expiresAt: new Date(Date.now() + 60_000),
+  });
+}
+
 describe("createActivityExportRouter", () => {
   beforeEach(() => {
     vi.mocked(getSessionIdFromRequest).mockReset();
@@ -116,13 +125,51 @@ describe("createActivityExportRouter", () => {
     expect(response.body).toEqual({ error: "Not authenticated" });
   });
 
-  it("returns exported file bytes for authenticated requests", async () => {
+  it("returns 401 when the session is expired", async () => {
     vi.mocked(getSessionIdFromRequest).mockReturnValue("session-id");
-    vi.mocked(validateSession).mockResolvedValue({
-      sessionId: "session-id",
-      userId,
-      expiresAt: new Date(Date.now() + 60_000),
-    });
+    vi.mocked(validateSession).mockResolvedValue(null);
+
+    const response = await request(
+      createTestApp(),
+      "get",
+      `/api/activity/${activityId}/export?format=csv`,
+    );
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({ error: "Session expired" });
+    expect(exportActivityFile).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when the activity id is invalid", async () => {
+    authenticate();
+
+    const response = await request(
+      createTestApp(),
+      "get",
+      "/api/activity/not-a-uuid/export?format=csv",
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error: "Invalid activity id" });
+    expect(exportActivityFile).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when the export format is invalid", async () => {
+    authenticate();
+
+    const response = await request(
+      createTestApp(),
+      "get",
+      `/api/activity/${activityId}/export?format=pdf`,
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error: "Invalid export format" });
+    expect(exportActivityFile).not.toHaveBeenCalled();
+  });
+
+  it("returns exported file bytes for authenticated requests", async () => {
+    authenticate();
     vi.mocked(exportActivityFile).mockResolvedValue({
       body: Buffer.from("a,b\n1,2"),
       contentType: "text/csv; charset=utf-8",
@@ -149,13 +196,35 @@ describe("createActivityExportRouter", () => {
     );
   });
 
-  it("returns 400 when export preconditions fail", async () => {
-    vi.mocked(getSessionIdFromRequest).mockReturnValue("session-id");
-    vi.mocked(validateSession).mockResolvedValue({
-      sessionId: "session-id",
-      userId,
-      expiresAt: new Date(Date.now() + 60_000),
+  it("passes the timezone header into the export service", async () => {
+    authenticate();
+    vi.mocked(exportActivityFile).mockResolvedValue({
+      body: Buffer.from("a,b\n1,2"),
+      contentType: "text/csv; charset=utf-8",
+      filename: "morning-run-11111111.csv",
     });
+
+    const response = await request(
+      createTestApp(),
+      "get",
+      `/api/activity/${activityId}/export?format=csv`,
+      { "x-timezone": "America/Los_Angeles" },
+    );
+
+    expect(response.status).toBe(200);
+    expect(exportActivityFile).toHaveBeenCalledWith(
+      expect.anything(),
+      userId,
+      "America/Los_Angeles",
+      expect.objectContaining({ kind: "full" }),
+      mockSensorStore,
+      activityId,
+      "csv",
+    );
+  });
+
+  it("returns 400 when export preconditions fail", async () => {
+    authenticate();
     vi.mocked(exportActivityFile).mockRejectedValue(
       new TRPCError({ code: "BAD_REQUEST", message: "GPX export requires GPS track points" }),
     );
@@ -168,5 +237,52 @@ describe("createActivityExportRouter", () => {
 
     expect(response.status).toBe(400);
     expect(response.body).toEqual({ error: "GPX export requires GPS track points" });
+  });
+
+  it("returns 404 when the activity export target is not found", async () => {
+    authenticate();
+    vi.mocked(exportActivityFile).mockRejectedValue(
+      new TRPCError({ code: "NOT_FOUND", message: "Activity not found" }),
+    );
+
+    const response = await request(
+      createTestApp(),
+      "get",
+      `/api/activity/${activityId}/export?format=csv`,
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({ error: "Activity not found" });
+  });
+
+  it("does not map unsupported TRPC errors to export precondition responses", async () => {
+    authenticate();
+    vi.mocked(exportActivityFile).mockRejectedValue(
+      new TRPCError({ code: "FORBIDDEN", message: "No access to activity" }),
+    );
+
+    const response = await request(
+      createTestApp(),
+      "get",
+      `/api/activity/${activityId}/export?format=csv`,
+    );
+
+    expect(response.status).toBe(500);
+  });
+
+  it("does not map non-TRPC errors to export precondition responses", async () => {
+    authenticate();
+    vi.mocked(exportActivityFile).mockRejectedValue({
+      code: "BAD_REQUEST",
+      message: "Plain object failure",
+    });
+
+    const response = await request(
+      createTestApp(),
+      "get",
+      `/api/activity/${activityId}/export?format=csv`,
+    );
+
+    expect(response.status).toBe(500);
   });
 });

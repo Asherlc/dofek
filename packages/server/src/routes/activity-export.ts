@@ -16,12 +16,6 @@ interface ActivityExportRouterDeps {
   sensorStore: ActivitySensorStore;
 }
 
-function getSingleHeaderValue(value: string | string[] | undefined): string | undefined {
-  if (typeof value === "string") return value;
-  if (Array.isArray(value) && typeof value[0] === "string") return value[0];
-  return undefined;
-}
-
 export function createActivityExportRouter({ db, sensorStore }: ActivityExportRouterDeps): Router {
   const router = Router();
 
@@ -50,7 +44,7 @@ export function createActivityExportRouter({ db, sensorStore }: ActivityExportRo
       return;
     }
 
-    const timezone = getSingleHeaderValue(req.headers["x-timezone"]) ?? "UTC";
+    const timezone = req.get("x-timezone") ?? "UTC";
     const accessWindow = await getAccessWindowForUser(db, session.userId);
 
     try {
