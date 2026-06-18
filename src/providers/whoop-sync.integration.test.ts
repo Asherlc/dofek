@@ -781,6 +781,9 @@ describe("WhoopProvider.sync() (integration)", () => {
       http.get("https://api.prod.whoop.com/metrics-service/v1/metrics/user/:userId", () => {
         return HttpResponse.json({ values: [] });
       }),
+      http.get("https://api.prod.whoop.com/home-service/v1/deep-dive/strain", () => {
+        return HttpResponse.json({ sections: [] });
+      }),
       http.get("https://api.prod.whoop.com/behavior-impact-service/v1/impact", () => {
         return HttpResponse.json([
           {
@@ -872,6 +875,9 @@ describe("WhoopProvider.sync() (integration)", () => {
       http.get("https://api.prod.whoop.com/metrics-service/v1/metrics/user/:userId", () => {
         return new HttpResponse("Internal Server Error", { status: 500 });
       }),
+      http.get("https://api.prod.whoop.com/home-service/v1/deep-dive/strain", () => {
+        return HttpResponse.json({ sections: [] });
+      }),
       http.get("https://api.prod.whoop.com/behavior-impact-service/v1/impact", () => {
         return HttpResponse.json([
           {
@@ -915,6 +921,9 @@ describe("WhoopProvider.sync() (integration)", () => {
       }),
       http.get("https://api.prod.whoop.com/metrics-service/v1/metrics/user/:userId", () => {
         return HttpResponse.json({ values: [] });
+      }),
+      http.get("https://api.prod.whoop.com/home-service/v1/deep-dive/strain", () => {
+        return HttpResponse.json({ sections: [] });
       }),
       http.get("https://api.prod.whoop.com/behavior-impact-service/v1/impact", () => {
         return new HttpResponse("Internal Server Error", { status: 500 });

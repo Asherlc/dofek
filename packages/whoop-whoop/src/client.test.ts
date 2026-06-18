@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { WhoopClient, WhoopRateLimitError, WhoopMetricUnavailableError } from "./client.ts";
+import { WhoopClient, WhoopMetricUnavailableError, WhoopRateLimitError } from "./client.ts";
 import { createMockFetch, createMockResponse, createTypedMockFetch } from "./test-helpers.ts";
 import type { WhoopAuthToken } from "./types.ts";
 

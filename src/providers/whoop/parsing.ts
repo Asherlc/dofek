@@ -354,8 +354,7 @@ export function parseStrainDeepDiveSteps(raw: unknown): number | null {
   collectWhoopBffItems(raw, items);
 
   const contributors = items.find(
-    (item) =>
-      item.type === "CONTRIBUTORS_TILE" && item.content.id === "STRAIN_CONTRIBUTORS_TILE",
+    (item) => item.type === "CONTRIBUTORS_TILE" && item.content.id === "STRAIN_CONTRIBUTORS_TILE",
   );
   if (!contributors) return null;
 
