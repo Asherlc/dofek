@@ -6,6 +6,8 @@ import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
 import {
   createClickHouseTestActivitySensorStore,
+  type ClickHouseMetricStreamSeedRow,
+  seedClickHouseMetricStreamRows,
   syncClickHouseTestActivitySensorStore,
 } from "./clickhouse-integration-test-helpers.ts";
 
@@ -24,7 +26,7 @@ describe("Router transformation logic", () => {
   let sessionCookie: string;
 
   beforeAll(async () => {
-    testCtx = await setupTestDatabase({ createRetiredMetricStreamFixture: true });
+    testCtx = await setupTestDatabase();
 
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
@@ -288,7 +290,7 @@ describe("Router transformation logic", () => {
       // Insert 30 nights of sleep data + daily HRV
       const sleepInserts: ReturnType<typeof sql>[] = [];
       const metricsInserts: ReturnType<typeof sql>[] = [];
-      const heartRateInserts: ReturnType<typeof sql>[] = [];
+      const sleepNeedMetricStreamRows: ClickHouseMetricStreamSeedRow[] = [];
 
       for (let i = 1; i <= 30; i++) {
         const date = new Date();
@@ -316,21 +318,23 @@ describe("Router transformation logic", () => {
               ON CONFLICT DO NOTHING`,
         );
         for (let sampleIndex = 0; sampleIndex < 30; sampleIndex++) {
-          heartRateInserts.push(
-            sql`INSERT INTO fitness.metric_stream
-                (recorded_at, user_id, provider_id, source_type, channel, scalar)
-                VALUES (${new Date(startedAt.getTime() + (sampleIndex + 1) * 60_000).toISOString()},
-                        ${TEST_USER_ID}, 'test-provider', 'api', 'heart_rate',
-                        ${58})`,
-          );
+          sleepNeedMetricStreamRows.push({
+            userId: TEST_USER_ID,
+            recordedAt: new Date(startedAt.getTime() + (sampleIndex + 1) * 60_000).toISOString(),
+            providerId: "test-provider",
+            sourceType: "api",
+            channel: "heart_rate",
+            scalar: 58,
+          });
         }
       }
 
-      for (const insert of [...sleepInserts, ...metricsInserts, ...heartRateInserts]) {
+      for (const insert of [...sleepInserts, ...metricsInserts]) {
         await testCtx.db.execute(insert);
       }
 
       await syncClickHouseTestActivitySensorStore(testCtx);
+      await seedClickHouseMetricStreamRows(testCtx, sleepNeedMetricStreamRows);
       await queryCache.invalidateAll();
     }, 30_000);
 
@@ -386,6 +390,8 @@ describe("Router transformation logic", () => {
       // Need activities in the activity table + metric_stream for activity_summary
       const now = new Date();
 
+      const weeklyReportMetricStreamRows: ClickHouseMetricStreamSeedRow[] = [];
+
       for (let week = 0; week < 8; week++) {
         for (let day = 0; day < 3; day++) {
           // 3 activities per week
@@ -410,33 +416,52 @@ describe("Router transformation logic", () => {
           );
           const activityId = activityRows[0]?.id;
           if (activityId) {
-            // Insert a few metric samples so activity_summary can compute stats
-            const sensorValues: string[] = [];
             for (let minute = 0; minute < 60; minute++) {
               const sampleTime = new Date(startedAt.getTime() + minute * 60 * 1000);
               const hr = 140 + Math.round(Math.random() * 20);
               const power = 180 + Math.round(Math.random() * 40);
               const speed = 6.5 + Math.random();
-              const ts = `'${sampleTime.toISOString()}'`;
-              sensorValues.push(
-                `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'heart_rate', '${activityId}', ${hr}, NULL)`,
-                `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'power', '${activityId}', ${power}, NULL)`,
-                `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'speed', '${activityId}', ${speed}, NULL)`,
+              const recordedAt = sampleTime.toISOString();
+              weeklyReportMetricStreamRows.push(
+                {
+                  userId: TEST_USER_ID,
+                  recordedAt,
+                  providerId: "test-provider",
+                  sourceType: "api",
+                  channel: "heart_rate",
+                  activityId,
+                  scalar: hr,
+                },
+                {
+                  userId: TEST_USER_ID,
+                  recordedAt,
+                  providerId: "test-provider",
+                  sourceType: "api",
+                  channel: "power",
+                  activityId,
+                  scalar: power,
+                },
+                {
+                  userId: TEST_USER_ID,
+                  recordedAt,
+                  providerId: "test-provider",
+                  sourceType: "api",
+                  channel: "speed",
+                  activityId,
+                  scalar: speed,
+                },
               );
             }
-            await testCtx.db.execute(
-              sql.raw(`INSERT INTO fitness.metric_stream (
-                  recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
-                ) VALUES ${sensorValues.join(",")}`),
-            );
           }
         }
       }
 
-      // Set max_hr on user profile for activity_summary calculations
       await testCtx.db.execute(
         sql`UPDATE fitness.user_profile SET max_hr = 190 WHERE id = ${TEST_USER_ID}`,
       );
+
+      await syncClickHouseTestActivitySensorStore(testCtx);
+      await seedClickHouseMetricStreamRows(testCtx, weeklyReportMetricStreamRows);
     }, 120_000);
 
     it("returns weekly summaries with strain zones", async () => {
@@ -587,15 +612,26 @@ describe("Router transformation logic", () => {
             WHERE id = ${TEST_USER_ID}`,
       );
 
-      // Insert body metrics for lean mass calculation
-      await testCtx.db.execute(
-        sql`INSERT INTO fitness.metric_stream
-            (provider_id, user_id, external_id, recorded_at, source_type, channel, scalar)
-            VALUES
-              ('test-provider', ${TEST_USER_ID}, 'test-body-1', NOW() - INTERVAL '1 day', 'api', 'body_weight', 75),
-              ('test-provider', ${TEST_USER_ID}, 'test-body-1', NOW() - INTERVAL '1 day', 'api', 'body_fat_percentage', 18)
-            ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO NOTHING`,
-      );
+      const healthspanBodyMetricRows: ClickHouseMetricStreamSeedRow[] = [
+        {
+          userId: TEST_USER_ID,
+          recordedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+          providerId: "test-provider",
+          externalId: "test-body-1",
+          sourceType: "api",
+          channel: "body_weight",
+          scalar: 75,
+        },
+        {
+          userId: TEST_USER_ID,
+          recordedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+          providerId: "test-provider",
+          externalId: "test-body-1",
+          sourceType: "api",
+          channel: "body_fat_percentage",
+          scalar: 18,
+        },
+      ];
 
       // Insert a strength workout for strength frequency score
       const workoutDate = new Date();
@@ -608,6 +644,7 @@ describe("Router transformation logic", () => {
       );
 
       await syncClickHouseTestActivitySensorStore(testCtx);
+      await seedClickHouseMetricStreamRows(testCtx, healthspanBodyMetricRows);
       await queryCache.invalidateAll();
     }, 30_000);
 
@@ -786,6 +823,7 @@ describe("Router transformation logic", () => {
     beforeAll(async () => {
       // Insert hiking activities with elevation data
       const now = new Date();
+      const hikingMetricStreamRows: ClickHouseMetricStreamSeedRow[] = [];
       for (let i = 0; i < 3; i++) {
         const activityDate = new Date(now);
         activityDate.setDate(activityDate.getDate() - i * 7 - 1);
@@ -806,38 +844,79 @@ describe("Router transformation logic", () => {
         );
         const activityId = activityRows[0]?.id;
         if (activityId) {
-          // Insert metric_stream with altitude + GPS data for elevation/distance calculations
-          // Simulate a straight-line hike heading north (~1.2 m/s for 90 minutes ≈ 6.5 km)
           const baseLat = 40.7;
           const baseLng = -74.0;
-          const sensorValues: string[] = [];
           for (let minute = 0; minute < 90; minute++) {
             const sampleTime = new Date(startedAt.getTime() + minute * 60 * 1000);
-            // Simulate climbing: altitude goes from 500m to 900m
             const altitude = 500 + (minute / 90) * 400;
-            const speed = 1.2 + Math.random() * 0.3; // ~1.2-1.5 m/s
-            // Move north ~72m per minute (≈0.00065° lat)
+            const speed = 1.2 + Math.random() * 0.3;
             const lat = baseLat + minute * 0.00065;
             const hr = 130 + Math.round(Math.random() * 15);
             const grade = 5 + Math.random() * 3;
-            const ts = `'${sampleTime.toISOString()}'`;
+            const recordedAt = sampleTime.toISOString();
 
-            sensorValues.push(
-              `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'heart_rate', '${activityId}', ${hr}, NULL)`,
-              `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'speed', '${activityId}', ${speed}, NULL)`,
-              `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'altitude', '${activityId}', ${altitude}, NULL)`,
-              `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'grade', '${activityId}', ${grade}, NULL)`,
-              `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'lat', '${activityId}', ${lat}, NULL)`,
-              `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'lng', '${activityId}', ${baseLng}, NULL)`,
+            hikingMetricStreamRows.push(
+              {
+                userId: TEST_USER_ID,
+                recordedAt,
+                providerId: "test-provider",
+                sourceType: "api",
+                channel: "heart_rate",
+                activityId,
+                scalar: hr,
+              },
+              {
+                userId: TEST_USER_ID,
+                recordedAt,
+                providerId: "test-provider",
+                sourceType: "api",
+                channel: "speed",
+                activityId,
+                scalar: speed,
+              },
+              {
+                userId: TEST_USER_ID,
+                recordedAt,
+                providerId: "test-provider",
+                sourceType: "api",
+                channel: "altitude",
+                activityId,
+                scalar: altitude,
+              },
+              {
+                userId: TEST_USER_ID,
+                recordedAt,
+                providerId: "test-provider",
+                sourceType: "api",
+                channel: "grade",
+                activityId,
+                scalar: grade,
+              },
+              {
+                userId: TEST_USER_ID,
+                recordedAt,
+                providerId: "test-provider",
+                sourceType: "api",
+                channel: "lat",
+                activityId,
+                scalar: lat,
+              },
+              {
+                userId: TEST_USER_ID,
+                recordedAt,
+                providerId: "test-provider",
+                sourceType: "api",
+                channel: "lng",
+                activityId,
+                scalar: baseLng,
+              },
             );
           }
-          await testCtx.db.execute(
-            sql.raw(`INSERT INTO fitness.metric_stream (
-                recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
-              ) VALUES ${sensorValues.join(",")}`),
-          );
         }
       }
+
+      await syncClickHouseTestActivitySensorStore(testCtx);
+      await seedClickHouseMetricStreamRows(testCtx, hikingMetricStreamRows);
     }, 60_000);
 
     it("computes grade-adjusted pace using Minetti cost factor", async () => {
@@ -890,6 +969,7 @@ describe("Router transformation logic", () => {
     beforeAll(async () => {
       // Insert 2 activities with the same name for comparison
       const now = new Date();
+      const comparisonMetricStreamRows: ClickHouseMetricStreamSeedRow[] = [];
       for (let i = 0; i < 2; i++) {
         const activityDate = new Date(now);
         activityDate.setDate(activityDate.getDate() - i * 14 - 1);
@@ -912,7 +992,6 @@ describe("Router transformation logic", () => {
         if (activityId) {
           const baseLat = 40.7;
           const baseLng = -74.0;
-          const sensorValues: string[] = [];
           for (let minute = 0; minute < 75; minute++) {
             const sampleTime = new Date(startedAt.getTime() + minute * 60 * 1000);
             const altitude = 300 + (minute / 75) * 200;
@@ -920,24 +999,70 @@ describe("Router transformation logic", () => {
             const lat = baseLat + minute * 0.00065;
             const hr = 125 + Math.round(Math.random() * 10);
             const grade = 3 + Math.random() * 2;
-            const ts = `'${sampleTime.toISOString()}'`;
+            const recordedAt = sampleTime.toISOString();
 
-            sensorValues.push(
-              `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'heart_rate', '${activityId}', ${hr}, NULL)`,
-              `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'speed', '${activityId}', ${speed}, NULL)`,
-              `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'altitude', '${activityId}', ${altitude}, NULL)`,
-              `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'grade', '${activityId}', ${grade}, NULL)`,
-              `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'lat', '${activityId}', ${lat}, NULL)`,
-              `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'lng', '${activityId}', ${baseLng}, NULL)`,
+            comparisonMetricStreamRows.push(
+              {
+                userId: TEST_USER_ID,
+                recordedAt,
+                providerId: "test-provider",
+                sourceType: "api",
+                channel: "heart_rate",
+                activityId,
+                scalar: hr,
+              },
+              {
+                userId: TEST_USER_ID,
+                recordedAt,
+                providerId: "test-provider",
+                sourceType: "api",
+                channel: "speed",
+                activityId,
+                scalar: speed,
+              },
+              {
+                userId: TEST_USER_ID,
+                recordedAt,
+                providerId: "test-provider",
+                sourceType: "api",
+                channel: "altitude",
+                activityId,
+                scalar: altitude,
+              },
+              {
+                userId: TEST_USER_ID,
+                recordedAt,
+                providerId: "test-provider",
+                sourceType: "api",
+                channel: "grade",
+                activityId,
+                scalar: grade,
+              },
+              {
+                userId: TEST_USER_ID,
+                recordedAt,
+                providerId: "test-provider",
+                sourceType: "api",
+                channel: "lat",
+                activityId,
+                scalar: lat,
+              },
+              {
+                userId: TEST_USER_ID,
+                recordedAt,
+                providerId: "test-provider",
+                sourceType: "api",
+                channel: "lng",
+                activityId,
+                scalar: baseLng,
+              },
             );
           }
-          await testCtx.db.execute(
-            sql.raw(`INSERT INTO fitness.metric_stream (
-                recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
-              ) VALUES ${sensorValues.join(",")}`),
-          );
         }
       }
+
+      await syncClickHouseTestActivitySensorStore(testCtx);
+      await seedClickHouseMetricStreamRows(testCtx, comparisonMetricStreamRows);
     }, 60_000);
 
     it("groups repeated activities and returns comparison instances", async () => {
@@ -990,12 +1115,9 @@ describe("Router transformation logic", () => {
       const firstRow: { id: string } = activityRows[0];
       intervalActivityId = firstRow.id;
 
-      // Insert metric_stream with alternating easy/hard segments
-      // Easy: power ~150, Hard: power ~250 (>15% change)
-      const sensorValues: string[] = [];
+      const intervalMetricStreamRows: ClickHouseMetricStreamSeedRow[] = [];
       for (let minute = 0; minute < 40; minute++) {
         const sampleTime = new Date(startedAt.getTime() + minute * 60 * 1000);
-        // Alternate every 5 minutes between easy and hard
         const isHard = Math.floor(minute / 5) % 2 === 1;
         const power = isHard
           ? 240 + Math.round(Math.random() * 20)
@@ -1004,21 +1126,41 @@ describe("Router transformation logic", () => {
           ? 165 + Math.round(Math.random() * 10)
           : 130 + Math.round(Math.random() * 10);
         const speed = 5.5 + Math.random();
-        const ts = `'${sampleTime.toISOString()}'`;
+        const recordedAt = sampleTime.toISOString();
 
-        sensorValues.push(
-          `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'heart_rate', '${intervalActivityId}', ${hr}, NULL)`,
-          `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'power', '${intervalActivityId}', ${power}, NULL)`,
-          `(${ts}, '${TEST_USER_ID}', 'test-provider', NULL, 'api', 'speed', '${intervalActivityId}', ${speed}, NULL)`,
+        intervalMetricStreamRows.push(
+          {
+            userId: TEST_USER_ID,
+            recordedAt,
+            providerId: "test-provider",
+            sourceType: "api",
+            channel: "heart_rate",
+            activityId: intervalActivityId,
+            scalar: hr,
+          },
+          {
+            userId: TEST_USER_ID,
+            recordedAt,
+            providerId: "test-provider",
+            sourceType: "api",
+            channel: "power",
+            activityId: intervalActivityId,
+            scalar: power,
+          },
+          {
+            userId: TEST_USER_ID,
+            recordedAt,
+            providerId: "test-provider",
+            sourceType: "api",
+            channel: "speed",
+            activityId: intervalActivityId,
+            scalar: speed,
+          },
         );
       }
-      await testCtx.db.execute(
-        sql.raw(`INSERT INTO fitness.metric_stream (
-            recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
-          ) VALUES ${sensorValues.join(",")}`),
-      );
 
       await syncClickHouseTestActivitySensorStore(testCtx);
+      await seedClickHouseMetricStreamRows(testCtx, intervalMetricStreamRows);
     }, 30_000);
 
     it("detects intervals from intensity changes", async () => {

@@ -5,7 +5,11 @@ import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import { createClickHouseTestActivitySensorStore } from "./clickhouse-integration-test-helpers.ts";
+import {
+  createClickHouseTestActivitySensorStore,
+  type ClickHouseMetricStreamSeedRow,
+  seedClickHouseMetricStreamRows,
+} from "./clickhouse-integration-test-helpers.ts";
 
 /**
  * Integration tests covering uncovered transformation logic in tRPC router endpoints.
@@ -31,7 +35,9 @@ describe("Router data coverage", () => {
   const activityIds: string[] = [];
 
   beforeAll(async () => {
-    testCtx = await setupTestDatabase({ createRetiredMetricStreamFixture: true });
+    testCtx = await setupTestDatabase();
+
+    const metricStreamSeedRows: ClickHouseMetricStreamSeedRow[] = [];
 
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
@@ -99,43 +105,115 @@ describe("Router data coverage", () => {
 
       if (actId) {
         activityIds.push(actId);
-        for (let batchStart = 0; batchStart < durationSec; batchStart += 100) {
-          const batchEnd = Math.min(batchStart + 100, durationSec);
-          const sensorValues: string[] = [];
-          for (let s = batchStart; s < batchEnd; s++) {
-            const hr = avgHr + Math.round(Math.sin(s * 0.01) * 8);
-            const power = avgPower + Math.round(Math.cos(s * 0.01) * 20);
-            const speed = 7.5 + Math.sin(s * 0.005) * 1.5;
-            const alt = hasAltitude ? `${300 + (s / durationSec) * 200}` : "NULL";
-            const grd = hasAltitude ? `${4 + (s % 7) * 0.5}` : "NULL";
-            const balance = 49.5 + (s % 10) * 0.1;
-            const lte = 75 + (s % 5);
-            const rte = 74 + (s % 5);
-            const lps = 18 + (s % 4);
-            const rps = 17 + (s % 4);
-            const ts = `CURRENT_TIMESTAMP - ${daysAgo} * INTERVAL '1 day' + ${s} * INTERVAL '1 second'`;
-            sensorValues.push(
-              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
-              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'power', '${actId}', ${power}, NULL)`,
-              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'speed', '${actId}', ${speed}, NULL)`,
-              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'left_right_balance', '${actId}', ${balance}, NULL)`,
-              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'left_torque_effectiveness', '${actId}', ${lte}, NULL)`,
-              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'right_torque_effectiveness', '${actId}', ${rte}, NULL)`,
-              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'left_pedal_smoothness', '${actId}', ${lps}, NULL)`,
-              `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'right_pedal_smoothness', '${actId}', ${rps}, NULL)`,
-            );
-            if (hasAltitude) {
-              sensorValues.push(
-                `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'altitude', '${actId}', ${alt}, NULL)`,
-                `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'grade', '${actId}', ${grd}, NULL)`,
-              );
-            }
-          }
-          await testCtx.db.execute(
-            sql.raw(`INSERT INTO fitness.metric_stream (
-              recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
-            ) VALUES ${sensorValues.join(",\n")}`),
+        const activityStartedAt = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
+        for (let s = 0; s < durationSec; s++) {
+          const hr = avgHr + Math.round(Math.sin(s * 0.01) * 8);
+          const power = avgPower + Math.round(Math.cos(s * 0.01) * 20);
+          const speed = 7.5 + Math.sin(s * 0.005) * 1.5;
+          const alt = hasAltitude ? 300 + (s / durationSec) * 200 : null;
+          const grd = hasAltitude ? 4 + (s % 7) * 0.5 : null;
+          const balance = 49.5 + (s % 10) * 0.1;
+          const lte = 75 + (s % 5);
+          const rte = 74 + (s % 5);
+          const lps = 18 + (s % 4);
+          const rps = 17 + (s % 4);
+          const recordedAt = new Date(activityStartedAt.getTime() + s * 1000).toISOString();
+          metricStreamSeedRows.push(
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "heart_rate",
+              activityId: actId,
+              scalar: hr,
+            },
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "power",
+              activityId: actId,
+              scalar: power,
+            },
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "speed",
+              activityId: actId,
+              scalar: speed,
+            },
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "left_right_balance",
+              activityId: actId,
+              scalar: balance,
+            },
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "left_torque_effectiveness",
+              activityId: actId,
+              scalar: lte,
+            },
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "right_torque_effectiveness",
+              activityId: actId,
+              scalar: rte,
+            },
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "left_pedal_smoothness",
+              activityId: actId,
+              scalar: lps,
+            },
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "right_pedal_smoothness",
+              activityId: actId,
+              scalar: rps,
+            },
           );
+          if (hasAltitude && alt !== null && grd !== null) {
+            metricStreamSeedRows.push(
+              {
+                userId: TEST_USER_ID,
+                recordedAt,
+                providerId: "test_provider",
+                sourceType: "api",
+                channel: "altitude",
+                activityId: actId,
+                scalar: alt,
+              },
+              {
+                userId: TEST_USER_ID,
+                recordedAt,
+                providerId: "test_provider",
+                sourceType: "api",
+                channel: "grade",
+                activityId: actId,
+                scalar: grd,
+              },
+            );
+          }
         }
       }
     }
@@ -154,22 +232,30 @@ describe("Router data coverage", () => {
     );
     const runId = runResult[0]?.id;
     if (runId) {
-      for (let batchStart = 0; batchStart < runDurationSec; batchStart += 100) {
-        const batchEnd = Math.min(batchStart + 100, runDurationSec);
-        const sensorValues: string[] = [];
-        for (let s = batchStart; s < batchEnd; s++) {
-          const speed = 3.0 + Math.sin(s * 0.005) * 0.5;
-          const hr = 155 + Math.round(Math.sin(s * 0.01) * 8);
-          const ts = `CURRENT_TIMESTAMP - INTERVAL '3 days' + ${s} * INTERVAL '1 second'`;
-          sensorValues.push(
-            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${runId}', ${hr}, NULL)`,
-            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'speed', '${runId}', ${speed}, NULL)`,
-          );
-        }
-        await testCtx.db.execute(
-          sql.raw(`INSERT INTO fitness.metric_stream (
-            recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
-          ) VALUES ${sensorValues.join(",\n")}`),
+      const runStartedAt = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+      for (let s = 0; s < runDurationSec; s++) {
+        const speed = 3.0 + Math.sin(s * 0.005) * 0.5;
+        const hr = 155 + Math.round(Math.sin(s * 0.01) * 8);
+        const recordedAt = new Date(runStartedAt.getTime() + s * 1000).toISOString();
+        metricStreamSeedRows.push(
+          {
+            userId: TEST_USER_ID,
+            recordedAt,
+            providerId: "test_provider",
+            sourceType: "api",
+            channel: "heart_rate",
+            activityId: runId,
+            scalar: hr,
+          },
+          {
+            userId: TEST_USER_ID,
+            recordedAt,
+            providerId: "test_provider",
+            sourceType: "api",
+            channel: "speed",
+            activityId: runId,
+            scalar: speed,
+          },
         );
       }
     }
@@ -195,15 +281,21 @@ describe("Router data coverage", () => {
 	              ${efficiency}, 'sleep'
 	            )`,
       );
-      const restingHeartRateValues = Array.from({ length: 30 }, (_, sampleIndex) => {
-        const restingHeartRate = 52 + Math.round(Math.cos(i * 0.3) * 3);
-        return `((CURRENT_DATE - ${i}::int + 1)::timestamp + INTERVAL '1 hour' + ${sampleIndex} * INTERVAL '1 minute', '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', NULL, ${restingHeartRate}, NULL)`;
-      });
-      await testCtx.db.execute(
-        sql.raw(`INSERT INTO fitness.metric_stream (
-          recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
-        ) VALUES ${restingHeartRateValues.join(",\n")}`),
-      );
+      const restingHeartRate = 52 + Math.round(Math.cos(i * 0.3) * 3);
+      for (let sampleIndex = 0; sampleIndex < 30; sampleIndex++) {
+        const recordedAt = new Date();
+        recordedAt.setHours(0, 0, 0, 0);
+        recordedAt.setDate(recordedAt.getDate() - i);
+        recordedAt.setHours(1, sampleIndex, 0, 0);
+        metricStreamSeedRows.push({
+          userId: TEST_USER_ID,
+          recordedAt: recordedAt.toISOString(),
+          providerId: "test_provider",
+          sourceType: "api",
+          channel: "heart_rate",
+          scalar: restingHeartRate,
+        });
+      }
     }
 
     // ── Insert body metrics for 35 days (needed for body-analytics branches) ──
@@ -211,12 +303,26 @@ describe("Router data coverage", () => {
     for (let i = 34; i >= 0; i--) {
       const weight = 73 + (34 - i) * 0.08 + Math.sin(i) * 0.3; // upward trend ~0.08 kg/day
       const bodyFat = 17 + (34 - i) * 0.02;
-      await testCtx.db.execute(
-        sql`INSERT INTO fitness.metric_stream (
-              recorded_at, provider_id, user_id, external_id, source_type, channel, scalar
-            ) VALUES
-              (NOW() - ${i}::int * INTERVAL '1 day', 'test_provider', ${TEST_USER_ID}, ${`test-body-${i}`}, 'api', 'body_weight', ${weight}),
-              (NOW() - ${i}::int * INTERVAL '1 day', 'test_provider', ${TEST_USER_ID}, ${`test-body-${i}`}, 'api', 'body_fat_percentage', ${bodyFat})`,
+      const recordedAt = new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString();
+      metricStreamSeedRows.push(
+        {
+          userId: TEST_USER_ID,
+          recordedAt,
+          providerId: "test_provider",
+          externalId: `test-body-${i}`,
+          sourceType: "api",
+          channel: "body_weight",
+          scalar: weight,
+        },
+        {
+          userId: TEST_USER_ID,
+          recordedAt,
+          providerId: "test_provider",
+          externalId: `test-body-${i}`,
+          sourceType: "api",
+          channel: "body_fat_percentage",
+          scalar: bodyFat,
+        },
       );
     }
 
@@ -340,6 +446,7 @@ describe("Router data coverage", () => {
 
     // Start server
     const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
+    await seedClickHouseMetricStreamRows(testCtx, metricStreamSeedRows);
     const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {

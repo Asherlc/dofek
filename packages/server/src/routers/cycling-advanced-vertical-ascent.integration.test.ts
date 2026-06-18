@@ -7,6 +7,8 @@ import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
 import {
   createClickHouseTestActivitySensorStore,
+  type ClickHouseMetricStreamSeedRow,
+  seedClickHouseMetricStreamRows,
   syncClickHouseTestActivitySensorStore,
 } from "./clickhouse-integration-test-helpers.ts";
 
@@ -17,7 +19,7 @@ describe("cyclingAdvanced vertical ascent integration", () => {
   let testCtx: TestContext;
 
   beforeAll(async () => {
-    testCtx = await setupTestDatabase({ createRetiredMetricStreamFixture: true });
+    testCtx = await setupTestDatabase();
 
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
@@ -68,12 +70,10 @@ describe("cyclingAdvanced vertical ascent integration", () => {
       new Date(endedAt.getTime() + 40 * 60 * 1000),
     );
 
-    const sensorValues: string[] = [];
+    const metricStreamSeedRows: ClickHouseMetricStreamSeedRow[] = [];
     for (let second = 0; second <= 360; second += 120) {
       const offsetAltitudeTimestamp = new Date(startedAt.getTime() + second * 1000).toISOString();
-      const offsetGradeTimestamp = new Date(
-        startedAt.getTime() + second * 1000 + 2000,
-      ).toISOString();
+      const offsetGradeTimestamp = new Date(startedAt.getTime() + second * 1000 + 2000).toISOString();
       const driftAltitudeTimestamp = new Date(
         startedAt.getTime() + 20 * 60 * 1000 + second * 1000,
       ).toISOString();
@@ -85,22 +85,57 @@ describe("cyclingAdvanced vertical ascent integration", () => {
       ).toISOString();
       const altitude = 400 + second * 0.6;
 
-      sensorValues.push(
-        `('${offsetAltitudeTimestamp}', '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'altitude', '${offsetGradeClimbId}', ${altitude}, NULL)`,
-        `('${offsetGradeTimestamp}', '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'grade', '${offsetGradeClimbId}', 6, NULL)`,
-        `('${driftAltitudeTimestamp}', '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'altitude', '${lowGradeDriftId}', ${altitude}, NULL)`,
-        `('${driftGradeTimestamp}', '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'grade', '${lowGradeDriftId}', 0.5, NULL)`,
-        `('${altitudeOnlyTimestamp}', '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'altitude', '${altitudeOnlyClimbId}', ${altitude}, NULL)`,
+      metricStreamSeedRows.push(
+        {
+          userId: TEST_USER_ID,
+          recordedAt: offsetAltitudeTimestamp,
+          providerId: "test_provider",
+          sourceType: "api",
+          channel: "altitude",
+          activityId: offsetGradeClimbId,
+          scalar: altitude,
+        },
+        {
+          userId: TEST_USER_ID,
+          recordedAt: offsetGradeTimestamp,
+          providerId: "test_provider",
+          sourceType: "api",
+          channel: "grade",
+          activityId: offsetGradeClimbId,
+          scalar: 6,
+        },
+        {
+          userId: TEST_USER_ID,
+          recordedAt: driftAltitudeTimestamp,
+          providerId: "test_provider",
+          sourceType: "api",
+          channel: "altitude",
+          activityId: lowGradeDriftId,
+          scalar: altitude,
+        },
+        {
+          userId: TEST_USER_ID,
+          recordedAt: driftGradeTimestamp,
+          providerId: "test_provider",
+          sourceType: "api",
+          channel: "grade",
+          activityId: lowGradeDriftId,
+          scalar: 0.5,
+        },
+        {
+          userId: TEST_USER_ID,
+          recordedAt: altitudeOnlyTimestamp,
+          providerId: "test_provider",
+          sourceType: "api",
+          channel: "altitude",
+          activityId: altitudeOnlyClimbId,
+          scalar: altitude,
+        },
       );
     }
 
-    await testCtx.db.execute(
-      sql.raw(`INSERT INTO fitness.metric_stream (
-        recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
-      ) VALUES ${sensorValues.join(",\n")}`),
-    );
-
     await syncClickHouseTestActivitySensorStore(testCtx);
+    await seedClickHouseMetricStreamRows(testCtx, metricStreamSeedRows);
     await queryCache.invalidateAll();
 
     const result = await query<

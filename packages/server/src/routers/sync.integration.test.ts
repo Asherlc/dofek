@@ -13,7 +13,7 @@ describe("countProviderRecords SQL", () => {
   let testCtx: TestContext;
 
   beforeAll(async () => {
-    testCtx = await setupTestDatabase({ createRetiredMetricStreamFixture: true });
+    testCtx = await setupTestDatabase();
     // Reset search_path to only 'public' — simulates production where
     // the default search_path may not include 'fitness'
     await testCtx.db.execute(sql`SET search_path TO public`);
@@ -30,7 +30,7 @@ describe("countProviderRecords SQL", () => {
         (SELECT count(*) FROM fitness.activity WHERE provider_id = ${providerId}) +
         (SELECT count(*) FROM fitness.daily_metrics WHERE provider_id = ${providerId}) +
         (SELECT count(*) FROM fitness.sleep_session WHERE provider_id = ${providerId}) +
-        (SELECT count(*) FROM fitness.metric_stream WHERE provider_id = ${providerId} AND channel LIKE 'body_%') +
+        (SELECT count(*) FROM fitness.journal_entry WHERE provider_id = ${providerId}) +
         (SELECT count(*) FROM fitness.food_entry WHERE provider_id = ${providerId}) +
         (SELECT count(*) FROM fitness.health_event WHERE provider_id = ${providerId})
       AS total
@@ -44,7 +44,7 @@ describe("triggerSync token lookup SQL", () => {
   const testUserId = "00000000-0000-0000-0000-000000000099";
 
   beforeAll(async () => {
-    testCtx = await setupTestDatabase({ createRetiredMetricStreamFixture: true });
+    testCtx = await setupTestDatabase();
     await testCtx.db.execute(sql`SET search_path TO public`);
 
     // Seed a user, two providers, and one oauth token

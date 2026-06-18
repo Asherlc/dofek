@@ -11,55 +11,19 @@ export type TestDatabase = ReturnType<typeof createDatabase>;
 export interface TestContext {
   db: TestDatabase;
   connectionString: string;
-  hasRetiredMetricStreamFixture: boolean;
   addCleanup: (cleanup: () => Promise<void>) => void;
   cleanup: () => Promise<void>;
 }
 
-interface SetupTestDatabaseOptions {
-  createRetiredMetricStreamFixture?: boolean;
-}
-
 const isRunnableMigrationStatement = (statement: string): boolean =>
   statement.length > 0 && !statement.includes("CREATE OR REPLACE VIEW clickhouse.v_sleep AS");
-
-async function createRetiredMetricStreamFixtureTable(client: Client): Promise<void> {
-  // Minimal retired-table stub for integration tests that still INSERT metric_stream rows.
-  await client.query("CREATE EXTENSION IF NOT EXISTS postgis");
-
-  await client.query(`
-    CREATE TABLE IF NOT EXISTS fitness.metric_stream (
-      id uuid NOT NULL DEFAULT gen_random_uuid(),
-      recorded_at timestamptz NOT NULL,
-      user_id uuid NOT NULL REFERENCES fitness.user_profile(id),
-      provider_id text NOT NULL REFERENCES fitness.provider(id),
-      external_id text,
-      device_id text,
-      source_type text NOT NULL,
-      channel text NOT NULL,
-      activity_id uuid REFERENCES fitness.activity(id) ON DELETE CASCADE,
-      scalar real,
-      vector real[],
-      point public.geometry(Point, 4326),
-      metadata jsonb,
-      PRIMARY KEY (id, recorded_at)
-    )
-  `);
-
-  await client.query(`
-    CREATE UNIQUE INDEX IF NOT EXISTS metric_stream_provider_external_channel_time_idx
-      ON fitness.metric_stream (user_id, provider_id, external_id, channel, recorded_at)
-  `);
-}
 
 /**
  * Spin up a TimescaleDB container (or use TEST_DATABASE_URL), create schema, run migrations.
  * When TEST_DATABASE_URL is set, creates an isolated database per test file to avoid
  * concurrent migration collisions. Call cleanup() in afterAll to tear down.
  */
-export async function setupTestDatabase(
-  options: SetupTestDatabaseOptions = {},
-): Promise<TestContext> {
+export async function setupTestDatabase(): Promise<TestContext> {
   let connectionString: string;
   let container: Awaited<ReturnType<GenericContainer["start"]>> | null = null;
   let adminUrl: string | null = null;
@@ -202,10 +166,6 @@ export async function setupTestDatabase(
     [schema.TEST_USER_ID],
   );
 
-  if (options.createRetiredMetricStreamFixture) {
-    await createRetiredMetricStreamFixtureTable(migrationClient);
-  }
-
   await migrationClient.end();
 
   const db = createDatabase(connectionString);
@@ -213,7 +173,6 @@ export async function setupTestDatabase(
   return {
     db,
     connectionString,
-    hasRetiredMetricStreamFixture: options.createRetiredMetricStreamFixture === true,
     addCleanup: (cleanup) => {
       cleanupTasks.push(cleanup);
     },

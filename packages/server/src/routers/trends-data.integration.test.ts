@@ -4,7 +4,11 @@ import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import { createClickHouseTestActivitySensorStore } from "./clickhouse-integration-test-helpers.ts";
+import {
+  createClickHouseTestActivitySensorStore,
+  type ClickHouseMetricStreamSeedRow,
+  seedClickHouseMetricStreamRows,
+} from "./clickhouse-integration-test-helpers.ts";
 import type { DailyTrendRow, WeeklyTrendRow } from "./trends.ts";
 
 /**
@@ -19,7 +23,7 @@ describe("Trends router — trend data tests", () => {
   let sessionCookie: string;
 
   beforeAll(async () => {
-    testCtx = await setupTestDatabase({ createRetiredMetricStreamFixture: true });
+    testCtx = await setupTestDatabase();
 
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
@@ -30,6 +34,8 @@ describe("Trends router — trend data tests", () => {
           VALUES ('test_provider', 'Test Provider', ${TEST_USER_ID})
           ON CONFLICT DO NOTHING`,
     );
+
+    const metricStreamSeedRows: ClickHouseMetricStreamSeedRow[] = [];
 
     // Insert activities spanning 30 days, with metric_stream data
     for (let day = 30; day >= 1; day--) {
@@ -51,30 +57,57 @@ describe("Trends router — trend data tests", () => {
       const actId = actResult[0]?.id;
 
       if (actId) {
-        // Insert metric_stream samples (1 per minute)
-        const sensorValues: string[] = [];
+        const activityStartedAt = new Date(Date.now() - day * 24 * 60 * 60 * 1000);
         for (let s = 0; s < durationMin; s++) {
           const hr = avgHr + Math.round(Math.sin(s * 0.1) * 5);
           const power = avgPower + Math.round(Math.cos(s * 0.1) * 15);
           const cadence = 85 + Math.round(Math.sin(s * 0.05) * 10);
           const speed = 8 + Math.sin(s * 0.08) * 1.5;
-          const ts = `CURRENT_TIMESTAMP - ${day} * INTERVAL '1 day' + ${s} * INTERVAL '1 minute'`;
-          sensorValues.push(
-            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
-            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'power', '${actId}', ${power}, NULL)`,
-            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'speed', '${actId}', ${speed.toFixed(3)}, NULL)`,
-            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'cadence', '${actId}', ${cadence}, NULL)`,
+          const recordedAt = new Date(activityStartedAt.getTime() + s * 60_000).toISOString();
+          metricStreamSeedRows.push(
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "heart_rate",
+              activityId: actId,
+              scalar: hr,
+            },
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "power",
+              activityId: actId,
+              scalar: power,
+            },
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "speed",
+              activityId: actId,
+              scalar: Number(speed.toFixed(3)),
+            },
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "cadence",
+              activityId: actId,
+              scalar: cadence,
+            },
           );
         }
-        await testCtx.db.execute(
-          sql.raw(`INSERT INTO fitness.metric_stream (
-                recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
-              ) VALUES ${sensorValues.join(",")}`),
-        );
       }
     }
 
     const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
+    await seedClickHouseMetricStreamRows(testCtx, metricStreamSeedRows);
     const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {

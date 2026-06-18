@@ -14,7 +14,7 @@ describe("Settings router", () => {
   let sessionCookie: string;
 
   beforeAll(async () => {
-    testCtx = await setupTestDatabase({ createRetiredMetricStreamFixture: true });
+    testCtx = await setupTestDatabase();
     await testCtx.db.execute(
       sql`INSERT INTO fitness.user_profile (id, name)
           VALUES (${SETTINGS_TEST_USER_ID}, 'Settings Test User')
@@ -166,20 +166,6 @@ describe("Settings router", () => {
               ON CONFLICT DO NOTHING`,
         ),
         testCtx.db.execute(
-          sql`INSERT INTO fitness.metric_stream (recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector)
-              VALUES (
-                '2024-01-15T10:00:00Z',
-                ${SETTINGS_TEST_USER_ID},
-                'settings-wipe-provider',
-                NULL,
-                'api',
-                'heart_rate',
-                '22222222-2222-2222-2222-222222222222',
-                150,
-                NULL
-              )`,
-        ),
-        testCtx.db.execute(
           sql`INSERT INTO fitness.sync_log (provider_id, user_id, data_type, status)
               VALUES ('settings-wipe-provider', ${SETTINGS_TEST_USER_ID}, 'activities', 'success')`,
         ),
@@ -214,7 +200,6 @@ describe("Settings router", () => {
 
       const [
         activitiesAfter,
-        metricsAfter,
         logsAfter,
         tokensAfter,
         eventsAfter,
@@ -224,9 +209,6 @@ describe("Settings router", () => {
       ] = await Promise.all([
         testCtx.db.execute<{ count: number }>(
           sql`SELECT count(*)::int AS count FROM fitness.activity WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
-        ),
-        testCtx.db.execute<{ count: number }>(
-          sql`SELECT count(*)::int AS count FROM fitness.metric_stream WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
         testCtx.db.execute<{ count: number }>(
           sql`SELECT count(*)::int AS count FROM fitness.sync_log WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
@@ -249,7 +231,6 @@ describe("Settings router", () => {
       ]);
 
       expect(activitiesAfter[0]?.count).toBe(0);
-      expect(metricsAfter[0]?.count).toBe(0);
       expect(logsAfter[0]?.count).toBe(0);
       expect(tokensAfter[0]?.count).toBe(0);
       expect(eventsAfter[0]?.count).toBe(0);

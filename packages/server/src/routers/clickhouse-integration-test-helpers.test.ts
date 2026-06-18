@@ -183,7 +183,7 @@ describe("clickhouse integration test helpers", () => {
           command.includes("TRUNCATE TABLE postgres_fitness_test_") &&
           command.endsWith(".metric_stream"),
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       commands.some(
         (command) =>
@@ -382,11 +382,10 @@ describe("clickhouse integration test helpers", () => {
     ).toBe(true);
   });
 
-  it("syncs retired metric stream rows when the Postgres fixture table exists", async () => {
+  it("does not copy metric_stream from Postgres when syncing", async () => {
     const testContext = {
       addCleanup: vi.fn(),
       connectionString: "postgres://health:fixture@db:5432/health",
-      hasRetiredMetricStreamFixture: true,
     };
 
     await createClickHouseTestActivitySensorStore(testContext);
@@ -401,8 +400,8 @@ describe("clickhouse integration test helpers", () => {
         (command) =>
           command.includes("INSERT INTO postgres_fitness_test_") &&
           command.includes(".metric_stream") &&
-          command.includes("FROM postgresql('db:5432', 'health', 'metric_stream'"),
+          command.includes("FROM postgresql("),
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 });
