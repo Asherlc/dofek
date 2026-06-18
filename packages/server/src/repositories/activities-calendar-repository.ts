@@ -85,6 +85,7 @@ const activityRowSchema = z.object({
     .array(z.record(z.string(), z.string().nullable()))
     .optional()
     .default([]),
+  source_external_ids: z.array(z.record(z.string(), z.string().nullable())).optional().default([]),
 });
 
 const caloriesRowSchema = z.object({
@@ -189,6 +190,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             asum.centroid_lat AS centroid_lat,
             asum.centroid_lng AS centroid_lng,
             activity.absent_source_external_ids AS absent_source_external_ids,
+            activity.source_external_ids AS source_external_ids,
             toString(toDate(toTimeZone(activity.started_at, {timezone:String}))) AS local_date
           FROM analytics.deduped_activities AS activity FINAL
           LEFT JOIN analytics.activity_summary asum
@@ -242,7 +244,8 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         calculator,
       });
 
-      const sourceAttribution = ActivitySourceAttribution.fromClickHouseAbsentMaps(
+      const sourceAttribution = ActivitySourceAttribution.fromClickHouseRow(
+        row.source_external_ids,
         row.absent_source_external_ids,
       );
 

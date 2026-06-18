@@ -770,7 +770,16 @@ describe("ActivitiesCalendarRepository", () => {
       [{ max_hr: null, resting_hr: null, ftp: null }],
       [],
     ]);
-    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+    const providerLookup = (providerId: string) =>
+      providerId === "strava" ? { name: "Strava" } : { name: providerId };
+    const repository = new ActivitiesCalendarRepository(
+      database,
+      "user-1",
+      "UTC",
+      sensorStore,
+      undefined,
+      providerLookup,
+    );
 
     const result = await repository.getWeekList({
       weeks: 1,
@@ -789,6 +798,7 @@ describe("ActivitiesCalendarRepository", () => {
             providerId: "strava",
             providerAbsentAt: "2026-03-05T14:30:00.000Z",
             calories: 300,
+            tombstoneSummary: expect.stringMatching(/Removed from Strava · Mar 5,/),
           }),
         ],
       },
@@ -798,6 +808,248 @@ describe("ActivitiesCalendarRepository", () => {
       "FROM postgres_fitness.activity AS activity FINAL",
     );
     expect(normalizeSql(hiddenQueryText)).toContain("provider_absent_at IS NOT NULL");
+    expect(sensorStore.query).toHaveBeenNthCalledWith(
+      4,
+      expect.anything(),
+      expect.stringContaining("FROM analytics.activity_summary_rows FINAL"),
+      expect.objectContaining({
+        userId: "user-1",
+        activityIds: ["hidden-1"],
+      }),
+    );
+    expect(sensorStore.query).toHaveBeenNthCalledWith(
+      3,
+      expect.anything(),
+      expect.stringContaining("FROM postgres_fitness.activity AS activity FINAL"),
+      expect.objectContaining({
+        userId: "user-1",
+        timezone: "UTC",
+        windowStart: "2026-03-13",
+      }),
+    );
     expect(database.execute).not.toHaveBeenCalled();
+  });
+
+  it("returns only active days when includeProviderAbsent is requested but no hidden activities match", async () => {
+    const database = makeDatabase([{ id: "activity-1", calories: 421.6 }]);
+    const sensorStore = makeSensorStore([
+      [makeActivityRow({ id: "activity-1" })],
+      [{ max_hr: null, resting_hr: null, ftp: 250 }],
+      [],
+      [],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    const result = await repository.getWeekList({
+      weeks: 1,
+      endDate: "2026-03-20",
+      includeProviderAbsent: true,
+    });
+
+    expect(result).toEqual([
+      {
+        date: "2026-03-18",
+        activities: [expect.objectContaining({ id: "activity-1", name: "Trainer Ride" })],
+      },
+    ]);
+    expect(sensorStore.query).toHaveBeenCalledTimes(4);
+  });
+
+  it("merges active and hidden activities by date while preferring active entries for duplicate ids", async () => {
+    const database = makeDatabase([{ id: "shared-id", calories: 300 }]);
+    const sensorStore = makeSensorStore([
+      [
+        makeActivityRow({
+          id: "shared-id",
+          name: "Active Ride",
+          local_date: "2026-03-18",
+        }),
+        makeActivityRow({
+          id: "active-only",
+          name: "Other Ride",
+          local_date: "2026-03-19",
+        }),
+      ],
+      [{ max_hr: null, resting_hr: null, ftp: 250 }],
+      [],
+      [
+        {
+          id: "shared-id",
+          name: "Hidden Ride",
+          activity_type: "cycling",
+          started_at: "2026-03-18T07:00:00.000Z",
+          ended_at: "2026-03-18T08:00:00.000Z",
+          duration_min: 60,
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          total_distance: null,
+          elevation_gain_m: null,
+          centroid_lat: null,
+          centroid_lng: null,
+          local_date: "2026-03-18",
+          provider_id: "strava",
+          provider_absent_at: "2026-03-05T14:30:00.000Z",
+          calories: 100,
+        },
+        {
+          id: "hidden-only",
+          name: "Hidden Run",
+          activity_type: "running",
+          started_at: "2026-03-17T07:00:00.000Z",
+          ended_at: "2026-03-17T08:00:00.000Z",
+          duration_min: 45,
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          total_distance: null,
+          elevation_gain_m: null,
+          centroid_lat: null,
+          centroid_lng: null,
+          local_date: "2026-03-17",
+          provider_id: "garmin",
+          provider_absent_at: "2026-03-04T14:30:00.000Z",
+          calories: null,
+        },
+      ],
+      [],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    const result = await repository.getWeekList({
+      weeks: 1,
+      endDate: "2026-03-20",
+      includeProviderAbsent: true,
+    });
+
+    expect(result.map((day) => day.date)).toEqual(["2026-03-19", "2026-03-18", "2026-03-17"]);
+    expect(result.find((day) => day.date === "2026-03-18")?.activities).toEqual([
+      expect.objectContaining({
+        id: "shared-id",
+        name: "Active Ride",
+      }),
+    ]);
+    expect(
+      result.find((day) => day.date === "2026-03-18")?.activities[0]?.isProviderAbsent,
+    ).toBeUndefined();
+    expect(result.find((day) => day.date === "2026-03-17")?.activities[0]).toEqual(
+      expect.objectContaining({
+        id: "hidden-only",
+        isProviderAbsent: true,
+      }),
+    );
+  });
+
+  it("enriches hidden activities with summary metrics and route previews", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [
+        {
+          id: "hidden-outdoor",
+          name: "Hidden Run",
+          activity_type: "running",
+          started_at: "2026-03-18T07:00:00.000Z",
+          ended_at: "2026-03-18T08:00:00.000Z",
+          duration_min: 60,
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          total_distance: null,
+          elevation_gain_m: null,
+          centroid_lat: null,
+          centroid_lng: null,
+          local_date: "2026-03-18",
+          provider_id: "strava",
+          provider_absent_at: "2026-03-05T14:30:00.000Z",
+          calories: null,
+        },
+      ],
+      [
+        {
+          id: "hidden-outdoor",
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          total_distance: 5000,
+          elevation_gain_m: 125,
+          centroid_lat: 37.8,
+          centroid_lng: -122.4,
+        },
+      ],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [
+        {
+          activity_id: "hidden-outdoor",
+          lat: 37.8,
+          lng: -122.4,
+        },
+      ],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    const result = await repository.getWeekList({
+      weeks: 1,
+      endDate: "2026-03-20",
+      includeProviderAbsent: true,
+    });
+
+    expect(result[0]?.activities[0]).toEqual(
+      expect.objectContaining({
+        id: "hidden-outdoor",
+        isProviderAbsent: true,
+        location: expect.objectContaining({
+          centroidLat: 37.8,
+          centroidLng: -122.4,
+          distanceMeters: 5000,
+          elevationGainM: 125,
+        }),
+      }),
+    );
+  });
+
+  it("includes partial absence summaries for canonical activities with absent source links", async () => {
+    const database = makeDatabase([]);
+    const providerLookup = (providerId: string) =>
+      providerId === "strava" ? { name: "Strava" } : { name: providerId };
+    const sensorStore = makeSensorStore([
+      [
+        makeActivityRow({
+          id: "canonical-activity",
+          source_external_ids: [
+            {
+              providerId: "garmin",
+              externalId: "123",
+            },
+          ],
+          absent_source_external_ids: [
+            {
+              providerId: "strava",
+              externalId: "99999",
+              memberActivityId: "member-strava",
+              providerAbsentAt: "2026-03-05T14:30:00.000Z",
+            },
+          ],
+        }),
+      ],
+      [{ max_hr: null, resting_hr: null, ftp: 250 }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(
+      database,
+      "user-1",
+      "UTC",
+      sensorStore,
+      undefined,
+      providerLookup,
+    );
+
+    const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
+
+    expect(result[0]?.activities[0]?.partialAbsenceSummary).toMatch(/Strava removed · Mar 5,/);
   });
 });

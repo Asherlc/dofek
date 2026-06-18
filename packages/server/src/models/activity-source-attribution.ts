@@ -41,7 +41,21 @@ export class ActivitySourceAttribution {
   static fromClickHouseAbsentMaps(
     maps: Array<Record<string, string | null>>,
   ): ActivitySourceAttribution {
-    const absentEntries = maps.flatMap((map) => {
+    return new ActivitySourceAttribution([], ActivitySourceAttribution.#parseClickHouseMaps(maps));
+  }
+
+  static fromClickHouseRow(
+    activeMaps: Array<Record<string, string | null>> | null | undefined,
+    absentMaps: Array<Record<string, string | null>> | null | undefined,
+  ): ActivitySourceAttribution {
+    return new ActivitySourceAttribution(
+      ActivitySourceAttribution.#parseClickHouseMaps(activeMaps ?? []),
+      ActivitySourceAttribution.#parseClickHouseMaps(absentMaps ?? []),
+    );
+  }
+
+  static #parseClickHouseMaps(maps: Array<Record<string, string | null>>): SourceExternalIdEntry[] {
+    return maps.flatMap((map) => {
       const providerId = map.providerId;
       const externalId = map.externalId;
       if (!providerId || !externalId) return [];
@@ -54,7 +68,6 @@ export class ActivitySourceAttribution {
         },
       ];
     });
-    return new ActivitySourceAttribution([], absentEntries);
   }
 
   get hasPartialAbsence(): boolean {

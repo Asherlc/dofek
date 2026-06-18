@@ -942,5 +942,30 @@ describe("ActivityRepository", () => {
         expect.arrayContaining(["activity-id", "other-id", "user-1"]),
       );
     });
+
+    it("restoreProviderAbsent skips SQL when no activity ids are provided", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await expect(repo.restoreProviderAbsent([])).resolves.toEqual({ restoredCount: 0 });
+
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it("restoreProviderAbsent deduplicates activity ids and clears provider tombstones", async () => {
+      const { repo, execute } = makeRepository([{ id: "activity-id" }, { id: "other-id" }]);
+
+      await expect(
+        repo.restoreProviderAbsent(["activity-id", "activity-id", "other-id"]),
+      ).resolves.toEqual({ restoredCount: 2 });
+
+      const sqlObject = execute.mock.calls[0]?.[0];
+      const compiledQuery = dialect.sqlToQuery(sqlObject);
+      expect(compiledQuery.sql).toContain("UPDATE fitness.activity");
+      expect(compiledQuery.sql).toContain("provider_absent_at = NULL");
+      expect(compiledQuery.sql).toContain("id IN");
+      expect(compiledQuery.params).toEqual(
+        expect.arrayContaining(["activity-id", "other-id", "user-1"]),
+      );
+    });
   });
 });
