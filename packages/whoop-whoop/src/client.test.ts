@@ -704,7 +704,7 @@ describe("WhoopClient.listDeveloperWorkouts", () => {
     expect(String(url)).toContain("limit=25");
   });
 
-  it("passes next_token and filters malformed developer workout records", async () => {
+  it("passes next_token and parses developer workout records", async () => {
     const fetchFn = createMockFetch({
       status: 200,
       ok: true,
@@ -718,35 +718,6 @@ describe("WhoopClient.listDeveloperWorkouts", () => {
             sport_name: "Running",
             sport_id: 1,
             score_state: "SCORED",
-          },
-          { id: "missing-start", end: "2024-01-15T11:00:00Z" },
-          null,
-          "not-a-record",
-          { id: 123, start: "2024-01-15T10:00:00Z", end: "2024-01-15T11:00:00Z" },
-          { id: "bad-end", start: "2024-01-15T10:00:00Z", end: 123 },
-          {
-            id: "bad-timezone",
-            start: "2024-01-15T10:00:00Z",
-            end: "2024-01-15T11:00:00Z",
-            timezone_offset: 123,
-          },
-          {
-            id: "bad-sport-name",
-            start: "2024-01-15T10:00:00Z",
-            end: "2024-01-15T11:00:00Z",
-            sport_name: 123,
-          },
-          {
-            id: "bad-sport-id",
-            start: "2024-01-15T10:00:00Z",
-            end: "2024-01-15T11:00:00Z",
-            sport_id: "1",
-          },
-          {
-            id: "bad-score-state",
-            start: "2024-01-15T10:00:00Z",
-            end: "2024-01-15T11:00:00Z",
-            score_state: 123,
           },
         ],
         next_token: "page-3",
@@ -763,7 +734,21 @@ describe("WhoopClient.listDeveloperWorkouts", () => {
     expect(url).toContain("next_token=page-2");
   });
 
-  it("returns an empty page for malformed developer workout responses", async () => {
+  it("rejects malformed developer workout records", async () => {
+    const fetchFn = createMockFetch({
+      status: 200,
+      ok: true,
+      body: {
+        records: [{ id: "missing-start", end: "2024-01-15T11:00:00Z" }],
+        next_token: null,
+      },
+    });
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    await expect(client.listDeveloperWorkouts()).rejects.toThrow();
+  });
+
+  it("rejects malformed developer workout responses", async () => {
     const fetchFn = createMockFetch({
       status: 200,
       ok: true,
@@ -771,10 +756,7 @@ describe("WhoopClient.listDeveloperWorkouts", () => {
     });
     const client = new WhoopClient(makeToken(), fetchFn);
 
-    await expect(client.listDeveloperWorkouts()).resolves.toEqual({
-      records: [],
-      next_token: null,
-    });
+    await expect(client.listDeveloperWorkouts()).rejects.toThrow();
   });
 
   it("returns null next_token when the API token is not a string", async () => {
@@ -800,14 +782,58 @@ describe("WhoopClient.listDeveloperWorkouts", () => {
     expect(result.next_token).toBeNull();
   });
 
-  it("returns an empty page when the developer workout response is null", async () => {
+  it("rejects null developer workout responses", async () => {
     const fetchFn = createMockFetch({ status: 200, ok: true, body: null });
     const client = new WhoopClient(makeToken(), fetchFn);
 
-    await expect(client.listDeveloperWorkouts()).resolves.toEqual({
-      records: [],
-      next_token: null,
-    });
+    await expect(client.listDeveloperWorkouts()).rejects.toThrow();
+  });
+
+  it("retries rate-limited developer workout requests before succeeding", async () => {
+    const fetchFn = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(
+        createMockResponse({ status: 429, ok: false, text: "slow down", body: "slow down" }),
+      )
+      .mockResolvedValueOnce(
+        createMockResponse({ status: 429, ok: false, text: "still slow", body: "still slow" }),
+      )
+      .mockResolvedValueOnce(
+        createMockResponse({
+          status: 200,
+          ok: true,
+          body: {
+            records: [
+              {
+                id: "after-retry",
+                start: "2024-01-15T10:00:00Z",
+                end: "2024-01-15T11:00:00Z",
+              },
+            ],
+            next_token: null,
+          },
+        }),
+      );
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    const result = await client.listDeveloperWorkouts();
+
+    expect(result.records.map((record) => record.id)).toEqual(["after-retry"]);
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+  });
+
+  it("throws the rate-limit error after exhausting developer workout retries", async () => {
+    const fetchFn = vi
+      .fn<typeof globalThis.fetch>()
+      .mockImplementation(() =>
+        Promise.resolve(
+          createMockResponse({ status: 429, ok: false, text: "slow down", body: "slow down" }),
+        ),
+      );
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    await expect(client.listDeveloperWorkouts()).rejects.toBeInstanceOf(WhoopRateLimitError);
+    expect(fetchFn).toHaveBeenCalledTimes(4);
   });
 });
 

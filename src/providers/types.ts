@@ -129,6 +129,12 @@ interface BaseProvider {
  */
 export interface SyncProvider extends BaseProvider {
   /**
+   * Number of days scheduled sync jobs should request by default.
+   * Omit to use the framework default.
+   */
+  readonly scheduledSyncLookbackDays?: number;
+
+  /**
    * Pull data from the provider API and upsert into the database.
    * @param run - Sync invocation context (db, window, and per-run options)
    */

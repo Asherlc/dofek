@@ -4,11 +4,11 @@ import {
   ProviderRateLimitError,
   parseRetryAfterHeader,
 } from "@dofek/provider-http/rate-limit";
+import { z } from "zod";
 import type {
   WhoopAuthToken,
   WhoopCycle,
   WhoopDeveloperWorkoutListResponse,
-  WhoopDeveloperWorkoutRecord,
   WhoopHrValue,
   WhoopMetricResponse,
   WhoopMetricValue,
@@ -69,20 +69,24 @@ function isRecord(val: unknown): val is Record<string, unknown> {
   return val !== null && typeof val === "object" && !Array.isArray(val);
 }
 
-function isWhoopDeveloperWorkoutRecord(value: unknown): value is WhoopDeveloperWorkoutRecord {
-  if (!isRecord(value)) {
-    return false;
-  }
-  return (
-    typeof value.id === "string" &&
-    typeof value.start === "string" &&
-    typeof value.end === "string" &&
-    (value.timezone_offset === undefined || typeof value.timezone_offset === "string") &&
-    (value.sport_name === undefined || typeof value.sport_name === "string") &&
-    (value.sport_id === undefined || typeof value.sport_id === "number") &&
-    (value.score_state === undefined || typeof value.score_state === "string")
-  );
-}
+const whoopDeveloperWorkoutRecordSchema = z
+  .object({
+    id: z.string(),
+    start: z.string(),
+    end: z.string(),
+    timezone_offset: z.string().optional(),
+    sport_name: z.string().optional(),
+    sport_id: z.number().optional(),
+    score_state: z.string().optional(),
+  })
+  .passthrough();
+
+const whoopDeveloperWorkoutListResponseSchema = z
+  .object({
+    records: z.array(whoopDeveloperWorkoutRecordSchema),
+    next_token: z.string().nullable().optional().catch(null),
+  })
+  .passthrough();
 
 /** Safely extract a nested record from an untyped record */
 function getRecord(obj: Record<string, unknown>, key: string): Record<string, unknown> | undefined {
@@ -357,7 +361,7 @@ export class WhoopClient {
     return userId;
   }
 
-  async #get<T>(url: string, params?: Record<string, string>): Promise<T> {
+  async #get<T>(url: string, params?: Record<string, string>, attempt = 0): Promise<T> {
     const requestUrl = new URL(url);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
@@ -380,7 +384,7 @@ export class WhoopClient {
       userId: this.#userId,
       endpoint: requestUrl.pathname,
       status: response.status,
-      attempt: 0,
+      attempt,
       retryAfterSeconds,
       timestamp: new Date(),
     });
@@ -400,6 +404,24 @@ export class WhoopClient {
 
     const text = await response.text();
     throw new Error(`WHOOP API error (${response.status}): ${text}`);
+  }
+
+  async #getWithRateLimitRetry<T>(
+    url: string,
+    params?: Record<string, string>,
+    maxRetries = 3,
+  ): Promise<T> {
+    let attempt = 0;
+    while (true) {
+      try {
+        return await this.#get<T>(url, params, attempt);
+      } catch (err) {
+        if (!(err instanceof WhoopRateLimitError) || attempt >= maxRetries) {
+          throw err;
+        }
+        attempt++;
+      }
+    }
   }
 
   async getHeartRate(start: string, end: string, step = 6): Promise<WhoopHrValue[]> {
@@ -463,18 +485,15 @@ export class WhoopClient {
     if (options?.nextToken) {
       params.next_token = options.nextToken;
     }
-    const raw = await this.#get<unknown>(`${WHOOP_API_BASE}/developer/v2/activity/workout`, params);
-    if (isRecord(raw)) {
-      const records = raw.records;
-      const nextToken = raw.next_token;
-      if (Array.isArray(records)) {
-        return {
-          records: records.filter(isWhoopDeveloperWorkoutRecord),
-          next_token: typeof nextToken === "string" ? nextToken : null,
-        };
-      }
-    }
-    return { records: [], next_token: null };
+    const raw = await this.#getWithRateLimitRetry<unknown>(
+      `${WHOOP_API_BASE}/developer/v2/activity/workout`,
+      params,
+    );
+    const parsed = whoopDeveloperWorkoutListResponseSchema.parse(raw);
+    return {
+      records: parsed.records,
+      next_token: parsed.next_token ?? null,
+    };
   }
 
   /**

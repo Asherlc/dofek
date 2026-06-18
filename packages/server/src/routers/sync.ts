@@ -213,14 +213,15 @@ export const syncRouter = router({
       if (providerIds.length === 0) throw new Error("No configured providers available for sync");
     }
 
+    const syncWindow = syncWindowFromTriggerInput({
+      sinceDays: input.sinceDays,
+      sinceDate: input.sinceDate,
+      untilDate: input.untilDate,
+    });
+
     const providerJobs = await Promise.all(
       providerIds.map(async (providerId) => {
         const queue = getProviderSyncQueue(providerId);
-        const syncWindow = syncWindowFromTriggerInput({
-          sinceDays: input.sinceDays,
-          sinceDate: input.sinceDate,
-          untilDate: input.untilDate,
-        });
         const job = await queue.add(
           "sync",
           {

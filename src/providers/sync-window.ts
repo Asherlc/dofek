@@ -9,16 +9,16 @@ export class SyncWindow {
 
   constructor({ since, until }: SyncWindowBounds) {
     SyncWindow.#validate(since, until);
-    this.#since = since;
-    this.#until = until;
+    this.#since = new Date(since.getTime());
+    this.#until = new Date(until.getTime());
   }
 
   get since(): Date {
-    return this.#since;
+    return new Date(this.#since.getTime());
   }
 
   get until(): Date {
-    return this.#until;
+    return new Date(this.#until.getTime());
   }
 
   get sinceIso(): string {

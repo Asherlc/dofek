@@ -427,7 +427,7 @@ describe("WHOOP sync helpers", () => {
     );
   });
 
-  it("falls back to cycle workout ids when developer workout listing fails", async () => {
+  it("skips workout absence reconciliation when developer workout listing fails", async () => {
     const db = makeDb();
     const client = makeClient();
     const developerError = new Error("developer API unavailable");
@@ -455,15 +455,6 @@ describe("WHOOP sync helpers", () => {
         cause: developerError,
       },
     ]);
-    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
-      db.db,
-      expect.objectContaining({
-        presentExternalIds: new Set(["present-workout", "42"]),
-      }),
-    );
-    const reconcileArgs =
-      providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mock.calls[0]?.[1];
-    if (!reconcileArgs) throw new Error("expected reconciliation call");
-    expect([...reconcileArgs.presentExternalIds].sort()).toEqual(["42", "present-workout"]);
+    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).not.toHaveBeenCalled();
   });
 });

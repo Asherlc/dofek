@@ -30,6 +30,7 @@ import { syncWhoopStrength, syncWhoopWorkouts } from "./sync-workouts.ts";
 export class WhoopProvider implements SyncProvider {
   readonly id = "whoop";
   readonly name = "WHOOP";
+  readonly scheduledSyncLookbackDays = 30;
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {

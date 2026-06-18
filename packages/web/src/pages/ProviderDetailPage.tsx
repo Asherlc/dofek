@@ -59,7 +59,7 @@ export function ProviderDetailPage() {
   const [sinceDays, setSinceDays] = useState("30");
   const [rangeStartDate, setRangeStartDate] = useState(() => {
     const start = new Date();
-    start.setUTCDate(start.getUTCDate() - 7);
+    start.setDate(start.getDate() - 7);
     return formatDateYmd(start);
   });
   const [rangeEndDate, setRangeEndDate] = useState(() => formatDateYmd(new Date()));
@@ -114,6 +114,11 @@ export function ProviderDetailPage() {
 
   const handleSyncDateRange = useCallback(async () => {
     if (!rangeStartDate || !rangeEndDate) return;
+    if (rangeStartDate > rangeEndDate) {
+      setSyncStatus("error");
+      setSyncMessage('"From" date must be on or before "To" date');
+      return;
+    }
     await runSyncJob({ sinceDate: rangeStartDate, untilDate: rangeEndDate });
   }, [rangeEndDate, rangeStartDate, runSyncJob]);
   // Disconnect

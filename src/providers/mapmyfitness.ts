@@ -167,11 +167,18 @@ export class MapMyFitnessClient {
   async getWorkouts(
     userId: string,
     startedAfter: string,
+    startedBefore: string,
     offset = 0,
   ): Promise<MapMyFitnessWorkoutListResponse> {
-    return this.#get<MapMyFitnessWorkoutListResponse>(
-      `/v7.1/workout/?user=${userId}&started_after=${startedAfter}&order_by=-start_datetime&limit=40&offset=${offset}`,
-    );
+    const params = new URLSearchParams({
+      user: userId,
+      started_after: startedAfter,
+      started_before: startedBefore,
+      order_by: "-start_datetime",
+      limit: "40",
+      offset: String(offset),
+    });
+    return this.#get<MapMyFitnessWorkoutListResponse>(`/v7.1/workout/?${params.toString()}`);
   }
 }
 
@@ -260,7 +267,12 @@ export class MapMyFitnessProvider implements SyncProvider {
           let hasMore = true;
 
           while (hasMore) {
-            const response = await client.getWorkouts(userId, formatDate(since), offset);
+            const response = await client.getWorkouts(
+              userId,
+              formatDate(since),
+              formatDate(syncWindowEnd),
+              offset,
+            );
             const workouts = response._embedded?.workouts ?? [];
             if (workouts.length === 0) break;
 

@@ -48,6 +48,20 @@ describe("SyncWindow", () => {
     expect(window.until).toEqual(until);
   });
 
+  it("defensively copies dates from constructor input and getters", () => {
+    const since = new Date("2026-06-10T00:00:00.000Z");
+    const until = new Date("2026-06-18T15:00:00.000Z");
+    const window = new SyncWindow({ since, until });
+
+    since.setUTCFullYear(2020);
+    until.setUTCFullYear(2020);
+    window.since.setUTCFullYear(2021);
+    window.until.setUTCFullYear(2021);
+
+    expect(window.since.toISOString()).toBe("2026-06-10T00:00:00.000Z");
+    expect(window.until.toISOString()).toBe("2026-06-18T15:00:00.000Z");
+  });
+
   it("withMinimumLookback widens the start bound", () => {
     const window = SyncWindow.fromDateRange({
       sinceDate: "2026-06-15",
@@ -79,11 +93,13 @@ describe("sync job window adapter", () => {
     expect(window.until.toISOString()).toBe("2026-06-17T23:59:59.999Z");
   });
 
-  it("syncWindowFromTriggerInput ignores incomplete explicit date ranges", () => {
-    const window = syncWindowFromTriggerInput({ sinceDate: "2026-06-10", now });
-
-    expect(window.since.toISOString()).toBe("1970-01-01T00:00:00.000Z");
-    expect(window.until).toEqual(now);
+  it("syncWindowFromTriggerInput rejects incomplete explicit date ranges", () => {
+    expect(() => syncWindowFromTriggerInput({ sinceDate: "2026-06-10", now })).toThrow(
+      "untilDate is required when sinceDate is set",
+    );
+    expect(() => syncWindowFromTriggerInput({ untilDate: "2026-06-17", now })).toThrow(
+      "sinceDate is required when untilDate is set",
+    );
   });
 
   it("syncWindowFromTriggerInput applies untilDate to relative windows", () => {

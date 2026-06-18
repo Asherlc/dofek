@@ -850,6 +850,59 @@ describe("FitbitProvider", () => {
       expect(weightRow).toMatchObject({ scalar: 82.5 });
     });
 
+    it("bounds daily summary and weight sync loops by the sync window end", async () => {
+      setupEnv();
+      vi.useFakeTimers({ now: new Date("2026-04-01T12:00:00Z") });
+
+      const dailyDates: string[] = [];
+      const weightDates: string[] = [];
+      const mockFetch: typeof globalThis.fetch = async (
+        input: RequestInfo | URL,
+      ): Promise<Response> => {
+        const url = input.toString();
+        if (url.includes("/activities/list.json")) {
+          return Response.json({
+            activities: [],
+            pagination: { next: "", previous: "", limit: 20, offset: 0, sort: "asc" },
+          });
+        }
+        if (url.includes("/sleep/list.json")) {
+          return Response.json({
+            sleep: [],
+            pagination: { next: "", previous: "", limit: 20, offset: 0, sort: "asc" },
+          });
+        }
+        if (url.includes("/activities/date/")) {
+          const match = url.match(/\/activities\/date\/([\d-]+)\.json/);
+          if (match?.[1]) dailyDates.push(match[1]);
+          return Response.json(sampleDailySummary);
+        }
+        if (url.includes("/body/log/weight/date/")) {
+          const match = url.match(/\/body\/log\/weight\/date\/([\d-]+)\//);
+          if (match?.[1]) weightDates.push(match[1]);
+          return Response.json({ weight: [] });
+        }
+        return new Response("Not found", { status: 404 });
+      };
+
+      const result = await new FitbitProvider(mockFetch).sync(
+        new SyncRun({
+          db: createMockDb(),
+          window: SyncWindow.fromDateRange({
+            sinceDate: "2026-03-01",
+            untilDate: "2026-03-02",
+          }),
+        }),
+      );
+      vi.useRealTimers();
+
+      expect(result.errors).toHaveLength(0);
+      expect(dailyDates).toEqual(["2026-03-01", "2026-03-02"]);
+      expect(weightDates).toEqual(["2026-03-01"]);
+      expect(dailyDates).not.toContain("2026-04-01");
+      expect(weightDates).not.toContain("2026-04-01");
+    });
+
     it("returns a reasonable duration when token resolution fails", async () => {
       setupEnv();
       const { loadTokens } = await import("../../db/tokens.ts");

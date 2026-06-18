@@ -210,6 +210,9 @@ export class CyclingAnalyticsProvider implements SyncProvider {
 
             for (const raw of rides) {
               const parsed = parseCyclingAnalyticsRide(raw);
+              if (parsed.startedAt.getTime() > syncWindowEnd.getTime()) {
+                continue;
+              }
               presentActivityExternalIds.add(parsed.externalId);
               try {
                 await db

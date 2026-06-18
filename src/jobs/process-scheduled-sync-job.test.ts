@@ -33,6 +33,7 @@ vi.mock("../logger.ts", () => ({
 vi.mock("../providers/index.ts", () => ({
   getProvider: (providerId: string) => {
     if (providerId === "strong-csv") return { id: providerId, importOnly: true as const };
+    if (providerId === "whoop") return { id: providerId, scheduledSyncLookbackDays: 30 };
     return { id: providerId };
   },
   isSyncEligibleProvider: (provider: { importOnly?: boolean }) => !provider.importOnly,

@@ -231,6 +231,9 @@ export class DecathlonProvider implements SyncProvider {
 
             for (const raw of activities) {
               const parsed = parseDecathlonActivity(raw);
+              if (parsed.startedAt.getTime() > syncWindowEnd.getTime()) {
+                continue;
+              }
               presentActivityExternalIds.add(parsed.externalId);
               try {
                 await db

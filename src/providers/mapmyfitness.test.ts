@@ -134,9 +134,9 @@ describe("MapMyFitnessClient", () => {
     const mockFetch = vi.fn().mockResolvedValue(new Response("Unauthorized", { status: 401 }));
 
     const client = new MapMyFitnessClient("token", "client-id", mockFetch);
-    await expect(client.getWorkouts("user-1", "2026-01-01T00:00:00Z")).rejects.toThrow(
-      "MapMyFitness API error (401)",
-    );
+    await expect(
+      client.getWorkouts("user-1", "2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z"),
+    ).rejects.toThrow("MapMyFitness API error (401)");
   });
 
   it("throws a ProviderRateLimitError with providerId on 429", async () => {
@@ -145,7 +145,9 @@ describe("MapMyFitnessClient", () => {
     const mockFetch = vi.fn().mockResolvedValue(new Response("slow down", { status: 429 }));
 
     const client = new MapMyFitnessClient("token", "client-id", mockFetch);
-    const error = await client.getWorkouts("user-1", "2026-01-01T00:00:00Z").catch((e) => e);
+    const error = await client
+      .getWorkouts("user-1", "2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z")
+      .catch((caught: unknown) => caught);
     if (!(error instanceof ProviderRateLimitError)) {
       throw new Error(`expected ProviderRateLimitError, got ${String(error)}`);
     }
@@ -163,11 +165,29 @@ describe("MapMyFitnessClient", () => {
     );
 
     const client = new MapMyFitnessClient("my-token", "my-client-id", mockFetch);
-    await client.getWorkouts("user-1", "2026-01-01");
+    await client.getWorkouts("user-1", "2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z");
 
     const headers: Record<string, string> = mockFetch.mock.calls[0]?.[1]?.headers;
     expect(headers.Authorization).toBe("Bearer my-token");
     expect(headers["Api-Key"]).toBe("my-client-id");
+  });
+
+  it("includes the upper sync bound in the workout query", async () => {
+    const mockFetch = vi.fn().mockResolvedValue(
+      Response.json({
+        _embedded: { workouts: [] },
+        _links: {},
+        total_count: 0,
+      }),
+    );
+
+    const client = new MapMyFitnessClient("my-token", "my-client-id", mockFetch);
+    await client.getWorkouts("user-1", "2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z", 40);
+
+    const requestUrl = String(mockFetch.mock.calls[0]?.[0]);
+    expect(requestUrl).toContain("started_after=2026-01-01T00%3A00%3A00Z");
+    expect(requestUrl).toContain("started_before=2026-01-02T00%3A00%3A00Z");
+    expect(requestUrl).toContain("offset=40");
   });
 });
 

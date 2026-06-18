@@ -16,7 +16,8 @@
     "lint": "biome check ."
   },
   "dependencies": {
-    "@dofek/provider-http": "workspace:*"
+    "@dofek/provider-http": "workspace:*",
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "typescript": "5.9.3",

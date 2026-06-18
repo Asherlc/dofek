@@ -671,6 +671,51 @@ describe("syncRouter", () => {
       );
     });
 
+    it("uses one sync window for every job in a sync-all fan-out", async () => {
+      const dateNowSpy = vi
+        .spyOn(Date, "now")
+        .mockReturnValueOnce(Date.parse("2026-04-28T12:00:00.000Z"))
+        .mockReturnValueOnce(Date.parse("2026-04-29T12:00:00.000Z"))
+        .mockReturnValue(Date.parse("2026-04-30T12:00:00.000Z"));
+      mockGetAllProviders.mockReturnValue([
+        { id: "strava", name: "Strava", validate: () => null },
+        { id: "wahoo", name: "Wahoo", validate: () => null },
+      ]);
+      mockAdd
+        .mockResolvedValueOnce({ id: "job-strava" })
+        .mockResolvedValueOnce({ id: "job-wahoo" });
+
+      const caller = createCaller({
+        db: {
+          execute: vi.fn().mockResolvedValueOnce([]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.triggerSync({ sinceDays: 7 });
+      dateNowSpy.mockRestore();
+
+      expect(mockAdd).toHaveBeenNthCalledWith(
+        1,
+        "sync",
+        expect.objectContaining({
+          sinceIso: "2026-04-21T00:00:00.000Z",
+          untilIso: "2026-04-28T23:59:59.999Z",
+        }),
+        expect.anything(),
+      );
+      expect(mockAdd).toHaveBeenNthCalledWith(
+        2,
+        "sync",
+        expect.objectContaining({
+          sinceIso: "2026-04-21T00:00:00.000Z",
+          untilIso: "2026-04-28T23:59:59.999Z",
+        }),
+        expect.anything(),
+      );
+    });
+
     it("finds the correct provider among multiple", async () => {
       mockGetAllProviders.mockReturnValue([
         { id: "peloton", name: "Peloton", validate: () => "Not configured" },

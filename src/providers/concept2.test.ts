@@ -454,6 +454,79 @@ describe("Concept2Provider", () => {
       expect(result.errors[0]?.message).toContain("Failed to parse webhook result payload");
     });
   });
+
+  describe("sync()", () => {
+    it("skips results after the sync window end", async () => {
+      process.env.CONCEPT2_CLIENT_ID = "test-id";
+      process.env.CONCEPT2_CLIENT_SECRET = "test-secret";
+
+      const mockFetch: typeof globalThis.fetch = async (): Promise<Response> =>
+        Response.json({
+          data: [
+            {
+              id: 12345,
+              type: "rower",
+              date: "2026-03-01T08:00:00Z",
+              distance: 5000,
+              time: 12000,
+              time_formatted: "20:00.0",
+              stroke_rate: 24,
+              stroke_count: 480,
+              weight_class: "H",
+              workout_type: "FixedDistSplits",
+              privacy: "default",
+            },
+            {
+              id: 67890,
+              type: "rower",
+              date: "2026-03-03T08:00:00Z",
+              distance: 5000,
+              time: 12000,
+              time_formatted: "20:00.0",
+              stroke_rate: 24,
+              stroke_count: 480,
+              weight_class: "H",
+              workout_type: "FixedDistSplits",
+              privacy: "default",
+            },
+          ],
+          meta: {
+            pagination: {
+              total: 2,
+              count: 2,
+              per_page: 50,
+              current_page: 1,
+              total_pages: 1,
+            },
+          },
+        });
+      const provider = new Concept2Provider(mockFetch);
+      const db = createMockDb();
+
+      const result = await provider.sync(
+        new SyncRun({
+          db,
+          window: SyncWindow.fromDateRange({
+            sinceDate: "2026-03-01",
+            untilDate: "2026-03-01",
+          }),
+        }),
+      );
+
+      expect(result.errors).toHaveLength(0);
+      expect(result.recordsSynced).toBe(1);
+      expect(findValuesCall(db, (value) => value.externalId === "12345")).toBeDefined();
+      expect(db.values.mock.calls).not.toContainEqual([
+        expect.objectContaining({ externalId: "67890" }),
+      ]);
+      expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+        db,
+        expect.objectContaining({
+          presentExternalIds: new Set(["12345"]),
+        }),
+      );
+    });
+  });
 });
 
 // ============================================================

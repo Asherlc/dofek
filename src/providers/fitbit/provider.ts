@@ -325,10 +325,10 @@ export class FitbitProvider implements WebhookProvider {
         "daily_metrics",
         async () => {
           let count = 0;
-          const today = new Date();
+          const windowEndDate = new Date(syncWindowEnd);
           const currentDate = new Date(since);
 
-          while (currentDate <= today) {
+          while (currentDate <= windowEndDate) {
             const dateStr = formatDate(currentDate);
             try {
               const response = await client.getDailySummary(dateStr);
@@ -365,10 +365,10 @@ export class FitbitProvider implements WebhookProvider {
         "metric_stream",
         async () => {
           let count = 0;
-          const today = new Date();
+          const windowEndDate = new Date(syncWindowEnd);
           const currentDate = new Date(since);
 
-          while (currentDate <= today) {
+          while (currentDate <= windowEndDate) {
             const dateStr = formatDate(currentDate);
             try {
               const response = await client.getWeightLogs(dateStr);

@@ -413,6 +413,9 @@ export class Concept2Provider implements WebhookProvider {
 
             for (const raw of data.data) {
               const parsed = parseConcept2Result(raw);
+              if (parsed.startedAt.getTime() > syncWindowEnd.getTime()) {
+                continue;
+              }
               presentActivityExternalIds.add(parsed.externalId);
               try {
                 await db

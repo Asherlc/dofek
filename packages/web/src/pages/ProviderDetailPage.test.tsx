@@ -82,7 +82,10 @@ vi.mock("../lib/poll-sync-job.ts", () => ({
   pollSyncJob: vi.fn(),
 }));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
 
 function queryButton(container: HTMLElement, ariaLabel: string): Element {
   const el = container.querySelector(`button[aria-label="${ariaLabel}"]`);
@@ -285,6 +288,30 @@ describe("ProviderDetailPage import-only providers", () => {
     expect(screen.getByText("Sync Controls")).toBeTruthy();
     expect(screen.getByText("Connected")).toBeTruthy();
     expect(screen.queryByText("Import only")).toBeNull();
+  });
+
+  it("does not trigger sync for an inverted date range", async () => {
+    mockProviders.data = [
+      {
+        id: "strong-csv",
+        name: "Wahoo",
+        authorized: true,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+    mockSyncMutation.mutateAsync.mockResolvedValue({ jobId: "job-1" });
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-06-18" } });
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-06-17" } });
+    fireEvent.click(screen.getByText("Sync Dates"));
+
+    expect(screen.getByText('"From" date must be on or before "To" date')).toBeTruthy();
+    expect(mockSyncMutation.mutateAsync).not.toHaveBeenCalled();
   });
 
   it("does not render disconnect for providers that are not connected", async () => {

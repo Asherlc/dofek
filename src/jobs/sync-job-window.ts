@@ -17,6 +17,12 @@ export function syncWindowFromTriggerInput(input: SyncWindowTriggerInput): SyncW
   if (input.sinceDate && input.untilDate) {
     return SyncWindow.fromDateRange({ sinceDate: input.sinceDate, untilDate: input.untilDate });
   }
+  if (input.sinceDate) {
+    throw new Error("untilDate is required when sinceDate is set");
+  }
+  if (input.untilDate && input.sinceDays == null) {
+    throw new Error("sinceDate is required when untilDate is set");
+  }
   if (input.sinceDays != null) {
     return SyncWindow.lastDays(input.sinceDays, {
       untilDate: input.untilDate,

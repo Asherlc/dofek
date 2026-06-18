@@ -36,20 +36,10 @@ function collectWhoopWorkouts(context: WhoopSyncContext): {
   };
 }
 
-function collectCycleWorkoutExternalIds(workouts: WhoopWorkoutRecord[]): Set<string> {
-  return new Set(
-    workouts.flatMap((workoutRecord) => {
-      const externalId = resolveWhoopWorkoutExternalId(workoutRecord);
-      return externalId ? [externalId] : [];
-    }),
-  );
-}
-
 async function resolveWhoopPresentExternalIds(
   context: WhoopSyncContext,
-  workouts: WhoopWorkoutRecord[],
   absenceWindow: SyncWindow,
-): Promise<Set<string>> {
+): Promise<Set<string> | null> {
   try {
     return await context.client.listDeveloperWorkoutIdsInWindow(
       absenceWindow.since,
@@ -60,7 +50,7 @@ async function resolveWhoopPresentExternalIds(
       message: `developer workouts: ${err instanceof Error ? err.message : String(err)}`,
       cause: err,
     });
-    return collectCycleWorkoutExternalIds(workouts);
+    return null;
   }
 }
 
@@ -71,7 +61,7 @@ export async function syncWhoopWorkouts(context: WhoopSyncContext): Promise<numb
     since: context.since,
     until: context.windowEnd,
   }).withMinimumLookback(WHOOP_ACTIVITY_ABSENCE_RECONCILE_DAYS);
-  const presentExternalIds = await resolveWhoopPresentExternalIds(context, workouts, absenceWindow);
+  const presentExternalIds = await resolveWhoopPresentExternalIds(context, absenceWindow);
 
   try {
     return await withSyncLog(
@@ -129,13 +119,15 @@ export async function syncWhoopWorkouts(context: WhoopSyncContext): Promise<numb
             });
           }
         }
-        await reconcileProviderActivityAbsence(db, {
-          providerId,
-          userId: options?.userId,
-          windowStart: absenceWindow.since,
-          windowEnd: absenceWindow.until,
-          presentExternalIds,
-        });
+        if (presentExternalIds) {
+          await reconcileProviderActivityAbsence(db, {
+            providerId,
+            userId: options?.userId,
+            windowStart: absenceWindow.since,
+            windowEnd: absenceWindow.until,
+            presentExternalIds,
+          });
+        }
         return { recordCount: count, result: count };
       },
       options?.userId,
