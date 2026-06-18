@@ -78,6 +78,12 @@ vi.mock("./routes/export.ts", () => ({
     return Router();
   }),
 }));
+vi.mock("./routes/activity-export.ts", () => ({
+  createActivityExportRouter: vi.fn(() => {
+    const { Router } = require("express");
+    return Router();
+  }),
+}));
 vi.mock("./routes/stripe-webhook.ts", () => ({
   createStripeWebhookRouter: vi.fn(() => {
     const { Router } = require("express");
@@ -122,6 +128,7 @@ import { getAccessWindowForUser } from "./billing/access-window-repository.ts";
 import { createApp, main, runStartupTasks } from "./index.ts";
 import { httpRequestDuration, registry } from "./lib/metrics.ts";
 import { logger } from "./logger.ts";
+import { createActivityExportRouter } from "./routes/activity-export.ts";
 import { createAuthRouter } from "./routes/auth/index.ts";
 import { createStripeWebhookRouter } from "./routes/stripe-webhook.ts";
 import { createUploadRouter } from "./routes/upload.ts";
@@ -698,6 +705,15 @@ describe("createApp HTTP routes", () => {
         expect.objectContaining({
           importQueue: expect.anything(),
           db: expect.anything(),
+        }),
+      );
+    });
+
+    it("passes db and sensorStore to createActivityExportRouter", () => {
+      expect(vi.mocked(createActivityExportRouter)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          db: expect.anything(),
+          sensorStore: expect.anything(),
         }),
       );
     });
