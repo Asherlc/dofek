@@ -8,7 +8,7 @@ import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
-import { RefreshTokenRevokedError } from "./auth-errors.ts";
+import { ProviderAuthenticationFailedError, RefreshTokenRevokedError } from "./auth-errors.ts";
 import type {
   ProviderAuthSetup,
   SyncError,
@@ -142,6 +142,24 @@ class WithingsTokenError extends Error {
   }
 }
 
+class WithingsApiError extends Error {
+  #status: number;
+
+  constructor(status: number) {
+    super(`Withings API error (status ${status})`);
+    this.name = "WithingsApiError";
+    this.#status = status;
+  }
+
+  get status(): number {
+    return this.#status;
+  }
+}
+
+function isWithingsAccessTokenRejected(error: unknown): boolean {
+  return error instanceof WithingsApiError && error.status === 401;
+}
+
 export function withingsOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.WITHINGS_CLIENT_ID;
   const clientSecret = process.env.WITHINGS_CLIENT_SECRET;
@@ -267,7 +285,7 @@ export class WithingsClient {
 
     const json: { status: number; body: T } = await response.json();
     if (json.status !== 0) {
-      throw new Error(`Withings API error (status ${json.status})`);
+      throw new WithingsApiError(json.status);
     }
 
     return json.body;
@@ -390,17 +408,7 @@ export class WithingsProvider implements WebhookProvider {
     };
   }
 
-  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
-    const tokens = await loadTokens(db, this.id);
-    if (!tokens) {
-      throw new Error("No OAuth tokens found for Withings. Run: health-data auth withings");
-    }
-
-    if (tokens.expiresAt > new Date()) {
-      return tokens;
-    }
-
-    logger.info("[withings] Access token expired, refreshing...");
+  async #refreshTokens(db: SyncDatabase, tokens: TokenSet): Promise<TokenSet> {
     const config = withingsOAuthConfig();
     if (!config)
       throw new Error(
@@ -424,6 +432,20 @@ export class WithingsProvider implements WebhookProvider {
     }
   }
 
+  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+    const tokens = await loadTokens(db, this.id);
+    if (!tokens) {
+      throw new ProviderAuthenticationFailedError(this.name);
+    }
+
+    if (tokens.expiresAt > new Date()) {
+      return tokens;
+    }
+
+    logger.info("[withings] Access token expired, refreshing...");
+    return this.#refreshTokens(db, tokens);
+  }
+
   async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
@@ -439,7 +461,7 @@ export class WithingsProvider implements WebhookProvider {
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new WithingsClient(tokens.accessToken, this.#fetchFn);
+    let client = new WithingsClient(tokens.accessToken, this.#fetchFn);
     const sinceUnix = Math.floor(since.getTime() / 1000);
     const nowUnix = Math.floor(Date.now() / 1000);
 
@@ -452,9 +474,22 @@ export class WithingsProvider implements WebhookProvider {
           let count = 0;
           let offset = 0;
           let more = 1;
+          let refreshedAfterAccessTokenRejection = false;
 
           while (more) {
-            const response = await client.getMeas(sinceUnix, nowUnix, offset);
+            let response: Awaited<ReturnType<WithingsClient["getMeas"]>>;
+            try {
+              response = await client.getMeas(sinceUnix, nowUnix, offset);
+            } catch (err) {
+              if (!refreshedAfterAccessTokenRejection && isWithingsAccessTokenRejected(err)) {
+                logger.info("[withings] Access token rejected by API, refreshing and retrying...");
+                tokens = await this.#refreshTokens(db, tokens);
+                client = new WithingsClient(tokens.accessToken, this.#fetchFn);
+                refreshedAfterAccessTokenRejection = true;
+                continue;
+              }
+              throw err;
+            }
 
             for (const group of response.measuregrps) {
               const parsed = parseMeasureGroup(group);
