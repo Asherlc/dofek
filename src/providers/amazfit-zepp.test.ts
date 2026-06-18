@@ -655,12 +655,35 @@ describe("AmazfitZeppProvider auth", () => {
   });
 
   it("wraps invalid credentials as an expected provider auth failure", async () => {
+    const originalError = new Error("Amazfit/Zepp login failed: invalid email or password");
     const setup = new AmazfitZeppProvider(async () => {
-      throw new Error("Amazfit/Zepp login failed: invalid email or password");
+      throw originalError;
     }).authSetup();
 
-    await expect(setup.automatedLogin?.("user@example.com", "wrong")).rejects.toThrow(
-      ProviderInvalidCredentialsError,
+    const error = await setup
+      .automatedLogin?.("user@example.com", "wrong")
+      .catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(ProviderInvalidCredentialsError);
+    expect(error).toHaveProperty("cause", originalError);
+  });
+
+  it("does not wrap unrelated automated login errors as invalid credentials", async () => {
+    const originalError = new Error("Zepp returned malformed token payload");
+    const setup = new AmazfitZeppProvider(async () => {
+      throw originalError;
+    }).authSetup();
+
+    await expect(setup.automatedLogin?.("user@example.com", "wrong")).rejects.toBe(originalError);
+  });
+
+  it("does not wrap non-error automated login failures as invalid credentials", async () => {
+    const setup = new AmazfitZeppProvider(async () => {
+      throw "plain upstream failure";
+    }).authSetup();
+
+    await expect(setup.automatedLogin?.("user@example.com", "wrong")).rejects.toBe(
+      "plain upstream failure",
     );
   });
 });
