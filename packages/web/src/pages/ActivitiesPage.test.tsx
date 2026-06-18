@@ -390,6 +390,6 @@ describe("ActivitiesPage", () => {
     fireEvent.change(screen.getByLabelText("Activity type"), { target: { value: "running" } });
 
     expect(screen.queryByText("1 selected")).toBeNull();
-    expect(screen.queryByText("Select")).toBeDefined();
+    expect(screen.queryByText("Select")).not.toBeNull();
   });
 });

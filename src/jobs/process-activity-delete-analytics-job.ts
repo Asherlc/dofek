@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/node";
 import {
   runActivityReadModelBuild,
   waitForPeerDbActivityDeletes,
@@ -27,19 +26,5 @@ export async function processActivityDeleteAnalyticsJob(
     );
   } finally {
     await client.close?.();
-  }
-}
-
-export async function processActivityDeleteAnalyticsJobSafe(
-  job: ActivityDeleteAnalyticsJob,
-): Promise<void> {
-  try {
-    await processActivityDeleteAnalyticsJob(job);
-  } catch (error) {
-    Sentry.captureException(error, {
-      tags: { job: "activity-delete-analytics" },
-      extra: { userId: job.data.userId, activityCount: job.data.activityIds.length },
-    });
-    throw error;
   }
 }

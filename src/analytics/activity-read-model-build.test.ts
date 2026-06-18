@@ -145,7 +145,7 @@ describe("activity-read-model-build", () => {
       ],
       {
         env: process.env,
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: ["ignore", "ignore", "pipe"],
       },
     );
   });

@@ -48,7 +48,7 @@ vi.mock("./process-post-sync-job.ts", () => ({
 }));
 
 vi.mock("./process-activity-delete-analytics-job.ts", () => ({
-  processActivityDeleteAnalyticsJobSafe: vi.fn(),
+  processActivityDeleteAnalyticsJob: vi.fn(),
 }));
 
 vi.mock("./scheduled-sync.ts", () => ({
@@ -401,11 +401,11 @@ describe("worker module", () => {
     expect(refreshBodyMeasurementReadModel).toHaveBeenCalledOnce();
   });
 
-  it("activity-delete-analytics processor delegates to processActivityDeleteAnalyticsJobSafe", async () => {
-    const { processActivityDeleteAnalyticsJobSafe } = await import(
+  it("activity-delete-analytics processor delegates to processActivityDeleteAnalyticsJob", async () => {
+    const { processActivityDeleteAnalyticsJob } = await import(
       "./process-activity-delete-analytics-job.ts"
     );
-    vi.mocked(processActivityDeleteAnalyticsJobSafe).mockClear();
+    vi.mocked(processActivityDeleteAnalyticsJob).mockClear();
 
     await invokeProcessor("activity-delete-analytics-queue", {
       type: "activity-delete-analytics-refresh",
@@ -413,6 +413,6 @@ describe("worker module", () => {
       activityIds: ["00000000-0000-0000-0000-000000000001"],
     });
 
-    expect(processActivityDeleteAnalyticsJobSafe).toHaveBeenCalled();
+    expect(processActivityDeleteAnalyticsJob).toHaveBeenCalled();
   });
 });

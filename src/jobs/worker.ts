@@ -5,7 +5,7 @@ import { refreshBodyMeasurementReadModel } from "../db/clickhouse-read-model-ref
 import { createDatabaseFromEnv } from "../db/index.ts";
 import { createRefitSensorStore } from "../db/refit-sensor-store.ts";
 import { jobContext, logger } from "../logger.ts";
-import { processActivityDeleteAnalyticsJobSafe } from "./process-activity-delete-analytics-job.ts";
+import { processActivityDeleteAnalyticsJob } from "./process-activity-delete-analytics-job.ts";
 import { processExportJob } from "./process-export-job.ts";
 import { processImportJob } from "./process-import-job.ts";
 import { processPostSyncJob } from "./process-post-sync-job.ts";
@@ -121,7 +121,7 @@ const postSyncWorker = new Worker<PostSyncJobData>(
 );
 const activityDeleteAnalyticsWorker = new Worker<ActivityDeleteAnalyticsJobData>(
   ACTIVITY_DELETE_ANALYTICS_QUEUE,
-  (job) => jobContext.run(job, () => processActivityDeleteAnalyticsJobSafe(job)),
+  (job) => jobContext.run(job, () => processActivityDeleteAnalyticsJob(job)),
   { connection, concurrency: 1 },
 );
 // Training export jobs are processed by the standalone Python BullMQ worker

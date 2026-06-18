@@ -91,7 +91,7 @@ export async function runActivityReadModelBuild(
       ],
       {
         env: process.env,
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: ["ignore", "ignore", "pipe"],
       },
     );
 
