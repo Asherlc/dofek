@@ -221,9 +221,11 @@ export const activityRouter = router({
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
-      let memberActivityIds: string[] = [];
       try {
-        ({ memberActivityIds } = await repo.bulkDelete([input.id]));
+        const { memberActivityIds } = await repo.bulkDelete([input.id]);
+        await invalidateActivityListCaches(ctx.userId);
+        await scheduleActivityAnalyticsRefresh(ctx.userId, memberActivityIds);
+        return { success: true };
       } catch (error) {
         if (isRelationMissingError(error)) {
           throw new TRPCError({
@@ -234,9 +236,6 @@ export const activityRouter = router({
         }
         throw error;
       }
-      await invalidateActivityListCaches(ctx.userId);
-      await scheduleActivityAnalyticsRefresh(ctx.userId, memberActivityIds);
-      return { success: true };
     }),
 
   bulkDelete: protectedProcedure
