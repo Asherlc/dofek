@@ -144,6 +144,14 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("_peerdb_is_deleted Int8 DEFAULT 0");
     expect(sql).toContain("_peerdb_version Int64 DEFAULT 0");
     expect(sql).toContain("ENGINE = ReplacingMergeTree(_peerdb_version)");
+    expect(sql).toContain(`CREATE TABLE IF NOT EXISTS postgres_fitness.activity (
+  id UUID`);
+    const activityDefinition = sql.slice(
+      sql.indexOf("CREATE TABLE IF NOT EXISTS postgres_fitness.activity"),
+      sql.indexOf("CREATE TABLE IF NOT EXISTS postgres_fitness.sleep_session"),
+    );
+    expect(activityDefinition).toContain("ORDER BY id");
+    expect(activityDefinition).not.toContain("ORDER BY (user_id, started_at, id)");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS postgres_fitness.user_profile_current");
     expect(sql).toContain("FROM postgres_fitness.user_profile FINAL");
     expect(sql).toContain("WHERE _peerdb_is_deleted = 0");

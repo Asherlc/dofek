@@ -25,6 +25,7 @@ import * as recreateProviderStatsDbtTableMigration from "./clickhouse-migrations
 import * as createDashboardTablesMigration from "./clickhouse-migrations/0026_create_dashboard_tables.ts";
 import * as createDomainDashboardTablesMigration from "./clickhouse-migrations/0028_create_domain_dashboard_tables.ts";
 import * as activityProviderAbsenceMigration from "./clickhouse-migrations/0029_activity_provider_absence.ts";
+import * as activityMirrorOrderKeyMigration from "./clickhouse-migrations/0030_activity_mirror_order_key.ts";
 import { clickHouseMigrationFileNames } from "./clickhouse-migrations/registry.ts";
 import { runClickHouseMigrationStatement } from "./clickhouse-migrations/statement-runner.ts";
 import {
@@ -65,6 +66,7 @@ describe("buildClickHouseMigrationStatements", () => {
       "0027_create_daily_sleep_table.ts",
       "0028_create_domain_dashboard_tables.ts",
       "0029_activity_provider_absence.ts",
+      "0030_activity_mirror_order_key.ts",
     ]);
   });
 
@@ -73,6 +75,7 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(repairLegacyMetricStreamEngineMigration.createMigration().statements).toEqual([]);
     expect(repairMetricStreamBackfillMigration.createMigration().statements).toEqual([]);
     expect(restingHeartRateSleepWindowMigration.createMigration().statements).toEqual([]);
+    expect(activityMirrorOrderKeyMigration.createMigration().statements).toEqual([]);
   });
 
   it("keeps the derived resting heart rate cleanup statements in its migration file", () => {
@@ -364,6 +367,13 @@ SETTINGS allow_nullable_key = 1`);
             ]),
         };
       }
+      if (queryText.includes("create_table_query")) {
+        return {
+          json: vi
+            .fn()
+            .mockResolvedValue([{ create_table_query: "CREATE TABLE activity ORDER BY id" }]),
+        };
+      }
       if (queryText.includes("system.tables")) {
         return { json: vi.fn().mockResolvedValue([{ table_count: 1 }]) };
       }
@@ -407,6 +417,13 @@ describe("runClickHouseMigrations", () => {
   it("runs pending ClickHouse migrations once and records them", async () => {
     const command = vi.fn().mockResolvedValue(undefined);
     const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => {
+      if (queryText.includes("create_table_query")) {
+        return {
+          json: vi
+            .fn()
+            .mockResolvedValue([{ create_table_query: "CREATE TABLE activity ORDER BY id" }]),
+        };
+      }
       if (queryText.includes("system.tables") && queryText.includes("engine")) {
         return { json: vi.fn().mockResolvedValue([{ engine: "ReplacingMergeTree" }]) };
       }
@@ -427,7 +444,7 @@ describe("runClickHouseMigrations", () => {
 
     const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
-    expect(count).toBe(29);
+    expect(count).toBe(30);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(
