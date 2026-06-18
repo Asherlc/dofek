@@ -18,6 +18,7 @@ WITH active_activity AS (
     WHERE
         _peerdb_is_deleted = 0
         AND provider_absent_at IS NULL
+        AND deleted_at IS NULL
 ),
 
 active_provider_priority AS (

@@ -260,6 +260,7 @@ export class EfficiencyRepository extends BaseRepository {
             FROM fitness.activity
             WHERE user_id = ${this.userId}::uuid
               AND provider_absent_at IS NULL
+              AND deleted_at IS NULL
               AND activity_type IN (${sql.join(
                 ENDURANCE_TYPES.map((activityType) => sql`${activityType}`),
                 sql`, `,

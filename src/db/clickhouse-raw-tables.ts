@@ -29,6 +29,7 @@ export function buildPostgresFitnessActivityRawTableStatement(
   strava_id Nullable(String),
   raw Nullable(String),
   provider_absent_at Nullable(DateTime64(6, 'UTC')),
+  deleted_at Nullable(DateTime64(6, 'UTC')),
   created_at DateTime64(6, 'UTC'),
 ${peerDbMetadataColumnDefinitions}
 )

@@ -1,10 +1,7 @@
--- Canonical definition of the fitness.v_activity view.
--- This file is the source definition for fresh databases, local test schemas,
--- and future forward migrations that need to update the deployed view.
---
--- To change v_activity: edit THIS file and add a forward migration when the
--- deployed view definition must change.
--- Git merge conflicts here force developers to reconcile concurrent changes.
+ALTER TABLE fitness.activity
+ADD COLUMN IF NOT EXISTS deleted_at timestamp with time zone;
+
+--> statement-breakpoint
 
 CREATE OR REPLACE VIEW fitness.v_activity AS
 WITH RECURSIVE ranked AS (
@@ -135,3 +132,94 @@ SELECT
   m.member_activity_ids
 FROM merged m
 ORDER BY m.started_at DESC;
+
+--> statement-breakpoint
+
+CREATE OR REPLACE VIEW fitness.provider_stats AS
+WITH providers AS (
+  SELECT DISTINCT user_id, provider_id
+  FROM fitness.oauth_token
+  UNION
+  SELECT DISTINCT user_id, provider_id FROM fitness.activity WHERE provider_absent_at IS NULL AND deleted_at IS NULL
+  UNION
+  SELECT DISTINCT user_id, provider_id FROM fitness.daily_metrics
+  UNION
+  SELECT DISTINCT user_id, provider_id FROM fitness.sleep_session
+  UNION
+  SELECT DISTINCT user_id, provider_id FROM fitness.food_entry
+  UNION
+  SELECT DISTINCT user_id, provider_id FROM fitness.health_event
+  UNION
+  SELECT DISTINCT user_id, provider_id FROM fitness.v_nutrition_daily
+  UNION
+  SELECT DISTINCT user_id, provider_id FROM fitness.lab_panel
+  UNION
+  SELECT DISTINCT user_id, provider_id FROM fitness.lab_result
+  UNION
+  SELECT DISTINCT user_id, provider_id FROM fitness.journal_entry
+)
+SELECT
+  p.user_id,
+  p.provider_id,
+  COALESCE(a.cnt, 0)::bigint AS activities,
+  COALESCE(dm.cnt, 0)::bigint AS daily_metrics,
+  COALESCE(ss.cnt, 0)::bigint AS sleep_sessions,
+  0::bigint AS body_measurements,
+  COALESCE(fe.cnt, 0)::bigint AS food_entries,
+  COALESCE(he.cnt, 0)::bigint AS health_events,
+  0::bigint AS metric_stream,
+  COALESCE(nd.cnt, 0)::bigint AS nutrition_daily,
+  COALESCE(lp.cnt, 0)::bigint AS lab_panels,
+  COALESCE(lr.cnt, 0)::bigint AS lab_results,
+  COALESCE(je.cnt, 0)::bigint AS journal_entries
+FROM providers p
+LEFT JOIN (
+  SELECT user_id, provider_id, count(*) AS cnt
+  FROM fitness.activity
+  WHERE provider_absent_at IS NULL
+    AND deleted_at IS NULL
+  GROUP BY user_id, provider_id
+) a ON a.user_id = p.user_id AND a.provider_id = p.provider_id
+LEFT JOIN (
+  SELECT user_id, provider_id, count(*) AS cnt
+  FROM fitness.daily_metrics
+  GROUP BY user_id, provider_id
+) dm ON dm.user_id = p.user_id AND dm.provider_id = p.provider_id
+LEFT JOIN (
+  SELECT user_id, provider_id, count(*) AS cnt
+  FROM fitness.sleep_session
+  GROUP BY user_id, provider_id
+) ss ON ss.user_id = p.user_id AND ss.provider_id = p.provider_id
+LEFT JOIN (
+  SELECT user_id, provider_id, count(*) AS cnt
+  FROM fitness.food_entry
+  WHERE confirmed = true
+  GROUP BY user_id, provider_id
+) fe ON fe.user_id = p.user_id AND fe.provider_id = p.provider_id
+LEFT JOIN (
+  SELECT user_id, provider_id, count(*) AS cnt
+  FROM fitness.health_event
+  GROUP BY user_id, provider_id
+) he ON he.user_id = p.user_id AND he.provider_id = p.provider_id
+LEFT JOIN (
+  SELECT user_id, provider_id, count(*) AS cnt
+  FROM fitness.v_nutrition_daily
+  GROUP BY user_id, provider_id
+) nd ON nd.user_id = p.user_id AND nd.provider_id = p.provider_id
+LEFT JOIN (
+  SELECT user_id, provider_id, count(*) AS cnt
+  FROM fitness.lab_panel
+  GROUP BY user_id, provider_id
+) lp ON lp.user_id = p.user_id AND lp.provider_id = p.provider_id
+LEFT JOIN (
+  SELECT user_id, provider_id, count(*) AS cnt
+  FROM fitness.lab_result
+  GROUP BY user_id, provider_id
+) lr ON lr.user_id = p.user_id AND lr.provider_id = p.provider_id
+LEFT JOIN (
+  SELECT user_id, provider_id, count(*) AS cnt
+  FROM fitness.journal_entry
+  GROUP BY user_id, provider_id
+) je ON je.user_id = p.user_id AND je.provider_id = p.provider_id;
+
+--> statement-breakpoint

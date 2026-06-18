@@ -271,6 +271,7 @@ export class StrengthRepository {
           JOIN fitness.strength_set ss ON ss.activity_id = a.id
           WHERE a.user_id = ${this.#userId}
             AND a.provider_absent_at IS NULL
+            AND a.deleted_at IS NULL
             AND a.activity_type IN ('strength', 'strength_training')
             AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
           GROUP BY 1
@@ -309,6 +310,7 @@ export class StrengthRepository {
             JOIN fitness.exercise e ON e.id = ss.exercise_id
           WHERE a.user_id = ${this.#userId}
             AND a.provider_absent_at IS NULL
+            AND a.deleted_at IS NULL
             AND a.activity_type IN ('strength', 'strength_training')
             AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
             AND ss.set_type = 'working'
@@ -366,6 +368,7 @@ export class StrengthRepository {
           CROSS JOIN LATERAL unnest(e.muscle_groups) AS mg
           WHERE a.user_id = ${this.#userId}
             AND a.provider_absent_at IS NULL
+            AND a.deleted_at IS NULL
             AND a.activity_type IN ('strength', 'strength_training')
             AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
             AND e.muscle_groups IS NOT NULL
@@ -399,6 +402,7 @@ export class StrengthRepository {
           JOIN fitness.exercise e ON e.id = ss.exercise_id
           WHERE a.user_id = ${this.#userId}
             AND a.provider_absent_at IS NULL
+            AND a.deleted_at IS NULL
             AND a.activity_type IN ('strength', 'strength_training')
             AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
             AND ss.weight_kg > 0
@@ -510,6 +514,7 @@ export class StrengthRepository {
           LEFT JOIN fitness.strength_set ss ON ss.activity_id = a.id
           WHERE a.user_id = ${this.#userId}
             AND a.provider_absent_at IS NULL
+            AND a.deleted_at IS NULL
             AND a.activity_type IN ('strength', 'strength_training')
             AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
             AND a.ended_at IS NOT NULL
