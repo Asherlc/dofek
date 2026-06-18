@@ -24,6 +24,7 @@ export interface Activity {
     centroidLat: number;
     centroidLng: number;
     tileUrl: string;
+    routePath?: { x: number; y: number }[] | null;
     distanceMeters: number | null;
     elevationGainM: number | null;
   } | null;
@@ -87,13 +88,16 @@ export function ActivityList({
       cellClassName: "py-2 pr-4 whitespace-nowrap",
       renderCell: (activity) =>
         activity.location ? (
-          <img
-            src={activity.location.tileUrl}
-            alt="Activity route map summary"
-            className="h-12 w-16 rounded object-cover bg-surface-hover"
-            loading="lazy"
-            referrerPolicy="origin"
-          />
+          <div className="relative h-12 w-16 overflow-hidden rounded bg-surface-hover">
+            <img
+              src={activity.location.tileUrl}
+              alt="Activity route map summary"
+              className="h-full w-full object-cover"
+              loading="lazy"
+              referrerPolicy="origin"
+            />
+            <ActivityRouteOverlay routePath={activity.location.routePath} />
+          </div>
         ) : (
           "—"
         ),
@@ -196,5 +200,39 @@ export function ActivityList({
       rowClassName="border-b border-border/50 hover:bg-surface-hover cursor-pointer activity-row"
       footer={footer}
     />
+  );
+}
+
+function ActivityRouteOverlay({ routePath }: { routePath?: { x: number; y: number }[] | null }) {
+  if (routePath == null || routePath.length < 2) return null;
+
+  const points = routePath.map((point) => `${point.x},${point.y}`).join(" ");
+  return (
+    <svg
+      className="pointer-events-none absolute inset-0 h-full w-full"
+      viewBox="0 0 100 100"
+      preserveAspectRatio="none"
+    >
+      <title>Activity route path</title>
+      <polyline
+        points={points}
+        fill="none"
+        stroke="white"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="5"
+        vectorEffect="non-scaling-stroke"
+      />
+      <polyline
+        data-testid="activity-route-path"
+        points={points}
+        fill="none"
+        stroke="rgb(22 163 74)"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2.5"
+        vectorEffect="non-scaling-stroke"
+      />
+    </svg>
   );
 }

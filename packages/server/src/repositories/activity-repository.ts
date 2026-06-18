@@ -7,6 +7,7 @@ import { timestampWindowStart } from "../lib/date-window.ts";
 import { osmTileUrl } from "../lib/osm-tile.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivityRow } from "../models/activity.ts";
+import { getActivityRoutePreviews } from "./activity-route-preview.ts";
 import {
   fetchRestingHeartRateRows,
   localDateString,
@@ -364,7 +365,10 @@ export class ActivityRepository extends BaseRepository {
     const activityIds = [
       ...new Set(rows.flatMap((row) => [row.id, ...(row.member_activity_ids ?? [])])),
     ];
-    const summaries = await sensorStore.getActivitySummaries(activityIds);
+    const [summaries, routePreviewByActivityId] = await Promise.all([
+      sensorStore.getActivitySummaries(activityIds),
+      getActivityRoutePreviews(sensorStore, this.userId, activityIds),
+    ]);
     const summaryByActivityId = new Map(
       summaries.map((summary) => [
         summary.activity_id,
@@ -379,6 +383,7 @@ export class ActivityRepository extends BaseRepository {
       if (!summary) {
         return row;
       }
+      const routePreview = routePreviewByActivityId.get(summary.activity_id);
       return {
         ...row,
         avg_hr: summary.avg_hr,
@@ -398,7 +403,9 @@ export class ActivityRepository extends BaseRepository {
             ? {
                 centroidLat: summary.centroid_lat,
                 centroidLng: summary.centroid_lng,
-                tileUrl: osmTileUrl(summary.centroid_lat, summary.centroid_lng),
+                tileUrl:
+                  routePreview?.tileUrl ?? osmTileUrl(summary.centroid_lat, summary.centroid_lng),
+                routePath: routePreview?.routePath ?? null,
                 distanceMeters: summary.total_distance,
                 elevationGainM: summary.elevation_gain_m,
               }

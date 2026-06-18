@@ -89,7 +89,7 @@ describe("ActivityRepository", () => {
     const execute = vi.fn().mockResolvedValue(postgresRows);
     const database = { execute };
     const sensorStore = {
-      query: vi.fn().mockResolvedValue([{ date: "2024-01-14", resting_hr: 55 }]),
+      query: vi.fn().mockResolvedValue([]),
       getActivitySummaries: vi.fn().mockResolvedValue([]),
       getStream: vi.fn().mockResolvedValue([
         {
@@ -260,9 +260,64 @@ describe("ActivityRepository", () => {
           centroidLat: 37.7749,
           centroidLng: -122.4194,
           tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
+          routePath: null,
           distanceMeters: 5000,
           elevationGainM: 120,
         },
+      });
+    });
+
+    it("adds a route preview when hydrated summaries include location samples", async () => {
+      const { repo, sensorStore } = makeRepositoryWithSensorStore([
+        {
+          id: "provider-row-id",
+          activity_type: "running",
+          started_at: "2024-01-15T10:00:00.000Z",
+          ended_at: "2024-01-15T11:00:00.000Z",
+          name: "Morning Run",
+          provider_id: "strava",
+          source_providers: ["strava"],
+          member_activity_ids: ["clickhouse-row-id", "provider-row-id"],
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          distance_meters: null,
+          total_count: 1,
+        },
+      ]);
+      sensorStore.getActivitySummaries.mockResolvedValueOnce([
+        {
+          activity_id: "clickhouse-row-id",
+          avg_hr: 145,
+          max_hr: 171,
+          avg_power: 220,
+          max_power: 450,
+          avg_speed: 8,
+          max_speed: 13,
+          avg_cadence: 82,
+          total_distance: 5000,
+          elevation_gain_m: 120,
+          elevation_loss_m: 90,
+          sample_count: 3600,
+          centroid_lat: 37.7749,
+          centroid_lng: -122.4194,
+        },
+      ]);
+      sensorStore.query.mockResolvedValueOnce([
+        { activity_id: "clickhouse-row-id", lat: 37.7749, lng: -122.4194 },
+        { activity_id: "clickhouse-row-id", lat: 37.7752, lng: -122.4188 },
+        { activity_id: "clickhouse-row-id", lat: 37.7756, lng: -122.4182 },
+      ]);
+
+      const result = await repo.list({ days: 30, endDate: "2024-02-01", limit: 20, offset: 0 });
+
+      expect(result.items[0]?.location).toMatchObject({
+        tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
+        routePath: [
+          { x: 27.854, y: 37.951 },
+          { x: 29.22, y: 37.088 },
+          { x: 30.585, y: 35.936 },
+        ],
       });
     });
 
