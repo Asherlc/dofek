@@ -101,6 +101,13 @@ restored_dirty_keys AS (
         INNER JOIN current_activity
             ON current_activity.activity_id = tombstoned_summary.activity_id
             AND current_activity.user_id = tombstoned_summary.user_id
+        WHERE EXISTS (
+            SELECT 1
+            FROM {{ this }} AS prior_summary FINAL
+            WHERE prior_summary.activity_id = tombstoned_summary.activity_id
+                AND prior_summary.user_id = tombstoned_summary.user_id
+                AND prior_summary.is_deleted = 0
+        )
     {% else %}
         SELECT
             CAST(null, 'Nullable(UUID)') AS activity_id,

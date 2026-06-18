@@ -1,3 +1,4 @@
+import { buildProviderStatsTableSql } from "./clickhouse-provider-stats.ts";
 import {
   peerDbMetadataColumnDefinitions,
   replacingMergeTreeTable,
@@ -965,8 +966,8 @@ export function buildProviderStatsCreateReadModelStatements(): string[] {
 
 export function buildProviderStatsReadModelStatements(): string[] {
   return [
-    "DROP VIEW IF EXISTS analytics.provider_stats",
     "DROP TABLE IF EXISTS analytics.provider_stats",
+    "DROP VIEW IF EXISTS analytics.provider_stats",
     ...buildProviderStatsCreateReadModelStatements(),
   ];
 }
@@ -989,8 +990,8 @@ export function buildAnalyticsFitnessReadModelDropStatements(): string[] {
     "DROP VIEW IF EXISTS analytics.v_sleep",
     "DROP VIEW IF EXISTS analytics.v_daily_metrics",
     "DROP VIEW IF EXISTS analytics.v_body_measurement",
-    "DROP VIEW IF EXISTS analytics.provider_stats",
     "DROP TABLE IF EXISTS analytics.provider_stats",
+    "DROP VIEW IF EXISTS analytics.provider_stats",
   ];
 }
 
@@ -1014,8 +1015,12 @@ export function buildProviderActivityAbsenceMigrationStatements(): string[] {
   return [
     "ALTER TABLE postgres_fitness.activity ADD COLUMN IF NOT EXISTS provider_absent_at Nullable(DateTime64(6, 'UTC'))",
     ...buildAnalyticsFitnessReadModelDropStatements(),
-    ...buildProviderActivityPresenceReadModelResetStatements(),
-    ...buildAnalyticsFitnessReadModelStatements(),
+    buildActivityReadModelSql(),
+    buildActivityMembersReadModelSql(),
+    buildSleepReadModelSql(),
+    buildBodyMeasurementReadModelSql(),
+    buildDailyMetricsReadModelSql(),
+    buildProviderStatsTableSql(),
   ];
 }
 

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WhoopClient } from "whoop-whoop/client";
-import type { WhoopCycle } from "whoop-whoop/types";
+import type { WhoopCycle, WhoopWorkoutRecord } from "whoop-whoop/types";
 import type { SyncDatabase } from "../../db/index.ts";
 import { writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
@@ -8,6 +8,15 @@ import { syncWhoopDailyActivity } from "./sync-daily-activity.ts";
 import { syncWhoopSleepSessions, syncWhoopSleepStages } from "./sync-sleep.ts";
 import { syncWhoopHeartRateStream } from "./sync-streams.ts";
 import type { WhoopSyncContext } from "./sync-types.ts";
+import { syncWhoopWorkouts } from "./sync-workouts.ts";
+
+const providerActivityAbsenceMocks = vi.hoisted(() => ({
+  reconcileProviderActivityAbsence: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("../../db/provider-activity-absence.ts", () => ({
+  reconcileProviderActivityAbsence: providerActivityAbsenceMocks.reconcileProviderActivityAbsence,
+}));
 
 vi.mock("../../db/sync-log.ts", () => ({
   withSyncLog: vi.fn(
@@ -79,7 +88,36 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-05-09T00:00:00.000Z"));
   vi.mocked(writeMetricStreamBatch).mockClear();
+  providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockClear();
 });
+
+function makeWorkoutRecord(
+  overrides: Partial<{
+    activity_id: string | undefined;
+    during: string;
+  }> = {},
+): WhoopWorkoutRecord {
+  return {
+    activity_id: "workout-1",
+    during: "['2026-05-01T10:00:00Z','2026-05-01T11:00:00Z')",
+    sport_id: 0,
+    average_heart_rate: 155,
+    max_heart_rate: 185,
+    kilojoules: 2500.5,
+    score: 12.5,
+    timezone_offset: "Z",
+    ...overrides,
+  };
+}
+
+function makeWorkoutRecordWithRawActivityId(activityId: unknown): WhoopWorkoutRecord {
+  const record = makeWorkoutRecord();
+  Object.defineProperty(record, "activity_id", {
+    value: activityId,
+    enumerable: true,
+  });
+  return record;
+}
 
 describe("WHOOP sync helpers", () => {
   it("syncs daily activity using the maximum valid steps per date", async () => {
@@ -313,5 +351,54 @@ describe("WHOOP sync helpers", () => {
 
     await expect(syncWhoopSleepStages(secondContext)).resolves.toBe(0);
     expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("reconciles provider absence with string workout activity ids only", async () => {
+    const db = makeDb();
+    const context = makeContext({
+      db: db.db,
+      options: undefined,
+      cycles: [
+        {
+          workouts: [
+            makeWorkoutRecord({ activity_id: "present-workout" }),
+            makeWorkoutRecordWithRawActivityId(null),
+            makeWorkoutRecordWithRawActivityId(42),
+          ],
+        },
+      ],
+    });
+
+    await expect(syncWhoopWorkouts(context)).resolves.toBe(3);
+
+    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+      db.db,
+      {
+        providerId: "whoop",
+        userId: undefined,
+        windowStart: context.since,
+        windowEnd: context.windowEnd,
+        presentExternalIds: new Set(["present-workout"]),
+      },
+    );
+  });
+
+  it("passes sync user id through to workout absence reconciliation", async () => {
+    const db = makeDb();
+    const context = makeContext({
+      db: db.db,
+      options: { userId: "user-1" },
+      cycles: [{ workouts: [makeWorkoutRecord({ activity_id: "present-workout" })] }],
+    });
+
+    await expect(syncWhoopWorkouts(context)).resolves.toBe(1);
+
+    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+      db.db,
+      expect.objectContaining({
+        userId: "user-1",
+        presentExternalIds: new Set(["present-workout"]),
+      }),
+    );
   });
 });

@@ -173,7 +173,7 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(statements[2]).toContain("ORDER BY (user_id, provider_id)");
   });
 
-  it("resets provider-absence dependent read models and rebuilds activity views", () => {
+  it("refreshes provider-absence fitness views without dropping dbt tables", () => {
     const statements = activityProviderAbsenceMigration.createMigration().statements;
     const statementSql = statements.join("\n");
 
@@ -181,9 +181,15 @@ describe("buildClickHouseMigrationStatements", () => {
       "ALTER TABLE postgres_fitness.activity ADD COLUMN IF NOT EXISTS provider_absent_at",
     );
     expect(statements).toContain("DROP VIEW IF EXISTS analytics.v_activity");
-    expect(statements).toContain("DROP TABLE IF EXISTS analytics.activity_source_records");
-    expect(statements).toContain("DROP TABLE IF EXISTS analytics.sleep_heart_rate_sample");
+    expect(statements).not.toContain("DROP TABLE IF EXISTS analytics.activity_source_records");
+    expect(statements).not.toContain("DROP TABLE IF EXISTS analytics.sleep_heart_rate_sample");
+    expect(statements).toContain("DROP TABLE IF EXISTS analytics.provider_stats");
+    expect(statements.indexOf("DROP TABLE IF EXISTS analytics.provider_stats")).toBeLessThan(
+      statements.indexOf("DROP VIEW IF EXISTS analytics.provider_stats"),
+    );
     expect(statementSql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_activity");
+    expect(statementSql).toContain("CREATE TABLE IF NOT EXISTS analytics.provider_stats");
+    expect(statementSql).not.toContain("CREATE VIEW IF NOT EXISTS analytics.provider_stats");
     expect(statementSql).toContain("provider_absent_at IS NULL");
   });
 
