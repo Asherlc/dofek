@@ -10857,3 +10857,44 @@ new incremental tables are populated.
 - **Remaining risk:** Already-missed activities whose activity/dedupe freshness
   falls outside the deployment-time lookback can still need an explicit targeted
   backfill or full model rebuild.
+
+## 2026-06-18 - Activity delete analytics job stuck waiting for PeerDB tombstones
+
+- **Symptoms:** Sentry issue `DOFEK-SERVER-3Q` reported five production worker
+  failures with `Timed out waiting for PeerDB to reflect deletion of 25
+  activities` from `waitForPeerDbActivityDeletes()`.
+- **User impact:** The activity delete API completed, but the asynchronous
+  ClickHouse activity read-model refresh failed after all BullMQ retries. Deleted
+  activities can remain visible in ClickHouse-backed activity analytics until the
+  mirror/read-model path is fixed and rebuilt.
+- **Evidence:** The failed Redis job `bull:activity-delete-analytics:1` contained
+  25 activity IDs for user `f923fed7-d934-4cd9-8cb9-8e83020d0e69`. Postgres
+  `fitness.activity` returned `0` source rows for those IDs, while ClickHouse
+  `postgres_fitness.activity FINAL` still returned `25` active rows under the
+  worker predicate. Raw ClickHouse rows showed `50` versions: one active version
+  and one `_peerdb_is_deleted = 1` version per activity. For activity
+  `0759c689-565d-41e1-9548-6a798306b59e`, the active row had the real
+  `user_id` and `started_at`, while the delete tombstone had
+  `user_id = 00000000-0000-0000-0000-000000000000` and
+  `started_at = 1970-01-01`.
+- **Root cause:** The ClickHouse raw `postgres_fitness.activity` table uses
+  `ReplacingMergeTree(_peerdb_version)` ordered by `(user_id, started_at, id)`,
+  but PeerDB delete rows only preserve the primary key and use default values for
+  non-key columns. The delete tombstones therefore do not share the same
+  replacing key as the original activity rows, so `FINAL` does not collapse the
+  active version away even though a newer delete version exists for the same
+  `id`.
+- **Fix / mitigation:** Fresh ClickHouse raw activity tables now use
+  `ReplacingMergeTree(_peerdb_version) ORDER BY id`. Migration
+  `0030_activity_mirror_order_key` replaces existing `postgres_fitness.activity`
+  tables that still order by `(user_id, started_at, id)`, copies all raw
+  versions into the replacement table, atomically swaps it into place, and then
+  copies once more from the backup table to capture any mirror writes that landed
+  during the initial copy.
+- **Remaining risk:** Deployment still needs to run the migration and then rerun
+  the failed activity-delete analytics job or rebuild `activity_source_records+`
+  so already-stale activity read models drop the deleted activity IDs.
+- **Follow-up:** Add a CDC runbook check for PeerDB delete tombstones: compare
+  `argMax(_peerdb_is_deleted, _peerdb_version)` by primary key against
+  `FINAL WHERE _peerdb_is_deleted = 0` when ClickHouse mirrors retain deleted
+  rows unexpectedly.

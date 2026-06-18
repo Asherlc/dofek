@@ -21,6 +21,7 @@ describe("clickHouseMigrations", () => {
     expect(clickHouseMigrationFileNames).toContain("0026_create_dashboard_tables.ts");
     expect(clickHouseMigrationFileNames).toContain("0027_create_daily_sleep_table.ts");
     expect(clickHouseMigrationFileNames).toContain("0028_create_domain_dashboard_tables.ts");
+    expect(clickHouseMigrationFileNames).toContain("0030_activity_mirror_order_key.ts");
     expect(statements).toContainEqual(
       expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.provider_stats"),
     );
@@ -35,6 +36,12 @@ describe("clickHouseMigrations", () => {
     );
     expect(statements).toContainEqual(
       expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.daily_sleep"),
+    );
+    expect(migrations).toContainEqual(
+      expect.objectContaining({
+        id: "0030_activity_mirror_order_key",
+        run: expect.any(Function),
+      }),
     );
   });
 });

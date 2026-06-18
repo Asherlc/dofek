@@ -13,6 +13,7 @@ import {
   buildIncrementalDedupedSensorResetStatements,
 } from "../clickhouse-deduped-sensor.ts";
 import { buildActivitySummaryReadModelStatements } from "../clickhouse-metric-stream-bootstrap.ts";
+import { buildPostgresFitnessActivityRawTableStatement } from "../clickhouse-raw-tables.ts";
 import {
   clickHouseDateTimeLiteral,
   clickHouseStringLiteral,
@@ -54,6 +55,10 @@ interface ClickHouseDatabaseEngineRow {
   engine: string;
 }
 
+interface ClickHouseCreateTableQueryRow {
+  create_table_query: string;
+}
+
 const metricStreamBackfillChunkRowSchema = z.object({
   lower_bound: z.string().nullable(),
   upper_bound: z.string().nullable(),
@@ -71,6 +76,10 @@ const timescaleChunkRowSchema = z.object({
 
 const clickHouseDatabaseEngineRowSchema = z.object({
   engine: z.string(),
+});
+
+const clickHouseCreateTableQueryRowSchema = z.object({
+  create_table_query: z.string(),
 });
 
 const migrationCountRowSchema = z.object({
@@ -224,6 +233,33 @@ export async function replaceLegacyMetricStreamIfNeeded(
   await backfillNativeMetricStream(client, postgresConnectionString);
 }
 
+export async function replaceActivityMirrorOrderKey(
+  client: ClickHouseCommandClient,
+  _postgresConnectionString: string,
+): Promise<void> {
+  if (!(await shouldReplaceActivityMirrorOrderKey(client))) {
+    return;
+  }
+
+  const replacementTableName = "postgres_fitness.activity_order_key_next";
+  const backupTableName = "postgres_fitness.activity_before_order_key_fix";
+  const statements = [
+    `DROP TABLE IF EXISTS ${replacementTableName}`,
+    buildPostgresFitnessActivityRawTableStatement({
+      tableName: replacementTableName,
+      ifNotExists: false,
+    }),
+    `INSERT INTO ${replacementTableName} SELECT * FROM postgres_fitness.activity`,
+    `DROP TABLE IF EXISTS ${backupTableName}`,
+    `RENAME TABLE postgres_fitness.activity TO ${backupTableName}, ${replacementTableName} TO postgres_fitness.activity`,
+    `INSERT INTO postgres_fitness.activity SELECT * FROM ${backupTableName}`,
+  ];
+
+  for (const statement of statements) {
+    await runClickHouseMigrationStatement(client, statement);
+  }
+}
+
 async function metricStreamMirrorHasColumns(
   client: ClickHouseCommandClient,
   columns: string[],
@@ -278,6 +314,25 @@ async function shouldReplaceMetricStreamTable(client: ClickHouseCommandClient): 
   }
   const row = clickHouseDatabaseEngineRowSchema.parse(rows[0]);
   return row.engine !== "ReplacingMergeTree";
+}
+
+async function shouldReplaceActivityMirrorOrderKey(
+  client: ClickHouseCommandClient,
+): Promise<boolean> {
+  if (!client.query) {
+    throw new Error("ClickHouse migrations require a query-capable client");
+  }
+  const result = await client.query<ClickHouseCreateTableQueryRow>({
+    query:
+      "SELECT create_table_query FROM system.tables WHERE database = 'postgres_fitness' AND name = 'activity'",
+    format: "JSONEachRow",
+  });
+  const rows = await result.json();
+  if (!rows[0]) {
+    return false;
+  }
+  const row = clickHouseCreateTableQueryRowSchema.parse(rows[0]);
+  return !/\bORDER BY\s+id\b/.test(row.create_table_query);
 }
 
 async function backfillNativeMetricStream(

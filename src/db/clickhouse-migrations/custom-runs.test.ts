@@ -47,6 +47,7 @@ vi.mock("../../logger.ts", () => ({
 }));
 
 const {
+  replaceActivityMirrorOrderKey,
   replaceNativeMetricStreamAndBackfill,
   repairNativeMetricStreamBackfill,
   rebuildMetricStreamLocationPoint,
@@ -109,6 +110,68 @@ describe("replaceNativeMetricStreamAndBackfill", () => {
       String(call[1]).includes("DROP DATABASE"),
     );
     expect(dropCalls).toHaveLength(0);
+  });
+});
+
+describe("replaceActivityMirrorOrderKey", () => {
+  it("rejects a client without query method at the table definition check guard", async () => {
+    const client: ClickHouseCommandClient = { command: vi.fn() };
+    await expect(replaceActivityMirrorOrderKey(client, "conn")).rejects.toThrow(
+      "ClickHouse migrations require a query-capable client",
+    );
+  });
+
+  it("replaces the activity mirror when the order key still includes mutable columns", async () => {
+    const client = mockQueryClient([
+      {
+        create_table_query:
+          "CREATE TABLE postgres_fitness.activity ORDER BY (user_id, started_at, id)",
+      },
+    ]);
+    const { runClickHouseMigrationStatement } = await import("./statement-runner.ts");
+
+    await replaceActivityMirrorOrderKey(client, "conn");
+
+    expect(runClickHouseMigrationStatement).toHaveBeenCalledWith(
+      client,
+      expect.stringContaining("CREATE TABLE postgres_fitness.activity_order_key_next"),
+    );
+    expect(runClickHouseMigrationStatement).toHaveBeenCalledWith(
+      client,
+      expect.stringContaining("ORDER BY id"),
+    );
+    expect(runClickHouseMigrationStatement).toHaveBeenCalledWith(
+      client,
+      "INSERT INTO postgres_fitness.activity_order_key_next SELECT * FROM postgres_fitness.activity",
+    );
+    expect(runClickHouseMigrationStatement).toHaveBeenCalledWith(
+      client,
+      "RENAME TABLE postgres_fitness.activity TO postgres_fitness.activity_before_order_key_fix, postgres_fitness.activity_order_key_next TO postgres_fitness.activity",
+    );
+    expect(runClickHouseMigrationStatement).toHaveBeenCalledWith(
+      client,
+      "INSERT INTO postgres_fitness.activity SELECT * FROM postgres_fitness.activity_before_order_key_fix",
+    );
+  });
+
+  it("returns early when the activity mirror already uses id as its order key", async () => {
+    const client = mockQueryClient([
+      { create_table_query: "CREATE TABLE postgres_fitness.activity ORDER BY id" },
+    ]);
+    const { runClickHouseMigrationStatement } = await import("./statement-runner.ts");
+
+    await replaceActivityMirrorOrderKey(client, "conn");
+
+    expect(runClickHouseMigrationStatement).not.toHaveBeenCalled();
+  });
+
+  it("returns early when the activity mirror table does not exist", async () => {
+    const client = mockQueryClient([]);
+    const { runClickHouseMigrationStatement } = await import("./statement-runner.ts");
+
+    await replaceActivityMirrorOrderKey(client, "conn");
+
+    expect(runClickHouseMigrationStatement).not.toHaveBeenCalled();
   });
 });
 
