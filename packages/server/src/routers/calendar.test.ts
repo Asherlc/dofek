@@ -115,6 +115,68 @@ describe("calendarRouter", () => {
     ]);
   });
 
+  it("preserves route path points on activity location at the API boundary", async () => {
+    repositoryResultMock.mockResolvedValueOnce([
+      {
+        date: "2026-03-18",
+        activities: [
+          {
+            id: "activity-1",
+            name: "Morning Run",
+            activityType: "running",
+            startedAt: "2026-03-18T07:00:00.000Z",
+            endedAt: "2026-03-18T08:00:00.000Z",
+            durationMin: 60,
+            location: {
+              centroidLat: 37.7749,
+              centroidLng: -122.4194,
+              tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
+              routePath: [
+                { x: 27.854, y: 37.951 },
+                { x: 29.22, y: 37.088 },
+              ],
+              distanceMeters: 5000,
+              elevationGainM: 120,
+            },
+            calories: null,
+            tss: null,
+            stats: [
+              { label: "Training Stress Score", value: "—" },
+              { label: "Calories", value: "—" },
+            ],
+          },
+        ],
+      },
+    ]);
+    const caller = createCaller({
+      db: {},
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: { query: vi.fn() },
+    });
+
+    await expect(caller.weekList({ weeks: 4, endDate: "2026-03-20" })).resolves.toEqual([
+      {
+        date: "2026-03-18",
+        activities: [
+          expect.objectContaining({
+            location: {
+              centroidLat: 37.7749,
+              centroidLng: -122.4194,
+              tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
+              routePath: [
+                { x: 27.854, y: 37.951 },
+                { x: 29.22, y: 37.088 },
+              ],
+              distanceMeters: 5000,
+              elevationGainM: 120,
+            },
+          }),
+        ],
+      },
+    ]);
+  });
+
   it("passes the selected activity type through to weekList", async () => {
     repositoryResultMock.mockResolvedValueOnce([]);
     const caller = createCaller({
