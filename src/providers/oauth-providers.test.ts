@@ -124,9 +124,9 @@ describe("SuuntoProvider.authSetup()", () => {
     process.env.SUUNTO_CLIENT_SECRET = "test-secret";
     const provider = new SuuntoProvider();
     const setup = provider.authSetup();
-    expect(setup.oauthConfig!.clientId).toBe("test-id");
-    expect(setup.oauthConfig!.tokenAuthMethod).toBe("basic");
-    expect(setup.exchangeCode!).toBeTypeOf("function");
+    expect(setup.oauthConfig?.clientId).toBe("test-id");
+    expect(setup.oauthConfig?.tokenAuthMethod).toBe("basic");
+    expect(setup.exchangeCode).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("suunto.com");
   });
 
@@ -298,9 +298,9 @@ describe("WgerProvider.authSetup()", () => {
     process.env.WGER_CLIENT_SECRET = "test-secret";
     const provider = new WgerProvider();
     const setup = provider.authSetup();
-    expect(setup.oauthConfig!.clientId).toBe("test-id");
-    expect(setup.oauthConfig!.scopes).toContain("read");
-    expect(setup.exchangeCode!).toBeTypeOf("function");
+    expect(setup.oauthConfig?.clientId).toBe("test-id");
+    expect(setup.oauthConfig?.scopes).toContain("read");
+    expect(setup.exchangeCode).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("wger.de");
   });
 
@@ -395,7 +395,7 @@ describe("XertProvider.authSetup()", () => {
     delete process.env.XERT_CLIENT_SECRET;
     const provider = new XertProvider();
     const setup = provider.authSetup();
-    expect(setup.oauthConfig!.clientId).toBe("xert_public");
+    expect(setup.oauthConfig?.clientId).toBe("xert_public");
     expect(setup.automatedLogin).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("xertonline.com");
   });
@@ -403,7 +403,7 @@ describe("XertProvider.authSetup()", () => {
   it("exchangeCode throws (not supported for credential providers)", async () => {
     const provider = new XertProvider();
     const setup = provider.authSetup();
-    await expect(setup.exchangeCode!("code")).rejects.toThrow();
+    await expect(setup.exchangeCode?.("code")).rejects.toThrow();
   });
 
   it("always works even without env vars", () => {
@@ -527,8 +527,8 @@ describe("MapMyFitnessProvider.authSetup()", () => {
     process.env.MAPMYFITNESS_CLIENT_SECRET = "test-secret";
     const provider = new MapMyFitnessProvider();
     const setup = provider.authSetup();
-    expect(setup.oauthConfig!.clientId).toBe("test-id");
-    expect(setup.exchangeCode!).toBeTypeOf("function");
+    expect(setup.oauthConfig?.clientId).toBe("test-id");
+    expect(setup.exchangeCode).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("mapmyfitness.com");
   });
 

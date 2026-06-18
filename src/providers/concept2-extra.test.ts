@@ -177,8 +177,8 @@ describe("Concept2Provider", () => {
     process.env.CONCEPT2_CLIENT_ID = "id";
     process.env.CONCEPT2_CLIENT_SECRET = "secret";
     const setup = new Concept2Provider().authSetup();
-    expect(setup.oauthConfig!.clientId).toBe("id");
-    expect(setup.exchangeCode!).toBeTypeOf("function");
+    expect(setup.oauthConfig?.clientId).toBe("id");
+    expect(setup.exchangeCode).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("concept2.com");
   });
 

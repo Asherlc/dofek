@@ -526,13 +526,13 @@ describe("StravaProvider.authSetup()", () => {
     process.env.STRAVA_CLIENT_SECRET = "test-secret";
     const provider = new StravaProvider();
     const setup = provider.authSetup();
-    expect(setup.oauthConfig!.clientId).toBe("test-id");
-    expect(setup.exchangeCode!).toBeTypeOf("function");
+    expect(setup.oauthConfig?.clientId).toBe("test-id");
+    expect(setup.exchangeCode).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toBe("https://www.strava.com/api/v3/");
     expect(setup.identityCapabilities?.providesEmail).toBe(false);
-    expect(setup.oauthConfig!.authorizeUrl).toBe("https://www.strava.com/oauth/authorize");
-    expect(setup.oauthConfig!.tokenUrl).toBe("https://www.strava.com/oauth/token");
-    expect(setup.oauthConfig!.scopes).toEqual(["read", "activity:read_all"]);
+    expect(setup.oauthConfig?.authorizeUrl).toBe("https://www.strava.com/oauth/authorize");
+    expect(setup.oauthConfig?.tokenUrl).toBe("https://www.strava.com/oauth/token");
+    expect(setup.oauthConfig?.scopes).toEqual(["read", "activity:read_all"]);
   });
 
   it("throws when env vars are missing", () => {

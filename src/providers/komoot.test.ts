@@ -207,8 +207,8 @@ describe("KomootProvider.authSetup()", () => {
     process.env.KOMOOT_CLIENT_SECRET = "test-secret";
     const provider = new KomootProvider();
     const setup = provider.authSetup();
-    expect(setup.oauthConfig!.clientId).toBe("test-id");
-    expect(setup.exchangeCode!).toBeTypeOf("function");
+    expect(setup.oauthConfig?.clientId).toBe("test-id");
+    expect(setup.exchangeCode).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("komoot.de");
   });
 
@@ -220,8 +220,10 @@ describe("KomootProvider.authSetup()", () => {
 
     const provider = new KomootProvider(fetchFn);
     const setup = provider.authSetup();
+    const { exchangeCode } = setup;
+    if (!exchangeCode) throw new Error("exchangeCode not defined");
 
-    await expectKomootRateLimitError(() => setup.exchangeCode!("code"));
+    await expectKomootRateLimitError(() => exchangeCode("code"));
   });
 
   it("throws when env vars are missing", () => {

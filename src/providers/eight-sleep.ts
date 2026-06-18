@@ -1,7 +1,5 @@
 import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
-import {
-  EightSleepClient,
-} from "eight-sleep-client/client";
+import { EightSleepClient } from "eight-sleep-client/client";
 import {
   parseEightSleepDailyMetrics,
   parseEightSleepHeartRateSamples,

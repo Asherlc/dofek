@@ -5,16 +5,7 @@ import {
   LEGACY_SERVER_SIDE_USER_AUTH_PROVIDER_IDS,
   requiresPerUserConnect,
 } from "./provider-auth-policy.ts";
-import type { OAuthConfig, Provider, ProviderAuthSetup } from "./types.ts";
-
-const dummyOAuthConfig = {
-  clientId: "client",
-  clientSecret: "secret",
-  authorizeUrl: "https://example.com/auth",
-  tokenUrl: "https://example.com/token",
-  redirectUri: "https://example.com/callback",
-  scopes: ["read"],
-};
+import type { Provider, ProviderAuthSetup } from "./types.ts";
 
 function stubProvider(overrides: Partial<Provider> = {}): Provider {
   return {
@@ -106,15 +97,7 @@ describe("checkPerUserAuthCompliance", () => {
     const provider = stubProvider({
       id: "no-flow-provider",
       name: "No Flow",
-      authSetup: (): ProviderAuthSetup => ({
-        oauthConfig: undefined as unknown as OAuthConfig,
-        exchangeCode: async () => ({
-          accessToken: "token",
-          refreshToken: null,
-          expiresAt: new Date(),
-          scopes: null,
-        }),
-      }),
+      authSetup: (): ProviderAuthSetup => ({}),
     });
     expect(checkPerUserAuthCompliance(provider)).toEqual({
       ok: false,

@@ -480,8 +480,8 @@ describe("FitbitProvider.authSetup()", () => {
     process.env.FITBIT_CLIENT_SECRET = "test-secret";
     const provider = new FitbitProvider();
     const setup = provider.authSetup();
-    expect(setup.oauthConfig!.clientId).toBe("test-id");
-    expect(setup.exchangeCode!).toBeTypeOf("function");
+    expect(setup.oauthConfig?.clientId).toBe("test-id");
+    expect(setup.exchangeCode).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("fitbit.com");
   });
 

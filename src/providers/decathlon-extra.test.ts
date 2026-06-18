@@ -199,8 +199,8 @@ describe("DecathlonProvider.authSetup()", () => {
     process.env.DECATHLON_CLIENT_SECRET = "test-secret";
     const provider = new DecathlonProvider();
     const setup = provider.authSetup();
-    expect(setup.oauthConfig!.clientId).toBe("test-id");
-    expect(setup.exchangeCode!).toBeTypeOf("function");
+    expect(setup.oauthConfig?.clientId).toBe("test-id");
+    expect(setup.exchangeCode).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("decathlon.net");
   });
 

@@ -197,8 +197,10 @@ describe("CorosProvider", () => {
         new Response("window exceeded", { status: 429, headers: { "Retry-After": "45" } });
       const provider = new CorosProvider(fetchFn);
       const setup = provider.authSetup();
+      const { exchangeCode } = setup;
+      if (!exchangeCode) throw new Error("exchangeCode not defined");
 
-      await expectCorosRateLimitError(() => setup.exchangeCode!("code"));
+      await expectCorosRateLimitError(() => exchangeCode("code"));
     });
   });
 
