@@ -49,13 +49,6 @@ export interface UserRefitPostSyncJobData {
 
 export type PostSyncJobData = GlobalMaintenancePostSyncJobData | UserRefitPostSyncJobData;
 
-export interface TrainingExportJobData {
-  /** Optional: only export data after this timestamp */
-  since?: string;
-  /** Optional: only export data before this timestamp */
-  until?: string;
-}
-
 // ── Queue names ──
 
 export const SYNC_QUEUE = "sync";
@@ -64,9 +57,6 @@ export const IMPORT_QUEUE = "import";
 export const EXPORT_QUEUE = "export";
 export const SCHEDULED_SYNC_QUEUE = "scheduled-sync";
 export const POST_SYNC_QUEUE = "post-sync";
-export const TRAINING_EXPORT_QUEUE = "training-export";
-export const POSTGRES_METRIC_STREAM_EXPORT_RETIRED_MESSAGE =
-  "Postgres metric_stream training export has been retired because fitness.metric_stream was removed from Postgres. Use the Redpanda R2 archive or ClickHouse metric-stream data for training exports.";
 export const POST_SYNC_DEBOUNCE_MS = 10_000;
 export const SYNC_JOB_RETRY_OPTIONS = {
   attempts: 288,
@@ -193,10 +183,4 @@ export async function enqueueDebouncedUserRefit(
       removeOnComplete: true,
     },
   );
-}
-
-export function createTrainingExportQueue(
-  connection?: ConnectionOptions,
-): Queue<TrainingExportJobData> {
-  return new Queue(TRAINING_EXPORT_QUEUE, { connection: connection ?? getRedisConnection() });
 }
