@@ -415,7 +415,8 @@ export async function processWorkouts(
               activity_type = ${activityType},
               started_at = ${workout.startDate}::timestamptz,
               ended_at = ${workout.endDate}::timestamptz,
-              raw = ${rawData}::jsonb`,
+              raw = ${rawData}::jsonb,
+              provider_absent_at = NULL`,
       );
       inserted++;
     }

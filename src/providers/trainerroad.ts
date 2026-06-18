@@ -2,6 +2,7 @@ import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import { TrainerRoadClient } from "trainerroad-client/client";
 import { parseTrainerRoadActivity } from "trainerroad-client/parsing";
 import type { SyncDatabase } from "../db/index.ts";
+import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
@@ -94,6 +95,8 @@ export class TrainerRoadProvider implements SyncProvider {
     }
 
     // Sync activities
+    const syncWindowEnd = new Date();
+    const presentActivityExternalIds = new Set<string>();
     try {
       const activityCount = await withSyncLog(
         db,
@@ -102,12 +105,13 @@ export class TrainerRoadProvider implements SyncProvider {
         async () => {
           let count = 0;
           const sinceDate = formatDate(since);
-          const toDate = formatDate(new Date());
+          const toDate = formatDate(syncWindowEnd);
 
           const activities = await client.getActivities(username, sinceDate, toDate);
 
           for (const raw of activities) {
             const parsed = parseTrainerRoadActivity(raw);
+            presentActivityExternalIds.add(parsed.externalId);
             try {
               await db
                 .insert(activity)
@@ -128,6 +132,7 @@ export class TrainerRoadProvider implements SyncProvider {
                     startedAt: parsed.startedAt,
                     endedAt: parsed.endedAt,
                     raw: parsed.raw,
+                    providerAbsentAt: null,
                   },
                 });
               count++;
@@ -140,6 +145,13 @@ export class TrainerRoadProvider implements SyncProvider {
             }
           }
 
+          await reconcileProviderActivityAbsence(db, {
+            providerId: this.id,
+            userId: options?.userId,
+            windowStart: since,
+            windowEnd: syncWindowEnd,
+            presentExternalIds: presentActivityExternalIds,
+          });
           return { recordCount: count, result: count };
         },
         options?.userId,

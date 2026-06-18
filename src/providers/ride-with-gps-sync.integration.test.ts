@@ -231,7 +231,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     expect(countOf5001).toBe(1);
   });
 
-  it("handles deleted trips by removing activity", async () => {
+  it("handles deleted trips by marking activity provider-absent", async () => {
     await saveTokens(ctx.db, "ride-with-gps", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",
@@ -259,7 +259,8 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.externalId, "6001"));
 
-    expect(rows).toHaveLength(0);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.providerAbsentAt).toBeInstanceOf(Date);
   });
 
   it("skips route items (only processes trips)", async () => {

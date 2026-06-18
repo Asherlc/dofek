@@ -152,9 +152,11 @@ export class WhoopProvider implements SyncProvider {
     // WHOOP API limits cycle queries to 200-day windows
     const MAX_CYCLE_WINDOW_MS = 200 * 24 * 60 * 60 * 1000;
     const cycles: WhoopCycle[] = [];
+    let syncWindowEnd = new Date();
     try {
       let windowStart = since.getTime();
       const nowMs = Date.now();
+      syncWindowEnd = new Date(nowMs);
       while (windowStart < nowMs) {
         const windowEnd = Math.min(windowStart + MAX_CYCLE_WINDOW_MS, nowMs);
         const startStr = new Date(windowStart).toISOString();
@@ -179,6 +181,7 @@ export class WhoopProvider implements SyncProvider {
       cycles,
       providerId: this.id,
       since,
+      windowEnd: syncWindowEnd,
       options,
       errors,
     };

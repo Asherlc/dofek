@@ -86,11 +86,9 @@ describe("Predictions router (integration)", () => {
 	            )`,
       );
       const restingHeartRate = Math.round(55 - Math.cos(i * 0.3) * 5);
+      const sleepSampleStart = new Date(startedAt.getTime() + 3 * 60 * 60 * 1000);
       for (let sampleIndex = 0; sampleIndex < 30; sampleIndex++) {
-        const recordedAt = new Date();
-        recordedAt.setHours(0, 0, 0, 0);
-        recordedAt.setDate(recordedAt.getDate() - i + 1);
-        recordedAt.setHours(1, sampleIndex, 0, 0);
+        const recordedAt = new Date(sleepSampleStart.getTime() + sampleIndex * 60_000);
         metricStreamSeedRows.push({
           userId: TEST_USER_ID,
           recordedAt: recordedAt.toISOString(),

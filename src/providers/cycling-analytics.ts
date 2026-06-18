@@ -4,6 +4,7 @@ import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
+import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
@@ -176,6 +177,8 @@ export class CyclingAnalyticsProvider implements SyncProvider {
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
+    const syncWindowEnd = new Date();
+    const presentActivityExternalIds = new Set<string>();
     try {
       const activityCount = await withSyncLog(
         db,
@@ -210,6 +213,7 @@ export class CyclingAnalyticsProvider implements SyncProvider {
 
             for (const raw of rides) {
               const parsed = parseCyclingAnalyticsRide(raw);
+              presentActivityExternalIds.add(parsed.externalId);
               try {
                 await db
                   .insert(activity)
@@ -230,6 +234,7 @@ export class CyclingAnalyticsProvider implements SyncProvider {
                       startedAt: parsed.startedAt,
                       endedAt: parsed.endedAt,
                       raw: parsed.raw,
+                      providerAbsentAt: null,
                     },
                   });
                 count++;
@@ -245,6 +250,13 @@ export class CyclingAnalyticsProvider implements SyncProvider {
             page++;
           }
 
+          await reconcileProviderActivityAbsence(db, {
+            providerId: this.id,
+            userId: options?.userId,
+            windowStart: since,
+            windowEnd: syncWindowEnd,
+            presentExternalIds: presentActivityExternalIds,
+          });
           return { recordCount: count, result: count };
         },
         options?.userId,

@@ -16,6 +16,7 @@ This directory contains implementations for various data providers (fitness trac
 - **Validation**: `validate()` may gate app-level OAuth client config, but must not gate on per-user credentials. User auth is checked at sync time via `loadTokens()`.
 - **UI visibility**: Providers that fail `validate()` are hidden until required app config is present. Users connect individually via Connect buttons.
 - **Data Mapping**: Providers transform vendor-specific JSON into Dofek's internal schema (see `src/db/schema.ts`).
+- **Activity absence tombstones**: Activity syncs that fetch an authoritative provider activity list must call `reconcileProviderActivityAbsence()` for the covered time window. Explicit delete/removed webhook events should call `markProviderActivityAbsent()`. Activity upserts must clear `providerAbsentAt` so restored provider activities become visible again. Do not reconcile when a provider response is partial because of rate limits, auth failures, or other fetch errors.
 
 ## Supported Providers
 

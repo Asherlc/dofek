@@ -10708,6 +10708,38 @@ new incremental tables are populated.
   the same activity window, or move the alias lookup to a persisted/read-model
   path.
 
+## 2026-06-18 — Top 20 slow tRPC calls still dominated by ClickHouse queueing and stream aggregation
+
+- **Symptoms:** Axiom's 24h top slow tRPC procedures showed multiple dashboard
+  and activity-detail procedures taking seconds to two minutes.
+- **User impact:** Web dashboard and activity detail API calls could stall or
+  timeout when several expensive activity stream requests were in flight.
+- **Evidence:** Axiom `dofek-logs` showed the slowest individual procedures in
+  the 24h window were `insights.compute` max `123.20s`,
+  `activity.stream` max `122.79s` with 7 timeout errors,
+  `activity.byId` max `76.23s`, `dailyMetrics.hrvBaseline` max `59.64s`,
+  `dailyMetrics.trends` max `59.48s`, `recovery.readinessScore` max `59.44s`,
+  `recovery.workloadRatio` max `59.33s`, and body/correlation/sleep/training
+  procedures from `8-43s`. Trace `3a598820a5c992ec9969ba0d916cef5b`
+  showed `insights.compute` waiting about one minute before its ClickHouse
+  requests started, then spending `21.48s` and `41.67s` in ClickHouse `POST`
+  calls. The stream SQL grouped every scalar sample from
+  `analytics.activity_sensor_sample` before returning at most `maxPoints`.
+- **Root cause:** Dashboard read-model queries for
+  `analytics.v_daily_metrics`, `analytics.v_body_measurement`, and
+  `analytics.v_sleep` were not classified into the dashboard ClickHouse queue,
+  so they could wait behind long regular activity stream work. Separately,
+  `activity.stream` still aggregated scalar values for every raw sample timestamp
+  instead of only the selected downsampled timestamps.
+- **Fix / mitigation:** Added those dashboard read models to the dashboard queue
+  markers. Updated `ClickHouseActivitySensorStore.getStream()` so scalar
+  aggregation joins from `sample_times` to `activity_samples`, limiting scalar
+  aggregation to the selected output timestamps.
+- **Remaining risk:** This improves queue priority and one stream query hot spot,
+  but it has not been validated against post-deploy production spans yet. Re-run
+  the top-slow Axiom query after deploy and compare `activity.stream` timeout
+  count plus p95/max durations for the same procedure list.
+
 ## 2026-06-18 — Garmin sync repeatedly hit Connect API rate limits
 
 - **Symptoms:** Garmin sync logs showed repeated `Rate limit exceeded (429):

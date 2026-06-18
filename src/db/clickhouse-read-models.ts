@@ -1,3 +1,4 @@
+import { buildProviderStatsTableSql } from "./clickhouse-provider-stats.ts";
 import {
   peerDbMetadataColumnDefinitions,
   replacingMergeTreeTable,
@@ -117,6 +118,7 @@ active_activity AS (
   SELECT *
   FROM postgres_fitness.activity FINAL
   WHERE _peerdb_is_deleted = 0
+    AND provider_absent_at IS NULL
 ),
 active_provider_priority AS (
   SELECT *
@@ -789,6 +791,7 @@ providers AS (
   SELECT DISTINCT user_id, provider_id
   FROM postgres_fitness.activity FINAL
   WHERE _peerdb_is_deleted = 0
+    AND provider_absent_at IS NULL
   UNION DISTINCT
   SELECT DISTINCT user_id, provider_id
   FROM postgres_fitness.daily_metrics FINAL
@@ -826,6 +829,7 @@ activity_counts AS (
   SELECT user_id, provider_id, count() AS count
   FROM postgres_fitness.activity FINAL
   WHERE _peerdb_is_deleted = 0
+    AND provider_absent_at IS NULL
   GROUP BY user_id, provider_id
 ),
 daily_metric_counts AS (
@@ -962,8 +966,8 @@ export function buildProviderStatsCreateReadModelStatements(): string[] {
 
 export function buildProviderStatsReadModelStatements(): string[] {
   return [
-    "DROP VIEW IF EXISTS analytics.provider_stats",
     "DROP TABLE IF EXISTS analytics.provider_stats",
+    "DROP VIEW IF EXISTS analytics.provider_stats",
     ...buildProviderStatsCreateReadModelStatements(),
   ];
 }
@@ -976,6 +980,31 @@ export function buildAnalyticsFitnessReadModelStatements(): string[] {
     buildBodyMeasurementReadModelSql(),
     buildDailyMetricsReadModelSql(),
     ...buildProviderStatsCreateReadModelStatements(),
+  ];
+}
+
+export function buildAnalyticsFitnessReadModelDropStatements(): string[] {
+  return [
+    "DROP VIEW IF EXISTS analytics.v_activity_members",
+    "DROP VIEW IF EXISTS analytics.v_activity",
+    "DROP VIEW IF EXISTS analytics.v_sleep",
+    "DROP VIEW IF EXISTS analytics.v_daily_metrics",
+    "DROP VIEW IF EXISTS analytics.v_body_measurement",
+    "DROP TABLE IF EXISTS analytics.provider_stats",
+    "DROP VIEW IF EXISTS analytics.provider_stats",
+  ];
+}
+
+export function buildProviderActivityAbsenceMigrationStatements(): string[] {
+  return [
+    "ALTER TABLE postgres_fitness.activity ADD COLUMN IF NOT EXISTS provider_absent_at Nullable(DateTime64(6, 'UTC'))",
+    ...buildAnalyticsFitnessReadModelDropStatements(),
+    buildActivityReadModelSql(),
+    buildActivityMembersReadModelSql(),
+    buildSleepReadModelSql(),
+    buildBodyMeasurementReadModelSql(),
+    buildDailyMetricsReadModelSql(),
+    buildProviderStatsTableSql(),
   ];
 }
 

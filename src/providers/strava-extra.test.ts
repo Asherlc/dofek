@@ -8,6 +8,11 @@ const { publishedMetricStreamBatches } = vi.hoisted<{
   publishedMetricStreamBatches: [],
 }));
 
+const providerActivityAbsenceMocks = vi.hoisted(() => ({
+  markProviderActivityAbsent: vi.fn().mockResolvedValue(undefined),
+  reconcileProviderActivityAbsence: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("../metric-stream/redpanda-producer.ts", () => ({
   getDefaultMetricStreamEventPublisher: async () => ({
     publishRows: async (rows: readonly Record<string, unknown>[]) => {
@@ -26,8 +31,15 @@ vi.mock("../db/token-user-context.ts", () => ({
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
 
+vi.mock("../db/provider-activity-absence.ts", () => ({
+  markProviderActivityAbsent: providerActivityAbsenceMocks.markProviderActivityAbsent,
+  reconcileProviderActivityAbsence: providerActivityAbsenceMocks.reconcileProviderActivityAbsence,
+}));
+
 beforeEach(() => {
   publishedMetricStreamBatches.length = 0;
+  providerActivityAbsenceMocks.markProviderActivityAbsent.mockClear();
+  providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockClear();
 });
 
 // ============================================================
@@ -204,6 +216,7 @@ describe("StravaProvider.sync", () => {
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.provider).toBe("strava");
     expect(result.errors.some((e) => e.message.includes("rate limit"))).toBe(true);
+    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).not.toHaveBeenCalled();
   });
 });
 
@@ -348,6 +361,14 @@ describe("StravaProvider.sync — additional coverage", () => {
         String(url).includes(`/activities/${MOCK_ACTIVITY.id}/streams`),
       ),
     ).toBe(true);
+    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        providerId: "strava",
+        windowStart: new Date("2026-01-01"),
+        presentExternalIds: new Set([String(MOCK_ACTIVITY.id)]),
+      }),
+    );
   });
 
   it("writes expected upsert payloads for activity records", async () => {
