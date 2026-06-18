@@ -195,6 +195,17 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).toContain("(row_number - 1) * (toUInt64({maxPoints:UInt32}) - 1)");
   });
 
+  it("prefers GPS timestamps when downsampling activity stream points", async () => {
+    const { store, query } = makeStore([]);
+
+    await store.getStream(window, 500);
+
+    const queryText = query.mock.calls[0]?.[0]?.query;
+    expect(queryText).toContain("has_location");
+    expect(queryText).toContain("countIf(has_location = 1) > 0");
+    expect(queryText).toContain("argMinIf(recorded_at, recorded_at, has_location = 1)");
+  });
+
   it("generates heart-rate zone SQL from the shared zone definitions", async () => {
     const { store, query } = makeStore([{ zone: 0, seconds: 5 }]);
 

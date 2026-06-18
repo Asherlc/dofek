@@ -12,6 +12,7 @@ import { formatActivityTypeLabel } from "@dofek/training/training";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
+  Alert,
   Image,
   RefreshControl,
   ScrollView,
@@ -42,19 +43,73 @@ export default function ActivitiesScreen() {
   const endDate = useMemo(() => formatDateYmd(), []);
   const [weeks, setWeeks] = useState(DEFAULT_WEEKS);
   const [activityType, setActivityType] = useState(ALL_ACTIVITY_TYPES);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedActivityIds, setSelectedActivityIds] = useState<Set<string>>(new Set());
   const selectedActivityType = activityType === ALL_ACTIVITY_TYPES ? undefined : activityType;
   const queryInput = {
     weeks,
     endDate,
     ...(selectedActivityType ? { activityType: selectedActivityType } : {}),
   };
+  const trpcUtils = trpc.useUtils();
   const query = trpc.calendar.weekList.useQuery(queryInput);
   const overviewQuery = trpc.calendar.activityOverview.useQuery(queryInput, {
     placeholderData: (previousData) => previousData,
   });
+  const bulkDelete = trpc.activity.bulkDelete.useMutation({
+    onSuccess: async () => {
+      await trpcUtils.calendar.weekList.invalidate();
+      await trpcUtils.calendar.activityOverview.invalidate();
+      await trpcUtils.activity.list.invalidate();
+      setSelectedActivityIds(new Set());
+      setSelectMode(false);
+    },
+  });
   const { refreshing, onRefresh } = useRefresh();
 
   const dayGroups = query.data;
+  const hasActivities = dayGroups?.some((day) => day.activities.length > 0) ?? false;
+  const selectedCount = selectedActivityIds.size;
+  const toggleSelectedActivity = (activityId: string) => {
+    setSelectedActivityIds((current) => {
+      const next = new Set(current);
+      if (next.has(activityId)) {
+        next.delete(activityId);
+      } else {
+        next.add(activityId);
+      }
+      return next;
+    });
+  };
+  const cancelSelection = () => {
+    setSelectedActivityIds(new Set());
+    setSelectMode(false);
+  };
+  const updateActivityType = (nextActivityType: string) => {
+    setActivityType(nextActivityType);
+    cancelSelection();
+  };
+  const updateWeeks = (nextWeeks: number) => {
+    setWeeks(nextWeeks);
+    cancelSelection();
+  };
+  const confirmBulkDelete = () => {
+    if (selectedCount === 0) return;
+    Alert.alert(
+      "Delete Activities",
+      `Delete ${selectedCount} selected ${selectedCount === 1 ? "activity" : "activities"}? This cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            bulkDelete.mutate({ ids: [...selectedActivityIds] });
+          },
+        },
+      ],
+    );
+  };
 
   return (
     <ScrollView
@@ -80,9 +135,20 @@ export default function ActivitiesScreen() {
         activityTypes={overviewQuery.data?.activityTypes ?? []}
         activityType={activityType}
         weeks={weeks}
-        onActivityTypeChange={setActivityType}
-        onWeeksChange={setWeeks}
+        canSelect={hasActivities}
+        selectMode={selectMode}
+        selectedCount={selectedCount}
+        deletePending={bulkDelete.isPending}
+        onActivityTypeChange={updateActivityType}
+        onWeeksChange={updateWeeks}
+        onSelect={() => setSelectMode(true)}
+        onCancelSelection={cancelSelection}
+        onDeleteSelected={confirmBulkDelete}
       />
+
+      {bulkDelete.error ? (
+        <QueryStatePanel variant="error" message={bulkDelete.error.message} />
+      ) : null}
 
       {overviewQuery.isLoading ? (
         <QueryStatePanel variant="loading" minHeight={100} />
@@ -109,8 +175,17 @@ export default function ActivitiesScreen() {
               <TouchableOpacity
                 key={activity.id}
                 activeOpacity={0.7}
-                onPress={() => router.push(`/activity/${activity.id}`)}
-                style={styles.card}
+                onPress={() => {
+                  if (selectMode) {
+                    toggleSelectedActivity(activity.id);
+                    return;
+                  }
+                  router.push(`/activity/${activity.id}`);
+                }}
+                style={[
+                  styles.card,
+                  selectedActivityIds.has(activity.id) ? styles.cardSelected : null,
+                ]}
               >
                 <View style={styles.cardContent}>
                   <View style={styles.cardMain}>
@@ -118,6 +193,18 @@ export default function ActivitiesScreen() {
                       <Text style={styles.activityName} numberOfLines={1}>
                         {activity.name ?? formatActivityTypeLabel(activity.activityType)}
                       </Text>
+                      {selectMode ? (
+                        <Text
+                          style={[
+                            styles.selectionPill,
+                            selectedActivityIds.has(activity.id)
+                              ? styles.selectionPillSelected
+                              : null,
+                          ]}
+                        >
+                          {selectedActivityIds.has(activity.id) ? "Selected" : "Select"}
+                        </Text>
+                      ) : null}
                       <Text style={styles.typePill}>
                         {formatActivityTypeLabel(activity.activityType)}
                       </Text>
@@ -145,22 +232,67 @@ interface ActivityControlsProps {
   activityTypes: string[];
   activityType: string;
   weeks: number;
+  canSelect: boolean;
+  selectMode: boolean;
+  selectedCount: number;
+  deletePending: boolean;
   onActivityTypeChange: (activityType: string) => void;
   onWeeksChange: (weeks: number) => void;
+  onSelect: () => void;
+  onCancelSelection: () => void;
+  onDeleteSelected: () => void;
 }
 
 function ActivityControls({
   activityTypes,
   activityType,
   weeks,
+  canSelect,
+  selectMode,
+  selectedCount,
+  deletePending,
   onActivityTypeChange,
   onWeeksChange,
+  onSelect,
+  onCancelSelection,
+  onDeleteSelected,
 }: ActivityControlsProps) {
   return (
     <View style={styles.controlsPanel}>
-      <View>
+      <View style={styles.controlsHeader}>
         <Text style={styles.controlsTitle}>Activity log</Text>
+        {canSelect && !selectMode ? (
+          <TouchableOpacity style={styles.selectButton} onPress={onSelect} activeOpacity={0.7}>
+            <Text style={styles.selectButtonText}>Select</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
+      {selectMode ? (
+        <View style={styles.bulkActionRow}>
+          <Text style={styles.selectedCount}>{selectedCount} selected</Text>
+          <TouchableOpacity
+            style={[
+              styles.deleteSelectionButton,
+              selectedCount === 0 ? styles.disabledAction : null,
+            ]}
+            onPress={onDeleteSelected}
+            disabled={selectedCount === 0 || deletePending}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.deleteSelectionButtonText}>
+              {deletePending ? "Deleting..." : "Delete"}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.cancelSelectionButton}
+            onPress={onCancelSelection}
+            disabled={deletePending}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.cancelSelectionButtonText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
       <View style={styles.chipRow}>
         {DATE_RANGE_OPTIONS.map((option) => (
           <TouchableOpacity
@@ -428,10 +560,64 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.sm,
   },
+  controlsHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
   controlsTitle: {
     color: colors.text,
     fontSize: 15,
     fontWeight: "700",
+  },
+  selectButton: {
+    borderColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  selectButtonText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  bulkActionRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
+  selectedCount: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  deleteSelectionButton: {
+    backgroundColor: colors.danger,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  deleteSelectionButtonText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  cancelSelectionButton: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  cancelSelectionButtonText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  disabledAction: {
+    opacity: 0.5,
   },
   chipRow: {
     flexDirection: "row",
@@ -508,6 +694,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     overflow: "hidden",
   },
+  cardSelected: {
+    borderColor: colors.accent,
+    borderWidth: 1,
+  },
   cardContent: {
     flexDirection: "row",
     gap: spacing.sm,
@@ -538,6 +728,22 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     paddingHorizontal: spacing.xs,
     paddingVertical: 2,
+  },
+  selectionPill: {
+    borderColor: colors.surfaceSecondary,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "600",
+    overflow: "hidden",
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+  },
+  selectionPillSelected: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+    color: "#fff",
   },
   activityMeta: {
     color: colors.textSecondary,
