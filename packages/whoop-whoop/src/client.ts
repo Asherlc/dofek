@@ -37,6 +37,14 @@ export class WhoopRateLimitError extends ProviderRateLimitError {
   }
 }
 
+/** Thrown when metrics-service rejects a metric name (400/404). */
+export class WhoopMetricUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WhoopMetricUnavailableError";
+  }
+}
+
 function createWhoopRateLimitError(response: Response, responseBody: string): WhoopRateLimitError {
   const retryAfterSeconds = parseRetryAfterHeader(response.headers.get("Retry-After"));
   return new WhoopRateLimitError(
@@ -393,17 +401,33 @@ export class WhoopClient {
     return this.getMetricValues("steps", start, end, step);
   }
 
+  /** Strain deep-dive BFF — includes daily step count in CONTRIBUTORS_TILE_STEPS. */
+  async getStrainDeepDive(date: string): Promise<unknown> {
+    return this.#get<unknown>(`${WHOOP_API_BASE}/home-service/v1/deep-dive/strain`, { date });
+  }
+
   async getMetricValues(
     name: "heart_rate" | "steps",
     start: string,
     end: string,
     step: number,
   ): Promise<WhoopMetricValue[]> {
-    const response = await this.#get<WhoopMetricResponse>(
-      `${WHOOP_API_BASE}/metrics-service/v1/metrics/user/${this.#userId}`,
-      { start, end, step: String(step), name },
-    );
-    return response.values ?? [];
+    try {
+      const response = await this.#get<WhoopMetricResponse>(
+        `${WHOOP_API_BASE}/metrics-service/v1/metrics/user/${this.#userId}`,
+        { start, end, step: String(step), name },
+      );
+      return response.values ?? [];
+    } catch (err) {
+      if (
+        err instanceof Error &&
+        (err.message.includes("WHOOP API error (400)") ||
+          err.message.includes("WHOOP API error (404)"))
+      ) {
+        throw new WhoopMetricUnavailableError(err.message);
+      }
+      throw err;
+    }
   }
 
   async getCycles(start: string, end: string, limit = 26): Promise<WhoopCycle[]> {

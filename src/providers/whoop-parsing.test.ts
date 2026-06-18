@@ -13,6 +13,7 @@ import {
   buildV2ActivityTypeLookup,
   type InlineSleepRecord,
   parseDailyStepValues,
+  parseStrainDeepDiveSteps,
   parseHeartRateValues,
   parseInlineSleep,
   parseRecovery,
@@ -709,6 +710,37 @@ describe("parseHeartRateValues — edge cases", () => {
     expect(parsed[0]?.heartRate).toBe(72);
     expect(parsed[1]?.recordedAt).toEqual(new Date(1709280006000));
     expect(parsed[1]?.heartRate).toBe(75);
+  });
+});
+
+describe("parseStrainDeepDiveSteps", () => {
+  it("extracts comma-formatted step counts from strain contributors", () => {
+    const raw = {
+      sections: [
+        {
+          items: [
+            {
+              type: "CONTRIBUTORS_TILE",
+              content: {
+                id: "STRAIN_CONTRIBUTORS_TILE",
+                metrics: [
+                  {
+                    id: "CONTRIBUTORS_TILE_STEPS",
+                    status: "10,616",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(parseStrainDeepDiveSteps(raw)).toBe(10616);
+  });
+
+  it("returns null when the strain contributors tile is missing", () => {
+    expect(parseStrainDeepDiveSteps({ sections: [] })).toBeNull();
   });
 });
 

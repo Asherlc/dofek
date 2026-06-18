@@ -1,11 +1,10 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { WhoopClient } from "whoop-whoop/client";
 import type {
   WhoopHrValue,
-  WhoopMetricValue,
   WhoopRecoveryRecord,
   WhoopSleepRecord,
   WhoopWorkoutRecord,
@@ -16,6 +15,7 @@ import {
   journalEntry,
   sleepSession,
   sleepStage,
+  syncLog,
   TEST_USER_ID,
 } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
@@ -140,11 +140,34 @@ function fakeHrValues(count: number, startTime: number): WhoopHrValue[] {
   }));
 }
 
+function fakeStrainDeepDiveResponse(steps: number): Record<string, unknown> {
+  return {
+    sections: [
+      {
+        items: [
+          {
+            type: "CONTRIBUTORS_TILE",
+            content: {
+              id: "STRAIN_CONTRIBUTORS_TILE",
+              metrics: [
+                {
+                  id: "CONTRIBUTORS_TILE_STEPS",
+                  status: steps.toLocaleString("en-US"),
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
+}
+
 function whoopHandlers(
   cycles: FakeCycle[],
   opts?: {
     hrValues?: WhoopHrValue[];
-    stepValues?: WhoopMetricValue[];
+    stepsByDate?: Record<string, number>;
     authError?: boolean;
     /** Per-activityId response for GET sleep-events (detailed sleep + stages). */
     sleepDetailByActivityId?: Record<string, WhoopSleepRecord>;
@@ -196,18 +219,31 @@ function whoopHandlers(
       return HttpResponse.json(fakeSleepResponse);
     }),
 
-    // Metrics (metrics-service): heart_rate + steps
+    // Metrics (metrics-service): heart_rate only
     http.get(
       "https://api.prod.whoop.com/metrics-service/v1/metrics/user/:userId",
       ({ request }) => {
         const metricName = new URL(request.url).searchParams.get("name");
         if (metricName === "steps") {
-          return HttpResponse.json({ values: opts?.stepValues ?? [] });
+          return HttpResponse.json(
+            { code: 400, message: "query param name must be one of [heart_rate]" },
+            { status: 400 },
+          );
         }
         const values = opts?.hrValues ?? fakeHrValues(100, Date.now() - 600000);
         return HttpResponse.json({ values });
       },
     ),
+
+    // Strain deep-dive BFF (daily steps)
+    http.get("https://api.prod.whoop.com/home-service/v1/deep-dive/strain", ({ request }) => {
+      const date = new URL(request.url).searchParams.get("date") ?? "";
+      const steps = opts?.stepsByDate?.[date];
+      if (steps == null) {
+        return HttpResponse.json({ sections: [] });
+      }
+      return HttpResponse.json(fakeStrainDeepDiveResponse(steps));
+    }),
 
     // Journal / behavior-impact-service
     http.get("https://api.prod.whoop.com/behavior-impact-service/v1/impact", () => {
@@ -312,14 +348,16 @@ describe("WhoopProvider.sync() (integration)", () => {
     expect(day.skinTempC).toBeCloseTo(34.2);
   });
 
-  it("syncs daily steps from metrics-service into daily_metrics", async () => {
+  it("syncs daily steps from strain deep-dive into daily_metrics", async () => {
     const cycles = [fakeCycle({ days: ["2026-03-01"] })];
-    const stepValues: WhoopMetricValue[] = [
-      { time: new Date("2026-03-01T08:00:00Z").getTime(), data: 1200 },
-      { time: new Date("2026-03-01T20:00:00Z").getTime(), data: 7421 },
-      { time: new Date("2026-03-02T21:00:00Z").getTime(), data: 9100 },
-    ];
-    server.use(...whoopHandlers(cycles, { stepValues }));
+    server.use(
+      ...whoopHandlers(cycles, {
+        stepsByDate: {
+          "2026-03-01": 7421,
+          "2026-03-02": 9100,
+        },
+      }),
+    );
     const provider = new WhoopProvider();
     const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
       metricStreamPublisher: metricStreamCapture.publisher,
@@ -336,6 +374,26 @@ describe("WhoopProvider.sync() (integration)", () => {
     const march2 = rows.find((row) => row.date === "2026-03-02");
     expect(march1?.steps).toBe(7421);
     expect(march2?.steps).toBe(9100);
+  });
+
+  it("skips daily steps when strain deep-dive has no contributors tile", async () => {
+    const cycles = [fakeCycle({ days: ["2026-03-01"] })];
+    server.use(...whoopHandlers(cycles));
+    const provider = new WhoopProvider();
+    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
+
+    expect(result.errors).toHaveLength(0);
+
+    const [dailyActivityLog] = await ctx.db
+      .select()
+      .from(syncLog)
+      .where(and(eq(syncLog.providerId, "whoop"), eq(syncLog.dataType, "daily_activity")))
+      .orderBy(desc(syncLog.syncedAt))
+      .limit(1);
+    expect(dailyActivityLog?.status).toBe("success");
+    expect(dailyActivityLog?.errorMessage).toBeNull();
   });
 
   it("syncs sleep sessions", async () => {
