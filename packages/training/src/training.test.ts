@@ -3,6 +3,8 @@ import { ENDURANCE_ACTIVITY_TYPES } from "./endurance-types";
 import {
   CANONICAL_ACTIVITY_TYPES,
   CYCLING_ACTIVITY_TYPES,
+  cadenceAxisLabel,
+  cadenceUnit,
   collapseWeeklyVolumeActivityTypes,
   createActivityTypeMapper,
   formatActivityTypeLabel,
@@ -117,6 +119,26 @@ describe("isCyclingActivity", () => {
     expect(isCyclingActivity("swimming")).toBe(false);
     expect(isCyclingActivity("strength")).toBe(false);
     expect(isCyclingActivity("other")).toBe(false);
+  });
+});
+
+describe("cadenceUnit", () => {
+  it("returns rpm for cycling activity types", () => {
+    expect(cadenceUnit("cycling")).toBe("rpm");
+    expect(cadenceUnit("indoor_cycling")).toBe("rpm");
+  });
+
+  it("returns steps/min for running, walking, and hiking", () => {
+    expect(cadenceUnit("running")).toBe("steps/min");
+    expect(cadenceUnit("walking")).toBe("steps/min");
+    expect(cadenceUnit("hiking")).toBe("steps/min");
+  });
+});
+
+describe("cadenceAxisLabel", () => {
+  it("labels cadence by activity type", () => {
+    expect(cadenceAxisLabel("cycling")).toBe("Cadence (rpm)");
+    expect(cadenceAxisLabel("hiking")).toBe("Cadence (steps/min)");
   });
 });
 

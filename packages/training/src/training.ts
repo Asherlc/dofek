@@ -170,6 +170,16 @@ export function isCyclingActivity(activityType: string): activityType is Cycling
   return CYCLING_ACTIVITY_TYPES.some((t) => t === activityType);
 }
 
+/** Cadence unit for display based on activity type. */
+export function cadenceUnit(activityType: string): "rpm" | "steps/min" {
+  return isCyclingActivity(activityType) ? "rpm" : "steps/min";
+}
+
+/** Y-axis label for cadence charts. */
+export function cadenceAxisLabel(activityType: string): string {
+  return `Cadence (${cadenceUnit(activityType)})`;
+}
+
 // ============================================================
 // Endurance activity types
 // ============================================================
