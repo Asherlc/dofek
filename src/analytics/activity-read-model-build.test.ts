@@ -1,6 +1,9 @@
 import { EventEmitter } from "node:events";
+import { Readable } from "node:stream";
 import type { ChildProcess } from "node:child_process";
+import type { Mock } from "vitest";
 import { describe, expect, it, vi } from "vitest";
+import type { ClickHouseClient } from "../db/clickhouse.ts";
 import {
   ACTIVITY_DELETE_DBT_SELECT,
   countActivePeerDbActivities,
@@ -8,13 +11,26 @@ import {
   waitForPeerDbActivityDeletes,
 } from "./activity-read-model-build.ts";
 
+function createMockClickHouseClient(query: Mock): ClickHouseClient {
+  return {
+    command: vi.fn(),
+    query,
+  };
+}
+
+function createMockChildProcess(): ChildProcess {
+  return Object.assign(new EventEmitter(), {
+    stderr: new Readable({ read() {} }),
+  }) as ChildProcess;
+}
+
 describe("activity-read-model-build", () => {
   it("counts active mirrored activities for the requested ids", async () => {
-    const client = {
-      query: vi.fn().mockResolvedValue({
+    const client = createMockClickHouseClient(
+      vi.fn().mockResolvedValue({
         json: vi.fn().mockResolvedValue([{ active_count: 1 }]),
       }),
-    };
+    );
 
     await expect(
       countActivePeerDbActivities(client, ["00000000-0000-0000-0000-000000000001"]),
@@ -22,12 +38,12 @@ describe("activity-read-model-build", () => {
   });
 
   it("waits until PeerDB no longer reports deleted activities as active", async () => {
-    const client = {
-      query: vi
+    const client = createMockClickHouseClient(
+      vi
         .fn()
         .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ active_count: 1 }]) })
         .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ active_count: 0 }]) }),
-    };
+    );
 
     await expect(
       waitForPeerDbActivityDeletes(client, ["00000000-0000-0000-0000-000000000001"], {
@@ -38,8 +54,7 @@ describe("activity-read-model-build", () => {
   });
 
   it("runs the activity delete dbt model chain", async () => {
-    const child = new EventEmitter() as ChildProcess & { stderr: EventEmitter };
-    child.stderr = new EventEmitter();
+    const child = createMockChildProcess();
     const spawnImpl = vi.fn().mockReturnValue(child);
 
     const buildPromise = runActivityReadModelBuild(spawnImpl);
