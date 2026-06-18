@@ -3,7 +3,8 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import { osmTilePreview, osmTileUrl } from "../lib/osm-tile.ts";
 import { ActivitySourceAttribution } from "../models/activity-source-attribution.ts";
-import { ActivitiesCalendarRepository } from "./activities-calendar-repository.ts";
+import { ActivitiesCalendarRepository, mergeDayGroups } from "./activities-calendar-repository.ts";
+import type { CalendarActivityEntry } from "./activities-calendar-repository.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 
 function makeDatabase(rows: Record<string, unknown>[] = []) {
@@ -82,6 +83,22 @@ function expectDedupedActivitiesDriveActivityListIdentity(queryText: string | un
   expect(normalizedQueryText).toContain("activity.activity_type AS activity_type");
   expect(normalizedQueryText).toContain("toString(activity.started_at) AS started_at");
   expect(normalizedQueryText).toContain("toString(activity.ended_at) AS ended_at");
+}
+
+function makeCalendarEntry(
+  overrides: Partial<CalendarActivityEntry> & Pick<CalendarActivityEntry, "id" | "startedAt">,
+): CalendarActivityEntry {
+  return {
+    name: overrides.name ?? overrides.id,
+    activityType: overrides.activityType ?? "running",
+    endedAt: overrides.endedAt ?? overrides.startedAt,
+    durationMin: overrides.durationMin ?? 60,
+    location: overrides.location ?? null,
+    calories: overrides.calories ?? null,
+    tss: overrides.tss ?? null,
+    stats: overrides.stats ?? [],
+    ...overrides,
+  };
 }
 
 describe("ActivitiesCalendarRepository", () => {
@@ -820,6 +837,12 @@ describe("ActivitiesCalendarRepository", () => {
       }),
     );
     expect(sensorStore.query).toHaveBeenNthCalledWith(
+      5,
+      expect.anything(),
+      expect.stringContaining("FROM postgres_fitness.user_profile_current"),
+      { userId: "user-1" },
+    );
+    expect(sensorStore.query).toHaveBeenNthCalledWith(
       3,
       expect.anything(),
       expect.stringContaining("FROM postgres_fitness.activity AS activity FINAL"),
@@ -946,6 +969,12 @@ describe("ActivitiesCalendarRepository", () => {
   });
 
   it("enriches hidden activities with summary metrics and route previews", async () => {
+    const routePoints = [
+      { lat: 37.8, lng: -122.4 },
+      { lat: 37.801, lng: -122.399 },
+      { lat: 37.802, lng: -122.398 },
+    ];
+    const routePreview = osmTilePreview(routePoints);
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
       [],
@@ -984,13 +1013,11 @@ describe("ActivitiesCalendarRepository", () => {
         },
       ],
       [{ max_hr: null, resting_hr: null, ftp: null }],
-      [
-        {
-          activity_id: "hidden-outdoor",
-          lat: 37.8,
-          lng: -122.4,
-        },
-      ],
+      routePoints.map((point) => ({
+        activity_id: "hidden-outdoor",
+        lat: point.lat,
+        lng: point.lng,
+      })),
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
@@ -1000,18 +1027,14 @@ describe("ActivitiesCalendarRepository", () => {
       includeProviderAbsent: true,
     });
 
-    expect(result[0]?.activities[0]).toEqual(
-      expect.objectContaining({
-        id: "hidden-outdoor",
-        isProviderAbsent: true,
-        location: expect.objectContaining({
-          centroidLat: 37.8,
-          centroidLng: -122.4,
-          distanceMeters: 5000,
-          elevationGainM: 125,
-        }),
-      }),
-    );
+    expect(result[0]?.activities[0]?.location).toEqual({
+      centroidLat: 37.8,
+      centroidLng: -122.4,
+      tileUrl: routePreview.tileUrl,
+      routePath: routePreview.routePath,
+      distanceMeters: 5000,
+      elevationGainM: 125,
+    });
   });
 
   it("includes partial absence summaries for canonical activities with absent source links", async () => {
@@ -1586,6 +1609,64 @@ describe("ActivitiesCalendarRepository", () => {
     ]);
   });
 
+  it("sorts merged active and hidden activities on the same day by startedAt descending", async () => {
+    const database = makeDatabase([{ id: "active-early", calories: 200 }]);
+    const sensorStore = makeSensorStore([
+      [
+        makeActivityRow({
+          id: "active-early",
+          name: "Active Early",
+          started_at: "2026-03-18T07:00:00.000Z",
+          ended_at: "2026-03-18T08:00:00.000Z",
+          local_date: "2026-03-18",
+        }),
+      ],
+      [{ max_hr: null, resting_hr: null, ftp: 250 }],
+      [],
+      [
+        {
+          id: "hidden-late",
+          name: "Hidden Late",
+          activity_type: "running",
+          started_at: "2026-03-18T10:00:00.000Z",
+          ended_at: "2026-03-18T11:00:00.000Z",
+          duration_min: 60,
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          total_distance: null,
+          elevation_gain_m: null,
+          centroid_lat: null,
+          centroid_lng: null,
+          local_date: "2026-03-18",
+          provider_id: "strava",
+          provider_absent_at: "2026-03-05T14:30:00.000Z",
+          calories: null,
+        },
+      ],
+      [],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    const result = await repository.getWeekList({
+      weeks: 1,
+      endDate: "2026-03-20",
+      includeProviderAbsent: true,
+    });
+
+    expect(result).toEqual([
+      {
+        date: "2026-03-18",
+        activities: [
+          expect.objectContaining({ id: "hidden-late" }),
+          expect.objectContaining({ id: "active-early" }),
+        ],
+      },
+    ]);
+  });
+
   it("filters hidden activities by activity type when requested", async () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
@@ -1754,5 +1835,86 @@ describe("ActivitiesCalendarRepository", () => {
         ],
       }),
     );
+  });
+});
+
+describe("mergeDayGroups", () => {
+  it("sorts day groups in descending date order", () => {
+    const activeDays = [
+      {
+        date: "2026-03-17",
+        activities: [makeCalendarEntry({ id: "active-old", startedAt: "2026-03-17T07:00:00.000Z" })],
+      },
+    ];
+    const hiddenDays = [
+      {
+        date: "2026-03-18",
+        activities: [
+          makeCalendarEntry({ id: "hidden-new", startedAt: "2026-03-18T07:00:00.000Z" }),
+        ],
+      },
+    ];
+
+    expect(mergeDayGroups(activeDays, hiddenDays).map((day) => day.date)).toEqual([
+      "2026-03-18",
+      "2026-03-17",
+    ]);
+  });
+
+  it("sorts activities within a day by startedAt descending", () => {
+    const activeDays = [
+      {
+        date: "2026-03-18",
+        activities: [
+          makeCalendarEntry({
+            id: "early",
+            startedAt: "2026-03-18T07:00:00.000Z",
+          }),
+          makeCalendarEntry({
+            id: "late",
+            startedAt: "2026-03-18T10:00:00.000Z",
+          }),
+        ],
+      },
+    ];
+
+    expect(
+      mergeDayGroups(activeDays, []).flatMap((day) => day.activities.map((activity) => activity.id)),
+    ).toEqual(["late", "early"]);
+  });
+
+  it("prefers active entries when active and hidden activities share the same id", () => {
+    const activeDays = [
+      {
+        date: "2026-03-18",
+        activities: [
+          makeCalendarEntry({
+            id: "shared-id",
+            name: "Active Ride",
+            startedAt: "2026-03-18T07:00:00.000Z",
+          }),
+        ],
+      },
+    ];
+    const hiddenDays = [
+      {
+        date: "2026-03-18",
+        activities: [
+          makeCalendarEntry({
+            id: "shared-id",
+            name: "Hidden Ride",
+            startedAt: "2026-03-18T07:00:00.000Z",
+            isProviderAbsent: true,
+          }),
+        ],
+      },
+    ];
+
+    expect(mergeDayGroups(activeDays, hiddenDays)).toEqual([
+      {
+        date: "2026-03-18",
+        activities: [expect.objectContaining({ id: "shared-id", name: "Active Ride" })],
+      },
+    ]);
   });
 });

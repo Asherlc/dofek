@@ -415,9 +415,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       dayMap.set(row.local_date, bucket);
     }
 
-    return Array.from(dayMap.entries())
-      .map(([date, activities]) => ({ date, activities }))
-      .sort((a, b) => (a.date < b.date ? 1 : -1));
+    return Array.from(dayMap.entries()).map(([date, activities]) => ({ date, activities }));
   }
 
   #clickhouseTimestampAccessClause(): string {
@@ -532,7 +530,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
   }
 }
 
-function mergeDayGroups(
+export function mergeDayGroups(
   activeDays: CalendarDayActivities[],
   hiddenDays: CalendarDayActivities[],
 ): CalendarDayActivities[] {
