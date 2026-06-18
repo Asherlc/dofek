@@ -2,7 +2,7 @@
     materialized='incremental',
     incremental_strategy='microbatch',
     unique_key=['user_id', 'channel', 'recorded_at'],
-    event_time='recorded_at',
+    event_time='refreshed_at',
     begin='2026-01-01',
     batch_size='day',
     lookback=3,
@@ -52,9 +52,10 @@ SELECT
         minIf(samples.provider_priority, samples._peerdb_is_deleted = 0),
         65535
     ) AS provider_priority,
+    max(samples._peerdb_synced_at) AS source_refreshed_at,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
     if(countIf(samples._peerdb_is_deleted = 0) = 0, 1, 0) AS is_deleted,
-    now64(9) AS refreshed_at
+    source_refreshed_at AS refreshed_at
 FROM batch_keys
 LEFT JOIN samples
     ON samples.user_id = batch_keys.user_id

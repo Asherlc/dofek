@@ -46,14 +46,15 @@ Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `activity_sensor_summary_rows`, `activity_location_summary_rows`,
 `activity_summary_rows`, `activity_vo2max_estimate`, `provider_stats`,
 `daily_activity_load`, `daily_strain`, `healthspan_activity_zone_minutes`,
-and `weekly_healthspan`. The sample-stage and most sample-intermediate models
-use dbt's `microbatch` incremental strategy with `recorded_at` as the event
-time, daily batches, and short lookbacks so ClickHouse processes bounded
-sample-time windows instead of one large activity/window query. Activity sample
-membership models (`activity_sensor_sample` and `activity_location_sample`) use
-upstream source freshness as their microbatch event time so late activity
-dedupe changes can reattach older workout samples outside the normal recorded
-time lookback. `deduped_activities` and `deduped_activity_members`
+and `weekly_healthspan`. Sample-time models use dbt's `microbatch`
+incremental strategy with daily batches and short lookbacks so ClickHouse
+processes bounded windows instead of one large activity/window query. Activity
+stream staging uses the `metric_stream_freshness` source alias and batches by
+`_peerdb_synced_at`; downstream activity sample membership models
+(`activity_sensor_sample` and `activity_location_sample`) use upstream source
+freshness as their microbatch event time so late provider stream syncs and
+late activity dedupe changes can reattach older workout samples outside the
+normal recorded-time lookback. `deduped_activities` and `deduped_activity_members`
 materialize canonical activity identity once, but incremental runs only rebuild
 activity windows affected by new raw activity changes; provider/device priority
 changes intentionally rebuild the full activity dedupe graph because they can
