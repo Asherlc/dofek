@@ -49,7 +49,11 @@ export function RecentActivitiesSection({ activityTypes }: RecentActivitiesSecti
   });
   const bulkDelete = trpc.activity.bulkDelete.useMutation({
     onSuccess: async () => {
-      await trpcUtils.activity.list.invalidate();
+      await Promise.all([
+        trpcUtils.activity.list.invalidate(),
+        trpcUtils.calendar.weekList.invalidate(),
+        trpcUtils.calendar.activityOverview.invalidate(),
+      ]);
     },
   });
 

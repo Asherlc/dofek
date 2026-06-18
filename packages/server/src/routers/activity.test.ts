@@ -1,6 +1,7 @@
 import { mapHrZones } from "@dofek/zones/zones";
 import { TRPCError } from "@trpc/server";
-import { describe, expect, it, vi } from "vitest";
+import { queryCache } from "dofek/lib/cache";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityRow } from "../models/activity.ts";
 import { Activity } from "../models/activity.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
@@ -8,6 +9,19 @@ import { PowerRepository } from "../repositories/power-repository.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
 import { mapStreamPoint } from "./activity.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
+
+vi.mock("dofek/lib/cache", () => ({
+  queryCache: {
+    invalidateByPrefix: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
+const mockEnqueueActivityDeleteAnalyticsRefresh = vi.fn().mockResolvedValue(undefined);
+
+vi.mock("dofek/jobs/queues", () => ({
+  enqueueActivityDeleteAnalyticsRefresh: (...args: unknown[]) =>
+    mockEnqueueActivityDeleteAnalyticsRefresh(...args),
+}));
 
 // Mock tRPC infrastructure
 vi.mock("../trpc.ts", async () => {
@@ -529,8 +543,15 @@ describe("activityRouter", () => {
   });
 
   describe("delete", () => {
+    beforeEach(() => {
+      mockEnqueueActivityDeleteAnalyticsRefresh.mockClear();
+    });
+
     it("calls DELETE with correct activity id and user_id", async () => {
-      const execute = vi.fn().mockResolvedValue([]);
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([{ member_activity_id: "00000000-0000-0000-0000-000000000001" }])
+        .mockResolvedValueOnce([]);
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
@@ -540,7 +561,77 @@ describe("activityRouter", () => {
         id: "00000000-0000-0000-0000-000000000001",
       });
       expect(result).toEqual({ success: true });
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute).toHaveBeenCalledTimes(2);
+    });
+
+    it("invalidates activity and calendar caches after delete", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([{ member_activity_id: "00000000-0000-0000-0000-000000000001" }])
+        .mockResolvedValueOnce([]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.delete({
+        id: "00000000-0000-0000-0000-000000000001",
+      });
+
+      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:activity.");
+      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:calendar.");
+    });
+
+    it("enqueues an activity analytics refresh after delete", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([
+          { member_activity_id: "00000000-0000-0000-0000-000000000001" },
+          { member_activity_id: "00000000-0000-0000-0000-000000000002" },
+        ])
+        .mockResolvedValueOnce([]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.delete({
+        id: "00000000-0000-0000-0000-000000000001",
+      });
+
+      expect(mockEnqueueActivityDeleteAnalyticsRefresh).toHaveBeenCalledWith("user-1", [
+        "00000000-0000-0000-0000-000000000001",
+        "00000000-0000-0000-0000-000000000002",
+      ]);
+    });
+
+    it("reports analytics enqueue failures to Sentry without failing delete", async () => {
+      const Sentry = await import("@sentry/node");
+      vi.mocked(Sentry.captureException).mockClear();
+      const enqueueError = new Error("redis unavailable");
+      mockEnqueueActivityDeleteAnalyticsRefresh.mockRejectedValueOnce(enqueueError);
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([{ member_activity_id: "00000000-0000-0000-0000-000000000001" }])
+        .mockResolvedValueOnce([]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.delete({
+          id: "00000000-0000-0000-0000-000000000001",
+        }),
+      ).resolves.toEqual({ success: true });
+
+      expect(Sentry.captureException).toHaveBeenCalledWith(enqueueError, {
+        tags: { phase: "activity-delete-analytics-enqueue" },
+        extra: { userId: "user-1", activityCount: 1 },
+      });
     });
 
     it("throws PRECONDITION_FAILED when activity views are missing", async () => {
@@ -567,7 +658,13 @@ describe("activityRouter", () => {
     });
 
     it("bulkDelete returns the deduplicated selected count", async () => {
-      const execute = vi.fn().mockResolvedValue([]);
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([
+          { member_activity_id: "00000000-0000-0000-0000-000000000001" },
+          { member_activity_id: "00000000-0000-0000-0000-000000000002" },
+        ])
+        .mockResolvedValueOnce([]);
       const caller = createCaller({
         db: { execute },
         userId: "user-1",
@@ -583,7 +680,57 @@ describe("activityRouter", () => {
       });
 
       expect(result).toEqual({ success: true, deletedCount: 2 });
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute).toHaveBeenCalledTimes(2);
+      expect(mockEnqueueActivityDeleteAnalyticsRefresh).toHaveBeenCalledWith("user-1", [
+        "00000000-0000-0000-0000-000000000001",
+        "00000000-0000-0000-0000-000000000002",
+      ]);
+    });
+
+    it("invalidates activity and calendar caches after bulkDelete", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.bulkDelete({
+        ids: ["00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002"],
+      });
+
+      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:activity.");
+      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:calendar.");
+    });
+
+    it("reports analytics enqueue failures to Sentry without failing bulkDelete", async () => {
+      const Sentry = await import("@sentry/node");
+      vi.mocked(Sentry.captureException).mockClear();
+      const enqueueError = new Error("queue unavailable");
+      mockEnqueueActivityDeleteAnalyticsRefresh.mockRejectedValueOnce(enqueueError);
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([
+          { member_activity_id: "00000000-0000-0000-0000-000000000001" },
+          { member_activity_id: "00000000-0000-0000-0000-000000000002" },
+        ])
+        .mockResolvedValueOnce([]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.bulkDelete({
+          ids: ["00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002"],
+        }),
+      ).resolves.toEqual({ success: true, deletedCount: 2 });
+
+      expect(Sentry.captureException).toHaveBeenCalledWith(enqueueError, {
+        tags: { phase: "activity-delete-analytics-enqueue" },
+        extra: { userId: "user-1", activityCount: 2 },
+      });
     });
 
     it("bulkDelete rejects oversized selections before querying the database", async () => {

@@ -47,6 +47,10 @@ vi.mock("./process-post-sync-job.ts", () => ({
   processPostSyncJob: vi.fn(),
 }));
 
+vi.mock("./process-activity-delete-analytics-job.ts", () => ({
+  processActivityDeleteAnalyticsJob: vi.fn(),
+}));
+
 vi.mock("./scheduled-sync.ts", () => ({
   setupScheduledSync: vi.fn(() => Promise.resolve()),
 }));
@@ -68,6 +72,7 @@ vi.mock("./queues.ts", () => ({
   EXPORT_QUEUE: "export-queue",
   SCHEDULED_SYNC_QUEUE: "scheduled-sync-queue",
   POST_SYNC_QUEUE: "post-sync-queue",
+  ACTIVITY_DELETE_ANALYTICS_QUEUE: "activity-delete-analytics-queue",
 }));
 
 vi.mock("@sentry/node", () => ({
@@ -103,9 +108,9 @@ describe("worker module", () => {
     await import("./worker.ts");
   });
 
-  // 2 per-provider workers (strava, garmin) + 1 legacy sync + 1 import + 1 export + 1 scheduled-sync + 1 post-sync = 7
+  // 2 per-provider workers (strava, garmin) + 1 legacy sync + 1 import + 1 export + 1 scheduled-sync + 1 post-sync + 1 activity-delete-analytics = 8
   // Training export is handled by the standalone Python BullMQ worker (packages/ml).
-  const EXPECTED_WORKER_COUNT = 7;
+  const EXPECTED_WORKER_COUNT = 8;
 
   it("creates per-provider workers plus standard workers", async () => {
     const { Worker } = await import("bullmq");
@@ -127,6 +132,11 @@ describe("worker module", () => {
       "post-sync-queue",
       expect.any(Function),
       expect.any(Object),
+    );
+    expect(Worker).toHaveBeenCalledWith(
+      "activity-delete-analytics-queue",
+      expect.any(Function),
+      expect.objectContaining({ concurrency: 1 }),
     );
   });
 
@@ -389,5 +399,20 @@ describe("worker module", () => {
     expect(createClickHouseClientFromEnv).toHaveBeenCalledOnce();
     expect(createRefitSensorStore).toHaveBeenCalledOnce();
     expect(refreshBodyMeasurementReadModel).toHaveBeenCalledOnce();
+  });
+
+  it("activity-delete-analytics processor delegates to processActivityDeleteAnalyticsJob", async () => {
+    const { processActivityDeleteAnalyticsJob } = await import(
+      "./process-activity-delete-analytics-job.ts"
+    );
+    vi.mocked(processActivityDeleteAnalyticsJob).mockClear();
+
+    await invokeProcessor("activity-delete-analytics-queue", {
+      type: "activity-delete-analytics-refresh",
+      userId: "user-1",
+      activityIds: ["00000000-0000-0000-0000-000000000001"],
+    });
+
+    expect(processActivityDeleteAnalyticsJob).toHaveBeenCalled();
   });
 });

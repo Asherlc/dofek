@@ -12,6 +12,7 @@ import cookieParser from "cookie-parser";
 import { createDatabaseFromEnv } from "dofek/db";
 import { bootstrapClickHouseFromEnv, createClickHouseClientFromEnv } from "dofek/db/clickhouse";
 import {
+  createActivityDeleteAnalyticsQueue,
   createExportQueue,
   createImportQueue,
   createPostSyncQueue,
@@ -122,6 +123,7 @@ function setupRoutes(
   const exportQueue = createExportQueue();
   const scheduledSyncQueue = createScheduledSyncQueue();
   const postSyncQueue = createPostSyncQueue();
+  const activityDeleteAnalyticsQueue = createActivityDeleteAnalyticsQueue();
 
   // ── Bull Board dashboard (admin-only) ──
   const bullBoardAdapter = new ExpressAdapter();
@@ -133,6 +135,7 @@ function setupRoutes(
       new BullMQAdapter(exportQueue),
       new BullMQAdapter(scheduledSyncQueue),
       new BullMQAdapter(postSyncQueue),
+      new BullMQAdapter(activityDeleteAnalyticsQueue),
     ],
     serverAdapter: bullBoardAdapter,
   });

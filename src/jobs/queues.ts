@@ -49,6 +49,12 @@ export interface UserRefitPostSyncJobData {
 
 export type PostSyncJobData = GlobalMaintenancePostSyncJobData | UserRefitPostSyncJobData;
 
+export interface ActivityDeleteAnalyticsJobData {
+  type: "activity-delete-analytics-refresh";
+  userId: string;
+  activityIds: string[];
+}
+
 // ── Queue names ──
 
 export const SYNC_QUEUE = "sync";
@@ -57,6 +63,7 @@ export const IMPORT_QUEUE = "import";
 export const EXPORT_QUEUE = "export";
 export const SCHEDULED_SYNC_QUEUE = "scheduled-sync";
 export const POST_SYNC_QUEUE = "post-sync";
+export const ACTIVITY_DELETE_ANALYTICS_QUEUE = "activity-delete-analytics";
 export const POST_SYNC_DEBOUNCE_MS = 10_000;
 export const SYNC_JOB_RETRY_OPTIONS = {
   attempts: 288,
@@ -67,6 +74,7 @@ export const SYNC_JOB_RETRY_OPTIONS = {
 
 const GLOBAL_POST_SYNC_JOB_NAME = "global-maintenance";
 const USER_REFIT_POST_SYNC_JOB_NAME = "user-refit";
+const ACTIVITY_DELETE_ANALYTICS_JOB_NAME = "activity-delete-analytics-refresh";
 const GLOBAL_POST_SYNC_DEDUPLICATION_ID = "post-sync:global-maintenance";
 
 /** Get the per-provider queue name for a given provider ID. */
@@ -137,13 +145,53 @@ export function createPostSyncQueue(connection?: ConnectionOptions): Queue<PostS
   return new Queue(POST_SYNC_QUEUE, { connection: connection ?? getRedisConnection() });
 }
 
+export function createActivityDeleteAnalyticsQueue(
+  connection?: ConnectionOptions,
+): Queue<ActivityDeleteAnalyticsJobData> {
+  return new Queue(ACTIVITY_DELETE_ANALYTICS_QUEUE, {
+    connection: connection ?? getRedisConnection(),
+  });
+}
+
 let cachedPostSyncQueue: Queue<PostSyncJobData> | null = null;
+let cachedActivityDeleteAnalyticsQueue: Queue<ActivityDeleteAnalyticsJobData> | null = null;
 
 export function getPostSyncQueue(): Queue<PostSyncJobData> {
   if (!cachedPostSyncQueue) {
     cachedPostSyncQueue = createPostSyncQueue();
   }
   return cachedPostSyncQueue;
+}
+
+export function getActivityDeleteAnalyticsQueue(): Queue<ActivityDeleteAnalyticsJobData> {
+  if (!cachedActivityDeleteAnalyticsQueue) {
+    cachedActivityDeleteAnalyticsQueue = createActivityDeleteAnalyticsQueue();
+  }
+  return cachedActivityDeleteAnalyticsQueue;
+}
+
+export async function enqueueActivityDeleteAnalyticsRefresh(
+  userId: string,
+  activityIds: string[],
+  queue: Queue<ActivityDeleteAnalyticsJobData> = getActivityDeleteAnalyticsQueue(),
+): Promise<void> {
+  const uniqueActivityIds = [...new Set(activityIds)];
+  if (uniqueActivityIds.length === 0) return;
+
+  await queue.add(
+    ACTIVITY_DELETE_ANALYTICS_JOB_NAME,
+    {
+      type: "activity-delete-analytics-refresh",
+      userId,
+      activityIds: uniqueActivityIds,
+    },
+    {
+      removeOnComplete: true,
+      removeOnFail: { age: 604_800, count: 100 },
+      attempts: 5,
+      backoff: { type: "fixed", delay: 30_000 },
+    },
+  );
 }
 
 export async function enqueueDebouncedPostSyncMaintenance(
