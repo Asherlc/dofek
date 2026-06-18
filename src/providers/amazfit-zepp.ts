@@ -9,7 +9,10 @@ import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
-import { ProviderStoredIdentityMissingError } from "./auth-errors.ts";
+import {
+  ProviderInvalidCredentialsError,
+  ProviderStoredIdentityMissingError,
+} from "./auth-errors.ts";
 import type {
   ProviderAuthSetup,
   SyncError,
@@ -146,6 +149,12 @@ function resolveScopedUserId(userId?: string): string {
     throw new Error("amazfit-zepp sync requires a userId");
   }
   return scopedUserId;
+}
+
+function isZeppInvalidCredentialsError(error: unknown): boolean {
+  return (
+    error instanceof Error && error.message.toLowerCase().includes("invalid email or password")
+  );
 }
 
 interface ResolvedZeppCredentials {
@@ -330,7 +339,15 @@ export class AmazfitZeppProvider implements SyncProvider {
     return {
       apiBaseUrl,
       automatedLogin: async (email: string, password: string) => {
-        const result = await signInToZepp(email, password, fetchFn);
+        let result: Awaited<ReturnType<typeof signInToZepp>>;
+        try {
+          result = await signInToZepp(email, password, fetchFn);
+        } catch (error) {
+          if (isZeppInvalidCredentialsError(error)) {
+            throw new ProviderInvalidCredentialsError("Amazfit/Zepp", { cause: error });
+          }
+          throw error;
+        }
         return {
           accessToken: result.appToken,
           refreshToken: result.loginToken,

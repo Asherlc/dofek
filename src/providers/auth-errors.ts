@@ -60,6 +60,16 @@ export class ProviderAuthenticationFailedError extends ProviderAuthError {
   }
 }
 
+export class ProviderInvalidCredentialsError extends ProviderAuthError {
+  constructor(providerName: string, options?: ErrorOptions) {
+    super(
+      "authentication_failed",
+      `${providerName} login failed: invalid email or password.`,
+      options,
+    );
+  }
+}
+
 export class ProviderStoredIdentityMissingError extends ProviderAuthError {
   constructor(providerName: string, identityName: string, options?: ErrorOptions) {
     super("authentication_failed", `${providerName} ${identityName} not found.`, options);
