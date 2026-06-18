@@ -69,8 +69,11 @@ function getRouteViewportTransform(routePath?: RoutePathPoint[] | null) {
   const scale = Math.max(1, Math.min(MAX_ROUTE_THUMBNAIL_SCALE, fittedScale));
   const routeCenterX = (minX + maxX) / 2;
   const routeCenterY = (minY + maxY) / 2;
-  const translateX = ((50 - routeCenterX * scale) / 100) * TILE_SIZE;
-  const translateY = ((50 - routeCenterY * scale) / 100) * TILE_SIZE;
+  const minTranslatePercent = 100 * (1 - scale);
+  const translateXPercent = Math.min(0, Math.max(minTranslatePercent, 50 - routeCenterX * scale));
+  const translateYPercent = Math.min(0, Math.max(minTranslatePercent, 50 - routeCenterY * scale));
+  const translateX = (translateXPercent / 100) * TILE_SIZE;
+  const translateY = (translateYPercent / 100) * TILE_SIZE;
 
   return {
     transform: [{ translateX }, { translateY }, { scale }],

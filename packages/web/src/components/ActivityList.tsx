@@ -96,8 +96,9 @@ function getRouteViewportStyle(routePath?: RoutePathPoint[] | null): CSSProperti
   const scale = Math.max(1, Math.min(MAX_ROUTE_THUMBNAIL_SCALE, fittedScale));
   const routeCenterX = (minX + maxX) / 2;
   const routeCenterY = (minY + maxY) / 2;
-  const translateX = 50 - routeCenterX * scale;
-  const translateY = 50 - routeCenterY * scale;
+  const minTranslate = 100 * (1 - scale);
+  const translateX = Math.min(0, Math.max(minTranslate, 50 - routeCenterX * scale));
+  const translateY = Math.min(0, Math.max(minTranslate, 50 - routeCenterY * scale));
 
   return {
     transform: `translate(${formatRouteViewportNumber(translateX)}%, ${formatRouteViewportNumber(
