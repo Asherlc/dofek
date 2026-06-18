@@ -65,6 +65,11 @@ vi.mock("../../lib/trainingDaysContext.ts", () => ({
 
 vi.mock("../../lib/trpc.ts", () => ({
   trpc: {
+    useUtils: () => ({
+      activity: {
+        list: { invalidate: vi.fn() },
+      },
+    }),
     durationCurves: {
       paceCurve: { useQuery: () => ({ data: mockPaceCurveData, isLoading: false }) },
     },
@@ -74,6 +79,13 @@ vi.mock("../../lib/trpc.ts", () => ({
     },
     activity: {
       list: { useQuery: () => ({ data: { items: [], totalCount: 0 }, isLoading: false }) },
+      bulkDelete: {
+        useMutation: () => ({
+          mutateAsync: vi.fn(),
+          isPending: false,
+          error: null,
+        }),
+      },
     },
   },
 }));
