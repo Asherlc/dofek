@@ -296,23 +296,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN }}
 
-      - name: Reclaim Docker root disk headroom
+      - name: Prune unused images before pull
         run: |
-          df -h /
           docker system df || true
-          minimum_kb=$((8 * 1024 * 1024))
-          available_kb="$(df --output=avail -k / | tail -n 1 | tr -d ' ')"
-          if [ "$available_kb" -lt "$minimum_kb" ]; then
-            docker system prune --all --force
-          else
-            echo "Root filesystem already has at least 8 GiB free; skipping Docker prune."
-          fi
-          df -h /
-          available_kb="$(df --output=avail -k / | tail -n 1 | tr -d ' ')"
-          if [ "$available_kb" -lt "$minimum_kb" ]; then
-            echo "::error::Root filesystem has less than 8 GiB free after Docker cleanup; aborting before image pulls."
-            exit 1
-          fi
+          docker image prune -af
+          docker system df || true
 
       - name: Pull deploy images
         env:
