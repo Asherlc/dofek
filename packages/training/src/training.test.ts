@@ -104,6 +104,7 @@ describe("CYCLING_ACTIVITY_TYPES", () => {
     expect(CYCLING_ACTIVITY_TYPES).toContain("cyclocross");
     expect(CYCLING_ACTIVITY_TYPES).toContain("track_cycling");
     expect(CYCLING_ACTIVITY_TYPES).toContain("bmx");
+    expect(CYCLING_ACTIVITY_TYPES).toContain("hand_cycling");
   });
 });
 
@@ -126,6 +127,7 @@ describe("cadenceUnit", () => {
   it("returns rpm for cycling activity types", () => {
     expect(cadenceUnit("cycling")).toBe("rpm");
     expect(cadenceUnit("indoor_cycling")).toBe("rpm");
+    expect(cadenceUnit("hand_cycling")).toBe("rpm");
   });
 
   it("returns steps/min for running, walking, and hiking", () => {

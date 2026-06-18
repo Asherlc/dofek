@@ -161,6 +161,7 @@ export const CYCLING_ACTIVITY_TYPES = [
   "cyclocross",
   "track_cycling",
   "bmx",
+  "hand_cycling",
 ] as const;
 
 export type CyclingActivityType = (typeof CYCLING_ACTIVITY_TYPES)[number];
