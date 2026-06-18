@@ -32,28 +32,12 @@ describe("EightSleepProvider", () => {
   });
 
   describe("authSetup()", () => {
-    it("returns auth setup with automatedLogin function", () => {
+    it("returns credential-only auth setup with automatedLogin", () => {
       const provider = new EightSleepProvider();
       const setup = provider.authSetup();
       expect(setup.automatedLogin).toBeTypeOf("function");
-      expect(setup.oauthConfig.authorizeUrl).toContain("8slp.net");
-    });
-
-    it("has correct oauthConfig fields", () => {
-      const provider = new EightSleepProvider();
-      const setup = provider.authSetup();
-      expect(setup.oauthConfig.tokenUrl).toContain("8slp.net");
-      expect(setup.oauthConfig.redirectUri).toBe("");
-      expect(setup.oauthConfig.scopes).toEqual([]);
-    });
-
-    it("exchangeCode throws with descriptive message", async () => {
-      const provider = new EightSleepProvider();
-      const setup = provider.authSetup();
-      await expect(setup.exchangeCode("code", "verifier")).rejects.toThrow("automated login");
-      await expect(setup.exchangeCode("code", "verifier")).rejects.toThrow(
-        "Eight Sleep uses automated login, not OAuth code exchange",
-      );
+      expect(setup.oauthConfig).toBeUndefined();
+      expect(setup.exchangeCode).toBeUndefined();
     });
 
     it("accepts custom fetch function", () => {
@@ -85,29 +69,12 @@ describe("TrainerRoadProvider", () => {
   });
 
   describe("authSetup()", () => {
-    it("returns auth setup with automatedLogin function", () => {
+    it("returns credential-only auth setup with automatedLogin", () => {
       const provider = new TrainerRoadProvider();
       const setup = provider.authSetup();
       expect(setup.automatedLogin).toBeTypeOf("function");
-      expect(setup.oauthConfig.authorizeUrl).toContain("trainerroad.com");
-    });
-
-    it("has correct oauthConfig fields", () => {
-      const provider = new TrainerRoadProvider();
-      const setup = provider.authSetup();
-      expect(setup.oauthConfig.clientId).toBe("");
-      expect(setup.oauthConfig.tokenUrl).toContain("trainerroad.com");
-      expect(setup.oauthConfig.redirectUri).toBe("");
-      expect(setup.oauthConfig.scopes).toEqual([]);
-    });
-
-    it("exchangeCode throws with descriptive message", async () => {
-      const provider = new TrainerRoadProvider();
-      const setup = provider.authSetup();
-      await expect(setup.exchangeCode("code", "verifier")).rejects.toThrow("automated login");
-      await expect(setup.exchangeCode("code", "verifier")).rejects.toThrow(
-        "TrainerRoad uses automated login, not OAuth code exchange",
-      );
+      expect(setup.oauthConfig).toBeUndefined();
+      expect(setup.exchangeCode).toBeUndefined();
     });
 
     it("passes custom fetch function through automated login", async () => {
@@ -158,30 +125,12 @@ describe("VeloHeroProvider", () => {
   });
 
   describe("authSetup()", () => {
-    it("returns auth setup with automatedLogin function", () => {
+    it("returns credential-only auth setup with automatedLogin", () => {
       const provider = new VeloHeroProvider();
       const setup = provider.authSetup();
       expect(setup.automatedLogin).toBeTypeOf("function");
-      expect(setup.oauthConfig.authorizeUrl).toContain("velohero.com");
-    });
-
-    it("has correct oauthConfig fields", () => {
-      const provider = new VeloHeroProvider();
-      const setup = provider.authSetup();
-      expect(setup.oauthConfig.clientId).toBe("");
-      expect(setup.oauthConfig.clientSecret).toBe("");
-      expect(setup.oauthConfig.tokenUrl).toContain("velohero.com");
-      expect(setup.oauthConfig.redirectUri).toBe("");
-      expect(setup.oauthConfig.scopes).toEqual([]);
-    });
-
-    it("exchangeCode throws with descriptive message", async () => {
-      const provider = new VeloHeroProvider();
-      const setup = provider.authSetup();
-      await expect(setup.exchangeCode("code", "verifier")).rejects.toThrow("automated login");
-      await expect(setup.exchangeCode("code", "verifier")).rejects.toThrow(
-        "VeloHero uses automated login, not OAuth code exchange",
-      );
+      expect(setup.oauthConfig).toBeUndefined();
+      expect(setup.exchangeCode).toBeUndefined();
     });
 
     it("passes custom fetch function through automated login", async () => {
@@ -232,30 +181,12 @@ describe("ZwiftProvider", () => {
   });
 
   describe("authSetup()", () => {
-    it("returns auth setup with automatedLogin function", () => {
+    it("returns credential-only auth setup with automatedLogin", () => {
       const provider = new ZwiftProvider();
       const setup = provider.authSetup();
       expect(setup.automatedLogin).toBeTypeOf("function");
-      expect(setup.oauthConfig.clientId).toBe("Zwift Game Client");
-    });
-
-    it("has correct oauthConfig fields", () => {
-      const provider = new ZwiftProvider();
-      const setup = provider.authSetup();
-      expect(setup.oauthConfig.redirectUri).toBe("");
-      expect(setup.oauthConfig.scopes).toEqual([]);
-      // authorizeUrl and tokenUrl should point to Zwift auth
-      expect(setup.oauthConfig.authorizeUrl).toBeTruthy();
-      expect(setup.oauthConfig.tokenUrl).toBeTruthy();
-    });
-
-    it("exchangeCode throws with descriptive message", async () => {
-      const provider = new ZwiftProvider();
-      const setup = provider.authSetup();
-      await expect(setup.exchangeCode("code", "verifier")).rejects.toThrow("automated login");
-      await expect(setup.exchangeCode("code", "verifier")).rejects.toThrow(
-        "Zwift uses automated login, not OAuth code exchange",
-      );
+      expect(setup.oauthConfig).toBeUndefined();
+      expect(setup.exchangeCode).toBeUndefined();
     });
 
     it("accepts custom fetch function", () => {

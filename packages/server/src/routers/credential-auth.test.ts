@@ -71,16 +71,6 @@ describe("credentialAuthRouter", () => {
         id: "eight-sleep",
         name: "Eight Sleep",
         authSetup: () => ({
-          oauthConfig: {
-            clientId: "",
-            authorizeUrl: "",
-            tokenUrl: "",
-            redirectUri: "",
-            scopes: [],
-          },
-          exchangeCode: async () => {
-            throw new Error("not supported");
-          },
           automatedLogin: mockAutomatedLogin,
           apiBaseUrl: "https://api.8slp.net",
         }),
@@ -169,16 +159,6 @@ describe("credentialAuthRouter", () => {
         id: "eight-sleep",
         name: "Eight Sleep",
         authSetup: () => ({
-          oauthConfig: {
-            clientId: "",
-            authorizeUrl: "",
-            tokenUrl: "",
-            redirectUri: "",
-            scopes: [],
-          },
-          exchangeCode: async () => {
-            throw new Error("not supported");
-          },
           automatedLogin: vi.fn().mockRejectedValue(new Error("Invalid credentials")),
         }),
       });

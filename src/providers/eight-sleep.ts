@@ -1,7 +1,5 @@
 import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import {
-  EIGHT_SLEEP_CLIENT_ID,
-  EIGHT_SLEEP_CLIENT_SECRET,
   EightSleepClient,
 } from "eight-sleep-client/client";
 import {
@@ -56,14 +54,6 @@ export class EightSleepProvider implements SyncProvider {
   authSetup(_options?: { host?: string }): ProviderAuthSetup {
     const fetchFn = this.#fetchFn;
     return {
-      oauthConfig: {
-        clientId: EIGHT_SLEEP_CLIENT_ID,
-        clientSecret: EIGHT_SLEEP_CLIENT_SECRET,
-        authorizeUrl: `${AUTH_API_BASE}/tokens`,
-        tokenUrl: `${AUTH_API_BASE}/tokens`,
-        redirectUri: "",
-        scopes: [],
-      },
       automatedLogin: async (email: string, password: string) => {
         const result = await EightSleepClient.signIn(email, password, fetchFn);
         return {
@@ -72,9 +62,6 @@ export class EightSleepProvider implements SyncProvider {
           expiresAt: new Date(Date.now() + result.expiresIn * 1000),
           scopes: `userId:${result.userId}`,
         };
-      },
-      exchangeCode: async () => {
-        throw new Error("Eight Sleep uses automated login, not OAuth code exchange");
       },
     };
   }

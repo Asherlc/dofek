@@ -50,14 +50,6 @@ export class VeloHeroProvider implements SyncProvider {
   authSetup(_options?: { host?: string }): ProviderAuthSetup {
     const fetchFn = this.#fetchFn;
     return {
-      oauthConfig: {
-        clientId: "",
-        clientSecret: "",
-        authorizeUrl: `${VELOHERO_BASE_URL}/sso`,
-        tokenUrl: `${VELOHERO_BASE_URL}/sso`,
-        redirectUri: "",
-        scopes: [],
-      },
       automatedLogin: async (email: string, password: string) => {
         const result = await VeloHeroClient.signIn(email, password, fetchFn);
         return {
@@ -66,9 +58,6 @@ export class VeloHeroProvider implements SyncProvider {
           expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // sessions likely expire in ~24h
           scopes: `userId:${result.userId}`,
         };
-      },
-      exchangeCode: async () => {
-        throw new Error("VeloHero uses automated login, not OAuth code exchange");
       },
     };
   }

@@ -310,19 +310,7 @@ export class GarminProvider implements SyncProvider {
   }
 
   authSetup(_options?: { host?: string }): ProviderAuthSetup {
-    const dummyConfig = {
-      clientId: "garmin-connect-internal",
-      authorizeUrl: "",
-      tokenUrl: "",
-      redirectUri: "",
-      scopes: [],
-    };
-
     return {
-      oauthConfig: dummyConfig,
-      exchangeCode: async () => {
-        throw new Error("Garmin uses credential-based sign-in, not OAuth code exchange");
-      },
       automatedLogin: async (email: string, password: string): Promise<TokenSet> => {
         const { tokens } = await GarminConnectClient.signIn(
           email,

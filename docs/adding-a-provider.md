@@ -108,7 +108,25 @@ export class MyProvider implements SyncProvider {
 }
 ```
 
-For credential-based providers (email/password, no browser OAuth), return only `automatedLogin` from `authSetup()` — see `src/providers/amazfit-zepp.ts`. Legacy providers may still include unused `oauthConfig` boilerplate; new providers should not.
+For credential-based providers (email/password, no browser OAuth), return only `automatedLogin` from `authSetup()` — do not include `oauthConfig` or `exchangeCode`. See `src/providers/amazfit-zepp.ts`, `src/providers/eight-sleep.ts`, or `src/providers/garmin.ts`:
+
+```typescript
+authSetup(_options?: { host?: string }): ProviderAuthSetup {
+  const fetchFn = this.#fetchFn;
+  return {
+    apiBaseUrl: "https://api.provider.example.com",
+    automatedLogin: async (email: string, password: string) => {
+      const result = await ProviderClient.signIn(email, password, fetchFn);
+      return {
+        accessToken: result.token,
+        refreshToken: null,
+        expiresAt: new Date(Date.now() + result.expiresIn * 1000),
+        scopes: `userId:${result.userId}`,
+      };
+    },
+  };
+}
+```
 
 If the provider is file-import-only (like Strong CSV or Cronometer CSV), implement `ImportProvider` instead and add `readonly importOnly = true` rather than a `sync()` method.
 
