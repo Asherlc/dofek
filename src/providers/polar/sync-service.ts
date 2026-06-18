@@ -3,6 +3,7 @@ import type { TokenSet } from "../../auth/oauth.ts";
 import { refreshAccessToken } from "../../auth/oauth.ts";
 import type { SyncDatabase } from "../../db/index.ts";
 import { replaceMetricStreamBatch } from "../../db/metric-stream-writer.ts";
+import { reconcileProviderActivityAbsence } from "../../db/provider-activity-absence.ts";
 import { activity, dailyMetrics, sleepSession, sleepStage } from "../../db/schema.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
@@ -137,6 +138,8 @@ export class PolarSyncService {
   }
 
   async #syncExercises(client: PolarClient, since: Date): Promise<void> {
+    const syncWindowEnd = new Date();
+    const presentActivityExternalIds = new Set<string>();
     try {
       const exerciseCount = await withSyncLog(
         this.#db,
@@ -150,6 +153,7 @@ export class PolarSyncService {
             if (new Date(exercise.start_time) < since) continue;
 
             const parsedExercise = parsePolarExercise(exercise);
+            presentActivityExternalIds.add(parsedExercise.externalId);
             try {
               const [activityRow] = await this.#db
                 .insert(activity)
@@ -182,6 +186,7 @@ export class PolarSyncService {
                       avgHeartRate: parsedExercise.avgHeartRate,
                       maxHeartRate: parsedExercise.maxHeartRate,
                     },
+                    providerAbsentAt: null,
                   },
                 })
                 .returning({ id: activity.id });
@@ -201,6 +206,13 @@ export class PolarSyncService {
             }
           }
 
+          await reconcileProviderActivityAbsence(this.#db, {
+            providerId: this.#providerId,
+            userId: this.#userId,
+            windowStart: since,
+            windowEnd: syncWindowEnd,
+            presentExternalIds: presentActivityExternalIds,
+          });
           return { recordCount: count, result: count };
         },
         this.#userId,

@@ -9,6 +9,7 @@ export type WhoopSyncContext = {
   cycles: WhoopCycle[];
   providerId: string;
   since: Date;
+  windowEnd: Date;
   options?: SyncOptions;
   errors: SyncError[];
 };

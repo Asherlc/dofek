@@ -735,6 +735,7 @@ export async function upsertWorkoutBatch(
           endedAt: sql`excluded.ended_at`,
           sourceName: sql`coalesce(excluded.source_name, ${activity.sourceName})`,
           raw: sql`excluded.raw`,
+          providerAbsentAt: null,
         },
       })
       .returning({ id: activity.id });

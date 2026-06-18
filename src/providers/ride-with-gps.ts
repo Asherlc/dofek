@@ -12,6 +12,7 @@ import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { replaceMetricStreamBatch } from "../db/metric-stream-writer.ts";
+import { markProviderActivityAbsent } from "../db/provider-activity-absence.ts";
 import { activity, userSettings } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
@@ -441,15 +442,11 @@ export class RideWithGpsProvider implements SyncProvider {
 
       if (item.action === "deleted" || item.action === "removed") {
         try {
-          await db
-            .delete(activity)
-            .where(
-              and(
-                eq(activity.userId, scopedUserId),
-                eq(activity.providerId, this.id),
-                eq(activity.externalId, String(item.item_id)),
-              ),
-            );
+          await markProviderActivityAbsent(db, {
+            providerId: this.id,
+            externalId: String(item.item_id),
+            userId: scopedUserId,
+          });
         } catch (err) {
           errors.push({
             message: `Failed to delete trip ${item.item_id}: ${err instanceof Error ? err.message : String(err)}`,
@@ -489,6 +486,7 @@ export class RideWithGpsProvider implements SyncProvider {
               notes: parsed.notes,
               sourceName: parsed.sourceName,
               raw: parsed.raw,
+              providerAbsentAt: null,
             },
           })
           .returning({ id: activity.id });

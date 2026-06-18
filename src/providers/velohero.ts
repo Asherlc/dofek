@@ -2,6 +2,7 @@ import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import { VeloHeroClient } from "velohero-client/client";
 import { parseVeloHeroWorkout } from "velohero-client/parsing";
 import type { SyncDatabase } from "../db/index.ts";
+import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
@@ -89,7 +90,9 @@ export class VeloHeroProvider implements SyncProvider {
 
     // Fetch and sync activities
     const sinceDate = formatDate(since);
-    const toDate = formatDate(new Date());
+    const syncWindowEnd = new Date();
+    const toDate = formatDate(syncWindowEnd);
+    const presentActivityExternalIds = new Set<string>();
 
     try {
       const activityCount = await withSyncLog(
@@ -105,6 +108,7 @@ export class VeloHeroProvider implements SyncProvider {
 
           for (const workout of workouts) {
             const parsed = parseVeloHeroWorkout(workout);
+            presentActivityExternalIds.add(parsed.externalId);
             try {
               await db
                 .insert(activity)
@@ -125,6 +129,7 @@ export class VeloHeroProvider implements SyncProvider {
                     startedAt: parsed.startedAt,
                     endedAt: parsed.endedAt,
                     raw: parsed.raw,
+                    providerAbsentAt: null,
                   },
                 });
               count++;
@@ -137,6 +142,13 @@ export class VeloHeroProvider implements SyncProvider {
             }
           }
 
+          await reconcileProviderActivityAbsence(db, {
+            providerId: this.id,
+            userId: options?.userId,
+            windowStart: since,
+            windowEnd: syncWindowEnd,
+            presentExternalIds: presentActivityExternalIds,
+          });
           return { recordCount: count, result: count };
         },
         options?.userId,

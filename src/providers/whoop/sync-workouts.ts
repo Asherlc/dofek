@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { WhoopRateLimitError } from "whoop-whoop/client";
 import type { WhoopWorkoutRecord } from "whoop-whoop/types";
 import { parseDuringRange } from "whoop-whoop/utils";
+import { reconcileProviderActivityAbsence } from "../../db/provider-activity-absence.ts";
 import { activity, exercise, exerciseAlias, strengthSet } from "../../db/schema.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { buildV2ActivityTypeLookup, parseWeightliftingWorkout, parseWorkout } from "./parsing.ts";
@@ -29,6 +30,11 @@ function collectWhoopWorkouts(context: WhoopSyncContext): {
 export async function syncWhoopWorkouts(context: WhoopSyncContext): Promise<number> {
   const { db, providerId, options } = context;
   const { workouts, v2ActivityTypeByActivityId } = collectWhoopWorkouts(context);
+  const presentExternalIds = new Set(
+    workouts
+      .map((workoutRecord) => workoutRecord.activity_id)
+      .filter((activityId): activityId is string => typeof activityId === "string"),
+  );
 
   try {
     return await withSyncLog(
@@ -74,6 +80,7 @@ export async function syncWhoopWorkouts(context: WhoopSyncContext): Promise<numb
                     calories: parsed.calories,
                     durationSeconds: parsed.durationSeconds,
                   },
+                  providerAbsentAt: null,
                 },
               });
             count++;
@@ -85,6 +92,13 @@ export async function syncWhoopWorkouts(context: WhoopSyncContext): Promise<numb
             });
           }
         }
+        await reconcileProviderActivityAbsence(db, {
+          providerId,
+          userId: options?.userId,
+          windowStart: context.since,
+          windowEnd: context.windowEnd,
+          presentExternalIds,
+        });
         return { recordCount: count, result: count };
       },
       options?.userId,
@@ -158,6 +172,7 @@ export async function syncWhoopStrength(
                     cardioStrainContributionPercent: parsed.cardioStrainContributionPercent,
                     mskStrainContributionPercent: parsed.mskStrainContributionPercent,
                   })}::jsonb`,
+                  providerAbsentAt: null,
                 },
               })
               .returning({ id: activity.id });

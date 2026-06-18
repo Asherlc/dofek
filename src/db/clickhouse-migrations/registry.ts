@@ -26,6 +26,7 @@ import { createMigration as createMigration0025 } from "./0025_recreate_provider
 import { createMigration as createMigration0026 } from "./0026_create_dashboard_tables.ts";
 import { createMigration as createMigration0027 } from "./0027_create_daily_sleep_table.ts";
 import { createMigration as createMigration0028 } from "./0028_create_domain_dashboard_tables.ts";
+import { createMigration as createMigration0029 } from "./0029_activity_provider_absence.ts";
 import type { ClickHouseMigration, ClickHouseMigrationFactory } from "./types.ts";
 
 const migrationFactories: ClickHouseMigrationFactory[] = [
@@ -57,6 +58,7 @@ const migrationFactories: ClickHouseMigrationFactory[] = [
   createMigration0026,
   createMigration0027,
   createMigration0028,
+  createMigration0029,
 ];
 
 export const clickHouseMigrationFileNames = [
@@ -88,6 +90,7 @@ export const clickHouseMigrationFileNames = [
   "0026_create_dashboard_tables.ts",
   "0027_create_daily_sleep_table.ts",
   "0028_create_domain_dashboard_tables.ts",
+  "0029_activity_provider_absence.ts",
 ] as const;
 
 export function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigration[] {

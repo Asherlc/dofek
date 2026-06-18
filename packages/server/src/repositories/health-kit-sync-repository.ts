@@ -635,7 +635,8 @@ export class HealthKitSyncRepository {
               ON CONFLICT (user_id, provider_id, external_id) DO UPDATE SET
                 activity_type = ${activityType},
                 started_at = ${workout.startDate}::timestamptz,
-                ended_at = ${workout.endDate}::timestamptz`,
+                ended_at = ${workout.endDate}::timestamptz,
+                provider_absent_at = NULL`,
         );
         inserted++;
       }

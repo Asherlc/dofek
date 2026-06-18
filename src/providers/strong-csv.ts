@@ -398,6 +398,7 @@ export async function importStrongCsv(
             endedAt,
             name: group.workoutName,
             notes: group.workoutNotes,
+            providerAbsentAt: null,
           },
         })
         .returning({ id: activity.id });

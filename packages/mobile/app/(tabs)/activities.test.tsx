@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { createElement, type ReactNode } from "react";
 import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -94,6 +95,13 @@ vi.mock("../../lib/units", () => ({
 
 vi.mock("../../lib/useRefresh", () => ({
   useRefresh: () => ({ refreshing: false, onRefresh: vi.fn() }),
+}));
+
+vi.mock("react-native-svg", () => ({
+  default: ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) =>
+    createElement("svg", props, children),
+  Polyline: ({ testID, ...props }: Record<string, unknown>) =>
+    createElement("polyline", { ...props, "data-testid": testID }),
 }));
 
 import ActivitiesScreen from "./activities";
@@ -347,5 +355,40 @@ describe("ActivitiesScreen", () => {
     fireEvent.error(screen.getByLabelText("Activity location map"));
 
     expect(screen.getByLabelText("Activity location unavailable")).toBeDefined();
+  });
+
+  it("draws a route overlay when a map tile includes route path points", () => {
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: [
+            activity({
+              location: {
+                centroidLat: 37.7749,
+                centroidLng: -122.4194,
+                tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
+                routePath: [
+                  { x: 27.854, y: 37.951 },
+                  { x: 29.22, y: 37.088 },
+                  { x: 30.585, y: 35.936 },
+                ],
+                distanceMeters: 5000,
+                elevationGainM: 120,
+              },
+            }),
+          ],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesScreen />);
+
+    expect(screen.getByTestId("activity-route-path").getAttribute("points")).toBe(
+      "27.854,37.951 29.22,37.088 30.585,35.936",
+    );
   });
 });

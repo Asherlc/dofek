@@ -130,6 +130,7 @@ describe("ActivitiesCalendarRepository", () => {
         }),
       ],
       [{ max_hr: null, resting_hr: null, ftp: null }],
+      [],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
@@ -139,8 +140,61 @@ describe("ActivitiesCalendarRepository", () => {
       centroidLat: 90,
       centroidLng: 180,
       tileUrl: "https://tile.openstreetmap.org/13/0/0.png",
+      routePath: null,
       distanceMeters: 5000,
       elevationGainM: 125,
+    });
+  });
+
+  it("adds route preview path points for outdoor activities", async () => {
+    const database = makeDatabase([]);
+    const sensorStore = makeSensorStore([
+      [
+        makeActivityRow({
+          id: "00000000-0000-0000-0000-000000000001",
+          activity_type: "running",
+          total_distance: 5000,
+          elevation_gain_m: 125,
+          centroid_lat: 37.7749,
+          centroid_lng: -122.4194,
+          avg_power: null,
+        }),
+      ],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [
+        {
+          activity_id: "00000000-0000-0000-0000-000000000001",
+          lat: 37.7749,
+          lng: -122.4194,
+        },
+        {
+          activity_id: "00000000-0000-0000-0000-000000000001",
+          lat: 37.7752,
+          lng: -122.4188,
+        },
+        {
+          activity_id: "00000000-0000-0000-0000-000000000001",
+          lat: 37.7756,
+          lng: -122.4182,
+        },
+      ],
+    ]);
+    const repository = new ActivitiesCalendarRepository(
+      database,
+      "00000000-0000-0000-0000-000000000001",
+      "UTC",
+      sensorStore,
+    );
+
+    const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
+
+    expect(result[0]?.activities[0]?.location).toMatchObject({
+      tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
+      routePath: [
+        { x: 27.854, y: 37.951 },
+        { x: 29.22, y: 37.088 },
+        { x: 30.585, y: 35.936 },
+      ],
     });
   });
 
@@ -254,7 +308,17 @@ describe("ActivitiesCalendarRepository", () => {
       expect.stringContaining("FROM postgres_fitness.user_profile_current"),
       { userId: "00000000-0000-0000-0000-000000000001" },
     );
-    expect(sensorStore.query).toHaveBeenCalledTimes(2);
+    expect(sensorStore.query).toHaveBeenNthCalledWith(
+      3,
+      expect.anything(),
+      expect.stringContaining("FROM analytics.activity_location_sample"),
+      {
+        activityIds: ["activity-1", "activity-2"],
+        maxPoints: 24,
+        userId: "00000000-0000-0000-0000-000000000001",
+      },
+    );
+    expect(sensorStore.query).toHaveBeenCalledTimes(3);
   });
 
   it("lists only canonical deduped activity summary rows", async () => {
@@ -410,6 +474,7 @@ describe("ActivitiesCalendarRepository", () => {
         }),
       ],
       [{ max_hr: null, resting_hr: null, ftp: null }],
+      [],
     ]);
     const repository = new ActivitiesCalendarRepository(
       database,
@@ -426,10 +491,11 @@ describe("ActivitiesCalendarRepository", () => {
       centroidLat: 37.8,
       centroidLng: -122.4,
       tileUrl: "https://tile.openstreetmap.org/13/1310/3165.png",
+      routePath: null,
       distanceMeters: 5000,
       elevationGainM: 125,
     });
-    expect(sensorStore.query).toHaveBeenCalledTimes(2);
+    expect(sensorStore.query).toHaveBeenCalledTimes(3);
     expect(sensorStore.query).not.toHaveBeenCalledWith(
       expect.anything(),
       expect.stringContaining("FROM analytics.deduped_location"),

@@ -6,6 +6,7 @@ import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { replaceMetricStreamBatch } from "../db/metric-stream-writer.ts";
+import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
 import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { SOURCE_TYPE_FILE } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
@@ -338,7 +339,9 @@ export class CorosProvider implements WebhookProvider {
     }
 
     const sinceDate = formatDateCompact(since);
-    const toDate = formatDateCompact(new Date());
+    const syncWindowEnd = new Date();
+    const toDate = formatDateCompact(syncWindowEnd);
+    const presentActivityExternalIds = new Set<string>();
 
     // 1. Sync workouts
     try {
@@ -352,6 +355,7 @@ export class CorosProvider implements WebhookProvider {
 
           for (const raw of data.data ?? []) {
             const parsed = parseCorosWorkout(raw);
+            presentActivityExternalIds.add(parsed.externalId);
             try {
               const [row] = await db
                 .insert(activity)
@@ -372,6 +376,7 @@ export class CorosProvider implements WebhookProvider {
                     startedAt: parsed.startedAt,
                     endedAt: parsed.endedAt,
                     raw: parsed.raw,
+                    providerAbsentAt: null,
                   },
                 })
                 .returning({ id: activity.id });
@@ -421,6 +426,13 @@ export class CorosProvider implements WebhookProvider {
             }
           }
 
+          await reconcileProviderActivityAbsence(db, {
+            providerId: this.id,
+            userId: options?.userId,
+            windowStart: since,
+            windowEnd: syncWindowEnd,
+            presentExternalIds: presentActivityExternalIds,
+          });
           return { recordCount: count, result: count };
         },
         options?.userId,
