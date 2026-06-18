@@ -64,6 +64,7 @@ const activityDetailRowSchema = z.object({
   elevation_gain_m: z.number().nullable(),
   elevation_loss_m: z.number().nullable(),
   sample_count: z.number().nullable(),
+  provider_absent_at: timestampStringSchema.nullable().optional().default(null),
 });
 
 const streamPointRowSchema = z.object({
@@ -313,6 +314,14 @@ export class ActivityRepository extends BaseRepository {
 
   /** Single activity with full detail row. Returns null when not found. */
   async findById(activityId: string): Promise<ActivityRow | null> {
+    const activeRow = await this.#findActiveById(activityId);
+    if (activeRow) {
+      return activeRow;
+    }
+    return this.#findProviderAbsentById(activityId);
+  }
+
+  async #findActiveById(activityId: string): Promise<ActivityRow | null> {
     const rows = await this.query(
       activityDetailRowSchema,
       sql`SELECT
@@ -337,10 +346,57 @@ export class ActivityRepository extends BaseRepository {
             NULL::double precision AS total_distance,
             NULL::double precision AS elevation_gain_m,
             NULL::double precision AS elevation_loss_m,
-            NULL::integer AS sample_count
+            NULL::integer AS sample_count,
+            NULL::text AS provider_absent_at
           FROM fitness.v_activity a
           WHERE ${activityId}::uuid = ANY(a.member_activity_ids)
             AND a.user_id = ${this.userId}
+            ${this.timestampAccessPredicate(sql`a.started_at`)}`,
+    );
+    const hydratedRows = await this.#withActivitySummaries(rows);
+    const firstRow = hydratedRows[0];
+    if (!firstRow) return null;
+    const { member_activity_ids: _, ...activity } = firstRow;
+    return activity;
+  }
+
+  async #findProviderAbsentById(activityId: string): Promise<ActivityRow | null> {
+    const rows = await this.query(
+      activityDetailRowSchema,
+      sql`SELECT
+            a.id,
+            a.activity_type,
+            a.started_at::text AS started_at,
+            a.ended_at::text AS ended_at,
+            a.name,
+            a.notes,
+            a.provider_id,
+            a.raw->>'sourceName' AS subsource,
+            ARRAY[a.provider_id] AS source_providers,
+            CASE
+              WHEN a.external_id IS NOT NULL AND a.external_id <> ''
+              THEN jsonb_build_array(
+                jsonb_build_object('providerId', a.provider_id, 'externalId', a.external_id)
+              )
+              ELSE NULL
+            END AS source_external_ids,
+            ARRAY[a.id]::uuid[] AS member_activity_ids,
+            NULL::double precision AS avg_hr,
+            NULL::smallint AS max_hr,
+            NULL::double precision AS avg_power,
+            NULL::smallint AS max_power,
+            NULL::double precision AS avg_speed,
+            NULL::double precision AS max_speed,
+            NULL::double precision AS avg_cadence,
+            NULL::double precision AS total_distance,
+            NULL::double precision AS elevation_gain_m,
+            NULL::double precision AS elevation_loss_m,
+            NULL::integer AS sample_count,
+            a.provider_absent_at::text AS provider_absent_at
+          FROM fitness.activity a
+          WHERE a.id = ${activityId}::uuid
+            AND a.user_id = ${this.userId}::uuid
+            AND a.provider_absent_at IS NOT NULL
             ${this.timestampAccessPredicate(sql`a.started_at`)}`,
     );
     const hydratedRows = await this.#withActivitySummaries(rows);
@@ -512,6 +568,28 @@ export class ActivityRepository extends BaseRepository {
   /** Delete an activity by ID. */
   async delete(activityId: string): Promise<void> {
     await this.bulkDelete([activityId]);
+  }
+
+  /** Clear provider tombstones so hidden activities become visible again. */
+  async restoreProviderAbsent(activityIds: string[]): Promise<{ restoredCount: number }> {
+    const uniqueActivityIds = [...new Set(activityIds)];
+    if (uniqueActivityIds.length === 0) {
+      return { restoredCount: 0 };
+    }
+
+    const restoredRows = await this.query(
+      z.object({ id: z.string() }),
+      sql`UPDATE fitness.activity
+          SET provider_absent_at = NULL
+          WHERE user_id = ${this.userId}::uuid
+            AND provider_absent_at IS NOT NULL
+            AND id IN (${sql.join(
+              uniqueActivityIds.map((activityId) => sql`${activityId}::uuid`),
+              sql`, `,
+            )})
+          RETURNING id::text AS id`,
+    );
+    return { restoredCount: restoredRows.length };
   }
 
   /** Delete activities by visible activity IDs, including all members of matching deduped groups. */

@@ -426,6 +426,58 @@ describe("ActivityRepository", () => {
       expect(result).toBeNull();
     });
 
+    it("falls back to provider-absent activities when the canonical view excludes them", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          {
+            id: "tombstoned-id",
+            activity_type: "running",
+            started_at: "2024-01-15T10:00:00.000Z",
+            ended_at: "2024-01-15T10:45:00.000Z",
+            name: "Deleted Run",
+            notes: null,
+            provider_id: "strava",
+            subsource: null,
+            source_providers: ["strava"],
+            source_external_ids: [{ providerId: "strava", externalId: "123" }],
+            member_activity_ids: ["tombstoned-id"],
+            avg_hr: null,
+            max_hr: null,
+            avg_power: null,
+            max_power: null,
+            avg_speed: null,
+            max_speed: null,
+            avg_cadence: null,
+            total_distance: null,
+            elevation_gain_m: null,
+            elevation_loss_m: null,
+            sample_count: null,
+            provider_absent_at: "2024-01-16T08:00:00.000Z",
+          },
+        ]);
+      const database = { execute };
+      const sensorStore = {
+        query: vi.fn().mockResolvedValue([]),
+        getActivitySummaries: vi.fn().mockResolvedValue([]),
+        getStream: vi.fn().mockResolvedValue([]),
+        getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+      };
+      const repo = new ActivityRepository(database, "user-1", "UTC", undefined, sensorStore);
+
+      const result = await repo.findById("tombstoned-id");
+
+      expect(result).toMatchObject({
+        id: "tombstoned-id",
+        provider_id: "strava",
+        provider_absent_at: "2024-01-16T08:00:00.000Z",
+      });
+      const fallbackQuery = dialect.sqlToQuery(execute.mock.calls[1]?.[0]);
+      expect(fallbackQuery.sql).toContain("provider_absent_at IS NOT NULL");
+    });
+
     it("returns a row without summaries when no sensor store is configured", async () => {
       const { repo } = makeRepository([
         {
@@ -450,6 +502,7 @@ describe("ActivityRepository", () => {
           elevation_gain_m: null,
           elevation_loss_m: null,
           sample_count: null,
+          provider_absent_at: null,
         },
       ]);
       const result = await repo.findById("abc-123");
@@ -524,8 +577,33 @@ describe("ActivityRepository", () => {
       expect(result).not.toHaveProperty("member_activity_ids");
     });
 
-    it("calls execute once", async () => {
-      const { repo, execute } = makeRepositoryWithSensorStore([]);
+    it("calls execute once when the canonical view has a match", async () => {
+      const { repo, execute } = makeRepositoryWithSensorStore([
+        {
+          id: "some-id",
+          activity_type: "running",
+          started_at: "2024-01-15T10:00:00.000Z",
+          ended_at: "2024-01-15T10:45:00.000Z",
+          name: "Morning Run",
+          notes: "",
+          provider_id: "garmin",
+          subsource: "Garmin Connect",
+          source_providers: ["garmin"],
+          source_external_ids: [{ providerId: "garmin", externalId: "activity-1" }],
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          max_power: null,
+          avg_speed: null,
+          max_speed: null,
+          avg_cadence: null,
+          total_distance: null,
+          elevation_gain_m: null,
+          elevation_loss_m: null,
+          sample_count: null,
+          provider_absent_at: null,
+        },
+      ]);
       await repo.findById("some-id");
       expect(execute).toHaveBeenCalledTimes(1);
     });

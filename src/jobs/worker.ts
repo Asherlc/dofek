@@ -14,7 +14,7 @@ import { processSyncJob } from "./process-sync-job.ts";
 import { getConfiguredProviderIds, getProviderQueueConfig } from "./provider-queue-config.ts";
 import {
   ACTIVITY_DELETE_ANALYTICS_QUEUE,
-  type ActivityDeleteAnalyticsJobData,
+  type ActivityAnalyticsJobData,
   EXPORT_QUEUE,
   type ExportJobData,
   getRedisConnection,
@@ -119,7 +119,7 @@ const postSyncWorker = new Worker<PostSyncJobData>(
     ),
   { connection, concurrency: 1 },
 );
-const activityDeleteAnalyticsWorker = new Worker<ActivityDeleteAnalyticsJobData>(
+const activityDeleteAnalyticsWorker = new Worker<ActivityAnalyticsJobData>(
   ACTIVITY_DELETE_ANALYTICS_QUEUE,
   (job) => jobContext.run(job, () => processActivityDeleteAnalyticsJob(job)),
   { connection, concurrency: 1 },

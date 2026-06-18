@@ -5,6 +5,7 @@ import { UnitConverter } from "@dofek/format/units";
 import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ActivityDetail } from "../../../server/src/models/activity.ts";
 import { UnitContext } from "../lib/unitContext.ts";
 
 const capturedOptions: Array<Record<string, unknown>> = [];
@@ -24,13 +25,19 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }));
 
-const mockActivity = {
+const mockActivity: ActivityDetail = {
+  id: "test-123",
+  notes: null,
+  maxSpeed: null,
+  elevationLoss: null,
+  sampleCount: null,
   name: "Morning Run",
   activityType: "running",
   startedAt: "2026-03-18T07:00:00Z",
   endedAt: "2026-03-18T07:45:00Z",
   providerId: "whoop",
   subsource: null,
+  providerAbsentAt: null,
   totalDistance: 10000,
   elevationGain: 200,
   avgHr: 150,
@@ -284,6 +291,28 @@ async function importPage() {
 }
 
 describe("ActivityDetailPage", () => {
+  describe("provider tombstone status", () => {
+    afterEach(() => {
+      mockActivity.providerAbsentAt = null;
+      mockActivity.providerId = "whoop";
+      mockActivity.subsource = null;
+    });
+
+    it("shows tombstone status, provider, and removed time on the detail page", async () => {
+      mockActivity.providerAbsentAt = "2026-03-05T14:30:00.000Z";
+      mockActivity.providerId = "strava";
+      mockActivity.subsource = null;
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(screen.getByText("Removed from provider sync")).toBeDefined();
+      expect(screen.getByText("Tombstoned")).toBeDefined();
+      expect(screen.getByText("Strava")).toBeDefined();
+      expect(screen.getByText(/Mar 5,/)).toBeDefined();
+    });
+  });
+
   describe("ActivityHeader unit display", () => {
     it("shows metric distance and elevation", async () => {
       const ActivityDetailPage = await importPage();

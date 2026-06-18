@@ -739,4 +739,62 @@ describe("ActivitiesCalendarRepository", () => {
 
     expect(result[0]?.activities[0]?.tss).toBeNull();
   });
+
+  it("includes provider-absent activities when requested", async () => {
+    const database = makeDatabase([
+      { id: "hidden-1", calories: 300 },
+    ]);
+    const sensorStore = makeSensorStore([
+      [],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [],
+    ]);
+    vi.mocked(database.execute).mockImplementationOnce(async () => [
+      {
+        id: "hidden-1",
+        name: "Hidden Ride",
+        activity_type: "cycling",
+        started_at: "2026-03-18T07:00:00.000Z",
+        ended_at: "2026-03-18T08:00:00.000Z",
+        duration_min: 60,
+        avg_hr: null,
+        max_hr: null,
+        avg_power: null,
+        total_distance: null,
+        elevation_gain_m: null,
+        centroid_lat: null,
+        centroid_lng: null,
+        local_date: "2026-03-18",
+        provider_id: "strava",
+        provider_absent_at: "2026-03-05T14:30:00.000Z",
+      },
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+
+    const result = await repository.getWeekList({
+      weeks: 1,
+      endDate: "2026-03-20",
+      includeProviderAbsent: true,
+    });
+
+    expect(result).toEqual([
+      {
+        date: "2026-03-18",
+        activities: [
+          expect.objectContaining({
+            id: "hidden-1",
+            name: "Hidden Ride",
+            isProviderAbsent: true,
+            providerId: "strava",
+            providerAbsentAt: "2026-03-05T14:30:00.000Z",
+          }),
+        ],
+      },
+    ]);
+    const sqlObject = database.execute.mock.calls[0]?.[0];
+    const compiledQuery = dialect.sqlToQuery(sqlObject);
+    expect(compiledQuery.sql).toContain("provider_absent_at IS NOT NULL");
+  });
 });

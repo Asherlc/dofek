@@ -55,6 +55,16 @@ export interface ActivityDeleteAnalyticsJobData {
   activityIds: string[];
 }
 
+export interface ActivityRestoreAnalyticsJobData {
+  type: "activity-restore-analytics-refresh";
+  userId: string;
+  activityIds: string[];
+}
+
+export type ActivityAnalyticsJobData =
+  | ActivityDeleteAnalyticsJobData
+  | ActivityRestoreAnalyticsJobData;
+
 // ── Queue names ──
 
 export const SYNC_QUEUE = "sync";
@@ -75,6 +85,7 @@ export const SYNC_JOB_RETRY_OPTIONS = {
 const GLOBAL_POST_SYNC_JOB_NAME = "global-maintenance";
 const USER_REFIT_POST_SYNC_JOB_NAME = "user-refit";
 const ACTIVITY_DELETE_ANALYTICS_JOB_NAME = "activity-delete-analytics-refresh";
+const ACTIVITY_RESTORE_ANALYTICS_JOB_NAME = "activity-restore-analytics-refresh";
 const GLOBAL_POST_SYNC_DEDUPLICATION_ID = "post-sync:global-maintenance";
 
 /** Get the per-provider queue name for a given provider ID. */
@@ -147,14 +158,14 @@ export function createPostSyncQueue(connection?: ConnectionOptions): Queue<PostS
 
 export function createActivityDeleteAnalyticsQueue(
   connection?: ConnectionOptions,
-): Queue<ActivityDeleteAnalyticsJobData> {
+): Queue<ActivityAnalyticsJobData> {
   return new Queue(ACTIVITY_DELETE_ANALYTICS_QUEUE, {
     connection: connection ?? getRedisConnection(),
   });
 }
 
 let cachedPostSyncQueue: Queue<PostSyncJobData> | null = null;
-let cachedActivityDeleteAnalyticsQueue: Queue<ActivityDeleteAnalyticsJobData> | null = null;
+let cachedActivityDeleteAnalyticsQueue: Queue<ActivityAnalyticsJobData> | null = null;
 
 export function getPostSyncQueue(): Queue<PostSyncJobData> {
   if (!cachedPostSyncQueue) {
@@ -163,7 +174,7 @@ export function getPostSyncQueue(): Queue<PostSyncJobData> {
   return cachedPostSyncQueue;
 }
 
-export function getActivityDeleteAnalyticsQueue(): Queue<ActivityDeleteAnalyticsJobData> {
+export function getActivityDeleteAnalyticsQueue(): Queue<ActivityAnalyticsJobData> {
   if (!cachedActivityDeleteAnalyticsQueue) {
     cachedActivityDeleteAnalyticsQueue = createActivityDeleteAnalyticsQueue();
   }
@@ -173,7 +184,7 @@ export function getActivityDeleteAnalyticsQueue(): Queue<ActivityDeleteAnalytics
 export async function enqueueActivityDeleteAnalyticsRefresh(
   userId: string,
   activityIds: string[],
-  queue: Queue<ActivityDeleteAnalyticsJobData> = getActivityDeleteAnalyticsQueue(),
+  queue: Queue<ActivityAnalyticsJobData> = getActivityDeleteAnalyticsQueue(),
 ): Promise<void> {
   const uniqueActivityIds = [...new Set(activityIds)];
   if (uniqueActivityIds.length === 0) return;
@@ -182,6 +193,30 @@ export async function enqueueActivityDeleteAnalyticsRefresh(
     ACTIVITY_DELETE_ANALYTICS_JOB_NAME,
     {
       type: "activity-delete-analytics-refresh",
+      userId,
+      activityIds: uniqueActivityIds,
+    },
+    {
+      removeOnComplete: true,
+      removeOnFail: { age: 604_800, count: 100 },
+      attempts: 5,
+      backoff: { type: "fixed", delay: 30_000 },
+    },
+  );
+}
+
+export async function enqueueActivityRestoreAnalyticsRefresh(
+  userId: string,
+  activityIds: string[],
+  queue: Queue<ActivityAnalyticsJobData> = getActivityDeleteAnalyticsQueue(),
+): Promise<void> {
+  const uniqueActivityIds = [...new Set(activityIds)];
+  if (uniqueActivityIds.length === 0) return;
+
+  await queue.add(
+    ACTIVITY_RESTORE_ANALYTICS_JOB_NAME,
+    {
+      type: "activity-restore-analytics-refresh",
       userId,
       activityIds: uniqueActivityIds,
     },

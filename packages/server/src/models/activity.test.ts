@@ -47,6 +47,7 @@ const fullRow: ActivityRow = {
   elevation_gain_m: 350,
   elevation_loss_m: 340,
   sample_count: 5400,
+  provider_absent_at: null,
 };
 
 describe("Activity", () => {
@@ -160,6 +161,18 @@ describe("Activity", () => {
     expect(activity.subsource).toBe("Strong");
   });
 
+  it("serializes provider tombstone metadata in toDetail", () => {
+    const activity = new Activity(
+      {
+        ...fullRow,
+        provider_absent_at: "2026-03-05T14:30:00.000Z",
+      },
+      mockLookup,
+    );
+
+    expect(activity.toDetail().providerAbsentAt).toBe("2026-03-05T14:30:00.000Z");
+  });
+
   describe("toDetail", () => {
     it("serializes to ActivityDetail shape", () => {
       const activity = new Activity(fullRow, mockLookup);
@@ -198,6 +211,7 @@ describe("Activity", () => {
         elevationGain: 350,
         elevationLoss: 340,
         sampleCount: 5400,
+        providerAbsentAt: null,
       });
     });
   });

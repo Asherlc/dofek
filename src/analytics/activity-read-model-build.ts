@@ -49,6 +49,25 @@ export async function countActivePeerDbActivities(
   return Number(row?.active_count ?? 0);
 }
 
+export async function countProviderAbsentPeerDbActivities(
+  client: ClickHouseClient,
+  activityIds: string[],
+): Promise<number> {
+  if (activityIds.length === 0) return 0;
+
+  const rows = await client.query<{ absent_count: string | number }>({
+    query: `SELECT count() AS absent_count
+      FROM postgres_fitness.activity FINAL
+      WHERE toString(id) IN {activityIds:Array(String)}
+        AND _peerdb_is_deleted = 0
+        AND provider_absent_at IS NOT NULL`,
+    format: "JSONEachRow",
+    query_params: { activityIds },
+  });
+  const row = (await rows.json())[0];
+  return Number(row?.absent_count ?? 0);
+}
+
 export async function waitForPeerDbActivityDeletes(
   client: ClickHouseClient,
   activityIds: string[],
@@ -69,6 +88,29 @@ export async function waitForPeerDbActivityDeletes(
 
   throw new Error(
     `Timed out waiting for PeerDB to reflect deletion of ${uniqueActivityIds.length} activities`,
+  );
+}
+
+export async function waitForPeerDbActivityRestores(
+  client: ClickHouseClient,
+  activityIds: string[],
+  options: WaitForPeerDbActivityDeletesOptions = {},
+): Promise<void> {
+  const uniqueActivityIds = [...new Set(activityIds)];
+  if (uniqueActivityIds.length === 0) return;
+
+  const timeoutMs = options.timeoutMs ?? 120_000;
+  const pollIntervalMs = options.pollIntervalMs ?? 2_000;
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const absentCount = await countProviderAbsentPeerDbActivities(client, uniqueActivityIds);
+    if (absentCount === 0) return;
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  }
+
+  throw new Error(
+    `Timed out waiting for PeerDB to reflect restoration of ${uniqueActivityIds.length} activities`,
   );
 }
 

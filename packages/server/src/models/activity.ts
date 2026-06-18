@@ -26,6 +26,7 @@ export interface ActivityDetail {
   elevationGain: number | null;
   elevationLoss: number | null;
   sampleCount: number | null;
+  providerAbsentAt: string | null;
 }
 
 export interface ActivityRow {
@@ -50,6 +51,7 @@ export interface ActivityRow {
   elevation_gain_m: number | null;
   elevation_loss_m: number | null;
   sample_count: number | null;
+  provider_absent_at: string | null;
 }
 
 export type ProviderLookup = (
@@ -162,6 +164,10 @@ export class Activity {
     return this.#row.sample_count != null ? Number(this.#row.sample_count) : null;
   }
 
+  get providerAbsentAt(): string | null {
+    return this.#row.provider_absent_at ? String(this.#row.provider_absent_at) : null;
+  }
+
   /** Serialize to the ActivityDetail shape consumed by API clients. */
   toDetail(): ActivityDetail {
     return {
@@ -186,6 +192,7 @@ export class Activity {
       elevationGain: this.elevationGain,
       elevationLoss: this.elevationLoss,
       sampleCount: this.sampleCount,
+      providerAbsentAt: this.providerAbsentAt,
     };
   }
 }

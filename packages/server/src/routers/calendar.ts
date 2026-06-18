@@ -43,6 +43,9 @@ const calendarActivityEntrySchema = z.object({
   calories: z.number().nullable(),
   tss: z.number().nullable(),
   stats: z.array(activityStatSchema),
+  isProviderAbsent: z.boolean().optional(),
+  providerId: z.string().optional(),
+  providerAbsentAt: timestampStringSchema.nullable().optional(),
 });
 
 const calendarDayActivitiesSchema = z.object({
@@ -54,6 +57,7 @@ const activityListInputSchema = z.object({
   weeks: z.number().int().min(1).max(52).default(4),
   endDate: endDateSchema,
   activityType: z.string().min(1).optional(),
+  includeProviderAbsent: z.boolean().default(false).optional(),
 });
 
 const activityOverviewSchema = z.object({
