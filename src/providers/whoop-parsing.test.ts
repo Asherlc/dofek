@@ -714,6 +714,25 @@ describe("parseHeartRateValues — edge cases", () => {
 });
 
 describe("parseStrainDeepDiveSteps", () => {
+  function makeStrainDeepDiveRaw(overrides: {
+    contributorsId?: string;
+    itemType?: string;
+    metrics?: unknown;
+    nestedSections?: boolean;
+  } = {}) {
+    const tile = {
+      type: overrides.itemType ?? "CONTRIBUTORS_TILE",
+      content: {
+        id: overrides.contributorsId ?? "STRAIN_CONTRIBUTORS_TILE",
+        metrics: overrides.metrics ?? [{ id: "CONTRIBUTORS_TILE_STEPS", status: "4,880" }],
+      },
+    };
+    if (overrides.nestedSections) {
+      return { sections: [[{ items: [tile] }]] };
+    }
+    return { sections: [{ items: [tile] }] };
+  }
+
   it("extracts comma-formatted step counts from strain contributors", () => {
     const raw = {
       sections: [
@@ -741,6 +760,76 @@ describe("parseStrainDeepDiveSteps", () => {
 
   it("returns null when the strain contributors tile is missing", () => {
     expect(parseStrainDeepDiveSteps({ sections: [] })).toBeNull();
+  });
+
+  it("returns null for non-object raw payloads", () => {
+    expect(parseStrainDeepDiveSteps(null)).toBeNull();
+    expect(parseStrainDeepDiveSteps("steps")).toBeNull();
+  });
+
+  it("walks nested arrays in the BFF response", () => {
+    expect(parseStrainDeepDiveSteps(makeStrainDeepDiveRaw({ nestedSections: true }))).toBe(4880);
+  });
+
+  it("returns null when contributors tile id does not match strain", () => {
+    expect(
+      parseStrainDeepDiveSteps(makeStrainDeepDiveRaw({ contributorsId: "RECOVERY_CONTRIBUTORS_TILE" })),
+    ).toBeNull();
+    expect(parseStrainDeepDiveSteps(makeStrainDeepDiveRaw({ itemType: "OTHER_TILE" }))).toBeNull();
+  });
+
+  it("returns null when metrics are missing or malformed", () => {
+    expect(parseStrainDeepDiveSteps(makeStrainDeepDiveRaw({ metrics: "not-an-array" }))).toBeNull();
+    expect(
+      parseStrainDeepDiveSteps(
+        makeStrainDeepDiveRaw({ metrics: [{ id: "CONTRIBUTORS_TILE_HR_ZONES_1_3", status: "1:00" }] }),
+      ),
+    ).toBeNull();
+  });
+
+  it("skips invalid metric entries before reading steps", () => {
+    expect(
+      parseStrainDeepDiveSteps(
+        makeStrainDeepDiveRaw({
+          metrics: [
+            "bad-entry",
+            { id: "CONTRIBUTORS_TILE_HR_ZONES_1_3", status: "1:00" },
+            { id: "CONTRIBUTORS_TILE_STEPS", status: "2,500" },
+          ],
+        }),
+      ),
+    ).toBe(2500);
+  });
+
+  it("returns null when step status is not a string or not parseable", () => {
+    expect(
+      parseStrainDeepDiveSteps(
+        makeStrainDeepDiveRaw({ metrics: [{ id: "CONTRIBUTORS_TILE_STEPS", status: 123 }] }),
+      ),
+    ).toBeNull();
+    expect(
+      parseStrainDeepDiveSteps(
+        makeStrainDeepDiveRaw({ metrics: [{ id: "CONTRIBUTORS_TILE_STEPS", status: "abc" }] }),
+      ),
+    ).toBeNull();
+    expect(
+      parseStrainDeepDiveSteps(
+        makeStrainDeepDiveRaw({ metrics: [{ id: "CONTRIBUTORS_TILE_STEPS", status: "-5" }] }),
+      ),
+    ).toBeNull();
+  });
+
+  it("trims whitespace around step counts and accepts zero", () => {
+    expect(
+      parseStrainDeepDiveSteps(
+        makeStrainDeepDiveRaw({ metrics: [{ id: "CONTRIBUTORS_TILE_STEPS", status: " 4,880 " }] }),
+      ),
+    ).toBe(4880);
+    expect(
+      parseStrainDeepDiveSteps(
+        makeStrainDeepDiveRaw({ metrics: [{ id: "CONTRIBUTORS_TILE_STEPS", status: "0" }] }),
+      ),
+    ).toBe(0);
   });
 });
 
