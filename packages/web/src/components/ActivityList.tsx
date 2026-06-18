@@ -6,7 +6,7 @@ import {
   parseValidDate,
 } from "@dofek/format/format";
 import { formatActivityTypeLabel } from "@dofek/training/training";
-import { useState } from "react";
+import { type CSSProperties, useState } from "react";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { ActivityTable, type ActivityTableColumn } from "./ActivityTable.tsx";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
@@ -30,6 +30,12 @@ export interface Activity {
     elevationGainM: number | null;
   } | null;
 }
+
+type RoutePathPoint = { x: number; y: number };
+
+const ROUTE_THUMBNAIL_PADDING_PERCENT = 20;
+const MAX_ROUTE_THUMBNAIL_SCALE = 2.5;
+const MIN_ROUTE_THUMBNAIL_SPAN_PERCENT = 1;
 
 interface ActivityListProps {
   activities: Activity[];
@@ -56,6 +62,49 @@ function formatActivityDuration(startedAt: string, endedAt: string | null): stri
   if (!startedDate || !endedDate) return "—";
   const durationMinutes = Math.round((endedDate.getTime() - startedDate.getTime()) / 60000);
   return durationMinutes >= 0 ? formatDurationMinutes(durationMinutes) : "—";
+}
+
+function formatRouteViewportNumber(value: number): string {
+  const rounded = Math.round(value * 1000) / 1000;
+  return Object.is(rounded, -0) ? "0" : String(rounded);
+}
+
+function getRouteViewportStyle(routePath?: RoutePathPoint[] | null): CSSProperties | undefined {
+  if (routePath == null || routePath.length < 2) return undefined;
+
+  const firstPoint = routePath[0];
+  if (!firstPoint) return undefined;
+
+  let minX = firstPoint.x;
+  let maxX = firstPoint.x;
+  let minY = firstPoint.y;
+  let maxY = firstPoint.y;
+
+  for (const point of routePath) {
+    minX = Math.min(minX, point.x);
+    maxX = Math.max(maxX, point.x);
+    minY = Math.min(minY, point.y);
+    maxY = Math.max(maxY, point.y);
+  }
+
+  const routeWidth = Math.max(maxX - minX, MIN_ROUTE_THUMBNAIL_SPAN_PERCENT);
+  const routeHeight = Math.max(maxY - minY, MIN_ROUTE_THUMBNAIL_SPAN_PERCENT);
+  const fittedScale = Math.min(
+    (100 - ROUTE_THUMBNAIL_PADDING_PERCENT * 2) / routeWidth,
+    (100 - ROUTE_THUMBNAIL_PADDING_PERCENT * 2) / routeHeight,
+  );
+  const scale = Math.max(1, Math.min(MAX_ROUTE_THUMBNAIL_SCALE, fittedScale));
+  const routeCenterX = (minX + maxX) / 2;
+  const routeCenterY = (minY + maxY) / 2;
+  const translateX = 50 - routeCenterX * scale;
+  const translateY = 50 - routeCenterY * scale;
+
+  return {
+    transform: `translate(${formatRouteViewportNumber(translateX)}%, ${formatRouteViewportNumber(
+      translateY,
+    )}%) scale(${formatRouteViewportNumber(scale)})`,
+    transformOrigin: "top left",
+  };
 }
 
 export function ActivityList({
@@ -145,21 +194,29 @@ export function ActivityList({
       label: "Map",
       headerClassName: "pb-2 pr-4 whitespace-nowrap",
       cellClassName: "py-2 pr-4 whitespace-nowrap",
-      renderCell: (activity) =>
-        activity.location ? (
+      renderCell: (activity) => {
+        if (!activity.location) return "—";
+
+        const routeViewportStyle = getRouteViewportStyle(activity.location.routePath);
+        return (
           <div className="relative h-12 w-16 overflow-hidden rounded bg-surface-hover">
-            <img
-              src={activity.location.tileUrl}
-              alt="Activity route map summary"
-              className="h-full w-full object-cover"
-              loading="lazy"
-              referrerPolicy="origin"
-            />
-            <ActivityRouteOverlay routePath={activity.location.routePath} />
+            <div
+              data-testid="activity-route-viewport"
+              className="absolute inset-0 h-full w-full"
+              style={routeViewportStyle}
+            >
+              <img
+                src={activity.location.tileUrl}
+                alt="Activity route map summary"
+                className="h-full w-full object-cover"
+                loading="lazy"
+                referrerPolicy="origin"
+              />
+              <ActivityRouteOverlay routePath={activity.location.routePath} />
+            </div>
           </div>
-        ) : (
-          "—"
-        ),
+        );
+      },
     },
     {
       key: "date",

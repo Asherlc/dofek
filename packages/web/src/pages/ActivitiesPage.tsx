@@ -10,7 +10,7 @@ import {
 import { formatMeasurementText } from "@dofek/format/units";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { type CSSProperties, useMemo, useState } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { trpc } from "../lib/trpc.ts";
@@ -18,11 +18,59 @@ import { useUnitConverter } from "../lib/unitContext.ts";
 
 const DEFAULT_WEEKS = 4;
 const ALL_ACTIVITY_TYPES = "all";
+const ROUTE_THUMBNAIL_PADDING_PERCENT = 20;
+const MAX_ROUTE_THUMBNAIL_SCALE = 2.5;
+const MIN_ROUTE_THUMBNAIL_SPAN_PERCENT = 1;
 const DATE_RANGE_OPTIONS = [
   { value: 4, label: "4 weeks" },
   { value: 8, label: "8 weeks" },
   { value: 12, label: "12 weeks" },
 ] as const;
+
+type RoutePathPoint = { x: number; y: number };
+
+function formatRouteViewportNumber(value: number): string {
+  const rounded = Math.round(value * 1000) / 1000;
+  return Object.is(rounded, -0) ? "0" : String(rounded);
+}
+
+function getRouteViewportStyle(routePath?: RoutePathPoint[] | null): CSSProperties | undefined {
+  if (routePath == null || routePath.length < 2) return undefined;
+
+  const firstPoint = routePath[0];
+  if (!firstPoint) return undefined;
+
+  let minX = firstPoint.x;
+  let maxX = firstPoint.x;
+  let minY = firstPoint.y;
+  let maxY = firstPoint.y;
+
+  for (const point of routePath) {
+    minX = Math.min(minX, point.x);
+    maxX = Math.max(maxX, point.x);
+    minY = Math.min(minY, point.y);
+    maxY = Math.max(maxY, point.y);
+  }
+
+  const routeWidth = Math.max(maxX - minX, MIN_ROUTE_THUMBNAIL_SPAN_PERCENT);
+  const routeHeight = Math.max(maxY - minY, MIN_ROUTE_THUMBNAIL_SPAN_PERCENT);
+  const fittedScale = Math.min(
+    (100 - ROUTE_THUMBNAIL_PADDING_PERCENT * 2) / routeWidth,
+    (100 - ROUTE_THUMBNAIL_PADDING_PERCENT * 2) / routeHeight,
+  );
+  const scale = Math.max(1, Math.min(MAX_ROUTE_THUMBNAIL_SCALE, fittedScale));
+  const routeCenterX = (minX + maxX) / 2;
+  const routeCenterY = (minY + maxY) / 2;
+  const translateX = 50 - routeCenterX * scale;
+  const translateY = 50 - routeCenterY * scale;
+
+  return {
+    transform: `translate(${formatRouteViewportNumber(translateX)}%, ${formatRouteViewportNumber(
+      translateY,
+    )}%) scale(${formatRouteViewportNumber(scale)})`,
+    transformOrigin: "top left",
+  };
+}
 
 export function ActivitiesPage() {
   const [weeks, setWeeks] = useState(DEFAULT_WEEKS);
@@ -422,24 +470,31 @@ interface ActivityMapTileProps {
 
 function ActivityMapTile({ location, units }: ActivityMapTileProps) {
   const [loadFailed, setLoadFailed] = useState(false);
+  const routeViewportStyle = getRouteViewportStyle(location.routePath);
 
   return (
-    <div className="relative h-24 bg-surface-secondary sm:h-auto sm:w-36 sm:shrink-0">
+    <div className="relative h-24 overflow-hidden bg-surface-secondary sm:h-auto sm:w-36 sm:shrink-0">
       {loadFailed ? (
         <div className="w-full h-full flex items-center justify-center text-xs text-muted">
           Map unavailable
         </div>
       ) : (
-        <img
-          src={location.tileUrl}
-          alt="Activity location map"
-          className="w-full h-full object-cover"
-          loading="lazy"
-          referrerPolicy="origin"
-          onError={() => setLoadFailed(true)}
-        />
+        <div
+          data-testid="activity-route-viewport"
+          className="absolute inset-0 h-full w-full"
+          style={routeViewportStyle}
+        >
+          <img
+            src={location.tileUrl}
+            alt="Activity location map"
+            className="w-full h-full object-cover"
+            loading="lazy"
+            referrerPolicy="origin"
+            onError={() => setLoadFailed(true)}
+          />
+          <ActivityRouteOverlay routePath={location.routePath} />
+        </div>
       )}
-      {loadFailed ? null : <ActivityRouteOverlay routePath={location.routePath} />}
       <div className="absolute bottom-2 left-2 flex flex-wrap gap-1">
         {location.distanceMeters != null ? (
           <span className="bg-black/60 text-white text-[11px] font-semibold px-2 py-0.5 rounded">
