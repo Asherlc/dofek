@@ -2,7 +2,7 @@
     materialized='incremental',
     incremental_strategy='microbatch',
     unique_key=['activity_id', 'channel', 'recorded_at'],
-    event_time='recorded_at',
+    event_time='refreshed_at',
     begin='2026-01-01',
     batch_size='day',
     lookback=3,
@@ -52,5 +52,5 @@ SELECT
     scalar,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
     is_deleted,
-    now64(9) AS refreshed_at
+    source_refreshed_at AS refreshed_at
 FROM activity_samples

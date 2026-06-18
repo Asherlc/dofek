@@ -205,12 +205,13 @@ describe("production analytics read-model build", () => {
     const sql = readModel("activity_sensor_sample");
 
     expect(sql).toContain("incremental_strategy='microbatch'");
-    expect(sql).toContain("event_time='recorded_at'");
+    expect(sql).toContain("event_time='refreshed_at'");
     expect(sql).toContain("lookback=3");
     expect(sql).toContain("ref('deduped_sensor')");
     expect(sql).toContain("ref('deduped_activities')");
     expect(sql).not.toContain("source('analytics', 'v_activity')");
     expect(sql).toContain("activity_id");
+    expect(sql).toContain("source_refreshed_at AS refreshed_at");
   });
 
   it("materializes activity location membership as a microbatch intermediary", () => {
@@ -218,7 +219,7 @@ describe("production analytics read-model build", () => {
     const sql = readModel("activity_location_sample");
 
     expect(sql).toContain("incremental_strategy='microbatch'");
-    expect(sql).toContain("event_time='recorded_at'");
+    expect(sql).toContain("event_time='refreshed_at'");
     expect(sql).toContain("lookback=3");
     expect(sql).toContain("source('postgres_fitness', 'metric_stream')");
     expect(sql).toContain("ref('deduped_activity_members')");
@@ -254,10 +255,11 @@ describe("production analytics read-model build", () => {
     expect(activitySensorSampleSql).toContain(
       "greatest(samples.refreshed_at, current_activity.source_synced_at) AS source_refreshed_at",
     );
-    expect(activitySensorSampleSql).toContain("now64(9) AS refreshed_at");
+    expect(activitySensorSampleSql).toContain("source_refreshed_at AS refreshed_at");
     expect(activityLocationSampleSql).toContain(
-      "greatest(location_rows._peerdb_synced_at, activity_members.source_synced_at) AS refreshed_at",
+      "greatest(location_rows._peerdb_synced_at, activity_members.source_synced_at) AS source_refreshed_at",
     );
+    expect(activityLocationSampleSql).toContain("source_refreshed_at AS refreshed_at");
     expect(activityLocationSampleSql).not.toContain("now64(9) AS refreshed_at");
     expect(sleepHeartRateSampleSql).toContain("greatest(samples.refreshed_at, active_sleep._peerdb_synced_at)");
     expect(sleepHeartRateSampleSql).not.toContain("now64(9) AS refreshed_at");
