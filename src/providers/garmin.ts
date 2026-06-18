@@ -232,6 +232,10 @@ function isNoDataError(error: unknown): boolean {
   return error instanceof GarminApiError && error.statusCode === 204;
 }
 
+function throwIfProviderSyncAbortError(error: unknown): void {
+  if (isRetryableInfraError(error) || error instanceof GarminRateLimitError) throw error;
+}
+
 /**
  * Tracks unexpected errors within a sync operation (e.g., "sleep", "stress").
  * Reports only the first error to Sentry to avoid noise when Garmin is down,
@@ -248,7 +252,7 @@ class SyncErrorTracker {
 
   /** Record an error. Only the first error per operation is sent to Sentry. */
   record(context: string, error: unknown): void {
-    if (isRetryableInfraError(error)) throw error;
+    throwIfProviderSyncAbortError(error);
     if (isNoDataError(error)) return;
 
     this.errors.push({ context, error });
@@ -366,7 +370,7 @@ export class GarminProvider implements SyncProvider {
     try {
       internalTokens = await this.#resolveTokens(db, scopedUserId);
     } catch (err) {
-      if (isRetryableInfraError(err)) throw err;
+      throwIfProviderSyncAbortError(err);
       return {
         provider: this.id,
         recordsSynced: 0,
@@ -422,6 +426,7 @@ export class GarminProvider implements SyncProvider {
     try {
       client = await GarminConnectClient.fromTokens(tokens, "garmin.com", this.#fetchFn);
     } catch (err) {
+      throwIfProviderSyncAbortError(err);
       errors.push({
         message: `Connect API authentication failed: ${err instanceof Error ? err.message : String(err)}`,
         cause: new ProviderAuthenticationFailedError("Garmin Connect", {
@@ -463,7 +468,7 @@ export class GarminProvider implements SyncProvider {
         recordsSynced += count;
         await saveGarminCheckpoint(checkpointStore, checkpointForNextPhase("activities", dates[0]));
       } catch (err) {
-        if (isRetryableInfraError(err)) throw err;
+        throwIfProviderSyncAbortError(err);
         errors.push({
           message: `Activities sync failed: ${err instanceof Error ? err.message : String(err)}`,
           cause: err,
@@ -492,7 +497,7 @@ export class GarminProvider implements SyncProvider {
         recordsSynced += count;
         await saveGarminCheckpoint(checkpointStore, checkpointForNextPhase("sleep", dates[0]));
       } catch (err) {
-        if (isRetryableInfraError(err)) throw err;
+        throwIfProviderSyncAbortError(err);
         errors.push({
           message: `Sleep sync failed: ${err instanceof Error ? err.message : String(err)}`,
           cause: err,
@@ -524,7 +529,7 @@ export class GarminProvider implements SyncProvider {
           checkpointForNextPhase("daily_metrics", dates[0]),
         );
       } catch (err) {
-        if (isRetryableInfraError(err)) throw err;
+        throwIfProviderSyncAbortError(err);
         errors.push({
           message: `Daily metrics sync failed: ${err instanceof Error ? err.message : String(err)}`,
           cause: err,
@@ -554,7 +559,7 @@ export class GarminProvider implements SyncProvider {
         recordsSynced += count;
         await saveGarminCheckpoint(checkpointStore, checkpointForNextPhase("stress", dates[0]));
       } catch (err) {
-        if (isRetryableInfraError(err)) throw err;
+        throwIfProviderSyncAbortError(err);
         errors.push({
           message: `Stress sync failed: ${err instanceof Error ? err.message : String(err)}`,
           cause: err,
@@ -584,7 +589,7 @@ export class GarminProvider implements SyncProvider {
         recordsSynced += count;
         await saveGarminCheckpoint(checkpointStore, { phase: "complete" });
       } catch (err) {
-        if (isRetryableInfraError(err)) throw err;
+        throwIfProviderSyncAbortError(err);
         errors.push({
           message: `Heart rate sync failed: ${err instanceof Error ? err.message : String(err)}`,
           cause: err,

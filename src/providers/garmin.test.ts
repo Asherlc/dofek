@@ -1086,6 +1086,17 @@ describe("GarminProvider.sync()", () => {
     expect(result.recordsSynced).toBe(1);
   });
 
+  it("stops the provider sync immediately when Garmin rate limits a phase", async () => {
+    const rateLimitError = new GarminRateLimitError("Rate limit exceeded (429): limited");
+    mocks.client.getSleepData.mockRejectedValue(rateLimitError);
+
+    await expect(syncProvider(provider, db, new Date())).rejects.toBe(rateLimitError);
+
+    expect(mocks.client.getDailySummary).not.toHaveBeenCalled();
+    expect(mocks.client.getDailyStress).not.toHaveBeenCalled();
+    expect(mocks.client.getDailyHeartRate).not.toHaveBeenCalled();
+  });
+
   it("calls ensureProvider with correct args", async () => {
     await syncProvider(provider, db, new Date());
 
