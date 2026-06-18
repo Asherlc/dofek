@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { WhoopClient, WhoopRateLimitError } from "./client.ts";
+import { WhoopClient, WhoopMetricUnavailableError, WhoopRateLimitError } from "./client.ts";
 import { createMockFetch, createMockResponse, createTypedMockFetch } from "./test-helpers.ts";
 import type { WhoopAuthToken } from "./types.ts";
 
@@ -588,6 +588,48 @@ describe("WhoopClient.getSteps", () => {
     const url = getFirstRequestUrl(fetchFn);
     expect(String(url)).toContain("name=steps");
     expect(String(url)).toContain("step=300");
+  });
+
+  it("throws WhoopMetricUnavailableError when steps metric is rejected", async () => {
+    const fetchFn = createMockFetch({
+      status: 400,
+      ok: false,
+      body: '{"code":400,"message":"query param name must be one of [heart_rate]"}',
+    });
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    await expect(
+      client.getSteps("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z"),
+    ).rejects.toBeInstanceOf(WhoopMetricUnavailableError);
+  });
+});
+
+describe("WhoopClient.getStrainDeepDive", () => {
+  it("requests the strain deep-dive BFF for a calendar date", async () => {
+    const body = {
+      sections: [
+        {
+          items: [
+            {
+              type: "CONTRIBUTORS_TILE",
+              content: {
+                id: "STRAIN_CONTRIBUTORS_TILE",
+                metrics: [{ id: "CONTRIBUTORS_TILE_STEPS", status: "7,421" }],
+              },
+            },
+          ],
+        },
+      ],
+    };
+    const fetchFn = createMockFetch({ status: 200, ok: true, body });
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    const result = await client.getStrainDeepDive("2026-03-01");
+
+    expect(result).toEqual(body);
+    const url = getFirstRequestUrl(fetchFn);
+    expect(String(url)).toContain("/home-service/v1/deep-dive/strain");
+    expect(String(url)).toContain("date=2026-03-01");
   });
 });
 

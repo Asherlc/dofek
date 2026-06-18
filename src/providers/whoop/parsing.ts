@@ -345,6 +345,56 @@ export interface ParsedDailyStepCount {
   steps: number;
 }
 
+function isWhoopBffRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function collectWhoopBffItems(
+  node: unknown,
+  out: Array<{ type: string; content: Record<string, unknown> }>,
+): void {
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      collectWhoopBffItems(child, out);
+    }
+    return;
+  }
+  if (!isWhoopBffRecord(node)) return;
+
+  if (typeof node.type === "string" && isWhoopBffRecord(node.content)) {
+    out.push({ type: node.type, content: node.content });
+  }
+  for (const value of Object.values(node)) {
+    collectWhoopBffItems(value, out);
+  }
+}
+
+/** Parse daily steps from GET /home-service/v1/deep-dive/strain. */
+export function parseStrainDeepDiveSteps(raw: unknown): number | null {
+  const items: Array<{ type: string; content: Record<string, unknown> }> = [];
+  collectWhoopBffItems(raw, items);
+
+  const contributors = items.find(
+    (item) => item.type === "CONTRIBUTORS_TILE" && item.content.id === "STRAIN_CONTRIBUTORS_TILE",
+  );
+  if (!contributors) return null;
+
+  const metrics = contributors.content.metrics;
+  if (!Array.isArray(metrics)) return null;
+
+  for (const metric of metrics) {
+    if (!isWhoopBffRecord(metric)) continue;
+    if (metric.id !== "CONTRIBUTORS_TILE_STEPS") continue;
+    if (typeof metric.status !== "string") return null;
+
+    const cleaned = metric.status.replace(/[,%]/g, "").trim();
+    const steps = Number.parseInt(cleaned, 10);
+    return Number.isFinite(steps) && steps >= 0 ? steps : null;
+  }
+
+  return null;
+}
+
 export function parseDailyStepValues(values: WhoopMetricValue[]): ParsedDailyStepCount[] {
   const maxStepsByDate = new Map<string, number>();
 
