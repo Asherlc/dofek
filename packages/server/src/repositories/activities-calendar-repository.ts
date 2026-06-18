@@ -332,7 +332,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
 
     const activityIds = activityRows.map((row) => row.id);
     const [summaryRows, baselineRows, routePreviewByActivityId] = await Promise.all([
-      this.#fetchSummaryMetricsByActivityId(activityIds, { includeDeleted: true }),
+      this.#fetchSummaryMetricsByActivityId(activityIds),
       this.#sensorStore.query(
         baselineRowSchema,
         `SELECT
@@ -492,45 +492,23 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     };
   }
 
-  async #fetchSummaryMetricsByActivityId(
-    activityIds: string[],
-    options: { includeDeleted?: boolean } = {},
-  ) {
-    if (activityIds.length === 0) return [];
-    if (options.includeDeleted) {
-      return this.#sensorStore.query(
-        activitySummaryMetricsRowSchema,
-        `SELECT
-            toString(activity_id) AS id,
-            avg_hr,
-            max_hr,
-            avg_power,
-            total_distance,
-            elevation_gain_m,
-            centroid_lat,
-            centroid_lng
-          FROM analytics.activity_summary_rows FINAL
-          WHERE user_id = {userId:UUID}
-            AND activity_id IN {activityIds:Array(UUID)}
-          ORDER BY refresh_version DESC
-          LIMIT 1 BY activity_id`,
-        { userId: this.userId, activityIds },
-      );
-    }
+  async #fetchSummaryMetricsByActivityId(activityIds: string[]) {
     return this.#sensorStore.query(
       activitySummaryMetricsRowSchema,
       `SELECT
-          toString(asum.activity_id) AS id,
-          asum.avg_hr AS avg_hr,
-          asum.max_hr AS max_hr,
-          asum.avg_power AS avg_power,
-          asum.total_distance AS total_distance,
-          asum.elevation_gain_m AS elevation_gain_m,
-          asum.centroid_lat AS centroid_lat,
-          asum.centroid_lng AS centroid_lng
-        FROM analytics.activity_summary asum
-        WHERE asum.user_id = {userId:UUID}
-          AND asum.activity_id IN {activityIds:Array(UUID)}`,
+          toString(activity_id) AS id,
+          avg_hr,
+          max_hr,
+          avg_power,
+          total_distance,
+          elevation_gain_m,
+          centroid_lat,
+          centroid_lng
+        FROM analytics.activity_summary_rows FINAL
+        WHERE user_id = {userId:UUID}
+          AND activity_id IN {activityIds:Array(UUID)}
+        ORDER BY refresh_version DESC
+        LIMIT 1 BY activity_id`,
       { userId: this.userId, activityIds },
     );
   }

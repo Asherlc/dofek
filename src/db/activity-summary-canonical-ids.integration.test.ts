@@ -365,7 +365,7 @@ function insertUnchangedRawMemberActivitySql(targetSchema: string): string {
 
 function insertDedupedActivitiesSql(targetSchema: string): string {
   return `INSERT INTO ${targetSchema}.deduped_activities VALUES
-  ('${canonicalActivityId}', 'garmin', '${testUserId}', '${canonicalActivityId}', 'mountain_biking', 'Lunch Mountain Bike Ride', toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), 'Garmin Edge', NULL, 'America/Los_Angeles', NULL, toDateTime64('2026-06-01 00:10:00', 9, 'UTC'), ['garmin', 'wahoo'], [], ['${canonicalActivityId}', '${memberActivityId}'], 400, 0, toDateTime64('2026-06-01 00:10:00', 9, 'UTC'))`;
+  ('${canonicalActivityId}', 'garmin', '${testUserId}', '${canonicalActivityId}', 'mountain_biking', 'Lunch Mountain Bike Ride', toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), 'Garmin Edge', NULL, 'America/Los_Angeles', NULL, toDateTime64('2026-06-01 00:10:00', 9, 'UTC'), ['garmin', 'wahoo'], [], [], ['${canonicalActivityId}', '${memberActivityId}'], 400, 0, toDateTime64('2026-06-01 00:10:00', 9, 'UTC'))`;
 }
 
 function insertDedupedActivityMembersSql(targetSchema: string): string {
