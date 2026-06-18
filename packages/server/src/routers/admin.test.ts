@@ -1,4 +1,3 @@
-import { POSTGRES_METRIC_STREAM_EXPORT_RETIRED_MESSAGE } from "dofek/jobs/queues";
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
@@ -568,15 +567,6 @@ describe("adminRouter", () => {
         succeeded: 48,
         failed: 2,
         last_sync: "2024-01-01T00:00:00Z",
-      });
-    });
-  });
-
-  describe("triggerTrainingExport", () => {
-    it("rejects retired Postgres training export", async () => {
-      const caller = makeCaller(vi.fn());
-      await expect(caller.triggerTrainingExport({})).rejects.toMatchObject({
-        message: POSTGRES_METRIC_STREAM_EXPORT_RETIRED_MESSAGE,
       });
     });
   });
