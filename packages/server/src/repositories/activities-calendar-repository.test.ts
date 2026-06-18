@@ -3,8 +3,8 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import { osmTilePreview, osmTileUrl } from "../lib/osm-tile.ts";
 import { ActivitySourceAttribution } from "../models/activity-source-attribution.ts";
-import { ActivitiesCalendarRepository, mergeDayGroups } from "./activities-calendar-repository.ts";
 import type { CalendarActivityEntry } from "./activities-calendar-repository.ts";
+import { ActivitiesCalendarRepository, mergeDayGroups } from "./activities-calendar-repository.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 
 function makeDatabase(rows: Record<string, unknown>[] = []) {
@@ -1843,7 +1843,9 @@ describe("mergeDayGroups", () => {
     const activeDays = [
       {
         date: "2026-03-17",
-        activities: [makeCalendarEntry({ id: "active-old", startedAt: "2026-03-17T07:00:00.000Z" })],
+        activities: [
+          makeCalendarEntry({ id: "active-old", startedAt: "2026-03-17T07:00:00.000Z" }),
+        ],
       },
     ];
     const hiddenDays = [
@@ -1879,7 +1881,9 @@ describe("mergeDayGroups", () => {
     ];
 
     expect(
-      mergeDayGroups(activeDays, []).flatMap((day) => day.activities.map((activity) => activity.id)),
+      mergeDayGroups(activeDays, []).flatMap((day) =>
+        day.activities.map((activity) => activity.id),
+      ),
     ).toEqual(["late", "early"]);
   });
 
