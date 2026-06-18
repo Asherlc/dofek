@@ -102,6 +102,7 @@ const activityTypeRowSchema = z.object({
 const providerAbsentActivityRowSchema = activityRowSchema.extend({
   provider_id: z.string(),
   provider_absent_at: timestampStringSchema,
+  calories: z.coerce.number().nullable().optional(),
 });
 
 const activitySummaryMetricsRowSchema = z.object({
@@ -265,37 +266,42 @@ export class ActivitiesCalendarRepository extends BaseRepository {
   async #getProviderAbsentWeekList(input: WeekListInput): Promise<CalendarDayActivities[]> {
     const days = input.weeks * 7;
     const windowStart = dateWindowStartString(input.endDate, days);
-    const activityTypePredicate = input.activityType
-      ? sql`AND a.activity_type = ${input.activityType}`
-      : sql``;
+    const activityTypeFilter = activityTypeFilterSql(input);
+    const queryParams = {
+      ...activitySummaryQueryParams(this.userId, this.timezone, windowStart, input),
+      ...this.#clickhouseTimestampAccessParams(),
+    };
 
-    const activityRows = await this.query(
+    const activityRows = await this.#sensorStore.query(
       providerAbsentActivityRowSchema,
-      sql`SELECT
-            a.id::text AS id,
-            a.name AS name,
-            a.activity_type::text AS activity_type,
-            a.started_at::text AS started_at,
-            a.ended_at::text AS ended_at,
-            EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60.0 AS duration_min,
-            NULL::numeric AS avg_hr,
-            NULL::numeric AS max_hr,
-            NULL::numeric AS avg_power,
-            NULL::numeric AS total_distance,
-            NULL::numeric AS elevation_gain_m,
-            NULL::numeric AS centroid_lat,
-            NULL::numeric AS centroid_lng,
-            to_char((a.started_at AT TIME ZONE ${this.timezone})::date, 'YYYY-MM-DD') AS local_date,
-            a.provider_id::text AS provider_id,
-            a.provider_absent_at::text AS provider_absent_at
-          FROM fitness.activity a
-          WHERE a.user_id = ${this.userId}::uuid
-            AND a.provider_absent_at IS NOT NULL
-            AND a.ended_at IS NOT NULL
-            AND (a.started_at AT TIME ZONE ${this.timezone})::date >= ${windowStart}::date
-            ${activityTypePredicate}
-            ${this.timestampAccessPredicate(sql`a.started_at`)}
-          ORDER BY a.started_at DESC`,
+      `SELECT
+          toString(activity.id) AS id,
+          activity.name AS name,
+          activity.activity_type AS activity_type,
+          toString(activity.started_at) AS started_at,
+          toString(activity.ended_at) AS ended_at,
+          dateDiff('second', activity.started_at, activity.ended_at) / 60.0 AS duration_min,
+          NULL AS avg_hr,
+          NULL AS max_hr,
+          NULL AS avg_power,
+          NULL AS total_distance,
+          NULL AS elevation_gain_m,
+          NULL AS centroid_lat,
+          NULL AS centroid_lng,
+          toString(toDate(toTimeZone(activity.started_at, {timezone:String}))) AS local_date,
+          activity.provider_id AS provider_id,
+          toString(activity.provider_absent_at) AS provider_absent_at,
+          toFloat64OrNull(nullIf(JSONExtractString(activity.raw, 'calories'), '')) AS calories
+        FROM postgres_fitness.activity AS activity FINAL
+        WHERE activity.user_id = {userId:UUID}
+          AND activity._peerdb_is_deleted = 0
+          AND activity.provider_absent_at IS NOT NULL
+          AND activity.ended_at IS NOT NULL
+          AND toDate(toTimeZone(activity.started_at, {timezone:String})) >= toDate({windowStart:String})
+          ${activityTypeFilter}
+          ${this.#clickhouseTimestampAccessClause()}
+        ORDER BY activity.started_at DESC`,
+      queryParams,
     );
 
     if (activityRows.length === 0) {
@@ -303,8 +309,8 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     }
 
     const activityIds = activityRows.map((row) => row.id);
-    const [summaryRows, baselineRows, caloriesRows, routePreviewByActivityId] = await Promise.all([
-      this.#fetchSummaryMetricsByActivityId(activityIds),
+    const [summaryRows, baselineRows, routePreviewByActivityId] = await Promise.all([
+      this.#fetchSummaryMetricsByActivityId(activityIds, { includeDeleted: true }),
       this.#sensorStore.query(
         baselineRowSchema,
         `SELECT
@@ -315,7 +321,6 @@ export class ActivitiesCalendarRepository extends BaseRepository {
           WHERE up.id = {userId:UUID}`,
         { userId: this.userId },
       ),
-      this.#fetchCaloriesByActivityId(activityIds, { providerAbsentOnly: true }),
       getActivityRoutePreviews(this.#sensorStore, this.userId, activityIds),
     ]);
 
@@ -335,15 +340,11 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       };
     });
 
-    const caloriesByActivityId = new Map(
-      caloriesRows.map((row) => [row.id, row.calories] as const),
-    );
     const baseline = baselineRows[0] ?? { max_hr: null, resting_hr: null, ftp: null };
     const calculator = new TrainingStressCalculator();
 
     const dayMap = new Map<string, CalendarActivityEntry[]>();
     for (const row of enrichedRows) {
-      const calories = caloriesByActivityId.get(row.id) ?? null;
       const tss = computeActivityTss({
         durationMin: row.duration_min,
         avgPower: row.avg_power,
@@ -375,9 +376,9 @@ export class ActivitiesCalendarRepository extends BaseRepository {
                 elevationGainM: row.elevation_gain_m,
               }
             : null,
-        calories,
+        calories: row.calories ?? null,
         tss: tss != null ? Math.round(tss * 10) / 10 : null,
-        stats: formatActivityStats(tss, calories),
+        stats: formatActivityStats(tss, row.calories ?? null),
         isProviderAbsent: true,
         providerId: row.provider_id,
         providerAbsentAt: row.provider_absent_at,
@@ -391,6 +392,21 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     return Array.from(dayMap.entries())
       .map(([date, activities]) => ({ date, activities }))
       .sort((a, b) => (a.date < b.date ? 1 : -1));
+  }
+
+  #clickhouseTimestampAccessClause(): string {
+    if (this.accessWindow.kind === "full") return "";
+    return `
+          AND toDate(toTimeZone(activity.started_at, {timezone:String})) >= toDate({accessStartDate:String})
+          AND toDate(toTimeZone(activity.started_at, {timezone:String})) < toDate({accessEndDateExclusive:String})`;
+  }
+
+  #clickhouseTimestampAccessParams(): Record<string, string> {
+    if (this.accessWindow.kind === "full") return {};
+    return {
+      accessStartDate: this.accessWindow.startDate,
+      accessEndDateExclusive: this.accessWindow.endDateExclusive,
+    };
   }
 
   async getActivityOverview(input: WeekListInput): Promise<ActivityOverview> {
@@ -449,8 +465,31 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     };
   }
 
-  async #fetchSummaryMetricsByActivityId(activityIds: string[]) {
+  async #fetchSummaryMetricsByActivityId(
+    activityIds: string[],
+    options: { includeDeleted?: boolean } = {},
+  ) {
     if (activityIds.length === 0) return [];
+    if (options.includeDeleted) {
+      return this.#sensorStore.query(
+        activitySummaryMetricsRowSchema,
+        `SELECT
+            toString(activity_id) AS id,
+            avg_hr,
+            max_hr,
+            avg_power,
+            total_distance,
+            elevation_gain_m,
+            centroid_lat,
+            centroid_lng
+          FROM analytics.activity_summary_rows FINAL
+          WHERE user_id = {userId:UUID}
+            AND activity_id IN {activityIds:Array(UUID)}
+          ORDER BY refresh_version DESC
+          LIMIT 1 BY activity_id`,
+        { userId: this.userId, activityIds },
+      );
+    }
     return this.#sensorStore.query(
       activitySummaryMetricsRowSchema,
       `SELECT
@@ -469,18 +508,12 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     );
   }
 
-  async #fetchCaloriesByActivityId(
-    activityIds: string[],
-    options: { providerAbsentOnly?: boolean } = {},
-  ) {
+  async #fetchCaloriesByActivityId(activityIds: string[]) {
     if (activityIds.length === 0) return [];
     const activityIdFilter = sql.join(
       activityIds.map((activityId) => sql`${activityId}::uuid`),
       sql`, `,
     );
-    const providerAbsentPredicate = options.providerAbsentOnly
-      ? sql`AND a.provider_absent_at IS NOT NULL`
-      : sql`AND a.provider_absent_at IS NULL`;
     return this.query(
       caloriesRowSchema,
       sql`SELECT
@@ -488,7 +521,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             NULLIF(a.raw->>'calories', '')::numeric AS calories
           FROM fitness.activity a
           WHERE a.user_id = ${this.userId}::uuid
-            ${providerAbsentPredicate}
+            AND a.provider_absent_at IS NULL
             AND a.id IN (${activityIdFilter})
             AND a.raw ? 'calories'`,
     );
