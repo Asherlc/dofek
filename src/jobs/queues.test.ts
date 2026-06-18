@@ -17,13 +17,20 @@ describe("queues", () => {
 
   describe("constants", () => {
     it("exports correct queue names", async () => {
-      const { EXPORT_QUEUE, IMPORT_QUEUE, POST_SYNC_QUEUE, SCHEDULED_SYNC_QUEUE, SYNC_QUEUE } =
-        await import("./queues.ts");
+      const {
+        ACTIVITY_DELETE_ANALYTICS_QUEUE,
+        EXPORT_QUEUE,
+        IMPORT_QUEUE,
+        POST_SYNC_QUEUE,
+        SCHEDULED_SYNC_QUEUE,
+        SYNC_QUEUE,
+      } = await import("./queues.ts");
       expect(SYNC_QUEUE).toBe("sync");
       expect(IMPORT_QUEUE).toBe("import");
       expect(EXPORT_QUEUE).toBe("export");
       expect(SCHEDULED_SYNC_QUEUE).toBe("scheduled-sync");
       expect(POST_SYNC_QUEUE).toBe("post-sync");
+      expect(ACTIVITY_DELETE_ANALYTICS_QUEUE).toBe("activity-delete-analytics");
     });
   });
 
@@ -292,6 +299,38 @@ describe("queues", () => {
             replace: true,
           },
           removeOnComplete: true,
+        },
+      );
+    });
+  });
+
+  describe("enqueueActivityDeleteAnalyticsRefresh", () => {
+    it("adds an activity delete analytics refresh job with retries", async () => {
+      const { enqueueActivityDeleteAnalyticsRefresh, createActivityDeleteAnalyticsQueue } =
+        await import("./queues.ts");
+
+      const queue = createActivityDeleteAnalyticsQueue({ host: "test", port: 9999 });
+      await enqueueActivityDeleteAnalyticsRefresh(
+        "user-123",
+        [
+          "00000000-0000-0000-0000-000000000001",
+          "00000000-0000-0000-0000-000000000001",
+        ],
+        queue,
+      );
+
+      expect(mockQueueAdd).toHaveBeenCalledWith(
+        "activity-delete-analytics-refresh",
+        {
+          type: "activity-delete-analytics-refresh",
+          userId: "user-123",
+          activityIds: ["00000000-0000-0000-0000-000000000001"],
+        },
+        {
+          removeOnComplete: true,
+          removeOnFail: { age: 604_800, count: 100 },
+          attempts: 5,
+          backoff: { type: "fixed", delay: 30_000 },
         },
       );
     });

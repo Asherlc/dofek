@@ -811,17 +811,17 @@ describe("ActivityRepository", () => {
 
   describe("delete", () => {
     it("calls execute", async () => {
-      const { repo, execute } = makeRepository([]);
+      const { repo, execute } = makeRepository([{ member_activity_id: "activity-id" }]);
       await repo.delete("activity-id");
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute).toHaveBeenCalledTimes(2);
     });
 
     it("deletes every member activity in the selected deduped activity group", async () => {
-      const { repo, execute } = makeRepository([]);
+      const { repo, execute } = makeRepository([{ member_activity_id: "activity-id" }]);
 
       await repo.delete("activity-id");
 
-      const sqlObject = execute.mock.calls[0]?.[0];
+      const sqlObject = execute.mock.calls[1]?.[0];
       const compiledQuery = dialect.sqlToQuery(sqlObject);
       expect(compiledQuery.sql).toContain("DELETE FROM fitness.activity");
       expect(compiledQuery.sql).toContain("member_rows.member_activity_id");
@@ -836,17 +836,28 @@ describe("ActivityRepository", () => {
     it("bulkDelete skips SQL when no activity ids are provided", async () => {
       const { repo, execute } = makeRepository([]);
 
-      await expect(repo.bulkDelete([])).resolves.toBe(0);
+      await expect(repo.bulkDelete([])).resolves.toEqual({
+        deletedCount: 0,
+        memberActivityIds: [],
+      });
 
       expect(execute).not.toHaveBeenCalled();
     });
 
     it("bulkDelete deduplicates selected activity ids and deletes every member activity in matching deduped groups", async () => {
-      const { repo, execute } = makeRepository([]);
+      const { repo, execute } = makeRepository([
+        { member_activity_id: "activity-id" },
+        { member_activity_id: "other-id" },
+      ]);
 
-      await expect(repo.bulkDelete(["activity-id", "activity-id", "other-id"])).resolves.toBe(2);
+      await expect(
+        repo.bulkDelete(["activity-id", "activity-id", "other-id"]),
+      ).resolves.toEqual({
+        deletedCount: 2,
+        memberActivityIds: ["activity-id", "other-id"],
+      });
 
-      const sqlObject = execute.mock.calls[0]?.[0];
+      const sqlObject = execute.mock.calls[1]?.[0];
       const compiledQuery = dialect.sqlToQuery(sqlObject);
       expect(compiledQuery.sql).toContain("DELETE FROM fitness.activity");
       expect(compiledQuery.sql).toContain("selected_member.member_activity_id IN");

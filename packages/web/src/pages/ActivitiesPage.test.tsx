@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -29,6 +29,10 @@ let mockOverviewQuery: {
 let weekListInput: unknown;
 let overviewInput: unknown;
 let overviewOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
+let bulkDeleteMutate: ReturnType<typeof vi.fn>;
+let invalidateWeekList: ReturnType<typeof vi.fn>;
+let invalidateActivityOverview: ReturnType<typeof vi.fn>;
+let invalidateActivityList: ReturnType<typeof vi.fn>;
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
@@ -54,6 +58,26 @@ vi.mock("../lib/trpc.ts", () => ({
         },
       },
     },
+    activity: {
+      bulkDelete: {
+        useMutation: (options?: { onSuccess?: () => Promise<void> | void }) => ({
+          mutate: bulkDeleteMutate.mockImplementation(async () => {
+            await options?.onSuccess?.();
+          }),
+          isPending: false,
+          error: null,
+        }),
+      },
+    },
+    useUtils: () => ({
+      calendar: {
+        weekList: { invalidate: invalidateWeekList },
+        activityOverview: { invalidate: invalidateActivityOverview },
+      },
+      activity: {
+        list: { invalidate: invalidateActivityList },
+      },
+    }),
   },
 }));
 
@@ -105,6 +129,10 @@ describe("ActivitiesPage", () => {
     weekListInput = undefined;
     overviewInput = undefined;
     overviewOptions = undefined;
+    bulkDeleteMutate = vi.fn();
+    invalidateWeekList = vi.fn();
+    invalidateActivityOverview = vi.fn();
+    invalidateActivityList = vi.fn();
   });
 
   it("uses QueryStatePanel for loading state", () => {
@@ -283,5 +311,85 @@ describe("ActivitiesPage", () => {
     expect(screen.getByTestId("activity-route-path").getAttribute("points")).toBe(
       "27.854,37.951 29.22,37.088 30.585,35.936",
     );
+  });
+
+  it("shows a Select button when activities are present", () => {
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity()] }],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesPage />);
+
+    expect(screen.getByText("Select")).toBeDefined();
+  });
+
+  it("toggles selected activities instead of navigating in select mode", () => {
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity()] }],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesPage />);
+    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByText("Trainer Ride"));
+
+    expect(screen.getByText("1 selected")).toBeDefined();
+    expect(screen.queryByRole("link", { name: /Trainer Ride/i })).toBeNull();
+  });
+
+  it("bulk deletes selected activities after confirmation", async () => {
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity()] }],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesPage />);
+    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByText("Trainer Ride"));
+    fireEvent.click(screen.getByText("Delete"));
+    fireEvent.click(screen.getByText("Confirm Delete"));
+
+    await waitFor(() => {
+      expect(bulkDeleteMutate).toHaveBeenCalledWith({ ids: ["activity-1"] });
+      expect(invalidateWeekList).toHaveBeenCalled();
+      expect(invalidateActivityOverview).toHaveBeenCalled();
+      expect(invalidateActivityList).toHaveBeenCalled();
+    });
+  });
+
+  it("clears selected activities when the activity type filter changes", () => {
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity()] }],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    mockOverviewQuery = {
+      data: {
+        activityCount: 1,
+        totalMinutes: 60,
+        totalDistanceMeters: 5000,
+        totalElevationGainM: 120,
+        activityTypes: ["running"],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesPage />);
+    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByText("Trainer Ride"));
+    fireEvent.change(screen.getByLabelText("Activity type"), { target: { value: "running" } });
+
+    expect(screen.queryByText("1 selected")).toBeNull();
+    expect(screen.queryByText("Select")).toBeDefined();
   });
 });

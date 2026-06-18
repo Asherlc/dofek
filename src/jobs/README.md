@@ -9,6 +9,7 @@ This directory contains background job processing logic using BullMQ and Redis.
 - **Export**: Generating user data ZIP exports.
 - **Scheduled Sync**: High-level orchestrator for triggering periodic syncs based on tiers.
 - **Post-Sync**: Downstream tasks (e.g., recomputing metrics, cache invalidation) triggered after a successful sync.
+- **Activity Delete Analytics**: Rebuilds ClickHouse activity read models after user-initiated deletes.
 - **Training Export**: Incremental data export for machine learning models.
 
 ## Architecture

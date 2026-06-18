@@ -241,7 +241,11 @@ function DeleteActivityButton({ activityId }: { activityId: string }) {
   const trpcUtils = trpc.useUtils();
   const deleteMutation = trpc.activity.delete.useMutation({
     onSuccess: async () => {
-      await trpcUtils.activity.list.invalidate();
+      await Promise.all([
+        trpcUtils.activity.list.invalidate(),
+        trpcUtils.calendar.weekList.invalidate(),
+        trpcUtils.calendar.activityOverview.invalidate(),
+      ]);
       navigate({ to: "/dashboard" });
     },
   });

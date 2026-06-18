@@ -27,6 +27,9 @@ const DATE_RANGE_OPTIONS = [
 export function ActivitiesPage() {
   const [weeks, setWeeks] = useState(DEFAULT_WEEKS);
   const [activityType, setActivityType] = useState(ALL_ACTIVITY_TYPES);
+  const [selectMode, setSelectMode] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [selectedActivityIds, setSelectedActivityIds] = useState<Set<string>>(new Set());
   const endDate = useMemo(() => formatDateYmd(), []);
   const units = useUnitConverter();
   const selectedActivityType = activityType === ALL_ACTIVITY_TYPES ? undefined : activityType;
@@ -35,14 +38,61 @@ export function ActivitiesPage() {
     endDate,
     ...(selectedActivityType ? { activityType: selectedActivityType } : {}),
   };
+  const trpcUtils = trpc.useUtils();
   const query = trpc.calendar.weekList.useQuery(queryInput);
   const overviewQuery = trpc.calendar.activityOverview.useQuery(queryInput, {
     placeholderData: (previousData) => previousData,
   });
+  const bulkDelete = trpc.activity.bulkDelete.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        trpcUtils.calendar.weekList.invalidate(),
+        trpcUtils.calendar.activityOverview.invalidate(),
+        trpcUtils.activity.list.invalidate(),
+      ]);
+      setSelectedActivityIds(new Set());
+      setSelectMode(false);
+      setConfirmDelete(false);
+    },
+  });
 
   const dayGroups = query.data;
-
+  const hasActivities = dayGroups?.some((day) => day.activities.length > 0) ?? false;
+  const selectedCount = selectedActivityIds.size;
   const subtitle = `Last ${weeks} weeks`;
+
+  const cancelSelection = () => {
+    setSelectedActivityIds(new Set());
+    setSelectMode(false);
+    setConfirmDelete(false);
+  };
+
+  const toggleSelectedActivity = (activityId: string) => {
+    setSelectedActivityIds((current) => {
+      const next = new Set(current);
+      if (next.has(activityId)) {
+        next.delete(activityId);
+      } else {
+        next.add(activityId);
+      }
+      return next;
+    });
+  };
+
+  const handleConfirmDelete = () => {
+    if (selectedCount === 0) return;
+    bulkDelete.mutate({ ids: [...selectedActivityIds] });
+  };
+
+  const updateActivityType = (nextActivityType: string) => {
+    setActivityType(nextActivityType);
+    cancelSelection();
+  };
+
+  const updateWeeks = (nextWeeks: number) => {
+    setWeeks(nextWeeks);
+    cancelSelection();
+  };
 
   return (
     <PageLayout title="Activities" subtitle={subtitle}>
@@ -51,9 +101,21 @@ export function ActivitiesPage() {
           activityTypes={overviewQuery.data?.activityTypes ?? []}
           activityType={activityType}
           weeks={weeks}
-          onActivityTypeChange={setActivityType}
-          onWeeksChange={setWeeks}
+          canSelect={hasActivities}
+          selectMode={selectMode}
+          confirmDelete={confirmDelete}
+          selectedCount={selectedCount}
+          deletePending={bulkDelete.isPending}
+          onActivityTypeChange={updateActivityType}
+          onWeeksChange={updateWeeks}
+          onSelect={() => setSelectMode(true)}
+          onCancelSelection={cancelSelection}
+          onDeleteSelected={() => setConfirmDelete(true)}
+          onConfirmDelete={handleConfirmDelete}
         />
+        {bulkDelete.error ? (
+          <QueryStatePanel error={bulkDelete.error} height={80} />
+        ) : null}
         {overviewQuery.isLoading ? (
           <QueryStatePanel variant="loading" height={120} />
         ) : overviewQuery.isError ? (
@@ -84,35 +146,14 @@ export function ActivitiesPage() {
               </div>
               <div className="space-y-2">
                 {day.activities.map((activity) => (
-                  <Link
+                  <ActivityCard
                     key={activity.id}
-                    to="/activity/$id"
-                    params={{ id: activity.id }}
-                    className="card block overflow-hidden transition-colors hover:bg-surface-elevated"
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-stretch">
-                      <div className="flex min-w-0 flex-1 flex-col gap-3 p-3 sm:flex-row sm:items-center sm:p-4">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                            <h4 className="truncate text-sm font-semibold">
-                              {activity.name ?? formatActivityTypeLabel(activity.activityType)}
-                            </h4>
-                            <span className="rounded border border-border bg-surface-secondary px-1.5 py-0.5 text-[11px] font-medium text-muted">
-                              {formatActivityTypeLabel(activity.activityType)}
-                            </span>
-                          </div>
-                          <p className="mt-1 text-xs text-muted">
-                            {formatTime(activity.startedAt)} ·{" "}
-                            {formatDurationMinutes(activity.durationMin)}
-                          </p>
-                        </div>
-                        <ActivityMetricStrip activity={activity} units={units} />
-                      </div>
-                      {activity.location ? (
-                        <ActivityMapTile location={activity.location} units={units} />
-                      ) : null}
-                    </div>
-                  </Link>
+                    activity={activity}
+                    units={units}
+                    selectMode={selectMode}
+                    selected={selectedActivityIds.has(activity.id)}
+                    onToggleSelected={() => toggleSelectedActivity(activity.id)}
+                  />
                 ))}
               </div>
             </section>
@@ -127,23 +168,87 @@ interface ActivityControlsProps {
   activityTypes: string[];
   activityType: string;
   weeks: number;
+  canSelect: boolean;
+  selectMode: boolean;
+  confirmDelete: boolean;
+  selectedCount: number;
+  deletePending: boolean;
   onActivityTypeChange: (activityType: string) => void;
   onWeeksChange: (weeks: number) => void;
+  onSelect: () => void;
+  onCancelSelection: () => void;
+  onDeleteSelected: () => void;
+  onConfirmDelete: () => void;
 }
 
 function ActivityControls({
   activityTypes,
   activityType,
   weeks,
+  canSelect,
+  selectMode,
+  confirmDelete,
+  selectedCount,
+  deletePending,
   onActivityTypeChange,
   onWeeksChange,
+  onSelect,
+  onCancelSelection,
+  onDeleteSelected,
+  onConfirmDelete,
 }: ActivityControlsProps) {
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface-solid p-3 sm:flex-row sm:items-center sm:justify-between">
-      <div>
+    <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface-solid p-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm font-semibold">Activity log</p>
+        {canSelect && !selectMode ? (
+          <button
+            type="button"
+            onClick={onSelect}
+            className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover transition-colors cursor-pointer"
+          >
+            Select
+          </button>
+        ) : null}
       </div>
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      {selectMode ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-subtle tabular-nums">{selectedCount} selected</span>
+          {confirmDelete ? (
+            <>
+              <span className="text-xs text-muted">
+                Delete selected activities? This cannot be undone.
+              </span>
+              <button
+                type="button"
+                onClick={onConfirmDelete}
+                disabled={deletePending || selectedCount === 0}
+                className="px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              >
+                {deletePending ? "Deleting..." : "Confirm Delete"}
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={onDeleteSelected}
+              disabled={deletePending || selectedCount === 0}
+              className="px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            >
+              Delete
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onCancelSelection}
+            disabled={deletePending}
+            className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors cursor-pointer"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : null}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
         <label className="flex items-center gap-2 text-xs text-muted">
           Date range
           <select
@@ -175,6 +280,83 @@ function ActivityControls({
         </label>
       </div>
     </div>
+  );
+}
+
+interface ActivityCardProps {
+  activity: {
+    id: string;
+    name: string | null;
+    activityType: string;
+    startedAt: string;
+    durationMin: number;
+    location: ActivityMapTileProps["location"] | null;
+    stats: { label: string; value: string }[];
+  };
+  units: ReturnType<typeof useUnitConverter>;
+  selectMode: boolean;
+  selected: boolean;
+  onToggleSelected: () => void;
+}
+
+function ActivityCard({
+  activity,
+  units,
+  selectMode,
+  selected,
+  onToggleSelected,
+}: ActivityCardProps) {
+  const cardClassName = [
+    "card block overflow-hidden transition-colors",
+    selectMode ? "cursor-pointer hover:bg-surface-elevated" : "hover:bg-surface-elevated",
+    selected ? "ring-2 ring-accent bg-surface-hover" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const content = (
+    <div className="flex flex-col sm:flex-row sm:items-stretch">
+      <div className="flex min-w-0 flex-1 flex-col gap-3 p-3 sm:flex-row sm:items-center sm:p-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            {selectMode ? (
+              <input
+                type="checkbox"
+                aria-label={`Select ${activity.name ?? formatActivityTypeLabel(activity.activityType)}`}
+                checked={selected}
+                readOnly
+                className="h-4 w-4 accent-accent cursor-pointer"
+              />
+            ) : null}
+            <h4 className="truncate text-sm font-semibold">
+              {activity.name ?? formatActivityTypeLabel(activity.activityType)}
+            </h4>
+            <span className="rounded border border-border bg-surface-secondary px-1.5 py-0.5 text-[11px] font-medium text-muted">
+              {formatActivityTypeLabel(activity.activityType)}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-muted">
+            {formatTime(activity.startedAt)} · {formatDurationMinutes(activity.durationMin)}
+          </p>
+        </div>
+        <ActivityMetricStrip activity={activity} units={units} />
+      </div>
+      {activity.location ? <ActivityMapTile location={activity.location} units={units} /> : null}
+    </div>
+  );
+
+  if (selectMode) {
+    return (
+      <button type="button" onClick={onToggleSelected} className={`${cardClassName} w-full text-left`}>
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <Link to="/activity/$id" params={{ id: activity.id }} className={cardClassName}>
+      {content}
+    </Link>
   );
 }
 

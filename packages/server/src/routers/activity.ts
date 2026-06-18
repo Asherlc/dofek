@@ -1,6 +1,8 @@
 import { isCyclingActivity } from "@dofek/training/training";
 import { TRPCError } from "@trpc/server";
 import { isRelationMissingError } from "dofek/db/dedup";
+import { enqueueActivityDeleteAnalyticsRefresh } from "dofek/jobs/queues";
+import { queryCache } from "dofek/lib/cache";
 import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";
 import { endDateSchema } from "../lib/date-window.ts";
@@ -15,6 +17,28 @@ import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../t
 import { ensureProvidersRegistered } from "./sync-helpers.ts";
 
 const MAX_BULK_DELETE_ACTIVITY_IDS = 500;
+
+async function invalidateActivityListCaches(userId: string): Promise<void> {
+  await Promise.allSettled([
+    queryCache.invalidateByPrefix(`${userId}:activity.`),
+    queryCache.invalidateByPrefix(`${userId}:calendar.`),
+  ]);
+}
+
+async function scheduleActivityAnalyticsRefresh(
+  userId: string,
+  memberActivityIds: string[],
+): Promise<void> {
+  try {
+    await enqueueActivityDeleteAnalyticsRefresh(userId, memberActivityIds);
+  } catch (error) {
+    const { captureException } = await import("@sentry/node");
+    captureException(error, {
+      tags: { phase: "activity-delete-analytics-enqueue" },
+      extra: { userId, activityCount: memberActivityIds.length },
+    });
+  }
+}
 
 export interface StrengthExerciseDetail {
   exerciseIndex: number;
@@ -197,8 +221,9 @@ export const activityRouter = router({
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+      let memberActivityIds: string[] = [];
       try {
-        await repo.delete(input.id);
+        ({ memberActivityIds } = await repo.bulkDelete([input.id]));
       } catch (error) {
         if (isRelationMissingError(error)) {
           throw new TRPCError({
@@ -209,6 +234,8 @@ export const activityRouter = router({
         }
         throw error;
       }
+      await invalidateActivityListCaches(ctx.userId);
+      await scheduleActivityAnalyticsRefresh(ctx.userId, memberActivityIds);
       return { success: true };
     }),
 
@@ -217,7 +244,9 @@ export const activityRouter = router({
     .mutation(async ({ ctx, input }) => {
       const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       try {
-        const deletedCount = await repo.bulkDelete(input.ids);
+        const { deletedCount, memberActivityIds } = await repo.bulkDelete(input.ids);
+        await invalidateActivityListCaches(ctx.userId);
+        await scheduleActivityAnalyticsRefresh(ctx.userId, memberActivityIds);
         return { success: true, deletedCount };
       } catch (error) {
         if (isRelationMissingError(error)) {

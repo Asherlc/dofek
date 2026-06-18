@@ -515,9 +515,27 @@ export class ActivityRepository extends BaseRepository {
   }
 
   /** Delete activities by visible activity IDs, including all members of matching deduped groups. */
-  async bulkDelete(activityIds: string[]): Promise<number> {
+  async bulkDelete(
+    activityIds: string[],
+  ): Promise<{ deletedCount: number; memberActivityIds: string[] }> {
     const uniqueActivityIds = [...new Set(activityIds)];
-    if (uniqueActivityIds.length === 0) return 0;
+    if (uniqueActivityIds.length === 0) {
+      return { deletedCount: 0, memberActivityIds: [] };
+    }
+
+    const memberRows = await this.query(
+      z.object({ member_activity_id: z.string() }),
+      sql`SELECT DISTINCT member_rows.member_activity_id::text AS member_activity_id
+          FROM fitness.v_activity a
+          JOIN fitness.v_activity_members selected_member ON selected_member.activity_id = a.id
+          JOIN fitness.v_activity_members member_rows ON member_rows.activity_id = a.id
+          WHERE selected_member.member_activity_id IN (${sql.join(
+            uniqueActivityIds.map((selectedActivityId) => sql`${selectedActivityId}::uuid`),
+            sql`, `,
+          )})
+            AND a.user_id = ${this.userId}`,
+    );
+    const memberActivityIds = memberRows.map((row) => row.member_activity_id);
 
     await this.db.execute(sql`
       DELETE FROM fitness.activity
@@ -534,6 +552,6 @@ export class ActivityRepository extends BaseRepository {
       )
       AND user_id = ${this.userId}
     `);
-    return uniqueActivityIds.length;
+    return { deletedCount: uniqueActivityIds.length, memberActivityIds };
   }
 }
