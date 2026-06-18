@@ -28,6 +28,8 @@ vi.mock("react-native", () => ({
     ),
   ActivityIndicator: () => React.createElement("div", { "data-testid": "loading" }),
   Alert: { alert: vi.fn() },
+  Modal: ({ children, visible }: Record<string, unknown>) =>
+    visible ? React.createElement("div", { "data-testid": "modal" }, children) : null,
   Linking: { openURL: vi.fn() },
   StyleSheet: {
     create: <T extends Record<string, unknown>>(styles: T): T => {
@@ -95,6 +97,21 @@ vi.mock("../../lib/units", () => ({
     convertWeight: (kg: number) => kg,
     weightLabel: "kg",
   }),
+}));
+
+vi.mock("../../lib/auth-context", () => ({
+  useAuth: () => ({
+    serverUrl: "https://example.com",
+    sessionToken: "test-session-token",
+  }),
+}));
+
+vi.mock("../../lib/activity-export", () => ({
+  downloadActivityExport: vi.fn(),
+}));
+
+vi.mock("../../lib/telemetry", () => ({
+  captureException: vi.fn(),
 }));
 
 vi.mock("../../theme", () => ({

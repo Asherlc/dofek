@@ -25,6 +25,7 @@ import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
 import type { StreamPoint, StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
+import { ActivityExportDropdown } from "../components/ActivityExportDropdown.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { DofekChart } from "../components/DofekChart.tsx";
 import { HrZonesChart, PowerZonesChart } from "../components/HeartRateZonesChart.tsx";
@@ -147,7 +148,10 @@ export function ActivityDetailPage() {
           <span>/</span>
           <span className="text-foreground">{activity.name ?? activity.activityType}</span>
         </div>
-        <DeleteActivityButton activityId={id} />
+        <div className="flex items-center gap-2">
+          <ActivityExportDropdown activityId={id} hasGps={hasGps} />
+          <DeleteActivityButton activityId={id} />
+        </div>
       </div>
 
       <ActivityHeader activity={activity} units={units} hasGps={hasGps} />

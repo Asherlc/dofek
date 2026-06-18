@@ -502,7 +502,13 @@
     "deauthorization",
     "modelcontextprotocol",
     "Streamable",
-    "streamable"
+    "streamable",
+    "fitsdk",
+    "gpxtpx",
+    "trkpt",
+    "trkseg",
+    "Mesgs",
+    "mesg"
   ],
   "flagWords": [],
   "useGitignore": false,
