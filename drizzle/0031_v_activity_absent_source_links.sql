@@ -165,14 +165,15 @@ merged AS (
           ORDER BY absent.provider_id
         )
       FROM fitness.activity AS absent
-      CROSS JOIN LATERAL (
-        SELECT
-          MIN(r.started_at) AS group_started_at,
-          MAX(COALESCE(r.ended_at, r.started_at + interval '1 hour')) AS group_ended_at
-        FROM final_groups AS fg_bounds
-        INNER JOIN ranked AS r ON fg_bounds.activity_id = r.id
-        WHERE fg_bounds.group_id = b.group_id
-      ) AS bounds
+      CROSS JOIN
+        LATERAL (
+          SELECT
+            MIN(r.started_at) AS group_started_at,
+            MAX(COALESCE(r.ended_at, r.started_at + interval '1 hour')) AS group_ended_at
+          FROM final_groups AS fg_bounds
+          INNER JOIN ranked AS r ON fg_bounds.activity_id = r.id
+          WHERE fg_bounds.group_id = b.group_id
+        ) AS bounds
       WHERE
         absent.user_id = b.user_id
         AND absent.provider_absent_at IS NOT null
