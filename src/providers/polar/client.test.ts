@@ -73,6 +73,93 @@ describe("PolarClient — response parsing", () => {
       "Polar API returned unexpected JSON shape for /exercises",
     );
   });
+
+  it("throws when daily activity response is not an array", async () => {
+    const fetchFn: typeof globalThis.fetch = async () => Response.json({ days: [] });
+
+    const client = new PolarClient("access-token", fetchFn);
+
+    await expect(client.getDailyActivity()).rejects.toThrow(
+      "Polar API returned unexpected JSON shape for /users/activities",
+    );
+  });
+
+  it("throws when sleep response is not an object", async () => {
+    const fetchFn: typeof globalThis.fetch = async () => Response.json("not-an-object");
+
+    const client = new PolarClient("access-token", fetchFn);
+
+    await expect(client.getSleep()).rejects.toThrow(
+      "Polar API returned unexpected JSON shape for /users/sleep",
+    );
+  });
+
+  it("throws when sleep response is missing nights", async () => {
+    const fetchFn: typeof globalThis.fetch = async () => Response.json({});
+
+    const client = new PolarClient("access-token", fetchFn);
+
+    await expect(client.getSleep()).rejects.toThrow(
+      "Polar API returned unexpected JSON shape for /users/sleep",
+    );
+  });
+
+  it("throws when sleep nights is not an array", async () => {
+    const fetchFn: typeof globalThis.fetch = async () => Response.json({ nights: "bad" });
+
+    const client = new PolarClient("access-token", fetchFn);
+
+    await expect(client.getSleep()).rejects.toThrow(
+      "Polar API returned unexpected JSON shape for /users/sleep",
+    );
+  });
+
+  it("throws when nightly recharge response is not an object", async () => {
+    const fetchFn: typeof globalThis.fetch = async () => Response.json(null);
+
+    const client = new PolarClient("access-token", fetchFn);
+
+    await expect(client.getNightlyRecharge()).rejects.toThrow(
+      "Polar API returned unexpected JSON shape for /users/nightly-recharge",
+    );
+  });
+
+  it("throws when nightly recharge response is missing recharges", async () => {
+    const fetchFn: typeof globalThis.fetch = async () => Response.json({});
+
+    const client = new PolarClient("access-token", fetchFn);
+
+    await expect(client.getNightlyRecharge()).rejects.toThrow(
+      "Polar API returned unexpected JSON shape for /users/nightly-recharge",
+    );
+  });
+
+  it("throws when nightly recharge recharges is not an array", async () => {
+    const fetchFn: typeof globalThis.fetch = async () => Response.json({ recharges: "bad" });
+
+    const client = new PolarClient("access-token", fetchFn);
+
+    await expect(client.getNightlyRecharge()).rejects.toThrow(
+      "Polar API returned unexpected JSON shape for /users/nightly-recharge",
+    );
+  });
+
+  it("preserves the JSON parse error as the cause", async () => {
+    const fetchFn: typeof globalThis.fetch = async () => new Response("{not-json", { status: 200 });
+
+    const client = new PolarClient("access-token", fetchFn);
+
+    try {
+      await client.getExercises();
+      expect.unreachable("expected invalid JSON to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(Error);
+      if (!(error instanceof Error)) {
+        return;
+      }
+      expect(error.cause).toBeInstanceOf(SyntaxError);
+    }
+  });
 });
 
 describe("PolarClient — API error responses", () => {
@@ -97,7 +184,9 @@ describe("PolarClient — API error responses", () => {
 
     const client = new PolarClient("access-token", fetchFn);
 
-    await expect(client.getExercises()).rejects.toThrow("Polar API error (500): ");
+    await expect(client.getExercises()).rejects.toThrow(
+      "Polar API error (500): (empty JSON error body)",
+    );
   });
 
   it("redacts HTML error pages from API error messages", async () => {

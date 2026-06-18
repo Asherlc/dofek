@@ -62,15 +62,9 @@ export class PolarClient {
 
     if (!response.ok) {
       const contentType = response.headers.get("content-type") ?? "";
-      let detailMessage: string;
-      if (contentType.includes("application/json") && textBody.trim() !== "") {
-        detailMessage = textBody;
-      } else if (contentType.includes("text/html")) {
-        detailMessage = "(HTML error page)";
-      } else {
-        detailMessage = textBody.length > 200 ? `${textBody.slice(0, 200)}…` : textBody;
-      }
-      throw new Error(`Polar API error (${response.status}): ${detailMessage}`);
+      throw new Error(
+        `Polar API error (${response.status}): ${formatPolarApiErrorBody(contentType, textBody)}`,
+      );
     }
 
     if (textBody.trim() === "") {
@@ -206,6 +200,18 @@ export class PolarClient {
 
     return response.text();
   }
+}
+
+function formatPolarApiErrorBody(contentType: string, textBody: string): string {
+  if (contentType.includes("text/html")) {
+    return "(HTML error page)";
+  }
+
+  if (contentType.includes("application/json")) {
+    return textBody.trim() === "" ? "(empty JSON error body)" : textBody;
+  }
+
+  return textBody.length > 200 ? `${textBody.slice(0, 200)}…` : textBody;
 }
 
 function assertPolarExerciseArray(value: unknown, path = "/exercises"): PolarExercise[] {
