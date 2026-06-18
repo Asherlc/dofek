@@ -26,6 +26,7 @@ import * as createDashboardTablesMigration from "./clickhouse-migrations/0026_cr
 import * as createDomainDashboardTablesMigration from "./clickhouse-migrations/0028_create_domain_dashboard_tables.ts";
 import * as activityProviderAbsenceMigration from "./clickhouse-migrations/0029_activity_provider_absence.ts";
 import * as activityMirrorOrderKeyMigration from "./clickhouse-migrations/0030_activity_mirror_order_key.ts";
+import * as dedupedActivitiesAbsentSourceLinksMigration from "./clickhouse-migrations/0031_deduped_activities_absent_source_links.ts";
 import { clickHouseMigrationFileNames } from "./clickhouse-migrations/registry.ts";
 import { runClickHouseMigrationStatement } from "./clickhouse-migrations/statement-runner.ts";
 import {
@@ -67,7 +68,21 @@ describe("buildClickHouseMigrationStatements", () => {
       "0028_create_domain_dashboard_tables.ts",
       "0029_activity_provider_absence.ts",
       "0030_activity_mirror_order_key.ts",
+      "0031_deduped_activities_absent_source_links.ts",
     ]);
+  });
+
+  it("keeps absent source link migration statements in its migration file", () => {
+    const statements = dedupedActivitiesAbsentSourceLinksMigration.createMigration().statements;
+    const statementSql = statements.join("\n");
+
+    expect(statements).toContain("DROP VIEW IF EXISTS analytics.v_activity");
+    expect(statementSql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_activity");
+    expect(statementSql).toContain("absent_group_members");
+    expect(statementSql).toContain("absent_source_external_ids");
+    expect(statements.at(-1)).toContain(
+      "ALTER TABLE analytics.deduped_activities\nADD COLUMN IF NOT EXISTS absent_source_external_ids",
+    );
   });
 
   it("keeps custom-run migrations free of accidental static statements", () => {
@@ -444,7 +459,7 @@ describe("runClickHouseMigrations", () => {
 
     const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
-    expect(count).toBe(30);
+    expect(count).toBe(31);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(

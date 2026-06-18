@@ -28,6 +28,7 @@ import { createMigration as createMigration0027 } from "./0027_create_daily_slee
 import { createMigration as createMigration0028 } from "./0028_create_domain_dashboard_tables.ts";
 import { createMigration as createMigration0029 } from "./0029_activity_provider_absence.ts";
 import { createMigration as createMigration0030 } from "./0030_activity_mirror_order_key.ts";
+import { createMigration as createMigration0031 } from "./0031_deduped_activities_absent_source_links.ts";
 import type { ClickHouseMigration, ClickHouseMigrationFactory } from "./types.ts";
 
 const migrationFactories: ClickHouseMigrationFactory[] = [
@@ -61,6 +62,7 @@ const migrationFactories: ClickHouseMigrationFactory[] = [
   createMigration0028,
   createMigration0029,
   createMigration0030,
+  createMigration0031,
 ];
 
 export const clickHouseMigrationFileNames = [

@@ -7,9 +7,11 @@ import {
   ACTIVITY_DELETE_DBT_SELECT,
   type ActivityReadModelSpawner,
   countActivePeerDbActivities,
+  countProviderAbsentPeerDbActivities,
   runActivityReadModelBuild,
   type SpawnedProcess,
   waitForPeerDbActivityDeletes,
+  waitForPeerDbActivityRestores,
 } from "./activity-read-model-build.ts";
 
 function createMockClickHouseClient(query: Mock): ClickHouseClient {
@@ -71,6 +73,51 @@ describe("activity-read-model-build", () => {
     await expect(countActivePeerDbActivities(client, ["id-1"])).resolves.toBe(0);
   });
 
+  it("returns zero without querying when no absent activity ids are provided", async () => {
+    const query = vi.fn();
+    const client = createMockClickHouseClient(query);
+
+    await expect(countProviderAbsentPeerDbActivities(client, [])).resolves.toBe(0);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it("counts provider-absent mirrored activities for the requested ids", async () => {
+    const client = createMockClickHouseClient(
+      vi.fn().mockResolvedValue({
+        json: vi.fn().mockResolvedValue([{ absent_count: 1 }]),
+      }),
+    );
+
+    await expect(
+      countProviderAbsentPeerDbActivities(client, ["00000000-0000-0000-0000-000000000001"]),
+    ).resolves.toBe(1);
+  });
+
+  it("passes activity ids to the provider-absent PeerDB count query", async () => {
+    const query = vi.fn().mockResolvedValue({
+      json: vi.fn().mockResolvedValue([{ absent_count: 2 }]),
+    });
+    const client = createMockClickHouseClient(query);
+
+    await countProviderAbsentPeerDbActivities(client, ["id-1", "id-2"]);
+
+    expect(query).toHaveBeenCalledWith({
+      query: expect.stringContaining("provider_absent_at IS NOT NULL"),
+      format: "JSONEachRow",
+      query_params: { activityIds: ["id-1", "id-2"] },
+    });
+  });
+
+  it("returns zero when the provider-absent count query returns no rows", async () => {
+    const client = createMockClickHouseClient(
+      vi.fn().mockResolvedValue({
+        json: vi.fn().mockResolvedValue([]),
+      }),
+    );
+
+    await expect(countProviderAbsentPeerDbActivities(client, ["id-1"])).resolves.toBe(0);
+  });
+
   it("returns immediately when no activity ids need waiting", async () => {
     const query = vi.fn();
     const client = createMockClickHouseClient(query);
@@ -120,6 +167,57 @@ describe("activity-read-model-build", () => {
     await expect(
       waitForPeerDbActivityDeletes(client, ["id-1"], { pollIntervalMs: 0, timeoutMs: 1 }),
     ).rejects.toThrow("Timed out waiting for PeerDB to reflect deletion of 1 activities");
+  });
+
+  it("returns immediately when no restored activity ids need waiting", async () => {
+    const query = vi.fn();
+    const client = createMockClickHouseClient(query);
+
+    await expect(waitForPeerDbActivityRestores(client, [])).resolves.toBeUndefined();
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it("waits until PeerDB no longer reports restored activities as provider-absent", async () => {
+    const client = createMockClickHouseClient(
+      vi
+        .fn()
+        .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ absent_count: 1 }]) })
+        .mockResolvedValueOnce({ json: vi.fn().mockResolvedValue([{ absent_count: 0 }]) }),
+    );
+
+    await expect(
+      waitForPeerDbActivityRestores(client, ["00000000-0000-0000-0000-000000000001"], {
+        pollIntervalMs: 0,
+        timeoutMs: 1_000,
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("deduplicates activity ids while waiting for PeerDB restores", async () => {
+    const query = vi.fn().mockResolvedValue({
+      json: vi.fn().mockResolvedValue([{ absent_count: 0 }]),
+    });
+    const client = createMockClickHouseClient(query);
+
+    await waitForPeerDbActivityRestores(client, ["id-1", "id-1"]);
+
+    expect(query).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query_params: { activityIds: ["id-1"] },
+      }),
+    );
+  });
+
+  it("throws when PeerDB restores are not reflected before timeout", async () => {
+    const client = createMockClickHouseClient(
+      vi.fn().mockResolvedValue({
+        json: vi.fn().mockResolvedValue([{ absent_count: 1 }]),
+      }),
+    );
+
+    await expect(
+      waitForPeerDbActivityRestores(client, ["id-1"], { pollIntervalMs: 0, timeoutMs: 1 }),
+    ).rejects.toThrow("Timed out waiting for PeerDB to reflect restoration of 1 activities");
   });
 
   it("runs the activity delete dbt model chain", async () => {

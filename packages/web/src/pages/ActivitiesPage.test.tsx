@@ -434,6 +434,7 @@ describe("ActivitiesPage", () => {
               isProviderAbsent: true,
               providerId: "strava",
               providerAbsentAt: "2026-03-05T14:30:00.000Z",
+              tombstoneSummary: "Removed from Strava · Mar 5, 2:30 PM",
             }),
           ],
         },

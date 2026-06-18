@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  ActivitySourceAttribution,
-  type ProviderLookup,
-} from "./activity-source-attribution.ts";
+import { ActivitySourceAttribution, type ProviderLookup } from "./activity-source-attribution.ts";
 
 const mockLookup: ProviderLookup = (id: string) => {
   const providers: Record<string, { name: string; activityUrl: (externalId: string) => string }> = {
@@ -99,8 +96,8 @@ describe("ActivitySourceAttribution", () => {
   it("builds a tombstone summary for fully hidden activities", () => {
     const attribution = ActivitySourceAttribution.fromEntries([], []);
 
-    expect(
-      attribution.tombstoneSummary(null, "strava", "2026-03-05T14:30:00.000Z"),
-    ).toMatch(/Removed from Strava · Mar 5,/);
+    expect(attribution.tombstoneSummary(null, "strava", "2026-03-05T14:30:00.000Z")).toMatch(
+      /Removed from Strava · Mar 5,/,
+    );
   });
 });

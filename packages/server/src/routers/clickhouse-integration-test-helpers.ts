@@ -724,6 +724,7 @@ function buildTestDedupedActivitiesSelectSql(databases: IsolatedClickHouseDataba
   now64(9, 'UTC') AS source_synced_at,
   source_providers,
   source_external_ids,
+  absent_source_external_ids,
   member_activity_ids,
   toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
   toUInt8(0) AS is_deleted,
