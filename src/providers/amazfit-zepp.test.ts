@@ -412,6 +412,71 @@ describe("Amazfit/Zepp provider", () => {
     expect(result.errors[0]?.message).toContain("credentials");
   });
 
+  it("returns a not-connected error when the stored access token is missing", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "",
+      refreshToken: "login-token",
+      expiresAt: new Date("2099-01-01"),
+      scopes: "userId:user-123",
+    });
+
+    const { db } = createMockDatabase();
+    const fetchFn = vi.fn<typeof globalThis.fetch>();
+    const provider = new AmazfitZeppProvider(fetchFn);
+
+    const result = await provider.sync(db, new Date("2026-02-01T00:00:00.000Z"), {
+      userId: TEST_USER_ID,
+    });
+
+    expect(fetchFn).not.toHaveBeenCalled();
+    expect(result.errors[0]?.message).toContain("credentials");
+  });
+
+  it("returns a not-connected error when stored scopes omit the Zepp user id", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "token-123",
+      refreshToken: "login-token",
+      expiresAt: new Date("2099-01-01"),
+      scopes: null,
+    });
+
+    const { db } = createMockDatabase();
+    const fetchFn = vi.fn<typeof globalThis.fetch>();
+    const provider = new AmazfitZeppProvider(fetchFn);
+
+    const result = await provider.sync(db, new Date("2026-02-01T00:00:00.000Z"), {
+      userId: TEST_USER_ID,
+    });
+
+    expect(fetchFn).not.toHaveBeenCalled();
+    expect(result.errors[0]?.message).toContain("credentials");
+  });
+
+  it("uses stored app token and Zepp user id when requesting band data", async () => {
+    await mockStoredZeppCredentials("my-app-token", "zepp-user-42");
+
+    const { db } = createMockDatabase();
+    const fetchFn = vi.fn<typeof globalThis.fetch>(
+      async () =>
+        new Response(JSON.stringify({ code: 1, data: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    const provider = new AmazfitZeppProvider(fetchFn);
+
+    await provider.sync(db, new Date("2026-02-01T00:00:00.000Z"), {
+      userId: TEST_USER_ID,
+    });
+
+    expect(String(fetchFn.mock.calls[0]?.[0])).toContain("userid=zepp-user-42");
+    expect(fetchFn.mock.calls[0]?.[1]?.headers).toMatchObject({
+      apptoken: "my-app-token",
+    });
+  });
+
   it("records API errors from the sync request and reports them", async () => {
     await mockStoredZeppCredentials();
 

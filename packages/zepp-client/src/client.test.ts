@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  signInToZepp,
   ZEPP_ACCOUNT_LOGIN_URL,
   ZEPP_APP_NAME,
   ZEPP_REGISTRATION_REDIRECT_URI,
-  ZeppClient,
 } from "./client.ts";
 
 function mockFetch(handlers: {
@@ -26,7 +26,7 @@ function mockFetch(handlers: {
   });
 }
 
-describe("ZeppClient.signIn", () => {
+describe("signInToZepp", () => {
   it("exchanges email credentials for app token and user id", async () => {
     const fetchFn = mockFetch({
       registration: new Response(null, {
@@ -47,7 +47,7 @@ describe("ZeppClient.signIn", () => {
       ),
     });
 
-    const result = await ZeppClient.signIn("user@example.com", "secret-pass", fetchFn);
+    const result = await signInToZepp("user@example.com", "secret-pass", fetchFn);
 
     expect(result).toEqual({
       appToken: "app-token-456",
@@ -91,7 +91,7 @@ describe("ZeppClient.signIn", () => {
       ),
     });
 
-    const result = await ZeppClient.signIn("user@example.com", "password", fetchFn);
+    const result = await signInToZepp("user@example.com", "password", fetchFn);
     expect(result.userId).toBe("12345");
     expect(result.loginToken).toBeNull();
   });
@@ -104,7 +104,7 @@ describe("ZeppClient.signIn", () => {
       }),
     });
 
-    await expect(ZeppClient.signIn("user@example.com", "bad-password", fetchFn)).rejects.toThrow(
+    await expect(signInToZepp("user@example.com", "bad-password", fetchFn)).rejects.toThrow(
       "invalid email or password",
     );
   });
@@ -123,8 +123,44 @@ describe("ZeppClient.signIn", () => {
       }),
     });
 
-    await expect(ZeppClient.signIn("user@example.com", "password", fetchFn)).rejects.toThrow(
+    await expect(signInToZepp("user@example.com", "password", fetchFn)).rejects.toThrow(
       "login denied",
+    );
+  });
+
+  it("throws when registration does not redirect", async () => {
+    const fetchFn = mockFetch({
+      registration: new Response("invalid credentials", { status: 401 }),
+    });
+
+    await expect(signInToZepp("user@example.com", "password", fetchFn)).rejects.toThrow(
+      "Amazfit/Zepp login failed (401)",
+    );
+  });
+
+  it("throws when registration redirect is missing location", async () => {
+    const fetchFn = mockFetch({
+      registration: new Response(null, { status: 302 }),
+    });
+
+    await expect(signInToZepp("user@example.com", "password", fetchFn)).rejects.toThrow(
+      "missing redirect location",
+    );
+  });
+
+  it("throws when login HTTP response is not ok", async () => {
+    const fetchFn = mockFetch({
+      registration: new Response(null, {
+        status: 302,
+        headers: {
+          Location: `${ZEPP_REGISTRATION_REDIRECT_URI}?access=access-code&country_code=US`,
+        },
+      }),
+      login: new Response("denied", { status: 403 }),
+    });
+
+    await expect(signInToZepp("user@example.com", "password", fetchFn)).rejects.toThrow(
+      "Amazfit/Zepp login error (403)",
     );
   });
 });

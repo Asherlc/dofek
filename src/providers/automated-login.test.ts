@@ -522,6 +522,9 @@ describe("AmazfitZeppProvider", () => {
     const setup = new AmazfitZeppProvider().authSetup();
     expect(setup.automatedLogin).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("zepp.com");
+    expect(setup.oauthConfig.clientId).toBe("com.xiaomi.hm.health");
+    expect(setup.oauthConfig.scopes).toEqual([]);
+    expect(setup.oauthConfig.clientSecret).toBe("");
   });
 
   it("automatedLogin stores app token and user id in token scopes", async () => {
@@ -550,7 +553,9 @@ describe("AmazfitZeppProvider", () => {
     };
 
     const setup = new AmazfitZeppProvider(fetchFn).authSetup();
+    const before = Date.now();
     const tokens = await setup.automatedLogin?.("user@example.com", "password123");
+    const after = Date.now();
 
     expect(tokens).toEqual({
       accessToken: "app-token-456",
@@ -558,5 +563,7 @@ describe("AmazfitZeppProvider", () => {
       expiresAt: expect.any(Date),
       scopes: "userId:987654321",
     });
+    expect(tokens?.expiresAt.getTime()).toBeGreaterThanOrEqual(before + 364 * 24 * 60 * 60 * 1000);
+    expect(tokens?.expiresAt.getTime()).toBeLessThanOrEqual(after + 366 * 24 * 60 * 60 * 1000);
   });
 });

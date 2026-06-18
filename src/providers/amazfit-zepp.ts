@@ -1,7 +1,7 @@
 import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { captureException } from "@sentry/node";
+import { signInToZepp, ZEPP_APP_NAME } from "zepp-client/client";
 import { z } from "zod";
-import { ZEPP_APP_NAME, ZeppClient } from "zepp-client/client";
 import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
 import { dailyMetrics, sleepSession } from "../db/schema.ts";
@@ -307,7 +307,7 @@ export class AmazfitZeppProvider implements SyncProvider {
         scopes: [],
       },
       automatedLogin: async (email: string, password: string) => {
-        const result = await ZeppClient.signIn(email, password, fetchFn);
+        const result = await signInToZepp(email, password, fetchFn);
         return {
           accessToken: result.appToken,
           refreshToken: result.loginToken,
@@ -345,11 +345,7 @@ export class AmazfitZeppProvider implements SyncProvider {
           "credentials — connect via the app",
         );
       }
-      client = new AmazfitZeppClient(
-        credentials.appToken,
-        credentials.zeppUserId,
-        this.#fetchFn,
-      );
+      client = new AmazfitZeppClient(credentials.appToken, credentials.zeppUserId, this.#fetchFn);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };

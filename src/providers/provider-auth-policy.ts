@@ -1,4 +1,4 @@
-import type { BaseProvider } from "./types.ts";
+import type { Provider, ProviderAuthSetup } from "./types.ts";
 import { getProviderAuthType } from "./types.ts";
 
 /**
@@ -20,7 +20,7 @@ export function requiresPerUserConnect(providerId: string): boolean {
   return true;
 }
 
-export function isImportOnlyProvider(provider: BaseProvider): boolean {
+export function isImportOnlyProvider(provider: Provider): boolean {
   return "importOnly" in provider && provider.importOnly === true;
 }
 
@@ -32,7 +32,7 @@ export type PerUserAuthComplianceResult =
  * Validates that a provider follows the per-user authentication policy.
  * Import-only, internal, and legacy providers are exempt.
  */
-export function checkPerUserAuthCompliance(provider: BaseProvider): PerUserAuthComplianceResult {
+export function checkPerUserAuthCompliance(provider: Provider): PerUserAuthComplianceResult {
   if (isImportOnlyProvider(provider)) {
     return { ok: true };
   }
@@ -50,7 +50,7 @@ export function checkPerUserAuthCompliance(provider: BaseProvider): PerUserAuthC
     };
   }
 
-  let setup;
+  let setup: ProviderAuthSetup | undefined;
   try {
     setup = provider.authSetup();
   } catch (error: unknown) {

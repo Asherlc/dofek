@@ -812,9 +812,6 @@ importers:
 
   packages/zepp-client:
     dependencies:
-      '@dofek/provider-http':
-        specifier: workspace:*
-        version: link:../provider-http
       zod:
         specifier: 3.25.76
         version: 3.25.76
