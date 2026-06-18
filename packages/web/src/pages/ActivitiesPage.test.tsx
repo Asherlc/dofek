@@ -313,6 +313,74 @@ describe("ActivitiesPage", () => {
     );
   });
 
+  it("clamps map thumbnail translation to avoid blank tile edges", () => {
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: [
+            activity({
+              location: {
+                centroidLat: 37.7749,
+                centroidLng: -122.4194,
+                tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
+                routePath: [
+                  { x: 5, y: 5 },
+                  { x: 15, y: 15 },
+                ],
+                distanceMeters: 5000,
+                elevationGainM: 120,
+              },
+            }),
+          ],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesPage />);
+
+    expect(screen.getByTestId("activity-route-viewport").getAttribute("style")).toContain(
+      "translate(0%, 0%) scale(2.5)",
+    );
+  });
+
+  it("centers map thumbnails around the route bounds", () => {
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: [
+            activity({
+              location: {
+                centroidLat: 37.7749,
+                centroidLng: -122.4194,
+                tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
+                routePath: [
+                  { x: 25, y: 30 },
+                  { x: 35, y: 40 },
+                ],
+                distanceMeters: 5000,
+                elevationGainM: 120,
+              },
+            }),
+          ],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesPage />);
+
+    expect(screen.getByTestId("activity-route-viewport").getAttribute("style")).toContain(
+      "translate(-25%, -37.5%) scale(2.5)",
+    );
+  });
+
   it("shows a Select button when activities are present", () => {
     mockQuery = {
       data: [{ date: "2026-03-18", activities: [activity()] }],

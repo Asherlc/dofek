@@ -391,4 +391,38 @@ describe("ActivitiesScreen", () => {
       "27.854,37.951 29.22,37.088 30.585,35.936",
     );
   });
+
+  it("centers map thumbnails around the route bounds", () => {
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: [
+            activity({
+              location: {
+                centroidLat: 37.7749,
+                centroidLng: -122.4194,
+                tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
+                routePath: [
+                  { x: 25, y: 30 },
+                  { x: 35, y: 40 },
+                ],
+                distanceMeters: 5000,
+                elevationGainM: 120,
+              },
+            }),
+          ],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesScreen />);
+
+    expect(
+      window.getComputedStyle(screen.getByTestId("activity-route-viewport")).transform,
+    ).not.toBe("none");
+  });
 });
