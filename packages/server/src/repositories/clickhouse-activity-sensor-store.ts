@@ -384,10 +384,59 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             AND recorded_at <= parseDateTime64BestEffort({windowEndedAt:String})
             AND is_deleted = 0
         ),
+        combined_sample_times AS (
+          SELECT recorded_at, 0 AS has_location FROM activity_samples
+          UNION ALL
+          SELECT recorded_at, 1 AS has_location FROM location_samples
+        ),
+        deduped_sample_times AS (
+          SELECT
+            recorded_at,
+            max(has_location) AS has_location
+          FROM combined_sample_times
+          GROUP BY recorded_at
+        ),
+        ranked_sample_times AS (
+          SELECT
+            recorded_at,
+            has_location,
+            row_number() OVER (ORDER BY recorded_at) AS row_number,
+            count() OVER () AS total
+          FROM deduped_sample_times
+        ),
+        bucketed_sample_times AS (
+          SELECT
+            recorded_at,
+            has_location,
+            total,
+            intDiv(
+              (row_number - 1) * (toUInt64({maxPoints:UInt32}) - 1),
+              greatest(total - 1, 1)
+            ) AS sample_bucket
+          FROM ranked_sample_times
+        ),
         sample_times AS (
-          SELECT recorded_at FROM activity_samples
+          SELECT recorded_at
+          FROM bucketed_sample_times
+          WHERE total <= toUInt64({maxPoints:UInt32})
           UNION DISTINCT
-          SELECT recorded_at FROM location_samples
+          SELECT
+            if(
+              sample_bucket = 0,
+              min(recorded_at),
+              if(
+                sample_bucket = toUInt64({maxPoints:UInt32}) - 1,
+                max(recorded_at),
+                if(
+                  countIf(has_location = 1) > 0,
+                  argMinIf(recorded_at, recorded_at, has_location = 1),
+                  min(recorded_at)
+                )
+              )
+            ) AS recorded_at
+          FROM bucketed_sample_times
+          WHERE total > toUInt64({maxPoints:UInt32})
+          GROUP BY sample_bucket
         ),
         scalar_points AS (
           SELECT
@@ -411,24 +460,13 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
           location_samples.lng AS lng
         FROM (
           SELECT
-            sample_times.recorded_at AS recorded_at,
-            row_number() OVER (ORDER BY sample_times.recorded_at) AS row_number,
-            count() OVER () AS total
+            sample_times.recorded_at AS recorded_at
           FROM sample_times
         ) AS sample_times
         LEFT JOIN scalar_points
           ON scalar_points.recorded_at = sample_times.recorded_at
         LEFT JOIN location_samples
           ON location_samples.recorded_at = sample_times.recorded_at
-        WHERE total <= toUInt64({maxPoints:UInt32})
-           OR row_number = 1
-           OR intDiv(
-             (row_number - 1) * (toUInt64({maxPoints:UInt32}) - 1),
-             greatest(total - 1, 1)
-           ) > intDiv(
-             toUInt64(greatest(toInt64(row_number) - 2, 0)) * (toUInt64({maxPoints:UInt32}) - 1),
-             greatest(total - 1, 1)
-           )
         ORDER BY sample_times.recorded_at
       `,
       format: "JSONEachRow",
