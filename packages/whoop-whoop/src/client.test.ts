@@ -759,7 +759,7 @@ describe("WhoopClient.listDeveloperWorkouts", () => {
     await expect(client.listDeveloperWorkouts()).rejects.toThrow();
   });
 
-  it("returns null next_token when the API token is not a string", async () => {
+  it("rejects non-string next_token values in developer workout responses", async () => {
     const fetchFn = createMockFetch({
       status: 200,
       ok: true,
@@ -776,10 +776,7 @@ describe("WhoopClient.listDeveloperWorkouts", () => {
     });
     const client = new WhoopClient(makeToken(), fetchFn);
 
-    const result = await client.listDeveloperWorkouts();
-
-    expect(result.records.map((record) => record.id)).toEqual(["valid-workout"]);
-    expect(result.next_token).toBeNull();
+    await expect(client.listDeveloperWorkouts()).rejects.toThrow();
   });
 
   it("rejects null developer workout responses", async () => {

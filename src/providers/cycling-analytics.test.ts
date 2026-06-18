@@ -1,9 +1,9 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SyncDatabase } from "../db/index.ts";
 import { CyclingAnalyticsProvider } from "./cycling-analytics.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
+import { createMockDatabase } from "./test-helpers.ts";
 
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
   reconcileProviderActivityAbsence: vi.fn().mockResolvedValue(undefined),
@@ -47,27 +47,6 @@ vi.mock("../db/provider-activity-absence.ts", async (importOriginal) => {
     reconcileProviderActivityAbsence: providerActivityAbsenceMocks.reconcileProviderActivityAbsence,
   };
 });
-
-function createMockDb() {
-  const chain = {
-    values: vi.fn(),
-    onConflictDoUpdate: vi.fn(),
-    onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
-  };
-
-  for (const fn of Object.values(chain)) {
-    fn.mockReturnValue(chain);
-  }
-
-  const db: SyncDatabase = {
-    select: vi.fn(),
-    insert: vi.fn().mockReturnValue(chain),
-    delete: vi.fn(),
-    execute: vi.fn(),
-  };
-
-  return Object.assign(db, chain);
-}
 
 describe("CyclingAnalyticsProvider — rate-limit aware fetch wiring", () => {
   const originalEnv = { ...process.env };
@@ -125,7 +104,7 @@ describe("CyclingAnalyticsProvider — rate-limit aware fetch wiring", () => {
       return new Response("not found", { status: 404 });
     };
 
-    const db = createMockDb();
+    const { db, spies } = createMockDatabase();
     const result = await new CyclingAnalyticsProvider(mockFetch).sync(
       new SyncRun({
         db,
@@ -135,13 +114,42 @@ describe("CyclingAnalyticsProvider — rate-limit aware fetch wiring", () => {
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBe(1);
-    expect(db.values).toHaveBeenCalledWith(expect.objectContaining({ externalId: "1" }));
-    expect(db.values).not.toHaveBeenCalledWith(expect.objectContaining({ externalId: "2" }));
+    expect(spies.values).toHaveBeenCalledWith(expect.objectContaining({ externalId: "1" }));
+    expect(spies.values).not.toHaveBeenCalledWith(expect.objectContaining({ externalId: "2" }));
     expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
         presentExternalIds: new Set(["1"]),
       }),
     );
+  });
+
+  it("rejects malformed ride dates at the API boundary", async () => {
+    process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
+    process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-secret";
+
+    const mockFetch: typeof globalThis.fetch = async () =>
+      Response.json({
+        rides: [
+          {
+            id: 1,
+            title: "Bad date",
+            date: "not-a-date",
+            duration: 3600,
+          },
+        ],
+      });
+
+    const { db } = createMockDatabase();
+    const result = await new CyclingAnalyticsProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("activity:");
   });
 });

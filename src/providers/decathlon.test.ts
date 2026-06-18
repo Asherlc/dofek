@@ -147,4 +147,35 @@ describe("DecathlonProvider — rate-limit aware fetch wiring", () => {
       }),
     );
   });
+
+  it("rejects malformed activity dates at the API boundary", async () => {
+    process.env.DECATHLON_CLIENT_ID = "test-id";
+    process.env.DECATHLON_CLIENT_SECRET = "test-secret";
+
+    const mockFetch: typeof globalThis.fetch = async () =>
+      Response.json({
+        data: [
+          {
+            id: "bad-date",
+            name: "Run",
+            sport: "/v2/sports/381",
+            startdate: "not-a-date",
+            duration: 3600,
+            dataSummaries: [],
+          },
+        ],
+      });
+
+    const db = createMockDb();
+    const result = await new DecathlonProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("activity:");
+  });
 });

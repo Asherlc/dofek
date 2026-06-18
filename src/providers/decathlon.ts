@@ -1,5 +1,6 @@
 import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import type { CanonicalActivityType } from "@dofek/training/training";
+import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
@@ -18,29 +19,34 @@ import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./t
 const DECATHLON_API_BASE = "https://api.decathlon.net/sportstrackingdata/v2";
 const _DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
 
-interface DecathlonActivity {
-  id: string;
-  name: string;
-  sport: string; // e.g. "/v2/sports/{id}"
-  startdate: string; // ISO datetime
-  duration: number; // seconds
-  dataSummaries: DecathlonDataSummary[];
-}
+const parseableIsoDateTimeSchema = z
+  .string()
+  .refine((value) => Number.isFinite(Date.parse(value)), "Invalid ISO datetime");
 
-interface DecathlonDataSummary {
-  id: number;
-  value: number;
-  // Common datatype IDs:
-  // 5 = distance (km), 9 = calories (kcal),
-  // 1 = avg HR, 2 = max HR, 24 = duration (s)
-}
+const decathlonDataSummarySchema = z.object({
+  id: z.number(),
+  value: z.number(),
+});
 
-interface DecathlonActivitiesResponse {
-  data: DecathlonActivity[];
-  links?: {
-    next?: string;
-  };
-}
+const decathlonActivitySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  sport: z.string(),
+  startdate: parseableIsoDateTimeSchema,
+  duration: z.number(),
+  dataSummaries: z.array(decathlonDataSummarySchema).optional().default([]),
+});
+
+type DecathlonActivity = z.infer<typeof decathlonActivitySchema>;
+
+const decathlonActivitiesResponseSchema = z.object({
+  data: z.array(decathlonActivitySchema).optional().default([]),
+  links: z
+    .object({
+      next: z.string().optional(),
+    })
+    .optional(),
+});
 
 // ============================================================
 // Parsed types
@@ -225,8 +231,8 @@ export class DecathlonProvider implements SyncProvider {
               throw new Error(`Decathlon API error (${response.status}): ${text}`);
             }
 
-            const data: DecathlonActivitiesResponse = await response.json();
-            const activities = data.data ?? [];
+            const data = decathlonActivitiesResponseSchema.parse(await response.json());
+            const activities = data.data;
             nextUrl = data.links?.next;
 
             for (const raw of activities) {

@@ -84,7 +84,7 @@ const whoopDeveloperWorkoutRecordSchema = z
 const whoopDeveloperWorkoutListResponseSchema = z
   .object({
     records: z.array(whoopDeveloperWorkoutRecordSchema),
-    next_token: z.string().nullable().optional().catch(null),
+    next_token: z.string().nullable().optional(),
   })
   .passthrough();
 
