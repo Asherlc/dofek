@@ -70,6 +70,12 @@ describe("ActivityList", () => {
     expect(image.getAttribute("src")).toBe("https://tile.openstreetmap.org/13/1310/3166.png");
   });
 
+  it("allows compact map tile requests to include the page origin as the referrer", () => {
+    renderWithUnits(<ActivityList activities={mockActivities} />);
+    const image = screen.getByAltText("Activity route map summary");
+    expect(image.getAttribute("referrerpolicy")).toBe("origin");
+  });
+
   it("navigates to activity detail on row click", () => {
     renderWithUnits(<ActivityList activities={mockActivities} />);
     const row = screen.getByText("Morning Run").closest("tr");

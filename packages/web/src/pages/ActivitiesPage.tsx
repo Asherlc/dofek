@@ -250,7 +250,7 @@ function ActivityMapTile({ location, units }: ActivityMapTileProps) {
           alt="Activity location map"
           className="w-full h-full object-cover"
           loading="lazy"
-          referrerPolicy="no-referrer"
+          referrerPolicy="origin"
           onError={() => setLoadFailed(true)}
         />
       )}
