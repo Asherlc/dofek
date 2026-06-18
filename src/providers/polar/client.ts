@@ -38,7 +38,11 @@ export class PolarClient {
     this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "polar" });
   }
 
-  async #get<TResponse>(path: string, emptyValue: TResponse): Promise<TResponse> {
+  async #get<TResponse>(
+    path: string,
+    emptyValue: TResponse,
+    parse: (value: unknown) => TResponse,
+  ): Promise<TResponse> {
     const response = await this.#fetchFn(`${POLAR_API_BASE}${path}`, {
       headers: {
         Authorization: `Bearer ${this.#accessToken}`,
@@ -74,34 +78,39 @@ export class PolarClient {
       return emptyValue;
     }
 
+    let parsed: unknown;
     try {
-      return JSON.parse(textBody) as TResponse;
+      parsed = JSON.parse(textBody);
     } catch (error) {
       throw new Error(
         `Polar API returned invalid JSON for ${path}: ${error instanceof Error ? error.message : String(error)}`,
         { cause: error },
       );
     }
+
+    return parse(parsed);
   }
 
   async getExercises(): Promise<PolarExercise[]> {
-    return this.#get<PolarExercise[]>("/exercises", []);
+    return this.#get("/exercises", [], assertPolarExerciseArray);
   }
 
   async getSleep(): Promise<PolarSleep[]> {
-    const response = await this.#get<PolarSleepResponse>("/users/sleep", { nights: [] });
-    return response.nights;
+    const response = this.#get("/users/sleep", { nights: [] }, assertPolarSleepResponse);
+    return (await response).nights;
   }
 
   async getDailyActivity(): Promise<PolarDailyActivity[]> {
-    return this.#get<PolarDailyActivity[]>("/users/activities", []);
+    return this.#get("/users/activities", [], assertPolarDailyActivityArray);
   }
 
   async getNightlyRecharge(): Promise<PolarNightlyRecharge[]> {
-    const response = await this.#get<PolarNightlyRechargeResponse>("/users/nightly-recharge", {
-      recharges: [],
-    });
-    return response.recharges;
+    const response = this.#get(
+      "/users/nightly-recharge",
+      { recharges: [] },
+      assertPolarNightlyRechargeResponse,
+    );
+    return (await response).recharges;
   }
 
   /**
@@ -197,4 +206,50 @@ export class PolarClient {
 
     return response.text();
   }
+}
+
+function assertPolarExerciseArray(value: unknown, path = "/exercises"): PolarExercise[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`Polar API returned unexpected JSON shape for ${path}`);
+  }
+  return value satisfies PolarExercise[];
+}
+
+function assertPolarDailyActivityArray(
+  value: unknown,
+  path = "/users/activities",
+): PolarDailyActivity[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`Polar API returned unexpected JSON shape for ${path}`);
+  }
+  return value satisfies PolarDailyActivity[];
+}
+
+function assertPolarSleepResponse(value: unknown, path = "/users/sleep"): PolarSleepResponse {
+  if (typeof value !== "object" || value === null || !("nights" in value)) {
+    throw new Error(`Polar API returned unexpected JSON shape for ${path}`);
+  }
+
+  const nights = value.nights;
+  if (!Array.isArray(nights)) {
+    throw new Error(`Polar API returned unexpected JSON shape for ${path}`);
+  }
+
+  return { nights: nights satisfies PolarSleep[] };
+}
+
+function assertPolarNightlyRechargeResponse(
+  value: unknown,
+  path = "/users/nightly-recharge",
+): PolarNightlyRechargeResponse {
+  if (typeof value !== "object" || value === null || !("recharges" in value)) {
+    throw new Error(`Polar API returned unexpected JSON shape for ${path}`);
+  }
+
+  const recharges = value.recharges;
+  if (!Array.isArray(recharges)) {
+    throw new Error(`Polar API returned unexpected JSON shape for ${path}`);
+  }
+
+  return { recharges: recharges satisfies PolarNightlyRecharge[] };
 }
