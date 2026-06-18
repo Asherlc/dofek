@@ -24,6 +24,9 @@ FRONTMATTER_REGEX = re.compile(
     r"\A(---\r?\n.*?\r?\n---\r?\n)(.*)", re.DOTALL
 )
 
+# Accept claude, platform shims (.cmd/.bat/.exe), and versioned names like claude-4.5.
+CLAUDE_CLI_NAME = re.compile(r"^claude(?:[.-][\w.+]+)*$", re.IGNORECASE)
+
 
 def split_frontmatter(text: str):
     """Split YAML frontmatter from body. Returns (frontmatter, body).
@@ -119,6 +122,40 @@ MAX_RETRIES = 2
 # ---------- Claude Calls ----------
 
 
+def resolve_claude_cli() -> Path:
+    """Resolve and validate the claude CLI executable from PATH."""
+    claude_path = shutil.which("claude")
+    if claude_path is None:
+        raise FileNotFoundError("claude CLI not found on PATH")
+    if any(char in claude_path for char in "\n\r\0"):
+        raise ValueError("claude CLI path contains control characters")
+
+    claude_bin = Path(claude_path).resolve(strict=True)
+    if not claude_bin.is_file():
+        raise FileNotFoundError(f"claude CLI is not a file: {claude_bin}")
+    if not CLAUDE_CLI_NAME.fullmatch(claude_bin.name):
+        raise ValueError(f"Unexpected claude binary name: {claude_bin.name}")
+    return claude_bin
+
+
+def run_claude_cli(prompt: str, executable: Path) -> str:
+    """Run the validated claude CLI with a fixed argv and stdin prompt."""
+    try:
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
+        result = subprocess.run(
+            [str(executable), "--print"],
+            input=prompt,
+            text=True,
+            capture_output=True,
+            check=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError(f"Claude call failed:\n{error.stderr}") from error
+    return strip_llm_wrapper(result.stdout.strip())
+
+
 def call_claude(prompt: str) -> str:
     """Send a prompt to Claude.
 
@@ -148,29 +185,8 @@ def call_claude(prompt: str) -> str:
             pass  # anthropic not installed, fall back to CLI
     # Fallback: use claude CLI (handles desktop auth).
     # Resolve binary via shutil.which so Windows .cmd/.bat shims (e.g.
-    # %APPDATA%\npm\claude.CMD) work without shell=True. On POSIX,
-    # shutil.which returns the same absolute path as the implicit lookup,
-    # so this is a no-op there. Falls back to bare "claude" if not found
-    # on PATH so subprocess raises a clear FileNotFoundError.
-    claude_path = shutil.which("claude")
-    if claude_path is None:
-        raise FileNotFoundError("claude CLI not found on PATH")
-    claude_bin = Path(claude_path).resolve(strict=True)
-    if claude_bin.name not in {"claude", "claude.cmd", "claude.exe"}:
-        raise ValueError(f"Unexpected claude binary name: {claude_bin.name}")
-    try:
-        result = subprocess.run(
-            [str(claude_bin), "--print"],
-            input=prompt,
-            text=True,
-            capture_output=True,
-            check=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-        return strip_llm_wrapper(result.stdout.strip())
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Claude call failed:\n{e.stderr}")
+    # %APPDATA%\npm\claude.CMD) work without shell=True.
+    return run_claude_cli(prompt, resolve_claude_cli())
 
 
 def build_compress_prompt(original: str) -> str:
