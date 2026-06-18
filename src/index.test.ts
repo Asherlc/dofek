@@ -498,6 +498,32 @@ describe("handleAuthCommand", () => {
     expect(mockLoggerInfo).toHaveBeenCalledWith("[auth] Tokens saved to database.");
   });
 
+  it("cleans up OAuth callback server when exchangeCode throws", async () => {
+    const mockExchangeCode = vi.fn().mockRejectedValue(new Error("exchange failed"));
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "strava",
+        name: "Strava",
+        authSetup: () => ({
+          oauthConfig: {
+            redirectUri: "http://localhost:9876/callback",
+          },
+          exchangeCode: mockExchangeCode,
+        }),
+        validate: () => null,
+      },
+    ]);
+    mockWaitForAuthCode.mockResolvedValue({ code: "auth-code-123", cleanup: mockCleanup });
+
+    await expect(handleAuthCommand(["node", "index.ts", "auth", "strava"])).rejects.toThrow(
+      "exchange failed",
+    );
+
+    expect(mockExchangeCode).toHaveBeenCalledWith("auth-code-123");
+    expect(mockCleanup).toHaveBeenCalled();
+    expect(mockSaveTokens).not.toHaveBeenCalled();
+  });
+
   it("uses buildAuthorizationUrl when setup.authUrl is not provided", async () => {
     const mockExchangeCode = vi.fn().mockResolvedValue(mockTokens);
     const oauthConfig = { redirectUri: "http://localhost:9876/callback" };

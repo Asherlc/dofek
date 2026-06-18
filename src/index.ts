@@ -194,9 +194,12 @@ export async function handleAuthCommand(args: string[]): Promise<number> {
     const { code, cleanup: cleanupServer } = await waitForAuthCode(callbackPort, {
       https: useHttps,
     });
-    logger.info("[auth] Received authorization code. Exchanging for tokens...");
-    tokens = await exchangeCode(code);
-    cleanupServer();
+    try {
+      logger.info("[auth] Received authorization code. Exchanging for tokens...");
+      tokens = await exchangeCode(code);
+    } finally {
+      cleanupServer();
+    }
   }
 
   logger.info(`[auth] Authorized! Token expires at ${tokens.expiresAt.toISOString()}`);
