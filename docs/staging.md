@@ -25,7 +25,7 @@ manual deploys update production only.
 
 When re-enabled, the workflow:
 
-1. Confirms the `dofek` and `dofek-ml` GHCR image tags exist.
+1. Confirms the `dofek` GHCR image tag exists.
 2. Provisions staging infrastructure in a dedicated Terraform root or explicitly
    reintroduces staging resources to `deploy/`.
 3. Exports Infisical secrets from the `staging` environment.

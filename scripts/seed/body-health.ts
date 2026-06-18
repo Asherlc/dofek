@@ -1,58 +1,16 @@
-import { daysBefore, round, type SeedRandom, type Sql, timestampAt, USER_ID } from "./helpers.ts";
+import { daysBefore, round, type Sql, timestampAt, USER_ID } from "./helpers.ts";
 
 interface IdRow {
   id: string;
 }
 
-export async function seedBodyHealth(sql: Sql, random: SeedRandom): Promise<void> {
+export async function seedBodyHealth(sql: Sql): Promise<void> {
   const today = new Date();
-  await seedBodyMeasurements(sql, random, today);
   await seedDexaScans(sql, today);
   await seedLabs(sql, today);
   await seedClinicalRecords(sql, today);
   await seedMenstrualPeriods(sql, today);
   console.log("Seeded: body composition, labs, clinical records, and cycle data");
-}
-
-async function seedBodyMeasurements(sql: Sql, random: SeedRandom, today: Date): Promise<void> {
-  let weightKg = 82.4;
-  await sql`
-    DELETE FROM fitness.metric_stream
-    WHERE provider_id = 'apple_health'
-      AND user_id = ${USER_ID}
-      AND external_id LIKE 'seed-body-%'
-  `;
-
-  for (let daysAgo = 180; daysAgo >= 0; daysAgo -= 3) {
-    if (daysAgo % 39 === 0) continue;
-    const date = daysBefore(today, daysAgo);
-    weightKg += random.float(-0.18, 0.12, 2);
-    const bodyFatPct = 18.4 - (180 - daysAgo) * 0.012 + random.float(-0.25, 0.25, 2);
-    const recordedAt = timestampAt(date, 7, 20);
-    const externalId = `seed-body-${daysAgo}`;
-    const sourceName = "Apple Health Review Seed";
-    await sql`
-      INSERT INTO fitness.metric_stream (
-        provider_id, user_id, external_id, recorded_at, device_id, source_type, channel, scalar
-      ) VALUES
-        ('apple_health', ${USER_ID}, ${externalId}, ${recordedAt}, ${sourceName}, 'file', 'body_weight', ${round(weightKg, 2)}),
-        ('apple_health', ${USER_ID}, ${externalId}, ${recordedAt}, ${sourceName}, 'file', 'body_fat_percentage', ${round(bodyFatPct, 2)}),
-        ('apple_health', ${USER_ID}, ${externalId}, ${recordedAt}, ${sourceName}, 'file', 'muscle_mass', ${round(weightKg * 0.48, 2)}),
-        ('apple_health', ${USER_ID}, ${externalId}, ${recordedAt}, ${sourceName}, 'file', 'bone_mass', 3.2),
-        ('apple_health', ${USER_ID}, ${externalId}, ${recordedAt}, ${sourceName}, 'file', 'body_water_percentage', ${random.float(54, 59, 1)}),
-        ('apple_health', ${USER_ID}, ${externalId}, ${recordedAt}, ${sourceName}, 'file', 'body_mass_index', ${round(weightKg / 3.1329, 1)}),
-        ('apple_health', ${USER_ID}, ${externalId}, ${recordedAt}, ${sourceName}, 'file', 'height', 179),
-        ('apple_health', ${USER_ID}, ${externalId}, ${recordedAt}, ${sourceName}, 'file', 'waist_circumference', ${random.float(82, 88, 1)}),
-        ('apple_health', ${USER_ID}, ${externalId}, ${recordedAt}, ${sourceName}, 'file', 'systolic_blood_pressure', ${random.int(108, 124)}),
-        ('apple_health', ${USER_ID}, ${externalId}, ${recordedAt}, ${sourceName}, 'file', 'diastolic_blood_pressure', ${random.int(65, 78)}),
-        ('apple_health', ${USER_ID}, ${externalId}, ${recordedAt}, ${sourceName}, 'file', 'heart_pulse', ${random.int(48, 58)}),
-        ('apple_health', ${USER_ID}, ${externalId}, ${recordedAt}, ${sourceName}, 'file', 'body_temperature', ${random.float(36.2, 36.8, 1)})
-      ON CONFLICT (user_id, provider_id, external_id, channel, recorded_at) DO UPDATE
-        SET scalar = excluded.scalar,
-            device_id = excluded.device_id,
-            source_type = excluded.source_type
-    `;
-  }
 }
 
 async function seedDexaScans(sql: Sql, today: Date): Promise<void> {

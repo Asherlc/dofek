@@ -706,29 +706,6 @@ table fitness.menstrual_period {
   }
 }
 
-table fitness.metric_stream {
-  id uuid [not null, default: `gen_random_uuid()`]
-  recorded_at "timestamp with time zone" [not null]
-  user_id uuid [not null]
-  provider_id text [not null]
-  external_id text
-  device_id text
-  source_type text [not null]
-  channel text [not null]
-  activity_id uuid
-  scalar real
-  vector real[]
-  point "geometry(Point, 4326)"
-  metadata jsonb
-
-  indexes {
-    (activity_id, channel, recorded_at) [name: 'metric_stream_activity_channel_time_idx']
-    (id, recorded_at) [pk]
-    (user_id, provider_id, external_id, channel, recorded_at) [name: 'metric_stream_provider_external_channel_time_idx', unique]
-    (user_id, channel, recorded_at) [name: 'metric_stream_user_channel_time_idx']
-  }
-}
-
 table fitness.nutrient {
   id text [pk, not null]
   display_name text [not null]
@@ -1131,12 +1108,6 @@ ref medication_dose_event_provider_id_provider_id_fk: fitness.medication_dose_ev
 ref medication_dose_event_user_id_user_profile_id_fk: fitness.medication_dose_event.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
 ref menstrual_period_user_id_user_profile_id_fk: fitness.menstrual_period.user_id > fitness.user_profile.id [delete: no action, update: no action]
-
-ref metric_stream_user_id_user_profile_id_fk: fitness.metric_stream.user_id > fitness.user_profile.id [delete: no action, update: no action]
-
-ref metric_stream_provider_id_provider_id_fk: fitness.metric_stream.provider_id > fitness.provider.id [delete: no action, update: no action]
-
-ref metric_stream_activity_id_activity_id_fk: fitness.metric_stream.activity_id > fitness.activity.id [delete: cascade, update: no action]
 
 ref oauth_token_user_id_user_profile_id_fk: fitness.oauth_token.user_id > fitness.user_profile.id [delete: no action, update: no action]
 

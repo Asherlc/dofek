@@ -530,15 +530,14 @@ describe("ActivityRepository", () => {
       expect(execute).toHaveBeenCalledTimes(1);
     });
 
-    it("looks up activities through the member alias view", async () => {
+    it("looks up activities through the deduped member ids without recomputing the alias view", async () => {
       const { repo, execute } = makeRepositoryWithSensorStore([]);
       await repo.findById("member-id");
       const sqlObject = execute.mock.calls[0]?.[0];
       const compiledQuery = dialect.sqlToQuery(sqlObject);
-      expect(compiledQuery.sql).toContain("JOIN fitness.v_activity_members am");
-      expect(compiledQuery.sql).toContain("am.activity_id = a.id");
-      expect(compiledQuery.sql).toContain("am.member_activity_id = $1");
-      expect(compiledQuery.sql).not.toContain("ANY(a.member_activity_ids)");
+      expect(compiledQuery.sql).toContain("FROM fitness.v_activity a");
+      expect(compiledQuery.sql).toContain("= ANY(a.member_activity_ids)");
+      expect(compiledQuery.sql).not.toContain("JOIN fitness.v_activity_members am");
       expect(compiledQuery.params).toEqual(expect.arrayContaining(["member-id"]));
     });
   });
@@ -594,15 +593,14 @@ describe("ActivityRepository", () => {
       );
     });
 
-    it("resolves stream windows through the member alias view", async () => {
+    it("resolves stream windows through the deduped member ids without recomputing the alias view", async () => {
       const { repo, execute } = makeRepositoryWithSensorStore([]);
       await repo.getStream("member-id", 500);
       const sqlObject = execute.mock.calls[0]?.[0];
       const compiledQuery = dialect.sqlToQuery(sqlObject);
-      expect(compiledQuery.sql).toContain("JOIN fitness.v_activity_members am");
-      expect(compiledQuery.sql).toContain("am.activity_id = a.id");
-      expect(compiledQuery.sql).toContain("am.member_activity_id = $1");
-      expect(compiledQuery.sql).not.toContain("ANY(a.member_activity_ids)");
+      expect(compiledQuery.sql).toContain("FROM fitness.v_activity a");
+      expect(compiledQuery.sql).toContain("= ANY(a.member_activity_ids)");
+      expect(compiledQuery.sql).not.toContain("JOIN fitness.v_activity_members am");
       expect(compiledQuery.params).toEqual(expect.arrayContaining(["member-id"]));
     });
 

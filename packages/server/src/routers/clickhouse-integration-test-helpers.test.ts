@@ -133,6 +133,13 @@ describe("clickhouse integration test helpers", () => {
       setupCommands.some(
         (command) =>
           command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
+          command.includes(".activity_location_sample"),
+      ),
+    ).toBe(true);
+    expect(
+      setupCommands.some(
+        (command) =>
+          command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
           command.includes(".daily_recovery_inputs"),
       ),
     ).toBe(true);
@@ -177,6 +184,21 @@ describe("clickhouse integration test helpers", () => {
     await syncClickHouseTestActivitySensorStore(testContext);
 
     const commands = clickHouseMocks.command.mock.calls.map(([options]) => String(options.query));
+    expect(
+      commands.some(
+        (command) =>
+          command.includes("TRUNCATE TABLE postgres_fitness_test_") &&
+          command.endsWith(".metric_stream"),
+      ),
+    ).toBe(false);
+    expect(
+      commands.some(
+        (command) =>
+          command.includes("INSERT INTO postgres_fitness_test_") &&
+          command.includes(".metric_stream") &&
+          command.includes("FROM postgresql('db:5432', 'health', 'metric_stream'"),
+      ),
+    ).toBe(false);
     expect(
       commands.some(
         (command) =>
@@ -300,6 +322,14 @@ describe("clickhouse integration test helpers", () => {
     expect(
       commands.some(
         (command) =>
+          command.includes("INSERT INTO analytics_test_") &&
+          command.includes(".activity_location_sample") &&
+          command.includes("FROM analytics_test_"),
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
           command.includes("TRUNCATE TABLE analytics_test_") &&
           command.endsWith(".activity_vo2max_estimate"),
       ),
@@ -365,5 +395,28 @@ describe("clickhouse integration test helpers", () => {
           command.includes(".v_daily_metrics"),
       ),
     ).toBe(true);
+  });
+
+  it("does not copy metric_stream from Postgres when syncing", async () => {
+    const testContext = {
+      addCleanup: vi.fn(),
+      connectionString: "postgres://health:fixture@db:5432/health",
+    };
+
+    await createClickHouseTestActivitySensorStore(testContext);
+
+    clickHouseMocks.command.mockClear();
+
+    await syncClickHouseTestActivitySensorStore(testContext);
+
+    const commands = clickHouseMocks.command.mock.calls.map(([options]) => String(options.query));
+    expect(
+      commands.some(
+        (command) =>
+          command.includes("INSERT INTO postgres_fitness_test_") &&
+          command.includes(".metric_stream") &&
+          command.includes("FROM postgresql("),
+      ),
+    ).toBe(false);
   });
 });

@@ -1,12 +1,4 @@
-import {
-  addMinutes,
-  daysBefore,
-  round,
-  type SeedRandom,
-  type Sql,
-  timestampAt,
-  USER_ID,
-} from "./helpers.ts";
+import { addMinutes, daysBefore, type Sql, timestampAt, USER_ID } from "./helpers.ts";
 
 type ActivityType = "cycling" | "running" | "hiking" | "walking" | "strength";
 
@@ -18,7 +10,7 @@ interface ExerciseRow {
   id: string;
 }
 
-export async function seedTraining(sql: Sql, random: SeedRandom): Promise<void> {
+export async function seedTraining(sql: Sql): Promise<void> {
   const today = new Date();
   const exerciseIds = await seedExercises(sql);
 
@@ -43,16 +35,6 @@ export async function seedTraining(sql: Sql, random: SeedRandom): Promise<void> 
         'America/Los_Angeles'
       ) RETURNING id
     `;
-
-    await seedActivityStreams(
-      sql,
-      random,
-      activityId,
-      activityType,
-      startedAt,
-      durationMinutes,
-      daysAgo,
-    );
 
     if (daysAgo % 10 === 0) {
       await seedIntervals(sql, activityId, startedAt);
@@ -141,152 +123,6 @@ function perceivedExertion(activityType: ActivityType, daysAgo: number): number 
   if (activityType === "strength") return 7;
   if (activityType === "walking") return 3;
   return 5 + (daysAgo % 3);
-}
-
-async function seedActivityStreams(
-  sql: Sql,
-  random: SeedRandom,
-  activityId: string,
-  activityType: ActivityType,
-  startedAt: string,
-  durationMinutes: number,
-  daysAgo: number,
-): Promise<void> {
-  const sampleCount = Math.max(8, Math.floor(durationMinutes / 5));
-  const baseHeartRate = activityType === "strength" ? 112 : activityType === "walking" ? 98 : 138;
-
-  for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
-    const recordedAt = addMinutes(startedAt, sampleIndex * 5);
-    const wave = Math.sin(sampleIndex / 2);
-    await sql`
-      INSERT INTO fitness.metric_stream (
-        recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar
-      ) VALUES (
-        ${recordedAt}, ${USER_ID}, 'whoop', 'review-strap', 'api', 'heart_rate', ${activityId},
-        ${Math.round(baseHeartRate + wave * 12 + random.int(-4, 6))}
-      )
-    `;
-
-    if (activityType === "cycling") {
-      await insertScalar(
-        sql,
-        recordedAt,
-        "strava",
-        "power",
-        activityId,
-        185 + wave * 42 + random.int(-15, 18),
-      );
-      await insertScalar(
-        sql,
-        recordedAt,
-        "strava",
-        "cadence",
-        activityId,
-        86 + wave * 8 + random.int(-3, 4),
-      );
-      await insertScalar(
-        sql,
-        recordedAt,
-        "strava",
-        "speed",
-        activityId,
-        8.2 + wave * 1.5 + random.float(-0.4, 0.5, 1),
-      );
-      await insertScalar(
-        sql,
-        recordedAt,
-        "strava",
-        "altitude",
-        activityId,
-        85 + sampleIndex * 2 + random.int(-3, 5),
-      );
-      await insertScalar(sql, recordedAt, "strava", "lat", activityId, 37.78 + sampleIndex * 0.001);
-      await insertScalar(
-        sql,
-        recordedAt,
-        "strava",
-        "lng",
-        activityId,
-        -122.42 + sampleIndex * 0.001,
-      );
-      if (daysAgo % 9 === 0) {
-        await insertScalar(sql, recordedAt, "strava", "left_right_balance", activityId, 49 + wave);
-      }
-    }
-
-    if (activityType === "running" || activityType === "hiking" || activityType === "walking") {
-      const speed = activityType === "running" ? 3.1 : activityType === "hiking" ? 1.55 : 1.35;
-      await insertScalar(
-        sql,
-        recordedAt,
-        "strava",
-        "speed",
-        activityId,
-        speed + random.float(-0.15, 0.18, 2),
-      );
-      await insertScalar(
-        sql,
-        recordedAt,
-        "strava",
-        "altitude",
-        activityId,
-        60 + sampleIndex * (activityType === "hiking" ? 4 : 1),
-      );
-      await insertScalar(sql, recordedAt, "strava", "lat", activityId, 37.7 + sampleIndex * 0.0007);
-      await insertScalar(
-        sql,
-        recordedAt,
-        "strava",
-        "lng",
-        activityId,
-        -122.39 + sampleIndex * 0.0007,
-      );
-      if (activityType === "running") {
-        await insertScalar(
-          sql,
-          recordedAt,
-          "strava",
-          "cadence",
-          activityId,
-          168 + random.int(-5, 6),
-        );
-        await insertScalar(
-          sql,
-          recordedAt,
-          "strava",
-          "stride_length",
-          activityId,
-          1.12 + random.float(-0.08, 0.08, 2),
-        );
-        await insertScalar(
-          sql,
-          recordedAt,
-          "strava",
-          "ground_contact_time",
-          activityId,
-          245 + random.int(-18, 18),
-        );
-      }
-    }
-  }
-}
-
-async function insertScalar(
-  sql: Sql,
-  recordedAt: string,
-  providerId: string,
-  channel: string,
-  activityId: string,
-  value: number,
-): Promise<void> {
-  await sql`
-    INSERT INTO fitness.metric_stream (
-      recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar
-    ) VALUES (
-      ${recordedAt}, ${USER_ID}, ${providerId}, 'review-device', 'api', ${channel}, ${activityId},
-      ${round(value, 2)}
-    )
-  `;
 }
 
 async function seedIntervals(sql: Sql, activityId: string, startedAt: string): Promise<void> {

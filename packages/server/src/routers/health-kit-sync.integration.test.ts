@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import {
   createMetricStreamEvent,
+  type MetricStreamEventV1,
   type MetricStreamRowInput,
 } from "../../../../src/metric-stream/events.ts";
 import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/redpanda-producer.ts";
@@ -16,6 +17,7 @@ describe("HealthKit sync router", () => {
   let testCtx: TestContext;
   let sessionCookie: string;
   let metricStreamPublisher: MetricStreamEventPublisher;
+  const publishedMetricStreamEvents: MetricStreamEventV1[] = [];
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
@@ -26,60 +28,7 @@ describe("HealthKit sync router", () => {
     metricStreamPublisher = {
       publishRows: async (rows: readonly MetricStreamRowInput[]) => {
         const events = rows.map((row) => createMetricStreamEvent(row));
-        if (events.length === 0) {
-          return events;
-        }
-        const valueTuples = events.map(
-          (event) => sql`(
-            ${event.id}::uuid,
-            ${event.recordedAt}::timestamptz,
-            ${event.userId}::uuid,
-            ${event.providerId},
-            ${event.externalId},
-            ${event.deviceId},
-            ${event.sourceType},
-            ${event.channel},
-            ${
-              event.activityId === null || event.activityId === undefined
-                ? sql`NULL`
-                : sql`${event.activityId}::uuid`
-            },
-            ${event.scalar},
-            ${
-              event.vector === null || event.vector === undefined
-                ? sql`NULL`
-                : sql`ARRAY[${sql.join(
-                    event.vector.map((component) => sql`${component}::real`),
-                    sql`, `,
-                  )}]`
-            },
-            ${
-              event.point === null || event.point === undefined
-                ? sql`NULL`
-                : sql`ST_GeomFromEWKT(${event.point})`
-            },
-            ${
-              event.metadata === null || event.metadata === undefined
-                ? sql`NULL`
-                : sql`${JSON.stringify(event.metadata)}::jsonb`
-            }
-          )`,
-        );
-        await testCtx.db.execute(
-          sql`INSERT INTO fitness.metric_stream (
-            id, recorded_at, user_id, provider_id, external_id, device_id,
-            source_type, channel, activity_id, scalar, vector, point, metadata
-          )
-          VALUES ${sql.join(valueTuples, sql`, `)}
-          ON CONFLICT (id, recorded_at) DO UPDATE
-            SET scalar = EXCLUDED.scalar,
-                vector = EXCLUDED.vector,
-                point = EXCLUDED.point,
-                metadata = EXCLUDED.metadata,
-                device_id = EXCLUDED.device_id,
-                source_type = EXCLUDED.source_type,
-                activity_id = EXCLUDED.activity_id`,
-        );
+        publishedMetricStreamEvents.push(...events);
         return events;
       },
     };
@@ -134,15 +83,15 @@ describe("HealthKit sync router", () => {
       expect(result.result.data.inserted).toBe(1);
       expect(result.result.data.errors).toEqual([]);
 
-      // Verify in DB
-      const rows = await testCtx.db.execute(
-        sql`SELECT * FROM fitness.metric_stream
-            WHERE provider_id = 'apple_health'
-              AND external_id = 'hk:body-mass-uuid-1'
-              AND channel = 'body_weight'`,
+      // Verify published metric stream events
+      const bodyMassEvent = publishedMetricStreamEvents.find(
+        (event) =>
+          event.providerId === "apple_health" &&
+          event.externalId === "hk:body-mass-uuid-1" &&
+          event.channel === "body_weight",
       );
-      expect(rows.length).toBe(1);
-      expect(rows[0]?.scalar).toBeCloseTo(82.5, 1);
+      expect(bodyMassEvent).toBeDefined();
+      expect(bodyMassEvent?.scalar).toBeCloseTo(82.5, 1);
     });
 
     it("routes body fat percentage and multiplies by 100", async () => {
@@ -163,14 +112,14 @@ describe("HealthKit sync router", () => {
 
       expect(result.result.data.inserted).toBe(1);
 
-      const rows = await testCtx.db.execute(
-        sql`SELECT * FROM fitness.metric_stream
-            WHERE provider_id = 'apple_health'
-              AND external_id = 'hk:body-fat-uuid-1'
-              AND channel = 'body_fat_percentage'`,
+      const bodyFatEvent = publishedMetricStreamEvents.find(
+        (event) =>
+          event.providerId === "apple_health" &&
+          event.externalId === "hk:body-fat-uuid-1" &&
+          event.channel === "body_fat_percentage",
       );
-      expect(rows.length).toBe(1);
-      expect(rows[0]?.scalar).toBeCloseTo(18, 1);
+      expect(bodyFatEvent).toBeDefined();
+      expect(bodyFatEvent?.scalar).toBeCloseTo(18, 1);
     });
   });
 
@@ -322,19 +271,23 @@ describe("HealthKit sync router", () => {
 
       expect(result.result.data.inserted).toBe(2);
 
-      const rows = await testCtx.db.execute(
-        sql`SELECT channel, scalar FROM fitness.metric_stream
-            WHERE provider_id = 'apple_health'
-            ORDER BY recorded_at`,
+      const hrEvent = publishedMetricStreamEvents.find(
+        (event) =>
+          event.providerId === "apple_health" &&
+          event.externalId === "hk:hr-uuid-1" &&
+          event.channel === "heart_rate",
       );
-      expect(rows.length).toBeGreaterThanOrEqual(2);
-      const hrRow = rows.find((r: Record<string, unknown>) => r.channel === "heart_rate");
-      expect(hrRow).toBeDefined();
-      expect(hrRow?.scalar).toBe(72);
+      expect(hrEvent).toBeDefined();
+      expect(hrEvent?.scalar).toBe(72);
 
-      const spo2Row = rows.find((r: Record<string, unknown>) => r.channel === "spo2");
-      expect(spo2Row).toBeDefined();
-      expect(spo2Row?.scalar).toBeCloseTo(0.98, 2);
+      const spo2Event = publishedMetricStreamEvents.find(
+        (event) =>
+          event.providerId === "apple_health" &&
+          event.externalId === "hk:spo2-uuid-1" &&
+          event.channel === "spo2",
+      );
+      expect(spo2Event).toBeDefined();
+      expect(spo2Event?.scalar).toBeCloseTo(0.98, 2);
     });
 
     it("aggregates SpO2 from metric_stream into daily_metrics as percentage", async () => {
@@ -661,20 +614,18 @@ describe("HealthKit sync router", () => {
 
       expect(result.result.data.inserted).toBe(1);
 
-      const rows = await testCtx.db.execute(
-        sql`SELECT ms.device_id
-            FROM fitness.metric_stream ms
-            INNER JOIN fitness.activity a ON a.id = ms.activity_id
-            WHERE a.external_id = 'hk:workout:route-source-workout-1'
-              AND ms.provider_id = 'apple_health'
-              AND ms.channel = 'location'`,
+      const locationEvent = publishedMetricStreamEvents.find(
+        (event) =>
+          event.providerId === "apple_health" &&
+          event.channel === "location" &&
+          event.deviceId === "Route Watch",
       );
-      expect(rows).toEqual([{ device_id: "Route Watch" }]);
+      expect(locationEvent).toBeDefined();
     });
   });
 
   describe("deduplication", () => {
-    it("does not create duplicate body metric rows on re-push", async () => {
+    it("re-push publishes idempotent body metric stream events", async () => {
       const samples = [
         {
           type: "HKQuantityTypeIdentifierBodyMass",
@@ -691,13 +642,15 @@ describe("HealthKit sync router", () => {
       await mutate("healthKitSync.pushQuantitySamples", { samples });
       await mutate("healthKitSync.pushQuantitySamples", { samples });
 
-      const rows = await testCtx.db.execute(
-        sql`SELECT * FROM fitness.metric_stream
-            WHERE provider_id = 'apple_health'
-              AND external_id = 'hk:dedup-body-uuid-1'
-              AND channel = 'body_weight'`,
+      const dedupEvents = publishedMetricStreamEvents.filter(
+        (event) =>
+          event.providerId === "apple_health" &&
+          event.externalId === "hk:dedup-body-uuid-1" &&
+          event.channel === "body_weight",
       );
-      expect(rows.length).toBe(1);
+      // Metric stream ingestion is append-only; ClickHouse dedupes on deterministic event id.
+      expect(dedupEvents.length).toBe(2);
+      expect(new Set(dedupEvents.map((event) => event.id)).size).toBe(1);
     });
 
     it("does not create duplicate workouts on re-push", async () => {

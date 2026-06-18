@@ -1,15 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import type { MetricStreamInsert } from "./metric-stream-writer.ts";
 import {
-  createBatchInsert,
-  metricStreamConflictTarget,
   replaceMetricStreamBatch,
   sourceRowToMetricStream,
-  writeMetricStream,
   writeMetricStreamBatch,
   writeMetricStreamBatchForScope,
 } from "./metric-stream-writer.ts";
-import { metricStream } from "./schema.ts";
 import { runWithTokenUser } from "./token-user-context.ts";
 
 const mockPublishRows = vi.fn(async (rows: readonly unknown[]) =>
@@ -239,122 +234,6 @@ describe("sourceRowToMetricStream", () => {
   });
 });
 
-// ── writeMetricStream ──────────────────────────────────────
-
-describe("writeMetricStream", () => {
-  it("returns 0 for empty input", async () => {
-    const insertBatch = vi.fn();
-    const count = await writeMetricStream(insertBatch, []);
-    expect(count).toBe(0);
-    expect(insertBatch).not.toHaveBeenCalled();
-  });
-
-  it("inserts rows in batches", async () => {
-    const insertedBatches: MetricStreamInsert[][] = [];
-    const insertBatch = vi.fn(async (batch: MetricStreamInsert[]) => {
-      insertedBatches.push(batch);
-    });
-
-    const rows: MetricStreamInsert[] = Array.from({ length: 7 }, (_, index) => ({
-      recordedAt: new Date(),
-      providerId: "test",
-      externalId: `sample-${index}`,
-      sourceType: "api",
-      channel: "heart_rate",
-      scalar: index,
-    }));
-
-    const count = await writeMetricStream(insertBatch, rows, 3);
-
-    expect(count).toBe(7);
-    expect(insertedBatches).toHaveLength(3); // 3 + 3 + 1
-    expect(insertedBatches[0]).toHaveLength(3);
-    expect(insertedBatches[1]).toHaveLength(3);
-    expect(insertedBatches[2]).toHaveLength(1);
-  });
-
-  it("does not insert an empty trailing batch when rows evenly divide by batch size", async () => {
-    const insertedBatches: MetricStreamInsert[][] = [];
-    const insertBatch = vi.fn(async (batch: MetricStreamInsert[]) => {
-      insertedBatches.push(batch);
-    });
-
-    const rows: MetricStreamInsert[] = Array.from({ length: 4 }, (_, index) => ({
-      recordedAt: new Date("2026-03-30T12:00:00Z"),
-      providerId: "test",
-      externalId: `sample-${index}`,
-      sourceType: "api",
-      channel: "heart_rate",
-      scalar: index,
-    }));
-
-    const count = await writeMetricStream(insertBatch, rows, 2);
-
-    expect(count).toBe(4);
-    expect(insertedBatches).toEqual([rows.slice(0, 2), rows.slice(2, 4)]);
-  });
-
-  it("uses a conservative default batch size", async () => {
-    const insertedBatches: MetricStreamInsert[][] = [];
-    const insertBatch = vi.fn(async (batch: MetricStreamInsert[]) => {
-      insertedBatches.push(batch);
-    });
-
-    const rows: MetricStreamInsert[] = Array.from({ length: 1001 }, (_, index) => ({
-      recordedAt: new Date(),
-      providerId: "test",
-      externalId: `sample-${index}`,
-      sourceType: "api",
-      channel: "heart_rate",
-      scalar: index,
-    }));
-
-    const count = await writeMetricStream(insertBatch, rows);
-
-    expect(count).toBe(1001);
-    expect(insertedBatches).toHaveLength(2);
-    expect(insertedBatches[0]).toHaveLength(1000);
-    expect(insertedBatches[1]).toHaveLength(1);
-  });
-
-  it("rejects rows without external IDs", async () => {
-    const insertBatch = vi.fn();
-    const rows: MetricStreamInsert[] = [
-      {
-        recordedAt: new Date("2026-03-30T12:00:00Z"),
-        providerId: "test",
-        sourceType: "api",
-        channel: "heart_rate",
-        scalar: 72,
-      },
-    ];
-
-    await expect(writeMetricStream(insertBatch, rows)).rejects.toThrow(
-      "metric_stream ingestion rows require externalId for idempotency",
-    );
-    expect(insertBatch).not.toHaveBeenCalled();
-  });
-
-  it("rejects rows with whitespace-only external IDs", async () => {
-    const insertBatch = vi.fn();
-    const rows: MetricStreamInsert[] = [
-      {
-        recordedAt: new Date("2026-03-30T12:00:00Z"),
-        providerId: "test",
-        externalId: "   ",
-        sourceType: "api",
-        channel: "heart_rate",
-        scalar: 72,
-      },
-    ];
-
-    await expect(writeMetricStream(insertBatch, rows)).rejects.toThrow(
-      "metric_stream ingestion rows require externalId for idempotency",
-    );
-    expect(insertBatch).not.toHaveBeenCalled();
-  });
-});
-
 // ── writeMetricStreamBatch ─────────────────────────────────
 
 describe("writeMetricStreamBatch", () => {
@@ -496,34 +375,6 @@ describe("replaceMetricStreamBatch", () => {
   });
 });
 
-describe("createBatchInsert", () => {
-  it("inserts with the metric stream conflict target", async () => {
-    const rows: MetricStreamInsert[] = [
-      {
-        recordedAt: new Date("2026-03-30T12:00:00Z"),
-        userId: "00000000-0000-0000-0000-000000000001",
-        providerId: "test",
-        externalId: "sample-1",
-        sourceType: "api",
-        channel: "heart_rate",
-        scalar: 72,
-      },
-    ];
-    const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
-    const values = vi.fn().mockReturnValue({ onConflictDoNothing });
-    const insert = vi.fn().mockReturnValue({ values });
-
-    const insertBatch = createBatchInsert({ insert });
-    await insertBatch(rows);
-
-    expect(insert).toHaveBeenCalledWith(metricStream);
-    expect(values).toHaveBeenCalledWith(rows);
-    expect(onConflictDoNothing).toHaveBeenCalledWith({
-      target: metricStreamConflictTarget(metricStream),
-    });
-  });
-});
-
 describe("writeMetricStreamBatchForScope", () => {
   it("publishes rows with the delete scope partition key", async () => {
     const db = { insert: vi.fn() };
@@ -558,19 +409,5 @@ describe("writeMetricStreamBatchForScope", () => {
       ],
       "provider:00000000-0000-0000-0000-000000000001:apple_health:*:*:2026-03-30T00:00:00.000Z:*",
     );
-  });
-});
-
-// ── metricStreamConflictTarget ─────────────────────────────
-
-describe("metricStreamConflictTarget", () => {
-  it("uses the provider sample identity as the duplicate key", () => {
-    expect(metricStreamConflictTarget(metricStream)).toEqual([
-      metricStream.userId,
-      metricStream.providerId,
-      metricStream.externalId,
-      metricStream.channel,
-      metricStream.recordedAt,
-    ]);
   });
 });

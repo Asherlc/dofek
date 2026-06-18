@@ -11,7 +11,6 @@ import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 
 const tableNameRowsSchema = z.array(z.object({ table_name: z.string() }));
 const relationExistsRowsSchema = z.array(z.object({ relation_exists: z.boolean() }));
-const replicaIdentityRowsSchema = z.array(z.object({ replica_identity: z.string() }));
 const nullableRowsSchema = z.array(z.object({ is_nullable: z.enum(["YES", "NO"]) }));
 const primaryKeyRowsSchema = z.array(z.object({ columns: z.string() }));
 
@@ -161,40 +160,15 @@ describe("runMigrations", () => {
     }
   });
 
-  it("gives metric_stream full replica identity and a Timescale-compatible primary key", async () => {
+  it("drops the retired Postgres metric_stream table", async () => {
     const client = new Client({ connectionString: ctx.connectionString });
     await client.connect();
     try {
-      const replicaIdentityResult = await client.query(
-        `SELECT class.relreplident AS replica_identity
-         FROM pg_class class
-         JOIN pg_namespace namespace ON namespace.oid = class.relnamespace
-         WHERE namespace.nspname = 'fitness'
-           AND class.relname = 'metric_stream'`,
-      );
-      expect(replicaIdentityRowsSchema.parse(replicaIdentityResult.rows)).toEqual([
-        { replica_identity: "f" },
-      ]);
-
-      const nullableResult = await client.query(`
-        SELECT is_nullable
-        FROM information_schema.columns
-        WHERE table_schema = 'fitness'
-          AND table_name = 'metric_stream'
-          AND column_name = 'id'
+      const tableResult = await client.query(`
+        SELECT to_regclass('fitness.metric_stream') IS NOT NULL AS relation_exists
       `);
-      expect(nullableRowsSchema.parse(nullableResult.rows)).toEqual([{ is_nullable: "NO" }]);
-
-      const primaryKeyResult = await client.query(`
-        SELECT string_agg(column_name, ',' ORDER BY ordinal_position) AS columns
-        FROM information_schema.key_column_usage
-        WHERE table_schema = 'fitness'
-          AND table_name = 'metric_stream'
-          AND constraint_name = 'metric_stream_pkey'
-        GROUP BY constraint_name
-      `);
-      expect(primaryKeyRowsSchema.parse(primaryKeyResult.rows)).toEqual([
-        { columns: "id,recorded_at" },
+      expect(relationExistsRowsSchema.parse(tableResult.rows)).toEqual([
+        { relation_exists: false },
       ]);
     } finally {
       await client.end();

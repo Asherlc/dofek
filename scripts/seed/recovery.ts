@@ -103,7 +103,6 @@ async function seedSleep(sql: Sql, random: SeedRandom, today: Date): Promise<voi
       lightMinutes,
       awakeMinutes,
     );
-    await seedSleepHeartRateSamples(sql, random, startedAt, endedAt, daysAgo);
 
     if (daysAgo <= 30) {
       const appleStart = addMinutes(startedAt, 90);
@@ -124,36 +123,6 @@ async function seedSleep(sql: Sql, random: SeedRandom, today: Date): Promise<voi
         )
       `;
     }
-  }
-}
-
-async function seedSleepHeartRateSamples(
-  sql: Sql,
-  random: SeedRandom,
-  startedAt: string,
-  endedAt: string,
-  daysAgo: number,
-): Promise<void> {
-  const badSleepWeek = daysAgo >= 9 && daysAgo <= 15;
-  const trendDaysAgo = daysAgo - 1;
-  const restingHeartRate =
-    50 + Math.round(trendDaysAgo / 60) + (badSleepWeek ? 7 : 0) + random.int(-2, 2);
-  const startedAtMilliseconds = new Date(startedAt).getTime();
-  const endedAtMilliseconds = new Date(endedAt).getTime();
-  const intervalMilliseconds = (endedAtMilliseconds - startedAtMilliseconds) / 31;
-
-  for (let sampleIndex = 0; sampleIndex < 30; sampleIndex++) {
-    const recordedAt = new Date(
-      startedAtMilliseconds + Math.round(intervalMilliseconds * (sampleIndex + 1)),
-    ).toISOString();
-    const heartRate = restingHeartRate + random.int(0, 10);
-    await sql`
-      INSERT INTO fitness.metric_stream (
-        recorded_at, provider_id, user_id, source_type, channel, scalar
-      ) VALUES (
-        ${recordedAt}, 'whoop', ${USER_ID}, 'api', 'heart_rate', ${heartRate}
-      )
-    `;
   }
 }
 
