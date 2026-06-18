@@ -22,12 +22,22 @@ vi.mock("../db/token-user-context.ts", () => ({
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
 
+vi.mock("../db/provider-activity-absence.ts", () => ({
+  markProviderActivityAbsent: providerActivityAbsenceMocks.markProviderActivityAbsent,
+  reconcileProviderActivityAbsence: providerActivityAbsenceMocks.reconcileProviderActivityAbsence,
+}));
+
 const { publishedMetricStreamBatches, publishedMetricStreamReplacements } = vi.hoisted<{
   publishedMetricStreamBatches: unknown[][];
   publishedMetricStreamReplacements: Array<{ scope: unknown; rows: unknown[] }>;
 }>(() => ({
   publishedMetricStreamBatches: [],
   publishedMetricStreamReplacements: [],
+}));
+
+const providerActivityAbsenceMocks = vi.hoisted(() => ({
+  markProviderActivityAbsent: vi.fn().mockResolvedValue(undefined),
+  reconcileProviderActivityAbsence: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../metric-stream/redpanda-producer.ts", () => ({
@@ -904,6 +914,8 @@ describe("StravaProvider.syncWebhookEvent", () => {
   beforeEach(() => {
     process.env.STRAVA_CLIENT_ID = "test-id";
     process.env.STRAVA_CLIENT_SECRET = "test-secret";
+    providerActivityAbsenceMocks.markProviderActivityAbsent.mockClear();
+    providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockClear();
   });
 
   afterEach(() => {
@@ -959,18 +971,13 @@ describe("StravaProvider.syncWebhookEvent", () => {
     expect(result.errors).toHaveLength(0);
   });
 
-  it("handles delete events by removing activity and streams", async () => {
+  it("handles delete events by marking activity provider-absent", async () => {
     const provider = new StravaProvider(async () => new Response(), 0);
-    const mockDelete = vi.fn().mockReturnValue({
-      where: vi.fn().mockReturnValue({
-        returning: vi.fn().mockResolvedValue([{ id: "10000000-0000-4000-8000-000000000002" }]),
-      }),
-    });
 
     const mockDb = {
       select: vi.fn(),
       insert: vi.fn(),
-      delete: mockDelete,
+      delete: vi.fn(),
       execute: vi.fn(),
     };
 
@@ -987,28 +994,22 @@ describe("StravaProvider.syncWebhookEvent", () => {
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(0);
-    expect(mockDelete).toHaveBeenCalledTimes(1);
-    expect(publishedMetricStreamReplacements).toEqual([
-      {
-        scope: { activityId: "10000000-0000-4000-8000-000000000002" },
-        rows: [],
-      },
-    ]);
-    expect(publishedMetricStreamBatches).toEqual([[]]);
+    expect(providerActivityAbsenceMocks.markProviderActivityAbsent).toHaveBeenCalledWith(mockDb, {
+      providerId: "strava",
+      externalId: "99999",
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
+    expect(publishedMetricStreamReplacements).toEqual([]);
+    expect(publishedMetricStreamBatches).toEqual([]);
   });
 
   it("handles delete event when activity not found", async () => {
     const provider = new StravaProvider(async () => new Response(), 0);
-    const mockDelete = vi.fn().mockReturnValue({
-      where: vi.fn().mockReturnValue({
-        returning: vi.fn().mockResolvedValue([]),
-      }),
-    });
 
     const mockDb = {
       select: vi.fn(),
       insert: vi.fn(),
-      delete: mockDelete,
+      delete: vi.fn(),
       execute: vi.fn(),
     };
 
@@ -1025,8 +1026,11 @@ describe("StravaProvider.syncWebhookEvent", () => {
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(0);
-    // Only called once for the activity delete, not for metric_stream
-    expect(mockDelete).toHaveBeenCalledTimes(1);
+    expect(providerActivityAbsenceMocks.markProviderActivityAbsent).toHaveBeenCalledWith(mockDb, {
+      providerId: "strava",
+      externalId: "nonexistent",
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
   });
 
   it("returns error when token resolution fails", async () => {
@@ -1542,17 +1546,10 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
   });
 
   it("syncWebhookEvent delete path returns provider 'strava'", async () => {
-    const mockDeleteWhere = vi.fn();
-    const mockDelete = vi.fn().mockReturnValue({
-      where: mockDeleteWhere,
-    });
-    mockDeleteWhere.mockReturnValueOnce({
-      returning: vi.fn().mockResolvedValue([{ id: "10000000-0000-4000-8000-000000000003" }]),
-    });
     const mockDb = {
       select: vi.fn(),
       insert: vi.fn(),
-      delete: mockDelete,
+      delete: vi.fn(),
       execute: vi.fn(),
     };
 
@@ -1570,27 +1567,18 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
     expect(result.provider).toBe("strava");
     expect(result.recordsSynced).toBe(0);
 
-    expect(mockDelete).toHaveBeenCalledTimes(1);
-    const whereCalls = mockDeleteWhere.mock.calls;
-    expect(whereCalls).toHaveLength(1);
-    expect(whereCalls[0]?.[0]).toBeDefined();
-    expect(publishedMetricStreamReplacements).toEqual([
-      {
-        scope: { activityId: "10000000-0000-4000-8000-000000000003" },
-        rows: [],
-      },
-    ]);
-    expect(publishedMetricStreamBatches).toEqual([[]]);
+    expect(providerActivityAbsenceMocks.markProviderActivityAbsent).toHaveBeenCalledWith(mockDb, {
+      providerId: "strava",
+      externalId: "999",
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
+    expect(publishedMetricStreamReplacements).toEqual([]);
+    expect(publishedMetricStreamBatches).toEqual([]);
   });
 
   it("syncWebhookEvent falls back to token user context when options.userId is missing", async () => {
     const provider = new StravaProvider(async () => new Response(), 0);
-    const mockDelete = vi.fn().mockReturnValue({
-      where: vi.fn().mockReturnValue({
-        returning: vi.fn().mockResolvedValue([]),
-      }),
-    });
-    const mockDb = { select: vi.fn(), insert: vi.fn(), delete: mockDelete, execute: vi.fn() };
+    const mockDb = { select: vi.fn(), insert: vi.fn(), delete: vi.fn(), execute: vi.fn() };
 
     const result = await provider.syncWebhookEvent(mockDb, {
       ownerExternalId: "1",
@@ -1601,7 +1589,11 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
 
     expect(result.provider).toBe("strava");
     expect(result.errors).toEqual([]);
-    expect(mockDelete).toHaveBeenCalledOnce();
+    expect(providerActivityAbsenceMocks.markProviderActivityAbsent).toHaveBeenCalledWith(mockDb, {
+      providerId: "strava",
+      externalId: "123",
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
   });
 });
 

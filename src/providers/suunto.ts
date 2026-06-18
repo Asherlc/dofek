@@ -7,6 +7,7 @@ import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { replaceMetricStreamBatch } from "../db/metric-stream-writer.ts";
+import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
 import { activity } from "../db/schema.ts";
 import { SOURCE_TYPE_FILE } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
@@ -293,6 +294,7 @@ export class SuuntoProvider implements WebhookProvider {
                 startedAt: parsed.startedAt,
                 endedAt: parsed.endedAt,
                 raw: parsed.raw,
+                providerAbsentAt: null,
               },
             });
           return { recordCount: 1, result: 1 };
@@ -349,6 +351,8 @@ export class SuuntoProvider implements WebhookProvider {
     }
 
     const subscriptionKey = process.env.SUUNTO_SUBSCRIPTION_KEY ?? "";
+    const syncWindowEnd = new Date();
+    const presentActivityExternalIds = new Set<string>();
 
     try {
       const activityCount = await withSyncLog(
@@ -376,6 +380,7 @@ export class SuuntoProvider implements WebhookProvider {
 
           for (const raw of data.payload ?? []) {
             const parsed = parseSuuntoWorkout(raw);
+            presentActivityExternalIds.add(parsed.externalId);
             try {
               const [row] = await db
                 .insert(activity)
@@ -396,6 +401,7 @@ export class SuuntoProvider implements WebhookProvider {
                     startedAt: parsed.startedAt,
                     endedAt: parsed.endedAt,
                     raw: parsed.raw,
+                    providerAbsentAt: null,
                   },
                 })
                 .returning({ id: activity.id });
@@ -455,6 +461,13 @@ export class SuuntoProvider implements WebhookProvider {
             }
           }
 
+          await reconcileProviderActivityAbsence(db, {
+            providerId: this.id,
+            userId: options?.userId,
+            windowStart: since,
+            windowEnd: syncWindowEnd,
+            presentExternalIds: presentActivityExternalIds,
+          });
           return { recordCount: count, result: count };
         },
         options?.userId,

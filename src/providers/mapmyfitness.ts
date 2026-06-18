@@ -4,6 +4,7 @@ import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
+import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
@@ -245,6 +246,8 @@ export class MapMyFitnessProvider implements SyncProvider {
 
     const clientId = process.env.MAPMYFITNESS_CLIENT_ID ?? "";
     const client = new MapMyFitnessClient(tokens.accessToken, clientId, this.#fetchFn);
+    const syncWindowEnd = new Date();
+    const presentActivityExternalIds = new Set<string>();
 
     // Extract user ID from token scopes or use "-" for self
     const userId = tokens.scopes?.match(/user_id:(\S+)/)?.[1] ?? "-";
@@ -267,6 +270,7 @@ export class MapMyFitnessProvider implements SyncProvider {
             for (const raw of workouts) {
               const parsed = parseMapMyFitnessWorkout(raw);
               if (!parsed.externalId) continue;
+              presentActivityExternalIds.add(parsed.externalId);
               try {
                 await db
                   .insert(activity)
@@ -287,6 +291,7 @@ export class MapMyFitnessProvider implements SyncProvider {
                       startedAt: parsed.startedAt,
                       endedAt: parsed.endedAt,
                       raw: parsed.raw,
+                      providerAbsentAt: null,
                     },
                   });
                 count++;
@@ -303,6 +308,13 @@ export class MapMyFitnessProvider implements SyncProvider {
             offset += 40;
           }
 
+          await reconcileProviderActivityAbsence(db, {
+            providerId: this.id,
+            userId: options?.userId,
+            windowStart: since,
+            windowEnd: syncWindowEnd,
+            presentExternalIds: presentActivityExternalIds,
+          });
           return { recordCount: count, result: count };
         },
         options?.userId,

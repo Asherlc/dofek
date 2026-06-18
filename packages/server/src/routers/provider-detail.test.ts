@@ -611,6 +611,34 @@ describe("providerDetailRouter", () => {
       expect(sqlText).not.toContain("avg_hr");
     });
 
+    it("filters provider-absent activities from record lists", async () => {
+      const mockExecute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.records({ providerId: "strava", dataType: "activities" });
+
+      const sqlText = extractSqlText(mockExecute.mock.calls[0][0]);
+      expect(sqlText).toContain("provider_absent_at IS NULL");
+    });
+
+    it("does not apply the provider-absent activity filter to non-activity record lists", async () => {
+      const mockExecute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.records({ providerId: "strava", dataType: "dailyMetrics" });
+
+      const sqlText = extractSqlText(mockExecute.mock.calls[0][0]);
+      expect(sqlText).not.toContain("provider_absent_at IS NULL");
+    });
+
     it("defaults offset to 0 and limit to 50", async () => {
       const mockExecute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
@@ -744,6 +772,42 @@ describe("providerDetailRouter", () => {
       expect(sqlText).not.toContain("activity_summary");
       expect(sqlText).not.toContain("LEFT JOIN");
       expect(sqlText).not.toContain("avg_hr");
+    });
+
+    it("filters provider-absent activities from record details", async () => {
+      const mockExecute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.recordDetail({
+        providerId: "strava",
+        dataType: "activities",
+        recordId: "act-1",
+      });
+
+      const sqlText = extractSqlText(mockExecute.mock.calls[0][0]);
+      expect(sqlText).toContain("provider_absent_at IS NULL");
+    });
+
+    it("does not apply the provider-absent activity filter to non-activity record details", async () => {
+      const mockExecute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.recordDetail({
+        providerId: "strava",
+        dataType: "dailyMetrics",
+        recordId: "2026-03-01",
+      });
+
+      const sqlText = extractSqlText(mockExecute.mock.calls[0][0]);
+      expect(sqlText).not.toContain("provider_absent_at IS NULL");
     });
   });
 

@@ -11,6 +11,7 @@ import {
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { replaceMetricStreamBatch } from "../db/metric-stream-writer.ts";
+import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
 import { activity } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
@@ -587,6 +588,8 @@ export class PelotonProvider implements SyncProvider {
 
     const client = new PelotonClient(tokens.accessToken, this.#fetchFn);
     await ensureProvider(db, this.id, this.name, PELOTON_API_BASE);
+    const syncWindowEnd = new Date();
+    const presentActivityExternalIds = new Set<string>();
 
     // Single-pass: fetch workouts, then for each fetch performance graph,
     // enrich the activity with summary stats, and insert both activity + streams.
@@ -614,6 +617,7 @@ export class PelotonProvider implements SyncProvider {
             }
 
             const parsed = parseWorkout(workout);
+            presentActivityExternalIds.add(parsed.externalId);
 
             // Upsert the activity first so we have an ID for metric_stream
             let activityId: string | null = null;
@@ -641,6 +645,7 @@ export class PelotonProvider implements SyncProvider {
                     timezone: parsed.timezone,
                     stravaId: parsed.stravaId,
                     raw: parsed.raw,
+                    providerAbsentAt: null,
                   },
                 })
                 .returning({ id: activity.id });
@@ -724,6 +729,13 @@ export class PelotonProvider implements SyncProvider {
         }
 
         logger.info(`[peloton] ${workoutCount} workouts, ${streamCount} metric stream rows`);
+        await reconcileProviderActivityAbsence(db, {
+          providerId: this.id,
+          userId,
+          windowStart: since,
+          windowEnd: syncWindowEnd,
+          presentExternalIds: presentActivityExternalIds,
+        });
         return { recordCount: workoutCount + streamCount, result: workoutCount + streamCount };
       },
       userId,

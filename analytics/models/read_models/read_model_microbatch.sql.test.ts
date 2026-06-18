@@ -76,6 +76,7 @@ describe("production analytics read-model build", () => {
 
     expect(sql).toContain("incremental_strategy='microbatch'");
     expect(sql).toContain("event_time='recorded_at'");
+    expect(sql).toContain("lookback=120");
     expect(sql).toContain("ref('deduped_sensor')");
     expect(sql).toContain("source('postgres_fitness', 'sleep_session')");
     expect(sql).toContain("channel = 'heart_rate'");
@@ -125,6 +126,7 @@ describe("production analytics read-model build", () => {
     expect(sourceRecordsSql).toContain("active_provider_priority AS");
     expect(sourceRecordsSql).toContain("device_priority_match AS");
     expect(sourceRecordsSql).toContain("current_source_records AS");
+    expect(sourceRecordsSql).toContain("provider_absent_at IS NULL");
     expect(sourceRecordsSql).toContain("length(active_device_priority.source_name_pattern) DESC");
     expect(sourceRecordsSql).toContain("active_device_priority.priority ASC");
     expect(sourceRecordsSql).toContain("active_device_priority.source_name_pattern ASC");
@@ -164,6 +166,13 @@ describe("production analytics read-model build", () => {
       "Activity source mirror would tombstone at least",
     );
     expect(normalizedSql.match(/CROSS JOIN source_safety_check/g)?.length).toBe(2);
+  });
+
+  it("counts only active activities in provider stats", () => {
+    const providerStatsSql = readModel("provider_stats");
+
+    expect(providerStatsSql).toContain("source('postgres_fitness', 'activity') }} FINAL");
+    expect(providerStatsSql).toContain("provider_absent_at IS null");
   });
 
   it("materializes deduped activity member aliases from deduped activities", () => {
@@ -262,6 +271,9 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("ref('activity_sensor_sample')");
     expect(normalizedSql).toContain("(sensor_samples.user_id, sensor_samples.activity_id) IN");
     expect(sql).toContain("source('postgres_fitness', 'activity') }} FINAL");
+    expect(sql).toContain("provider_absent_at IS null");
+    expect(sql).toContain("restored_dirty_keys AS");
+    expect(sql).toContain("prior_summary.is_deleted = 0");
     expect(sql).not.toContain("source('analytics', 'v_activity')");
     expect(normalizedSql).not.toContain("ref('activity_sensor_sample') }} AS sensor_samples FINAL");
     expect(normalizedSql).not.toContain("FROM {{ ref('deduped_sensor') }}");
@@ -277,6 +289,9 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("ref('activity_location_sample')");
     expect(normalizedSql).toContain("(location_samples.user_id, location_samples.activity_id) IN");
     expect(sql).toContain("source('postgres_fitness', 'activity') }} FINAL");
+    expect(sql).toContain("provider_absent_at IS null");
+    expect(sql).toContain("restored_dirty_keys AS");
+    expect(sql).toContain("prior_summary.is_deleted = 0");
     expect(sql).not.toContain("source('analytics', 'v_activity')");
     expect(normalizedSql).not.toContain("ref('activity_location_sample') }} AS location_samples FINAL");
     expect(normalizedSql).not.toContain("FROM analytics.deduped_location");

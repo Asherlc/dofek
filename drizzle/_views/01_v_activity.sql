@@ -21,6 +21,7 @@ WITH RECURSIVE ranked AS (
     ORDER BY length(dp2.source_name_pattern) DESC
     LIMIT 1
   ) dp ON true
+  WHERE a.provider_absent_at IS NULL
 ),
 pairs AS (
   SELECT r1.id AS id1, r2.id AS id2
@@ -43,12 +44,13 @@ edges AS (
   UNION ALL
   SELECT id2 AS a, id1 AS b FROM pairs
 ),
-clusters(activity_id, group_id) AS (
-  SELECT id, id::text FROM ranked
+clusters(activity_id, group_id, depth) AS (
+  SELECT id, id::text, 0 FROM ranked
   UNION
-  SELECT e.b, c.group_id
+  SELECT e.b, c.group_id, c.depth + 1
   FROM edges e
   JOIN clusters c ON c.activity_id = e.a
+  WHERE c.depth < 2
 ),
 final_groups AS (
   SELECT activity_id, MIN(group_id) AS group_id

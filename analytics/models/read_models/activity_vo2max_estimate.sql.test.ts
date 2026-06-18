@@ -34,6 +34,7 @@ describe("activity_vo2max_estimate model", () => {
 
     expect(currentActivitySql).toContain("source('postgres_fitness', 'activity')");
     expect(currentActivitySql).toContain("_peerdb_is_deleted = 0");
+    expect(currentActivitySql).toContain("provider_absent_at IS null");
     expect(currentActivitySql).not.toContain("analytics.v_activity");
   });
 

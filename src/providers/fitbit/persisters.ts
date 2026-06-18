@@ -43,6 +43,7 @@ export async function persistActivity(
         endedAt: parsed.endedAt,
         name: parsed.name,
         raw: raw,
+        providerAbsentAt: null,
       },
     })
     .returning({ id: activity.id });

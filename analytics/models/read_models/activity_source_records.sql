@@ -15,7 +15,9 @@
 WITH active_activity AS (
     SELECT *
     FROM {{ source('postgres_fitness', 'activity') }} FINAL
-    WHERE _peerdb_is_deleted = 0
+    WHERE
+        _peerdb_is_deleted = 0
+        AND provider_absent_at IS NULL
 ),
 
 active_provider_priority AS (
@@ -82,7 +84,7 @@ existing_source_records AS (
         FROM {{ this }} FINAL
         WHERE is_deleted = 0
     {% else %}
-        SELECT CAST(null, 'Nullable(UUID)') AS activity_id
+        SELECT CAST(NULL, 'Nullable(UUID)') AS activity_id
         WHERE 1 = 0
     {% endif %}
 ),
@@ -92,7 +94,7 @@ stale_source_records AS (
     FROM existing_source_records
     LEFT JOIN current_source_records
         ON current_source_records.activity_id = existing_source_records.activity_id
-    WHERE current_source_records.activity_id IS null
+    WHERE current_source_records.activity_id IS NULL
 ),
 
 source_record_counts AS (
@@ -149,19 +151,19 @@ UNION ALL
 
 SELECT
     assumeNotNull(activity_id) AS activity_id,
-    CAST(null, 'Nullable(String)') AS provider_id,
-    CAST(null, 'Nullable(UUID)') AS user_id,
-    CAST(null, 'Nullable(String)') AS external_id,
-    CAST(null, 'Nullable(String)') AS activity_type,
-    CAST(null, 'Nullable(DateTime64(6, ''UTC''))') AS started_at,
-    CAST(null, 'Nullable(DateTime64(6, ''UTC''))') AS ended_at,
-    CAST(null, 'Nullable(String)') AS source_name,
-    CAST(null, 'Nullable(String)') AS name,
-    CAST(null, 'Nullable(String)') AS notes,
-    CAST(null, 'Nullable(String)') AS timezone,
-    CAST(null, 'Nullable(String)') AS raw,
-    CAST(null, 'Nullable(DateTime64(9, ''UTC''))') AS source_synced_at,
-    CAST(null, 'Nullable(Int32)') AS priority,
+    CAST(NULL, 'Nullable(String)') AS provider_id,
+    CAST(NULL, 'Nullable(UUID)') AS user_id,
+    CAST(NULL, 'Nullable(String)') AS external_id,
+    CAST(NULL, 'Nullable(String)') AS activity_type,
+    CAST(NULL, 'Nullable(DateTime64(6, ''UTC''))') AS started_at,
+    CAST(NULL, 'Nullable(DateTime64(6, ''UTC''))') AS ended_at,
+    CAST(NULL, 'Nullable(String)') AS source_name,
+    CAST(NULL, 'Nullable(String)') AS name,
+    CAST(NULL, 'Nullable(String)') AS notes,
+    CAST(NULL, 'Nullable(String)') AS timezone,
+    CAST(NULL, 'Nullable(String)') AS raw,
+    CAST(NULL, 'Nullable(DateTime64(9, ''UTC''))') AS source_synced_at,
+    CAST(NULL, 'Nullable(Int32)') AS priority,
     refresh_clock.refresh_version AS refresh_version,
     1 AS is_deleted,
     refresh_clock.refreshed_at AS refreshed_at

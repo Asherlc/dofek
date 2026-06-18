@@ -358,17 +358,23 @@ export const syncRouter = router({
     const countSchema = z.object({ count: z.coerce.number() });
 
     const healthChecks = [
-      { key: "dailyMetrics", table: "fitness.daily_metrics" },
-      { key: "sleep", table: "fitness.sleep_session" },
-      { key: "activity", table: "fitness.activity" },
+      { key: "dailyMetrics", table: "fitness.daily_metrics", predicate: sqlTag`` },
+      { key: "sleep", table: "fitness.sleep_session", predicate: sqlTag`` },
+      {
+        key: "activity",
+        table: "fitness.activity",
+        predicate: sqlTag`AND provider_absent_at IS NULL`,
+      },
     ] as const;
 
     const counts = await Promise.all(
-      healthChecks.map(({ table }) =>
+      healthChecks.map(({ table, predicate }) =>
         executeWithSchema(
           ctx.db,
           countSchema,
-          sqlTag`SELECT count(*)::int AS count FROM ${sqlTag.raw(table)} WHERE user_id = ${ctx.userId}`,
+          sqlTag`SELECT count(*)::int AS count FROM ${sqlTag.raw(table)}
+                 WHERE user_id = ${ctx.userId}
+                 ${predicate}`,
         ),
       ),
     );
