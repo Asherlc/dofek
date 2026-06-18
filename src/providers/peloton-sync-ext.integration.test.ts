@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { SyncWindow } from "./sync-window.ts";
 import { activity } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
@@ -171,7 +172,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     );
 
     const provider = new PelotonProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-03-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2024-03-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -228,7 +229,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     );
 
     const provider = new PelotonProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2024-01-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -283,7 +284,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     );
 
     const provider = new PelotonProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2024-01-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -367,7 +368,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     );
 
     const provider = new PelotonProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2024-01-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -443,8 +444,8 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     const since = new Date("2024-01-01T00:00:00Z");
 
     // Sync twice
-    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
-    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(ctx.db, SyncWindow.fromSince(since), { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(ctx.db, SyncWindow.fromSince(since), { metricStreamPublisher: metricStreamCapture.publisher });
 
     // Redpanda is an append log, so both sync attempts publish their raw events.
     const activityRows = await ctx.db
@@ -514,7 +515,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     );
 
     const provider = new PelotonProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2024-01-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 

@@ -19,6 +19,7 @@ import type {
   WebhookEvent,
   WebhookProvider,
 } from "../types.ts";
+import { SyncWindow } from "../sync-window.ts";
 import { WahooActivityPersister } from "./activity-persister.ts";
 import {
   WAHOO_API_BASE,
@@ -269,7 +270,7 @@ export class WahooProvider implements WebhookProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(db: SyncDatabase, window: SyncWindow, options?: SyncOptions): Promise<SyncResult> {
     const onProgress = options?.onProgress;
     const start = Date.now();
     const errors: SyncError[] = [];
@@ -295,7 +296,8 @@ export class WahooProvider implements WebhookProvider {
     // Paginate through all workouts
     let page = 1;
     let hasMore = true;
-    const syncWindowEnd = new Date();
+    const since = window.since;
+    const syncWindowEnd = window.until;
     const presentActivityExternalIds = new Set<string>();
 
     while (hasMore) {

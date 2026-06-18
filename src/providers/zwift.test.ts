@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SyncWindow } from "./sync-window.ts";
 
 // Restore real timers and any Date.now spy after each test so a failed
 // assertion before an inline mockRestore() can't leak the mocked clock.
@@ -315,7 +316,7 @@ describe("ZwiftProvider.sync() — token resolution", () => {
     });
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(db, new Date("2026-01-01"));
+    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-01-01")));
     expect(result.errors.length).toBeGreaterThan(0);
   });
 
@@ -338,7 +339,7 @@ describe("ZwiftProvider.sync() — token resolution", () => {
     });
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(db, new Date("2026-01-01"));
+    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-01-01")));
     // Should proceed (no "token expired" error, just possibly empty results)
     expect(result.provider).toBe("zwift");
   });
@@ -366,7 +367,7 @@ describe("ZwiftProvider.sync() — token resolution", () => {
     });
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(db, new Date("2026-01-01"));
+    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-01-01")));
     expect(result.provider).toBe("zwift");
     expect(result.errors).toHaveLength(0);
     expect(MockZwiftClient.getAuthenticatedProfileCalls).toBeGreaterThan(0);
@@ -391,7 +392,7 @@ describe("ZwiftProvider.sync() — activity sync", () => {
     });
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(db, new Date("2026-01-01"));
+    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-01-01")));
     expect(result.provider).toBe("zwift");
     expect(result.recordsSynced).toBe(1);
   });
@@ -422,7 +423,7 @@ describe("ZwiftProvider.sync() — activity sync", () => {
     });
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(db, new Date("2026-01-01"));
+    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-01-01")));
     // The activity itself still counted even if streams fail
     expect(result.provider).toBe("zwift");
   });
@@ -448,7 +449,7 @@ describe("ZwiftProvider.sync() — activity sync", () => {
     });
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(db, new Date("2026-01-01"));
+    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-01-01")));
     expect(result.provider).toBe("zwift");
     // Old activity skipped
   });
@@ -469,7 +470,7 @@ describe("ZwiftProvider.sync() — power curve sync", () => {
     });
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(db, new Date("2026-01-01"));
+    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-01-01")));
     expect(result.provider).toBe("zwift");
     // recordsSynced should be 0 since nothing was synced
     expect(result.recordsSynced).toBe(0);

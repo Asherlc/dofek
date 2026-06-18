@@ -22,6 +22,7 @@ import type {
   WebhookEvent,
   WebhookProvider,
 } from "./types.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 // ============================================================
 // Concept2 Logbook API Zod schemas
@@ -375,7 +376,7 @@ export class Concept2Provider implements WebhookProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(db: SyncDatabase, window: SyncWindow, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -391,7 +392,8 @@ export class Concept2Provider implements WebhookProvider {
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const syncWindowEnd = new Date();
+    const since = window.since;
+    const syncWindowEnd = window.until;
     const presentActivityExternalIds = new Set<string>();
     try {
       const activityCount = await withSyncLog(

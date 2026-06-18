@@ -667,7 +667,7 @@ describe("WhoopClient.getCycles", () => {
     await client.getCycles("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z");
 
     const url = getFirstRequestUrl(fetchFn);
-    expect(String(url)).toContain("limit=26");
+    expect(String(url)).toContain("limit=200");
   });
 
   it("uses custom limit parameter", async () => {
@@ -678,6 +678,68 @@ describe("WhoopClient.getCycles", () => {
 
     const url = getFirstRequestUrl(fetchFn);
     expect(String(url)).toContain("limit=50");
+  });
+});
+
+describe("WhoopClient.listDeveloperWorkouts", () => {
+  it("returns paginated developer workout records", async () => {
+    const body = {
+      records: [
+        {
+          id: "workout-uuid-1",
+          start: "2024-01-15T10:00:00Z",
+          end: "2024-01-15T11:00:00Z",
+        },
+      ],
+      next_token: null,
+    };
+    const fetchFn = createMockFetch({ status: 200, ok: true, body });
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    const result = await client.listDeveloperWorkouts({ limit: 25 });
+
+    expect(result).toEqual(body);
+    const url = getFirstRequestUrl(fetchFn);
+    expect(String(url)).toContain("/developer/v2/activity/workout");
+    expect(String(url)).toContain("limit=25");
+  });
+});
+
+describe("WhoopClient.listDeveloperWorkoutIdsInWindow", () => {
+  it("collects workout ids whose start time falls in the window", async () => {
+    const fetchFn = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url.includes("/developer/v2/activity/workout")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            records: [
+              {
+                id: "in-window",
+                start: "2024-01-15T10:00:00Z",
+                end: "2024-01-15T11:00:00Z",
+              },
+              {
+                id: "before-window",
+                start: "2024-01-01T10:00:00Z",
+                end: "2024-01-01T11:00:00Z",
+              },
+            ],
+            next_token: null,
+          }),
+        };
+      }
+      return { ok: false, status: 404, text: async () => "not found" };
+    });
+    const client = new WhoopClient(makeToken(), fetchFn as typeof globalThis.fetch);
+
+    const ids = await client.listDeveloperWorkoutIdsInWindow(
+      new Date("2024-01-10T00:00:00Z"),
+      new Date("2024-01-20T00:00:00Z"),
+    );
+
+    expect(ids).toEqual(new Set(["in-window"]));
   });
 });
 

@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { SyncWindow } from "./sync-window.ts";
 import { activity, oauthToken } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
@@ -124,7 +125,7 @@ describe("CyclingAnalyticsProvider.sync() (integration)", () => {
     server.use(...cyclingAnalyticsHandlers([rides]));
 
     const provider = new CyclingAnalyticsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")));
 
     expect(result.provider).toBe("cycling_analytics");
     expect(result.recordsSynced).toBe(2);
@@ -160,14 +161,14 @@ describe("CyclingAnalyticsProvider.sync() (integration)", () => {
     server.use(...cyclingAnalyticsHandlers([rides]));
 
     const provider = new CyclingAnalyticsProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")));
 
     // Sync again — should upsert, not duplicate
     server.resetHandlers();
     server.use(...cyclingAnalyticsHandlers([rides]));
 
     const provider2 = new CyclingAnalyticsProvider();
-    await provider2.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider2.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")));
 
     const rows = await ctx.db
       .select()
@@ -196,7 +197,7 @@ describe("CyclingAnalyticsProvider.sync() (integration)", () => {
     server.use(...cyclingAnalyticsHandlers([page1, page2, page3]));
 
     const provider = new CyclingAnalyticsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-15T00:00:00Z"));
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-15T00:00:00Z")));
 
     expect(result.recordsSynced).toBe(3);
     expect(result.errors).toHaveLength(0);
@@ -213,7 +214,7 @@ describe("CyclingAnalyticsProvider.sync() (integration)", () => {
     server.use(...cyclingAnalyticsHandlers([[]]));
 
     const provider = new CyclingAnalyticsProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")));
 
     const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "cycling_analytics");
@@ -224,7 +225,7 @@ describe("CyclingAnalyticsProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "cycling_analytics"));
 
     const provider = new CyclingAnalyticsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")));
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens");

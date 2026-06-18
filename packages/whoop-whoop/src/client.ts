@@ -7,6 +7,8 @@ import {
 import type {
   WhoopAuthToken,
   WhoopCycle,
+  WhoopDeveloperWorkoutListResponse,
+  WhoopDeveloperWorkoutRecord,
   WhoopHrValue,
   WhoopMetricResponse,
   WhoopMetricValue,
@@ -406,7 +408,7 @@ export class WhoopClient {
     return response.values ?? [];
   }
 
-  async getCycles(start: string, end: string, limit = 26): Promise<WhoopCycle[]> {
+  async getCycles(start: string, end: string, limit = 200): Promise<WhoopCycle[]> {
     const raw = await this.#get<unknown>(`${WHOOP_API_BASE}/core-details-bff/v0/cycles/details`, {
       id: String(this.#userId),
       startTime: start,
@@ -429,6 +431,81 @@ export class WhoopClient {
       }
     }
     return [];
+  }
+
+  /**
+   * List workouts from the developer API. Paginated via next_token.
+   * Unlike the cycles BFF embed, this list omits workouts deleted in WHOOP.
+   */
+  async listDeveloperWorkouts(options?: {
+    limit?: number;
+    nextToken?: string;
+  }): Promise<WhoopDeveloperWorkoutListResponse> {
+    const params: Record<string, string> = {};
+    if (options?.limit != null) {
+      params.limit = String(options.limit);
+    }
+    if (options?.nextToken) {
+      params.next_token = options.nextToken;
+    }
+    const raw = await this.#get<unknown>(
+      `${WHOOP_API_BASE}/developer/v2/activity/workout`,
+      params,
+    );
+    if (isRecord(raw)) {
+      const records = raw.records;
+      const nextToken = raw.next_token;
+      if (Array.isArray(records)) {
+        return {
+          records: records as WhoopDeveloperWorkoutRecord[],
+          next_token: typeof nextToken === "string" ? nextToken : null,
+        };
+      }
+    }
+    return { records: [], next_token: null };
+  }
+
+  /**
+   * Collect workout IDs present in WHOOP for a sync window using the developer
+   * workout list (authoritative for deletions).
+   */
+  async listDeveloperWorkoutIdsInWindow(windowStart: Date, windowEnd: Date): Promise<Set<string>> {
+    const presentExternalIds = new Set<string>();
+    const pageLimit = 25;
+    let nextToken: string | undefined;
+    let reachedWindowStart = false;
+
+    do {
+      const page = await this.listDeveloperWorkouts({ limit: pageLimit, nextToken });
+      if (page.records.length === 0) {
+        break;
+      }
+
+      let oldestStartMs = Number.POSITIVE_INFINITY;
+      for (const record of page.records) {
+        const workoutStartMs = Date.parse(record.start);
+        if (!Number.isFinite(workoutStartMs)) {
+          continue;
+        }
+        oldestStartMs = Math.min(oldestStartMs, workoutStartMs);
+        if (workoutStartMs >= windowStart.getTime() && workoutStartMs < windowEnd.getTime()) {
+          if (record.id) {
+            presentExternalIds.add(record.id);
+          }
+        }
+      }
+
+      if (oldestStartMs < windowStart.getTime()) {
+        reachedWindowStart = true;
+      }
+
+      nextToken = page.next_token ?? undefined;
+      if (reachedWindowStart || !nextToken) {
+        break;
+      }
+    } while (nextToken);
+
+    return presentExternalIds;
   }
 
   async getSleep(sleepId: string | number): Promise<WhoopSleepRecord> {

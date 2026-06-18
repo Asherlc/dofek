@@ -5,6 +5,10 @@ import {
   providerSyncQueueName,
   SYNC_JOB_RETRY_OPTIONS,
 } from "dofek/jobs/queues";
+import {
+  syncWindowFromTriggerInput,
+  syncWindowToJobData,
+} from "dofek/jobs/sync-window";
 import { ProviderModel } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";
 import { z } from "zod";
@@ -19,8 +23,6 @@ import { SyncRepository } from "../repositories/sync-repository.ts";
 import {
   CUSTOM_AUTH_PROVIDERS,
   ensureProvidersRegistered,
-  resolveSinceIso,
-  resolveTargetRefreshWindow,
   toJobId,
 } from "../routers/sync-helpers.ts";
 import { type McpScope, requireMcpScope } from "./token-repository.ts";
@@ -214,9 +216,17 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       inputSchema: {
         providerId: z.string().min(1),
         sinceDays: z.number().int().positive().optional(),
+        sinceDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
+        untilDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
       },
     },
-    async ({ providerId, sinceDays }) => {
+    async ({ providerId, sinceDays, sinceDate, untilDate }) => {
       requireMcpScope(context.scopes, "sync:write");
       await ensureProvidersRegistered();
       const provider = getAllProviders().find((candidate) => candidate.id === providerId);
@@ -227,15 +237,18 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       if (validationMessage) {
         throw new Error(`Provider not configured: ${validationMessage}`);
       }
+      const syncWindow = syncWindowFromTriggerInput({
+        sinceDays,
+        sinceDate,
+        untilDate,
+      });
       const queue = getProviderSyncQueue(providerId);
       const job = await queue.add(
         "sync",
         {
           providerId,
-          sinceDays,
-          sinceIso: resolveSinceIso(sinceDays),
-          targetRefreshWindow: resolveTargetRefreshWindow(sinceDays),
           userId: context.userId,
+          ...syncWindowToJobData(syncWindow, sinceDays),
         },
         SYNC_JOB_RETRY_OPTIONS,
       );

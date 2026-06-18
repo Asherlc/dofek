@@ -17,6 +17,8 @@ import type {
   WebhookEvent,
   WebhookProvider,
 } from "./types.ts";
+import { SyncWindow } from "./sync-window.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 // ============================================================
 // Withings API types
@@ -446,7 +448,8 @@ export class WithingsProvider implements WebhookProvider {
     return this.#refreshTokens(db, tokens);
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(db: SyncDatabase, window: SyncWindow, options?: SyncOptions): Promise<SyncResult> {
+    const since = window.since;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;

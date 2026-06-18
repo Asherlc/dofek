@@ -17,6 +17,7 @@ import type {
   WebhookEvent,
   WebhookProvider,
 } from "../types.ts";
+import { SyncWindow } from "../sync-window.ts";
 import { OURA_API_BASE, OuraClient } from "./client.ts";
 import { formatDate, ouraOAuthConfig } from "./oauth.ts";
 import {
@@ -211,7 +212,7 @@ export class OuraProvider implements WebhookProvider {
     return tokens.accessToken;
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(db: SyncDatabase, window: SyncWindow, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -227,8 +228,9 @@ export class OuraProvider implements WebhookProvider {
     }
 
     const client = new OuraClient(accessToken, this.#fetchFn);
+    const since = window.since;
     const sinceDate = formatDate(since);
-    const syncWindowEnd = new Date();
+    const syncWindowEnd = window.until;
     const todayDate = formatDate(syncWindowEnd);
     const activityPresentExternalIds = new Set<string>();
 

@@ -8,6 +8,7 @@ import { syncWhoopDailyActivity } from "./sync-daily-activity.ts";
 import { syncWhoopSleepSessions, syncWhoopSleepStages } from "./sync-sleep.ts";
 import { syncWhoopHeartRateStream } from "./sync-streams.ts";
 import type { WhoopSyncContext } from "./sync-types.ts";
+import { SyncWindow } from "../sync-window.ts";
 import { syncWhoopWorkouts } from "./sync-workouts.ts";
 
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
@@ -353,10 +354,15 @@ describe("WHOOP sync helpers", () => {
     expect(db.insert).not.toHaveBeenCalled();
   });
 
-  it("reconciles provider absence with string workout activity ids only", async () => {
+  it("reconciles provider absence using developer workout ids in the sync window", async () => {
     const db = makeDb();
+    const client = makeClient();
+    vi.spyOn(client, "listDeveloperWorkoutIdsInWindow").mockResolvedValue(
+      new Set(["present-workout", "42"]),
+    );
     const context = makeContext({
       db: db.db,
+      client,
       options: undefined,
       cycles: [
         {
@@ -369,34 +375,43 @@ describe("WHOOP sync helpers", () => {
       ],
     });
 
-    await expect(syncWhoopWorkouts(context)).resolves.toBe(3);
+    await expect(syncWhoopWorkouts(context)).resolves.toBe(2);
 
+    const absenceWindow = new SyncWindow(context.since, context.windowEnd).withMinimumLookback(30);
     expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
       db.db,
       {
         providerId: "whoop",
         userId: undefined,
-        windowStart: context.since,
-        windowEnd: context.windowEnd,
-        presentExternalIds: new Set(["present-workout"]),
+        windowStart: absenceWindow.since,
+        windowEnd: absenceWindow.until,
+        presentExternalIds: new Set(["present-workout", "42"]),
       },
     );
   });
 
   it("passes sync user id through to workout absence reconciliation", async () => {
     const db = makeDb();
+    const client = makeClient();
+    vi.spyOn(client, "listDeveloperWorkoutIdsInWindow").mockResolvedValue(
+      new Set(["present-workout"]),
+    );
     const context = makeContext({
       db: db.db,
+      client,
       options: { userId: "user-1" },
       cycles: [{ workouts: [makeWorkoutRecord({ activity_id: "present-workout" })] }],
     });
 
     await expect(syncWhoopWorkouts(context)).resolves.toBe(1);
 
+    const absenceWindow = new SyncWindow(context.since, context.windowEnd).withMinimumLookback(30);
     expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
       db.db,
       expect.objectContaining({
         userId: "user-1",
+        windowStart: absenceWindow.since,
+        windowEnd: absenceWindow.until,
         presentExternalIds: new Set(["present-workout"]),
       }),
     );

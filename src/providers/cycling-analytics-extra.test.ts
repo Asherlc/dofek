@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SyncWindow } from "./sync-window.ts";
 
 vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "user-1",
@@ -174,7 +175,7 @@ describe("CyclingAnalyticsProvider", () => {
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
     };
-    const result = await new CyclingAnalyticsProvider().sync(mockDb, new Date("2026-01-01"));
+    const result = await new CyclingAnalyticsProvider().sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
     expect(result.errors.length).toBeGreaterThan(0);
   });
 });

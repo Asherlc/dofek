@@ -1,5 +1,6 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SyncWindow } from "./sync-window.ts";
 
 vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "user-1",
@@ -258,7 +259,7 @@ describe("MapMyFitnessProvider", () => {
       execute: vi.fn().mockResolvedValue([]),
     };
 
-    const result = await new MapMyFitnessProvider().sync(mockDb, new Date("2026-01-01"));
+    const result = await new MapMyFitnessProvider().sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
     expect(result.provider).toBe("mapmyfitness");
     expect(result.errors.length).toBeGreaterThan(0);
   });

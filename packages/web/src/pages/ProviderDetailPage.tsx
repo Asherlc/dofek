@@ -1,4 +1,4 @@
-import { formatDurationSeconds, formatRelativeTime, formatTime } from "@dofek/format/format";
+import { formatDateYmd, formatDurationSeconds, formatRelativeTime, formatTime } from "@dofek/format/format";
 import { DATA_TYPE_LABELS, type ProviderStats } from "@dofek/providers/provider-stats";
 import {
   parseWhoopWearLocation,
@@ -52,19 +52,25 @@ export function ProviderDetailPage() {
 
   // Date range sync
   const [sinceDays, setSinceDays] = useState("30");
+  const [rangeStartDate, setRangeStartDate] = useState(() => {
+    const start = new Date();
+    start.setUTCDate(start.getUTCDate() - 7);
+    return formatDateYmd(start);
+  });
+  const [rangeEndDate, setRangeEndDate] = useState(() => formatDateYmd(new Date()));
 
-  // Disconnect
-  const disconnectMutation = trpc.providerDetail.disconnect.useMutation();
-  const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
-
-  const handleSync = useCallback(
-    async (fullSync = false, customSinceDays?: number) => {
+  const runSyncJob = useCallback(
+    async (input: {
+      sinceDays?: number;
+      sinceDate?: string;
+      untilDate?: string;
+    }) => {
       setSyncStatus("syncing");
       setSyncMessage(null);
       try {
         const { jobId } = await syncMutation.mutateAsync({
           providerId,
-          sinceDays: fullSync ? undefined : (customSinceDays ?? 7),
+          ...input,
         });
         await pollSyncJob({
           jobId,
@@ -93,6 +99,25 @@ export function ProviderDetailPage() {
     },
     [providerId, syncMutation, trpcUtils],
   );
+
+  const handleSync = useCallback(
+    async (fullSync = false, customSinceDays?: number) => {
+      if (fullSync) {
+        await runSyncJob({});
+        return;
+      }
+      await runSyncJob({ sinceDays: customSinceDays ?? 7 });
+    },
+    [runSyncJob],
+  );
+
+  const handleSyncDateRange = useCallback(async () => {
+    if (!rangeStartDate || !rangeEndDate) return;
+    await runSyncJob({ sinceDate: rangeStartDate, untilDate: rangeEndDate });
+  }, [rangeEndDate, rangeStartDate, runSyncJob]);
+  // Disconnect
+  const disconnectMutation = trpc.providerDetail.disconnect.useMutation();
+  const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
 
   const handleReauthorize = useCallback(() => {
     window.open(`/auth/provider/${providerId}`, "_blank");
@@ -228,6 +253,40 @@ export function ProviderDetailPage() {
                 className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
               >
                 Sync Range
+              </button>
+            </div>
+            <div className="flex items-end gap-1.5">
+              <div>
+                <label htmlFor="range-start-date" className="block text-xs text-subtle mb-1">
+                  From
+                </label>
+                <input
+                  id="range-start-date"
+                  type="date"
+                  value={rangeStartDate}
+                  onChange={(e) => setRangeStartDate(e.target.value)}
+                  className="px-2 py-1.5 text-xs bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-border-strong"
+                />
+              </div>
+              <div>
+                <label htmlFor="range-end-date" className="block text-xs text-subtle mb-1">
+                  To
+                </label>
+                <input
+                  id="range-end-date"
+                  type="date"
+                  value={rangeEndDate}
+                  onChange={(e) => setRangeEndDate(e.target.value)}
+                  className="px-2 py-1.5 text-xs bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-border-strong"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => handleSyncDateRange()}
+                disabled={syncStatus === "syncing" || !rangeStartDate || !rangeEndDate}
+                className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
+              >
+                Sync Dates
               </button>
             </div>
             <div className="ml-auto flex items-center gap-3">

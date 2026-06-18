@@ -1,0 +1,103 @@
+export class SyncWindow {
+  readonly #since: Date;
+  readonly #until: Date;
+
+  constructor(since: Date, until: Date) {
+    SyncWindow.#validate(since, until);
+    this.#since = since;
+    this.#until = until;
+  }
+
+  get since(): Date {
+    return this.#since;
+  }
+
+  get until(): Date {
+    return this.#until;
+  }
+
+  get sinceIso(): string {
+    return this.#since.toISOString();
+  }
+
+  get untilIso(): string {
+    return this.#until.toISOString();
+  }
+
+  /** Widen the start bound so reconciliation covers at least `days` lookback. */
+  withMinimumLookback(days: number): SyncWindow {
+    const untilYmd = this.#until.toISOString().slice(0, 10);
+    const minimumStart = SyncWindow.#parseYmdUtcStart(
+      SyncWindow.#dateWindowStartString(untilYmd, days),
+    );
+    const since =
+      this.#since.getTime() < minimumStart.getTime() ? this.#since : minimumStart;
+    return new SyncWindow(since, this.#until);
+  }
+
+  static now(): Date {
+    return new Date(Date.now());
+  }
+
+  static full(now = SyncWindow.now()): SyncWindow {
+    return new SyncWindow(new Date(0), now);
+  }
+
+  static lastDays(days: number, options?: { untilDate?: string; now?: Date }): SyncWindow {
+    const now = options?.now ?? SyncWindow.now();
+    const untilDate = options?.untilDate ?? SyncWindow.#todayYmd(now);
+    const until = SyncWindow.#parseYmdUtcEnd(untilDate);
+    const since = SyncWindow.#parseYmdUtcStart(SyncWindow.#dateWindowStartString(untilDate, days));
+    return new SyncWindow(since, until);
+  }
+
+  static fromDateRange(sinceDate: string, untilDate: string): SyncWindow {
+    return new SyncWindow(
+      SyncWindow.#parseYmdUtcStart(sinceDate),
+      SyncWindow.#parseYmdUtcEnd(untilDate),
+    );
+  }
+
+  static fromIsoRange(sinceIso: string, untilIso: string): SyncWindow {
+    const since = SyncWindow.#parseIso(sinceIso, "sinceIso");
+    const until = SyncWindow.#parseIso(untilIso, "untilIso");
+    return new SyncWindow(since, until);
+  }
+
+  /** Open-ended window from a start bound; end defaults to now. */
+  static fromSince(since: Date, until = SyncWindow.now()): SyncWindow {
+    return new SyncWindow(since, until);
+  }
+
+  static #todayYmd(now: Date): string {
+    return now.toISOString().slice(0, 10);
+  }
+
+  static #parseYmdUtcStart(ymd: string): Date {
+    return new Date(`${ymd}T00:00:00.000Z`);
+  }
+
+  static #parseYmdUtcEnd(ymd: string): Date {
+    return new Date(`${ymd}T23:59:59.999Z`);
+  }
+
+  static #dateWindowStartString(endDate: string, days: number): string {
+    const windowStart = new Date(`${endDate}T00:00:00.000Z`);
+    windowStart.setUTCDate(windowStart.getUTCDate() - days);
+    return windowStart.toISOString().slice(0, 10);
+  }
+
+  static #parseIso(iso: string, fieldName: string): Date {
+    const parsed = new Date(iso);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new Error(`Invalid sync window ${fieldName}: ${iso}`);
+    }
+    return parsed;
+  }
+
+  static #validate(since: Date, until: Date): void {
+    if (since.getTime() > until.getTime()) {
+      throw new Error("Sync window start must be before end");
+    }
+  }
+}

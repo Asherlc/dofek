@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { SyncWindow } from "./sync-window.ts";
 import { activity } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
@@ -125,7 +126,7 @@ describe("WahooProvider.sync() (integration)", () => {
 
     const provider = new WahooProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since, {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(since), {
       metricStreamPublisher: metricStreamCapture.publisher,
       userId: "00000000-0000-0000-0000-000000000001",
     });
@@ -161,13 +162,13 @@ describe("WahooProvider.sync() (integration)", () => {
     server.use(...wahooHandlers(workouts));
 
     const provider = new WahooProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
       userId: "00000000-0000-0000-0000-000000000001",
     });
 
     // Sync again — should upsert, not duplicate
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
       userId: "00000000-0000-0000-0000-000000000001",
     });
@@ -190,7 +191,7 @@ describe("WahooProvider.sync() (integration)", () => {
     server.use(...wahooHandlers([]));
 
     const provider = new WahooProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
       userId: "00000000-0000-0000-0000-000000000001",
     });
@@ -214,7 +215,7 @@ describe("WahooProvider.sync() (integration)", () => {
     server.use(...wahooHandlers(workouts));
 
     const provider = new WahooProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
       userId: "00000000-0000-0000-0000-000000000001",
     });
@@ -256,7 +257,7 @@ describe("WahooProvider.sync() (integration)", () => {
     server.use(...wahooHandlers(workouts, { fitFileError: true }));
 
     const provider = new WahooProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-04-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-04-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
       userId: "00000000-0000-0000-0000-000000000001",
     });
@@ -281,7 +282,7 @@ describe("WahooProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "wahoo"));
 
     const provider = new WahooProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
       userId: "00000000-0000-0000-0000-000000000001",
     });

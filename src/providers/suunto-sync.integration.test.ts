@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { SyncWindow } from "./sync-window.ts";
 import { activity, oauthToken } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
@@ -141,7 +142,7 @@ describe("SuuntoProvider.sync() (integration)", () => {
     server.use(...suuntoHandlers(workouts));
 
     const provider = new SuuntoProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2024-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -176,7 +177,7 @@ describe("SuuntoProvider.sync() (integration)", () => {
     server.use(...suuntoHandlers(workouts, { fitFile: true }));
 
     const provider = new SuuntoProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2024-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -205,10 +206,10 @@ describe("SuuntoProvider.sync() (integration)", () => {
     server.use(...suuntoHandlers(workouts));
 
     const provider = new SuuntoProvider();
-    await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
+    await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2024-02-01T00:00:00Z")));
 
     // Sync again
-    await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
+    await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2024-02-01T00:00:00Z")));
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "suunto"));
 
@@ -234,7 +235,7 @@ describe("SuuntoProvider.sync() (integration)", () => {
     server.use(...suuntoHandlers(workouts));
 
     const provider = new SuuntoProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2024-02-01T00:00:00Z")));
     expect(result.recordsSynced).toBe(4);
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "suunto"));
@@ -263,7 +264,7 @@ describe("SuuntoProvider.sync() (integration)", () => {
     server.use(...suuntoHandlers([]));
 
     const provider = new SuuntoProvider();
-    await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
+    await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2024-02-01T00:00:00Z")));
 
     const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "suunto");
@@ -274,7 +275,7 @@ describe("SuuntoProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "suunto"));
 
     const provider = new SuuntoProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2024-02-01T00:00:00Z")));
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens");

@@ -1,6 +1,7 @@
 import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { captureException } from "@sentry/node";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SyncWindow } from "./sync-window.ts";
 import { runWithTokenUser } from "../db/token-user-context.ts";
 import {
   AmazfitZeppClient,
@@ -321,7 +322,7 @@ describe("Amazfit/Zepp provider", () => {
     const provider = new AmazfitZeppProvider(fetchFn);
 
     const result = await runWithTokenUser(TEST_USER_ID, () =>
-      provider.sync(db, new Date("2026-02-01T00:00:00.000Z"), {
+      provider.sync(db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00.000Z")), {
         metricStreamPublisher: metricStreamCapture.publisher,
         onProgress,
         userId: TEST_USER_ID,
@@ -405,7 +406,7 @@ describe("Amazfit/Zepp provider", () => {
     const provider = new AmazfitZeppProvider(fetchFn);
 
     const result = await runWithTokenUser(TEST_USER_ID, () =>
-      provider.sync(db, new Date("2026-02-01T00:00:00.000Z"), {
+      provider.sync(db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00.000Z")), {
         userId: TEST_USER_ID,
       }),
     );
@@ -422,7 +423,7 @@ describe("Amazfit/Zepp provider", () => {
     const fetchFn = vi.fn<typeof globalThis.fetch>();
     const provider = new AmazfitZeppProvider(fetchFn);
 
-    const result = await provider.sync(db, new Date("2026-02-01T00:00:00.000Z"), {
+    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00.000Z")), {
       userId: TEST_USER_ID,
     });
 
@@ -444,7 +445,7 @@ describe("Amazfit/Zepp provider", () => {
     const fetchFn = vi.fn<typeof globalThis.fetch>();
     const provider = new AmazfitZeppProvider(fetchFn);
 
-    const result = await provider.sync(db, new Date("2026-02-01T00:00:00.000Z"), {
+    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00.000Z")), {
       userId: TEST_USER_ID,
     });
 
@@ -465,7 +466,7 @@ describe("Amazfit/Zepp provider", () => {
     const fetchFn = vi.fn<typeof globalThis.fetch>();
     const provider = new AmazfitZeppProvider(fetchFn);
 
-    const result = await provider.sync(db, new Date("2026-02-01T00:00:00.000Z"), {
+    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00.000Z")), {
       userId: TEST_USER_ID,
     });
 
@@ -486,7 +487,7 @@ describe("Amazfit/Zepp provider", () => {
     );
     const provider = new AmazfitZeppProvider(fetchFn);
 
-    await provider.sync(db, new Date("2026-02-01T00:00:00.000Z"), {
+    await provider.sync(db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00.000Z")), {
       userId: TEST_USER_ID,
     });
 
@@ -515,7 +516,7 @@ describe("Amazfit/Zepp provider", () => {
     );
     const provider = new AmazfitZeppProvider(fetchFn);
 
-    await provider.sync(db, new Date("2026-02-01T00:00:00.000Z"), {
+    await provider.sync(db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00.000Z")), {
       userId: TEST_USER_ID,
     });
 
@@ -536,7 +537,7 @@ describe("Amazfit/Zepp provider", () => {
       });
     const provider = new AmazfitZeppProvider(fetchFn);
 
-    const result = await provider.sync(db, new Date("2026-02-01T00:00:00.000Z"), {
+    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00.000Z")), {
       userId: TEST_USER_ID,
     });
 
@@ -561,7 +562,7 @@ describe("Amazfit/Zepp provider", () => {
     const provider = new AmazfitZeppProvider(fetchFn);
 
     await expect(
-      provider.sync(db, new Date("2026-02-01T00:00:00.000Z"), {
+      provider.sync(db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00.000Z")), {
         userId: TEST_USER_ID,
       }),
     ).rejects.toBeInstanceOf(ProviderRateLimitError);

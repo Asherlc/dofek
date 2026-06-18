@@ -9,6 +9,7 @@ import type {
   WebhookEvent,
   WebhookProvider,
 } from "../types.ts";
+import { SyncWindow } from "../sync-window.ts";
 import { PolarClient } from "./client.ts";
 import { POLAR_API_BASE, POLAR_TOKEN_URL, polarOAuthConfig } from "./oauth.ts";
 import { PolarSyncService } from "./sync-service.ts";
@@ -149,7 +150,7 @@ export class PolarProvider implements WebhookProvider {
     };
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(db: SyncDatabase, window: SyncWindow, options?: SyncOptions): Promise<SyncResult> {
     const startTime = Date.now();
     const syncService = new PolarSyncService({
       db,
@@ -160,7 +161,7 @@ export class PolarProvider implements WebhookProvider {
       metricStreamPublisher: options?.metricStreamPublisher,
     });
 
-    const result = await syncService.run(since);
+    const result = await syncService.run(window);
     return {
       provider: this.id,
       recordsSynced: result.recordsSynced,

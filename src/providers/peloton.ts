@@ -18,6 +18,7 @@ import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 // ============================================================
 // Peloton API types
@@ -570,7 +571,7 @@ export class PelotonProvider implements SyncProvider {
 
   async sync(
     db: SyncDatabase,
-    since: Date,
+    window: SyncWindow,
     options?: import("./types.ts").SyncOptions,
   ): Promise<SyncResult> {
     const { onProgress, userId } = options ?? {};
@@ -588,7 +589,8 @@ export class PelotonProvider implements SyncProvider {
 
     const client = new PelotonClient(tokens.accessToken, this.#fetchFn);
     await ensureProvider(db, this.id, this.name, PELOTON_API_BASE);
-    const syncWindowEnd = new Date();
+    const since = window.since;
+    const syncWindowEnd = window.until;
     const presentActivityExternalIds = new Set<string>();
 
     // Single-pass: fetch workouts, then for each fetch performance graph,

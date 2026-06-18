@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SyncWindow } from "./sync-window.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import {
@@ -238,7 +239,11 @@ describe("Auto-Supplements Provider", () => {
 
       const db = createMockDb({ execute, select, insert: vi.fn() });
 
-      const result = await provider.sync(db, new Date("2026-04-01T20:00:00.000Z"));
+      const window = new SyncWindow(
+        new Date("2026-04-01T20:00:00.000Z"),
+        new Date("2026-04-01T23:59:59.999Z"),
+      );
+      const result = await provider.sync(db, window);
       vi.useRealTimers();
 
       expect(result.errors).toHaveLength(0);
@@ -281,7 +286,7 @@ describe("Auto-Supplements Provider", () => {
 
       const db = createMockDb({ execute, select, insert });
 
-      const result = await provider.sync(db, new Date("2026-04-01T00:00:00.000Z"));
+      const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-04-01T00:00:00.000Z")));
       vi.useRealTimers();
 
       expect(result.errors).toHaveLength(0);
@@ -319,7 +324,7 @@ describe("Auto-Supplements Provider", () => {
 
       const db = createMockDb({ execute, select, insert });
 
-      const result = await provider.sync(db, new Date("2026-04-01T00:00:00.000Z"));
+      const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-04-01T00:00:00.000Z")));
       vi.useRealTimers();
 
       expect(result.errors).toHaveLength(0);
@@ -348,7 +353,7 @@ describe("Auto-Supplements Provider", () => {
 
       const db = createMockDb({ execute, select, insert: vi.fn() });
 
-      const result = await provider.sync(db, new Date("2026-04-01T00:00:00.000Z"));
+      const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-04-01T00:00:00.000Z")));
       vi.useRealTimers();
 
       expect(result.recordsSynced).toBe(0);

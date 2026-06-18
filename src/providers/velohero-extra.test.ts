@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SyncWindow } from "./sync-window.ts";
 
 vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "user-1",
@@ -46,7 +47,7 @@ describe("VeloHeroProvider", () => {
     };
 
     const provider = new VeloHeroProvider();
-    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
     expect(result.provider).toBe("velohero");
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("not connected");
@@ -87,7 +88,7 @@ describe("VeloHeroProvider", () => {
     };
 
     const provider = new VeloHeroProvider();
-    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
     expect(result.errors[0]?.message).toContain("VeloHero session expired.");
     expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "session_expired" });
     expect(result.duration).toBe(0);

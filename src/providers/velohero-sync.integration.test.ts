@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { SyncWindow } from "./sync-window.ts";
 import { activity, oauthToken } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
@@ -111,7 +112,7 @@ describe("VeloHeroProvider.sync() (integration)", () => {
 
     const provider = new VeloHeroProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(since));
 
     expect(result.provider).toBe("velohero");
     expect(result.recordsSynced).toBe(2);
@@ -148,10 +149,10 @@ describe("VeloHeroProvider.sync() (integration)", () => {
     server.use(...veloheroHandlers(workouts));
 
     const provider = new VeloHeroProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")));
 
     // Sync again
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")));
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "velohero"));
     const countOf3001 = rows.filter((r) => r.externalId === "3001").length;
@@ -171,7 +172,7 @@ describe("VeloHeroProvider.sync() (integration)", () => {
     });
 
     const provider = new VeloHeroProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")));
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("VeloHero session expired.");
@@ -183,7 +184,7 @@ describe("VeloHeroProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "velohero"));
 
     const provider = new VeloHeroProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")));
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("not connected");
@@ -203,7 +204,7 @@ describe("VeloHeroProvider.sync() (integration)", () => {
     server.use(...veloheroHandlers([]));
 
     const provider = new VeloHeroProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")));
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBe(0);
@@ -231,7 +232,7 @@ describe("VeloHeroProvider.sync() (integration)", () => {
     server.use(...veloheroHandlers(workouts));
 
     const provider = new VeloHeroProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")));
 
     expect(result.errors).toHaveLength(0);
 

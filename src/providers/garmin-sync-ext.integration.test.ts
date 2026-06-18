@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { SyncWindow } from "./sync-window.ts";
 import { activity, dailyMetrics, oauthToken, sleepSession, userSettings } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
@@ -408,7 +409,7 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     );
 
     const since = new Date("2026-03-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since, {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(since), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -457,7 +458,7 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
 
     // Narrow range: just March 1
     const since = new Date("2026-03-01T00:00:00Z");
-    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(ctx.db, SyncWindow.fromSince(since), { metricStreamPublisher: metricStreamCapture.publisher });
 
     const sleepRows = await ctx.db
       .select()
@@ -494,7 +495,7 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     );
 
     const since = new Date("2026-03-01T00:00:00Z");
-    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(ctx.db, SyncWindow.fromSince(since), { metricStreamPublisher: metricStreamCapture.publisher });
 
     const dailyRows = await ctx.db
       .select()
@@ -530,7 +531,7 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     );
 
     const since = new Date("2026-03-01T00:00:00Z");
-    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(ctx.db, SyncWindow.fromSince(since), { metricStreamPublisher: metricStreamCapture.publisher });
 
     const dailyRows = await ctx.db
       .select()
@@ -562,7 +563,7 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     );
 
     const since = new Date("2026-03-01T00:00:00Z");
-    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(ctx.db, SyncWindow.fromSince(since), { metricStreamPublisher: metricStreamCapture.publisher });
 
     const stressMetrics = metricStreamCapture.publishedMetricStreamRows;
 
@@ -585,7 +586,7 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     );
 
     const since = new Date("2026-03-01T00:00:00Z");
-    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(ctx.db, SyncWindow.fromSince(since), { metricStreamPublisher: metricStreamCapture.publisher });
 
     const hrMetrics = metricStreamCapture.publishedMetricStreamRows;
 
@@ -609,7 +610,7 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
       }),
     );
 
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -642,7 +643,7 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
       }),
     );
 
-    await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+    await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -675,7 +676,7 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
       }),
     );
 
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -703,7 +704,7 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     );
 
     const since = new Date("2026-03-01T00:00:00Z");
-    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(ctx.db, SyncWindow.fromSince(since), { metricStreamPublisher: metricStreamCapture.publisher });
 
     // Activity should still be inserted even if detail fails
     const activityRows = await ctx.db
@@ -734,7 +735,7 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     );
 
     const since = new Date("2026-03-01T00:00:00Z");
-    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(ctx.db, SyncWindow.fromSince(since), { metricStreamPublisher: metricStreamCapture.publisher });
 
     // No daily metrics should be inserted for privacy-protected days
     const dailyRows = await ctx.db
@@ -748,7 +749,7 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "garmin"));
 
     const provider = new GarminProvider(createConnectMockFetch());
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 

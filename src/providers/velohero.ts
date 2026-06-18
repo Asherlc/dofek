@@ -15,6 +15,7 @@ import type {
   SyncProvider,
   SyncResult,
 } from "./types.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 const VELOHERO_BASE_URL = "https://app.velohero.com";
 
@@ -63,7 +64,7 @@ export class VeloHeroProvider implements SyncProvider {
     };
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(db: SyncDatabase, window: SyncWindow, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -89,8 +90,9 @@ export class VeloHeroProvider implements SyncProvider {
     }
 
     // Fetch and sync activities
+    const since = window.since;
     const sinceDate = formatDate(since);
-    const syncWindowEnd = new Date();
+    const syncWindowEnd = window.until;
     const toDate = formatDate(syncWindowEnd);
     const presentActivityExternalIds = new Set<string>();
 

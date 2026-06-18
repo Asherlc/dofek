@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { SyncWindow } from "./sync-window.ts";
 import { dailyMetrics, sleepSession } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
@@ -159,7 +160,7 @@ describe("UltrahumanProvider.sync() (integration)", () => {
 
     // Sync from March 14 to today (March 15)
     const since = new Date("2026-03-14T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(since));
 
     expect(result.provider).toBe("ultrahuman");
     expect(result.errors).toHaveLength(0);
@@ -217,8 +218,8 @@ describe("UltrahumanProvider.sync() (integration)", () => {
     const provider = new UltrahumanProvider();
 
     const since = new Date("2026-03-14T00:00:00Z");
-    await provider.sync(ctx.db, since);
-    await provider.sync(ctx.db, since);
+    await provider.sync(ctx.db, SyncWindow.fromSince(since));
+    await provider.sync(ctx.db, SyncWindow.fromSince(since));
 
     // Should not duplicate
     const sleepRows = await ctx.db
@@ -255,7 +256,7 @@ describe("UltrahumanProvider.sync() (integration)", () => {
       );
 
       const provider = new UltrahumanProvider();
-      await provider.sync(ctx.db, new Date("2026-03-15T00:00:00Z"));
+      await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-15T00:00:00Z")));
 
       expect(capturedAuthHeader).toBe("db-stored-token");
     } finally {
@@ -276,7 +277,7 @@ describe("UltrahumanProvider.sync() (integration)", () => {
       await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "ultrahuman"));
 
       const provider = new UltrahumanProvider();
-      const result = await provider.sync(ctx.db, new Date("2026-03-14T00:00:00Z"));
+      const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-14T00:00:00Z")));
 
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0]?.message).toContain("token and email required");
@@ -308,7 +309,7 @@ describe("UltrahumanProvider.sync() (integration)", () => {
 
     const provider = new UltrahumanProvider();
     const error = await provider
-      .sync(ctx.db, new Date("2026-03-10T00:00:00Z"))
+      .sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-10T00:00:00Z")))
       .catch((caughtError: unknown) => caughtError);
 
     // The 429 must surface (for the cooldown pipeline), not be flattened into
@@ -343,7 +344,7 @@ describe("UltrahumanProvider.sync() (integration)", () => {
     const provider = new UltrahumanProvider();
 
     const since = new Date("2026-03-14T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(since));
 
     // March 14 should still sync successfully
     const dailyRows = await ctx.db
@@ -383,7 +384,7 @@ describe("UltrahumanProvider.sync() (integration)", () => {
     const provider = new UltrahumanProvider();
 
     const since = new Date("2026-03-15T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(since));
 
     // Should only have sleep, no daily metrics
     const dailyRows = await ctx.db

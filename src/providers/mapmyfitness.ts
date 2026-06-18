@@ -15,6 +15,7 @@ import type {
   SyncProvider,
   SyncResult,
 } from "./types.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 // ============================================================
 // MapMyFitness API types
@@ -229,7 +230,7 @@ export class MapMyFitnessProvider implements SyncProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(db: SyncDatabase, window: SyncWindow, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -246,7 +247,8 @@ export class MapMyFitnessProvider implements SyncProvider {
 
     const clientId = process.env.MAPMYFITNESS_CLIENT_ID ?? "";
     const client = new MapMyFitnessClient(tokens.accessToken, clientId, this.#fetchFn);
-    const syncWindowEnd = new Date();
+    const since = window.since;
+    const syncWindowEnd = window.until;
     const presentActivityExternalIds = new Set<string>();
 
     // Extract user ID from token scopes or use "-" for self

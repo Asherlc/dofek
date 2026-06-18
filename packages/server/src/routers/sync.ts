@@ -29,17 +29,44 @@ import {
   getAllConfiguredProviderIds,
   mapBullMqStateToSyncStatus,
   parseJobId,
-  resolveSinceIso,
-  resolveTargetRefreshWindow,
   toJobId,
   UPLOAD_IMPORT_PROVIDERS,
 } from "./sync-helpers.ts";
+import {
+  syncWindowFromTriggerInput,
+  syncWindowToJobData,
+} from "dofek/jobs/sync-window";
 
-// ── Input schemas ──
-export const triggerSyncInput = z.object({
-  providerId: z.string().optional(),
-  sinceDays: z.number().optional(),
-});
+const syncDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD date");
+
+export const triggerSyncInput = z
+  .object({
+    providerId: z.string().optional(),
+    sinceDays: z.number().int().positive().optional(),
+    sinceDate: syncDateSchema.optional(),
+    untilDate: syncDateSchema.optional(),
+  })
+  .superRefine((input, ctx) => {
+    const hasRange = input.sinceDate != null || input.untilDate != null;
+    if (hasRange && input.sinceDays != null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Use either sinceDays or sinceDate/untilDate, not both",
+      });
+    }
+    if (input.sinceDate && !input.untilDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "untilDate is required when sinceDate is set",
+      });
+    }
+    if (input.untilDate && !input.sinceDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "sinceDate is required when untilDate is set",
+      });
+    }
+  });
 
 export const syncStatusInput = z.object({ jobId: z.string() });
 
@@ -67,10 +94,16 @@ const syncJobDataSchema = z.object({
   providerId: z.string().optional(),
   sinceDays: z.number().optional(),
   sinceIso: z.string().optional(),
+  untilIso: z.string().optional(),
   targetRefreshWindow: z
     .discriminatedUnion("type", [
       z.object({ type: z.literal("full") }),
       z.object({ type: z.literal("days"), days: z.number() }),
+      z.object({
+        type: z.literal("range"),
+        sinceIso: z.string(),
+        untilIso: z.string(),
+      }),
     ])
     .optional(),
   checkpoint: z.unknown().optional(),
@@ -180,14 +213,17 @@ export const syncRouter = router({
     const providerJobs = await Promise.all(
       providerIds.map(async (providerId) => {
         const queue = getProviderSyncQueue(providerId);
+        const syncWindow = syncWindowFromTriggerInput({
+          sinceDays: input.sinceDays,
+          sinceDate: input.sinceDate,
+          untilDate: input.untilDate,
+        });
         const job = await queue.add(
           "sync",
           {
             providerId,
-            sinceDays: input.sinceDays,
-            sinceIso: resolveSinceIso(input.sinceDays),
-            targetRefreshWindow: resolveTargetRefreshWindow(input.sinceDays),
             userId: ctx.userId,
+            ...syncWindowToJobData(syncWindow, input.sinceDays),
           },
           SYNC_JOB_RETRY_OPTIONS,
         );

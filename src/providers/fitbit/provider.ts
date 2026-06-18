@@ -23,6 +23,7 @@ import type {
   WebhookEvent,
   WebhookProvider,
 } from "../types.ts";
+import { SyncWindow } from "../sync-window.ts";
 import { FITBIT_API_BASE, FitbitClient } from "./client.ts";
 import {
   parseFitbitActivity,
@@ -191,7 +192,7 @@ export class FitbitProvider implements WebhookProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(db: SyncDatabase, window: SyncWindow, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -207,8 +208,9 @@ export class FitbitProvider implements WebhookProvider {
     }
 
     const client = new FitbitClient(tokens.accessToken, this.#fetchFn);
+    const since = window.since;
     const sinceDate = formatDate(since);
-    const syncWindowEnd = new Date();
+    const syncWindowEnd = window.until;
     const presentActivityExternalIds = new Set<string>();
 
     // 1. Sync activities

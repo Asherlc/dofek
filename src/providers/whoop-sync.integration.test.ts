@@ -2,6 +2,8 @@ import { and, eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { SyncWindow } from "./sync-window.ts";
+import { parseDuringRange } from "whoop-whoop/utils";
 import { WhoopClient } from "whoop-whoop/client";
 import type {
   WhoopHrValue,
@@ -140,6 +142,42 @@ function fakeHrValues(count: number, startTime: number): WhoopHrValue[] {
   }));
 }
 
+type DeveloperWorkoutStub = {
+  id: string;
+  start: string;
+  end: string;
+};
+
+function extractDeveloperWorkoutsFromCycles(cycles: FakeCycle[]): DeveloperWorkoutStub[] {
+  const workouts: DeveloperWorkoutStub[] = [];
+  for (const cycle of cycles) {
+    for (const workout of cycle.workouts ?? cycle.strain?.workouts ?? []) {
+      const id =
+        workout.activity_id != null && workout.activity_id !== ""
+          ? String(workout.activity_id)
+          : workout.id != null
+            ? String(workout.id)
+            : null;
+      if (!id) continue;
+
+      let start = workout.start;
+      let end = workout.end;
+      if (workout.during) {
+        try {
+          const range = parseDuringRange(workout.during);
+          start = range.start.toISOString();
+          end = range.end.toISOString();
+        } catch {
+          continue;
+        }
+      }
+      if (!start || !end) continue;
+      workouts.push({ id, start, end });
+    }
+  }
+  return workouts;
+}
+
 function whoopHandlers(
   cycles: FakeCycle[],
   opts?: {
@@ -148,6 +186,8 @@ function whoopHandlers(
     authError?: boolean;
     /** Per-activityId response for GET sleep-events (detailed sleep + stages). */
     sleepDetailByActivityId?: Record<string, WhoopSleepRecord>;
+    /** Developer workout list for provider-absence reconciliation. */
+    developerWorkouts?: DeveloperWorkoutStub[];
   },
 ) {
   return [
@@ -175,6 +215,12 @@ function whoopHandlers(
     // Cycles (BFF endpoint)
     http.get("https://api.prod.whoop.com/core-details-bff/v0/cycles/details", () => {
       return HttpResponse.json({ records: cycles });
+    }),
+
+    // Developer workout list (authoritative for tombstoning deletions)
+    http.get("https://api.prod.whoop.com/developer/v2/activity/workout", () => {
+      const records = opts?.developerWorkouts ?? extractDeveloperWorkoutsFromCycles(cycles);
+      return HttpResponse.json({ records, next_token: null });
     }),
 
     // Weightlifting-service — return 404 unless overridden
@@ -252,7 +298,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     const cycles = [fakeCycle()];
     server.use(...whoopHandlers(cycles));
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -292,7 +338,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     ];
     server.use(...whoopHandlers(cycles));
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -321,7 +367,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     ];
     server.use(...whoopHandlers(cycles, { stepValues }));
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -342,7 +388,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     const cycles = [fakeCycle()];
     server.use(...whoopHandlers(cycles));
     const provider = new WhoopProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -406,7 +452,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     });
 
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -433,7 +479,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     const cycles = [fakeCycle()];
     server.use(...whoopHandlers(cycles));
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -488,7 +534,7 @@ describe("WhoopProvider.sync() (integration)", () => {
 
     server.use(...whoopHandlers([twoWorkoutCycle]));
     const provider = new WhoopProvider();
-    await provider.sync(ctx.db, new Date("2026-03-04T00:00:00Z"), {
+    await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-04T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -507,7 +553,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     const hrValues = fakeHrValues(50, new Date("2026-03-01T10:00:00Z").getTime());
     server.use(...whoopHandlers([], { hrValues }));
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -540,10 +586,10 @@ describe("WhoopProvider.sync() (integration)", () => {
 
     server.use(...whoopHandlers(cycles));
     const provider = new WhoopProvider();
-    await provider.sync(ctx.db, new Date("2026-03-07T00:00:00Z"), {
+    await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-07T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
-    await provider.sync(ctx.db, new Date("2026-03-07T00:00:00Z"), {
+    await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-07T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -595,7 +641,7 @@ describe("WhoopProvider.sync() (integration)", () => {
 
     server.use(...whoopHandlers(cycles));
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-10T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-10T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -625,6 +671,94 @@ describe("WhoopProvider.sync() (integration)", () => {
     expect(presentRows[0]?.providerAbsentAt).toBeNull();
   });
 
+  it("tombstones workouts deleted in WHOOP when cycles BFF still returns them", async () => {
+    await ctx.db
+      .insert(activity)
+      .values({
+        providerId: "whoop",
+        externalId: "whoop-stale-bff-workout-uuid",
+        activityType: "running",
+        startedAt: new Date("2026-03-10T10:00:00Z"),
+      })
+      .onConflictDoUpdate({
+        target: [activity.userId, activity.providerId, activity.externalId],
+        set: {
+          providerAbsentAt: null,
+        },
+      });
+
+    const cycles = [
+      fakeCycle({
+        id: 302,
+        days: ["2026-03-10"],
+        workouts: [
+          {
+            activity_id: "whoop-stale-bff-workout-uuid",
+            during: "['2026-03-10T10:00:00Z','2026-03-10T11:00:00Z')",
+            timezone_offset: "-05:00",
+            sport_id: 0,
+            average_heart_rate: 145,
+            max_heart_rate: 175,
+            kilojoules: 2000,
+            percent_recorded: 100,
+            score: 10,
+          },
+          {
+            activity_id: "whoop-present-workout-uuid",
+            during: "['2026-03-10T12:00:00Z','2026-03-10T13:00:00Z')",
+            timezone_offset: "-05:00",
+            sport_id: 0,
+            average_heart_rate: 145,
+            max_heart_rate: 175,
+            kilojoules: 2000,
+            percent_recorded: 100,
+            score: 10,
+          },
+        ],
+      }),
+    ];
+
+    server.use(
+      ...whoopHandlers(cycles, {
+        developerWorkouts: [
+          {
+            id: "whoop-present-workout-uuid",
+            start: "2026-03-10T12:00:00Z",
+            end: "2026-03-10T13:00:00Z",
+          },
+        ],
+      }),
+    );
+    const provider = new WhoopProvider();
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-10T00:00:00Z")), {
+      metricStreamPublisher: metricStreamCapture.publisher,
+    });
+
+    expect(result.errors).toHaveLength(0);
+
+    const staleRows = await ctx.db
+      .select()
+      .from(activity)
+      .where(
+        and(
+          eq(activity.providerId, "whoop"),
+          eq(activity.externalId, "whoop-stale-bff-workout-uuid"),
+        ),
+      );
+    const presentRows = await ctx.db
+      .select()
+      .from(activity)
+      .where(
+        and(
+          eq(activity.providerId, "whoop"),
+          eq(activity.externalId, "whoop-present-workout-uuid"),
+        ),
+      );
+
+    expect(staleRows[0]?.providerAbsentAt).toBeInstanceOf(Date);
+    expect(presentRows[0]?.providerAbsentAt).toBeNull();
+  });
+
   it("uses stored userId from scopes when bootstrap returns no user ID", async () => {
     // Save tokens with userId in scopes (as the auth flow does)
     await saveTokens(ctx.db, "whoop", {
@@ -644,7 +778,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     );
 
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -663,7 +797,7 @@ describe("WhoopProvider.sync() (integration)", () => {
 
     server.use(...whoopHandlers([fakeCycle()]));
     const provider = new WhoopProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -679,7 +813,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "whoop"));
 
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -720,6 +854,9 @@ describe("WhoopProvider.sync() (integration)", () => {
       http.get("https://api.prod.whoop.com/core-details-bff/v0/cycles/details", () => {
         return HttpResponse.json([]);
       }),
+      http.get("https://api.prod.whoop.com/developer/v2/activity/workout", () => {
+        return HttpResponse.json({ records: [], next_token: null });
+      }),
       http.get("https://api.prod.whoop.com/metrics-service/v1/metrics/user/:userId", () => {
         return HttpResponse.json({ values: [] });
       }),
@@ -738,7 +875,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     );
 
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-28T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-28T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -760,7 +897,7 @@ describe("WhoopProvider.sync() (integration)", () => {
   it("handles auth failure gracefully", async () => {
     server.use(...whoopHandlers([], { authError: true }));
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -784,7 +921,7 @@ describe("WhoopProvider.sync() (integration)", () => {
 
     server.use(...whoopHandlers([cycle]));
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -825,7 +962,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     );
 
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-28T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-28T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -864,7 +1001,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     );
 
     const provider = new WhoopProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-28T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-28T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 

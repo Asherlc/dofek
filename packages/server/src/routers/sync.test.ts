@@ -502,25 +502,25 @@ describe("syncRouter", () => {
       expect(mockAdd).toHaveBeenNthCalledWith(
         1,
         "sync",
-        {
+        expect.objectContaining({
           providerId: "strava",
           sinceDays: undefined,
           sinceIso: "1970-01-01T00:00:00.000Z",
           targetRefreshWindow: { type: "full" },
           userId: "user-1",
-        },
+        }),
         expect.objectContaining({ attempts: 288 }),
       );
       expect(mockAdd).toHaveBeenNthCalledWith(
         2,
         "sync",
-        {
+        expect.objectContaining({
           providerId: "wahoo",
           sinceDays: undefined,
           sinceIso: "1970-01-01T00:00:00.000Z",
           targetRefreshWindow: { type: "full" },
           userId: "user-1",
-        },
+        }),
         expect.objectContaining({ attempts: 288 }),
       );
     });
@@ -602,13 +602,13 @@ describe("syncRouter", () => {
       expect(mockAdd).toHaveBeenCalledTimes(1);
       expect(mockAdd).toHaveBeenCalledWith(
         "sync",
-        {
+        expect.objectContaining({
           providerId: "strava",
           sinceDays: undefined,
           sinceIso: "1970-01-01T00:00:00.000Z",
           targetRefreshWindow: { type: "full" },
           userId: "user-1",
-        },
+        }),
         expect.objectContaining({ attempts: 288 }),
       );
     });
@@ -630,20 +630,19 @@ describe("syncRouter", () => {
       ]);
       expect(mockAdd).toHaveBeenCalledWith(
         "sync",
-        {
+        expect.objectContaining({
           providerId: "wahoo",
           sinceDays: undefined,
           sinceIso: "1970-01-01T00:00:00.000Z",
           targetRefreshWindow: { type: "full" },
           userId: "user-1",
-        },
+        }),
         expect.objectContaining({ attempts: 288 }),
       );
     });
 
     it("stores a fixed since timestamp when sinceDays is provided", async () => {
-      const now = new Date("2026-04-28T12:00:00.000Z").getTime();
-      const dateNowSpy = vi.spyOn(Date, "now").mockReturnValue(now);
+      vi.setSystemTime(new Date("2026-04-28T12:00:00.000Z"));
       mockGetAllProviders.mockReturnValue([{ id: "wahoo", name: "Wahoo", validate: () => null }]);
 
       const caller = createCaller({
@@ -652,21 +651,19 @@ describe("syncRouter", () => {
         timezone: "UTC",
       });
 
-      try {
-        await caller.triggerSync({ providerId: "wahoo", sinceDays: 7 });
-      } finally {
-        dateNowSpy.mockRestore();
-      }
+      await caller.triggerSync({ providerId: "wahoo", sinceDays: 7 });
+      vi.useRealTimers();
 
       expect(mockAdd).toHaveBeenCalledWith(
         "sync",
-        {
+        expect.objectContaining({
           providerId: "wahoo",
           sinceDays: 7,
-          sinceIso: "2026-04-21T12:00:00.000Z",
+          sinceIso: "2026-04-21T00:00:00.000Z",
+          untilIso: "2026-04-28T23:59:59.999Z",
           targetRefreshWindow: { type: "days", days: 7 },
           userId: "user-1",
-        },
+        }),
         expect.objectContaining({
           attempts: 288,
           backoff: { type: "fixed", delay: 300_000 },

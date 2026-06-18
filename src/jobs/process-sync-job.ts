@@ -24,6 +24,8 @@ import {
 } from "./provider-rate-limit-cooldown.ts";
 import type { SyncJobData } from "./queues.ts";
 import { getProviderSyncQueue, SYNC_JOB_RETRY_OPTIONS } from "./queues.ts";
+import { SyncWindow } from "../providers/sync-window.ts";
+import { syncWindowFromJobData } from "./sync-job-window.ts";
 
 /**
  * Compute overall job percentage from completed providers + within-provider progress.
@@ -45,17 +47,6 @@ interface SyncJob {
   data: SyncJobData;
   updateProgress: (data: object) => Promise<void>;
   updateData: (data: SyncJobData) => Promise<void>;
-}
-
-function resolveSince(data: SyncJobData): Date {
-  if (data.sinceIso) {
-    const since = new Date(data.sinceIso);
-    if (Number.isNaN(since.getTime())) {
-      throw new Error(`Invalid sync job sinceIso: ${data.sinceIso}`);
-    }
-    return since;
-  }
-  return data.sinceDays ? new Date(Date.now() - data.sinceDays * 24 * 60 * 60 * 1000) : new Date(0);
 }
 
 function createCheckpointStore(job: SyncJob): SyncCheckpointStore {
@@ -99,15 +90,15 @@ async function scheduleRateLimitRetry(
   job: SyncJob,
   error: ProviderRateLimitError,
   since: Date,
+  until: Date,
 ): Promise<string> {
   const cooldown = await providerRateLimitCooldownStore.record(error, job.data.userId);
   const delay = providerRateLimitDelayMs(cooldown);
   const nextData: SyncJobData = {
     ...job.data,
     providerId: error.providerId,
-    // Persist the concrete window resolved for this run so the delayed retry
-    // syncs from the same point rather than recomputing a now-shifted sinceDays.
     sinceIso: since.toISOString(),
+    untilIso: until.toISOString(),
   };
   await getProviderSyncQueue(error.providerId).add("sync", nextData, {
     ...SYNC_JOB_RETRY_OPTIONS,
@@ -119,7 +110,9 @@ async function scheduleRateLimitRetry(
 
 export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<void> {
   const { providerId } = job.data;
-  const since = resolveSince(job.data);
+  const syncWindow = syncWindowFromJobData(job.data);
+  const since = syncWindow.since;
+  const until = syncWindow.until;
 
   // Lazy-import provider registration
   const { ensureProvidersRegistered } = await import("./provider-registration.ts");
@@ -182,7 +175,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
     try {
       logger.info(`[worker] Starting ${provider.name}...`);
       const result = await runWithTokenUser(job.data.userId, () =>
-        provider.sync(db, since, {
+        provider.sync(db, syncWindow, {
           onProgress: (percentage, message) => {
             providerStatus[provider.id] = { status: "running", message };
             job.updateProgress({
@@ -254,7 +247,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       }
     } catch (err: unknown) {
       if (err instanceof ProviderRateLimitError) {
-        const retryAt = await scheduleRateLimitRetry(job, err, since);
+        const retryAt = await scheduleRateLimitRetry(job, err, since, until);
         const message = `Rate limited; retry scheduled for ${retryAt}`;
         completedCount++;
         providerStatus[provider.id] = { status: "running", message };

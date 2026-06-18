@@ -17,6 +17,7 @@ import type {
   SyncProvider,
   SyncResult,
 } from "./types.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 export const AMAZFIT_ZEPP_API_BASE = "https://api-mifit.zepp.com";
 const AMAZFIT_ZEPP_SOURCE_NAME = "Zepp";
@@ -341,7 +342,8 @@ export class AmazfitZeppProvider implements SyncProvider {
     };
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(db: SyncDatabase, window: SyncWindow, options?: SyncOptions): Promise<SyncResult> {
+    const since = window.since;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;

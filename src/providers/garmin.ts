@@ -35,6 +35,7 @@ import type {
   SyncProvider,
   SyncResult,
 } from "./types.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 // ============================================================
 // Internal token serialization
@@ -360,7 +361,7 @@ export class GarminProvider implements SyncProvider {
     return refreshed;
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(db: SyncDatabase, window: SyncWindow, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
 
@@ -381,10 +382,11 @@ export class GarminProvider implements SyncProvider {
 
     await ensureProvider(db, this.id, this.name);
 
-    // Use sync cursor if available, otherwise fall back to `since` param
+    // Use sync cursor if available, otherwise fall back to sync window start
+    const since = window.since;
     const cursor = await loadSyncCursor(db, scopedUserId);
     const effectiveSince = cursor ? new Date(cursor) : since;
-    const now = new Date();
+    const now = window.until;
     const checkpoint = await loadGarminSyncCheckpoint(options?.checkpoint);
 
     const recordsSynced = await this.#syncViaConnectApi(

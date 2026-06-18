@@ -1,5 +1,6 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SyncWindow } from "./sync-window.ts";
 import {
   mapSuuntoActivityType,
   parseSuuntoWorkout,
@@ -153,7 +154,7 @@ describe("SuuntoProvider", () => {
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
     };
-    const result = await new SuuntoProvider().sync(mockDb, new Date("2026-01-01"));
+    const result = await new SuuntoProvider().sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
     expect(result.errors.length).toBeGreaterThan(0);
   });
 });

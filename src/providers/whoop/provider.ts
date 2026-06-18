@@ -16,6 +16,7 @@ import type {
   SyncProvider,
   SyncResult,
 } from "../types.ts";
+import { SyncWindow } from "../sync-window.ts";
 import { syncWhoopDailyActivity } from "./sync-daily-activity.ts";
 import { syncWhoopJournal } from "./sync-journal.ts";
 import { syncWhoopRecovery } from "./sync-recovery.ts";
@@ -91,7 +92,7 @@ export class WhoopProvider implements SyncProvider {
     };
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(db: SyncDatabase, window: SyncWindow, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -152,13 +153,13 @@ export class WhoopProvider implements SyncProvider {
     // WHOOP API limits cycle queries to 200-day windows
     const MAX_CYCLE_WINDOW_MS = 200 * 24 * 60 * 60 * 1000;
     const cycles: WhoopCycle[] = [];
-    let syncWindowEnd = new Date();
+    const since = window.since;
+    const syncWindowEnd = window.until;
+    const windowEndMs = syncWindowEnd.getTime();
     try {
       let windowStart = since.getTime();
-      const nowMs = Date.now();
-      syncWindowEnd = new Date(nowMs);
-      while (windowStart < nowMs) {
-        const windowEnd = Math.min(windowStart + MAX_CYCLE_WINDOW_MS, nowMs);
+      while (windowStart < windowEndMs) {
+        const windowEnd = Math.min(windowStart + MAX_CYCLE_WINDOW_MS, windowEndMs);
         const startStr = new Date(windowStart).toISOString();
         const endStr = new Date(windowEnd).toISOString();
         logger.info(`[whoop] Fetching cycles ${startStr} → ${endStr}`);

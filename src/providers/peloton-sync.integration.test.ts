@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { SyncWindow } from "./sync-window.ts";
 import { activity } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
@@ -152,7 +153,7 @@ describe("PelotonProvider.sync() (integration)", () => {
   });
 
   async function syncProvider(provider: PelotonProvider, since: Date) {
-    return provider.sync(ctx.db, since, {
+    return provider.sync(ctx.db, SyncWindow.fromSince(since), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
   }

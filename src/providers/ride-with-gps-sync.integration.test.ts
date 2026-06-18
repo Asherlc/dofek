@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { SyncWindow } from "./sync-window.ts";
 import { activity, oauthToken } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
@@ -158,7 +159,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
 
     const provider = new RideWithGpsProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since, {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(since), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -215,10 +216,10 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     server.use(...rwgpsHandlers(syncResp, trips));
 
     const provider = new RideWithGpsProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -247,7 +248,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     server.use(...rwgpsHandlers(syncResp1, trips));
 
     const provider1 = new RideWithGpsProvider();
-    await provider1.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider1.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")));
 
     // Now sync with deleted action
     server.resetHandlers();
@@ -255,7 +256,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     server.use(...rwgpsHandlers(deleteSyncResp, new Map()));
 
     const provider2 = new RideWithGpsProvider();
-    await provider2.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider2.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")));
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.externalId, "6001"));
 
@@ -286,7 +287,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     server.use(...rwgpsHandlers(syncResp, new Map()));
 
     const provider = new RideWithGpsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -299,7 +300,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "ride-with-gps"));
 
     const provider = new RideWithGpsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -321,7 +322,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     server.use(...rwgpsHandlers(syncResp, new Map()));
 
     const provider = new RideWithGpsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -353,7 +354,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     server.use(...rwgpsHandlers(syncResp, trips));
 
     const provider = new RideWithGpsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -384,7 +385,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     );
 
     const provider = new RideWithGpsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -421,7 +422,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     );
 
     const provider = new RideWithGpsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -467,7 +468,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     );
 
     const provider = new RideWithGpsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -499,7 +500,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     });
 
     const provider = new RideWithGpsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -535,7 +536,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     );
 
     const provider = new RideWithGpsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 

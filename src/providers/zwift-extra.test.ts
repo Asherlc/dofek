@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { SyncWindow } from "./sync-window.ts";
 
 vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "user-1",
@@ -41,7 +42,7 @@ describe("ZwiftProvider", () => {
     };
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
     expect(result.provider).toBe("zwift");
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("not connected");
@@ -77,7 +78,7 @@ describe("ZwiftProvider", () => {
     };
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
     expect(result.errors[0]?.message).toContain("athlete ID not found");
     expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "authentication_failed" });
   });
@@ -125,7 +126,7 @@ describe("ZwiftProvider", () => {
     });
 
     const provider = new ZwiftProvider(mockFetch);
-    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
 
     // Should NOT have the "athlete ID not found" error
     const athleteIdErrors = result.errors.filter((error) =>
@@ -164,7 +165,7 @@ describe("ZwiftProvider", () => {
     };
 
     const provider = new ZwiftProvider();
-    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
     expect(result.errors[0]?.message).toContain("Zwift authentication failed.");
     expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "authentication_failed" });
   });

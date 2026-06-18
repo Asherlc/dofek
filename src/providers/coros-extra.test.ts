@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SyncWindow } from "./sync-window.ts";
 import { ZodError } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import {
@@ -240,7 +241,7 @@ describe("CorosProvider", () => {
       execute: vi.fn().mockResolvedValue([]),
     };
 
-    const result = await new CorosProvider().sync(mockDb, new Date("2026-01-01"));
+    const result = await new CorosProvider().sync(mockDb, SyncWindow.fromSince(new Date("2026-01-01")));
     expect(result.provider).toBe("coros");
     expect(result.errors.length).toBeGreaterThan(0);
   });
@@ -330,8 +331,7 @@ describe("CorosProvider", () => {
     };
 
     const result = await new CorosProvider(mockFetch).sync(
-      mockDb,
-      new Date("2026-03-01T00:00:00Z"),
+      mockDb, SyncWindow.fromSince(new Date("2026-03-01T00:00:00Z")),
       { userId: "00000000-0000-0000-0000-000000000001" },
     );
 

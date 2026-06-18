@@ -23,6 +23,7 @@ import type {
   WebhookEvent,
   WebhookProvider,
 } from "./types.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 // ============================================================
 // COROS API Zod schemas
@@ -322,7 +323,7 @@ export class CorosProvider implements WebhookProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date, options: SyncOptions = {}): Promise<SyncResult> {
+  async sync(db: SyncDatabase, window: SyncWindow, options: SyncOptions = {}): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -338,8 +339,9 @@ export class CorosProvider implements WebhookProvider {
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
+    const since = window.since;
     const sinceDate = formatDateCompact(since);
-    const syncWindowEnd = new Date();
+    const syncWindowEnd = window.until;
     const toDate = formatDateCompact(syncWindowEnd);
     const presentActivityExternalIds = new Set<string>();
 

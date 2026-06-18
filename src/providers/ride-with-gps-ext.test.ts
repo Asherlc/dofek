@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SyncWindow } from "./sync-window.ts";
 import {
   mapActivityType,
   parseTrackPoints,
@@ -636,7 +637,7 @@ describe("RideWithGpsProvider — sync", () => {
 
     const provider = new RideWithGpsProvider();
     const db = createChainProxy();
-    const result = await provider.sync(db, new Date("2026-01-01"));
+    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-01-01")));
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);
@@ -666,7 +667,7 @@ describe("RideWithGpsProvider — sync", () => {
 
     const provider = new RideWithGpsProvider(mockFetch);
     const db = createSyncMockDb();
-    const result = await provider.sync(db, new Date("2026-01-01"));
+    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-01-01")));
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(0);
@@ -697,7 +698,7 @@ describe("RideWithGpsProvider — sync", () => {
 
     const provider = new RideWithGpsProvider(mockFetch);
     const db = createSyncMockDb();
-    const result = await provider.sync(db, new Date("2026-01-01"));
+    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-01-01")));
 
     const { refreshAccessToken } = await import("../auth/oauth.ts");
     expect(refreshAccessToken).toHaveBeenCalled();
@@ -719,7 +720,7 @@ describe("RideWithGpsProvider — sync", () => {
 
     const provider = new RideWithGpsProvider();
     const db = createChainProxy();
-    const result = await provider.sync(db, new Date("2026-01-01"));
+    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-01-01")));
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No refresh token");
@@ -742,7 +743,7 @@ describe("RideWithGpsProvider — sync", () => {
 
     const provider = new RideWithGpsProvider(mockFetch);
     const db = createSyncMockDb();
-    const result = await provider.sync(db, new Date("2026-01-01"));
+    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-01-01")));
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("Sync endpoint failed");
@@ -769,7 +770,7 @@ describe("RideWithGpsProvider — sync", () => {
 
     const provider = new RideWithGpsProvider(mockFetch);
     const db = createSyncMockDb({ syncCursor: null });
-    await provider.sync(db, new Date("2026-03-01T00:00:00Z"));
+    await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01T00:00:00Z")));
 
     expect(capturedUrl).toContain("since=2026-03-01");
   });
@@ -793,7 +794,7 @@ describe("RideWithGpsProvider — sync", () => {
 
     const provider = new RideWithGpsProvider(mockFetch);
     const db = createSyncMockDb({ syncCursor: "2026-02-14T03:00:00Z" });
-    await provider.sync(db, new Date("2026-03-01T00:00:00Z"));
+    await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01T00:00:00Z")));
 
     expect(capturedUrl).toContain("since=2026-02-14");
   });
@@ -817,7 +818,7 @@ describe("RideWithGpsProvider — sync", () => {
 
     const provider = new RideWithGpsProvider(mockFetch);
     const db = createSyncMockDb({ settingsValue: {} });
-    await provider.sync(db, new Date("2026-03-01T00:00:00Z"));
+    await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01T00:00:00Z")));
 
     expect(capturedUrl).toContain("since=2026-03-01");
   });
@@ -839,7 +840,7 @@ describe("RideWithGpsProvider — sync", () => {
 
     const provider = new RideWithGpsProvider(mockFetch);
     const db = createSyncMockDb();
-    const result = await provider.sync(db, new Date("2026-03-01T00:00:00Z"));
+    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01T00:00:00Z")));
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBe(0);
@@ -891,7 +892,7 @@ describe("RideWithGpsProvider — sync", () => {
 
     const provider = new RideWithGpsProvider(mockFetch);
     const db = createSyncMockDb({ activityId: "10000000-0000-4000-8000-000000000007" });
-    const result = await provider.sync(db, new Date("2026-03-01"));
+    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
 
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
@@ -1017,7 +1018,7 @@ describe("RideWithGpsProvider — sync", () => {
 
     const provider = new RideWithGpsProvider(mockFetch);
     const db = createSyncMockDb({ returningRows: [] });
-    const result = await provider.sync(db, new Date("2026-03-01"));
+    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(0);
@@ -1071,7 +1072,7 @@ describe("RideWithGpsProvider — sync", () => {
 
     const provider = new RideWithGpsProvider(mockFetch);
     const db = createSyncMockDb({ activityId: "10000000-0000-4000-8000-000000000011" });
-    const result = await provider.sync(db, new Date("2026-03-01"));
+    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
 
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
@@ -1102,7 +1103,7 @@ describe("RideWithGpsProvider — sync", () => {
 
     const provider = new RideWithGpsProvider(mockFetch);
     const db = createSyncMockDb();
-    const result = await provider.sync(db, new Date("2026-03-01"));
+    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
 
     expect(result.errors).toHaveLength(0);
     expect(db.execute).toHaveBeenCalled();
@@ -1131,7 +1132,7 @@ describe("RideWithGpsProvider — sync", () => {
 
     const provider = new RideWithGpsProvider(mockFetch);
     const db = createSyncMockDb();
-    const result = await provider.sync(db, new Date("2026-03-01"));
+    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(0);
@@ -1161,7 +1162,7 @@ describe("RideWithGpsProvider — sync", () => {
 
     const provider = new RideWithGpsProvider(mockFetch);
     const db = createSyncMockDb();
-    const result = await provider.sync(db, new Date("2026-03-01"));
+    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);
@@ -1192,7 +1193,7 @@ describe("RideWithGpsProvider — sync", () => {
     const provider = new RideWithGpsProvider(mockFetch);
     const db = createSyncMockDb();
     db.execute.mockRejectedValue(new Error("DB error"));
-    const result = await provider.sync(db, new Date("2026-03-01"));
+    const result = await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("Failed to delete trip 77");
@@ -1221,7 +1222,7 @@ describe("RideWithGpsProvider — sync", () => {
 
     const provider = new RideWithGpsProvider(mockFetch);
     const db = createSyncMockDb();
-    await provider.sync(db, new Date("2026-03-01"));
+    await provider.sync(db, SyncWindow.fromSince(new Date("2026-03-01")));
 
     expect(db.insert).toHaveBeenCalled();
   });

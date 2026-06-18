@@ -4,6 +4,7 @@ import { dailyMetrics, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import type { SyncError, SyncOptions, SyncProvider, SyncResult } from "./types.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 // ============================================================
 // Ultrahuman Partner API types
@@ -162,7 +163,8 @@ export class UltrahumanProvider implements SyncProvider {
     return null;
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(db: SyncDatabase, window: SyncWindow, options?: SyncOptions): Promise<SyncResult> {
+    const since = window.since;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;

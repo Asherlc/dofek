@@ -3,15 +3,24 @@ import { WhoopRateLimitError } from "whoop-whoop/client";
 import type { WhoopWorkoutRecord } from "whoop-whoop/types";
 import { parseDuringRange } from "whoop-whoop/utils";
 import { reconcileProviderActivityAbsence } from "../../db/provider-activity-absence.ts";
+import { SyncWindow } from "../sync-window.ts";
 import { activity, exercise, exerciseAlias, strengthSet } from "../../db/schema.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
-import { buildV2ActivityTypeLookup, parseWeightliftingWorkout, parseWorkout } from "./parsing.ts";
+import {
+  buildV2ActivityTypeLookup,
+  parseWeightliftingWorkout,
+  parseWorkout,
+  resolveWhoopWorkoutExternalId,
+} from "./parsing.ts";
 import type { WhoopSyncContext } from "./sync-types.ts";
 
 export type WhoopWorkoutSyncResult = {
   count: number;
   rateLimited: boolean;
 };
+
+/** Tombstone reconciliation covers at least this many days even on short sync windows. */
+const WHOOP_ACTIVITY_ABSENCE_RECONCILE_DAYS = 30;
 
 function collectWhoopWorkouts(context: WhoopSyncContext): {
   workouts: WhoopWorkoutRecord[];
@@ -27,14 +36,43 @@ function collectWhoopWorkouts(context: WhoopSyncContext): {
   };
 }
 
+function collectCycleWorkoutExternalIds(workouts: WhoopWorkoutRecord[]): Set<string> {
+  const presentExternalIds = new Set<string>();
+  for (const workoutRecord of workouts) {
+    const externalId = resolveWhoopWorkoutExternalId(workoutRecord);
+    if (externalId) {
+      presentExternalIds.add(externalId);
+    }
+  }
+  return presentExternalIds;
+}
+
+async function resolveWhoopPresentExternalIds(
+  context: WhoopSyncContext,
+  workouts: WhoopWorkoutRecord[],
+  absenceWindow: SyncWindow,
+): Promise<Set<string>> {
+  try {
+    return await context.client.listDeveloperWorkoutIdsInWindow(
+      absenceWindow.since,
+      absenceWindow.until,
+    );
+  } catch (err) {
+    context.errors.push({
+      message: `developer workouts: ${err instanceof Error ? err.message : String(err)}`,
+      cause: err,
+    });
+    return collectCycleWorkoutExternalIds(workouts);
+  }
+}
+
 export async function syncWhoopWorkouts(context: WhoopSyncContext): Promise<number> {
   const { db, providerId, options } = context;
   const { workouts, v2ActivityTypeByActivityId } = collectWhoopWorkouts(context);
-  const presentExternalIds = new Set(
-    workouts
-      .map((workoutRecord) => workoutRecord.activity_id)
-      .filter((activityId): activityId is string => typeof activityId === "string"),
+  const absenceWindow = new SyncWindow(context.since, context.windowEnd).withMinimumLookback(
+    WHOOP_ACTIVITY_ABSENCE_RECONCILE_DAYS,
   );
+  const presentExternalIds = await resolveWhoopPresentExternalIds(context, workouts, absenceWindow);
 
   try {
     return await withSyncLog(
@@ -95,8 +133,8 @@ export async function syncWhoopWorkouts(context: WhoopSyncContext): Promise<numb
         await reconcileProviderActivityAbsence(db, {
           providerId,
           userId: options?.userId,
-          windowStart: context.since,
-          windowEnd: context.windowEnd,
+          windowStart: absenceWindow.since,
+          windowEnd: absenceWindow.until,
           presentExternalIds,
         });
         return { recordCount: count, result: count };

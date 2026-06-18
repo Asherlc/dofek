@@ -17,6 +17,7 @@ import {
   RefreshTokenRevokedError,
 } from "../auth-errors.ts";
 import type { SyncError } from "../types.ts";
+import { SyncWindow } from "../sync-window.ts";
 import { PolarClient, PolarNotFoundError, PolarUnauthorizedError } from "./client.ts";
 import { POLAR_API_BASE, polarOAuthConfig } from "./oauth.ts";
 import {
@@ -60,7 +61,7 @@ export class PolarSyncService {
     this.#metricStreamPublisher = options.metricStreamPublisher;
   }
 
-  async run(since: Date): Promise<PolarSyncAccumulator> {
+  async run(window: SyncWindow): Promise<PolarSyncAccumulator> {
     await ensureProvider(this.#db, this.#providerId, this.#providerName, POLAR_API_BASE);
 
     let tokens: TokenSet;
@@ -76,13 +77,13 @@ export class PolarSyncService {
 
     const client = new PolarClient(tokens.accessToken, this.#fetchFn);
 
-    await this.#syncExercises(client, since);
+    await this.#syncExercises(client, window);
     if (await this.#invalidateTokensIfAuthFailed()) return this.#result();
 
-    await this.#syncSleep(client, since);
+    await this.#syncSleep(client, window);
     if (await this.#invalidateTokensIfAuthFailed()) return this.#result();
 
-    await this.#syncDailyActivity(client, since);
+    await this.#syncDailyActivity(client, window);
     if (await this.#invalidateTokensIfAuthFailed()) return this.#result();
 
     return this.#result();
@@ -137,8 +138,9 @@ export class PolarSyncService {
     return tokens;
   }
 
-  async #syncExercises(client: PolarClient, since: Date): Promise<void> {
-    const syncWindowEnd = new Date();
+  async #syncExercises(client: PolarClient, window: SyncWindow): Promise<void> {
+    const since = window.since;
+    const syncWindowEnd = window.until;
     const presentActivityExternalIds = new Set<string>();
     try {
       const exerciseCount = await withSyncLog(
@@ -255,7 +257,8 @@ export class PolarSyncService {
     }
   }
 
-  async #syncSleep(client: PolarClient, since: Date): Promise<void> {
+  async #syncSleep(client: PolarClient, window: SyncWindow): Promise<void> {
+    const since = window.since;
     try {
       const sleepCount = await withSyncLog(
         this.#db,
@@ -333,7 +336,8 @@ export class PolarSyncService {
     }
   }
 
-  async #syncDailyActivity(client: PolarClient, since: Date): Promise<void> {
+  async #syncDailyActivity(client: PolarClient, window: SyncWindow): Promise<void> {
+    const since = window.since;
     try {
       const dailyCount = await withSyncLog(
         this.#db,

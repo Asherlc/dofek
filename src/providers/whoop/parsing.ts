@@ -258,6 +258,19 @@ export interface ParsedWorkout {
  * Uses sport_id as the primary source; falls back to the v2_activity type
  * name when the sport_id is unknown or maps to "other".
  */
+/**
+ * Canonical external_id for a WHOOP workout — must match between upserts and
+ * provider-absence reconciliation.
+ */
+export function resolveWhoopWorkoutExternalId(record: WhoopWorkoutRecord): string | null {
+  const rawId = record.activity_id ?? record.id;
+  if (rawId == null || rawId === "") {
+    return null;
+  }
+  const externalId = String(rawId).trim();
+  return externalId === "" ? null : externalId;
+}
+
 export function resolveActivityType(
   sportId: number,
   v2ActivityTypeName?: string,
@@ -293,8 +306,13 @@ export function parseWorkout(
     return null;
   }
 
+  const externalId = resolveWhoopWorkoutExternalId(record);
+  if (!externalId) {
+    return null;
+  }
+
   return {
-    externalId: record.activity_id ?? String(record.id ?? ""),
+    externalId,
     activityType: resolveActivityType(record.sport_id, v2ActivityTypeName),
     startedAt,
     endedAt,

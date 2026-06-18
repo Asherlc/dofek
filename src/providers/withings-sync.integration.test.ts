@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { SyncWindow } from "./sync-window.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -130,7 +131,7 @@ describe("WithingsProvider.sync() (integration)", () => {
     const provider = new WithingsProvider();
 
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since, {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(since), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -197,7 +198,7 @@ describe("WithingsProvider.sync() (integration)", () => {
     const provider = new WithingsProvider();
 
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since, {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(since), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -226,8 +227,8 @@ describe("WithingsProvider.sync() (integration)", () => {
     const provider = new WithingsProvider();
 
     const since = new Date("2026-02-01T00:00:00Z");
-    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
-    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(ctx.db, SyncWindow.fromSince(since), { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(ctx.db, SyncWindow.fromSince(since), { metricStreamPublisher: metricStreamCapture.publisher });
 
     const rows = metricStreamCapture.publishedMetricStreamRows;
     const countOf8020 = rows.filter(
@@ -247,7 +248,7 @@ describe("WithingsProvider.sync() (integration)", () => {
     server.use(...withingsHandlers());
 
     const provider = new WithingsProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -261,7 +262,7 @@ describe("WithingsProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "withings"));
 
     const provider = new WithingsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -293,7 +294,7 @@ describe("WithingsProvider.sync() (integration)", () => {
     );
 
     const provider = new WithingsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -320,7 +321,7 @@ describe("WithingsProvider.sync() (integration)", () => {
     );
 
     const provider = new WithingsProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 

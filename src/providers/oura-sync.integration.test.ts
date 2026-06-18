@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { SyncWindow } from "./sync-window.ts";
 import { activity, dailyMetrics, healthEvent, sleepSession } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
@@ -365,7 +366,7 @@ describe("OuraProvider.sync() (integration)", () => {
     );
 
     const provider = new OuraProvider();
-    const result = await provider.sync(ctx.db, since, {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(since), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -459,7 +460,7 @@ describe("OuraProvider.sync() (integration)", () => {
     );
 
     const provider = new OuraProvider();
-    const result = await provider.sync(ctx.db, since, {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(since), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -496,8 +497,8 @@ describe("OuraProvider.sync() (integration)", () => {
     );
 
     const provider = new OuraProvider();
-    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
-    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(ctx.db, SyncWindow.fromSince(since), { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(ctx.db, SyncWindow.fromSince(since), { metricStreamPublisher: metricStreamCapture.publisher });
 
     const sleepRows = await ctx.db
       .select()
@@ -525,7 +526,7 @@ describe("OuraProvider.sync() (integration)", () => {
     server.use(...ouraHandlers());
 
     const provider = new OuraProvider();
-    await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+    await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -539,7 +540,7 @@ describe("OuraProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "oura"));
 
     const provider = new OuraProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -656,7 +657,7 @@ describe("OuraProvider.sync() — error paths (integration)", () => {
     errorServer.use(...ouraErrorHandlers({ sleepError: true }));
 
     const provider = new OuraProvider();
-    const result = await provider.sync(ctx.db, since, {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(since), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 

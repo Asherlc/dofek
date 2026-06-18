@@ -16,6 +16,7 @@ import type {
   SyncProvider,
   SyncResult,
 } from "./types.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 // ============================================================
 // Xert API types
@@ -237,7 +238,7 @@ export class XertProvider implements SyncProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(db: SyncDatabase, window: SyncWindow, options?: SyncOptions): Promise<SyncResult> {
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -253,7 +254,8 @@ export class XertProvider implements SyncProvider {
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const syncWindowEnd = new Date();
+    const since = window.since;
+    const syncWindowEnd = window.until;
     const presentActivityExternalIds = new Set<string>();
     try {
       const activityCount = await withSyncLog(

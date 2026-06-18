@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SyncWindow } from "./sync-window.ts";
 import { ZodError } from "zod";
 import * as resolveTokensModule from "../auth/resolve-tokens.ts";
 import * as metricStreamWriterModule from "../db/metric-stream-writer.ts";
@@ -1250,7 +1251,7 @@ describe("WahooProvider.sync", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    const result = await provider.sync(mockDb, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(mockDb, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       userId: "00000000-0000-0000-0000-000000000001",
     });
 

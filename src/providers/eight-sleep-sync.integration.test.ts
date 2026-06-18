@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { SyncWindow } from "./sync-window.ts";
 import { dailyMetrics, oauthToken, sleepSession, userProfile } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
@@ -168,7 +169,7 @@ describe("EightSleepProvider.sync() (integration)", () => {
 
     const provider = new EightSleepProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since, {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(since), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -237,7 +238,7 @@ describe("EightSleepProvider.sync() (integration)", () => {
     server.use(...eightSleepHandlers(days));
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -261,7 +262,7 @@ describe("EightSleepProvider.sync() (integration)", () => {
     });
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -275,7 +276,7 @@ describe("EightSleepProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "eight-sleep"));
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -293,7 +294,7 @@ describe("EightSleepProvider.sync() (integration)", () => {
     });
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-02-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -332,7 +333,7 @@ describe("EightSleepProvider.sync() (integration)", () => {
     server.use(...eightSleepHandlers(days));
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -362,7 +363,7 @@ describe("EightSleepProvider.sync() (integration)", () => {
     );
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -414,7 +415,7 @@ describe("EightSleepProvider.sync() (integration)", () => {
     );
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -448,7 +449,7 @@ describe("EightSleepProvider.sync() (integration)", () => {
     );
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -480,7 +481,7 @@ describe("EightSleepProvider.sync() (integration)", () => {
     );
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -509,7 +510,7 @@ describe("EightSleepProvider.sync() (integration)", () => {
     );
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-01T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
@@ -566,7 +567,7 @@ describe("EightSleepProvider.sync() (integration)", () => {
     );
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-20T00:00:00Z"), {
+    const result = await provider.sync(ctx.db, SyncWindow.fromSince(new Date("2026-03-20T00:00:00Z")), {
       metricStreamPublisher: metricStreamCapture.publisher,
     });
 
