@@ -1,7 +1,6 @@
 import {
   bigint,
   boolean,
-  customType,
   date,
   index,
   integer,
@@ -23,12 +22,6 @@ import { getTokenUserId } from "./token-user-context.ts";
 
 // All tables live in the 'fitness' schema
 const fitness = pgSchema("fitness");
-
-const geometryPoint = customType<{ data: string; driverData: string }>({
-  dataType() {
-    return "geometry(Point, 4326)";
-  },
-});
 
 // Stable user ID used in integration tests and fixtures.
 export const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
@@ -552,59 +545,6 @@ export const activityInterval = fitness.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("activity_interval_activity_idx").on(table.activityId, table.intervalIndex)],
-);
-
-// ============================================================
-// Metric stream (TimescaleDB hypertable — DDL managed by SQL migration, not Drizzle)
-// Unified time-series table for ALL metric data using a per-channel layout.
-// This Drizzle definition exists for type-safe queries/inserts only.
-//
-// Design:
-//   - `channel` identifies what's measured (e.g., "heart_rate", "power", "imu")
-//   - `scalar` stores single numeric values (HR, power, cadence, speed, etc.)
-//   - `vector` stores multi-axis data as real[] (accel [x,y,z], quaternion [w,x,y,z])
-//   - Dedup: per (activity, channel), pick the provider with the most samples
-//   - `source_type` is informational only (debugging/auditing), not used for priority
-// ============================================================
-
-export const metricStream = fitness.table(
-  "metric_stream",
-  {
-    id: uuid("id").defaultRandom().notNull(),
-    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
-    userId: uuid("user_id")
-      .notNull()
-      .$defaultFn(resolveImplicitUserId)
-      .references(() => userProfile.id),
-    providerId: text("provider_id")
-      .notNull()
-      .references(() => provider.id),
-    externalId: text("external_id"),
-    deviceId: text("device_id"),
-    sourceType: text("source_type").notNull(), // 'ble', 'file', 'api' (informational only)
-    channel: text("channel").notNull(), // 'heart_rate', 'power', 'imu', 'orientation', etc.
-    activityId: uuid("activity_id").references(() => activity.id, { onDelete: "cascade" }),
-    scalar: real("scalar"), // single numeric value
-    vector: real("vector").array(), // multi-axis data (e.g., [x, y, z] for accel)
-    point: geometryPoint("point"), // spatial value, currently used for channel = 'location'
-    metadata: jsonb("metadata"), // channel-specific provenance/accuracy metadata
-  },
-  (table) => [
-    index("metric_stream_activity_channel_time_idx").on(
-      table.activityId,
-      table.channel,
-      table.recordedAt,
-    ),
-    primaryKey({ columns: [table.id, table.recordedAt] }),
-    uniqueIndex("metric_stream_provider_external_channel_time_idx").on(
-      table.userId,
-      table.providerId,
-      table.externalId,
-      table.channel,
-      table.recordedAt,
-    ),
-    index("metric_stream_user_channel_time_idx").on(table.userId, table.channel, table.recordedAt),
-  ],
 );
 
 // ============================================================

@@ -296,23 +296,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN }}
 
-      - name: Reclaim Docker root disk headroom
+      - name: Prune unused images before pull
         run: |
-          df -h /
           docker system df || true
-          minimum_kb=$((8 * 1024 * 1024))
-          available_kb="$(df --output=avail -k / | tail -n 1 | tr -d ' ')"
-          if [ "$available_kb" -lt "$minimum_kb" ]; then
-            docker system prune --all --force
-          else
-            echo "Root filesystem already has at least 8 GiB free; skipping Docker prune."
-          fi
-          df -h /
-          available_kb="$(df --output=avail -k / | tail -n 1 | tr -d ' ')"
-          if [ "$available_kb" -lt "$minimum_kb" ]; then
-            echo "::error::Root filesystem has less than 8 GiB free after Docker cleanup; aborting before image pulls."
-            exit 1
-          fi
+          docker image prune -af
+          docker system df || true
 
       - name: Pull deploy images
         env:
@@ -320,7 +308,6 @@ jobs:
         run: |
           echo "Starting deploy with IMAGE_TAG=${IMAGE_TAG}"
           docker pull "ghcr.io/asherlc/dofek:${IMAGE_TAG}"
-          docker pull "ghcr.io/asherlc/dofek-ml:${IMAGE_TAG}"
 
           server_host="${DOCKER_HOST#ssh://${SSH_USER}@}"
           if [ -z "$server_host" ] || [ "$server_host" = "$DOCKER_HOST" ]; then
@@ -500,7 +487,7 @@ jobs:
           fi
 
           wait_deadline_seconds=$((SECONDS + 1200))
-          for service in web worker training-export-worker analytics-worker clickhouse; do
+          for service in web worker analytics-worker clickhouse; do
             service_name="${STACK_NAME}_${service}"
             while true; do
               update_state="$(

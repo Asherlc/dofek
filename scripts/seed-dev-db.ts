@@ -81,9 +81,9 @@ async function seedData() {
   await seedCore(sql);
   const random = new SeedRandom(42);
   await seedRecovery(sql, random);
-  await seedTraining(sql, random);
+  await seedTraining(sql);
   await seedNutrition(sql, random);
-  await seedBodyHealth(sql, random);
+  await seedBodyHealth(sql);
   await seedReviewSurfaces(sql, random);
 }
 
@@ -110,11 +110,6 @@ async function verifySeed() {
       `SELECT COUNT(*)::int AS count FROM fitness.activity WHERE user_id = '${USER_ID}'`,
     ],
     [
-      "metric stream samples",
-      1_000,
-      `SELECT COUNT(*)::int AS count FROM fitness.metric_stream WHERE user_id = '${USER_ID}'`,
-    ],
-    [
       "nutrition days",
       85,
       `SELECT COUNT(*)::int AS count FROM fitness.food_entry WHERE user_id = '${USER_ID}'`,
@@ -123,11 +118,6 @@ async function verifySeed() {
       "food entries",
       20,
       `SELECT COUNT(*)::int AS count FROM fitness.food_entry WHERE user_id = '${USER_ID}'`,
-    ],
-    [
-      "body measurements",
-      50,
-      `SELECT COUNT(*)::int AS count FROM fitness.metric_stream WHERE user_id = '${USER_ID}' AND channel = 'body_weight'`,
     ],
     [
       "lab results",

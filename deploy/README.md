@@ -10,8 +10,8 @@ Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle C
 - **Storage**:
   - **PostgreSQL**: Managed via TimescaleDB with PostGIS enabled for geospatial metric data.
   - **ClickHouse**: Runs in the swarm as the stored analytics read-model service for heavy activity stream reads. The raw `metric_stream` copy is populated by the Redpanda ClickHouse sink for Redpanda-first sources and remains compatible with tracked ClickHouse migrations and chunk-range backfills. See [docs/clickhouse-metric-stream.md](../docs/clickhouse-metric-stream.md).
-  - **Redpanda**: Runs internally in the swarm as the hot ingest log for high-volume `metric_stream` events. Postgres and ClickHouse sink services consume the topic, and Redpanda Connect archives it to R2.
-  - **PeerDB**: Runs internally in the swarm as the Postgres-to-ClickHouse CDC service for lower-volume raw fitness tables into `postgres_fitness.*`. The old `metric_stream` PeerDB mirror remains useful during shadow validation and bounded incident recovery until fully retired.
+  - **Redpanda**: Runs internally in the swarm as the hot ingest log for high-volume `metric_stream` events. The ClickHouse sink service consumes the topic, and Redpanda Connect archives it to R2.
+  - **PeerDB**: Runs internally in the swarm as the Postgres-to-ClickHouse CDC service for lower-volume raw fitness tables into `postgres_fitness.*`.
   - **Volume**: Production uses the OCI data volume mounted at `/mnt/dofek-data`.
   - **DB data path**: The `db` service bind-mounts Postgres data to `/mnt/dofek-data/postgres`.
   - **Databasus state path**: The `databasus` service bind-mounts its internal state to `/mnt/dofek-data/databasus` so backup schedules and storage config survive Docker volume churn.
@@ -39,7 +39,7 @@ Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle C
 - `cloud-init.yml`: Installs Docker CE, configures Docker log rotation (10m, 3 files), and idempotently runs `docker swarm init`. No deploy helpers, no Infisical CLI.
 
 ### Swarm Stack (`stack.yml`)
-- Single file defining all services: `web`, `worker`, `analytics-worker`, `cdc-health`, `training-export-worker`, `traefik`, `db`, `clickhouse`, `redpanda`, `metric-stream-clickhouse-sink`, `metric-stream-r2-archive`, `redis`, `collector`, `ota`, `databasus`, `cloudbeaver`, `pgadmin`, `portainer`, `netdata`.
+- Single file defining all services: `web`, `worker`, `analytics-worker`, `cdc-health`, `traefik`, `db`, `clickhouse`, `redpanda`, `metric-stream-clickhouse-sink`, `metric-stream-r2-archive`, `redis`, `collector`, `ota`, `databasus`, `cloudbeaver`, `pgadmin`, `portainer`, `netdata`.
 - Traefik consumes the swarm provider and routes traffic from labels declared on stack services.
 - Zero-downtime updates for `web` and `worker` are configured via `deploy.update_config` (`order: start-first`, `failure_action: rollback`, healthcheck-gated `monitor` window).
 - The `default` overlay network is declared `attachable: true` so CI can run one-shot migration containers on it from a remote Docker context.
@@ -50,7 +50,7 @@ Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle C
 - Netdata has a 768 MiB container memory limit and a checked-in `deploy/netdata/netdata.conf` that bounds dbengine retention to two tiers: one day of per-second data capped at 96 MiB and seven days of per-minute data capped at 128 MiB. The stack mounts this file as a Docker Swarm config, so changing it must also rotate the config key in `deploy/stack.yml` (for example `netdata_db_limits_v2`).
 - PeerDB uses an internal catalog Postgres service, Temporal, worker services, and a private MinIO staging bucket. Its persistent catalog and staging data live under `/mnt/dofek-data/peerdb-catalog` and `/mnt/dofek-data/peerdb-minio`. The catalog uses the PostgreSQL 18 image layout: mount the host directory at `/var/lib/postgresql`, not `/var/lib/postgresql/data`, so the image can manage its versioned data directory. Production mirrors use 100,000-row CDC batches and single-worker 100,000-row initial snapshot partitions so PeerDB can stay inside its fixed memory limits at the cost of slower catch-up.
 - Redpanda stores hot `metric_stream` ingest data under `/mnt/dofek-data/redpanda` (a bind mount on the large data disk — a default named volume lands on the small root disk and fills during a metric-stream backfill). Redpanda local retention is not the long-term source of truth; Redpanda Connect writes the `metric-stream-v1` topic to the `dofek-metric-stream-archive` R2 bucket for canonical replay. The ClickHouse sink and R2 archive services must be healthy before any metric-stream writer change is considered deployed safely.
-- `metric_stream` storage controls (Timescale hypertable + compression) are managed via `docs/metric-stream-timescaledb-runbook.md` and `drizzle/0006_metric_stream_timescale_policies.sql` for historical Postgres data. The `cdc-health` service alerts on remaining PeerDB slot lag at 16 GiB and fails the check at 32 GiB so operators have headroom before Postgres reaches the 64 GiB per-slot WAL cap.
+- The historical Postgres `fitness.metric_stream` hypertable has been retired; metric-stream durability is Redpanda plus the R2 archive, and ClickHouse is the serving copy. The `cdc-health` service alerts on remaining PeerDB slot lag at 16 GiB and fails the check at 32 GiB so operators have headroom before Postgres reaches the 64 GiB per-slot WAL cap.
 - Slack is forced to HTTP mode in production via `SLACK_MODE=http` on the `web` service. This avoids Socket Mode multi-consumer overlap during rolling deploys when `web` has multiple replicas.
 - Management UIs use a local Authentik proxy outpost service (`authentik-proxy`) and shared Traefik middleware (`management-auth`). See [docs/management-ui-auth.md](../docs/management-ui-auth.md).
 
@@ -99,10 +99,10 @@ If direct SSH fails with `Permission denied`, verify you are using the matching 
 ### Release Unit (Important)
 
 - A web deploy is a **single swarm stack release**, not separate app/ML rollouts.
-- `IMAGE_TAG` is shared across both GHCR images:
-  - `ghcr.io/asherlc/dofek:<tag>`
-  - `ghcr.io/asherlc/dofek-ml:<tag>`
-- `docker stack deploy` is the only production rollout command for web deploys. It updates `web`, `worker`, and `training-export-worker` together from `deploy/stack.yml`.
+- `IMAGE_TAG` is shared across GHCR images built from main:
+  - `ghcr.io/asherlc/dofek:<tag>` (production stack)
+  - `ghcr.io/asherlc/dofek-ml:<tag>` (local ML tooling; not deployed to the stack)
+- `docker stack deploy` is the only production rollout command for web deploys. It updates `web` and `worker` together from `deploy/stack.yml`.
 - Swarm rollback is **image rollback only**. It does not roll back database schema changes that were already applied.
 - Because migrations run before `docker stack deploy`, every production schema change must remain compatible with both the old app version and the new app version during rollout.
 
@@ -117,8 +117,8 @@ below. Missing required keys must fail the workflow before rollout.
 ### Flow Diagram
 
 ```text
-CI (main) -> build dofek + dofek-ml (same tag)
-         -> deploy-web production check (both app image tags must exist)
+CI (main) -> build dofek (+ dofek-ml for local ML tooling)
+         -> deploy-web production check (dofek app image tag must exist)
          -> deploy-terraform (shared prerequisite)
          -> deploy-web-stack
               -> fetch env via Infisical Secrets Action
@@ -143,7 +143,7 @@ CI (main) -> build dofek + dofek-ml (same tag)
       - Optional: `CREDENTIAL_ENCRYPTION_KEY_NAMESPACE` (default `dofek`) and `CREDENTIAL_ENCRYPTION_KEY_NAME` (default `provider-credentials`).
    2. Point Docker CLI at the remote daemon with `DOCKER_HOST=ssh://ubuntu@<host>`.
    3. Login to GHCR on the CI runner.
-   4. `docker pull ghcr.io/asherlc/dofek:<tag>` and `docker pull ghcr.io/asherlc/dofek-ml:<tag>`.
+   4. `docker pull ghcr.io/asherlc/dofek:<tag>`.
       The workflow also ensures pinned third-party stack images exist on the
       host, but skips those pulls when the exact image is already present.
       Image cleanup is controlled by this deploy workflow: it prunes unused
@@ -153,7 +153,7 @@ CI (main) -> build dofek + dofek-ml (same tag)
       referenced by a service until after migrations complete.
    5. Apply the stack configuration before migrations with a non-prune,
       detached `docker stack deploy` and a temporary overlay that sets web,
-      worker, analytics-worker, and training-export-worker replicas to zero.
+      worker and analytics-worker replicas to zero.
       On existing stacks this uses the currently
       deployed app image tag, so database, ClickHouse, network, config, and
       resource-limit changes are applied before migrations without rolling new
@@ -171,7 +171,7 @@ CI (main) -> build dofek + dofek-ml (same tag)
       When `CLICKHOUSE_URL` is present, this also runs tracked ClickHouse
       analytics migrations before the stack update.
    8. Validate required host bind-mount directories before deploying the stack. This must fail before `docker stack deploy` if paths such as `/mnt/dofek-data/redis` are missing, because Swarm rejects tasks with missing bind sources.
-   9. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=true <stack>` — swarm performs a single stack-wide update, including `training-export-worker`, and CI then polls the key services until their desired replicas are running and any update state is complete. The deploy workflow bounds this wait at 20 minutes so a wedged Swarm rollback fails CI instead of running indefinitely.
+   9. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=true <stack>` — swarm performs a single stack-wide update and CI then polls the key services until their desired replicas are running and any update state is complete. The deploy workflow bounds this wait at 20 minutes so a wedged Swarm rollback fails CI instead of running indefinitely.
       The workflow parses the Infisical dotenv file inside a child process for stack interpolation. Do not append the full dotenv file to `GITHUB_ENV`; GitHub Actions prints step environments and can expose Infisical-only secrets that GitHub does not automatically mask.
    10. Wait for PeerDB and run the one-shot ClickHouse CDC setup command. The command loads `src/db/peerdb/metric-stream-cdc.sql`, substitutes deployment connection values, creates the Postgres and ClickHouse peers if missing, and applies the metric-stream, raw analytics, and provider inventory mirrors.
 

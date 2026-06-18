@@ -14,7 +14,6 @@ export async function clearSeedData(sql: Sql): Promise<void> {
   await sql`DELETE FROM fitness.activity_interval WHERE activity_id IN (
     SELECT id FROM fitness.activity WHERE user_id = ${USER_ID}
   )`;
-  await sql`DELETE FROM fitness.metric_stream WHERE user_id = ${USER_ID}`;
   await sql`DELETE FROM fitness.strength_set WHERE activity_id IN (
     SELECT id FROM fitness.activity WHERE user_id = ${USER_ID}
   )`;

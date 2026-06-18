@@ -16,8 +16,8 @@ A column is raw if the data originates from a sensor or external system and **ca
 
 | Removed column | Why it's derivable |
 |---|---|
-| `metric_stream.distance` | **Outdoor**: computable from GPS lat/lng via haversine. **Indoor** (trainer/treadmill): synthetic — computed from virtual speed models, not a real measurement. |
-| `metric_stream.calories` | Device-computed from HR, power, body weight, and proprietary algorithms. Not a direct sensor reading. |
+| `metric_stream.distance` | Retired with the Postgres metric-stream table. **Outdoor** distance is computable from GPS lat/lng via haversine. **Indoor** distance is synthetic from virtual speed models, not a direct measurement. |
+| `metric_stream.calories` | Retired with the Postgres metric-stream table. Device calories are computed from HR, power, body weight, and proprietary algorithms, not direct sensor readings. |
 | `activity_interval.avg_heart_rate` | Computable from sensor_sample where channel='heart_rate' within the interval's time range. |
 | `activity_interval.max_heart_rate` | Same — `MAX(scalar)` over the interval window. |
 | `activity_interval.avg_power` | Same — `AVG(scalar)` where channel='power' over the interval window. |
@@ -111,8 +111,6 @@ Use Timescale continuous aggregates for straightforward time-bucket rollups wher
 
 | View | Purpose |
 |------|---------|
-| `fitness.cagg_metric_daily` | Daily stats per (user, metric type, source/provider) from metric_stream |
-| `fitness.cagg_metric_weekly` | Weekly rollup from daily metric cagg |
 | `fitness.cagg_sensor_daily` | Daily stats per (user, channel) from sensor_sample |
 | `fitness.cagg_sensor_weekly` | Weekly rollup from daily cagg |
 
@@ -134,7 +132,6 @@ tables through ClickHouse replication.
 
 | Table | Purpose |
 |-------|---------|
-| `fitness.metric_stream` | Time-series metric samples, including body composition channels such as weight, body fat %, muscle mass, and BMI |
 | `fitness.strength_workout` | Workout sessions |
 | `fitness.strength_set` | Individual sets (exercise, weight, reps, RPE) |
 | `fitness.sleep_session` | Sleep sessions with stage breakdown |

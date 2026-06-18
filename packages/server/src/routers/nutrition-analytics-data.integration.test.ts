@@ -5,7 +5,11 @@ import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import { createClickHouseTestActivitySensorStore } from "./clickhouse-integration-test-helpers.ts";
+import {
+  type ClickHouseMetricStreamSeedRow,
+  createClickHouseTestActivitySensorStore,
+  seedClickHouseMetricStreamRows,
+} from "./clickhouse-integration-test-helpers.ts";
 import type {
   AdaptiveTdeeResult,
   CaloricBalanceRow,
@@ -51,6 +55,8 @@ describe("Nutrition analytics data coverage", () => {
           ON CONFLICT DO NOTHING`,
     );
 
+    const metricStreamSeedRows: ClickHouseMetricStreamSeedRow[] = [];
+
     // ── Insert 50 days of unnamed food-entry nutrition (needed for adaptiveTdee + macroRatios + caloricBalance) ──
     for (let i = 49; i >= 0; i--) {
       // Vary calories slightly so TDEE estimation has something to work with
@@ -85,14 +91,18 @@ describe("Nutrition analytics data coverage", () => {
     // Simulate gradual weight loss from 80kg to ~79kg over 50 days
     for (let i = 49; i >= 0; i--) {
       const weightKg = 80 - (49 - i) * 0.02 + Math.sin(i * 0.7) * 0.3;
-      await testCtx.db.execute(
-        sql`INSERT INTO fitness.metric_stream (
-              recorded_at, provider_id, user_id, external_id, source_type, channel, scalar
-            ) VALUES (
-              (CURRENT_DATE - ${i}::int)::timestamp + INTERVAL '8 hours',
-              'test_provider', ${TEST_USER_ID}, ${`test-body-${i}`}, 'api', 'body_weight', ${weightKg}
-            )`,
-      );
+      const recordedAt = new Date();
+      recordedAt.setHours(8, 0, 0, 0);
+      recordedAt.setDate(recordedAt.getDate() - i);
+      metricStreamSeedRows.push({
+        userId: TEST_USER_ID,
+        recordedAt: recordedAt.toISOString(),
+        providerId: "test_provider",
+        externalId: `test-body-${i}`,
+        sourceType: "api",
+        channel: "body_weight",
+        scalar: weightKg,
+      });
     }
 
     // ── Insert daily_metrics with active_energy_kcal and basal_energy_kcal (for caloricBalance) ──
@@ -250,6 +260,7 @@ describe("Nutrition analytics data coverage", () => {
 
     // Start server
     const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
+    await seedClickHouseMetricStreamRows(testCtx, metricStreamSeedRows);
     const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {

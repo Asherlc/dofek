@@ -23,14 +23,12 @@ interface SeedCounts {
   sleepSessions: number;
   sleepStages: number;
   activities: number;
-  metricStream: number;
   activityIntervals: number;
   strengthWorkouts: number;
   strengthSets: number;
   nutritionDaily: number;
   foodEntries: number;
   supplements: number;
-  bodyMeasurements: number;
   labPanels: number;
   labResults: number;
   dexaScans: number;
@@ -40,7 +38,6 @@ interface SeedCounts {
   menstrualPeriods: number;
   vSleep: number;
   vDailyMetrics: number;
-  vBodyMeasurement: number;
 }
 
 interface BareDatabaseContext {
@@ -147,14 +144,12 @@ describe("seed-dev-db", () => {
       expect(firstCounts.sleepSessions).toBeGreaterThanOrEqual(100);
       expect(firstCounts.sleepStages).toBeGreaterThanOrEqual(250);
       expect(firstCounts.activities).toBeGreaterThanOrEqual(90);
-      expect(firstCounts.metricStream).toBeGreaterThanOrEqual(1_000);
       expect(firstCounts.activityIntervals).toBeGreaterThanOrEqual(10);
       expect(firstCounts.strengthWorkouts).toBeGreaterThanOrEqual(12);
       expect(firstCounts.strengthSets).toBeGreaterThanOrEqual(80);
       expect(firstCounts.nutritionDaily).toBeGreaterThanOrEqual(85);
       expect(firstCounts.foodEntries).toBeGreaterThanOrEqual(20);
       expect(firstCounts.supplements).toBeGreaterThanOrEqual(3);
-      expect(firstCounts.bodyMeasurements).toBeGreaterThanOrEqual(50);
       expect(firstCounts.labPanels).toBeGreaterThanOrEqual(2);
       expect(firstCounts.labResults).toBeGreaterThanOrEqual(8);
       expect(firstCounts.dexaScans).toBeGreaterThanOrEqual(2);
@@ -164,7 +159,6 @@ describe("seed-dev-db", () => {
       expect(firstCounts.menstrualPeriods).toBeGreaterThanOrEqual(4);
       expect(firstCounts.vSleep).toBeGreaterThanOrEqual(90);
       expect(firstCounts.vDailyMetrics).toBeGreaterThanOrEqual(170);
-      expect(firstCounts.vBodyMeasurement).toBeGreaterThanOrEqual(50);
     } finally {
       await sql.end();
     }
@@ -226,10 +220,6 @@ async function readSeedCounts(sql: postgres.Sql): Promise<SeedCounts> {
       sql,
       `SELECT COUNT(*)::int AS count FROM fitness.activity WHERE user_id = '${userId}'`,
     ),
-    metricStream: await readCount(
-      sql,
-      `SELECT COUNT(*)::int AS count FROM fitness.metric_stream WHERE user_id = '${userId}'`,
-    ),
     activityIntervals: await readCount(
       sql,
       `SELECT COUNT(*)::int AS count FROM fitness.activity_interval interval JOIN fitness.activity activity ON activity.id = interval.activity_id WHERE activity.user_id = '${userId}'`,
@@ -254,10 +244,6 @@ async function readSeedCounts(sql: postgres.Sql): Promise<SeedCounts> {
     supplements: await readCount(
       sql,
       `SELECT COUNT(*)::int AS count FROM fitness.supplement WHERE user_id = '${userId}'`,
-    ),
-    bodyMeasurements: await readCount(
-      sql,
-      `SELECT COUNT(*)::int AS count FROM fitness.metric_stream WHERE user_id = '${userId}' AND channel = 'body_weight'`,
     ),
     labPanels: await readCount(
       sql,
@@ -294,10 +280,6 @@ async function readSeedCounts(sql: postgres.Sql): Promise<SeedCounts> {
     vDailyMetrics: await readCount(
       sql,
       `SELECT COUNT(*)::int AS count FROM fitness.daily_metrics WHERE user_id = '${userId}'`,
-    ),
-    vBodyMeasurement: await readCount(
-      sql,
-      `SELECT COUNT(*)::int AS count FROM fitness.metric_stream WHERE user_id = '${userId}' AND channel = 'body_weight'`,
     ),
   };
 }

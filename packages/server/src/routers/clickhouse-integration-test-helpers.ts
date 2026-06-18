@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { mkdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,6 +21,22 @@ import { ClickHouseActivitySensorStore } from "../repositories/clickhouse-activi
 interface ClickHouseSyncTestContext {
   addCleanup(cleanup: () => Promise<void>): void;
   connectionString: string;
+}
+
+export interface ClickHouseMetricStreamSeedRow {
+  id?: string;
+  activityId?: string | null;
+  userId: string;
+  recordedAt: string;
+  channel: string;
+  providerId: string;
+  externalId?: string | null;
+  deviceId?: string | null;
+  sourceType?: string | null;
+  scalar?: number | null;
+  vector?: readonly number[] | null;
+  point?: string;
+  metadata?: string;
 }
 
 interface IsolatedClickHouseDatabases {
@@ -1654,6 +1670,9 @@ async function syncClickHouseTestActivitySensorStoreWithClient(
   connectionString: string,
 ): Promise<void> {
   for (const rawTableSync of rawTableSyncs) {
+    if (rawTableSync.tableName === "metric_stream") {
+      continue;
+    }
     await client.command({
       query: `TRUNCATE TABLE postgres_fitness.${rawTableSync.tableName}`,
     });
@@ -1662,6 +1681,114 @@ async function syncClickHouseTestActivitySensorStoreWithClient(
     });
   }
 
+  await rebuildClickHouseSensorAnalyticsWithClient(client);
+}
+
+function formatNullableClickHouseString(value: string | null | undefined): string {
+  if (value === null || value === undefined) {
+    return "NULL";
+  }
+  return clickHouseStringLiteral(value);
+}
+
+function formatNullableClickHouseUuid(value: string | null | undefined): string {
+  if (value === null || value === undefined) {
+    return "NULL";
+  }
+  return `toUUID(${clickHouseStringLiteral(value)})`;
+}
+
+function formatNullableClickHouseFloat(value: number | null | undefined): string {
+  if (value === null || value === undefined) {
+    return "NULL";
+  }
+  return String(value);
+}
+
+function formatClickHouseVector(value: readonly number[] | null | undefined): string {
+  if (!value || value.length === 0) {
+    return "[]";
+  }
+  return `[${value.join(",")}]`;
+}
+
+function formatClickHouseMetricStreamSeedValue(row: ClickHouseMetricStreamSeedRow): string {
+  const id = row.id ?? randomUUID();
+  return `(
+    toUUID(${clickHouseStringLiteral(id)}),
+    ${formatNullableClickHouseUuid(row.activityId)},
+    toUUID(${clickHouseStringLiteral(row.userId)}),
+    parseDateTime64BestEffort(${clickHouseStringLiteral(row.recordedAt)}, 6, 'UTC'),
+    ${clickHouseStringLiteral(row.channel)},
+    ${clickHouseStringLiteral(row.providerId)},
+    ${formatNullableClickHouseString(row.externalId)},
+    ${formatNullableClickHouseString(row.deviceId)},
+    ${formatNullableClickHouseString(row.sourceType)},
+    ${formatNullableClickHouseFloat(row.scalar)},
+    ${formatClickHouseVector(row.vector)},
+    ${formatNullableClickHouseString(row.point ?? "")},
+    ${formatNullableClickHouseString(row.metadata ?? "")},
+    now64(9),
+    0,
+    1
+  )`;
+}
+
+export async function insertClickHouseMetricStreamRows(
+  testContext: ClickHouseSyncTestContext,
+  rows: readonly ClickHouseMetricStreamSeedRow[],
+): Promise<void> {
+  if (rows.length === 0) {
+    return;
+  }
+
+  const handle = handlesByContext.get(testContext);
+  if (!handle) {
+    throw new Error("ClickHouse test activity sensor store has not been created");
+  }
+
+  await handle.setupClient.command({
+    query: `INSERT INTO postgres_fitness.metric_stream (
+      id,
+      activity_id,
+      user_id,
+      recorded_at,
+      channel,
+      provider_id,
+      external_id,
+      device_id,
+      source_type,
+      scalar,
+      vector,
+      point,
+      metadata,
+      _peerdb_synced_at,
+      _peerdb_is_deleted,
+      _peerdb_version
+    ) VALUES ${rows.map(formatClickHouseMetricStreamSeedValue).join(",\n")}`,
+  });
+}
+
+export async function rebuildClickHouseSensorAnalytics(
+  testContext: ClickHouseSyncTestContext,
+): Promise<void> {
+  const handle = handlesByContext.get(testContext);
+  if (!handle) {
+    throw new Error("ClickHouse test activity sensor store has not been created");
+  }
+
+  await rebuildClickHouseSensorAnalyticsWithClient(handle.setupClient);
+}
+
+export async function seedClickHouseMetricStreamRows(
+  testContext: ClickHouseSyncTestContext,
+  rows: readonly ClickHouseMetricStreamSeedRow[],
+): Promise<void> {
+  await insertClickHouseMetricStreamRows(testContext, rows);
+  await rebuildClickHouseSensorAnalytics(testContext);
+}
+
+async function rebuildClickHouseSensorAnalyticsWithClient(client: ClickHouseClient): Promise<void> {
   await client.command({ query: "TRUNCATE TABLE analytics.sensor_scalar_sample" });
   await client.command({ query: "TRUNCATE TABLE analytics.deduped_sensor" });
   await client.command({ query: "TRUNCATE TABLE analytics.deduped_activities" });

@@ -9,6 +9,9 @@
     }
 ) }}
 
+{% set activity_source_mass_tombstone_min_existing = var('activity_source_mass_tombstone_min_existing', 10) %}
+{% set activity_source_mass_tombstone_ratio = var('activity_source_mass_tombstone_ratio', 0.95) %}
+
 WITH active_activity AS (
     SELECT *
     FROM {{ source('postgres_fitness', 'activity') }} FINAL
@@ -92,6 +95,28 @@ stale_source_records AS (
     WHERE current_source_records.activity_id IS null
 ),
 
+source_record_counts AS (
+    SELECT
+        (SELECT count() FROM current_source_records) AS current_source_record_count,
+        (SELECT count() FROM existing_source_records) AS existing_source_record_count,
+        (SELECT count() FROM stale_source_records) AS stale_source_record_count
+),
+
+source_safety_check AS (
+    SELECT
+        throwIf(
+            existing_source_record_count > 0
+            AND current_source_record_count = 0,
+            'Activity source mirror returned zero current rows while active activity_source_records rows already exist'
+        ) AS empty_source_guard,
+        throwIf(
+            existing_source_record_count >= {{ activity_source_mass_tombstone_min_existing }}
+            AND stale_source_record_count >= existing_source_record_count * {{ activity_source_mass_tombstone_ratio }},
+            'Activity source mirror would tombstone at least {{ (activity_source_mass_tombstone_ratio * 100) | int }}% of active activity_source_records rows'
+        ) AS mass_tombstone_guard
+    FROM source_record_counts
+),
+
 refresh_clock AS (
     SELECT
         toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
@@ -117,6 +142,7 @@ SELECT
     0 AS is_deleted,
     refresh_clock.refreshed_at AS refreshed_at
 FROM current_source_records
+CROSS JOIN source_safety_check
 CROSS JOIN refresh_clock
 
 UNION ALL
@@ -140,4 +166,5 @@ SELECT
     1 AS is_deleted,
     refresh_clock.refreshed_at AS refreshed_at
 FROM stale_source_records
+CROSS JOIN source_safety_check
 CROSS JOIN refresh_clock

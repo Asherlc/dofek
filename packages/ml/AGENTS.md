@@ -2,19 +2,15 @@
 
 > Read [README.md](./README.md) first for general architecture and usage.
 
-## BullMQ Worker Implementation
-The worker (`dofek_ml/worker.py`) replaces the legacy Node.js child process architecture.
-- **Queue**: `training-export`
-- **Locking**: 10m duration (`600_000ms`), 5m stalled interval.
-- **Concurrency**: 1 job at a time per worker instance.
-- **Progress**: Uses `asyncio.run_coroutine_threadsafe` to report progress back to BullMQ from the synchronous export thread.
+## Retired Postgres training export
+The BullMQ `training-export` worker and Postgres-backed `metric_stream` export
+path were removed with the Postgres table drop. Do not reintroduce reads from
+Postgres `fitness.metric_stream`.
 
 ## Data Export Flow
-1. Job received with `since` and `until` parameters.
-2. Synchronous `export_to_parquet` runs in an executor thread.
-3. Uses `psycopg` to query TimescaleDB and `PyArrow` for Parquet conversion.
-4. Parquet files are written to `/tmp/dofek-job-files/training-export` (default).
+Use the Redpanda R2 archive or ClickHouse metric-stream data for any future ML
+training export implementation.
 
 ## Testing
 - **Contract Validation**: `tests/test_contract_validation.py` ensures the export schema matches the main application expectations.
-- **Worker Tests**: `tests/test_worker.py` mocks Redis and BullMQ to verify the job handling loop.
+- **Export retirement**: `tests/test_export.py` verifies the retired CLI/export entrypoints fail with the migration message.
