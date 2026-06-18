@@ -103,7 +103,9 @@ describe("AmazfitZeppProvider auth", () => {
     const setup = new AmazfitZeppProvider().authSetup();
     expect(setup.oauthConfig.clientId).toBe("com.xiaomi.hm.health");
     expect(setup.oauthConfig.clientSecret).toBeUndefined();
-    expect(setup.oauthConfig.redirectUri).toContain("/callback");
+    expect(setup.oauthConfig.redirectUri).toBe(
+      "https://s3-us-west-2.amazonaws.com/hm-registration/successsignin.html",
+    );
     expect(setup.oauthConfig.scopes).toEqual([]);
     expect(setup.apiBaseUrl).toContain("zepp.com");
     expect(setup.automatedLogin).toBeTypeOf("function");

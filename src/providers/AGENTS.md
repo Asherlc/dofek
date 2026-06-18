@@ -10,7 +10,7 @@
 - **Raw Data Only**: Store raw data from providers. Deduplication and aggregation belong in the database layer (see `src/db/dedup.ts`).
 - **Error Handling**: Use `SyncResult` to report successes and failures. Never swallow API errors.
 - **Validation**: `validate()` may check app-level OAuth client env vars. User auth belongs in sync, not validate.
-- **No empty-string sentinels**: Omit optional OAuth fields or use `getOAuthRedirectUri()` — never default missing config to `""`.
+- **No empty-string sentinels**: Omit optional OAuth fields or use real config values — never default missing config to `""`. Credential providers still fill `oauthConfig` to satisfy `ProviderAuthSetup`, but users connect via `automatedLogin`, not Dofek OAuth redirects.
 
 ### Testing Strategy
 - **Unit Tests**: `<provider>.test.ts` for parsing logic and API client mocks.
