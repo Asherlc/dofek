@@ -13,23 +13,6 @@ function elapsedSeconds(start: Date, end: Date): number {
   return Math.max(0, Math.round((end.getTime() - start.getTime()) / 1000));
 }
 
-function recordDistanceMeters(points: ActivityExportPoint[], index: number): number {
-  let distance = 0;
-  for (let i = 1; i <= index; i += 1) {
-    const previous = points[i - 1];
-    const current = points[i];
-    if (
-      previous?.lat != null &&
-      previous.lng != null &&
-      current?.lat != null &&
-      current.lng != null
-    ) {
-      distance += haversineMeters(previous.lat, previous.lng, current.lat, current.lng);
-    }
-  }
-  return distance;
-}
-
 function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const toRadians = (value: number) => (value * Math.PI) / 180;
   const earthRadiusMeters = 6_371_000;
@@ -69,7 +52,12 @@ function buildRecordMessage(
 
 export function generateFit(activity: ActivityExportInput): Buffer {
   const startDate = new Date(activity.startedAt);
-  const endDate = activity.endedAt ? new Date(activity.endedAt) : startDate;
+  const fallbackEnd = activity.points.at(-1)?.recordedAt;
+  const endDate = activity.endedAt
+    ? new Date(activity.endedAt)
+    : fallbackEnd
+      ? new Date(fallbackEnd)
+      : startDate;
   const startTime = Utils.convertDateToDateTime(startDate);
   const endTime = Utils.convertDateToDateTime(endDate);
   const totalElapsedTime = Math.max(1, elapsedSeconds(startDate, endDate));
@@ -116,12 +104,19 @@ export function generateFit(activity: ActivityExportInput): Buffer {
           },
         ];
 
+  let cumulativeDistance = 0;
   for (let index = 0; index < points.length; index += 1) {
     const point = points[index];
     if (!point) continue;
+    if (index > 0) {
+      const previous = points[index - 1];
+      if (previous?.lat != null && previous.lng != null && point.lat != null && point.lng != null) {
+        cumulativeDistance += haversineMeters(previous.lat, previous.lng, point.lat, point.lng);
+      }
+    }
     const pointDate = new Date(point.recordedAt);
     const fitTimestamp = Utils.convertDateToDateTime(pointDate);
-    encoder.writeMesg(buildRecordMessage(point, fitTimestamp, recordDistanceMeters(points, index)));
+    encoder.writeMesg(buildRecordMessage(point, fitTimestamp, cumulativeDistance));
   }
 
   encoder.writeMesg({
@@ -138,7 +133,7 @@ export function generateFit(activity: ActivityExportInput): Buffer {
     startTime,
     totalElapsedTime,
     totalTimerTime: totalElapsedTime,
-    totalDistance: activity.totalDistance ?? recordDistanceMeters(points, points.length - 1),
+    totalDistance: activity.totalDistance ?? cumulativeDistance,
   });
 
   encoder.writeMesg({
@@ -152,7 +147,7 @@ export function generateFit(activity: ActivityExportInput): Buffer {
     subSport: "generic",
     firstLapIndex: 0,
     numLaps: 1,
-    totalDistance: activity.totalDistance ?? recordDistanceMeters(points, points.length - 1),
+    totalDistance: activity.totalDistance ?? cumulativeDistance,
     avgHeartRate: activity.avgHr != null ? Math.round(activity.avgHr) : undefined,
     maxHeartRate: activity.maxHr != null ? Math.round(activity.maxHr) : undefined,
     avgPower: activity.avgPower != null ? Math.round(activity.avgPower) : undefined,

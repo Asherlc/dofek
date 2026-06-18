@@ -14,6 +14,9 @@ import type { ActivitySensorStore } from "../repositories/activity-repository.ts
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { ensureProvidersRegistered } from "../routers/sync-helpers.ts";
 
+/** Chart previews cap at 10k points; exports should include the full activity stream. */
+const ACTIVITY_EXPORT_MAX_STREAM_POINTS = 1_000_000;
+
 export async function loadActivityExportInput(
   db: Database,
   userId: string,
@@ -33,7 +36,7 @@ export async function loadActivityExportInput(
 
   let points: ActivityExportInput["points"] = [];
   if (sensorStore) {
-    const stream = await repo.getStream(activityId, 10_000);
+    const stream = await repo.getStream(activityId, ACTIVITY_EXPORT_MAX_STREAM_POINTS);
     points = stream.map((point) => point.toDetail());
   }
 

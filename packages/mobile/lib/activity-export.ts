@@ -1,6 +1,7 @@
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { z } from "zod";
+import { captureException } from "./telemetry";
 
 export type ActivityExportFormat = "gpx" | "tcx" | "csv" | "fit";
 
@@ -51,8 +52,8 @@ export async function downloadActivityExport({
       const body = await FileSystem.readAsStringAsync(downloadResult.uri);
       const parsed = exportErrorSchema.safeParse(JSON.parse(body));
       if (parsed.success && parsed.data.error) message = parsed.data.error;
-    } catch {
-      // Ignore parse failures and keep the generic message.
+    } catch (error) {
+      captureException(error, { source: "activity-export.parse-error-response" });
     }
     throw new Error(message);
   }

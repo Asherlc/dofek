@@ -28,6 +28,8 @@ vi.mock("react-native", () => ({
     ),
   ActivityIndicator: () => React.createElement("div", { "data-testid": "loading" }),
   Alert: { alert: vi.fn() },
+  Modal: ({ children, visible }: Record<string, unknown>) =>
+    visible ? React.createElement("div", { "data-testid": "modal" }, children) : null,
   Linking: { openURL: vi.fn() },
   StyleSheet: {
     create: <T extends Record<string, unknown>>(styles: T): T => {

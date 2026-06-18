@@ -119,11 +119,27 @@ describe("activity export serializers", () => {
     const tcx = generateTcx(cyclingActivity);
     expect(tcx).toContain('Sport="Biking"');
     expect(tcx).toContain("<Watts>200</Watts>");
+    expect(tcx).not.toContain("<Name>");
+    expect(tcx).toContain("<Notes>Morning Ride</Notes>");
+    expect(tcx).toContain("<TotalTimeSeconds>1800</TotalTimeSeconds>");
+    expect(tcx).toContain("<DistanceMeters>10000</DistanceMeters>");
+    expect(tcx).toContain("<AverageHeartRateBpm>");
+    expect(tcx).toContain("<MaximumHeartRateBpm>");
 
     const trackpoints = parseTcx(tcx);
     expect(trackpoints).toHaveLength(3);
     expect(trackpoints[0]?.heartRate).toBe(140);
     expect(trackpoints[1]?.lat).toBeCloseTo(37.7755, 4);
+  });
+
+  it("derives TCX lap duration from the last stream point when endedAt is missing", () => {
+    const openEndedActivity: ActivityExportInput = {
+      ...sampleActivity,
+      endedAt: null,
+    };
+
+    const tcx = generateTcx(openEndedActivity);
+    expect(tcx).toContain("<TotalTimeSeconds>1800</TotalTimeSeconds>");
   });
 
   it("generates CSV with summary and stream sections", () => {
@@ -148,6 +164,8 @@ describe("activity export serializers", () => {
         avgHeartRate: 150,
         maxHeartRate: 175,
         totalDistance: 10_000,
+        totalElapsedTime: 1800,
+        totalTimerTime: 1800,
       }),
     );
 
@@ -157,6 +175,30 @@ describe("activity export serializers", () => {
         heartRate: 140,
         power: 200,
         cadence: 165,
+        distance: 0,
+        positionLat: expect.any(Number),
+        positionLong: expect.any(Number),
+      }),
+    );
+
+    const lastRecord = messages.recordMesgs?.at(-1);
+    expect(lastRecord?.distance).toBeGreaterThan(0);
+  });
+
+  it("derives FIT stop timing from the last stream point when endedAt is missing", () => {
+    const openEndedActivity: ActivityExportInput = {
+      ...cyclingActivity,
+      endedAt: null,
+    };
+
+    const { messages, errors } = decodeFit(openEndedActivity);
+    expect(errors).toEqual([]);
+
+    const session = messages.sessionMesgs?.[0];
+    expect(session).toEqual(
+      expect.objectContaining({
+        totalElapsedTime: 1800,
+        totalTimerTime: 1800,
       }),
     );
   });

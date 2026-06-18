@@ -745,7 +745,6 @@ jobs:
             | { grep -v 'drizzle/' || true; } \
             | { grep -v 'src/db/clickhouse-migrations\.ts$' || true; } \
             | { grep -v 'src/db/schema\.ts$' || true; } \
-            | { grep -v 'src/activity-export/' || true; } \
             | { grep -v 'packages/server/src/types\.ts$' || true; } \
             | { grep -v 'scripts/' || true; } \
             | { grep -v 'packages/mobile/' || true; } \

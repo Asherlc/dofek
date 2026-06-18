@@ -131,6 +131,56 @@ export const styles = StyleSheet.create({
     fontWeight: "600",
     color: colors.text,
   },
+  exportModalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    padding: 24,
+  },
+  exportModalCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 20,
+    gap: 8,
+  },
+  exportModalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  exportModalSubtitle: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginBottom: 8,
+  },
+  exportModalOption: {
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  exportModalOptionPressed: {
+    opacity: 0.7,
+  },
+  exportModalOptionDisabled: {
+    opacity: 0.5,
+  },
+  exportModalOptionText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  exportModalCancel: {
+    marginTop: 8,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  exportModalCancelText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: colors.textSecondary,
+  },
   deleteButtonPressed: {
     opacity: 0.7,
   },

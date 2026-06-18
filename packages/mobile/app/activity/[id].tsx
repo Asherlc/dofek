@@ -16,6 +16,7 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -622,6 +623,7 @@ export default function ActivityDetailScreen() {
   const { serverUrl, sessionToken } = useAuth();
   const trpcUtils = trpc.useUtils();
   const [exportingFormat, setExportingFormat] = useState<ActivityExportFormat | null>(null);
+  const [exportModalVisible, setExportModalVisible] = useState(false);
   const deleteMutation = trpc.activity.delete.useMutation({
     onSuccess: async () => {
       await trpcUtils.activity.list.invalidate();
@@ -707,45 +709,42 @@ export default function ActivityDetailScreen() {
   const hasHr = points.some((p) => p.heartRate != null);
   const hasAltitude = points.some((p) => p.altitude != null);
 
-  const handleExport = () => {
-    if (!id || !sessionToken) return;
-
-    const options: Array<{ text: string; format: ActivityExportFormat; disabled?: boolean }> = [
-      { text: "GPX", format: "gpx", disabled: !hasGps },
-      { text: "TCX", format: "tcx", disabled: !hasGps },
-      { text: "CSV", format: "csv" },
-      { text: "FIT", format: "fit" },
+  const exportOptions: Array<{ label: string; format: ActivityExportFormat; disabled?: boolean }> =
+    [
+      { label: "GPX", format: "gpx", disabled: !hasGps },
+      { label: "TCX", format: "tcx", disabled: !hasGps },
+      { label: "CSV", format: "csv" },
+      { label: "FIT", format: "fit" },
     ];
 
-    Alert.alert("Export Activity", "Choose a file format", [
-      { text: "Cancel", style: "cancel" },
-      ...options.map(({ text, format, disabled }) => ({
-        text: disabled ? `${text} (no GPS)` : text,
-        onPress: disabled
-          ? undefined
-          : () => {
-              void (async () => {
-                setExportingFormat(format);
-                try {
-                  await downloadActivityExport({
-                    activityId: id,
-                    format,
-                    serverUrl,
-                    sessionToken,
-                  });
-                } catch (error) {
-                  captureException(error);
-                  Alert.alert(
-                    "Export Failed",
-                    error instanceof Error ? error.message : "Unable to export activity.",
-                  );
-                } finally {
-                  setExportingFormat(null);
-                }
-              })();
-            },
-      })),
-    ]);
+  const handleExport = () => {
+    if (!id || !sessionToken) return;
+    setExportModalVisible(true);
+  };
+
+  const handleExportFormatSelect = (format: ActivityExportFormat) => {
+    if (!id || !sessionToken) return;
+
+    setExportModalVisible(false);
+    void (async () => {
+      setExportingFormat(format);
+      try {
+        await downloadActivityExport({
+          activityId: id,
+          format,
+          serverUrl,
+          sessionToken,
+        });
+      } catch (error) {
+        captureException(error);
+        Alert.alert(
+          "Export Failed",
+          error instanceof Error ? error.message : "Unable to export activity.",
+        );
+      } finally {
+        setExportingFormat(null);
+      }
+    })();
   };
 
   // Build stats array
@@ -956,6 +955,45 @@ export default function ActivityDetailScreen() {
             : "Export Activity"}
         </Text>
       </Pressable>
+
+      <Modal
+        visible={exportModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setExportModalVisible(false)}
+      >
+        <Pressable style={styles.exportModalBackdrop} onPress={() => setExportModalVisible(false)}>
+          <Pressable style={styles.exportModalCard} onPress={() => undefined}>
+            <Text style={styles.exportModalTitle}>Export Activity</Text>
+            <Text style={styles.exportModalSubtitle}>Choose a file format</Text>
+            {exportOptions.map(({ label, format, disabled }) => (
+              <Pressable
+                key={format}
+                disabled={disabled || exportingFormat != null}
+                onPress={() => handleExportFormatSelect(format)}
+                style={({ pressed }) => [
+                  styles.exportModalOption,
+                  pressed && !disabled && styles.exportModalOptionPressed,
+                  disabled && styles.exportModalOptionDisabled,
+                ]}
+              >
+                <Text style={styles.exportModalOptionText}>
+                  {disabled ? `${label} (no GPS)` : label}
+                </Text>
+              </Pressable>
+            ))}
+            <Pressable
+              onPress={() => setExportModalVisible(false)}
+              style={({ pressed }) => [
+                styles.exportModalCancel,
+                pressed && styles.exportModalOptionPressed,
+              ]}
+            >
+              <Text style={styles.exportModalCancelText}>Cancel</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* Delete Activity */}
       <Pressable
