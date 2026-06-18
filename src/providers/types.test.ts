@@ -124,6 +124,12 @@ describe("getProviderAuthType", () => {
     expect(getProviderAuthType(provider)).toBe("none");
   });
 
+  it("returns 'credential' for AmazfitZeppProvider", async () => {
+    const { AmazfitZeppProvider } = await import("./amazfit-zepp.ts");
+    const provider = new AmazfitZeppProvider();
+    expect(getProviderAuthType(provider)).toBe("credential");
+  });
+
   it("returns 'oauth' when setup has oauthConfig but nothing else", () => {
     // Ensures the oauthConfig check on line 289 actually fires and returns 'oauth'
     // (if oauthConfig were mutated away, this would return 'none' instead)

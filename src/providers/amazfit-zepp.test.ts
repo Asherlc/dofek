@@ -15,28 +15,59 @@ vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
 }));
 
+vi.mock("../db/tokens.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../db/tokens.ts")>();
+  return {
+    ...actual,
+    loadTokens: vi.fn(actual.loadTokens),
+  };
+});
+
 const TEST_USER_ID = "11111111-1111-4111-8111-111111111111";
 
 function encodeBase64(value: string | Buffer): string {
   return Buffer.from(value).toString("base64");
 }
 
+async function mockStoredZeppCredentials(
+  appToken = "token-123",
+  zeppUserId = "user-123",
+): Promise<void> {
+  const { loadTokens } = await import("../db/tokens.ts");
+  vi.mocked(loadTokens).mockResolvedValue({
+    accessToken: appToken,
+    refreshToken: "login-token",
+    expiresAt: new Date("2099-01-01"),
+    scopes: `userId:${zeppUserId}`,
+  });
+}
+
 describe("Amazfit/Zepp provider", () => {
-  afterEach(() => {
+  afterEach(async () => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockReset();
   });
 
-  it("requires app token and user id configuration", () => {
-    const provider = new AmazfitZeppProvider();
+  it("is always enabled and checks auth at sync time", () => {
+    expect(new AmazfitZeppProvider().validate()).toBeNull();
+  });
 
-    expect(provider.validate()).toBe("ZEPP_APP_TOKEN is not set");
+  it("authSetup returns credential login configuration", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response(null, {
+        status: 302,
+        headers: {
+          Location:
+            "https://s3-us-west-2.amazonaws.com/hm-registration/successsignin.html?access=access-code&country_code=US",
+        },
+      });
+    const provider = new AmazfitZeppProvider(fetchFn);
+    const setup = provider.authSetup();
 
-    vi.stubEnv("ZEPP_APP_TOKEN", "token-123");
-    expect(provider.validate()).toBe("ZEPP_USER_ID is not set");
-
-    vi.stubEnv("ZEPP_USER_ID", "user-123");
-    expect(provider.validate()).toBeNull();
+    expect(setup.automatedLogin).toBeTypeOf("function");
+    expect(setup.apiBaseUrl).toBe("https://api-mifit.zepp.com");
   });
 
   it("decodes base64 summary payloads", () => {
@@ -244,8 +275,7 @@ describe("Amazfit/Zepp provider", () => {
   });
 
   it("syncs daily metrics, sleep, and heart rate samples from band data", async () => {
-    vi.stubEnv("ZEPP_APP_TOKEN", "token-123");
-    vi.stubEnv("ZEPP_USER_ID", "user-123");
+    await mockStoredZeppCredentials();
 
     const { db, spies } = createMockDatabase();
     const metricStreamCapture = createCapturingMetricStreamPublisher();
@@ -345,8 +375,7 @@ describe("Amazfit/Zepp provider", () => {
   });
 
   it("records malformed band days as sync errors and continues", async () => {
-    vi.stubEnv("ZEPP_APP_TOKEN", "token-123");
-    vi.stubEnv("ZEPP_USER_ID", "user-123");
+    await mockStoredZeppCredentials();
 
     const { db } = createMockDatabase();
     const fetchFn: typeof globalThis.fetch = async () =>
@@ -369,10 +398,7 @@ describe("Amazfit/Zepp provider", () => {
     });
   });
 
-  it("returns a configuration error before fetching when credentials are incomplete", async () => {
-    vi.stubEnv("ZEPP_APP_TOKEN", "token-123");
-    vi.stubEnv("ZEPP_USER_ID", "");
-
+  it("returns a not-connected error before fetching when credentials are missing", async () => {
     const { db } = createMockDatabase();
     const fetchFn = vi.fn<typeof globalThis.fetch>();
     const provider = new AmazfitZeppProvider(fetchFn);
@@ -383,12 +409,11 @@ describe("Amazfit/Zepp provider", () => {
 
     expect(fetchFn).not.toHaveBeenCalled();
     expect(result.recordsSynced).toBe(0);
-    expect(result.errors).toMatchObject([{ message: "ZEPP_USER_ID is not set" }]);
+    expect(result.errors[0]?.message).toContain("credentials");
   });
 
   it("records API errors from the sync request and reports them", async () => {
-    vi.stubEnv("ZEPP_APP_TOKEN", "token-123");
-    vi.stubEnv("ZEPP_USER_ID", "user-123");
+    await mockStoredZeppCredentials();
 
     const { db } = createMockDatabase();
     const fetchFn: typeof globalThis.fetch = async () =>
@@ -412,8 +437,7 @@ describe("Amazfit/Zepp provider", () => {
   });
 
   it("propagates rate limit errors from sync", async () => {
-    vi.stubEnv("ZEPP_APP_TOKEN", "token-123");
-    vi.stubEnv("ZEPP_USER_ID", "user-123");
+    await mockStoredZeppCredentials();
 
     const { db } = createMockDatabase();
     const fetchFn: typeof globalThis.fetch = async () =>

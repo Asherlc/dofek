@@ -100,6 +100,9 @@ vi.mock("dofek/providers/trainerroad", () => ({
 vi.mock("dofek/providers/ultrahuman", () => ({
   UltrahumanProvider: vi.fn(() => ({ id: "ultrahuman" })),
 }));
+vi.mock("dofek/providers/amazfit-zepp", () => ({
+  AmazfitZeppProvider: vi.fn(() => ({ id: "amazfit-zepp" })),
+}));
 vi.mock("dofek/providers/mapmyfitness", () => ({
   MapMyFitnessProvider: vi.fn(() => ({ id: "mapmyfitness" })),
 }));

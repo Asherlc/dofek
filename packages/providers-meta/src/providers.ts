@@ -28,6 +28,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   fatsecret: "FatSecret",
   mapmyfitness: "MapMyFitness",
   ultrahuman: "Ultrahuman",
+  "amazfit-zepp": "Amazfit/Zepp",
   velohero: "VeloHero",
   wger: "Wger",
   xert: "Xert",
@@ -101,6 +102,7 @@ export const BRAND_COLORS: Readonly<Record<string, string>> = {
   velohero: "#FF6600",
   bodyspec: "#00B4D8",
   dofek: "#4A9D8E",
+  "amazfit-zepp": "#00B588",
 };
 
 /** Returns "svg", "png", or null depending on what logo file a provider has. */

@@ -141,6 +141,9 @@ export interface SyncOptions {
 /**
  * A provider that syncs data from an API on a schedule.
  * The sync framework calls `sync()` periodically.
+ *
+ * New sync providers must authenticate per user via `authSetup()` and load
+ * credentials with `loadTokens()` during sync. See `docs/adding-a-provider.md`.
  */
 export interface SyncProvider extends BaseProvider {
   /**
