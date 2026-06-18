@@ -1,26 +1,9 @@
 /**
- * Shared predicates for activities that should appear in user-facing views,
- * exports, analytics read models, and sync stats.
+ * Regression guard for activity visibility filters.
  *
  * Keep `provider_absent_at` and `deleted_at` checks paired everywhere we filter
  * visible activities. {@link scanActiveActivityPredicatePairing} enforces this.
  */
-
-/** Postgres SQL fragment (unqualified columns). */
-export const ACTIVE_ACTIVITY_PREDICATE = "provider_absent_at IS NULL AND deleted_at IS NULL";
-
-/** Postgres SQL fragment with a table alias (e.g. `a`). */
-export function activeActivityPredicateAliased(alias: string): string {
-  return `${alias}.provider_absent_at IS NULL AND ${alias}.deleted_at IS NULL`;
-}
-
-/** ClickHouse / dbt SQL fragment (unqualified columns, lowercase null). */
-export const ACTIVE_ACTIVITY_PREDICATE_CH = "provider_absent_at IS null AND deleted_at IS null";
-
-/** ClickHouse SQL fragment with a table alias. */
-export function activeActivityPredicateAliasedCh(alias: string): string {
-  return `${alias}.provider_absent_at IS null AND ${alias}.deleted_at IS null`;
-}
 
 const SCANNED_RELATIVE_PATHS = [
   "packages/server/src/repositories/activities-calendar-repository.ts",
