@@ -345,7 +345,10 @@ async function exchangeAccessCodeForToken(
     try {
       return await performTokenExchange(attempt, fetchFn);
     } catch (error) {
-      if (!(error instanceof ZeppLoginExchangeError) || !isRetryableLoginExchangeStatus(error.status)) {
+      if (
+        !(error instanceof ZeppLoginExchangeError) ||
+        !isRetryableLoginExchangeStatus(error.status)
+      ) {
         throw error;
       }
       lastError = error;
@@ -365,7 +368,10 @@ export async function signInToZepp(
     try {
       return await exchangeAccessCodeForToken(legacyCredentials, fetchFn);
     } catch (error) {
-      if (!(error instanceof ZeppLoginExchangeError) || !isRetryableLoginExchangeStatus(error.status)) {
+      if (
+        !(error instanceof ZeppLoginExchangeError) ||
+        !isRetryableLoginExchangeStatus(error.status)
+      ) {
         throw error;
       }
     }

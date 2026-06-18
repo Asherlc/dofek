@@ -523,9 +523,11 @@ describe("signInToZepp", () => {
 
     expect(result.appToken).toBe("encrypted-app-token");
     expect(loginAttempts).toBe(3);
-    expect(String(fetchFn.mock.calls.find(([url]) => String(url) === ZEPP_ENCRYPTED_REGISTRATION_URL)?.[0])).toBe(
-      ZEPP_ENCRYPTED_REGISTRATION_URL,
-    );
+    expect(
+      String(
+        fetchFn.mock.calls.find(([url]) => String(url) === ZEPP_ENCRYPTED_REGISTRATION_URL)?.[0],
+      ),
+    ).toBe(ZEPP_ENCRYPTED_REGISTRATION_URL);
   });
 
   it("throws when login response body is not JSON", async () => {
