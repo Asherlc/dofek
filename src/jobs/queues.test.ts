@@ -17,20 +17,13 @@ describe("queues", () => {
 
   describe("constants", () => {
     it("exports correct queue names", async () => {
-      const {
-        EXPORT_QUEUE,
-        IMPORT_QUEUE,
-        POST_SYNC_QUEUE,
-        SCHEDULED_SYNC_QUEUE,
-        SYNC_QUEUE,
-        TRAINING_EXPORT_QUEUE,
-      } = await import("./queues.ts");
+      const { EXPORT_QUEUE, IMPORT_QUEUE, POST_SYNC_QUEUE, SCHEDULED_SYNC_QUEUE, SYNC_QUEUE } =
+        await import("./queues.ts");
       expect(SYNC_QUEUE).toBe("sync");
       expect(IMPORT_QUEUE).toBe("import");
       expect(EXPORT_QUEUE).toBe("export");
       expect(SCHEDULED_SYNC_QUEUE).toBe("scheduled-sync");
       expect(POST_SYNC_QUEUE).toBe("post-sync");
-      expect(TRAINING_EXPORT_QUEUE).toBe("training-export");
     });
   });
 
@@ -301,18 +294,6 @@ describe("queues", () => {
           removeOnComplete: true,
         },
       );
-    });
-  });
-
-  describe("createTrainingExportQueue", () => {
-    it("creates a Queue with the training export queue name", async () => {
-      const { createTrainingExportQueue, TRAINING_EXPORT_QUEUE } = await import("./queues.ts");
-
-      createTrainingExportQueue({ host: "test", port: 3333 });
-
-      expect(MockQueue).toHaveBeenCalledWith(TRAINING_EXPORT_QUEUE, {
-        connection: { host: "test", port: 3333 },
-      });
     });
   });
 });

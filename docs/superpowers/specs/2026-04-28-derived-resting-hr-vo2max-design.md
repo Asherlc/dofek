@@ -47,7 +47,7 @@ Provider parsers can keep provider VO2 Max parsing only when an API contract tes
 
 ## Derived Resting Heart Rate
 
-Create server-side derived resting-heart-rate logic that reads raw heart-rate samples from `fitness.deduped_sensor` or `fitness.metric_stream`.
+Create server-side derived resting-heart-rate logic that reads raw heart-rate samples from `analytics.deduped_sensor` (or ClickHouse `postgres_fitness.metric_stream`).
 
 The first implementation must:
 

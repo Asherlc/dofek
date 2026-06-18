@@ -485,7 +485,6 @@ Standalone TypeScript packages for internal APIs that lack public developer acce
 |----------|--------|------------|
 | Rouvy | No public API, no RE work exists. Firebase + GraphQL behind Tyk gateway. | Sync to Strava/Garmin, pull from there |
 | Hammerhead | No public API. Some RE work exists but SRAM account migration broke auth. | Sync to Strava/Intervals.icu, pull from there |
-| Zepp (Amazfit) | Official API registration effectively closed. RE feasible via `hacking-mifit-api` (email+password auth) but not yet built. | Future candidate for RE'd package |
 | Samsung Health | No web API, no RE work. Would need dedicated Android companion app. | Not feasible for server-side sync |
 
 See [docs/provider-api-audit.md](docs/provider-api-audit.md) for detailed RE feasibility analysis of each provider.

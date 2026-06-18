@@ -53,6 +53,18 @@ const { publishedMetricStreamBatches } = vi.hoisted<{
   publishedMetricStreamBatches: [],
 }));
 
+const providerActivityAbsenceMocks = vi.hoisted(() => ({
+  reconcileProviderActivityAbsence: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("../db/provider-activity-absence.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../db/provider-activity-absence.ts")>();
+  return {
+    ...original,
+    reconcileProviderActivityAbsence: providerActivityAbsenceMocks.reconcileProviderActivityAbsence,
+  };
+});
+
 vi.mock("../metric-stream/redpanda-producer.ts", () => ({
   getDefaultMetricStreamEventPublisher: async () => ({
     publishRows: async (rows: readonly Record<string, unknown>[]) => {
@@ -73,6 +85,8 @@ vi.mock("../db/token-user-context.ts", () => ({
 
 afterEach(() => {
   publishedMetricStreamBatches.length = 0;
+  providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockReset();
+  providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockResolvedValue(undefined);
 });
 
 // ============================================================
@@ -1677,6 +1691,33 @@ describe("OuraProvider.sync()", () => {
       activityTable.providerId,
       activityTable.externalId,
     ]);
+    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        providerId: "oura",
+        windowStart: new Date("2026-03-01"),
+        presentExternalIds: new Set(["workout-001"]),
+      }),
+    );
+  });
+
+  it("reports activity absence reconciliation errors without rejecting sync", async () => {
+    setupEnv();
+    providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockRejectedValueOnce(
+      new Error("write failed"),
+    );
+    const workout = fakeWorkout();
+    const mockFetch = createMockApiFetch({ workouts: [workout] });
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.provider).toBe("oura");
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toBe("activity absence reconciliation: write failed");
+    expect(result.errors[0]?.cause).toBeInstanceOf(Error);
   });
 
   it("syncs sessions to activity table", async () => {
@@ -2090,6 +2131,7 @@ describe("OuraProvider.sync()", () => {
 
     // Verify tags endpoint was actually called (phases after workout still ran)
     expect(callCount).toBe(1);
+    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).not.toHaveBeenCalled();
   });
 
   it("handles empty API responses gracefully", async () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 describe("sensor channel mappings", () => {
-  it("maps every known source field to the canonical metric_stream channel", async () => {
+  it("maps every known source field to the canonical metric stream channel", async () => {
     const { BODY_MEASUREMENT_COLUMN_TO_CHANNEL, DRIZZLE_FIELD_TO_CHANNEL } = await import(
       "./sensor-channels.ts"
     );

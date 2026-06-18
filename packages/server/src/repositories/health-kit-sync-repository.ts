@@ -30,7 +30,7 @@ const INTEGER_DAILY_COLUMNS = new Set([
   "stand_hours",
 ]);
 
-/** metric_stream columns that are smallint/integer and require Math.round() before insert */
+/** Metric stream channels that are smallint/integer and require Math.round() before publish */
 const INTEGER_METRIC_STREAM_COLUMNS = new Set([
   "heart_rate",
   "power",
@@ -450,7 +450,7 @@ export class HealthKitSyncRepository {
         const channel = BODY_MEASUREMENT_COLUMN_TO_CHANNEL[mapping.column];
         if (!channel) {
           throw new Error(
-            `Missing metric_stream channel mapping for body column: ${mapping.column}`,
+            `Missing metric stream channel mapping for body column: ${mapping.column}`,
           );
         }
 
@@ -635,7 +635,8 @@ export class HealthKitSyncRepository {
               ON CONFLICT (user_id, provider_id, external_id) DO UPDATE SET
                 activity_type = ${activityType},
                 started_at = ${workout.startDate}::timestamptz,
-                ended_at = ${workout.endDate}::timestamptz`,
+                ended_at = ${workout.endDate}::timestamptz,
+                provider_absent_at = NULL`,
         );
         inserted++;
       }

@@ -1,11 +1,14 @@
 import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import type { CanonicalActivityType } from "@dofek/training/training";
-import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
+import {
+  markProviderActivityAbsent,
+  reconcileProviderActivityAbsence,
+} from "../db/provider-activity-absence.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
@@ -282,15 +285,11 @@ export class Concept2Provider implements WebhookProvider {
     // Handle delete events
     if (event.eventType === "delete" && event.objectId) {
       const scopedUserId = resolveScopedUserId(options?.userId);
-      await db
-        .delete(activity)
-        .where(
-          and(
-            eq(activity.userId, scopedUserId),
-            eq(activity.providerId, this.id),
-            eq(activity.externalId, event.objectId),
-          ),
-        );
+      await markProviderActivityAbsent(db, {
+        providerId: this.id,
+        externalId: event.objectId,
+        userId: scopedUserId,
+      });
       return { provider: this.id, recordsSynced: 0, errors: [], duration: Date.now() - start };
     }
 
@@ -336,6 +335,7 @@ export class Concept2Provider implements WebhookProvider {
                 startedAt: parsed.startedAt,
                 endedAt: parsed.endedAt,
                 raw: parsed.raw,
+                providerAbsentAt: null,
               },
             });
           return { recordCount: 1, result: 1 };
@@ -391,6 +391,8 @@ export class Concept2Provider implements WebhookProvider {
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
+    const syncWindowEnd = new Date();
+    const presentActivityExternalIds = new Set<string>();
     try {
       const activityCount = await withSyncLog(
         db,
@@ -408,6 +410,7 @@ export class Concept2Provider implements WebhookProvider {
 
             for (const raw of data.data) {
               const parsed = parseConcept2Result(raw);
+              presentActivityExternalIds.add(parsed.externalId);
               try {
                 await db
                   .insert(activity)
@@ -428,6 +431,7 @@ export class Concept2Provider implements WebhookProvider {
                       startedAt: parsed.startedAt,
                       endedAt: parsed.endedAt,
                       raw: parsed.raw,
+                      providerAbsentAt: null,
                     },
                   });
                 count++;
@@ -443,6 +447,13 @@ export class Concept2Provider implements WebhookProvider {
             page++;
           }
 
+          await reconcileProviderActivityAbsence(db, {
+            providerId: this.id,
+            userId: options?.userId,
+            windowStart: since,
+            windowEnd: syncWindowEnd,
+            presentExternalIds: presentActivityExternalIds,
+          });
           return { recordCount: count, result: count };
         },
         options?.userId,

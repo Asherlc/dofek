@@ -5,6 +5,7 @@ import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
+import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
 import { activity } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
@@ -167,6 +168,8 @@ export class WgerProvider implements SyncProvider {
     }
 
     // Sync workout sessions → activity table
+    const syncWindowEnd = new Date();
+    const presentActivityExternalIds = new Set<string>();
     try {
       const activityCount = await withSyncLog(
         db,
@@ -201,6 +204,7 @@ export class WgerProvider implements SyncProvider {
               }
 
               const parsed = parseWgerWorkoutSession(raw);
+              presentActivityExternalIds.add(parsed.externalId);
               try {
                 await db
                   .insert(activity)
@@ -219,6 +223,7 @@ export class WgerProvider implements SyncProvider {
                       name: parsed.name,
                       startedAt: parsed.startedAt,
                       raw: parsed.raw,
+                      providerAbsentAt: null,
                     },
                   });
                 count++;
@@ -236,6 +241,13 @@ export class WgerProvider implements SyncProvider {
             }
           }
 
+          await reconcileProviderActivityAbsence(db, {
+            providerId: this.id,
+            userId: options?.userId,
+            windowStart: since,
+            windowEnd: syncWindowEnd,
+            presentExternalIds: presentActivityExternalIds,
+          });
           return { recordCount: count, result: count };
         },
         options?.userId,
@@ -248,7 +260,7 @@ export class WgerProvider implements SyncProvider {
       });
     }
 
-    // Sync body weight into metric_stream body channels.
+    // Sync body weight into metric stream body channels.
     try {
       const weightCount = await withSyncLog(
         db,

@@ -9,7 +9,7 @@ import {
   createActivityTypeMapper,
   STRAVA_ACTIVITY_TYPE_MAP,
 } from "@dofek/training/training";
-import { and, eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -20,6 +20,10 @@ import {
   replaceMetricStreamBatch,
   writeMetricStreamBatch,
 } from "../db/metric-stream-writer.ts";
+import {
+  markProviderActivityAbsent,
+  reconcileProviderActivityAbsence,
+} from "../db/provider-activity-absence.ts";
 import { activity } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
@@ -170,7 +174,7 @@ export function parseStravaActivityList(
 }
 
 // ============================================================
-// Streams → metric_stream mapping
+// Streams → metric stream mapping
 // ============================================================
 
 export function stravaStreamsToMetricStream(
@@ -627,31 +631,16 @@ export class StravaProvider implements WebhookProvider {
       throw new Error(`[strava] Cannot sync webhook event: no userId provided or in context`);
     }
 
-    // Handle delete events — remove the activity and its streams
+    // Handle delete events by preserving the raw row but hiding it from current activity views.
     if (event.eventType === "delete") {
-      const deleted = await db
-        .delete(activity)
-        .where(
-          and(
-            eq(activity.userId, scopedUserId),
-            eq(activity.providerId, this.id),
-            eq(activity.externalId, event.objectId),
-          ),
-        )
-        .returning({ id: activity.id });
-      const deletedRow = deleted[0];
-      if (deletedRow) {
-        await replaceMetricStreamBatch(
-          db,
-          { activityId: deletedRow.id },
-          [],
-          SOURCE_TYPE_API,
-          options.metricStreamPublisher,
-        );
-        logger.info(
-          `[strava] Deleted activity ${event.objectId} via webhook for user ${scopedUserId}`,
-        );
-      }
+      await markProviderActivityAbsent(db, {
+        providerId: this.id,
+        externalId: event.objectId,
+        userId: scopedUserId,
+      });
+      logger.info(
+        `[strava] Marked activity ${event.objectId} provider-absent via webhook for user ${scopedUserId}`,
+      );
       return { provider: this.id, recordsSynced: 0, errors: [], duration: Date.now() - start };
     }
 
@@ -691,6 +680,7 @@ export class StravaProvider implements WebhookProvider {
           name: parsed.name,
           sourceName: detail.device_name,
           raw: detail,
+          providerAbsentAt: null,
         },
       })
       .returning({ id: activity.id });
@@ -764,6 +754,8 @@ export class StravaProvider implements WebhookProvider {
     const perPage = 30;
     let hasMore = true;
     let shouldStop = false;
+    const syncWindowEnd = new Date();
+    const presentActivityExternalIds = new Set<string>();
 
     while (hasMore && !shouldStop) {
       let rawActivities: StravaActivity[];
@@ -805,6 +797,7 @@ export class StravaProvider implements WebhookProvider {
       const parsed = parseStravaActivityList(rawActivities, perPage);
 
       for (const act of parsed.activities) {
+        presentActivityExternalIds.add(act.externalId);
         try {
           // Fetch detailed activity to get device_name for source tracking
           let sourceName: string | undefined = act.sourceName;
@@ -861,6 +854,7 @@ export class StravaProvider implements WebhookProvider {
                 name: act.name,
                 sourceName: sql`coalesce(excluded.source_name, ${activity.sourceName})`,
                 raw: rawActivities.find((r) => String(r.id) === act.externalId),
+                providerAbsentAt: null,
               },
             })
             .returning({ id: activity.id });
@@ -936,6 +930,16 @@ export class StravaProvider implements WebhookProvider {
 
       hasMore = parsed.hasMore && !shouldStop;
       page++;
+    }
+
+    if (!shouldStop) {
+      await reconcileProviderActivityAbsence(db, {
+        providerId: this.id,
+        userId: options.userId,
+        windowStart: since,
+        windowEnd: syncWindowEnd,
+        presentExternalIds: presentActivityExternalIds,
+      });
     }
 
     return {

@@ -33,6 +33,7 @@ interface SyncStepContext {
   todayDate: string;
   errors: SyncError[];
   options?: SyncOptions;
+  activityPresentExternalIds?: Set<string>;
 }
 
 export async function syncSleep(context: SyncStepContext): Promise<number> {
@@ -118,6 +119,7 @@ export async function syncWorkouts(context: SyncStepContext): Promise<number> {
         );
 
         for (const workout of allWorkouts) {
+          context.activityPresentExternalIds?.add(workout.id);
           try {
             await db
               .insert(activity)
@@ -138,6 +140,7 @@ export async function syncWorkouts(context: SyncStepContext): Promise<number> {
                   endedAt: new Date(workout.end_datetime),
                   name: workout.label,
                   raw: workout,
+                  providerAbsentAt: null,
                 },
               });
             count++;
@@ -178,6 +181,7 @@ export async function syncSessions(context: SyncStepContext): Promise<number> {
         );
 
         for (const session of allSessions) {
+          context.activityPresentExternalIds?.add(session.id);
           try {
             const sessionActivityType = mapOuraSessionType(session.type);
             await db
@@ -199,6 +203,7 @@ export async function syncSessions(context: SyncStepContext): Promise<number> {
                   endedAt: new Date(session.end_datetime),
                   name: session.type,
                   raw: session,
+                  providerAbsentAt: null,
                 },
               });
             count++;

@@ -332,6 +332,7 @@ describe("CorosProvider", () => {
     const result = await new CorosProvider(mockFetch).sync(
       mockDb,
       new Date("2026-03-01T00:00:00Z"),
+      { userId: "00000000-0000-0000-0000-000000000001" },
     );
 
     expect(result.errors).toHaveLength(0);

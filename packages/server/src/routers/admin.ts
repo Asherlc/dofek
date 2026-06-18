@@ -1,6 +1,5 @@
 import { PROVIDER_GUIDE_SETTINGS_KEY } from "@dofek/onboarding/provider-guide";
 import { TRPCError } from "@trpc/server";
-import { POSTGRES_METRIC_STREAM_EXPORT_RETIRED_MESSAGE } from "dofek/jobs/queues";
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -440,13 +439,14 @@ export const adminRouter = router({
                    a.source_name
             FROM fitness.activity a
             LEFT JOIN fitness.user_profile up ON up.id = a.user_id
+            WHERE a.provider_absent_at IS NULL
             ORDER BY a.started_at DESC
             LIMIT ${input.limit} OFFSET ${input.offset}`,
       ),
       executeWithSchema(
         ctx.db,
         countSchema,
-        sql`SELECT COUNT(*)::text AS count FROM fitness.activity`,
+        sql`SELECT COUNT(*)::text AS count FROM fitness.activity WHERE provider_absent_at IS NULL`,
       ),
     ]);
     return { rows, total: countRows[0]?.count ?? 0 };
@@ -620,19 +620,4 @@ export const adminRouter = router({
           ORDER BY failed DESC, total DESC`,
     );
   }),
-
-  /** Retired: Postgres metric_stream training export was removed with the table drop. */
-  triggerTrainingExport: adminProcedure
-    .input(
-      z.object({
-        since: z.string().optional(),
-        until: z.string().optional(),
-      }),
-    )
-    .mutation(async () => {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: POSTGRES_METRIC_STREAM_EXPORT_RETIRED_MESSAGE,
-      });
-    }),
 });

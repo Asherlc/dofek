@@ -12,6 +12,7 @@ import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { replaceMetricStreamBatch } from "../db/metric-stream-writer.ts";
+import { markProviderActivityAbsent } from "../db/provider-activity-absence.ts";
 import { activity, userSettings } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
@@ -208,7 +209,7 @@ export function parseTripToActivity(trip: RideWithGpsTripSummary): ParsedActivit
 export function parseTrackPoints(points: RideWithGpsTrackPoint[]): ParsedTrackPoint[] {
   const result: ParsedTrackPoint[] = [];
   for (const point of points) {
-    // Skip points without a timestamp — can't insert into metric_stream
+    // Skip points without a timestamp — can't publish metric stream samples
     if (point.epochSeconds === undefined) continue;
     // Skip points without coordinates — indoor/GPS-less activities may omit lat/lng
     if (point.latitude === undefined || point.longitude === undefined) continue;
@@ -441,15 +442,11 @@ export class RideWithGpsProvider implements SyncProvider {
 
       if (item.action === "deleted" || item.action === "removed") {
         try {
-          await db
-            .delete(activity)
-            .where(
-              and(
-                eq(activity.userId, scopedUserId),
-                eq(activity.providerId, this.id),
-                eq(activity.externalId, String(item.item_id)),
-              ),
-            );
+          await markProviderActivityAbsent(db, {
+            providerId: this.id,
+            externalId: String(item.item_id),
+            userId: scopedUserId,
+          });
         } catch (err) {
           errors.push({
             message: `Failed to delete trip ${item.item_id}: ${err instanceof Error ? err.message : String(err)}`,
@@ -489,6 +486,7 @@ export class RideWithGpsProvider implements SyncProvider {
               notes: parsed.notes,
               sourceName: parsed.sourceName,
               raw: parsed.raw,
+              providerAbsentAt: null,
             },
           })
           .returning({ id: activity.id });
@@ -512,7 +510,7 @@ export class RideWithGpsProvider implements SyncProvider {
           cadence: point.cadence,
           power: point.power,
         }));
-        // metricRows still use the legacy shape; convert and insert into metric_stream.
+        // metricRows still use the legacy shape; convert and publish to metric stream.
         await replaceMetricStreamBatch(
           db,
           { activityId },

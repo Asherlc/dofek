@@ -11,6 +11,7 @@ import {
 } from "../../auth/oauth.ts";
 import { resolveOAuthTokens } from "../../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../../db/index.ts";
+import { reconcileProviderActivityAbsence } from "../../db/provider-activity-absence.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { ensureProvider } from "../../db/tokens.ts";
 import type {
@@ -207,6 +208,8 @@ export class FitbitProvider implements WebhookProvider {
 
     const client = new FitbitClient(tokens.accessToken, this.#fetchFn);
     const sinceDate = formatDate(since);
+    const syncWindowEnd = new Date();
+    const presentActivityExternalIds = new Set<string>();
 
     // 1. Sync activities
     try {
@@ -224,6 +227,7 @@ export class FitbitProvider implements WebhookProvider {
 
             for (const raw of response.activities) {
               const parsed = parseFitbitActivity(raw);
+              presentActivityExternalIds.add(parsed.externalId);
               try {
                 const { errors: activityErrors } = await persistActivity(
                   db,
@@ -247,6 +251,13 @@ export class FitbitProvider implements WebhookProvider {
             offset += response.pagination.limit;
           }
 
+          await reconcileProviderActivityAbsence(db, {
+            providerId: this.id,
+            userId: options?.userId,
+            windowStart: since,
+            windowEnd: syncWindowEnd,
+            presentExternalIds: presentActivityExternalIds,
+          });
           return { recordCount: count, result: count };
         },
         options?.userId,

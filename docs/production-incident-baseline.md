@@ -10762,3 +10762,35 @@ new incremental tables are populated.
 - **Remaining risk:** Other future workspace TypeScript packages can hit the
   same failure if they are added as server runtime dependencies without the
   matching Dockerfile copy and symlink entries.
+
+## 2026-06-18 — Garmin sync repeatedly hit Connect API rate limits
+
+- **Symptoms:** Garmin sync logs showed repeated `Rate limit exceeded (429):
+  Rate limited` failures at 30-minute intervals, with multiple zero-record
+  error rows around each run.
+- **User impact:** Garmin data did not sync while the Connect API was rate
+  limiting the account, and each retry could continue into later Garmin phases
+  after the first 429.
+- **Evidence:** The observed error cadence matched the worker's 30-minute
+  scheduled sync interval and Garmin's 30-minute fallback cooldown when Garmin
+  omits `Retry-After`. Code inspection showed `SyncErrorTracker.record()` and
+  Garmin phase-level catches treated `GarminRateLimitError` as a collected
+  partial-sync error, so `processSyncJob()` only saw the provider rate limit
+  after Garmin sync had continued through later phases.
+- **Root cause:** Garmin provider phase error handling did not classify
+  provider rate limits as sync-abort errors. Rate limits were wrapped into
+  phase summary errors instead of bubbling immediately to the worker cooldown
+  path.
+- **Fix / mitigation:** Garmin sync now rethrows `GarminRateLimitError` anywhere
+  it is seen during token resolution, client construction, phase execution, or
+  per-date/per-activity tracking. The worker now schedules the existing provider
+  cooldown retry immediately after the first Garmin 429 instead of allowing
+  later Garmin phases to keep issuing requests in the same run.
+- **Remaining risk:** Garmin still receives a 30-minute fallback cooldown when
+  it does not send `Retry-After`. If production continues to get 429s after
+  this fix, Garmin likely needs a longer provider-specific fallback cooldown or
+  a scheduled-sync dedupe change so the scheduled fan-out cannot collide with a
+  just-due delayed retry.
+- **Follow-up:** Add an operational runbook note for provider rate limits,
+  including how fallback cooldowns interact with scheduled sync intervals and
+  when to lengthen a provider-specific fallback.

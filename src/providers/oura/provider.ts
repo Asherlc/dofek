@@ -3,6 +3,10 @@ import { z } from "zod";
 import { exchangeCodeForTokens } from "../../auth/oauth.ts";
 import { resolveOAuthTokens } from "../../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../../db/index.ts";
+import {
+  hasProviderActivityListSyncErrors,
+  reconcileProviderActivityAbsence,
+} from "../../db/provider-activity-absence.ts";
 import { ensureProvider } from "../../db/tokens.ts";
 import type {
   ProviderAuthSetup,
@@ -224,7 +228,9 @@ export class OuraProvider implements WebhookProvider {
 
     const client = new OuraClient(accessToken, this.#fetchFn);
     const sinceDate = formatDate(since);
-    const todayDate = formatDate(new Date());
+    const syncWindowEnd = new Date();
+    const todayDate = formatDate(syncWindowEnd);
+    const activityPresentExternalIds = new Set<string>();
 
     const context = {
       db,
@@ -234,6 +240,7 @@ export class OuraProvider implements WebhookProvider {
       todayDate,
       errors,
       options,
+      activityPresentExternalIds,
     };
 
     // 1. Sync sleep sessions
@@ -244,6 +251,25 @@ export class OuraProvider implements WebhookProvider {
 
     // 3. Sync sessions (meditation, breathing, etc.) → activity table
     recordsSynced += await syncSessions(context);
+
+    if (!hasProviderActivityListSyncErrors(errors, ["workouts:", "sessions:"])) {
+      try {
+        await reconcileProviderActivityAbsence(db, {
+          providerId: this.id,
+          userId: options?.userId,
+          windowStart: since,
+          windowEnd: syncWindowEnd,
+          presentExternalIds: activityPresentExternalIds,
+        });
+      } catch (err) {
+        errors.push({
+          message: `activity absence reconciliation: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+          cause: err,
+        });
+      }
+    }
 
     // 4. Sync heart rate → metric_stream table (batched)
     recordsSynced += await syncHeartRate(context, since);

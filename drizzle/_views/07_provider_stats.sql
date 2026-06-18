@@ -7,7 +7,7 @@ WITH providers AS (
   SELECT DISTINCT user_id, provider_id
   FROM fitness.oauth_token
   UNION
-  SELECT DISTINCT user_id, provider_id FROM fitness.activity
+  SELECT DISTINCT user_id, provider_id FROM fitness.activity WHERE provider_absent_at IS NULL
   UNION
   SELECT DISTINCT user_id, provider_id FROM fitness.daily_metrics
   UNION
@@ -43,6 +43,7 @@ FROM providers p
 LEFT JOIN (
   SELECT user_id, provider_id, count(*) AS cnt
   FROM fitness.activity
+  WHERE provider_absent_at IS NULL
   GROUP BY user_id, provider_id
 ) a ON a.user_id = p.user_id AND a.provider_id = p.provider_id
 LEFT JOIN (

@@ -638,7 +638,7 @@ describe("Router data coverage", () => {
       >("cyclingAdvanced.pedalDynamics", { days: 90 });
 
       // We inserted pedal dynamics data (left_right_balance, torque_eff, pedal_smooth)
-      // into metric_stream, but pedalDynamics reads from activity_summary which
+      // into metric stream, but pedalDynamics reads from activity_summary which
       // aggregates these. The activity_summary view should have them.
       expect(Array.isArray(result)).toBe(true);
 

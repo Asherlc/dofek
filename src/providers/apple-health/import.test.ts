@@ -532,7 +532,7 @@ describe("runImport", () => {
     expect(progressCalls[progressCalls.length - 1]).toBe(100);
   });
 
-  it("does not run a post-import metric_stream activity link", async () => {
+  it("does not run a post-import Postgres metric_stream activity link", async () => {
     const xmlPath = join(tmpDir, "linked-hr-import.xml");
     writeFileSync(
       xmlPath,
@@ -548,10 +548,7 @@ describe("runImport", () => {
     expect(loggerInfoSpy).not.toHaveBeenCalledWith(
       expect.stringContaining("Linked 1 heart-rate sensor rows to workouts after import"),
     );
-    const linkCall = spies.execute.mock.calls.find((call: unknown[]) =>
-      JSON.stringify(call[0]).includes("UPDATE fitness.metric_stream ss"),
-    );
-    expect(linkCall).toBeUndefined();
+    expect(JSON.stringify(spies.execute.mock.calls)).not.toContain("fitness.metric_stream");
   });
 });
 

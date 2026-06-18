@@ -1338,7 +1338,7 @@ describe("HealthKitSyncRepository", () => {
       expect(execute).not.toHaveBeenCalled();
     });
 
-    it("inserts workouts without updating metric_stream rows", async () => {
+    it("inserts workouts without touching the retired Postgres metric_stream table", async () => {
       const { repository, execute } = makeRepository();
       const workouts = [
         {
@@ -1356,9 +1356,7 @@ describe("HealthKitSyncRepository", () => {
       const result = await repository.processWorkouts(workouts);
       expect(result).toBe(1);
       expect(execute).toHaveBeenCalledTimes(1);
-      expect(JSON.stringify(execute.mock.calls[0]?.[0])).not.toContain(
-        "UPDATE fitness.metric_stream ss",
-      );
+      expect(JSON.stringify(execute.mock.calls)).not.toContain("fitness.metric_stream");
     });
   });
 
