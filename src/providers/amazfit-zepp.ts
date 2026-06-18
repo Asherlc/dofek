@@ -153,6 +153,38 @@ interface ResolvedZeppCredentials {
   zeppUserId: string;
 }
 
+/** Stored in TokenSet.scopes — JSON payload carrying the Zepp-side user id. */
+interface ZeppTokenScopes {
+  zeppUserId: string;
+}
+
+export function encodeZeppTokenScopes(zeppUserId: string): string {
+  return JSON.stringify({ zeppUserId } satisfies ZeppTokenScopes);
+}
+
+/** Reads zeppUserId from structured scopes, with legacy `userId:<id>` fallback. */
+export function decodeZeppUserIdFromScopes(scopes: string | null | undefined): string | null {
+  if (!scopes) return null;
+
+  try {
+    const parsed: unknown = JSON.parse(scopes);
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "zeppUserId" in parsed &&
+      typeof parsed.zeppUserId === "string" &&
+      parsed.zeppUserId.length > 0
+    ) {
+      return parsed.zeppUserId;
+    }
+  } catch {
+    // Fall back to legacy string format used during initial rollout.
+  }
+
+  const legacyMatch = scopes.match(/^userId:(\S+)$/);
+  return legacyMatch?.[1] ?? null;
+}
+
 async function resolveZeppCredentials(
   db: SyncDatabase,
   providerId: string,
@@ -161,8 +193,7 @@ async function resolveZeppCredentials(
   const stored = await loadTokens(db, providerId, scopedUserId);
   if (!stored) return null;
 
-  const userIdMatch = stored.scopes?.match(/userId:(\S+)/);
-  const zeppUserId = userIdMatch?.[1];
+  const zeppUserId = decodeZeppUserIdFromScopes(stored.scopes);
   if (!stored.accessToken || !zeppUserId) return null;
 
   return { appToken: stored.accessToken, zeppUserId };
@@ -312,7 +343,7 @@ export class AmazfitZeppProvider implements SyncProvider {
           accessToken: result.appToken,
           refreshToken: result.loginToken,
           expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
-          scopes: `userId:${result.userId}`,
+          scopes: encodeZeppTokenScopes(result.userId),
         };
       },
       exchangeCode: async () => {

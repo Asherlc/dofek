@@ -61,10 +61,8 @@ export async function signInToZepp(
   });
 
   if (registrationResponse.status !== 302 && registrationResponse.status !== 303) {
-    const text = await registrationResponse.text();
-    throw new Error(
-      `Amazfit/Zepp login failed (${registrationResponse.status}): ${text || "unexpected response"}`,
-    );
+    await registrationResponse.text().catch(() => undefined);
+    throw new Error(`Amazfit/Zepp login failed (${registrationResponse.status})`);
   }
 
   const location = registrationResponse.headers.get("location");
@@ -95,12 +93,20 @@ export async function signInToZepp(
     body: loginBody.toString(),
   });
 
+  const responseBody = await loginResponse.text();
+
   if (!loginResponse.ok) {
-    const text = await loginResponse.text();
-    throw new Error(`Amazfit/Zepp login error (${loginResponse.status}): ${text}`);
+    throw new Error(`Amazfit/Zepp login error (${loginResponse.status})`);
   }
 
-  const payload = zeppLoginResponseSchema.parse(await loginResponse.json());
+  let parsedBody: unknown;
+  try {
+    parsedBody = JSON.parse(responseBody);
+  } catch {
+    throw new Error("Amazfit/Zepp login error: unexpected non-JSON response from Zepp");
+  }
+
+  const payload = zeppLoginResponseSchema.parse(parsedBody);
   const tokenInfo = payload.token_info;
   if (!tokenInfo) {
     throw new Error(

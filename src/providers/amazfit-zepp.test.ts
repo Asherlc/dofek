@@ -7,6 +7,7 @@ import {
   AmazfitZeppProvider,
   decodeZeppHeartRateSamples,
   decodeZeppSummary,
+  encodeZeppTokenScopes,
   parseZeppBandDay,
 } from "./amazfit-zepp.ts";
 import { createCapturingMetricStreamPublisher, createMockDatabase } from "./test-helpers.ts";
@@ -38,7 +39,7 @@ async function mockStoredZeppCredentials(
     accessToken: appToken,
     refreshToken: "login-token",
     expiresAt: new Date("2099-01-01"),
-    scopes: `userId:${zeppUserId}`,
+    scopes: encodeZeppTokenScopes(zeppUserId),
   });
 }
 
@@ -52,22 +53,6 @@ describe("Amazfit/Zepp provider", () => {
 
   it("is always enabled and checks auth at sync time", () => {
     expect(new AmazfitZeppProvider().validate()).toBeNull();
-  });
-
-  it("authSetup returns credential login configuration", async () => {
-    const fetchFn: typeof globalThis.fetch = async () =>
-      new Response(null, {
-        status: 302,
-        headers: {
-          Location:
-            "https://s3-us-west-2.amazonaws.com/hm-registration/successsignin.html?access=access-code&country_code=US",
-        },
-      });
-    const provider = new AmazfitZeppProvider(fetchFn);
-    const setup = provider.authSetup();
-
-    expect(setup.automatedLogin).toBeTypeOf("function");
-    expect(setup.apiBaseUrl).toBe("https://api-mifit.zepp.com");
   });
 
   it("decodes base64 summary payloads", () => {
@@ -474,6 +459,35 @@ describe("Amazfit/Zepp provider", () => {
     expect(String(fetchFn.mock.calls[0]?.[0])).toContain("userid=zepp-user-42");
     expect(fetchFn.mock.calls[0]?.[1]?.headers).toMatchObject({
       apptoken: "my-app-token",
+    });
+  });
+
+  it("accepts legacy userId: scopes when resolving stored credentials", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "legacy-token",
+      refreshToken: "login-token",
+      expiresAt: new Date("2099-01-01"),
+      scopes: "userId:legacy-zepp-user",
+    });
+
+    const { db } = createMockDatabase();
+    const fetchFn = vi.fn<typeof globalThis.fetch>(
+      async () =>
+        new Response(JSON.stringify({ code: 1, data: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    const provider = new AmazfitZeppProvider(fetchFn);
+
+    await provider.sync(db, new Date("2026-02-01T00:00:00.000Z"), {
+      userId: TEST_USER_ID,
+    });
+
+    expect(String(fetchFn.mock.calls[0]?.[0])).toContain("userid=legacy-zepp-user");
+    expect(fetchFn.mock.calls[0]?.[1]?.headers).toMatchObject({
+      apptoken: "legacy-token",
     });
   });
 

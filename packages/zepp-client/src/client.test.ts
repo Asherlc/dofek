@@ -163,4 +163,23 @@ describe("signInToZepp", () => {
       "Amazfit/Zepp login error (403)",
     );
   });
+
+  it("throws when login response body is not JSON", async () => {
+    const fetchFn = mockFetch({
+      registration: new Response(null, {
+        status: 302,
+        headers: {
+          Location: `${ZEPP_REGISTRATION_REDIRECT_URI}?access=access-code&country_code=US`,
+        },
+      }),
+      login: new Response("<html>maintenance</html>", {
+        status: 200,
+        headers: { "Content-Type": "text/html" },
+      }),
+    });
+
+    await expect(signInToZepp("user@example.com", "password", fetchFn)).rejects.toThrow(
+      "unexpected non-JSON response from Zepp",
+    );
+  });
 });
