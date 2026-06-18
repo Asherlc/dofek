@@ -285,7 +285,7 @@ describe("Router data coverage", () => {
       for (let sampleIndex = 0; sampleIndex < 30; sampleIndex++) {
         const recordedAt = new Date();
         recordedAt.setHours(0, 0, 0, 0);
-        recordedAt.setDate(recordedAt.getDate() - i);
+        recordedAt.setDate(recordedAt.getDate() - i + 1);
         recordedAt.setHours(1, sampleIndex, 0, 0);
         metricStreamSeedRows.push({
           userId: TEST_USER_ID,
