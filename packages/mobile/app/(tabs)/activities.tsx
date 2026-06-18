@@ -84,6 +84,14 @@ export default function ActivitiesScreen() {
     setSelectedActivityIds(new Set());
     setSelectMode(false);
   };
+  const updateActivityType = (nextActivityType: string) => {
+    setActivityType(nextActivityType);
+    cancelSelection();
+  };
+  const updateWeeks = (nextWeeks: number) => {
+    setWeeks(nextWeeks);
+    cancelSelection();
+  };
   const confirmBulkDelete = () => {
     if (selectedCount === 0) return;
     Alert.alert(
@@ -130,8 +138,8 @@ export default function ActivitiesScreen() {
         selectMode={selectMode}
         selectedCount={selectedCount}
         deletePending={bulkDelete.isPending}
-        onActivityTypeChange={setActivityType}
-        onWeeksChange={setWeeks}
+        onActivityTypeChange={updateActivityType}
+        onWeeksChange={updateWeeks}
         onSelect={() => setSelectMode(true)}
         onCancelSelection={cancelSelection}
         onDeleteSelected={confirmBulkDelete}

@@ -62,8 +62,8 @@ export function RecentActivitiesSection({ activityTypes }: RecentActivitiesSecti
       page={page}
       pageSize={PAGE_SIZE}
       onPageChange={setPage}
-      onBulkDelete={async (ids) => {
-        await bulkDelete.mutateAsync({ ids });
+      onBulkDelete={(ids) => {
+        bulkDelete.mutate({ ids });
       }}
       bulkDeletePending={bulkDelete.isPending}
       bulkDeleteError={bulkDelete.error?.message}

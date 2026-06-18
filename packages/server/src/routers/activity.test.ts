@@ -586,6 +586,25 @@ describe("activityRouter", () => {
       expect(execute).toHaveBeenCalledTimes(1);
     });
 
+    it("bulkDelete rejects oversized selections before querying the database", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.bulkDelete({
+          ids: Array.from(
+            { length: 501 },
+            (_, index) => `00000000-0000-0000-0000-${String(index + 1).padStart(12, "0")}`,
+          ),
+        }),
+      ).rejects.toThrow();
+      expect(execute).not.toHaveBeenCalled();
+    });
+
     it("bulkDelete throws PRECONDITION_FAILED when activity views are missing", async () => {
       const execute = vi.fn().mockRejectedValue(
         Object.assign(new Error('relation "fitness.v_activity" does not exist'), {

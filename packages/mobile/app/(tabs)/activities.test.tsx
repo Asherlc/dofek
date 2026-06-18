@@ -273,6 +273,52 @@ describe("ActivitiesScreen", () => {
     });
   });
 
+  it("clears selected activities when the activity type filter changes", () => {
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity()] }],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    mockOverviewQuery = {
+      data: {
+        activityCount: 1,
+        totalMinutes: 60,
+        totalDistanceMeters: 5000,
+        totalElevationGainM: 120,
+        activityTypes: ["running"],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesScreen />);
+    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByText("Trainer Ride"));
+    fireEvent.click(screen.getByText("Running"));
+
+    expect(screen.queryByText("1 selected")).toBeNull();
+    expect(screen.getByText("Select")).toBeDefined();
+  });
+
+  it("clears selected activities when the date range changes", () => {
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity()] }],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesScreen />);
+    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByText("Trainer Ride"));
+    fireEvent.click(screen.getByText("8 weeks"));
+
+    expect(screen.queryByText("1 selected")).toBeNull();
+    expect(screen.getByText("Select")).toBeDefined();
+  });
+
   it("replaces failed map tiles with a fallback", () => {
     mockQuery = {
       data: [
