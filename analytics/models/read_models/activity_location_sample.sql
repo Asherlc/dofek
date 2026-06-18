@@ -2,7 +2,7 @@
     materialized='incremental',
     incremental_strategy='microbatch',
     unique_key='source_metric_stream_id',
-    event_time='recorded_at',
+    event_time='refreshed_at',
     begin='2026-01-01',
     batch_size='day',
     lookback=3,
@@ -96,7 +96,8 @@ SELECT
     )) AS lng,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
     location_rows.is_deleted AS is_deleted,
-    greatest(location_rows._peerdb_synced_at, activity_members.source_synced_at) AS refreshed_at
+    greatest(location_rows._peerdb_synced_at, activity_members.source_synced_at) AS source_refreshed_at,
+    source_refreshed_at AS refreshed_at
 FROM location_points AS location_rows
 INNER JOIN activity_members
     ON activity_members.member_activity_id = location_rows.member_activity_id

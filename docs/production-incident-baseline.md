@@ -10794,3 +10794,39 @@ new incremental tables are populated.
 - **Follow-up:** Add an operational runbook note for provider rate limits,
   including how fallback cooldowns interact with scheduled sync intervals and
   when to lengthen a provider-specific fallback.
+
+## 2026-06-18 — Activity detail missing map and stream metrics after late activity refresh
+
+- **Symptoms:** Production activity
+  `8a6df8c4-9de2-4099-b9c4-aee1aaaba539` rendered without heart-rate,
+  elevation, speed, cadence, route map, or heart-rate zone sections.
+- **User impact:** The activity detail page showed only basic activity metadata
+  even though raw Strava, Apple Health, and WHOOP samples existed for the
+  workout window.
+- **Evidence:** `fitness.v_activity` showed a hiking dedupe group with member
+  IDs `420b1ce0-57df-4881-8295-dbeb28b58776`,
+  `8a6df8c4-9de2-4099-b9c4-aee1aaaba539`, and
+  `973eacc0-4373-4fc9-9a6b-e24dd97a7879`. ClickHouse
+  `analytics.activity_sensor_sample` and `analytics.activity_location_sample`
+  returned zero rows for that group, while raw window reads found Apple Health
+  altitude and heart-rate rows, Strava altitude/cadence/heart-rate/speed rows,
+  WHOOP heart-rate rows, and raw location rows for Apple Health and Strava.
+  `analytics.deduped_activities FINAL` showed the active canonical activity was
+  refreshed at `2026-06-18 17:24:18Z` for an activity that occurred on
+  `2026-06-12`.
+- **Root cause:** The activity-specific ClickHouse read models are dbt
+  microbatch incrementals with a three-day event-time lookback. The canonical
+  activity/dedupe mapping refreshed about six days after the activity time, so
+  the raw samples existed but the microbatch models no longer revisited the
+  June 12 event window to attach those samples to the activity.
+- **Fix / mitigation:** No manual production data mutation was performed during
+  diagnosis. The activity sample membership dbt models now use upstream source
+  freshness as their microbatch event time, so a late activity or dedupe refresh
+  reprocesses the affected activity window even when the raw sample
+  `recorded_at` values are older than the normal lookback. A read-only
+  model-join check showed this path would produce sensor rows for altitude,
+  cadence, grade, heart rate, and speed, plus Strava route location rows for
+  the canonical activity.
+- **Remaining risk:** Already-missed activities whose activity/dedupe freshness
+  falls outside the deployment-time lookback can still need an explicit targeted
+  backfill or full model rebuild.
