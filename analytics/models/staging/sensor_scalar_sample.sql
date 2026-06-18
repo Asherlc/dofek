@@ -2,7 +2,7 @@
     materialized='incremental',
     incremental_strategy='microbatch',
     unique_key='id',
-    event_time='recorded_at',
+    event_time='_peerdb_synced_at',
     begin='2026-01-01',
     batch_size='day',
     lookback=3,
@@ -17,7 +17,7 @@
 
 WITH metric_stream_versions AS (
     SELECT *
-    FROM {{ source('postgres_fitness', 'metric_stream') }}
+    FROM {{ source('postgres_fitness', 'metric_stream_freshness') }}
     WHERE (scalar IS NOT null OR _peerdb_is_deleted = 1)
         AND channel IN (
             'heart_rate',

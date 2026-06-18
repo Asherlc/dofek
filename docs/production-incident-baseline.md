@@ -10898,3 +10898,45 @@ new incremental tables are populated.
   `argMax(_peerdb_is_deleted, _peerdb_version)` by primary key against
   `FINAL WHERE _peerdb_is_deleted = 0` when ClickHouse mirrors retain deleted
   rows unexpectedly.
+
+## 2026-06-18 — Strava activity streams present but activity detail read models empty
+
+- **Symptoms:** Production activity
+  `600dc3c6-d32b-4edf-84b3-0d0c180d4dd4` rendered without heart-rate, GPS
+  route, elevation, speed, cadence, or heart-rate zone detail even though it is
+  a Strava-sourced outdoor activity.
+- **User impact:** The activity detail page showed basic Strava activity
+  metadata but omitted the expected stream charts and map.
+- **Evidence:** `fitness.v_activity` resolved the target to a single canonical
+  Strava activity with external ID `18896230967`, started at
+  `2026-06-11 15:30:02Z`. ClickHouse raw
+  `postgres_fitness.metric_stream` contained 23,179 non-deleted rows each for
+  `altitude`, `cadence`, `grade`, `heart_rate`, `location`, and `speed`, with
+  records from `2026-06-11 15:30:02Z` through `2026-06-11 21:56:20Z`.
+  `analytics.activity_sensor_sample` returned no channels,
+  `analytics.activity_location_sample` returned zero rows, and
+  `analytics.activity_summary` had one row with null stream-derived metrics.
+  `analytics.sensor_scalar_sample` also had zero rows for the target raw
+  metric-stream IDs. A 14-day blast-radius check found seven Strava-source
+  activities with raw streams and two missing both location and sensor read
+  models: this activity and `8a6df8c4-9de2-4099-b9c4-aee1aaaba539`.
+- **Root cause:** Unresolved. The immediate failure is stale/missing
+  ClickHouse analytics rows, not missing Strava ingestion. Scalar samples are
+  blocked because `analytics.sensor_scalar_sample` still microbatches by
+  `recorded_at` with a three-day lookback, so Strava samples recorded on
+  June 11 but synced on June 18 were not staged. Location rows should be
+  recoverable with the deployed `activity_location_sample` freshness-based
+  event time: a read-only reproduction of the model join produced 23,179
+  candidate location rows with `refreshed_at = 2026-06-18 19:57:30Z`, but the
+  scheduled dbt run at `20:04Z` still left the materialized table empty.
+- **Fix / mitigation:** The long-term code fix adds a
+  `postgres_fitness.metric_stream_freshness` dbt source alias with
+  `_peerdb_synced_at` as its event time. `sensor_scalar_sample` now reads that
+  source and microbatches by `_peerdb_synced_at`; `deduped_sensor` now carries
+  source freshness forward as `refreshed_at`; and `activity_location_sample`
+  reads the freshness source alias so dbt no longer injects a `recorded_at`
+  source filter before GPS rows can be attached to activities.
+- **Remaining risk:** Any Strava activity whose raw stream rows arrive outside
+  the prior recorded-time lookback can still miss stream metrics in production
+  until the fixed models are deployed and the affected batches are explicitly
+  backfilled or rebuilt.

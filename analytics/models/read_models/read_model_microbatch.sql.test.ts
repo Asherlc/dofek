@@ -214,6 +214,32 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("source_refreshed_at AS refreshed_at");
   });
 
+  it("uses source freshness for late-arriving activity stream samples", () => {
+    const sourcesYaml = readProjectFile("analytics/models/sources.yml");
+    const sensorScalarSampleSql = readProjectFile(
+      "analytics/models/staging/sensor_scalar_sample.sql",
+    );
+    const dedupedSensorSql = readModel("deduped_sensor");
+    const activityLocationSampleSql = readModel("activity_location_sample");
+
+    expect(sourcesYaml).toContain("name: metric_stream_freshness");
+    expect(sourcesYaml).toContain("identifier: metric_stream");
+    expect(sourcesYaml).toContain("event_time: _peerdb_synced_at");
+    expect(sensorScalarSampleSql).toContain("event_time='_peerdb_synced_at'");
+    expect(sensorScalarSampleSql).toContain(
+      "source('postgres_fitness', 'metric_stream_freshness')",
+    );
+    expect(dedupedSensorSql).toContain("event_time='refreshed_at'");
+    expect(dedupedSensorSql).toContain("max(samples._peerdb_synced_at) AS source_refreshed_at");
+    expect(dedupedSensorSql).toContain("source_refreshed_at AS refreshed_at");
+    expect(activityLocationSampleSql).toContain(
+      "source('postgres_fitness', 'metric_stream_freshness')",
+    );
+    expect(activityLocationSampleSql).not.toContain(
+      "source('postgres_fitness', 'metric_stream')",
+    );
+  });
+
   it("materializes activity location membership as a microbatch intermediary", () => {
     expect(existsSync(new URL("./activity_location_sample.sql", import.meta.url))).toBe(true);
     const sql = readModel("activity_location_sample");
@@ -221,7 +247,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("incremental_strategy='microbatch'");
     expect(sql).toContain("event_time='refreshed_at'");
     expect(sql).toContain("lookback=3");
-    expect(sql).toContain("source('postgres_fitness', 'metric_stream')");
+    expect(sql).toContain("source('postgres_fitness', 'metric_stream_freshness')");
     expect(sql).toContain("ref('deduped_activity_members')");
     expect(sql).not.toContain("source('analytics', 'v_activity_members')");
     expect(sql).toContain("channel = 'location'");
@@ -251,7 +277,8 @@ describe("production analytics read-model build", () => {
     const activityLocationSampleSql = readModel("activity_location_sample");
     const sleepHeartRateSampleSql = readModel("sleep_heart_rate_sample");
 
-    expect(dedupedSensorSql).toContain("now64(9) AS refreshed_at");
+    expect(dedupedSensorSql).toContain("max(samples._peerdb_synced_at) AS source_refreshed_at");
+    expect(dedupedSensorSql).toContain("source_refreshed_at AS refreshed_at");
     expect(activitySensorSampleSql).toContain(
       "greatest(samples.refreshed_at, current_activity.source_synced_at) AS source_refreshed_at",
     );
