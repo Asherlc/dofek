@@ -316,6 +316,7 @@ const analyticsBuildOrder = [
   "analytics.daily_recovery",
   "analytics.deduped_location",
   "analytics.activity_sensor_sample",
+  "analytics.activity_location_sample",
   "analytics.activity_summary",
   "analytics.daily_activity_load",
   "analytics.daily_strain",
@@ -556,6 +557,16 @@ scalar Nullable(Float32),
 refresh_version UInt64,
 is_deleted UInt8,
 refreshed_at DateTime64(9)`,
+    activity_location_sample: `activity_id UUID,
+user_id UUID,
+recorded_at DateTime64(6, 'UTC'),
+recorded_date Date,
+source_metric_stream_id UUID,
+lat Nullable(Float32),
+lng Nullable(Float32),
+refresh_version UInt64,
+is_deleted UInt8,
+refreshed_at Nullable(DateTime64(6, 'UTC'))`,
     activity_summary: `activity_id UUID,
 user_id UUID,
 activity_type String,
@@ -655,6 +666,7 @@ activity_count UInt64`,
   const engine =
     shortViewName === "deduped_activities" ||
     shortViewName === "activity_sensor_sample" ||
+    shortViewName === "activity_location_sample" ||
     shortViewName === "daily_sleep" ||
     shortViewName === "daily_recovery_inputs" ||
     shortViewName === "daily_recovery" ||
@@ -670,20 +682,22 @@ activity_count UInt64`,
       ? "(user_id, activity_id)"
       : shortViewName === "activity_sensor_sample"
         ? "(user_id, activity_id, recorded_date, channel, recorded_at)"
-        : shortViewName === "daily_sleep" || shortViewName === "daily_recovery_inputs"
-          ? "(user_id, date)"
-          : shortViewName === "daily_recovery"
+        : shortViewName === "activity_location_sample"
+          ? "(user_id, activity_id, recorded_date, recorded_at, source_metric_stream_id)"
+          : shortViewName === "daily_sleep" || shortViewName === "daily_recovery_inputs"
             ? "(user_id, date)"
-            : shortViewName === "daily_activity_load" ||
-                shortViewName === "healthspan_activity_zone_minutes"
-              ? "(user_id, activity_id)"
-              : shortViewName === "daily_strain"
-                ? "(user_id, date)"
-                : shortViewName === "weekly_healthspan"
-                  ? "(user_id, week_start)"
-                  : shortViewName === "provider_stats"
-                    ? "(user_id, provider_id)"
-                    : "tuple()";
+            : shortViewName === "daily_recovery"
+              ? "(user_id, date)"
+              : shortViewName === "daily_activity_load" ||
+                  shortViewName === "healthspan_activity_zone_minutes"
+                ? "(user_id, activity_id)"
+                : shortViewName === "daily_strain"
+                  ? "(user_id, date)"
+                  : shortViewName === "weekly_healthspan"
+                    ? "(user_id, week_start)"
+                    : shortViewName === "provider_stats"
+                      ? "(user_id, provider_id)"
+                      : "tuple()";
   return `CREATE TABLE IF NOT EXISTS ${viewName} (
 ${columnDefinitions}
 )
@@ -739,6 +753,21 @@ INNER JOIN current_activity
   ON current_activity.user_id = samples.user_id
  AND samples.recorded_at >= current_activity.started_at
  AND samples.recorded_at <= coalesce(current_activity.ended_at, current_activity.started_at + INTERVAL 12 HOUR)`;
+}
+
+function buildTestActivityLocationSampleSelectSql(databases: IsolatedClickHouseDatabases): string {
+  return `SELECT
+  activity_id,
+  user_id,
+  recorded_at,
+  toDate(recorded_at) AS recorded_date,
+  generateUUIDv4() AS source_metric_stream_id,
+  lat,
+  lng,
+  toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+  toUInt8(0) AS is_deleted,
+  now64(6, 'UTC') AS refreshed_at
+FROM ${databases.analytics}.deduped_location`;
 }
 
 function buildTestProviderStatsSelectSql(selectSql: string): string {
@@ -1577,6 +1606,14 @@ ${buildTestDedupedActivitiesSelectSql({
     query: `CREATE VIEW IF NOT EXISTS analytics.activity_sensor_sample
 AS
 ${buildTestActivitySensorSampleSelectSql({
+  analytics: "analytics",
+  postgresFitness: "postgres_fitness",
+})}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.activity_location_sample
+AS
+${buildTestActivityLocationSampleSelectSql({
   analytics: "analytics",
   postgresFitness: "postgres_fitness",
 })}`,
