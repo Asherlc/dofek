@@ -19,9 +19,7 @@ import {
   syncRecordsTotal,
 } from "../sync-metrics.ts";
 import { scheduleDelayedSyncJob } from "./enqueue-sync-job.ts";
-import {
-  providerRateLimitCooldownStore,
-} from "./provider-rate-limit-cooldown.ts";
+import { providerRateLimitCooldownStore } from "./provider-rate-limit-cooldown.ts";
 import type { SyncJobData } from "./queues.ts";
 import { syncWindowFromJobData } from "./sync-job-window.ts";
 

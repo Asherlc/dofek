@@ -1,10 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Database } from "dofek/db";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
-import {
-  getProviderSyncQueue,
-  providerSyncQueueName,
-} from "dofek/jobs/queues";
+import { providerSyncQueueName } from "dofek/jobs/queues";
 import { syncWindowFromTriggerInput, syncWindowToJobData } from "dofek/jobs/sync-window";
 import { ProviderModel } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";

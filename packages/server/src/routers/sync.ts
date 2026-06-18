@@ -1,12 +1,12 @@
 import { TRPCError } from "@trpc/server";
 import type { Job, Queue } from "bullmq";
+import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
 import {
   createSyncQueue,
   getProviderSyncQueue,
   providerSyncQueueName,
   type SyncJobData,
 } from "dofek/jobs/queues";
-import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
 import { syncWindowFromTriggerInput, syncWindowToJobData } from "dofek/jobs/sync-window";
 import { queryCache } from "dofek/lib/cache";
 import { ProviderModel } from "dofek/providers/provider-model";

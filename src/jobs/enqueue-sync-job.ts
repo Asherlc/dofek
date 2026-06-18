@@ -1,9 +1,9 @@
 import type { Job, JobsOptions } from "bullmq";
 import {
+  type ProviderRateLimitCooldown,
   providerRateLimitCooldownJobId,
   providerRateLimitCooldownStore,
   providerRateLimitDelayMs,
-  type ProviderRateLimitCooldown,
 } from "./provider-rate-limit-cooldown.ts";
 import { getProviderSyncQueue, SYNC_JOB_RETRY_OPTIONS, type SyncJobData } from "./queues.ts";
 

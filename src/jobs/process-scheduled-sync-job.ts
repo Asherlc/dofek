@@ -1,10 +1,10 @@
 import type { Job } from "bullmq";
 import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
-import { enqueueSyncJob } from "./enqueue-sync-job.ts";
-import type { ScheduledSyncJobData } from "./queues.ts";
 import { logger } from "../logger.ts";
 import { getProvider, isSyncEligibleProvider } from "../providers/index.ts";
+import { enqueueSyncJob } from "./enqueue-sync-job.ts";
+import type { ScheduledSyncJobData } from "./queues.ts";
 
 /**
  * Process a scheduled sync job: query all users with connected providers
