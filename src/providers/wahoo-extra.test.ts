@@ -551,6 +551,55 @@ describe("WahooProvider.sync — since date boundary", () => {
     expect(workoutCalls).toHaveLength(1);
     expect(mockInsert).not.toHaveBeenCalled();
   });
+
+  it("syncs workouts at the window end and skips workouts after it", async () => {
+    process.env.WAHOO_CLIENT_ID = "test-id";
+    process.env.WAHOO_CLIENT_SECRET = "test-secret";
+
+    const tokenRow = makeTokenRow();
+    const mockInsert = makeInsertMock();
+    const mockDb = {
+      select: makeSelectMock(tokenRow),
+      insert: mockInsert,
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+
+    const atEndWorkout: WahooWorkout = {
+      ...sampleWahooWorkoutNoFit,
+      id: 100,
+      starts: "2026-03-02T18:00:00.000Z",
+    };
+    const afterEndWorkout: WahooWorkout = {
+      ...sampleWahooWorkoutNoFit,
+      id: 101,
+      starts: "2026-03-02T18:00:00.001Z",
+    };
+
+    const workoutsResponse = makeWorkoutApiResponse([atEndWorkout, afterEndWorkout]);
+    const mockFetch = vi.fn().mockImplementation((url: string | URL | Request) => {
+      const urlStr = String(typeof url === "object" && "toString" in url ? url.toString() : url);
+      if (urlStr.includes("/v1/workouts")) {
+        return Promise.resolve(Response.json(workoutsResponse));
+      }
+      return Promise.resolve(new Response("Not Found", { status: 404 }));
+    });
+
+    const provider = new WahooProvider(mockFetch);
+    const result = await provider.sync(
+      new SyncRun({
+        db: mockDb,
+        window: new SyncWindow({
+          since: new Date("2026-03-01T00:00:00.000Z"),
+          until: new Date("2026-03-02T18:00:00.000Z"),
+        }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
+    expect(mockInsert).toHaveBeenCalledOnce();
+  });
 });
 
 describe("WahooProvider.sync — onProgress callback", () => {

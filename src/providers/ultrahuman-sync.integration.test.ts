@@ -202,6 +202,46 @@ describe("UltrahumanProvider.sync() (integration)", () => {
     expect(result.recordsSynced).toBe(3);
   });
 
+  it("includes the final day when until is exactly midnight", async () => {
+    await saveTokens(ctx.db, "ultrahuman", {
+      accessToken: "test-token",
+      refreshToken: null,
+      expiresAt: new Date("2099-12-31T23:59:59Z"),
+      scopes: "email:test@example.com",
+    });
+
+    await ctx.db.delete(dailyMetrics).where(eq(dailyMetrics.providerId, "ultrahuman"));
+    await ctx.db.delete(sleepSession).where(eq(sleepSession.providerId, "ultrahuman"));
+
+    server.use(
+      ...ultrahumanHandlers({
+        dayResponses: {
+          "2026-03-14": fakeMetricsOnlyDay(),
+          "2026-03-15": fakeMetricsOnlyDay(),
+        },
+      }),
+    );
+
+    const provider = new UltrahumanProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: new SyncWindow({
+          since: new Date("2026-03-14T00:00:00.000Z"),
+          until: new Date("2026-03-15T00:00:00.000Z"),
+        }),
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+
+    const dailyRows = await ctx.db
+      .select()
+      .from(dailyMetrics)
+      .where(eq(dailyMetrics.providerId, "ultrahuman"));
+    expect(dailyRows.map((row) => row.date).sort()).toEqual(["2026-03-14", "2026-03-15"]);
+  });
+
   it("upserts on re-sync (no duplicates)", async () => {
     await saveTokens(ctx.db, "ultrahuman", {
       accessToken: "test-token",

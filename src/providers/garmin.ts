@@ -366,7 +366,7 @@ export class GarminProvider implements SyncProvider {
     const start = Date.now();
     const errors: SyncError[] = [];
 
-    const scopedUserId = resolveScopedUserId(options?.userId);
+    const scopedUserId = resolveScopedUserId(options.userId);
 
     let internalTokens: GarminTokens;
     try {
@@ -388,7 +388,7 @@ export class GarminProvider implements SyncProvider {
     const cursor = await loadSyncCursor(db, scopedUserId);
     const effectiveSince = cursor ? new Date(cursor) : since;
     const now = window.until;
-    const checkpoint = await loadGarminSyncCheckpoint(options?.checkpoint);
+    const checkpoint = await loadGarminSyncCheckpoint(options.checkpoint);
 
     const recordsSynced = await this.#syncViaConnectApi(
       db,
@@ -398,8 +398,8 @@ export class GarminProvider implements SyncProvider {
       errors,
       scopedUserId,
       checkpoint,
-      options?.checkpoint,
-      options?.metricStreamPublisher,
+      options.checkpoint,
+      options.metricStreamPublisher,
     );
 
     // Save sync cursor

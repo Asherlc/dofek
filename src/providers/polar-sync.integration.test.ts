@@ -426,6 +426,77 @@ describe("PolarProvider.sync() (integration)", () => {
     expect(activityRows[0]?.externalId).toBe("ex-new");
   });
 
+  it("includes records on sync window boundaries and skips records outside them", async () => {
+    await saveTokens(ctx.db, "polar", {
+      accessToken: "valid-polar-token",
+      refreshToken: "valid-polar-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "accesslink.read_all",
+    });
+
+    await ctx.db.delete(activity).where(eq(activity.providerId, "polar"));
+    await ctx.db.delete(sleepSession).where(eq(sleepSession.providerId, "polar"));
+    await ctx.db.delete(dailyMetrics).where(eq(dailyMetrics.providerId, "polar"));
+
+    server.use(
+      ...polarHandlers({
+        exercises: [
+          fakePolarExercise({ id: "ex-before", start_time: "2026-03-09T23:59:59.999Z" }),
+          fakePolarExercise({ id: "ex-at-since", start_time: "2026-03-10T00:00:00.000Z" }),
+          fakePolarExercise({ id: "ex-at-until", start_time: "2026-03-12T00:00:00.000Z" }),
+          fakePolarExercise({ id: "ex-after", start_time: "2026-03-12T00:00:00.001Z" }),
+        ],
+        sleep: [
+          fakePolarSleep({ date: "2026-03-09", sleep_start_time: "2026-03-09T23:59:59.999Z" }),
+          fakePolarSleep({ date: "2026-03-10", sleep_start_time: "2026-03-10T00:00:00.000Z" }),
+          fakePolarSleep({ date: "2026-03-12", sleep_start_time: "2026-03-12T00:00:00.000Z" }),
+          fakePolarSleep({ date: "2026-03-13", sleep_start_time: "2026-03-12T00:00:00.001Z" }),
+        ],
+        dailyActivity: [
+          fakePolarDailyActivity({ start_time: "2026-03-09T08:00:00" }),
+          fakePolarDailyActivity({ start_time: "2026-03-10T08:00:00", steps: 10_001 }),
+          fakePolarDailyActivity({ start_time: "2026-03-12T08:00:00", steps: 10_002 }),
+          fakePolarDailyActivity({ start_time: "2026-03-13T08:00:00", steps: 10_003 }),
+        ],
+      }),
+    );
+
+    const provider = new PolarProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: new SyncWindow({
+          since: new Date("2026-03-10T00:00:00.000Z"),
+          until: new Date("2026-03-12T00:00:00.000Z"),
+        }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+
+    const activityRows = await ctx.db
+      .select()
+      .from(activity)
+      .where(eq(activity.providerId, "polar"));
+    expect(activityRows.map((row) => row.externalId).sort()).toEqual([
+      "ex-at-since",
+      "ex-at-until",
+    ]);
+
+    const sleepRows = await ctx.db
+      .select()
+      .from(sleepSession)
+      .where(eq(sleepSession.providerId, "polar"));
+    expect(sleepRows.map((row) => row.externalId).sort()).toEqual(["2026-03-10", "2026-03-12"]);
+
+    const dailyRows = await ctx.db
+      .select()
+      .from(dailyMetrics)
+      .where(eq(dailyMetrics.providerId, "polar"));
+    expect(dailyRows.map((row) => row.date).sort()).toEqual(["2026-03-10", "2026-03-12"]);
+  });
+
   it("returns error when no tokens exist", async () => {
     const { oauthToken } = await import("../db/schema.ts");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "polar"));

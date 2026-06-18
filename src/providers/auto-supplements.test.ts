@@ -341,6 +341,12 @@ describe("Auto-Supplements Provider", () => {
       expect(result.errors).toHaveLength(0);
       expect(result.recordsSynced).toBe(1);
       expect(insert).toHaveBeenCalledTimes(2);
+      expect(foodValues).toHaveBeenCalledWith(
+        expect.objectContaining({
+          date: "2026-04-01",
+          externalId: `auto:creatine:${TEST_USER_ID}:2026-04-01`,
+        }),
+      );
       expect(foodReturning).toHaveBeenCalledTimes(1);
       expect(foodConflict).toHaveBeenCalledTimes(1);
     });

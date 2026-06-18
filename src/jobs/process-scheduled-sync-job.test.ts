@@ -65,6 +65,7 @@ describe("processScheduledSyncJob", () => {
         { user_id: "user-1", provider_id: "strava" },
         { user_id: "user-1", provider_id: "strong-csv" },
         { user_id: "user-2", provider_id: "wahoo" },
+        { user_id: "user-3", provider_id: "whoop" },
       ]),
     };
 
@@ -73,6 +74,7 @@ describe("processScheduledSyncJob", () => {
     // Each provider gets its own queue
     const stravaQueue = getMockQueue("strava");
     const wahooQueue = getMockQueue("wahoo");
+    const whoopQueue = getMockQueue("whoop");
 
     expect(stravaQueue.add).toHaveBeenCalledTimes(1);
     expect(stravaQueue.add).toHaveBeenCalledWith(
@@ -96,6 +98,17 @@ describe("processScheduledSyncJob", () => {
       expect.objectContaining({ attempts: 288 }),
     );
 
+    expect(whoopQueue.add).toHaveBeenCalledTimes(1);
+    expect(whoopQueue.add).toHaveBeenCalledWith(
+      "sync",
+      {
+        userId: "user-3",
+        providerId: "whoop",
+        sinceDays: 30,
+      },
+      expect.objectContaining({ attempts: 288 }),
+    );
+
     // CSV provider queue should not be created
     expect(providerQueues.has("strong-csv")).toBe(false);
 
@@ -103,7 +116,7 @@ describe("processScheduledSyncJob", () => {
       "[scheduled-sync] Skipping CSV provider strong-csv",
     );
     expect(mockLoggerInfo).toHaveBeenCalledWith(
-      "[scheduled-sync] Enqueued 2 sync jobs for 2 users",
+      "[scheduled-sync] Enqueued 3 sync jobs for 3 users",
     );
   });
 

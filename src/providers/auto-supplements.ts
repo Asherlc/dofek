@@ -96,11 +96,10 @@ const PROVIDER_NAME = "Auto-Supplements";
 /** Generate ISO date strings for each day in the inclusive range. */
 function datesInRange(since: Date, until: Date): string[] {
   const dates: string[] = [];
-  const current = new Date(since);
-  const end = new Date(until);
-  // Start from the date portion
-  current.setUTCHours(0, 0, 0, 0);
-  end.setUTCHours(0, 0, 0, 0);
+  const current = new Date(
+    Date.UTC(since.getUTCFullYear(), since.getUTCMonth(), since.getUTCDate()),
+  );
+  const end = new Date(Date.UTC(until.getUTCFullYear(), until.getUTCMonth(), until.getUTCDate()));
 
   while (current <= end) {
     dates.push(current.toISOString().slice(0, 10));
@@ -136,10 +135,6 @@ export class AutoSupplementsProvider implements SyncProvider {
     }
 
     const dates = datesInRange(since, until);
-    if (dates.length === 0) {
-      return { provider: PROVIDER_ID, recordsSynced: 0, errors, duration: Date.now() - start };
-    }
-
     const firstUser = allSupplements[0];
     if (!firstUser) {
       return { provider: PROVIDER_ID, recordsSynced: 0, errors, duration: Date.now() - start };

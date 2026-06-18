@@ -391,6 +391,10 @@ describe("WHOOP sync helpers", () => {
         presentExternalIds: new Set(["present-workout", "42"]),
       },
     );
+    const reconcileArgs =
+      providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mock.calls[0]?.[1];
+    if (!reconcileArgs) throw new Error("expected reconciliation call");
+    expect([...reconcileArgs.presentExternalIds].sort()).toEqual(["42", "present-workout"]);
   });
 
   it("passes sync user id through to workout absence reconciliation", async () => {
@@ -421,5 +425,45 @@ describe("WHOOP sync helpers", () => {
         presentExternalIds: new Set(["present-workout"]),
       }),
     );
+  });
+
+  it("falls back to cycle workout ids when developer workout listing fails", async () => {
+    const db = makeDb();
+    const client = makeClient();
+    const developerError = new Error("developer API unavailable");
+    vi.spyOn(client, "listDeveloperWorkoutIdsInWindow").mockRejectedValue(developerError);
+    const context = makeContext({
+      db: db.db,
+      client,
+      options: { userId: "user-1" },
+      cycles: [
+        {
+          workouts: [
+            makeWorkoutRecord({ activity_id: "present-workout" }),
+            makeWorkoutRecordWithRawActivityId(null),
+            makeWorkoutRecordWithRawActivityId(42),
+          ],
+        },
+      ],
+    });
+
+    await expect(syncWhoopWorkouts(context)).resolves.toBe(2);
+
+    expect(context.errors).toEqual([
+      {
+        message: "developer workouts: developer API unavailable",
+        cause: developerError,
+      },
+    ]);
+    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+      db.db,
+      expect.objectContaining({
+        presentExternalIds: new Set(["present-workout", "42"]),
+      }),
+    );
+    const reconcileArgs =
+      providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mock.calls[0]?.[1];
+    if (!reconcileArgs) throw new Error("expected reconciliation call");
+    expect([...reconcileArgs.presentExternalIds].sort()).toEqual(["42", "present-workout"]);
   });
 });

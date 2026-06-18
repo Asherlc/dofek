@@ -247,6 +247,50 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
     expect(result.errors).toHaveLength(0);
   });
 
+  it("syncs workouts at the window end and skips workouts after it", async () => {
+    await saveTokens(ctx.db, "mapmyfitness", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user_id:12345",
+    });
+
+    const workouts = [
+      fakeWorkout({
+        id: "mmf-at-window-end",
+        start_datetime: "2026-04-02T08:00:00.000+00:00",
+      }),
+      fakeWorkout({
+        id: "mmf-after-window-end",
+        start_datetime: "2026-04-02T08:00:00.001+00:00",
+      }),
+    ];
+
+    server.use(...mapmyfitHandlers({ pages: [{ workouts, hasNext: false }] }));
+
+    const provider = new MapMyFitnessProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: new SyncWindow({
+          since: new Date("2026-04-01T00:00:00.000Z"),
+          until: new Date("2026-04-02T08:00:00.000Z"),
+        }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
+
+    const rows = await ctx.db
+      .select()
+      .from(activity)
+      .where(eq(activity.providerId, "mapmyfitness"));
+
+    expect(rows.some((row) => row.externalId === "mmf-at-window-end")).toBe(true);
+    expect(rows.some((row) => row.externalId === "mmf-after-window-end")).toBe(false);
+  });
+
   it("maps activity types correctly", async () => {
     await saveTokens(ctx.db, "mapmyfitness", {
       accessToken: "valid-token",

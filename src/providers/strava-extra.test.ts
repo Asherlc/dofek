@@ -163,11 +163,16 @@ describe("StravaProvider.sync", () => {
       execute: vi.fn().mockResolvedValue([]),
     };
 
+    const before = Date.now();
     const result = await provider.sync(
       new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
     );
+    const after = Date.now();
+
     expect(result.provider).toBe("strava");
     expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+    expect(result.duration).toBeLessThanOrEqual(after - before + 100);
     expect(result.errors[0]?.message).toContain("No OAuth tokens");
   });
 
@@ -882,6 +887,13 @@ describe("StravaProvider.sync — additional coverage", () => {
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toBe("Strava authorization failed.");
     expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "authorization_failed" });
+    expect(result.errors[0]?.cause).toBeInstanceOf(Error);
+    if (result.errors[0]?.cause instanceof Error) {
+      expect(result.errors[0].cause.cause).toMatchObject({
+        name: "StravaUnauthorizedError",
+        message: "Strava API unauthorized (401): /api/v3/athlete/activities",
+      });
+    }
   });
 
   it("generic getActivities failures are returned as fetch errors", async () => {

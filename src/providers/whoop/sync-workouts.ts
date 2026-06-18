@@ -37,19 +37,12 @@ function collectWhoopWorkouts(context: WhoopSyncContext): {
 }
 
 function collectCycleWorkoutExternalIds(workouts: WhoopWorkoutRecord[]): Set<string> {
-  const presentExternalIds = new Set<string>();
-  for (const workoutRecord of workouts) {
-    const externalId = resolveWhoopWorkoutExternalId(workoutRecord);
-    if (externalId) {
-      presentExternalIds.add(externalId);
-    }
-  }
-  return presentExternalIds;
-}
-
-function workoutActivityIdString(workoutRecord: WhoopWorkoutRecord): string | undefined {
-  const activityId = workoutRecord.activity_id;
-  return activityId == null ? undefined : String(activityId);
+  return new Set(
+    workouts.flatMap((workoutRecord) => {
+      const externalId = resolveWhoopWorkoutExternalId(workoutRecord);
+      return externalId ? [externalId] : [];
+    }),
+  );
 }
 
 async function resolveWhoopPresentExternalIds(
@@ -89,8 +82,8 @@ export async function syncWhoopWorkouts(context: WhoopSyncContext): Promise<numb
         let count = 0;
         for (const workoutRecord of workouts) {
           try {
-            const activityId = workoutActivityIdString(workoutRecord);
-            const v2TypeName = activityId ? v2ActivityTypeByActivityId.get(activityId) : undefined;
+            const externalId = resolveWhoopWorkoutExternalId(workoutRecord);
+            const v2TypeName = externalId ? v2ActivityTypeByActivityId.get(externalId) : undefined;
             const parsed = parseWorkout(workoutRecord, v2TypeName);
             if (!parsed) continue;
 
@@ -128,7 +121,7 @@ export async function syncWhoopWorkouts(context: WhoopSyncContext): Promise<numb
               });
             count++;
           } catch (err) {
-            const activityId = workoutActivityIdString(workoutRecord);
+            const activityId = resolveWhoopWorkoutExternalId(workoutRecord) ?? "unknown-workout";
             context.errors.push({
               message: `Workout ${activityId}: ${err instanceof Error ? err.message : String(err)}`,
               externalId: activityId,
@@ -172,7 +165,7 @@ export async function syncWhoopStrength(
         const exerciseCache = new Map<string, string>();
 
         for (const workoutRecord of workouts) {
-          const activityId = workoutActivityIdString(workoutRecord);
+          const activityId = resolveWhoopWorkoutExternalId(workoutRecord);
           if (!activityId) continue;
 
           try {

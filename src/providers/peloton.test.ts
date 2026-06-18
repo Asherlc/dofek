@@ -1019,6 +1019,42 @@ describe("PelotonProvider.sync — workout filtering", () => {
     expect(result.recordsSynced).toBe(0);
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
+
+  it("syncs workouts at the window end and skips workouts after it", async () => {
+    const atEnd = makeSyncWorkout({
+      id: "peloton-at-window-end",
+      start_time: 1_709_280_000,
+      end_time: 1_709_281_800,
+    });
+    const afterEnd = makeSyncWorkout({
+      id: "peloton-after-window-end",
+      start_time: 1_709_280_001,
+      end_time: 1_709_281_801,
+    });
+
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ id: "user-123" }))
+      .mockResolvedValueOnce(Response.json(makeWorkoutListResponse([atEnd, afterEnd])))
+      .mockResolvedValueOnce(Response.json(makeSyncPerformanceGraph(["heart_rate"])));
+
+    const mockDb = createMockDb();
+
+    const provider = new PelotonProvider(mockFetch);
+    const result = await provider.sync(
+      new SyncRun({
+        db: mockDb,
+        window: new SyncWindow({
+          since: new Date("2024-03-01T00:00:00.000Z"),
+          until: new Date(atEnd.start_time * 1000),
+        }),
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThan(0);
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
 });
 
 describe("PelotonProvider.sync — has_pedaling_metrics", () => {
