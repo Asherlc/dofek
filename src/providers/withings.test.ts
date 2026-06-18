@@ -602,6 +602,65 @@ describe("WithingsProvider.sync() — unit tests", () => {
     expect(result.provider).toBe("withings");
   });
 
+  it("refreshes token when expiresAt equals current time", async () => {
+    vi.useFakeTimers({ now: new Date("2026-06-17T12:00:00.000Z"), toFake: ["Date"] });
+    try {
+      process.env.WITHINGS_CLIENT_ID = "test-id";
+      process.env.WITHINGS_CLIENT_SECRET = "test-secret";
+
+      const expiryAtNow = new Date("2026-06-17T12:00:00.000Z");
+      let tokenCallMade = false;
+
+      const { db: mockDb } = createMockDb({
+        tokensResult: [
+          {
+            providerId: "withings",
+            accessToken: "expired-token",
+            refreshToken: "valid-refresh",
+            expiresAt: expiryAtNow,
+            scopes: "user.metrics",
+          },
+        ],
+      });
+
+      const mockFetch: typeof globalThis.fetch = async (
+        input: RequestInfo | URL,
+        init?: RequestInit,
+      ): Promise<Response> => {
+        const url = input.toString();
+        const body = String(init?.body ?? "");
+
+        if (url.includes("/v2/oauth2") && body.includes("grant_type=refresh_token")) {
+          tokenCallMade = true;
+          return Response.json({
+            status: 0,
+            body: {
+              access_token: "new-access-token",
+              refresh_token: "new-refresh-token",
+              expires_in: 10800,
+              scope: "user.metrics",
+            },
+          });
+        }
+
+        if (url.includes("/measure")) {
+          return Response.json({
+            status: 0,
+            body: { measuregrps: [], more: 0, offset: 0 },
+          });
+        }
+
+        return new Response("Not found", { status: 404 });
+      };
+
+      const provider = new WithingsProvider(mockFetch);
+      await provider.sync(mockDb, new Date("2026-01-01"));
+      expect(tokenCallMade).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("deletes stored tokens and asks the user to reconnect when Withings rejects refresh params", async () => {
     process.env.WITHINGS_CLIENT_ID = "test-id";
     process.env.WITHINGS_CLIENT_SECRET = "test-secret";

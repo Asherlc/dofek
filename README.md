@@ -215,7 +215,7 @@ A single image is built from a multi-stage Dockerfile:
 
 | Image | Base | Contents |
 |-------|------|----------|
-| `ghcr.io/asherlc/dofek:latest` | node:22-alpine | Express API + built web assets + migrations + sync/worker entrypoints |
+| `ghcr.io/asherlc/dofek:latest` | node:22-alpine3.23 | Express API + built web assets + migrations + sync/worker entrypoints |
 
 ### How it works
 
