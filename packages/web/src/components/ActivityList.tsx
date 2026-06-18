@@ -6,6 +6,7 @@ import {
   parseValidDate,
 } from "@dofek/format/format";
 import { formatActivityTypeLabel } from "@dofek/training/training";
+import { useState } from "react";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { ActivityTable, type ActivityTableColumn } from "./ActivityTable.tsx";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
@@ -37,6 +38,9 @@ interface ActivityListProps {
   page?: number;
   pageSize?: number;
   onPageChange?: (page: number) => void;
+  onBulkDelete?: (ids: string[]) => Promise<void> | void;
+  bulkDeletePending?: boolean;
+  bulkDeleteError?: string | null;
 }
 
 function formatActivityDate(startedAt: string): string {
@@ -61,8 +65,14 @@ export function ActivityList({
   page,
   pageSize,
   onPageChange,
+  onBulkDelete,
+  bulkDeletePending = false,
+  bulkDeleteError,
 }: ActivityListProps) {
   const units = useUnitConverter();
+  const [selectMode, setSelectMode] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [selectedActivityIds, setSelectedActivityIds] = useState<Set<string>>(new Set());
 
   if (loading) {
     return <ChartLoadingSkeleton height={100} />;
@@ -79,7 +89,56 @@ export function ActivityList({
   const totalPages =
     totalCount != null && pageSize != null ? Math.ceil(totalCount / pageSize) : undefined;
   const currentPage = page ?? 0;
-  const columns: ActivityTableColumn<Activity>[] = [
+  const selectedCount = selectedActivityIds.size;
+  const selectedIds = [...selectedActivityIds];
+
+  const toggleSelected = (activityId: string) => {
+    setSelectedActivityIds((current) => {
+      const next = new Set(current);
+      if (next.has(activityId)) {
+        next.delete(activityId);
+      } else {
+        next.add(activityId);
+      }
+      return next;
+    });
+  };
+
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setConfirmDelete(false);
+    setSelectedActivityIds(new Set());
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!onBulkDelete || selectedIds.length === 0) return;
+    const result = onBulkDelete(selectedIds);
+    if (result instanceof Promise) {
+      await result;
+      exitSelectMode();
+      return;
+    }
+    exitSelectMode();
+  };
+
+  const selectionColumn: ActivityTableColumn<Activity> = {
+    key: "select",
+    label: "",
+    headerClassName: "pb-2 pr-3 w-8",
+    cellClassName: "py-2 pr-3 w-8",
+    renderCell: (activity) => (
+      <input
+        type="checkbox"
+        aria-label={`Select ${activity.name ?? formatActivityTypeLabel(activity.activity_type)}`}
+        checked={selectedActivityIds.has(activity.id)}
+        onChange={() => toggleSelected(activity.id)}
+        onClick={(event) => event.stopPropagation()}
+        className="h-4 w-4 accent-accent cursor-pointer"
+      />
+    ),
+  };
+
+  const baseColumns: ActivityTableColumn<Activity>[] = [
     {
       key: "map",
       label: "Map",
@@ -159,6 +218,7 @@ export function ActivityList({
       renderCell: (activity) => activity.source_providers?.join(", "),
     },
   ];
+  const columns = selectMode ? [selectionColumn, ...baseColumns] : baseColumns;
   const footer =
     totalPages != null && totalPages > 1 && onPageChange ? (
       <div className="flex items-center justify-between pt-3 border-t border-border/50 mt-2">
@@ -188,13 +248,73 @@ export function ActivityList({
     ) : null;
 
   return (
-    <ActivityTable
-      rows={activities}
-      columns={columns}
-      getRowKey={(activity) => activity.id}
-      getActivityId={(activity) => activity.id}
-      rowClassName="border-b border-border/50 hover:bg-surface-hover cursor-pointer activity-row"
-      footer={footer}
-    />
+    <div className="space-y-3">
+      {onBulkDelete ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {selectMode ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-subtle tabular-nums">{selectedCount} selected</span>
+              {confirmDelete ? (
+                <>
+                  <span className="text-xs text-muted">
+                    Delete selected activities? This cannot be undone.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleConfirmDelete}
+                    disabled={bulkDeletePending || selectedCount === 0}
+                    className="px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                  >
+                    {bulkDeletePending ? "Deleting..." : "Confirm Delete"}
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  disabled={bulkDeletePending || selectedCount === 0}
+                  className="px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                >
+                  Delete
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={exitSelectMode}
+                disabled={bulkDeletePending}
+                className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setSelectMode(true)}
+              className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover transition-colors cursor-pointer"
+            >
+              Select
+            </button>
+          )}
+        </div>
+      ) : null}
+      {bulkDeleteError ? <p className="text-sm text-red-400">{bulkDeleteError}</p> : null}
+      <ActivityTable
+        rows={activities}
+        columns={columns}
+        getRowKey={(activity) => activity.id}
+        getActivityId={(activity) => activity.id}
+        rowClassName={(activity) =>
+          [
+            "border-b border-border/50 hover:bg-surface-hover cursor-pointer activity-row",
+            selectedActivityIds.has(activity.id) ? "bg-surface-hover" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")
+        }
+        onRowClick={selectMode ? (activity) => toggleSelected(activity.id) : undefined}
+        footer={footer}
+      />
+    </div>
   );
 }
