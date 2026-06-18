@@ -7,6 +7,73 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-06-17: Raw PeerDB mirrors missing from production
+
+### Symptoms
+
+Sentry issue `DOFEK-SERVER-3B` reported recurring `ClickHouse CDC health check
+failed` events from the production `cdc-health` service. The latest failure was
+for missing raw analytics PeerDB slots:
+`peerflow_slot_dofek_fitness_raw_analytics`,
+`peerflow_slot_dofek_provider_inventory_raw_analytics`, and
+`peerflow_slot_dofek_sensor_priority_raw_analytics`.
+
+### User Impact
+
+No direct Sentry users were impacted. ClickHouse raw mirrors and downstream
+analytics could become stale for non-metric-stream source tables while the raw
+PeerDB mirrors were absent.
+
+### Evidence
+
+Sentry event `4b961c3da10544bc824ba36642710cca` occurred at
+`2026-06-17T22:01:23.893Z` and reported all three required raw PeerDB slots as
+missing. Production `pg_replication_slots` returned no
+`peerflow_slot_dofek_%` rows, and the PeerDB catalog had no registered
+`dofek_*analytics` flows. The old `metric_stream` PeerDB mirror was not part of
+this failure; metric-stream ingestion is owned by Redpanda and the ClickHouse
+sink.
+
+Follow-up investigation found the durable missing-slot state began after the
+June 9 `Deploy Web` run for `669cac25`. The deploy workflow ran
+`src/db/setup-clickhouse-cdc.ts` and logged
+`[clickhouse-cdc] PeerDB raw analytics CDC mirrors are configured` at
+`2026-06-09T18:49:56Z`; the next `cdc-health` run failed at
+`2026-06-09T18:54:34Z`. The deployed commit did not modify PeerDB setup or CDC
+health-check code. Retained PeerDB Docker logs no longer contained the exact
+flow deletion/failure statement for that June 9 window.
+
+### Root Cause
+
+The raw analytics PeerDB mirrors were absent from production, so Postgres had no
+logical replication slots for the raw table CDC flows that feed
+`postgres_fitness.*`. The exact statement or PeerDB workflow failure that
+removed the flows was not available from retained logs. The confirmed prevention
+gap is that CDC setup returned success after submitting/reconciling mirrors but
+did not validate the postcondition that all required raw flows had durable
+catalog rows and active/reserved Postgres replication slots after PeerDB settled.
+
+### Fix or Mitigation
+
+Ran the checked-in `src/db/setup-clickhouse-cdc.ts` path inside the production
+`cdc-health` container. This recreated only the three raw analytics mirrors and
+did not recreate the retired metric-stream PeerDB mirror. Validation showed all
+three raw slots active with `wal_status = reserved`, PeerDB started CDC on
+`peerflow_slot_dofek_fitness_raw_analytics`, and
+`scripts/check-clickhouse-cdc.ts` returned
+`[clickhouse-cdc-health] ok: checked 3 slots and 1 mirror`.
+
+### Remaining Risk
+
+The cause of the catalog/slot disappearance is still unknown. If the mirrors
+disappear again, inspect PeerDB catalog persistence, recent stack deploys, and
+whether any manual PeerDB cleanup removed raw `dofek_*analytics` flows. Do not
+recreate the legacy metric-stream mirror during this investigation. Follow-up on
+June 17 added catalog-aware CDC health reporting and sanitized Sentry evidence
+for observed PeerDB flows and Postgres slots. Remaining repo work is to make
+`setup-clickhouse-cdc.ts` fail unless it can read the three raw flow catalog rows
+and matching active/reserved Postgres slots after setup.
+
 ## 2026-06-07: Integration testcontainers pulled TimescaleDB from Docker Hub
 
 ### Symptoms
