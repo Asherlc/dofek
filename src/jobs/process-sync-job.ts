@@ -18,13 +18,11 @@ import {
   syncOperationsTotal,
   syncRecordsTotal,
 } from "../sync-metrics.ts";
+import { scheduleDelayedSyncJob } from "./enqueue-sync-job.ts";
 import {
-  providerRateLimitCooldownJobId,
   providerRateLimitCooldownStore,
-  providerRateLimitDelayMs,
 } from "./provider-rate-limit-cooldown.ts";
 import type { SyncJobData } from "./queues.ts";
-import { getProviderSyncQueue, SYNC_JOB_RETRY_OPTIONS } from "./queues.ts";
 import { syncWindowFromJobData } from "./sync-job-window.ts";
 
 /**
@@ -93,19 +91,15 @@ async function scheduleRateLimitRetry(
   until: Date,
 ): Promise<string> {
   const cooldown = await providerRateLimitCooldownStore.record(error, job.data.userId);
-  const delay = providerRateLimitDelayMs(cooldown);
-  const nextData: SyncJobData = {
-    ...job.data,
-    providerId: error.providerId,
-    sinceIso: since.toISOString(),
-    untilIso: until.toISOString(),
-  };
-  await getProviderSyncQueue(error.providerId).add("sync", nextData, {
-    ...SYNC_JOB_RETRY_OPTIONS,
-    delay,
-    jobId: providerRateLimitCooldownJobId(cooldown, job.data.userId),
-  });
-  return cooldown.expiresAt.toISOString();
+  return scheduleDelayedSyncJob(
+    {
+      ...job.data,
+      providerId: error.providerId,
+      sinceIso: since.toISOString(),
+      untilIso: until.toISOString(),
+    },
+    cooldown,
+  );
 }
 
 export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<void> {
@@ -155,6 +149,36 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
     });
 
     await ensureProvider(db, provider.id, provider.name, undefined, job.data.userId);
+
+    const activeCooldown = await providerRateLimitCooldownStore.getActive(
+      provider.id,
+      job.data.userId,
+    );
+    if (activeCooldown) {
+      const retryAt = await scheduleDelayedSyncJob(
+        {
+          ...job.data,
+          providerId: provider.id,
+          sinceIso: since.toISOString(),
+          untilIso: until.toISOString(),
+        },
+        activeCooldown,
+      );
+      completedCount++;
+      providerStatus[provider.id] = {
+        status: "running",
+        message: `Rate limited; retry scheduled for ${retryAt}`,
+      };
+      await job.updateProgress({
+        providers: providerStatus,
+        percentage: computePercentage(completedCount, 0, totalProviders),
+      });
+      logger.info(
+        `[worker] ${provider.name} sync deferred until rate-limit cooldown expires at ${retryAt}`,
+      );
+      continue;
+    }
+
     const syncStart = Date.now();
 
     const requiresTokens = provider.authSetup !== undefined;

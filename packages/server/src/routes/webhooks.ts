@@ -15,7 +15,7 @@
 
 import { randomBytes } from "node:crypto";
 import { runWithTokenUser } from "dofek/db/token-user-context";
-import { SYNC_JOB_RETRY_OPTIONS } from "dofek/jobs/queues";
+import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
 import type { WebhookEvent, WebhookProvider } from "dofek/providers/types";
 import { sql } from "drizzle-orm";
 import { Router, raw } from "express";
@@ -34,7 +34,7 @@ interface WebhookRouterDeps {
   syncQueue: import("bullmq").Queue;
 }
 
-export function createWebhookRouter({ db, syncQueue }: WebhookRouterDeps): Router {
+export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouterDeps): Router {
   const router = Router();
   const webhookSubscriptionRepository = new WebhookSubscriptionRepository(db);
 
@@ -154,7 +154,6 @@ export function createWebhookRouter({ db, syncQueue }: WebhookRouterDeps): Route
       }
 
       // Resolve external owner IDs → internal user+provider and process events
-      const queue = syncQueue;
       // `processed` counts all successfully handled events (targeted or fallback) and is used for log summary.
       // `fallbackJobsEnqueued` counts only events that fell back to full BullMQ sync,
       // which determines whether the worker container needs to be started.
@@ -210,15 +209,11 @@ export function createWebhookRouter({ db, syncQueue }: WebhookRouterDeps): Route
           }
 
           // Fallback: enqueue a full 1-day sync via BullMQ
-          await queue.add(
-            "sync",
-            {
-              providerId: provider_id,
-              sinceDays: 1,
-              userId: user_id,
-            },
-            SYNC_JOB_RETRY_OPTIONS,
-          );
+          await enqueueSyncJob(provider_id, {
+            providerId: provider_id,
+            sinceDays: 1,
+            userId: user_id,
+          });
           processed++;
           fallbackJobsEnqueued++;
 

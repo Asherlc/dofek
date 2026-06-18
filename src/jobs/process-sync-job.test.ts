@@ -400,6 +400,59 @@ describe("processSyncJob", () => {
     vi.useRealTimers();
   });
 
+  it("defers sync without calling the provider when a rate-limit cooldown is already active", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const provider = createMockProvider({
+      id: "garmin",
+      name: "Garmin",
+      sync: vi.fn(),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    const { providerRateLimitCooldownStore } = await import("./provider-rate-limit-cooldown.ts");
+    await providerRateLimitCooldownStore.record(
+      new ProviderRateLimitError({
+        message: "Garmin API rate limit exceeded (429): limited",
+        providerId: "garmin",
+        statusCode: 429,
+        responseBody: "limited",
+        scope: "provider",
+        retryAfterSeconds: 600,
+      }),
+      "user-1",
+    );
+
+    const job = createMockJob({ providerId: "garmin", userId: "user-1", sinceDays: 1 });
+    await runSyncJob(job, mockDb);
+
+    expect(provider.sync).not.toHaveBeenCalled();
+    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      expect.objectContaining({
+        providerId: "garmin",
+        userId: "user-1",
+        sinceIso: "2026-06-01T00:00:00.000Z",
+        untilIso: "2026-06-02T23:59:59.999Z",
+      }),
+      expect.objectContaining({
+        delay: 600_000,
+        jobId: "provider-rate-limit-garmin-provider-user-1-1780402200000",
+      }),
+    );
+    expect(mockLogSync).not.toHaveBeenCalled();
+    expect(mockSyncErrorsTotal.add).not.toHaveBeenCalled();
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      providers: {
+        garmin: {
+          status: "running",
+          message: "Rate limited; retry scheduled for 2026-06-02T12:10:00.000Z",
+        },
+      },
+      percentage: 100,
+    });
+    vi.useRealTimers();
+  });
+
   it("skips import-only providers when enqueued by id", async () => {
     mockGetProvider.mockReturnValue({ id: "strong-csv", importOnly: true });
     mockIsSyncEligibleProvider.mockReturnValue(false);

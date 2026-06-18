@@ -4,9 +4,9 @@ import {
   createSyncQueue,
   getProviderSyncQueue,
   providerSyncQueueName,
-  SYNC_JOB_RETRY_OPTIONS,
   type SyncJobData,
 } from "dofek/jobs/queues";
+import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
 import { syncWindowFromTriggerInput, syncWindowToJobData } from "dofek/jobs/sync-window";
 import { queryCache } from "dofek/lib/cache";
 import { ProviderModel } from "dofek/providers/provider-model";
@@ -221,16 +221,11 @@ export const syncRouter = router({
 
     const providerJobs = await Promise.all(
       providerIds.map(async (providerId) => {
-        const queue = getProviderSyncQueue(providerId);
-        const job = await queue.add(
-          "sync",
-          {
-            providerId,
-            userId: ctx.userId,
-            ...syncWindowToJobData(syncWindow, input.sinceDays),
-          },
-          SYNC_JOB_RETRY_OPTIONS,
-        );
+        const job = await enqueueSyncJob(providerId, {
+          providerId,
+          userId: ctx.userId,
+          ...syncWindowToJobData(syncWindow, input.sinceDays),
+        });
         const jobId = toJobId(job.id, providerId);
         return {
           providerId,
