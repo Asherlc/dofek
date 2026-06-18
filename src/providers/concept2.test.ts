@@ -61,6 +61,20 @@ vi.mock("../auth/oauth.ts", () => ({
   })),
 }));
 
+const providerActivityAbsenceMocks = vi.hoisted(() => ({
+  markProviderActivityAbsent: vi.fn().mockResolvedValue(undefined),
+  reconcileProviderActivityAbsence: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("../db/provider-activity-absence.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../db/provider-activity-absence.ts")>();
+  return {
+    ...original,
+    markProviderActivityAbsent: providerActivityAbsenceMocks.markProviderActivityAbsent,
+    reconcileProviderActivityAbsence: providerActivityAbsenceMocks.reconcileProviderActivityAbsence,
+  };
+});
+
 // ============================================================
 // Mock DB
 // ============================================================
@@ -186,6 +200,8 @@ describe("Concept2Provider", () => {
 
   afterEach(() => {
     process.env = { ...originalEnv };
+    providerActivityAbsenceMocks.markProviderActivityAbsent.mockClear();
+    providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockClear();
   });
 
   describe("properties", () => {
@@ -393,7 +409,11 @@ describe("Concept2Provider", () => {
 
       expect(result.provider).toBe("concept2");
       expect(result.recordsSynced).toBe(0);
-      expect(db.execute).toHaveBeenCalled();
+      expect(providerActivityAbsenceMocks.markProviderActivityAbsent).toHaveBeenCalledWith(db, {
+        providerId: "concept2",
+        externalId: "12345",
+        userId: "00000000-0000-0000-0000-000000000001",
+      });
     });
 
     it("returns 0 records when no payload metadata is present", async () => {

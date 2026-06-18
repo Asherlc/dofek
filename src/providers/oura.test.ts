@@ -53,6 +53,18 @@ const { publishedMetricStreamBatches } = vi.hoisted<{
   publishedMetricStreamBatches: [],
 }));
 
+const providerActivityAbsenceMocks = vi.hoisted(() => ({
+  reconcileProviderActivityAbsence: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("../db/provider-activity-absence.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../db/provider-activity-absence.ts")>();
+  return {
+    ...original,
+    reconcileProviderActivityAbsence: providerActivityAbsenceMocks.reconcileProviderActivityAbsence,
+  };
+});
+
 vi.mock("../metric-stream/redpanda-producer.ts", () => ({
   getDefaultMetricStreamEventPublisher: async () => ({
     publishRows: async (rows: readonly Record<string, unknown>[]) => {
@@ -73,6 +85,7 @@ vi.mock("../db/token-user-context.ts", () => ({
 
 afterEach(() => {
   publishedMetricStreamBatches.length = 0;
+  providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockClear();
 });
 
 // ============================================================
@@ -1677,6 +1690,14 @@ describe("OuraProvider.sync()", () => {
       activityTable.providerId,
       activityTable.externalId,
     ]);
+    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        providerId: "oura",
+        windowStart: new Date("2026-03-01"),
+        presentExternalIds: new Set(["workout-001"]),
+      }),
+    );
   });
 
   it("syncs sessions to activity table", async () => {
@@ -2090,6 +2111,7 @@ describe("OuraProvider.sync()", () => {
 
     // Verify tags endpoint was actually called (phases after workout still ran)
     expect(callCount).toBe(1);
+    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).not.toHaveBeenCalled();
   });
 
   it("handles empty API responses gracefully", async () => {
