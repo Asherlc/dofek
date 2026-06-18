@@ -10553,6 +10553,52 @@ new incremental tables are populated.
   metric-stream retirement plan), draining the R2 archive consumer between
   windows; consider raising r2-archive throughput to shorten the ~33h floor.
 
+## 2026-06-17 — Activities list empty while activity CDC was catching up
+
+- **Symptoms:** The activities list showed no recent activity data even though
+  recent completed activities existed upstream.
+- **User impact:** The web/mobile activities list and overview could show an
+  empty state until ClickHouse CDC and dbt read models caught up.
+- **Evidence:** At investigation time, production ClickHouse
+  `postgres_fitness.activity FINAL` had 204 recent completed raw activity rows
+  for user `f923fed7-d934-4cd9-8cb9-8e83020d0e69` since `2026-05-20`, latest
+  `2026-06-16 16:46:00.190000`, but `analytics.deduped_activities FINAL` and
+  `analytics.activity_summary` both returned 0 rows for the same page-equivalent
+  window. `analytics.activity_source_records FINAL` had 0 active rows and 1,140
+  tombstoned rows, with the latest tombstone refresh at
+  `2026-06-09 18:50:50.714717608`. The source CTE over
+  `postgres_fitness.activity FINAL WHERE _peerdb_is_deleted = 0` returned 1,183
+  active rows, and the raw mirror's `_peerdb_synced_at` range showed those rows
+  arrived between `2026-06-17 22:09:37` and `2026-06-17 22:11:57`, after the
+  previous scheduled analytics-worker dbt run.
+- **Root cause:** The activity CDC mirror caught up after a scheduled dbt run,
+  leaving the dbt-owned activity source/dedupe/summary models still reflecting
+  their earlier tombstoned state. The activities page reads
+  `analytics.deduped_activities` and `analytics.activity_summary`, so it stayed
+  empty until those derived models were rebuilt after CDC had current raw rows.
+- **Fix / mitigation:** Ran `dbt build --select activity_source_records` in the
+  production `analytics-worker` container, confirmed
+  `analytics.activity_source_records FINAL` had 1,183 active rows, then ran
+  `dbt build --select activity_source_records+` to rebuild the downstream
+  dedupe and activity summary chain. The dependency-chain run completed
+  `PASS=15 WARN=0 ERROR=0 SKIP=0`. A rolling `docker service update --force
+  dofek_web` cleared the 10-minute in-memory tRPC cache. Post-fix validation
+  showed `analytics.deduped_activities FINAL` and `analytics.activity_summary`
+  both had 74 recent rows for the page window, latest
+  `2026-06-16 16:46:00.000000`, and `dofek_web` was 2/2.
+- **Remaining risk:** The manual dbt run accelerated catch-up but did not add
+  alerting for the gap where raw activity CDC is current but derived activity
+  models are still tombstoned or stale. Add a monitor comparing recent
+  `postgres_fitness.activity` rows to active `analytics.activity_source_records`
+  and `analytics.deduped_activities` rows, and alert when the derived count is
+  zero while raw recent activity rows exist.
+- **2026-06-17 prevention follow-up:** Added a fail-closed guard to
+  `analytics.activity_source_records` so an incremental dbt run raises a
+  ClickHouse error instead of writing tombstones when the current source scan is
+  empty while active source records already exist, or when it would tombstone at
+  least 95% of active source records. This preserves the last good derived
+  activity state when the raw activity mirror is incomplete.
+
 ## 2026-06-17 — Withings sync retried expired-looking token until Sentry noise
 
 - **Symptoms:** Sentry issue `DOFEK-SERVER-22` reported recurring production
@@ -10580,3 +10626,4 @@ new incremental tables are populated.
   deletes stored tokens only for the known Withings invalid-refresh status path.
 - **Follow-up:** If additional Withings auth body statuses appear in Sentry,
   add them to the typed auth-status predicate with a focused replay test.
+
