@@ -154,7 +154,8 @@ describe("WithingsProvider.sync() — unit tests", () => {
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(result.provider).toBe("withings");
     expect(result.errors.length).toBeGreaterThan(0);
-    expect(result.errors[0]?.message).toContain("No OAuth tokens");
+    expect(result.errors[0]?.message).toBe("Withings authentication failed.");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "authentication_failed" });
   });
 
   it("syncs measurements successfully with valid tokens", async () => {
@@ -362,7 +363,7 @@ describe("WithingsProvider.sync() — unit tests", () => {
     expect(result.errors[0]?.message).toContain("Redpanda publish failed");
   });
 
-  it("catches API error in outer withSyncLog catch", async () => {
+  it("catches non-auth API error in outer withSyncLog catch", async () => {
     process.env.WITHINGS_CLIENT_ID = "test-id";
     process.env.WITHINGS_CLIENT_SECRET = "test-secret";
 
@@ -379,14 +380,169 @@ describe("WithingsProvider.sync() — unit tests", () => {
       ],
     });
 
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return Response.json({ status: 401, body: {} });
+    let refreshCallCount = 0;
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      const url = input.toString();
+      const body = String(init?.body ?? "");
+
+      if (url.includes("/v2/oauth2") && body.includes("grant_type=refresh_token")) {
+        refreshCallCount++;
+        return Response.json({
+          status: 0,
+          body: {
+            access_token: "refreshed-access-token",
+            refresh_token: "new-refresh-token",
+            expires_in: 10800,
+            scope: "user.metrics",
+          },
+        });
+      }
+
+      return Response.json({ status: 500, body: {} });
     };
 
     const provider = new WithingsProvider(mockFetch);
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
+    expect(refreshCallCount).toBe(0);
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("metric_stream");
+  });
+
+  it("refreshes and retries once when Withings rejects an unexpired access token", async () => {
+    process.env.WITHINGS_CLIENT_ID = "test-id";
+    process.env.WITHINGS_CLIENT_SECRET = "test-secret";
+
+    const { db: mockDb } = createMockDb({
+      tokensResult: [
+        {
+          providerId: "withings",
+          accessToken: "stale-access-token",
+          refreshToken: "valid-refresh",
+          expiresAt: new Date("2099-01-01"),
+          scopes: "user.metrics",
+        },
+      ],
+    });
+
+    let measureCallCount = 0;
+    let refreshCallCount = 0;
+    let retriedAuthorization: string | null = null;
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      const url = input.toString();
+      const body = String(init?.body ?? "");
+
+      if (url.includes("/measure")) {
+        measureCallCount++;
+        const headers = new Headers(init?.headers);
+        if (measureCallCount === 1) {
+          expect(headers.get("Authorization")).toBe("Bearer stale-access-token");
+          return Response.json({ status: 401, body: {} });
+        }
+
+        retriedAuthorization = headers.get("Authorization");
+        return Response.json({
+          status: 0,
+          body: {
+            measuregrps: [
+              {
+                grpid: 5001,
+                date: 1709251200,
+                category: 1,
+                measures: [{ type: 1, value: 72500, unit: -3 }],
+              },
+            ],
+            more: 0,
+            offset: 0,
+          },
+        });
+      }
+
+      if (url.includes("/v2/oauth2") && body.includes("grant_type=refresh_token")) {
+        refreshCallCount++;
+        return Response.json({
+          status: 0,
+          body: {
+            access_token: "refreshed-access-token",
+            refresh_token: "new-refresh-token",
+            expires_in: 10800,
+            scope: "user.metrics",
+          },
+        });
+      }
+
+      return new Response("Not found", { status: 404 });
+    };
+
+    const provider = new WithingsProvider(mockFetch);
+    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
+    expect(refreshCallCount).toBe(1);
+    expect(measureCallCount).toBe(2);
+    expect(retriedAuthorization).toBe("Bearer refreshed-access-token");
+  });
+
+  it("refreshes only once when Withings keeps rejecting the access token", async () => {
+    process.env.WITHINGS_CLIENT_ID = "test-id";
+    process.env.WITHINGS_CLIENT_SECRET = "test-secret";
+
+    const { db: mockDb } = createMockDb({
+      tokensResult: [
+        {
+          providerId: "withings",
+          accessToken: "stale-access-token",
+          refreshToken: "valid-refresh",
+          expiresAt: new Date("2099-01-01"),
+          scopes: "user.metrics",
+        },
+      ],
+    });
+
+    let measureCallCount = 0;
+    let refreshCallCount = 0;
+    const mockFetch: typeof globalThis.fetch = async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      const url = input.toString();
+      const body = String(init?.body ?? "");
+
+      if (url.includes("/measure")) {
+        measureCallCount++;
+        return Response.json({ status: 401, body: {} });
+      }
+
+      if (url.includes("/v2/oauth2") && body.includes("grant_type=refresh_token")) {
+        refreshCallCount++;
+        return Response.json({
+          status: 0,
+          body: {
+            access_token: "refreshed-access-token",
+            refresh_token: "new-refresh-token",
+            expires_in: 10800,
+            scope: "user.metrics",
+          },
+        });
+      }
+
+      return new Response("Not found", { status: 404 });
+    };
+
+    const provider = new WithingsProvider(mockFetch);
+    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors[0]?.message).toContain("metric_stream");
+    expect(refreshCallCount).toBe(1);
+    expect(measureCallCount).toBe(2);
   });
 
   it("refreshes expired token during resolveTokens", async () => {
@@ -444,6 +600,65 @@ describe("WithingsProvider.sync() — unit tests", () => {
     const result = await provider.sync(mockDb, new Date("2026-01-01"));
     expect(tokenCallMade).toBe(true);
     expect(result.provider).toBe("withings");
+  });
+
+  it("refreshes token when expiresAt equals current time", async () => {
+    vi.useFakeTimers({ now: new Date("2026-06-17T12:00:00.000Z"), toFake: ["Date"] });
+    try {
+      process.env.WITHINGS_CLIENT_ID = "test-id";
+      process.env.WITHINGS_CLIENT_SECRET = "test-secret";
+
+      const expiryAtNow = new Date("2026-06-17T12:00:00.000Z");
+      let tokenCallMade = false;
+
+      const { db: mockDb } = createMockDb({
+        tokensResult: [
+          {
+            providerId: "withings",
+            accessToken: "expired-token",
+            refreshToken: "valid-refresh",
+            expiresAt: expiryAtNow,
+            scopes: "user.metrics",
+          },
+        ],
+      });
+
+      const mockFetch: typeof globalThis.fetch = async (
+        input: RequestInfo | URL,
+        init?: RequestInit,
+      ): Promise<Response> => {
+        const url = input.toString();
+        const body = String(init?.body ?? "");
+
+        if (url.includes("/v2/oauth2") && body.includes("grant_type=refresh_token")) {
+          tokenCallMade = true;
+          return Response.json({
+            status: 0,
+            body: {
+              access_token: "new-access-token",
+              refresh_token: "new-refresh-token",
+              expires_in: 10800,
+              scope: "user.metrics",
+            },
+          });
+        }
+
+        if (url.includes("/measure")) {
+          return Response.json({
+            status: 0,
+            body: { measuregrps: [], more: 0, offset: 0 },
+          });
+        }
+
+        return new Response("Not found", { status: 404 });
+      };
+
+      const provider = new WithingsProvider(mockFetch);
+      await provider.sync(mockDb, new Date("2026-01-01"));
+      expect(tokenCallMade).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("deletes stored tokens and asks the user to reconnect when Withings rejects refresh params", async () => {

@@ -4,7 +4,9 @@ FROM node:22-alpine3.23 AS base
 RUN apk upgrade --no-cache
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
-RUN corepack enable && corepack prepare pnpm@latest --activate
+WORKDIR /app
+COPY package.json ./
+RUN corepack enable && corepack prepare --activate
 
 # ── Source stage: just copy files, no install ─────────────────────────
 FROM base AS source
