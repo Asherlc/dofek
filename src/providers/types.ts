@@ -1,12 +1,14 @@
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import type { SyncRun } from "./sync-run.ts";
-
-export type { SyncRun } from "./sync-run.ts";
-
-import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
+import type { SyncOptions, SyncRun } from "./sync-run.ts";
 
 export type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
+export type {
+  SyncCheckpointStore,
+  SyncOptions,
+  SyncProgressCallback,
+  SyncRun,
+} from "./sync-run.ts";
 
 /**
  * OAuth 1.0 3-legged flow (e.g. FatSecret).
@@ -75,19 +77,6 @@ export interface SyncError {
   cause?: unknown;
 }
 
-/**
- * Progress callback for reporting sync progress from within a provider.
- * @param percentage - Percentage complete (0–100)
- * @param message - Human-readable status message
- */
-export type SyncProgressCallback = (percentage: number, message: string) => void;
-
-export interface SyncCheckpointStore {
-  load(): Promise<unknown | null>;
-  save(checkpoint: unknown): Promise<void>;
-  clear(): Promise<void>;
-}
-
 // ============================================================
 // Provider auth type discrimination
 // ============================================================
@@ -129,20 +118,6 @@ interface BaseProvider {
    * Call sites should treat undefined as "not available for login" and surface configuration errors to the user.
    */
   authSetup?(options?: { host?: string }): ProviderAuthSetup | undefined;
-}
-
-/**
- * Options for a sync run, passed as a bag so we can extend without adding positional params.
- */
-export interface SyncOptions {
-  /** Callback to report progress (0–100%) */
-  onProgress?: SyncProgressCallback;
-  /** User ID for attributing sync log entries */
-  userId?: string;
-  /** Provider-owned checkpoint state for retryable job resumes */
-  checkpoint?: SyncCheckpointStore;
-  /** Optional publisher override for metric-stream writers. */
-  metricStreamPublisher?: MetricStreamEventPublisher;
 }
 
 /**
