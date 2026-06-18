@@ -20,6 +20,13 @@ interface FreshnessRow {
   table_name: string;
 }
 
+interface PeerDbMirrorRow {
+  name: string;
+  status: number | string | null;
+  updated_at: string | null;
+  workflow_id: string | null;
+}
+
 class FakePostgresClient implements PostgresQueryClient {
   readonly #rows: readonly SlotRow[];
   queryTexts: string[] = [];
@@ -53,10 +60,30 @@ class FakeClickHouseClient implements CdcHealthClickHouseClient {
   }
 }
 
+class FakePeerDbClient implements PostgresQueryClient {
+  readonly #rows: readonly PeerDbMirrorRow[];
+  queryTexts: string[] = [];
+
+  constructor(rows: readonly PeerDbMirrorRow[]) {
+    this.#rows = rows;
+  }
+
+  async query(queryText: string): Promise<unknown> {
+    this.queryTexts.push(queryText);
+    return { rows: this.#rows };
+  }
+}
+
 const slotNames = [
   "peerflow_slot_dofek_fitness_raw_analytics",
   "peerflow_slot_dofek_provider_inventory_raw_analytics",
   "peerflow_slot_dofek_sensor_priority_raw_analytics",
+] as const;
+
+const mirrorNames = [
+  "dofek_fitness_raw_analytics",
+  "dofek_provider_inventory_raw_analytics",
+  "dofek_sensor_priority_raw_analytics",
 ] as const;
 
 function healthySlotRows(overrides: Partial<SlotRow> = {}): SlotRow[] {
@@ -66,6 +93,16 @@ function healthySlotRows(overrides: Partial<SlotRow> = {}): SlotRow[] {
     retained_wal_bytes: "1024",
     slot_name: slotName,
     wal_status: "reserved",
+    ...overrides,
+  }));
+}
+
+function healthyPeerDbMirrorRows(overrides: Partial<PeerDbMirrorRow> = {}): PeerDbMirrorRow[] {
+  return mirrorNames.map((mirrorName) => ({
+    name: mirrorName,
+    status: 1,
+    updated_at: "2026-06-03 19:45:00.000000",
+    workflow_id: `${mirrorName}-peerflow`,
     ...overrides,
   }));
 }
@@ -152,6 +189,66 @@ describe("checkClickHouseCdcHealth", () => {
       severity: "failure",
       message: "Missing required PeerDB replication slot peerflow_slot_dofek_fitness_raw_analytics",
     });
+  });
+
+  it("fails when a required PeerDB raw mirror is missing from the catalog", async () => {
+    const report = await checkClickHouseCdcHealth({
+      postgresClient: new FakePostgresClient(healthySlotRows()),
+      peerDbClient: new FakePeerDbClient(healthyPeerDbMirrorRows().slice(1)),
+      clickHouseClient: new FakeClickHouseClient(healthyFreshnessRows()),
+      now: new Date("2026-06-03T20:00:00.000Z"),
+    });
+
+    expect(report.peerDbMirrorCount).toBe(2);
+    expect(report.issues).toContainEqual({
+      severity: "failure",
+      message: "Missing required PeerDB raw mirror dofek_fitness_raw_analytics",
+    });
+  });
+
+  it("records sanitized PeerDB and Postgres evidence for failed health checks", async () => {
+    const report = await checkClickHouseCdcHealth({
+      postgresClient: new FakePostgresClient(healthySlotRows().slice(1)),
+      peerDbClient: new FakePeerDbClient(healthyPeerDbMirrorRows().slice(1)),
+      clickHouseClient: new FakeClickHouseClient(healthyFreshnessRows()),
+      now: new Date("2026-06-03T20:00:00.000Z"),
+    });
+
+    expect(report.evidence).toEqual({
+      peerDbMirrors: [
+        {
+          name: "dofek_provider_inventory_raw_analytics",
+          status: "1",
+          updatedAt: "2026-06-03 19:45:00.000000",
+          workflowId: "dofek_provider_inventory_raw_analytics-peerflow",
+        },
+        {
+          name: "dofek_sensor_priority_raw_analytics",
+          status: "1",
+          updatedAt: "2026-06-03 19:45:00.000000",
+          workflowId: "dofek_sensor_priority_raw_analytics-peerflow",
+        },
+      ],
+      replicationSlots: [
+        {
+          active: true,
+          retainedWalBytes: "1024",
+          slotName: "peerflow_slot_dofek_provider_inventory_raw_analytics",
+          walStatus: "reserved",
+        },
+        {
+          active: true,
+          retainedWalBytes: "1024",
+          slotName: "peerflow_slot_dofek_sensor_priority_raw_analytics",
+          walStatus: "reserved",
+        },
+      ],
+    });
+    expect(() => assertClickHouseCdcHealth(report)).toThrow(
+      "CDC health evidence:\n" +
+        "- PeerDB raw mirrors observed: dofek_provider_inventory_raw_analytics(status=1, workflow=dofek_provider_inventory_raw_analytics-peerflow), dofek_sensor_priority_raw_analytics(status=1, workflow=dofek_sensor_priority_raw_analytics-peerflow)\n" +
+        "- Postgres replication slots observed: peerflow_slot_dofek_provider_inventory_raw_analytics(active=true, wal_status=reserved, retained_wal_bytes=1024), peerflow_slot_dofek_sensor_priority_raw_analytics(active=true, wal_status=reserved, retained_wal_bytes=1024)",
+    );
   });
 
   it("fails when a required PeerDB replication slot is lost", async () => {
