@@ -52,6 +52,13 @@ describe("osmTileUrl", () => {
 });
 
 describe("osmTilePreview", () => {
+  it("returns world tile and null route path for empty input", () => {
+    expect(osmTilePreview([])).toEqual({
+      tileUrl: "https://tile.openstreetmap.org/0/0/0.png",
+      routePath: null,
+    });
+  });
+
   it("returns a route-fitted tile URL and normalized path points", () => {
     const preview = osmTilePreview([
       { lat: 37.7749, lng: -122.4194 },

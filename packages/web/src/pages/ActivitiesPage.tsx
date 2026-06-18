@@ -255,7 +255,7 @@ function ActivityMapTile({ location, units }: ActivityMapTileProps) {
           onError={() => setLoadFailed(true)}
         />
       )}
-      <ActivityRouteOverlay routePath={location.routePath} />
+      {loadFailed ? null : <ActivityRouteOverlay routePath={location.routePath} />}
       <div className="absolute bottom-2 left-2 flex flex-wrap gap-1">
         {location.distanceMeters != null ? (
           <span className="bg-black/60 text-white text-[11px] font-semibold px-2 py-0.5 rounded">

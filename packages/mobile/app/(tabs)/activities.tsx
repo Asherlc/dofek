@@ -430,7 +430,7 @@ function ActivityMapTile({ location, units }: ActivityMapTileProps) {
           onError={() => setLoadFailed(true)}
         />
       )}
-      <ActivityRouteOverlay routePath={location.routePath} />
+      {loadFailed ? null : <ActivityRouteOverlay routePath={location.routePath} />}
       <View style={styles.tileOverlay}>
         {location.distanceMeters != null ? (
           <Text style={styles.tileBadge}>
