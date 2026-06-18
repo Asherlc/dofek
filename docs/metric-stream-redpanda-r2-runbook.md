@@ -6,7 +6,7 @@ Redpanda first. Postgres no longer stores the metric stream.
 
 ## Purpose
 
-Metric stream is high-volume sensor data. It is intentionally not stored in
+Metric-stream is high-volume sensor data. It is intentionally not stored in
 Postgres; Redpanda is the hot ingest log, R2 is the durable archive, and
 ClickHouse is the analytics serving copy.
 

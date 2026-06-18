@@ -320,7 +320,6 @@ jobs:
         run: |
           echo "Starting deploy with IMAGE_TAG=${IMAGE_TAG}"
           docker pull "ghcr.io/asherlc/dofek:${IMAGE_TAG}"
-          docker pull "ghcr.io/asherlc/dofek-ml:${IMAGE_TAG}"
 
           server_host="${DOCKER_HOST#ssh://${SSH_USER}@}"
           if [ -z "$server_host" ] || [ "$server_host" = "$DOCKER_HOST" ]; then
@@ -500,7 +499,7 @@ jobs:
           fi
 
           wait_deadline_seconds=$((SECONDS + 1200))
-          for service in web worker training-export-worker analytics-worker clickhouse; do
+          for service in web worker analytics-worker clickhouse; do
             service_name="${STACK_NAME}_${service}"
             while true; do
               update_state="$(

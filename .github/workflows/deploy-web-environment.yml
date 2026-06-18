@@ -142,7 +142,6 @@ jobs:
           }
 
           require_tag "dofek"
-          require_tag "dofek-ml"
 
           echo "image_tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Deploying ${ENVIRONMENT_NAME} web stack image tag: $TAG"

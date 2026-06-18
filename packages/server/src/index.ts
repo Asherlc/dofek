@@ -17,7 +17,6 @@ import {
   createPostSyncQueue,
   createScheduledSyncQueue,
   createSyncQueue,
-  createTrainingExportQueue,
 } from "dofek/jobs/queues";
 import { sql } from "drizzle-orm";
 import express from "express";
@@ -123,7 +122,6 @@ function setupRoutes(
   const exportQueue = createExportQueue();
   const scheduledSyncQueue = createScheduledSyncQueue();
   const postSyncQueue = createPostSyncQueue();
-  const trainingExportQueue = createTrainingExportQueue();
 
   // ── Bull Board dashboard (admin-only) ──
   const bullBoardAdapter = new ExpressAdapter();
@@ -135,7 +133,6 @@ function setupRoutes(
       new BullMQAdapter(exportQueue),
       new BullMQAdapter(scheduledSyncQueue),
       new BullMQAdapter(postSyncQueue),
-      new BullMQAdapter(trainingExportQueue),
     ],
     serverAdapter: bullBoardAdapter,
   });

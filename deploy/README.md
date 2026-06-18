@@ -39,7 +39,7 @@ Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle C
 - `cloud-init.yml`: Installs Docker CE, configures Docker log rotation (10m, 3 files), and idempotently runs `docker swarm init`. No deploy helpers, no Infisical CLI.
 
 ### Swarm Stack (`stack.yml`)
-- Single file defining all services: `web`, `worker`, `analytics-worker`, `cdc-health`, `training-export-worker`, `traefik`, `db`, `clickhouse`, `redpanda`, `metric-stream-clickhouse-sink`, `metric-stream-r2-archive`, `redis`, `collector`, `ota`, `databasus`, `cloudbeaver`, `pgadmin`, `portainer`, `netdata`.
+- Single file defining all services: `web`, `worker`, `analytics-worker`, `cdc-health`, `traefik`, `db`, `clickhouse`, `redpanda`, `metric-stream-clickhouse-sink`, `metric-stream-r2-archive`, `redis`, `collector`, `ota`, `databasus`, `cloudbeaver`, `pgadmin`, `portainer`, `netdata`.
 - Traefik consumes the swarm provider and routes traffic from labels declared on stack services.
 - Zero-downtime updates for `web` and `worker` are configured via `deploy.update_config` (`order: start-first`, `failure_action: rollback`, healthcheck-gated `monitor` window).
 - The `default` overlay network is declared `attachable: true` so CI can run one-shot migration containers on it from a remote Docker context.
@@ -99,10 +99,10 @@ If direct SSH fails with `Permission denied`, verify you are using the matching 
 ### Release Unit (Important)
 
 - A web deploy is a **single swarm stack release**, not separate app/ML rollouts.
-- `IMAGE_TAG` is shared across both GHCR images:
-  - `ghcr.io/asherlc/dofek:<tag>`
-  - `ghcr.io/asherlc/dofek-ml:<tag>`
-- `docker stack deploy` is the only production rollout command for web deploys. It updates `web`, `worker`, and `training-export-worker` together from `deploy/stack.yml`.
+- `IMAGE_TAG` is shared across GHCR images built from main:
+  - `ghcr.io/asherlc/dofek:<tag>` (production stack)
+  - `ghcr.io/asherlc/dofek-ml:<tag>` (local ML tooling; not deployed to the stack)
+- `docker stack deploy` is the only production rollout command for web deploys. It updates `web` and `worker` together from `deploy/stack.yml`.
 - Swarm rollback is **image rollback only**. It does not roll back database schema changes that were already applied.
 - Because migrations run before `docker stack deploy`, every production schema change must remain compatible with both the old app version and the new app version during rollout.
 
@@ -117,8 +117,8 @@ below. Missing required keys must fail the workflow before rollout.
 ### Flow Diagram
 
 ```text
-CI (main) -> build dofek + dofek-ml (same tag)
-         -> deploy-web production check (both app image tags must exist)
+CI (main) -> build dofek (+ dofek-ml for local ML tooling)
+         -> deploy-web production check (dofek app image tag must exist)
          -> deploy-terraform (shared prerequisite)
          -> deploy-web-stack
               -> fetch env via Infisical Secrets Action
@@ -143,7 +143,7 @@ CI (main) -> build dofek + dofek-ml (same tag)
       - Optional: `CREDENTIAL_ENCRYPTION_KEY_NAMESPACE` (default `dofek`) and `CREDENTIAL_ENCRYPTION_KEY_NAME` (default `provider-credentials`).
    2. Point Docker CLI at the remote daemon with `DOCKER_HOST=ssh://ubuntu@<host>`.
    3. Login to GHCR on the CI runner.
-   4. `docker pull ghcr.io/asherlc/dofek:<tag>` and `docker pull ghcr.io/asherlc/dofek-ml:<tag>`.
+   4. `docker pull ghcr.io/asherlc/dofek:<tag>`.
       The workflow also ensures pinned third-party stack images exist on the
       host, but skips those pulls when the exact image is already present.
       Image cleanup is controlled by this deploy workflow: it prunes unused
@@ -153,7 +153,7 @@ CI (main) -> build dofek + dofek-ml (same tag)
       referenced by a service until after migrations complete.
    5. Apply the stack configuration before migrations with a non-prune,
       detached `docker stack deploy` and a temporary overlay that sets web,
-      worker, analytics-worker, and training-export-worker replicas to zero.
+      worker and analytics-worker replicas to zero.
       On existing stacks this uses the currently
       deployed app image tag, so database, ClickHouse, network, config, and
       resource-limit changes are applied before migrations without rolling new
@@ -171,7 +171,7 @@ CI (main) -> build dofek + dofek-ml (same tag)
       When `CLICKHOUSE_URL` is present, this also runs tracked ClickHouse
       analytics migrations before the stack update.
    8. Validate required host bind-mount directories before deploying the stack. This must fail before `docker stack deploy` if paths such as `/mnt/dofek-data/redis` are missing, because Swarm rejects tasks with missing bind sources.
-   9. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=true <stack>` — swarm performs a single stack-wide update, including `training-export-worker`, and CI then polls the key services until their desired replicas are running and any update state is complete. The deploy workflow bounds this wait at 20 minutes so a wedged Swarm rollback fails CI instead of running indefinitely.
+   9. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=true <stack>` — swarm performs a single stack-wide update and CI then polls the key services until their desired replicas are running and any update state is complete. The deploy workflow bounds this wait at 20 minutes so a wedged Swarm rollback fails CI instead of running indefinitely.
       The workflow parses the Infisical dotenv file inside a child process for stack interpolation. Do not append the full dotenv file to `GITHUB_ENV`; GitHub Actions prints step environments and can expose Infisical-only secrets that GitHub does not automatically mask.
    10. Wait for PeerDB and run the one-shot ClickHouse CDC setup command. The command loads `src/db/peerdb/metric-stream-cdc.sql`, substitutes deployment connection values, creates the Postgres and ClickHouse peers if missing, and applies the metric-stream, raw analytics, and provider inventory mirrors.
 

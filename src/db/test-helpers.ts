@@ -24,6 +24,7 @@ const isRunnableMigrationStatement = (statement: string): boolean =>
   statement.length > 0 && !statement.includes("CREATE OR REPLACE VIEW clickhouse.v_sleep AS");
 
 async function createRetiredMetricStreamFixtureTable(client: Client): Promise<void> {
+  // Minimal retired-table stub for integration tests that still INSERT metric_stream rows.
   await client.query("CREATE EXTENSION IF NOT EXISTS postgis");
 
   await client.query(`
@@ -43,16 +44,6 @@ async function createRetiredMetricStreamFixtureTable(client: Client): Promise<vo
       metadata jsonb,
       PRIMARY KEY (id, recorded_at)
     )
-  `);
-
-  await client.query(`
-    CREATE UNIQUE INDEX IF NOT EXISTS metric_stream_provider_external_channel_time_idx
-      ON fitness.metric_stream (user_id, provider_id, external_id, channel, recorded_at)
-  `);
-
-  await client.query(`
-    CREATE INDEX IF NOT EXISTS metric_stream_user_channel_time_idx
-      ON fitness.metric_stream (user_id, channel, recorded_at)
   `);
 }
 
