@@ -149,21 +149,21 @@ describe("production analytics read-model build", () => {
 
     expect(sourceRecordsSql).toContain("source_record_counts AS");
     expect(sourceRecordsSql).toContain("source_safety_check AS");
+    expect(sourceRecordsSql).toContain("activity_source_mass_tombstone_min_existing");
+    expect(sourceRecordsSql).toContain("activity_source_mass_tombstone_ratio");
     expect(sourceRecordsSql).toContain("throwIf(");
-    expect(normalizedSql).toContain(
-      "existing_source_record_count > 0 AND current_source_record_count = 0",
-    );
-    expect(normalizedSql).toContain(
-      "existing_source_record_count >= 10 AND stale_source_record_count >= existing_source_record_count * 0.95",
-    );
+    expect(normalizedSql).toContain("existing_source_record_count > 0");
+    expect(normalizedSql).toContain("current_source_record_count = 0");
+    expect(normalizedSql).toContain("existing_source_record_count >=");
+    expect(normalizedSql).toContain("stale_source_record_count >=");
+    expect(normalizedSql).toContain("existing_source_record_count *");
     expect(normalizedSql).toContain(
       "Activity source mirror returned zero current rows while active activity_source_records rows already exist",
     );
     expect(normalizedSql).toContain(
-      "Activity source mirror would tombstone at least 95% of active activity_source_records rows",
+      "Activity source mirror would tombstone at least",
     );
-    expect(normalizedSql).toContain("FROM current_source_records CROSS JOIN source_safety_check");
-    expect(normalizedSql).toContain("FROM stale_source_records CROSS JOIN source_safety_check");
+    expect(normalizedSql.match(/CROSS JOIN source_safety_check/g)?.length).toBe(2);
   });
 
   it("materializes deduped activity member aliases from deduped activities", () => {

@@ -152,10 +152,15 @@ def call_claude(prompt: str) -> str:
     # shutil.which returns the same absolute path as the implicit lookup,
     # so this is a no-op there. Falls back to bare "claude" if not found
     # on PATH so subprocess raises a clear FileNotFoundError.
-    claude_bin = shutil.which("claude") or "claude"
+    claude_path = shutil.which("claude")
+    if claude_path is None:
+        raise FileNotFoundError("claude CLI not found on PATH")
+    claude_bin = Path(claude_path).resolve(strict=True)
+    if claude_bin.name not in {"claude", "claude.cmd", "claude.exe"}:
+        raise ValueError(f"Unexpected claude binary name: {claude_bin.name}")
     try:
         result = subprocess.run(
-            [claude_bin, "--print"],
+            [str(claude_bin), "--print"],
             input=prompt,
             text=True,
             capture_output=True,
@@ -246,7 +251,11 @@ def compress_file(filepath: Path) -> bool:
         print("Skipping (not natural language)")
         return False
 
-    original_text = filepath.read_text(errors="ignore")
+    raw_bytes = filepath.read_bytes()
+    try:
+        original_text = raw_bytes.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError(f"File is not valid UTF-8: {filepath}") from error
     # Store backup outside the source directory so skill auto-loaders don't
     # re-ingest the `.original.md` copy as a live file. Mirror the source's
     # parent-dir name + stem under a platform-aware base to reduce collisions.
