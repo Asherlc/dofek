@@ -65,6 +65,13 @@ describe("Predictions router (integration)", () => {
       const light = Math.round(duration * 0.45);
       const awake = Math.round(duration * 0.1);
       const efficiency = 82 + Math.sin(i * 0.5) * 6;
+      const startedAt = new Date();
+      startedAt.setHours(0, 0, 0, 0);
+      startedAt.setDate(startedAt.getDate() - i);
+      startedAt.setHours(22, 0, 0, 0);
+      const endedAt = new Date(startedAt);
+      endedAt.setDate(endedAt.getDate() + 1);
+      endedAt.setHours(6, 0, 0, 0);
 
       await testCtx.db.execute(
         sql`INSERT INTO fitness.sleep_session (
@@ -73,20 +80,16 @@ describe("Predictions router (integration)", () => {
               awake_minutes, efficiency_pct, sleep_type
             ) VALUES (
               'test_provider', ${TEST_USER_ID},
-              (CURRENT_DATE - ${i}::int)::timestamp + INTERVAL '22 hours',
-              (CURRENT_DATE - ${i}::int + 1)::timestamp + INTERVAL '6 hours',
+              ${startedAt.toISOString()}, ${endedAt.toISOString()},
               ${Math.round(duration)}, ${deep}, ${rem}, ${light},
 	              ${awake}, ${Math.round(efficiency * 10) / 10}, 'sleep'
 	            )`,
       );
       const restingHeartRate = Math.round(55 - Math.cos(i * 0.3) * 5);
       for (let sampleIndex = 0; sampleIndex < 30; sampleIndex++) {
-        const recordedAt = new Date(
-          Date.now() - i * 24 * 60 * 60 * 1000 + (24 + 1) * 60 * 60 * 1000 + sampleIndex * 60_000,
-        ).toISOString();
         metricStreamSeedRows.push({
           userId: TEST_USER_ID,
-          recordedAt,
+          recordedAt: new Date(startedAt.getTime() + (sampleIndex + 1) * 60_000).toISOString(),
           providerId: "test_provider",
           sourceType: "api",
           channel: "heart_rate",
