@@ -64,9 +64,10 @@ export function createActivityExportRouter({ db, sensorStore }: ActivityExportRo
         formatResult.data,
       );
 
+      res.status(200);
       res.setHeader("Content-Type", exported.contentType);
       res.setHeader("Content-Disposition", `attachment; filename="${exported.filename}"`);
-      res.send(exported.body);
+      res.end(exported.body);
     } catch (error) {
       if (error instanceof TRPCError) {
         if (error.code === "NOT_FOUND") {
