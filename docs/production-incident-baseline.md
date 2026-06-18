@@ -10740,6 +10740,29 @@ new incremental tables are populated.
   the top-slow Axiom query after deploy and compare `activity.stream` timeout
   count plus p95/max durations for the same procedure list.
 
+## 2026-06-18 — Data Sources page failed when registering Amazfit/Zepp
+
+- **Symptoms:** The Data Sources page failed to load because the
+  `sync.providers` tRPC query threw during provider registration.
+- **User impact:** Users could not see or manage data-source providers while the
+  registration failure was active.
+- **Evidence:** Sentry issue `DOFEK-SERVER-3M` reported
+  `Failed to register amazfit-zepp provider: Stripping types is currently
+  unsupported for files under node_modules`, with the offending path resolving
+  to `node_modules/.pnpm/zepp-client@file+packages+zepp-client/.../src/client.ts`
+  in production.
+- **Root cause:** The production Docker image copied and symlinked other
+  reverse-engineered workspace client packages out of `node_modules`, but
+  omitted `packages/zepp-client`. The server therefore imported the pnpm deploy
+  copy under `node_modules`, where Node 22 refuses to strip TypeScript types.
+- **Fix / mitigation:** Add `packages/zepp-client` to the Dockerfile workspace
+  package manifest copy, runtime source copy, and explicit `node_modules`
+  symlink list so `zepp-client/client` resolves to `/app/packages/zepp-client`
+  like the other TypeScript workspace clients.
+- **Remaining risk:** Other future workspace TypeScript packages can hit the
+  same failure if they are added as server runtime dependencies without the
+  matching Dockerfile copy and symlink entries.
+
 ## 2026-06-18 — Garmin sync repeatedly hit Connect API rate limits
 
 - **Symptoms:** Garmin sync logs showed repeated `Rate limit exceeded (429):

@@ -116,6 +116,7 @@ dofek/
 │   ├── whoop-whoop/               # RE'd WHOOP internal API client
 │   ├── eight-sleep/               # RE'd Eight Sleep internal API client
 │   ├── zwift-client/              # RE'd Zwift internal API client
+│   ├── zepp-client/               # RE'd Amazfit/Zepp internal API client
 │   ├── trainerroad-client/        # RE'd TrainerRoad internal API client
 │   ├── velohero-client/           # RE'd VeloHero API client
 │   ├── garmin-connect/            # RE'd Garmin Connect SSO + API client
@@ -463,7 +464,7 @@ Each provider is enabled by adding its credentials to Infisical. OAuth providers
 OAuth providers also need a callback URL env var pointing at your deployment's `/callback` route (for example `https://dofek.asherlc.com/callback`). Set `OAUTH_REDIRECT_URI` in Infisical. After adding credentials, click the provider tile on the Data Sources page to complete the OAuth flow.
 Provider secrets must be stored in Infisical, not `.env.local`.
 
-### Reverse-Engineered API Packages (7)
+### Reverse-Engineered API Packages (8)
 
 Standalone TypeScript packages for internal APIs that lack public developer access:
 
@@ -472,6 +473,7 @@ Standalone TypeScript packages for internal APIs that lack public developer acce
 | `packages/whoop-whoop` | AWS Cognito | Internal API |
 | `packages/eight-sleep` | Hardcoded OAuth creds (from APK) | Internal API |
 | `packages/zwift-client` | Keycloak password grant | Internal API |
+| `packages/zepp-client` | Huami registration token exchange | Internal API |
 | `packages/trainerroad-client` | CSRF cookie form login | Internal API |
 | `packages/velohero-client` | SSO token | Simple web API |
 | `packages/garmin-connect` | Multi-step SSO (OAuth1 → OAuth2) | Based on python-garminconnect |
@@ -483,7 +485,6 @@ Standalone TypeScript packages for internal APIs that lack public developer acce
 |----------|--------|------------|
 | Rouvy | No public API, no RE work exists. Firebase + GraphQL behind Tyk gateway. | Sync to Strava/Garmin, pull from there |
 | Hammerhead | No public API. Some RE work exists but SRAM account migration broke auth. | Sync to Strava/Intervals.icu, pull from there |
-| Zepp (Amazfit) | Official API registration effectively closed. RE feasible via `hacking-mifit-api` (email+password auth) but not yet built. | Future candidate for RE'd package |
 | Samsung Health | No web API, no RE work. Would need dedicated Android companion app. | Not feasible for server-side sync |
 
 See [docs/provider-api-audit.md](docs/provider-api-audit.md) for detailed RE feasibility analysis of each provider.

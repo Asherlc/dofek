@@ -33,6 +33,7 @@ COPY packages/web/package.json ./packages/web/
 COPY packages/whoop-whoop/package.json ./packages/whoop-whoop/
 COPY packages/eight-sleep/package.json ./packages/eight-sleep/
 COPY packages/zwift-client/package.json ./packages/zwift-client/
+COPY packages/zepp-client/package.json ./packages/zepp-client/
 COPY packages/trainerroad-client/package.json ./packages/trainerroad-client/
 COPY packages/velohero-client/package.json ./packages/velohero-client/
 COPY packages/garmin-connect/package.json ./packages/garmin-connect/
@@ -91,6 +92,8 @@ COPY --from=source --chown=node:node /app/packages/eight-sleep/src ./packages/ei
 COPY --from=source --chown=node:node /app/packages/eight-sleep/package.json ./packages/eight-sleep/
 COPY --from=source --chown=node:node /app/packages/zwift-client/src ./packages/zwift-client/src
 COPY --from=source --chown=node:node /app/packages/zwift-client/package.json ./packages/zwift-client/
+COPY --from=source --chown=node:node /app/packages/zepp-client/src ./packages/zepp-client/src
+COPY --from=source --chown=node:node /app/packages/zepp-client/package.json ./packages/zepp-client/
 COPY --from=source --chown=node:node /app/packages/trainerroad-client/src ./packages/trainerroad-client/src
 COPY --from=source --chown=node:node /app/packages/trainerroad-client/package.json ./packages/trainerroad-client/
 COPY --from=source --chown=node:node /app/packages/velohero-client/src ./packages/velohero-client/src
@@ -128,6 +131,7 @@ RUN corepack disable && rm -rf /pnpm /root/.cache/node/corepack /root/.local/sha
 RUN ln -sfn /app node_modules/dofek && \
     ln -sfn /app/packages/eight-sleep node_modules/eight-sleep-client && \
     ln -sfn /app/packages/zwift-client node_modules/zwift-client && \
+    ln -sfn /app/packages/zepp-client node_modules/zepp-client && \
     ln -sfn /app/packages/trainerroad-client node_modules/trainerroad-client && \
     ln -sfn /app/packages/velohero-client node_modules/velohero-client && \
     ln -sfn /app/packages/garmin-connect node_modules/garmin-connect && \
