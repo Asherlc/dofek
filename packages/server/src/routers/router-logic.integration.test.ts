@@ -5,8 +5,8 @@ import { setupTestDatabase, type TestContext } from "../../../../src/db/test-hel
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
 import {
-  createClickHouseTestActivitySensorStore,
   type ClickHouseMetricStreamSeedRow,
+  createClickHouseTestActivitySensorStore,
   seedClickHouseMetricStreamRows,
   syncClickHouseTestActivitySensorStore,
 } from "./clickhouse-integration-test-helpers.ts";

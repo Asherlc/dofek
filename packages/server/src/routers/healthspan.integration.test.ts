@@ -6,8 +6,8 @@ import { setupTestDatabase, type TestContext } from "../../../../src/db/test-hel
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
 import {
-  createClickHouseTestActivitySensorStore,
   type ClickHouseMetricStreamSeedRow,
+  createClickHouseTestActivitySensorStore,
   seedClickHouseMetricStreamRows,
   syncClickHouseTestActivitySensorStore,
 } from "./clickhouse-integration-test-helpers.ts";
@@ -313,7 +313,9 @@ describe("healthspan zone time with variable-interval HR data", () => {
     const powerMetricStreamSeedRows: ClickHouseMetricStreamSeedRow[] = [];
     for (let sampleIndex = 0; sampleIndex < 120; sampleIndex++) {
       const offsetSeconds = sampleIndex * 5;
-      const recordedAt = new Date(powerActivityStartedAt.getTime() + offsetSeconds * 1000).toISOString();
+      const recordedAt = new Date(
+        powerActivityStartedAt.getTime() + offsetSeconds * 1000,
+      ).toISOString();
       powerMetricStreamSeedRows.push({
         userId: TEST_USER_ID,
         recordedAt,

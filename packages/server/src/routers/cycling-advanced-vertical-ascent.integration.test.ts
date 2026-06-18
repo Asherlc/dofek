@@ -6,8 +6,8 @@ import { setupTestDatabase, type TestContext } from "../../../../src/db/test-hel
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
 import {
-  createClickHouseTestActivitySensorStore,
   type ClickHouseMetricStreamSeedRow,
+  createClickHouseTestActivitySensorStore,
   seedClickHouseMetricStreamRows,
   syncClickHouseTestActivitySensorStore,
 } from "./clickhouse-integration-test-helpers.ts";
@@ -73,7 +73,9 @@ describe("cyclingAdvanced vertical ascent integration", () => {
     const metricStreamSeedRows: ClickHouseMetricStreamSeedRow[] = [];
     for (let second = 0; second <= 360; second += 120) {
       const offsetAltitudeTimestamp = new Date(startedAt.getTime() + second * 1000).toISOString();
-      const offsetGradeTimestamp = new Date(startedAt.getTime() + second * 1000 + 2000).toISOString();
+      const offsetGradeTimestamp = new Date(
+        startedAt.getTime() + second * 1000 + 2000,
+      ).toISOString();
       const driftAltitudeTimestamp = new Date(
         startedAt.getTime() + 20 * 60 * 1000 + second * 1000,
       ).toISOString();
