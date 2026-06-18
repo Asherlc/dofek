@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   signInToZepp,
-  ZeppInvalidCredentialsError,
   ZEPP_ACCOUNT_LOGIN_URL,
   ZEPP_ACCOUNT_ZEPP_LOGIN_URL,
   ZEPP_APP_NAME,
   ZEPP_ENCRYPTED_REGISTRATION_URL,
   ZEPP_REGISTRATION_REDIRECT_URI,
+  ZeppInvalidCredentialsError,
 } from "./client.ts";
 
 type MockFetch = ReturnType<typeof vi.fn<typeof globalThis.fetch>>;

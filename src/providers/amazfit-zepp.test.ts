@@ -1,6 +1,7 @@
 import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { captureException } from "@sentry/node";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ZeppInvalidCredentialsError } from "zepp-client/client";
 import { runWithTokenUser } from "../db/token-user-context.ts";
 import {
   AmazfitZeppClient,
@@ -12,7 +13,6 @@ import {
   parseZeppBandDay,
 } from "./amazfit-zepp.ts";
 import { ProviderInvalidCredentialsError } from "./auth-errors.ts";
-import { ZeppInvalidCredentialsError } from "zepp-client/client";
 import { createCapturingMetricStreamPublisher, createMockDatabase } from "./test-helpers.ts";
 
 vi.mock("@dofek/provider-http/rate-limit", async (importOriginal) => {
