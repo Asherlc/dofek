@@ -20,8 +20,3 @@ function startContainer(containerName: string): void {
 export function startWorker(): void {
   startContainer("dofek-worker");
 }
-
-/** Start the Python training export worker container. */
-export function startTrainingExportWorker(): void {
-  startContainer("dofek-training-export-worker");
-}

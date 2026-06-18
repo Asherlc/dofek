@@ -377,11 +377,12 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
         ${activityStreamSamplesSql("channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude')")}
         , location_samples AS (
           SELECT recorded_at, lat, lng
-          FROM analytics.deduped_location
+          FROM analytics.activity_location_sample
           WHERE user_id = {userId:UUID}
             AND activity_id IN {activityIds:Array(UUID)}
             AND recorded_at >= parseDateTime64BestEffort({windowStartedAt:String})
             AND recorded_at <= parseDateTime64BestEffort({windowEndedAt:String})
+            AND is_deleted = 0
         ),
         sample_times AS (
           SELECT recorded_at FROM activity_samples

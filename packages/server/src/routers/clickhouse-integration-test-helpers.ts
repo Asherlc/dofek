@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { mkdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,6 +21,22 @@ import { ClickHouseActivitySensorStore } from "../repositories/clickhouse-activi
 interface ClickHouseSyncTestContext {
   addCleanup(cleanup: () => Promise<void>): void;
   connectionString: string;
+}
+
+export interface ClickHouseMetricStreamSeedRow {
+  id?: string;
+  activityId?: string | null;
+  userId: string;
+  recordedAt: string;
+  channel: string;
+  providerId: string;
+  externalId?: string | null;
+  deviceId?: string | null;
+  sourceType?: string | null;
+  scalar?: number | null;
+  vector?: readonly number[] | null;
+  point?: string;
+  metadata?: string;
 }
 
 interface IsolatedClickHouseDatabases {
@@ -300,6 +316,7 @@ const analyticsBuildOrder = [
   "analytics.daily_recovery",
   "analytics.deduped_location",
   "analytics.activity_sensor_sample",
+  "analytics.activity_location_sample",
   "analytics.activity_summary",
   "analytics.daily_activity_load",
   "analytics.daily_strain",
@@ -540,6 +557,16 @@ scalar Nullable(Float32),
 refresh_version UInt64,
 is_deleted UInt8,
 refreshed_at DateTime64(9)`,
+    activity_location_sample: `activity_id UUID,
+user_id UUID,
+recorded_at DateTime64(6, 'UTC'),
+recorded_date Date,
+source_metric_stream_id UUID,
+lat Nullable(Float32),
+lng Nullable(Float32),
+refresh_version UInt64,
+is_deleted UInt8,
+refreshed_at Nullable(DateTime64(6, 'UTC'))`,
     activity_summary: `activity_id UUID,
 user_id UUID,
 activity_type String,
@@ -639,6 +666,7 @@ activity_count UInt64`,
   const engine =
     shortViewName === "deduped_activities" ||
     shortViewName === "activity_sensor_sample" ||
+    shortViewName === "activity_location_sample" ||
     shortViewName === "daily_sleep" ||
     shortViewName === "daily_recovery_inputs" ||
     shortViewName === "daily_recovery" ||
@@ -654,20 +682,22 @@ activity_count UInt64`,
       ? "(user_id, activity_id)"
       : shortViewName === "activity_sensor_sample"
         ? "(user_id, activity_id, recorded_date, channel, recorded_at)"
-        : shortViewName === "daily_sleep" || shortViewName === "daily_recovery_inputs"
-          ? "(user_id, date)"
-          : shortViewName === "daily_recovery"
+        : shortViewName === "activity_location_sample"
+          ? "(user_id, activity_id, recorded_date, recorded_at, source_metric_stream_id)"
+          : shortViewName === "daily_sleep" || shortViewName === "daily_recovery_inputs"
             ? "(user_id, date)"
-            : shortViewName === "daily_activity_load" ||
-                shortViewName === "healthspan_activity_zone_minutes"
-              ? "(user_id, activity_id)"
-              : shortViewName === "daily_strain"
-                ? "(user_id, date)"
-                : shortViewName === "weekly_healthspan"
-                  ? "(user_id, week_start)"
-                  : shortViewName === "provider_stats"
-                    ? "(user_id, provider_id)"
-                    : "tuple()";
+            : shortViewName === "daily_recovery"
+              ? "(user_id, date)"
+              : shortViewName === "daily_activity_load" ||
+                  shortViewName === "healthspan_activity_zone_minutes"
+                ? "(user_id, activity_id)"
+                : shortViewName === "daily_strain"
+                  ? "(user_id, date)"
+                  : shortViewName === "weekly_healthspan"
+                    ? "(user_id, week_start)"
+                    : shortViewName === "provider_stats"
+                      ? "(user_id, provider_id)"
+                      : "tuple()";
   return `CREATE TABLE IF NOT EXISTS ${viewName} (
 ${columnDefinitions}
 )
@@ -723,6 +753,21 @@ INNER JOIN current_activity
   ON current_activity.user_id = samples.user_id
  AND samples.recorded_at >= current_activity.started_at
  AND samples.recorded_at <= coalesce(current_activity.ended_at, current_activity.started_at + INTERVAL 12 HOUR)`;
+}
+
+function buildTestActivityLocationSampleSelectSql(databases: IsolatedClickHouseDatabases): string {
+  return `SELECT
+  activity_id,
+  user_id,
+  recorded_at,
+  toDate(recorded_at) AS recorded_date,
+  generateUUIDv4() AS source_metric_stream_id,
+  lat,
+  lng,
+  toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+  toUInt8(0) AS is_deleted,
+  now64(6, 'UTC') AS refreshed_at
+FROM ${databases.analytics}.deduped_location`;
 }
 
 function buildTestProviderStatsSelectSql(selectSql: string): string {
@@ -1566,6 +1611,14 @@ ${buildTestActivitySensorSampleSelectSql({
 })}`,
   });
   await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.activity_location_sample
+AS
+${buildTestActivityLocationSampleSelectSql({
+  analytics: "analytics",
+  postgresFitness: "postgres_fitness",
+})}`,
+  });
+  await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.daily_recovery_inputs
 AS
 ${buildTestDailyRecoveryInputsSelectSql({
@@ -1654,6 +1707,9 @@ async function syncClickHouseTestActivitySensorStoreWithClient(
   connectionString: string,
 ): Promise<void> {
   for (const rawTableSync of rawTableSyncs) {
+    if (rawTableSync.tableName === "metric_stream") {
+      continue;
+    }
     await client.command({
       query: `TRUNCATE TABLE postgres_fitness.${rawTableSync.tableName}`,
     });
@@ -1662,6 +1718,114 @@ async function syncClickHouseTestActivitySensorStoreWithClient(
     });
   }
 
+  await rebuildClickHouseSensorAnalyticsWithClient(client);
+}
+
+function formatNullableClickHouseString(value: string | null | undefined): string {
+  if (value === null || value === undefined) {
+    return "NULL";
+  }
+  return clickHouseStringLiteral(value);
+}
+
+function formatNullableClickHouseUuid(value: string | null | undefined): string {
+  if (value === null || value === undefined) {
+    return "NULL";
+  }
+  return `toUUID(${clickHouseStringLiteral(value)})`;
+}
+
+function formatNullableClickHouseFloat(value: number | null | undefined): string {
+  if (value === null || value === undefined) {
+    return "NULL";
+  }
+  return String(value);
+}
+
+function formatClickHouseVector(value: readonly number[] | null | undefined): string {
+  if (!value || value.length === 0) {
+    return "[]";
+  }
+  return `[${value.join(",")}]`;
+}
+
+function formatClickHouseMetricStreamSeedValue(row: ClickHouseMetricStreamSeedRow): string {
+  const id = row.id ?? randomUUID();
+  return `(
+    toUUID(${clickHouseStringLiteral(id)}),
+    ${formatNullableClickHouseUuid(row.activityId)},
+    toUUID(${clickHouseStringLiteral(row.userId)}),
+    parseDateTime64BestEffort(${clickHouseStringLiteral(row.recordedAt)}, 6, 'UTC'),
+    ${clickHouseStringLiteral(row.channel)},
+    ${clickHouseStringLiteral(row.providerId)},
+    ${formatNullableClickHouseString(row.externalId)},
+    ${formatNullableClickHouseString(row.deviceId)},
+    ${formatNullableClickHouseString(row.sourceType)},
+    ${formatNullableClickHouseFloat(row.scalar)},
+    ${formatClickHouseVector(row.vector)},
+    ${formatNullableClickHouseString(row.point ?? "")},
+    ${formatNullableClickHouseString(row.metadata ?? "")},
+    now64(9),
+    0,
+    1
+  )`;
+}
+
+export async function insertClickHouseMetricStreamRows(
+  testContext: ClickHouseSyncTestContext,
+  rows: readonly ClickHouseMetricStreamSeedRow[],
+): Promise<void> {
+  if (rows.length === 0) {
+    return;
+  }
+
+  const handle = handlesByContext.get(testContext);
+  if (!handle) {
+    throw new Error("ClickHouse test activity sensor store has not been created");
+  }
+
+  await handle.setupClient.command({
+    query: `INSERT INTO postgres_fitness.metric_stream (
+      id,
+      activity_id,
+      user_id,
+      recorded_at,
+      channel,
+      provider_id,
+      external_id,
+      device_id,
+      source_type,
+      scalar,
+      vector,
+      point,
+      metadata,
+      _peerdb_synced_at,
+      _peerdb_is_deleted,
+      _peerdb_version
+    ) VALUES ${rows.map(formatClickHouseMetricStreamSeedValue).join(",\n")}`,
+  });
+}
+
+export async function rebuildClickHouseSensorAnalytics(
+  testContext: ClickHouseSyncTestContext,
+): Promise<void> {
+  const handle = handlesByContext.get(testContext);
+  if (!handle) {
+    throw new Error("ClickHouse test activity sensor store has not been created");
+  }
+
+  await rebuildClickHouseSensorAnalyticsWithClient(handle.setupClient);
+}
+
+export async function seedClickHouseMetricStreamRows(
+  testContext: ClickHouseSyncTestContext,
+  rows: readonly ClickHouseMetricStreamSeedRow[],
+): Promise<void> {
+  await insertClickHouseMetricStreamRows(testContext, rows);
+  await rebuildClickHouseSensorAnalytics(testContext);
+}
+
+async function rebuildClickHouseSensorAnalyticsWithClient(client: ClickHouseClient): Promise<void> {
   await client.command({ query: "TRUNCATE TABLE analytics.sensor_scalar_sample" });
   await client.command({ query: "TRUNCATE TABLE analytics.deduped_sensor" });
   await client.command({ query: "TRUNCATE TABLE analytics.deduped_activities" });

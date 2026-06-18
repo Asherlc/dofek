@@ -4,7 +4,11 @@ import { TEST_USER_ID } from "../../../../src/db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
-import { createClickHouseTestActivitySensorStore } from "./clickhouse-integration-test-helpers.ts";
+import {
+  type ClickHouseMetricStreamSeedRow,
+  createClickHouseTestActivitySensorStore,
+  seedClickHouseMetricStreamRows,
+} from "./clickhouse-integration-test-helpers.ts";
 
 /**
  * Integration tests for the predictions router.
@@ -36,6 +40,8 @@ describe("Predictions router (integration)", () => {
           SET max_hr = 190, resting_hr = 50, ftp = 250
           WHERE id = ${TEST_USER_ID}`,
     );
+
+    const metricStreamSeedRows: ClickHouseMetricStreamSeedRow[] = [];
 
     // Insert 120 days of daily metrics (HRV, resting HR)
     for (let i = 120; i >= 0; i--) {
@@ -74,14 +80,19 @@ describe("Predictions router (integration)", () => {
 	            )`,
       );
       const restingHeartRate = Math.round(55 - Math.cos(i * 0.3) * 5);
-      const restingHeartRateValues = Array.from({ length: 30 }, (_, sampleIndex) => {
-        return `((CURRENT_DATE - ${i}::int + 1)::timestamp + INTERVAL '1 hour' + ${sampleIndex} * INTERVAL '1 minute', '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', NULL, ${restingHeartRate}, NULL)`;
-      });
-      await testCtx.db.execute(
-        sql.raw(`INSERT INTO fitness.metric_stream (
-          recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
-        ) VALUES ${restingHeartRateValues.join(",\n")}`),
-      );
+      for (let sampleIndex = 0; sampleIndex < 30; sampleIndex++) {
+        const recordedAt = new Date(
+          Date.now() - i * 24 * 60 * 60 * 1000 + (24 + 1) * 60 * 60 * 1000 + sampleIndex * 60_000,
+        ).toISOString();
+        metricStreamSeedRows.push({
+          userId: TEST_USER_ID,
+          recordedAt,
+          providerId: "test_provider",
+          sourceType: "api",
+          channel: "heart_rate",
+          scalar: restingHeartRate,
+        });
+      }
     }
 
     // Insert 60 cycling activities with metric_stream (for activity predictions)
@@ -105,22 +116,32 @@ describe("Predictions router (integration)", () => {
       const actId = actResult[0]?.id;
 
       if (actId) {
-        // Insert metric stream samples (1 per minute)
-        const sensorValues: string[] = [];
+        const activityStartedAt = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
         for (let s = 0; s < durationMin; s++) {
           const hr = avgHr + Math.round(Math.sin(s * 0.1) * 5);
           const power = avgPower + Math.round(Math.cos(s * 0.1) * 15);
-          const ts = `CURRENT_TIMESTAMP - ${i} * INTERVAL '1 day' + ${s} * INTERVAL '1 minute'`;
-          sensorValues.push(
-            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
-            `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'power', '${actId}', ${power}, NULL)`,
+          const recordedAt = new Date(activityStartedAt.getTime() + s * 60_000).toISOString();
+          metricStreamSeedRows.push(
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "heart_rate",
+              activityId: actId,
+              scalar: hr,
+            },
+            {
+              userId: TEST_USER_ID,
+              recordedAt,
+              providerId: "test_provider",
+              sourceType: "api",
+              channel: "power",
+              activityId: actId,
+              scalar: power,
+            },
           );
         }
-        await testCtx.db.execute(
-          sql.raw(`INSERT INTO fitness.metric_stream (
-                recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
-              ) VALUES ${sensorValues.join(",")}`),
-        );
       }
     }
 
@@ -167,6 +188,7 @@ describe("Predictions router (integration)", () => {
     // Refresh sleep materialized view
 
     const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
+    await seedClickHouseMetricStreamRows(testCtx, metricStreamSeedRows);
     const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {

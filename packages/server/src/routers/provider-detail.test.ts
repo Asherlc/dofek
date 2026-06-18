@@ -267,7 +267,7 @@ describe("providerDetailRouter", () => {
       ["bodyMeasurements", "analytics.v_body_measurement", "recorded_at", "id"],
       ["foodEntries", "fitness.food_entry", "date", "id"],
       ["healthEvents", "fitness.health_event", "start_date", "id"],
-      ["metricStream", "fitness.metric_stream", "recorded_at", "id"],
+      ["metricStream", "postgres_fitness.metric_stream", "recorded_at", "id"],
       ["nutritionDaily", "fitness.v_nutrition_daily", "date", "date"],
       ["labPanels", "fitness.lab_panel", "recorded_at", "id"],
       ["labResults", "fitness.lab_result", "recorded_at", "id"],
@@ -317,12 +317,12 @@ describe("providerDetailRouter", () => {
   // ── DISCONNECT_CHILD_TABLES ──
 
   describe("DISCONNECT_CHILD_TABLES", () => {
-    it("contains 12 child tables", () => {
-      expect(DISCONNECT_CHILD_TABLES).toHaveLength(12);
+    it("contains 11 child tables", () => {
+      expect(DISCONNECT_CHILD_TABLES).toHaveLength(11);
     });
 
     it("includes all required child tables", () => {
-      expect(DISCONNECT_CHILD_TABLES).toContain("fitness.metric_stream");
+      expect(DISCONNECT_CHILD_TABLES).not.toContain("fitness.metric_stream");
       expect(DISCONNECT_CHILD_TABLES).not.toContain("fitness.strength_workout");
       expect(DISCONNECT_CHILD_TABLES).not.toContain("fitness.body_measurement");
       expect(DISCONNECT_CHILD_TABLES).not.toContain("fitness.nutrition_daily");

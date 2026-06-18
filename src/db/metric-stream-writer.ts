@@ -1,4 +1,3 @@
-import type { InferInsertModel } from "drizzle-orm";
 import {
   createMetricStreamDeletedEvent,
   type MetricStreamDeleteScopeInput,
@@ -10,13 +9,24 @@ import {
   type MetricStreamEventPublisher,
   type MetricStreamReplacementPublishResult,
 } from "../metric-stream/redpanda-producer.ts";
-import type { SyncDatabase } from "./index.ts";
 import { DRIZZLE_FIELD_TO_CHANNEL, LOCATION } from "./sensor-channels.ts";
 import { getTokenUserId } from "./token-user-context.ts";
 
-type MetricStreamTable = typeof import("./schema.ts").metricStream;
-
-export type MetricStreamInsert = InferInsertModel<MetricStreamTable>;
+export interface MetricStreamInsert {
+  id?: string;
+  recordedAt: Date;
+  userId?: string;
+  providerId: string;
+  externalId?: string | null;
+  deviceId?: string | null;
+  sourceType: string;
+  channel: string;
+  activityId?: string | null;
+  scalar?: number | null;
+  vector?: number[] | null;
+  point?: string | null;
+  metadata?: unknown;
+}
 
 export interface MetricStreamSourceRow {
   recordedAt: Date;
@@ -62,32 +72,6 @@ function metricStreamExternalId(row: MetricStreamSourceRow, channel: string): st
   return `${row.providerId}:${activitySegment}:${sourceSegment}:${channel}:${row.recordedAt.toISOString()}`;
 }
 
-/**
- * Callback that receives a batch of rows to insert.
- * The default implementation uses Drizzle's `db.insert(metricStream).values(batch)`.
- * Tests can supply a lightweight mock without needing the full Drizzle type.
- */
-export type BatchInsertFn = (batch: MetricStreamInsert[]) => Promise<void>;
-
-export function metricStreamConflictTarget(table: MetricStreamTable) {
-  return [table.userId, table.providerId, table.externalId, table.channel, table.recordedAt];
-}
-
-/**
- * Create the default batch insert function using a Drizzle DB instance.
- */
-export function createBatchInsert(db: Pick<SyncDatabase, "insert">): BatchInsertFn {
-  return async (batch) => {
-    const { metricStream: table } = await import("./schema.ts");
-    await db
-      .insert(table)
-      .values(batch)
-      .onConflictDoNothing({
-        target: metricStreamConflictTarget(table),
-      });
-  };
-}
-
 function requireMetricStreamUserId(row: MetricStreamInsert): string {
   const userId = row.userId ?? getTokenUserId();
   if (!hasExternalId(userId)) {
@@ -123,27 +107,6 @@ function requireReplacementPublisher(
     throw new Error("Metric stream publisher does not support scoped replacement");
   }
   return publisher;
-}
-
-/**
- * Batch-insert metric stream rows.
- */
-export async function writeMetricStream(
-  insertBatch: BatchInsertFn,
-  rows: MetricStreamInsert[],
-  batchSize = DEFAULT_BATCH_SIZE,
-): Promise<number> {
-  if (rows.length === 0) return 0;
-
-  const rowWithoutExternalId = rows.find((row) => !hasExternalId(row.externalId));
-  if (rowWithoutExternalId) {
-    throw new Error("metric_stream ingestion rows require externalId for idempotency");
-  }
-
-  for (let offset = 0; offset < rows.length; offset += batchSize) {
-    await insertBatch(rows.slice(offset, offset + batchSize));
-  }
-  return rows.length;
 }
 
 /**
@@ -200,7 +163,7 @@ export function sourceRowToMetricStream(
  * and batch-inserts them.
  */
 export async function writeMetricStreamBatch(
-  _db: Pick<SyncDatabase, "insert">,
+  _db: unknown,
   metricRows: MetricStreamSourceRow[],
   sourceType: string,
   batchSize = DEFAULT_BATCH_SIZE,
@@ -228,7 +191,7 @@ export async function writeMetricStreamBatch(
 }
 
 export async function writeMetricStreamBatchForScope(
-  _db: Pick<SyncDatabase, "insert">,
+  _db: unknown,
   scope: MetricStreamDeleteScopeInput,
   metricRows: MetricStreamSourceRow[],
   sourceType: string,
@@ -249,7 +212,7 @@ export async function writeMetricStreamBatchForScope(
 }
 
 export async function replaceMetricStreamBatch(
-  _db: Pick<SyncDatabase, "insert">,
+  _db: unknown,
   scope: MetricStreamDeleteScopeInput,
   metricRows: MetricStreamSourceRow[],
   sourceType: string,

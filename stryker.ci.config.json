@@ -49,7 +49,9 @@
     ".codex/**",
     ".claude/**",
     ".context/**",
-    ".gemini/**"
+    ".gemini/**",
+    ".kilocode/**",
+    ".agents/**"
   ],
   "mutator": {
     "excludedMutations": ["StringLiteral"]

@@ -804,28 +804,12 @@ function TokensTab() {
 }
 
 function TrainingExportTab() {
-  const triggerExport = trpc.admin.triggerTrainingExport.useMutation();
-
   return (
     <AdminCard title="Training Data Export">
-      <div className="flex items-center gap-4">
-        <button
-          type="button"
-          className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-          disabled={triggerExport.isPending}
-          onClick={() => triggerExport.mutate({})}
-        >
-          {triggerExport.isPending ? "Triggering..." : "Trigger Export"}
-        </button>
-        {triggerExport.isSuccess && (
-          <span className="text-sm text-green-600">
-            Export job queued (ID: {triggerExport.data.jobId})
-          </span>
-        )}
-        {triggerExport.isError && (
-          <span className="text-sm text-red-600">{triggerExport.error.message}</span>
-        )}
-      </div>
+      <p className="text-sm text-gray-600">
+        Postgres metric_stream training export has been retired. Use the Redpanda R2 archive or
+        ClickHouse metric-stream data for ML training datasets.
+      </p>
     </AdminCard>
   );
 }

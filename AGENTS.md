@@ -153,7 +153,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 
 ## CI
 - **GitHub Actions** runs on every push/PR: lint, typecheck, knip, test (unit + integration with coverage), e2e (Docker-based), mutation (Stryker, PR-only).
-- **Swarm deploy release unit**: For web deploys, treat `docker stack deploy` as the single release action. Do not split `web` and `training-export-worker` into separate deploy workflows/jobs for normal releases; both are updated by the same stack using the same image tag.
+- **Swarm deploy release unit**: For web deploys, treat `docker stack deploy` as the single release action. Do not split `web` and `worker` into separate deploy workflows/jobs for normal releases; both are updated by the same stack using the same image tag.
 - **Knip unused code analysis**: Root `knip.json` must be updated whenever adding a new package with its own runtime entry point (e.g. `packages/server/src/index.ts`). If Knip reports false positives for an entire package, verify its entry point is correctly registered.
 - **Use the `gh` CLI** to check build status and read job logs — never scrape the web UI or use raw API calls with curl. Example: `gh run list`, `gh run view <id>`. See `docs/ci-debugging.md` for how to extract actual error messages from truncated CI logs (especially iOS builds where xcodebuild output is piped through `tail -40`).
 - **Use the CI fix skill**: When a user asks to fix failing GitHub Actions checks, use the `github:gh-fix-ci` skill.

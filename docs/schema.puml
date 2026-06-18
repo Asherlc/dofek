@@ -420,22 +420,6 @@ entity "menstrual_period" {
   created_at : timestamp
 }
 
-entity "metric_stream" {
-  id : uuid
-  recorded_at : timestamp
-  user_id : uuid <<FK>>
-  provider_id : text <<FK>>
-  external_id : text
-  device_id : text
-  source_type : text
-  channel : text
-  activity_id : uuid <<FK>>
-  scalar : real
-  vector : real[]
-  point : geometry(Point, 4326)
-  metadata : jsonb
-}
-
 entity "nutrient" {
   * id : text <<PK>>
   --
@@ -732,9 +716,6 @@ user_profile ||--o{ medication
 provider ||--o{ medication_dose_event
 user_profile ||--o{ medication_dose_event
 user_profile ||--o{ menstrual_period
-user_profile ||--o{ metric_stream
-provider ||--o{ metric_stream
-activity ||--o{ metric_stream
 user_profile ||--o{ oauth_token
 provider ||--o{ oauth_token
 user_profile ||--o{ provider

@@ -10662,3 +10662,48 @@ new incremental tables are populated.
 - **Follow-up:** Add a short runbook note documenting dashboard-critical
   ClickHouse queueing and add an Axiom monitor for nonzero
   `clickhouse.queue_wait` p95 on the dashboard queue.
+
+## 2026-06-18 — Activity detail page slow for a deduped kayaking activity
+
+- **Symptoms:** `https://dofek.asherlc.com/activity/41fbc42a-4dd4-4be8-ae14-4d0fd63729e8`
+  loaded slowly after the SPA shell returned quickly.
+- **User impact:** Activity detail pages could take several seconds before
+  showing metrics, maps, and zone charts, especially for activities with many
+  deduped source aliases.
+- **Evidence:** The HTML shell returned in ~43 ms, so the delay was in
+  client-side API loading. Axiom spans/logs showed the batched
+  `POST /api/trpc/activity.byId,activity.stream,activity.hrZones?batch=1`
+  taking ~122 s, with `activity.stream` logging `Timeout error` and
+  `db_duration_ms` around 121-122 s. The trace for
+  `49eaf1be5f1c93848ad1b338137bd58d` showed `activity.stream` spending
+  `2m2.155s` inside a ClickHouse `POST`, while `activity.byId` took
+  `1m16.227s` in one overlapping request. Production `pg_stat_statements`
+  showed `activity.byId`'s `fitness.v_activity` + `fitness.v_activity_members`
+  query averaging ~3.85 s, max ~4.62 s, and the stream/window lookup averaging
+  ~1.85 s. `EXPLAIN ANALYZE` for the specific activity showed the detail query
+  taking ~4.05 s because Postgres expanded the recursive `fitness.v_activity`
+  dedup view once for `a` and again through `fitness.v_activity_members`.
+  ClickHouse `system.query_log` showed the old stream query reading
+  `analytics.deduped_location`; related stream queries read 14-18M rows and
+  failed with `MEMORY_LIMIT_EXCEEDED`.
+- **Root cause:** Two request-path recomputation issues stacked together.
+  Activity detail and sensor-window lookups joined `fitness.v_activity` to
+  `fitness.v_activity_members`, but `v_activity_members` is a projection over
+  `v_activity`. Separately, `activity.stream` read GPS rows from
+  `analytics.deduped_location`, a live view over `postgres_fitness.metric_stream
+  FINAL` and `analytics.v_activity_members`, instead of the dbt-owned bounded
+  `analytics.activity_location_sample` table.
+- **Fix / mitigation:** Updated the Postgres repository lookups to resolve
+  member aliases with `activity_id = ANY(a.member_activity_ids)` against
+  `fitness.v_activity` directly, avoiding the second view expansion. Production
+  `EXPLAIN ANALYZE` of the new query shape reduced the detail lookup to ~0.99 s
+  and the sensor-window lookup to ~0.94 s before code deploy. Updated
+  `activity.stream` to read location rows from
+  `analytics.activity_location_sample` with `is_deleted = 0`. The replacement
+  ClickHouse query for the exact activity returned 500 downsampled points in
+  `0.106s` before code deploy.
+- **Remaining risk:** This narrows repeated view expansion but still computes
+  the recursive dedup view once per API procedure. A future larger optimization
+  should avoid making separate `byId`, `stream`, and `hrZones` calls recompute
+  the same activity window, or move the alias lookup to a persisted/read-model
+  path.

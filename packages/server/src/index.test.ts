@@ -38,7 +38,6 @@ vi.mock("dofek/jobs/queues", () => ({
   createExportQueue: vi.fn(() => ({ _queue: "export" })),
   createScheduledSyncQueue: vi.fn(() => ({ _queue: "scheduled-sync" })),
   createPostSyncQueue: vi.fn(() => ({ _queue: "post-sync" })),
-  createTrainingExportQueue: vi.fn(() => ({ _queue: "training-export" })),
 }));
 vi.mock("./auth/admin.ts", () => ({
   isAdmin: vi.fn().mockResolvedValue(false),
@@ -337,13 +336,13 @@ describe("createApp HTTP routes", () => {
       expect(body).toBe("bull-board");
     });
 
-    it("registers all 6 queue types with Bull Board during app creation", async () => {
+    it("registers all 5 queue types with Bull Board during app creation", async () => {
       const { createBullBoard: mockCreateBullBoard } = await import("@bull-board/api");
       const { BullMQAdapter: MockBullMQAdapter } = await import("@bull-board/api/bullMQAdapter");
 
       // Bull Board is initialized eagerly during createApp, so check the calls
       // from the beforeEach setup
-      expect(vi.mocked(MockBullMQAdapter)).toHaveBeenCalledTimes(6);
+      expect(vi.mocked(MockBullMQAdapter)).toHaveBeenCalledTimes(5);
       expect(vi.mocked(mockCreateBullBoard)).toHaveBeenCalledWith(
         expect.objectContaining({
           queues: expect.arrayContaining([
@@ -357,7 +356,7 @@ describe("createApp HTTP routes", () => {
         }),
       );
       const call = vi.mocked(mockCreateBullBoard).mock.calls[0][0];
-      expect(call.queues).toHaveLength(6);
+      expect(call.queues).toHaveLength(5);
     });
 
     it("passes queue factory results to BullMQAdapter", async () => {
@@ -369,7 +368,6 @@ describe("createApp HTTP routes", () => {
       expect(adapterArgs).toContainEqual({ _queue: "export" });
       expect(adapterArgs).toContainEqual({ _queue: "scheduled-sync" });
       expect(adapterArgs).toContainEqual({ _queue: "post-sync" });
-      expect(adapterArgs).toContainEqual({ _queue: "training-export" });
     });
   });
 
