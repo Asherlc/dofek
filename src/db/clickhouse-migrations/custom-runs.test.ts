@@ -42,11 +42,18 @@ vi.mock("../clickhouse-metric-stream-bootstrap.ts", () => ({
   buildActivitySummaryReadModelStatements: vi.fn().mockReturnValue([]),
 }));
 
+vi.mock("../clickhouse-read-models.ts", () => ({
+  buildActivityReadModelRefreshStatements: vi
+    .fn()
+    .mockReturnValue(["DROP VIEW IF EXISTS analytics.v_activity"]),
+}));
+
 vi.mock("../../logger.ts", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
 const {
+  addDedupedActivitiesAbsentSourceLinks,
   replaceActivityMirrorOrderKey,
   replaceNativeMetricStreamAndBackfill,
   repairNativeMetricStreamBackfill,
@@ -231,5 +238,33 @@ describe("replaceLegacyMetricStreamIfNeeded", () => {
     const { runClickHouseMigrationStatement } = await import("./statement-runner.ts");
     await replaceLegacyMetricStreamIfNeeded(client, "conn");
     expect(runClickHouseMigrationStatement).not.toHaveBeenCalled();
+  });
+});
+
+describe("addDedupedActivitiesAbsentSourceLinks", () => {
+  it("rejects a client without query method", async () => {
+    const client: ClickHouseCommandClient = { command: vi.fn() };
+    await expect(addDedupedActivitiesAbsentSourceLinks(client, "conn")).rejects.toThrow(
+      "ClickHouse migrations require a query-capable client",
+    );
+  });
+
+  it("refreshes v_activity views and skips the column alter when deduped_activities is missing", async () => {
+    const client = mockQueryClient([{ table_count: 0 }]);
+    const { runClickHouseMigrationStatement } = await import("./statement-runner.ts");
+    await addDedupedActivitiesAbsentSourceLinks(client, "conn");
+    expect(runClickHouseMigrationStatement).toHaveBeenCalledWith(
+      client,
+      "DROP VIEW IF EXISTS analytics.v_activity",
+    );
+    expect(client.command).not.toHaveBeenCalled();
+  });
+
+  it("adds the absent source column when deduped_activities already exists", async () => {
+    const client = mockQueryClient([{ table_count: 1 }]);
+    await addDedupedActivitiesAbsentSourceLinks(client, "conn");
+    expect(client.command).toHaveBeenCalledWith({
+      query: expect.stringContaining("ALTER TABLE analytics.deduped_activities"),
+    });
   });
 });

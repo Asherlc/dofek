@@ -72,17 +72,11 @@ describe("buildClickHouseMigrationStatements", () => {
     ]);
   });
 
-  it("keeps absent source link migration statements in its migration file", () => {
-    const statements = dedupedActivitiesAbsentSourceLinksMigration.createMigration().statements;
-    const statementSql = statements.join("\n");
+  it("keeps absent source link migration as a custom run", () => {
+    const migration = dedupedActivitiesAbsentSourceLinksMigration.createMigration();
 
-    expect(statements).toContain("DROP VIEW IF EXISTS analytics.v_activity");
-    expect(statementSql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_activity");
-    expect(statementSql).toContain("absent_group_members");
-    expect(statementSql).toContain("absent_source_external_ids");
-    expect(statements.at(-1)).toContain(
-      "ALTER TABLE analytics.deduped_activities\nADD COLUMN IF NOT EXISTS absent_source_external_ids",
-    );
+    expect(migration.statements).toEqual([]);
+    expect(migration.run).toBeTypeOf("function");
   });
 
   it("keeps custom-run migrations free of accidental static statements", () => {
@@ -91,6 +85,7 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(repairMetricStreamBackfillMigration.createMigration().statements).toEqual([]);
     expect(restingHeartRateSleepWindowMigration.createMigration().statements).toEqual([]);
     expect(activityMirrorOrderKeyMigration.createMigration().statements).toEqual([]);
+    expect(dedupedActivitiesAbsentSourceLinksMigration.createMigration().statements).toEqual([]);
   });
 
   it("keeps the derived resting heart rate cleanup statements in its migration file", () => {
