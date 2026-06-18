@@ -102,7 +102,8 @@ describe("AmazfitZeppProvider auth", () => {
   it("authSetup returns credential configuration", () => {
     const setup = new AmazfitZeppProvider().authSetup();
     expect(setup.oauthConfig.clientId).toBe("com.xiaomi.hm.health");
-    expect(setup.oauthConfig.clientSecret).toBe("");
+    expect(setup.oauthConfig.clientSecret).toBeUndefined();
+    expect(setup.oauthConfig.redirectUri).toContain("/callback");
     expect(setup.oauthConfig.scopes).toEqual([]);
     expect(setup.apiBaseUrl).toContain("zepp.com");
     expect(setup.automatedLogin).toBeTypeOf("function");

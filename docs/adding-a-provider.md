@@ -35,6 +35,7 @@ Use this template for API sync providers:
 
 ```typescript
 import type { SyncDatabase } from "../db/index.ts";
+import { getOAuthRedirectUri } from "../auth/oauth.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { ProviderStoredIdentityMissingError } from "./auth-errors.ts";
 import type {
@@ -54,14 +55,14 @@ export class MyProvider implements SyncProvider {
     return null;
   }
 
-  authSetup(_options?: { host?: string }): ProviderAuthSetup {
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
     return {
       oauthConfig: {
         clientId: process.env.MY_PROVIDER_CLIENT_ID!,
         clientSecret: process.env.MY_PROVIDER_CLIENT_SECRET,
         authorizeUrl: "https://provider.example.com/oauth/authorize",
         tokenUrl: "https://provider.example.com/oauth/token",
-        redirectUri: "",
+        redirectUri: getOAuthRedirectUri(options?.host),
         scopes: ["read"],
       },
       exchangeCode: async (code) => {

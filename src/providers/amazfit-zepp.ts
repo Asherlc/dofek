@@ -2,6 +2,7 @@ import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provid
 import { captureException } from "@sentry/node";
 import { signInToZepp, ZEPP_APP_NAME } from "zepp-client/client";
 import { z } from "zod";
+import { getOAuthRedirectUri } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
 import { dailyMetrics, sleepSession } from "../db/schema.ts";
@@ -324,17 +325,16 @@ export class AmazfitZeppProvider implements SyncProvider {
     return null;
   }
 
-  authSetup(_options?: { host?: string }): ProviderAuthSetup {
+  authSetup(options?: { host?: string }): ProviderAuthSetup {
     const fetchFn = this.#fetchFn;
     const apiBaseUrl = process.env.ZEPP_API_BASE_URL ?? AMAZFIT_ZEPP_API_BASE;
     return {
       apiBaseUrl,
       oauthConfig: {
         clientId: ZEPP_APP_NAME,
-        clientSecret: "",
         authorizeUrl: "https://account.huami.com/v2/client/login",
         tokenUrl: "https://account.huami.com/v2/client/login",
-        redirectUri: "",
+        redirectUri: getOAuthRedirectUri(options?.host),
         scopes: [],
       },
       automatedLogin: async (email: string, password: string) => {
