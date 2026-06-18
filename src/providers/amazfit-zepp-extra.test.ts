@@ -101,19 +101,10 @@ describe("AmazfitZeppProvider auth", () => {
 
   it("authSetup returns credential configuration", () => {
     const setup = new AmazfitZeppProvider().authSetup();
-    expect(setup.oauthConfig.clientId).toBe("com.xiaomi.hm.health");
-    expect(setup.oauthConfig.clientSecret).toBeUndefined();
-    expect(setup.oauthConfig.redirectUri).toBe(
-      "https://s3-us-west-2.amazonaws.com/hm-registration/successsignin.html",
-    );
-    expect(setup.oauthConfig.scopes).toEqual([]);
+    expect(setup.oauthConfig).toBeUndefined();
+    expect(setup.exchangeCode).toBeUndefined();
     expect(setup.apiBaseUrl).toContain("zepp.com");
     expect(setup.automatedLogin).toBeTypeOf("function");
-  });
-
-  it("authSetup.exchangeCode throws", async () => {
-    const setup = new AmazfitZeppProvider().authSetup();
-    await expect(setup.exchangeCode("code")).rejects.toThrow("automated login");
   });
 
   it("automatedLogin stores tokens with structured scopes and one-year expiry", async () => {

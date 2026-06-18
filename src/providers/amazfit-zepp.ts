@@ -1,6 +1,6 @@
 import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { captureException } from "@sentry/node";
-import { signInToZepp, ZEPP_ACCOUNT_LOGIN_URL, ZEPP_APP_NAME, ZEPP_REGISTRATION_REDIRECT_URI } from "zepp-client/client";
+import { signInToZepp } from "zepp-client/client";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
@@ -327,17 +327,8 @@ export class AmazfitZeppProvider implements SyncProvider {
   authSetup(_options?: { host?: string }): ProviderAuthSetup {
     const fetchFn = this.#fetchFn;
     const apiBaseUrl = process.env.ZEPP_API_BASE_URL ?? AMAZFIT_ZEPP_API_BASE;
-    // ProviderAuthSetup requires oauthConfig, but Zepp connects via automatedLogin
-    // (email/password) — users never go through a Dofek OAuth redirect.
     return {
       apiBaseUrl,
-      oauthConfig: {
-        clientId: ZEPP_APP_NAME,
-        authorizeUrl: ZEPP_ACCOUNT_LOGIN_URL,
-        tokenUrl: ZEPP_ACCOUNT_LOGIN_URL,
-        redirectUri: ZEPP_REGISTRATION_REDIRECT_URI,
-        scopes: [],
-      },
       automatedLogin: async (email: string, password: string) => {
         const result = await signInToZepp(email, password, fetchFn);
         return {
@@ -346,9 +337,6 @@ export class AmazfitZeppProvider implements SyncProvider {
           expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
           scopes: encodeZeppTokenScopes(result.userId),
         };
-      },
-      exchangeCode: async () => {
-        throw new Error("Amazfit/Zepp uses automated login, not OAuth code exchange");
       },
     };
   }

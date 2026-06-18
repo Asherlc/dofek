@@ -108,7 +108,7 @@ export class MyProvider implements SyncProvider {
 }
 ```
 
-For credential-based providers, implement `automatedLogin` in `authSetup()` instead of (or in addition to) OAuth — see `src/providers/eight-sleep.ts` or `src/providers/amazfit-zepp.ts`.
+For credential-based providers (email/password, no browser OAuth), return only `automatedLogin` from `authSetup()` — see `src/providers/amazfit-zepp.ts`. Legacy providers may still include unused `oauthConfig` boilerplate; new providers should not.
 
 If the provider is file-import-only (like Strong CSV or Cronometer CSV), implement `ImportProvider` instead and add `readonly importOnly = true` rather than a `sync()` method.
 

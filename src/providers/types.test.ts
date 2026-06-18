@@ -53,10 +53,6 @@ describe("getProviderAuthType", () => {
 
   it("returns 'credential' when automatedLogin is defined", () => {
     const setup: ProviderAuthSetup = {
-      oauthConfig: dummyOAuthConfig,
-      exchangeCode: async () => {
-        throw new Error("not supported");
-      },
       automatedLogin: async () => ({
         accessToken: "tok",
         refreshToken: null,

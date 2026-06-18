@@ -32,13 +32,14 @@ export interface ProviderIdentityCapabilities {
 }
 
 /**
- * Auth setup returned by providers that use OAuth.
+ * Auth setup returned by providers that require user connection.
+ * OAuth providers supply oauthConfig + exchangeCode; credential providers use automatedLogin only.
  */
 export interface ProviderAuthSetup {
-  oauthConfig: OAuthConfig;
+  oauthConfig?: OAuthConfig;
   /** Override the authorization URL (e.g. with PKCE challenge baked in) */
   authUrl?: string;
-  exchangeCode: (code: string, codeVerifier?: string) => Promise<TokenSet>;
+  exchangeCode?: (code: string, codeVerifier?: string) => Promise<TokenSet>;
   /** Provider-specific cleanup before exchanging a new auth code. */
   revokeExistingTokens?: (tokens: TokenSet) => Promise<void>;
   apiBaseUrl?: string;

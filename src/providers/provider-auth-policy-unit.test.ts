@@ -123,21 +123,17 @@ describe("checkPerUserAuthCompliance", () => {
     });
   });
 
-  it("accepts credential providers with automatedLogin", () => {
+  it("accepts credential providers with automatedLogin only", () => {
     const provider = stubProvider({
       id: "credential-provider",
       name: "Credential",
       authSetup: () => ({
-        oauthConfig: dummyOAuthConfig,
         automatedLogin: async () => ({
           accessToken: "token",
           refreshToken: null,
           expiresAt: new Date(),
           scopes: null,
         }),
-        exchangeCode: async () => {
-          throw new Error("not supported");
-        },
       }),
     });
     expect(checkPerUserAuthCompliance(provider)).toEqual({ ok: true });

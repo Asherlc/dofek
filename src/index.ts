@@ -117,13 +117,18 @@ export async function handleAuthCommand(args: string[]): Promise<number> {
     );
     return 1;
   }
-  const { oauthConfig, exchangeCode, apiBaseUrl } = setup;
 
   let tokens: import("./auth/oauth.ts").TokenSet;
+  const { apiBaseUrl } = setup;
 
   // OAuth 1.0 3-legged flow (FatSecret)
   if (setup.oauth1Flow) {
+    if (!setup.oauthConfig) {
+      logger.error(`[auth] Provider ${providerArg} requires oauthConfig for OAuth 1.0`);
+      return 1;
+    }
     const oauth1 = setup.oauth1Flow;
+    const { oauthConfig } = setup;
 
     const callbackUrl = oauthConfig.redirectUri;
     const callbackParsed = new URL(callbackUrl);
@@ -170,6 +175,13 @@ export async function handleAuthCommand(args: string[]): Promise<number> {
     logger.info(`[auth] Logging in as ${email}...`);
     tokens = await setup.automatedLogin(email, password);
   } else {
+    if (!setup.oauthConfig || !setup.exchangeCode) {
+      logger.error(
+        `[auth] Provider ${providerArg} requires oauthConfig and exchangeCode for OAuth 2.0`,
+      );
+      return 1;
+    }
+    const { oauthConfig, exchangeCode } = setup;
     // Browser-based OAuth 2.0 flow
     const authUrl = setup.authUrl ?? buildAuthorizationUrl(oauthConfig);
     logger.info(`[auth] Opening browser...\n\n  ${authUrl}\n`);
