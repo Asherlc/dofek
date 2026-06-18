@@ -1,6 +1,7 @@
 import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { captureException } from "@sentry/node";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ZeppInvalidCredentialsError } from "zepp-client/client";
 import { runWithTokenUser } from "../db/token-user-context.ts";
 import {
   AmazfitZeppClient,
@@ -11,6 +12,7 @@ import {
   encodeZeppTokenScopes,
   parseZeppBandDay,
 } from "./amazfit-zepp.ts";
+import { ProviderInvalidCredentialsError } from "./auth-errors.ts";
 import { createCapturingMetricStreamPublisher, createMockDatabase } from "./test-helpers.ts";
 
 vi.mock("@dofek/provider-http/rate-limit", async (importOriginal) => {
@@ -651,5 +653,38 @@ describe("AmazfitZeppProvider auth", () => {
     });
     expect(tokens?.expiresAt.getTime()).toBeGreaterThanOrEqual(before + 364 * 24 * 60 * 60 * 1000);
     expect(tokens?.expiresAt.getTime()).toBeLessThanOrEqual(after + 366 * 24 * 60 * 60 * 1000);
+  });
+
+  it("wraps invalid credentials as an expected provider auth failure", async () => {
+    const originalError = new ZeppInvalidCredentialsError();
+    const setup = new AmazfitZeppProvider(async () => {
+      throw originalError;
+    }).authSetup();
+
+    const error = await setup
+      .automatedLogin?.("user@example.com", "wrong")
+      .catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(ProviderInvalidCredentialsError);
+    expect(error).toHaveProperty("cause", originalError);
+  });
+
+  it("does not wrap unrelated automated login errors as invalid credentials", async () => {
+    const originalError = new Error("Zepp returned malformed token payload");
+    const setup = new AmazfitZeppProvider(async () => {
+      throw originalError;
+    }).authSetup();
+
+    await expect(setup.automatedLogin?.("user@example.com", "wrong")).rejects.toBe(originalError);
+  });
+
+  it("does not wrap non-error automated login failures as invalid credentials", async () => {
+    const setup = new AmazfitZeppProvider(async () => {
+      throw "plain upstream failure";
+    }).authSetup();
+
+    await expect(setup.automatedLogin?.("user@example.com", "wrong")).rejects.toBe(
+      "plain upstream failure",
+    );
   });
 });
