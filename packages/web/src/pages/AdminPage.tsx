@@ -17,8 +17,7 @@ type Tab =
   | "food"
   | "body"
   | "dailyMetrics"
-  | "tokens"
-  | "trainingExport";
+  | "tokens";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" },
@@ -32,7 +31,6 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "dailyMetrics", label: "Daily Metrics" },
   { id: "sessions", label: "Sessions" },
   { id: "tokens", label: "OAuth Tokens" },
-  { id: "trainingExport", label: "Training Export" },
 ];
 
 export function AdminPage() {
@@ -79,7 +77,6 @@ export function AdminPage() {
       {activeTab === "dailyMetrics" && <DailyMetricsTab />}
       {activeTab === "sessions" && <SessionsTab />}
       {activeTab === "tokens" && <TokensTab />}
-      {activeTab === "trainingExport" && <TrainingExportTab />}
     </PageLayout>
   );
 }
@@ -799,17 +796,6 @@ function TokensTab() {
   return (
     <AdminCard title="OAuth Tokens (No Secrets)">
       <DataTable columns={columns} data={data ?? []} />
-    </AdminCard>
-  );
-}
-
-function TrainingExportTab() {
-  return (
-    <AdminCard title="Training Data Export">
-      <p className="text-sm text-gray-600">
-        Postgres metric_stream training export has been retired. Use the Redpanda R2 archive or
-        ClickHouse metric-stream data for ML training datasets.
-      </p>
     </AdminCard>
   );
 }
