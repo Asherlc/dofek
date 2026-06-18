@@ -727,10 +727,8 @@ describe("GarminProvider.sync()", () => {
     );
   });
 
-  it("reconciles provider absence from the oldest fetched activity when the page is full", async () => {
+  it("skips provider absence reconciliation when the activity page is full", async () => {
     const since = new Date("2026-01-01T00:00:00Z");
-    const oldestStartedAt = new Date("2026-02-01T08:00:00Z");
-    const newestStartedAt = new Date("2026-03-15T08:00:00Z");
     const rawActivities = Array.from({ length: 50 }, (_, index) => ({ activityId: index + 1 }));
 
     mocks.client.getActivities.mockResolvedValue(rawActivities);
@@ -738,8 +736,8 @@ describe("GarminProvider.sync()", () => {
       externalId: String(raw.activityId),
       activityType: "running",
       name: `Run ${raw.activityId}`,
-      startedAt: raw.activityId === 1 ? oldestStartedAt : newestStartedAt,
-      endedAt: new Date("2026-03-15T09:00:00Z"),
+      startedAt: new Date("2026-03-01T10:00:00Z"),
+      endedAt: new Date("2026-03-01T11:00:00Z"),
       raw,
     }));
     mocks.client.getActivityDetail.mockResolvedValue({});
@@ -747,18 +745,7 @@ describe("GarminProvider.sync()", () => {
 
     await syncProvider(provider, db, since);
 
-    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
-      db,
-      expect.objectContaining({
-        providerId: "garmin",
-        userId: "00000000-0000-0000-0000-000000000001",
-        windowStart: oldestStartedAt,
-        presentExternalIds: new Set(rawActivities.map((activity) => String(activity.activityId))),
-      }),
-    );
-    expect(
-      providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mock.calls[0]?.[1]?.windowStart,
-    ).not.toEqual(since);
+    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).not.toHaveBeenCalled();
   });
 
   it("syncs sleep data", async () => {

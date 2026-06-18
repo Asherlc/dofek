@@ -86,6 +86,29 @@ stale_dirty_keys AS (
     WHERE current_activity.activity_id IS null
 ),
 
+restored_dirty_keys AS (
+    {% if is_incremental() %}
+        SELECT
+            tombstoned_summary.activity_id AS activity_id,
+            tombstoned_summary.user_id AS user_id
+        FROM (
+            SELECT
+                activity_id,
+                user_id
+            FROM {{ this }} FINAL
+            WHERE is_deleted = 1
+        ) AS tombstoned_summary
+        INNER JOIN current_activity
+            ON current_activity.activity_id = tombstoned_summary.activity_id
+            AND current_activity.user_id = tombstoned_summary.user_id
+    {% else %}
+        SELECT
+            CAST(null, 'Nullable(UUID)') AS activity_id,
+            CAST(null, 'Nullable(UUID)') AS user_id
+        WHERE 1 = 0
+    {% endif %}
+),
+
 dirty_keys AS (
     SELECT DISTINCT
         activity_id,
@@ -105,6 +128,11 @@ dirty_keys AS (
             activity_id,
             user_id
         FROM stale_dirty_keys
+        UNION ALL
+        SELECT
+            activity_id,
+            user_id
+        FROM restored_dirty_keys
     )
 ),
 

@@ -24,6 +24,7 @@ import * as incrementalActivityVo2MaxEstimateMigration from "./clickhouse-migrat
 import * as recreateProviderStatsDbtTableMigration from "./clickhouse-migrations/0025_recreate_provider_stats_dbt_table.ts";
 import * as createDashboardTablesMigration from "./clickhouse-migrations/0026_create_dashboard_tables.ts";
 import * as createDomainDashboardTablesMigration from "./clickhouse-migrations/0028_create_domain_dashboard_tables.ts";
+import * as activityProviderAbsenceMigration from "./clickhouse-migrations/0029_activity_provider_absence.ts";
 import { clickHouseMigrationFileNames } from "./clickhouse-migrations/registry.ts";
 import { runClickHouseMigrationStatement } from "./clickhouse-migrations/statement-runner.ts";
 import {
@@ -170,6 +171,20 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(statements[2]).toContain("is_deleted UInt8");
     expect(statements[2]).toContain("ENGINE = ReplacingMergeTree(refresh_version)");
     expect(statements[2]).toContain("ORDER BY (user_id, provider_id)");
+  });
+
+  it("resets provider-absence dependent read models and rebuilds activity views", () => {
+    const statements = activityProviderAbsenceMigration.createMigration().statements;
+    const statementSql = statements.join("\n");
+
+    expect(statements[0]).toContain(
+      "ALTER TABLE postgres_fitness.activity ADD COLUMN IF NOT EXISTS provider_absent_at",
+    );
+    expect(statements).toContain("DROP VIEW IF EXISTS analytics.v_activity");
+    expect(statements).toContain("DROP TABLE IF EXISTS analytics.activity_source_records");
+    expect(statements).toContain("DROP TABLE IF EXISTS analytics.sleep_heart_rate_sample");
+    expect(statementSql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_activity");
+    expect(statementSql).toContain("provider_absent_at IS NULL");
   });
 
   it("keeps dashboard table creation in its migration file", () => {

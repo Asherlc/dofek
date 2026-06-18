@@ -16,6 +16,15 @@ export interface ProviderActivityAbsenceMark {
   userId?: string;
 }
 
+export function hasProviderActivityListSyncErrors(
+  errors: ReadonlyArray<{ message: string }>,
+  activityListErrorPrefixes: readonly string[],
+): boolean {
+  return errors.some((error) =>
+    activityListErrorPrefixes.some((prefix) => error.message.startsWith(prefix)),
+  );
+}
+
 function resolveUserId(userId?: string): string {
   const scopedUserId = userId ?? getTokenUserId();
   if (!scopedUserId) {

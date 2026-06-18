@@ -624,14 +624,10 @@ export class GarminProvider implements SyncProvider {
     let count = 0;
     const detailErrors = new SyncErrorTracker("activity_detail");
     const presentActivityExternalIds = new Set<string>();
-    let oldestFetchedStartedAt: Date | null = null;
 
     for (const raw of activities) {
       const parsed = parseConnectActivity(raw);
       presentActivityExternalIds.add(parsed.externalId);
-      if (!oldestFetchedStartedAt || parsed.startedAt < oldestFetchedStartedAt) {
-        oldestFetchedStartedAt = parsed.startedAt;
-      }
 
       const connectDeviceName = raw.deviceName ?? null;
 
@@ -723,17 +719,17 @@ export class GarminProvider implements SyncProvider {
       count++;
     }
 
-    // Don't throw for detail errors — activity metadata is still synced
-    await reconcileProviderActivityAbsence(db, {
-      providerId: this.id,
-      userId,
-      windowStart:
-        activities.length >= GARMIN_ACTIVITY_PAGE_SIZE && oldestFetchedStartedAt
-          ? oldestFetchedStartedAt
-          : since,
-      windowEnd: until,
-      presentExternalIds: presentActivityExternalIds,
-    });
+    // Only reconcile when the page is partial. A full page may have more activities
+    // on subsequent pages, so absence in this fetch is not authoritative.
+    if (activities.length < GARMIN_ACTIVITY_PAGE_SIZE) {
+      await reconcileProviderActivityAbsence(db, {
+        providerId: this.id,
+        userId,
+        windowStart: since,
+        windowEnd: until,
+        presentExternalIds: presentActivityExternalIds,
+      });
+    }
 
     return count;
   }

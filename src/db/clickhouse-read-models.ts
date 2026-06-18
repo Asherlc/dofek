@@ -982,6 +982,43 @@ export function buildAnalyticsFitnessReadModelStatements(): string[] {
   ];
 }
 
+export function buildAnalyticsFitnessReadModelDropStatements(): string[] {
+  return [
+    "DROP VIEW IF EXISTS analytics.v_activity_members",
+    "DROP VIEW IF EXISTS analytics.v_activity",
+    "DROP VIEW IF EXISTS analytics.v_sleep",
+    "DROP VIEW IF EXISTS analytics.v_daily_metrics",
+    "DROP VIEW IF EXISTS analytics.v_body_measurement",
+    "DROP VIEW IF EXISTS analytics.provider_stats",
+    "DROP TABLE IF EXISTS analytics.provider_stats",
+  ];
+}
+
+export function buildProviderActivityPresenceReadModelResetStatements(): string[] {
+  return [
+    "DROP VIEW IF EXISTS analytics.activity_summary",
+    "DROP TABLE IF EXISTS analytics.activity_summary_rows",
+    "DROP TABLE IF EXISTS analytics.activity_source_records",
+    "DROP TABLE IF EXISTS analytics.activity_duplicate_matches",
+    "DROP TABLE IF EXISTS analytics.activity_duplicate_groups",
+    "DROP TABLE IF EXISTS analytics.deduped_activities",
+    "DROP TABLE IF EXISTS analytics.deduped_activity_members",
+    "DROP TABLE IF EXISTS analytics.activity_sensor_summary_rows",
+    "DROP TABLE IF EXISTS analytics.activity_location_summary_rows",
+    "DROP TABLE IF EXISTS analytics.activity_vo2max_estimate",
+    "DROP TABLE IF EXISTS analytics.sleep_heart_rate_sample",
+  ];
+}
+
+export function buildProviderActivityAbsenceMigrationStatements(): string[] {
+  return [
+    "ALTER TABLE postgres_fitness.activity ADD COLUMN IF NOT EXISTS provider_absent_at Nullable(DateTime64(6, 'UTC'))",
+    ...buildAnalyticsFitnessReadModelDropStatements(),
+    ...buildProviderActivityPresenceReadModelResetStatements(),
+    ...buildAnalyticsFitnessReadModelStatements(),
+  ];
+}
+
 export function buildBodyMeasurementReadModelStatements(): string[] {
   return [
     "DROP VIEW IF EXISTS analytics.v_body_measurement",

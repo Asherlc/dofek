@@ -3,7 +3,10 @@ import { z } from "zod";
 import { exchangeCodeForTokens } from "../../auth/oauth.ts";
 import { resolveOAuthTokens } from "../../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../../db/index.ts";
-import { reconcileProviderActivityAbsence } from "../../db/provider-activity-absence.ts";
+import {
+  hasProviderActivityListSyncErrors,
+  reconcileProviderActivityAbsence,
+} from "../../db/provider-activity-absence.ts";
 import { ensureProvider } from "../../db/tokens.ts";
 import type {
   ProviderAuthSetup,
@@ -249,13 +252,15 @@ export class OuraProvider implements WebhookProvider {
     // 3. Sync sessions (meditation, breathing, etc.) → activity table
     recordsSynced += await syncSessions(context);
 
-    await reconcileProviderActivityAbsence(db, {
-      providerId: this.id,
-      userId: options?.userId,
-      windowStart: since,
-      windowEnd: syncWindowEnd,
-      presentExternalIds: activityPresentExternalIds,
-    });
+    if (!hasProviderActivityListSyncErrors(errors, ["workouts:", "sessions:"])) {
+      await reconcileProviderActivityAbsence(db, {
+        providerId: this.id,
+        userId: options?.userId,
+        windowStart: since,
+        windowEnd: syncWindowEnd,
+        presentExternalIds: activityPresentExternalIds,
+      });
+    }
 
     // 4. Sync heart rate → metric_stream table (batched)
     recordsSynced += await syncHeartRate(context, since);
