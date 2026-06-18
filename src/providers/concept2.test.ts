@@ -477,6 +477,19 @@ describe("Concept2Provider", () => {
               privacy: "default",
             },
             {
+              id: 11111,
+              type: "rower",
+              date: "2026-03-01T23:59:59.999Z",
+              distance: 5000,
+              time: 12000,
+              time_formatted: "20:00.0",
+              stroke_rate: 24,
+              stroke_count: 480,
+              weight_class: "H",
+              workout_type: "FixedDistSplits",
+              privacy: "default",
+            },
+            {
               id: 67890,
               type: "rower",
               date: "2026-03-03T08:00:00Z",
@@ -514,15 +527,16 @@ describe("Concept2Provider", () => {
       );
 
       expect(result.errors).toHaveLength(0);
-      expect(result.recordsSynced).toBe(1);
+      expect(result.recordsSynced).toBe(2);
       expect(findValuesCall(db, (value) => value.externalId === "12345")).toBeDefined();
+      expect(findValuesCall(db, (value) => value.externalId === "11111")).toBeDefined();
       expect(db.values.mock.calls).not.toContainEqual([
         expect.objectContaining({ externalId: "67890" }),
       ]);
       expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
         db,
         expect.objectContaining({
-          presentExternalIds: new Set(["12345"]),
+          presentExternalIds: new Set(["12345", "11111"]),
         }),
       );
     });
