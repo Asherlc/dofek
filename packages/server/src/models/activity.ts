@@ -1,8 +1,11 @@
-export interface SourceLink {
-  providerId: string;
-  label: string;
-  url: string;
-}
+import {
+  ActivitySourceAttribution,
+  type ProviderLookup,
+  type SourceExternalIdEntry,
+  type SourceLink,
+} from "./activity-source-attribution.ts";
+
+export type { ProviderLookup, SourceExternalIdEntry, SourceLink };
 
 export interface ActivityDetail {
   id: string;
@@ -39,7 +42,8 @@ export interface ActivityRow {
   provider_id: string;
   subsource: string | null;
   source_providers: string[] | null;
-  source_external_ids: Array<{ providerId: string; externalId: string }> | null;
+  source_external_ids: Array<SourceExternalIdEntry> | null;
+  absent_source_external_ids?: Array<SourceExternalIdEntry> | null;
   avg_hr: number | null;
   max_hr: number | null;
   avg_power: number | null;
@@ -54,18 +58,19 @@ export interface ActivityRow {
   provider_absent_at: string | null;
 }
 
-export type ProviderLookup = (
-  id: string,
-) => { activityUrl?(externalId: string): string; name: string } | undefined;
-
 /** Domain model for a single activity with provider-aware source links. */
 export class Activity {
   readonly #row: ActivityRow;
   readonly #lookupProvider: ProviderLookup;
+  readonly #sourceAttribution: ActivitySourceAttribution;
 
   constructor(row: ActivityRow, lookupProvider: ProviderLookup) {
     this.#row = row;
     this.#lookupProvider = lookupProvider;
+    this.#sourceAttribution = ActivitySourceAttribution.fromEntries(
+      row.source_external_ids,
+      row.absent_source_external_ids,
+    );
   }
 
   get id(): string {
@@ -101,23 +106,11 @@ export class Activity {
   }
 
   get sourceProviders(): string[] {
-    return this.#row.source_providers ?? [];
+    return this.#sourceAttribution.providerIds();
   }
 
   get sourceLinks(): SourceLink[] {
-    if (!this.#row.source_external_ids) return [];
-    const links: SourceLink[] = [];
-    for (const { providerId, externalId } of this.#row.source_external_ids) {
-      const provider = this.#lookupProvider(providerId);
-      if (provider?.activityUrl) {
-        links.push({
-          providerId,
-          label: provider.name,
-          url: provider.activityUrl(externalId),
-        });
-      }
-    }
-    return links;
+    return this.#sourceAttribution.toSourceLinks(this.#lookupProvider);
   }
 
   get avgHr(): number | null {

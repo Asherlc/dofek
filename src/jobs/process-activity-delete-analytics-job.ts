@@ -12,9 +12,7 @@ export interface ActivityAnalyticsJob {
   data: ActivityAnalyticsJobData;
 }
 
-export async function processActivityDeleteAnalyticsJob(
-  job: ActivityAnalyticsJob,
-): Promise<void> {
+export async function processActivityDeleteAnalyticsJob(job: ActivityAnalyticsJob): Promise<void> {
   const { userId, activityIds } = job.data;
   const client = createClickHouseClientFromEnv();
 

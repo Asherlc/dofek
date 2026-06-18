@@ -348,11 +348,17 @@ describe("activityRouter", () => {
       expect(result.elevationGain).toBe(300);
       expect(result.subsource).toBeNull();
       expect(result.sourceLinks).toEqual([
-        { providerId: "strava", label: "Strava", url: "https://www.strava.com/activities/99999" },
+        {
+          providerId: "strava",
+          label: "Strava",
+          url: "https://www.strava.com/activities/99999",
+          providerAbsentAt: null,
+        },
         {
           providerId: "wahoo",
           label: "Wahoo",
           url: "https://systm.wahoofitness.com/history/activity-details/42",
+          providerAbsentAt: null,
         },
       ]);
     });
@@ -1121,7 +1127,7 @@ describe("Activity model (via router integration)", () => {
     expect(detail.name).toBe("Morning Ride");
     expect(detail.notes).toBe("Felt good");
     expect(detail.providerId).toBe("wahoo");
-    expect(detail.sourceProviders).toEqual(["wahoo", "strava"]);
+    expect(detail.sourceProviders).toEqual(["strava", "wahoo"]);
     expect(detail.sourceLinks).toHaveLength(2);
     expect(detail.sourceLinks[0]?.label).toBe("Strava");
     expect(detail.avgHr).toBe(145);

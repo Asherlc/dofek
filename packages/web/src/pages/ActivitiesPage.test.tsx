@@ -44,9 +44,7 @@ vi.mock("@tanstack/react-router", () => ({
     children: ReactNode;
     to: string;
     params?: { id: string };
-  }) => (
-    <a href={params?.id ? to.replace("$id", params.id) : to}>{children}</a>
-  ),
+  }) => <a href={params?.id ? to.replace("$id", params.id) : to}>{children}</a>,
 }));
 
 vi.mock("../lib/trpc.ts", () => ({

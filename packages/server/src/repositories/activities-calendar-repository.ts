@@ -6,6 +6,10 @@ import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { osmTileUrl } from "../lib/osm-tile.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import {
+  ActivitySourceAttribution,
+  type ProviderLookup,
+} from "../models/activity-source-attribution.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { getActivityRoutePreviews } from "./activity-route-preview.ts";
 
@@ -41,6 +45,8 @@ export interface CalendarActivityEntry {
   isProviderAbsent?: boolean;
   providerId?: string;
   providerAbsentAt?: string | null;
+  partialAbsenceSummary?: string | null;
+  tombstoneSummary?: string | null;
 }
 
 export interface CalendarDayActivities {
@@ -75,6 +81,10 @@ const activityRowSchema = z.object({
   centroid_lat: z.coerce.number().nullable(),
   centroid_lng: z.coerce.number().nullable(),
   local_date: dateStringSchema,
+  absent_source_external_ids: z
+    .array(z.record(z.string(), z.string().nullable()))
+    .optional()
+    .default([]),
 });
 
 const caloriesRowSchema = z.object({
@@ -130,6 +140,7 @@ export interface WeekListInput {
 /** Per-activity calendar data (location for outdoor, calories + TSS otherwise). */
 export class ActivitiesCalendarRepository extends BaseRepository {
   readonly #sensorStore: ActivitySensorStore;
+  readonly #providerLookup: ProviderLookup;
 
   constructor(
     db: Pick<Database, "execute">,
@@ -137,9 +148,11 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     timezone: string,
     sensorStore: ActivitySensorStore,
     accessWindow?: ConstructorParameters<typeof BaseRepository>[3],
+    providerLookup: ProviderLookup = (providerId) => ({ name: providerId }),
   ) {
     super(db, userId, timezone, accessWindow);
     this.#sensorStore = sensorStore;
+    this.#providerLookup = providerLookup;
   }
 
   async getWeekList(input: WeekListInput): Promise<CalendarDayActivities[]> {
@@ -175,6 +188,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             asum.elevation_gain_m AS elevation_gain_m,
             asum.centroid_lat AS centroid_lat,
             asum.centroid_lng AS centroid_lng,
+            activity.absent_source_external_ids AS absent_source_external_ids,
             toString(toDate(toTimeZone(activity.started_at, {timezone:String}))) AS local_date
           FROM analytics.deduped_activities AS activity FINAL
           LEFT JOIN analytics.activity_summary asum
@@ -228,6 +242,10 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         calculator,
       });
 
+      const sourceAttribution = ActivitySourceAttribution.fromClickHouseAbsentMaps(
+        row.absent_source_external_ids,
+      );
+
       const entry: CalendarActivityEntry = {
         id: row.id,
         name: row.name,
@@ -235,6 +253,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         startedAt: row.started_at,
         endedAt: row.ended_at,
         durationMin: Math.round(row.duration_min * 10) / 10,
+        partialAbsenceSummary: sourceAttribution.partialAbsenceSummary(this.#providerLookup),
         location:
           row.centroid_lat != null && row.centroid_lng != null
             ? {
@@ -382,6 +401,11 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         isProviderAbsent: true,
         providerId: row.provider_id,
         providerAbsentAt: row.provider_absent_at,
+        tombstoneSummary: ActivitySourceAttribution.fromEntries([], []).tombstoneSummary(
+          null,
+          row.provider_id,
+          row.provider_absent_at,
+        ),
       };
 
       const bucket = dayMap.get(row.local_date) ?? [];

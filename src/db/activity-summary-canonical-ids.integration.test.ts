@@ -275,6 +275,7 @@ function createDedupedActivitiesTableSql(targetSchema: string): string {
   source_synced_at DateTime64(9, 'UTC'),
   source_providers Array(String),
   source_external_ids Array(Map(String, String)),
+  absent_source_external_ids Array(Map(String, String)),
   member_activity_ids Array(UUID),
   refresh_version UInt64,
   is_deleted UInt8,

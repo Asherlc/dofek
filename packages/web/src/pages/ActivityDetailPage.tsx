@@ -155,9 +155,7 @@ export function ActivityDetailPage() {
         </div>
       </div>
 
-      {activity.providerAbsentAt ? (
-        <ProviderAbsentBanner activity={activity} />
-      ) : null}
+      {activity.providerAbsentAt ? <ProviderAbsentBanner activity={activity} /> : null}
 
       <ActivityHeader activity={activity} units={units} hasGps={hasGps} />
 
@@ -429,7 +427,18 @@ function SourceLinks({ activity }: { activity: ActivityDetail }) {
         return (
           <span key={providerId}>
             {index > 0 && ", "}
-            {link ? (
+            {link?.providerAbsentAt ? (
+              <span
+                className="text-amber-700 dark:text-amber-300 line-through decoration-amber-500/60"
+                title={
+                  link.providerAbsentAt
+                    ? `Removed ${formatDateTime(link.providerAbsentAt)}`
+                    : "Removed from provider sync"
+                }
+              >
+                {link.label} (removed)
+              </span>
+            ) : link?.url ? (
               <a
                 href={link.url}
                 target="_blank"

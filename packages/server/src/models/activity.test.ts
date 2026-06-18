@@ -62,7 +62,7 @@ describe("Activity", () => {
     expect(activity.notes).toBe("Felt good");
     expect(activity.providerId).toBe("wahoo");
     expect(activity.subsource).toBeNull();
-    expect(activity.sourceProviders).toEqual(["wahoo", "strava"]);
+    expect(activity.sourceProviders).toEqual(["strava", "wahoo"]);
     expect(activity.avgHr).toBe(145);
     expect(activity.maxHr).toBe(175);
     expect(activity.avgPower).toBe(220);
@@ -80,11 +80,51 @@ describe("Activity", () => {
     const activity = new Activity(fullRow, mockLookup);
 
     expect(activity.sourceLinks).toEqual([
-      { providerId: "strava", label: "Strava", url: "https://www.strava.com/activities/99999" },
+      {
+        providerId: "strava",
+        label: "Strava",
+        url: "https://www.strava.com/activities/99999",
+        providerAbsentAt: null,
+      },
       {
         providerId: "wahoo",
         label: "Wahoo",
         url: "https://systm.wahoofitness.com/history/activity-details/42",
+        providerAbsentAt: null,
+      },
+    ]);
+  });
+
+  it("includes absent providers in source links and source providers", () => {
+    const row: ActivityRow = {
+      ...fullRow,
+      source_providers: ["garmin"],
+      source_external_ids: [{ providerId: "garmin", externalId: "123" }],
+      absent_source_external_ids: [
+        {
+          providerId: "strava",
+          externalId: "99999",
+          memberActivityId: "member-strava",
+          providerAbsentAt: "2026-03-05T14:30:00.000Z",
+        },
+      ],
+    };
+    const activity = new Activity(row, mockLookup);
+
+    expect(activity.sourceProviders).toEqual(["garmin", "strava"]);
+    expect(activity.sourceLinks).toEqual([
+      {
+        providerId: "garmin",
+        label: "Garmin",
+        url: "https://connect.garmin.com/modern/activity/123",
+        providerAbsentAt: null,
+      },
+      {
+        providerId: "strava",
+        label: "Strava",
+        url: "https://www.strava.com/activities/99999",
+        providerAbsentAt: "2026-03-05T14:30:00.000Z",
+        memberActivityId: "member-strava",
       },
     ]);
   });
@@ -147,11 +187,11 @@ describe("Activity", () => {
     expect(activity.sampleCount).toBeNull();
   });
 
-  it("defaults source_providers to empty array when null", () => {
+  it("derives source providers from source links when source_providers is null", () => {
     const row: ActivityRow = { ...fullRow, source_providers: null };
     const activity = new Activity(row, mockLookup);
 
-    expect(activity.sourceProviders).toEqual([]);
+    expect(activity.sourceProviders).toEqual(["strava", "wahoo"]);
   });
 
   it("exposes the subsource when present", () => {
@@ -187,17 +227,19 @@ describe("Activity", () => {
         notes: "Felt good",
         providerId: "wahoo",
         subsource: null,
-        sourceProviders: ["wahoo", "strava"],
+        sourceProviders: ["strava", "wahoo"],
         sourceLinks: [
           {
             providerId: "strava",
             label: "Strava",
             url: "https://www.strava.com/activities/99999",
+            providerAbsentAt: null,
           },
           {
             providerId: "wahoo",
             label: "Wahoo",
             url: "https://systm.wahoofitness.com/history/activity-details/42",
+            providerAbsentAt: null,
           },
         ],
         avgHr: 145,

@@ -94,6 +94,7 @@ export const clickHouseMigrationFileNames = [
   "0028_create_domain_dashboard_tables.ts",
   "0029_activity_provider_absence.ts",
   "0030_activity_mirror_order_key.ts",
+  "0031_deduped_activities_absent_source_links.ts",
 ] as const;
 
 export function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigration[] {

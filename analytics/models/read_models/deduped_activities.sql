@@ -23,6 +23,57 @@ final_groups AS (
     WHERE is_deleted = 0
 ),
 
+group_bounds AS (
+    SELECT
+        final_groups.group_id AS group_id,
+        min(ranked.started_at) AS group_started_at,
+        max(coalesce(ranked.ended_at, ranked.started_at + INTERVAL 12 HOUR)) AS group_ended_at,
+        any(ranked.user_id) AS user_id
+    FROM final_groups
+    INNER JOIN ranked
+        ON ranked.activity_id = final_groups.activity_id
+    GROUP BY final_groups.group_id
+),
+
+absent_group_members AS (
+    SELECT
+        group_bounds.group_id AS group_id,
+        absent.id AS activity_id,
+        absent.provider_id AS provider_id,
+        absent.external_id AS external_id,
+        absent.provider_absent_at AS provider_absent_at
+    FROM group_bounds
+    INNER JOIN {{ source('postgres_fitness', 'activity') }} AS absent FINAL
+        ON absent.user_id = group_bounds.user_id
+        AND absent.provider_absent_at IS NOT NULL
+        AND absent._peerdb_is_deleted = 0
+    WHERE absent.id NOT IN (
+        SELECT final_groups.activity_id
+        FROM final_groups
+        WHERE final_groups.group_id = group_bounds.group_id
+    )
+    AND (
+        dateDiff(
+            'second',
+            greatest(absent.started_at, group_bounds.group_started_at),
+            least(
+                coalesce(absent.ended_at, absent.started_at + INTERVAL 12 HOUR),
+                group_bounds.group_ended_at
+            )
+        ) / nullIf(
+            dateDiff(
+                'second',
+                least(
+                    coalesce(absent.ended_at, absent.started_at + INTERVAL 12 HOUR),
+                    group_bounds.group_ended_at
+                ),
+                greatest(absent.started_at, group_bounds.group_started_at)
+            ),
+            0
+        )
+    ) > 0.8
+),
+
 best AS (
     SELECT *
     FROM (
@@ -67,12 +118,25 @@ merged AS (
             map('providerId', ranked.provider_id, 'externalId', ranked.external_id),
             ranked.external_id IS NOT NULL AND ranked.external_id != ''
         ) AS source_external_ids,
+        groupArrayIf(
+            map(
+                'providerId', absent_group_members.provider_id,
+                'externalId', absent_group_members.external_id,
+                'memberActivityId', toString(absent_group_members.activity_id),
+                'providerAbsentAt', toString(absent_group_members.provider_absent_at)
+            ),
+            absent_group_members.provider_id IS NOT NULL
+            AND absent_group_members.external_id IS NOT NULL
+            AND absent_group_members.external_id != ''
+        ) AS absent_source_external_ids,
         groupArray(ranked.activity_id) AS member_activity_ids
     FROM best
     INNER JOIN final_groups
         ON final_groups.group_id = best.group_id
     INNER JOIN ranked
         ON ranked.activity_id = final_groups.activity_id
+    LEFT JOIN absent_group_members
+        ON absent_group_members.group_id = best.group_id
     GROUP BY best.group_id, best.canonical_id
 ),
 
@@ -92,6 +156,7 @@ current_deduped_activities AS (
         source_synced_at,
         source_providers,
         source_external_ids,
+        absent_source_external_ids,
         member_activity_ids
     FROM merged
 )
@@ -114,6 +179,7 @@ existing_deduped_activities AS (
         deduped.source_synced_at,
         deduped.source_providers,
         deduped.source_external_ids,
+        deduped.absent_source_external_ids,
         deduped.member_activity_ids
     FROM {{ this }} AS deduped FINAL
     WHERE deduped.is_deleted = 0
@@ -152,6 +218,7 @@ SELECT
     source_synced_at,
     source_providers,
     source_external_ids,
+    absent_source_external_ids,
     member_activity_ids,
     refresh_clock.refresh_version AS refresh_version,
     0 AS is_deleted,
@@ -178,6 +245,7 @@ SELECT
     source_synced_at,
     source_providers,
     source_external_ids,
+    absent_source_external_ids,
     member_activity_ids,
     refresh_clock.refresh_version AS refresh_version,
     1 AS is_deleted,

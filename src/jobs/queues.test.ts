@@ -385,4 +385,43 @@ describe("queues", () => {
       expect(mockQueueAdd).not.toHaveBeenCalled();
     });
   });
+
+  describe("enqueueActivityRestoreAnalyticsRefresh", () => {
+    it("adds an activity restore analytics refresh job with retries", async () => {
+      const { enqueueActivityRestoreAnalyticsRefresh, createActivityDeleteAnalyticsQueue } =
+        await import("./queues.ts");
+
+      const queue = createActivityDeleteAnalyticsQueue({ host: "test", port: 9999 });
+      await enqueueActivityRestoreAnalyticsRefresh(
+        "user-123",
+        ["00000000-0000-0000-0000-000000000002", "00000000-0000-0000-0000-000000000002"],
+        queue,
+      );
+
+      expect(mockQueueAdd).toHaveBeenCalledWith(
+        "activity-restore-analytics-refresh",
+        {
+          type: "activity-restore-analytics-refresh",
+          userId: "user-123",
+          activityIds: ["00000000-0000-0000-0000-000000000002"],
+        },
+        {
+          removeOnComplete: true,
+          removeOnFail: { age: 604_800, count: 100 },
+          attempts: 5,
+          backoff: { type: "fixed", delay: 30_000 },
+        },
+      );
+    });
+
+    it("does not enqueue a job when no activity ids are provided", async () => {
+      const { enqueueActivityRestoreAnalyticsRefresh, createActivityDeleteAnalyticsQueue } =
+        await import("./queues.ts");
+
+      const queue = createActivityDeleteAnalyticsQueue({ host: "test", port: 9999 });
+      await enqueueActivityRestoreAnalyticsRefresh("user-123", [], queue);
+
+      expect(mockQueueAdd).not.toHaveBeenCalled();
+    });
+  });
 });

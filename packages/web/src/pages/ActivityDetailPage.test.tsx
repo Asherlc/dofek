@@ -366,6 +366,38 @@ describe("ActivityDetailPage", () => {
       Object.assign(mockActivity, originalData);
     });
 
+    it("renders removed source links without anchors", async () => {
+      const originalData = { ...mockActivity };
+      Object.assign(mockActivity, {
+        providerId: "garmin",
+        subsource: null,
+        sourceProviders: ["garmin", "strava"],
+        sourceLinks: [
+          {
+            providerId: "garmin",
+            label: "Garmin",
+            url: "https://connect.garmin.com/modern/activity/456",
+            providerAbsentAt: null,
+          },
+          {
+            providerId: "strava",
+            label: "Strava",
+            url: "https://www.strava.com/activities/123",
+            providerAbsentAt: "2026-03-05T14:30:00.000Z",
+          },
+        ],
+      });
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(screen.getByText("Strava (removed)")).toBeTruthy();
+      expect(screen.queryByRole("link", { name: "Strava" })).toBeNull();
+      expect(screen.getByRole("link", { name: "Garmin" })).toBeTruthy();
+
+      Object.assign(mockActivity, originalData);
+    });
+
     it("renders source links as clickable anchors", async () => {
       const originalData = { ...mockActivity };
       Object.assign(mockActivity, {

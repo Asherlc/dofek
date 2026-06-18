@@ -39,6 +39,8 @@ const activityListRowSchema = z
 const sourceExternalIdSchema = z.object({
   providerId: z.string(),
   externalId: z.string(),
+  memberActivityId: z.string().optional(),
+  providerAbsentAt: timestampStringSchema.nullable().optional(),
 });
 
 const activityDetailRowSchema = z.object({
@@ -52,6 +54,7 @@ const activityDetailRowSchema = z.object({
   subsource: z.string().nullable(),
   source_providers: z.array(z.string()),
   source_external_ids: z.array(sourceExternalIdSchema).nullable(),
+  absent_source_external_ids: z.array(sourceExternalIdSchema).nullable().optional().default(null),
   member_activity_ids: z.array(z.string()).optional().default([]),
   avg_hr: z.number().nullable(),
   max_hr: z.number().nullable(),
@@ -335,6 +338,7 @@ export class ActivityRepository extends BaseRepository {
             a.raw->>'sourceName' AS subsource,
             a.source_providers,
             a.source_external_ids,
+            a.absent_source_external_ids,
             a.member_activity_ids,
             NULL::double precision AS avg_hr,
             NULL::smallint AS max_hr,
@@ -373,13 +377,19 @@ export class ActivityRepository extends BaseRepository {
             a.provider_id,
             a.raw->>'sourceName' AS subsource,
             ARRAY[a.provider_id] AS source_providers,
+            NULL::jsonb AS source_external_ids,
             CASE
               WHEN a.external_id IS NOT NULL AND a.external_id <> ''
               THEN jsonb_build_array(
-                jsonb_build_object('providerId', a.provider_id, 'externalId', a.external_id)
+                jsonb_build_object(
+                  'providerId', a.provider_id,
+                  'externalId', a.external_id,
+                  'memberActivityId', a.id,
+                  'providerAbsentAt', a.provider_absent_at
+                )
               )
               ELSE NULL
-            END AS source_external_ids,
+            END AS absent_source_external_ids,
             ARRAY[a.id]::uuid[] AS member_activity_ids,
             NULL::double precision AS avg_hr,
             NULL::smallint AS max_hr,

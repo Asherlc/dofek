@@ -838,7 +838,15 @@ export default function ActivityDetailScreen() {
               const link = activity.sourceLinks.find(
                 (sourceLink) => sourceLink.providerId === providerId,
               );
-              if (link) {
+              if (link?.providerAbsentAt) {
+                return (
+                  <Text key={providerId} style={styles.sourceRemoved}>
+                    {index > 0 && ", "}
+                    {link.label} (removed)
+                  </Text>
+                );
+              }
+              if (link?.url) {
                 return (
                   <View key={providerId} style={styles.sourceLinkRow}>
                     {index > 0 && <Text style={styles.source}>, </Text>}

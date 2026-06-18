@@ -106,6 +106,11 @@ export const styles = StyleSheet.create({
     color: colors.accent,
     textDecorationLine: "underline",
   },
+  sourceRemoved: {
+    fontSize: 12,
+    color: colors.textTertiary,
+    textDecorationLine: "line-through",
+  },
   deleteButton: {
     backgroundColor: colors.surface,
     borderRadius: 12,

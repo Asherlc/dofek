@@ -1,7 +1,10 @@
 import { isCyclingActivity } from "@dofek/training/training";
 import { TRPCError } from "@trpc/server";
 import { isRelationMissingError } from "dofek/db/dedup";
-import { enqueueActivityDeleteAnalyticsRefresh, enqueueActivityRestoreAnalyticsRefresh } from "dofek/jobs/queues";
+import {
+  enqueueActivityDeleteAnalyticsRefresh,
+  enqueueActivityRestoreAnalyticsRefresh,
+} from "dofek/jobs/queues";
 import { queryCache } from "dofek/lib/cache";
 import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";

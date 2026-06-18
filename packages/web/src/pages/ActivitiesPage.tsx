@@ -1,6 +1,5 @@
 import {
   formatDateForDisplay,
-  formatDateTime,
   formatDateYmd,
   formatDurationMinutes,
   formatTime,
@@ -9,7 +8,6 @@ import {
   parseValidDate,
 } from "@dofek/format/format";
 import { formatMeasurementText } from "@dofek/format/units";
-import { providerSourceLabel } from "@dofek/providers/providers";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
@@ -402,8 +400,8 @@ interface ActivityCardProps {
     startedAt: string;
     durationMin: number;
     isProviderAbsent?: boolean;
-    providerId?: string;
-    providerAbsentAt?: string | null;
+    partialAbsenceSummary?: string | null;
+    tombstoneSummary?: string | null;
     location: ActivityMapTileProps["location"] | null;
     stats: { label: string; value: string }[];
   };
@@ -429,14 +427,6 @@ function ActivityCard({
   ]
     .filter(Boolean)
     .join(" ");
-  const providerLabel =
-    activity.providerId != null
-      ? providerSourceLabel(activity.providerId, null)
-      : "provider sync";
-  const tombstoneSummary =
-    isHidden && activity.providerAbsentAt
-      ? `Removed from ${providerLabel} · ${formatDateTime(activity.providerAbsentAt)}`
-      : null;
 
   const content = (
     <div className="flex flex-col sm:flex-row sm:items-stretch">
@@ -467,8 +457,15 @@ function ActivityCard({
           <p className="mt-1 text-xs text-muted">
             {formatTime(activity.startedAt)} · {formatDurationMinutes(activity.durationMin)}
           </p>
-          {tombstoneSummary ? (
-            <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">{tombstoneSummary}</p>
+          {activity.tombstoneSummary ? (
+            <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+              {activity.tombstoneSummary}
+            </p>
+          ) : null}
+          {activity.partialAbsenceSummary ? (
+            <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+              {activity.partialAbsenceSummary}
+            </p>
           ) : null}
         </div>
         <ActivityMetricStrip activity={activity} units={units} />

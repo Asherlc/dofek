@@ -794,7 +794,9 @@ describe("ActivitiesCalendarRepository", () => {
       },
     ]);
     const hiddenQueryText = vi.mocked(sensorStore.query).mock.calls[2]?.[1];
-    expect(normalizeSql(hiddenQueryText)).toContain("FROM postgres_fitness.activity AS activity FINAL");
+    expect(normalizeSql(hiddenQueryText)).toContain(
+      "FROM postgres_fitness.activity AS activity FINAL",
+    );
     expect(normalizeSql(hiddenQueryText)).toContain("provider_absent_at IS NOT NULL");
     expect(database.execute).not.toHaveBeenCalled();
   });
