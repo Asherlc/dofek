@@ -57,6 +57,9 @@ describe("Predictions router (integration)", () => {
       );
     }
 
+    const currentUtcMidnight = new Date();
+    currentUtcMidnight.setUTCHours(0, 0, 0, 0);
+
     // Insert 120 days of sleep data
     for (let i = 120; i >= 0; i--) {
       const duration = 420 + Math.sin(i * 0.4) * 40;
@@ -80,9 +83,12 @@ describe("Predictions router (integration)", () => {
 	            )`,
       );
       const restingHeartRate = Math.round(55 - Math.cos(i * 0.3) * 5);
+      const sleepSampleStart = new Date(currentUtcMidnight);
+      sleepSampleStart.setUTCDate(currentUtcMidnight.getUTCDate() - i);
+      sleepSampleStart.setUTCHours(22, 30, 0, 0);
       for (let sampleIndex = 0; sampleIndex < 30; sampleIndex++) {
         const recordedAt = new Date(
-          Date.now() - i * 24 * 60 * 60 * 1000 + (24 + 1) * 60 * 60 * 1000 + sampleIndex * 60_000,
+          sleepSampleStart.getTime() + sampleIndex * 60_000,
         ).toISOString();
         metricStreamSeedRows.push({
           userId: TEST_USER_ID,
