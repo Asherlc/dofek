@@ -29,7 +29,7 @@ WITH activity_members AS (
 
 location_versions AS (
     SELECT *
-    FROM {{ source('postgres_fitness', 'metric_stream') }}
+    FROM {{ source('postgres_fitness', 'metric_stream_freshness') }}
     WHERE channel = 'location'
         AND (point IS NOT NULL OR _peerdb_is_deleted = 1)
 ),
