@@ -243,11 +243,10 @@ absent_group_members AS (
     ON absent.user_id = group_bounds.user_id
    AND absent.provider_absent_at IS NOT NULL
    AND absent._peerdb_is_deleted = 0
-  WHERE absent.id NOT IN (
-    SELECT final_groups.activity_id
-    FROM final_groups
-    WHERE final_groups.group_id = group_bounds.group_id
-  )
+  LEFT JOIN final_groups AS fg_member
+    ON fg_member.group_id = group_bounds.group_id
+   AND fg_member.activity_id = absent.id
+  WHERE fg_member.activity_id IS NULL
   AND (
     dateDiff(
       'second',
