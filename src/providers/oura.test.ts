@@ -1076,8 +1076,8 @@ describe("OuraProvider.authSetup()", () => {
     process.env.OURA_CLIENT_SECRET = "test-secret";
     const provider = new OuraProvider();
     const setup = provider.authSetup();
-    expect(setup.oauthConfig.clientId).toBe("test-id");
-    expect(setup.exchangeCode).toBeTypeOf("function");
+    expect(setup.oauthConfig!.clientId).toBe("test-id");
+    expect(setup.exchangeCode!).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("ouraring.com");
   });
 
@@ -1156,7 +1156,7 @@ describe("OuraProvider.getUserIdentity()", () => {
 
     const provider = new OuraProvider();
     const setup = provider.authSetup();
-    expect(setup.oauthConfig.scopes).toContain("email");
+    expect(setup.oauthConfig!.scopes).toContain("email");
   });
 });
 

@@ -158,14 +158,14 @@ describe("XertProvider", () => {
 
   it("authSetup returns config with automatedLogin", () => {
     const setup = new XertProvider().authSetup();
-    expect(setup.oauthConfig.clientId).toBeDefined();
+    expect(setup.oauthConfig!.clientId).toBeDefined();
     expect(setup.apiBaseUrl).toContain("xertonline.com");
     expect(setup.automatedLogin).toBeTypeOf("function");
   });
 
   it("authSetup.exchangeCode throws (not supported)", async () => {
     const setup = new XertProvider().authSetup();
-    await expect(setup.exchangeCode("code")).rejects.toThrow("automated login");
+    await expect(setup.exchangeCode!("code")).rejects.toThrow("automated login");
   });
 
   it("is detected as a credential provider", () => {

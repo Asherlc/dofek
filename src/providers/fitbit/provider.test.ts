@@ -438,8 +438,8 @@ describe("FitbitProvider — authSetup", () => {
     process.env.FITBIT_CLIENT_SECRET = "test-secret";
     const provider = new FitbitProvider();
     const setup = provider.authSetup();
-    expect(setup.oauthConfig.clientId).toBe("test-id");
-    expect(setup.exchangeCode).toBeTypeOf("function");
+    expect(setup.oauthConfig!.clientId).toBe("test-id");
+    expect(setup.exchangeCode!).toBeTypeOf("function");
     expect(setup.authUrl).toBeDefined();
     expect(setup.apiBaseUrl).toContain("fitbit.com");
     expect(setup.getUserIdentity).toBeTypeOf("function");
@@ -493,7 +493,7 @@ describe("FitbitProvider — authSetup", () => {
     // The arrow function must actually call exchangeCodeForTokens with the code
     // and the real PKCE verifier. A missing verifier object ({}) would send
     // code_verifier=undefined; a no-op arrow (() => undefined) would never fetch.
-    const tokens = await setup.exchangeCode("auth-code-123");
+    const tokens = await setup.exchangeCode!("auth-code-123");
     expect(tokens).not.toBeUndefined();
     expect(tokens.accessToken).toBe("exchanged-access-token");
     expect(capturedBody).toContain("code=auth-code-123");

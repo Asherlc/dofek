@@ -640,8 +640,8 @@ describe("PelotonProvider.authSetup()", () => {
   it("returns auth setup with OAuth config", () => {
     const provider = new PelotonProvider();
     const setup = provider.authSetup();
-    expect(setup.oauthConfig.clientId).toBeDefined();
-    expect(setup.exchangeCode).toBeTypeOf("function");
+    expect(setup.oauthConfig!.clientId).toBeDefined();
+    expect(setup.exchangeCode!).toBeTypeOf("function");
     expect(setup.automatedLogin).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("onepeloton.com");
   });
@@ -1357,7 +1357,7 @@ describe("Peloton — rate-limit aware fetch wiring", () => {
 
   it("provider authSetup.exchangeCode surfaces a 429 tagged 'peloton'", async () => {
     const setup = new PelotonProvider(rateLimited429).authSetup();
-    const err = await setup.exchangeCode("code").catch((caught: unknown) => caught);
+    const err = await setup.exchangeCode!("code").catch((caught: unknown) => caught);
     expect(err).toBeInstanceOf(ProviderRateLimitError);
     if (err instanceof ProviderRateLimitError) {
       expect(err.providerId).toBe("peloton");

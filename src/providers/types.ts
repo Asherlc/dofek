@@ -2,6 +2,8 @@ import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
 
+export type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
+
 /**
  * OAuth 1.0 3-legged flow (e.g. FatSecret).
  */

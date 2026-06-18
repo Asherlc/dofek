@@ -198,7 +198,7 @@ describe("CorosProvider", () => {
       const provider = new CorosProvider(fetchFn);
       const setup = provider.authSetup();
 
-      await expectCorosRateLimitError(() => setup.exchangeCode("code"));
+      await expectCorosRateLimitError(() => setup.exchangeCode!("code"));
     });
   });
 

@@ -450,13 +450,13 @@ describe("BodySpecProvider", () => {
       const provider = new BodySpecProvider();
       const setup = provider.authSetup();
       expect(setup).toBeDefined();
-      expect(setup?.oauthConfig.clientId).toBe("test-id");
-      expect(setup?.oauthConfig.clientSecret).toBe("test-secret");
-      expect(setup?.oauthConfig.authorizeUrl).toContain("bodyspec.com/oauth/authorize");
-      expect(setup?.oauthConfig.tokenUrl).toContain("bodyspec.com/oauth/token");
-      expect(setup?.oauthConfig.scopes).toEqual(["read:results"]);
-      expect(setup?.apiBaseUrl).toBe("https://app.bodyspec.com");
-      expect(setup?.exchangeCode).toBeTypeOf("function");
+      expect(setup!.oauthConfig!.clientId).toBe("test-id");
+      expect(setup!.oauthConfig!.clientSecret).toBe("test-secret");
+      expect(setup!.oauthConfig!.authorizeUrl).toContain("bodyspec.com/oauth/authorize");
+      expect(setup!.oauthConfig!.tokenUrl).toContain("bodyspec.com/oauth/token");
+      expect(setup!.oauthConfig!.scopes).toEqual(["read:results"]);
+      expect(setup!.apiBaseUrl).toBe("https://app.bodyspec.com");
+      expect(setup!.exchangeCode).toBeTypeOf("function");
     });
   });
 

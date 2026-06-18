@@ -355,8 +355,8 @@ describe("WahooProvider.authSetup()", () => {
     process.env.WAHOO_CLIENT_SECRET = "test-secret";
     const provider = new WahooProvider();
     const setup = provider.authSetup();
-    expect(setup.oauthConfig.clientId).toBe("test-id");
-    expect(setup.exchangeCode).toBeTypeOf("function");
+    expect(setup.oauthConfig!.clientId).toBe("test-id");
+    expect(setup.exchangeCode!).toBeTypeOf("function");
     expect(setup.revokeExistingTokens).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toBe("https://api.wahooligan.com");
     expect(setup.identityCapabilities?.providesEmail).toBe(false);

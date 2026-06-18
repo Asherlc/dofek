@@ -19,7 +19,7 @@ describe("WgerProvider — rate-limit aware fetch wiring", () => {
     const provider = new WgerProvider(mockFetch);
     const setup = provider.authSetup();
 
-    const err = await setup.exchangeCode("any-code").catch((caught: unknown) => caught);
+    const err = await setup.exchangeCode!("any-code").catch((caught: unknown) => caught);
     expect(err).toBeInstanceOf(ProviderRateLimitError);
     if (err instanceof ProviderRateLimitError) {
       expect(err.providerId).toBe("wger");

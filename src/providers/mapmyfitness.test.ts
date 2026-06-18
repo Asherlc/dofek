@@ -213,7 +213,7 @@ describe("MapMyFitnessProvider", () => {
     );
 
     const setup = new MapMyFitnessProvider(mockFetch).authSetup();
-    const tokens = await setup.exchangeCode("auth-code-123");
+    const tokens = await setup.exchangeCode!("auth-code-123");
 
     expect(tokens.accessToken).toBe("access-xyz");
     const [url, init] = mockFetch.mock.calls[0] ?? [];

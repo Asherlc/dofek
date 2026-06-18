@@ -1481,9 +1481,9 @@ describe("WhoopProvider.authSetup()", () => {
     const provider = new WhoopProvider();
     const setup = provider.authSetup();
     expect(setup).toBeDefined();
-    expect(setup?.oauthConfig.clientId).toBe("test-id");
-    expect(setup?.oauthConfig.scopes).toContain("read:profile");
-    expect(setup?.exchangeCode).toBeTypeOf("function");
+    expect(setup!.oauthConfig!.clientId).toBe("test-id");
+    expect(setup!.oauthConfig!.scopes).toContain("read:profile");
+    expect(setup!.exchangeCode).toBeTypeOf("function");
   });
 
   it("returns undefined when env vars are missing", () => {

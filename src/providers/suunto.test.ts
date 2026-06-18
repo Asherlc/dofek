@@ -688,7 +688,7 @@ describe("SuuntoProvider.authSetup — apiBaseUrl", () => {
     process.env.SUUNTO_CLIENT_SECRET = "secret";
     const provider = new SuuntoProvider();
     const setup = provider.authSetup();
-    expect(setup.exchangeCode).toBeTypeOf("function");
+    expect(setup.exchangeCode!).toBeTypeOf("function");
   });
 
   it("throws when env vars are missing", () => {
@@ -716,7 +716,7 @@ describe("SuuntoProvider — rate-limit aware fetch wiring", () => {
     const provider = new SuuntoProvider(mockFetch);
     const setup = provider.authSetup();
 
-    const err = await setup.exchangeCode("any-code").catch((caught: unknown) => caught);
+    const err = await setup.exchangeCode!("any-code").catch((caught: unknown) => caught);
     expect(err).toBeInstanceOf(ProviderRateLimitError);
     if (err instanceof ProviderRateLimitError) {
       expect(err.providerId).toBe("suunto");
