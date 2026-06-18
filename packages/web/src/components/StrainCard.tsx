@@ -1,5 +1,6 @@
 import { formatDateShort, formatIntensity, formatTrainingLoad } from "@dofek/format/format";
 import { StrainScore, WorkloadRatio } from "@dofek/scoring/scoring";
+import { duration, easing } from "@dofek/scoring/tokens";
 import type { StrainTargetResult, WorkloadRatioResult } from "dofek-server/types";
 import { useEffect, useState } from "react";
 import { useCountUp } from "../hooks/useCountUp.ts";
@@ -29,7 +30,7 @@ function StrainRing({
   const targetOffset = circumference * (1 - fraction);
   const color = new StrainScore(strain).color;
   const center = size / 2;
-  const displayValue = useCountUp(strain, 1200, 1);
+  const displayValue = useCountUp(strain, duration.countUp, 1);
 
   // Animate ring draw-in
   const [animatedOffset, setAnimatedOffset] = useState(circumference);
@@ -67,7 +68,7 @@ function StrainRing({
           strokeDashoffset={animatedOffset}
           strokeLinecap="round"
           transform={`rotate(-90 ${center} ${center})`}
-          style={{ transition: "stroke-dashoffset 1.2s cubic-bezier(0.16, 1, 0.3, 1)" }}
+          style={{ transition: `stroke-dashoffset ${duration.countUp}ms ${easing.out}` }}
         />
         {/* Target marker */}
         {targetStrain != null &&

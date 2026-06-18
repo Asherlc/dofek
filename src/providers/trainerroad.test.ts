@@ -12,16 +12,11 @@ describe("TrainerRoadProvider", () => {
     expect(new TrainerRoadProvider().validate()).toBeNull();
   });
 
-  it("authSetup returns correct configuration", () => {
+  it("authSetup returns credential-only configuration", () => {
     const setup = new TrainerRoadProvider().authSetup();
-    expect(setup.oauthConfig.authorizeUrl).toContain("trainerroad.com");
     expect(setup.automatedLogin).toBeTypeOf("function");
-    expect(setup.exchangeCode).toBeTypeOf("function");
-  });
-
-  it("authSetup.exchangeCode throws", async () => {
-    const setup = new TrainerRoadProvider().authSetup();
-    await expect(setup.exchangeCode("code")).rejects.toThrow("automated login");
+    expect(setup.oauthConfig).toBeUndefined();
+    expect(setup.exchangeCode).toBeUndefined();
   });
 
   it("sync returns error when no tokens stored", async () => {

@@ -161,6 +161,7 @@ export const CYCLING_ACTIVITY_TYPES = [
   "cyclocross",
   "track_cycling",
   "bmx",
+  "hand_cycling",
 ] as const;
 
 export type CyclingActivityType = (typeof CYCLING_ACTIVITY_TYPES)[number];
@@ -168,6 +169,16 @@ export type CyclingActivityType = (typeof CYCLING_ACTIVITY_TYPES)[number];
 /** Check whether an activity type is a cycling variant. */
 export function isCyclingActivity(activityType: string): activityType is CyclingActivityType {
   return CYCLING_ACTIVITY_TYPES.some((t) => t === activityType);
+}
+
+/** Cadence unit for display based on activity type. */
+export function cadenceUnit(activityType: string): "rpm" | "steps/min" {
+  return isCyclingActivity(activityType) ? "rpm" : "steps/min";
+}
+
+/** Y-axis label for cadence charts. */
+export function cadenceAxisLabel(activityType: string): string {
+  return `Cadence (${cadenceUnit(activityType)})`;
 }
 
 // ============================================================

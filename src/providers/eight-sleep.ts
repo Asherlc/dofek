@@ -1,9 +1,5 @@
 import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
-import {
-  EIGHT_SLEEP_CLIENT_ID,
-  EIGHT_SLEEP_CLIENT_SECRET,
-  EightSleepClient,
-} from "eight-sleep-client/client";
+import { EightSleepClient } from "eight-sleep-client/client";
 import {
   parseEightSleepDailyMetrics,
   parseEightSleepHeartRateSamples,
@@ -37,8 +33,6 @@ function formatDate(date: Date): string {
 // Provider implementation
 // ============================================================
 
-const AUTH_API_BASE = "https://auth-api.8slp.net/v1";
-
 export class EightSleepProvider implements SyncProvider {
   readonly id = "eight-sleep";
   readonly name = "Eight Sleep";
@@ -56,14 +50,6 @@ export class EightSleepProvider implements SyncProvider {
   authSetup(_options?: { host?: string }): ProviderAuthSetup {
     const fetchFn = this.#fetchFn;
     return {
-      oauthConfig: {
-        clientId: EIGHT_SLEEP_CLIENT_ID,
-        clientSecret: EIGHT_SLEEP_CLIENT_SECRET,
-        authorizeUrl: `${AUTH_API_BASE}/tokens`,
-        tokenUrl: `${AUTH_API_BASE}/tokens`,
-        redirectUri: "",
-        scopes: [],
-      },
       automatedLogin: async (email: string, password: string) => {
         const result = await EightSleepClient.signIn(email, password, fetchFn);
         return {
@@ -72,9 +58,6 @@ export class EightSleepProvider implements SyncProvider {
           expiresAt: new Date(Date.now() + result.expiresIn * 1000),
           scopes: `userId:${result.userId}`,
         };
-      },
-      exchangeCode: async () => {
-        throw new Error("Eight Sleep uses automated login, not OAuth code exchange");
       },
     };
   }

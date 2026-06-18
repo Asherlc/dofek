@@ -14,6 +14,8 @@ import { StrengthRepository } from "../repositories/strength-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 import { ensureProvidersRegistered } from "./sync-helpers.ts";
 
+const MAX_BULK_DELETE_ACTIVITY_IDS = 500;
+
 export interface StrengthExerciseDetail {
   exerciseIndex: number;
   exerciseName: string;
@@ -208,6 +210,25 @@ export const activityRouter = router({
         throw error;
       }
       return { success: true };
+    }),
+
+  bulkDelete: protectedProcedure
+    .input(z.object({ ids: z.array(z.string().uuid()).min(1).max(MAX_BULK_DELETE_ACTIVITY_IDS) }))
+    .mutation(async ({ ctx, input }) => {
+      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+      try {
+        const deletedCount = await repo.bulkDelete(input.ids);
+        return { success: true, deletedCount };
+      } catch (error) {
+        if (isRelationMissingError(error)) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
+          });
+        }
+        throw error;
+      }
     }),
 });
 

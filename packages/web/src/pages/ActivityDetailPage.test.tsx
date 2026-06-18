@@ -420,6 +420,70 @@ describe("ActivityDetailPage", () => {
     });
   });
 
+  describe("MetricsChart cadence unit display", () => {
+    it("labels hiking cadence as steps/min", async () => {
+      const originalActivity = { ...mockActivity };
+      const originalStream = mockStreamPoints.map((point) => ({ ...point }));
+
+      Object.assign(mockActivity, { activityType: "hiking", avgCadence: 85 });
+      mockStreamPoints.splice(
+        0,
+        mockStreamPoints.length,
+        ...originalStream.map((point) => ({ ...point, cadence: 85 })),
+      );
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(screen.getByText("85 steps/min")).toBeDefined();
+
+      const cadenceOption = findOptionByYAxisArrayName("Cadence");
+      expect(cadenceOption).toBeDefined();
+      if (!cadenceOption) return;
+
+      const yAxes = cadenceOption.yAxis;
+      if (!Array.isArray(yAxes)) return;
+      const cadenceAxis = yAxes.find(
+        (y: Record<string, unknown>) => typeof y.name === "string" && y.name.includes("Cadence"),
+      );
+      expect(String(cadenceAxis?.name)).toBe("Cadence (steps/min)");
+
+      Object.assign(mockActivity, originalActivity);
+      mockStreamPoints.splice(0, mockStreamPoints.length, ...originalStream);
+    });
+
+    it("labels cycling cadence as rpm", async () => {
+      const originalActivity = { ...mockActivity };
+      const originalStream = mockStreamPoints.map((point) => ({ ...point }));
+
+      Object.assign(mockActivity, { activityType: "cycling", avgCadence: 90 });
+      mockStreamPoints.splice(
+        0,
+        mockStreamPoints.length,
+        ...originalStream.map((point) => ({ ...point, cadence: 90 })),
+      );
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(screen.getByText("90 rpm")).toBeDefined();
+
+      const cadenceOption = findOptionByYAxisArrayName("Cadence");
+      expect(cadenceOption).toBeDefined();
+      if (!cadenceOption) return;
+
+      const yAxes = cadenceOption.yAxis;
+      if (!Array.isArray(yAxes)) return;
+      const cadenceAxis = yAxes.find(
+        (y: Record<string, unknown>) => typeof y.name === "string" && y.name.includes("Cadence"),
+      );
+      expect(String(cadenceAxis?.name)).toBe("Cadence (rpm)");
+
+      Object.assign(mockActivity, originalActivity);
+      mockStreamPoints.splice(0, mockStreamPoints.length, ...originalStream);
+    });
+  });
+
   describe("strength exercise query gating", () => {
     it("disables strength exercises query for non-strength activities", async () => {
       const originalData = { ...mockActivity };

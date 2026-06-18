@@ -1,15 +1,18 @@
 /** @vitest-environment jsdom */
 import { formatDateYmd } from "@dofek/format/format";
+import { duration } from "@dofek/scoring/tokens";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DailyOverview } from "./DailyOverview.tsx";
+
+const mockUseCountUp = vi.hoisted(() => vi.fn((val: number | null) => val ?? 0));
 
 vi.mock("../lib/chartTheme.ts", () => ({
   chartThemeColors: { gridLine: "#333" },
 }));
 
 vi.mock("../hooks/useCountUp.ts", () => ({
-  useCountUp: (val: number | null) => val ?? 0,
+  useCountUp: mockUseCountUp,
 }));
 
 const today = formatDateYmd();
@@ -59,6 +62,7 @@ describe("DailyOverview", () => {
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
+    mockUseCountUp.mockClear();
   });
 
   it("renders loading skeletons when loading", () => {
@@ -195,6 +199,31 @@ describe("DailyOverview", () => {
     expect(screen.getByText(/productive training day/)).toBeTruthy();
     // Sleep description (Good tier)
     expect(screen.getByText(/most of what your body needed/)).toBeTruthy();
+  });
+
+  it("uses the standard count-up duration for recovery, strain, and sleep rings", () => {
+    const { container } = render(
+      <DailyOverview
+        readiness={mockReadiness}
+        workloadRatio={mockWorkloadRatio}
+        sleepPerformance={mockSleepPerformance}
+        readinessLoading={false}
+        workloadLoading={false}
+        sleepLoading={false}
+      />,
+    );
+
+    expect(mockUseCountUp).toHaveBeenCalledWith(75, duration.countUp);
+    expect(mockUseCountUp).toHaveBeenCalledWith(12.5, duration.countUp, 1);
+    expect(mockUseCountUp).toHaveBeenCalledWith(82, duration.countUp);
+
+    const animatedCircles = Array.from(container.querySelectorAll("circle")).filter((circle) =>
+      circle.getAttribute("style")?.includes("stroke-dashoffset"),
+    );
+    expect(animatedCircles.length).toBeGreaterThanOrEqual(3);
+    for (const circle of animatedCircles) {
+      expect(circle.getAttribute("style")).toContain(`${duration.countUp}ms`);
+    }
   });
 
   it("shows placeholder for missing readiness data", () => {

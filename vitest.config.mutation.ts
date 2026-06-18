@@ -38,6 +38,7 @@ export default defineConfig({
       "packages/trainerroad-client/src/**/*.test.ts",
       "packages/velohero-client/src/**/*.test.ts",
       "packages/zwift-client/src/**/*.test.ts",
+      "packages/zepp-client/src/**/*.test.ts",
       "packages/whoop-whoop/src/**/*.test.ts",
       "packages/trainingpeaks-connect/src/**/*.test.ts",
       "packages/provider-http/src/**/*.test.ts",

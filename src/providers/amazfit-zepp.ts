@@ -1,5 +1,6 @@
 import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { captureException } from "@sentry/node";
+import { signInToZepp } from "zepp-client/client";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
@@ -7,8 +8,15 @@ import { dailyMetrics, sleepSession } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
-import { ensureProvider } from "../db/tokens.ts";
-import type { SyncError, SyncOptions, SyncProvider, SyncResult } from "./types.ts";
+import { ensureProvider, loadTokens } from "../db/tokens.ts";
+import { ProviderStoredIdentityMissingError } from "./auth-errors.ts";
+import type {
+  ProviderAuthSetup,
+  SyncError,
+  SyncOptions,
+  SyncProvider,
+  SyncResult,
+} from "./types.ts";
 
 export const AMAZFIT_ZEPP_API_BASE = "https://api-mifit.zepp.com";
 const AMAZFIT_ZEPP_SOURCE_NAME = "Zepp";
@@ -140,6 +148,57 @@ function resolveScopedUserId(userId?: string): string {
   return scopedUserId;
 }
 
+interface ResolvedZeppCredentials {
+  appToken: string;
+  zeppUserId: string;
+}
+
+/** Stored in TokenSet.scopes — JSON payload carrying the Zepp-side user id. */
+interface ZeppTokenScopes {
+  zeppUserId: string;
+}
+
+export function encodeZeppTokenScopes(zeppUserId: string): string {
+  return JSON.stringify({ zeppUserId } satisfies ZeppTokenScopes);
+}
+
+/** Reads zeppUserId from structured scopes, with legacy `userId:<id>` fallback. */
+export function decodeZeppUserIdFromScopes(scopes: string | null | undefined): string | null {
+  if (!scopes) return null;
+
+  try {
+    const parsed: unknown = JSON.parse(scopes);
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "zeppUserId" in parsed &&
+      typeof parsed.zeppUserId === "string" &&
+      parsed.zeppUserId.length > 0
+    ) {
+      return parsed.zeppUserId;
+    }
+  } catch {
+    // Fall back to legacy string format used during initial rollout.
+  }
+
+  const legacyMatch = scopes.match(/^userId:(\S+)$/);
+  return legacyMatch?.[1] ?? null;
+}
+
+async function resolveZeppCredentials(
+  db: SyncDatabase,
+  providerId: string,
+  scopedUserId: string,
+): Promise<ResolvedZeppCredentials | null> {
+  const stored = await loadTokens(db, providerId, scopedUserId);
+  if (!stored) return null;
+
+  const zeppUserId = decodeZeppUserIdFromScopes(stored.scopes);
+  if (!stored.accessToken || !zeppUserId) return null;
+
+  return { appToken: stored.accessToken, zeppUserId };
+}
+
 function parseDailyMetrics(date: string, summary: ZeppSummary): ParsedZeppDailyMetrics | undefined {
   const steps = summary.stp?.ttl;
   const distanceMeters = summary.stp?.dis;
@@ -258,13 +317,28 @@ export class AmazfitZeppProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "amazfit-zepp" });
   }
 
   validate(): string | null {
-    if (!process.env.ZEPP_APP_TOKEN) return "ZEPP_APP_TOKEN is not set";
-    if (!process.env.ZEPP_USER_ID) return "ZEPP_USER_ID is not set";
     return null;
+  }
+
+  authSetup(_options?: { host?: string }): ProviderAuthSetup {
+    const fetchFn = this.#fetchFn;
+    const apiBaseUrl = process.env.ZEPP_API_BASE_URL ?? AMAZFIT_ZEPP_API_BASE;
+    return {
+      apiBaseUrl,
+      automatedLogin: async (email: string, password: string) => {
+        const result = await signInToZepp(email, password, fetchFn);
+        return {
+          accessToken: result.appToken,
+          refreshToken: result.loginToken,
+          expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+          scopes: encodeZeppTokenScopes(result.userId),
+        };
+      },
+    };
   }
 
   async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
@@ -282,14 +356,26 @@ export class AmazfitZeppProvider implements SyncProvider {
       scopedUserId,
     );
 
-    const appToken = process.env.ZEPP_APP_TOKEN;
-    const zeppUserId = process.env.ZEPP_USER_ID;
-    if (!appToken || !zeppUserId) {
-      errors.push({ message: this.validate() ?? "Amazfit/Zepp credentials are not configured" });
+    let client: AmazfitZeppClient;
+    try {
+      const credentials = await resolveZeppCredentials(db, this.id, scopedUserId);
+      if (!credentials) {
+        throw new ProviderStoredIdentityMissingError(
+          "Amazfit/Zepp",
+          "credentials — connect via the app",
+        );
+      }
+      client = new AmazfitZeppClient(credentials.appToken, credentials.zeppUserId, this.#fetchFn);
+    } catch (err) {
+      if (!(err instanceof ProviderStoredIdentityMissingError)) {
+        captureException(err, {
+          tags: { provider: this.id, dataType: "band_data", phase: "credential_resolution" },
+        });
+      }
+      errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new AmazfitZeppClient(appToken, zeppUserId, this.#fetchFn);
     const sinceDate = formatDate(since);
     const todayDate = formatDate(new Date());
 

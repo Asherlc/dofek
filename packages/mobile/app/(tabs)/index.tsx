@@ -45,7 +45,7 @@ export default function TodayScreen() {
   const dashboardData = dashboardQuery.data;
   const anomalyQuery = trpc.anomalyDetection.check.useQuery(
     { endDate },
-    { staleTime: 10 * 60 * 1000 },
+    { staleTime: 10 * 60 * 1000, enabled: dashboardData != null },
   );
 
   // Derived readiness/recovery

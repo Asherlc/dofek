@@ -1,4 +1,4 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { captureException } from "@sentry/node";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runWithTokenUser } from "../db/token-user-context.ts";
@@ -7,13 +7,31 @@ import {
   AmazfitZeppProvider,
   decodeZeppHeartRateSamples,
   decodeZeppSummary,
+  decodeZeppUserIdFromScopes,
+  encodeZeppTokenScopes,
   parseZeppBandDay,
 } from "./amazfit-zepp.ts";
 import { createCapturingMetricStreamPublisher, createMockDatabase } from "./test-helpers.ts";
 
+vi.mock("@dofek/provider-http/rate-limit", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@dofek/provider-http/rate-limit")>();
+  return {
+    ...actual,
+    createRateLimitAwareFetch: vi.fn(actual.createRateLimitAwareFetch),
+  };
+});
+
 vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
 }));
+
+vi.mock("../db/tokens.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../db/tokens.ts")>();
+  return {
+    ...actual,
+    loadTokens: vi.fn(actual.loadTokens),
+  };
+});
 
 const TEST_USER_ID = "11111111-1111-4111-8111-111111111111";
 
@@ -21,22 +39,54 @@ function encodeBase64(value: string | Buffer): string {
   return Buffer.from(value).toString("base64");
 }
 
+function mockZeppLoginFetch(
+  tokenInfo: { app_token: string; user_id: string; login_token?: string } = {
+    app_token: "app-token-456",
+    user_id: "987654321",
+    login_token: "login-token-789",
+  },
+): typeof globalThis.fetch {
+  return async (input) => {
+    const url = String(input);
+    if (url.includes("/registrations/")) {
+      return new Response(null, {
+        status: 302,
+        headers: {
+          Location:
+            "https://s3-us-west-2.amazonaws.com/hm-registration/successsignin.html?access=access-code&country_code=US",
+        },
+      });
+    }
+    return new Response(JSON.stringify({ token_info: tokenInfo }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+}
+
+async function mockStoredZeppCredentials(
+  appToken = "token-123",
+  zeppUserId = "user-123",
+): Promise<void> {
+  const { loadTokens } = await import("../db/tokens.ts");
+  vi.mocked(loadTokens).mockResolvedValue({
+    accessToken: appToken,
+    refreshToken: "login-token",
+    expiresAt: new Date("2099-01-01"),
+    scopes: encodeZeppTokenScopes(zeppUserId),
+  });
+}
+
 describe("Amazfit/Zepp provider", () => {
-  afterEach(() => {
+  afterEach(async () => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockReset();
   });
 
-  it("requires app token and user id configuration", () => {
-    const provider = new AmazfitZeppProvider();
-
-    expect(provider.validate()).toBe("ZEPP_APP_TOKEN is not set");
-
-    vi.stubEnv("ZEPP_APP_TOKEN", "token-123");
-    expect(provider.validate()).toBe("ZEPP_USER_ID is not set");
-
-    vi.stubEnv("ZEPP_USER_ID", "user-123");
-    expect(provider.validate()).toBeNull();
+  it("is always enabled and checks auth at sync time", () => {
+    expect(new AmazfitZeppProvider().validate()).toBeNull();
   });
 
   it("decodes base64 summary payloads", () => {
@@ -244,8 +294,7 @@ describe("Amazfit/Zepp provider", () => {
   });
 
   it("syncs daily metrics, sleep, and heart rate samples from band data", async () => {
-    vi.stubEnv("ZEPP_APP_TOKEN", "token-123");
-    vi.stubEnv("ZEPP_USER_ID", "user-123");
+    await mockStoredZeppCredentials();
 
     const { db, spies } = createMockDatabase();
     const metricStreamCapture = createCapturingMetricStreamPublisher();
@@ -345,8 +394,7 @@ describe("Amazfit/Zepp provider", () => {
   });
 
   it("records malformed band days as sync errors and continues", async () => {
-    vi.stubEnv("ZEPP_APP_TOKEN", "token-123");
-    vi.stubEnv("ZEPP_USER_ID", "user-123");
+    await mockStoredZeppCredentials();
 
     const { db } = createMockDatabase();
     const fetchFn: typeof globalThis.fetch = async () =>
@@ -369,10 +417,7 @@ describe("Amazfit/Zepp provider", () => {
     });
   });
 
-  it("returns a configuration error before fetching when credentials are incomplete", async () => {
-    vi.stubEnv("ZEPP_APP_TOKEN", "token-123");
-    vi.stubEnv("ZEPP_USER_ID", "");
-
+  it("returns a not-connected error before fetching when credentials are missing", async () => {
     const { db } = createMockDatabase();
     const fetchFn = vi.fn<typeof globalThis.fetch>();
     const provider = new AmazfitZeppProvider(fetchFn);
@@ -383,12 +428,105 @@ describe("Amazfit/Zepp provider", () => {
 
     expect(fetchFn).not.toHaveBeenCalled();
     expect(result.recordsSynced).toBe(0);
-    expect(result.errors).toMatchObject([{ message: "ZEPP_USER_ID is not set" }]);
+    expect(result.errors[0]?.message).toContain("credentials");
+  });
+
+  it("returns a not-connected error when the stored access token is missing", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "",
+      refreshToken: "login-token",
+      expiresAt: new Date("2099-01-01"),
+      scopes: "userId:user-123",
+    });
+
+    const { db } = createMockDatabase();
+    const fetchFn = vi.fn<typeof globalThis.fetch>();
+    const provider = new AmazfitZeppProvider(fetchFn);
+
+    const result = await provider.sync(db, new Date("2026-02-01T00:00:00.000Z"), {
+      userId: TEST_USER_ID,
+    });
+
+    expect(fetchFn).not.toHaveBeenCalled();
+    expect(result.errors[0]?.message).toContain("credentials");
+  });
+
+  it("returns a not-connected error when stored scopes omit the Zepp user id", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "token-123",
+      refreshToken: "login-token",
+      expiresAt: new Date("2099-01-01"),
+      scopes: null,
+    });
+
+    const { db } = createMockDatabase();
+    const fetchFn = vi.fn<typeof globalThis.fetch>();
+    const provider = new AmazfitZeppProvider(fetchFn);
+
+    const result = await provider.sync(db, new Date("2026-02-01T00:00:00.000Z"), {
+      userId: TEST_USER_ID,
+    });
+
+    expect(fetchFn).not.toHaveBeenCalled();
+    expect(result.errors[0]?.message).toContain("credentials");
+  });
+
+  it("uses stored app token and Zepp user id when requesting band data", async () => {
+    await mockStoredZeppCredentials("my-app-token", "zepp-user-42");
+
+    const { db } = createMockDatabase();
+    const fetchFn = vi.fn<typeof globalThis.fetch>(
+      async () =>
+        new Response(JSON.stringify({ code: 1, data: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    const provider = new AmazfitZeppProvider(fetchFn);
+
+    await provider.sync(db, new Date("2026-02-01T00:00:00.000Z"), {
+      userId: TEST_USER_ID,
+    });
+
+    expect(String(fetchFn.mock.calls[0]?.[0])).toContain("userid=zepp-user-42");
+    expect(fetchFn.mock.calls[0]?.[1]?.headers).toMatchObject({
+      apptoken: "my-app-token",
+    });
+  });
+
+  it("accepts legacy userId: scopes when resolving stored credentials", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "legacy-token",
+      refreshToken: "login-token",
+      expiresAt: new Date("2099-01-01"),
+      scopes: "userId:legacy-zepp-user",
+    });
+
+    const { db } = createMockDatabase();
+    const fetchFn = vi.fn<typeof globalThis.fetch>(
+      async () =>
+        new Response(JSON.stringify({ code: 1, data: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    const provider = new AmazfitZeppProvider(fetchFn);
+
+    await provider.sync(db, new Date("2026-02-01T00:00:00.000Z"), {
+      userId: TEST_USER_ID,
+    });
+
+    expect(String(fetchFn.mock.calls[0]?.[0])).toContain("userid=legacy-zepp-user");
+    expect(fetchFn.mock.calls[0]?.[1]?.headers).toMatchObject({
+      apptoken: "legacy-token",
+    });
   });
 
   it("records API errors from the sync request and reports them", async () => {
-    vi.stubEnv("ZEPP_APP_TOKEN", "token-123");
-    vi.stubEnv("ZEPP_USER_ID", "user-123");
+    await mockStoredZeppCredentials();
 
     const { db } = createMockDatabase();
     const fetchFn: typeof globalThis.fetch = async () =>
@@ -412,8 +550,7 @@ describe("Amazfit/Zepp provider", () => {
   });
 
   it("propagates rate limit errors from sync", async () => {
-    vi.stubEnv("ZEPP_APP_TOKEN", "token-123");
-    vi.stubEnv("ZEPP_USER_ID", "user-123");
+    await mockStoredZeppCredentials();
 
     const { db } = createMockDatabase();
     const fetchFn: typeof globalThis.fetch = async () =>
@@ -429,5 +566,90 @@ describe("Amazfit/Zepp provider", () => {
       }),
     ).rejects.toBeInstanceOf(ProviderRateLimitError);
     expect(captureException).not.toHaveBeenCalled();
+  });
+});
+
+describe("Zepp token scopes", () => {
+  it("round-trips zepp user id through JSON scopes", () => {
+    const scopes = encodeZeppTokenScopes("987654321");
+    expect(scopes).toBe('{"zeppUserId":"987654321"}');
+    expect(decodeZeppUserIdFromScopes(scopes)).toBe("987654321");
+  });
+
+  it("falls back to legacy userId: scopes", () => {
+    expect(decodeZeppUserIdFromScopes("userId:legacy-user")).toBe("legacy-user");
+  });
+
+  it("returns null for missing scopes", () => {
+    expect(decodeZeppUserIdFromScopes(null)).toBeNull();
+    expect(decodeZeppUserIdFromScopes(undefined)).toBeNull();
+    expect(decodeZeppUserIdFromScopes("")).toBeNull();
+  });
+
+  it("returns null when JSON scopes omit zeppUserId", () => {
+    expect(decodeZeppUserIdFromScopes('{"other":"value"}')).toBeNull();
+  });
+
+  it("returns null when zeppUserId is not a string", () => {
+    expect(decodeZeppUserIdFromScopes('{"zeppUserId":123}')).toBeNull();
+  });
+
+  it("returns null when zeppUserId is empty", () => {
+    expect(decodeZeppUserIdFromScopes('{"zeppUserId":""}')).toBeNull();
+  });
+
+  it("returns null for JSON null literal scopes", () => {
+    expect(decodeZeppUserIdFromScopes("null")).toBeNull();
+  });
+
+  it("returns null for non-object JSON scopes", () => {
+    expect(decodeZeppUserIdFromScopes('"hello"')).toBeNull();
+    expect(decodeZeppUserIdFromScopes("42")).toBeNull();
+  });
+
+  it("requires exact legacy userId: prefix match", () => {
+    expect(decodeZeppUserIdFromScopes("prefix userId:legacy-user")).toBeNull();
+    expect(decodeZeppUserIdFromScopes("userId:legacy-user suffix")).toBeNull();
+  });
+
+  it("returns null for unrelated scope strings", () => {
+    expect(decodeZeppUserIdFromScopes("oauth:google")).toBeNull();
+  });
+});
+
+describe("AmazfitZeppProvider auth", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("wraps fetch with amazfit-zepp rate limit config", () => {
+    new AmazfitZeppProvider();
+    expect(createRateLimitAwareFetch).toHaveBeenCalledWith(expect.any(Function), {
+      providerId: "amazfit-zepp",
+    });
+  });
+
+  it("authSetup returns credential configuration", () => {
+    const setup = new AmazfitZeppProvider().authSetup();
+    expect(setup.oauthConfig).toBeUndefined();
+    expect(setup.exchangeCode).toBeUndefined();
+    expect(setup.apiBaseUrl).toContain("zepp.com");
+    expect(setup.automatedLogin).toBeTypeOf("function");
+  });
+
+  it("automatedLogin stores tokens with structured scopes and one-year expiry", async () => {
+    const before = Date.now();
+    const setup = new AmazfitZeppProvider(mockZeppLoginFetch()).authSetup();
+    const tokens = await setup.automatedLogin?.("user@example.com", "password123");
+    const after = Date.now();
+
+    expect(tokens).toEqual({
+      accessToken: "app-token-456",
+      refreshToken: "login-token-789",
+      expiresAt: expect.any(Date),
+      scopes: encodeZeppTokenScopes("987654321"),
+    });
+    expect(tokens?.expiresAt.getTime()).toBeGreaterThanOrEqual(before + 364 * 24 * 60 * 60 * 1000);
+    expect(tokens?.expiresAt.getTime()).toBeLessThanOrEqual(after + 366 * 24 * 60 * 60 * 1000);
   });
 });

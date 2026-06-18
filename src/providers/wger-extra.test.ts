@@ -113,7 +113,7 @@ describe("WgerProvider", () => {
     process.env.WGER_CLIENT_ID = "id";
     process.env.WGER_CLIENT_SECRET = "secret";
     const setup = new WgerProvider().authSetup();
-    expect(setup.oauthConfig.clientId).toBe("id");
+    expect(setup.oauthConfig?.clientId).toBe("id");
     expect(setup.apiBaseUrl).toContain("wger.de");
   });
 

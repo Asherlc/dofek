@@ -12,17 +12,11 @@ describe("ZwiftProvider", () => {
     expect(new ZwiftProvider().validate()).toBeNull();
   });
 
-  it("authSetup returns correct configuration", () => {
+  it("authSetup returns credential-only configuration", () => {
     const setup = new ZwiftProvider().authSetup();
-    expect(setup.oauthConfig.clientId).toBe("Zwift Game Client");
-    expect(setup.oauthConfig.authorizeUrl).toContain("zwift");
     expect(setup.automatedLogin).toBeTypeOf("function");
-    expect(setup.exchangeCode).toBeTypeOf("function");
-  });
-
-  it("authSetup.exchangeCode throws", async () => {
-    const setup = new ZwiftProvider().authSetup();
-    await expect(setup.exchangeCode("code")).rejects.toThrow("automated login");
+    expect(setup.oauthConfig).toBeUndefined();
+    expect(setup.exchangeCode).toBeUndefined();
   });
 
   it("sync returns error when no tokens stored", async () => {

@@ -565,6 +565,68 @@ describe("activityRouter", () => {
           "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
       });
     });
+
+    it("bulkDelete returns the deduplicated selected count", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.bulkDelete({
+        ids: [
+          "00000000-0000-0000-0000-000000000001",
+          "00000000-0000-0000-0000-000000000001",
+          "00000000-0000-0000-0000-000000000002",
+        ],
+      });
+
+      expect(result).toEqual({ success: true, deletedCount: 2 });
+      expect(execute).toHaveBeenCalledTimes(1);
+    });
+
+    it("bulkDelete rejects oversized selections before querying the database", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.bulkDelete({
+          ids: Array.from(
+            { length: 501 },
+            (_, index) => `00000000-0000-0000-0000-${String(index + 1).padStart(12, "0")}`,
+          ),
+        }),
+      ).rejects.toThrow();
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it("bulkDelete throws PRECONDITION_FAILED when activity views are missing", async () => {
+      const execute = vi.fn().mockRejectedValue(
+        Object.assign(new Error('relation "fitness.v_activity" does not exist'), {
+          code: "42P01",
+        }),
+      );
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.bulkDelete({
+          ids: ["00000000-0000-0000-0000-000000000001"],
+        }),
+      ).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message:
+          "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
+      });
+    });
   });
 
   describe("strengthExercises", () => {
