@@ -39,11 +39,12 @@ describe("production analytics read-model build", () => {
     expect(migrateBlockMatch?.groups?.body).not.toContain("dbt build");
   });
 
-  it("runs every bounded intermediary and final read model in dependency order", () => {
+  it("runs activity read models before sleep and dashboard models", () => {
     const entrypoint = readProjectFile("entrypoint.sh");
-    const safeModelMatch = entrypoint.match(/^DBT_SAFE_MODELS="([^"]+)"$/m);
+    const activityMatch = entrypoint.match(/^DBT_ACTIVITY_MODELS="([^"]+)"$/m);
+    const sleepDashboardMatch = entrypoint.match(/^DBT_SLEEP_DASHBOARD_MODELS="([^"]+)"$/m);
 
-    expect(safeModelMatch?.[1]?.split(" ")).toEqual([
+    expect(activityMatch?.[1]?.split(" ")).toEqual([
       "sensor_scalar_sample",
       "deduped_sensor",
       "activity_source_records",
@@ -51,11 +52,6 @@ describe("production analytics read-model build", () => {
       "activity_duplicate_groups",
       "deduped_activities",
       "deduped_activity_members",
-      "sleep_heart_rate_sample",
-      "resting_heart_rate_sleep_window",
-      "daily_sleep",
-      "daily_recovery_inputs",
-      "daily_recovery",
       "activity_sensor_sample",
       "activity_location_sample",
       "activity_sensor_summary_rows",
@@ -63,24 +59,48 @@ describe("production analytics read-model build", () => {
       "activity_summary_rows",
       "activity_vo2max_estimate",
       "provider_stats",
+    ]);
+    expect(sleepDashboardMatch?.[1]?.split(" ")).toEqual([
+      "sleep_heart_rate_sample",
+      "resting_heart_rate_sleep_window",
+      "daily_sleep",
+      "daily_recovery_inputs",
+      "daily_recovery",
       "daily_activity_load",
       "daily_strain",
       "healthspan_activity_zone_minutes",
       "weekly_healthspan",
     ]);
+    expect(entrypoint).toContain('DBT_SAFE_MODELS="$DBT_ACTIVITY_MODELS $DBT_SLEEP_DASHBOARD_MODELS"');
+    expect(entrypoint).toContain("run_dbt_safe_builds()");
+    expect(entrypoint).toContain("--select $DBT_ACTIVITY_MODELS");
+    expect(entrypoint).toContain("--select $DBT_SLEEP_DASHBOARD_MODELS");
   });
 
-  it("materializes sleep heart-rate membership as a microbatch intermediary", () => {
+  it("materializes sleep heart-rate membership from dirty sleep, sensor, and activity keys", () => {
     expect(existsSync(new URL("./sleep_heart_rate_sample.sql", import.meta.url))).toBe(true);
     const sql = readModel("sleep_heart_rate_sample");
+    const normalizedSql = compactWhitespace(sql);
 
-    expect(sql).toContain("incremental_strategy='microbatch'");
-    expect(sql).toContain("event_time='recorded_at'");
-    expect(sql).toContain("lookback=120");
+    expect(sql).toContain("incremental_strategy='append'");
+    expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
+    expect(sql).toContain("initial_lookback_days");
+    expect(sql).toContain("target_state AS");
+    expect(sql).toContain("sleep_dirty_keys AS");
+    expect(sql).toContain("sensor_dirty_keys AS");
+    expect(sql).toContain("activity_dirty_keys AS");
+    expect(sql).toContain("initial_dirty_keys AS");
+    expect(sql).toContain("stale_sleep_dirty_keys AS");
+    expect(sql).toContain("stale_sample_tombstones AS");
     expect(sql).toContain("ref('deduped_sensor')");
     expect(sql).toContain("source('postgres_fitness', 'sleep_session')");
+    expect(sql).toContain("source('postgres_fitness', 'activity')");
     expect(sql).toContain("channel = 'heart_rate'");
     expect(sql).toContain("'join_use_nulls': 1");
+    expect(normalizedSql).toContain("_peerdb_synced_at > (SELECT last_refreshed_at FROM target_state)");
+    expect(normalizedSql).toContain("refreshed_at > (SELECT last_refreshed_at FROM target_state)");
+    expect(normalizedSql).not.toContain("incremental_strategy='microbatch'");
+    expect(normalizedSql).not.toContain("lookback=");
   });
 
   it("aggregates resting heart rate from the bounded sleep intermediary", () => {
@@ -288,8 +308,9 @@ describe("production analytics read-model build", () => {
     );
     expect(activityLocationSampleSql).toContain("source_refreshed_at AS refreshed_at");
     expect(activityLocationSampleSql).not.toContain("now64(9) AS refreshed_at");
-    expect(sleepHeartRateSampleSql).toContain("greatest(samples.refreshed_at, active_sleep._peerdb_synced_at)");
-    expect(sleepHeartRateSampleSql).not.toContain("now64(9) AS refreshed_at");
+    expect(sleepHeartRateSampleSql).toContain("greatest(samples.refreshed_at, active_dirty_sleep._peerdb_synced_at)");
+    expect(sleepHeartRateSampleSql).toContain("source_refreshed_at AS refreshed_at");
+    expect(sleepHeartRateSampleSql).toContain("stale_sample_tombstones");
   });
 
   it("aggregates activity sensor summary from the bounded sensor intermediary", () => {
