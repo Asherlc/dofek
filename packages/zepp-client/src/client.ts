@@ -35,6 +35,13 @@ const zeppRegistrationJsonSchema = z
   })
   .passthrough();
 
+export class ZeppInvalidCredentialsError extends Error {
+  constructor(options?: ErrorOptions) {
+    super("Amazfit/Zepp login failed: invalid email or password", options);
+    this.name = new.target.name;
+  }
+}
+
 interface ZeppAccessCredentials {
   accessCode: string;
   countryCode: string;
@@ -56,7 +63,7 @@ function parseRedirectCredentials(
   const accessCode = redirectUrl.searchParams.get("access");
   const countryCode = redirectUrl.searchParams.get("country_code");
   if (!accessCode || !countryCode) {
-    throw new Error("Amazfit/Zepp login failed: invalid email or password");
+    throw new ZeppInvalidCredentialsError();
   }
   return { accessCode, countryCode };
 }
@@ -83,8 +90,8 @@ function isRetryableLegacyRegistrationStatus(status: number): boolean {
   return status === 400 || status === 401 || status === 403;
 }
 
-function invalidCredentialsError(): Error {
-  return new Error("Amazfit/Zepp login failed: invalid email or password");
+function invalidCredentialsError(): ZeppInvalidCredentialsError {
+  return new ZeppInvalidCredentialsError();
 }
 
 function rateLimitError(responseBody: string): Error {
@@ -102,7 +109,10 @@ async function parseJsonRegistrationResponse(
     return null;
   }
 
-  const payload = zeppRegistrationJsonSchema.parse(parsedBody);
+  const parseResult = zeppRegistrationJsonSchema.safeParse(parsedBody);
+  if (!parseResult.success) return null;
+
+  const payload = parseResult.data;
   if (!payload.access) return null;
 
   return {

@@ -1,6 +1,6 @@
 import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { captureException } from "@sentry/node";
-import { signInToZepp } from "zepp-client/client";
+import { signInToZepp, ZeppInvalidCredentialsError } from "zepp-client/client";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
@@ -149,12 +149,6 @@ function resolveScopedUserId(userId?: string): string {
     throw new Error("amazfit-zepp sync requires a userId");
   }
   return scopedUserId;
-}
-
-function isZeppInvalidCredentialsError(error: unknown): boolean {
-  return (
-    error instanceof Error && error.message.toLowerCase().includes("invalid email or password")
-  );
 }
 
 interface ResolvedZeppCredentials {
@@ -343,7 +337,7 @@ export class AmazfitZeppProvider implements SyncProvider {
         try {
           result = await signInToZepp(email, password, fetchFn);
         } catch (error) {
-          if (isZeppInvalidCredentialsError(error)) {
+          if (error instanceof ZeppInvalidCredentialsError) {
             throw new ProviderInvalidCredentialsError("Amazfit/Zepp", { cause: error });
           }
           throw error;

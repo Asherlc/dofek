@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   signInToZepp,
+  ZeppInvalidCredentialsError,
   ZEPP_ACCOUNT_LOGIN_URL,
   ZEPP_ACCOUNT_ZEPP_LOGIN_URL,
   ZEPP_APP_NAME,
@@ -188,9 +189,35 @@ describe("signInToZepp", () => {
       }),
     });
 
-    await expect(signInToZepp("user@example.com", "bad-password", fetchFn)).rejects.toMatchObject({
-      message: "Amazfit/Zepp login failed: invalid email or password",
+    await expect(signInToZepp("user@example.com", "bad-password", fetchFn)).rejects.toBeInstanceOf(
+      ZeppInvalidCredentialsError,
+    );
+  });
+
+  it("falls back to encrypted Zepp registration when JSON registration is null", async () => {
+    const fetchFn = mockFetch({
+      registration: Response.json(null),
+      encryptedRegistration: new Response(null, {
+        status: 303,
+        headers: {
+          Location: `${ZEPP_REGISTRATION_REDIRECT_URI}?access=encrypted-access&country_code=US`,
+        },
+      }),
+      zeppLogin: new Response(
+        JSON.stringify({
+          token_info: {
+            app_token: "encrypted-app-token",
+            user_id: "encrypted-user",
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
     });
+
+    const result = await signInToZepp("user@example.com", "password", fetchFn);
+
+    expect(result.appToken).toBe("encrypted-app-token");
+    expect(String(fetchFn.mock.calls[1]?.[0])).toBe(ZEPP_ENCRYPTED_REGISTRATION_URL);
   });
 
   it("falls back to encrypted Zepp registration when JSON registration is malformed", async () => {
@@ -270,9 +297,9 @@ describe("signInToZepp", () => {
       encryptedRegistration: new Response("invalid credentials", { status: 401 }),
     });
 
-    await expect(signInToZepp("user@example.com", "password", fetchFn)).rejects.toMatchObject({
-      message: "Amazfit/Zepp login failed: invalid email or password",
-    });
+    await expect(signInToZepp("user@example.com", "password", fetchFn)).rejects.toBeInstanceOf(
+      ZeppInvalidCredentialsError,
+    );
   });
 
   it("falls back to encrypted Zepp registration when legacy registration returns 403", async () => {
@@ -393,9 +420,9 @@ describe("signInToZepp", () => {
       encryptedRegistration: new Response("denied", { status: 401 }),
     });
 
-    await expect(signInToZepp("user@example.com", "password", fetchFn)).rejects.toMatchObject({
-      message: "Amazfit/Zepp login failed: invalid email or password",
-    });
+    await expect(signInToZepp("user@example.com", "password", fetchFn)).rejects.toBeInstanceOf(
+      ZeppInvalidCredentialsError,
+    );
     expect(fetchFn).toHaveBeenCalledTimes(2);
   });
 

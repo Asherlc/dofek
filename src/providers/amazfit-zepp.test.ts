@@ -12,6 +12,7 @@ import {
   parseZeppBandDay,
 } from "./amazfit-zepp.ts";
 import { ProviderInvalidCredentialsError } from "./auth-errors.ts";
+import { ZeppInvalidCredentialsError } from "zepp-client/client";
 import { createCapturingMetricStreamPublisher, createMockDatabase } from "./test-helpers.ts";
 
 vi.mock("@dofek/provider-http/rate-limit", async (importOriginal) => {
@@ -655,7 +656,7 @@ describe("AmazfitZeppProvider auth", () => {
   });
 
   it("wraps invalid credentials as an expected provider auth failure", async () => {
-    const originalError = new Error("Amazfit/Zepp login failed: invalid email or password");
+    const originalError = new ZeppInvalidCredentialsError();
     const setup = new AmazfitZeppProvider(async () => {
       throw originalError;
     }).authSetup();
