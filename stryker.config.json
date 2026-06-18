@@ -51,7 +51,8 @@
     ".codex/**",
     ".claude/**",
     ".context/**",
-    ".gemini/**"
+    ".gemini/**",
+    ".kilocode/**"
   ],
   "mutator": {
     "excludedMutations": ["StringLiteral"]
