@@ -995,22 +995,6 @@ export function buildAnalyticsFitnessReadModelDropStatements(): string[] {
   ];
 }
 
-export function buildProviderActivityPresenceReadModelResetStatements(): string[] {
-  return [
-    "DROP VIEW IF EXISTS analytics.activity_summary",
-    "DROP TABLE IF EXISTS analytics.activity_summary_rows",
-    "DROP TABLE IF EXISTS analytics.activity_source_records",
-    "DROP TABLE IF EXISTS analytics.activity_duplicate_matches",
-    "DROP TABLE IF EXISTS analytics.activity_duplicate_groups",
-    "DROP TABLE IF EXISTS analytics.deduped_activities",
-    "DROP TABLE IF EXISTS analytics.deduped_activity_members",
-    "DROP TABLE IF EXISTS analytics.activity_sensor_summary_rows",
-    "DROP TABLE IF EXISTS analytics.activity_location_summary_rows",
-    "DROP TABLE IF EXISTS analytics.activity_vo2max_estimate",
-    "DROP TABLE IF EXISTS analytics.sleep_heart_rate_sample",
-  ];
-}
-
 export function buildProviderActivityAbsenceMigrationStatements(): string[] {
   return [
     "ALTER TABLE postgres_fitness.activity ADD COLUMN IF NOT EXISTS provider_absent_at Nullable(DateTime64(6, 'UTC'))",
