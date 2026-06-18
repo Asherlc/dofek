@@ -253,6 +253,7 @@ export async function replaceActivityMirrorOrderKey(
     `DROP TABLE IF EXISTS ${backupTableName}`,
     `RENAME TABLE postgres_fitness.activity TO ${backupTableName}, ${replacementTableName} TO postgres_fitness.activity`,
     `INSERT INTO postgres_fitness.activity SELECT * FROM ${backupTableName}`,
+    `DROP TABLE IF EXISTS ${backupTableName}`,
   ];
 
   for (const statement of statements) {

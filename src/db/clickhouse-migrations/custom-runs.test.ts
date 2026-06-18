@@ -152,6 +152,10 @@ describe("replaceActivityMirrorOrderKey", () => {
       client,
       "INSERT INTO postgres_fitness.activity SELECT * FROM postgres_fitness.activity_before_order_key_fix",
     );
+    expect(runClickHouseMigrationStatement).toHaveBeenCalledWith(
+      client,
+      "DROP TABLE IF EXISTS postgres_fitness.activity_before_order_key_fix",
+    );
   });
 
   it("returns early when the activity mirror already uses id as its order key", async () => {
