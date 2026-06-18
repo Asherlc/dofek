@@ -1299,6 +1299,16 @@ describe("syncRouter", () => {
       expect(result.sinceDays).toBe(7);
     });
 
+    it("triggerSyncInput rejects invalid calendar dates", () => {
+      expect(() =>
+        triggerSyncInput.parse({
+          providerId: "wahoo",
+          sinceDate: "2026-02-31",
+          untilDate: "2026-03-01",
+        }),
+      ).toThrow("Invalid calendar date");
+    });
+
     it("syncStatusInput requires jobId string", () => {
       const result = syncStatusInput.parse({ jobId: "abc-123" });
       expect(result.jobId).toBe("abc-123");

@@ -42,6 +42,21 @@ function dateFromOptionalDateTime(value: string | undefined, timezone: string): 
   return localDateString(value ? new Date(value) : new Date(), timezone);
 }
 
+function validateSyncWindowTriggerInput(input: {
+  sinceDays?: number;
+  sinceDate?: string;
+  untilDate?: string;
+}): void {
+  const hasSinceDate = input.sinceDate != null;
+  const hasUntilDate = input.untilDate != null;
+  if (hasSinceDate !== hasUntilDate) {
+    throw new Error("sinceDate and untilDate must be provided together");
+  }
+  if (input.sinceDays != null && hasSinceDate) {
+    throw new Error("sinceDays cannot be combined with sinceDate/untilDate");
+  }
+}
+
 export function createDofekMcpServer(context: DofekMcpContext): McpServer {
   const server = new McpServer({
     name: "dofek",
@@ -234,6 +249,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       if (validationMessage) {
         throw new Error(`Provider not configured: ${validationMessage}`);
       }
+      validateSyncWindowTriggerInput({ sinceDays, sinceDate, untilDate });
       const syncWindow = syncWindowFromTriggerInput({
         sinceDays,
         sinceDate,

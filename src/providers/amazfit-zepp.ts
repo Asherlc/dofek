@@ -1,6 +1,6 @@
 import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { captureException } from "@sentry/node";
-import { signInToZepp } from "zepp-client/client";
+import { signInToZepp, ZeppInvalidCredentialsError } from "zepp-client/client";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
@@ -9,7 +9,10 @@ import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
-import { ProviderStoredIdentityMissingError } from "./auth-errors.ts";
+import {
+  ProviderInvalidCredentialsError,
+  ProviderStoredIdentityMissingError,
+} from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
@@ -325,7 +328,15 @@ export class AmazfitZeppProvider implements SyncProvider {
     return {
       apiBaseUrl,
       automatedLogin: async (email: string, password: string) => {
-        const result = await signInToZepp(email, password, fetchFn);
+        let result: Awaited<ReturnType<typeof signInToZepp>>;
+        try {
+          result = await signInToZepp(email, password, fetchFn);
+        } catch (error) {
+          if (error instanceof ZeppInvalidCredentialsError) {
+            throw new ProviderInvalidCredentialsError("Amazfit/Zepp", { cause: error });
+          }
+          throw error;
+        }
         return {
           accessToken: result.appToken,
           refreshToken: result.loginToken,
@@ -374,7 +385,7 @@ export class AmazfitZeppProvider implements SyncProvider {
     }
 
     const sinceDate = formatDate(since);
-    const todayDate = formatDate(new Date());
+    const untilDate = formatDate(window.until);
 
     try {
       const count = await withSyncLog(
@@ -384,7 +395,7 @@ export class AmazfitZeppProvider implements SyncProvider {
         async () => {
           let synced = 0;
           onProgress?.(0, "Fetching band data");
-          const days = await client.getBandData(sinceDate, todayDate);
+          const days = await client.getBandData(sinceDate, untilDate);
 
           for (const [dayIndex, day] of days.entries()) {
             try {

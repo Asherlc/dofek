@@ -13,10 +13,16 @@ export interface CalendarDay {
   activityTypes: string[];
 }
 
+const routePathPointSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+});
+
 const activityLocationSchema = z.object({
   centroidLat: z.number(),
   centroidLng: z.number(),
   tileUrl: z.string(),
+  routePath: z.array(routePathPointSchema).nullable(),
   distanceMeters: z.number().nullable(),
   elevationGainM: z.number().nullable(),
 });

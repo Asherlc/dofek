@@ -189,7 +189,7 @@ export class UltrahumanProvider implements SyncProvider {
     }
 
     // Iterate day by day
-    const today = new Date();
+    const until = window.until;
     const currentDate = new Date(since);
 
     // 1. Sync daily metrics + sleep
@@ -201,7 +201,7 @@ export class UltrahumanProvider implements SyncProvider {
         async () => {
           let dailyCount = 0;
 
-          while (currentDate <= today) {
+          while (currentDate <= until) {
             const dateStr = formatDate(currentDate);
             try {
               const response = await client.getDailyMetrics(dateStr);

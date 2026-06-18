@@ -614,6 +614,7 @@ export class PelotonProvider implements SyncProvider {
               hasMore = false;
               break;
             }
+            if (startedAt > syncWindowEnd) continue;
 
             const parsed = parseWorkout(workout);
             presentActivityExternalIds.add(parsed.externalId);

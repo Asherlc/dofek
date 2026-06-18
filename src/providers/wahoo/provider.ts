@@ -313,6 +313,7 @@ export class WahooProvider implements WebhookProvider {
           hasMore = false;
           break;
         }
+        if (workout.startedAt > syncWindowEnd) continue;
 
         presentActivityExternalIds.add(workout.externalId);
         const result = await persister.persist(workout);

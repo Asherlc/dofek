@@ -16,6 +16,15 @@ describe("SyncWindow", () => {
     expect(window.until.toISOString()).toBe("2026-06-17T23:59:59.999Z");
   });
 
+  it("rejects overflow calendar dates instead of normalizing them", () => {
+    expect(() =>
+      SyncWindow.fromDateRange({ sinceDate: "2026-02-31", untilDate: "2026-03-01" }),
+    ).toThrow("Invalid sync window date: 2026-02-31");
+    expect(() => SyncWindow.lastDays(7, { untilDate: "2026-13-01", now })).toThrow(
+      "Invalid sync window date: 2026-13-01",
+    );
+  });
+
   it("lastDays resolves relative to the anchor day", () => {
     const window = SyncWindow.lastDays(7, { now });
 

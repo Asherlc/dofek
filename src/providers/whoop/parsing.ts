@@ -263,7 +263,10 @@ export interface ParsedWorkout {
  * provider-absence reconciliation.
  */
 export function resolveWhoopWorkoutExternalId(record: WhoopWorkoutRecord): string | null {
-  const rawId = record.activity_id ?? record.id;
+  const normalizedActivityId =
+    typeof record.activity_id === "string" ? record.activity_id.trim() : record.activity_id;
+  const rawId =
+    normalizedActivityId == null || normalizedActivityId === "" ? record.id : normalizedActivityId;
   if (rawId == null || rawId === "") {
     return null;
   }

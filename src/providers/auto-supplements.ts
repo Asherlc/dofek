@@ -93,15 +93,16 @@ export function buildDailyEntries(
 const PROVIDER_ID = "auto-supplements";
 const PROVIDER_NAME = "Auto-Supplements";
 
-/** Generate ISO date strings for each day in the range [since, today]. */
-function datesInRange(since: Date): string[] {
+/** Generate ISO date strings for each day in the inclusive range. */
+function datesInRange(since: Date, until: Date): string[] {
   const dates: string[] = [];
-  const now = new Date();
   const current = new Date(since);
+  const end = new Date(until);
   // Start from the date portion
   current.setUTCHours(0, 0, 0, 0);
+  end.setUTCHours(0, 0, 0, 0);
 
-  while (current <= now) {
+  while (current <= end) {
     dates.push(current.toISOString().slice(0, 10));
     current.setUTCDate(current.getUTCDate() + 1);
   }
@@ -121,6 +122,7 @@ export class AutoSupplementsProvider implements SyncProvider {
   async sync(run: SyncRun): Promise<SyncResult> {
     const { db, window } = run;
     const since = window.since;
+    const until = window.until;
     const start = Date.now();
     const errors: SyncError[] = [];
 
@@ -133,7 +135,7 @@ export class AutoSupplementsProvider implements SyncProvider {
       return { provider: PROVIDER_ID, recordsSynced: 0, errors, duration: Date.now() - start };
     }
 
-    const dates = datesInRange(since);
+    const dates = datesInRange(since, until);
     if (dates.length === 0) {
       return { provider: PROVIDER_ID, recordsSynced: 0, errors, duration: Date.now() - start };
     }

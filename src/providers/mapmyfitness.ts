@@ -267,6 +267,7 @@ export class MapMyFitnessProvider implements SyncProvider {
             for (const raw of workouts) {
               const parsed = parseMapMyFitnessWorkout(raw);
               if (!parsed.externalId) continue;
+              if (parsed.startedAt > syncWindowEnd) continue;
               presentActivityExternalIds.add(parsed.externalId);
               try {
                 await db

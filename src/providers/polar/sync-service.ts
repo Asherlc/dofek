@@ -152,7 +152,9 @@ export class PolarSyncService {
           let count = 0;
 
           for (const exercise of exercises) {
-            if (new Date(exercise.start_time) < since) continue;
+            const exerciseStart = new Date(exercise.start_time);
+            if (exerciseStart < since) continue;
+            if (exerciseStart > syncWindowEnd) continue;
 
             const parsedExercise = parsePolarExercise(exercise);
             presentActivityExternalIds.add(parsedExercise.externalId);
@@ -259,6 +261,7 @@ export class PolarSyncService {
 
   async #syncSleep(client: PolarClient, window: SyncWindow): Promise<void> {
     const since = window.since;
+    const until = window.until;
     try {
       const sleepCount = await withSyncLog(
         this.#db,
@@ -269,7 +272,9 @@ export class PolarSyncService {
           let count = 0;
 
           for (const sleepRecord of sleepRecords) {
-            if (new Date(sleepRecord.sleep_start_time) < since) continue;
+            const sleepStart = new Date(sleepRecord.sleep_start_time);
+            if (sleepStart < since) continue;
+            if (sleepStart > until) continue;
 
             const parsedSleep = parsePolarSleep(sleepRecord);
             try {
@@ -338,6 +343,7 @@ export class PolarSyncService {
 
   async #syncDailyActivity(client: PolarClient, window: SyncWindow): Promise<void> {
     const since = window.since;
+    const until = window.until;
     try {
       const dailyCount = await withSyncLog(
         this.#db,
@@ -363,7 +369,9 @@ export class PolarSyncService {
 
           for (const dailyActivity of dailyActivities) {
             const activityDate = dailyActivity.start_time.slice(0, 10);
-            if (new Date(activityDate) < since) continue;
+            const activityDateStart = new Date(`${activityDate}T00:00:00.000Z`);
+            if (activityDateStart < since) continue;
+            if (activityDateStart > until) continue;
 
             const recharge = rechargeByDate.get(activityDate) ?? null;
             const parsedDailyMetrics = parsePolarDailyActivity(dailyActivity, recharge);

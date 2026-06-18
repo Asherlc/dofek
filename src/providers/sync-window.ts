@@ -84,17 +84,25 @@ export class SyncWindow {
   }
 
   static #parseYmdUtcStart(ymd: string): Date {
-    return new Date(`${ymd}T00:00:00.000Z`);
+    return SyncWindow.#parseYmd(ymd, "T00:00:00.000Z");
   }
 
   static #parseYmdUtcEnd(ymd: string): Date {
-    return new Date(`${ymd}T23:59:59.999Z`);
+    return SyncWindow.#parseYmd(ymd, "T23:59:59.999Z");
   }
 
   static #dateWindowStartString(endDate: string, days: number): string {
-    const windowStart = new Date(`${endDate}T00:00:00.000Z`);
+    const windowStart = SyncWindow.#parseYmdUtcStart(endDate);
     windowStart.setUTCDate(windowStart.getUTCDate() - days);
     return windowStart.toISOString().slice(0, 10);
+  }
+
+  static #parseYmd(ymd: string, timeSuffix: string): Date {
+    const parsed = new Date(`${ymd}${timeSuffix}`);
+    if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== ymd) {
+      throw new Error(`Invalid sync window date: ${ymd}`);
+    }
+    return parsed;
   }
 
   static #parseIso(iso: string, fieldName: string): Date {

@@ -10795,6 +10795,33 @@ new incremental tables are populated.
   including how fallback cooldowns interact with scheduled sync intervals and
   when to lengthen a provider-specific fallback.
 
+## 2026-06-18 — Zepp invalid credential attempts reported to Sentry
+
+- **Symptoms:** Sentry issue `7560588336` reported two production errors for
+  `Amazfit/Zepp login failed: invalid email or password` from
+  `packages/zepp-client/src/client.ts`.
+- **User impact:** Users entering credentials Zepp rejected saw a failed connect
+  attempt, and expected user/auth failures were counted as production server
+  errors.
+- **Evidence:** Sentry error search for issue `7560588336` in production showed
+  two events at `2026-06-18T16:58:21Z` and `2026-06-18T16:58:29Z`, both titled
+  `Error: Amazfit/Zepp login failed: invalid email or password`.
+- **Root cause:** `credentialAuth.signIn` let provider `automatedLogin()` errors
+  bubble as raw errors. tRPC converted them to `INTERNAL_SERVER_ERROR`, and the
+  global tRPC `onError` handler reports all internal errors to Sentry. Zepp
+  invalid credentials were not represented as expected provider auth failures.
+- **Fix / mitigation:** The credential-auth router now converts
+  `ProviderAuthError` failures to `BAD_REQUEST` and provider rate limits to
+  `TOO_MANY_REQUESTS`, leaving unexpected failures reportable. The Amazfit/Zepp
+  provider wraps invalid credential responses in `ProviderInvalidCredentialsError`.
+  The Zepp client also tries the JSON access-code registration flow first and
+  falls back to the encrypted Zepp registration flow only when the legacy
+  access-code flow is unavailable, never after a 429.
+- **Remaining risk:** The encrypted Zepp login flow is based on reverse-engineered
+  app traffic and may still fail for Apple/Google-only SSO accounts or if Zepp
+  changes the private API again. Monitor future Zepp connect failures for
+  non-auth errors that should remain reportable.
+
 ## 2026-06-18 — Activity detail missing map and stream metrics after late activity refresh
 
 - **Symptoms:** Production activity

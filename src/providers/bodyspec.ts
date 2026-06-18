@@ -342,6 +342,7 @@ export class BodySpecProvider implements SyncProvider {
   async sync(run: SyncRun): Promise<SyncResult> {
     const { db, window, options } = run;
     const since = window.since;
+    const until = window.until;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -374,6 +375,7 @@ export class BodySpecProvider implements SyncProvider {
             for (const result of listResponse.results) {
               const resultTime = new Date(result.start_time);
               if (resultTime < since) continue;
+              if (resultTime > until) continue;
 
               try {
                 count += await this.#syncResult(db, client, result.result_id, resultTime);
