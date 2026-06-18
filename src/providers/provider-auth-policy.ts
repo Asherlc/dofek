@@ -30,7 +30,7 @@ export type PerUserAuthComplianceResult =
 function getAuthTypeFromSetup(setup: ProviderAuthSetup): ProviderAuthType | "none" {
   if (setup.automatedLogin) return "credential";
   if (setup.oauth1Flow) return "oauth1";
-  if (setup.oauthConfig) return "oauth";
+  if (setup.oauthConfig && setup.exchangeCode) return "oauth";
   return "none";
 }
 

@@ -108,7 +108,7 @@ export class MyProvider implements SyncProvider {
 }
 ```
 
-For credential-based providers (email/password, no browser OAuth), return only `automatedLogin` from `authSetup()` — do not include `oauthConfig` or `exchangeCode`. See `src/providers/amazfit-zepp.ts`, `src/providers/eight-sleep.ts`, or `src/providers/garmin.ts`:
+For credential-based providers (email/password, no browser OAuth), return only `automatedLogin` from `authSetup()` — do not include `oauthConfig` or `exchangeCode`. See `src/providers/amazfit-zepp.ts` or `src/providers/eight-sleep.ts`:
 
 ```typescript
 authSetup(_options?: { host?: string }): ProviderAuthSetup {

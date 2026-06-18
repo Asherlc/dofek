@@ -106,6 +106,28 @@ describe("checkPerUserAuthCompliance", () => {
     });
   });
 
+  it("rejects OAuth providers without an exchangeCode handler", () => {
+    const provider = stubProvider({
+      id: "oauth-without-exchange-provider",
+      name: "OAuth Without Exchange",
+      authSetup: () => ({
+        oauthConfig: {
+          clientId: "client-id",
+          clientSecret: "client-secret",
+          redirectUri: "https://example.com/callback",
+          authorizeUrl: "https://example.com/authorize",
+          tokenUrl: "https://example.com/token",
+          scopes: ["read"],
+        },
+      }),
+    });
+    expect(checkPerUserAuthCompliance(provider)).toEqual({
+      ok: false,
+      providerId: "oauth-without-exchange-provider",
+      reason: expect.stringContaining('authType is "none"'),
+    });
+  });
+
   it("accepts credential providers with automatedLogin only", () => {
     const provider = stubProvider({
       id: "credential-provider",
