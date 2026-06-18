@@ -258,7 +258,7 @@ SELECT
     coalesce(lab_panel_counts.count, 0) AS lab_panels,
     coalesce(lab_result_counts.count, 0) AS lab_results,
     coalesce(journal_entry_counts.count, 0) AS journal_entries,
-    if(current_providers.provider_id IS NULL, 1, 0) AS is_deleted,
+    if(current_providers.provider_id IS null, 1, 0) AS is_deleted,
     refresh_clock.refresh_version AS refresh_version,
     refresh_clock.refreshed_at AS refreshed_at
 FROM providers

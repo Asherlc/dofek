@@ -73,6 +73,11 @@ const mocks = vi.hoisted(() => {
   };
 });
 
+const providerActivityAbsenceMocks = vi.hoisted(() => ({
+  markProviderActivityAbsent: vi.fn().mockResolvedValue(undefined),
+  reconcileProviderActivityAbsence: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
 }));
@@ -109,6 +114,11 @@ vi.mock("../db/tokens.ts", () => ({
 
 vi.mock("../db/sync-log.ts", () => ({
   withSyncLog: mocks.withSyncLog,
+}));
+
+vi.mock("../db/provider-activity-absence.ts", () => ({
+  markProviderActivityAbsent: providerActivityAbsenceMocks.markProviderActivityAbsent,
+  reconcileProviderActivityAbsence: providerActivityAbsenceMocks.reconcileProviderActivityAbsence,
 }));
 
 vi.mock("../logger.ts", () => ({
@@ -513,6 +523,8 @@ describe("GarminProvider.sync()", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     publishedMetricStreamBatches.length = 0;
+    providerActivityAbsenceMocks.markProviderActivityAbsent.mockClear();
+    providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockClear();
     provider = new GarminProvider();
     db = createMockDb();
 
@@ -685,6 +697,68 @@ describe("GarminProvider.sync()", () => {
       expect.objectContaining({ channel: "temperature", scalar: 18 }),
     );
     expect(sensorRows).toContainEqual(expect.objectContaining({ channel: "cadence", scalar: 90 }));
+  });
+
+  it("reconciles provider absence using since when the activity page is partial", async () => {
+    const since = new Date("2026-01-01T00:00:00Z");
+    const rawActivity = { activityId: 123, deviceName: "Forerunner 955" };
+    mocks.client.getActivities.mockResolvedValue([rawActivity]);
+    mocks.parseConnectActivity.mockReturnValue({
+      externalId: "123",
+      activityType: "running",
+      name: "Morning Run",
+      startedAt: new Date("2026-03-01T10:00:00Z"),
+      endedAt: new Date("2026-03-01T11:00:00Z"),
+      raw: rawActivity,
+    });
+    mocks.client.getActivityDetail.mockResolvedValue({});
+    mocks.parseActivityDetail.mockReturnValue({ samples: [] });
+
+    await syncProvider(provider, db, since);
+
+    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        providerId: "garmin",
+        userId: "00000000-0000-0000-0000-000000000001",
+        windowStart: since,
+        presentExternalIds: new Set(["123"]),
+      }),
+    );
+  });
+
+  it("reconciles provider absence from the oldest fetched activity when the page is full", async () => {
+    const since = new Date("2026-01-01T00:00:00Z");
+    const oldestStartedAt = new Date("2026-02-01T08:00:00Z");
+    const newestStartedAt = new Date("2026-03-15T08:00:00Z");
+    const rawActivities = Array.from({ length: 50 }, (_, index) => ({ activityId: index + 1 }));
+
+    mocks.client.getActivities.mockResolvedValue(rawActivities);
+    mocks.parseConnectActivity.mockImplementation((raw: { activityId: number }) => ({
+      externalId: String(raw.activityId),
+      activityType: "running",
+      name: `Run ${raw.activityId}`,
+      startedAt: raw.activityId === 1 ? oldestStartedAt : newestStartedAt,
+      endedAt: new Date("2026-03-15T09:00:00Z"),
+      raw,
+    }));
+    mocks.client.getActivityDetail.mockResolvedValue({});
+    mocks.parseActivityDetail.mockReturnValue({ samples: [] });
+
+    await syncProvider(provider, db, since);
+
+    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        providerId: "garmin",
+        userId: "00000000-0000-0000-0000-000000000001",
+        windowStart: oldestStartedAt,
+        presentExternalIds: new Set(rawActivities.map((activity) => String(activity.activityId))),
+      }),
+    );
+    expect(
+      providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mock.calls[0]?.[1]?.windowStart,
+    ).not.toEqual(since);
   });
 
   it("syncs sleep data", async () => {
