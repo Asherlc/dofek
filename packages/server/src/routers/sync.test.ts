@@ -1309,6 +1309,49 @@ describe("syncRouter", () => {
       ).toThrow("Invalid calendar date");
     });
 
+    it("triggerSyncInput accepts a valid date range", () => {
+      const result = triggerSyncInput.parse({
+        providerId: "wahoo",
+        sinceDate: "2026-02-28",
+        untilDate: "2026-03-01",
+      });
+
+      expect(result).toEqual({
+        providerId: "wahoo",
+        sinceDate: "2026-02-28",
+        untilDate: "2026-03-01",
+      });
+    });
+
+    it("triggerSyncInput rejects mixing sinceDays with a date range", () => {
+      expect(() =>
+        triggerSyncInput.parse({
+          providerId: "wahoo",
+          sinceDays: 7,
+          sinceDate: "2026-02-28",
+          untilDate: "2026-03-01",
+        }),
+      ).toThrow("Use either sinceDays or sinceDate/untilDate, not both");
+    });
+
+    it("triggerSyncInput rejects sinceDate without untilDate", () => {
+      expect(() =>
+        triggerSyncInput.parse({
+          providerId: "wahoo",
+          sinceDate: "2026-02-28",
+        }),
+      ).toThrow("untilDate is required when sinceDate is set");
+    });
+
+    it("triggerSyncInput rejects untilDate without sinceDate", () => {
+      expect(() =>
+        triggerSyncInput.parse({
+          providerId: "wahoo",
+          untilDate: "2026-03-01",
+        }),
+      ).toThrow("sinceDate is required when untilDate is set");
+    });
+
     it("syncStatusInput requires jobId string", () => {
       const result = syncStatusInput.parse({ jobId: "abc-123" });
       expect(result.jobId).toBe("abc-123");
