@@ -737,6 +737,7 @@ describe("createMcpRouter", () => {
         sinceDays: 7,
         sinceIso: expect.any(String),
         targetRefreshWindow: { days: 7, type: "days" },
+        untilIso: expect.any(String),
         userId: "user-id",
       },
       expect.objectContaining({ attempts: expect.any(Number) }),
@@ -785,6 +786,50 @@ describe("createMcpRouter", () => {
     const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
     expect(parsedResponse.result.isError).toBe(true);
     expect(parsedResponse.result.content[0]?.text).toBe("Provider not configured: missing API key");
+  });
+
+  it("returns tool errors for incomplete date ranges", async () => {
+    authorizeMcpToken();
+    toolTestMocks.getAllProviders.mockReturnValue([
+      { id: "wahoo", name: "Wahoo", validate: () => null },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("start_provider_sync", {
+        providerId: "wahoo",
+        sinceDate: "2026-06-01",
+      }),
+    });
+
+    const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
+    expect(parsedResponse.result.isError).toBe(true);
+    expect(parsedResponse.result.content[0]?.text).toBe(
+      "sinceDate and untilDate must be provided together",
+    );
+  });
+
+  it("returns tool errors when sinceDays is combined with explicit dates", async () => {
+    authorizeMcpToken();
+    toolTestMocks.getAllProviders.mockReturnValue([
+      { id: "wahoo", name: "Wahoo", validate: () => null },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("start_provider_sync", {
+        providerId: "wahoo",
+        sinceDays: 7,
+        sinceDate: "2026-06-01",
+        untilDate: "2026-06-07",
+      }),
+    });
+
+    const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
+    expect(parsedResponse.result.isError).toBe(true);
+    expect(parsedResponse.result.content[0]?.text).toBe(
+      "sinceDays cannot be combined with sinceDate/untilDate",
+    );
   });
 
   it("returns tool-level insufficient scope errors", async () => {

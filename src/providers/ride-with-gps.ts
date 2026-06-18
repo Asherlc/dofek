@@ -17,11 +17,11 @@ import { activity, userSettings } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import type { SyncRun } from "./sync-run.ts";
 import type {
   ProviderAuthSetup,
   ProviderIdentity,
   SyncError,
-  SyncOptions,
   SyncProvider,
   SyncResult,
 } from "./types.ts";
@@ -390,7 +390,9 @@ export class RideWithGpsProvider implements SyncProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date, options: SyncOptions = {}): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
+    const since = window.since;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;

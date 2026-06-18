@@ -33,6 +33,8 @@ vi.mock("../logger.ts", () => ({
 vi.mock("../providers/index.ts", () => ({
   getProvider: (providerId: string) => {
     if (providerId === "strong-csv") return { id: providerId, importOnly: true as const };
+    if (providerId === "whoop") return { id: providerId, scheduledSyncLookbackDays: 30 };
+    if (providerId === "unknown-provider") return undefined;
     return { id: providerId };
   },
   isSyncEligibleProvider: (provider: { importOnly?: boolean }) => !provider.importOnly,
@@ -65,6 +67,7 @@ describe("processScheduledSyncJob", () => {
         { user_id: "user-1", provider_id: "strava" },
         { user_id: "user-1", provider_id: "strong-csv" },
         { user_id: "user-2", provider_id: "wahoo" },
+        { user_id: "user-3", provider_id: "whoop" },
       ]),
     };
 
@@ -73,6 +76,7 @@ describe("processScheduledSyncJob", () => {
     // Each provider gets its own queue
     const stravaQueue = getMockQueue("strava");
     const wahooQueue = getMockQueue("wahoo");
+    const whoopQueue = getMockQueue("whoop");
 
     expect(stravaQueue.add).toHaveBeenCalledTimes(1);
     expect(stravaQueue.add).toHaveBeenCalledWith(
@@ -96,6 +100,17 @@ describe("processScheduledSyncJob", () => {
       expect.objectContaining({ attempts: 288 }),
     );
 
+    expect(whoopQueue.add).toHaveBeenCalledTimes(1);
+    expect(whoopQueue.add).toHaveBeenCalledWith(
+      "sync",
+      {
+        userId: "user-3",
+        providerId: "whoop",
+        sinceDays: 30,
+      },
+      expect.objectContaining({ attempts: 288 }),
+    );
+
     // CSV provider queue should not be created
     expect(providerQueues.has("strong-csv")).toBe(false);
 
@@ -103,7 +118,7 @@ describe("processScheduledSyncJob", () => {
       "[scheduled-sync] Skipping CSV provider strong-csv",
     );
     expect(mockLoggerInfo).toHaveBeenCalledWith(
-      "[scheduled-sync] Enqueued 2 sync jobs for 2 users",
+      "[scheduled-sync] Enqueued 3 sync jobs for 3 users",
     );
   });
 
@@ -121,6 +136,25 @@ describe("processScheduledSyncJob", () => {
     expect(stravaQueue.add).toHaveBeenCalledTimes(2);
     // Only one queue instance created for strava
     expect(providerQueues.size).toBe(1);
+  });
+
+  it("defaults sinceDays when provider metadata is missing", async () => {
+    const db = {
+      execute: vi.fn().mockResolvedValue([{ user_id: "user-1", provider_id: "unknown-provider" }]),
+    };
+
+    await Reflect.apply(processScheduledSyncJob, undefined, [{}, db]);
+
+    const unknownQueue = getMockQueue("unknown-provider");
+    expect(unknownQueue.add).toHaveBeenCalledWith(
+      "sync",
+      {
+        userId: "user-1",
+        providerId: "unknown-provider",
+        sinceDays: 1,
+      },
+      expect.objectContaining({ attempts: 288 }),
+    );
   });
 
   it("enqueues delayed sync jobs when a provider cooldown is active", async () => {

@@ -10,6 +10,7 @@ import type { SyncDatabase } from "../../db/index.ts";
 import { reconcileProviderActivityAbsence } from "../../db/provider-activity-absence.ts";
 import { logger } from "../../logger.ts";
 import { AccessTokenExpiredError } from "../auth-errors.ts";
+import type { SyncRun } from "../sync-run.ts";
 import type {
   ProviderAuthSetup,
   ProviderIdentity,
@@ -269,7 +270,8 @@ export class WahooProvider implements WebhookProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const onProgress = options?.onProgress;
     const start = Date.now();
     const errors: SyncError[] = [];
@@ -295,7 +297,8 @@ export class WahooProvider implements WebhookProvider {
     // Paginate through all workouts
     let page = 1;
     let hasMore = true;
-    const syncWindowEnd = new Date();
+    const since = window.since;
+    const syncWindowEnd = window.until;
     const presentActivityExternalIds = new Set<string>();
 
     while (hasMore) {
@@ -310,6 +313,7 @@ export class WahooProvider implements WebhookProvider {
           hasMore = false;
           break;
         }
+        if (workout.startedAt > syncWindowEnd) continue;
 
         presentActivityExternalIds.add(workout.externalId);
         const result = await persister.persist(workout);

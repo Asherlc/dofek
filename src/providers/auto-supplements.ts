@@ -1,11 +1,11 @@
 import { sql } from "drizzle-orm";
-import type { SyncDatabase } from "../db/index.ts";
 import {
   nutrientAmountEntriesFromLegacyFields,
   nutrientColumnsToValues,
 } from "../db/nutrient-columns.ts";
 import { foodEntry, foodEntryNutrient } from "../db/schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import type { SyncRun } from "./sync-run.ts";
 import type { SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
@@ -93,15 +93,15 @@ export function buildDailyEntries(
 const PROVIDER_ID = "auto-supplements";
 const PROVIDER_NAME = "Auto-Supplements";
 
-/** Generate ISO date strings for each day in the range [since, today]. */
-function datesInRange(since: Date): string[] {
+/** Generate ISO date strings for each day in the inclusive range. */
+function datesInRange(since: Date, until: Date): string[] {
   const dates: string[] = [];
-  const now = new Date();
-  const current = new Date(since);
-  // Start from the date portion
-  current.setUTCHours(0, 0, 0, 0);
+  const current = new Date(
+    Date.UTC(since.getUTCFullYear(), since.getUTCMonth(), since.getUTCDate()),
+  );
+  const end = new Date(Date.UTC(until.getUTCFullYear(), until.getUTCMonth(), until.getUTCDate()));
 
-  while (current <= now) {
+  while (current <= end) {
     dates.push(current.toISOString().slice(0, 10));
     current.setUTCDate(current.getUTCDate() + 1);
   }
@@ -118,7 +118,10 @@ export class AutoSupplementsProvider implements SyncProvider {
     return null;
   }
 
-  async sync(db: SyncDatabase, since: Date): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window } = run;
+    const since = window.since;
+    const until = window.until;
     const start = Date.now();
     const errors: SyncError[] = [];
 
@@ -131,11 +134,7 @@ export class AutoSupplementsProvider implements SyncProvider {
       return { provider: PROVIDER_ID, recordsSynced: 0, errors, duration: Date.now() - start };
     }
 
-    const dates = datesInRange(since);
-    if (dates.length === 0) {
-      return { provider: PROVIDER_ID, recordsSynced: 0, errors, duration: Date.now() - start };
-    }
-
+    const dates = datesInRange(since, until);
     const firstUser = allSupplements[0];
     if (!firstUser) {
       return { provider: PROVIDER_ID, recordsSynced: 0, errors, duration: Date.now() - start };

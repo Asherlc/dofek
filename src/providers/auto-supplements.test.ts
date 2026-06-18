@@ -6,6 +6,8 @@ import {
   buildDailyEntries,
   type SupplementWithNutrition,
 } from "./auto-supplements.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 vi.mock("../db/tokens.ts", () => ({
   ensureProvider: vi.fn(async () => "auto-supplements"),
@@ -238,7 +240,11 @@ describe("Auto-Supplements Provider", () => {
 
       const db = createMockDb({ execute, select, insert: vi.fn() });
 
-      const result = await provider.sync(db, new Date("2026-04-01T20:00:00.000Z"));
+      const window = new SyncWindow({
+        since: new Date("2026-04-01T20:00:00.000Z"),
+        until: new Date("2026-04-01T23:59:59.999Z"),
+      });
+      const result = await provider.sync(new SyncRun({ db: db, window: window }));
       vi.useRealTimers();
 
       expect(result.errors).toHaveLength(0);
@@ -281,7 +287,12 @@ describe("Auto-Supplements Provider", () => {
 
       const db = createMockDb({ execute, select, insert });
 
-      const result = await provider.sync(db, new Date("2026-04-01T00:00:00.000Z"));
+      const result = await provider.sync(
+        new SyncRun({
+          db: db,
+          window: SyncWindow.fromSince({ since: new Date("2026-04-01T00:00:00.000Z") }),
+        }),
+      );
       vi.useRealTimers();
 
       expect(result.errors).toHaveLength(0);
@@ -319,12 +330,23 @@ describe("Auto-Supplements Provider", () => {
 
       const db = createMockDb({ execute, select, insert });
 
-      const result = await provider.sync(db, new Date("2026-04-01T00:00:00.000Z"));
+      const result = await provider.sync(
+        new SyncRun({
+          db: db,
+          window: SyncWindow.fromSince({ since: new Date("2026-04-01T00:00:00.000Z") }),
+        }),
+      );
       vi.useRealTimers();
 
       expect(result.errors).toHaveLength(0);
       expect(result.recordsSynced).toBe(1);
       expect(insert).toHaveBeenCalledTimes(2);
+      expect(foodValues).toHaveBeenCalledWith(
+        expect.objectContaining({
+          date: "2026-04-01",
+          externalId: `auto:creatine:${TEST_USER_ID}:2026-04-01`,
+        }),
+      );
       expect(foodReturning).toHaveBeenCalledTimes(1);
       expect(foodConflict).toHaveBeenCalledTimes(1);
     });
@@ -348,7 +370,12 @@ describe("Auto-Supplements Provider", () => {
 
       const db = createMockDb({ execute, select, insert: vi.fn() });
 
-      const result = await provider.sync(db, new Date("2026-04-01T00:00:00.000Z"));
+      const result = await provider.sync(
+        new SyncRun({
+          db: db,
+          window: SyncWindow.fromSince({ since: new Date("2026-04-01T00:00:00.000Z") }),
+        }),
+      );
       vi.useRealTimers();
 
       expect(result.recordsSynced).toBe(0);

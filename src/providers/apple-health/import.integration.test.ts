@@ -8,6 +8,8 @@ import * as schema from "../../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
 import { runWithTokenUser } from "../../db/token-user-context.ts";
 import type { MetricStreamRowInput } from "../../metric-stream/events.ts";
+import { SyncRun } from "../sync-run.ts";
+import { SyncWindow } from "../sync-window.ts";
 import { createCapturingMetricStreamPublisher } from "../test-helpers.ts";
 import {
   buildPanelMap,
@@ -390,14 +392,19 @@ describe("AppleHealthProvider", () => {
     process.env.APPLE_HEALTH_IMPORT_DIR = emptyDir;
 
     const provider = new AppleHealthProvider();
-    const mockDb = Object.create(null);
-    const result = await provider.sync(mockDb, new Date());
+    const testContext = await setupTestDatabase();
+    try {
+      const result = await provider.sync(
+        new SyncRun({ db: testContext.db, window: SyncWindow.fromSince({ since: new Date() }) }),
+      );
 
-    expect(result.recordsSynced).toBe(0);
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain("No Apple Health export found");
-
-    rmSync(emptyDir, { recursive: true, force: true });
+      expect(result.recordsSynced).toBe(0);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]?.message).toContain("No Apple Health export found");
+    } finally {
+      await testContext.cleanup();
+      rmSync(emptyDir, { recursive: true, force: true });
+    }
   });
 });
 

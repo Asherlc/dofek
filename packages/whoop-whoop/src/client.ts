@@ -4,9 +4,11 @@ import {
   ProviderRateLimitError,
   parseRetryAfterHeader,
 } from "@dofek/provider-http/rate-limit";
+import { z } from "zod";
 import type {
   WhoopAuthToken,
   WhoopCycle,
+  WhoopDeveloperWorkoutListResponse,
   WhoopHrValue,
   WhoopMetricResponse,
   WhoopMetricValue,
@@ -66,6 +68,25 @@ function getNumber(obj: Record<string, unknown>, key: string): number | undefine
 function isRecord(val: unknown): val is Record<string, unknown> {
   return val !== null && typeof val === "object" && !Array.isArray(val);
 }
+
+const whoopDeveloperWorkoutRecordSchema = z
+  .object({
+    id: z.string(),
+    start: z.string(),
+    end: z.string(),
+    timezone_offset: z.string().optional(),
+    sport_name: z.string().optional(),
+    sport_id: z.number().optional(),
+    score_state: z.string().optional(),
+  })
+  .passthrough();
+
+const whoopDeveloperWorkoutListResponseSchema = z
+  .object({
+    records: z.array(whoopDeveloperWorkoutRecordSchema),
+    next_token: z.string().nullable().optional(),
+  })
+  .passthrough();
 
 /** Safely extract a nested record from an untyped record */
 function getRecord(obj: Record<string, unknown>, key: string): Record<string, unknown> | undefined {
@@ -340,7 +361,7 @@ export class WhoopClient {
     return userId;
   }
 
-  async #get<T>(url: string, params?: Record<string, string>): Promise<T> {
+  async #get<T>(url: string, params?: Record<string, string>, attempt = 0): Promise<T> {
     const requestUrl = new URL(url);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
@@ -363,7 +384,7 @@ export class WhoopClient {
       userId: this.#userId,
       endpoint: requestUrl.pathname,
       status: response.status,
-      attempt: 0,
+      attempt,
       retryAfterSeconds,
       timestamp: new Date(),
     });
@@ -383,6 +404,24 @@ export class WhoopClient {
 
     const text = await response.text();
     throw new Error(`WHOOP API error (${response.status}): ${text}`);
+  }
+
+  async #getWithRateLimitRetry<T>(
+    url: string,
+    params?: Record<string, string>,
+    maxRetries = 3,
+  ): Promise<T> {
+    let attempt = 0;
+    while (true) {
+      try {
+        return await this.#get<T>(url, params, attempt);
+      } catch (err) {
+        if (!(err instanceof WhoopRateLimitError) || attempt >= maxRetries) {
+          throw err;
+        }
+        attempt++;
+      }
+    }
   }
 
   async getHeartRate(start: string, end: string, step = 6): Promise<WhoopHrValue[]> {
@@ -406,7 +445,7 @@ export class WhoopClient {
     return response.values ?? [];
   }
 
-  async getCycles(start: string, end: string, limit = 26): Promise<WhoopCycle[]> {
+  async getCycles(start: string, end: string, limit = 200): Promise<WhoopCycle[]> {
     const raw = await this.#get<unknown>(`${WHOOP_API_BASE}/core-details-bff/v0/cycles/details`, {
       id: String(this.#userId),
       startTime: start,
@@ -429,6 +468,75 @@ export class WhoopClient {
       }
     }
     return [];
+  }
+
+  /**
+   * List workouts from the developer API. Paginated via next_token.
+   * Unlike the cycles BFF embed, this list omits workouts deleted in WHOOP.
+   */
+  async listDeveloperWorkouts(options?: {
+    limit?: number;
+    nextToken?: string;
+  }): Promise<WhoopDeveloperWorkoutListResponse> {
+    const params: Record<string, string> = {};
+    if (options?.limit != null) {
+      params.limit = String(options.limit);
+    }
+    if (options?.nextToken) {
+      params.next_token = options.nextToken;
+    }
+    const raw = await this.#getWithRateLimitRetry<unknown>(
+      `${WHOOP_API_BASE}/developer/v2/activity/workout`,
+      params,
+    );
+    const parsed = whoopDeveloperWorkoutListResponseSchema.parse(raw);
+    return {
+      records: parsed.records,
+      next_token: parsed.next_token ?? null,
+    };
+  }
+
+  /**
+   * Collect workout IDs present in WHOOP for a sync window using the developer
+   * workout list (authoritative for deletions).
+   */
+  async listDeveloperWorkoutIdsInWindow(windowStart: Date, windowEnd: Date): Promise<Set<string>> {
+    const presentExternalIds = new Set<string>();
+    const pageLimit = 25;
+    let nextToken: string | undefined;
+    let reachedWindowStart = false;
+
+    do {
+      const page = await this.listDeveloperWorkouts({ limit: pageLimit, nextToken });
+      if (page.records.length === 0) {
+        break;
+      }
+
+      let oldestStartMs = Number.POSITIVE_INFINITY;
+      for (const record of page.records) {
+        const workoutStartMs = Date.parse(record.start);
+        if (!Number.isFinite(workoutStartMs)) {
+          continue;
+        }
+        oldestStartMs = Math.min(oldestStartMs, workoutStartMs);
+        if (workoutStartMs >= windowStart.getTime() && workoutStartMs < windowEnd.getTime()) {
+          if (record.id) {
+            presentExternalIds.add(record.id);
+          }
+        }
+      }
+
+      if (oldestStartMs < windowStart.getTime()) {
+        reachedWindowStart = true;
+      }
+
+      nextToken = page.next_token ?? undefined;
+      if (reachedWindowStart || !nextToken) {
+        break;
+      }
+    } while (nextToken);
+
+    return presentExternalIds;
   }
 
   async getSleep(sleepId: string | number): Promise<WhoopSleepRecord> {

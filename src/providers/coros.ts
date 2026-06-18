@@ -15,10 +15,10 @@ import { parseFitFile } from "../fit/parser.ts";
 import { fitRecordsToSensorSamples } from "../fit/records.ts";
 import { logger } from "../logger.ts";
 import { ProviderHttpClient } from "./http-client.ts";
+import type { SyncRun } from "./sync-run.ts";
 import type {
   ProviderAuthSetup,
   SyncError,
-  SyncOptions,
   SyncResult,
   WebhookEvent,
   WebhookProvider,
@@ -322,7 +322,8 @@ export class CorosProvider implements WebhookProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date, options: SyncOptions = {}): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -338,8 +339,9 @@ export class CorosProvider implements WebhookProvider {
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
+    const since = window.since;
     const sinceDate = formatDateCompact(since);
-    const syncWindowEnd = new Date();
+    const syncWindowEnd = window.until;
     const toDate = formatDateCompact(syncWindowEnd);
     const presentActivityExternalIds = new Set<string>();
 

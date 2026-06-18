@@ -6,6 +6,8 @@ import type { ParsedFitRecord, ParsedFitSession } from "../fit/parser.ts";
 import * as fitParserModule from "../fit/parser.ts";
 import { fitRecordsToSensorSamples as fitRecordsToMetricStream } from "../fit/records.ts";
 import * as loggerModule from "../logger.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 import { WahooClient, type WahooWorkout, type WahooWorkoutSummary } from "./wahoo/client.ts";
 import { parseWorkoutList, parseWorkoutSummary } from "./wahoo/parsers.ts";
 import { WahooProvider, wahooOAuthConfig } from "./wahoo/provider.ts";
@@ -1250,9 +1252,13 @@ describe("WahooProvider.sync", () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    const result = await provider.sync(mockDb, new Date("2026-02-01T00:00:00Z"), {
-      userId: "00000000-0000-0000-0000-000000000001",
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: mockDb,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
 
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);

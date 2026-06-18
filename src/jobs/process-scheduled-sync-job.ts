@@ -55,7 +55,7 @@ export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, d
       const jobData = {
         userId,
         providerId,
-        sinceDays: 1,
+        sinceDays: provider?.scheduledSyncLookbackDays ?? 1,
       };
       const cooldown = await providerRateLimitCooldownStore.getActive(providerId, userId);
       const jobOptions = cooldown

@@ -59,6 +59,8 @@ module.exports = {
           "^src/providers/provider-model\\.ts$",
           "^src/providers/http-client\\.ts$",
           "^src/providers/auth-errors\\.ts$",
+          "^src/providers/sync-run\\.ts$",
+          "^src/providers/sync-window\\.ts$",
         ],
       },
     },

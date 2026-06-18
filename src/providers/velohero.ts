@@ -1,20 +1,14 @@
 import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import { VeloHeroClient } from "velohero-client/client";
 import { parseVeloHeroWorkout } from "velohero-client/parsing";
-import type { SyncDatabase } from "../db/index.ts";
 import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
 import { ProviderSessionExpiredError } from "./auth-errors.ts";
-import type {
-  ProviderAuthSetup,
-  SyncError,
-  SyncOptions,
-  SyncProvider,
-  SyncResult,
-} from "./types.ts";
+import type { SyncRun } from "./sync-run.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 const VELOHERO_BASE_URL = "https://app.velohero.com";
 
@@ -63,7 +57,8 @@ export class VeloHeroProvider implements SyncProvider {
     };
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -89,8 +84,9 @@ export class VeloHeroProvider implements SyncProvider {
     }
 
     // Fetch and sync activities
+    const since = window.since;
     const sinceDate = formatDate(since);
-    const syncWindowEnd = new Date();
+    const syncWindowEnd = window.until;
     const toDate = formatDate(syncWindowEnd);
     const presentActivityExternalIds = new Set<string>();
 

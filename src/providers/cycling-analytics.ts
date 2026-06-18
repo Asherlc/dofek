@@ -1,5 +1,6 @@
 import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import type { CanonicalActivityType } from "@dofek/training/training";
+import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
@@ -8,13 +9,8 @@ import { reconcileProviderActivityAbsence } from "../db/provider-activity-absenc
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
-import type {
-  ProviderAuthSetup,
-  SyncError,
-  SyncOptions,
-  SyncProvider,
-  SyncResult,
-} from "./types.ts";
+import type { SyncRun } from "./sync-run.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Cycling Analytics API types
@@ -23,31 +19,37 @@ import type {
 const CYCLING_ANALYTICS_API_BASE = "https://www.cyclinganalytics.com/api";
 const _DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
 
-interface CyclingAnalyticsRide {
-  id: number;
-  title: string;
-  date: string; // ISO datetime
-  duration: number; // seconds
-  distance?: number; // meters
-  average_power?: number; // watts
-  normalized_power?: number; // watts
-  max_power?: number; // watts
-  average_heart_rate?: number; // bpm
-  max_heart_rate?: number; // bpm
-  average_cadence?: number; // rpm
-  max_cadence?: number; // rpm
-  elevation_gain?: number; // meters
-  elevation_loss?: number; // meters
-  average_speed?: number; // m/s
-  max_speed?: number; // m/s
-  calories?: number;
-  training_stress_score?: number;
-  intensity_factor?: number;
-}
+const parseableIsoDateTimeSchema = z
+  .string()
+  .refine((value) => Number.isFinite(Date.parse(value)), "Invalid ISO datetime");
 
-interface CyclingAnalyticsRidesResponse {
-  rides: CyclingAnalyticsRide[];
-}
+const cyclingAnalyticsRideSchema = z.object({
+  id: z.number(),
+  title: z.string(),
+  date: parseableIsoDateTimeSchema,
+  duration: z.number(),
+  distance: z.number().optional(),
+  average_power: z.number().optional(),
+  normalized_power: z.number().optional(),
+  max_power: z.number().optional(),
+  average_heart_rate: z.number().optional(),
+  max_heart_rate: z.number().optional(),
+  average_cadence: z.number().optional(),
+  max_cadence: z.number().optional(),
+  elevation_gain: z.number().optional(),
+  elevation_loss: z.number().optional(),
+  average_speed: z.number().optional(),
+  max_speed: z.number().optional(),
+  calories: z.number().optional(),
+  training_stress_score: z.number().optional(),
+  intensity_factor: z.number().optional(),
+});
+
+type CyclingAnalyticsRide = z.infer<typeof cyclingAnalyticsRideSchema>;
+
+const cyclingAnalyticsRidesResponseSchema = z.object({
+  rides: z.preprocess((value) => value ?? [], z.array(cyclingAnalyticsRideSchema)),
+});
 
 // ============================================================
 // Parsed types
@@ -161,7 +163,8 @@ export class CyclingAnalyticsProvider implements SyncProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -177,7 +180,8 @@ export class CyclingAnalyticsProvider implements SyncProvider {
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const syncWindowEnd = new Date();
+    const since = window.since;
+    const syncWindowEnd = window.until;
     const presentActivityExternalIds = new Set<string>();
     try {
       const activityCount = await withSyncLog(
@@ -203,8 +207,8 @@ export class CyclingAnalyticsProvider implements SyncProvider {
               throw new Error(`Cycling Analytics API error (${response.status}): ${text}`);
             }
 
-            const data: CyclingAnalyticsRidesResponse = await response.json();
-            const rides = data.rides ?? [];
+            const data = cyclingAnalyticsRidesResponseSchema.parse(await response.json());
+            const rides = data.rides;
 
             if (rides.length === 0) {
               hasMore = false;
@@ -213,6 +217,9 @@ export class CyclingAnalyticsProvider implements SyncProvider {
 
             for (const raw of rides) {
               const parsed = parseCyclingAnalyticsRide(raw);
+              if (parsed.startedAt.getTime() > syncWindowEnd.getTime()) {
+                continue;
+              }
               presentActivityExternalIds.add(parsed.externalId);
               try {
                 await db
