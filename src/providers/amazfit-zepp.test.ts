@@ -6,8 +6,8 @@ import {
   AmazfitZeppClient,
   AmazfitZeppProvider,
   decodeZeppHeartRateSamples,
-  decodeZeppUserIdFromScopes,
   decodeZeppSummary,
+  decodeZeppUserIdFromScopes,
   encodeZeppTokenScopes,
   parseZeppBandDay,
 } from "./amazfit-zepp.ts";

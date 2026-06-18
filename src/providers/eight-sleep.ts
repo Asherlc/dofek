@@ -33,8 +33,6 @@ function formatDate(date: Date): string {
 // Provider implementation
 // ============================================================
 
-const AUTH_API_BASE = "https://auth-api.8slp.net/v1";
-
 export class EightSleepProvider implements SyncProvider {
   readonly id = "eight-sleep";
   readonly name = "Eight Sleep";
