@@ -21,7 +21,7 @@ describe("ClickHouseActivitySensorStore", () => {
     ],
   };
 
-  it("queries activity-keyed scalar samples and location samples inside the activity window", async () => {
+  it("queries activity-keyed scalar samples and materialized location samples inside the activity window", async () => {
     const { store, query } = makeStore([
       {
         recorded_at: "2024-01-15 10:00:00.000",
@@ -54,8 +54,9 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).not.toContain("fitness.metric_stream");
     expect(queryText).not.toContain("fitness.deduped_sensor");
     expect(queryText).not.toContain("analytics.deduped_sensor");
+    expect(queryText).not.toContain("analytics.deduped_location");
     expect(queryText).toContain("activity_id IN {activityIds:Array(UUID)}");
-    expect(queryText).toContain("analytics.deduped_location");
+    expect(queryText).toContain("analytics.activity_location_sample");
   });
 
   it("queries activity summaries from the ClickHouse analytics schema", async () => {

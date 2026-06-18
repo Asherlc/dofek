@@ -338,8 +338,7 @@ export class ActivityRepository extends BaseRepository {
             NULL::double precision AS elevation_loss_m,
             NULL::integer AS sample_count
           FROM fitness.v_activity a
-          JOIN fitness.v_activity_members am ON am.activity_id = a.id
-          WHERE am.member_activity_id = ${activityId}
+          WHERE ${activityId}::uuid = ANY(a.member_activity_ids)
             AND a.user_id = ${this.userId}
             ${this.timestampAccessPredicate(sql`a.started_at`)}`,
     );
@@ -456,8 +455,7 @@ export class ActivityRepository extends BaseRepository {
             a.ended_at::text AS ended_at,
             a.member_activity_ids
           FROM fitness.v_activity a
-          JOIN fitness.v_activity_members am ON am.activity_id = a.id
-          WHERE am.member_activity_id = ${activityId}
+          WHERE ${activityId}::uuid = ANY(a.member_activity_ids)
             AND a.user_id = ${this.userId}
             ${this.timestampAccessPredicate(sql`a.started_at`)}`,
     );
