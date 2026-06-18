@@ -58,17 +58,20 @@ edges AS (
   FROM pairs
 ),
 
-clusters (activity_id, group_id) AS (
+clusters (activity_id, group_id, depth) AS (
   SELECT
     id,
-    id::text
+    id::text,
+    0
   FROM ranked
   UNION
   SELECT
     e.b,
-    c.group_id
+    c.group_id,
+    c.depth + 1
   FROM edges AS e
   INNER JOIN clusters AS c ON e.a = c.activity_id
+  WHERE c.depth < 2
 ),
 
 final_groups AS (

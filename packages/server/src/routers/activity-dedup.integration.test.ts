@@ -234,6 +234,71 @@ describe("Activity summary deduplication", () => {
     expect(Number(result[0]?.count)).toBe(2);
   });
 
+  it("does not collapse long overlap chains into one canonical activity", async () => {
+    const chainActivityIds = [
+      "00000000-0000-4000-8000-000000000101",
+      "00000000-0000-4000-8000-000000000102",
+      "00000000-0000-4000-8000-000000000103",
+      "00000000-0000-4000-8000-000000000104",
+    ];
+    const insertedIdArray = sql`ARRAY[${sql.join(
+      chainActivityIds.map((activityId) => sql`${activityId}::uuid`),
+      sql`, `,
+    )}]`;
+
+    await testCtx.db.execute(sql`DELETE FROM fitness.activity WHERE id = ANY(${insertedIdArray})`);
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.activity (
+            id, provider_id, user_id, activity_type, started_at, ended_at, name
+          ) VALUES
+            (
+              ${chainActivityIds[0]}::uuid,
+              'wahoo', ${TEST_USER_ID}, 'cycling',
+              TIMESTAMPTZ '2026-01-10 10:00:00+00',
+              TIMESTAMPTZ '2026-01-10 10:30:00+00',
+              'Two-hop chain A'
+            ),
+            (
+              ${chainActivityIds[1]}::uuid,
+              'wahoo', ${TEST_USER_ID}, 'cycling',
+              TIMESTAMPTZ '2026-01-10 10:02:00+00',
+              TIMESTAMPTZ '2026-01-10 10:32:00+00',
+              'Two-hop chain B'
+            ),
+            (
+              ${chainActivityIds[2]}::uuid,
+              'wahoo', ${TEST_USER_ID}, 'cycling',
+              TIMESTAMPTZ '2026-01-10 10:04:00+00',
+              TIMESTAMPTZ '2026-01-10 10:34:00+00',
+              'Two-hop chain C'
+            ),
+            (
+              ${chainActivityIds[3]}::uuid,
+              'wahoo', ${TEST_USER_ID}, 'cycling',
+              TIMESTAMPTZ '2026-01-10 10:06:00+00',
+              TIMESTAMPTZ '2026-01-10 10:36:00+00',
+              'Two-hop chain D'
+            )`,
+    );
+
+    try {
+      const groupedRows = await testCtx.db.execute<{ member_activity_ids: string[] }>(
+        sql`SELECT member_activity_ids::text[] AS member_activity_ids
+            FROM fitness.v_activity
+            WHERE member_activity_ids && ${insertedIdArray}
+            ORDER BY started_at`,
+      );
+
+      expect(groupedRows.length).toBeGreaterThan(1);
+      expect(groupedRows.map((row) => row.member_activity_ids.length).sort()).toEqual([1, 3]);
+    } finally {
+      await testCtx.db.execute(
+        sql`DELETE FROM fitness.activity WHERE id = ANY(${insertedIdArray})`,
+      );
+    }
+  });
+
   it("ramp rate does not double-count overlapping activities", async () => {
     await queryCache.invalidateAll();
     const { status, result } = await query("cyclingAdvanced.rampRate", {

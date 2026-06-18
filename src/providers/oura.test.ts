@@ -85,7 +85,8 @@ vi.mock("../db/token-user-context.ts", () => ({
 
 afterEach(() => {
   publishedMetricStreamBatches.length = 0;
-  providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockClear();
+  providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockReset();
+  providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockResolvedValue(undefined);
 });
 
 // ============================================================
@@ -1698,6 +1699,25 @@ describe("OuraProvider.sync()", () => {
         presentExternalIds: new Set(["workout-001"]),
       }),
     );
+  });
+
+  it("reports activity absence reconciliation errors without rejecting sync", async () => {
+    setupEnv();
+    providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockRejectedValueOnce(
+      new Error("write failed"),
+    );
+    const workout = fakeWorkout();
+    const mockFetch = createMockApiFetch({ workouts: [workout] });
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(db, new Date("2026-03-01"));
+
+    expect(result.provider).toBe("oura");
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toBe("activity absence reconciliation: write failed");
+    expect(result.errors[0]?.cause).toBeInstanceOf(Error);
   });
 
   it("syncs sessions to activity table", async () => {

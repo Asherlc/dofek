@@ -253,13 +253,22 @@ export class OuraProvider implements WebhookProvider {
     recordsSynced += await syncSessions(context);
 
     if (!hasProviderActivityListSyncErrors(errors, ["workouts:", "sessions:"])) {
-      await reconcileProviderActivityAbsence(db, {
-        providerId: this.id,
-        userId: options?.userId,
-        windowStart: since,
-        windowEnd: syncWindowEnd,
-        presentExternalIds: activityPresentExternalIds,
-      });
+      try {
+        await reconcileProviderActivityAbsence(db, {
+          providerId: this.id,
+          userId: options?.userId,
+          windowStart: since,
+          windowEnd: syncWindowEnd,
+          presentExternalIds: activityPresentExternalIds,
+        });
+      } catch (err) {
+        errors.push({
+          message: `activity absence reconciliation: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+          cause: err,
+        });
+      }
     }
 
     // 4. Sync heart rate → metric_stream table (batched)

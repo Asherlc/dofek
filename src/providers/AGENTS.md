@@ -11,6 +11,7 @@
 - **Validation**: Ensure `validate()` checks all required environment variables.
 
 ### Provider Activity Absence Checklist
+
 When a provider writes activities, follow this contract (see `src/db/provider-activity-absence.ts`):
 - **Authoritative list syncs must reconcile provider absence**: After a completed, authoritative activity-list fetch for the exact sync window, call `reconcileProviderActivityAbsence()`.
 - **Webhook deletes must tombstone**: Explicit delete/removed events must call `markProviderActivityAbsent()`, not hard-delete rows.
