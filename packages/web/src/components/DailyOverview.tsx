@@ -14,6 +14,7 @@ import {
   sleepTierDescription,
   WorkloadRatio,
 } from "@dofek/scoring/scoring";
+import { duration, easing } from "@dofek/scoring/tokens";
 import type {
   ReadinessRow,
   SleepPerformanceInfo,
@@ -105,7 +106,7 @@ function ScoreRing({
           strokeDashoffset={animatedOffset}
           strokeLinecap="round"
           transform={`rotate(-90 ${center} ${center})`}
-          style={{ transition: "stroke-dashoffset 1.2s cubic-bezier(0.16, 1, 0.3, 1)" }}
+          style={{ transition: `stroke-dashoffset ${duration.countUp}ms ${easing.out}` }}
         />
         {/* Target marker */}
         {targetFraction != null &&
@@ -430,7 +431,7 @@ function StrainRing({
   const strainScore = new StrainScore(strain);
   const color = strainScore.color;
   const ringLabel = strainScore.label;
-  const displayValue = useCountUp(strain, 1200, 1);
+  const displayValue = useCountUp(strain, duration.countUp, 1);
 
   return (
     <div className="flex flex-col items-center gap-2 max-w-[180px]">
