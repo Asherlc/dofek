@@ -58,8 +58,8 @@ describe("PolarProvider.authSetup", () => {
 
     const provider = new PolarProvider();
     const setup = provider.authSetup();
-    expect(setup.oauthConfig.scopes).toEqual(["accesslink.read_all"]);
-    expect(setup.oauthConfig.tokenAuthMethod).toBe("basic");
+    expect(setup.oauthConfig?.scopes).toEqual(["accesslink.read_all"]);
+    expect(setup.oauthConfig?.tokenAuthMethod).toBe("basic");
   });
 
   it("registerWebhook throws the common rate-limit error when Polar throttles", async () => {
@@ -111,7 +111,9 @@ describe("PolarProvider.authSetup", () => {
 
     const provider = new PolarProvider(mockFetch);
     const setup = provider.authSetup();
-    const tokens = await setup.exchangeCode("oauth-code");
+    const { exchangeCode } = setup;
+    if (!exchangeCode) throw new Error("exchangeCode not defined");
+    const tokens = await exchangeCode("oauth-code");
 
     expect(tokens.accessToken).toBe("new-access-token");
     // Should register using x_user_id, not by calling GET /v3/users
@@ -145,7 +147,7 @@ describe("PolarProvider.authSetup", () => {
 
     const provider = new PolarProvider(mockFetch);
     const setup = provider.authSetup();
-    await expect(setup.exchangeCode("oauth-code")).rejects.toThrow("registration failed");
+    await expect(setup.exchangeCode?.("oauth-code")).rejects.toThrow("registration failed");
   });
 
   it("exchangeCode throws when token response is missing x_user_id", async () => {
@@ -168,7 +170,7 @@ describe("PolarProvider.authSetup", () => {
 
     const provider = new PolarProvider(mockFetch);
     const setup = provider.authSetup();
-    await expect(setup.exchangeCode("oauth-code")).rejects.toThrow("missing x_user_id");
+    await expect(setup.exchangeCode?.("oauth-code")).rejects.toThrow("missing x_user_id");
   });
 
   it("revokeExistingTokens deregisters user to free token slot", async () => {
@@ -281,8 +283,9 @@ describe("PolarProvider — exchangeCode AccessLink registration", () => {
 
     const provider = new PolarProvider(mockFetch);
     const setup = provider.authSetup();
-    expect(setup.exchangeCode).toBeDefined();
-    const tokens = await setup.exchangeCode("auth-code");
+    const { exchangeCode } = setup;
+    if (!exchangeCode) throw new Error("exchangeCode not defined");
+    const tokens = await exchangeCode("auth-code");
 
     expect(tokens.accessToken).toBe("new-token");
 
@@ -326,8 +329,9 @@ describe("PolarProvider — exchangeCode AccessLink registration", () => {
 
     const provider = new PolarProvider(mockFetch);
     const setup = provider.authSetup();
-    expect(setup.exchangeCode).toBeDefined();
-    await expect(setup.exchangeCode("auth-code")).rejects.toThrow("registration failed");
+    const { exchangeCode } = setup;
+    if (!exchangeCode) throw new Error("exchangeCode not defined");
+    await expect(exchangeCode("auth-code")).rejects.toThrow("registration failed");
   });
 
   it("succeeds when registration returns 409 (already registered)", async () => {
@@ -357,8 +361,9 @@ describe("PolarProvider — exchangeCode AccessLink registration", () => {
 
     const provider = new PolarProvider(mockFetch);
     const setup = provider.authSetup();
-    expect(setup.exchangeCode).toBeDefined();
-    const tokens = await setup.exchangeCode("auth-code");
+    const { exchangeCode } = setup;
+    if (!exchangeCode) throw new Error("exchangeCode not defined");
+    const tokens = await exchangeCode("auth-code");
     expect(tokens.accessToken).toBe("new-token");
   });
 });
@@ -411,7 +416,7 @@ describe("PolarProvider — exchangeCode token request & parsing", () => {
       x_user_id: "user-1",
     });
 
-    await provider.authSetup().exchangeCode("the-auth-code");
+    await provider.authSetup().exchangeCode?.("the-auth-code");
 
     expect(tokenRequest.method).toBe("POST");
     expect(tokenRequest.headers.get("Content-Type")).toBe("application/x-www-form-urlencoded");
@@ -426,7 +431,7 @@ describe("PolarProvider — exchangeCode token request & parsing", () => {
 
   it("throws when the token exchange response is not ok", async () => {
     const { provider } = setupProvider({}, 400);
-    await expect(provider.authSetup().exchangeCode("c")).rejects.toThrow(
+    await expect(provider.authSetup().exchangeCode?.("c")).rejects.toThrow(
       "Polar token exchange failed",
     );
   });
@@ -441,7 +446,9 @@ describe("PolarProvider — exchangeCode token request & parsing", () => {
       scope: "accesslink.read_all",
     });
 
-    const tokens = await provider.authSetup().exchangeCode("c");
+    const { exchangeCode } = provider.authSetup();
+    if (!exchangeCode) throw new Error("exchangeCode not defined");
+    const tokens = await exchangeCode("c");
 
     expect(tokens.refreshToken).toBe("refresh-tok");
     expect(tokens.scopes).toBe("accesslink.read_all");
@@ -457,7 +464,9 @@ describe("PolarProvider — exchangeCode token request & parsing", () => {
       x_user_id: "user-1",
     });
 
-    const tokens = await provider.authSetup().exchangeCode("c");
+    const { exchangeCode } = provider.authSetup();
+    if (!exchangeCode) throw new Error("exchangeCode not defined");
+    const tokens = await exchangeCode("c");
 
     expect(tokens.refreshToken).toBeNull();
     expect(tokens.scopes).toBeNull();
@@ -593,8 +602,8 @@ describe("PolarProvider — validate and properties", () => {
     process.env.POLAR_CLIENT_SECRET = "test-secret";
     const provider = new PolarProvider();
     const setup = provider.authSetup();
-    expect(setup.oauthConfig.clientId).toBe("test-id");
-    expect(setup.oauthConfig.clientSecret).toBe("test-secret");
+    expect(setup.oauthConfig?.clientId).toBe("test-id");
+    expect(setup.oauthConfig?.clientSecret).toBe("test-secret");
     expect(setup.exchangeCode).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("polaraccesslink.com");
   });

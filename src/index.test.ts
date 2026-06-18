@@ -392,6 +392,72 @@ describe("handleAuthCommand", () => {
     expect(mockLoggerError).toHaveBeenCalledWith(expect.stringContaining("STRAVA_CLIENT_ID"));
   });
 
+  it("returns 1 when OAuth 1.0 setup is missing oauthConfig", async () => {
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "fatsecret",
+        name: "FatSecret",
+        authSetup: () => ({
+          oauth1Flow: {
+            getRequestToken: vi.fn(),
+            exchangeForAccessToken: vi.fn(),
+          },
+        }),
+        validate: () => null,
+      },
+    ]);
+
+    const code = await handleAuthCommand(["node", "index.ts", "auth", "fatsecret"]);
+
+    expect(code).toBe(1);
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      "[auth] Provider fatsecret requires oauthConfig for OAuth 1.0",
+    );
+    expect(mockWaitForAuthCode).not.toHaveBeenCalled();
+  });
+
+  it("returns 1 when OAuth 2.0 setup is missing oauthConfig", async () => {
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "strava",
+        name: "Strava",
+        authSetup: () => ({
+          exchangeCode: vi.fn(),
+        }),
+        validate: () => null,
+      },
+    ]);
+
+    const code = await handleAuthCommand(["node", "index.ts", "auth", "strava"]);
+
+    expect(code).toBe(1);
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      "[auth] Provider strava requires oauthConfig and exchangeCode for OAuth 2.0",
+    );
+    expect(mockWaitForAuthCode).not.toHaveBeenCalled();
+  });
+
+  it("returns 1 when OAuth 2.0 setup is missing exchangeCode", async () => {
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "strava",
+        name: "Strava",
+        authSetup: () => ({
+          oauthConfig: { redirectUri: "http://localhost:9876/callback" },
+        }),
+        validate: () => null,
+      },
+    ]);
+
+    const code = await handleAuthCommand(["node", "index.ts", "auth", "strava"]);
+
+    expect(code).toBe(1);
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      "[auth] Provider strava requires oauthConfig and exchangeCode for OAuth 2.0",
+    );
+    expect(mockWaitForAuthCode).not.toHaveBeenCalled();
+  });
+
   it("handles OAuth 2.0 browser flow and saves tokens", async () => {
     const mockExchangeCode = vi.fn().mockResolvedValue(mockTokens);
     mockGetAllProviders.mockReturnValue([
@@ -430,6 +496,32 @@ describe("handleAuthCommand", () => {
     );
     expect(mockLoggerInfo).toHaveBeenCalledWith(expect.stringContaining("[auth] Authorized!"));
     expect(mockLoggerInfo).toHaveBeenCalledWith("[auth] Tokens saved to database.");
+  });
+
+  it("cleans up OAuth callback server when exchangeCode throws", async () => {
+    const mockExchangeCode = vi.fn().mockRejectedValue(new Error("exchange failed"));
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "strava",
+        name: "Strava",
+        authSetup: () => ({
+          oauthConfig: {
+            redirectUri: "http://localhost:9876/callback",
+          },
+          exchangeCode: mockExchangeCode,
+        }),
+        validate: () => null,
+      },
+    ]);
+    mockWaitForAuthCode.mockResolvedValue({ code: "auth-code-123", cleanup: mockCleanup });
+
+    await expect(handleAuthCommand(["node", "index.ts", "auth", "strava"])).rejects.toThrow(
+      "exchange failed",
+    );
+
+    expect(mockExchangeCode).toHaveBeenCalledWith("auth-code-123");
+    expect(mockCleanup).toHaveBeenCalled();
+    expect(mockSaveTokens).not.toHaveBeenCalled();
   });
 
   it("uses buildAuthorizationUrl when setup.authUrl is not provided", async () => {

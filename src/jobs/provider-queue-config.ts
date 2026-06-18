@@ -79,6 +79,7 @@ const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map
   ["oura", frequentProvider()],
   ["peloton", frequentProvider()],
   ["ultrahuman", frequentProvider()],
+  ["amazfit-zepp", frequentProvider()],
   ["trainerroad", frequentProvider()],
   ["eight-sleep", frequentProvider()],
   ["zwift", frequentProvider()],

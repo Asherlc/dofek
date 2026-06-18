@@ -20,25 +20,12 @@ describe("EightSleepProvider — basic properties", () => {
 });
 
 describe("EightSleepProvider — authSetup", () => {
-  it("returns auth setup with correct oauthConfig", () => {
+  it("returns credential-only auth setup", () => {
     const provider = new EightSleepProvider();
     const setup = provider.authSetup();
 
-    expect(setup.oauthConfig.authorizeUrl).toContain("8slp.net");
-    expect(setup.oauthConfig.tokenUrl).toContain("8slp.net");
-    expect(setup.oauthConfig.redirectUri).toBe("");
-    expect(setup.oauthConfig.scopes).toEqual([]);
-  });
-
-  it("has automatedLogin function", () => {
-    const provider = new EightSleepProvider();
-    const setup = provider.authSetup();
     expect(setup.automatedLogin).toBeTypeOf("function");
-  });
-
-  it("exchangeCode throws (not supported)", async () => {
-    const provider = new EightSleepProvider();
-    const setup = provider.authSetup();
-    await expect(setup.exchangeCode("code")).rejects.toThrow("automated login");
+    expect(setup.oauthConfig).toBeUndefined();
+    expect(setup.exchangeCode).toBeUndefined();
   });
 });

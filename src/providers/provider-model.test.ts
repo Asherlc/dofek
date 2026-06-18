@@ -40,7 +40,6 @@ describe("ProviderModel", () => {
         id: "eight-sleep",
         name: "Eight Sleep",
         authSetup: () => ({
-          oauthConfig: { clientId: "", authorizeUrl: "", tokenUrl: "", redirectUri: "" },
           automatedLogin: async () => ({}),
         }),
       },

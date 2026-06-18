@@ -92,6 +92,13 @@ async function doRegisterProviders() {
       () => import("dofek/providers/ultrahuman").then((m) => new m.UltrahumanProvider()),
     ],
     [
+      "amazfit-zepp",
+      () =>
+        import("dofek/providers/amazfit-zepp").then(
+          (amazfitZeppModule) => new amazfitZeppModule.AmazfitZeppProvider(),
+        ),
+    ],
+    [
       "mapmyfitness",
       () => import("dofek/providers/mapmyfitness").then((m) => new m.MapMyFitnessProvider()),
     ],

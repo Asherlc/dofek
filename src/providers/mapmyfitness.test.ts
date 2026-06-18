@@ -213,7 +213,9 @@ describe("MapMyFitnessProvider", () => {
     );
 
     const setup = new MapMyFitnessProvider(mockFetch).authSetup();
-    const tokens = await setup.exchangeCode("auth-code-123");
+    const { exchangeCode } = setup;
+    if (!exchangeCode) throw new Error("exchangeCode not defined");
+    const tokens = await exchangeCode("auth-code-123");
 
     expect(tokens.accessToken).toBe("access-xyz");
     const [url, init] = mockFetch.mock.calls[0] ?? [];

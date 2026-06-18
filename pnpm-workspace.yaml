@@ -18,6 +18,7 @@ packages:
   - packages/whoop-whoop
   - packages/eight-sleep
   - packages/zwift-client
+  - packages/zepp-client
   - packages/trainerroad-client
   - packages/velohero-client
   - packages/garmin-connect

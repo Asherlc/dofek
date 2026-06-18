@@ -390,22 +390,11 @@ describe("GarminProvider.authSetup()", () => {
     expect(setup.automatedLogin).toBeTypeOf("function");
   });
 
-  it("uses a dummy OAuth config (internal API only)", () => {
+  it("does not include oauthConfig (credential-only)", () => {
     const provider = new GarminProvider();
     const setup = provider.authSetup();
-    expect(setup.oauthConfig.clientId).toBe("garmin-connect-internal");
-    expect(setup.oauthConfig.authorizeUrl).toBe("");
-    expect(setup.oauthConfig.tokenUrl).toBe("");
-    expect(setup.oauthConfig.redirectUri).toBe("");
-    expect(setup.oauthConfig.scopes).toEqual([]);
-  });
-
-  it("exchangeCode always rejects (credential-only)", async () => {
-    const provider = new GarminProvider();
-    const setup = provider.authSetup();
-    await expect(setup.exchangeCode("some-code")).rejects.toThrow(
-      "Garmin uses credential-based sign-in",
-    );
+    expect(setup.oauthConfig).toBeUndefined();
+    expect(setup.exchangeCode).toBeUndefined();
   });
 
   it("automatedLogin calls GarminConnectClient.signIn with the provider's fetchFn", async () => {

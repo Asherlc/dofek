@@ -87,9 +87,13 @@ describe("Predictions router (integration)", () => {
       );
       const restingHeartRate = Math.round(55 - Math.cos(i * 0.3) * 5);
       for (let sampleIndex = 0; sampleIndex < 30; sampleIndex++) {
+        const recordedAt = new Date();
+        recordedAt.setHours(0, 0, 0, 0);
+        recordedAt.setDate(recordedAt.getDate() - i + 1);
+        recordedAt.setHours(1, sampleIndex, 0, 0);
         metricStreamSeedRows.push({
           userId: TEST_USER_ID,
-          recordedAt: new Date(startedAt.getTime() + (sampleIndex + 1) * 60_000).toISOString(),
+          recordedAt: recordedAt.toISOString(),
           providerId: "test_provider",
           sourceType: "api",
           channel: "heart_rate",

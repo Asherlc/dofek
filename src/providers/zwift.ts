@@ -1,6 +1,6 @@
 import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import { z } from "zod";
-import { ZWIFT_API_BASE, ZWIFT_AUTH_URL, ZwiftClient } from "zwift-client/client";
+import { ZWIFT_API_BASE, ZwiftClient } from "zwift-client/client";
 import { parseZwiftActivity, parseZwiftFitnessData } from "zwift-client/parsing";
 import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
@@ -91,13 +91,6 @@ export class ZwiftProvider implements SyncProvider {
   authSetup(_options?: { host?: string }): ProviderAuthSetup {
     const fetchFn = this.#fetchFn;
     return {
-      oauthConfig: {
-        clientId: "Zwift Game Client",
-        authorizeUrl: ZWIFT_AUTH_URL,
-        tokenUrl: ZWIFT_AUTH_URL,
-        redirectUri: "",
-        scopes: [],
-      },
       automatedLogin: async (email: string, password: string) => {
         const result = await ZwiftClient.signIn(email, password, fetchFn);
 
@@ -117,9 +110,6 @@ export class ZwiftProvider implements SyncProvider {
           expiresAt: new Date(Date.now() + result.expiresIn * 1000),
           scopes: `athleteId:${athleteId}`,
         };
-      },
-      exchangeCode: async () => {
-        throw new Error("Zwift uses automated login, not OAuth code exchange");
       },
     };
   }

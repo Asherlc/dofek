@@ -53,10 +53,6 @@ describe("getProviderAuthType", () => {
 
   it("returns 'credential' when automatedLogin is defined", () => {
     const setup: ProviderAuthSetup = {
-      oauthConfig: dummyOAuthConfig,
-      exchangeCode: async () => {
-        throw new Error("not supported");
-      },
       automatedLogin: async () => ({
         accessToken: "tok",
         refreshToken: null,
@@ -122,6 +118,12 @@ describe("getProviderAuthType", () => {
     const { UltrahumanProvider } = await import("./ultrahuman.ts");
     const provider = new UltrahumanProvider();
     expect(getProviderAuthType(provider)).toBe("none");
+  });
+
+  it("returns 'credential' for AmazfitZeppProvider", async () => {
+    const { AmazfitZeppProvider } = await import("./amazfit-zepp.ts");
+    const provider = new AmazfitZeppProvider();
+    expect(getProviderAuthType(provider)).toBe("credential");
   });
 
   it("returns 'oauth' when setup has oauthConfig but nothing else", () => {
