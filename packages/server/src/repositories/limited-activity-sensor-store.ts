@@ -11,6 +11,9 @@ const DASHBOARD_CLICKHOUSE_CONCURRENCY = 2;
 const DASHBOARD_QUERY_MARKERS = [
   "analytics.daily_recovery",
   "analytics.daily_strain",
+  "analytics.v_body_measurement",
+  "analytics.v_daily_metrics",
+  "analytics.v_sleep",
   "analytics.resting_heart_rate_sleep_window",
 ];
 

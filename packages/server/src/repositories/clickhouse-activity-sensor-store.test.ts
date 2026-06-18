@@ -206,6 +206,18 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).toContain("argMinIf(recorded_at, recorded_at, has_location = 1)");
   });
 
+  it("aggregates scalar stream values only for selected sample timestamps", async () => {
+    const { store, query } = makeStore([]);
+
+    await store.getStream(window, 500);
+
+    const queryText = query.mock.calls[0]?.[0]?.query;
+    expect(queryText).toContain("selected_scalar_points AS");
+    expect(queryText).toContain("FROM sample_times");
+    expect(queryText).toContain("LEFT JOIN activity_samples");
+    expect(queryText).not.toContain("FROM activity_samples\n          GROUP BY recorded_at");
+  });
+
   it("generates heart-rate zone SQL from the shared zone definitions", async () => {
     const { store, query } = makeStore([{ zone: 0, seconds: 5 }]);
 

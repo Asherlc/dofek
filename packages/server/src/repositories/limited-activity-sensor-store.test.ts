@@ -78,4 +78,43 @@ describe("LimitedActivitySensorStore", () => {
 
     expect(dashboardStartedBeforeRegularRelease).toBe(true);
   });
+
+  it("starts dashboard read-model queries while regular activity stream work is queued", async () => {
+    const readModelQueries = [
+      "SELECT date FROM analytics.v_daily_metrics",
+      "SELECT recorded_at FROM analytics.v_body_measurement",
+      "SELECT started_at FROM analytics.v_sleep",
+    ];
+
+    for (const readModelQuery of readModelQueries) {
+      const events: string[] = [];
+      const stream = deferred<StreamPointRow[]>();
+      const dashboardRows = deferred<Array<{ value: number }>>();
+      const delegate = makeDelegate({
+        getStream: vi.fn(() => {
+          events.push("stream-started");
+          return stream.promise;
+        }),
+        query: vi.fn(() => {
+          events.push("dashboard-started");
+          return dashboardRows.promise;
+        }),
+      });
+      const store = new LimitedActivitySensorStore(delegate, 1);
+
+      const streamPromise = store.getStream(makeSensorWindow(), 500);
+      await Promise.resolve();
+      const dashboardPromise = store.query(z.object({ value: z.number() }), readModelQuery);
+      for (let microtaskTurn = 0; microtaskTurn < 5; microtaskTurn += 1) {
+        await Promise.resolve();
+      }
+
+      const dashboardStartedBeforeRegularRelease = events.includes("dashboard-started");
+      stream.resolve([]);
+      dashboardRows.resolve([{ value: 1 }]);
+      await Promise.all([streamPromise, dashboardPromise]);
+
+      expect(dashboardStartedBeforeRegularRelease).toBe(true);
+    }
+  });
 });
