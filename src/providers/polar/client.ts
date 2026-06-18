@@ -38,7 +38,7 @@ export class PolarClient {
     this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "polar" });
   }
 
-  async #get<TResponse>(path: string): Promise<TResponse> {
+  async #get<TResponse>(path: string, emptyValue: TResponse): Promise<TResponse> {
     const response = await this.#fetchFn(`${POLAR_API_BASE}${path}`, {
       headers: {
         Authorization: `Bearer ${this.#accessToken}`,
@@ -54,38 +54,53 @@ export class PolarClient {
       throw new PolarNotFoundError(`Polar API 404: ${path}`);
     }
 
+    const textBody = await response.text();
+
     if (!response.ok) {
       const contentType = response.headers.get("content-type") ?? "";
       let detailMessage: string;
-      if (contentType.includes("application/json")) {
-        detailMessage = JSON.stringify(await response.json());
+      if (contentType.includes("application/json") && textBody.trim() !== "") {
+        detailMessage = textBody;
       } else if (contentType.includes("text/html")) {
         detailMessage = "(HTML error page)";
       } else {
-        const textBody = await response.text();
         detailMessage = textBody.length > 200 ? `${textBody.slice(0, 200)}…` : textBody;
       }
       throw new Error(`Polar API error (${response.status}): ${detailMessage}`);
     }
 
-    return response.json();
+    if (textBody.trim() === "") {
+      // Polar sometimes returns 200 with an empty body when there is no data.
+      return emptyValue;
+    }
+
+    try {
+      return JSON.parse(textBody) as TResponse;
+    } catch (error) {
+      throw new Error(
+        `Polar API returned invalid JSON for ${path}: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
+    }
   }
 
   async getExercises(): Promise<PolarExercise[]> {
-    return this.#get<PolarExercise[]>("/exercises");
+    return this.#get<PolarExercise[]>("/exercises", []);
   }
 
   async getSleep(): Promise<PolarSleep[]> {
-    const response = await this.#get<PolarSleepResponse>("/users/sleep");
+    const response = await this.#get<PolarSleepResponse>("/users/sleep", { nights: [] });
     return response.nights;
   }
 
   async getDailyActivity(): Promise<PolarDailyActivity[]> {
-    return this.#get<PolarDailyActivity[]>("/users/activities");
+    return this.#get<PolarDailyActivity[]>("/users/activities", []);
   }
 
   async getNightlyRecharge(): Promise<PolarNightlyRecharge[]> {
-    const response = await this.#get<PolarNightlyRechargeResponse>("/users/nightly-recharge");
+    const response = await this.#get<PolarNightlyRechargeResponse>("/users/nightly-recharge", {
+      recharges: [],
+    });
     return response.recharges;
   }
 
