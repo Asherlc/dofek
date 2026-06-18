@@ -6,7 +6,9 @@ import { setupTestDatabase, type TestContext } from "../../../../src/db/test-hel
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
 import {
+  type ClickHouseMetricStreamSeedRow,
   createClickHouseTestActivitySensorStore,
+  seedClickHouseMetricStreamRows,
   syncClickHouseTestActivitySensorStore,
 } from "./clickhouse-integration-test-helpers.ts";
 
@@ -72,20 +74,22 @@ describe("healthspan zone time with variable-interval HR data", () => {
     const actId = actResult[0]?.id;
     if (!actId) throw new Error("Failed to insert activity");
 
-    const sensorValues: string[] = [];
+    const metricStreamSeedRows: ClickHouseMetricStreamSeedRow[] = [];
+    const activityStartedAt = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
     for (let sample = 0; sample < 120; sample++) {
       const offsetSeconds = sample * 5; // 5-second intervals
       const hr = sample < 60 ? 140 : 175; // first half aerobic, second half high intensity
-      const ts = `CURRENT_TIMESTAMP - INTERVAL '2 days' + ${offsetSeconds} * INTERVAL '1 second'`;
-      sensorValues.push(
-        `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', '${actId}', ${hr}, NULL)`,
-      );
+      const recordedAt = new Date(activityStartedAt.getTime() + offsetSeconds * 1000).toISOString();
+      metricStreamSeedRows.push({
+        userId: TEST_USER_ID,
+        recordedAt,
+        providerId: "test_provider",
+        sourceType: "api",
+        channel: "heart_rate",
+        activityId: actId,
+        scalar: hr,
+      });
     }
-    await testCtx.db.execute(
-      sql.raw(`INSERT INTO fitness.metric_stream (
-        recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
-      ) VALUES ${sensorValues.join(",\n")}`),
-    );
 
     // Sleep data (needed to avoid CROSS JOIN eliminating the row)
     await testCtx.db.execute(
@@ -110,16 +114,22 @@ describe("healthspan zone time with variable-interval HR data", () => {
             480, 'sleep'
           )`,
     );
-    const restingHeartRateValues = Array.from({ length: 30 }, (_, index) => {
-      return `(CURRENT_DATE - INTERVAL '2 days' + INTERVAL '1 hour' + ${index} * INTERVAL '1 minute', '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'heart_rate', NULL, ${RESTING_HR}, NULL)`;
-    });
-    await testCtx.db.execute(
-      sql.raw(`INSERT INTO fitness.metric_stream (
-        recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
-      ) VALUES ${restingHeartRateValues.join(",\n")}`),
-    );
+    const restingSleepStart = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    restingSleepStart.setHours(restingSleepStart.getHours() + 1);
+    for (let index = 0; index < 30; index++) {
+      const recordedAt = new Date(restingSleepStart.getTime() + index * 60_000).toISOString();
+      metricStreamSeedRows.push({
+        userId: TEST_USER_ID,
+        recordedAt,
+        providerId: "test_provider",
+        sourceType: "api",
+        channel: "heart_rate",
+        scalar: RESTING_HR,
+      });
+    }
 
     const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
+    await seedClickHouseMetricStreamRows(testCtx, metricStreamSeedRows);
     const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
@@ -299,20 +309,25 @@ describe("healthspan zone time with variable-interval HR data", () => {
     const actId = actResult[0]?.id;
     if (!actId) throw new Error("Failed to insert activity");
 
-    const sensorValues: string[] = [];
+    const powerActivityStartedAt = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000);
+    const powerMetricStreamSeedRows: ClickHouseMetricStreamSeedRow[] = [];
     for (let sampleIndex = 0; sampleIndex < 120; sampleIndex++) {
       const offsetSeconds = sampleIndex * 5;
-      const ts = `CURRENT_TIMESTAMP - INTERVAL '1 day' + ${offsetSeconds} * INTERVAL '1 second'`;
-      sensorValues.push(
-        `(${ts}, '${TEST_USER_ID}', 'test_provider', NULL, 'api', 'power', '${actId}', 230, NULL)`,
-      );
+      const recordedAt = new Date(
+        powerActivityStartedAt.getTime() + offsetSeconds * 1000,
+      ).toISOString();
+      powerMetricStreamSeedRows.push({
+        userId: TEST_USER_ID,
+        recordedAt,
+        providerId: "test_provider",
+        sourceType: "api",
+        channel: "power",
+        activityId: actId,
+        scalar: 230,
+      });
     }
-    await testCtx.db.execute(
-      sql.raw(`INSERT INTO fitness.metric_stream (
-        recorded_at, user_id, provider_id, device_id, source_type, channel, activity_id, scalar, vector
-      ) VALUES ${sensorValues.join(",\n")}`),
-    );
     await syncClickHouseTestActivitySensorStore(testCtx);
+    await seedClickHouseMetricStreamRows(testCtx, powerMetricStreamSeedRows);
 
     const result = await query<HealthspanResult>("healthspan.score", { weeks: 4 });
 

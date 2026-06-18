@@ -45,7 +45,7 @@ export function tableInfo(dataType: DataType): {
       return { table: "fitness.health_event", orderColumn: "start_date", idColumn: "id" };
     case "metricStream":
       return {
-        table: "fitness.metric_stream",
+        table: "postgres_fitness.metric_stream",
         orderColumn: "recorded_at",
         idColumn: "id",
       };
@@ -184,7 +184,6 @@ function listColumns(dataType: Exclude<DataType, "bodyMeasurements" | "metricStr
 
 /** Tables to cascade-delete when disconnecting a provider, in deletion order. */
 export const DISCONNECT_CHILD_TABLES = [
-  "fitness.metric_stream",
   "fitness.daily_metrics",
   "fitness.sleep_session",
   "fitness.food_entry",

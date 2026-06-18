@@ -1,12 +1,6 @@
+import { POSTGRES_METRIC_STREAM_EXPORT_RETIRED_MESSAGE } from "dofek/jobs/queues";
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
-
-const { mockAdd } = vi.hoisted(() => ({
-  mockAdd: vi.fn().mockResolvedValue({ id: "job-123" }),
-}));
-vi.mock("dofek/jobs/queues", () => ({
-  createTrainingExportQueue: () => ({ add: mockAdd }),
-}));
 
 vi.mock("../logger.ts", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -579,17 +573,10 @@ describe("adminRouter", () => {
   });
 
   describe("triggerTrainingExport", () => {
-    it("enqueues a training export job and returns job ID", async () => {
-      const execute = vi.fn();
-      const caller = makeCaller(execute);
-      const result = await caller.triggerTrainingExport({
-        since: "2024-01-01",
-        until: "2024-02-01",
-      });
-      expect(result).toEqual({ jobId: "job-123" });
-      expect(mockAdd).toHaveBeenCalledWith("training-export", {
-        since: "2024-01-01",
-        until: "2024-02-01",
+    it("rejects retired Postgres training export", async () => {
+      const caller = makeCaller(vi.fn());
+      await expect(caller.triggerTrainingExport({})).rejects.toMatchObject({
+        message: POSTGRES_METRIC_STREAM_EXPORT_RETIRED_MESSAGE,
       });
     });
   });

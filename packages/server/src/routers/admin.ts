@@ -1,6 +1,6 @@
 import { PROVIDER_GUIDE_SETTINGS_KEY } from "@dofek/onboarding/provider-guide";
 import { TRPCError } from "@trpc/server";
-import { createTrainingExportQueue } from "dofek/jobs/queues";
+import { POSTGRES_METRIC_STREAM_EXPORT_RETIRED_MESSAGE } from "dofek/jobs/queues";
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -8,8 +8,6 @@ import { resolveAccessWindow } from "../billing/entitlement.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { adminProcedure, router } from "../trpc.ts";
-
-const trainingExportQueue = createTrainingExportQueue();
 
 // ── Schemas for admin queries ──
 
@@ -623,7 +621,7 @@ export const adminRouter = router({
     );
   }),
 
-  /** Trigger a global training data export */
+  /** Retired: Postgres metric_stream training export was removed with the table drop. */
   triggerTrainingExport: adminProcedure
     .input(
       z.object({
@@ -631,12 +629,10 @@ export const adminRouter = router({
         until: z.string().optional(),
       }),
     )
-    .mutation(async ({ input }) => {
-      const queue = trainingExportQueue;
-      const job = await queue.add("training-export", {
-        since: input.since,
-        until: input.until,
+    .mutation(async () => {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: POSTGRES_METRIC_STREAM_EXPORT_RETIRED_MESSAGE,
       });
-      return { jobId: String(job.id) };
     }),
 });
