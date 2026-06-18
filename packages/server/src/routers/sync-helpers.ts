@@ -1,5 +1,4 @@
 import { getConfiguredProviderIds } from "dofek/jobs/provider-queue-config";
-import type { SyncJobData } from "dofek/jobs/queues";
 import { registerProvider } from "dofek/providers/registry";
 
 export const CUSTOM_AUTH_PROVIDERS: Record<string, string> = {
@@ -32,16 +31,6 @@ export function parseJobId(compositeId: string): { providerId: string | null; ra
     };
   }
   return { providerId: null, rawId: compositeId };
-}
-
-export function resolveSinceIso(sinceDays?: number): string {
-  return sinceDays
-    ? new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000).toISOString()
-    : new Date(0).toISOString();
-}
-
-export function resolveTargetRefreshWindow(sinceDays?: number): SyncJobData["targetRefreshWindow"] {
-  return sinceDays ? { type: "days", days: sinceDays } : { type: "full" };
 }
 
 let registrationPromise: Promise<void> | null = null;

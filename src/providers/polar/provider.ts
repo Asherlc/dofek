@@ -1,14 +1,8 @@
 import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import type { TokenSet } from "../../auth/oauth.ts";
-import type { SyncDatabase } from "../../db/index.ts";
 import { logger } from "../../logger.ts";
-import type {
-  ProviderAuthSetup,
-  SyncOptions,
-  SyncResult,
-  WebhookEvent,
-  WebhookProvider,
-} from "../types.ts";
+import type { SyncRun } from "../sync-run.ts";
+import type { ProviderAuthSetup, SyncResult, WebhookEvent, WebhookProvider } from "../types.ts";
 import { PolarClient } from "./client.ts";
 import { POLAR_API_BASE, POLAR_TOKEN_URL, polarOAuthConfig } from "./oauth.ts";
 import { PolarSyncService } from "./sync-service.ts";
@@ -149,7 +143,8 @@ export class PolarProvider implements WebhookProvider {
     };
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const startTime = Date.now();
     const syncService = new PolarSyncService({
       db,
@@ -160,7 +155,7 @@ export class PolarProvider implements WebhookProvider {
       metricStreamPublisher: options?.metricStreamPublisher,
     });
 
-    const result = await syncService.run(since);
+    const result = await syncService.run(window);
     return {
       provider: this.id,
       recordsSynced: result.recordsSynced,

@@ -7,6 +7,8 @@ import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { EightSleepProvider } from "./eight-sleep.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 
 // ============================================================
@@ -168,9 +170,13 @@ describe("EightSleepProvider.sync() (integration)", () => {
 
     const provider = new EightSleepProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since, {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.provider).toBe("eight-sleep");
     expect(result.errors).toHaveLength(0);
@@ -237,9 +243,13 @@ describe("EightSleepProvider.sync() (integration)", () => {
     server.use(...eightSleepHandlers(days));
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
 
@@ -261,9 +271,13 @@ describe("EightSleepProvider.sync() (integration)", () => {
     });
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("Eight Sleep access token expired.");
@@ -275,9 +289,13 @@ describe("EightSleepProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "eight-sleep"));
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("not connected");
@@ -293,9 +311,13 @@ describe("EightSleepProvider.sync() (integration)", () => {
     });
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("user ID not found");
@@ -332,9 +354,13 @@ describe("EightSleepProvider.sync() (integration)", () => {
     server.use(...eightSleepHandlers(days));
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     // Sleep session should be skipped (no presenceStart/End)
     const sleepRows = await ctx.db
@@ -362,9 +388,13 @@ describe("EightSleepProvider.sync() (integration)", () => {
     );
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
     const sleepRows = await ctx.db
@@ -414,9 +444,13 @@ describe("EightSleepProvider.sync() (integration)", () => {
     );
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
     const dailyRows = await ctx.db
@@ -448,9 +482,13 @@ describe("EightSleepProvider.sync() (integration)", () => {
     );
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
     const dailyRows = await ctx.db
@@ -480,9 +518,13 @@ describe("EightSleepProvider.sync() (integration)", () => {
     );
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
     const temperatureRows = metricStreamCapture.publishedMetricStreamRows;
@@ -509,9 +551,13 @@ describe("EightSleepProvider.sync() (integration)", () => {
     );
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
     const streamRows = metricStreamCapture.publishedMetricStreamRows;
@@ -566,9 +612,13 @@ describe("EightSleepProvider.sync() (integration)", () => {
     );
 
     const provider = new EightSleepProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-20T00:00:00Z"), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-20T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
 

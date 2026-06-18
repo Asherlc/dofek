@@ -1070,6 +1070,20 @@ describe("parseWorkout — legacy fallback without during", () => {
     expect(parsed).not.toBeNull();
     expect(parsed?.externalId).toBe("12345");
   });
+
+  it("falls back to id when activity_id is blank", () => {
+    const record: WhoopWorkoutRecord = {
+      activity_id: "   ",
+      id: 67890,
+      timezone_offset: "-05:00",
+      sport_id: 0,
+      during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
+    };
+
+    const parsed = parseWorkout(record);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.externalId).toBe("67890");
+  });
 });
 
 // ============================================================

@@ -27,6 +27,7 @@ import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { isRetryableInfraError } from "../lib/retryable-infra-error.ts";
 import { logger } from "../logger.ts";
 import { ProviderAuthenticationFailedError } from "./auth-errors.ts";
+import type { SyncRun } from "./sync-run.ts";
 import type {
   ProviderAuthSetup,
   SyncCheckpointStore,
@@ -360,11 +361,12 @@ export class GarminProvider implements SyncProvider {
     return refreshed;
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const start = Date.now();
     const errors: SyncError[] = [];
 
-    const scopedUserId = resolveScopedUserId(options?.userId);
+    const scopedUserId = resolveScopedUserId(options.userId);
 
     let internalTokens: GarminTokens;
     try {
@@ -381,11 +383,12 @@ export class GarminProvider implements SyncProvider {
 
     await ensureProvider(db, this.id, this.name);
 
-    // Use sync cursor if available, otherwise fall back to `since` param
+    // Use sync cursor if available, otherwise fall back to sync window start
+    const since = window.since;
     const cursor = await loadSyncCursor(db, scopedUserId);
     const effectiveSince = cursor ? new Date(cursor) : since;
-    const now = new Date();
-    const checkpoint = await loadGarminSyncCheckpoint(options?.checkpoint);
+    const now = window.until;
+    const checkpoint = await loadGarminSyncCheckpoint(options.checkpoint);
 
     const recordsSynced = await this.#syncViaConnectApi(
       db,
@@ -395,8 +398,8 @@ export class GarminProvider implements SyncProvider {
       errors,
       scopedUserId,
       checkpoint,
-      options?.checkpoint,
-      options?.metricStreamPublisher,
+      options.checkpoint,
+      options.metricStreamPublisher,
     );
 
     // Save sync cursor

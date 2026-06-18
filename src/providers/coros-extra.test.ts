@@ -6,6 +6,8 @@ import {
   dailyMetrics as dailyMetricsTable,
   sleepSession as sleepSessionTable,
 } from "../db/schema.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 // Mock modules (needed for sync tests)
 vi.mock("../db/sync-log.ts", () => ({
@@ -240,7 +242,9 @@ describe("CorosProvider", () => {
       execute: vi.fn().mockResolvedValue([]),
     };
 
-    const result = await new CorosProvider().sync(mockDb, new Date("2026-01-01"));
+    const result = await new CorosProvider().sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
     expect(result.provider).toBe("coros");
     expect(result.errors.length).toBeGreaterThan(0);
   });
@@ -330,9 +334,11 @@ describe("CorosProvider", () => {
     };
 
     const result = await new CorosProvider(mockFetch).sync(
-      mockDb,
-      new Date("2026-03-01T00:00:00Z"),
-      { userId: "00000000-0000-0000-0000-000000000001" },
+      new SyncRun({
+        db: mockDb,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
     );
 
     expect(result.errors).toHaveLength(0);

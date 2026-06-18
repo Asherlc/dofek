@@ -8,6 +8,7 @@ import {
   reconcileProviderActivityAbsence,
 } from "../../db/provider-activity-absence.ts";
 import { ensureProvider } from "../../db/tokens.ts";
+import type { SyncRun } from "../sync-run.ts";
 import type {
   ProviderAuthSetup,
   ProviderIdentity,
@@ -211,7 +212,8 @@ export class OuraProvider implements WebhookProvider {
     return tokens.accessToken;
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -227,8 +229,9 @@ export class OuraProvider implements WebhookProvider {
     }
 
     const client = new OuraClient(accessToken, this.#fetchFn);
+    const since = window.since;
     const sinceDate = formatDate(since);
-    const syncWindowEnd = new Date();
+    const syncWindowEnd = window.until;
     const todayDate = formatDate(syncWindowEnd);
     const activityPresentExternalIds = new Set<string>();
 

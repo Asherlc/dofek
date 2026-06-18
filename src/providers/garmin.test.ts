@@ -10,6 +10,8 @@ import {
   INTERNAL_SCOPE_MARKER,
   serializeInternalTokens,
 } from "./garmin.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 import type { SyncOptions } from "./types.ts";
 
 vi.mock("../db/token-user-context.ts", () => ({
@@ -204,9 +206,9 @@ function createMockDb(): MockDb {
 // The mock DB duck-types SyncDatabase at runtime but cannot satisfy the
 // Drizzle branded type at compile time, so we widen via bind().
 function syncProvider(provider: GarminProvider, db: MockDb, since: Date, options?: SyncOptions) {
-  // Use Reflect.apply to call sync() with a mock DB that structurally
-  // matches SyncDatabase at runtime but not at compile time
-  return Reflect.apply(provider.sync, provider, [db, since, options]) satisfies Promise<{
+  return Reflect.apply(provider.sync, provider, [
+    new SyncRun({ db, window: SyncWindow.fromSince({ since }), ...options }),
+  ]) satisfies Promise<{
     provider: string;
     recordsSynced: number;
     errors: { message: string; cause?: unknown }[];

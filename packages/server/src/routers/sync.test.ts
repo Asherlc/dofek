@@ -502,25 +502,25 @@ describe("syncRouter", () => {
       expect(mockAdd).toHaveBeenNthCalledWith(
         1,
         "sync",
-        {
+        expect.objectContaining({
           providerId: "strava",
           sinceDays: undefined,
           sinceIso: "1970-01-01T00:00:00.000Z",
           targetRefreshWindow: { type: "full" },
           userId: "user-1",
-        },
+        }),
         expect.objectContaining({ attempts: 288 }),
       );
       expect(mockAdd).toHaveBeenNthCalledWith(
         2,
         "sync",
-        {
+        expect.objectContaining({
           providerId: "wahoo",
           sinceDays: undefined,
           sinceIso: "1970-01-01T00:00:00.000Z",
           targetRefreshWindow: { type: "full" },
           userId: "user-1",
-        },
+        }),
         expect.objectContaining({ attempts: 288 }),
       );
     });
@@ -602,13 +602,13 @@ describe("syncRouter", () => {
       expect(mockAdd).toHaveBeenCalledTimes(1);
       expect(mockAdd).toHaveBeenCalledWith(
         "sync",
-        {
+        expect.objectContaining({
           providerId: "strava",
           sinceDays: undefined,
           sinceIso: "1970-01-01T00:00:00.000Z",
           targetRefreshWindow: { type: "full" },
           userId: "user-1",
-        },
+        }),
         expect.objectContaining({ attempts: 288 }),
       );
     });
@@ -630,20 +630,19 @@ describe("syncRouter", () => {
       ]);
       expect(mockAdd).toHaveBeenCalledWith(
         "sync",
-        {
+        expect.objectContaining({
           providerId: "wahoo",
           sinceDays: undefined,
           sinceIso: "1970-01-01T00:00:00.000Z",
           targetRefreshWindow: { type: "full" },
           userId: "user-1",
-        },
+        }),
         expect.objectContaining({ attempts: 288 }),
       );
     });
 
     it("stores a fixed since timestamp when sinceDays is provided", async () => {
-      const now = new Date("2026-04-28T12:00:00.000Z").getTime();
-      const dateNowSpy = vi.spyOn(Date, "now").mockReturnValue(now);
+      vi.setSystemTime(new Date("2026-04-28T12:00:00.000Z"));
       mockGetAllProviders.mockReturnValue([{ id: "wahoo", name: "Wahoo", validate: () => null }]);
 
       const caller = createCaller({
@@ -652,25 +651,68 @@ describe("syncRouter", () => {
         timezone: "UTC",
       });
 
-      try {
-        await caller.triggerSync({ providerId: "wahoo", sinceDays: 7 });
-      } finally {
-        dateNowSpy.mockRestore();
-      }
+      await caller.triggerSync({ providerId: "wahoo", sinceDays: 7 });
+      vi.useRealTimers();
 
       expect(mockAdd).toHaveBeenCalledWith(
         "sync",
-        {
+        expect.objectContaining({
           providerId: "wahoo",
           sinceDays: 7,
-          sinceIso: "2026-04-21T12:00:00.000Z",
+          sinceIso: "2026-04-21T00:00:00.000Z",
+          untilIso: "2026-04-28T23:59:59.999Z",
           targetRefreshWindow: { type: "days", days: 7 },
           userId: "user-1",
-        },
+        }),
         expect.objectContaining({
           attempts: 288,
           backoff: { type: "fixed", delay: 300_000 },
         }),
+      );
+    });
+
+    it("uses one sync window for every job in a sync-all fan-out", async () => {
+      const dateNowSpy = vi
+        .spyOn(Date, "now")
+        .mockReturnValueOnce(Date.parse("2026-04-28T12:00:00.000Z"))
+        .mockReturnValueOnce(Date.parse("2026-04-29T12:00:00.000Z"))
+        .mockReturnValue(Date.parse("2026-04-30T12:00:00.000Z"));
+      mockGetAllProviders.mockReturnValue([
+        { id: "strava", name: "Strava", validate: () => null },
+        { id: "wahoo", name: "Wahoo", validate: () => null },
+      ]);
+      mockAdd
+        .mockResolvedValueOnce({ id: "job-strava" })
+        .mockResolvedValueOnce({ id: "job-wahoo" });
+
+      const caller = createCaller({
+        db: {
+          execute: vi.fn().mockResolvedValueOnce([]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.triggerSync({ sinceDays: 7 });
+      dateNowSpy.mockRestore();
+
+      expect(mockAdd).toHaveBeenNthCalledWith(
+        1,
+        "sync",
+        expect.objectContaining({
+          sinceIso: "2026-04-21T00:00:00.000Z",
+          untilIso: "2026-04-28T23:59:59.999Z",
+        }),
+        expect.anything(),
+      );
+      expect(mockAdd).toHaveBeenNthCalledWith(
+        2,
+        "sync",
+        expect.objectContaining({
+          sinceIso: "2026-04-21T00:00:00.000Z",
+          untilIso: "2026-04-28T23:59:59.999Z",
+        }),
+        expect.anything(),
       );
     });
 
@@ -1300,6 +1342,59 @@ describe("syncRouter", () => {
       const result = triggerSyncInput.parse({ providerId: "wahoo", sinceDays: 7 });
       expect(result.providerId).toBe("wahoo");
       expect(result.sinceDays).toBe(7);
+    });
+
+    it("triggerSyncInput rejects invalid calendar dates", () => {
+      expect(() =>
+        triggerSyncInput.parse({
+          providerId: "wahoo",
+          sinceDate: "2026-02-31",
+          untilDate: "2026-03-01",
+        }),
+      ).toThrow("Invalid calendar date");
+    });
+
+    it("triggerSyncInput accepts a valid date range", () => {
+      const result = triggerSyncInput.parse({
+        providerId: "wahoo",
+        sinceDate: "2026-02-28",
+        untilDate: "2026-03-01",
+      });
+
+      expect(result).toEqual({
+        providerId: "wahoo",
+        sinceDate: "2026-02-28",
+        untilDate: "2026-03-01",
+      });
+    });
+
+    it("triggerSyncInput rejects mixing sinceDays with a date range", () => {
+      expect(() =>
+        triggerSyncInput.parse({
+          providerId: "wahoo",
+          sinceDays: 7,
+          sinceDate: "2026-02-28",
+          untilDate: "2026-03-01",
+        }),
+      ).toThrow("Use either sinceDays or sinceDate/untilDate, not both");
+    });
+
+    it("triggerSyncInput rejects sinceDate without untilDate", () => {
+      expect(() =>
+        triggerSyncInput.parse({
+          providerId: "wahoo",
+          sinceDate: "2026-02-28",
+        }),
+      ).toThrow("untilDate is required when sinceDate is set");
+    });
+
+    it("triggerSyncInput rejects untilDate without sinceDate", () => {
+      expect(() =>
+        triggerSyncInput.parse({
+          providerId: "wahoo",
+          untilDate: "2026-03-01",
+        }),
+      ).toThrow("sinceDate is required when untilDate is set");
     });
 
     it("syncStatusInput requires jobId string", () => {

@@ -7,6 +7,8 @@ import {
   dailyMetrics as dailyMetricsTable,
   sleepSession as sleepSessionTable,
 } from "../../db/schema.ts";
+import { SyncRun } from "../sync-run.ts";
+import { SyncWindow } from "../sync-window.ts";
 import type { WebhookEvent } from "../types.ts";
 import type {
   FitbitActivity,
@@ -727,7 +729,9 @@ describe("FitbitProvider", () => {
 
       const since = new Date();
       since.setUTCHours(0, 0, 0, 0);
-      const result = await provider.sync(db, since);
+      const result = await provider.sync(
+        new SyncRun({ db: db, window: SyncWindow.fromSince({ since: since }) }),
+      );
 
       expect(result.provider).toBe("fitbit");
       expect(result.errors).toHaveLength(0);
@@ -794,7 +798,9 @@ describe("FitbitProvider", () => {
 
       const since = new Date();
       since.setUTCHours(0, 0, 0, 0);
-      const result = await provider.sync(db, since);
+      const result = await provider.sync(
+        new SyncRun({ db: db, window: SyncWindow.fromSince({ since: since }) }),
+      );
 
       expect(result.provider).toBe("fitbit");
       expect(result.errors.length).toBeGreaterThanOrEqual(1);
@@ -816,7 +822,12 @@ describe("FitbitProvider", () => {
       );
       const db = createMockDb();
 
-      const result = await provider.sync(db, new Date("2026-03-01T00:00:00Z"));
+      const result = await provider.sync(
+        new SyncRun({
+          db: db,
+          window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        }),
+      );
       vi.useRealTimers();
 
       expect(result.errors).toHaveLength(0);
@@ -839,6 +850,62 @@ describe("FitbitProvider", () => {
       expect(weightRow).toMatchObject({ scalar: 82.5 });
     });
 
+    it("bounds daily summary and weight sync loops by the sync window end", async () => {
+      setupEnv();
+      vi.useFakeTimers({ now: new Date("2026-04-01T12:00:00Z") });
+
+      try {
+        const dailyDates: string[] = [];
+        const weightDates: string[] = [];
+        const mockFetch: typeof globalThis.fetch = async (
+          input: RequestInfo | URL,
+        ): Promise<Response> => {
+          const url = input.toString();
+          if (url.includes("/activities/list.json")) {
+            return Response.json({
+              activities: [],
+              pagination: { next: "", previous: "", limit: 20, offset: 0, sort: "asc" },
+            });
+          }
+          if (url.includes("/sleep/list.json")) {
+            return Response.json({
+              sleep: [],
+              pagination: { next: "", previous: "", limit: 20, offset: 0, sort: "asc" },
+            });
+          }
+          if (url.includes("/activities/date/")) {
+            const match = url.match(/\/activities\/date\/([\d-]+)\.json/);
+            if (match?.[1]) dailyDates.push(match[1]);
+            return Response.json(sampleDailySummary);
+          }
+          if (url.includes("/body/log/weight/date/")) {
+            const match = url.match(/\/body\/log\/weight\/date\/([\d-]+)\//);
+            if (match?.[1]) weightDates.push(match[1]);
+            return Response.json({ weight: [] });
+          }
+          return new Response("Not found", { status: 404 });
+        };
+
+        const result = await new FitbitProvider(mockFetch).sync(
+          new SyncRun({
+            db: createMockDb(),
+            window: SyncWindow.fromDateRange({
+              sinceDate: "2026-03-01",
+              untilDate: "2026-03-02",
+            }),
+          }),
+        );
+
+        expect(result.errors).toHaveLength(0);
+        expect(dailyDates).toEqual(["2026-03-01", "2026-03-02"]);
+        expect(weightDates).toEqual(["2026-03-01"]);
+        expect(dailyDates).not.toContain("2026-04-01");
+        expect(weightDates).not.toContain("2026-04-01");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("returns a reasonable duration when token resolution fails", async () => {
       setupEnv();
       const { loadTokens } = await import("../../db/tokens.ts");
@@ -849,7 +916,9 @@ describe("FitbitProvider", () => {
 
       const since = new Date();
       since.setUTCHours(0, 0, 0, 0);
-      const result = await provider.sync(db, since);
+      const result = await provider.sync(
+        new SyncRun({ db: db, window: SyncWindow.fromSince({ since: since }) }),
+      );
 
       expect(result.recordsSynced).toBe(0);
       expect(result.errors.length).toBeGreaterThanOrEqual(1);
@@ -875,7 +944,9 @@ describe("FitbitProvider", () => {
       );
       const db = createMockDb();
 
-      const result = await provider.sync(db, new Date(instant));
+      const result = await provider.sync(
+        new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date(instant) }) }),
+      );
       vi.useRealTimers();
 
       expect(result.errors).toHaveLength(0);
@@ -952,7 +1023,12 @@ describe("FitbitProvider", () => {
 
       const provider = new FitbitProvider(mockFetch);
       const db = createMockDb();
-      const result = await provider.sync(db, new Date("2026-03-01T00:00:00Z"));
+      const result = await provider.sync(
+        new SyncRun({
+          db: db,
+          window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        }),
+      );
       vi.useRealTimers();
 
       expect(result.errors).toHaveLength(0);
@@ -1006,7 +1082,12 @@ describe("FitbitProvider", () => {
 
       const provider = new FitbitProvider(mockFetch);
       const db = createMockDb();
-      const result = await provider.sync(db, new Date("2026-03-01T00:00:00Z"));
+      const result = await provider.sync(
+        new SyncRun({
+          db: db,
+          window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        }),
+      );
       vi.useRealTimers();
 
       expect(result.errors).toHaveLength(0);

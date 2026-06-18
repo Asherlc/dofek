@@ -5,13 +5,22 @@ import { parseDuringRange } from "whoop-whoop/utils";
 import { reconcileProviderActivityAbsence } from "../../db/provider-activity-absence.ts";
 import { activity, exercise, exerciseAlias, strengthSet } from "../../db/schema.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
-import { buildV2ActivityTypeLookup, parseWeightliftingWorkout, parseWorkout } from "./parsing.ts";
+import { SyncWindow } from "../sync-window.ts";
+import {
+  buildV2ActivityTypeLookup,
+  parseWeightliftingWorkout,
+  parseWorkout,
+  resolveWhoopWorkoutExternalId,
+} from "./parsing.ts";
 import type { WhoopSyncContext } from "./sync-types.ts";
 
 export type WhoopWorkoutSyncResult = {
   count: number;
   rateLimited: boolean;
 };
+
+/** Tombstone reconciliation covers at least this many days even on short sync windows. */
+const WHOOP_ACTIVITY_ABSENCE_RECONCILE_DAYS = 30;
 
 function collectWhoopWorkouts(context: WhoopSyncContext): {
   workouts: WhoopWorkoutRecord[];
@@ -27,14 +36,32 @@ function collectWhoopWorkouts(context: WhoopSyncContext): {
   };
 }
 
+async function resolveWhoopPresentExternalIds(
+  context: WhoopSyncContext,
+  absenceWindow: SyncWindow,
+): Promise<Set<string> | null> {
+  try {
+    return await context.client.listDeveloperWorkoutIdsInWindow(
+      absenceWindow.since,
+      absenceWindow.until,
+    );
+  } catch (err) {
+    context.errors.push({
+      message: `developer workouts: ${err instanceof Error ? err.message : String(err)}`,
+      cause: err,
+    });
+    return null;
+  }
+}
+
 export async function syncWhoopWorkouts(context: WhoopSyncContext): Promise<number> {
   const { db, providerId, options } = context;
   const { workouts, v2ActivityTypeByActivityId } = collectWhoopWorkouts(context);
-  const presentExternalIds = new Set(
-    workouts
-      .map((workoutRecord) => workoutRecord.activity_id)
-      .filter((activityId): activityId is string => typeof activityId === "string"),
-  );
+  const absenceWindow = new SyncWindow({
+    since: context.since,
+    until: context.windowEnd,
+  }).withMinimumLookback(WHOOP_ACTIVITY_ABSENCE_RECONCILE_DAYS);
+  const presentExternalIds = await resolveWhoopPresentExternalIds(context, absenceWindow);
 
   try {
     return await withSyncLog(
@@ -45,9 +72,8 @@ export async function syncWhoopWorkouts(context: WhoopSyncContext): Promise<numb
         let count = 0;
         for (const workoutRecord of workouts) {
           try {
-            const v2TypeName = workoutRecord.activity_id
-              ? v2ActivityTypeByActivityId.get(workoutRecord.activity_id)
-              : undefined;
+            const externalId = resolveWhoopWorkoutExternalId(workoutRecord);
+            const v2TypeName = externalId ? v2ActivityTypeByActivityId.get(externalId) : undefined;
             const parsed = parseWorkout(workoutRecord, v2TypeName);
             if (!parsed) continue;
 
@@ -85,20 +111,23 @@ export async function syncWhoopWorkouts(context: WhoopSyncContext): Promise<numb
               });
             count++;
           } catch (err) {
+            const activityId = resolveWhoopWorkoutExternalId(workoutRecord) ?? "unknown-workout";
             context.errors.push({
-              message: `Workout ${workoutRecord.activity_id}: ${err instanceof Error ? err.message : String(err)}`,
-              externalId: workoutRecord.activity_id,
+              message: `Workout ${activityId}: ${err instanceof Error ? err.message : String(err)}`,
+              externalId: activityId,
               cause: err,
             });
           }
         }
-        await reconcileProviderActivityAbsence(db, {
-          providerId,
-          userId: options?.userId,
-          windowStart: context.since,
-          windowEnd: context.windowEnd,
-          presentExternalIds,
-        });
+        if (presentExternalIds) {
+          await reconcileProviderActivityAbsence(db, {
+            providerId,
+            userId: options?.userId,
+            windowStart: absenceWindow.since,
+            windowEnd: absenceWindow.until,
+            presentExternalIds,
+          });
+        }
         return { recordCount: count, result: count };
       },
       options?.userId,
@@ -128,7 +157,7 @@ export async function syncWhoopStrength(
         const exerciseCache = new Map<string, string>();
 
         for (const workoutRecord of workouts) {
-          const activityId = workoutRecord.activity_id;
+          const activityId = resolveWhoopWorkoutExternalId(workoutRecord);
           if (!activityId) continue;
 
           try {

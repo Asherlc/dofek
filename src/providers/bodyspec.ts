@@ -8,13 +8,8 @@ import { dexaScan, dexaScanRegion } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { ProviderHttpClient } from "./http-client.ts";
-import type {
-  ProviderAuthSetup,
-  SyncError,
-  SyncOptions,
-  SyncProvider,
-  SyncResult,
-} from "./types.ts";
+import type { SyncRun } from "./sync-run.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // BodySpec API types & Zod schemas
@@ -344,7 +339,10 @@ export class BodySpecProvider implements SyncProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
+    const since = window.since;
+    const until = window.until;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -377,6 +375,7 @@ export class BodySpecProvider implements SyncProvider {
             for (const result of listResponse.results) {
               const resultTime = new Date(result.start_time);
               if (resultTime < since) continue;
+              if (resultTime > until) continue;
 
               try {
                 count += await this.#syncResult(db, client, result.result_id, resultTime);

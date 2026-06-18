@@ -10,6 +10,8 @@ import {
 } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { AutoSupplementsProvider } from "./auto-supplements.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 // ============================================================
 // Helpers
@@ -85,7 +87,9 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
     // Use a since date that is today so we get exactly 1 day
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
-    const result = await provider.sync(ctx.db, today);
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: today }) }),
+    );
 
     expect(result.provider).toBe("auto-supplements");
     expect(result.errors).toHaveLength(0);
@@ -120,8 +124,12 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
     today.setUTCHours(0, 0, 0, 0);
 
     // Sync twice
-    await provider.sync(ctx.db, today);
-    const result = await provider.sync(ctx.db, today);
+    await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: today }) }),
+    );
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: today }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
 
@@ -135,13 +143,33 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
     expect(magCount).toBe(1);
   });
 
-  it("returns empty result when since is in the future (no dates)", async () => {
-    const provider = new AutoSupplementsProvider();
-    const future = new Date("2099-01-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, future);
+  it("syncs an exact-day window when since and until are equal", async () => {
+    await insertSupplementWithNutrition(
+      ctx.db,
+      { userId: TEST_USER_ID, name: "ExactDaySupplement", sortOrder: 0 },
+      { calories: 5 },
+    );
 
-    expect(result.recordsSynced).toBe(0);
+    const provider = new AutoSupplementsProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: new SyncWindow({
+          since: new Date("2099-01-01T00:00:00Z"),
+          until: new Date("2099-01-01T00:00:00Z"),
+        }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBeGreaterThan(0);
     expect(result.errors).toHaveLength(0);
+
+    const rows = await ctx.db
+      .select()
+      .from(foodEntry)
+      .where(eq(foodEntry.providerId, "auto-supplements"));
+    const exactDayRows = rows.filter((row) => row.foodName === "ExactDaySupplement");
+    expect(exactDayRows.map((row) => row.date)).toEqual(["2099-01-01"]);
   });
 
   it("handles multiple days in range", async () => {
@@ -158,11 +186,38 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
     threeDaysAgo.setUTCDate(threeDaysAgo.getUTCDate() - 3);
     threeDaysAgo.setUTCHours(0, 0, 0, 0);
 
-    const result = await provider.sync(ctx.db, threeDaysAgo);
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: threeDaysAgo }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     // Should have entries for multiple supplements across multiple days
     expect(result.recordsSynced).toBeGreaterThanOrEqual(4);
+  });
+
+  it("does not sync supplement entries after the window end", async () => {
+    await insertSupplementWithNutrition(
+      ctx.db,
+      { userId: TEST_USER_ID, name: "WindowBounded", sortOrder: 0 },
+      { calories: 5 },
+    );
+
+    const provider = new AutoSupplementsProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-04-01", untilDate: "2026-04-01" }),
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+
+    const rows = await ctx.db
+      .select()
+      .from(foodEntry)
+      .where(eq(foodEntry.providerId, "auto-supplements"));
+    const windowBoundedRows = rows.filter((row) => row.foodName === "WindowBounded");
+    expect(windowBoundedRows.map((row) => row.date)).toEqual(["2026-04-01"]);
   });
 
   it("syncs supplements for multiple users independently", async () => {
@@ -183,7 +238,9 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
     const provider = new AutoSupplementsProvider();
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
-    const result = await provider.sync(ctx.db, today);
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: today }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
 
@@ -210,7 +267,9 @@ describe("AutoSupplementsProvider — sync() with DB (integration)", () => {
     const provider = new AutoSupplementsProvider();
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
-    const result = await provider.sync(ctx.db, today);
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: today }) }),
+    );
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(0);

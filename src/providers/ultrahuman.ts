@@ -1,9 +1,9 @@
 import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
-import type { SyncDatabase } from "../db/index.ts";
 import { dailyMetrics, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
-import type { SyncError, SyncOptions, SyncProvider, SyncResult } from "./types.ts";
+import type { SyncRun } from "./sync-run.ts";
+import type { SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Ultrahuman Partner API types
@@ -162,7 +162,9 @@ export class UltrahumanProvider implements SyncProvider {
     return null;
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
+    const since = window.since;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -187,7 +189,7 @@ export class UltrahumanProvider implements SyncProvider {
     }
 
     // Iterate day by day
-    const today = new Date();
+    const until = window.until;
     const currentDate = new Date(since);
 
     // 1. Sync daily metrics + sleep
@@ -199,7 +201,7 @@ export class UltrahumanProvider implements SyncProvider {
         async () => {
           let dailyCount = 0;
 
-          while (currentDate <= today) {
+          while (currentDate <= until) {
             const dateStr = formatDate(currentDate);
             try {
               const response = await client.getDailyMetrics(dateStr);

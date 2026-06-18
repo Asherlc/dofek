@@ -1,8 +1,14 @@
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
+import type { SyncOptions, SyncRun } from "./sync-run.ts";
 
 export type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
+export type {
+  SyncCheckpointStore,
+  SyncOptions,
+  SyncProgressCallback,
+  SyncRun,
+} from "./sync-run.ts";
 
 /**
  * OAuth 1.0 3-legged flow (e.g. FatSecret).
@@ -71,19 +77,6 @@ export interface SyncError {
   cause?: unknown;
 }
 
-/**
- * Progress callback for reporting sync progress from within a provider.
- * @param percentage - Percentage complete (0–100)
- * @param message - Human-readable status message
- */
-export type SyncProgressCallback = (percentage: number, message: string) => void;
-
-export interface SyncCheckpointStore {
-  load(): Promise<unknown | null>;
-  save(checkpoint: unknown): Promise<void>;
-  clear(): Promise<void>;
-}
-
 // ============================================================
 // Provider auth type discrimination
 // ============================================================
@@ -128,20 +121,6 @@ interface BaseProvider {
 }
 
 /**
- * Options for a sync run, passed as a bag so we can extend without adding positional params.
- */
-export interface SyncOptions {
-  /** Callback to report progress (0–100%) */
-  onProgress?: SyncProgressCallback;
-  /** User ID for attributing sync log entries */
-  userId?: string;
-  /** Provider-owned checkpoint state for retryable job resumes */
-  checkpoint?: SyncCheckpointStore;
-  /** Optional publisher override for metric-stream writers. */
-  metricStreamPublisher?: MetricStreamEventPublisher;
-}
-
-/**
  * A provider that syncs data from an API on a schedule.
  * The sync framework calls `sync()` periodically.
  *
@@ -150,12 +129,16 @@ export interface SyncOptions {
  */
 export interface SyncProvider extends BaseProvider {
   /**
-   * Pull data from the provider API and upsert into the database.
-   * @param db - Drizzle database instance
-   * @param since - Only sync data after this date (incremental sync)
-   * @param options - Optional sync options (progress callback, userId, etc.)
+   * Number of days scheduled sync jobs should request by default.
+   * Omit to use the framework default.
    */
-  sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult>;
+  readonly scheduledSyncLookbackDays?: number;
+
+  /**
+   * Pull data from the provider API and upsert into the database.
+   * @param run - Sync invocation context (db, window, and per-run options)
+   */
+  sync(run: SyncRun): Promise<SyncResult>;
 }
 
 /**

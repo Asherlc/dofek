@@ -647,9 +647,9 @@ describe("MapMyFitnessClient — error handling", () => {
     };
 
     const client = new MapMyFitnessClient("bad-token", "client-id", mockFetch);
-    await expect(client.getWorkouts("-", "2026-03-01T00:00:00Z")).rejects.toThrow(
-      "MapMyFitness API error (401)",
-    );
+    await expect(
+      client.getWorkouts("-", "2026-03-01T00:00:00Z", "2026-03-02T00:00:00Z"),
+    ).rejects.toThrow("MapMyFitness API error (401)");
   });
 
   it("throws on 403 Forbidden", async () => {
@@ -658,9 +658,9 @@ describe("MapMyFitnessClient — error handling", () => {
     };
 
     const client = new MapMyFitnessClient("token", "client-id", mockFetch);
-    await expect(client.getWorkouts("-", "2026-03-01T00:00:00Z")).rejects.toThrow(
-      "MapMyFitness API error (403)",
-    );
+    await expect(
+      client.getWorkouts("-", "2026-03-01T00:00:00Z", "2026-03-02T00:00:00Z"),
+    ).rejects.toThrow("MapMyFitness API error (403)");
   });
 
   it("throws on 500 server error", async () => {
@@ -669,9 +669,9 @@ describe("MapMyFitnessClient — error handling", () => {
     };
 
     const client = new MapMyFitnessClient("token", "client-id", mockFetch);
-    await expect(client.getWorkouts("-", "2026-03-01T00:00:00Z")).rejects.toThrow(
-      "MapMyFitness API error (500): Internal Server Error",
-    );
+    await expect(
+      client.getWorkouts("-", "2026-03-01T00:00:00Z", "2026-03-02T00:00:00Z"),
+    ).rejects.toThrow("MapMyFitness API error (500): Internal Server Error");
   });
 
   it("includes error body text in thrown error", async () => {
@@ -681,7 +681,7 @@ describe("MapMyFitnessClient — error handling", () => {
 
     const client = new MapMyFitnessClient("token", "client-id", mockFetch);
     const error = await client
-      .getWorkouts("-", "2026-03-01T00:00:00Z")
+      .getWorkouts("-", "2026-03-01T00:00:00Z", "2026-03-02T00:00:00Z")
       .catch((caughtError: unknown) => caughtError);
     expect(error).toBeInstanceOf(ProviderRateLimitError);
     expect(error).toHaveProperty("providerId", "mapmyfitness");

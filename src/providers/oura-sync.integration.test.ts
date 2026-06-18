@@ -24,6 +24,8 @@ import type {
   OuraVO2Max,
   OuraWorkout,
 } from "./oura/schemas.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 
 function fakeSleepDoc(overrides: Partial<OuraSleepDocument> = {}): OuraSleepDocument {
@@ -365,9 +367,13 @@ describe("OuraProvider.sync() (integration)", () => {
     );
 
     const provider = new OuraProvider();
-    const result = await provider.sync(ctx.db, since, {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.provider).toBe("oura");
     expect(result.errors).toHaveLength(0);
@@ -459,9 +465,13 @@ describe("OuraProvider.sync() (integration)", () => {
     );
 
     const provider = new OuraProvider();
-    const result = await provider.sync(ctx.db, since, {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
 
@@ -496,8 +506,20 @@ describe("OuraProvider.sync() (integration)", () => {
     );
 
     const provider = new OuraProvider();
-    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
-    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     const sleepRows = await ctx.db
       .select()
@@ -525,9 +547,13 @@ describe("OuraProvider.sync() (integration)", () => {
     server.use(...ouraHandlers());
 
     const provider = new OuraProvider();
-    await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "oura");
@@ -539,9 +565,13 @@ describe("OuraProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "oura"));
 
     const provider = new OuraProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens found");
@@ -656,9 +686,13 @@ describe("OuraProvider.sync() — error paths (integration)", () => {
     errorServer.use(...ouraErrorHandlers({ sleepError: true }));
 
     const provider = new OuraProvider();
-    const result = await provider.sync(ctx.db, since, {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     const sleepError = result.errors.find((e) => e.message.includes("sleep"));
     expect(sleepError).toBeDefined();

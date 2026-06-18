@@ -3,12 +3,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import { AccessTokenExpiredError, RefreshTokenRevokedError } from "../providers/auth-errors.ts";
-import type { SyncOptions, SyncProvider, SyncResult } from "../providers/types.ts";
+import type { SyncRun } from "../providers/sync-run.ts";
+import { SyncWindow } from "../providers/sync-window.ts";
+import type { SyncProvider, SyncResult } from "../providers/types.ts";
 
 const MockJobDataSchema = z.object({
   providerId: z.string().optional(),
   sinceDays: z.number().optional(),
   sinceIso: z.string().optional(),
+  untilIso: z.string().optional(),
   userId: z.string(),
   checkpoint: z.unknown().optional(),
 });
@@ -256,9 +259,8 @@ describe("processSyncJob", () => {
         providerId: "garmin",
         userId: "user-1",
         sinceDays: 1,
-        // Resolved absolute window for this run (2026-06-02T12:00:00Z minus 1 day),
-        // persisted so the delayed retry does not recompute a shifted relative window.
-        sinceIso: "2026-06-01T12:00:00.000Z",
+        sinceIso: "2026-06-01T00:00:00.000Z",
+        untilIso: "2026-06-02T23:59:59.999Z",
       },
       expect.objectContaining({
         attempts: 288,
@@ -329,24 +331,29 @@ describe("processSyncJob", () => {
     const job = createMockJob({ providerId: "garmin", userId: "user-1", sinceDays: 7 });
     await runSyncJob(job, mockDb);
 
-    // The original run resolved since = now - 7 days = 2026-05-26T12:00:00Z.
-    const expectedSinceIso = "2026-05-26T12:00:00.000Z";
+    // The original run resolved a 7-day window ending at the end of the sync day.
+    const expectedWindow = SyncWindow.lastDays(7, { now: new Date("2026-06-02T12:00:00Z") });
     const firstCall = mockProviderQueueAdd.mock.calls[0];
     expect(firstCall).toBeDefined();
     const requeuedData = MockJobDataSchema.parse(firstCall?.[1]);
-    expect(requeuedData.sinceIso).toBe(expectedSinceIso);
+    expect(requeuedData.sinceIso).toBe(expectedWindow.sinceIso);
+    expect(requeuedData.untilIso).toBe(expectedWindow.untilIso);
 
-    // The delayed retry resolves the same absolute window from the persisted sinceIso,
-    // not a shifted relative sinceDays, even if it runs later.
+    // The delayed retry resolves the same absolute window from persisted ISO timestamps.
     vi.setSystemTime(new Date("2026-06-02T12:30:00Z"));
     const retryProvider = createMockProvider({ id: "garmin", name: "Garmin" });
     mockGetEnabledSyncProviders.mockReturnValue([retryProvider]);
     await runSyncJob(createMockJob(requeuedData), mockDb);
 
     expect(retryProvider.sync).toHaveBeenCalledWith(
-      mockDb,
-      new Date(expectedSinceIso),
-      expect.objectContaining({ onProgress: expect.any(Function), userId: "user-1" }),
+      expect.objectContaining({
+        db: mockDb,
+        window: expectedWindow,
+        options: expect.objectContaining({
+          onProgress: expect.any(Function),
+          userId: "user-1",
+        }),
+      }),
     );
     vi.useRealTimers();
   });
@@ -381,7 +388,8 @@ describe("processSyncJob", () => {
       expect.objectContaining({
         providerId: "garmin",
         userId: "user-1",
-        sinceIso: "2026-06-01T12:00:00.000Z",
+        sinceIso: "2026-06-01T00:00:00.000Z",
+        untilIso: "2026-06-02T23:59:59.999Z",
       }),
       expect.objectContaining({
         delay: 600_000,
@@ -703,18 +711,10 @@ describe("processSyncJob", () => {
     const provider = createMockProvider({
       id: "test",
       name: "Test",
-      sync: vi
-        .fn()
-        .mockImplementation(
-          async (
-            _db: SyncDatabase,
-            _since: Date,
-            options?: { onProgress?: (percentage: number, message: string) => void },
-          ) => {
-            options?.onProgress?.(50, "5/10 activities");
-            return { provider: "test", recordsSynced: 10, errors: [], duration: 100 };
-          },
-        ),
+      sync: vi.fn().mockImplementation(async (run: SyncRun) => {
+        run.options?.onProgress?.(50, "5/10 activities");
+        return { provider: "test", recordsSynced: 10, errors: [], duration: 100 };
+      }),
     });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
 
@@ -765,16 +765,21 @@ describe("processSyncJob", () => {
     const provider = createMockProvider({ id: "test", name: "Test" });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
 
-    const now = Date.now();
-    vi.spyOn(Date, "now").mockReturnValue(now);
+    const now = new Date("2026-06-18T15:00:00.000Z");
+    vi.spyOn(Date, "now").mockReturnValue(now.getTime());
 
     await runSyncJob(createMockJob({ sinceDays: 30 }), mockDb);
 
-    const expectedSince = new Date(now - 30 * 24 * 60 * 60 * 1000);
+    const expectedWindow = SyncWindow.lastDays(30, { now });
     expect(provider.sync).toHaveBeenCalledWith(
-      mockDb,
-      expectedSince,
-      expect.objectContaining({ onProgress: expect.any(Function), userId: "user-1" }),
+      expect.objectContaining({
+        db: mockDb,
+        window: expectedWindow,
+        options: expect.objectContaining({
+          onProgress: expect.any(Function),
+          userId: "user-1",
+        }),
+      }),
     );
   });
 
@@ -789,9 +794,17 @@ describe("processSyncJob", () => {
     await runSyncJob(createMockJob({ sinceDays: 30, sinceIso }), mockDb);
 
     expect(provider.sync).toHaveBeenCalledWith(
-      mockDb,
-      new Date(sinceIso),
-      expect.objectContaining({ onProgress: expect.any(Function), userId: "user-1" }),
+      expect.objectContaining({
+        db: mockDb,
+        window: SyncWindow.fromIsoRange({
+          sinceIso,
+          untilIso: new Date(now).toISOString(),
+        }),
+        options: expect.objectContaining({
+          onProgress: expect.any(Function),
+          userId: "user-1",
+        }),
+      }),
     );
   });
 
@@ -802,15 +815,12 @@ describe("processSyncJob", () => {
     const provider = createMockProvider({
       id: "garmin",
       name: "Garmin",
-      sync: vi
-        .fn()
-        .mockImplementation(
-          async (_db: SyncDatabase, _since: Date, options?: SyncOptions): Promise<SyncResult> => {
-            observedCheckpoints.push(await options?.checkpoint?.load());
-            await options?.checkpoint?.save(savedCheckpoint);
-            return { provider: "garmin", recordsSynced: 1, errors: [], duration: 10 };
-          },
-        ),
+      sync: vi.fn().mockImplementation(async (run: SyncRun): Promise<SyncResult> => {
+        const options = run.options;
+        observedCheckpoints.push(await options?.checkpoint?.load());
+        await options?.checkpoint?.save(savedCheckpoint);
+        return { provider: "garmin", recordsSynced: 1, errors: [], duration: 10 };
+      }),
     });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
 
@@ -831,12 +841,20 @@ describe("processSyncJob", () => {
     const provider = createMockProvider({ id: "test", name: "Test" });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
 
+    const now = new Date("2026-06-18T15:00:00.000Z");
+    vi.spyOn(Date, "now").mockReturnValue(now.getTime());
+
     await runSyncJob(createMockJob({}), mockDb);
 
     expect(provider.sync).toHaveBeenCalledWith(
-      mockDb,
-      new Date(0),
-      expect.objectContaining({ onProgress: expect.any(Function), userId: "user-1" }),
+      expect.objectContaining({
+        db: mockDb,
+        window: SyncWindow.full(now),
+        options: expect.objectContaining({
+          onProgress: expect.any(Function),
+          userId: "user-1",
+        }),
+      }),
     );
   });
 

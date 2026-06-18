@@ -4,6 +4,7 @@ import type { WhoopCycle, WhoopWorkoutRecord } from "whoop-whoop/types";
 import type { SyncDatabase } from "../../db/index.ts";
 import { writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
+import { SyncWindow } from "../sync-window.ts";
 import { syncWhoopDailyActivity } from "./sync-daily-activity.ts";
 import { syncWhoopSleepSessions, syncWhoopSleepStages } from "./sync-sleep.ts";
 import { syncWhoopHeartRateStream } from "./sync-streams.ts";
@@ -369,10 +370,15 @@ describe("WHOOP sync helpers", () => {
     expect(db.insert).not.toHaveBeenCalled();
   });
 
-  it("reconciles provider absence with string workout activity ids only", async () => {
+  it("reconciles provider absence using developer workout ids in the sync window", async () => {
     const db = makeDb();
+    const client = makeClient();
+    vi.spyOn(client, "listDeveloperWorkoutIdsInWindow").mockResolvedValue(
+      new Set(["present-workout", "42"]),
+    );
     const context = makeContext({
       db: db.db,
+      client,
       options: undefined,
       cycles: [
         {
@@ -385,36 +391,86 @@ describe("WHOOP sync helpers", () => {
       ],
     });
 
-    await expect(syncWhoopWorkouts(context)).resolves.toBe(3);
+    await expect(syncWhoopWorkouts(context)).resolves.toBe(2);
 
+    const absenceWindow = new SyncWindow({
+      since: context.since,
+      until: context.windowEnd,
+    }).withMinimumLookback(30);
     expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
       db.db,
       {
         providerId: "whoop",
         userId: undefined,
-        windowStart: context.since,
-        windowEnd: context.windowEnd,
-        presentExternalIds: new Set(["present-workout"]),
+        windowStart: absenceWindow.since,
+        windowEnd: absenceWindow.until,
+        presentExternalIds: new Set(["present-workout", "42"]),
       },
     );
+    const reconcileArgs =
+      providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mock.calls[0]?.[1];
+    if (!reconcileArgs) throw new Error("expected reconciliation call");
+    expect([...reconcileArgs.presentExternalIds].sort()).toEqual(["42", "present-workout"]);
   });
 
   it("passes sync user id through to workout absence reconciliation", async () => {
     const db = makeDb();
+    const client = makeClient();
+    vi.spyOn(client, "listDeveloperWorkoutIdsInWindow").mockResolvedValue(
+      new Set(["present-workout"]),
+    );
     const context = makeContext({
       db: db.db,
+      client,
       options: { userId: "user-1" },
       cycles: [{ workouts: [makeWorkoutRecord({ activity_id: "present-workout" })] }],
     });
 
     await expect(syncWhoopWorkouts(context)).resolves.toBe(1);
 
+    const absenceWindow = new SyncWindow({
+      since: context.since,
+      until: context.windowEnd,
+    }).withMinimumLookback(30);
     expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
       db.db,
       expect.objectContaining({
         userId: "user-1",
+        windowStart: absenceWindow.since,
+        windowEnd: absenceWindow.until,
         presentExternalIds: new Set(["present-workout"]),
       }),
     );
+  });
+
+  it("skips workout absence reconciliation when developer workout listing fails", async () => {
+    const db = makeDb();
+    const client = makeClient();
+    const developerError = new Error("developer API unavailable");
+    vi.spyOn(client, "listDeveloperWorkoutIdsInWindow").mockRejectedValue(developerError);
+    const context = makeContext({
+      db: db.db,
+      client,
+      options: { userId: "user-1" },
+      cycles: [
+        {
+          workouts: [
+            makeWorkoutRecord({ activity_id: "present-workout" }),
+            makeWorkoutRecordWithRawActivityId(null),
+            makeWorkoutRecordWithRawActivityId(42),
+          ],
+        },
+      ],
+    });
+
+    await expect(syncWhoopWorkouts(context)).resolves.toBe(2);
+
+    expect(context.errors).toEqual([
+      {
+        message: "developer workouts: developer API unavailable",
+        cause: developerError,
+      },
+    ]);
+    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).not.toHaveBeenCalled();
   });
 });

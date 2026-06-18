@@ -12,6 +12,8 @@ import {
   pelotonAutomatedLogin,
   pelotonOAuthConfig,
 } from "./peloton.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
@@ -936,7 +938,9 @@ describe("PelotonProvider.sync — happy path", () => {
 
     const since = new Date((workout.start_time - 1000) * 1000);
     const provider = new PelotonProvider(mockFetch);
-    const result = await provider.sync(mockDb, since);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.provider).toBe("peloton");
     expect(result.errors).toHaveLength(0);
@@ -962,7 +966,9 @@ describe("PelotonProvider.sync — no tokens", () => {
     };
 
     const provider = new PelotonProvider();
-    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
     expect(result.provider).toBe("peloton");
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("No OAuth tokens");
@@ -982,7 +988,9 @@ describe("PelotonProvider.sync — workout filtering", () => {
 
     const since = new Date((workout.start_time - 1000) * 1000);
     const provider = new PelotonProvider(mockFetch);
-    const result = await provider.sync(mockDb, since);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBe(0);
@@ -1003,11 +1011,49 @@ describe("PelotonProvider.sync — workout filtering", () => {
     const mockDb = createMockDb();
 
     const provider = new PelotonProvider(mockFetch);
-    const result = await provider.sync(mockDb, since);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBe(0);
     expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("syncs workouts at the window end and skips workouts after it", async () => {
+    const atEnd = makeSyncWorkout({
+      id: "peloton-at-window-end",
+      start_time: 1_709_280_000,
+      end_time: 1_709_281_800,
+    });
+    const afterEnd = makeSyncWorkout({
+      id: "peloton-after-window-end",
+      start_time: 1_709_280_001,
+      end_time: 1_709_281_801,
+    });
+
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ id: "user-123" }))
+      .mockResolvedValueOnce(Response.json(makeWorkoutListResponse([atEnd, afterEnd])))
+      .mockResolvedValueOnce(Response.json(makeSyncPerformanceGraph(["heart_rate"])));
+
+    const mockDb = createMockDb();
+
+    const provider = new PelotonProvider(mockFetch);
+    const result = await provider.sync(
+      new SyncRun({
+        db: mockDb,
+        window: new SyncWindow({
+          since: new Date("2024-03-01T00:00:00.000Z"),
+          until: new Date(atEnd.start_time * 1000),
+        }),
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThan(0);
+    expect(mockFetch).toHaveBeenCalledTimes(3);
   });
 });
 
@@ -1028,7 +1074,9 @@ describe("PelotonProvider.sync — has_pedaling_metrics", () => {
 
     const since = new Date((workout.start_time - 1000) * 1000);
     const provider = new PelotonProvider(mockFetch);
-    const result = await provider.sync(mockDb, since);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThan(0);
@@ -1050,7 +1098,9 @@ describe("PelotonProvider.sync — has_pedaling_metrics", () => {
 
     const since = new Date((workout.start_time - 1000) * 1000);
     const provider = new PelotonProvider(mockFetch);
-    const result = await provider.sync(mockDb, since);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     expect(mockFetch).toHaveBeenCalledTimes(3);
@@ -1069,7 +1119,9 @@ describe("PelotonProvider.sync — has_pedaling_metrics", () => {
 
     const since = new Date((workout.start_time - 1000) * 1000);
     const provider = new PelotonProvider(mockFetch);
-    const result = await provider.sync(mockDb, since);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     expect(mockFetch).toHaveBeenCalledTimes(3);
@@ -1106,7 +1158,9 @@ describe("PelotonProvider.sync — onProgress callback", () => {
     const onProgress = vi.fn();
 
     const provider = new PelotonProvider(mockFetch);
-    await provider.sync(mockDb, since, { onProgress });
+    await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }), onProgress }),
+    );
 
     expect(onProgress).toHaveBeenCalledTimes(2);
     expect(onProgress).toHaveBeenNthCalledWith(1, 50, "1/2 workouts");
@@ -1123,7 +1177,13 @@ describe("PelotonProvider.sync — onProgress callback", () => {
     const onProgress = vi.fn();
 
     const provider = new PelotonProvider(mockFetch);
-    await provider.sync(mockDb, new Date("2026-01-01"), { onProgress });
+    await provider.sync(
+      new SyncRun({
+        db: mockDb,
+        window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+        onProgress,
+      }),
+    );
 
     expect(onProgress).not.toHaveBeenCalled();
   });
@@ -1143,7 +1203,9 @@ describe("PelotonProvider.sync — performance graph error handling", () => {
 
     const since = new Date((workout.start_time - 1000) * 1000);
     const provider = new PelotonProvider(mockFetch);
-    const result = await provider.sync(mockDb, since);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.recordsSynced).toBeGreaterThan(0);
     expect(result.errors).toHaveLength(1);
@@ -1184,7 +1246,9 @@ describe("PelotonProvider.sync — metric stream deletion and insertion", () => 
 
     const since = new Date((workout.start_time - 1000) * 1000);
     const provider = new PelotonProvider(mockFetch);
-    const result = await provider.sync(mockDb, since);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     expect(mockDb.delete).not.toHaveBeenCalled();
@@ -1213,7 +1277,9 @@ describe("PelotonProvider.sync — metric stream deletion and insertion", () => 
 
     const since = new Date((workout.start_time - 1000) * 1000);
     const provider = new PelotonProvider(mockFetch);
-    const result = await provider.sync(mockDb, since);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     expect(mockDb.delete).not.toHaveBeenCalled();
@@ -1261,7 +1327,9 @@ describe("PelotonProvider.sync — pagination", () => {
 
     const since = new Date((workout2.start_time - 1000) * 1000);
     const provider = new PelotonProvider(mockFetch);
-    const result = await provider.sync(mockDb, since);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     const workoutFetchUrls = mockFetch.mock.calls
@@ -1296,7 +1364,9 @@ describe("PelotonProvider.sync — token refresh", () => {
 
     const since = new Date((workout.start_time - 1000) * 1000);
     const provider = new PelotonProvider(mockFetch);
-    const result = await provider.sync(mockDb, since);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     const refreshCall = mockFetch.mock.calls.find((args) =>
       String(args[0]).includes("oauth/token"),
@@ -1318,7 +1388,9 @@ describe("PelotonProvider.sync — duration", () => {
     const mockDb = createMockDb();
 
     const provider = new PelotonProvider(mockFetch);
-    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
 
     expect(result.duration).toBeGreaterThanOrEqual(0);
   });
@@ -1333,7 +1405,9 @@ describe("PelotonProvider.sync — duration", () => {
 
     const before = Date.now();
     const provider = new PelotonProvider(mockFetch);
-    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
     const after = Date.now();
 
     expect(result.duration).toBeGreaterThanOrEqual(0);

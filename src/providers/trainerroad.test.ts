@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "user-1",
@@ -41,7 +43,9 @@ describe("TrainerRoadProvider", () => {
     };
 
     const provider = new TrainerRoadProvider();
-    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
     expect(result.provider).toBe("trainerroad");
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("not connected");
@@ -77,7 +81,9 @@ describe("TrainerRoadProvider", () => {
     };
 
     const provider = new TrainerRoadProvider();
-    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
     expect(result.errors[0]?.message).toContain("username not found");
   });
 
@@ -111,7 +117,9 @@ describe("TrainerRoadProvider", () => {
     };
 
     const provider = new TrainerRoadProvider();
-    const result = await provider.sync(mockDb, new Date("2026-01-01"));
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
     expect(result.errors[0]?.message).toContain("TrainerRoad session expired.");
     expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "session_expired" });
   });
@@ -158,7 +166,12 @@ describe("TrainerRoadProvider", () => {
       vi.setSystemTime(now);
 
       const provider = new TrainerRoadProvider();
-      const result = await provider.sync(tokenDb(new Date(now.getTime())), new Date("2026-01-01"));
+      const result = await provider.sync(
+        new SyncRun({
+          db: tokenDb(new Date(now.getTime())),
+          window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+        }),
+      );
 
       expect(result.errors[0]?.message).toContain("TrainerRoad session expired.");
       expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "session_expired" });

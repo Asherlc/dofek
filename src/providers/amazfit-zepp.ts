@@ -13,13 +13,8 @@ import {
   ProviderInvalidCredentialsError,
   ProviderStoredIdentityMissingError,
 } from "./auth-errors.ts";
-import type {
-  ProviderAuthSetup,
-  SyncError,
-  SyncOptions,
-  SyncProvider,
-  SyncResult,
-} from "./types.ts";
+import type { SyncRun } from "./sync-run.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 export const AMAZFIT_ZEPP_API_BASE = "https://api-mifit.zepp.com";
 const AMAZFIT_ZEPP_SOURCE_NAME = "Zepp";
@@ -352,7 +347,9 @@ export class AmazfitZeppProvider implements SyncProvider {
     };
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
+    const since = window.since;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -388,7 +385,7 @@ export class AmazfitZeppProvider implements SyncProvider {
     }
 
     const sinceDate = formatDate(since);
-    const todayDate = formatDate(new Date());
+    const untilDate = formatDate(window.until);
 
     try {
       const count = await withSyncLog(
@@ -398,7 +395,7 @@ export class AmazfitZeppProvider implements SyncProvider {
         async () => {
           let synced = 0;
           onProgress?.(0, "Fetching band data");
-          const days = await client.getBandData(sinceDate, todayDate);
+          const days = await client.getBandData(sinceDate, untilDate);
 
           for (const [dayIndex, day] of days.entries()) {
             try {

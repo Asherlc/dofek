@@ -14,6 +14,7 @@ import type { SyncDatabase } from "../../db/index.ts";
 import { reconcileProviderActivityAbsence } from "../../db/provider-activity-absence.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { ensureProvider } from "../../db/tokens.ts";
+import type { SyncRun } from "../sync-run.ts";
 import type {
   ProviderAuthSetup,
   ProviderIdentity,
@@ -191,7 +192,8 @@ export class FitbitProvider implements WebhookProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -207,8 +209,9 @@ export class FitbitProvider implements WebhookProvider {
     }
 
     const client = new FitbitClient(tokens.accessToken, this.#fetchFn);
+    const since = window.since;
     const sinceDate = formatDate(since);
-    const syncWindowEnd = new Date();
+    const syncWindowEnd = window.until;
     const presentActivityExternalIds = new Set<string>();
 
     // 1. Sync activities
@@ -322,10 +325,10 @@ export class FitbitProvider implements WebhookProvider {
         "daily_metrics",
         async () => {
           let count = 0;
-          const today = new Date();
+          const windowEndDate = new Date(syncWindowEnd);
           const currentDate = new Date(since);
 
-          while (currentDate <= today) {
+          while (currentDate <= windowEndDate) {
             const dateStr = formatDate(currentDate);
             try {
               const response = await client.getDailySummary(dateStr);
@@ -362,10 +365,10 @@ export class FitbitProvider implements WebhookProvider {
         "metric_stream",
         async () => {
           let count = 0;
-          const today = new Date();
+          const windowEndDate = new Date(syncWindowEnd);
           const currentDate = new Date(since);
 
-          while (currentDate <= today) {
+          while (currentDate <= windowEndDate) {
             const dateStr = formatDate(currentDate);
             try {
               const response = await client.getWeightLogs(dateStr);

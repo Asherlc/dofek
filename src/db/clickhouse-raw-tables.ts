@@ -3,9 +3,17 @@ import {
   replacingMergeTreeTable,
 } from "./clickhouse-sql-helpers.ts";
 
-export function buildPostgresFitnessRawTableStatements(): string[] {
-  return [
-    `CREATE TABLE IF NOT EXISTS postgres_fitness.activity (
+interface PostgresFitnessActivityRawTableOptions {
+  tableName?: string;
+  ifNotExists?: boolean;
+}
+
+export function buildPostgresFitnessActivityRawTableStatement(
+  options: PostgresFitnessActivityRawTableOptions = {},
+): string {
+  const tableName = options.tableName ?? "postgres_fitness.activity";
+  const createTable = options.ifNotExists === false ? "CREATE TABLE" : "CREATE TABLE IF NOT EXISTS";
+  return `${createTable} ${tableName} (
   id UUID,
   provider_id String,
   user_id UUID,
@@ -24,7 +32,12 @@ export function buildPostgresFitnessRawTableStatements(): string[] {
   created_at DateTime64(6, 'UTC'),
 ${peerDbMetadataColumnDefinitions}
 )
-${replacingMergeTreeTable("(user_id, started_at, id)")}`,
+${replacingMergeTreeTable("id")}`;
+}
+
+export function buildPostgresFitnessRawTableStatements(): string[] {
+  return [
+    buildPostgresFitnessActivityRawTableStatement(),
     `CREATE TABLE IF NOT EXISTS postgres_fitness.sleep_session (
   id UUID,
   provider_id String,

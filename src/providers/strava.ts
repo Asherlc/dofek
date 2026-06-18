@@ -29,6 +29,7 @@ import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { logger } from "../logger.ts";
 import { ProviderAuthorizationFailedError } from "./auth-errors.ts";
+import type { SyncRun } from "./sync-run.ts";
 import type {
   ProviderAuthSetup,
   ProviderIdentity,
@@ -731,7 +732,8 @@ export class StravaProvider implements WebhookProvider {
     return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
   }
 
-  async sync(db: SyncDatabase, since: Date, options: SyncOptions = {}): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const onProgress = options.onProgress;
     const start = Date.now();
     const errors: SyncError[] = [];
@@ -746,6 +748,8 @@ export class StravaProvider implements WebhookProvider {
     }
 
     const client = new StravaClient(tokens.accessToken, this.#fetchFn, this.#throttleMs);
+    const since = window.since;
+    const syncWindowEnd = window.until;
 
     // Strava uses epoch seconds for the `after` parameter
     const afterEpoch = Math.floor(since.getTime() / 1000);
@@ -754,7 +758,6 @@ export class StravaProvider implements WebhookProvider {
     const perPage = 30;
     let hasMore = true;
     let shouldStop = false;
-    const syncWindowEnd = new Date();
     const presentActivityExternalIds = new Set<string>();
 
     while (hasMore && !shouldStop) {
