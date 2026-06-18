@@ -206,7 +206,7 @@ describe("CorosProvider", () => {
     process.env.COROS_CLIENT_ID = "test-id";
     process.env.COROS_CLIENT_SECRET = "test-secret";
     const setup = new CorosProvider().authSetup();
-    expect(setup.oauthConfig.clientId).toBe("test-id");
+    expect(setup.oauthConfig?.clientId).toBe("test-id");
     expect(setup.exchangeCode).toBeTypeOf("function");
     expect(setup.apiBaseUrl).toContain("coros.com");
   });

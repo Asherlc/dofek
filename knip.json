@@ -71,6 +71,12 @@
         "entry": ["src/**/*.test.ts"]
       }
     },
+    "packages/zepp-client": {
+      "vitest": {
+        "config": ["../../vitest.config.ts"],
+        "entry": ["src/**/*.test.ts"]
+      }
+    },
     "packages/trainerroad-client": {},
     "packages/velohero-client": {
       "vitest": {

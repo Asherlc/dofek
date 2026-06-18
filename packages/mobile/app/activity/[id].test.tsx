@@ -145,6 +145,7 @@ vi.mock("@dofek/training/muscle-groups", () => ({}));
 vi.mock("@dofek/training/training", () => ({
   formatActivityTypeLabel: (type: string) => type,
   isCyclingActivity: (type: string) => type === "cycling",
+  cadenceUnit: (type: string) => (type === "cycling" ? "rpm" : "steps/min"),
 }));
 
 vi.mock("@dofek/zones/zones", async () => {

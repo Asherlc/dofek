@@ -48,13 +48,6 @@ export class TrainerRoadProvider implements SyncProvider {
   authSetup(_options?: { host?: string }): ProviderAuthSetup {
     const fetchFn = this.#fetchFn;
     return {
-      oauthConfig: {
-        clientId: "",
-        authorizeUrl: `${TRAINERROAD_BASE}/app/login`,
-        tokenUrl: `${TRAINERROAD_BASE}/app/login`,
-        redirectUri: "",
-        scopes: [],
-      },
       automatedLogin: async (email: string, password: string) => {
         const result = await TrainerRoadClient.signIn(email, password, fetchFn);
         return {
@@ -64,9 +57,6 @@ export class TrainerRoadProvider implements SyncProvider {
           expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
           scopes: `username:${result.username}`,
         };
-      },
-      exchangeCode: async () => {
-        throw new Error("TrainerRoad uses automated login, not OAuth code exchange");
       },
     };
   }

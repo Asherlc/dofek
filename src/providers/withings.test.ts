@@ -944,7 +944,9 @@ describe("WithingsProvider webhook methods", () => {
 
       const setup = provider.authSetup();
       // Calling exchangeCode should return a promise, not undefined
-      const result = setup.exchangeCode("test-code");
+      const { exchangeCode } = setup;
+      if (!exchangeCode) throw new Error("exchangeCode not defined");
+      const result = exchangeCode("test-code");
       expect(result).toBeInstanceOf(Promise);
       // Catch the rejection since there's no real server
       result.catch((_error: unknown) => {});

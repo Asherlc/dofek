@@ -38,7 +38,7 @@ export const PROVIDER_GUIDE_CATEGORIES: ProviderGuideCategory[] = [
   {
     title: "Sleep & Recovery",
     description: "Track sleep stages, quality, and recovery metrics",
-    providerIds: ["oura", "whoop", "eight-sleep", "garmin", "fitbit", "ultrahuman"],
+    providerIds: ["oura", "whoop", "eight-sleep", "garmin", "fitbit", "ultrahuman", "amazfit-zepp"],
   },
   {
     title: "Nutrition",
@@ -53,7 +53,7 @@ export const PROVIDER_GUIDE_CATEGORIES: ProviderGuideCategory[] = [
   {
     title: "Health Metrics",
     description: "Heart rate variability, resting HR, blood oxygen, and skin temperature",
-    providerIds: ["oura", "whoop", "garmin", "fitbit", "ultrahuman", "withings"],
+    providerIds: ["oura", "whoop", "garmin", "fitbit", "ultrahuman", "amazfit-zepp", "withings"],
   },
 ];
 

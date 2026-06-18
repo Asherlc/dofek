@@ -15,7 +15,12 @@ import {
   muscleGroupFillColor,
   muscleGroupLabel,
 } from "@dofek/training/muscle-groups";
-import { formatActivityTypeLabel, isCyclingActivity } from "@dofek/training/training";
+import {
+  cadenceAxisLabel,
+  cadenceUnit,
+  formatActivityTypeLabel,
+  isCyclingActivity,
+} from "@dofek/training/training";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
@@ -163,6 +168,7 @@ export function ActivityDetailPage() {
         >
           <MetricsChart
             points={points}
+            activityType={activity.activityType}
             hasHr={hasHr}
             hasPower={hasPower}
             hasSpeed={hasSpeed}
@@ -324,7 +330,10 @@ export function ActivityHeader({
       value: `${formatNumber(units.convertSpeed(activity.avgSpeed * 3.6))} ${units.speedLabel}`,
     });
   if (activity.avgCadence != null)
-    stats.push({ label: "Avg Cadence", value: `${Math.round(activity.avgCadence)} rpm` });
+    stats.push({
+      label: "Avg Cadence",
+      value: `${Math.round(activity.avgCadence)} ${cadenceUnit(activity.activityType)}`,
+    });
 
   return (
     <div>
@@ -509,6 +518,7 @@ interface MetricDefinition {
 
 function MetricsChart({
   points,
+  activityType,
   hasHr,
   hasPower,
   hasSpeed,
@@ -518,6 +528,7 @@ function MetricsChart({
   onHoverPosition,
 }: {
   points: StreamPoint[];
+  activityType: string;
   hasHr: boolean;
   hasPower: boolean;
   hasSpeed: boolean;
@@ -579,7 +590,7 @@ function MetricsChart({
   if (hasCadence)
     metrics.push({
       name: "Cadence",
-      axisName: "Cadence (rpm)",
+      axisName: cadenceAxisLabel(activityType),
       color: CHART_COLORS.cadence,
       data: points.map((p) => p.cadence),
     });

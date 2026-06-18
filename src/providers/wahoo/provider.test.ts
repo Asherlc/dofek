@@ -196,6 +196,8 @@ describe("WahooProvider — rate-limit aware fetch wiring", () => {
     );
 
     const setup = new WahooProvider().authSetup();
+    expect(setup.exchangeCode).toBeTypeOf("function");
+    if (!setup.exchangeCode) throw new Error("expected exchangeCode");
     const err = await setup.exchangeCode("code").catch((caught: unknown) => caught);
 
     expect(err).toBeInstanceOf(ProviderRateLimitError);
