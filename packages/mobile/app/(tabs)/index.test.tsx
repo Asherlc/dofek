@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mockRouterPush = vi.fn();
 const mockDashboardRefetch = vi.fn(() => Promise.resolve());
 const mockAnomalyRefetch = vi.fn(() => Promise.resolve());
+const mockDashboardUseQuery = vi.fn();
+const mockAnomalyUseQuery = vi.fn();
 const mockInvalidate = vi.fn();
 const mockUseRefresh = vi.fn((_options: unknown) => ({
   refreshing: false,
@@ -24,24 +26,30 @@ vi.mock("../../lib/trpc", () => ({
   trpc: {
     mobileDashboard: {
       dashboard: {
-        useQuery: () => ({
-          data: mockDashboardError ? undefined : mockDashboardData,
-          isLoading: mockDashboardLoading,
-          isError: !!mockDashboardError,
-          error: mockDashboardError,
-          refetch: mockDashboardRefetch,
-        }),
+        useQuery: (...parameters: unknown[]) => {
+          mockDashboardUseQuery(...parameters);
+          return {
+            data: mockDashboardError ? undefined : mockDashboardData,
+            isLoading: mockDashboardLoading,
+            isError: !!mockDashboardError,
+            error: mockDashboardError,
+            refetch: mockDashboardRefetch,
+          };
+        },
       },
     },
     anomalyDetection: {
       check: {
-        useQuery: () => ({
-          data: mockAnomalyData,
-          isLoading: false,
-          isError: false,
-          error: null,
-          refetch: mockAnomalyRefetch,
-        }),
+        useQuery: (...parameters: unknown[]) => {
+          mockAnomalyUseQuery(...parameters);
+          return {
+            data: mockAnomalyData,
+            isLoading: false,
+            isError: false,
+            error: null,
+            refetch: mockAnomalyRefetch,
+          };
+        },
       },
     },
     sync: {
@@ -111,6 +119,8 @@ describe("TodayScreen independent loading states", () => {
     mockDashboardLoading = false;
     mockDashboardRefetch.mockClear();
     mockAnomalyRefetch.mockClear();
+    mockDashboardUseQuery.mockClear();
+    mockAnomalyUseQuery.mockClear();
     mockDashboardData = {
       readiness: {
         score: 85,
@@ -230,6 +240,29 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.getAllByText("Recovery").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Strain").length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByTestId("skeleton-circle")).toBeNull();
+  });
+
+  it("does not enable anomaly detection during the initial dashboard load", async () => {
+    mockDashboardLoading = true;
+    mockDashboardData = undefined;
+
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
+
+    expect(mockAnomalyUseQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ enabled: false }),
+    );
+  });
+
+  it("enables anomaly detection after dashboard data is available", async () => {
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
+
+    expect(mockAnomalyUseQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ enabled: true }),
+    );
   });
 
   it("shows anomaly alerts from the standalone anomaly query", async () => {

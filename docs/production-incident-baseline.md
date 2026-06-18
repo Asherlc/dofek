@@ -10627,3 +10627,38 @@ new incremental tables are populated.
 - **Follow-up:** If additional Withings auth body statuses appear in Sentry,
   add them to the typed auth-status predicate with a focused replay test.
 
+## 2026-06-18 — Recovery and strain circles could wait behind slow ClickHouse work
+
+- **Symptoms:** Recovery and strain circles appeared to load too slowly,
+  especially on web dashboard first load.
+- **User impact:** Dashboard recovery/strain cards could stay in loading states
+  even when their own ClickHouse read-model queries were fast.
+- **Evidence:** Axiom showed `mobileDashboard.dashboard` was fast in the sampled
+  24h window: 6 spans, max `307ms`, timing logs `58-270ms`. Slow mobile parent
+  trace `16d38d40bc49b2f38f96b64acbeb25f0` took `3.40s` because sibling
+  `anomalyDetection.check` took `3.39s` with a ClickHouse `POST` of `3.16s`.
+  Web traces showed `recovery.readinessScore` max `59.44s` and
+  `recovery.workloadRatio` max `59.33s`, while their child ClickHouse HTTP spans
+  were only about `89-103ms`. Slow-query logs in the same window showed
+  `activity.stream` work occupying the shared ClickHouse limiter for about
+  `122s`.
+- **Root cause:** Web dashboard recovery/strain queries shared the same
+  `LimitedActivitySensorStore` concurrency pool as long activity stream work,
+  causing priority inversion before the actual ClickHouse request started.
+  Mobile used a batched tRPC query link and enabled anomaly detection during the
+  initial dashboard render, so the dashboard HTTP response could wait on the
+  slower anomaly sibling.
+- **Fix / mitigation:** Split `LimitedActivitySensorStore` into separate regular
+  and dashboard ClickHouse queues, with dashboard markers for recovery/strain
+  read models and resting-heart-rate dashboard inputs. Added
+  `clickhouse.queue_wait` spans with queue name, active count, depth,
+  concurrency, and wait time. On mobile, `mobileDashboard.dashboard` now uses an
+  unbatched HTTP link, and `anomalyDetection.check` is disabled until dashboard
+  data exists.
+- **Remaining risk:** Dashboard query classification is currently based on the
+  read-model table names in the SQL text. If new dashboard-critical read models
+  are added, they need to be included in the dashboard queue markers or moved to
+  an explicit priority API.
+- **Follow-up:** Add a short runbook note documenting dashboard-critical
+  ClickHouse queueing and add an Axiom monitor for nonzero
+  `clickhouse.queue_wait` p95 on the dashboard queue.
