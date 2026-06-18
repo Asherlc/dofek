@@ -3,7 +3,6 @@ import {
   assertClickHouseCdcHealth,
   type CdcHealthClickHouseClient,
   checkClickHouseCdcHealth,
-  type PeerDbQueryClient,
   type PostgresQueryClient,
 } from "./clickhouse-cdc-health.ts";
 
@@ -61,7 +60,7 @@ class FakeClickHouseClient implements CdcHealthClickHouseClient {
   }
 }
 
-class FakePeerDbClient implements PeerDbQueryClient {
+class FakePeerDbClient implements PostgresQueryClient {
   readonly #rows: readonly PeerDbMirrorRow[];
   queryTexts: string[] = [];
 

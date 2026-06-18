@@ -54,7 +54,9 @@ const trackedEnvVars = [
   "CLICKHOUSE_URL",
   "DATABASE_URL",
   "PEERDB_CDC_HOST",
+  "PEERDB_CDC_PASSWORD",
   "PEERDB_CDC_PORT",
+  "PEERDB_PASSWORD",
   "POSTGRES_PASSWORD",
   "SENTRY_DSN",
   "SENTRY_DSN_unencrypted",
@@ -65,7 +67,9 @@ describe("check-clickhouse-cdc", () => {
     CLICKHOUSE_URL: undefined,
     DATABASE_URL: undefined,
     PEERDB_CDC_HOST: undefined,
+    PEERDB_CDC_PASSWORD: undefined,
     PEERDB_CDC_PORT: undefined,
+    PEERDB_PASSWORD: undefined,
     POSTGRES_PASSWORD: undefined,
     SENTRY_DSN: undefined,
     SENTRY_DSN_unencrypted: undefined,
@@ -164,5 +168,20 @@ describe("check-clickhouse-cdc", () => {
     });
     expect(mockedSentryClose).toHaveBeenCalledWith(2_000);
     expect(process.exit).toHaveBeenCalledWith(1);
+  });
+
+  it("uses dedicated PeerDB credentials and routes IPv6 localhost DATABASE_URL to 127.0.0.1", async () => {
+    process.env.CLICKHOUSE_URL = "http://default:clickhouse-password@clickhouse:8123";
+    process.env.DATABASE_URL = "postgres://health:postgres-password@[::1]:5432/health";
+    process.env.PEERDB_CDC_PASSWORD = "peerdb-dedicated-password";
+    process.env.PEERDB_CDC_PORT = "9900";
+
+    await expect(main()).resolves.toBeUndefined();
+
+    expect(pgClientInstances.map((client) => client.connectionString)).toEqual([
+      "postgres://health:postgres-password@[::1]:5432/health",
+      "postgres://peerdb:peerdb-dedicated-password@127.0.0.1:9900/peerdb",
+    ]);
+    expect(process.exit).toHaveBeenCalledWith(0);
   });
 });

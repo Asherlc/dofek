@@ -4,10 +4,6 @@ export interface PostgresQueryClient {
   query(queryText: string): Promise<unknown>;
 }
 
-export interface PeerDbQueryClient {
-  query(queryText: string): Promise<unknown>;
-}
-
 export interface CdcHealthClickHouseClient {
   query(options: { query: string; format: "JSONEachRow" }): Promise<{ json(): Promise<unknown> }>;
 }
@@ -37,7 +33,7 @@ interface MirrorFreshnessCheck {
 
 interface CheckClickHouseCdcHealthOptions {
   postgresClient: PostgresQueryClient;
-  peerDbClient?: PeerDbQueryClient;
+  peerDbClient?: PostgresQueryClient;
   clickHouseClient: CdcHealthClickHouseClient;
   now?: Date;
   thresholds?: Partial<CdcHealthThresholds>;

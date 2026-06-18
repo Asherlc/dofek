@@ -18,8 +18,21 @@ function requireEnvironmentVariable(environmentVariableName: string): string {
 function isLocalhost(host: string): boolean {
   const normalizedHost = host.toLowerCase();
   return (
-    normalizedHost === "localhost" || normalizedHost === "127.0.0.1" || normalizedHost === "::1"
+    normalizedHost === "localhost" ||
+    normalizedHost === "127.0.0.1" ||
+    normalizedHost === "::1" ||
+    normalizedHost === "[::1]"
   );
+}
+
+function resolvePeerDbPassword(): string {
+  const dedicatedPassword =
+    process.env.PEERDB_CDC_PASSWORD?.trim() || process.env.PEERDB_PASSWORD?.trim();
+  if (dedicatedPassword) {
+    return dedicatedPassword;
+  }
+
+  return requireEnvironmentVariable("POSTGRES_PASSWORD");
 }
 
 function resolvePeerDbHost(databaseUrl: string): string {
@@ -49,11 +62,10 @@ function resolvePeerDbPort(): number {
 }
 
 function buildPeerDbUrl(databaseUrl: string): string {
-  const peerDbUrl = new URL("postgres://peerdb:9900/peerdb");
+  const peerDbUrl = new URL("postgres://peerdb@peerdb/peerdb");
   peerDbUrl.hostname = resolvePeerDbHost(databaseUrl);
   peerDbUrl.port = String(resolvePeerDbPort());
-  peerDbUrl.username = "peerdb";
-  peerDbUrl.password = requireEnvironmentVariable("POSTGRES_PASSWORD");
+  peerDbUrl.password = resolvePeerDbPassword();
   return peerDbUrl.toString();
 }
 
@@ -99,8 +111,9 @@ export async function main(): Promise<void> {
     }
 
     assertClickHouseCdcHealth(report);
+    const mirrorLabel = report.mirrorCount === 1 ? "mirror" : "mirrors";
     console.log(
-      `[clickhouse-cdc-health] ok: checked ${report.slotCount} slots and ${report.mirrorCount} mirrors`,
+      `[clickhouse-cdc-health] ok: checked ${report.slotCount} slots and ${report.mirrorCount} ${mirrorLabel}`,
     );
     await Sentry.close(2_000);
   } catch (error: unknown) {

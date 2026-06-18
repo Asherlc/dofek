@@ -61,7 +61,7 @@ did not recreate the retired metric-stream PeerDB mirror. Validation showed all
 three raw slots active with `wal_status = reserved`, PeerDB started CDC on
 `peerflow_slot_dofek_fitness_raw_analytics`, and
 `scripts/check-clickhouse-cdc.ts` returned
-`[clickhouse-cdc-health] ok: checked 3 slots and 1 mirrors`.
+`[clickhouse-cdc-health] ok: checked 3 slots and 1 mirror`.
 
 ### Remaining Risk
 

@@ -238,7 +238,8 @@
       "esbuild": "0.28.0",
       "@slack/bolt>path-to-regexp": "8.4.2",
       "router>path-to-regexp": "8.4.2",
-      "protobufjs": "8.4.0",
+      "protobufjs": "8.4.1",
+      "shell-quote": "1.8.4",
       "yaml": "2.9.0"
     },
     "patchedDependencies": {
