@@ -775,9 +775,32 @@ describe("ActivityRepository", () => {
       expect(compiledQuery.sql).toContain("FROM fitness.v_activity a");
       expect(compiledQuery.sql).toContain("JOIN fitness.v_activity_members selected_member");
       expect(compiledQuery.sql).toContain("JOIN fitness.v_activity_members member_rows");
-      expect(compiledQuery.sql).toContain("selected_member.member_activity_id = $1");
+      expect(compiledQuery.sql).toContain("selected_member.member_activity_id IN");
       expect(compiledQuery.sql).toContain("id IN");
       expect(compiledQuery.params).toEqual(expect.arrayContaining(["activity-id", "user-1"]));
+    });
+
+    it("bulkDelete skips SQL when no activity ids are provided", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await expect(repo.bulkDelete([])).resolves.toBe(0);
+
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it("bulkDelete deduplicates selected activity ids and deletes every member activity in matching deduped groups", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await expect(repo.bulkDelete(["activity-id", "activity-id", "other-id"])).resolves.toBe(2);
+
+      const sqlObject = execute.mock.calls[0]?.[0];
+      const compiledQuery = dialect.sqlToQuery(sqlObject);
+      expect(compiledQuery.sql).toContain("DELETE FROM fitness.activity");
+      expect(compiledQuery.sql).toContain("selected_member.member_activity_id IN");
+      expect(compiledQuery.sql).toContain("member_rows.member_activity_id");
+      expect(compiledQuery.params).toEqual(
+        expect.arrayContaining(["activity-id", "other-id", "user-1"]),
+      );
     });
   });
 });

@@ -38,6 +38,7 @@ export function RecentActivitiesSection({ activityTypes }: RecentActivitiesSecti
   const { days } = useTrainingDays();
   const [page, setPage] = useState(0);
   const endDate = useMemo(() => formatDateYmd(new Date()), []);
+  const trpcUtils = trpc.useUtils();
 
   const activities = trpc.activity.list.useQuery({
     days,
@@ -45,6 +46,11 @@ export function RecentActivitiesSection({ activityTypes }: RecentActivitiesSecti
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
     activityTypes: activityTypes ? [...activityTypes] : undefined,
+  });
+  const bulkDelete = trpc.activity.bulkDelete.useMutation({
+    onSuccess: async () => {
+      await trpcUtils.activity.list.invalidate();
+    },
   });
 
   return (
@@ -56,6 +62,11 @@ export function RecentActivitiesSection({ activityTypes }: RecentActivitiesSecti
       page={page}
       pageSize={PAGE_SIZE}
       onPageChange={setPage}
+      onBulkDelete={async (ids) => {
+        await bulkDelete.mutateAsync({ ids });
+      }}
+      bulkDeletePending={bulkDelete.isPending}
+      bulkDeleteError={bulkDelete.error?.message}
     />
   );
 }

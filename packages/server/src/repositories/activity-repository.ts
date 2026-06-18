@@ -506,6 +506,14 @@ export class ActivityRepository extends BaseRepository {
 
   /** Delete an activity by ID. */
   async delete(activityId: string): Promise<void> {
+    await this.bulkDelete([activityId]);
+  }
+
+  /** Delete activities by visible activity IDs, including all members of matching deduped groups. */
+  async bulkDelete(activityIds: string[]): Promise<number> {
+    const uniqueActivityIds = [...new Set(activityIds)];
+    if (uniqueActivityIds.length === 0) return 0;
+
     await this.db.execute(sql`
       DELETE FROM fitness.activity
       WHERE id IN (
@@ -513,10 +521,14 @@ export class ActivityRepository extends BaseRepository {
         FROM fitness.v_activity a
         JOIN fitness.v_activity_members selected_member ON selected_member.activity_id = a.id
         JOIN fitness.v_activity_members member_rows ON member_rows.activity_id = a.id
-        WHERE selected_member.member_activity_id = ${activityId}::uuid
+        WHERE selected_member.member_activity_id IN (${sql.join(
+          uniqueActivityIds.map((selectedActivityId) => sql`${selectedActivityId}::uuid`),
+          sql`, `,
+        )})
           AND a.user_id = ${this.userId}
       )
       AND user_id = ${this.userId}
     `);
+    return uniqueActivityIds.length;
   }
 }

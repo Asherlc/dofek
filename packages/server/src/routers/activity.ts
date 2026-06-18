@@ -209,6 +209,25 @@ export const activityRouter = router({
       }
       return { success: true };
     }),
+
+  bulkDelete: protectedProcedure
+    .input(z.object({ ids: z.array(z.string().uuid()).min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+      try {
+        const deletedCount = await repo.bulkDelete(input.ids);
+        return { success: true, deletedCount };
+      } catch (error) {
+        if (isRelationMissingError(error)) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
+          });
+        }
+        throw error;
+      }
+    }),
 });
 
 /** Map a raw stream row to a StreamPoint. Exported for backward compatibility. */

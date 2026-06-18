@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 interface MockQuery {
@@ -28,9 +29,14 @@ let mockOverviewQuery: {
 let weekListInput: unknown;
 let overviewInput: unknown;
 let overviewOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
+let bulkDeleteMutateAsync: ReturnType<typeof vi.fn>;
+let invalidateWeekList: ReturnType<typeof vi.fn>;
+let invalidateActivityOverview: ReturnType<typeof vi.fn>;
+let invalidateActivityList: ReturnType<typeof vi.fn>;
+const routerPush = vi.fn();
 
 vi.mock("expo-router", () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: routerPush }),
 }));
 
 vi.mock("../../lib/trpc", () => ({
@@ -53,6 +59,27 @@ vi.mock("../../lib/trpc", () => ({
         },
       },
     },
+    activity: {
+      bulkDelete: {
+        useMutation: (options?: { onSuccess?: () => Promise<void> | void }) => ({
+          mutate: bulkDeleteMutateAsync.mockImplementation(async () => {
+            await options?.onSuccess?.();
+            return { success: true, deletedCount: 1 };
+          }),
+          isPending: false,
+          error: null,
+        }),
+      },
+    },
+    useUtils: () => ({
+      calendar: {
+        weekList: { invalidate: invalidateWeekList },
+        activityOverview: { invalidate: invalidateActivityOverview },
+      },
+      activity: {
+        list: { invalidate: invalidateActivityList },
+      },
+    }),
   },
 }));
 
@@ -108,6 +135,12 @@ describe("ActivitiesScreen", () => {
     weekListInput = undefined;
     overviewInput = undefined;
     overviewOptions = undefined;
+    bulkDeleteMutateAsync = vi.fn();
+    invalidateWeekList = vi.fn();
+    invalidateActivityOverview = vi.fn();
+    invalidateActivityList = vi.fn();
+    routerPush.mockReset();
+    vi.restoreAllMocks();
   });
 
   it("uses QueryStatePanel for overview loading state", () => {
@@ -184,6 +217,60 @@ describe("ActivitiesScreen", () => {
     });
     const previousOverview = { activityTypes: ["running"] };
     expect(overviewOptions?.placeholderData?.(previousOverview)).toBe(previousOverview);
+  });
+
+  it("navigates to activity detail when not selecting activities", () => {
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity()] }],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesScreen />);
+    fireEvent.click(screen.getByText("Trainer Ride"));
+
+    expect(routerPush).toHaveBeenCalledWith("/activity/activity-1");
+  });
+
+  it("toggles selected activities instead of navigating in select mode", () => {
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity()] }],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesScreen />);
+    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByText("Trainer Ride"));
+
+    expect(routerPush).not.toHaveBeenCalled();
+    expect(screen.getByText("1 selected")).toBeDefined();
+  });
+
+  it("bulk deletes selected activities after confirmation", async () => {
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity()] }],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    vi.spyOn(Alert, "alert").mockImplementation((_title, _message, buttons) => {
+      buttons?.find((button) => button.text === "Delete")?.onPress?.();
+    });
+
+    render(<ActivitiesScreen />);
+    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByText("Trainer Ride"));
+    fireEvent.click(screen.getByText("Delete"));
+
+    await waitFor(() => {
+      expect(bulkDeleteMutateAsync).toHaveBeenCalledWith({ ids: ["activity-1"] });
+      expect(invalidateWeekList).toHaveBeenCalled();
+      expect(invalidateActivityOverview).toHaveBeenCalled();
+      expect(invalidateActivityList).toHaveBeenCalled();
+    });
   });
 
   it("replaces failed map tiles with a fallback", () => {
