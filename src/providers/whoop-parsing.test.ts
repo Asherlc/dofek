@@ -714,12 +714,14 @@ describe("parseHeartRateValues — edge cases", () => {
 });
 
 describe("parseStrainDeepDiveSteps", () => {
-  function makeStrainDeepDiveRaw(overrides: {
-    contributorsId?: string;
-    itemType?: string;
-    metrics?: unknown;
-    nestedSections?: boolean;
-  } = {}) {
+  function makeStrainDeepDiveRaw(
+    overrides: {
+      contributorsId?: string;
+      itemType?: string;
+      metrics?: unknown;
+      nestedSections?: boolean;
+    } = {},
+  ) {
     const tile = {
       type: overrides.itemType ?? "CONTRIBUTORS_TILE",
       content: {
@@ -773,7 +775,9 @@ describe("parseStrainDeepDiveSteps", () => {
 
   it("returns null when contributors tile id does not match strain", () => {
     expect(
-      parseStrainDeepDiveSteps(makeStrainDeepDiveRaw({ contributorsId: "RECOVERY_CONTRIBUTORS_TILE" })),
+      parseStrainDeepDiveSteps(
+        makeStrainDeepDiveRaw({ contributorsId: "RECOVERY_CONTRIBUTORS_TILE" }),
+      ),
     ).toBeNull();
     expect(parseStrainDeepDiveSteps(makeStrainDeepDiveRaw({ itemType: "OTHER_TILE" }))).toBeNull();
   });
@@ -782,7 +786,9 @@ describe("parseStrainDeepDiveSteps", () => {
     expect(parseStrainDeepDiveSteps(makeStrainDeepDiveRaw({ metrics: "not-an-array" }))).toBeNull();
     expect(
       parseStrainDeepDiveSteps(
-        makeStrainDeepDiveRaw({ metrics: [{ id: "CONTRIBUTORS_TILE_HR_ZONES_1_3", status: "1:00" }] }),
+        makeStrainDeepDiveRaw({
+          metrics: [{ id: "CONTRIBUTORS_TILE_HR_ZONES_1_3", status: "1:00" }],
+        }),
       ),
     ).toBeNull();
   });
