@@ -8,7 +8,7 @@ import { generateGpx, hasGpsPoints } from "./gpx.ts";
 import { buildActivityExportFilename, serializeActivityExport } from "./index.ts";
 import { fitSport, tcxSport } from "./sports.ts";
 import { generateTcx } from "./tcx.ts";
-import type { ActivityExportInput } from "./types.ts";
+import type { ActivityExportInput, ActivityExportPoint } from "./types.ts";
 import { escapeXml } from "./xml.ts";
 
 const sampleActivity: ActivityExportInput = {
@@ -71,6 +71,14 @@ const cyclingActivity: ActivityExportInput = {
     power: 200 + index * 10,
   })),
 };
+
+function activityPointAt(activity: ActivityExportInput, index: number): ActivityExportPoint {
+  const point = activity.points[index];
+  if (!point) {
+    throw new Error(`Expected activity point at index ${index}`);
+  }
+  return point;
+}
 
 function decodeFit(activity: ActivityExportInput) {
   const fit = generateFit(activity);
@@ -160,13 +168,13 @@ describe("activity export serializers", () => {
     expect(
       hasGpsPoints({
         ...gpsOnlyActivity,
-        points: [{ ...gpsOnlyActivity.points[0], lng: null }],
+        points: [{ ...activityPointAt(gpsOnlyActivity, 0), lng: null }],
       }),
     ).toBe(false);
     expect(
       hasGpsPoints({
         ...gpsOnlyActivity,
-        points: [{ ...gpsOnlyActivity.points[0], lat: null }],
+        points: [{ ...activityPointAt(gpsOnlyActivity, 0), lat: null }],
       }),
     ).toBe(false);
   });
@@ -205,7 +213,7 @@ describe("activity export serializers", () => {
       name: null,
       points: [
         {
-          ...sampleActivity.points[0],
+          ...activityPointAt(sampleActivity, 0),
           speed: null,
           power: 195,
         },
@@ -376,10 +384,10 @@ describe("activity export serializers", () => {
       ...cyclingActivity,
       totalDistance: null,
       points: [
-        cyclingActivity.points[0],
-        cyclingActivity.points[1],
+        activityPointAt(cyclingActivity, 0),
+        activityPointAt(cyclingActivity, 1),
         {
-          ...cyclingActivity.points[2],
+          ...activityPointAt(cyclingActivity, 2),
           lat: null,
           lng: null,
         },
