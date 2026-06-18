@@ -1,3 +1,4 @@
+/// <reference path="./garmin-fitsdk.d.ts" />
 import { Encoder, Profile, Utils } from "@garmin/fitsdk";
 import { fitSport } from "./sports.ts";
 import type { ActivityExportInput, ActivityExportPoint } from "./types.ts";
@@ -117,6 +118,7 @@ export function generateFit(activity: ActivityExportInput): Buffer {
 
   for (let index = 0; index < points.length; index += 1) {
     const point = points[index];
+    if (!point) continue;
     const pointDate = new Date(point.recordedAt);
     const fitTimestamp = Utils.convertDateToDateTime(pointDate);
     encoder.writeMesg(buildRecordMessage(point, fitTimestamp, recordDistanceMeters(points, index)));

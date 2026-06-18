@@ -1,3 +1,7 @@
+import type { AddressInfo } from "node:net";
+import { TRPCError } from "@trpc/server";
+import cookieParser from "cookie-parser";
+import express from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../auth/cookies.ts", () => ({
@@ -20,17 +24,28 @@ vi.mock("../lib/activity-export-service.ts", () => ({
   exportActivityFile: vi.fn(),
 }));
 
-import type { AddressInfo } from "node:net";
-import cookieParser from "cookie-parser";
-import express from "express";
-import { TRPCError } from "@trpc/server";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
 import { exportActivityFile } from "../lib/activity-export-service.ts";
+import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { createActivityExportRouter } from "./activity-export.ts";
 
 const activityId = "11111111-1111-1111-1111-111111111111";
 const userId = "33333333-3333-3333-3333-333333333333";
+
+const mockSensorStore = {
+  query: vi.fn(),
+  getActivitySummaries: vi.fn(),
+  getPowerCurveSamples: vi.fn(),
+  getNormalizedPowerSamples: vi.fn(),
+  getVo2MaxEstimates: vi.fn(),
+  getHeartRateCurveRows: vi.fn(),
+  getPaceCurveRows: vi.fn(),
+  getStream: vi.fn(),
+  getHeartRateZoneSeconds: vi.fn(),
+  getPowerZoneSeconds: vi.fn(),
+  refreshBodyMeasurements: vi.fn(),
+} satisfies ActivitySensorStore;
 
 function createTestApp() {
   const app = express();
@@ -39,10 +54,18 @@ function createTestApp() {
     "/api/activity",
     createActivityExportRouter({
       db: { execute: vi.fn() },
-      sensorStore: {} as never,
+      sensorStore: mockSensorStore,
     }),
   );
   return app;
+}
+
+function getPort(server: ReturnType<express.Express["listen"]>): number {
+  const address = server.address();
+  if (address !== null && typeof address === "object") {
+    return (address satisfies AddressInfo).port;
+  }
+  throw new Error("Server address is not an object");
 }
 
 async function request(
@@ -51,21 +74,26 @@ async function request(
   path: string,
   headers: Record<string, string> = {},
 ) {
-  const server = app.listen(0);
-  try {
-    const address = server.address() as AddressInfo;
-    const response = await fetch(`http://127.0.0.1:${address.port}${path}`, {
-      method: method.toUpperCase(),
-      headers,
+  return new Promise<{ status: number; body: unknown; headers: Headers }>((resolve, reject) => {
+    const server = app.listen(0, () => {
+      const port = getPort(server);
+      fetch(`http://127.0.0.1:${port}${path}`, {
+        method: method.toUpperCase(),
+        headers,
+      })
+        .then(async (response) => {
+          const contentType = response.headers.get("content-type") ?? "";
+          const body = contentType.includes("json") ? await response.json() : await response.text();
+          resolve({ status: response.status, body, headers: response.headers });
+        })
+        .catch(reject)
+        .finally(() => {
+          server.close((error) => {
+            if (error) reject(error);
+          });
+        });
     });
-    const contentType = response.headers.get("content-type") ?? "";
-    const body = contentType.includes("json") ? await response.json() : await response.text();
-    return { status: response.status, body, headers: response.headers };
-  } finally {
-    await new Promise<void>((resolve, reject) => {
-      server.close((error) => (error ? reject(error) : resolve()));
-    });
-  }
+  });
 }
 
 describe("createActivityExportRouter", () => {
@@ -115,7 +143,7 @@ describe("createActivityExportRouter", () => {
       userId,
       "UTC",
       expect.objectContaining({ kind: "full" }),
-      expect.anything(),
+      mockSensorStore,
       activityId,
       "csv",
     );

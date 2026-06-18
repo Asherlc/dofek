@@ -80,7 +80,3 @@ export function ActivityExportDropdown({ activityId, hasGps }: ActivityExportDro
     </div>
   );
 }
-
-export function getActivityExportUrl(activityId: string, format: ActivityExportFormat): string {
-  return `/api/activity/${activityId}/export?format=${format}`;
-}

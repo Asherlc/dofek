@@ -7,6 +7,7 @@ import {
 } from "dofek/activity-export";
 import type { Database } from "dofek/db";
 import { getProvider } from "dofek/providers/registry";
+import type { AccessWindow } from "../billing/entitlement.ts";
 import type { ActivityDetail } from "../models/activity.ts";
 import { Activity } from "../models/activity.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
@@ -17,7 +18,7 @@ export async function loadActivityExportInput(
   db: Database,
   userId: string,
   timezone: string,
-  accessWindow: import("../billing/access-window-repository.ts").AccessWindow,
+  accessWindow: AccessWindow,
   sensorStore: ActivitySensorStore | undefined,
   activityId: string,
 ): Promise<ActivityExportInput> {
@@ -61,7 +62,7 @@ export async function exportActivityFile(
   db: Database,
   userId: string,
   timezone: string,
-  accessWindow: import("../billing/access-window-repository.ts").AccessWindow,
+  accessWindow: AccessWindow,
   sensorStore: ActivitySensorStore | undefined,
   activityId: string,
   format: ActivityExportFormat,
