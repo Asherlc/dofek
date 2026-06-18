@@ -1,4 +1,6 @@
-FROM node:22-alpine AS base
+# dbt 1.10 currently imports through mashumaro<3.15, which fails on Python 3.14
+# from Alpine 3.24. Keep the runtime on Alpine 3.23 until dbt supports it.
+FROM node:22-alpine3.23 AS base
 RUN apk upgrade --no-cache
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
@@ -64,7 +66,7 @@ WORKDIR /app
 # Docker CLI for worker container management (startWorker)
 RUN apk add --no-cache curl ca-certificates libbz2 && \
     ARCH=$(uname -m) && \
-    curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-29.4.1.tgz" | \
+    curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-29.5.3.tgz" | \
       tar xz --strip-components=1 -C /usr/local/bin docker/docker && \
     apk del curl
 COPY --from=dbt-tools /usr/local/bin/python3.12 /usr/local/bin/python3.12
@@ -118,6 +120,7 @@ COPY --from=source --chown=node:node /app/packages/zones/package.json ./packages
 COPY --from=source --chown=node:node /app/packages/providers-meta/src ./packages/providers-meta/src
 COPY --from=source --chown=node:node /app/packages/providers-meta/package.json ./packages/providers-meta/
 COPY --from=client-build --chown=node:node /prod/server/node_modules ./node_modules
+RUN corepack disable && rm -rf /pnpm /root/.cache/node/corepack /root/.local/share/pnpm
 # Link workspace packages so bare-specifier imports resolve
 # Use ln -sfn to overwrite any links pnpm deploy may have created
 RUN ln -sfn /app node_modules/dofek && \
