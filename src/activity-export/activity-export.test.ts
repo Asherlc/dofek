@@ -1,5 +1,5 @@
 /// <reference path="./garmin-fitsdk.d.ts" />
-import { Decoder, Stream } from "@garmin/fitsdk";
+import { Decoder, Stream, Utils } from "@garmin/fitsdk";
 import { describe, expect, it } from "vitest";
 import { parseTcx } from "../tcx/parser.ts";
 import { generateCsv } from "./csv.ts";
@@ -108,28 +108,114 @@ describe("activity export serializers", () => {
   });
 
   it("generates GPX with GPS and sensor extensions", () => {
-    const gpx = generateGpx(sampleActivity);
+    const gpx = generateGpx(cyclingActivity);
     expect(gpx).toContain("<gpx");
     expect(gpx).toContain('lat="37.7749"');
+    expect(gpx).toContain('lon="-122.4194"');
+    expect(gpx).toContain("<ele>10</ele>");
+    expect(gpx).toContain("<ele>25</ele>");
     expect(gpx).toContain("<gpxtpx:hr>140</gpxtpx:hr>");
+    expect(gpx).toContain("<gpxtpx:cad>165</gpxtpx:cad>");
+    expect(gpx).toContain("<gpxtpx:cad>172</gpxtpx:cad>");
+    expect(gpx).toContain("<power>200</power>");
+    expect(gpx).toContain("<speed>3</speed>");
+    expect(gpx).toContain("<speed>3.4</speed>");
     expect(hasGpsPoints(sampleActivity)).toBe(true);
+  });
+
+  it("omits GPX trackpoints and extensions when optional data is missing", () => {
+    const gpsOnlyActivity: ActivityExportInput = {
+      ...sampleActivity,
+      name: null,
+      points: [
+        {
+          recordedAt: "2026-03-18T07:00:00.000Z",
+          lat: 37.7749,
+          lng: -122.4194,
+          altitude: null,
+          heartRate: null,
+          power: null,
+          speed: null,
+          cadence: null,
+        },
+        {
+          recordedAt: "2026-03-18T07:15:00.000Z",
+          lat: 37.7755,
+          lng: null,
+          altitude: 25,
+          heartRate: 155,
+          power: 210,
+          speed: 3.4,
+          cadence: 172,
+        },
+      ],
+    };
+
+    const gpx = generateGpx(gpsOnlyActivity);
+    expect(gpx.match(/<trkpt/g)?.length).toBe(1);
+    expect(gpx).not.toContain("<ele>");
+    expect(gpx).not.toContain("<extensions>");
+    expect(gpx).toContain("<name>running</name>");
+    expect(hasGpsPoints(gpsOnlyActivity)).toBe(true);
+    expect(
+      hasGpsPoints({
+        ...gpsOnlyActivity,
+        points: [{ ...gpsOnlyActivity.points[0], lng: null }],
+      }),
+    ).toBe(false);
+    expect(
+      hasGpsPoints({
+        ...gpsOnlyActivity,
+        points: [{ ...gpsOnlyActivity.points[0], lat: null }],
+      }),
+    ).toBe(false);
+  });
+
+  it("escapes GPX metadata names", () => {
+    const gpx = generateGpx({ ...sampleActivity, name: 'Tom & Jerry\'s "run"' });
+    expect(gpx).toContain("<name>Tom &amp; Jerry&apos;s &quot;run&quot;</name>");
   });
 
   it("generates TCX that can be parsed back into trackpoints", () => {
     const tcx = generateTcx(cyclingActivity);
     expect(tcx).toContain('Sport="Biking"');
     expect(tcx).toContain("<Watts>200</Watts>");
+    expect(tcx).toContain("<Speed>3</Speed>");
     expect(tcx).not.toContain("<Name>");
     expect(tcx).toContain("<Notes>Morning Ride</Notes>");
     expect(tcx).toContain("<TotalTimeSeconds>1800</TotalTimeSeconds>");
     expect(tcx).toContain("<DistanceMeters>10000</DistanceMeters>");
+    expect(tcx).toContain("<MaximumSpeed>4.1</MaximumSpeed>");
     expect(tcx).toContain("<AverageHeartRateBpm>");
     expect(tcx).toContain("<MaximumHeartRateBpm>");
+    expect(tcx).toContain("<Value>150</Value>");
+    expect(tcx).toContain("<Value>175</Value>");
+    expect(tcx).toContain("<AltitudeMeters>10</AltitudeMeters>");
+    expect(tcx).toContain("<Cadence>165</Cadence>");
 
     const trackpoints = parseTcx(tcx);
     expect(trackpoints).toHaveLength(3);
     expect(trackpoints[0]?.heartRate).toBe(140);
     expect(trackpoints[1]?.lat).toBeCloseTo(37.7755, 4);
+  });
+
+  it("writes TCX power-only extensions and omits notes when the activity has no name", () => {
+    const powerOnlyActivity: ActivityExportInput = {
+      ...sampleActivity,
+      name: null,
+      points: [
+        {
+          ...sampleActivity.points[0],
+          speed: null,
+          power: 195,
+        },
+      ],
+    };
+
+    const tcx = generateTcx(powerOnlyActivity);
+    expect(tcx).not.toContain("<Notes>");
+    expect(tcx).toContain("<Watts>195</Watts>");
+    expect(tcx).not.toContain("<Speed>");
   });
 
   it("derives TCX lap duration from the last stream point when endedAt is missing", () => {
@@ -140,6 +226,14 @@ describe("activity export serializers", () => {
 
     const tcx = generateTcx(openEndedActivity);
     expect(tcx).toContain("<TotalTimeSeconds>1800</TotalTimeSeconds>");
+  });
+
+  it("prefers endedAt over the last stream point for TCX lap duration", () => {
+    const tcx = generateTcx({
+      ...sampleActivity,
+      endedAt: "2026-03-18T08:00:00.000Z",
+    });
+    expect(tcx).toContain("<TotalTimeSeconds>3600</TotalTimeSeconds>");
   });
 
   it("generates CSV with summary and stream sections", () => {
@@ -169,20 +263,144 @@ describe("activity export serializers", () => {
       }),
     );
 
-    const record = messages.recordMesgs?.[0];
-    expect(record).toEqual(
+    const records = messages.recordMesgs ?? [];
+    expect(records[0]).toEqual(
       expect.objectContaining({
         heartRate: 140,
         power: 200,
         cadence: 165,
         distance: 0,
-        positionLat: expect.any(Number),
-        positionLong: expect.any(Number),
+        positionLat: 450672111,
+        positionLong: -1460520332,
+        enhancedAltitude: 10,
+        enhancedSpeed: 3,
       }),
     );
+    expect(records[1]).toEqual(
+      expect.objectContaining({
+        distance: 85.04,
+        positionLat: 450679270,
+        positionLong: -1460513173,
+        enhancedAltitude: 25,
+      }),
+    );
+    expect(records[2]).toEqual(
+      expect.objectContaining({
+        distance: 170.08,
+        positionLat: 450686428,
+        positionLong: -1460506015,
+        enhancedAltitude: 18,
+      }),
+    );
+  });
 
-    const lastRecord = messages.recordMesgs?.at(-1);
-    expect(lastRecord?.distance).toBeGreaterThan(0);
+  it("omits optional FIT record fields when stream values are absent", () => {
+    const gpsOnlyActivity: ActivityExportInput = {
+      ...sampleActivity,
+      totalDistance: null,
+      points: [
+        {
+          recordedAt: "2026-03-18T07:00:00.000Z",
+          lat: 37.7749,
+          lng: -122.4194,
+          altitude: null,
+          heartRate: null,
+          power: null,
+          speed: null,
+          cadence: null,
+        },
+      ],
+    };
+
+    const { messages } = decodeFit(gpsOnlyActivity);
+    const record = messages.recordMesgs?.[0];
+    expect(record).toEqual(
+      expect.objectContaining({
+        distance: 0,
+        positionLat: 450672111,
+        positionLong: -1460520332,
+      }),
+    );
+    expect(record?.heartRate).toBeUndefined();
+    expect(record?.power).toBeUndefined();
+    expect(record?.cadence).toBeUndefined();
+    expect(record?.enhancedSpeed).toBeUndefined();
+    expect(record?.enhancedAltitude).toBeUndefined();
+    expect(messages.sessionMesgs?.[0]?.totalDistance).toBeCloseTo(0, 5);
+  });
+
+  it("derives FIT lap distance from GPS segments when totalDistance is missing", () => {
+    const { messages } = decodeFit({ ...cyclingActivity, totalDistance: null });
+    expect(messages.sessionMesgs?.[0]?.totalDistance).toBeCloseTo(170.08, 2);
+    expect(messages.lapMesgs?.[0]?.totalDistance).toBeCloseTo(170.08, 2);
+  });
+
+  it("writes partial GPS and session stats only when values are present", () => {
+    const partialGpsActivity: ActivityExportInput = {
+      ...sampleActivity,
+      avgHr: null,
+      maxHr: null,
+      avgPower: 205,
+      maxPower: 220,
+      avgCadence: 168,
+      totalDistance: null,
+      points: [
+        {
+          recordedAt: "2026-03-18T07:00:00.000Z",
+          lat: 37.7749,
+          lng: null,
+          altitude: null,
+          heartRate: null,
+          power: null,
+          speed: null,
+          cadence: null,
+        },
+      ],
+    };
+
+    const { messages } = decodeFit(partialGpsActivity);
+    const record = messages.recordMesgs?.[0];
+    expect(record?.positionLat).toBe(450672111);
+    expect(record?.positionLong).toBeUndefined();
+
+    const session = messages.sessionMesgs?.[0];
+    expect(session?.avgHeartRate).toBeUndefined();
+    expect(session?.maxHeartRate).toBeUndefined();
+    expect(session?.avgPower).toBe(205);
+    expect(session?.maxPower).toBe(220);
+    expect(session?.avgCadence).toBe(168);
+  });
+
+  it("skips FIT distance accumulation across points without complete GPS", () => {
+    const gapActivity: ActivityExportInput = {
+      ...cyclingActivity,
+      totalDistance: null,
+      points: [
+        cyclingActivity.points[0],
+        cyclingActivity.points[1],
+        {
+          ...cyclingActivity.points[2],
+          lat: null,
+          lng: null,
+        },
+      ],
+    };
+
+    const { messages } = decodeFit(gapActivity);
+    expect(messages.recordMesgs).toHaveLength(3);
+    expect(messages.recordMesgs?.[1]?.distance).toBeCloseTo(85.04, 2);
+    expect(messages.recordMesgs?.[2]?.distance).toBeCloseTo(85.04, 2);
+  });
+
+  it("writes FIT activity local timestamps relative to the session end", () => {
+    const { messages } = decodeFit(cyclingActivity);
+    const activityMessage = messages.activityMesgs?.[0];
+    const endDate = new Date(cyclingActivity.endedAt ?? cyclingActivity.startedAt);
+    const endTime = Utils.convertDateToDateTime(endDate);
+    const localTimestampOffset = endDate.getTimezoneOffset() * -60;
+
+    expect(activityMessage?.localTimestamp).toBe(endTime + localTimestampOffset);
+    expect(activityMessage?.totalTimerTime).toBe(1800);
   });
 
   it("derives FIT stop timing from the last stream point when endedAt is missing", () => {
