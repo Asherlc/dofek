@@ -18,7 +18,14 @@ fi
 
 # Node 22+ natively handles TypeScript — transform-types also rewrites .ts imports
 NODE="node --experimental-transform-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation.ts"
-DBT_SAFE_MODELS="sensor_scalar_sample deduped_sensor activity_source_records activity_duplicate_matches activity_duplicate_groups deduped_activities deduped_activity_members sleep_heart_rate_sample resting_heart_rate_sleep_window daily_sleep daily_recovery_inputs daily_recovery activity_sensor_sample activity_location_sample activity_sensor_summary_rows activity_location_summary_rows activity_summary_rows activity_vo2max_estimate provider_stats daily_activity_load daily_strain healthspan_activity_zone_minutes weekly_healthspan"
+DBT_ACTIVITY_MODELS="sensor_scalar_sample deduped_sensor activity_source_records activity_duplicate_matches activity_duplicate_groups deduped_activities deduped_activity_members activity_sensor_sample activity_location_sample activity_sensor_summary_rows activity_location_summary_rows activity_summary_rows activity_vo2max_estimate provider_stats"
+DBT_SLEEP_DASHBOARD_MODELS="sleep_heart_rate_sample resting_heart_rate_sleep_window daily_sleep daily_recovery_inputs daily_recovery daily_activity_load daily_strain healthspan_activity_zone_minutes weekly_healthspan"
+DBT_SAFE_MODELS="$DBT_ACTIVITY_MODELS $DBT_SLEEP_DASHBOARD_MODELS"
+
+run_dbt_safe_builds() {
+  dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_ACTIVITY_MODELS &&
+  dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_SLEEP_DASHBOARD_MODELS
+}
 
 case "${1:-sync}" in
   web)
@@ -26,7 +33,7 @@ case "${1:-sync}" in
     ;;
   sync)
     $NODE src/db/run-migrate.ts
-    dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_SAFE_MODELS
+    run_dbt_safe_builds
     exec $NODE src/index.ts sync
     ;;
   worker)
@@ -37,7 +44,7 @@ case "${1:-sync}" in
     exec $NODE src/db/run-migrate.ts
     ;;
   analytics)
-    exec dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_SAFE_MODELS
+    run_dbt_safe_builds
     ;;
   analytics-worker)
     interval_seconds="${ANALYTICS_BUILD_INTERVAL_SECONDS:-900}"
@@ -54,7 +61,7 @@ case "${1:-sync}" in
       sleep "$startup_delay_seconds"
     fi
     while true; do
-      if dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_SAFE_MODELS; then
+      if run_dbt_safe_builds; then
         sleep "$interval_seconds"
       else
         status="$?"
