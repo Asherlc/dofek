@@ -187,7 +187,7 @@ describe("osmTilePreview", () => {
     expect(preview.routePath).toBeNull();
   });
 
-  it("wraps low-zoom tile columns across the antimeridian instead of repeating edge tiles", () => {
+  it("wraps low-zoom tile columns across the world edge instead of repeating edge tiles", () => {
     const preview = osmTilePreview([
       { lat: 0, lng: -170 },
       { lat: 0, lng: 170 },
