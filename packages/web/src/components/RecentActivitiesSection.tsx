@@ -20,7 +20,20 @@ const activityRowSchema = z.object({
     .object({
       centroidLat: z.number(),
       centroidLng: z.number(),
-      tileUrl: z.string(),
+      mapPreview: z.object({
+        width: z.number(),
+        height: z.number(),
+        tiles: z.array(
+          z.object({
+            url: z.string(),
+            x: z.number(),
+            y: z.number(),
+            width: z.number(),
+            height: z.number(),
+          }),
+        ),
+        routePath: z.array(z.object({ x: z.number(), y: z.number() })).nullable(),
+      }),
       distanceMeters: z.number().nullable(),
       elevationGainM: z.number().nullable(),
     })

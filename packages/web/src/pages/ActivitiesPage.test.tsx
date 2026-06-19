@@ -129,6 +129,24 @@ function activity(overrides: Record<string, unknown> = {}) {
   };
 }
 
+const mapPreview = {
+  width: 1024,
+  height: 576,
+  tiles: [
+    {
+      url: "https://tile.openstreetmap.org/15/5241/12665.png",
+      x: 0,
+      y: 0,
+      width: 256,
+      height: 256,
+    },
+  ],
+  routePath: [
+    { x: 278.54, y: 379.51 },
+    { x: 292.2, y: 370.88 },
+  ],
+};
+
 describe("ActivitiesPage", () => {
   beforeEach(() => {
     mockQuery = { data: [], isLoading: false, isError: false, error: null };
@@ -281,11 +299,7 @@ describe("ActivitiesPage", () => {
               location: {
                 centroidLat: 37.7749,
                 centroidLng: -122.4194,
-                tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
-                routePath: [
-                  { x: 5, y: 5 },
-                  { x: 15, y: 15 },
-                ],
+                mapPreview,
                 distanceMeters: 5000,
                 elevationGainM: 120,
               },
@@ -300,7 +314,7 @@ describe("ActivitiesPage", () => {
 
     render(<ActivitiesPage />);
 
-    expect(screen.getByAltText("Activity location map")).toBeDefined();
+    expect(screen.getByLabelText("Activity location map")).toBeDefined();
   });
 
   it("shows a Select button when activities are present", () => {

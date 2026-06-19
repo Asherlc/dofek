@@ -1,7 +1,7 @@
 import type { Database } from "dofek/db";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
-import { osmTilePreview, osmTileUrl } from "../lib/osm-tile.ts";
+import { osmTilePreview } from "../lib/osm-tile.ts";
 import { ActivitySourceAttribution } from "../models/activity-source-attribution.ts";
 import type { CalendarActivityEntry } from "./activities-calendar-repository.ts";
 import { ActivitiesCalendarRepository, mergeDayGroups } from "./activities-calendar-repository.ts";
@@ -158,8 +158,7 @@ describe("ActivitiesCalendarRepository", () => {
     expect(result[0]?.activities[0]?.location).toEqual({
       centroidLat: 90,
       centroidLng: 180,
-      tileUrl: "https://tile.openstreetmap.org/13/0/0.png",
-      routePath: null,
+      mapPreview: osmTilePreview([{ lat: 90, lng: 180 }]),
       distanceMeters: 5000,
       elevationGainM: 125,
     });
@@ -208,12 +207,11 @@ describe("ActivitiesCalendarRepository", () => {
     const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
 
     expect(result[0]?.activities[0]?.location).toMatchObject({
-      tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
-      routePath: [
-        { x: 27.854, y: 37.951 },
-        { x: 29.22, y: 37.088 },
-        { x: 30.585, y: 35.936 },
-      ],
+      mapPreview: osmTilePreview([
+        { lat: 37.7749, lng: -122.4194 },
+        { lat: 37.7752, lng: -122.4188 },
+        { lat: 37.7756, lng: -122.4182 },
+      ]),
     });
   });
 
@@ -333,7 +331,7 @@ describe("ActivitiesCalendarRepository", () => {
       expect.stringContaining("FROM analytics.activity_location_sample"),
       {
         activityIds: ["activity-1", "activity-2"],
-        maxPoints: 24,
+        maxPoints: 96,
         userId: "00000000-0000-0000-0000-000000000001",
       },
     );
@@ -509,8 +507,7 @@ describe("ActivitiesCalendarRepository", () => {
     ).toEqual({
       centroidLat: 37.8,
       centroidLng: -122.4,
-      tileUrl: "https://tile.openstreetmap.org/13/1310/3165.png",
-      routePath: null,
+      mapPreview: osmTilePreview([{ lat: 37.8, lng: -122.4 }]),
       distanceMeters: 5000,
       elevationGainM: 125,
     });
@@ -1030,8 +1027,7 @@ describe("ActivitiesCalendarRepository", () => {
     expect(result[0]?.activities[0]?.location).toEqual({
       centroidLat: 37.8,
       centroidLng: -122.4,
-      tileUrl: routePreview.tileUrl,
-      routePath: routePreview.routePath,
+      mapPreview: routePreview,
       distanceMeters: 5000,
       elevationGainM: 125,
     });
@@ -1265,8 +1261,7 @@ describe("ActivitiesCalendarRepository", () => {
     expect(result[0]?.activities[0]?.location).toEqual({
       centroidLat: 37.7749,
       centroidLng: -122.4194,
-      tileUrl: routePreview.tileUrl,
-      routePath: routePreview.routePath,
+      mapPreview: routePreview,
       distanceMeters: 5000,
       elevationGainM: 125,
     });
@@ -1324,8 +1319,7 @@ describe("ActivitiesCalendarRepository", () => {
     expect(result[0]?.activities[0]?.location).toEqual({
       centroidLat: 37.8,
       centroidLng: -122.4,
-      tileUrl: osmTileUrl(37.8, -122.4),
-      routePath: null,
+      mapPreview: osmTilePreview([{ lat: 37.8, lng: -122.4 }]),
       distanceMeters: 5000,
       elevationGainM: 125,
     });

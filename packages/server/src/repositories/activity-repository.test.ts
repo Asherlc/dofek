@@ -1,5 +1,6 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
+import { osmTilePreview } from "../lib/osm-tile.ts";
 import { ActivityRepository, StreamPoint } from "./activity-repository.ts";
 
 // ---------------------------------------------------------------------------
@@ -259,8 +260,7 @@ describe("ActivityRepository", () => {
         location: {
           centroidLat: 37.7749,
           centroidLng: -122.4194,
-          tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
-          routePath: null,
+          mapPreview: osmTilePreview([{ lat: 37.7749, lng: -122.4194 }]),
           distanceMeters: 5000,
           elevationGainM: 120,
         },
@@ -312,12 +312,11 @@ describe("ActivityRepository", () => {
       const result = await repo.list({ days: 30, endDate: "2024-02-01", limit: 20, offset: 0 });
 
       expect(result.items[0]?.location).toMatchObject({
-        tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
-        routePath: [
-          { x: 27.854, y: 37.951 },
-          { x: 29.22, y: 37.088 },
-          { x: 30.585, y: 35.936 },
-        ],
+        mapPreview: osmTilePreview([
+          { lat: 37.7749, lng: -122.4194 },
+          { lat: 37.7752, lng: -122.4188 },
+          { lat: 37.7756, lng: -122.4182 },
+        ]),
       });
     });
 

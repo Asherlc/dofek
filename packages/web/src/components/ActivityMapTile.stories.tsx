@@ -1,37 +1,137 @@
-import { UnitConverter } from "@dofek/format/units";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { ActivityMapTile } from "./ActivityMapTile.tsx";
 
-const metricUnits = new UnitConverter("metric");
+const mapPreview = {
+  width: 1024,
+  height: 576,
+  tiles: [
+    {
+      url: "https://tile.openstreetmap.org/19/83856/202646.png",
+      x: -179.332,
+      y: -132.862,
+      width: 256,
+      height: 256,
+    },
+    {
+      url: "https://tile.openstreetmap.org/19/83857/202646.png",
+      x: 76.668,
+      y: -132.862,
+      width: 256,
+      height: 256,
+    },
+    {
+      url: "https://tile.openstreetmap.org/19/83858/202646.png",
+      x: 332.668,
+      y: -132.862,
+      width: 256,
+      height: 256,
+    },
+    {
+      url: "https://tile.openstreetmap.org/19/83859/202646.png",
+      x: 588.668,
+      y: -132.862,
+      width: 256,
+      height: 256,
+    },
+    {
+      url: "https://tile.openstreetmap.org/19/83860/202646.png",
+      x: 844.668,
+      y: -132.862,
+      width: 256,
+      height: 256,
+    },
+    {
+      url: "https://tile.openstreetmap.org/19/83856/202647.png",
+      x: -179.332,
+      y: 123.138,
+      width: 256,
+      height: 256,
+    },
+    {
+      url: "https://tile.openstreetmap.org/19/83857/202647.png",
+      x: 76.668,
+      y: 123.138,
+      width: 256,
+      height: 256,
+    },
+    {
+      url: "https://tile.openstreetmap.org/19/83858/202647.png",
+      x: 332.668,
+      y: 123.138,
+      width: 256,
+      height: 256,
+    },
+    {
+      url: "https://tile.openstreetmap.org/19/83859/202647.png",
+      x: 588.668,
+      y: 123.138,
+      width: 256,
+      height: 256,
+    },
+    {
+      url: "https://tile.openstreetmap.org/19/83860/202647.png",
+      x: 844.668,
+      y: 123.138,
+      width: 256,
+      height: 256,
+    },
+    {
+      url: "https://tile.openstreetmap.org/19/83856/202648.png",
+      x: -179.332,
+      y: 379.138,
+      width: 256,
+      height: 256,
+    },
+    {
+      url: "https://tile.openstreetmap.org/19/83857/202648.png",
+      x: 76.668,
+      y: 379.138,
+      width: 256,
+      height: 256,
+    },
+    {
+      url: "https://tile.openstreetmap.org/19/83858/202648.png",
+      x: 332.668,
+      y: 379.138,
+      width: 256,
+      height: 256,
+    },
+    {
+      url: "https://tile.openstreetmap.org/19/83859/202648.png",
+      x: 588.668,
+      y: 379.138,
+      width: 256,
+      height: 256,
+    },
+    {
+      url: "https://tile.openstreetmap.org/19/83860/202648.png",
+      x: 844.668,
+      y: 379.138,
+      width: 256,
+      height: 256,
+    },
+  ],
+  routePath: [
+    { x: 288.304, y: 453.089 },
+    { x: 512, y: 311.585 },
+    { x: 735.696, y: 122.911 },
+  ],
+};
 
 const meta = {
   title: "Activities/ActivityMapTile",
   component: ActivityMapTile,
   tags: ["autodocs"],
   args: {
-    units: metricUnits,
     location: {
-      tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
-      routePath: [
-        { x: 20, y: 38 },
-        { x: 26, y: 46 },
-        { x: 28, y: 21 },
-        { x: 31, y: 58 },
-        { x: 52, y: 59 },
-        { x: 59, y: 73 },
-        { x: 67, y: 68 },
-        { x: 75, y: 54 },
-        { x: 83, y: 49 },
-        { x: 79, y: 43 },
-        { x: 91, y: 51 },
-      ],
+      mapPreview,
       distanceMeters: 8530,
       elevationGainM: 493,
     },
   },
   decorators: [
     (Story) => (
-      <div className="max-w-xl bg-background p-6">
+      <div className="w-[560px] max-w-full bg-background p-6">
         <Story />
       </div>
     ),
@@ -42,12 +142,15 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-export const CoarseRoute: Story = {};
+export const HighResolutionRoute: Story = {};
 
 export const NoRoute: Story = {
   args: {
     location: {
-      tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
+      mapPreview: {
+        ...mapPreview,
+        routePath: null,
+      },
       distanceMeters: 5000,
       elevationGainM: 120,
     },

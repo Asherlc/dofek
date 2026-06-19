@@ -53,42 +53,77 @@ describe("osmTileUrl", () => {
 
 describe("osmTilePreview", () => {
   it("returns world tile and null route path for empty input", () => {
-    expect(osmTilePreview([])).toEqual({
-      tileUrl: "https://tile.openstreetmap.org/0/0/0.png",
-      routePath: null,
-    });
+    const preview = osmTilePreview([]);
+
+    expect(preview.width).toBe(1024);
+    expect(preview.height).toBe(576);
+    expect(preview.tiles).toEqual([
+      {
+        url: "https://tile.openstreetmap.org/0/0/0.png",
+        x: 384,
+        y: 160,
+        width: 256,
+        height: 256,
+      },
+    ]);
+    expect(preview.routePath).toBeNull();
   });
 
-  it("returns a route-fitted tile URL and normalized path points", () => {
+  it("exports a route-fitted multi-tile static map preview", () => {
     const preview = osmTilePreview([
       { lat: 37.7749, lng: -122.4194 },
       { lat: 37.7752, lng: -122.4188 },
       { lat: 37.7756, lng: -122.4182 },
     ]);
 
-    expect(preview).toEqual({
-      tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
-      routePath: [
-        { x: 27.854, y: 37.951 },
-        { x: 29.22, y: 37.088 },
-        { x: 30.585, y: 35.936 },
-      ],
+    expect(preview.width).toBe(1024);
+    expect(preview.height).toBe(576);
+    expect(preview.tiles.length).toBeGreaterThan(1);
+    expect(preview.tiles[0]).toEqual({
+      url: expect.stringMatching(/^https:\/\/tile\.openstreetmap\.org\/19\/\d+\/\d+\.png$/),
+      x: expect.any(Number),
+      y: expect.any(Number),
+      width: 256,
+      height: 256,
     });
+    expect(preview.routePath).toHaveLength(3);
+    expect(preview.routePath?.[0]?.x).toBeGreaterThan(0);
+    expect(preview.routePath?.[0]?.x).toBeLessThan(preview.width);
+    expect(preview.routePath?.[0]?.y).toBeGreaterThan(0);
+    expect(preview.routePath?.[0]?.y).toBeLessThan(preview.height);
+  });
+
+  it("zooms short route previews tightly enough that the path is readable", () => {
+    const preview = osmTilePreview([
+      { lat: 37.7749, lng: -122.4194 },
+      { lat: 37.7752, lng: -122.4188 },
+      { lat: 37.7756, lng: -122.4182 },
+    ]);
+    const routePath = preview.routePath ?? [];
+    const routeWidth =
+      Math.max(...routePath.map((point) => point.x)) -
+      Math.min(...routePath.map((point) => point.x));
+    const routeHeight =
+      Math.max(...routePath.map((point) => point.y)) -
+      Math.min(...routePath.map((point) => point.y));
+
+    expect(routeWidth).toBeGreaterThan(preview.width * 0.4);
+    expect(routeHeight).toBeGreaterThan(preview.height * 0.5);
   });
 
   it("omits route path points when fewer than two coordinates are available", () => {
-    expect(osmTilePreview([{ lat: 37.7749, lng: -122.4194 }])).toEqual({
-      tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
-      routePath: null,
-    });
+    const preview = osmTilePreview([{ lat: 37.7749, lng: -122.4194 }]);
+
+    expect(preview.tiles.length).toBeGreaterThan(1);
+    expect(preview.routePath).toBeNull();
   });
 
-  it("falls back to the lowest preview zoom when a route spans multiple tiles", () => {
+  it("uses the highest preview zoom that fits a long route inside the export", () => {
     const preview = osmTilePreview([
       { lat: 37.7749, lng: -122.4194 },
       { lat: 40.7128, lng: -74.006 },
     ]);
 
-    expect(preview.tileUrl).toBe("https://tile.openstreetmap.org/1/0/0.png");
+    expect(preview.tiles[0]?.url).toMatch(/^https:\/\/tile\.openstreetmap\.org\/4\//);
   });
 });

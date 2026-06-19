@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { timestampWindowStart } from "../lib/date-window.ts";
-import { osmTileUrl } from "../lib/osm-tile.ts";
+import { osmTilePreview } from "../lib/osm-tile.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivityRow } from "../models/activity.ts";
 import { getActivityRoutePreviews } from "./activity-route-preview.ts";
@@ -468,9 +468,9 @@ export class ActivityRepository extends BaseRepository {
             ? {
                 centroidLat: summary.centroid_lat,
                 centroidLng: summary.centroid_lng,
-                tileUrl:
-                  routePreview?.tileUrl ?? osmTileUrl(summary.centroid_lat, summary.centroid_lng),
-                routePath: routePreview?.routePath ?? null,
+                mapPreview:
+                  routePreview ??
+                  osmTilePreview([{ lat: summary.centroid_lat, lng: summary.centroid_lng }]),
                 distanceMeters: summary.total_distance,
                 elevationGainM: summary.elevation_gain_m,
               }

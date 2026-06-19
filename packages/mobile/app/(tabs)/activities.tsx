@@ -31,9 +31,6 @@ import { colors, radius, spacing } from "../../theme";
 const TILE_SIZE = 96;
 const DEFAULT_WEEKS = 4;
 const ALL_ACTIVITY_TYPES = "all";
-const ROUTE_THUMBNAIL_PADDING_PERCENT = 20;
-const MAX_ROUTE_THUMBNAIL_SCALE = 2.5;
-const MIN_ROUTE_THUMBNAIL_SPAN_PERCENT = 1;
 const DATE_RANGE_OPTIONS = [
   { value: 4, label: "4 weeks" },
   { value: 8, label: "8 weeks" },
@@ -41,43 +38,24 @@ const DATE_RANGE_OPTIONS = [
 ] as const;
 
 type RoutePathPoint = { x: number; y: number };
+type ActivityMapPreviewTile = {
+  url: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
 
-function getRouteViewportTransform(routePath?: RoutePathPoint[] | null) {
-  if (routePath == null || routePath.length < 2) return undefined;
+type ActivityMapPreview = {
+  width: number;
+  height: number;
+  tiles: ActivityMapPreviewTile[];
+  routePath: RoutePathPoint[] | null;
+};
 
-  const firstPoint = routePath[0];
-  if (!firstPoint) return undefined;
-
-  let minX = firstPoint.x;
-  let maxX = firstPoint.x;
-  let minY = firstPoint.y;
-  let maxY = firstPoint.y;
-
-  for (const point of routePath) {
-    minX = Math.min(minX, point.x);
-    maxX = Math.max(maxX, point.x);
-    minY = Math.min(minY, point.y);
-    maxY = Math.max(maxY, point.y);
-  }
-
-  const routeWidth = Math.max(maxX - minX, MIN_ROUTE_THUMBNAIL_SPAN_PERCENT);
-  const routeHeight = Math.max(maxY - minY, MIN_ROUTE_THUMBNAIL_SPAN_PERCENT);
-  const fittedScale = Math.min(
-    (100 - ROUTE_THUMBNAIL_PADDING_PERCENT * 2) / routeWidth,
-    (100 - ROUTE_THUMBNAIL_PADDING_PERCENT * 2) / routeHeight,
-  );
-  const scale = Math.max(1, Math.min(MAX_ROUTE_THUMBNAIL_SCALE, fittedScale));
-  const routeCenterX = (minX + maxX) / 2;
-  const routeCenterY = (minY + maxY) / 2;
-  const minTranslatePercent = 100 * (1 - scale);
-  const translateXPercent = Math.min(0, Math.max(minTranslatePercent, 50 - routeCenterX * scale));
-  const translateYPercent = Math.min(0, Math.max(minTranslatePercent, 50 - routeCenterY * scale));
-  const translateX = (translateXPercent / 100) * TILE_SIZE;
-  const translateY = (translateYPercent / 100) * TILE_SIZE;
-
-  return {
-    transform: [{ translateX }, { translateY }, { scale }],
-  };
+function formatRouteCoordinate(value: number): string {
+  const rounded = Math.round(value * 1000) / 1000;
+  return Object.is(rounded, -0) ? "0" : String(rounded);
 }
 
 export default function ActivitiesScreen() {
@@ -258,9 +236,7 @@ export default function ActivitiesScreen() {
                     </Text>
                     <ActivityMetricStrip activity={activity} units={units} />
                   </View>
-                  {activity.location ? (
-                    <ActivityMapTile location={activity.location} units={units} />
-                  ) : null}
+                  {activity.location ? <ActivityMapTile location={activity.location} /> : null}
                 </View>
               </TouchableOpacity>
             ))}
@@ -443,17 +419,22 @@ function ActivityOverview({
 
 interface ActivityMapTileProps {
   location: {
-    tileUrl: string;
-    routePath?: { x: number; y: number }[] | null;
+    mapPreview: ActivityMapPreview;
     distanceMeters: number | null;
     elevationGainM: number | null;
   };
-  units: ReturnType<typeof useUnitConverter>;
 }
 
-function ActivityMapTile({ location, units }: ActivityMapTileProps) {
+function ActivityMapTile({ location }: ActivityMapTileProps) {
   const [loadFailed, setLoadFailed] = useState(false);
-  const routeViewportTransform = getRouteViewportTransform(location.routePath);
+  const previewScale = Math.max(
+    TILE_SIZE / location.mapPreview.width,
+    TILE_SIZE / location.mapPreview.height,
+  );
+  const previewWidth = location.mapPreview.width * previewScale;
+  const previewHeight = location.mapPreview.height * previewScale;
+  const previewLeft = (TILE_SIZE - previewWidth) / 2;
+  const previewTop = (TILE_SIZE - previewHeight) / 2;
 
   return (
     <View style={styles.tileContainer}>
@@ -468,43 +449,64 @@ function ActivityMapTile({ location, units }: ActivityMapTileProps) {
       ) : (
         <View
           testID="activity-route-viewport"
-          style={[styles.routeViewport, routeViewportTransform]}
+          style={styles.routeViewport}
+          accessibilityLabel="Activity location map"
+          accessible={true}
         >
-          <Image
-            source={{ uri: location.tileUrl }}
-            style={styles.tile}
-            resizeMode="cover"
-            accessibilityLabel="Activity location map"
-            onError={() => setLoadFailed(true)}
+          {location.mapPreview.tiles.map((tile) => (
+            <Image
+              key={`${tile.url}-${tile.x}-${tile.y}`}
+              testID="activity-map-preview-tile"
+              source={{ uri: tile.url }}
+              style={{
+                ...styles.previewTile,
+                left: previewLeft + tile.x * previewScale,
+                top: previewTop + tile.y * previewScale,
+                width: tile.width * previewScale,
+                height: tile.height * previewScale,
+              }}
+              resizeMode="cover"
+              onError={() => setLoadFailed(true)}
+            />
+          ))}
+          <ActivityRouteOverlay
+            mapPreview={location.mapPreview}
+            width={previewWidth}
+            height={previewHeight}
+            left={previewLeft}
+            top={previewTop}
           />
-          <ActivityRouteOverlay routePath={location.routePath} />
         </View>
       )}
-      <View style={styles.tileOverlay}>
-        {location.distanceMeters != null ? (
-          <Text style={styles.tileBadge}>
-            {formatMeasurementText(units.formatDistance(location.distanceMeters / 1000))}
-          </Text>
-        ) : null}
-        {location.elevationGainM != null ? (
-          <Text style={styles.tileBadge}>
-            ↑ {formatMeasurementText(units.formatElevation(location.elevationGainM))}
-          </Text>
-        ) : null}
-      </View>
     </View>
   );
 }
 
-function ActivityRouteOverlay({ routePath }: { routePath?: { x: number; y: number }[] | null }) {
+function ActivityRouteOverlay({
+  mapPreview,
+  width,
+  height,
+  left,
+  top,
+}: {
+  mapPreview: ActivityMapPreview;
+  width: number;
+  height: number;
+  left: number;
+  top: number;
+}) {
+  const { routePath } = mapPreview;
   if (routePath == null || routePath.length < 2) return null;
 
-  const points = routePath.map((point) => `${point.x},${point.y}`).join(" ");
+  const points = routePath
+    .map((point) => `${formatRouteCoordinate(point.x)},${formatRouteCoordinate(point.y)}`)
+    .join(" ");
   return (
     <Svg
+      testID="activity-route-overlay"
       pointerEvents="none"
-      style={styles.routeOverlay}
-      viewBox="0 0 100 100"
+      style={{ ...styles.routeOverlay, left, top, width, height }}
+      viewBox={`0 0 ${mapPreview.width} ${mapPreview.height}`}
       preserveAspectRatio="none"
     >
       <Polyline
@@ -513,7 +515,7 @@ function ActivityRouteOverlay({ routePath }: { routePath?: { x: number; y: numbe
         stroke="#fff"
         strokeLinecap="round"
         strokeLinejoin="round"
-        strokeWidth={6}
+        strokeWidth={60}
       />
       <Polyline
         testID="activity-route-path"
@@ -522,7 +524,7 @@ function ActivityRouteOverlay({ routePath }: { routePath?: { x: number; y: numbe
         stroke={colors.positive}
         strokeLinecap="round"
         strokeLinejoin="round"
-        strokeWidth={3}
+        strokeWidth={30}
       />
     </Svg>
   );
@@ -807,24 +809,18 @@ const styles = StyleSheet.create({
     position: "relative",
     width: TILE_SIZE,
   },
-  tile: {
-    width: "100%",
-    height: "100%",
-  },
   routeViewport: {
     position: "absolute",
     top: 0,
     right: 0,
     bottom: 0,
     left: 0,
-    transformOrigin: "top left",
+  },
+  previewTile: {
+    position: "absolute",
   },
   routeOverlay: {
     position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
   },
   tileFallback: {
     width: "100%",
@@ -836,23 +832,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 12,
     fontWeight: "600",
-  },
-  tileOverlay: {
-    position: "absolute",
-    bottom: spacing.xs,
-    left: spacing.xs,
-    flexDirection: "row",
-    gap: spacing.xs,
-  },
-  tileBadge: {
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
-    color: "#fff",
-    fontSize: 11,
-    fontWeight: "600",
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 2,
-    borderRadius: radius.sm,
-    overflow: "hidden",
   },
   statsRow: {
     flexDirection: "row",

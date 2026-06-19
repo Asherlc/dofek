@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { osmTilePreview, type RoutePathPoint } from "../lib/osm-tile.ts";
+import { type OsmTilePreview, osmTilePreview } from "../lib/osm-tile.ts";
 
 const routePreviewPointRowSchema = z.object({
   activity_id: z.string(),
@@ -7,10 +7,7 @@ const routePreviewPointRowSchema = z.object({
   lng: z.coerce.number(),
 });
 
-export interface ActivityRoutePreview {
-  tileUrl: string;
-  routePath: RoutePathPoint[] | null;
-}
+export type ActivityRoutePreview = OsmTilePreview;
 
 interface RoutePreviewSensorStore {
   query<TSchema extends z.ZodType>(
@@ -20,7 +17,7 @@ interface RoutePreviewSensorStore {
   ): Promise<z.infer<TSchema>[]>;
 }
 
-const routePreviewMaxPoints = 24;
+const routePreviewMaxPoints = 96;
 
 export async function getActivityRoutePreviews(
   sensorStore: RoutePreviewSensorStore,
