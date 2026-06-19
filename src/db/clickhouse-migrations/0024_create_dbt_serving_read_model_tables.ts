@@ -50,7 +50,7 @@ const healthspanActivityZoneMinutesTableSql = `CREATE TABLE IF NOT EXISTS analyt
 ENGINE = ReplacingMergeTree(refresh_version)
 ORDER BY (user_id, activity_id)`;
 
-const dedupedActivitiesTableSql = `CREATE TABLE IF NOT EXISTS analytics.deduped_activities (
+export const dedupedActivitiesTableSql = `CREATE TABLE IF NOT EXISTS analytics.deduped_activities (
   activity_id UUID,
   provider_id String,
   user_id UUID,

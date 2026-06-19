@@ -11045,3 +11045,89 @@ new incremental tables are populated.
 - **Remaining risk:** Low. The local Stryker command matched the failed CI
   mutate target; final confirmation still depends on the pushed GitHub Actions
   rerun completing successfully.
+
+## 2026-06-19 — Branch deploy exposed ClickHouse client method binding failure
+
+- **Symptoms:** A production branch deploy of `sha-df7f751` completed
+  successfully and left `web`, `worker`, `cdc-health`, and `analytics-worker`
+  running the branch image, but the raw fitness ClickHouse mirror remained
+  incomplete. Re-running the CDC setup manually after dropping
+  `dofek_fitness_raw_analytics` failed before recreating the mirror.
+- **User impact:** Activity and sleep analytics that depend on raw
+  `postgres_fitness` activity tables still saw incomplete raw mirror data until
+  the follow-up fix could be deployed and the missing PeerDB mirror recreated.
+- **Evidence:** The deploy workflow run `27805523657` succeeded, including
+  `Configure ClickHouse CDC`. Production health returned `{"status":"ok"}` and
+  `dofek_analytics-worker` was `1/1` on `ghcr.io/asherlc/dofek:sha-df7f751`.
+  Postgres source counts still exceeded ClickHouse destination counts for
+  `fitness.activity`, `fitness.daily_metrics`, `fitness.sleep_session`, and
+  `fitness.sleep_stage`. After dropping only `dofek_fitness_raw_analytics`,
+  direct CDC setup failed with
+  `TypeError: Cannot read properties of undefined (reading 'withClientQueryParams')`
+  from `@clickhouse/client-common`. A follow-up deploy of `sha-6361c14`
+  reached PeerDB mirror creation, then failed with
+  `failed to validate destination connector dofek_clickhouse_postgres_fitness:
+  table activity exists and is not empty`.
+- **Root cause:** `readClickHouseDestinationRowCount` detached
+  `clickHouseClient.query` into a local function before calling it. The real
+  `@clickhouse/client` query method depends on its `this` binding, so the
+  production client failed. Unit tests used arrow-function mocks and did not
+  exercise the method binding. After that was fixed, PeerDB correctly rejected
+  initial-copy creation into the non-empty, incomplete ClickHouse destination
+  tables left behind by the earlier partial mirror.
+- **Fix / mitigation:** Updated the CDC setup path to call
+  `clickHouseClient.query(...)` directly and added a regression test with a
+  `this`-dependent ClickHouse client mock. Updated setup to truncate destination
+  tables for missing raw analytics mirrors that are about to be recreated with
+  `do_initial_copy = true`, so PeerDB can run a clean initial snapshot. The
+  production `dofek_fitness_raw_analytics` mirror was intentionally left absent
+  after the failed manual run so the fixed deploy can recreate it with initial
+  copy.
+- **Validation:** `pnpm exec vitest run src/db/clickhouse-cdc.test.ts` passed
+  `33` tests locally. Production verification still requires deploying the
+  fixed commit, confirming CDC setup recreates `dofek_fitness_raw_analytics`,
+  and checking ClickHouse raw table counts against Postgres source counts.
+- **Remaining risk:** Medium until the fixed branch image is deployed and the
+  absent fitness raw mirror finishes its initial copy.
+
+## 2026-06-19 — Analytics worker deduped activities insert column mismatch
+
+- **Symptoms:** Branch deploy run `27806652367` succeeded through
+  `Configure ClickHouse CDC`, recreated `dofek_fitness_raw_analytics`, and
+  restored complete raw ClickHouse counts, but the production
+  `analytics-worker` dbt build failed repeatedly at
+  `analytics.deduped_activities`.
+- **User impact:** Raw activity data was mirrored again, but activity analytics
+  read models downstream of `deduped_activities` remained stale because dbt
+  skipped dependent models after the failure.
+- **Evidence:** `analytics-worker` logs showed
+  `Failure in model deduped_activities`; replaying the compiled SQL through
+  `clickhouse-client` returned
+  `DB::Exception: CAST AS Array can only be performed between same-dimensional Array, Map or String types: while converting source column refreshed_at to destination column absent_source_external_ids`.
+  The follow-up PR E2E setup then failed in a fresh ClickHouse environment with
+  `member_activity_ids` being inserted into `absent_source_external_ids`,
+  proving that production and fresh table column order differed.
+- **Root cause:** The existing production `analytics.deduped_activities` table
+  has `absent_source_external_ids` as the final column because it was added to
+  an existing table. Fresh environments create the table with
+  `absent_source_external_ids` before `member_activity_ids`. dbt incremental
+  INSERTs use the target table column order, so either SELECT order broke one
+  of the two environments.
+- **Fix / mitigation:** Kept the dbt model in the canonical fresh-schema order
+  and added ClickHouse migration `0033_recreate_deduped_activities_column_order`
+  to drop and recreate the derived `analytics.deduped_activities` serving table
+  with that canonical order before dbt rebuilds it.
+- **Validation:** `pnpm exec vitest run
+  analytics/models/read_models/read_model_microbatch.sql.test.ts
+  src/db/clickhouse-migrations/registry.test.ts`,
+  `pnpm lint`, root `pnpm tsc --noEmit`, server `pnpm tsc --noEmit`, and web
+  `pnpm tsc --noEmit` passed locally. The local E2E compose migrate step
+  exited `0`, and the local analytics container completed dbt activity models
+  with `PASS=14 WARN=0 ERROR=0 SKIP=0 NO-OP=0 TOTAL=14` plus dashboard models
+  with `PASS=9 WARN=0 ERROR=0 SKIP=0 NO-OP=0 TOTAL=9`. Earlier branch deploy
+  run `27807103397` completed successfully, production services rolled to
+  `ghcr.io/asherlc/dofek:sha-4db22d8`, and the restarted analytics worker
+  completed dbt with `Done. PASS=14 WARN=0 ERROR=0 SKIP=0 NO-OP=0 TOTAL=14`.
+- **Remaining risk:** Low after migration `0033` deploys; dropping this derived
+  serving table temporarily empties `deduped_activities` until the analytics
+  worker rebuilds it.
