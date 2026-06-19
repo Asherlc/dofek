@@ -93,6 +93,10 @@ const caloriesRowSchema = z.object({
   calories: z.coerce.number().nullable(),
 });
 
+const deletedActivityRowSchema = z.object({
+  id: z.string(),
+});
+
 const baselineRowSchema = z.object({
   max_hr: z.coerce.number().nullable(),
   resting_hr: z.coerce.number().nullable(),
@@ -216,7 +220,13 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       ),
     ]);
 
-    const filteredActivityRows = filterActivityRowsByType(activityRows, input.activityType);
+    const activityRowsMatchingType = filterActivityRowsByType(activityRows, input.activityType);
+    const deletedActivityIds = await this.#fetchDeletedActivityIds(
+      activityRowsMatchingType.map((row) => row.id),
+    );
+    const filteredActivityRows = activityRowsMatchingType.filter(
+      (row) => !deletedActivityIds.has(row.id),
+    );
     const activityIds = filteredActivityRows.map((row) => row.id);
     const [caloriesRows, routePreviewByActivityId] = await Promise.all([
       this.#fetchCaloriesByActivityId(activityIds),
@@ -531,6 +541,23 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             AND a.id IN (${activityIdFilter})
             AND a.raw ? 'calories'`,
     );
+  }
+
+  async #fetchDeletedActivityIds(activityIds: string[]): Promise<Set<string>> {
+    if (activityIds.length === 0) return new Set();
+    const activityIdFilter = sql.join(
+      activityIds.map((activityId) => sql`${activityId}::uuid`),
+      sql`, `,
+    );
+    const rows = await this.query(
+      deletedActivityRowSchema,
+      sql`SELECT id::text AS id
+          FROM fitness.activity
+          WHERE user_id = ${this.userId}::uuid
+            AND id IN (${activityIdFilter})
+            AND deleted_at IS NOT NULL`,
+    );
+    return new Set(rows.map((row) => row.id));
   }
 }
 

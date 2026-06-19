@@ -34,6 +34,11 @@ let restoreProviderAbsentMutate: ReturnType<typeof vi.fn>;
 let invalidateWeekList: ReturnType<typeof vi.fn>;
 let invalidateActivityOverview: ReturnType<typeof vi.fn>;
 let invalidateActivityList: ReturnType<typeof vi.fn>;
+let mockBulkDeleteShouldFail: boolean;
+
+interface BulkDeleteVariables {
+  ids: string[];
+}
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({
@@ -69,8 +74,15 @@ vi.mock("../lib/trpc.ts", () => ({
     },
     activity: {
       bulkDelete: {
-        useMutation: (options?: { onSuccess?: () => Promise<void> | void }) => ({
-          mutate: bulkDeleteMutate.mockImplementation(async () => {
+        useMutation: (options?: {
+          onSuccess?: () => Promise<void> | void;
+          onError?: (error: Error, variables: BulkDeleteVariables) => void;
+        }) => ({
+          mutate: bulkDeleteMutate.mockImplementation(async (variables: BulkDeleteVariables) => {
+            if (mockBulkDeleteShouldFail) {
+              options?.onError?.(new Error("Delete failed"), variables);
+              return;
+            }
             await options?.onSuccess?.();
           }),
           isPending: false,
@@ -152,6 +164,7 @@ describe("ActivitiesPage", () => {
     invalidateWeekList = vi.fn();
     invalidateActivityOverview = vi.fn();
     invalidateActivityList = vi.fn();
+    mockBulkDeleteShouldFail = false;
   });
 
   it("uses QueryStatePanel for loading state", () => {
@@ -351,6 +364,47 @@ describe("ActivitiesPage", () => {
       expect(invalidateWeekList).toHaveBeenCalled();
       expect(invalidateActivityOverview).toHaveBeenCalled();
       expect(invalidateActivityList).toHaveBeenCalled();
+    });
+  });
+
+  it("hides deleted activities immediately after delete confirmation", async () => {
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity()] }],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesPage />);
+    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByText("Trainer Ride"));
+    fireEvent.click(screen.getByText("Delete"));
+    fireEvent.click(screen.getByText("Confirm Delete"));
+
+    await waitFor(() => {
+      expect(bulkDeleteMutate).toHaveBeenCalledWith({ ids: ["activity-1"] });
+      expect(screen.queryByText("Trainer Ride")).toBeNull();
+    });
+  });
+
+  it("restores deleted activities when bulk delete fails", async () => {
+    mockBulkDeleteShouldFail = true;
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity()] }],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesPage />);
+    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByText("Trainer Ride"));
+    fireEvent.click(screen.getByText("Delete"));
+    fireEvent.click(screen.getByText("Confirm Delete"));
+
+    await waitFor(() => {
+      expect(bulkDeleteMutate).toHaveBeenCalledWith({ ids: ["activity-1"] });
+      expect(screen.getByText("Trainer Ride")).toBeDefined();
     });
   });
 
