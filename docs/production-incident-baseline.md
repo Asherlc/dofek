@@ -11013,3 +11013,35 @@ new incremental tables are populated.
   or zero required PeerDB slots, not just stale mirrored timestamps. Consider a
   deploy smoke check that runs the two-phase analytics dbt command to completion
   before declaring `analytics-worker` healthy.
+
+## 2026-06-19 — Raw analytics mirror reconciliation Stryker failure
+
+- **Symptoms:** PR CI failed `Test / Stryker (0)`. The downstream
+  `Test / Mutation Testing`, `Test / Test Gate`, and `CI Gate` checks failed
+  because the mutation shard did not meet the configured threshold.
+- **User impact:** The follow-up ClickHouse CDC fix could not be marked ready
+  for merge until mutation coverage improved. No production runtime impact was
+  observed from this CI-only failure.
+- **Evidence:** GitHub Actions job `82281810586` in run `27804593577` ended
+  with `Final mutation score 60.00 under breaking threshold 75`. The report
+  listed surviving and no-coverage mutants in
+  `src/db/clickhouse-cdc.ts`, centered on
+  `sourcePostgresTablesHaveAtMostDestinationRows`: missing query support,
+  malformed Postgres/ClickHouse row counts, SQL table-name mapping, and the
+  `sourceRowCount > 0` decision.
+- **Root cause:** The new raw mirror reconciliation logic compared Postgres
+  source row counts against ClickHouse destination rows, but tests only covered
+  the happy path and one incomplete-destination path. They did not prove the
+  source-count SQL shape, zero-source behavior, malformed row-count handling, or
+  the shared ClickHouse row-count reader.
+- **Fix / mitigation:** Consolidated ClickHouse destination row-count parsing
+  into one helper, removed duplicate query/parsing paths, and added focused
+  tests for SQL shape, zero source rows, invalid ClickHouse counts, and invalid
+  Postgres counts.
+- **Validation:** `pnpm exec vitest run src/db/clickhouse-cdc.test.ts` passed
+  `32` tests. `pnpm exec stryker run stryker.ci.config.json --mutate
+  "src/db/clickhouse-cdc.ts"` passed locally with a `79.82` mutation score,
+  above the `75` break threshold.
+- **Remaining risk:** Low. The local Stryker command matched the failed CI
+  mutate target; final confirmation still depends on the pushed GitHub Actions
+  rerun completing successfully.

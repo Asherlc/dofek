@@ -505,16 +505,17 @@ async function dropObsoleteMetricStreamPeerDbMirrors(peerDbClient: PeerDbClient)
   }
 }
 
-async function clickHouseDestinationTablesHaveRows(
+async function readClickHouseDestinationRowCount(
   clickHouseClient: ClickHouseCommandClient,
   tableNames: readonly string[],
-): Promise<boolean> {
-  if (!clickHouseClient.query) {
+): Promise<number> {
+  const query = clickHouseClient.query;
+  if (!query) {
     throw new Error("ClickHouse raw analytics mirror reconciliation requires query support");
   }
 
   const tableNameList = tableNames.map(peerDbStringLiteral).join(", ");
-  const result = await clickHouseClient.query<ClickHouseRowCount>({
+  const result = await query<ClickHouseRowCount>({
     query: `
       SELECT coalesce(sum(rows), 0) AS row_count
       FROM system.parts
@@ -529,31 +530,22 @@ async function clickHouseDestinationTablesHaveRows(
     throw new Error("Unable to read ClickHouse raw analytics destination row count");
   }
 
-  const rows = parsedRows.data;
-  if (rows.length === 0) {
+  const [row] = parsedRows.data;
+  if (!row) {
     throw new Error("Unable to read ClickHouse raw analytics destination row count");
   }
 
-  const rowCount = readInteger(rows[0]?.row_count);
+  const rowCount = readInteger(row.row_count);
   if (rowCount === null) {
     throw new Error("Unable to read ClickHouse raw analytics destination row count");
   }
-  return rowCount > 0;
+  return rowCount;
 }
 
-async function sourcePostgresTablesHaveAtMostDestinationRows(
+async function readSourcePostgresRowCount(
   sourcePostgresClient: SourcePostgresClient,
-  clickHouseClient: ClickHouseCommandClient,
   tableNames: readonly string[],
-): Promise<boolean> {
-  if (!clickHouseClient.query) {
-    throw new Error("ClickHouse raw analytics mirror reconciliation requires query support");
-  }
-
-  if (!(await clickHouseDestinationTablesHaveRows(clickHouseClient, tableNames))) {
-    return false;
-  }
-
+): Promise<number> {
   const postgresCounts = tableNames
     .map((tableName) => `SELECT count(*) AS row_count FROM fitness.${tableName}`)
     .join(" UNION ALL ");
@@ -561,42 +553,30 @@ async function sourcePostgresTablesHaveAtMostDestinationRows(
     SELECT coalesce(sum(row_count), 0) AS row_count
     FROM (${postgresCounts}) AS source_counts
   `);
-  const sourceRows = readQueryRows(postgresResult);
-  if (sourceRows.length === 0) {
+  const [sourceRow] = readQueryRows(postgresResult);
+  if (!sourceRow) {
     throw new Error("Unable to read Postgres raw analytics source row count");
   }
 
-  const sourceRowCount = readInteger(sourceRows[0]?.row_count);
+  const sourceRowCount = readInteger(sourceRow.row_count);
   if (sourceRowCount === null) {
     throw new Error("Unable to read Postgres raw analytics source row count");
   }
 
-  const tableNameList = tableNames.map(peerDbStringLiteral).join(", ");
-  const clickHouseResult = await clickHouseClient.query<ClickHouseRowCount>({
-    query: `
-      SELECT coalesce(sum(rows), 0) AS row_count
-      FROM system.parts
-      WHERE database = 'postgres_fitness'
-        AND table IN (${tableNameList})
-        AND active = 1
-    `,
-    format: "JSONEachRow",
-  });
-  const parsedRows = clickHouseRowCountRowsSchema.safeParse(await clickHouseResult.json());
-  if (!parsedRows.success) {
-    throw new Error("Unable to read ClickHouse raw analytics destination row count");
+  return sourceRowCount;
+}
+
+async function sourcePostgresTablesHaveAtMostDestinationRows(
+  sourcePostgresClient: SourcePostgresClient,
+  clickHouseClient: ClickHouseCommandClient,
+  tableNames: readonly string[],
+): Promise<boolean> {
+  const destinationRowCount = await readClickHouseDestinationRowCount(clickHouseClient, tableNames);
+  if (destinationRowCount === 0) {
+    return false;
   }
 
-  const destinationRows = parsedRows.data;
-  if (destinationRows.length === 0) {
-    throw new Error("Unable to read ClickHouse raw analytics destination row count");
-  }
-
-  const destinationRowCount = readInteger(destinationRows[0]?.row_count);
-  if (destinationRowCount === null) {
-    throw new Error("Unable to read ClickHouse raw analytics destination row count");
-  }
-
+  const sourceRowCount = await readSourcePostgresRowCount(sourcePostgresClient, tableNames);
   return sourceRowCount > 0 && destinationRowCount >= sourceRowCount;
 }
 
