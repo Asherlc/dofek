@@ -4,9 +4,6 @@ import type { ClickHouseMigration } from "./types.ts";
 export function createMigration(): ClickHouseMigration {
   return {
     id: "0033_recreate_deduped_activities_column_order",
-    statements: [
-      "DROP TABLE IF EXISTS analytics.deduped_activities",
-      dedupedActivitiesTableSql,
-    ],
+    statements: ["DROP TABLE IF EXISTS analytics.deduped_activities", dedupedActivitiesTableSql],
   };
 }
