@@ -5,10 +5,10 @@ import { signInToZepp, ZeppInvalidCredentialsError } from "zepp-client/client";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
+import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
 import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
-import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import {
@@ -649,8 +649,7 @@ export class AmazfitZeppProvider implements SyncProvider {
           for (const [workoutIndex, summary] of summaries.entries()) {
             try {
               const parsed = parseZeppWorkoutSummary(summary);
-              const isWithinWindow =
-                parsed.startedAt >= since && parsed.startedAt <= window.until;
+              const isWithinWindow = parsed.startedAt >= since && parsed.startedAt <= window.until;
               if (isWithinWindow) {
                 presentActivityExternalIds.add(parsed.externalId);
                 await db
