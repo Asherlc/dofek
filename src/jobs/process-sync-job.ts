@@ -148,6 +148,21 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
 
     await ensureProvider(db, provider.id, provider.name, undefined, job.data.userId);
 
+    const requiresTokens = provider.authSetup !== undefined;
+    if (requiresTokens) {
+      const tokens = await loadTokens(db, provider.id, job.data.userId);
+      if (!tokens) {
+        logger.info(`[worker] Skipping ${provider.name}: not connected`);
+        completedCount++;
+        providerStatus[provider.id] = { status: "done", message: "Skipped — not connected" };
+        await job.updateProgress({
+          providers: providerStatus,
+          percentage: computePercentage(completedCount, 0, totalProviders),
+        });
+        continue;
+      }
+    }
+
     const activeCooldown = await providerRateLimitCooldownStore.getActive(
       provider.id,
       job.data.userId,
@@ -178,21 +193,6 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
     }
 
     const syncStart = Date.now();
-
-    const requiresTokens = provider.authSetup !== undefined;
-    if (requiresTokens) {
-      const tokens = await loadTokens(db, provider.id, job.data.userId);
-      if (!tokens) {
-        logger.info(`[worker] Skipping ${provider.name}: not connected`);
-        completedCount++;
-        providerStatus[provider.id] = { status: "done", message: "Skipped — not connected" };
-        await job.updateProgress({
-          providers: providerStatus,
-          percentage: computePercentage(completedCount, 0, totalProviders),
-        });
-        continue;
-      }
-    }
 
     try {
       logger.info(`[worker] Starting ${provider.name}...`);

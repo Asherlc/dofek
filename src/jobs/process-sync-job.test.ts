@@ -453,6 +453,43 @@ describe("processSyncJob", () => {
     vi.useRealTimers();
   });
 
+  it("skips disconnected OAuth providers before active cooldown deferral", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const provider = createMockProvider({
+      id: "garmin",
+      name: "Garmin",
+      authSetup: () => undefined,
+      sync: vi.fn(),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+    mockLoadTokens.mockResolvedValue(null);
+
+    const { providerRateLimitCooldownStore } = await import("./provider-rate-limit-cooldown.ts");
+    await providerRateLimitCooldownStore.record(
+      new ProviderRateLimitError({
+        message: "Garmin API rate limit exceeded (429): limited",
+        providerId: "garmin",
+        statusCode: 429,
+        responseBody: "limited",
+        scope: "provider",
+        retryAfterSeconds: 600,
+      }),
+      "user-1",
+    );
+
+    const job = createMockJob({ providerId: "garmin", userId: "user-1", sinceDays: 1 });
+    await runSyncJob(job, mockDb);
+
+    expect(mockLoadTokens).toHaveBeenCalledWith(mockDb, "garmin", "user-1");
+    expect(provider.sync).not.toHaveBeenCalled();
+    expect(mockProviderQueueAdd).not.toHaveBeenCalled();
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      providers: { garmin: { status: "done", message: "Skipped — not connected" } },
+      percentage: 100,
+    });
+    vi.useRealTimers();
+  });
+
   it("skips import-only providers when enqueued by id", async () => {
     mockGetProvider.mockReturnValue({ id: "strong-csv", importOnly: true });
     mockIsSyncEligibleProvider.mockReturnValue(false);

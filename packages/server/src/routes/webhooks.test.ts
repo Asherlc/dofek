@@ -5,7 +5,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // ── Mocks ──────────────────────────────────────────────────────────────────
 
-const mockEnqueueSyncJob = vi.fn(async () => ({ id: "job-1" }));
+const { mockEnqueueSyncJob } = vi.hoisted(() => ({
+  mockEnqueueSyncJob: vi.fn(async () => ({ id: "job-1" })),
+}));
 
 vi.mock("dofek/jobs/enqueue-sync-job", () => ({
   enqueueSyncJob: (...args: unknown[]) => mockEnqueueSyncJob(...args),
