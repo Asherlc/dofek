@@ -251,7 +251,7 @@ export function ActivitiesPage() {
                 </h3>
                 <div className="h-px flex-1 bg-border/60" />
               </div>
-              <div className="space-y-2">
+              <div data-testid="activity-card-grid" className="grid gap-3 lg:grid-cols-2">
                 {day.activities.map((activity) => (
                   <ActivityCard
                     key={activity.id}
@@ -469,7 +469,7 @@ function ActivityCard({
 }: ActivityCardProps) {
   const isHidden = activity.isProviderAbsent === true;
   const cardClassName = [
-    "card block overflow-hidden transition-colors",
+    "card block h-full overflow-hidden transition-colors",
     selectMode ? "cursor-pointer hover:bg-surface-elevated" : "hover:bg-surface-elevated",
     selected ? "ring-2 ring-accent bg-surface-hover" : "",
     isHidden ? "border-l-4 border-l-amber-500/80 bg-amber-500/5" : "",
@@ -478,8 +478,9 @@ function ActivityCard({
     .join(" ");
 
   const content = (
-    <div className="flex flex-col sm:flex-row sm:items-stretch">
-      <div className="flex min-w-0 flex-1 flex-col gap-3 p-3 sm:flex-row sm:items-center sm:p-4">
+    <div className="flex h-full flex-col">
+      {activity.location ? <ActivityMapTile location={activity.location} units={units} /> : null}
+      <div className="flex min-w-0 flex-1 flex-col gap-3 p-3 sm:p-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             {selectMode ? (
@@ -519,7 +520,6 @@ function ActivityCard({
         </div>
         <ActivityMetricStrip activity={activity} units={units} />
       </div>
-      {activity.location ? <ActivityMapTile location={activity.location} units={units} /> : null}
     </div>
   );
 
@@ -605,7 +605,7 @@ function ActivityMapTile({ location, units }: ActivityMapTileProps) {
   const routeViewportStyle = getRouteViewportStyle(location.routePath);
 
   return (
-    <div className="relative h-24 overflow-hidden bg-surface-secondary sm:h-auto sm:w-36 sm:shrink-0">
+    <div className="relative aspect-[16/9] w-full overflow-hidden bg-surface-secondary">
       {loadFailed ? (
         <div className="w-full h-full flex items-center justify-center text-xs text-muted">
           Map unavailable
@@ -713,7 +713,7 @@ function ActivityMetricStrip({
       : activity.stats;
 
   return (
-    <div className="grid grid-cols-2 gap-2 sm:w-72 sm:shrink-0">
+    <div className="grid grid-cols-2 gap-2">
       {locationStats.slice(0, 2).map((stat) => (
         <div key={stat.label} className="rounded-md bg-surface-secondary px-2 py-1.5 text-right">
           <div className="text-sm font-semibold tabular-nums">{stat.value}</div>

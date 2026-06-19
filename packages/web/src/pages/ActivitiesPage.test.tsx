@@ -184,6 +184,28 @@ describe("ActivitiesPage", () => {
     expect(screen.queryByText("TSS")).toBeNull();
   });
 
+  it("lays out each day of activities as a responsive card grid", () => {
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: [
+            activity({ id: "activity-1", name: "Trainer Ride" }),
+            activity({ id: "activity-2", name: "Morning Run", activityType: "running" }),
+          ],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesPage />);
+
+    expect(screen.getByTestId("activity-card-grid").className).toContain("grid");
+    expect(screen.getByTestId("activity-card-grid").className).toContain("lg:grid-cols-2");
+  });
+
   it("renders server-provided overview totals", () => {
     mockOverviewQuery = {
       data: {
