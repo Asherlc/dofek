@@ -114,9 +114,7 @@ export function osmTilePreview(points: LatLngPoint[]): OsmTilePreview {
   }
 
   let selectedZoom = DEFAULT_ROUTE_PREVIEW_ZOOM;
-  let selectedProjectedPoints = points.map((point) =>
-    projectToTilePoint(point.lat, point.lng, selectedZoom),
-  );
+  let selectedProjectedPoints: ProjectedTilePoint[] = [];
 
   for (let zoom = DEFAULT_ROUTE_PREVIEW_ZOOM; zoom >= MIN_ROUTE_PREVIEW_ZOOM; zoom--) {
     selectedZoom = zoom;

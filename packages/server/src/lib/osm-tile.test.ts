@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { latLngToTile, osmTilePreview, osmTileUrl } from "./osm-tile.ts";
 
+function tilePathnames(urls: string[]): string[] {
+  return urls.map((url) => new URL(url).pathname);
+}
+
 describe("latLngToTile", () => {
   it("computes tile coordinates for the equator/prime meridian at zoom 0", () => {
     expect(latLngToTile(0, 0, 0)).toEqual({ zoom: 0, tileX: 0, tileY: 0 });
@@ -89,7 +93,46 @@ describe("osmTilePreview", () => {
     });
     expect(firstTileUrl.origin).toBe("https://tile.openstreetmap.org");
     expect(firstTileUrl.pathname).toMatch(/^\/19\/\d+\/\d+\.png$/);
+    expect(tilePathnames(preview.tiles.map((tile) => tile.url))).toEqual([
+      "/19/83856/202646.png",
+      "/19/83857/202646.png",
+      "/19/83858/202646.png",
+      "/19/83859/202646.png",
+      "/19/83860/202646.png",
+      "/19/83856/202647.png",
+      "/19/83857/202647.png",
+      "/19/83858/202647.png",
+      "/19/83859/202647.png",
+      "/19/83860/202647.png",
+      "/19/83856/202648.png",
+      "/19/83857/202648.png",
+      "/19/83858/202648.png",
+      "/19/83859/202648.png",
+      "/19/83860/202648.png",
+    ]);
+    expect(preview.tiles.map((tile) => ({ x: tile.x, y: tile.y }))).toEqual([
+      { x: -179.332, y: -132.862 },
+      { x: 76.668, y: -132.862 },
+      { x: 332.668, y: -132.862 },
+      { x: 588.668, y: -132.862 },
+      { x: 844.668, y: -132.862 },
+      { x: -179.332, y: 123.138 },
+      { x: 76.668, y: 123.138 },
+      { x: 332.668, y: 123.138 },
+      { x: 588.668, y: 123.138 },
+      { x: 844.668, y: 123.138 },
+      { x: -179.332, y: 379.138 },
+      { x: 76.668, y: 379.138 },
+      { x: 332.668, y: 379.138 },
+      { x: 588.668, y: 379.138 },
+      { x: 844.668, y: 379.138 },
+    ]);
     expect(preview.routePath).toHaveLength(3);
+    expect(preview.routePath).toEqual([
+      { x: 288.304, y: 453.089 },
+      { x: 512, y: 311.585 },
+      { x: 735.696, y: 122.911 },
+    ]);
     expect(preview.routePath?.[0]?.x).toBeGreaterThan(0);
     expect(preview.routePath?.[0]?.x).toBeLessThan(preview.width);
     expect(preview.routePath?.[0]?.y).toBeGreaterThan(0);
@@ -121,6 +164,29 @@ describe("osmTilePreview", () => {
     expect(preview.routePath).toBeNull();
   });
 
+  it("anchors boundary previews to the valid world tile range", () => {
+    const preview = osmTilePreview([{ lat: 90, lng: 180 }]);
+
+    expect(preview.tiles).toHaveLength(12);
+    expect(tilePathnames(preview.tiles.map((tile) => tile.url))).toEqual([
+      "/19/0/0.png",
+      "/19/1/0.png",
+      "/19/2/0.png",
+      "/19/3/0.png",
+      "/19/0/1.png",
+      "/19/1/1.png",
+      "/19/2/1.png",
+      "/19/3/1.png",
+      "/19/0/2.png",
+      "/19/1/2.png",
+      "/19/2/2.png",
+      "/19/3/2.png",
+    ]);
+    expect(preview.tiles[0]).toMatchObject({ x: 0, y: 0 });
+    expect(preview.tiles.at(-1)).toMatchObject({ x: 768, y: 512 });
+    expect(preview.routePath).toBeNull();
+  });
+
   it("uses the highest preview zoom that fits a long route inside the export", () => {
     const preview = osmTilePreview([
       { lat: 37.7749, lng: -122.4194 },
@@ -130,5 +196,34 @@ describe("osmTilePreview", () => {
     const firstTileUrl = new URL(preview.tiles[0]?.url ?? "");
     expect(firstTileUrl.origin).toBe("https://tile.openstreetmap.org");
     expect(firstTileUrl.pathname).toMatch(/^\/4\//);
+    expect(preview.tiles).toHaveLength(20);
+    expect(tilePathnames(preview.tiles.map((tile) => tile.url))).toEqual([
+      "/4/1/4.png",
+      "/4/2/4.png",
+      "/4/3/4.png",
+      "/4/4/4.png",
+      "/4/5/4.png",
+      "/4/1/5.png",
+      "/4/2/5.png",
+      "/4/3/5.png",
+      "/4/4/5.png",
+      "/4/5/5.png",
+      "/4/1/6.png",
+      "/4/2/6.png",
+      "/4/3/6.png",
+      "/4/4/6.png",
+      "/4/5/6.png",
+      "/4/1/7.png",
+      "/4/2/7.png",
+      "/4/3/7.png",
+      "/4/4/7.png",
+      "/4/5/7.png",
+    ]);
+    expect(preview.tiles[0]).toMatchObject({ x: -162.558, y: -249.604 });
+    expect(preview.tiles.at(-1)).toMatchObject({ x: 861.442, y: 518.396 });
+    expect(preview.routePath).toEqual([
+      { x: 236.582, y: 309.586 },
+      { x: 787.418, y: 266.414 },
+    ]);
   });
 });
