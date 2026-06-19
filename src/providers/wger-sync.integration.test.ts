@@ -360,7 +360,7 @@ describe("WgerProvider.sync() (integration)", () => {
 
     server.use(
       http.get("https://wger.de/api/v2/workoutsession/*", () => {
-        return HttpResponse.json({ detail: "down" }, { status: 503 });
+        return HttpResponse.json({ detail: "server error" }, { status: 500 });
       }),
       http.get("https://wger.de/api/v2/weightentry/*", () => {
         return HttpResponse.json({ count: 0, next: null, previous: null, results: [] });
@@ -378,7 +378,7 @@ describe("WgerProvider.sync() (integration)", () => {
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors.map((error) => error.message)).toContainEqual(
-      expect.stringContaining("activity: Wger API error (503)"),
+      expect.stringContaining("activity: Wger API error (500)"),
     );
     const activityRows = await ctx.db
       .select()
@@ -400,7 +400,7 @@ describe("WgerProvider.sync() (integration)", () => {
         return HttpResponse.json({ count: 0, next: null, previous: null, results: [] });
       }),
       http.get("https://wger.de/api/v2/weightentry/*", () => {
-        return HttpResponse.json({ detail: "down" }, { status: 503 });
+        return HttpResponse.json({ detail: "server error" }, { status: 500 });
       }),
     );
 
@@ -415,7 +415,7 @@ describe("WgerProvider.sync() (integration)", () => {
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors.map((error) => error.message)).toContainEqual(
-      expect.stringContaining("metric_stream: Wger API error (503)"),
+      expect.stringContaining("metric_stream: Wger API error (500)"),
     );
     expect(metricStreamCapture.publishedMetricStreamRows).toHaveLength(0);
   });

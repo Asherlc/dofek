@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import {
   fetchWithRateLimitHandling,
+  isServiceUnavailableStatus,
   ProviderRateLimitError,
+  ProviderServiceUnavailableError,
   parseRetryAfterHeader,
 } from "@dofek/provider-http/rate-limit";
 import { z } from "zod";
@@ -54,6 +56,19 @@ function createWhoopRateLimitError(response: Response, responseBody: string): Wh
     responseBody,
     retryAfterSeconds,
   );
+}
+
+function createWhoopServiceUnavailableError(
+  response: Response,
+  responseBody: string,
+): ProviderServiceUnavailableError {
+  return new ProviderServiceUnavailableError({
+    message: `WHOOP API service unavailable (${response.status}): ${responseBody}`,
+    providerId: "whoop",
+    statusCode: response.status,
+    responseBody,
+    retryAfterSeconds: parseRetryAfterHeader(response.headers.get("Retry-After")),
+  });
 }
 
 // Cognito auth config (from id.whoop.com web app)
@@ -131,7 +146,10 @@ async function cognitoCall(
       },
       body: JSON.stringify(body),
     },
-    { createRateLimitError: createWhoopRateLimitError },
+    {
+      createRateLimitError: createWhoopRateLimitError,
+      createServiceUnavailableError: createWhoopServiceUnavailableError,
+    },
   );
 
   // Read body as text first — the proxy may return non-JSON errors
@@ -349,7 +367,10 @@ export class WhoopClient {
           Authorization: `Bearer ${accessToken}`,
         },
       },
-      { createRateLimitError: createWhoopRateLimitError },
+      {
+        createRateLimitError: createWhoopRateLimitError,
+        createServiceUnavailableError: createWhoopServiceUnavailableError,
+      },
     );
 
     if (!response.ok) {
@@ -411,6 +432,9 @@ export class WhoopClient {
     }
 
     const text = await response.text();
+    if (isServiceUnavailableStatus(response.status)) {
+      throw createWhoopServiceUnavailableError(response, text);
+    }
     throw new Error(`WHOOP API error (${response.status}): ${text}`);
   }
 
@@ -424,7 +448,9 @@ export class WhoopClient {
       try {
         return await this.#get<T>(url, params, attempt);
       } catch (err) {
-        if (!(err instanceof WhoopRateLimitError) || attempt >= maxRetries) {
+        const shouldRetry =
+          err instanceof WhoopRateLimitError || err instanceof ProviderServiceUnavailableError;
+        if (!shouldRetry || attempt >= maxRetries) {
           throw err;
         }
         attempt++;
@@ -610,6 +636,7 @@ export class WhoopClient {
           });
           return createWhoopRateLimitError(response, responseBody);
         },
+        createServiceUnavailableError: createWhoopServiceUnavailableError,
       },
     );
 
