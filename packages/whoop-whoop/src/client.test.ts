@@ -1,3 +1,4 @@
+import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
 import { describe, expect, it, vi } from "vitest";
 import { WhoopClient, WhoopMetricUnavailableError, WhoopRateLimitError } from "./client.ts";
 import { createMockFetch, createMockResponse, createTypedMockFetch } from "./test-helpers.ts";
@@ -861,6 +862,49 @@ describe("WhoopClient.listDeveloperWorkouts", () => {
     expect(fetchFn).toHaveBeenCalledTimes(3);
   });
 
+  it("retries service-unavailable developer workout requests before succeeding", async () => {
+    const fetchFn = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(
+        createMockResponse({
+          status: 503,
+          ok: false,
+          text: "Encountered ServiceUnavailableException",
+          body: "Encountered ServiceUnavailableException",
+        }),
+      )
+      .mockResolvedValueOnce(
+        createMockResponse({
+          status: 503,
+          ok: false,
+          text: "Encountered ServiceUnavailableException",
+          body: "Encountered ServiceUnavailableException",
+        }),
+      )
+      .mockResolvedValueOnce(
+        createMockResponse({
+          status: 200,
+          ok: true,
+          body: {
+            records: [
+              {
+                id: "after-service-retry",
+                start: "2024-01-15T10:00:00Z",
+                end: "2024-01-15T11:00:00Z",
+              },
+            ],
+            next_token: null,
+          },
+        }),
+      );
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    const result = await client.listDeveloperWorkouts();
+
+    expect(result.records.map((record) => record.id)).toEqual(["after-service-retry"]);
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+  });
+
   it("throws the rate-limit error after exhausting developer workout retries", async () => {
     const fetchFn = vi
       .fn<typeof globalThis.fetch>()
@@ -874,17 +918,37 @@ describe("WhoopClient.listDeveloperWorkouts", () => {
     await expect(client.listDeveloperWorkouts()).rejects.toBeInstanceOf(WhoopRateLimitError);
     expect(fetchFn).toHaveBeenCalledTimes(4);
   });
+
+  it("throws the common service-unavailable error after exhausting developer workout retries", async () => {
+    const fetchFn = vi.fn<typeof globalThis.fetch>().mockImplementation(() =>
+      Promise.resolve(
+        createMockResponse({
+          status: 503,
+          ok: false,
+          text: "Encountered ServiceUnavailableException",
+          body: "Encountered ServiceUnavailableException",
+        }),
+      ),
+    );
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    await expect(client.listDeveloperWorkouts()).rejects.toBeInstanceOf(
+      ProviderServiceUnavailableError,
+    );
+    expect(fetchFn).toHaveBeenCalledTimes(4);
+  });
 });
 
 describe("WhoopClient.listDeveloperWorkoutIdsInWindow", () => {
   it("collects workout ids whose start time falls in the window", async () => {
-    const fetchFn: typeof globalThis.fetch = vi.fn(async (input: string | URL) => {
+    const fetchFn = createTypedMockFetch();
+    fetchFn.mockImplementation(async (input) => {
       const url = String(input);
       if (url.includes("/developer/v2/activity/workout")) {
-        return {
-          ok: true,
+        return createMockResponse({
           status: 200,
-          json: async () => ({
+          ok: true,
+          body: {
             records: [
               {
                 id: "in-window",
@@ -898,10 +962,10 @@ describe("WhoopClient.listDeveloperWorkoutIdsInWindow", () => {
               },
             ],
             next_token: null,
-          }),
-        };
+          },
+        });
       }
-      return { ok: false, status: 404, text: async () => "not found" };
+      return createMockResponse({ status: 404, ok: false, text: "not found" });
     });
     const client = new WhoopClient(makeToken(), fetchFn);
 
