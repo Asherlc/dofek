@@ -159,14 +159,17 @@ export class WeeklyReportRepository {
       `WITH ${restingHeartRateClickHouseCte()},
       per_activity AS (
         SELECT
-          toDate(toTimeZone(started_at, {timezone:String})) AS date,
-          dateDiff('second', started_at, ended_at) / 3600.0 AS hours,
-          dateDiff('second', started_at, ended_at) / 60.0
-            * avg_hr / nullIf(toFloat64(max_hr), 0) AS load
-        FROM analytics.activity_summary
-        WHERE user_id = {userId:UUID}
-          AND toDate(toTimeZone(started_at, {timezone:String})) >= toDate({windowStart:String})
-          AND ended_at IS NOT NULL
+          toDate(toTimeZone(asum.started_at, {timezone:String})) AS date,
+          dateDiff('second', asum.started_at, asum.ended_at) / 3600.0 AS hours,
+          dateDiff('second', asum.started_at, asum.ended_at) / 60.0
+            * asum.avg_hr / nullIf(toFloat64(asum.max_hr), 0) AS load
+        FROM analytics.activity_summary asum
+        INNER JOIN analytics.v_activity va
+          ON va.id = asum.activity_id
+         AND va.user_id = asum.user_id
+        WHERE asum.user_id = {userId:UUID}
+          AND toDate(toTimeZone(asum.started_at, {timezone:String})) >= toDate({windowStart:String})
+          AND asum.ended_at IS NOT NULL
       ),
       daily_training AS (
         SELECT

@@ -240,25 +240,28 @@ export class HikingRepository {
     const rows = await this.#sensorStore.query(
       gradeRowSchema,
       `SELECT
-        toString(activity_id) AS activity_id,
-        toString(toDate(toTimeZone(started_at, {timezone:String}))) AS date,
-        name AS activity_name,
-        activity_type,
-        round(total_distance, 1) AS distance_m,
-        toFloat64(dateDiff('second', started_at, ended_at)) AS duration_seconds,
-        round(elevation_gain_m, 1) AS elevation_gain_m,
-        round(elevation_loss_m, 1) AS elevation_loss_m,
-        if(total_distance > 0,
-           round((elevation_gain_m - elevation_loss_m) / total_distance * 100, 4),
+        toString(asum.activity_id) AS activity_id,
+        toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS date,
+        asum.name AS activity_name,
+        asum.activity_type,
+        round(asum.total_distance, 1) AS distance_m,
+        toFloat64(dateDiff('second', asum.started_at, asum.ended_at)) AS duration_seconds,
+        round(asum.elevation_gain_m, 1) AS elevation_gain_m,
+        round(asum.elevation_loss_m, 1) AS elevation_loss_m,
+        if(asum.total_distance > 0,
+           round((asum.elevation_gain_m - asum.elevation_loss_m) / asum.total_distance * 100, 4),
            0) AS avg_grade
-      FROM analytics.activity_summary
-      WHERE user_id = {userId:UUID}
-        AND started_at > now() - INTERVAL {days:Int32} DAY
-        AND activity_type IN ('walking', 'hiking', 'trail_running')
-        AND total_distance > 0
-        AND ended_at IS NOT NULL
-        AND dateDiff('second', started_at, ended_at) > 0
-      ORDER BY started_at`,
+      FROM analytics.activity_summary asum
+      INNER JOIN analytics.v_activity va
+        ON va.id = asum.activity_id
+       AND va.user_id = asum.user_id
+      WHERE asum.user_id = {userId:UUID}
+        AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+        AND asum.activity_type IN ('walking', 'hiking', 'trail_running')
+        AND asum.total_distance > 0
+        AND asum.ended_at IS NOT NULL
+        AND dateDiff('second', asum.started_at, asum.ended_at) > 0
+      ORDER BY asum.started_at`,
       { userId: this.#userId, timezone: this.#timezone, days },
     );
 
@@ -283,14 +286,17 @@ export class HikingRepository {
     const rows = await this.#sensorStore.query(
       elevationRowSchema,
       `SELECT
-        toString(toMonday(toDate(toTimeZone(started_at, {timezone:String})))) AS week,
-        round(sum(elevation_gain_m), 1) AS elevation_gain_m,
+        toString(toMonday(toDate(toTimeZone(asum.started_at, {timezone:String})))) AS week,
+        round(sum(asum.elevation_gain_m), 1) AS elevation_gain_m,
         toInt32(count()) AS activity_count,
-        round(sum(total_distance / 1000.0), 2) AS total_distance_km
-      FROM analytics.activity_summary
-      WHERE user_id = {userId:UUID}
-        AND started_at > now() - INTERVAL {days:Int32} DAY
-        AND activity_type IN ('walking', 'hiking')
+        round(sum(asum.total_distance / 1000.0), 2) AS total_distance_km
+      FROM analytics.activity_summary asum
+      INNER JOIN analytics.v_activity va
+        ON va.id = asum.activity_id
+       AND va.user_id = asum.user_id
+      WHERE asum.user_id = {userId:UUID}
+        AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+        AND asum.activity_type IN ('walking', 'hiking')
       GROUP BY week
       ORDER BY week`,
       { userId: this.#userId, timezone: this.#timezone, days },
@@ -349,20 +355,23 @@ export class HikingRepository {
       comparisonRowSchema,
       `WITH activity_data AS (
         SELECT
-          name AS activity_name,
-          toString(toDate(toTimeZone(started_at, {timezone:String}))) AS date,
-          round(dateDiff('second', started_at, ended_at) / 60.0, 1) AS duration_minutes,
-          if(total_distance > 0,
-             round((dateDiff('second', started_at, ended_at) / 60.0) / (total_distance / 1000.0), 2),
+          asum.name AS activity_name,
+          toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS date,
+          round(dateDiff('second', asum.started_at, asum.ended_at) / 60.0, 1) AS duration_minutes,
+          if(asum.total_distance > 0,
+             round((dateDiff('second', asum.started_at, asum.ended_at) / 60.0) / (asum.total_distance / 1000.0), 2),
              0) AS average_pace_min_per_km,
-          round(avg_hr, 1) AS avg_heart_rate,
-          round(elevation_gain_m, 1) AS elevation_gain_m
-        FROM analytics.activity_summary
-        WHERE user_id = {userId:UUID}
-          AND started_at > now() - INTERVAL {days:Int32} DAY
-          AND activity_type IN ('walking', 'hiking', 'trail_running')
-          AND name IS NOT NULL
-          AND ended_at IS NOT NULL
+          round(asum.avg_hr, 1) AS avg_heart_rate,
+          round(asum.elevation_gain_m, 1) AS elevation_gain_m
+        FROM analytics.activity_summary asum
+        INNER JOIN analytics.v_activity va
+          ON va.id = asum.activity_id
+         AND va.user_id = asum.user_id
+        WHERE asum.user_id = {userId:UUID}
+          AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+          AND asum.activity_type IN ('walking', 'hiking', 'trail_running')
+          AND asum.name IS NOT NULL
+          AND asum.ended_at IS NOT NULL
       ),
       repeated_names AS (
         SELECT activity_name

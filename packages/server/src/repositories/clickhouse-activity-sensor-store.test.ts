@@ -87,6 +87,7 @@ describe("ClickHouseActivitySensorStore", () => {
       }),
     );
     const queryText = query.mock.calls[0]?.[0]?.query;
+    expect(queryText).toContain("analytics.v_activity");
     expect(queryText).toContain(
       "activity_id IN (\n          SELECT arrayJoin(CAST({activityIds:Array(String)}, 'Array(UUID)'))",
     );
@@ -98,7 +99,7 @@ describe("ClickHouseActivitySensorStore", () => {
     await store.getPowerCurveSamples(90, window.userId, "UTC");
 
     const queryText = query.mock.calls[0]?.[0]?.query;
-    expect(queryText).toContain("analytics.activity_summary");
+    expect(queryText).toContain("analytics.v_activity");
     expect(queryText).toContain("analytics.deduped_sensor");
   });
 
@@ -108,7 +109,7 @@ describe("ClickHouseActivitySensorStore", () => {
     await store.getNormalizedPowerSamples(365, window.userId, "UTC");
 
     const queryText = query.mock.calls[0]?.[0]?.query;
-    expect(queryText).toContain("analytics.activity_summary");
+    expect(queryText).toContain("analytics.v_activity");
     expect(queryText).toContain("analytics.deduped_sensor");
   });
 

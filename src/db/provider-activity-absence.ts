@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "./index.ts";
+import { queryCache } from "../lib/cache.ts";
 import { getTokenUserId } from "./token-user-context.ts";
 
 export interface ProviderActivityAbsenceReconciliation {
@@ -31,6 +32,14 @@ function resolveUserId(userId?: string): string {
     throw new Error("Provider activity absence reconciliation requires userId");
   }
   return scopedUserId;
+}
+
+async function invalidateActivityVisibilityCaches(userId: string): Promise<void> {
+  await Promise.allSettled([
+    queryCache.invalidateByPrefix(`${userId}:activity.`),
+    queryCache.invalidateByPrefix(`${userId}:calendar.`),
+    queryCache.invalidateByPrefix(`${userId}:training.`),
+  ]);
 }
 
 function presentExternalIdValues(presentExternalIds: ReadonlySet<string>): string[] {
@@ -81,6 +90,8 @@ export async function reconcileProviderActivityAbsence(
       AND started_at < ${reconciliation.windowEnd}
     ${missingExternalIdPredicate}
   `);
+
+  await invalidateActivityVisibilityCaches(userId);
 }
 
 export async function markProviderActivityAbsent(
@@ -97,4 +108,6 @@ export async function markProviderActivityAbsent(
       AND provider_absent_at IS NULL
       AND deleted_at IS NULL
   `);
+
+  await invalidateActivityVisibilityCaches(userId);
 }

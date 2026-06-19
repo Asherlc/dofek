@@ -591,7 +591,7 @@ describe("weeklyReportRouter", () => {
 
       const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1] ?? "";
       expect(queryText).not.toContain("AND avg_hr IS NOT NULL");
-      expect(queryText).toContain("* avg_hr / nullIf(toFloat64(max_hr), 0)");
+      expect(queryText).toContain("* asum.avg_hr / nullIf(toFloat64(asum.max_hr), 0)");
       expect(queryText).toContain("toInt32(count()) AS count");
       expect(queryText).toContain("sumIf(load, load IS NOT NULL) AS load");
     });

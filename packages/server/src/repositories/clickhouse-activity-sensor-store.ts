@@ -154,8 +154,11 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
           sample_count,
           centroid_lat,
           centroid_lng
-        FROM analytics.activity_summary
-        WHERE activity_id IN (
+        FROM analytics.activity_summary asum
+        INNER JOIN analytics.v_activity va
+          ON va.id = asum.activity_id
+         AND va.user_id = asum.user_id
+        WHERE asum.activity_id IN (
           SELECT arrayJoin(CAST({activityIds:Array(String)}, 'Array(UUID)'))
         )
       `,

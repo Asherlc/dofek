@@ -10,7 +10,7 @@ import { dateWindowStartString } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { PmcChartCalculator } from "./pmc-chart-calculator.ts";
 import { PmcTrainingLoadCalculator } from "./pmc-training-load-calculator.ts";
-import { countRawActivities } from "./raw-activity-count.ts";
+import { activityRepositoryFor } from "./activity-repository.ts";
 import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
 
 // ---------------------------------------------------------------------------
@@ -125,20 +125,28 @@ export class PmcRepository extends BaseRepository {
       },
     );
 
+    const visibleActivityRows = await activityRepositoryFor(
+      this.db,
+      this.userId,
+      this.timezone,
+      this.accessWindow,
+    ).filterToVisibleActivities(activityRows);
+
     // QUERY 2: Normalized Power per activity from analytics.deduped_sensor.
     const normalizedPowerRows = await this.#sensorStore.query(
       normalizedPowerRowSchema,
       `WITH rolling AS (
         SELECT
-          a.activity_id AS activity_id,
+          a.id AS activity_id,
           avg(ds.scalar) OVER (
-            PARTITION BY a.activity_id
+            PARTITION BY a.id
             ORDER BY toUnixTimestamp(ds.recorded_at)
             RANGE BETWEEN 29 PRECEDING AND CURRENT ROW
           ) AS rolling_30s_power
         FROM analytics.deduped_sensor ds
-        INNER JOIN analytics.activity_summary a
+        INNER JOIN analytics.v_activity a
           ON a.user_id = ds.user_id
+         AND a.id = ds.activity_id
          AND ds.recorded_at >= a.started_at
          AND ds.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
         WHERE ds.user_id = {userId:UUID}
@@ -173,7 +181,7 @@ export class PmcRepository extends BaseRepository {
       trainingLoadCalculator,
     });
     return chartCalculator.buildChart({
-      activityRows,
+      activityRows: visibleActivityRows,
       normalizedPowerRows,
       queryDays,
       displayDays: days,
@@ -181,9 +189,10 @@ export class PmcRepository extends BaseRepository {
   }
 
   async #loadRawActivityCount(days: number): Promise<number> {
-    return countRawActivities(this.db, {
-      userId: this.userId,
-      days,
-    });
+    return activityRepositoryFor(this.db, this.userId, this.timezone, this.accessWindow).countVisibleInWindow(
+      {
+        days,
+      },
+    );
   }
 }

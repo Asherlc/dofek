@@ -57,7 +57,7 @@ describe("PowerRepository", () => {
 
     it("does not scan power samples when no raw activities exist", async () => {
       const analyticsStore = makeAnalyticsStore();
-      const db = makeDb([{ raw_activity_count: 0 }]);
+      const db = makeDb([{ activity_count: 0 }]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore, db);
       const result = await repo.getPowerCurve(90);
 
@@ -131,7 +131,7 @@ describe("PowerRepository", () => {
 
     it("does not scan normalized power or power curve samples when no raw activities exist", async () => {
       const analyticsStore = makeAnalyticsStore();
-      const db = makeDb([{ raw_activity_count: 0 }]);
+      const db = makeDb([{ activity_count: 0 }]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore, db);
       const result = await repo.getEftpTrend(365);
 

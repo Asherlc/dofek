@@ -10,7 +10,7 @@ import {
   ActivitySourceAttribution,
   type ProviderLookup,
 } from "../models/activity-source-attribution.ts";
-import type { ActivitySensorStore } from "./activity-repository.ts";
+import { activityRepositoryFor, type ActivitySensorStore } from "./activity-repository.ts";
 import { getActivityRoutePreviews } from "./activity-route-preview.ts";
 
 // ---------------------------------------------------------------------------
@@ -90,10 +90,6 @@ const activityRowSchema = z.object({
 const caloriesRowSchema = z.object({
   id: z.string(),
   calories: z.coerce.number().nullable(),
-});
-
-const deletedActivityRowSchema = z.object({
-  id: z.string(),
 });
 
 const baselineRowSchema = z.object({
@@ -220,12 +216,12 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     ]);
 
     const activityRowsMatchingType = filterActivityRowsByType(activityRows, input.activityType);
-    const deletedActivityIds = await this.#fetchDeletedActivityIds(
-      activityRowsMatchingType.map((row) => row.id),
-    );
-    const filteredActivityRows = activityRowsMatchingType.filter(
-      (row) => !deletedActivityIds.has(row.id),
-    );
+    const filteredActivityRows = await activityRepositoryFor(
+      this.db,
+      this.userId,
+      this.timezone,
+      this.accessWindow,
+    ).filterToVisibleActivities(activityRowsMatchingType);
     const activityIds = filteredActivityRows.map((row) => row.id);
     const [caloriesRows, routePreviewByActivityId] = await Promise.all([
       this.#fetchCaloriesByActivityId(activityIds),
@@ -531,31 +527,13 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       sql`SELECT
             a.id::text AS id,
             NULLIF(a.raw->>'calories', '')::numeric AS calories
-          FROM fitness.activity a
+          FROM fitness.v_activity a
           WHERE a.user_id = ${this.userId}::uuid
-            AND a.provider_absent_at IS NULL
-            AND a.deleted_at IS NULL
             AND a.id IN (${activityIdFilter})
             AND a.raw ? 'calories'`,
     );
   }
 
-  async #fetchDeletedActivityIds(activityIds: string[]): Promise<Set<string>> {
-    if (activityIds.length === 0) return new Set();
-    const activityIdFilter = sql.join(
-      activityIds.map((activityId) => sql`${activityId}::uuid`),
-      sql`, `,
-    );
-    const rows = await this.query(
-      deletedActivityRowSchema,
-      sql`SELECT id::text AS id
-          FROM fitness.activity
-          WHERE user_id = ${this.userId}::uuid
-            AND id IN (${activityIdFilter})
-            AND deleted_at IS NOT NULL`,
-    );
-    return new Set(rows.map((row) => row.id));
-  }
 }
 
 export function mergeDayGroups(

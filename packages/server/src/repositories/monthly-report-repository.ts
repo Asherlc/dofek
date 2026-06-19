@@ -132,15 +132,18 @@ export class MonthlyReportRepository {
       `WITH ${restingHeartRateClickHouseCte()},
       per_activity AS (
         SELECT
-          toDate(started_at) AS date,
-          dateDiff('second', started_at, ended_at) / 3600.0 AS hours,
-          dateDiff('second', started_at, ended_at) / 60.0
-            * avg_hr / nullIf(toFloat64(max_hr), 0) AS load
-        FROM analytics.activity_summary
-        WHERE user_id = {userId:UUID}
-          AND started_at >= toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH
-          AND ended_at IS NOT NULL
-          AND avg_hr IS NOT NULL
+          toDate(asum.started_at) AS date,
+          dateDiff('second', asum.started_at, asum.ended_at) / 3600.0 AS hours,
+          dateDiff('second', asum.started_at, asum.ended_at) / 60.0
+            * asum.avg_hr / nullIf(toFloat64(asum.max_hr), 0) AS load
+          FROM analytics.activity_summary asum
+          INNER JOIN analytics.v_activity va
+            ON va.id = asum.activity_id
+           AND va.user_id = asum.user_id
+          WHERE asum.user_id = {userId:UUID}
+            AND asum.started_at >= toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH
+            AND asum.ended_at IS NOT NULL
+            AND asum.avg_hr IS NOT NULL
       ),
       daily_training AS (
         SELECT date, sum(hours) AS hours, toInt32(count()) AS count, sum(load) AS load
