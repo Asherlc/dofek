@@ -6,8 +6,9 @@ import {
   parseValidDate,
 } from "@dofek/format/format";
 import { formatActivityTypeLabel } from "@dofek/training/training";
-import { type CSSProperties, useState } from "react";
+import { useState } from "react";
 import { useUnitConverter } from "../lib/unitContext.ts";
+import type { ActivityMapPreview } from "./ActivityMapTile.tsx";
 import { ActivityTable, type ActivityTableColumn } from "./ActivityTable.tsx";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
@@ -24,18 +25,11 @@ export interface Activity {
   location?: {
     centroidLat: number;
     centroidLng: number;
-    tileUrl: string;
-    routePath?: { x: number; y: number }[] | null;
+    mapPreview: ActivityMapPreview;
     distanceMeters: number | null;
     elevationGainM: number | null;
   } | null;
 }
-
-type RoutePathPoint = { x: number; y: number };
-
-const ROUTE_THUMBNAIL_PADDING_PERCENT = 20;
-const MAX_ROUTE_THUMBNAIL_SCALE = 2.5;
-const MIN_ROUTE_THUMBNAIL_SPAN_PERCENT = 1;
 
 interface ActivityListProps {
   activities: Activity[];
@@ -62,50 +56,6 @@ function formatActivityDuration(startedAt: string, endedAt: string | null): stri
   if (!startedDate || !endedDate) return "—";
   const durationMinutes = Math.round((endedDate.getTime() - startedDate.getTime()) / 60000);
   return durationMinutes >= 0 ? formatDurationMinutes(durationMinutes) : "—";
-}
-
-function formatRouteViewportNumber(value: number): string {
-  const rounded = Math.round(value * 1000) / 1000;
-  return Object.is(rounded, -0) ? "0" : String(rounded);
-}
-
-function getRouteViewportStyle(routePath?: RoutePathPoint[] | null): CSSProperties | undefined {
-  if (routePath == null || routePath.length < 2) return undefined;
-
-  const firstPoint = routePath[0];
-  if (!firstPoint) return undefined;
-
-  let minX = firstPoint.x;
-  let maxX = firstPoint.x;
-  let minY = firstPoint.y;
-  let maxY = firstPoint.y;
-
-  for (const point of routePath) {
-    minX = Math.min(minX, point.x);
-    maxX = Math.max(maxX, point.x);
-    minY = Math.min(minY, point.y);
-    maxY = Math.max(maxY, point.y);
-  }
-
-  const routeWidth = Math.max(maxX - minX, MIN_ROUTE_THUMBNAIL_SPAN_PERCENT);
-  const routeHeight = Math.max(maxY - minY, MIN_ROUTE_THUMBNAIL_SPAN_PERCENT);
-  const fittedScale = Math.min(
-    (100 - ROUTE_THUMBNAIL_PADDING_PERCENT * 2) / routeWidth,
-    (100 - ROUTE_THUMBNAIL_PADDING_PERCENT * 2) / routeHeight,
-  );
-  const scale = Math.max(1, Math.min(MAX_ROUTE_THUMBNAIL_SCALE, fittedScale));
-  const routeCenterX = (minX + maxX) / 2;
-  const routeCenterY = (minY + maxY) / 2;
-  const minTranslate = 100 * (1 - scale);
-  const translateX = Math.min(0, Math.max(minTranslate, 50 - routeCenterX * scale));
-  const translateY = Math.min(0, Math.max(minTranslate, 50 - routeCenterY * scale));
-
-  return {
-    transform: `translate(${formatRouteViewportNumber(translateX)}%, ${formatRouteViewportNumber(
-      translateY,
-    )}%) scale(${formatRouteViewportNumber(scale)})`,
-    transformOrigin: "top left",
-  };
 }
 
 export function ActivityList({
@@ -197,23 +147,34 @@ export function ActivityList({
       cellClassName: "py-2 pr-4 whitespace-nowrap",
       renderCell: (activity) => {
         if (!activity.location) return "—";
+        const { mapPreview } = activity.location;
 
-        const routeViewportStyle = getRouteViewportStyle(activity.location.routePath);
         return (
           <div className="relative h-12 w-16 overflow-hidden rounded bg-surface-hover">
             <div
               data-testid="activity-route-viewport"
-              className="absolute inset-0 h-full w-full"
-              style={routeViewportStyle}
+              className="absolute inset-0 h-full w-full brightness-[0.95] contrast-[0.92] saturate-[0.85]"
+              role="img"
+              aria-label="Activity route map summary"
             >
-              <img
-                src={activity.location.tileUrl}
-                alt="Activity route map summary"
-                className="h-full w-full object-cover"
-                loading="lazy"
-                referrerPolicy="origin"
-              />
-              <ActivityRouteOverlay routePath={activity.location.routePath} />
+              {mapPreview.tiles.map((tile) => (
+                <img
+                  key={`${tile.url}-${tile.x}-${tile.y}`}
+                  data-testid="activity-map-preview-tile"
+                  src={tile.url}
+                  alt=""
+                  className="absolute max-w-none"
+                  loading="lazy"
+                  referrerPolicy="origin"
+                  style={{
+                    left: `${(tile.x / mapPreview.width) * 100}%`,
+                    top: `${(tile.y / mapPreview.height) * 100}%`,
+                    width: `${(tile.width / mapPreview.width) * 100}%`,
+                    height: `${(tile.height / mapPreview.height) * 100}%`,
+                  }}
+                />
+              ))}
+              <ActivityRouteOverlay mapPreview={mapPreview} />
             </div>
           </div>
         );
@@ -381,14 +342,15 @@ export function ActivityList({
   );
 }
 
-function ActivityRouteOverlay({ routePath }: { routePath?: { x: number; y: number }[] | null }) {
+function ActivityRouteOverlay({ mapPreview }: { mapPreview: ActivityMapPreview }) {
+  const routePath = mapPreview.routePath;
   if (routePath == null || routePath.length < 2) return null;
 
   const points = routePath.map((point) => `${point.x},${point.y}`).join(" ");
   return (
     <svg
       className="pointer-events-none absolute inset-0 h-full w-full"
-      viewBox="0 0 100 100"
+      viewBox={`0 0 ${mapPreview.width} ${mapPreview.height}`}
       preserveAspectRatio="none"
     >
       <title>Activity route path</title>
@@ -398,7 +360,7 @@ function ActivityRouteOverlay({ routePath }: { routePath?: { x: number; y: numbe
         stroke="white"
         strokeLinecap="round"
         strokeLinejoin="round"
-        strokeWidth="5"
+        strokeWidth="6"
         vectorEffect="non-scaling-stroke"
       />
       <polyline
@@ -408,7 +370,7 @@ function ActivityRouteOverlay({ routePath }: { routePath?: { x: number; y: numbe
         stroke="rgb(22 163 74)"
         strokeLinecap="round"
         strokeLinejoin="round"
-        strokeWidth="2.5"
+        strokeWidth="3"
         vectorEffect="non-scaling-stroke"
       />
     </svg>

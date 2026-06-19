@@ -337,7 +337,20 @@ describe("ActivitiesScreen", () => {
               location: {
                 centroidLat: 37.7749,
                 centroidLng: -122.4194,
-                tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
+                mapPreview: {
+                  width: 1024,
+                  height: 576,
+                  tiles: [
+                    {
+                      url: "https://tile.openstreetmap.org/15/5241/12665.png",
+                      x: 0,
+                      y: 0,
+                      width: 256,
+                      height: 256,
+                    },
+                  ],
+                  routePath: null,
+                },
                 distanceMeters: 5000,
                 elevationGainM: 120,
               },
@@ -352,7 +365,7 @@ describe("ActivitiesScreen", () => {
 
     render(<ActivitiesScreen />);
 
-    fireEvent.error(screen.getByLabelText("Activity location map"));
+    fireEvent.error(screen.getByTestId("activity-map-preview-tile"));
 
     expect(screen.getByLabelText("Activity location unavailable")).toBeDefined();
   });
@@ -367,12 +380,31 @@ describe("ActivitiesScreen", () => {
               location: {
                 centroidLat: 37.7749,
                 centroidLng: -122.4194,
-                tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
-                routePath: [
-                  { x: 27.854, y: 37.951 },
-                  { x: 29.22, y: 37.088 },
-                  { x: 30.585, y: 35.936 },
-                ],
+                mapPreview: {
+                  width: 1024,
+                  height: 576,
+                  tiles: [
+                    {
+                      url: "https://tile.openstreetmap.org/15/5241/12665.png",
+                      x: 0,
+                      y: 0,
+                      width: 256,
+                      height: 256,
+                    },
+                    {
+                      url: "https://tile.openstreetmap.org/15/5242/12665.png",
+                      x: 256,
+                      y: 0,
+                      width: 256,
+                      height: 256,
+                    },
+                  ],
+                  routePath: [
+                    { x: 278.54, y: 379.51 },
+                    { x: 292.2, y: 370.88 },
+                    { x: 305.85, y: 359.36 },
+                  ],
+                },
                 distanceMeters: 5000,
                 elevationGainM: 120,
               },
@@ -388,11 +420,12 @@ describe("ActivitiesScreen", () => {
     render(<ActivitiesScreen />);
 
     expect(screen.getByTestId("activity-route-path").getAttribute("points")).toBe(
-      "27.854,37.951 29.22,37.088 30.585,35.936",
+      "278.54,379.51 292.2,370.88 305.85,359.36",
     );
+    expect(screen.getAllByTestId("activity-map-preview-tile")).toHaveLength(2);
   });
 
-  it("centers map thumbnails around the route bounds", () => {
+  it("does not duplicate distance and elevation badges over the map", () => {
     mockQuery = {
       data: [
         {
@@ -402,11 +435,20 @@ describe("ActivitiesScreen", () => {
               location: {
                 centroidLat: 37.7749,
                 centroidLng: -122.4194,
-                tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
-                routePath: [
-                  { x: 25, y: 30 },
-                  { x: 35, y: 40 },
-                ],
+                mapPreview: {
+                  width: 1024,
+                  height: 576,
+                  tiles: [
+                    {
+                      url: "https://tile.openstreetmap.org/15/5241/12665.png",
+                      x: 0,
+                      y: 0,
+                      width: 256,
+                      height: 256,
+                    },
+                  ],
+                  routePath: null,
+                },
                 distanceMeters: 5000,
                 elevationGainM: 120,
               },
@@ -421,8 +463,56 @@ describe("ActivitiesScreen", () => {
 
     render(<ActivitiesScreen />);
 
-    expect(
-      window.getComputedStyle(screen.getByTestId("activity-route-viewport")).transform,
-    ).not.toBe("none");
+    expect(screen.getAllByText("5.0 km")).toHaveLength(1);
+    expect(screen.getAllByText("120 m")).toHaveLength(1);
+  });
+
+  it("renders exported map preview tiles inside the thumbnail", () => {
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: [
+            activity({
+              location: {
+                centroidLat: 37.7749,
+                centroidLng: -122.4194,
+                mapPreview: {
+                  width: 1024,
+                  height: 576,
+                  tiles: [
+                    {
+                      url: "https://tile.openstreetmap.org/15/5241/12665.png",
+                      x: 0,
+                      y: 0,
+                      width: 256,
+                      height: 256,
+                    },
+                  ],
+                  routePath: [
+                    { x: 250, y: 300 },
+                    { x: 350, y: 400 },
+                  ],
+                },
+                distanceMeters: 5000,
+                elevationGainM: 120,
+              },
+            }),
+          ],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesScreen />);
+
+    const previewTile = screen.getByTestId("activity-map-preview-tile");
+    expect(screen.getByTestId("activity-route-viewport")).toBeDefined();
+    expect(previewTile.getAttribute("style")).toContain("left: 0px");
+    expect(previewTile.getAttribute("style")).toContain("top: 21px");
+    expect(previewTile.getAttribute("style")).toContain("width: 24px");
+    expect(previewTile.getAttribute("style")).toContain("height: 24px");
   });
 });

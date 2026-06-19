@@ -1,19 +1,30 @@
-import type { UnitConverter } from "@dofek/format/units";
-import { formatMeasurementText } from "@dofek/format/units";
 import { useState } from "react";
 
 export type RoutePathPoint = { x: number; y: number };
 
+export interface ActivityMapPreviewTile {
+  url: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface ActivityMapPreview {
+  width: number;
+  height: number;
+  tiles: ActivityMapPreviewTile[];
+  routePath: RoutePathPoint[] | null;
+}
+
 export interface ActivityMapLocation {
-  tileUrl: string;
-  routePath?: RoutePathPoint[] | null;
+  mapPreview: ActivityMapPreview;
   distanceMeters: number | null;
   elevationGainM: number | null;
 }
 
 interface ActivityMapTileProps {
   location: ActivityMapLocation;
-  units: UnitConverter;
 }
 
 function formatRouteCoordinate(value: number): string {
@@ -68,14 +79,16 @@ function smoothedRoutePath(routePath?: RoutePathPoint[] | null): string | null {
   return commands.join(" ");
 }
 
-function ActivityRouteOverlay({ routePath }: { routePath?: RoutePathPoint[] | null }) {
+function ActivityRouteOverlay({ mapPreview }: { mapPreview: ActivityMapPreview }) {
+  const { routePath } = mapPreview;
   const pathData = smoothedRoutePath(routePath);
   if (pathData == null) return null;
 
   return (
     <svg
+      data-testid="activity-route-overlay"
       className="pointer-events-none absolute inset-0 h-full w-full"
-      viewBox="0 0 100 100"
+      viewBox={`0 0 ${mapPreview.width} ${mapPreview.height}`}
       preserveAspectRatio="none"
     >
       <title>Activity route path</title>
@@ -86,7 +99,7 @@ function ActivityRouteOverlay({ routePath }: { routePath?: RoutePathPoint[] | nu
         stroke="rgba(255, 255, 255, 0.9)"
         strokeLinecap="round"
         strokeLinejoin="round"
-        strokeWidth={4}
+        strokeWidth={5}
         vectorEffect="non-scaling-stroke"
       />
       <path
@@ -96,14 +109,14 @@ function ActivityRouteOverlay({ routePath }: { routePath?: RoutePathPoint[] | nu
         stroke="rgb(22 163 74)"
         strokeLinecap="round"
         strokeLinejoin="round"
-        strokeWidth={2}
+        strokeWidth={3}
         vectorEffect="non-scaling-stroke"
       />
     </svg>
   );
 }
 
-export function ActivityMapTile({ location, units }: ActivityMapTileProps) {
+export function ActivityMapTile({ location }: ActivityMapTileProps) {
   const [loadFailed, setLoadFailed] = useState(false);
 
   return (
@@ -113,30 +126,44 @@ export function ActivityMapTile({ location, units }: ActivityMapTileProps) {
           Map unavailable
         </div>
       ) : (
-        <div data-testid="activity-route-viewport" className="absolute inset-0 h-full w-full">
-          <img
-            src={location.tileUrl}
-            alt="Activity location map"
-            className="h-full w-full object-cover brightness-[0.95] contrast-[0.92] saturate-[0.85]"
-            loading="lazy"
-            referrerPolicy="origin"
-            onError={() => setLoadFailed(true)}
-          />
-          <ActivityRouteOverlay routePath={location.routePath} />
+        <div
+          data-testid="activity-route-viewport"
+          className="absolute inset-0 h-full w-full"
+          role="img"
+          aria-label="Activity location map"
+        >
+          <div
+            data-testid="activity-map-preview"
+            data-preview-width={location.mapPreview.width}
+            data-preview-height={location.mapPreview.height}
+            className="absolute inset-0 brightness-[0.95] contrast-[0.92] saturate-[0.85]"
+            style={{
+              width: "100%",
+              height: "100%",
+            }}
+          >
+            {location.mapPreview.tiles.map((tile) => (
+              <img
+                key={`${tile.url}-${tile.x}-${tile.y}`}
+                data-testid="activity-map-preview-tile"
+                src={tile.url}
+                alt=""
+                className="absolute max-w-none"
+                loading="lazy"
+                referrerPolicy="origin"
+                onError={() => setLoadFailed(true)}
+                style={{
+                  left: `${(tile.x / location.mapPreview.width) * 100}%`,
+                  top: `${(tile.y / location.mapPreview.height) * 100}%`,
+                  width: `${(tile.width / location.mapPreview.width) * 100}%`,
+                  height: `${(tile.height / location.mapPreview.height) * 100}%`,
+                }}
+              />
+            ))}
+            <ActivityRouteOverlay mapPreview={location.mapPreview} />
+          </div>
         </div>
       )}
-      <div className="absolute bottom-2 left-2 flex flex-wrap gap-1">
-        {location.distanceMeters != null ? (
-          <span className="rounded-md bg-neutral-950/70 px-2 py-0.5 text-[11px] font-semibold text-white shadow-sm backdrop-blur-[2px]">
-            {formatMeasurementText(units.formatDistance(location.distanceMeters / 1000))}
-          </span>
-        ) : null}
-        {location.elevationGainM != null ? (
-          <span className="rounded-md bg-neutral-950/70 px-2 py-0.5 text-[11px] font-semibold text-white shadow-sm backdrop-blur-[2px]">
-            ↑ {formatMeasurementText(units.formatElevation(location.elevationGainM))}
-          </span>
-        ) : null}
-      </div>
     </div>
   );
 }
