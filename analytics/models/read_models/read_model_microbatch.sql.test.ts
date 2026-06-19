@@ -97,6 +97,10 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("source('postgres_fitness', 'activity')");
     expect(sql).toContain("channel = 'heart_rate'");
     expect(sql).toContain("'join_use_nulls': 1");
+    expect(sql).toContain("assumeNotNull(sleep_id) AS sleep_id");
+    expect(sql).toContain("assumeNotNull(user_id) AS user_id");
+    expect(sql).toContain("assumeNotNull(recorded_at) AS recorded_at");
+    expect(sql).toContain("assumeNotNull(recorded_date) AS recorded_date");
     expect(normalizedSql).toContain("_peerdb_synced_at > (SELECT last_refreshed_at FROM target_state)");
     expect(normalizedSql).toContain("refreshed_at > (SELECT last_refreshed_at FROM target_state)");
     expect(normalizedSql).not.toContain("incremental_strategy='microbatch'");

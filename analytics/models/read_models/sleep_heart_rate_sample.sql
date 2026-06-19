@@ -332,13 +332,13 @@ refresh_clock AS (
 )
 
 SELECT
-    sleep_id,
-    user_id,
+    assumeNotNull(sleep_id) AS sleep_id,
+    assumeNotNull(user_id) AS user_id,
     started_at,
     ended_at,
     duration_seconds,
-    recorded_at,
-    recorded_date,
+    assumeNotNull(recorded_at) AS recorded_at,
+    assumeNotNull(recorded_date) AS recorded_date,
     heart_rate,
     refresh_clock.refresh_version AS refresh_version,
     is_deleted,
@@ -349,13 +349,13 @@ CROSS JOIN refresh_clock
 UNION ALL
 
 SELECT
-    sleep_id,
-    user_id,
+    assumeNotNull(sleep_id) AS sleep_id,
+    assumeNotNull(user_id) AS user_id,
     started_at,
     ended_at,
     duration_seconds,
-    recorded_at,
-    recorded_date,
+    assumeNotNull(recorded_at) AS recorded_at,
+    assumeNotNull(recorded_date) AS recorded_date,
     heart_rate,
     refresh_clock.refresh_version AS refresh_version,
     1 AS is_deleted,
