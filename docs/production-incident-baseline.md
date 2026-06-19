@@ -11089,3 +11089,32 @@ new incremental tables are populated.
   and checking ClickHouse raw table counts against Postgres source counts.
 - **Remaining risk:** Medium until the fixed branch image is deployed and the
   absent fitness raw mirror finishes its initial copy.
+
+## 2026-06-19 — Analytics worker deduped activities insert column mismatch
+
+- **Symptoms:** Branch deploy run `27806652367` succeeded through
+  `Configure ClickHouse CDC`, recreated `dofek_fitness_raw_analytics`, and
+  restored complete raw ClickHouse counts, but the production
+  `analytics-worker` dbt build failed repeatedly at
+  `analytics.deduped_activities`.
+- **User impact:** Raw activity data was mirrored again, but activity analytics
+  read models downstream of `deduped_activities` remained stale because dbt
+  skipped dependent models after the failure.
+- **Evidence:** `analytics-worker` logs showed
+  `Failure in model deduped_activities`; replaying the compiled SQL through
+  `clickhouse-client` returned
+  `DB::Exception: CAST AS Array can only be performed between same-dimensional Array, Map or String types: while converting source column refreshed_at to destination column absent_source_external_ids`.
+- **Root cause:** The existing production `analytics.deduped_activities` table
+  has `absent_source_external_ids` as the final column because it was added to
+  an existing table. The dbt model SELECT emitted `absent_source_external_ids`
+  before `member_activity_ids`, while dbt's incremental INSERT column list used
+  the existing table order. ClickHouse therefore attempted to insert
+  `refreshed_at` into `absent_source_external_ids`.
+- **Fix / mitigation:** Reordered the final `deduped_activities` SELECT
+  projection so `absent_source_external_ids` is emitted last, matching the
+  production table order used by dbt incremental INSERTs.
+- **Validation:** Pending local tests, branch deploy, and production
+  `analytics-worker` dbt success confirmation.
+- **Remaining risk:** Low after deploy, but dbt model changes that add columns
+  to existing incremental tables should explicitly preserve production column
+  order until a full table rebuild is run.
