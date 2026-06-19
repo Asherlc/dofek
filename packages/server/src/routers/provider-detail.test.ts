@@ -139,6 +139,7 @@ const expectedListColumns = {
     "name",
     "source_name",
     "provider_absent_at",
+    "deleted_at",
     "created_at",
   ],
   dailyMetrics: [

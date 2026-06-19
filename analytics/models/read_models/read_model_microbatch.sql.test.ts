@@ -127,6 +127,7 @@ describe("production analytics read-model build", () => {
     expect(sourceRecordsSql).toContain("device_priority_match AS");
     expect(sourceRecordsSql).toContain("current_source_records AS");
     expect(sourceRecordsSql).toContain("provider_absent_at IS NULL");
+    expect(sourceRecordsSql).toContain("deleted_at IS NULL");
     expect(sourceRecordsSql).toContain("length(active_device_priority.source_name_pattern) DESC");
     expect(sourceRecordsSql).toContain("active_device_priority.priority ASC");
     expect(sourceRecordsSql).toContain("active_device_priority.source_name_pattern ASC");
@@ -173,6 +174,7 @@ describe("production analytics read-model build", () => {
 
     expect(providerStatsSql).toContain("source('postgres_fitness', 'activity') }} FINAL");
     expect(providerStatsSql).toContain("provider_absent_at IS null");
+    expect(providerStatsSql).toContain("deleted_at IS null");
   });
 
   it("materializes deduped activity member aliases from deduped activities", () => {
@@ -301,6 +303,7 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).toContain("(sensor_samples.user_id, sensor_samples.activity_id) IN");
     expect(sql).toContain("source('postgres_fitness', 'activity') }} FINAL");
     expect(sql).toContain("provider_absent_at IS null");
+    expect(sql).toContain("deleted_at IS null");
     expect(sql).toContain("restored_dirty_keys AS");
     expect(sql).toContain("prior_summary.is_deleted = 0");
     expect(sql).not.toContain("source('analytics', 'v_activity')");
@@ -319,6 +322,7 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).toContain("(location_samples.user_id, location_samples.activity_id) IN");
     expect(sql).toContain("source('postgres_fitness', 'activity') }} FINAL");
     expect(sql).toContain("provider_absent_at IS null");
+    expect(sql).toContain("deleted_at IS null");
     expect(sql).toContain("restored_dirty_keys AS");
     expect(sql).toContain("prior_summary.is_deleted = 0");
     expect(sql).not.toContain("source('analytics', 'v_activity')");

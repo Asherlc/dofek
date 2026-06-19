@@ -55,7 +55,7 @@ describe("activity-read-model-build", () => {
     await countActivePeerDbActivities(client, ["id-1", "id-2"]);
 
     expect(query).toHaveBeenCalledWith({
-      query: expect.stringContaining("postgres_fitness.activity FINAL"),
+      query: expect.stringContaining("deleted_at IS NULL"),
       format: "JSONEachRow",
       query_params: { activityIds: ["id-1", "id-2"] },
     });

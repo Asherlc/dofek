@@ -538,7 +538,8 @@ export class ActivityRepository extends BaseRepository {
     const memberActivityIds = memberRows.map((row) => row.member_activity_id);
 
     await this.db.execute(sql`
-      DELETE FROM fitness.activity
+      UPDATE fitness.activity
+      SET deleted_at = NOW()
       WHERE id IN (
         SELECT member_rows.member_activity_id
         FROM fitness.v_activity a
@@ -551,6 +552,7 @@ export class ActivityRepository extends BaseRepository {
           AND a.user_id = ${this.userId}
       )
       AND user_id = ${this.userId}
+      AND deleted_at IS NULL
     `);
     return { deletedCount: uniqueActivityIds.length, memberActivityIds };
   }

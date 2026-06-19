@@ -403,7 +403,7 @@ export const syncRouter = router({
       {
         key: "activity",
         table: "fitness.activity",
-        predicate: sqlTag`AND provider_absent_at IS NULL`,
+        predicate: sqlTag`AND provider_absent_at IS NULL AND deleted_at IS NULL`,
       },
     ] as const;
 

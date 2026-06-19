@@ -19,7 +19,7 @@ When a provider writes activities, follow this contract (see `src/db/provider-ac
 - **Webhook deletes must tombstone**: Explicit delete/removed events must call `markProviderActivityAbsent()`, not hard-delete rows.
 - **Upserts must clear tombstones**: Activity upserts must clear `providerAbsentAt` so restored provider activities become visible again.
 - **Do not reconcile partial fetches**: Never reconcile when the provider response is partial because of rate limits, auth failures, incomplete pagination, checkpoint resumes, or other fetch errors. Absence is not proof of deletion unless the list fetch was complete and successful.
-- **Filter absent activities everywhere else**: Any code that shows activities, totals, stats, exports, or analytics must exclude rows where `provider_absent_at IS NOT NULL`. Tombstones are soft — they preserve raw history but must not appear in normal user-facing views.
+- **Filter absent and user-deleted activities everywhere else**: Any code that shows activities, totals, stats, exports, or analytics must exclude rows where `provider_absent_at IS NOT NULL` or `deleted_at IS NOT NULL`. Tombstones are soft — they preserve raw history but must not appear in normal user-facing views. Pair both filters; `scanActiveActivityPredicatePairing` in `src/db/activity-visibility.ts` guards this in CI.
 
 ### Testing Strategy
 - **Unit Tests**: `<provider>.test.ts` for parsing logic and API client mocks.

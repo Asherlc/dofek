@@ -26,6 +26,7 @@ import * as createDashboardTablesMigration from "./clickhouse-migrations/0026_cr
 import * as createDomainDashboardTablesMigration from "./clickhouse-migrations/0028_create_domain_dashboard_tables.ts";
 import * as activityProviderAbsenceMigration from "./clickhouse-migrations/0029_activity_provider_absence.ts";
 import * as activityMirrorOrderKeyMigration from "./clickhouse-migrations/0030_activity_mirror_order_key.ts";
+import * as activityUserSoftDeleteMigration from "./clickhouse-migrations/0031_activity_user_soft_delete.ts";
 import { clickHouseMigrationFileNames } from "./clickhouse-migrations/registry.ts";
 import { runClickHouseMigrationStatement } from "./clickhouse-migrations/statement-runner.ts";
 import {
@@ -67,6 +68,7 @@ describe("buildClickHouseMigrationStatements", () => {
       "0028_create_domain_dashboard_tables.ts",
       "0029_activity_provider_absence.ts",
       "0030_activity_mirror_order_key.ts",
+      "0031_activity_user_soft_delete.ts",
     ]);
   });
 
@@ -194,6 +196,20 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(statementSql).toContain("CREATE TABLE IF NOT EXISTS analytics.provider_stats");
     expect(statementSql).not.toContain("CREATE VIEW IF NOT EXISTS analytics.provider_stats");
     expect(statementSql).toContain("provider_absent_at IS NULL");
+    expect(statementSql).toContain("deleted_at IS NULL");
+  });
+
+  it("refreshes fitness views for user soft delete without dropping dbt tables", () => {
+    const statements = activityUserSoftDeleteMigration.createMigration().statements;
+    const statementSql = statements.join("\n");
+
+    expect(statements[0]).toContain(
+      "ALTER TABLE postgres_fitness.activity ADD COLUMN IF NOT EXISTS deleted_at",
+    );
+    expect(statements).toContain("DROP VIEW IF EXISTS analytics.v_activity");
+    expect(statements).not.toContain("DROP TABLE IF EXISTS analytics.activity_source_records");
+    expect(statementSql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_activity");
+    expect(statementSql).toContain("deleted_at IS NULL");
   });
 
   it("keeps dashboard table creation in its migration file", () => {
@@ -444,7 +460,7 @@ describe("runClickHouseMigrations", () => {
 
     const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
-    expect(count).toBe(30);
+    expect(count).toBe(31);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(
