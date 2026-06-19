@@ -1,10 +1,17 @@
 import type { AddressInfo } from "node:net";
-import { SYNC_JOB_RETRY_OPTIONS } from "dofek/jobs/queues";
 import type { WebhookEvent, WebhookProvider } from "dofek/providers/types";
 import { encryptCredentialValue } from "dofek/security/credential-encryption";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // ── Mocks ──────────────────────────────────────────────────────────────────
+
+const { mockEnqueueSyncJob } = vi.hoisted(() => ({
+  mockEnqueueSyncJob: vi.fn(async () => ({ id: "job-1" })),
+}));
+
+vi.mock("dofek/jobs/enqueue-sync-job", () => ({
+  enqueueSyncJob: (...args: unknown[]) => mockEnqueueSyncJob(...args),
+}));
 
 const mockGetAllProviders = vi.fn<() => Array<Record<string, unknown>>>(() => []);
 
@@ -397,15 +404,11 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
 
     const res = await request(createTestApp(), "post", "/api/webhooks/test-provider", '{"x":1}');
     expect(res.status).toBe(200);
-    expect(mockQueueAdd).toHaveBeenCalledWith(
-      "sync",
-      {
-        providerId: "prov-1",
-        sinceDays: 1,
-        userId: "user-1",
-      },
-      SYNC_JOB_RETRY_OPTIONS,
-    );
+    expect(mockEnqueueSyncJob).toHaveBeenCalledWith("prov-1", {
+      providerId: "prov-1",
+      sinceDays: 1,
+      userId: "user-1",
+    });
   });
 
   it("calls syncWebhookEvent for targeted sync when available", async () => {
@@ -439,7 +442,7 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
       userId: "user-1",
     });
     // Should NOT enqueue full sync
-    expect(mockQueueAdd).not.toHaveBeenCalled();
+    expect(mockEnqueueSyncJob).not.toHaveBeenCalled();
   });
 
   it("falls back to full sync when syncWebhookEvent fails", async () => {
@@ -466,15 +469,11 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
 
     const res = await request(createTestApp(), "post", "/api/webhooks/test-provider", '{"x":1}');
     expect(res.status).toBe(200);
-    expect(mockQueueAdd).toHaveBeenCalledWith(
-      "sync",
-      {
-        providerId: "prov-1",
-        sinceDays: 1,
-        userId: "user-1",
-      },
-      SYNC_JOB_RETRY_OPTIONS,
-    );
+    expect(mockEnqueueSyncJob).toHaveBeenCalledWith("prov-1", {
+      providerId: "prov-1",
+      sinceDays: 1,
+      userId: "user-1",
+    });
   });
 
   it("skips events when no user found for external ID", async () => {
@@ -497,7 +496,7 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
 
     const res = await request(createTestApp(), "post", "/api/webhooks/test-provider", '{"x":1}');
     expect(res.status).toBe(200);
-    expect(mockQueueAdd).not.toHaveBeenCalled();
+    expect(mockEnqueueSyncJob).not.toHaveBeenCalled();
   });
 
   it("continues processing remaining events when one fails", async () => {
@@ -525,16 +524,12 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
     const res = await request(createTestApp(), "post", "/api/webhooks/test-provider", '{"x":1}');
     expect(res.status).toBe(200);
     // Second event should still have been processed
-    expect(mockQueueAdd).toHaveBeenCalledTimes(1);
-    expect(mockQueueAdd).toHaveBeenCalledWith(
-      "sync",
-      {
-        providerId: "prov-2",
-        sinceDays: 1,
-        userId: "user-2",
-      },
-      SYNC_JOB_RETRY_OPTIONS,
-    );
+    expect(mockEnqueueSyncJob).toHaveBeenCalledTimes(1);
+    expect(mockEnqueueSyncJob).toHaveBeenCalledWith("prov-2", {
+      providerId: "prov-2",
+      sinceDays: 1,
+      userId: "user-2",
+    });
   });
 
   it("starts worker when full sync jobs are enqueued (no syncWebhookEvent)", async () => {
@@ -665,15 +660,14 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
     });
 
     await request(createTestApp(), "post", "/api/webhooks/test-provider", '{"x":1}');
-    expect(mockQueueAdd).toHaveBeenCalledTimes(1);
-    const jobData = mockQueueAdd.mock.calls[0]?.[1];
+    expect(mockEnqueueSyncJob).toHaveBeenCalledTimes(1);
+    const [providerId, jobData] = mockEnqueueSyncJob.mock.calls[0] ?? [];
+    expect(providerId).toBe("prov-X");
     expect(jobData).toEqual({
       providerId: "prov-X",
       sinceDays: 1,
       userId: "user-X",
     });
-    // First arg is the job name "sync"
-    expect(mockQueueAdd.mock.calls[0]?.[0]).toBe("sync");
   });
 
   it("uses signing_secret when present (not verify_token)", async () => {
@@ -723,7 +717,7 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
 
     const res = await request(createTestApp(), "post", "/api/webhooks/test-provider", "[]");
     expect(res.status).toBe(200);
-    expect(mockQueueAdd).toHaveBeenCalledTimes(2);
+    expect(mockEnqueueSyncJob).toHaveBeenCalledTimes(2);
   });
 
   it("uses signing_secret when available instead of verify_token", async () => {
