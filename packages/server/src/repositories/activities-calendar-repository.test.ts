@@ -7,9 +7,23 @@ import type { CalendarActivityEntry } from "./activities-calendar-repository.ts"
 import { ActivitiesCalendarRepository, mergeDayGroups } from "./activities-calendar-repository.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 
-function makeDatabase(rows: Record<string, unknown>[] = []) {
+type TestDatabaseRow = Record<string, unknown>;
+
+function isQueuedRowSets(
+  rowsOrRowSets: TestDatabaseRow[] | TestDatabaseRow[][],
+): rowsOrRowSets is TestDatabaseRow[][] {
+  return rowsOrRowSets.some(Array.isArray);
+}
+
+function makeDatabase(rowsOrRowSets: TestDatabaseRow[] | TestDatabaseRow[][] = []) {
+  const rowSets = isQueuedRowSets(rowsOrRowSets) ? rowsOrRowSets : [[], rowsOrRowSets];
+  const execute = vi.fn();
+  for (const rows of rowSets) {
+    execute.mockResolvedValueOnce(rows);
+  }
+  execute.mockResolvedValue([]);
   return {
-    execute: vi.fn().mockResolvedValue(rows),
+    execute,
   } satisfies Pick<Database, "execute">;
 }
 
@@ -286,7 +300,7 @@ describe("ActivitiesCalendarRepository", () => {
       expect.stringContaining("activity.activity_type = {activityType:String}"),
       expect.objectContaining({ activityType: "running" }),
     );
-    const sqlObject = database.execute.mock.calls[0]?.[0];
+    const sqlObject = database.execute.mock.calls[1]?.[0];
     const compiledQuery = dialect.sqlToQuery(sqlObject);
     expect(compiledQuery.params).toContain("run");
     expect(compiledQuery.params).not.toContain("ride");
@@ -368,6 +382,30 @@ describe("ActivitiesCalendarRepository", () => {
 
     const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
     expectDedupedActivitiesDriveActivityListIdentity(queryText);
+  });
+
+  it("excludes activities already deleted in Postgres even when ClickHouse is stale", async () => {
+    const database = makeDatabase([[{ id: "activity-1", calories: null }]]);
+    const sensorStore = makeSensorStore([
+      [makeActivityRow({ id: "activity-1" })],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(
+      database,
+      "00000000-0000-0000-0000-000000000001",
+      "UTC",
+      sensorStore,
+    );
+
+    const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
+
+    expect(result).toEqual([]);
+    expect(database.execute).toHaveBeenCalledTimes(1);
+    const sqlObject = database.execute.mock.calls[0]?.[0];
+    const compiledQuery = dialect.sqlToQuery(sqlObject);
+    expect(normalizeSql(compiledQuery.sql)).toContain("deleted_at IS NOT NULL");
+    expect(sensorStore.query).toHaveBeenCalledTimes(2);
   });
 
   it("returns activity overview totals directly from ClickHouse", async () => {
@@ -538,7 +576,7 @@ describe("ActivitiesCalendarRepository", () => {
 
     await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
 
-    const sqlObject = database.execute.mock.calls[0]?.[0];
+    const sqlObject = database.execute.mock.calls[1]?.[0];
     const compiledQuery = dialect.sqlToQuery(sqlObject);
     expect(compiledQuery.sql).toContain("a.id IN (");
     expect(compiledQuery.sql).not.toContain("AND a.id::text IN (");

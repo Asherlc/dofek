@@ -354,6 +354,26 @@ describe("ActivitiesPage", () => {
     });
   });
 
+  it("hides deleted activities immediately after delete confirmation", async () => {
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity()] }],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesPage />);
+    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByText("Trainer Ride"));
+    fireEvent.click(screen.getByText("Delete"));
+    fireEvent.click(screen.getByText("Confirm Delete"));
+
+    await waitFor(() => {
+      expect(bulkDeleteMutate).toHaveBeenCalledWith({ ids: ["activity-1"] });
+      expect(screen.queryByText("Trainer Ride")).toBeNull();
+    });
+  });
+
   it("clears selected activities when the activity type filter changes", () => {
     mockQuery = {
       data: [{ date: "2026-03-18", activities: [activity()] }],
