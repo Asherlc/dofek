@@ -79,13 +79,16 @@ describe("osmTilePreview", () => {
     expect(preview.width).toBe(1024);
     expect(preview.height).toBe(576);
     expect(preview.tiles.length).toBeGreaterThan(1);
+    const firstTileUrl = new URL(preview.tiles[0]?.url ?? "");
     expect(preview.tiles[0]).toEqual({
-      url: expect.stringMatching(/^https:\/\/tile\.openstreetmap\.org\/19\/\d+\/\d+\.png$/),
+      url: expect.any(String),
       x: expect.any(Number),
       y: expect.any(Number),
       width: 256,
       height: 256,
     });
+    expect(firstTileUrl.origin).toBe("https://tile.openstreetmap.org");
+    expect(firstTileUrl.pathname).toMatch(/^\/19\/\d+\/\d+\.png$/);
     expect(preview.routePath).toHaveLength(3);
     expect(preview.routePath?.[0]?.x).toBeGreaterThan(0);
     expect(preview.routePath?.[0]?.x).toBeLessThan(preview.width);
@@ -124,6 +127,8 @@ describe("osmTilePreview", () => {
       { lat: 40.7128, lng: -74.006 },
     ]);
 
-    expect(preview.tiles[0]?.url).toMatch(/^https:\/\/tile\.openstreetmap\.org\/4\//);
+    const firstTileUrl = new URL(preview.tiles[0]?.url ?? "");
+    expect(firstTileUrl.origin).toBe("https://tile.openstreetmap.org");
+    expect(firstTileUrl.pathname).toMatch(/^\/4\//);
   });
 });
