@@ -59,6 +59,7 @@ export async function reconcileProviderActivityAbsence(
         AND provider_id = ${reconciliation.providerId}
         AND external_id IN (${externalIdListSql(presentExternalIds)})
         AND provider_absent_at IS NOT NULL
+        AND deleted_at IS NULL
     `);
   }
 
@@ -73,6 +74,7 @@ export async function reconcileProviderActivityAbsence(
     WHERE user_id = ${userId}
       AND provider_id = ${reconciliation.providerId}
       AND provider_absent_at IS NULL
+      AND deleted_at IS NULL
       AND external_id IS NOT NULL
       AND external_id <> ''
       AND started_at >= ${reconciliation.windowStart}
@@ -93,5 +95,6 @@ export async function markProviderActivityAbsent(
       AND provider_id = ${mark.providerId}
       AND external_id = ${mark.externalId}
       AND provider_absent_at IS NULL
+      AND deleted_at IS NULL
   `);
 }

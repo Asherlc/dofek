@@ -320,6 +320,7 @@ export class PredictionsRepository {
           JOIN fitness.strength_set s ON s.activity_id = a.id
           WHERE a.user_id = ${this.#userId}
             AND a.provider_absent_at IS NULL
+            AND a.deleted_at IS NULL
             AND a.activity_type = 'strength'
             AND a.started_at > CURRENT_DATE - ${days}::int
           GROUP BY a.id, a.started_at
