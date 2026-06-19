@@ -11113,8 +11113,13 @@ new incremental tables are populated.
 - **Fix / mitigation:** Reordered the final `deduped_activities` SELECT
   projection so `absent_source_external_ids` is emitted last, matching the
   production table order used by dbt incremental INSERTs.
-- **Validation:** Pending local tests, branch deploy, and production
-  `analytics-worker` dbt success confirmation.
+- **Validation:** `pnpm exec vitest run
+  analytics/models/read_models/read_model_microbatch.sql.test.ts`,
+  `pnpm lint`, root `pnpm tsc --noEmit`, server `pnpm tsc --noEmit`, and web
+  `pnpm tsc --noEmit` passed locally. Branch deploy run `27807103397`
+  completed successfully, production services rolled to
+  `ghcr.io/asherlc/dofek:sha-4db22d8`, and the restarted analytics worker
+  completed dbt with `Done. PASS=14 WARN=0 ERROR=0 SKIP=0 NO-OP=0 TOTAL=14`.
 - **Remaining risk:** Low after deploy, but dbt model changes that add columns
   to existing incremental tables should explicitly preserve production column
   order until a full table rebuild is run.
