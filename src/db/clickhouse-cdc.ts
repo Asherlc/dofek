@@ -505,16 +505,17 @@ async function dropObsoleteMetricStreamPeerDbMirrors(peerDbClient: PeerDbClient)
   }
 }
 
-async function clickHouseDestinationTablesHaveRows(
+async function readClickHouseDestinationRowCount(
   clickHouseClient: ClickHouseCommandClient,
   tableNames: readonly string[],
-): Promise<boolean> {
-  if (!clickHouseClient.query) {
+): Promise<number> {
+  const query = clickHouseClient.query;
+  if (!query) {
     throw new Error("ClickHouse raw analytics mirror reconciliation requires query support");
   }
 
   const tableNameList = tableNames.map(peerDbStringLiteral).join(", ");
-  const result = await clickHouseClient.query<ClickHouseRowCount>({
+  const result = await query<ClickHouseRowCount>({
     query: `
       SELECT coalesce(sum(rows), 0) AS row_count
       FROM system.parts
@@ -529,20 +530,59 @@ async function clickHouseDestinationTablesHaveRows(
     throw new Error("Unable to read ClickHouse raw analytics destination row count");
   }
 
-  const rows = parsedRows.data;
-  if (rows.length === 0) {
+  const [row] = parsedRows.data;
+  if (!row) {
     throw new Error("Unable to read ClickHouse raw analytics destination row count");
   }
 
-  const rowCount = readInteger(rows[0]?.row_count);
+  const rowCount = readInteger(row.row_count);
   if (rowCount === null) {
     throw new Error("Unable to read ClickHouse raw analytics destination row count");
   }
-  return rowCount > 0;
+  return rowCount;
+}
+
+async function readSourcePostgresRowCount(
+  sourcePostgresClient: SourcePostgresClient,
+  tableNames: readonly string[],
+): Promise<number> {
+  const postgresCounts = tableNames
+    .map((tableName) => `SELECT count(*) AS row_count FROM fitness.${tableName}`)
+    .join(" UNION ALL ");
+  const postgresResult = await sourcePostgresClient.query(`
+    SELECT coalesce(sum(row_count), 0) AS row_count
+    FROM (${postgresCounts}) AS source_counts
+  `);
+  const [sourceRow] = readQueryRows(postgresResult);
+  if (!sourceRow) {
+    throw new Error("Unable to read Postgres raw analytics source row count");
+  }
+
+  const sourceRowCount = readInteger(sourceRow.row_count);
+  if (sourceRowCount === null) {
+    throw new Error("Unable to read Postgres raw analytics source row count");
+  }
+
+  return sourceRowCount;
+}
+
+async function sourcePostgresTablesHaveAtMostDestinationRows(
+  sourcePostgresClient: SourcePostgresClient,
+  clickHouseClient: ClickHouseCommandClient,
+  tableNames: readonly string[],
+): Promise<boolean> {
+  const destinationRowCount = await readClickHouseDestinationRowCount(clickHouseClient, tableNames);
+  if (destinationRowCount === 0) {
+    return false;
+  }
+
+  const sourceRowCount = await readSourcePostgresRowCount(sourcePostgresClient, tableNames);
+  return sourceRowCount > 0 && destinationRowCount >= sourceRowCount;
 }
 
 async function reconcileRawAnalyticsMirrors(
   peerDbClient: PeerDbClient,
+  sourcePostgresClient: SourcePostgresClient,
   clickHouseClient: ClickHouseCommandClient,
 ): Promise<RawAnalyticsInitialCopyValues> {
   const rawAnalyticsInitialCopyValues = { ...defaultRawAnalyticsInitialCopyValues };
@@ -561,7 +601,13 @@ async function reconcileRawAnalyticsMirrors(
     const tableNames = rawAnalyticsMirrorTableMappings[mirrorName];
     const mirrorRow = mirrorRows.find((row) => row.name === mirrorName);
     if (!mirrorRow) {
-      if (await clickHouseDestinationTablesHaveRows(clickHouseClient, tableNames)) {
+      if (
+        await sourcePostgresTablesHaveAtMostDestinationRows(
+          sourcePostgresClient,
+          clickHouseClient,
+          tableNames,
+        )
+      ) {
         rawAnalyticsInitialCopyValues[mirrorName] = false;
       }
     }
@@ -576,6 +622,7 @@ export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Pr
   await dropObsoleteMetricStreamPeerDbMirrors(options.peerDbClient);
   const rawAnalyticsInitialCopyValues = await reconcileRawAnalyticsMirrors(
     options.peerDbClient,
+    options.sourcePostgresClient,
     options.clickHouseClient,
   );
   const renderedSql = renderPeerDbSqlTemplate(

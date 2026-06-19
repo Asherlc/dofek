@@ -10968,7 +10968,15 @@ new incremental tables are populated.
   `sha-752d377` reproduced the mirror loss: the post-deploy ClickHouse CDC setup
   path read PeerDB's binary `config_proto` as escaped text, treated healthy raw
   mirrors as mapping mismatches, and issued `DROP MIRROR` for
-  `dofek_fitness_raw_analytics`.
+  `dofek_fitness_raw_analytics`. A later deploy of image `sha-f7ab13b` stopped
+  dropping existing mirrors but exposed a second setup bug: when a managed mirror
+  was missing, setup disabled initial copy if any destination table in that
+  mirror group had rows. In production, `postgres_fitness.daily_metrics`,
+  `postgres_fitness.food_entry`, `postgres_fitness.health_event`, and
+  `postgres_fitness.provider` had active parts, so the recreated raw mirrors
+  skipped initial copy even though `postgres_fitness.activity`,
+  `postgres_fitness.sleep_session`, `postgres_fitness.provider_priority`, and
+  `postgres_fitness.device_priority` were empty.
 - **Fix / mitigation:** Ran the checked-in ClickHouse CDC setup path inside the
   production swarm network with explicit PeerDB/Postgres/ClickHouse host
   overrides. It recreated the three raw mirrors and slots; `pg_replication_slots`
@@ -10990,15 +10998,50 @@ new incremental tables are populated.
   CDC setup dropped raw mirrors again. Reran CDC setup after deploy completion;
   all three slots became active and the raw mirror repopulated to
   `postgres_fitness.activity = 1211` and `postgres_fitness.sleep_session = 195`.
-- **Remaining risk:** Medium. `analytics-worker` is unpaused at `1/1`, but the
-  currently deployed image still fails the activity dbt phase at
-  `analytics.deduped_activities` with ClickHouse error code 53 because
-  `absent_source_external_ids` is inferred as
-  `Array(Map(String, Nullable(String)))` while the existing serving table column
-  is `Array(Map(String, String))`. Deploy the follow-up fix that casts the dbt
-  expression to `Array(Map(String, String))` and stops CDC setup from dropping
-  existing raw mirrors based on `config_proto` token parsing.
+  After image `sha-f7ab13b` deployed, paused `analytics-worker` at `0/0`, dropped
+  the three managed raw mirrors, and reran CDC setup. The deployed setup
+  recreated slots but still left the raw activity/sleep/provider-priority
+  destination tables empty because it disabled initial copy from partial
+  destination row counts.
+- **Remaining risk:** Medium. `analytics-worker` is paused while the raw mirrors
+  are empty. Deploy the follow-up fix that compares Postgres source row counts
+  against ClickHouse destination row counts before disabling initial copy for a
+  missing raw mirror, then recreate the three raw mirrors, verify
+  `postgres_fitness.activity` and `postgres_fitness.sleep_session` have rows, and
+  restore `analytics-worker` to `1/1`.
 - **Follow-up:** Add an alert that pages on missing managed mirror catalog rows
   or zero required PeerDB slots, not just stale mirrored timestamps. Consider a
   deploy smoke check that runs the two-phase analytics dbt command to completion
   before declaring `analytics-worker` healthy.
+
+## 2026-06-19 — Raw analytics mirror reconciliation Stryker failure
+
+- **Symptoms:** PR CI failed `Test / Stryker (0)`. The downstream
+  `Test / Mutation Testing`, `Test / Test Gate`, and `CI Gate` checks failed
+  because the mutation shard did not meet the configured threshold.
+- **User impact:** The follow-up ClickHouse CDC fix could not be marked ready
+  for merge until mutation coverage improved. No production runtime impact was
+  observed from this CI-only failure.
+- **Evidence:** GitHub Actions job `82281810586` in run `27804593577` ended
+  with `Final mutation score 60.00 under breaking threshold 75`. The report
+  listed surviving and no-coverage mutants in
+  `src/db/clickhouse-cdc.ts`, centered on
+  `sourcePostgresTablesHaveAtMostDestinationRows`: missing query support,
+  malformed Postgres/ClickHouse row counts, SQL table-name mapping, and the
+  `sourceRowCount > 0` decision.
+- **Root cause:** The new raw mirror reconciliation logic compared Postgres
+  source row counts against ClickHouse destination rows, but tests only covered
+  the happy path and one incomplete-destination path. They did not prove the
+  source-count SQL shape, zero-source behavior, malformed row-count handling, or
+  the shared ClickHouse row-count reader.
+- **Fix / mitigation:** Consolidated ClickHouse destination row-count parsing
+  into one helper, removed duplicate query/parsing paths, and added focused
+  tests for SQL shape, zero source rows, invalid ClickHouse counts, and invalid
+  Postgres counts.
+- **Validation:** `pnpm exec vitest run src/db/clickhouse-cdc.test.ts` passed
+  `32` tests. `pnpm exec stryker run stryker.ci.config.json --mutate
+  "src/db/clickhouse-cdc.ts"` passed locally with a `79.82` mutation score,
+  above the `75` break threshold.
+- **Remaining risk:** Low. The local Stryker command matched the failed CI
+  mutate target; final confirmation still depends on the pushed GitHub Actions
+  rerun completing successfully.
