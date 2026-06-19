@@ -93,6 +93,71 @@ best_per_group AS (
   ORDER BY fg.group_id ASC, r.prio ASC, r.id ASC
 ),
 
+group_bounds AS (
+  SELECT
+    fg.group_id,
+    MIN(r.started_at) AS group_started_at,
+    MAX(COALESCE(r.ended_at, r.started_at + interval '1 hour')) AS group_ended_at
+  FROM final_groups AS fg
+  INNER JOIN ranked AS r ON fg.activity_id = r.id
+  GROUP BY fg.group_id
+),
+
+absent_candidates AS (
+  SELECT
+    id,
+    provider_id,
+    user_id,
+    external_id,
+    started_at,
+    ended_at,
+    provider_absent_at
+  FROM fitness.activity
+  WHERE
+    provider_absent_at IS NOT NULL
+    AND external_id IS NOT NULL
+    AND external_id <> ''
+),
+
+absent_source_links AS (
+  SELECT
+    b.group_id,
+    JSONB_AGG(
+      JSONB_BUILD_OBJECT(
+        'providerId', absent.provider_id,
+        'externalId', absent.external_id,
+        'memberActivityId', absent.id,
+        'providerAbsentAt', absent.provider_absent_at
+      )
+      ORDER BY absent.provider_id
+    ) AS absent_source_external_ids
+  FROM best_per_group AS b
+  INNER JOIN group_bounds AS bounds ON b.group_id = bounds.group_id
+  INNER JOIN absent_candidates AS absent ON b.user_id = absent.user_id
+  WHERE
+    NOT EXISTS (
+      SELECT 1
+      FROM final_groups AS fg_member
+      WHERE
+        fg_member.group_id = b.group_id
+        AND fg_member.activity_id = absent.id
+    )
+    AND EXTRACT(EPOCH FROM (
+      LEAST(
+        COALESCE(absent.ended_at, absent.started_at + interval '1 hour'),
+        bounds.group_ended_at
+      )
+      - GREATEST(absent.started_at, bounds.group_started_at)
+    )) / NULLIF(EXTRACT(EPOCH FROM (
+      GREATEST(
+        COALESCE(absent.ended_at, absent.started_at + interval '1 hour'),
+        bounds.group_ended_at
+      )
+      - LEAST(absent.started_at, bounds.group_started_at)
+    )), 0) > 0.8
+  GROUP BY b.group_id
+),
+
 merged AS (
   SELECT
     b.canonical_id,
@@ -153,54 +218,9 @@ merged AS (
       FROM final_groups AS fg2
       WHERE fg2.group_id = b.group_id
     ) AS member_activity_ids,
-    (
-      SELECT
-        JSONB_AGG(
-          JSONB_BUILD_OBJECT(
-            'providerId', absent.provider_id,
-            'externalId', absent.external_id,
-            'memberActivityId', absent.id,
-            'providerAbsentAt', absent.provider_absent_at
-          )
-          ORDER BY absent.provider_id
-        )
-      FROM fitness.activity AS absent
-      CROSS JOIN
-        LATERAL (
-          SELECT
-            MIN(r.started_at) AS group_started_at,
-            MAX(COALESCE(r.ended_at, r.started_at + interval '1 hour')) AS group_ended_at
-          FROM final_groups AS fg_bounds
-          INNER JOIN ranked AS r ON fg_bounds.activity_id = r.id
-          WHERE fg_bounds.group_id = b.group_id
-        ) AS bounds
-      WHERE
-        absent.user_id = b.user_id
-        AND absent.provider_absent_at IS NOT null
-        AND absent.external_id IS NOT NULL
-        AND absent.external_id <> ''
-        AND NOT EXISTS (
-          SELECT 1
-          FROM final_groups AS fg_member
-          WHERE
-            fg_member.group_id = b.group_id
-            AND fg_member.activity_id = absent.id
-        )
-        AND EXTRACT(EPOCH FROM (
-          LEAST(
-            COALESCE(absent.ended_at, absent.started_at + interval '1 hour'),
-            bounds.group_ended_at
-          )
-          - GREATEST(absent.started_at, bounds.group_started_at)
-        )) / NULLIF(EXTRACT(EPOCH FROM (
-          GREATEST(
-            COALESCE(absent.ended_at, absent.started_at + interval '1 hour'),
-            bounds.group_ended_at
-          )
-          - LEAST(absent.started_at, bounds.group_started_at)
-        )), 0) > 0.8
-    ) AS absent_source_external_ids
+    absent_source_links.absent_source_external_ids
   FROM best_per_group AS b
+  LEFT JOIN absent_source_links ON b.group_id = absent_source_links.group_id
 )
 
 SELECT
