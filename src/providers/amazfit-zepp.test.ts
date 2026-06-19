@@ -81,6 +81,13 @@ async function mockStoredZeppCredentials(
   });
 }
 
+function emptyZeppWorkoutHistoryResponse(): Response {
+  return new Response(JSON.stringify({ code: 1, data: { next: -1, summary: [] } }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 describe("Amazfit/Zepp provider", () => {
   afterEach(async () => {
     vi.clearAllMocks();
@@ -303,8 +310,10 @@ describe("Amazfit/Zepp provider", () => {
     const { db, spies } = createMockDatabase();
     const metricStreamCapture = createCapturingMetricStreamPublisher();
     const onProgress = vi.fn();
-    const fetchFn: typeof globalThis.fetch = async () =>
-      new Response(
+    const fetchFn: typeof globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("/v1/sport/run/history.json")) return emptyZeppWorkoutHistoryResponse();
+      return new Response(
         JSON.stringify({
           code: 1,
           data: [
@@ -322,6 +331,7 @@ describe("Amazfit/Zepp provider", () => {
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
+    };
     const provider = new AmazfitZeppProvider(fetchFn);
 
     const result = await runWithTokenUser(TEST_USER_ID, () =>
@@ -401,15 +411,137 @@ describe("Amazfit/Zepp provider", () => {
     ]);
   });
 
+  it("syncs every workout summary returned by Zepp history as activities", async () => {
+    await mockStoredZeppCredentials();
+
+    const { db, spies } = createMockDatabase();
+    const startedAt = new Date("2026-02-06T14:00:00.000Z");
+    const endedAt = new Date("2026-02-06T15:00:00.000Z");
+    const secondStartedAt = new Date(startedAt.getTime() + 7200 * 1000);
+    const secondEndedAt = new Date(endedAt.getTime() + 7200 * 1000);
+    const thirdStartedAt = new Date(startedAt.getTime() + 14400 * 1000);
+    const thirdEndedAt = new Date(endedAt.getTime() + 14400 * 1000);
+    const secondPageCursor = thirdStartedAt.getTime() / 1000;
+    const historyRequests: string[] = [];
+    const fetchFn: typeof globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("/v1/data/band_data.json")) {
+        return new Response(JSON.stringify({ code: 1, data: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/v1/sport/run/history.json")) {
+        historyRequests.push(url);
+        const historyUrl = new URL(url);
+        if (historyUrl.searchParams.get("trackid") === String(secondPageCursor)) {
+          return new Response(
+            JSON.stringify({
+              code: 1,
+              data: {
+                next: -1,
+                summary: [
+                  {
+                    trackid: String(thirdStartedAt.getTime() / 1000),
+                    source: "watch",
+                    end_time: String(thirdEndedAt.getTime() / 1000),
+                    run_time: "3600",
+                    type: 999,
+                    dis: "1000",
+                    calorie: "120",
+                    app_name: "Zepp",
+                  },
+                ],
+              },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            code: 1,
+            data: {
+              next: secondPageCursor,
+              summary: [
+                {
+                  trackid: String(startedAt.getTime() / 1000),
+                  source: "watch",
+                  end_time: String(endedAt.getTime() / 1000),
+                  run_time: "3600",
+                  type: 1,
+                  dis: "10000",
+                  calorie: "620",
+                  app_name: "Zepp",
+                },
+                {
+                  trackid: String(secondStartedAt.getTime() / 1000),
+                  source: "watch",
+                  end_time: String(secondEndedAt.getTime() / 1000),
+                  run_time: "3600",
+                  type: 9,
+                  dis: "30000",
+                  calorie: "710",
+                  app_name: "Zepp",
+                },
+              ],
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      throw new Error(`Unexpected Amazfit/Zepp request: ${url}`);
+    };
+    const provider = new AmazfitZeppProvider(fetchFn);
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00.000Z") }),
+        userId: TEST_USER_ID,
+      }),
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.recordsSynced).toBe(3);
+    expect(historyRequests).toHaveLength(2);
+    expect(historyRequests[1]).toContain(`trackid=${secondPageCursor}`);
+    expect(spies.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "amazfit-zepp",
+        userId: TEST_USER_ID,
+        externalId: String(startedAt.getTime() / 1000),
+        activityType: "running",
+        startedAt,
+        endedAt,
+        sourceName: "Zepp",
+      }),
+    );
+    expect(spies.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activityType: "cycling",
+        externalId: String(secondStartedAt.getTime() / 1000),
+      }),
+    );
+    expect(spies.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activityType: "other",
+        externalId: String(thirdStartedAt.getTime() / 1000),
+      }),
+    );
+  });
+
   it("records malformed band days as sync errors and continues", async () => {
     await mockStoredZeppCredentials();
 
     const { db } = createMockDatabase();
-    const fetchFn: typeof globalThis.fetch = async () =>
-      new Response(JSON.stringify({ code: 1, data: [{}] }), {
+    const fetchFn: typeof globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("/v1/sport/run/history.json")) return emptyZeppWorkoutHistoryResponse();
+      return new Response(JSON.stringify({ code: 1, data: [{}] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
+    };
     const provider = new AmazfitZeppProvider(fetchFn);
 
     const result = await runWithTokenUser(TEST_USER_ID, () =>
@@ -561,11 +693,14 @@ describe("Amazfit/Zepp provider", () => {
     await mockStoredZeppCredentials();
 
     const { db } = createMockDatabase();
-    const fetchFn: typeof globalThis.fetch = async () =>
-      new Response(JSON.stringify({ code: 1002, message: "invalid token", data: [] }), {
+    const fetchFn: typeof globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("/v1/sport/run/history.json")) return emptyZeppWorkoutHistoryResponse();
+      return new Response(JSON.stringify({ code: 1002, message: "invalid token", data: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
+    };
     const provider = new AmazfitZeppProvider(fetchFn);
 
     const result = await provider.sync(
