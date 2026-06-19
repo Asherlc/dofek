@@ -305,7 +305,7 @@ export function ProviderAbsentBanner({ activity }: { activity: ActivityDetail })
           <dt className="text-xs font-medium uppercase tracking-wide text-amber-700/80 dark:text-amber-300/80">
             Status
           </dt>
-          <dd className="mt-0.5 text-foreground">Tombstoned</dd>
+          <dd className="mt-0.5 text-foreground">Removed</dd>
         </div>
         <div>
           <dt className="text-xs font-medium uppercase tracking-wide text-amber-700/80 dark:text-amber-300/80">

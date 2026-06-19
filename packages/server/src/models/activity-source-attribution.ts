@@ -101,6 +101,7 @@ export class ActivitySourceAttribution {
     }
 
     for (const entry of this.#absentEntries) {
+      if (linksByProvider.has(entry.providerId)) continue;
       const provider = lookup(entry.providerId);
       const label = provider?.name ?? entry.providerId;
       const url =

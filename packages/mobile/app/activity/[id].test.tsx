@@ -129,7 +129,7 @@ vi.mock("../../theme", () => ({
 }));
 
 vi.mock("@dofek/format/format", () => ({
-  formatDateLong: (value: string) => value,
+  formatDateLong: (value: string) => (value.startsWith("2026-03-05") ? "March 5, 2026" : value),
   formatDurationRange: () => "1:00:00",
   formatDurationSeconds: (value: number) => `${value}s`,
   formatNumber: (value: number) => String(value),
@@ -139,9 +139,13 @@ vi.mock("@dofek/format/format", () => ({
 vi.mock("@dofek/format/units", () => ({}));
 
 vi.mock("@dofek/providers/providers", () => ({
-  providerLabel: (id: string) => id,
+  providerLabel: (id: string) => (id === "strava" ? "Strava" : id),
   providerSourceLabel: (id: string, subsource?: string | null) =>
-    id === "apple_health" && subsource ? `${subsource} (via Apple Health)` : id,
+    id === "apple_health" && subsource
+      ? `${subsource} (via Apple Health)`
+      : id === "strava"
+        ? "Strava"
+        : id,
 }));
 
 vi.mock("@dofek/scoring/colors", () => ({
@@ -423,5 +427,25 @@ describe("ActivityDetailScreen", () => {
     render(React.createElement(ActivityDetailScreen));
 
     expect(screen.getByText(/Strong \(via Apple Health\)/)).toBeTruthy();
+  });
+
+  it("shows removed provider status for provider-absent activities", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: {
+        ...baseCyclingActivity,
+        providerId: "strava",
+        providerAbsentAt: "2026-03-05T14:30:00.000Z",
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getByText("Removed from provider sync")).toBeTruthy();
+    expect(screen.getByText("Removed")).toBeTruthy();
+    expect(screen.getByText("Strava")).toBeTruthy();
+    expect(screen.getByText(/March 5, 2026/)).toBeTruthy();
   });
 });

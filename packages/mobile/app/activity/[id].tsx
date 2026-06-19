@@ -869,6 +869,29 @@ export default function ActivityDetailScreen() {
             })}
           </View>
         )}
+        {activity.providerAbsentAt && (
+          <View style={styles.providerAbsentBanner}>
+            <Text style={styles.providerAbsentTitle}>Removed from provider sync</Text>
+            <View style={styles.providerAbsentDetails}>
+              <View style={styles.providerAbsentDetail}>
+                <Text style={styles.providerAbsentLabel}>Status</Text>
+                <Text style={styles.providerAbsentValue}>Removed</Text>
+              </View>
+              <View style={styles.providerAbsentDetail}>
+                <Text style={styles.providerAbsentLabel}>Provider</Text>
+                <Text style={styles.providerAbsentValue}>
+                  {providerSourceLabel(activity.providerId, activity.subsource)}
+                </Text>
+              </View>
+              <View style={styles.providerAbsentDetail}>
+                <Text style={styles.providerAbsentLabel}>Removed at</Text>
+                <Text style={styles.providerAbsentValue}>
+                  {formatDateLong(activity.providerAbsentAt)}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
       </View>
 
       {/* Stats Grid */}

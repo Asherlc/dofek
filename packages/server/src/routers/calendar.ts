@@ -92,7 +92,7 @@ export const calendarRouter = router({
             "Activity calendar requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.",
         });
       }
-      ensureProvidersRegistered();
+      await ensureProvidersRegistered();
       const repo = new ActivitiesCalendarRepository(
         ctx.db,
         ctx.userId,

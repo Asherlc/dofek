@@ -11,7 +11,20 @@ describe("buildActivityReadModelRefreshStatements", () => {
       expect.stringContaining("CREATE VIEW IF NOT EXISTS analytics.v_activity"),
       expect.stringContaining("CREATE VIEW IF NOT EXISTS analytics.v_activity_members"),
     ]);
-    expect(statements[2]).toContain("absent_group_members");
+    const activityStatement = statements[2];
+    if (!activityStatement) {
+      throw new Error("Expected activity read model statement");
+    }
+    const activitySql = activityStatement.replace(/\s+/g, " ");
+    expect(activitySql).toContain("absent_group_members");
+    expect(activitySql).toContain("absent_source_links AS");
+    expect(activitySql).toContain("least( absent.started_at, group_bounds.group_started_at )");
+    expect(activitySql).toContain(
+      "greatest(coalesce(absent.ended_at, absent.started_at + INTERVAL 1 HOUR), group_bounds.group_ended_at)",
+    );
+    expect(activitySql).toContain(
+      "coalesce(any(absent_source_links.absent_source_external_ids), []) AS absent_source_external_ids",
+    );
     expect(statements[3]).toContain("arrayJoin(member_activity_ids)");
   });
 });

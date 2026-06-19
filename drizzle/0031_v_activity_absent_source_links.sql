@@ -177,6 +177,8 @@ merged AS (
       WHERE
         absent.user_id = b.user_id
         AND absent.provider_absent_at IS NOT null
+        AND absent.external_id IS NOT NULL
+        AND absent.external_id <> ''
         AND NOT EXISTS (
           SELECT 1
           FROM final_groups AS fg_member

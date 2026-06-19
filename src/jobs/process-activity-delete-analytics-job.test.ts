@@ -42,6 +42,8 @@ describe("processActivityDeleteAnalyticsJob", () => {
     mockInvalidateByPrefix.mockClear();
     mockClose.mockClear();
     mockWaitForPeerDbActivityDeletes.mockResolvedValue(undefined);
+    mockWaitForPeerDbActivityRestores.mockClear();
+    mockWaitForPeerDbActivityRestores.mockResolvedValue(undefined);
     mockRunActivityReadModelBuild.mockResolvedValue(undefined);
   });
 
@@ -78,5 +80,6 @@ describe("processActivityDeleteAnalyticsJob", () => {
     expect(mockWaitForPeerDbActivityDeletes).not.toHaveBeenCalled();
     expect(mockRunActivityReadModelBuild).toHaveBeenCalledOnce();
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:");
+    expect(mockClose).toHaveBeenCalledOnce();
   });
 });

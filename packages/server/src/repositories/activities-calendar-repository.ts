@@ -313,7 +313,10 @@ export class ActivitiesCalendarRepository extends BaseRepository {
           toString(toDate(toTimeZone(activity.started_at, {timezone:String}))) AS local_date,
           activity.provider_id AS provider_id,
           toString(activity.provider_absent_at) AS provider_absent_at,
-          toFloat64OrNull(nullIf(JSONExtractString(activity.raw, 'calories'), '')) AS calories
+          coalesce(
+            toFloat64OrNull(JSONExtractRaw(activity.raw, 'calories')),
+            toFloat64OrNull(nullIf(JSONExtractString(activity.raw, 'calories'), ''))
+          ) AS calories
         FROM postgres_fitness.activity AS activity FINAL
         WHERE activity.user_id = {userId:UUID}
           AND activity._peerdb_is_deleted = 0
@@ -553,10 +556,10 @@ export function mergeDayGroups(
     .map(([date, activitiesById]) => ({
       date,
       activities: Array.from(activitiesById.values()).sort((left, right) =>
-        left.startedAt < right.startedAt ? 1 : -1,
+        right.startedAt.localeCompare(left.startedAt),
       ),
     }))
-    .sort((left, right) => (left.date < right.date ? 1 : -1));
+    .sort((left, right) => right.date.localeCompare(left.date));
 }
 
 function activityTypeFilterSql(input: Pick<WeekListInput, "activityType">): string {

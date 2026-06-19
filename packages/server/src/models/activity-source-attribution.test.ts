@@ -48,6 +48,29 @@ describe("ActivitySourceAttribution", () => {
     ]);
   });
 
+  it("keeps an active source link when the same provider also has an absent entry", () => {
+    const attribution = ActivitySourceAttribution.fromEntries(
+      [{ providerId: "strava", externalId: "active-123" }],
+      [
+        {
+          providerId: "strava",
+          externalId: "removed-999",
+          memberActivityId: "member-strava",
+          providerAbsentAt: "2026-03-05T14:30:00.000Z",
+        },
+      ],
+    );
+
+    expect(attribution.toSourceLinks(mockLookup)).toEqual([
+      {
+        providerId: "strava",
+        label: "Strava",
+        url: "https://www.strava.com/activities/active-123",
+        providerAbsentAt: null,
+      },
+    ]);
+  });
+
   it("builds a partial absence summary only when active and absent sources coexist", () => {
     const partial = ActivitySourceAttribution.fromEntries(
       [{ providerId: "garmin", externalId: "123" }],

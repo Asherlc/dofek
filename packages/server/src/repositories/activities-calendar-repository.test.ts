@@ -1887,6 +1887,30 @@ describe("mergeDayGroups", () => {
     ).toEqual(["late", "early"]);
   });
 
+  it("keeps equal startedAt entries in insertion order", () => {
+    const activeDays = [
+      {
+        date: "2026-03-18",
+        activities: [
+          makeCalendarEntry({
+            id: "first",
+            startedAt: "2026-03-18T07:00:00.000Z",
+          }),
+          makeCalendarEntry({
+            id: "second",
+            startedAt: "2026-03-18T07:00:00.000Z",
+          }),
+        ],
+      },
+    ];
+
+    expect(
+      mergeDayGroups(activeDays, []).flatMap((day) =>
+        day.activities.map((activity) => activity.id),
+      ),
+    ).toEqual(["first", "second"]);
+  });
+
   it("prefers active entries when active and hidden activities share the same id", () => {
     const activeDays = [
       {

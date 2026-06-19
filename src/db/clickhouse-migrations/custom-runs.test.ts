@@ -249,14 +249,13 @@ describe("addDedupedActivitiesAbsentSourceLinks", () => {
     );
   });
 
-  it("refreshes v_activity views and skips the column alter when deduped_activities is missing", async () => {
+  it("fails before refreshing views when deduped_activities is missing", async () => {
     const client = mockQueryClient([{ table_count: 0 }]);
     const { runClickHouseMigrationStatement } = await import("./statement-runner.ts");
-    await addDedupedActivitiesAbsentSourceLinks(client, "conn");
-    expect(runClickHouseMigrationStatement).toHaveBeenCalledWith(
-      client,
-      "DROP VIEW IF EXISTS analytics.v_activity",
+    await expect(addDedupedActivitiesAbsentSourceLinks(client, "conn")).rejects.toThrow(
+      "Missing analytics.deduped_activities; run serving table migrations before 0032",
     );
+    expect(runClickHouseMigrationStatement).not.toHaveBeenCalled();
     expect(client.command).not.toHaveBeenCalled();
   });
 

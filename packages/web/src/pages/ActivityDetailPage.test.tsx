@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 
+import { formatDateTime } from "@dofek/format/format";
 import type { UnitSystem } from "@dofek/format/units";
 import { UnitConverter } from "@dofek/format/units";
 import { render, screen } from "@testing-library/react";
@@ -307,9 +308,9 @@ describe("ActivityDetailPage", () => {
       renderWithUnits(<ActivityDetailPage />);
 
       expect(screen.getByText("Removed from provider sync")).toBeDefined();
-      expect(screen.getByText("Tombstoned")).toBeDefined();
+      expect(screen.getByText("Removed")).toBeDefined();
       expect(screen.getByText("Strava")).toBeDefined();
-      expect(screen.getByText(/Mar 5,/)).toBeDefined();
+      expect(screen.getByText(formatDateTime("2026-03-05T14:30:00.000Z"))).toBeDefined();
     });
   });
 

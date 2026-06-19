@@ -106,7 +106,11 @@ export class Activity {
   }
 
   get sourceProviders(): string[] {
-    return this.#sourceAttribution.providerIds();
+    const providers = new Set([
+      ...(this.#row.source_providers ?? []),
+      ...this.#sourceAttribution.providerIds(),
+    ]);
+    return [...providers].sort();
   }
 
   get sourceLinks(): SourceLink[] {

@@ -243,6 +243,8 @@ absent_group_members AS (
   INNER JOIN postgres_fitness.activity AS absent FINAL
     ON absent.user_id = group_bounds.user_id
    AND absent.provider_absent_at IS NOT NULL
+   AND absent.external_id IS NOT NULL
+   AND absent.external_id != ''
    AND absent._peerdb_is_deleted = 0
   LEFT JOIN final_groups AS fg_member
     ON fg_member.group_id = group_bounds.group_id
@@ -260,14 +262,31 @@ absent_group_members AS (
       dateDiff(
         'second',
         least(
-          coalesce(absent.ended_at, absent.started_at + INTERVAL 1 HOUR),
-          group_bounds.group_ended_at
+          absent.started_at,
+          group_bounds.group_started_at
         ),
-        greatest(absent.started_at, group_bounds.group_started_at)
+        greatest(coalesce(absent.ended_at, absent.started_at + INTERVAL 1 HOUR), group_bounds.group_ended_at)
       ),
       0
     )
   ) > 0.8
+),
+absent_source_links AS (
+  SELECT
+    group_id,
+    groupArrayIf(
+      map(
+        'providerId', provider_id,
+        'externalId', external_id,
+        'memberActivityId', toString(activity_id),
+        'providerAbsentAt', toString(provider_absent_at)
+      ),
+      provider_id IS NOT NULL
+      AND external_id IS NOT NULL
+      AND external_id != ''
+    ) AS absent_source_external_ids
+  FROM absent_group_members
+  GROUP BY group_id
 ),
 best AS (
   SELECT *
@@ -308,25 +327,15 @@ merged AS (
     argMinIf(ranked.raw, ranked.priority, ranked.raw IS NOT NULL) AS raw,
     arraySort(groupUniqArray(ranked.provider_id)) AS source_providers,
     groupArrayIf(map('providerId', ranked.provider_id, 'externalId', ranked.external_id), ranked.external_id IS NOT NULL AND ranked.external_id != '') AS source_external_ids,
-    groupArrayIf(
-      map(
-        'providerId', absent_group_members.provider_id,
-        'externalId', absent_group_members.external_id,
-        'memberActivityId', toString(absent_group_members.activity_id),
-        'providerAbsentAt', toString(absent_group_members.provider_absent_at)
-      ),
-      absent_group_members.provider_id IS NOT NULL
-      AND absent_group_members.external_id IS NOT NULL
-      AND absent_group_members.external_id != ''
-    ) AS absent_source_external_ids,
+    coalesce(any(absent_source_links.absent_source_external_ids), []) AS absent_source_external_ids,
     groupArray(ranked.id) AS member_activity_ids
   FROM best
   INNER JOIN final_groups
     ON final_groups.group_id = best.group_id
   INNER JOIN ranked
     ON ranked.id = final_groups.activity_id
-  LEFT JOIN absent_group_members
-    ON absent_group_members.group_id = best.group_id
+  LEFT JOIN absent_source_links
+    ON absent_source_links.group_id = best.group_id
   GROUP BY best.group_id, best.canonical_id
 )
 SELECT

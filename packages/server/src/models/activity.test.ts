@@ -143,11 +143,12 @@ describe("Activity", () => {
     expect(activity.sourceLinks[0]?.providerId).toBe("strava");
   });
 
-  it("returns empty source links for null source_external_ids", () => {
+  it("keeps source providers when source_external_ids is null", () => {
     const row: ActivityRow = { ...fullRow, source_external_ids: null };
     const activity = new Activity(row, mockLookup);
 
     expect(activity.sourceLinks).toEqual([]);
+    expect(activity.sourceProviders).toEqual(["strava", "wahoo"]);
   });
 
   it("returns null for all nullable fields when null", () => {

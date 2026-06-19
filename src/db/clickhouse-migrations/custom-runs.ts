@@ -599,10 +599,6 @@ export async function addDedupedActivitiesAbsentSourceLinks(
   client: ClickHouseCommandClient,
   _postgresConnectionString: string,
 ): Promise<void> {
-  for (const statement of buildActivityReadModelRefreshStatements()) {
-    await runClickHouseMigrationStatement(client, statement);
-  }
-
   if (!client.query) {
     throw new Error("ClickHouse migrations require a query-capable client");
   }
@@ -614,7 +610,13 @@ export async function addDedupedActivitiesAbsentSourceLinks(
   });
   const rows = await result.json();
   if (Number(rows[0]?.table_count ?? 0) === 0) {
-    return;
+    throw new Error(
+      "Missing analytics.deduped_activities; run serving table migrations before 0032",
+    );
+  }
+
+  for (const statement of buildActivityReadModelRefreshStatements()) {
+    await runClickHouseMigrationStatement(client, statement);
   }
 
   await client.command({ query: dedupedActivitiesAbsentSourceColumnSql });
