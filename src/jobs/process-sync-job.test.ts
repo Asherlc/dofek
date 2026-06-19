@@ -7,6 +7,13 @@ import type { SyncRun } from "../providers/sync-run.ts";
 import { SyncWindow } from "../providers/sync-window.ts";
 import type { SyncProvider, SyncResult } from "../providers/types.ts";
 
+type MockCooldownRecord = {
+  providerId: string;
+  scope: "provider" | "user";
+  userId: string | null;
+  expiresAt: Date;
+};
+
 const MockJobDataSchema = z.object({
   providerId: z.string().optional(),
   sinceDays: z.number().optional(),
@@ -15,6 +22,10 @@ const MockJobDataSchema = z.object({
   userId: z.string(),
   checkpoint: z.unknown().optional(),
 });
+
+const mockProviderRateLimitCooldownRecords = vi.hoisted(
+  (): Map<string, MockCooldownRecord> => new Map(),
+);
 
 const mockCaptureException = vi.fn();
 vi.mock("@sentry/node", () => ({
@@ -98,6 +109,57 @@ vi.mock("../sync-metrics.ts", () => ({
   syncErrorsTotal: mockSyncErrorsTotal,
 }));
 
+vi.mock("./provider-rate-limit-cooldown.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./provider-rate-limit-cooldown.ts")>();
+
+  function cooldownKey(providerId: string, scope: "provider" | "user", userId: string | null) {
+    return scope === "provider"
+      ? `${providerId}:provider`
+      : `${providerId}:user:${userId ?? "unknown"}`;
+  }
+
+  function activeCooldown(cooldown: MockCooldownRecord | null): MockCooldownRecord | null {
+    if (!cooldown) return null;
+    return cooldown.expiresAt > new Date() ? cooldown : null;
+  }
+
+  function laterCooldown(
+    first: MockCooldownRecord | null,
+    second: MockCooldownRecord | null,
+  ): MockCooldownRecord | null {
+    if (!first) return second;
+    if (!second) return first;
+    return first.expiresAt >= second.expiresAt ? first : second;
+  }
+
+  return {
+    ...actual,
+    providerRateLimitCooldownStore: {
+      record: async (error: ProviderRateLimitError, fallbackUserId: string) => {
+        const scope = error.scope;
+        const userId = scope === "user" ? (error.userId ?? fallbackUserId) : null;
+        const expiresAt = new Date(Date.now() + (error.retryAfterSeconds ?? 30 * 60) * 1000);
+        const cooldown = { providerId: error.providerId, scope, userId, expiresAt };
+        const key = cooldownKey(cooldown.providerId, cooldown.scope, cooldown.userId);
+        const existing = activeCooldown(mockProviderRateLimitCooldownRecords.get(key) ?? null);
+        const effective = laterCooldown(existing, cooldown) ?? cooldown;
+        mockProviderRateLimitCooldownRecords.set(key, effective);
+        return effective;
+      },
+      getActive: async (providerId: string, userId: string) => {
+        const providerCooldown = activeCooldown(
+          mockProviderRateLimitCooldownRecords.get(cooldownKey(providerId, "provider", null)) ??
+            null,
+        );
+        const userCooldown = activeCooldown(
+          mockProviderRateLimitCooldownRecords.get(cooldownKey(providerId, "user", userId)) ?? null,
+        );
+        return laterCooldown(providerCooldown, userCooldown);
+      },
+    },
+  };
+});
+
 // Import after mocks are set up
 const { processSyncJob } = await import("./process-sync-job.ts");
 
@@ -168,6 +230,7 @@ function runSyncJob(job: MockJob, db: SyncDatabase) {
 describe("processSyncJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockProviderRateLimitCooldownRecords.clear();
     // Restore default return values after clearAllMocks
     mockGetEnabledSyncProviders.mockReturnValue([]);
     mockGetProvider.mockReturnValue(undefined);
