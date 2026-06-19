@@ -10940,3 +10940,65 @@ new incremental tables are populated.
   the prior recorded-time lookback can still miss stream metrics in production
   until the fixed models are deployed and the affected batches are explicitly
   backfilled or rebuilt.
+
+## 2026-06-18 — Sleep heart-rate backfill exposed missing raw PeerDB mirrors
+
+- **Symptoms:** A production `dbt build --full-refresh --select
+  sleep_heart_rate_sample+` initially completed successfully but rebuilt
+  `analytics.sleep_heart_rate_sample`, `analytics.resting_heart_rate_sleep_window`,
+  `analytics.activity_vo2max_estimate`, `analytics.daily_recovery_inputs`, and
+  `analytics.daily_recovery` to zero rows.
+- **User impact:** Sleep/recovery read models were temporarily empty after the
+  first backfill attempt. The public health endpoint remained healthy, but
+  ClickHouse-backed dashboard data depended on a second backfill after CDC
+  recovery.
+- **Evidence:** Postgres source tables had data:
+  `fitness.activity = 1210` rows with latest `2026-06-19 00:19:00.58+00` and
+  `fitness.sleep_session = 195` rows with latest `2026-06-18 05:24:04.73+00`.
+  ClickHouse raw mirrors had zero rows in `postgres_fitness.activity`,
+  `postgres_fitness.sleep_session`, `postgres_fitness.sleep_stage`,
+  `postgres_fitness.daily_metrics`, provider inventory tables, and sensor
+  priority tables. `pg_replication_slots` returned zero rows. The `cdc-health`
+  service logged missing raw mirrors and missing slots for
+  `dofek_fitness_raw_analytics`, `dofek_provider_inventory_raw_analytics`, and
+  `dofek_sensor_priority_raw_analytics`.
+- **Root cause:** The immediate cause was that the managed raw PeerDB mirrors
+  and their Postgres logical replication slots were absent, so dbt rebuilt
+  downstream models from empty ClickHouse CDC sources. A later deploy of image
+  `sha-752d377` reproduced the mirror loss: the post-deploy ClickHouse CDC setup
+  path read PeerDB's binary `config_proto` as escaped text, treated healthy raw
+  mirrors as mapping mismatches, and issued `DROP MIRROR` for
+  `dofek_fitness_raw_analytics`.
+- **Fix / mitigation:** Ran the checked-in ClickHouse CDC setup path inside the
+  production swarm network with explicit PeerDB/Postgres/ClickHouse host
+  overrides. It recreated the three raw mirrors and slots; `pg_replication_slots`
+  then showed all three active with `wal_status = reserved`. The raw mirrors
+  repopulated to `postgres_fitness.activity = 1210` and
+  `postgres_fitness.sleep_session = 195`. Reran the corrected branch SQL with
+  `dbt build --full-refresh --select sleep_heart_rate_sample+`. After the
+  restored production analytics worker began rerunning the old deployed SQL,
+  scaled `dofek_analytics-worker` to `0/0` to preserve the corrected backfill
+  state, then reran the corrected full refresh. The final run completed
+  `PASS=7 WARN=0 ERROR=0` in 220 seconds. Final verification showed
+  `analytics.sleep_heart_rate_sample = 1,563,459`,
+  `analytics.resting_heart_rate_sleep_window = 195`,
+  `analytics.daily_recovery_inputs = 99`, and `analytics.daily_recovery = 99`.
+  A direct CDC health check returned
+  `[clickhouse-cdc-health] ok: checked 3 slots and 1 mirror`. After image
+  `sha-752d377` deployed, restored `dofek_analytics-worker` to `1/1`; the first
+  activity dbt phase completed `PASS=14 WARN=0 ERROR=0`, then the post-deploy
+  CDC setup dropped raw mirrors again. Reran CDC setup after deploy completion;
+  all three slots became active and the raw mirror repopulated to
+  `postgres_fitness.activity = 1211` and `postgres_fitness.sleep_session = 195`.
+- **Remaining risk:** Medium. `analytics-worker` is unpaused at `1/1`, but the
+  currently deployed image still fails the activity dbt phase at
+  `analytics.deduped_activities` with ClickHouse error code 53 because
+  `absent_source_external_ids` is inferred as
+  `Array(Map(String, Nullable(String)))` while the existing serving table column
+  is `Array(Map(String, String))`. Deploy the follow-up fix that casts the dbt
+  expression to `Array(Map(String, String))` and stops CDC setup from dropping
+  existing raw mirrors based on `config_proto` token parsing.
+- **Follow-up:** Add an alert that pages on missing managed mirror catalog rows
+  or zero required PeerDB slots, not just stale mirrored timestamps. Consider a
+  deploy smoke check that runs the two-phase analytics dbt command to completion
+  before declaring `analytics-worker` healthy.

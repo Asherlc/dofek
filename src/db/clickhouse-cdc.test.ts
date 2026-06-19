@@ -42,7 +42,7 @@ function credentialedUrl(
 function isPeerDbMirrorReconciliationQuery(queryText: string): boolean {
   return (
     queryText.includes("obsolete_metric_stream_mirror_name") ||
-    queryText.includes("raw_analytics_mirror_config") ||
+    queryText.includes("expected_mirrors(name)") ||
     queryText.includes("existing_mirror_name")
   );
 }
@@ -327,24 +327,12 @@ describe("PeerDB ClickHouse CDC setup", () => {
           if (query.includes("obsolete_metric_stream_mirror_name")) {
             return { rows: [] };
           }
-          if (query.includes("raw_analytics_mirror_config")) {
+          if (query.includes("expected_mirrors(name)") && !query.includes("existing_mirror_name")) {
             return {
               rows: [
-                {
-                  name: "dofek_fitness_raw_analytics",
-                  raw_analytics_mirror_config:
-                    "peerdb_raw_analytics_publication activity sleep_session sleep_stage daily_metrics provider provider_priority device_priority user_profile",
-                },
-                {
-                  name: "dofek_provider_inventory_raw_analytics",
-                  raw_analytics_mirror_config:
-                    "peerdb_raw_analytics_publication food_entry health_event lab_panel lab_result journal_entry",
-                },
-                {
-                  name: "dofek_sensor_priority_raw_analytics",
-                  raw_analytics_mirror_config:
-                    "peerdb_raw_analytics_publication sensor_provider_priority sensor_device_priority",
-                },
+                { name: "dofek_fitness_raw_analytics" },
+                { name: "dofek_provider_inventory_raw_analytics" },
+                { name: "dofek_sensor_priority_raw_analytics" },
               ],
             };
           }
@@ -398,7 +386,10 @@ describe("PeerDB ClickHouse CDC setup", () => {
             if (query.includes("obsolete_metric_stream_mirror_name")) {
               return { rows: [] };
             }
-            if (query.includes("raw_analytics_mirror_config")) {
+            if (
+              query.includes("expected_mirrors(name)") &&
+              !query.includes("existing_mirror_name")
+            ) {
               return { rows: [] };
             }
             if (query.includes("existing_mirror_name")) {
@@ -570,7 +561,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
               rows: [{ obsolete_metric_stream_mirror_name: "dofek_metric_stream_cdc" }],
             };
           }
-          if (query.includes("raw_analytics_mirror_config")) {
+          if (query.includes("expected_mirrors(name)") && !query.includes("existing_mirror_name")) {
             return { rows: [] };
           }
           if (query.includes("existing_mirror_name")) {
@@ -648,7 +639,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
     expect(peerDbQueries).not.toContain("DROP MIRROR null");
   });
 
-  it("recreates raw analytics mirrors when existing mappings are missing source tables", async () => {
+  it("preserves existing raw analytics mirrors instead of dropping them from config text", async () => {
     const peerDbQueries: string[] = [];
     const clickHouseCommands: string[] = [];
     const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
@@ -660,29 +651,23 @@ describe("PeerDB ClickHouse CDC setup", () => {
           if (query.includes("obsolete_metric_stream_mirror_name")) {
             return { rows: [] };
           }
-          if (query.includes("raw_analytics_mirror_config")) {
+          if (query.includes("expected_mirrors(name)") && !query.includes("existing_mirror_name")) {
             return {
               rows: [
-                {
-                  name: "dofek_fitness_raw_analytics",
-                  raw_analytics_mirror_config:
-                    "peerdb_raw_analytics_publication activity sleep_session sleep_stage daily_metrics provider provider_priority device_priority",
-                },
-                {
-                  name: "dofek_provider_inventory_raw_analytics",
-                  raw_analytics_mirror_config:
-                    "peerdb_raw_analytics_publication food_entry health_event lab_panel lab_result journal_entry",
-                },
-                {
-                  name: "dofek_sensor_priority_raw_analytics",
-                  raw_analytics_mirror_config:
-                    "peerdb_raw_analytics_publication sensor_provider_priority sensor_device_priority",
-                },
+                { name: "dofek_fitness_raw_analytics" },
+                { name: "dofek_provider_inventory_raw_analytics" },
+                { name: "dofek_sensor_priority_raw_analytics" },
               ],
             };
           }
           if (query.includes("existing_mirror_name")) {
-            return { rows: [] };
+            return {
+              rows: [
+                { existing_mirror_name: "dofek_fitness_raw_analytics" },
+                { existing_mirror_name: "dofek_provider_inventory_raw_analytics" },
+                { existing_mirror_name: "dofek_sensor_priority_raw_analytics" },
+              ],
+            };
           }
           peerDbQueries.push(query);
           return {};
@@ -706,179 +691,14 @@ describe("PeerDB ClickHouse CDC setup", () => {
       },
     });
 
-    expect(peerDbQueries[0]).toBe("DROP MIRROR dofek_fitness_raw_analytics");
+    expect(peerDbQueries).not.toContain("DROP MIRROR dofek_fitness_raw_analytics");
     expect(peerDbQueries).not.toContain("DROP MIRROR dofek_provider_inventory_raw_analytics");
-    expect(peerDbQueries).toContainEqual(
-      expect.stringContaining("CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics"),
-    );
+    expect(peerDbQueries).not.toContain("DROP MIRROR dofek_sensor_priority_raw_analytics");
+    expect(peerDbQueries.join("\n")).not.toContain("CREATE MIRROR");
     const truncateCommands = clickHouseCommands.filter((command) =>
       command.startsWith("TRUNCATE TABLE"),
     );
-    expect(truncateCommands).toContain("TRUNCATE TABLE IF EXISTS postgres_fitness.activity");
-    expect(truncateCommands).toContain("TRUNCATE TABLE IF EXISTS postgres_fitness.user_profile");
-    expect(truncateCommands).not.toContain("TRUNCATE TABLE IF EXISTS postgres_fitness.food_entry");
-  });
-
-  it("recreates raw analytics mirrors when existing mappings only contain partial table-name matches", async () => {
-    const peerDbQueries: string[] = [];
-    const clickHouseCommands: string[] = [];
-    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
-
-    await setupClickHouseCdc({
-      peerDbClient: {
-        async query(queryText) {
-          const query = String(queryText);
-          if (query.includes("obsolete_metric_stream_mirror_name")) {
-            return { rows: [] };
-          }
-          if (query.includes("raw_analytics_mirror_config")) {
-            return {
-              rows: [
-                {
-                  name: "dofek_fitness_raw_analytics",
-                  raw_analytics_mirror_config:
-                    "peerdb_raw_analytics_publication activity sleep_session sleep_stage daily_metrics provider provider_priority device_priority user_profile_archive",
-                },
-              ],
-            };
-          }
-          if (query.includes("existing_mirror_name")) {
-            return { rows: [] };
-          }
-          peerDbQueries.push(query);
-          return {};
-        },
-      },
-      sourcePostgresClient: {
-        async query() {},
-      },
-      clickHouseClient: createTestClickHouseClient(clickHouseCommands),
-      templateSql,
-      templateValues: {
-        clickHouseHost: "clickhouse",
-        clickHouseCredential: "clickhouse-fixture",
-        clickHousePort: 9000,
-        clickHouseUser: "default",
-        postgresDatabase: "health",
-        postgresHost: "db",
-        postgresCredential: "fixture",
-        postgresPort: 5432,
-        postgresUser: "health",
-      },
-    });
-
-    expect(peerDbQueries[0]).toBe("DROP MIRROR dofek_fitness_raw_analytics");
-    expect(clickHouseCommands).toContain("TRUNCATE TABLE IF EXISTS postgres_fitness.user_profile");
-  });
-
-  it("recreates raw analytics mirrors when existing mappings include extra managed source tables", async () => {
-    const peerDbQueries: string[] = [];
-    const clickHouseCommands: string[] = [];
-    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
-
-    await setupClickHouseCdc({
-      peerDbClient: {
-        async query(queryText) {
-          const query = String(queryText);
-          if (query.includes("obsolete_metric_stream_mirror_name")) {
-            return { rows: [] };
-          }
-          if (query.includes("raw_analytics_mirror_config")) {
-            return {
-              rows: [
-                {
-                  name: "dofek_fitness_raw_analytics",
-                  raw_analytics_mirror_config:
-                    "peerdb_raw_analytics_publication activity sleep_session sleep_stage daily_metrics provider provider_priority device_priority user_profile food_entry",
-                },
-              ],
-            };
-          }
-          if (query.includes("existing_mirror_name")) {
-            return { rows: [] };
-          }
-          peerDbQueries.push(query);
-          return {};
-        },
-      },
-      sourcePostgresClient: {
-        async query() {},
-      },
-      clickHouseClient: createTestClickHouseClient(clickHouseCommands),
-      templateSql,
-      templateValues: {
-        clickHouseHost: "clickhouse",
-        clickHouseCredential: "clickhouse-fixture",
-        clickHousePort: 9000,
-        clickHouseUser: "default",
-        postgresDatabase: "health",
-        postgresHost: "db",
-        postgresCredential: "fixture",
-        postgresPort: 5432,
-        postgresUser: "health",
-      },
-    });
-
-    expect(peerDbQueries[0]).toBe("DROP MIRROR dofek_fitness_raw_analytics");
-    expect(clickHouseCommands).toContain("TRUNCATE TABLE IF EXISTS postgres_fitness.activity");
-    expect(clickHouseCommands).not.toContain(
-      "TRUNCATE TABLE IF EXISTS postgres_fitness.food_entry",
-    );
-  });
-
-  it("recreates raw analytics mirrors when existing mappings use an obsolete publication", async () => {
-    const peerDbQueries: string[] = [];
-    const clickHouseCommands: string[] = [];
-    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
-
-    await setupClickHouseCdc({
-      peerDbClient: {
-        async query(queryText) {
-          const query = String(queryText);
-          if (query.includes("obsolete_metric_stream_mirror_name")) {
-            return { rows: [] };
-          }
-          if (query.includes("raw_analytics_mirror_config")) {
-            return {
-              rows: [
-                {
-                  name: "dofek_fitness_raw_analytics",
-                  raw_analytics_mirror_config:
-                    "peerdb_metric_stream_publication activity sleep_session sleep_stage daily_metrics provider provider_priority device_priority user_profile",
-                },
-              ],
-            };
-          }
-          if (query.includes("existing_mirror_name")) {
-            return { rows: [] };
-          }
-          peerDbQueries.push(query);
-          return {};
-        },
-      },
-      sourcePostgresClient: {
-        async query() {},
-      },
-      clickHouseClient: createTestClickHouseClient(clickHouseCommands),
-      templateSql,
-      templateValues: {
-        clickHouseHost: "clickhouse",
-        clickHouseCredential: "clickhouse-fixture",
-        clickHousePort: 9000,
-        clickHouseUser: "default",
-        postgresDatabase: "health",
-        postgresHost: "db",
-        postgresCredential: "fixture",
-        postgresPort: 5432,
-        postgresUser: "health",
-      },
-    });
-
-    expect(peerDbQueries[0]).toBe("DROP MIRROR dofek_fitness_raw_analytics");
-    expect(clickHouseCommands).toContain("TRUNCATE TABLE IF EXISTS postgres_fitness.activity");
-    expect(peerDbQueries).toContainEqual(
-      expect.stringContaining("CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics"),
-    );
+    expect(truncateCommands).toEqual([]);
   });
 
   it("recreates absent raw analytics mirrors without initial copy when destination rows already exist", async () => {
@@ -893,15 +713,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
           if (query.includes("obsolete_metric_stream_mirror_name")) {
             return { rows: [] };
           }
-          if (query.includes("raw_analytics_mirror_config")) {
+          if (query.includes("expected_mirrors(name)") && !query.includes("existing_mirror_name")) {
             return {
-              rows: [
-                {
-                  name: "dofek_provider_inventory_raw_analytics",
-                  raw_analytics_mirror_config:
-                    "peerdb_raw_analytics_publication food_entry health_event lab_panel lab_result journal_entry",
-                },
-              ],
+              rows: [{ name: "dofek_provider_inventory_raw_analytics" }],
             };
           }
           if (query.includes("existing_mirror_name")) {
@@ -959,15 +773,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
           if (query.includes("obsolete_metric_stream_mirror_name")) {
             return { rows: [] };
           }
-          if (query.includes("raw_analytics_mirror_config")) {
+          if (query.includes("expected_mirrors(name)") && !query.includes("existing_mirror_name")) {
             return {
-              rows: [
-                {
-                  name: "dofek_provider_inventory_raw_analytics",
-                  raw_analytics_mirror_config:
-                    "peerdb_raw_analytics_publication food_entry health_event lab_panel lab_result journal_entry",
-                },
-              ],
+              rows: [{ name: "dofek_provider_inventory_raw_analytics" }],
             };
           }
           if (query.includes("existing_mirror_name")) {
@@ -1024,7 +832,10 @@ describe("PeerDB ClickHouse CDC setup", () => {
         peerDbClient: {
           async query(queryText) {
             const query = String(queryText);
-            if (query.includes("raw_analytics_mirror_config")) {
+            if (
+              query.includes("expected_mirrors(name)") &&
+              !query.includes("existing_mirror_name")
+            ) {
               return { rows: [] };
             }
             if (isPeerDbMirrorReconciliationQuery(query)) {
@@ -1071,7 +882,10 @@ describe("PeerDB ClickHouse CDC setup", () => {
         peerDbClient: {
           async query(queryText) {
             const query = String(queryText);
-            if (query.includes("raw_analytics_mirror_config")) {
+            if (
+              query.includes("expected_mirrors(name)") &&
+              !query.includes("existing_mirror_name")
+            ) {
               return { rows: [] };
             }
             if (isPeerDbMirrorReconciliationQuery(query)) {
