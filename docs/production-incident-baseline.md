@@ -11132,6 +11132,42 @@ new incremental tables are populated.
   serving table temporarily empties `deduped_activities` until the analytics
   worker rebuilds it.
 
+## 2026-06-19 — Zepp token exchange auth rejection reported to Sentry
+
+- **Symptoms:** Sentry issue `DOFEK-SERVER-3T` reported one production error at
+  `2026-06-19T05:07:55Z` for `ZeppLoginExchangeError: Amazfit/Zepp login error
+  (400)` on `credentialAuth.signIn`.
+- **User impact:** A user attempting to connect Amazfit/Zepp credentials saw the
+  connect attempt fail, and a stale client request was counted as a production
+  server error.
+- **Evidence:** The Sentry event stack traced through
+  `packages/server/src/routers/credential-auth.ts` to
+  `src/providers/amazfit-zepp.ts` and
+  `packages/zepp-client/src/client.ts:312`. The event had one production
+  occurrence and no related trace spans or logs.
+- **Root cause:** The Zepp client used stale Mi Fit / Zepp token-exchange hosts
+  and app metadata (`account.huami.com`, `account.zepp.com`, Mi Fit `6.14.0`).
+  Zepp still issued an access code from the old registration path, but rejected
+  the stale token-exchange request with HTTP `400`. A live reproduction with the
+  same account succeeded only after switching to the current Zepp US2 flow:
+  encrypted registration at `api-user-us2.zepp.com` followed by token exchange
+  at `api-mifit-us2.zepp.com` with Zepp `9.12.5` metadata.
+- **Fix / mitigation:** `signInToZepp` now uses the current Zepp US2 encrypted
+  registration and token-exchange flow directly, requests both `access` and
+  `refresh` tokens during registration, and no longer sends the obsolete legacy
+  token-exchange requests first. Token-exchange `400` responses remain
+  `ZeppLoginExchangeError` so future stale request-shape failures are not
+  mislabeled as invalid credentials.
+- **Validation:** `pnpm vitest run packages/zepp-client/src/client.test.ts`
+  passed locally after rewriting the Zepp client tests around the current US2
+  request shape. A live sanitized run of `signInToZepp` with the affected
+  account made only the two current Zepp US2 calls and returned `result: ok`
+  with tokens redacted.
+- **Remaining risk:** Medium because the Zepp login API is private and
+  reverse-engineered. Future Zepp app/API changes can break this flow again, but
+  token-exchange bad requests are now preserved as reportable client/API-shape
+  failures rather than hidden behind invalid-credential messaging.
+
 ## 2026-06-19 — WHOOP developer workout listing service unavailable
 
 - **Symptoms:** Sentry issue `DOFEK-SERVER-3V` regressed in production with

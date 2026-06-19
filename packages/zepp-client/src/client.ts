@@ -4,17 +4,18 @@ import type { ZeppSignInResult } from "./types.ts";
 
 export const ZEPP_REGISTRATION_REDIRECT_URI =
   "https://s3-us-west-2.amazonaws.com/hm-registration/successsignin.html";
-export const ZEPP_ACCOUNT_LOGIN_URL = "https://account.huami.com/v2/client/login";
-export const ZEPP_ACCOUNT_ZEPP_LOGIN_URL = "https://account.zepp.com/v2/client/login";
-export const ZEPP_ENCRYPTED_REGISTRATION_URL = "https://api-user.zepp.com/v2/registrations/tokens";
-export const ZEPP_APP_NAME = "com.xiaomi.hm.health";
+export const ZEPP_ENCRYPTED_REGISTRATION_URL =
+  "https://api-user-us2.zepp.com/v2/registrations/tokens";
 
 const ZEPP_AES_KEY = "xeNtBVqzDc6tuNTh";
 const ZEPP_AES_IV = "MAAAYAAAAAAAAABg";
-const ZEPP_APP_VERSION = "6.14.0";
-const ZEPP_CLIENT_VERSION = "50818";
-const ZEPP_ZEPP_DN =
-  "account.zepp.com,api-user.zepp.com,api-mifit.zepp.com,api-watch.zepp.com,app-analytics.zepp.com,api-analytics.huami.com,auth.zepp.com";
+const CURRENT_ZEPP_APP_NAME = "com.huami.midong";
+const CURRENT_ZEPP_APP_VERSION = "9.12.5";
+const CURRENT_ZEPP_CLIENT_VERSION = "151689";
+const CURRENT_ZEPP_BUILD_VERSION = "202509151347";
+const CURRENT_ZEPP_LOGIN_URL = "https://api-mifit-us2.zepp.com/v2/client/login";
+const CURRENT_ZEPP_DN =
+  "api-mifit.zepp.com,api-user.zepp.com,api-mifit.zepp.com,api-watch.zepp.com,app-analytics.zepp.com,auth.zepp.com,api-analytics.zepp.com";
 
 const zeppTokenInfoSchema = z.object({
   app_token: z.string(),
@@ -26,14 +27,6 @@ const zeppLoginResponseSchema = z
   .object({
     token_info: zeppTokenInfoSchema.optional(),
     result: z.string().optional(),
-    message: z.string().optional(),
-  })
-  .passthrough();
-
-const zeppRegistrationJsonSchema = z
-  .object({
-    access: z.string().optional(),
-    country_code: z.string().optional(),
     message: z.string().optional(),
   })
   .passthrough();
@@ -57,15 +50,16 @@ export class ZeppLoginExchangeError extends Error {
 
 interface ZeppAccessCredentials {
   accessCode: string;
+  appName: string;
+  appVersion: string;
   countryCode: string;
+  countryState: string;
+  deviceId: string;
+  headers: Record<string, string>;
   loginUrl: string;
   thirdName: string;
   source?: string;
   dn: string;
-}
-
-function registrationUrl(email: string): string {
-  return `https://api-user.huami.com/registrations/${encodeURIComponent(email)}/tokens`;
 }
 
 function parseRedirectCredentials(
@@ -87,131 +81,41 @@ function encryptZeppRegistrationBody(body: URLSearchParams): Uint8Array<ArrayBuf
   return new Uint8Array(encrypted);
 }
 
-function zeppClientHeaders(): Record<string, string> {
+function currentZeppRegistrationHeaders(): Record<string, string> {
   return {
-    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-    "User-Agent": `MiFit${ZEPP_APP_VERSION} (android_phone; Android 15; Density/2.75)`,
-    app_name: ZEPP_APP_NAME,
-    appname: ZEPP_APP_NAME,
+    "accept-encoding": "gzip",
+    "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+    "user-agent": `Zepp/${CURRENT_ZEPP_APP_VERSION} (Pixel 4; Android 12; Density/2.75)`,
+    app_name: CURRENT_ZEPP_APP_NAME,
+    appname: CURRENT_ZEPP_APP_NAME,
     appplatform: "android_phone",
-    "hm-privacy-ceip": "false",
+    cv: `${CURRENT_ZEPP_CLIENT_VERSION}_${CURRENT_ZEPP_APP_VERSION}`,
+    v: "2.0",
+    vb: CURRENT_ZEPP_BUILD_VERSION,
+    vn: CURRENT_ZEPP_APP_VERSION,
     "x-hm-ekv": "1",
   };
 }
 
-function zeppLoginHeaders(): Record<string, string> {
+function currentZeppLoginHeaders(): Record<string, string> {
   return {
-    ...zeppClientHeaders(),
-    "x-request-id": randomUUID(),
-    "accept-language": "en-US,en;q=0.9",
-    cv: `${ZEPP_CLIENT_VERSION}_${ZEPP_APP_VERSION}`,
-    v: "2.0",
+    "accept-language": "en-US,en;q=0.5",
+    "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+    "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0",
+    accept: "application/json, text/plain, */*",
+    app_name: "com.huami.webapp",
+    appname: "com.huami.webapp",
+    origin: "https://user.zepp.com",
+    referer: "https://user.zepp.com/",
   };
 }
 
-function isRetryableLoginExchangeStatus(status: number): boolean {
-  return status === 400 || status === 401 || status === 403;
-}
-
-function isRetryableLegacyRegistrationStatus(status: number): boolean {
-  return status === 400 || status === 401 || status === 403;
-}
-
-function invalidCredentialsError(): ZeppInvalidCredentialsError {
-  return new ZeppInvalidCredentialsError();
+function invalidCredentialsError(options?: ErrorOptions): ZeppInvalidCredentialsError {
+  return new ZeppInvalidCredentialsError(options);
 }
 
 function rateLimitError(responseBody: string): Error {
   return new Error(`Amazfit/Zepp login failed: ${responseBody}`);
-}
-
-async function parseJsonRegistrationResponse(
-  response: Response,
-): Promise<Pick<ZeppAccessCredentials, "accessCode" | "countryCode"> | null> {
-  const responseBody = await response.text();
-  let parsedBody: unknown;
-  try {
-    parsedBody = JSON.parse(responseBody);
-  } catch {
-    return null;
-  }
-
-  const parseResult = zeppRegistrationJsonSchema.safeParse(parsedBody);
-  if (!parseResult.success) return null;
-
-  const payload = parseResult.data;
-  if (!payload.access) return null;
-
-  return {
-    accessCode: payload.access,
-    countryCode: payload.country_code ?? "US",
-  };
-}
-
-async function getLegacyRegistrationCredentials(
-  email: string,
-  password: string,
-  fetchFn: typeof globalThis.fetch = globalThis.fetch,
-): Promise<ZeppAccessCredentials | null> {
-  const authUrl = registrationUrl(email);
-  const registrationBody = new URLSearchParams({
-    state: "REDIRECTION",
-    client_id: "HuaMi",
-    redirect_uri: ZEPP_REGISTRATION_REDIRECT_URI,
-    token: "access",
-    json_response: "true",
-    name: email,
-    country_code: "US",
-    password,
-  });
-
-  const registrationResponse = await fetchFn(authUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-      "User-Agent": `MiFit/${ZEPP_APP_VERSION} (android_phone; Android 15; Density/2.75)`,
-      app_name: ZEPP_APP_NAME,
-    },
-    body: registrationBody.toString(),
-    redirect: "manual",
-  });
-
-  if (registrationResponse.status === 429) {
-    throw rateLimitError(await registrationResponse.text());
-  }
-
-  if (registrationResponse.status === 200) {
-    const credentials = await parseJsonRegistrationResponse(registrationResponse);
-    if (!credentials) return null;
-    return {
-      ...credentials,
-      loginUrl: ZEPP_ACCOUNT_LOGIN_URL,
-      thirdName: "huami",
-      dn: "account.huami.com,api-user.huami.com,api-watch.huami.com,api-analytics.huami.com,app-analytics.huami.com,api-mifit.huami.com",
-    };
-  }
-
-  if (registrationResponse.status === 302 || registrationResponse.status === 303) {
-    const location = registrationResponse.headers.get("location");
-    if (!location) return null;
-    try {
-      return {
-        ...parseRedirectCredentials(location, authUrl),
-        loginUrl: ZEPP_ACCOUNT_LOGIN_URL,
-        thirdName: "huami",
-        dn: "account.huami.com,api-user.huami.com,api-watch.huami.com,api-analytics.huami.com,app-analytics.huami.com,api-mifit.huami.com",
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  if (isRetryableLegacyRegistrationStatus(registrationResponse.status)) {
-    await registrationResponse.text();
-    return null;
-  }
-
-  throw new Error(`Amazfit/Zepp login failed (${registrationResponse.status})`);
 }
 
 async function getEncryptedRegistrationCredentials(
@@ -224,14 +128,16 @@ async function getEncryptedRegistrationCredentials(
     password,
     state: "REDIRECTION",
     client_id: "HuaMi",
+    region: "us-west-2",
     country_code: "US",
-    token: "access",
     redirect_uri: ZEPP_REGISTRATION_REDIRECT_URI,
   });
+  registrationBody.append("token", "access");
+  registrationBody.append("token", "refresh");
 
   const registrationResponse = await fetchFn(ZEPP_ENCRYPTED_REGISTRATION_URL, {
     method: "POST",
-    headers: zeppClientHeaders(),
+    headers: currentZeppRegistrationHeaders(),
     body: encryptZeppRegistrationBody(registrationBody),
     redirect: "manual",
   });
@@ -256,26 +162,17 @@ async function getEncryptedRegistrationCredentials(
   );
   return {
     accessCode,
+    appName: CURRENT_ZEPP_APP_NAME,
+    appVersion: CURRENT_ZEPP_APP_VERSION,
     countryCode,
-    loginUrl: ZEPP_ACCOUNT_ZEPP_LOGIN_URL,
-    thirdName: "email",
-    source: `${ZEPP_APP_NAME}:${ZEPP_APP_VERSION}:${ZEPP_CLIENT_VERSION}`,
-    dn: ZEPP_ZEPP_DN,
+    countryState: "US-NY",
+    deviceId: randomUUID(),
+    headers: currentZeppLoginHeaders(),
+    loginUrl: CURRENT_ZEPP_LOGIN_URL,
+    thirdName: "huami",
+    source: `com.huami.watch.hmwatchmanager:${CURRENT_ZEPP_APP_VERSION}:${CURRENT_ZEPP_CLIENT_VERSION}`,
+    dn: CURRENT_ZEPP_DN,
   };
-}
-
-function buildLoginAttempts(credentials: ZeppAccessCredentials): ZeppAccessCredentials[] {
-  const attempts = [credentials];
-  if (credentials.loginUrl === ZEPP_ACCOUNT_LOGIN_URL && !credentials.source) {
-    attempts.push({
-      ...credentials,
-      loginUrl: ZEPP_ACCOUNT_ZEPP_LOGIN_URL,
-      thirdName: "email",
-      source: `${ZEPP_APP_NAME}:${ZEPP_APP_VERSION}:${ZEPP_CLIENT_VERSION}`,
-      dn: ZEPP_ZEPP_DN,
-    });
-  }
-  return attempts;
 }
 
 async function performTokenExchange(
@@ -283,11 +180,11 @@ async function performTokenExchange(
   fetchFn: typeof globalThis.fetch,
 ): Promise<ZeppSignInResult> {
   const loginBody = new URLSearchParams({
-    app_name: ZEPP_APP_NAME,
+    app_name: credentials.appName,
     dn: credentials.dn,
-    device_id: "02:00:00:00:00:00",
+    device_id: credentials.deviceId,
     device_model: "android_phone",
-    app_version: ZEPP_APP_VERSION,
+    app_version: credentials.appVersion,
     allow_registration: "false",
     third_name: credentials.thirdName,
     grant_type: "access_token",
@@ -297,12 +194,12 @@ async function performTokenExchange(
   if (credentials.source) {
     loginBody.set("source", credentials.source);
     loginBody.set("lang", "en");
-    loginBody.set("os_version", "1.5.0");
   }
+  loginBody.set("countryState", credentials.countryState);
 
   const loginResponse = await fetchFn(credentials.loginUrl, {
     method: "POST",
-    headers: zeppLoginHeaders(),
+    headers: credentials.headers,
     body: loginBody.toString(),
   });
 
@@ -338,24 +235,7 @@ async function exchangeAccessCodeForToken(
   credentials: ZeppAccessCredentials,
   fetchFn: typeof globalThis.fetch,
 ): Promise<ZeppSignInResult> {
-  const attempts = buildLoginAttempts(credentials);
-  let lastError: ZeppLoginExchangeError | undefined;
-
-  for (const attempt of attempts) {
-    try {
-      return await performTokenExchange(attempt, fetchFn);
-    } catch (error) {
-      if (
-        !(error instanceof ZeppLoginExchangeError) ||
-        !isRetryableLoginExchangeStatus(error.status)
-      ) {
-        throw error;
-      }
-      lastError = error;
-    }
-  }
-
-  throw lastError ?? new Error("Amazfit/Zepp login failed");
+  return await performTokenExchange(credentials, fetchFn);
 }
 
 export async function signInToZepp(
@@ -363,20 +243,6 @@ export async function signInToZepp(
   password: string,
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<ZeppSignInResult> {
-  const legacyCredentials = await getLegacyRegistrationCredentials(email, password, fetchFn);
-  if (legacyCredentials) {
-    try {
-      return await exchangeAccessCodeForToken(legacyCredentials, fetchFn);
-    } catch (error) {
-      if (
-        !(error instanceof ZeppLoginExchangeError) ||
-        !isRetryableLoginExchangeStatus(error.status)
-      ) {
-        throw error;
-      }
-    }
-  }
-
   const encryptedCredentials = await getEncryptedRegistrationCredentials(email, password, fetchFn);
-  return exchangeAccessCodeForToken(encryptedCredentials, fetchFn);
+  return await exchangeAccessCodeForToken(encryptedCredentials, fetchFn);
 }

@@ -33,6 +33,7 @@ export function ActivitiesPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmRestore, setConfirmRestore] = useState(false);
   const [selectedActivityIds, setSelectedActivityIds] = useState<Set<string>>(new Set());
+  const [deletedActivityIds, setDeletedActivityIds] = useState<Set<string>>(new Set());
   const endDate = useMemo(() => formatDateYmd(), []);
   const units = useUnitConverter();
   const selectedActivityType = activityType === ALL_ACTIVITY_TYPES ? undefined : activityType;
@@ -58,6 +59,15 @@ export function ActivitiesPage() {
       setSelectMode(false);
       setConfirmDelete(false);
     },
+    onError: (_error, variables) => {
+      setDeletedActivityIds((current) => {
+        const next = new Set(current);
+        for (const activityId of variables.ids) {
+          next.delete(activityId);
+        }
+        return next;
+      });
+    },
   });
   const restoreProviderAbsent = trpc.activity.restoreProviderAbsent.useMutation({
     onSuccess: async () => {
@@ -72,7 +82,15 @@ export function ActivitiesPage() {
     },
   });
 
-  const dayGroups = query.data;
+  const dayGroups = useMemo(() => {
+    if (!query.data) return undefined;
+    return query.data
+      .map((day) => ({
+        ...day,
+        activities: day.activities.filter((activity) => !deletedActivityIds.has(activity.id)),
+      }))
+      .filter((day) => day.activities.length > 0);
+  }, [query.data, deletedActivityIds]);
   const hiddenActivityIds = useMemo(() => {
     const ids = new Set<string>();
     for (const day of dayGroups ?? []) {
@@ -113,9 +131,9 @@ export function ActivitiesPage() {
 
   const handleConfirmDelete = () => {
     if (selectedVisibleCount === 0) return;
-    bulkDelete.mutate({
-      ids: [...selectedActivityIds].filter((id) => !hiddenActivityIds.has(id)),
-    });
+    const ids = [...selectedActivityIds].filter((id) => !hiddenActivityIds.has(id));
+    setDeletedActivityIds((current) => new Set([...current, ...ids]));
+    bulkDelete.mutate({ ids });
   };
 
   const handleConfirmRestore = () => {

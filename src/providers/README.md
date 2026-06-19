@@ -32,6 +32,13 @@ Users connect with their Zepp email and password via the standard credential aut
 
 - `ZEPP_API_BASE_URL`: optional API base URL for region-specific hosts. Defaults to `https://api-mifit.zepp.com`.
 
+Credential login uses the current Zepp US2 app flow: encrypted registration at
+`https://api-user-us2.zepp.com/v2/registrations/tokens`, then token exchange at
+`https://api-mifit-us2.zepp.com/v2/client/login` with Zepp `9.12.5` app
+metadata. Do not use the older `account.huami.com` or `account.zepp.com` token
+exchange hosts for credential login; Zepp rejects that stale request shape with
+HTTP `400`.
+
 The first sync slice reads `/v1/data/band_data.json` and stores decoded daily steps, distance, active calories, sleep sessions, and minute-level heart rate samples.
 
 **Note:** Zepp accounts signed in via Xiaomi or Google SSO cannot authenticate with email/password login.
