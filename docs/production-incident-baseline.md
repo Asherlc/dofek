@@ -10962,29 +10962,43 @@ new incremental tables are populated.
   service logged missing raw mirrors and missing slots for
   `dofek_fitness_raw_analytics`, `dofek_provider_inventory_raw_analytics`, and
   `dofek_sensor_priority_raw_analytics`.
-- **Root cause:** Partially unresolved. The immediate cause was that the managed
-  raw PeerDB mirrors and their Postgres logical replication slots were absent,
-  so dbt rebuilt downstream models from empty ClickHouse CDC sources. The
-  evidence does not yet prove why the mirrors/slots disappeared.
+- **Root cause:** The immediate cause was that the managed raw PeerDB mirrors
+  and their Postgres logical replication slots were absent, so dbt rebuilt
+  downstream models from empty ClickHouse CDC sources. A later deploy of image
+  `sha-752d377` reproduced the mirror loss: the post-deploy ClickHouse CDC setup
+  path read PeerDB's binary `config_proto` as escaped text, treated healthy raw
+  mirrors as mapping mismatches, and issued `DROP MIRROR` for
+  `dofek_fitness_raw_analytics`.
 - **Fix / mitigation:** Ran the checked-in ClickHouse CDC setup path inside the
   production swarm network with explicit PeerDB/Postgres/ClickHouse host
   overrides. It recreated the three raw mirrors and slots; `pg_replication_slots`
   then showed all three active with `wal_status = reserved`. The raw mirrors
   repopulated to `postgres_fitness.activity = 1210` and
   `postgres_fitness.sleep_session = 195`. Reran the corrected branch SQL with
-  `dbt build --full-refresh --select sleep_heart_rate_sample+`; it completed
-  `PASS=7 WARN=0 ERROR=0` in 189 seconds. Final verification showed
-  `analytics.sleep_heart_rate_sample = 1,352,006`,
+  `dbt build --full-refresh --select sleep_heart_rate_sample+`. After the
+  restored production analytics worker began rerunning the old deployed SQL,
+  scaled `dofek_analytics-worker` to `0/0` to preserve the corrected backfill
+  state, then reran the corrected full refresh. The final run completed
+  `PASS=7 WARN=0 ERROR=0` in 220 seconds. Final verification showed
+  `analytics.sleep_heart_rate_sample = 1,563,459`,
   `analytics.resting_heart_rate_sleep_window = 195`,
   `analytics.daily_recovery_inputs = 99`, and `analytics.daily_recovery = 99`.
   A direct CDC health check returned
-  `[clickhouse-cdc-health] ok: checked 3 slots and 1 mirror`.
-- **Remaining risk:** Medium. The one-off backfill used the corrected branch SQL,
-  but production was still running image `sha-1fe83ed`, which does not include
-  the sleep activity-watermark fix. Deploy the PR containing that fix before
-  relying on scheduled `analytics-worker` runs for future activity-only sleep
-  membership changes.
-- **Follow-up:** Investigate why all managed raw PeerDB mirrors and slots were
-  absent despite PeerDB services being healthy. Add an alert that pages on
-  missing managed mirror catalog rows or zero required PeerDB slots, not just
-  stale mirrored timestamps.
+  `[clickhouse-cdc-health] ok: checked 3 slots and 1 mirror`. After image
+  `sha-752d377` deployed, restored `dofek_analytics-worker` to `1/1`; the first
+  activity dbt phase completed `PASS=14 WARN=0 ERROR=0`, then the post-deploy
+  CDC setup dropped raw mirrors again. Reran CDC setup after deploy completion;
+  all three slots became active and the raw mirror repopulated to
+  `postgres_fitness.activity = 1211` and `postgres_fitness.sleep_session = 195`.
+- **Remaining risk:** Medium. `analytics-worker` is unpaused at `1/1`, but the
+  currently deployed image still fails the activity dbt phase at
+  `analytics.deduped_activities` with ClickHouse error code 53 because
+  `absent_source_external_ids` is inferred as
+  `Array(Map(String, Nullable(String)))` while the existing serving table column
+  is `Array(Map(String, String))`. Deploy the follow-up fix that casts the dbt
+  expression to `Array(Map(String, String))` and stops CDC setup from dropping
+  existing raw mirrors based on `config_proto` token parsing.
+- **Follow-up:** Add an alert that pages on missing managed mirror catalog rows
+  or zero required PeerDB slots, not just stale mirrored timestamps. Consider a
+  deploy smoke check that runs the two-phase analytics dbt command to completion
+  before declaring `analytics-worker` healthy.

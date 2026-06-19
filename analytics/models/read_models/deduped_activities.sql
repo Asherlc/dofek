@@ -83,10 +83,10 @@ absent_source_links AS (
         group_id,
         groupArrayIf(
             map(
-                'providerId', provider_id,
-                'externalId', external_id,
+                'providerId', assumeNotNull(provider_id),
+                'externalId', assumeNotNull(external_id),
                 'memberActivityId', toString(activity_id),
-                'providerAbsentAt', toString(provider_absent_at)
+                'providerAbsentAt', toString(assumeNotNull(provider_absent_at))
             ),
             provider_id IS NOT NULL
             AND external_id IS NOT NULL
@@ -140,7 +140,10 @@ merged AS (
             map('providerId', ranked.provider_id, 'externalId', ranked.external_id),
             ranked.external_id IS NOT NULL AND ranked.external_id != ''
         ) AS source_external_ids,
-        coalesce(any(absent_source_links.absent_source_external_ids), []) AS absent_source_external_ids,
+        coalesce(
+            any(absent_source_links.absent_source_external_ids),
+            CAST([], 'Array(Map(String, String))')
+        ) AS absent_source_external_ids,
         groupArray(ranked.activity_id) AS member_activity_ids
     FROM best
     INNER JOIN final_groups

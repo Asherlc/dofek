@@ -149,14 +149,6 @@ function readInteger(value: unknown): number | null {
   return null;
 }
 
-function readString(value: unknown): string | null {
-  if (typeof value === "string") {
-    return value;
-  }
-
-  return null;
-}
-
 function readErrorMessage(error: unknown): string | null {
   if (error instanceof Error) {
     return error.message;
@@ -168,28 +160,6 @@ function readErrorMessage(error: unknown): string | null {
 
   const message = error.message;
   return typeof message === "string" ? message : null;
-}
-
-function readMirrorConfigTokens(mirrorConfig: string): Set<string> {
-  return new Set(mirrorConfig.split(/[^A-Za-z0-9_]+/).filter((token) => token.length > 0));
-}
-
-function mirrorConfigMatchesRawAnalyticsTables(
-  mirrorConfigTokens: Set<string>,
-  tableNames: readonly string[],
-): boolean {
-  if (!mirrorConfigTokens.has(analyticsPublicationName)) {
-    return false;
-  }
-
-  const expectedTableNames = new Set(tableNames);
-  if (tableNames.some((tableName) => !mirrorConfigTokens.has(tableName))) {
-    return false;
-  }
-
-  return analyticsSourceTables.every(
-    (tableName) => expectedTableNames.has(tableName) || !mirrorConfigTokens.has(tableName),
-  );
 }
 
 function peerDbStringLiteral(value: string): string {
@@ -535,19 +505,6 @@ async function dropObsoleteMetricStreamPeerDbMirrors(peerDbClient: PeerDbClient)
   }
 }
 
-async function truncateClickHouseDestinationTables(
-  clickHouseClient: ClickHouseCommandClient,
-  tableNames: readonly string[],
-): Promise<void> {
-  await Promise.all(
-    tableNames.map((tableName) =>
-      clickHouseClient.command({
-        query: `TRUNCATE TABLE IF EXISTS postgres_fitness.${tableName}`,
-      }),
-    ),
-  );
-}
-
 async function clickHouseDestinationTablesHaveRows(
   clickHouseClient: ClickHouseCommandClient,
   tableNames: readonly string[],
@@ -593,7 +550,7 @@ async function reconcileRawAnalyticsMirrors(
     .map((mirrorName) => `('${mirrorName}')`)
     .join(", ");
   const result = await peerDbClient.query(`
-    SELECT flows.name, encode(flows.config_proto, 'escape') AS raw_analytics_mirror_config
+    SELECT flows.name
     FROM public.flows
     JOIN (VALUES ${mirrorNameRows}) AS expected_mirrors(name)
       ON expected_mirrors.name = flows.name
@@ -607,18 +564,6 @@ async function reconcileRawAnalyticsMirrors(
       if (await clickHouseDestinationTablesHaveRows(clickHouseClient, tableNames)) {
         rawAnalyticsInitialCopyValues[mirrorName] = false;
       }
-      continue;
-    }
-
-    const mirrorConfig = readString(mirrorRow.raw_analytics_mirror_config);
-    if (mirrorConfig === null) {
-      throw new Error(`Unable to read PeerDB raw analytics mirror configuration for ${mirrorName}`);
-    }
-
-    const mirrorConfigTokens = readMirrorConfigTokens(mirrorConfig);
-    if (!mirrorConfigMatchesRawAnalyticsTables(mirrorConfigTokens, tableNames)) {
-      await peerDbClient.query(`DROP MIRROR ${mirrorName}`);
-      await truncateClickHouseDestinationTables(clickHouseClient, tableNames);
     }
   }
 
