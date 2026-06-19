@@ -38,11 +38,11 @@ sleep_source AS (
             dateDiff('second', started_at, assumeNotNull(ended_at))
         ) AS duration_seconds,
         multiIf(
-            sleep_type IN ('nap', 'late_nap', 'rest'), true,
-            sleep_type IN ('sleep', 'long_sleep', 'main'), false,
-            sleep_type = 'not_main', coalesce(duration_minutes < 120, true),
+            sleep_type IN ('nap', 'late_nap', 'rest'), TRUE,
+            sleep_type IN ('sleep', 'long_sleep', 'main'), FALSE,
+            sleep_type = 'not_main', coalesce(duration_minutes < 120, TRUE),
             duration_minutes IS NOT NULL, duration_minutes < 120,
-            false
+            FALSE
         ) AS is_nap
     FROM {{ source('postgres_fitness', 'sleep_session') }} FINAL
 ),
@@ -102,7 +102,7 @@ sensor_dirty_keys AS (
         ON active_sleep.user_id = samples.user_id
         AND samples.recorded_at >= active_sleep.started_at
         AND samples.recorded_at <= active_sleep.ended_at
-    WHERE active_sleep.is_nap = false
+    WHERE active_sleep.is_nap = FALSE
 ),
 
 activity_source AS (
@@ -128,7 +128,7 @@ activity_dirty_keys AS (
         AND activity_source.ended_at >= active_sleep.started_at
     WHERE activity_source._peerdb_is_deleted = 0
         AND activity_source.provider_absent_at IS NULL
-        AND active_sleep.is_nap = false
+        AND active_sleep.is_nap = FALSE
         {% if is_incremental() %}
             AND NOT (SELECT is_empty FROM target_state)
             AND activity_source._peerdb_synced_at > (SELECT last_refreshed_at FROM target_state)
@@ -142,12 +142,12 @@ initial_dirty_keys AS (
         user_id,
         sleep_id
     FROM active_sleep
-    WHERE is_nap = false
+    WHERE is_nap = FALSE
         AND (
             {% if is_incremental() %}
                 (SELECT is_empty FROM target_state)
             {% else %}
-                true
+                TRUE
             {% endif %}
         )
         AND started_at >= now64(6, 'UTC') - INTERVAL {{ initial_lookback_days }} DAY
@@ -176,7 +176,7 @@ stale_sleep_dirty_keys AS (
     LEFT JOIN active_sleep
         ON active_sleep.user_id = existing_sleep_keys.user_id
         AND active_sleep.sleep_id = existing_sleep_keys.sleep_id
-        AND active_sleep.is_nap = false
+        AND active_sleep.is_nap = FALSE
     WHERE active_sleep.sleep_id IS NULL
 ),
 
@@ -185,15 +185,30 @@ dirty_keys AS (
         user_id,
         sleep_id
     FROM (
-        SELECT user_id, sleep_id FROM sleep_dirty_keys
+        SELECT
+            user_id,
+            sleep_id
+        FROM sleep_dirty_keys
         UNION ALL
-        SELECT user_id, sleep_id FROM sensor_dirty_keys
+        SELECT
+            user_id,
+            sleep_id
+        FROM sensor_dirty_keys
         UNION ALL
-        SELECT user_id, sleep_id FROM activity_dirty_keys
+        SELECT
+            user_id,
+            sleep_id
+        FROM activity_dirty_keys
         UNION ALL
-        SELECT user_id, sleep_id FROM initial_dirty_keys
+        SELECT
+            user_id,
+            sleep_id
+        FROM initial_dirty_keys
         UNION ALL
-        SELECT user_id, sleep_id FROM stale_sleep_dirty_keys
+        SELECT
+            user_id,
+            sleep_id
+        FROM stale_sleep_dirty_keys
     )
 ),
 
@@ -209,7 +224,7 @@ active_dirty_sleep AS (
     INNER JOIN dirty_keys
         ON dirty_keys.user_id = active_sleep.user_id
         AND dirty_keys.sleep_id = active_sleep.sleep_id
-    WHERE active_sleep.is_nap = false
+    WHERE active_sleep.is_nap = FALSE
 ),
 
 sleep_activity_bounds AS (
