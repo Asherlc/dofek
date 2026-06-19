@@ -111,9 +111,7 @@ activity_source AS (
         user_id,
         started_at,
         coalesce(ended_at, started_at + INTERVAL 12 HOUR) AS ended_at,
-        _peerdb_synced_at,
-        _peerdb_is_deleted,
-        provider_absent_at
+        _peerdb_synced_at
     FROM {{ source('postgres_fitness', 'activity') }} FINAL
     WHERE _peerdb_is_deleted = 0
         AND provider_absent_at IS NULL
@@ -129,9 +127,7 @@ activity_dirty_keys AS (
         ON active_sleep.user_id = activity_source.user_id
         AND activity_source.started_at < active_sleep.ended_at
         AND activity_source.ended_at >= active_sleep.started_at
-    WHERE activity_source._peerdb_is_deleted = 0
-        AND activity_source.provider_absent_at IS NULL
-        AND active_sleep.is_nap = FALSE
+    WHERE active_sleep.is_nap = FALSE
         {% if is_incremental() %}
             AND NOT (SELECT is_empty FROM target_state)
             AND activity_source._peerdb_synced_at > (SELECT last_refreshed_at FROM target_state)
@@ -248,9 +244,7 @@ active_activity AS (
     FROM activity_source
     INNER JOIN sleep_activity_bounds AS bounds
         ON bounds.user_id = activity_source.user_id
-    WHERE activity_source._peerdb_is_deleted = 0
-        AND activity_source.provider_absent_at IS NULL
-        AND activity_source.started_at < bounds.max_ended_at
+    WHERE activity_source.started_at < bounds.max_ended_at
         AND activity_source.ended_at >= bounds.min_started_at
 ),
 
