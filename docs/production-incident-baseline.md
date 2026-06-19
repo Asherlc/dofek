@@ -11138,30 +11138,32 @@ new incremental tables are populated.
   `2026-06-19T05:07:55Z` for `ZeppLoginExchangeError: Amazfit/Zepp login error
   (400)` on `credentialAuth.signIn`.
 - **User impact:** A user attempting to connect Amazfit/Zepp credentials saw the
-  connect attempt fail, and the expected provider-auth failure was counted as a
-  production server error.
+  connect attempt fail, and a stale client request was counted as a production
+  server error.
 - **Evidence:** The Sentry event stack traced through
   `packages/server/src/routers/credential-auth.ts` to
   `src/providers/amazfit-zepp.ts` and
   `packages/zepp-client/src/client.ts:312`. The event had one production
   occurrence and no related trace spans or logs.
-- **Root cause:** The Zepp client treated final token-exchange `400`, `401`, and
-  `403` responses as retryable while alternate login attempts remained, but
-  after all legacy and encrypted Zepp token-exchange attempts were exhausted it
-  rethrew the final `ZeppLoginExchangeError`. The provider only wrapped
-  `ZeppInvalidCredentialsError`, so the credential-auth router saw an unexpected
-  error and let it reach Sentry as an internal server error.
-- **Fix / mitigation:** After the encrypted Zepp registration path also
-  exhausts retryable token-exchange statuses, the Zepp client now raises
-  `ZeppInvalidCredentialsError` with the token-exchange error as its cause. The
-  Amazfit/Zepp provider's existing wrapper converts that to
-  `ProviderInvalidCredentialsError`, and `credentialAuth.signIn` returns a
-  `BAD_REQUEST` provider-auth failure instead of reporting to Sentry.
-- **Validation:** `pnpm vitest run packages/zepp-client/src/client.test.ts
-  src/providers/amazfit-zepp.test.ts
-  packages/server/src/routers/credential-auth.test.ts` passed locally after
-  adding a regression test for exhausted legacy and encrypted token-exchange
-  `400` responses.
-- **Remaining risk:** Low. Future Zepp private API changes that produce
-  non-auth statuses or malformed success payloads remain reportable as
-  unexpected errors.
+- **Root cause:** The Zepp client used stale Mi Fit / Zepp token-exchange hosts
+  and app metadata (`account.huami.com`, `account.zepp.com`, Mi Fit `6.14.0`).
+  Zepp still issued an access code from the old registration path, but rejected
+  the stale token-exchange request with HTTP `400`. A live reproduction with the
+  same account succeeded only after switching to the current Zepp US2 flow:
+  encrypted registration at `api-user-us2.zepp.com` followed by token exchange
+  at `api-mifit-us2.zepp.com` with Zepp `9.12.5` metadata.
+- **Fix / mitigation:** `signInToZepp` now uses the current Zepp US2 encrypted
+  registration and token-exchange flow directly, requests both `access` and
+  `refresh` tokens during registration, and no longer sends the obsolete legacy
+  token-exchange requests first. Token-exchange `400` responses remain
+  `ZeppLoginExchangeError` so future stale request-shape failures are not
+  mislabeled as invalid credentials.
+- **Validation:** `pnpm vitest run packages/zepp-client/src/client.test.ts`
+  passed locally after rewriting the Zepp client tests around the current US2
+  request shape. A live sanitized run of `signInToZepp` with the affected
+  account made only the two current Zepp US2 calls and returned `result: ok`
+  with tokens redacted.
+- **Remaining risk:** Medium because the Zepp login API is private and
+  reverse-engineered. Future Zepp app/API changes can break this flow again, but
+  token-exchange bad requests are now preserved as reportable client/API-shape
+  failures rather than hidden behind invalid-credential messaging.
