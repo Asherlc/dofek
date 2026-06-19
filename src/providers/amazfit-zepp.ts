@@ -8,6 +8,7 @@ import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
 import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
+import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import {
@@ -191,7 +192,7 @@ const ZEPP_WORKOUT_TYPE_MAP: Record<number, CanonicalActivityType> = {
   92: "badminton",
 };
 
-export function mapZeppWorkoutType(type: number | undefined): CanonicalActivityType {
+function mapZeppWorkoutType(type: number | undefined): CanonicalActivityType {
   if (type === undefined) return "other";
   return ZEPP_WORKOUT_TYPE_MAP[type] ?? "other";
 }
@@ -200,7 +201,7 @@ function dateFromEpochSeconds(seconds: number): Date {
   return new Date(seconds * 1000);
 }
 
-export function parseZeppWorkoutSummary(summary: ZeppWorkoutSummary): ParsedZeppWorkout {
+function parseZeppWorkoutSummary(summary: ZeppWorkoutSummary): ParsedZeppWorkout {
   const startedAt = dateFromEpochSeconds(summary.trackid);
   const endedAt =
     summary.end_time === undefined
@@ -390,6 +391,7 @@ export class AmazfitZeppClient {
   async getWorkoutHistory(): Promise<ZeppWorkoutSummary[]> {
     const summaries: ZeppWorkoutSummary[] = [];
     let fromTrackId: number | undefined;
+    const seenCursors = new Set<number>();
 
     while (true) {
       const url = new URL("/v1/sport/run/history.json", this.#apiBaseUrl);
@@ -416,6 +418,12 @@ export class AmazfitZeppClient {
 
       summaries.push(...payload.data.summary);
       if (payload.data.next === -1) return summaries;
+      if (seenCursors.has(payload.data.next)) {
+        throw new Error(
+          `Amazfit/Zepp workout API error: repeated pagination cursor ${payload.data.next}`,
+        );
+      }
+      seenCursors.add(payload.data.next);
       fromTrackId = payload.data.next;
     }
   }
@@ -634,40 +642,42 @@ export class AmazfitZeppProvider implements SyncProvider {
         "workouts",
         async () => {
           let synced = 0;
+          const presentActivityExternalIds = new Set<string>();
           onProgress?.(0, "Fetching workout history");
           const summaries = await client.getWorkoutHistory();
 
           for (const [workoutIndex, summary] of summaries.entries()) {
             try {
               const parsed = parseZeppWorkoutSummary(summary);
-              if (parsed.startedAt < since || parsed.startedAt > window.until) {
-                continue;
-              }
-
-              await db
-                .insert(activity)
-                .values({
-                  providerId: this.id,
-                  userId: scopedUserId,
-                  externalId: parsed.externalId,
-                  activityType: parsed.activityType,
-                  startedAt: parsed.startedAt,
-                  endedAt: parsed.endedAt,
-                  sourceName: AMAZFIT_ZEPP_SOURCE_NAME,
-                  raw: summary,
-                })
-                .onConflictDoUpdate({
-                  target: [activity.userId, activity.providerId, activity.externalId],
-                  set: {
+              const isWithinWindow =
+                parsed.startedAt >= since && parsed.startedAt <= window.until;
+              if (isWithinWindow) {
+                presentActivityExternalIds.add(parsed.externalId);
+                await db
+                  .insert(activity)
+                  .values({
+                    providerId: this.id,
+                    userId: scopedUserId,
+                    externalId: parsed.externalId,
                     activityType: parsed.activityType,
                     startedAt: parsed.startedAt,
                     endedAt: parsed.endedAt,
                     sourceName: AMAZFIT_ZEPP_SOURCE_NAME,
                     raw: summary,
-                    providerAbsentAt: null,
-                  },
-                });
-              synced++;
+                  })
+                  .onConflictDoUpdate({
+                    target: [activity.userId, activity.providerId, activity.externalId],
+                    set: {
+                      activityType: parsed.activityType,
+                      startedAt: parsed.startedAt,
+                      endedAt: parsed.endedAt,
+                      sourceName: AMAZFIT_ZEPP_SOURCE_NAME,
+                      raw: summary,
+                      providerAbsentAt: null,
+                    },
+                  });
+                synced++;
+              }
             } catch (error: unknown) {
               captureException(error, {
                 tags: { provider: this.id, dataType: "workouts", phase: "workout" },
@@ -683,6 +693,14 @@ export class AmazfitZeppProvider implements SyncProvider {
             );
           }
           if (summaries.length === 0) onProgress?.(100, "0/0 workouts");
+
+          await reconcileProviderActivityAbsence(db, {
+            providerId: this.id,
+            userId: scopedUserId,
+            windowStart: since,
+            windowEnd: window.until,
+            presentExternalIds: presentActivityExternalIds,
+          });
 
           return { recordCount: synced, result: synced };
         },

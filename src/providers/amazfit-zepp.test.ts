@@ -11,9 +11,7 @@ import {
   decodeZeppSummary,
   decodeZeppUserIdFromScopes,
   encodeZeppTokenScopes,
-  mapZeppWorkoutType,
   parseZeppBandDay,
-  parseZeppWorkoutSummary,
 } from "./amazfit-zepp.ts";
 import { ProviderInvalidCredentialsError } from "./auth-errors.ts";
 import { SyncRun } from "./sync-run.ts";
@@ -41,6 +39,18 @@ vi.mock("../db/tokens.ts", async (importOriginal) => {
 });
 
 const TEST_USER_ID = "11111111-1111-4111-8111-111111111111";
+
+const providerActivityAbsenceMocks = vi.hoisted(() => ({
+  reconcileProviderActivityAbsence: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("../db/provider-activity-absence.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../db/provider-activity-absence.ts")>();
+  return {
+    ...actual,
+    reconcileProviderActivityAbsence: providerActivityAbsenceMocks.reconcileProviderActivityAbsence,
+  };
+});
 
 function encodeBase64(value: string | Buffer): string {
   return Buffer.from(value).toString("base64");
@@ -90,73 +100,6 @@ function emptyZeppWorkoutHistoryResponse(): Response {
     headers: { "Content-Type": "application/json" },
   });
 }
-
-describe("mapZeppWorkoutType", () => {
-  it("maps all known workout types", () => {
-    expect(mapZeppWorkoutType(1)).toBe("running");
-    expect(mapZeppWorkoutType(6)).toBe("walking");
-    expect(mapZeppWorkoutType(8)).toBe("running");
-    expect(mapZeppWorkoutType(9)).toBe("cycling");
-    expect(mapZeppWorkoutType(10)).toBe("indoor_cycling");
-    expect(mapZeppWorkoutType(16)).toBe("other");
-    expect(mapZeppWorkoutType(23)).toBe("rowing");
-    expect(mapZeppWorkoutType(92)).toBe("badminton");
-  });
-
-  it("returns other when type is undefined", () => {
-    expect(mapZeppWorkoutType(undefined)).toBe("other");
-  });
-
-  it("returns other for unknown types", () => {
-    expect(mapZeppWorkoutType(999)).toBe("other");
-  });
-});
-
-describe("parseZeppWorkoutSummary", () => {
-  it("parses workouts with explicit end_time", () => {
-    const startedAt = new Date("2026-02-06T14:00:00.000Z");
-    const endedAt = new Date("2026-02-06T15:00:00.000Z");
-
-    const parsed = parseZeppWorkoutSummary({
-      trackid: startedAt.getTime() / 1000,
-      end_time: endedAt.getTime() / 1000,
-      type: 9,
-      source: "watch",
-    });
-
-    expect(parsed).toEqual({
-      externalId: String(startedAt.getTime() / 1000),
-      activityType: "cycling",
-      startedAt,
-      endedAt,
-    });
-  });
-
-  it("derives endedAt from run_time when end_time is missing", () => {
-    const startedAt = new Date("2026-02-06T14:00:00.000Z");
-    const trackid = startedAt.getTime() / 1000;
-
-    const parsed = parseZeppWorkoutSummary({
-      trackid,
-      run_time: 3600,
-      type: 1,
-    });
-
-    expect(parsed.endedAt).toEqual(new Date("2026-02-06T15:00:00.000Z"));
-  });
-
-  it("leaves endedAt null when neither end_time nor run_time is present", () => {
-    const startedAt = new Date("2026-02-06T14:00:00.000Z");
-
-    const parsed = parseZeppWorkoutSummary({
-      trackid: startedAt.getTime() / 1000,
-      type: 6,
-    });
-
-    expect(parsed.endedAt).toBeNull();
-    expect(parsed.activityType).toBe("walking");
-  });
-});
 
 describe("AmazfitZeppClient workout history", () => {
   it("requests workout history with Zepp auth headers", async () => {
@@ -255,6 +198,27 @@ describe("AmazfitZeppClient workout history", () => {
     expect(summary?.source).toBeUndefined();
   });
 
+  it("throws when workout history pagination repeats a cursor", async () => {
+    const startedAt = new Date("2026-02-06T14:00:00.000Z");
+    const repeatedCursor = startedAt.getTime() / 1000;
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          code: 1,
+          data: {
+            next: repeatedCursor,
+            summary: [{ trackid: repeatedCursor, type: 1 }],
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
+
+    await expect(client.getWorkoutHistory()).rejects.toThrow(
+      `Amazfit/Zepp workout API error: repeated pagination cursor ${repeatedCursor}`,
+    );
+  });
+
   it("throws a specific error for non-success HTTP responses", async () => {
     const fetchFn: typeof globalThis.fetch = async () =>
       new Response("server error", { status: 500 });
@@ -297,6 +261,7 @@ describe("Amazfit/Zepp provider", () => {
   afterEach(async () => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
+    providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockClear();
     const { loadTokens } = await import("../db/tokens.ts");
     vi.mocked(loadTokens).mockReset();
   });
@@ -745,12 +710,73 @@ describe("Amazfit/Zepp provider", () => {
         }),
       }),
     );
+    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        providerId: "amazfit-zepp",
+        userId: TEST_USER_ID,
+        presentExternalIds: new Set([
+          String(startedAt.getTime() / 1000),
+          String(secondStartedAt.getTime() / 1000),
+          String(thirdStartedAt.getTime() / 1000),
+        ]),
+      }),
+    );
+  });
+
+  it("derives workout endedAt from run_time when end_time is missing", async () => {
+    await mockStoredZeppCredentials();
+
+    const { db, spies } = createMockDatabase();
+    const startedAt = new Date("2026-02-06T14:00:00.000Z");
+    const fetchFn: typeof globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("/v1/data/band_data.json")) {
+        return new Response(JSON.stringify({ code: 1, data: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/v1/sport/run/history.json")) {
+        return new Response(
+          JSON.stringify({
+            code: 1,
+            data: {
+              next: -1,
+              summary: [{ trackid: startedAt.getTime() / 1000, run_time: 3600, type: 6 }],
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      throw new Error(`Unexpected Amazfit/Zepp request: ${url}`);
+    };
+    const provider = new AmazfitZeppProvider(fetchFn);
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00.000Z") }),
+        userId: TEST_USER_ID,
+      }),
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.recordsSynced).toBe(1);
+    expect(spies.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activityType: "walking",
+        startedAt,
+        endedAt: new Date("2026-02-06T15:00:00.000Z"),
+      }),
+    );
   });
 
   it("skips workouts outside the sync window", async () => {
     await mockStoredZeppCredentials();
 
     const { db, spies } = createMockDatabase();
+    const onProgress = vi.fn();
     const inWindowStartedAt = new Date("2026-02-06T14:00:00.000Z");
     const beforeWindowStartedAt = new Date("2026-01-31T14:00:00.000Z");
     const afterWindowStartedAt = new Date("2026-02-08T14:00:00.000Z");
@@ -801,6 +827,7 @@ describe("Amazfit/Zepp provider", () => {
           since: new Date("2026-02-01T00:00:00.000Z"),
           until: new Date("2026-02-07T00:00:00.000Z"),
         }),
+        onProgress,
         userId: TEST_USER_ID,
       }),
     );
@@ -818,6 +845,15 @@ describe("Amazfit/Zepp provider", () => {
       externalId: String(inWindowStartedAt.getTime() / 1000),
       activityType: "cycling",
     });
+    expect(onProgress).toHaveBeenCalledWith(100, "3/3 workouts");
+    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        providerId: "amazfit-zepp",
+        userId: TEST_USER_ID,
+        presentExternalIds: new Set([String(inWindowStartedAt.getTime() / 1000)]),
+      }),
+    );
   });
 
   it("reports workout sync progress and empty-history progress", async () => {
