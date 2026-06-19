@@ -29,6 +29,9 @@ describe("clickHouseMigrations", () => {
     expect(clickHouseMigrationFileNames).toContain(
       "0032_deduped_activities_absent_source_links.ts",
     );
+    expect(clickHouseMigrationFileNames).toContain(
+      "0033_recreate_deduped_activities_column_order.ts",
+    );
     expect(statements).toContainEqual(
       expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.provider_stats"),
     );
@@ -48,6 +51,15 @@ describe("clickHouseMigrations", () => {
       expect.objectContaining({
         id: "0030_activity_mirror_order_key",
         run: expect.any(Function),
+      }),
+    );
+    expect(migrations).toContainEqual(
+      expect.objectContaining({
+        id: "0033_recreate_deduped_activities_column_order",
+        statements: expect.arrayContaining([
+          "DROP TABLE IF EXISTS analytics.deduped_activities",
+          expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.deduped_activities"),
+        ]),
       }),
     );
   });

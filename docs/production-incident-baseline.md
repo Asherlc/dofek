@@ -11104,22 +11104,30 @@ new incremental tables are populated.
   `Failure in model deduped_activities`; replaying the compiled SQL through
   `clickhouse-client` returned
   `DB::Exception: CAST AS Array can only be performed between same-dimensional Array, Map or String types: while converting source column refreshed_at to destination column absent_source_external_ids`.
+  The follow-up PR E2E setup then failed in a fresh ClickHouse environment with
+  `member_activity_ids` being inserted into `absent_source_external_ids`,
+  proving that production and fresh table column order differed.
 - **Root cause:** The existing production `analytics.deduped_activities` table
   has `absent_source_external_ids` as the final column because it was added to
-  an existing table. The dbt model SELECT emitted `absent_source_external_ids`
-  before `member_activity_ids`, while dbt's incremental INSERT column list used
-  the existing table order. ClickHouse therefore attempted to insert
-  `refreshed_at` into `absent_source_external_ids`.
-- **Fix / mitigation:** Reordered the final `deduped_activities` SELECT
-  projection so `absent_source_external_ids` is emitted last, matching the
-  production table order used by dbt incremental INSERTs.
+  an existing table. Fresh environments create the table with
+  `absent_source_external_ids` before `member_activity_ids`. dbt incremental
+  INSERTs use the target table column order, so either SELECT order broke one
+  of the two environments.
+- **Fix / mitigation:** Kept the dbt model in the canonical fresh-schema order
+  and added ClickHouse migration `0033_recreate_deduped_activities_column_order`
+  to drop and recreate the derived `analytics.deduped_activities` serving table
+  with that canonical order before dbt rebuilds it.
 - **Validation:** `pnpm exec vitest run
-  analytics/models/read_models/read_model_microbatch.sql.test.ts`,
+  analytics/models/read_models/read_model_microbatch.sql.test.ts
+  src/db/clickhouse-migrations/registry.test.ts`,
   `pnpm lint`, root `pnpm tsc --noEmit`, server `pnpm tsc --noEmit`, and web
-  `pnpm tsc --noEmit` passed locally. Branch deploy run `27807103397`
-  completed successfully, production services rolled to
+  `pnpm tsc --noEmit` passed locally. The local E2E compose migrate step
+  exited `0`, and the local analytics container completed dbt activity models
+  with `PASS=14 WARN=0 ERROR=0 SKIP=0 NO-OP=0 TOTAL=14` plus dashboard models
+  with `PASS=9 WARN=0 ERROR=0 SKIP=0 NO-OP=0 TOTAL=9`. Earlier branch deploy
+  run `27807103397` completed successfully, production services rolled to
   `ghcr.io/asherlc/dofek:sha-4db22d8`, and the restarted analytics worker
   completed dbt with `Done. PASS=14 WARN=0 ERROR=0 SKIP=0 NO-OP=0 TOTAL=14`.
-- **Remaining risk:** Low after deploy, but dbt model changes that add columns
-  to existing incremental tables should explicitly preserve production column
-  order until a full table rebuild is run.
+- **Remaining risk:** Low after migration `0033` deploys; dropping this derived
+  serving table temporarily empties `deduped_activities` until the analytics
+  worker rebuilds it.

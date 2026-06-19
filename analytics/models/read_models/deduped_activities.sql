@@ -233,11 +233,11 @@ SELECT
     source_synced_at,
     source_providers,
     source_external_ids,
+    absent_source_external_ids,
     member_activity_ids,
     refresh_clock.refresh_version AS refresh_version,
     0 AS is_deleted,
-    refresh_clock.refreshed_at AS refreshed_at,
-    absent_source_external_ids
+    refresh_clock.refreshed_at AS refreshed_at
 FROM current_deduped_activities
 CROSS JOIN refresh_clock
 
@@ -260,11 +260,11 @@ SELECT
     source_synced_at,
     source_providers,
     source_external_ids,
+    absent_source_external_ids,
     member_activity_ids,
     refresh_clock.refresh_version AS refresh_version,
     1 AS is_deleted,
-    refresh_clock.refreshed_at AS refreshed_at,
-    absent_source_external_ids
+    refresh_clock.refreshed_at AS refreshed_at
 FROM stale_deduped_activities
 CROSS JOIN refresh_clock
 {% endif %}
