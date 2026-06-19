@@ -10,7 +10,8 @@ import {
 import { formatMeasurementText } from "@dofek/format/units";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { Link } from "@tanstack/react-router";
-import { type CSSProperties, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { type ActivityMapLocation, ActivityMapTile } from "../components/ActivityMapTile.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { trpc } from "../lib/trpc.ts";
@@ -18,60 +19,11 @@ import { useUnitConverter } from "../lib/unitContext.ts";
 
 const DEFAULT_WEEKS = 4;
 const ALL_ACTIVITY_TYPES = "all";
-const ROUTE_THUMBNAIL_PADDING_PERCENT = 20;
-const MAX_ROUTE_THUMBNAIL_SCALE = 2.5;
-const MIN_ROUTE_THUMBNAIL_SPAN_PERCENT = 1;
 const DATE_RANGE_OPTIONS = [
   { value: 4, label: "4 weeks" },
   { value: 8, label: "8 weeks" },
   { value: 12, label: "12 weeks" },
 ] as const;
-
-type RoutePathPoint = { x: number; y: number };
-
-function formatRouteViewportNumber(value: number): string {
-  const rounded = Math.round(value * 1000) / 1000;
-  return Object.is(rounded, -0) ? "0" : String(rounded);
-}
-
-function getRouteViewportStyle(routePath?: RoutePathPoint[] | null): CSSProperties | undefined {
-  if (routePath == null || routePath.length < 2) return undefined;
-
-  const firstPoint = routePath[0];
-  if (!firstPoint) return undefined;
-
-  let minX = firstPoint.x;
-  let maxX = firstPoint.x;
-  let minY = firstPoint.y;
-  let maxY = firstPoint.y;
-
-  for (const point of routePath) {
-    minX = Math.min(minX, point.x);
-    maxX = Math.max(maxX, point.x);
-    minY = Math.min(minY, point.y);
-    maxY = Math.max(maxY, point.y);
-  }
-
-  const routeWidth = Math.max(maxX - minX, MIN_ROUTE_THUMBNAIL_SPAN_PERCENT);
-  const routeHeight = Math.max(maxY - minY, MIN_ROUTE_THUMBNAIL_SPAN_PERCENT);
-  const fittedScale = Math.min(
-    (100 - ROUTE_THUMBNAIL_PADDING_PERCENT * 2) / routeWidth,
-    (100 - ROUTE_THUMBNAIL_PADDING_PERCENT * 2) / routeHeight,
-  );
-  const scale = Math.max(1, Math.min(MAX_ROUTE_THUMBNAIL_SCALE, fittedScale));
-  const routeCenterX = (minX + maxX) / 2;
-  const routeCenterY = (minY + maxY) / 2;
-  const minTranslate = 100 * (1 - scale);
-  const translateX = Math.min(0, Math.max(minTranslate, 50 - routeCenterX * scale));
-  const translateY = Math.min(0, Math.max(minTranslate, 50 - routeCenterY * scale));
-
-  return {
-    transform: `translate(${formatRouteViewportNumber(translateX)}%, ${formatRouteViewportNumber(
-      translateY,
-    )}%) scale(${formatRouteViewportNumber(scale)})`,
-    transformOrigin: "top left",
-  };
-}
 
 export function ActivitiesPage() {
   const [weeks, setWeeks] = useState(DEFAULT_WEEKS);
@@ -451,7 +403,7 @@ interface ActivityCardProps {
     isProviderAbsent?: boolean;
     partialAbsenceSummary?: string | null;
     tombstoneSummary?: string | null;
-    location: ActivityMapTileProps["location"] | null;
+    location: ActivityMapLocation | null;
     stats: { label: string; value: string }[];
   };
   units: ReturnType<typeof useUnitConverter>;
@@ -587,93 +539,6 @@ function ActivityOverview({
         </div>
       ))}
     </div>
-  );
-}
-
-interface ActivityMapTileProps {
-  location: {
-    tileUrl: string;
-    routePath?: { x: number; y: number }[] | null;
-    distanceMeters: number | null;
-    elevationGainM: number | null;
-  };
-  units: ReturnType<typeof useUnitConverter>;
-}
-
-function ActivityMapTile({ location, units }: ActivityMapTileProps) {
-  const [loadFailed, setLoadFailed] = useState(false);
-  const routeViewportStyle = getRouteViewportStyle(location.routePath);
-
-  return (
-    <div className="relative aspect-[16/9] w-full overflow-hidden bg-surface-secondary">
-      {loadFailed ? (
-        <div className="w-full h-full flex items-center justify-center text-xs text-muted">
-          Map unavailable
-        </div>
-      ) : (
-        <div
-          data-testid="activity-route-viewport"
-          className="absolute inset-0 h-full w-full"
-          style={routeViewportStyle}
-        >
-          <img
-            src={location.tileUrl}
-            alt="Activity location map"
-            className="w-full h-full object-cover"
-            loading="lazy"
-            referrerPolicy="origin"
-            onError={() => setLoadFailed(true)}
-          />
-          <ActivityRouteOverlay routePath={location.routePath} />
-        </div>
-      )}
-      <div className="absolute bottom-2 left-2 flex flex-wrap gap-1">
-        {location.distanceMeters != null ? (
-          <span className="bg-black/60 text-white text-[11px] font-semibold px-2 py-0.5 rounded">
-            {formatMeasurementText(units.formatDistance(location.distanceMeters / 1000))}
-          </span>
-        ) : null}
-        {location.elevationGainM != null ? (
-          <span className="bg-black/60 text-white text-[11px] font-semibold px-2 py-0.5 rounded">
-            ↑ {formatMeasurementText(units.formatElevation(location.elevationGainM))}
-          </span>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function ActivityRouteOverlay({ routePath }: { routePath?: { x: number; y: number }[] | null }) {
-  if (routePath == null || routePath.length < 2) return null;
-
-  const points = routePath.map((point) => `${point.x},${point.y}`).join(" ");
-  return (
-    <svg
-      className="pointer-events-none absolute inset-0 h-full w-full"
-      viewBox="0 0 100 100"
-      preserveAspectRatio="none"
-    >
-      <title>Activity route path</title>
-      <polyline
-        points={points}
-        fill="none"
-        stroke="white"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="6"
-        vectorEffect="non-scaling-stroke"
-      />
-      <polyline
-        data-testid="activity-route-path"
-        points={points}
-        fill="none"
-        stroke="rgb(22 163 74)"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="3"
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
   );
 }
 

@@ -271,101 +271,7 @@ describe("ActivitiesPage", () => {
     });
   });
 
-  it("replaces failed map tiles with a fallback", () => {
-    mockQuery = {
-      data: [
-        {
-          date: "2026-03-18",
-          activities: [
-            activity({
-              location: {
-                centroidLat: 37.7749,
-                centroidLng: -122.4194,
-                tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
-                distanceMeters: 5000,
-                elevationGainM: 120,
-              },
-            }),
-          ],
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
-
-    render(<ActivitiesPage />);
-    fireEvent.error(screen.getByAltText("Activity location map"));
-
-    expect(screen.getByText("Map unavailable")).toBeDefined();
-  });
-
-  it("allows map tile requests to include the page origin as the referrer", () => {
-    mockQuery = {
-      data: [
-        {
-          date: "2026-03-18",
-          activities: [
-            activity({
-              location: {
-                centroidLat: 37.7749,
-                centroidLng: -122.4194,
-                tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
-                distanceMeters: 5000,
-                elevationGainM: 120,
-              },
-            }),
-          ],
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
-
-    render(<ActivitiesPage />);
-
-    expect(screen.getByAltText("Activity location map").getAttribute("referrerpolicy")).toBe(
-      "origin",
-    );
-  });
-
-  it("draws a route overlay when a map tile includes route path points", () => {
-    mockQuery = {
-      data: [
-        {
-          date: "2026-03-18",
-          activities: [
-            activity({
-              location: {
-                centroidLat: 37.7749,
-                centroidLng: -122.4194,
-                tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
-                routePath: [
-                  { x: 27.854, y: 37.951 },
-                  { x: 29.22, y: 37.088 },
-                  { x: 30.585, y: 35.936 },
-                ],
-                distanceMeters: 5000,
-                elevationGainM: 120,
-              },
-            }),
-          ],
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
-
-    render(<ActivitiesPage />);
-
-    expect(screen.getByTestId("activity-route-path").getAttribute("points")).toBe(
-      "27.854,37.951 29.22,37.088 30.585,35.936",
-    );
-  });
-
-  it("clamps map thumbnail translation to avoid blank tile edges", () => {
+  it("renders a map tile when an activity includes location data", () => {
     mockQuery = {
       data: [
         {
@@ -394,43 +300,7 @@ describe("ActivitiesPage", () => {
 
     render(<ActivitiesPage />);
 
-    expect(screen.getByTestId("activity-route-viewport").getAttribute("style")).toContain(
-      "translate(0%, 0%) scale(2.5)",
-    );
-  });
-
-  it("centers map thumbnails around the route bounds", () => {
-    mockQuery = {
-      data: [
-        {
-          date: "2026-03-18",
-          activities: [
-            activity({
-              location: {
-                centroidLat: 37.7749,
-                centroidLng: -122.4194,
-                tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
-                routePath: [
-                  { x: 25, y: 30 },
-                  { x: 35, y: 40 },
-                ],
-                distanceMeters: 5000,
-                elevationGainM: 120,
-              },
-            }),
-          ],
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
-
-    render(<ActivitiesPage />);
-
-    expect(screen.getByTestId("activity-route-viewport").getAttribute("style")).toContain(
-      "translate(-25%, -37.5%) scale(2.5)",
-    );
+    expect(screen.getByAltText("Activity location map")).toBeDefined();
   });
 
   it("shows a Select button when activities are present", () => {
