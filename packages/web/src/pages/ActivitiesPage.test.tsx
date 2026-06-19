@@ -30,12 +30,21 @@ let weekListInput: unknown;
 let overviewInput: unknown;
 let overviewOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
 let bulkDeleteMutate: ReturnType<typeof vi.fn>;
+let restoreProviderAbsentMutate: ReturnType<typeof vi.fn>;
 let invalidateWeekList: ReturnType<typeof vi.fn>;
 let invalidateActivityOverview: ReturnType<typeof vi.fn>;
 let invalidateActivityList: ReturnType<typeof vi.fn>;
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
+  Link: ({
+    children,
+    to,
+    params,
+  }: {
+    children: ReactNode;
+    to: string;
+    params?: { id: string };
+  }) => <a href={params?.id ? to.replace("$id", params.id) : to}>{children}</a>,
 }));
 
 vi.mock("../lib/trpc.ts", () => ({
@@ -62,6 +71,15 @@ vi.mock("../lib/trpc.ts", () => ({
       bulkDelete: {
         useMutation: (options?: { onSuccess?: () => Promise<void> | void }) => ({
           mutate: bulkDeleteMutate.mockImplementation(async () => {
+            await options?.onSuccess?.();
+          }),
+          isPending: false,
+          error: null,
+        }),
+      },
+      restoreProviderAbsent: {
+        useMutation: (options?: { onSuccess?: () => Promise<void> | void }) => ({
+          mutate: restoreProviderAbsentMutate.mockImplementation(async () => {
             await options?.onSuccess?.();
           }),
           isPending: false,
@@ -130,6 +148,7 @@ describe("ActivitiesPage", () => {
     overviewInput = undefined;
     overviewOptions = undefined;
     bulkDeleteMutate = vi.fn();
+    restoreProviderAbsentMutate = vi.fn();
     invalidateWeekList = vi.fn();
     invalidateActivityOverview = vi.fn();
     invalidateActivityList = vi.fn();
@@ -163,6 +182,28 @@ describe("ActivitiesPage", () => {
     expect(screen.getByText("Training Stress Score")).toBeDefined();
     expect(screen.getByText("100")).toBeDefined();
     expect(screen.queryByText("TSS")).toBeNull();
+  });
+
+  it("lays out each day of activities as a responsive card grid", () => {
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: [
+            activity({ id: "activity-1", name: "Trainer Ride" }),
+            activity({ id: "activity-2", name: "Morning Run", activityType: "running" }),
+          ],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesPage />);
+
+    expect(screen.getByTestId("activity-card-grid").className).toContain("grid");
+    expect(screen.getByTestId("activity-card-grid").className).toContain("lg:grid-cols-2");
   });
 
   it("renders server-provided overview totals", () => {
@@ -217,6 +258,17 @@ describe("ActivitiesPage", () => {
     });
     const previousOverview = { activityTypes: ["running"] };
     expect(overviewOptions?.placeholderData?.(previousOverview)).toBe(previousOverview);
+  });
+
+  it("requests hidden activities when the show hidden toggle is enabled", () => {
+    render(<ActivitiesPage />);
+    fireEvent.click(screen.getByLabelText("Show hidden activities"));
+
+    expect(weekListInput).toEqual({
+      weeks: 4,
+      endDate: expect.any(String),
+      includeProviderAbsent: true,
+    });
   });
 
   it("replaces failed map tiles with a fallback", () => {
@@ -459,5 +511,71 @@ describe("ActivitiesPage", () => {
 
     expect(screen.queryByText("1 selected")).toBeNull();
     expect(screen.queryByText("Select")).not.toBeNull();
+  });
+
+  it("restores selected hidden activities after confirmation", async () => {
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: [
+            activity({
+              id: "hidden-1",
+              isProviderAbsent: true,
+              providerId: "strava",
+              providerAbsentAt: "2026-03-05T14:30:00.000Z",
+              tombstoneSummary: "Removed from Strava · Mar 5, 2:30 PM",
+            }),
+          ],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesPage />);
+    fireEvent.click(screen.getByLabelText("Show hidden activities"));
+    expect(screen.getByText("Removed")).toBeDefined();
+    expect(screen.getByText(/Removed from Strava/)).toBeDefined();
+    fireEvent.click(screen.getByText("Select"));
+    fireEvent.click(screen.getByText("Trainer Ride"));
+    fireEvent.click(screen.getByText("Restore"));
+    fireEvent.click(screen.getByText("Confirm Restore"));
+
+    await waitFor(() => {
+      expect(restoreProviderAbsentMutate).toHaveBeenCalledWith({ ids: ["hidden-1"] });
+      expect(invalidateWeekList).toHaveBeenCalled();
+      expect(invalidateActivityOverview).toHaveBeenCalled();
+      expect(invalidateActivityList).toHaveBeenCalled();
+    });
+  });
+
+  it("links tombstoned activities to their detail page", () => {
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: [
+            activity({
+              id: "hidden-1",
+              isProviderAbsent: true,
+              providerId: "strava",
+              providerAbsentAt: "2026-03-05T14:30:00.000Z",
+            }),
+          ],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesPage />);
+    fireEvent.click(screen.getByLabelText("Show hidden activities"));
+
+    expect(screen.getByRole("link", { name: /Trainer Ride/i }).getAttribute("href")).toBe(
+      "/activity/hidden-1",
+    );
   });
 });

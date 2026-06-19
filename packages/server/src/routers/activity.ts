@@ -1,7 +1,10 @@
 import { isCyclingActivity } from "@dofek/training/training";
 import { TRPCError } from "@trpc/server";
 import { isRelationMissingError } from "dofek/db/dedup";
-import { enqueueActivityDeleteAnalyticsRefresh } from "dofek/jobs/queues";
+import {
+  enqueueActivityDeleteAnalyticsRefresh,
+  enqueueActivityRestoreAnalyticsRefresh,
+} from "dofek/jobs/queues";
 import { queryCache } from "dofek/lib/cache";
 import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";
@@ -36,6 +39,21 @@ async function scheduleActivityAnalyticsRefresh(
     captureException(error, {
       tags: { phase: "activity-delete-analytics-enqueue" },
       extra: { userId, activityCount: memberActivityIds.length },
+    });
+  }
+}
+
+async function scheduleActivityRestoreAnalyticsRefresh(
+  userId: string,
+  activityIds: string[],
+): Promise<void> {
+  try {
+    await enqueueActivityRestoreAnalyticsRefresh(userId, activityIds);
+  } catch (error) {
+    const { captureException } = await import("@sentry/node");
+    captureException(error, {
+      tags: { phase: "activity-restore-analytics-enqueue" },
+      extra: { userId, activityCount: activityIds.length },
     });
   }
 }
@@ -247,6 +265,27 @@ export const activityRouter = router({
         await invalidateActivityListCaches(ctx.userId);
         await scheduleActivityAnalyticsRefresh(ctx.userId, memberActivityIds);
         return { success: true, deletedCount };
+      } catch (error) {
+        if (isRelationMissingError(error)) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
+          });
+        }
+        throw error;
+      }
+    }),
+
+  restoreProviderAbsent: protectedProcedure
+    .input(z.object({ ids: z.array(z.string().uuid()).min(1).max(MAX_BULK_DELETE_ACTIVITY_IDS) }))
+    .mutation(async ({ ctx, input }) => {
+      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+      try {
+        const { restoredCount } = await repo.restoreProviderAbsent(input.ids);
+        await invalidateActivityListCaches(ctx.userId);
+        await scheduleActivityRestoreAnalyticsRefresh(ctx.userId, input.ids);
+        return { success: true, restoredCount };
       } catch (error) {
         if (isRelationMissingError(error)) {
           throw new TRPCError({

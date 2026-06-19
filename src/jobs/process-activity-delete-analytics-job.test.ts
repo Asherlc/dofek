@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockWaitForPeerDbActivityDeletes = vi.fn().mockResolvedValue(undefined);
+const mockWaitForPeerDbActivityRestores = vi.fn().mockResolvedValue(undefined);
 const mockRunActivityReadModelBuild = vi.fn().mockResolvedValue(undefined);
 const mockInvalidateByPrefix = vi.fn().mockResolvedValue(undefined);
 const mockClose = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("../analytics/activity-read-model-build.ts", () => ({
   waitForPeerDbActivityDeletes: (...args: unknown[]) => mockWaitForPeerDbActivityDeletes(...args),
+  waitForPeerDbActivityRestores: (...args: unknown[]) => mockWaitForPeerDbActivityRestores(...args),
   runActivityReadModelBuild: (...args: unknown[]) => mockRunActivityReadModelBuild(...args),
 }));
 
@@ -40,6 +42,8 @@ describe("processActivityDeleteAnalyticsJob", () => {
     mockInvalidateByPrefix.mockClear();
     mockClose.mockClear();
     mockWaitForPeerDbActivityDeletes.mockResolvedValue(undefined);
+    mockWaitForPeerDbActivityRestores.mockClear();
+    mockWaitForPeerDbActivityRestores.mockResolvedValue(undefined);
     mockRunActivityReadModelBuild.mockResolvedValue(undefined);
   });
 
@@ -58,6 +62,24 @@ describe("processActivityDeleteAnalyticsJob", () => {
     mockRunActivityReadModelBuild.mockRejectedValueOnce(new Error("dbt failed"));
 
     await expect(processActivityDeleteAnalyticsJob(job)).rejects.toThrow("dbt failed");
+    expect(mockClose).toHaveBeenCalledOnce();
+  });
+
+  it("waits for restored activities before rebuilding read models", async () => {
+    await processActivityDeleteAnalyticsJob({
+      data: {
+        type: "activity-restore-analytics-refresh",
+        userId: "user-1",
+        activityIds: ["00000000-0000-0000-0000-000000000002"],
+      },
+    });
+
+    expect(mockWaitForPeerDbActivityRestores).toHaveBeenCalledWith(expect.anything(), [
+      "00000000-0000-0000-0000-000000000002",
+    ]);
+    expect(mockWaitForPeerDbActivityDeletes).not.toHaveBeenCalled();
+    expect(mockRunActivityReadModelBuild).toHaveBeenCalledOnce();
+    expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:");
     expect(mockClose).toHaveBeenCalledOnce();
   });
 });

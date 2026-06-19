@@ -18,10 +18,17 @@ describe("clickHouseMigrations", () => {
         "CREATE TABLE IF NOT EXISTS analytics.healthspan_activity_zone_minutes",
       ),
     );
+    expect(statements).toContainEqual(
+      expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.deduped_activities"),
+    );
     expect(clickHouseMigrationFileNames).toContain("0026_create_dashboard_tables.ts");
     expect(clickHouseMigrationFileNames).toContain("0027_create_daily_sleep_table.ts");
     expect(clickHouseMigrationFileNames).toContain("0028_create_domain_dashboard_tables.ts");
     expect(clickHouseMigrationFileNames).toContain("0030_activity_mirror_order_key.ts");
+    expect(clickHouseMigrationFileNames).toContain("0031_activity_user_soft_delete.ts");
+    expect(clickHouseMigrationFileNames).toContain(
+      "0032_deduped_activities_absent_source_links.ts",
+    );
     expect(statements).toContainEqual(
       expect.stringContaining("CREATE TABLE IF NOT EXISTS analytics.provider_stats"),
     );

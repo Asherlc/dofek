@@ -14,6 +14,7 @@ import {
 } from "../clickhouse-deduped-sensor.ts";
 import { buildActivitySummaryReadModelStatements } from "../clickhouse-metric-stream-bootstrap.ts";
 import { buildPostgresFitnessActivityRawTableStatement } from "../clickhouse-raw-tables.ts";
+import { buildActivityReadModelRefreshStatements } from "../clickhouse-read-models.ts";
 import {
   clickHouseDateTimeLiteral,
   clickHouseStringLiteral,
@@ -589,4 +590,34 @@ LEFT JOIN (
 WHERE metric_stream.recorded_at >= ${lowerBound}
   AND metric_stream.recorded_at < ${upperBound}
   AND existing_metric_stream.id IS NULL`;
+}
+
+const dedupedActivitiesAbsentSourceColumnSql = `ALTER TABLE analytics.deduped_activities
+ADD COLUMN IF NOT EXISTS absent_source_external_ids Array(Map(String, String)) DEFAULT []`;
+
+export async function addDedupedActivitiesAbsentSourceLinks(
+  client: ClickHouseCommandClient,
+  _postgresConnectionString: string,
+): Promise<void> {
+  if (!client.query) {
+    throw new Error("ClickHouse migrations require a query-capable client");
+  }
+
+  const result = await client.query<{ table_count: string | number }>({
+    query:
+      "SELECT count() AS table_count FROM system.tables WHERE database = 'analytics' AND name = 'deduped_activities'",
+    format: "JSONEachRow",
+  });
+  const rows = await result.json();
+  if (Number(rows[0]?.table_count ?? 0) === 0) {
+    throw new Error(
+      "Missing analytics.deduped_activities; run serving table migrations before 0032",
+    );
+  }
+
+  for (const statement of buildActivityReadModelRefreshStatements()) {
+    await runClickHouseMigrationStatement(client, statement);
+  }
+
+  await client.command({ query: dedupedActivitiesAbsentSourceColumnSql });
 }

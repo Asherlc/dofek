@@ -70,6 +70,7 @@
     "./auth/oauth": "./src/auth/oauth.ts",
     "./db/sync-log": "./src/db/sync-log.ts",
     "./jobs/queues": "./src/jobs/queues.ts",
+    "./jobs/enqueue-sync-job": "./src/jobs/enqueue-sync-job.ts",
     "./jobs/sync-window": "./src/jobs/sync-job-window.ts",
     "./jobs/provider-queue-config": "./src/jobs/provider-queue-config.ts",
     "./jobs/process-export-job": "./src/jobs/process-export-job.ts",

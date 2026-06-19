@@ -33,6 +33,7 @@ const baseActivity: ActivityDetail = {
   elevationGain: 350,
   elevationLoss: 340,
   sampleCount: 5400,
+  providerAbsentAt: null,
 };
 
 const headerMeta = {

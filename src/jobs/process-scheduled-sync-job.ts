@@ -3,16 +3,8 @@ import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
 import { logger } from "../logger.ts";
 import { getProvider, isSyncEligibleProvider } from "../providers/index.ts";
-import {
-  providerRateLimitCooldownJobId,
-  providerRateLimitCooldownStore,
-  providerRateLimitDelayMs,
-} from "./provider-rate-limit-cooldown.ts";
-import {
-  getProviderSyncQueue,
-  type ScheduledSyncJobData,
-  SYNC_JOB_RETRY_OPTIONS,
-} from "./queues.ts";
+import { enqueueSyncJob } from "./enqueue-sync-job.ts";
+import type { ScheduledSyncJobData } from "./queues.ts";
 
 /**
  * Process a scheduled sync job: query all users with connected providers
@@ -57,16 +49,8 @@ export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, d
         providerId,
         sinceDays: provider?.scheduledSyncLookbackDays ?? 1,
       };
-      const cooldown = await providerRateLimitCooldownStore.getActive(providerId, userId);
-      const jobOptions = cooldown
-        ? {
-            ...SYNC_JOB_RETRY_OPTIONS,
-            delay: providerRateLimitDelayMs(cooldown),
-            jobId: providerRateLimitCooldownJobId(cooldown, userId),
-          }
-        : SYNC_JOB_RETRY_OPTIONS;
 
-      await getProviderSyncQueue(providerId).add("sync", jobData, jobOptions);
+      await enqueueSyncJob(providerId, jobData);
       jobCount++;
     }
   }

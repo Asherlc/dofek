@@ -7,6 +7,13 @@ import type { SyncRun } from "../providers/sync-run.ts";
 import { SyncWindow } from "../providers/sync-window.ts";
 import type { SyncProvider, SyncResult } from "../providers/types.ts";
 
+type MockCooldownRecord = {
+  providerId: string;
+  scope: "provider" | "user";
+  userId: string | null;
+  expiresAt: Date;
+};
+
 const MockJobDataSchema = z.object({
   providerId: z.string().optional(),
   sinceDays: z.number().optional(),
@@ -15,6 +22,10 @@ const MockJobDataSchema = z.object({
   userId: z.string(),
   checkpoint: z.unknown().optional(),
 });
+
+const mockProviderRateLimitCooldownRecords = vi.hoisted(
+  (): Map<string, MockCooldownRecord> => new Map(),
+);
 
 const mockCaptureException = vi.fn();
 vi.mock("@sentry/node", () => ({
@@ -98,6 +109,57 @@ vi.mock("../sync-metrics.ts", () => ({
   syncErrorsTotal: mockSyncErrorsTotal,
 }));
 
+vi.mock("./provider-rate-limit-cooldown.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./provider-rate-limit-cooldown.ts")>();
+
+  function cooldownKey(providerId: string, scope: "provider" | "user", userId: string | null) {
+    return scope === "provider"
+      ? `${providerId}:provider`
+      : `${providerId}:user:${userId ?? "unknown"}`;
+  }
+
+  function activeCooldown(cooldown: MockCooldownRecord | null): MockCooldownRecord | null {
+    if (!cooldown) return null;
+    return cooldown.expiresAt > new Date() ? cooldown : null;
+  }
+
+  function laterCooldown(
+    first: MockCooldownRecord | null,
+    second: MockCooldownRecord | null,
+  ): MockCooldownRecord | null {
+    if (!first) return second;
+    if (!second) return first;
+    return first.expiresAt >= second.expiresAt ? first : second;
+  }
+
+  return {
+    ...actual,
+    providerRateLimitCooldownStore: {
+      record: async (error: ProviderRateLimitError, fallbackUserId: string) => {
+        const scope = error.scope;
+        const userId = scope === "user" ? (error.userId ?? fallbackUserId) : null;
+        const expiresAt = new Date(Date.now() + (error.retryAfterSeconds ?? 30 * 60) * 1000);
+        const cooldown = { providerId: error.providerId, scope, userId, expiresAt };
+        const key = cooldownKey(cooldown.providerId, cooldown.scope, cooldown.userId);
+        const existing = activeCooldown(mockProviderRateLimitCooldownRecords.get(key) ?? null);
+        const effective = laterCooldown(existing, cooldown) ?? cooldown;
+        mockProviderRateLimitCooldownRecords.set(key, effective);
+        return effective;
+      },
+      getActive: async (providerId: string, userId: string) => {
+        const providerCooldown = activeCooldown(
+          mockProviderRateLimitCooldownRecords.get(cooldownKey(providerId, "provider", null)) ??
+            null,
+        );
+        const userCooldown = activeCooldown(
+          mockProviderRateLimitCooldownRecords.get(cooldownKey(providerId, "user", userId)) ?? null,
+        );
+        return laterCooldown(providerCooldown, userCooldown);
+      },
+    },
+  };
+});
+
 // Import after mocks are set up
 const { processSyncJob } = await import("./process-sync-job.ts");
 
@@ -168,6 +230,7 @@ function runSyncJob(job: MockJob, db: SyncDatabase) {
 describe("processSyncJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockProviderRateLimitCooldownRecords.clear();
     // Restore default return values after clearAllMocks
     mockGetEnabledSyncProviders.mockReturnValue([]);
     mockGetProvider.mockReturnValue(undefined);
@@ -397,6 +460,96 @@ describe("processSyncJob", () => {
       }),
     );
     expect(mockCaptureException).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("defers sync without calling the provider when a rate-limit cooldown is already active", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const provider = createMockProvider({
+      id: "garmin",
+      name: "Garmin",
+      sync: vi.fn(),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    const { providerRateLimitCooldownStore } = await import("./provider-rate-limit-cooldown.ts");
+    await providerRateLimitCooldownStore.record(
+      new ProviderRateLimitError({
+        message: "Garmin API rate limit exceeded (429): limited",
+        providerId: "garmin",
+        statusCode: 429,
+        responseBody: "limited",
+        scope: "provider",
+        retryAfterSeconds: 600,
+      }),
+      "user-1",
+    );
+
+    const job = createMockJob({ providerId: "garmin", userId: "user-1", sinceDays: 1 });
+    await runSyncJob(job, mockDb);
+
+    expect(provider.sync).not.toHaveBeenCalled();
+    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      expect.objectContaining({
+        providerId: "garmin",
+        userId: "user-1",
+        sinceIso: "2026-06-01T00:00:00.000Z",
+        untilIso: "2026-06-02T23:59:59.999Z",
+      }),
+      expect.objectContaining({
+        delay: 600_000,
+        jobId: "provider-rate-limit-garmin-provider-user-1-1780402200000",
+      }),
+    );
+    expect(mockLogSync).not.toHaveBeenCalled();
+    expect(mockSyncErrorsTotal.add).not.toHaveBeenCalled();
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      providers: {
+        garmin: {
+          status: "running",
+          message: "Rate limited; retry scheduled for 2026-06-02T12:10:00.000Z",
+        },
+      },
+      percentage: 100,
+    });
+    vi.useRealTimers();
+  });
+
+  it("skips disconnected OAuth providers before active cooldown deferral", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const provider = createMockProvider({
+      id: "garmin",
+      name: "Garmin",
+      authSetup: () => undefined,
+      sync: vi.fn(),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+    mockLoadTokens.mockResolvedValue(null);
+
+    const { providerRateLimitCooldownStore } = await import("./provider-rate-limit-cooldown.ts");
+    await providerRateLimitCooldownStore.record(
+      new ProviderRateLimitError({
+        message: "Garmin API rate limit exceeded (429): limited",
+        providerId: "garmin",
+        statusCode: 429,
+        responseBody: "limited",
+        scope: "provider",
+        retryAfterSeconds: 600,
+      }),
+      "user-1",
+    );
+
+    const job = createMockJob({ providerId: "garmin", userId: "user-1", sinceDays: 1 });
+    await runSyncJob(job, mockDb);
+
+    expect(mockLoadTokens).toHaveBeenCalledWith(mockDb, "garmin", "user-1");
+    expect(provider.sync).not.toHaveBeenCalled();
+    expect(mockProviderQueueAdd).not.toHaveBeenCalled();
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      providers: { garmin: { status: "done", message: "Skipped — not connected" } },
+      percentage: 100,
+    });
     vi.useRealTimers();
   });
 
