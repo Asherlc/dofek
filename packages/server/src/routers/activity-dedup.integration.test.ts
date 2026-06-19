@@ -368,7 +368,7 @@ describe("Activity summary deduplication", () => {
     );
   });
 
-  it("deletes all raw member rows when deleting a deduped activity member", async () => {
+  it("soft-deletes all raw member rows when deleting a deduped activity member", async () => {
     const inserted = await testCtx.db.execute<{ id: string; provider_id: string }>(
       sql`INSERT INTO fitness.activity (
             provider_id, user_id, activity_type, started_at, ended_at, name
@@ -413,12 +413,17 @@ describe("Activity summary deduplication", () => {
       expect(status).toBe(200);
       expect(result.result.data).toEqual({ success: true });
 
-      const remainingRows = await testCtx.db.execute<{ count: string }>(
-        sql`SELECT COUNT(*)::text AS count
+      const remainingRows = await testCtx.db.execute<{
+        id: string;
+        deleted_at: Date | null;
+      }>(
+        sql`SELECT id, deleted_at
             FROM fitness.activity
-            WHERE id = ANY(${insertedIdArray})`,
+            WHERE id = ANY(${insertedIdArray})
+            ORDER BY id`,
       );
-      expect(Number(remainingRows[0]?.count)).toBe(0);
+      expect(remainingRows).toHaveLength(2);
+      expect(remainingRows.every((row) => row.deleted_at !== null)).toBe(true);
     } finally {
       await testCtx.db.execute(
         sql`DELETE FROM fitness.activity WHERE id = ANY(${insertedIdArray})`,

@@ -13,6 +13,8 @@ import {
   parseAuth0FormHtml,
   pelotonAutomatedLogin,
 } from "./peloton.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 
 const server = setupServer();
@@ -171,9 +173,13 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     );
 
     const provider = new PelotonProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-03-01T00:00:00Z"), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2024-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
     // Should have fetched page 1 but stopped there (not page 2)
@@ -228,9 +234,13 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     );
 
     const provider = new PelotonProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2024-01-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     // Performance graph was called
     expect(callCount).toBe(1);
@@ -283,9 +293,13 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     );
 
     const provider = new PelotonProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2024-01-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
 
@@ -367,9 +381,13 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     );
 
     const provider = new PelotonProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2024-01-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
 
@@ -443,8 +461,20 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     const since = new Date("2024-01-01T00:00:00Z");
 
     // Sync twice
-    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
-    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     // Redpanda is an append log, so both sync attempts publish their raw events.
     const activityRows = await ctx.db
@@ -514,9 +544,13 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
     );
 
     const provider = new PelotonProvider();
-    const result = await provider.sync(ctx.db, new Date("2024-01-01T00:00:00Z"), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2024-01-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
 

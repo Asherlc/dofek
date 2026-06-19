@@ -7,6 +7,8 @@ import { foodEntry, oauthToken, userProfile } from "../../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../../test/msw.ts";
+import { SyncRun } from "../sync-run.ts";
+import { SyncWindow } from "../sync-window.ts";
 import type { FatSecretFoodEntriesResponse } from "./parsing.ts";
 import { FatSecretProvider } from "./provider.ts";
 
@@ -136,7 +138,9 @@ describe("FatSecretProvider.sync() (integration)", () => {
     const provider = new FatSecretProvider();
     // Sync just this one day
     const since = new Date("2026-03-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.provider).toBe("fatsecret");
     expect(result.recordsSynced).toBe(2);
@@ -200,8 +204,12 @@ describe("FatSecretProvider.sync() (integration)", () => {
     const provider = new FatSecretProvider();
     const since = new Date("2026-03-01T00:00:00Z");
 
-    await provider.sync(ctx.db, since);
-    await provider.sync(ctx.db, since);
+    await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: since }) }),
+    );
+    await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     const rows = await ctx.db.select().from(foodEntry).where(eq(foodEntry.providerId, "fatsecret"));
 
@@ -230,7 +238,9 @@ describe("FatSecretProvider.sync() (integration)", () => {
 
     const provider = new FatSecretProvider();
     const since = new Date("2026-03-02T00:00:00Z");
-    await provider.sync(ctx.db, since);
+    await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     const rows = await ctx.db.select().from(foodEntry).where(eq(foodEntry.externalId, "entry-200"));
 
@@ -242,7 +252,12 @@ describe("FatSecretProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "fatsecret"));
 
     const provider = new FatSecretProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens found");
@@ -261,9 +276,14 @@ describe("FatSecretProvider.sync() (integration)", () => {
     });
 
     const provider = new FatSecretProvider();
-    await expect(provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"))).rejects.toThrow(
-      "No token secret stored for FatSecret",
-    );
+    await expect(
+      provider.sync(
+        new SyncRun({
+          db: ctx.db,
+          window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        }),
+      ),
+    ).rejects.toThrow("No token secret stored for FatSecret");
   });
 
   it("handles null food_entries response for days with no data", async () => {
@@ -283,7 +303,9 @@ describe("FatSecretProvider.sync() (integration)", () => {
 
     const provider = new FatSecretProvider();
     const since = new Date("2026-03-19T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBe(0);
@@ -306,7 +328,9 @@ describe("FatSecretProvider.sync() (integration)", () => {
 
     const provider = new FatSecretProvider();
     const since = new Date("2026-03-10T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     // Should have errors but not crash, and each error names the failing date
     expect(result.errors.length).toBeGreaterThan(0);
@@ -333,7 +357,9 @@ describe("FatSecretProvider.sync() (integration)", () => {
     const provider = new FatSecretProvider();
     const since = new Date("2026-03-15T00:00:00Z");
 
-    await expect(provider.sync(ctx.db, since)).rejects.toBeInstanceOf(ProviderRateLimitError);
+    await expect(
+      provider.sync(new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: since }) })),
+    ).rejects.toBeInstanceOf(ProviderRateLimitError);
   });
 
   it("caps lookback to 2 years when since is epoch (new Date(0))", async () => {
@@ -360,7 +386,9 @@ describe("FatSecretProvider.sync() (integration)", () => {
 
     const provider = new FatSecretProvider();
     // Pass epoch — would generate ~20,000 API calls without the 2-year cap
-    const result = await provider.sync(ctx.db, new Date(0));
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: new Date(0) }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
 
@@ -395,7 +423,9 @@ describe("FatSecretProvider.sync() (integration)", () => {
 
     const provider = new FatSecretProvider();
     const since = new Date("2026-03-20T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     // The Zod error for food_entries path must not appear in errors
     expect(result.errors).toHaveLength(0);
@@ -454,7 +484,9 @@ describe("FatSecretProvider.sync() (integration)", () => {
     server.use(...fatsecretHandlers(responses));
 
     const provider = new FatSecretProvider();
-    const result = await provider.sync(ctx.db, today);
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: today }) }),
+    );
 
     expect(result.errors).toHaveLength(0);
 
@@ -473,9 +505,14 @@ describe("FatSecretProvider.sync() (integration)", () => {
 
     try {
       const provider = new FatSecretProvider();
-      await expect(provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"))).rejects.toThrow(
-        "fatsecret sync requires user context",
-      );
+      await expect(
+        provider.sync(
+          new SyncRun({
+            db: ctx.db,
+            window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+          }),
+        ),
+      ).rejects.toThrow("fatsecret sync requires user context");
     } finally {
       if (originalTestUserId) {
         process.env.TEST_TOKEN_USER_ID = originalTestUserId;

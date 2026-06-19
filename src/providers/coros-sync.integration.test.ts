@@ -9,6 +9,8 @@ import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { CorosProvider } from "./coros.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 
 // ============================================================
@@ -182,9 +184,13 @@ describe("CorosProvider.sync() (integration)", () => {
     server.use(...corosHandlers(workouts, []));
 
     const provider = new CorosProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.provider).toBe("coros");
     expect(result.errors).toHaveLength(0);
@@ -221,9 +227,13 @@ describe("CorosProvider.sync() (integration)", () => {
     server.use(...corosHandlers(workouts, []));
 
     const provider = new CorosProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
     const rows = await ctx.db.select().from(activity).where(eq(activity.externalId, "coros-w-fit"));
@@ -247,7 +257,12 @@ describe("CorosProvider.sync() (integration)", () => {
     server.use(...corosHandlers([], daily));
 
     const provider = new CorosProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
 
@@ -287,7 +302,12 @@ describe("CorosProvider.sync() (integration)", () => {
     server.use(...corosHandlers([], daily));
 
     const provider = new CorosProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
 
@@ -316,7 +336,12 @@ describe("CorosProvider.sync() (integration)", () => {
     server.use(...corosHandlers([], []));
 
     const provider = new CorosProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     const tokens = await loadTokens(ctx.db, "coros");
     expect(tokens?.accessToken).toBe("refreshed-token");
@@ -326,7 +351,12 @@ describe("CorosProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "coros"));
 
     const provider = new CorosProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens");
@@ -346,10 +376,20 @@ describe("CorosProvider.sync() (integration)", () => {
     server.use(...corosHandlers(workouts, []));
 
     const provider = new CorosProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     // Sync again — should upsert, not duplicate
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "coros"));
 

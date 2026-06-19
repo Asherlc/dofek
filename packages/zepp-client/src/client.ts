@@ -1,4 +1,4 @@
-import { createCipheriv } from "node:crypto";
+import { createCipheriv, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { ZeppSignInResult } from "./types.ts";
 
@@ -12,6 +12,9 @@ export const ZEPP_APP_NAME = "com.xiaomi.hm.health";
 const ZEPP_AES_KEY = "xeNtBVqzDc6tuNTh";
 const ZEPP_AES_IV = "MAAAYAAAAAAAAABg";
 const ZEPP_APP_VERSION = "6.14.0";
+const ZEPP_CLIENT_VERSION = "50818";
+const ZEPP_ZEPP_DN =
+  "account.zepp.com,api-user.zepp.com,api-mifit.zepp.com,api-watch.zepp.com,app-analytics.zepp.com,api-analytics.huami.com,auth.zepp.com";
 
 const zeppTokenInfoSchema = z.object({
   app_token: z.string(),
@@ -39,6 +42,16 @@ export class ZeppInvalidCredentialsError extends Error {
   constructor(options?: ErrorOptions) {
     super("Amazfit/Zepp login failed: invalid email or password", options);
     this.name = new.target.name;
+  }
+}
+
+export class ZeppLoginExchangeError extends Error {
+  readonly status: number;
+
+  constructor(status: number, options?: ErrorOptions) {
+    super(`Amazfit/Zepp login error (${status})`, options);
+    this.name = new.target.name;
+    this.status = status;
   }
 }
 
@@ -84,6 +97,20 @@ function zeppClientHeaders(): Record<string, string> {
     "hm-privacy-ceip": "false",
     "x-hm-ekv": "1",
   };
+}
+
+function zeppLoginHeaders(): Record<string, string> {
+  return {
+    ...zeppClientHeaders(),
+    "x-request-id": randomUUID(),
+    "accept-language": "en-US,en;q=0.9",
+    cv: `${ZEPP_CLIENT_VERSION}_${ZEPP_APP_VERSION}`,
+    v: "2.0",
+  };
+}
+
+function isRetryableLoginExchangeStatus(status: number): boolean {
+  return status === 400 || status === 401 || status === 403;
 }
 
 function isRetryableLegacyRegistrationStatus(status: number): boolean {
@@ -232,12 +259,26 @@ async function getEncryptedRegistrationCredentials(
     countryCode,
     loginUrl: ZEPP_ACCOUNT_ZEPP_LOGIN_URL,
     thirdName: "email",
-    source: `${ZEPP_APP_NAME}:${ZEPP_APP_VERSION}:50818`,
-    dn: "account.zepp.com,api-user.zepp.com,api-mifit.zepp.com,api-watch.zepp.com,app-analytics.zepp.com,api-analytics.huami.com,auth.zepp.com",
+    source: `${ZEPP_APP_NAME}:${ZEPP_APP_VERSION}:${ZEPP_CLIENT_VERSION}`,
+    dn: ZEPP_ZEPP_DN,
   };
 }
 
-async function exchangeAccessCodeForToken(
+function buildLoginAttempts(credentials: ZeppAccessCredentials): ZeppAccessCredentials[] {
+  const attempts = [credentials];
+  if (credentials.loginUrl === ZEPP_ACCOUNT_LOGIN_URL && !credentials.source) {
+    attempts.push({
+      ...credentials,
+      loginUrl: ZEPP_ACCOUNT_ZEPP_LOGIN_URL,
+      thirdName: "email",
+      source: `${ZEPP_APP_NAME}:${ZEPP_APP_VERSION}:${ZEPP_CLIENT_VERSION}`,
+      dn: ZEPP_ZEPP_DN,
+    });
+  }
+  return attempts;
+}
+
+async function performTokenExchange(
   credentials: ZeppAccessCredentials,
   fetchFn: typeof globalThis.fetch,
 ): Promise<ZeppSignInResult> {
@@ -256,21 +297,19 @@ async function exchangeAccessCodeForToken(
   if (credentials.source) {
     loginBody.set("source", credentials.source);
     loginBody.set("lang", "en");
+    loginBody.set("os_version", "1.5.0");
   }
 
   const loginResponse = await fetchFn(credentials.loginUrl, {
     method: "POST",
-    headers: {
-      ...zeppClientHeaders(),
-      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-    },
+    headers: zeppLoginHeaders(),
     body: loginBody.toString(),
   });
 
   const responseBody = await loginResponse.text();
 
   if (!loginResponse.ok) {
-    throw new Error(`Amazfit/Zepp login error (${loginResponse.status})`);
+    throw new ZeppLoginExchangeError(loginResponse.status);
   }
 
   let parsedBody: unknown;
@@ -295,13 +334,49 @@ async function exchangeAccessCodeForToken(
   };
 }
 
+async function exchangeAccessCodeForToken(
+  credentials: ZeppAccessCredentials,
+  fetchFn: typeof globalThis.fetch,
+): Promise<ZeppSignInResult> {
+  const attempts = buildLoginAttempts(credentials);
+  let lastError: ZeppLoginExchangeError | undefined;
+
+  for (const attempt of attempts) {
+    try {
+      return await performTokenExchange(attempt, fetchFn);
+    } catch (error) {
+      if (
+        !(error instanceof ZeppLoginExchangeError) ||
+        !isRetryableLoginExchangeStatus(error.status)
+      ) {
+        throw error;
+      }
+      lastError = error;
+    }
+  }
+
+  throw lastError ?? new Error("Amazfit/Zepp login failed");
+}
+
 export async function signInToZepp(
   email: string,
   password: string,
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<ZeppSignInResult> {
   const legacyCredentials = await getLegacyRegistrationCredentials(email, password, fetchFn);
-  const credentials =
-    legacyCredentials ?? (await getEncryptedRegistrationCredentials(email, password, fetchFn));
-  return exchangeAccessCodeForToken(credentials, fetchFn);
+  if (legacyCredentials) {
+    try {
+      return await exchangeAccessCodeForToken(legacyCredentials, fetchFn);
+    } catch (error) {
+      if (
+        !(error instanceof ZeppLoginExchangeError) ||
+        !isRetryableLoginExchangeStatus(error.status)
+      ) {
+        throw error;
+      }
+    }
+  }
+
+  const encryptedCredentials = await getEncryptedRegistrationCredentials(email, password, fetchFn);
+  return exchangeAccessCodeForToken(encryptedCredentials, fetchFn);
 }

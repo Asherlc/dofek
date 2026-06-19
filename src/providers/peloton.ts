@@ -17,6 +17,7 @@ import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { logger } from "../logger.ts";
+import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
@@ -568,11 +569,8 @@ export class PelotonProvider implements SyncProvider {
     });
   }
 
-  async sync(
-    db: SyncDatabase,
-    since: Date,
-    options?: import("./types.ts").SyncOptions,
-  ): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const { onProgress, userId } = options ?? {};
     const start = Date.now();
     const errors: SyncError[] = [];
@@ -588,7 +586,8 @@ export class PelotonProvider implements SyncProvider {
 
     const client = new PelotonClient(tokens.accessToken, this.#fetchFn);
     await ensureProvider(db, this.id, this.name, PELOTON_API_BASE);
-    const syncWindowEnd = new Date();
+    const since = window.since;
+    const syncWindowEnd = window.until;
     const presentActivityExternalIds = new Set<string>();
 
     // Single-pass: fetch workouts, then for each fetch performance graph,
@@ -615,6 +614,7 @@ export class PelotonProvider implements SyncProvider {
               hasMore = false;
               break;
             }
+            if (startedAt > syncWindowEnd) continue;
 
             const parsed = parseWorkout(workout);
             presentActivityExternalIds.add(parsed.externalId);

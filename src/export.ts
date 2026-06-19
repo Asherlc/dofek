@@ -47,6 +47,7 @@ const EXPORT_TABLES: ExportTableConfig[] = [
         sql`SELECT * FROM fitness.activity
             WHERE user_id = ${userId}
               AND provider_absent_at IS NULL
+              AND deleted_at IS NULL
             ORDER BY started_at`,
       ),
   },
@@ -60,6 +61,7 @@ const EXPORT_TABLES: ExportTableConfig[] = [
             JOIN fitness.activity a ON a.id = ai.activity_id
             WHERE a.user_id = ${userId}
               AND a.provider_absent_at IS NULL
+              AND a.deleted_at IS NULL
             ORDER BY ai.started_at`,
       ),
   },
@@ -122,6 +124,7 @@ const EXPORT_TABLES: ExportTableConfig[] = [
             JOIN fitness.activity a ON a.id = ss.activity_id
             WHERE a.user_id = ${userId}
               AND a.provider_absent_at IS NULL
+              AND a.deleted_at IS NULL
             ORDER BY a.started_at, ss.exercise_index, ss.set_index`,
       ),
   },

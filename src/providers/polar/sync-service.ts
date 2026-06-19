@@ -16,6 +16,7 @@ import {
   ProviderAuthorizationFailedError,
   RefreshTokenRevokedError,
 } from "../auth-errors.ts";
+import type { SyncWindow } from "../sync-window.ts";
 import type { SyncError } from "../types.ts";
 import { PolarClient, PolarNotFoundError, PolarUnauthorizedError } from "./client.ts";
 import { POLAR_API_BASE, polarOAuthConfig } from "./oauth.ts";
@@ -60,7 +61,7 @@ export class PolarSyncService {
     this.#metricStreamPublisher = options.metricStreamPublisher;
   }
 
-  async run(since: Date): Promise<PolarSyncAccumulator> {
+  async run(window: SyncWindow): Promise<PolarSyncAccumulator> {
     await ensureProvider(this.#db, this.#providerId, this.#providerName, POLAR_API_BASE);
 
     let tokens: TokenSet;
@@ -76,13 +77,13 @@ export class PolarSyncService {
 
     const client = new PolarClient(tokens.accessToken, this.#fetchFn);
 
-    await this.#syncExercises(client, since);
+    await this.#syncExercises(client, window);
     if (await this.#invalidateTokensIfAuthFailed()) return this.#result();
 
-    await this.#syncSleep(client, since);
+    await this.#syncSleep(client, window);
     if (await this.#invalidateTokensIfAuthFailed()) return this.#result();
 
-    await this.#syncDailyActivity(client, since);
+    await this.#syncDailyActivity(client, window);
     if (await this.#invalidateTokensIfAuthFailed()) return this.#result();
 
     return this.#result();
@@ -137,8 +138,9 @@ export class PolarSyncService {
     return tokens;
   }
 
-  async #syncExercises(client: PolarClient, since: Date): Promise<void> {
-    const syncWindowEnd = new Date();
+  async #syncExercises(client: PolarClient, window: SyncWindow): Promise<void> {
+    const since = window.since;
+    const syncWindowEnd = window.until;
     const presentActivityExternalIds = new Set<string>();
     try {
       const exerciseCount = await withSyncLog(
@@ -150,7 +152,9 @@ export class PolarSyncService {
           let count = 0;
 
           for (const exercise of exercises) {
-            if (new Date(exercise.start_time) < since) continue;
+            const exerciseStart = new Date(exercise.start_time);
+            if (exerciseStart < since) continue;
+            if (exerciseStart > syncWindowEnd) continue;
 
             const parsedExercise = parsePolarExercise(exercise);
             presentActivityExternalIds.add(parsedExercise.externalId);
@@ -255,7 +259,9 @@ export class PolarSyncService {
     }
   }
 
-  async #syncSleep(client: PolarClient, since: Date): Promise<void> {
+  async #syncSleep(client: PolarClient, window: SyncWindow): Promise<void> {
+    const since = window.since;
+    const until = window.until;
     try {
       const sleepCount = await withSyncLog(
         this.#db,
@@ -266,7 +272,9 @@ export class PolarSyncService {
           let count = 0;
 
           for (const sleepRecord of sleepRecords) {
-            if (new Date(sleepRecord.sleep_start_time) < since) continue;
+            const sleepStart = new Date(sleepRecord.sleep_start_time);
+            if (sleepStart < since) continue;
+            if (sleepStart > until) continue;
 
             const parsedSleep = parsePolarSleep(sleepRecord);
             try {
@@ -333,7 +341,9 @@ export class PolarSyncService {
     }
   }
 
-  async #syncDailyActivity(client: PolarClient, since: Date): Promise<void> {
+  async #syncDailyActivity(client: PolarClient, window: SyncWindow): Promise<void> {
+    const since = window.since;
+    const until = window.until;
     try {
       const dailyCount = await withSyncLog(
         this.#db,
@@ -359,7 +369,9 @@ export class PolarSyncService {
 
           for (const dailyActivity of dailyActivities) {
             const activityDate = dailyActivity.start_time.slice(0, 10);
-            if (new Date(activityDate) < since) continue;
+            const activityDateStart = new Date(`${activityDate}T00:00:00.000Z`);
+            if (activityDateStart < since) continue;
+            if (activityDateStart > until) continue;
 
             const recharge = rechargeByDate.get(activityDate) ?? null;
             const parsedDailyMetrics = parsePolarDailyActivity(dailyActivity, recharge);

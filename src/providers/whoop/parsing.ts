@@ -258,6 +258,22 @@ export interface ParsedWorkout {
  * Uses sport_id as the primary source; falls back to the v2_activity type
  * name when the sport_id is unknown or maps to "other".
  */
+/**
+ * Canonical external_id for a WHOOP workout — must match between upserts and
+ * provider-absence reconciliation.
+ */
+export function resolveWhoopWorkoutExternalId(record: WhoopWorkoutRecord): string | null {
+  const normalizedActivityId =
+    typeof record.activity_id === "string" ? record.activity_id.trim() : record.activity_id;
+  const rawId =
+    normalizedActivityId == null || normalizedActivityId === "" ? record.id : normalizedActivityId;
+  if (rawId == null || rawId === "") {
+    return null;
+  }
+  const externalId = String(rawId).trim();
+  return externalId === "" ? null : externalId;
+}
+
 export function resolveActivityType(
   sportId: number,
   v2ActivityTypeName?: string,
@@ -293,8 +309,13 @@ export function parseWorkout(
     return null;
   }
 
+  const externalId = resolveWhoopWorkoutExternalId(record);
+  if (!externalId) {
+    return null;
+  }
+
   return {
-    externalId: record.activity_id ?? String(record.id ?? ""),
+    externalId,
     activityType: resolveActivityType(record.sport_id, v2ActivityTypeName),
     startedAt,
     endedAt,
@@ -322,6 +343,56 @@ export function parseHeartRateValues(values: WhoopHrValue[]): ParsedHrRecord[] {
 export interface ParsedDailyStepCount {
   date: string;
   steps: number;
+}
+
+function isWhoopBffRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function collectWhoopBffItems(
+  node: unknown,
+  out: Array<{ type: string; content: Record<string, unknown> }>,
+): void {
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      collectWhoopBffItems(child, out);
+    }
+    return;
+  }
+  if (!isWhoopBffRecord(node)) return;
+
+  if (typeof node.type === "string" && isWhoopBffRecord(node.content)) {
+    out.push({ type: node.type, content: node.content });
+  }
+  for (const value of Object.values(node)) {
+    collectWhoopBffItems(value, out);
+  }
+}
+
+/** Parse daily steps from GET /home-service/v1/deep-dive/strain. */
+export function parseStrainDeepDiveSteps(raw: unknown): number | null {
+  const items: Array<{ type: string; content: Record<string, unknown> }> = [];
+  collectWhoopBffItems(raw, items);
+
+  const contributors = items.find(
+    (item) => item.type === "CONTRIBUTORS_TILE" && item.content.id === "STRAIN_CONTRIBUTORS_TILE",
+  );
+  if (!contributors) return null;
+
+  const metrics = contributors.content.metrics;
+  if (!Array.isArray(metrics)) return null;
+
+  for (const metric of metrics) {
+    if (!isWhoopBffRecord(metric)) continue;
+    if (metric.id !== "CONTRIBUTORS_TILE_STEPS") continue;
+    if (typeof metric.status !== "string") return null;
+
+    const cleaned = metric.status.replace(/[,%]/g, "").trim();
+    const steps = Number.parseInt(cleaned, 10);
+    return Number.isFinite(steps) && steps >= 0 ? steps : null;
+  }
+
+  return null;
 }
 
 export function parseDailyStepValues(values: WhoopMetricValue[]): ParsedDailyStepCount[] {

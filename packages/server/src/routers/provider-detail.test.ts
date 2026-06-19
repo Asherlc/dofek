@@ -138,6 +138,8 @@ const expectedListColumns = {
     "ended_at",
     "name",
     "source_name",
+    "provider_absent_at",
+    "deleted_at",
     "created_at",
   ],
   dailyMetrics: [
@@ -611,7 +613,7 @@ describe("providerDetailRouter", () => {
       expect(sqlText).not.toContain("avg_hr");
     });
 
-    it("filters provider-absent activities from record lists", async () => {
+    it("includes provider-absent activities in record lists", async () => {
       const mockExecute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
         db: { execute: mockExecute },
@@ -622,7 +624,8 @@ describe("providerDetailRouter", () => {
       await caller.records({ providerId: "strava", dataType: "activities" });
 
       const sqlText = extractSqlText(mockExecute.mock.calls[0][0]);
-      expect(sqlText).toContain("provider_absent_at IS NULL");
+      expect(sqlText).not.toContain("provider_absent_at IS NULL");
+      expect(sqlText).toContain("provider_absent_at");
     });
 
     it("does not apply the provider-absent activity filter to non-activity record lists", async () => {
@@ -774,7 +777,7 @@ describe("providerDetailRouter", () => {
       expect(sqlText).not.toContain("avg_hr");
     });
 
-    it("filters provider-absent activities from record details", async () => {
+    it("includes provider-absent activities in record details", async () => {
       const mockExecute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
         db: { execute: mockExecute },
@@ -789,7 +792,7 @@ describe("providerDetailRouter", () => {
       });
 
       const sqlText = extractSqlText(mockExecute.mock.calls[0][0]);
-      expect(sqlText).toContain("provider_absent_at IS NULL");
+      expect(sqlText).not.toContain("provider_absent_at IS NULL");
     });
 
     it("does not apply the provider-absent activity filter to non-activity record details", async () => {

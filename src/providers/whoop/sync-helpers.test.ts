@@ -4,6 +4,7 @@ import type { WhoopCycle, WhoopWorkoutRecord } from "whoop-whoop/types";
 import type { SyncDatabase } from "../../db/index.ts";
 import { writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
+import { SyncWindow } from "../sync-window.ts";
 import { syncWhoopDailyActivity } from "./sync-daily-activity.ts";
 import { syncWhoopSleepSessions, syncWhoopSleepStages } from "./sync-sleep.ts";
 import { syncWhoopHeartRateStream } from "./sync-streams.ts";
@@ -120,30 +121,48 @@ function makeWorkoutRecordWithRawActivityId(activityId: unknown): WhoopWorkoutRe
 }
 
 describe("WHOOP sync helpers", () => {
-  it("syncs daily activity using the maximum valid steps per date", async () => {
+  it("syncs daily activity from strain deep-dive steps per date", async () => {
     const db = makeDb();
     const client = makeClient();
-    const getSteps = vi.spyOn(client, "getSteps").mockResolvedValue([
-      { time: Date.parse("2026-05-01T08:00:00.000Z"), data: 1200 },
-      { time: Date.parse("2026-05-01T12:00:00.000Z"), data: 1800 },
-      { time: Date.parse("2026-05-02T08:00:00.000Z"), data: -5 },
-      { time: Date.parse("2026-05-02T12:00:00.000Z"), data: 999.6 },
-    ]);
+    const getStrainDeepDive = vi
+      .spyOn(client, "getStrainDeepDive")
+      .mockImplementation(async (date: string) => {
+        const stepsByDate: Record<string, number> = {
+          "2026-05-01": 1800,
+          "2026-05-02": 1000,
+        };
+        const steps = stepsByDate[date];
+        if (steps == null) {
+          return { sections: [] };
+        }
+        return {
+          sections: [
+            {
+              items: [
+                {
+                  type: "CONTRIBUTORS_TILE",
+                  content: {
+                    id: "STRAIN_CONTRIBUTORS_TILE",
+                    metrics: [
+                      {
+                        id: "CONTRIBUTORS_TILE_STEPS",
+                        status: steps.toLocaleString("en-US"),
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          ],
+        };
+      });
     const context = makeContext({ db: db.db, client });
 
     const result = await syncWhoopDailyActivity(context);
 
     expect(result).toEqual({ count: 2, rateLimited: false });
-    expect(getSteps).toHaveBeenCalledWith(
-      "2026-05-01T00:00:00.000Z",
-      "2026-05-08T00:00:00.000Z",
-      300,
-    );
-    expect(getSteps).toHaveBeenCalledWith(
-      "2026-05-08T00:00:00.000Z",
-      "2026-05-09T00:00:00.000Z",
-      300,
-    );
+    expect(getStrainDeepDive).toHaveBeenCalledWith("2026-05-01");
+    expect(getStrainDeepDive).toHaveBeenCalledWith("2026-05-09");
     expect(db.chain.values).toHaveBeenCalledWith({
       date: "2026-05-01",
       providerId: "whoop",
@@ -156,11 +175,9 @@ describe("WHOOP sync helpers", () => {
     });
   });
 
-  it("treats unavailable WHOOP steps as a non-rate-limited empty sync", async () => {
+  it("skips days without steps in the strain deep-dive response", async () => {
     const client = makeClient();
-    vi.spyOn(client, "getSteps").mockRejectedValue(
-      new Error("WHOOP API error (404): missing metric"),
-    );
+    vi.spyOn(client, "getStrainDeepDive").mockResolvedValue({ sections: [] });
     const context = makeContext({ client });
 
     await expect(syncWhoopDailyActivity(context)).resolves.toEqual({
@@ -172,7 +189,7 @@ describe("WHOOP sync helpers", () => {
 
   it("records daily activity errors without failing the whole provider sync", async () => {
     const client = makeClient();
-    vi.spyOn(client, "getSteps").mockRejectedValue(new Error("network down"));
+    vi.spyOn(client, "getStrainDeepDive").mockRejectedValue(new Error("network down"));
     const context = makeContext({ client });
 
     await expect(syncWhoopDailyActivity(context)).resolves.toEqual({
@@ -353,10 +370,15 @@ describe("WHOOP sync helpers", () => {
     expect(db.insert).not.toHaveBeenCalled();
   });
 
-  it("reconciles provider absence with string workout activity ids only", async () => {
+  it("reconciles provider absence using developer workout ids in the sync window", async () => {
     const db = makeDb();
+    const client = makeClient();
+    vi.spyOn(client, "listDeveloperWorkoutIdsInWindow").mockResolvedValue(
+      new Set(["present-workout", "42"]),
+    );
     const context = makeContext({
       db: db.db,
+      client,
       options: undefined,
       cycles: [
         {
@@ -369,36 +391,86 @@ describe("WHOOP sync helpers", () => {
       ],
     });
 
-    await expect(syncWhoopWorkouts(context)).resolves.toBe(3);
+    await expect(syncWhoopWorkouts(context)).resolves.toBe(2);
 
+    const absenceWindow = new SyncWindow({
+      since: context.since,
+      until: context.windowEnd,
+    }).withMinimumLookback(30);
     expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
       db.db,
       {
         providerId: "whoop",
         userId: undefined,
-        windowStart: context.since,
-        windowEnd: context.windowEnd,
-        presentExternalIds: new Set(["present-workout"]),
+        windowStart: absenceWindow.since,
+        windowEnd: absenceWindow.until,
+        presentExternalIds: new Set(["present-workout", "42"]),
       },
     );
+    const reconcileArgs =
+      providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mock.calls[0]?.[1];
+    if (!reconcileArgs) throw new Error("expected reconciliation call");
+    expect([...reconcileArgs.presentExternalIds].sort()).toEqual(["42", "present-workout"]);
   });
 
   it("passes sync user id through to workout absence reconciliation", async () => {
     const db = makeDb();
+    const client = makeClient();
+    vi.spyOn(client, "listDeveloperWorkoutIdsInWindow").mockResolvedValue(
+      new Set(["present-workout"]),
+    );
     const context = makeContext({
       db: db.db,
+      client,
       options: { userId: "user-1" },
       cycles: [{ workouts: [makeWorkoutRecord({ activity_id: "present-workout" })] }],
     });
 
     await expect(syncWhoopWorkouts(context)).resolves.toBe(1);
 
+    const absenceWindow = new SyncWindow({
+      since: context.since,
+      until: context.windowEnd,
+    }).withMinimumLookback(30);
     expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
       db.db,
       expect.objectContaining({
         userId: "user-1",
+        windowStart: absenceWindow.since,
+        windowEnd: absenceWindow.until,
         presentExternalIds: new Set(["present-workout"]),
       }),
     );
+  });
+
+  it("skips workout absence reconciliation when developer workout listing fails", async () => {
+    const db = makeDb();
+    const client = makeClient();
+    const developerError = new Error("developer API unavailable");
+    vi.spyOn(client, "listDeveloperWorkoutIdsInWindow").mockRejectedValue(developerError);
+    const context = makeContext({
+      db: db.db,
+      client,
+      options: { userId: "user-1" },
+      cycles: [
+        {
+          workouts: [
+            makeWorkoutRecord({ activity_id: "present-workout" }),
+            makeWorkoutRecordWithRawActivityId(null),
+            makeWorkoutRecordWithRawActivityId(42),
+          ],
+        },
+      ],
+    });
+
+    await expect(syncWhoopWorkouts(context)).resolves.toBe(2);
+
+    expect(context.errors).toEqual([
+      {
+        message: "developer workouts: developer API unavailable",
+        cause: developerError,
+      },
+    ]);
+    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).not.toHaveBeenCalled();
   });
 });

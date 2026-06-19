@@ -524,6 +524,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
           FROM fitness.activity a
           WHERE a.user_id = ${this.userId}::uuid
             AND a.provider_absent_at IS NULL
+            AND a.deleted_at IS NULL
             AND a.id IN (${activityIdFilter})
             AND a.raw ? 'calories'`,
     );

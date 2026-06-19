@@ -22,6 +22,7 @@ WITH RECURSIVE ranked AS (
     LIMIT 1
   ) dp ON true
   WHERE a.provider_absent_at IS NULL
+    AND a.deleted_at IS NULL
 ),
 pairs AS (
   SELECT r1.id AS id1, r2.id AS id2

@@ -1,5 +1,6 @@
 import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import type { CanonicalActivityType } from "@dofek/training/training";
+import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
@@ -8,13 +9,8 @@ import { reconcileProviderActivityAbsence } from "../db/provider-activity-absenc
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
-import type {
-  ProviderAuthSetup,
-  SyncError,
-  SyncOptions,
-  SyncProvider,
-  SyncResult,
-} from "./types.ts";
+import type { SyncRun } from "./sync-run.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Decathlon API types
@@ -23,29 +19,34 @@ import type {
 const DECATHLON_API_BASE = "https://api.decathlon.net/sportstrackingdata/v2";
 const _DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
 
-interface DecathlonActivity {
-  id: string;
-  name: string;
-  sport: string; // e.g. "/v2/sports/{id}"
-  startdate: string; // ISO datetime
-  duration: number; // seconds
-  dataSummaries: DecathlonDataSummary[];
-}
+const parseableIsoDateTimeSchema = z
+  .string()
+  .refine((value) => Number.isFinite(Date.parse(value)), "Invalid ISO datetime");
 
-interface DecathlonDataSummary {
-  id: number;
-  value: number;
-  // Common datatype IDs:
-  // 5 = distance (km), 9 = calories (kcal),
-  // 1 = avg HR, 2 = max HR, 24 = duration (s)
-}
+const decathlonDataSummarySchema = z.object({
+  id: z.number(),
+  value: z.number(),
+});
 
-interface DecathlonActivitiesResponse {
-  data: DecathlonActivity[];
-  links?: {
-    next?: string;
-  };
-}
+const decathlonActivitySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  sport: z.string(),
+  startdate: parseableIsoDateTimeSchema,
+  duration: z.number(),
+  dataSummaries: z.array(decathlonDataSummarySchema).optional().default([]),
+});
+
+type DecathlonActivity = z.infer<typeof decathlonActivitySchema>;
+
+const decathlonActivitiesResponseSchema = z.object({
+  data: z.preprocess((value) => value ?? [], z.array(decathlonActivitySchema)),
+  links: z
+    .object({
+      next: z.string().optional(),
+    })
+    .optional(),
+});
 
 // ============================================================
 // Parsed types
@@ -184,7 +185,8 @@ export class DecathlonProvider implements SyncProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -201,7 +203,8 @@ export class DecathlonProvider implements SyncProvider {
     }
 
     const clientId = process.env.DECATHLON_CLIENT_ID;
-    const syncWindowEnd = new Date();
+    const since = window.since;
+    const syncWindowEnd = window.until;
     const presentActivityExternalIds = new Set<string>();
 
     try {
@@ -228,12 +231,15 @@ export class DecathlonProvider implements SyncProvider {
               throw new Error(`Decathlon API error (${response.status}): ${text}`);
             }
 
-            const data: DecathlonActivitiesResponse = await response.json();
-            const activities = data.data ?? [];
+            const data = decathlonActivitiesResponseSchema.parse(await response.json());
+            const activities = data.data;
             nextUrl = data.links?.next;
 
             for (const raw of activities) {
               const parsed = parseDecathlonActivity(raw);
+              if (parsed.startedAt.getTime() > syncWindowEnd.getTime()) {
+                continue;
+              }
               presentActivityExternalIds.add(parsed.externalId);
               try {
                 await db

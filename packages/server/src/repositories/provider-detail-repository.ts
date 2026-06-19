@@ -72,6 +72,8 @@ function listColumns(dataType: Exclude<DataType, "bodyMeasurements" | "metricStr
         "ended_at",
         "name",
         "source_name",
+        "provider_absent_at",
+        "deleted_at",
         "created_at",
       ].join(", ");
     case "dailyMetrics":
@@ -259,12 +261,9 @@ export class ProviderDetailRepository {
       return this.#queryMetricStreamRecords(providerId, limit, offset);
     }
 
-    const activeRecordPredicate =
-      dataType === "activities" ? sql`AND provider_absent_at IS NULL` : sql``;
     const query = sql`SELECT ${sql.raw(listColumns(dataType))} FROM ${sql.raw(info.table)}
               WHERE user_id = ${this.#userId}
                 AND provider_id = ${providerId}
-                ${activeRecordPredicate}
               ORDER BY ${sql.raw(info.orderColumn)} DESC
               LIMIT ${limit}
               OFFSET ${offset}`;
@@ -290,13 +289,10 @@ export class ProviderDetailRepository {
       return rows[0] ?? null;
     }
 
-    const activeRecordPredicate =
-      dataType === "activities" ? sql`AND provider_absent_at IS NULL` : sql``;
     const query = sql`SELECT * FROM ${sql.raw(info.table)}
               WHERE user_id = ${this.#userId}
                 AND provider_id = ${providerId}
                 AND ${sql.raw(info.idColumn)} = ${recordId}
-                ${activeRecordPredicate}
               LIMIT 1`;
 
     const rows = await executeWithSchema(this.#db, genericRowSchema, query);

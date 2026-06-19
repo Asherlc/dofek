@@ -8,6 +8,8 @@ import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { MapMyFitnessProvider } from "./mapmyfitness.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 // ============================================================
 // Fake MapMyFitness API responses
@@ -139,7 +141,12 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
     server.use(...mapmyfitHandlers({ pages: [{ workouts, hasNext: false }] }));
 
     const provider = new MapMyFitnessProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.provider).toBe("mapmyfitness");
     expect(result.recordsSynced).toBe(2);
@@ -175,14 +182,24 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
     server.use(...mapmyfitHandlers({ pages: [{ workouts, hasNext: false }] }));
 
     const provider = new MapMyFitnessProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     // Sync again
     server.resetHandlers();
     server.use(...mapmyfitHandlers({ pages: [{ workouts, hasNext: false }] }));
 
     const provider2 = new MapMyFitnessProvider();
-    await provider2.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider2.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     const rows = await ctx.db
       .select()
@@ -219,10 +236,59 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
     );
 
     const provider = new MapMyFitnessProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-03-15T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-15T00:00:00Z") }),
+      }),
+    );
 
     expect(result.recordsSynced).toBe(3);
     expect(result.errors).toHaveLength(0);
+  });
+
+  it("syncs workouts at the window end and skips workouts after it", async () => {
+    await saveTokens(ctx.db, "mapmyfitness", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user_id:12345",
+    });
+
+    const workouts = [
+      fakeWorkout({
+        id: "mmf-at-window-end",
+        start_datetime: "2026-04-02T08:00:00.000+00:00",
+      }),
+      fakeWorkout({
+        id: "mmf-after-window-end",
+        start_datetime: "2026-04-02T08:00:00.001+00:00",
+      }),
+    ];
+
+    server.use(...mapmyfitHandlers({ pages: [{ workouts, hasNext: false }] }));
+
+    const provider = new MapMyFitnessProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: new SyncWindow({
+          since: new Date("2026-04-01T00:00:00.000Z"),
+          until: new Date("2026-04-02T08:00:00.000Z"),
+        }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
+
+    const rows = await ctx.db
+      .select()
+      .from(activity)
+      .where(eq(activity.providerId, "mapmyfitness"));
+
+    expect(rows.some((row) => row.externalId === "mmf-at-window-end")).toBe(true);
+    expect(rows.some((row) => row.externalId === "mmf-after-window-end")).toBe(false);
   });
 
   it("maps activity types correctly", async () => {
@@ -259,7 +325,12 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
     server.use(...mapmyfitHandlers({ pages: [{ workouts, hasNext: false }] }));
 
     const provider = new MapMyFitnessProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-04-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-04-01T00:00:00Z") }),
+      }),
+    );
     expect(result.recordsSynced).toBe(4);
 
     const rows = await ctx.db
@@ -291,7 +362,12 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
     server.use(...mapmyfitHandlers({ pages: [{ workouts: [], hasNext: false }] }));
 
     const provider = new MapMyFitnessProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "mapmyfitness");
@@ -302,7 +378,12 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "mapmyfitness"));
 
     const provider = new MapMyFitnessProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens");
@@ -324,7 +405,12 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
     );
 
     const provider = new MapMyFitnessProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-06-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-06-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { WhoopClient, WhoopRateLimitError } from "./client.ts";
+import { WhoopClient, WhoopMetricUnavailableError, WhoopRateLimitError } from "./client.ts";
 import { createMockFetch, createMockResponse, createTypedMockFetch } from "./test-helpers.ts";
 import type { WhoopAuthToken } from "./types.ts";
 
@@ -589,6 +589,48 @@ describe("WhoopClient.getSteps", () => {
     expect(String(url)).toContain("name=steps");
     expect(String(url)).toContain("step=300");
   });
+
+  it("throws WhoopMetricUnavailableError when steps metric is rejected", async () => {
+    const fetchFn = createMockFetch({
+      status: 400,
+      ok: false,
+      body: '{"code":400,"message":"query param name must be one of [heart_rate]"}',
+    });
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    await expect(
+      client.getSteps("2024-01-15T00:00:00Z", "2024-01-15T23:59:59Z"),
+    ).rejects.toBeInstanceOf(WhoopMetricUnavailableError);
+  });
+});
+
+describe("WhoopClient.getStrainDeepDive", () => {
+  it("requests the strain deep-dive BFF for a calendar date", async () => {
+    const body = {
+      sections: [
+        {
+          items: [
+            {
+              type: "CONTRIBUTORS_TILE",
+              content: {
+                id: "STRAIN_CONTRIBUTORS_TILE",
+                metrics: [{ id: "CONTRIBUTORS_TILE_STEPS", status: "7,421" }],
+              },
+            },
+          ],
+        },
+      ],
+    };
+    const fetchFn = createMockFetch({ status: 200, ok: true, body });
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    const result = await client.getStrainDeepDive("2026-03-01");
+
+    expect(result).toEqual(body);
+    const url = getFirstRequestUrl(fetchFn);
+    expect(String(url)).toContain("/home-service/v1/deep-dive/strain");
+    expect(String(url)).toContain("date=2026-03-01");
+  });
 });
 
 describe("WhoopClient.getCycles", () => {
@@ -667,7 +709,7 @@ describe("WhoopClient.getCycles", () => {
     await client.getCycles("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z");
 
     const url = getFirstRequestUrl(fetchFn);
-    expect(String(url)).toContain("limit=26");
+    expect(String(url)).toContain("limit=200");
   });
 
   it("uses custom limit parameter", async () => {
@@ -678,6 +720,406 @@ describe("WhoopClient.getCycles", () => {
 
     const url = getFirstRequestUrl(fetchFn);
     expect(String(url)).toContain("limit=50");
+  });
+});
+
+describe("WhoopClient.listDeveloperWorkouts", () => {
+  it("returns paginated developer workout records", async () => {
+    const body = {
+      records: [
+        {
+          id: "workout-uuid-1",
+          start: "2024-01-15T10:00:00Z",
+          end: "2024-01-15T11:00:00Z",
+        },
+      ],
+      next_token: null,
+    };
+    const fetchFn = createMockFetch({ status: 200, ok: true, body });
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    const result = await client.listDeveloperWorkouts({ limit: 25 });
+
+    expect(result).toEqual(body);
+    const url = getFirstRequestUrl(fetchFn);
+    expect(String(url)).toContain("/developer/v2/activity/workout");
+    expect(String(url)).toContain("limit=25");
+  });
+
+  it("passes next_token and parses developer workout records", async () => {
+    const fetchFn = createMockFetch({
+      status: 200,
+      ok: true,
+      body: {
+        records: [
+          {
+            id: "valid-workout",
+            start: "2024-01-15T10:00:00Z",
+            end: "2024-01-15T11:00:00Z",
+            timezone_offset: "+00:00",
+            sport_name: "Running",
+            sport_id: 1,
+            score_state: "SCORED",
+          },
+        ],
+        next_token: "page-3",
+      },
+    });
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    const result = await client.listDeveloperWorkouts({ limit: 10, nextToken: "page-2" });
+
+    expect(result.records.map((record) => record.id)).toEqual(["valid-workout"]);
+    expect(result.next_token).toBe("page-3");
+    const url = getFirstRequestUrl(fetchFn);
+    expect(url).toContain("limit=10");
+    expect(url).toContain("next_token=page-2");
+  });
+
+  it("rejects malformed developer workout records", async () => {
+    const fetchFn = createMockFetch({
+      status: 200,
+      ok: true,
+      body: {
+        records: [{ id: "missing-start", end: "2024-01-15T11:00:00Z" }],
+        next_token: null,
+      },
+    });
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    await expect(client.listDeveloperWorkouts()).rejects.toThrow();
+  });
+
+  it("rejects malformed developer workout responses", async () => {
+    const fetchFn = createMockFetch({
+      status: 200,
+      ok: true,
+      body: { records: "not-an-array", next_token: 123 },
+    });
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    await expect(client.listDeveloperWorkouts()).rejects.toThrow();
+  });
+
+  it("rejects non-string next_token values in developer workout responses", async () => {
+    const fetchFn = createMockFetch({
+      status: 200,
+      ok: true,
+      body: {
+        records: [
+          {
+            id: "valid-workout",
+            start: "2024-01-15T10:00:00Z",
+            end: "2024-01-15T11:00:00Z",
+          },
+        ],
+        next_token: 123,
+      },
+    });
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    await expect(client.listDeveloperWorkouts()).rejects.toThrow();
+  });
+
+  it("rejects null developer workout responses", async () => {
+    const fetchFn = createMockFetch({ status: 200, ok: true, body: null });
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    await expect(client.listDeveloperWorkouts()).rejects.toThrow();
+  });
+
+  it("retries rate-limited developer workout requests before succeeding", async () => {
+    const fetchFn = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(
+        createMockResponse({ status: 429, ok: false, text: "slow down", body: "slow down" }),
+      )
+      .mockResolvedValueOnce(
+        createMockResponse({ status: 429, ok: false, text: "still slow", body: "still slow" }),
+      )
+      .mockResolvedValueOnce(
+        createMockResponse({
+          status: 200,
+          ok: true,
+          body: {
+            records: [
+              {
+                id: "after-retry",
+                start: "2024-01-15T10:00:00Z",
+                end: "2024-01-15T11:00:00Z",
+              },
+            ],
+            next_token: null,
+          },
+        }),
+      );
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    const result = await client.listDeveloperWorkouts();
+
+    expect(result.records.map((record) => record.id)).toEqual(["after-retry"]);
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+  });
+
+  it("throws the rate-limit error after exhausting developer workout retries", async () => {
+    const fetchFn = vi
+      .fn<typeof globalThis.fetch>()
+      .mockImplementation(() =>
+        Promise.resolve(
+          createMockResponse({ status: 429, ok: false, text: "slow down", body: "slow down" }),
+        ),
+      );
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    await expect(client.listDeveloperWorkouts()).rejects.toBeInstanceOf(WhoopRateLimitError);
+    expect(fetchFn).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe("WhoopClient.listDeveloperWorkoutIdsInWindow", () => {
+  it("collects workout ids whose start time falls in the window", async () => {
+    const fetchFn: typeof globalThis.fetch = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url.includes("/developer/v2/activity/workout")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            records: [
+              {
+                id: "in-window",
+                start: "2024-01-15T10:00:00Z",
+                end: "2024-01-15T11:00:00Z",
+              },
+              {
+                id: "before-window",
+                start: "2024-01-01T10:00:00Z",
+                end: "2024-01-01T11:00:00Z",
+              },
+            ],
+            next_token: null,
+          }),
+        };
+      }
+      return { ok: false, status: 404, text: async () => "not found" };
+    });
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    const ids = await client.listDeveloperWorkoutIdsInWindow(
+      new Date("2024-01-10T00:00:00Z"),
+      new Date("2024-01-20T00:00:00Z"),
+    );
+
+    expect(ids).toEqual(new Set(["in-window"]));
+  });
+
+  it("includes starts at the lower bound and excludes starts at the upper bound", async () => {
+    const fetchFn = createMockFetch({
+      status: 200,
+      ok: true,
+      body: {
+        records: [
+          {
+            id: "at-start",
+            start: "2024-01-10T00:00:00.000Z",
+            end: "2024-01-10T01:00:00.000Z",
+          },
+          {
+            id: "at-end",
+            start: "2024-01-20T00:00:00.000Z",
+            end: "2024-01-20T01:00:00.000Z",
+          },
+          {
+            id: "invalid-start",
+            start: "not-a-date",
+            end: "2024-01-15T01:00:00.000Z",
+          },
+          {
+            id: "",
+            start: "2024-01-15T00:00:00.000Z",
+            end: "2024-01-15T01:00:00.000Z",
+          },
+        ],
+        next_token: null,
+      },
+    });
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    const ids = await client.listDeveloperWorkoutIdsInWindow(
+      new Date("2024-01-10T00:00:00.000Z"),
+      new Date("2024-01-20T00:00:00.000Z"),
+    );
+
+    expect(ids).toEqual(new Set(["at-start"]));
+  });
+
+  it("stops when a developer workout page is empty even if next_token is present", async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(
+        createMockResponse({
+          body: {
+            records: [],
+            next_token: "should-not-fetch",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        createMockResponse({
+          body: {
+            records: [
+              {
+                id: "unexpected",
+                start: "2024-01-15T00:00:00.000Z",
+                end: "2024-01-15T01:00:00.000Z",
+              },
+            ],
+            next_token: null,
+          },
+        }),
+      );
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    const ids = await client.listDeveloperWorkoutIdsInWindow(
+      new Date("2024-01-10T00:00:00.000Z"),
+      new Date("2024-01-20T00:00:00.000Z"),
+    );
+
+    expect(ids).toEqual(new Set());
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("continues pagination when the oldest workout starts exactly at the window start", async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(
+        createMockResponse({
+          body: {
+            records: [
+              {
+                id: "at-start",
+                start: "2024-01-10T00:00:00.000Z",
+                end: "2024-01-10T01:00:00.000Z",
+              },
+            ],
+            next_token: "next-page",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        createMockResponse({
+          body: {
+            records: [
+              {
+                id: "second-page",
+                start: "2024-01-12T00:00:00.000Z",
+                end: "2024-01-12T01:00:00.000Z",
+              },
+            ],
+            next_token: null,
+          },
+        }),
+      );
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    const ids = await client.listDeveloperWorkoutIdsInWindow(
+      new Date("2024-01-10T00:00:00.000Z"),
+      new Date("2024-01-20T00:00:00.000Z"),
+    );
+
+    expect(ids).toEqual(new Set(["at-start", "second-page"]));
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(String(fetchFn.mock.calls[1]?.[0])).toContain("next_token=next-page");
+  });
+
+  it("ignores invalid starts when deciding whether a page is older than the window", async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(
+        createMockResponse({
+          body: {
+            records: [
+              {
+                id: "invalid-start",
+                start: "not-a-date",
+                end: "2024-01-15T01:00:00.000Z",
+              },
+              {
+                id: "older-page",
+                start: "2024-01-01T00:00:00.000Z",
+                end: "2024-01-01T01:00:00.000Z",
+              },
+            ],
+            next_token: "should-not-fetch",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        createMockResponse({
+          body: {
+            records: [
+              {
+                id: "unexpected",
+                start: "2024-01-15T00:00:00.000Z",
+                end: "2024-01-15T01:00:00.000Z",
+              },
+            ],
+            next_token: null,
+          },
+        }),
+      );
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    const ids = await client.listDeveloperWorkoutIdsInWindow(
+      new Date("2024-01-10T00:00:00.000Z"),
+      new Date("2024-01-20T00:00:00.000Z"),
+    );
+
+    expect(ids).toEqual(new Set());
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("paginates until records are older than the window start", async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(
+        createMockResponse({
+          body: {
+            records: [
+              {
+                id: "newer-page",
+                start: "2024-01-18T00:00:00.000Z",
+                end: "2024-01-18T01:00:00.000Z",
+              },
+            ],
+            next_token: "next-page",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        createMockResponse({
+          body: {
+            records: [
+              {
+                id: "older-page",
+                start: "2024-01-01T00:00:00.000Z",
+                end: "2024-01-01T01:00:00.000Z",
+              },
+            ],
+            next_token: "ignored-page",
+          },
+        }),
+      );
+    const client = new WhoopClient(makeToken(), fetchFn);
+
+    const ids = await client.listDeveloperWorkoutIdsInWindow(
+      new Date("2024-01-10T00:00:00.000Z"),
+      new Date("2024-01-20T00:00:00.000Z"),
+    );
+
+    expect(ids).toEqual(new Set(["newer-page"]));
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(String(fetchFn.mock.calls[1]?.[0])).toContain("next_token=next-page");
   });
 });
 

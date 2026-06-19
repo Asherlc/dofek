@@ -31,11 +31,54 @@ import { colors, radius, spacing } from "../../theme";
 const TILE_SIZE = 96;
 const DEFAULT_WEEKS = 4;
 const ALL_ACTIVITY_TYPES = "all";
+const ROUTE_THUMBNAIL_PADDING_PERCENT = 20;
+const MAX_ROUTE_THUMBNAIL_SCALE = 2.5;
+const MIN_ROUTE_THUMBNAIL_SPAN_PERCENT = 1;
 const DATE_RANGE_OPTIONS = [
   { value: 4, label: "4 weeks" },
   { value: 8, label: "8 weeks" },
   { value: 12, label: "12 weeks" },
 ] as const;
+
+type RoutePathPoint = { x: number; y: number };
+
+function getRouteViewportTransform(routePath?: RoutePathPoint[] | null) {
+  if (routePath == null || routePath.length < 2) return undefined;
+
+  const firstPoint = routePath[0];
+  if (!firstPoint) return undefined;
+
+  let minX = firstPoint.x;
+  let maxX = firstPoint.x;
+  let minY = firstPoint.y;
+  let maxY = firstPoint.y;
+
+  for (const point of routePath) {
+    minX = Math.min(minX, point.x);
+    maxX = Math.max(maxX, point.x);
+    minY = Math.min(minY, point.y);
+    maxY = Math.max(maxY, point.y);
+  }
+
+  const routeWidth = Math.max(maxX - minX, MIN_ROUTE_THUMBNAIL_SPAN_PERCENT);
+  const routeHeight = Math.max(maxY - minY, MIN_ROUTE_THUMBNAIL_SPAN_PERCENT);
+  const fittedScale = Math.min(
+    (100 - ROUTE_THUMBNAIL_PADDING_PERCENT * 2) / routeWidth,
+    (100 - ROUTE_THUMBNAIL_PADDING_PERCENT * 2) / routeHeight,
+  );
+  const scale = Math.max(1, Math.min(MAX_ROUTE_THUMBNAIL_SCALE, fittedScale));
+  const routeCenterX = (minX + maxX) / 2;
+  const routeCenterY = (minY + maxY) / 2;
+  const minTranslatePercent = 100 * (1 - scale);
+  const translateXPercent = Math.min(0, Math.max(minTranslatePercent, 50 - routeCenterX * scale));
+  const translateYPercent = Math.min(0, Math.max(minTranslatePercent, 50 - routeCenterY * scale));
+  const translateX = (translateXPercent / 100) * TILE_SIZE;
+  const translateY = (translateYPercent / 100) * TILE_SIZE;
+
+  return {
+    transform: [{ translateX }, { translateY }, { scale }],
+  };
+}
 
 export default function ActivitiesScreen() {
   const router = useRouter();
@@ -410,6 +453,7 @@ interface ActivityMapTileProps {
 
 function ActivityMapTile({ location, units }: ActivityMapTileProps) {
   const [loadFailed, setLoadFailed] = useState(false);
+  const routeViewportTransform = getRouteViewportTransform(location.routePath);
 
   return (
     <View style={styles.tileContainer}>
@@ -422,15 +466,20 @@ function ActivityMapTile({ location, units }: ActivityMapTileProps) {
           <Text style={styles.tileFallbackText}>Map unavailable</Text>
         </View>
       ) : (
-        <Image
-          source={{ uri: location.tileUrl }}
-          style={styles.tile}
-          resizeMode="cover"
-          accessibilityLabel="Activity location map"
-          onError={() => setLoadFailed(true)}
-        />
+        <View
+          testID="activity-route-viewport"
+          style={[styles.routeViewport, routeViewportTransform]}
+        >
+          <Image
+            source={{ uri: location.tileUrl }}
+            style={styles.tile}
+            resizeMode="cover"
+            accessibilityLabel="Activity location map"
+            onError={() => setLoadFailed(true)}
+          />
+          <ActivityRouteOverlay routePath={location.routePath} />
+        </View>
       )}
-      {loadFailed ? null : <ActivityRouteOverlay routePath={location.routePath} />}
       <View style={styles.tileOverlay}>
         {location.distanceMeters != null ? (
           <Text style={styles.tileBadge}>
@@ -761,6 +810,14 @@ const styles = StyleSheet.create({
   tile: {
     width: "100%",
     height: "100%",
+  },
+  routeViewport: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    transformOrigin: "top left",
   },
   routeOverlay: {
     position: "absolute",

@@ -38,7 +38,11 @@ export class PolarClient {
     this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "polar" });
   }
 
-  async #get<TResponse>(path: string): Promise<TResponse> {
+  async #get<TResponse>(
+    path: string,
+    emptyValue: TResponse,
+    parse: (value: unknown) => TResponse,
+  ): Promise<TResponse> {
     const response = await this.#fetchFn(`${POLAR_API_BASE}${path}`, {
       headers: {
         Authorization: `Bearer ${this.#accessToken}`,
@@ -54,39 +58,53 @@ export class PolarClient {
       throw new PolarNotFoundError(`Polar API 404: ${path}`);
     }
 
+    const textBody = await response.text();
+
     if (!response.ok) {
       const contentType = response.headers.get("content-type") ?? "";
-      let detailMessage: string;
-      if (contentType.includes("application/json")) {
-        detailMessage = JSON.stringify(await response.json());
-      } else if (contentType.includes("text/html")) {
-        detailMessage = "(HTML error page)";
-      } else {
-        const textBody = await response.text();
-        detailMessage = textBody.length > 200 ? `${textBody.slice(0, 200)}…` : textBody;
-      }
-      throw new Error(`Polar API error (${response.status}): ${detailMessage}`);
+      throw new Error(
+        `Polar API error (${response.status}): ${formatPolarApiErrorBody(contentType, textBody)}`,
+      );
     }
 
-    return response.json();
+    if (textBody.trim() === "") {
+      // Polar sometimes returns 200 with an empty body when there is no data.
+      return emptyValue;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(textBody);
+    } catch (error) {
+      throw new Error(
+        `Polar API returned invalid JSON for ${path}: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
+    }
+
+    return parse(parsed);
   }
 
   async getExercises(): Promise<PolarExercise[]> {
-    return this.#get<PolarExercise[]>("/exercises");
+    return this.#get("/exercises", [], assertPolarExerciseArray);
   }
 
   async getSleep(): Promise<PolarSleep[]> {
-    const response = await this.#get<PolarSleepResponse>("/users/sleep");
-    return response.nights;
+    const response = this.#get("/users/sleep", { nights: [] }, assertPolarSleepResponse);
+    return (await response).nights;
   }
 
   async getDailyActivity(): Promise<PolarDailyActivity[]> {
-    return this.#get<PolarDailyActivity[]>("/users/activities");
+    return this.#get("/users/activities", [], assertPolarDailyActivityArray);
   }
 
   async getNightlyRecharge(): Promise<PolarNightlyRecharge[]> {
-    const response = await this.#get<PolarNightlyRechargeResponse>("/users/nightly-recharge");
-    return response.recharges;
+    const response = this.#get(
+      "/users/nightly-recharge",
+      { recharges: [] },
+      assertPolarNightlyRechargeResponse,
+    );
+    return (await response).recharges;
   }
 
   /**
@@ -182,4 +200,62 @@ export class PolarClient {
 
     return response.text();
   }
+}
+
+function formatPolarApiErrorBody(contentType: string, textBody: string): string {
+  if (contentType.includes("text/html")) {
+    return "(HTML error page)";
+  }
+
+  if (contentType.includes("application/json")) {
+    return textBody.trim() === "" ? "(empty JSON error body)" : textBody;
+  }
+
+  return textBody.length > 200 ? `${textBody.slice(0, 200)}…` : textBody;
+}
+
+function assertPolarExerciseArray(value: unknown, path = "/exercises"): PolarExercise[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`Polar API returned unexpected JSON shape for ${path}`);
+  }
+  return value satisfies PolarExercise[];
+}
+
+function assertPolarDailyActivityArray(
+  value: unknown,
+  path = "/users/activities",
+): PolarDailyActivity[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`Polar API returned unexpected JSON shape for ${path}`);
+  }
+  return value satisfies PolarDailyActivity[];
+}
+
+function assertPolarSleepResponse(value: unknown, path = "/users/sleep"): PolarSleepResponse {
+  if (typeof value !== "object" || value === null || !("nights" in value)) {
+    throw new Error(`Polar API returned unexpected JSON shape for ${path}`);
+  }
+
+  const nights = value.nights;
+  if (!Array.isArray(nights)) {
+    throw new Error(`Polar API returned unexpected JSON shape for ${path}`);
+  }
+
+  return { nights: nights satisfies PolarSleep[] };
+}
+
+function assertPolarNightlyRechargeResponse(
+  value: unknown,
+  path = "/users/nightly-recharge",
+): PolarNightlyRechargeResponse {
+  if (typeof value !== "object" || value === null || !("recharges" in value)) {
+    throw new Error(`Polar API returned unexpected JSON shape for ${path}`);
+  }
+
+  const recharges = value.recharges;
+  if (!Array.isArray(recharges)) {
+    throw new Error(`Polar API returned unexpected JSON shape for ${path}`);
+  }
+
+  return { recharges: recharges satisfies PolarNightlyRecharge[] };
 }

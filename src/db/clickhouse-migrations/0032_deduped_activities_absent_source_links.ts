@@ -3,7 +3,7 @@ import type { ClickHouseMigration } from "./types.ts";
 
 export function createMigration(): ClickHouseMigration {
   return {
-    id: "0031_deduped_activities_absent_source_links",
+    id: "0032_deduped_activities_absent_source_links",
     statements: [],
     run: addDedupedActivitiesAbsentSourceLinks,
   };

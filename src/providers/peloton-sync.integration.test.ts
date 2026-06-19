@@ -7,6 +7,8 @@ import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { type PelotonPerformanceGraph, PelotonProvider, type PelotonWorkout } from "./peloton.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 
 // ============================================================
@@ -152,9 +154,13 @@ describe("PelotonProvider.sync() (integration)", () => {
   });
 
   async function syncProvider(provider: PelotonProvider, since: Date) {
-    return provider.sync(ctx.db, since, {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    return provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
   }
 
   it("syncs workouts with enriched stats into cardio_activity", async () => {

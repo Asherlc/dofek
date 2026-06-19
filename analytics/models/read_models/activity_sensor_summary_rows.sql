@@ -31,6 +31,7 @@ current_activity AS (
     FROM {{ source('postgres_fitness', 'activity') }} FINAL
     WHERE _peerdb_is_deleted = 0
         AND provider_absent_at IS null
+        AND deleted_at IS null
 ),
 
 existing_summary AS (

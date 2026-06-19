@@ -7,6 +7,8 @@ import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { KomootProvider } from "./komoot.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 // ============================================================
 // Fake Komoot API responses
@@ -120,7 +122,12 @@ describe("KomootProvider.sync() (integration)", () => {
     server.use(...komootHandlers([tours]));
 
     const provider = new KomootProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.provider).toBe("komoot");
     expect(result.recordsSynced).toBe(2);
@@ -154,7 +161,12 @@ describe("KomootProvider.sync() (integration)", () => {
     server.use(...komootHandlers([page0, page1]));
 
     const provider = new KomootProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.recordsSynced).toBe(2);
     expect(result.errors).toHaveLength(0);
@@ -187,10 +199,20 @@ describe("KomootProvider.sync() (integration)", () => {
     server.use(...komootHandlers([tours]));
 
     const provider = new KomootProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     // Sync again
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "komoot"));
 
@@ -209,7 +231,12 @@ describe("KomootProvider.sync() (integration)", () => {
     server.use(...komootHandlers([[]]));
 
     const provider = new KomootProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     const tokens = await loadTokens(ctx.db, "komoot");
     expect(tokens?.accessToken).toBe("refreshed-token");
@@ -219,7 +246,12 @@ describe("KomootProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "komoot"));
 
     const provider = new KomootProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens");
@@ -258,7 +290,12 @@ describe("KomootProvider.sync() (integration)", () => {
     );
 
     const provider = new KomootProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
     // pages 0 and 1 only — never the out-of-range page at index === totalPages
@@ -288,7 +325,12 @@ describe("KomootProvider.sync() (integration)", () => {
     );
 
     const provider = new KomootProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     // `data._embedded?.tours ?? []` must not throw when _embedded is absent
     // (kills the optional-chaining mutant that would dereference undefined)
@@ -307,7 +349,12 @@ describe("KomootProvider.sync() (integration)", () => {
     server.use(...komootHandlers([], { apiError: true }));
 
     const provider = new KomootProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("Komoot API error");

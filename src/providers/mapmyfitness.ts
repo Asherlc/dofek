@@ -8,13 +8,8 @@ import { reconcileProviderActivityAbsence } from "../db/provider-activity-absenc
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
-import type {
-  ProviderAuthSetup,
-  SyncError,
-  SyncOptions,
-  SyncProvider,
-  SyncResult,
-} from "./types.ts";
+import type { SyncRun } from "./sync-run.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // MapMyFitness API types
@@ -172,11 +167,18 @@ export class MapMyFitnessClient {
   async getWorkouts(
     userId: string,
     startedAfter: string,
+    startedBefore: string,
     offset = 0,
   ): Promise<MapMyFitnessWorkoutListResponse> {
-    return this.#get<MapMyFitnessWorkoutListResponse>(
-      `/v7.1/workout/?user=${userId}&started_after=${startedAfter}&order_by=-start_datetime&limit=40&offset=${offset}`,
-    );
+    const params = new URLSearchParams({
+      user: userId,
+      started_after: startedAfter,
+      started_before: startedBefore,
+      order_by: "-start_datetime",
+      limit: "40",
+      offset: String(offset),
+    });
+    return this.#get<MapMyFitnessWorkoutListResponse>(`/v7.1/workout/?${params.toString()}`);
   }
 }
 
@@ -229,7 +231,8 @@ export class MapMyFitnessProvider implements SyncProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -246,7 +249,8 @@ export class MapMyFitnessProvider implements SyncProvider {
 
     const clientId = process.env.MAPMYFITNESS_CLIENT_ID ?? "";
     const client = new MapMyFitnessClient(tokens.accessToken, clientId, this.#fetchFn);
-    const syncWindowEnd = new Date();
+    const since = window.since;
+    const syncWindowEnd = window.until;
     const presentActivityExternalIds = new Set<string>();
 
     // Extract user ID from token scopes or use "-" for self
@@ -263,13 +267,19 @@ export class MapMyFitnessProvider implements SyncProvider {
           let hasMore = true;
 
           while (hasMore) {
-            const response = await client.getWorkouts(userId, formatDate(since), offset);
+            const response = await client.getWorkouts(
+              userId,
+              formatDate(since),
+              formatDate(syncWindowEnd),
+              offset,
+            );
             const workouts = response._embedded?.workouts ?? [];
             if (workouts.length === 0) break;
 
             for (const raw of workouts) {
               const parsed = parseMapMyFitnessWorkout(raw);
               if (!parsed.externalId) continue;
+              if (parsed.startedAt > syncWindowEnd) continue;
               presentActivityExternalIds.add(parsed.externalId);
               try {
                 await db

@@ -901,7 +901,8 @@ describe("ActivityRepository", () => {
 
       const sqlObject = execute.mock.calls[1]?.[0];
       const compiledQuery = dialect.sqlToQuery(sqlObject);
-      expect(compiledQuery.sql).toContain("DELETE FROM fitness.activity");
+      expect(compiledQuery.sql).toContain("UPDATE fitness.activity");
+      expect(compiledQuery.sql).toContain("SET deleted_at = NOW()");
       expect(compiledQuery.sql).toContain("member_rows.member_activity_id");
       expect(compiledQuery.sql).toContain("FROM fitness.v_activity a");
       expect(compiledQuery.sql).toContain("JOIN fitness.v_activity_members selected_member");
@@ -935,7 +936,8 @@ describe("ActivityRepository", () => {
 
       const sqlObject = execute.mock.calls[1]?.[0];
       const compiledQuery = dialect.sqlToQuery(sqlObject);
-      expect(compiledQuery.sql).toContain("DELETE FROM fitness.activity");
+      expect(compiledQuery.sql).toContain("UPDATE fitness.activity");
+      expect(compiledQuery.sql).toContain("SET deleted_at = NOW()");
       expect(compiledQuery.sql).toContain("selected_member.member_activity_id IN");
       expect(compiledQuery.sql).toContain("member_rows.member_activity_id");
       expect(compiledQuery.params).toEqual(

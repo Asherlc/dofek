@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 
 vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "user-1",
@@ -211,7 +213,9 @@ describe("Concept2Provider", () => {
       execute: vi.fn().mockResolvedValue([]),
     };
 
-    const result = await new Concept2Provider().sync(mockDb, new Date("2026-01-01"));
+    const result = await new Concept2Provider().sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
     expect(result.provider).toBe("concept2");
     expect(result.errors.length).toBeGreaterThan(0);
   });

@@ -119,6 +119,7 @@ active_activity AS (
   FROM postgres_fitness.activity FINAL
   WHERE _peerdb_is_deleted = 0
     AND provider_absent_at IS NULL
+    AND deleted_at IS NULL
 ),
 active_provider_priority AS (
   SELECT *
@@ -863,6 +864,7 @@ providers AS (
   FROM postgres_fitness.activity FINAL
   WHERE _peerdb_is_deleted = 0
     AND provider_absent_at IS NULL
+    AND deleted_at IS NULL
   UNION DISTINCT
   SELECT DISTINCT user_id, provider_id
   FROM postgres_fitness.daily_metrics FINAL
@@ -901,6 +903,7 @@ activity_counts AS (
   FROM postgres_fitness.activity FINAL
   WHERE _peerdb_is_deleted = 0
     AND provider_absent_at IS NULL
+    AND deleted_at IS NULL
   GROUP BY user_id, provider_id
 ),
 daily_metric_counts AS (
@@ -1063,6 +1066,19 @@ export function buildAnalyticsFitnessReadModelDropStatements(): string[] {
     "DROP VIEW IF EXISTS analytics.v_body_measurement",
     "DROP TABLE IF EXISTS analytics.provider_stats",
     "DROP VIEW IF EXISTS analytics.provider_stats",
+  ];
+}
+
+export function buildActivityUserSoftDeleteMigrationStatements(): string[] {
+  return [
+    "ALTER TABLE postgres_fitness.activity ADD COLUMN IF NOT EXISTS deleted_at Nullable(DateTime64(6, 'UTC'))",
+    ...buildAnalyticsFitnessReadModelDropStatements(),
+    buildActivityReadModelSql(),
+    buildActivityMembersReadModelSql(),
+    buildSleepReadModelSql(),
+    buildBodyMeasurementReadModelSql(),
+    buildDailyMetricsReadModelSql(),
+    buildProviderStatsTableSql(),
   ];
 }
 

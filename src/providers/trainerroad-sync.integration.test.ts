@@ -7,6 +7,8 @@ import { activity, oauthToken } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 import { TrainerRoadProvider } from "./trainerroad.ts";
 
 // ============================================================
@@ -119,7 +121,9 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
 
     const provider = new TrainerRoadProvider();
     const since = new Date("2026-02-01T00:00:00Z");
-    const result = await provider.sync(ctx.db, since);
+    const result = await provider.sync(
+      new SyncRun({ db: ctx.db, window: SyncWindow.fromSince({ since: since }) }),
+    );
 
     expect(result.provider).toBe("trainerroad");
     expect(result.recordsSynced).toBe(2);
@@ -159,10 +163,20 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
     server.use(...trainerroadHandlers(trActivities));
 
     const provider = new TrainerRoadProvider();
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     // Sync again
-    await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "trainerroad"));
     const countOf5001 = rows.filter((r) => r.externalId === "5001").length;
@@ -182,7 +196,12 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
     });
 
     const provider = new TrainerRoadProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("TrainerRoad session expired.");
@@ -194,7 +213,12 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "trainerroad"));
 
     const provider = new TrainerRoadProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("not connected");
@@ -210,7 +234,12 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
     });
 
     const provider = new TrainerRoadProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("username not found");
@@ -245,7 +274,12 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
     server.use(...trainerroadHandlers(trActivities));
 
     const provider = new TrainerRoadProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.errors).toHaveLength(0);
 
@@ -276,7 +310,12 @@ describe("TrainerRoadProvider.sync() (integration)", () => {
     );
 
     const provider = new TrainerRoadProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"));
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);

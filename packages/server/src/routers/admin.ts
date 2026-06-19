@@ -440,13 +440,14 @@ export const adminRouter = router({
             FROM fitness.activity a
             LEFT JOIN fitness.user_profile up ON up.id = a.user_id
             WHERE a.provider_absent_at IS NULL
+              AND a.deleted_at IS NULL
             ORDER BY a.started_at DESC
             LIMIT ${input.limit} OFFSET ${input.offset}`,
       ),
       executeWithSchema(
         ctx.db,
         countSchema,
-        sql`SELECT COUNT(*)::text AS count FROM fitness.activity WHERE provider_absent_at IS NULL`,
+        sql`SELECT COUNT(*)::text AS count FROM fitness.activity WHERE provider_absent_at IS NULL AND deleted_at IS NULL`,
       ),
     ]);
     return { rows, total: countRows[0]?.count ?? 0 };

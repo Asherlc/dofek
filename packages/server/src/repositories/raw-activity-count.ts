@@ -39,6 +39,7 @@ export async function countRawActivities(
         FROM fitness.activity
         WHERE user_id = ${input.userId}::uuid
           AND provider_absent_at IS NULL
+          AND deleted_at IS NULL
           AND started_at > CURRENT_TIMESTAMP - ${input.days}::int * INTERVAL '1 day'
           ${endedAtPredicate}
           ${activityTypePredicate}

@@ -15,13 +15,8 @@ import {
   ProviderStoredIdentityInvalidError,
   ProviderStoredIdentityMissingError,
 } from "./auth-errors.ts";
-import type {
-  ProviderAuthSetup,
-  SyncError,
-  SyncOptions,
-  SyncProvider,
-  SyncResult,
-} from "./types.ts";
+import type { SyncRun } from "./sync-run.ts";
+import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
 // ============================================================
 // Provider implementation
@@ -199,7 +194,8 @@ export class ZwiftProvider implements SyncProvider {
     return /\(401\)|\b401\b|\(403\)|\b403\b|unauthorized|invalid_token/i.test(error.message);
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -231,7 +227,8 @@ export class ZwiftProvider implements SyncProvider {
     };
 
     // 1. Sync activities (paginated)
-    const syncWindowEnd = new Date();
+    const since = window.since;
+    const syncWindowEnd = window.until;
     const presentActivityExternalIds = new Set<string>();
     try {
       const activityCount = await withSyncLog(

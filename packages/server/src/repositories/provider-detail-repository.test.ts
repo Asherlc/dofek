@@ -173,6 +173,15 @@ describe("ProviderDetailRepository", () => {
       expect(execute).toHaveBeenCalledTimes(1);
     });
 
+    it("includes provider-absent activities in activity record lists", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.getRecords("strava", "activities", 50, 0);
+
+      const sqlText = stringifyQuery(execute.mock.calls[0]?.[0]);
+      expect(sqlText).not.toContain("provider_absent_at IS NULL");
+      expect(sqlText).toContain("provider_absent_at");
+    });
+
     it("requires a ClickHouse body store for body measurements", async () => {
       const { repo } = makeRepository([]);
 
@@ -259,6 +268,14 @@ describe("ProviderDetailRepository", () => {
       const { repo, execute } = makeRepository([]);
       await repo.getRecordDetail("strava", "activities", "act-1");
       expect(execute).toHaveBeenCalledTimes(1);
+    });
+
+    it("includes provider-absent activities in activity record details", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.getRecordDetail("strava", "activities", "act-1");
+
+      const sqlText = stringifyQuery(execute.mock.calls[0]?.[0]);
+      expect(sqlText).not.toContain("provider_absent_at IS NULL");
     });
 
     it("filters body measurement detail by record ID in ClickHouse", async () => {

@@ -14,6 +14,7 @@ import { withSyncLog } from "../db/sync-log.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { ProviderHttpClient } from "./http-client.ts";
+import type { SyncRun } from "./sync-run.ts";
 import type {
   ProviderAuthSetup,
   SyncError,
@@ -375,7 +376,8 @@ export class Concept2Provider implements WebhookProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date, options?: SyncOptions): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -391,7 +393,8 @@ export class Concept2Provider implements WebhookProvider {
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const syncWindowEnd = new Date();
+    const since = window.since;
+    const syncWindowEnd = window.until;
     const presentActivityExternalIds = new Set<string>();
     try {
       const activityCount = await withSyncLog(
@@ -410,6 +413,9 @@ export class Concept2Provider implements WebhookProvider {
 
             for (const raw of data.data) {
               const parsed = parseConcept2Result(raw);
+              if (parsed.startedAt.getTime() > syncWindowEnd.getTime()) {
+                continue;
+              }
               presentActivityExternalIds.add(parsed.externalId);
               try {
                 await db

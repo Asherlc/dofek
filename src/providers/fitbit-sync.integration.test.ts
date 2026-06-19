@@ -24,6 +24,8 @@ import {
   parseFitbitWeightLog,
 } from "./fitbit/parsers.ts";
 import { FitbitProvider, fitbitOAuthConfig } from "./fitbit/provider.ts";
+import { SyncRun } from "./sync-run.ts";
+import { SyncWindow } from "./sync-window.ts";
 import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 
 function fakeActivity(overrides: Partial<FitbitActivity> = {}): FitbitActivity {
@@ -217,9 +219,13 @@ describe("FitbitProvider.sync() (integration)", () => {
     );
 
     const provider = new FitbitProvider();
-    const result = await provider.sync(ctx.db, since, {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.provider).toBe("fitbit");
     expect(result.errors).toHaveLength(0);
@@ -342,8 +348,20 @@ describe("FitbitProvider.sync() (integration)", () => {
     );
 
     const provider = new FitbitProvider();
-    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
-    await provider.sync(ctx.db, since, { metricStreamPublisher: metricStreamCapture.publisher });
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     const activityRows = await ctx.db
       .select()
@@ -371,9 +389,13 @@ describe("FitbitProvider.sync() (integration)", () => {
     server.use(...fitbitHandlers());
 
     const provider = new FitbitProvider();
-    await provider.sync(ctx.db, new Date("2026-03-01T00:00:00Z"), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     const { loadTokens } = await import("../db/tokens.ts");
     const tokens = await loadTokens(ctx.db, "fitbit");
@@ -385,9 +407,13 @@ describe("FitbitProvider.sync() (integration)", () => {
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "fitbit"));
 
     const provider = new FitbitProvider();
-    const result = await provider.sync(ctx.db, new Date("2026-02-01T00:00:00Z"), {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens found");
@@ -857,9 +883,13 @@ describe("FitbitProvider.sync() — weight error paths (integration)", () => {
     weightServer.use(...fitbitWeightErrorHandlers({ weightError: true }));
 
     const provider = new FitbitProvider();
-    const result = await provider.sync(ctx.db, since, {
-      metricStreamPublisher: metricStreamCapture.publisher,
-    });
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: since }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
 
     // The weight fetch returns 429, caught at lines 632-636
     const weightError = result.errors.find((e) => e.message.includes("weight"));

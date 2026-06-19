@@ -15,6 +15,7 @@ import { ensureProvider } from "../db/tokens.ts";
 import { parseFitFile } from "../fit/parser.ts";
 import { fitRecordsToSensorSamples } from "../fit/records.ts";
 import { logger } from "../logger.ts";
+import type { SyncRun } from "./sync-run.ts";
 import type {
   ProviderAuthSetup,
   SyncError,
@@ -334,7 +335,8 @@ export class SuuntoProvider implements WebhookProvider {
     });
   }
 
-  async sync(db: SyncDatabase, since: Date, options: SyncOptions = {}): Promise<SyncResult> {
+  async sync(run: SyncRun): Promise<SyncResult> {
+    const { db, window, options } = run;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -351,7 +353,8 @@ export class SuuntoProvider implements WebhookProvider {
     }
 
     const subscriptionKey = process.env.SUUNTO_SUBSCRIPTION_KEY ?? "";
-    const syncWindowEnd = new Date();
+    const since = window.since;
+    const syncWindowEnd = window.until;
     const presentActivityExternalIds = new Set<string>();
 
     try {

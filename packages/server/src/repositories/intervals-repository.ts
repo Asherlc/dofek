@@ -227,6 +227,7 @@ export class IntervalsRepository {
         WHERE ai.activity_id = ${activityId}::uuid
           AND a.user_id = ${this.#userId}
           AND a.provider_absent_at IS NULL
+          AND a.deleted_at IS NULL
         ORDER BY ai.interval_index
       `,
     );
