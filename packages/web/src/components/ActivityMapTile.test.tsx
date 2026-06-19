@@ -51,7 +51,7 @@ describe("ActivityMapTile", () => {
     );
   });
 
-  it("keeps the map tile unzoomed so labels stay readable", () => {
+  it("keeps the map tile at its original scale so labels stay readable", () => {
     render(
       <ActivityMapTile
         location={location({

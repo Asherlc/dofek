@@ -11,7 +11,7 @@ import { formatMeasurementText } from "@dofek/format/units";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { ActivityMapTile } from "../components/ActivityMapTile.tsx";
+import { type ActivityMapLocation, ActivityMapTile } from "../components/ActivityMapTile.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { trpc } from "../lib/trpc.ts";
@@ -403,7 +403,7 @@ interface ActivityCardProps {
     isProviderAbsent?: boolean;
     partialAbsenceSummary?: string | null;
     tombstoneSummary?: string | null;
-    location: ActivityMapTileProps["location"] | null;
+    location: ActivityMapLocation | null;
     stats: { label: string; value: string }[];
   };
   units: ReturnType<typeof useUnitConverter>;
