@@ -114,8 +114,8 @@ absent_candidates AS (
     provider_absent_at
   FROM fitness.activity
   WHERE
-    provider_absent_at IS NOT NULL
-    AND external_id IS NOT NULL
+    provider_absent_at IS NOT null
+    AND external_id IS NOT null
     AND external_id <> ''
 ),
 
