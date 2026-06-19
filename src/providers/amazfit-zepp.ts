@@ -191,7 +191,7 @@ const ZEPP_WORKOUT_TYPE_MAP: Record<number, CanonicalActivityType> = {
   92: "badminton",
 };
 
-function mapZeppWorkoutType(type: number | undefined): CanonicalActivityType {
+export function mapZeppWorkoutType(type: number | undefined): CanonicalActivityType {
   if (type === undefined) return "other";
   return ZEPP_WORKOUT_TYPE_MAP[type] ?? "other";
 }
@@ -200,7 +200,7 @@ function dateFromEpochSeconds(seconds: number): Date {
   return new Date(seconds * 1000);
 }
 
-function parseZeppWorkoutSummary(summary: ZeppWorkoutSummary): ParsedZeppWorkout {
+export function parseZeppWorkoutSummary(summary: ZeppWorkoutSummary): ParsedZeppWorkout {
   const startedAt = dateFromEpochSeconds(summary.trackid);
   const endedAt =
     summary.end_time === undefined
