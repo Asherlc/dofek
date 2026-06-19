@@ -789,6 +789,76 @@ describe("PeerDB ClickHouse CDC setup", () => {
     });
   });
 
+  it("reads raw analytics destination row counts with the ClickHouse client method binding", async () => {
+    const peerDbQueries: string[] = [];
+    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
+    interface BoundClickHouseClient extends ClickHouseCommandClient {
+      queryContextIsBound: boolean;
+    }
+    const clickHouseClient: BoundClickHouseClient = {
+      queryContextIsBound: true,
+      async command() {},
+      async query<TRow extends object>(
+        this: BoundClickHouseClient,
+        _options: { query: string; format: "JSONEachRow" },
+      ) {
+        expect(this.queryContextIsBound).toBe(true);
+        return {
+          async json(): Promise<TRow[]> {
+            return JSON.parse('[{"row_count":1}]');
+          },
+        };
+      },
+    };
+
+    await setupClickHouseCdc({
+      peerDbClient: {
+        async query(queryText) {
+          const query = String(queryText);
+          if (query.includes("obsolete_metric_stream_mirror_name")) {
+            return { rows: [] };
+          }
+          if (query.includes("expected_mirrors(name)") && !query.includes("existing_mirror_name")) {
+            return {
+              rows: [
+                { name: "dofek_provider_inventory_raw_analytics" },
+                { name: "dofek_sensor_priority_raw_analytics" },
+              ],
+            };
+          }
+          if (query.includes("existing_mirror_name")) {
+            return { rows: [] };
+          }
+          peerDbQueries.push(query);
+          return {};
+        },
+      },
+      sourcePostgresClient: {
+        async query() {
+          return { rows: [{ row_count: "1" }] };
+        },
+      },
+      clickHouseClient,
+      templateSql,
+      templateValues: {
+        clickHouseHost: "clickhouse",
+        clickHouseCredential: "clickhouse-fixture",
+        clickHousePort: 9000,
+        clickHouseUser: "default",
+        postgresDatabase: "health",
+        postgresHost: "db",
+        postgresCredential: "fixture",
+        postgresPort: 5432,
+        postgresUser: "health",
+      },
+    });
+
+    const rawFitnessMirrorQuery = peerDbQueries.find((query) =>
+      query.includes("CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics"),
+    );
+    expect(rawFitnessMirrorQuery).toContain("do_initial_copy = false");
+  });
+
   it("recreates absent raw analytics mirrors with initial copy when destination rows are incomplete", async () => {
     const peerDbQueries: string[] = [];
     const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");

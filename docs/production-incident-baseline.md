@@ -11045,3 +11045,39 @@ new incremental tables are populated.
 - **Remaining risk:** Low. The local Stryker command matched the failed CI
   mutate target; final confirmation still depends on the pushed GitHub Actions
   rerun completing successfully.
+
+## 2026-06-19 — Branch deploy exposed ClickHouse client method binding failure
+
+- **Symptoms:** A production branch deploy of `sha-df7f751` completed
+  successfully and left `web`, `worker`, `cdc-health`, and `analytics-worker`
+  running the branch image, but the raw fitness ClickHouse mirror remained
+  incomplete. Re-running the CDC setup manually after dropping
+  `dofek_fitness_raw_analytics` failed before recreating the mirror.
+- **User impact:** Activity and sleep analytics that depend on raw
+  `postgres_fitness` activity tables still saw incomplete raw mirror data until
+  the follow-up fix could be deployed and the missing PeerDB mirror recreated.
+- **Evidence:** The deploy workflow run `27805523657` succeeded, including
+  `Configure ClickHouse CDC`. Production health returned `{"status":"ok"}` and
+  `dofek_analytics-worker` was `1/1` on `ghcr.io/asherlc/dofek:sha-df7f751`.
+  Postgres source counts still exceeded ClickHouse destination counts for
+  `fitness.activity`, `fitness.daily_metrics`, `fitness.sleep_session`, and
+  `fitness.sleep_stage`. After dropping only `dofek_fitness_raw_analytics`,
+  direct CDC setup failed with
+  `TypeError: Cannot read properties of undefined (reading 'withClientQueryParams')`
+  from `@clickhouse/client-common`.
+- **Root cause:** `readClickHouseDestinationRowCount` detached
+  `clickHouseClient.query` into a local function before calling it. The real
+  `@clickhouse/client` query method depends on its `this` binding, so the
+  production client failed. Unit tests used arrow-function mocks and did not
+  exercise the method binding.
+- **Fix / mitigation:** Updated the CDC setup path to call
+  `clickHouseClient.query(...)` directly and added a regression test with a
+  `this`-dependent ClickHouse client mock. The production
+  `dofek_fitness_raw_analytics` mirror was intentionally left absent after the
+  failed manual run so the fixed deploy can recreate it with initial copy.
+- **Validation:** `pnpm exec vitest run src/db/clickhouse-cdc.test.ts` passed
+  `33` tests locally. Production verification still requires deploying the
+  fixed commit, confirming CDC setup recreates `dofek_fitness_raw_analytics`,
+  and checking ClickHouse raw table counts against Postgres source counts.
+- **Remaining risk:** Medium until the fixed branch image is deployed and the
+  absent fitness raw mirror finishes its initial copy.

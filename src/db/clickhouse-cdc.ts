@@ -509,13 +509,12 @@ async function readClickHouseDestinationRowCount(
   clickHouseClient: ClickHouseCommandClient,
   tableNames: readonly string[],
 ): Promise<number> {
-  const query = clickHouseClient.query;
-  if (!query) {
+  if (!clickHouseClient.query) {
     throw new Error("ClickHouse raw analytics mirror reconciliation requires query support");
   }
 
   const tableNameList = tableNames.map(peerDbStringLiteral).join(", ");
-  const result = await query<ClickHouseRowCount>({
+  const result = await clickHouseClient.query<ClickHouseRowCount>({
     query: `
       SELECT coalesce(sum(rows), 0) AS row_count
       FROM system.parts
