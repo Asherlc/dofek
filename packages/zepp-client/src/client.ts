@@ -117,8 +117,8 @@ function isRetryableLegacyRegistrationStatus(status: number): boolean {
   return status === 400 || status === 401 || status === 403;
 }
 
-function invalidCredentialsError(): ZeppInvalidCredentialsError {
-  return new ZeppInvalidCredentialsError();
+function invalidCredentialsError(options?: ErrorOptions): ZeppInvalidCredentialsError {
+  return new ZeppInvalidCredentialsError(options);
 }
 
 function rateLimitError(responseBody: string): Error {
@@ -378,5 +378,12 @@ export async function signInToZepp(
   }
 
   const encryptedCredentials = await getEncryptedRegistrationCredentials(email, password, fetchFn);
-  return exchangeAccessCodeForToken(encryptedCredentials, fetchFn);
+  try {
+    return await exchangeAccessCodeForToken(encryptedCredentials, fetchFn);
+  } catch (error) {
+    if (error instanceof ZeppLoginExchangeError && isRetryableLoginExchangeStatus(error.status)) {
+      throw invalidCredentialsError({ cause: error });
+    }
+    throw error;
+  }
 }

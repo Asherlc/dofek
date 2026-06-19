@@ -530,6 +530,32 @@ describe("signInToZepp", () => {
     ).toBe(ZEPP_ENCRYPTED_REGISTRATION_URL);
   });
 
+  it("throws invalid credentials when all token exchange attempts return retryable auth failures", async () => {
+    const fetchFn = vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("/registrations/") && !url.includes("v2/registrations/tokens")) {
+        return Response.json({ access: "json-access-code", country_code: "US" });
+      }
+      if (url === ZEPP_ENCRYPTED_REGISTRATION_URL) {
+        return new Response(null, {
+          status: 303,
+          headers: {
+            Location: `${ZEPP_REGISTRATION_REDIRECT_URI}?access=encrypted-access&country_code=US`,
+          },
+        });
+      }
+      if (url === ZEPP_ACCOUNT_LOGIN_URL || url === ZEPP_ACCOUNT_ZEPP_LOGIN_URL) {
+        return new Response("bad request", { status: 400 });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    await expect(signInToZepp("user@example.com", "password", fetchFn)).rejects.toBeInstanceOf(
+      ZeppInvalidCredentialsError,
+    );
+    expect(fetchFn).toHaveBeenCalledTimes(5);
+  });
+
   it("throws when login response body is not JSON", async () => {
     const fetchFn = mockFetch({
       registration: new Response(null, {

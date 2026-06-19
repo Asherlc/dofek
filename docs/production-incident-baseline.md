@@ -11131,3 +11131,37 @@ new incremental tables are populated.
 - **Remaining risk:** Low after migration `0033` deploys; dropping this derived
   serving table temporarily empties `deduped_activities` until the analytics
   worker rebuilds it.
+
+## 2026-06-19 — Zepp token exchange auth rejection reported to Sentry
+
+- **Symptoms:** Sentry issue `DOFEK-SERVER-3T` reported one production error at
+  `2026-06-19T05:07:55Z` for `ZeppLoginExchangeError: Amazfit/Zepp login error
+  (400)` on `credentialAuth.signIn`.
+- **User impact:** A user attempting to connect Amazfit/Zepp credentials saw the
+  connect attempt fail, and the expected provider-auth failure was counted as a
+  production server error.
+- **Evidence:** The Sentry event stack traced through
+  `packages/server/src/routers/credential-auth.ts` to
+  `src/providers/amazfit-zepp.ts` and
+  `packages/zepp-client/src/client.ts:312`. The event had one production
+  occurrence and no related trace spans or logs.
+- **Root cause:** The Zepp client treated final token-exchange `400`, `401`, and
+  `403` responses as retryable while alternate login attempts remained, but
+  after all legacy and encrypted Zepp token-exchange attempts were exhausted it
+  rethrew the final `ZeppLoginExchangeError`. The provider only wrapped
+  `ZeppInvalidCredentialsError`, so the credential-auth router saw an unexpected
+  error and let it reach Sentry as an internal server error.
+- **Fix / mitigation:** After the encrypted Zepp registration path also
+  exhausts retryable token-exchange statuses, the Zepp client now raises
+  `ZeppInvalidCredentialsError` with the token-exchange error as its cause. The
+  Amazfit/Zepp provider's existing wrapper converts that to
+  `ProviderInvalidCredentialsError`, and `credentialAuth.signIn` returns a
+  `BAD_REQUEST` provider-auth failure instead of reporting to Sentry.
+- **Validation:** `pnpm vitest run packages/zepp-client/src/client.test.ts
+  src/providers/amazfit-zepp.test.ts
+  packages/server/src/routers/credential-auth.test.ts` passed locally after
+  adding a regression test for exhausted legacy and encrypted token-exchange
+  `400` responses.
+- **Remaining risk:** Low. Future Zepp private API changes that produce
+  non-auth statuses or malformed success payloads remain reportable as
+  unexpected errors.
