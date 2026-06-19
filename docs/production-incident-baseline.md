@@ -11064,17 +11064,25 @@ new incremental tables are populated.
   `fitness.sleep_stage`. After dropping only `dofek_fitness_raw_analytics`,
   direct CDC setup failed with
   `TypeError: Cannot read properties of undefined (reading 'withClientQueryParams')`
-  from `@clickhouse/client-common`.
+  from `@clickhouse/client-common`. A follow-up deploy of `sha-6361c14`
+  reached PeerDB mirror creation, then failed with
+  `failed to validate destination connector dofek_clickhouse_postgres_fitness:
+  table activity exists and is not empty`.
 - **Root cause:** `readClickHouseDestinationRowCount` detached
   `clickHouseClient.query` into a local function before calling it. The real
   `@clickhouse/client` query method depends on its `this` binding, so the
   production client failed. Unit tests used arrow-function mocks and did not
-  exercise the method binding.
+  exercise the method binding. After that was fixed, PeerDB correctly rejected
+  initial-copy creation into the non-empty, incomplete ClickHouse destination
+  tables left behind by the earlier partial mirror.
 - **Fix / mitigation:** Updated the CDC setup path to call
   `clickHouseClient.query(...)` directly and added a regression test with a
-  `this`-dependent ClickHouse client mock. The production
-  `dofek_fitness_raw_analytics` mirror was intentionally left absent after the
-  failed manual run so the fixed deploy can recreate it with initial copy.
+  `this`-dependent ClickHouse client mock. Updated setup to truncate destination
+  tables for missing raw analytics mirrors that are about to be recreated with
+  `do_initial_copy = true`, so PeerDB can run a clean initial snapshot. The
+  production `dofek_fitness_raw_analytics` mirror was intentionally left absent
+  after the failed manual run so the fixed deploy can recreate it with initial
+  copy.
 - **Validation:** `pnpm exec vitest run src/db/clickhouse-cdc.test.ts` passed
   `33` tests locally. Production verification still requires deploying the
   fixed commit, confirming CDC setup recreates `dofek_fitness_raw_analytics`,

@@ -769,7 +769,16 @@ describe("PeerDB ClickHouse CDC setup", () => {
     const truncateCommands = clickHouseCommands.filter((command) =>
       command.startsWith("TRUNCATE TABLE"),
     );
-    expect(truncateCommands).toEqual([]);
+    expect(truncateCommands).toEqual([
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.food_entry",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.health_event",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.lab_panel",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.lab_result",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.journal_entry",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.sensor_provider_priority",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.sensor_device_priority",
+    ]);
+    expect(truncateCommands).not.toContain("TRUNCATE TABLE IF EXISTS postgres_fitness.activity");
     expect(sourcePostgresQueries).toHaveLength(1);
     expect(sourcePostgresQueries[0]).toContain(
       "SELECT count(*) AS row_count FROM fitness.activity",
@@ -861,6 +870,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
 
   it("recreates absent raw analytics mirrors with initial copy when destination rows are incomplete", async () => {
     const peerDbQueries: string[] = [];
+    const clickHouseCommands: string[] = [];
     const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
 
     await setupClickHouseCdc({
@@ -887,7 +897,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
           return { rows: [{ row_count: "2" }] };
         },
       },
-      clickHouseClient: createTestClickHouseClient([], 1),
+      clickHouseClient: createTestClickHouseClient(clickHouseCommands, 1),
       templateSql,
       templateValues: {
         clickHouseHost: "clickhouse",
@@ -906,6 +916,26 @@ describe("PeerDB ClickHouse CDC setup", () => {
       query.includes("CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics"),
     );
     expect(rawFitnessMirrorQuery).toContain("do_initial_copy = true");
+    const truncateCommands = clickHouseCommands.filter((command) =>
+      command.startsWith("TRUNCATE TABLE"),
+    );
+    expect(truncateCommands).toEqual([
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.activity",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.sleep_session",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.sleep_stage",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.daily_metrics",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.provider",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.provider_priority",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.device_priority",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.user_profile",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.food_entry",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.health_event",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.lab_panel",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.lab_result",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.journal_entry",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.sensor_provider_priority",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.sensor_device_priority",
+    ]);
   });
 
   it("recreates absent raw analytics mirrors with initial copy when source tables are empty", async () => {

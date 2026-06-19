@@ -579,6 +579,33 @@ async function sourcePostgresTablesHaveAtMostDestinationRows(
   return sourceRowCount > 0 && destinationRowCount >= sourceRowCount;
 }
 
+async function truncateRawAnalyticsDestinationTables(
+  clickHouseClient: ClickHouseCommandClient,
+  tableNames: readonly string[],
+): Promise<void> {
+  for (const tableName of tableNames) {
+    await clickHouseClient.command({
+      query: `TRUNCATE TABLE IF EXISTS postgres_fitness.${tableName}`,
+    });
+  }
+}
+
+async function truncateMissingInitialCopyRawAnalyticsDestinations(
+  clickHouseClient: ClickHouseCommandClient,
+  rawAnalyticsInitialCopyValues: RawAnalyticsInitialCopyValues,
+  existingMirrorNames: Set<string>,
+): Promise<void> {
+  for (const mirrorName of rawAnalyticsMirrorNames) {
+    if (existingMirrorNames.has(mirrorName) || !rawAnalyticsInitialCopyValues[mirrorName]) {
+      continue;
+    }
+    await truncateRawAnalyticsDestinationTables(
+      clickHouseClient,
+      rawAnalyticsMirrorTableMappings[mirrorName],
+    );
+  }
+}
+
 async function reconcileRawAnalyticsMirrors(
   peerDbClient: PeerDbClient,
   sourcePostgresClient: SourcePostgresClient,
@@ -630,6 +657,11 @@ export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Pr
     rawAnalyticsInitialCopyValues,
   );
   const existingMirrorNames = await readExistingManagedMirrorNames(options.peerDbClient);
+  await truncateMissingInitialCopyRawAnalyticsDestinations(
+    options.clickHouseClient,
+    rawAnalyticsInitialCopyValues,
+    existingMirrorNames,
+  );
   for (const statement of splitPeerDbSqlStatements(renderedSql)) {
     const mirrorName = readCreateMirrorName(statement);
     if (mirrorName !== null && existingMirrorNames.has(mirrorName)) {
