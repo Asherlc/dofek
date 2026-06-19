@@ -449,7 +449,7 @@ function ActivityCard({
 
   const content = (
     <div className="flex h-full flex-col">
-      {activity.location ? <ActivityMapTile location={activity.location} units={units} /> : null}
+      {activity.location ? <ActivityMapTile location={activity.location} /> : null}
       <div className="flex min-w-0 flex-1 flex-col gap-3 p-3 sm:p-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">

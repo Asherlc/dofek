@@ -4,7 +4,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
-import { osmTileUrl } from "../lib/osm-tile.ts";
+import { type OsmTilePreview, osmTilePreview } from "../lib/osm-tile.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import {
   ActivitySourceAttribution,
@@ -20,8 +20,7 @@ import { getActivityRoutePreviews } from "./activity-route-preview.ts";
 export interface ActivityLocation {
   centroidLat: number;
   centroidLng: number;
-  tileUrl: string;
-  routePath: { x: number; y: number }[] | null;
+  mapPreview: OsmTilePreview;
   distanceMeters: number | null;
   elevationGainM: number | null;
 }
@@ -272,10 +271,9 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             ? {
                 centroidLat: row.centroid_lat,
                 centroidLng: row.centroid_lng,
-                tileUrl:
-                  routePreviewByActivityId.get(row.id)?.tileUrl ??
-                  osmTileUrl(row.centroid_lat, row.centroid_lng),
-                routePath: routePreviewByActivityId.get(row.id)?.routePath ?? null,
+                mapPreview:
+                  routePreviewByActivityId.get(row.id) ??
+                  osmTilePreview([{ lat: row.centroid_lat, lng: row.centroid_lng }]),
                 distanceMeters: row.total_distance,
                 elevationGainM: row.elevation_gain_m,
               }
@@ -403,10 +401,9 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             ? {
                 centroidLat: row.centroid_lat,
                 centroidLng: row.centroid_lng,
-                tileUrl:
-                  routePreviewByActivityId.get(row.id)?.tileUrl ??
-                  osmTileUrl(row.centroid_lat, row.centroid_lng),
-                routePath: routePreviewByActivityId.get(row.id)?.routePath ?? null,
+                mapPreview:
+                  routePreviewByActivityId.get(row.id) ??
+                  osmTilePreview([{ lat: row.centroid_lat, lng: row.centroid_lng }]),
                 distanceMeters: row.total_distance,
                 elevationGainM: row.elevation_gain_m,
               }

@@ -3,6 +3,7 @@ import {
   createRateLimitAwareFetch,
   fetchWithRateLimitHandling,
   ProviderRateLimitError,
+  ProviderServiceUnavailableError,
   parseRetryAfterHeader,
 } from "./rate-limit.ts";
 
@@ -95,6 +96,28 @@ describe("fetchWithRateLimitHandling", () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
+  it("throws a provider service-unavailable error immediately on 503", async () => {
+    const fetchFn = vi.fn<typeof globalThis.fetch>();
+    fetchFn.mockResolvedValueOnce(response(503, "service down", "5"));
+
+    const error = await fetchWithRateLimitHandling(
+      fetchFn,
+      "https://api.example.com/data",
+      undefined,
+      {
+        createRateLimitError: (limitedResponse, body) =>
+          new TestRateLimitError(limitedResponse, body),
+      },
+    ).catch((caughtError: unknown) => caughtError);
+
+    expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(error).toHaveProperty("providerId", "unknown");
+    expect(error).toHaveProperty("statusCode", 503);
+    expect(error).toHaveProperty("responseBody", "service down");
+    expect(error).toHaveProperty("retryAfterSeconds", 5);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
   it("stores explicit provider rate-limit error options", () => {
     const error = new ProviderRateLimitError({
       message: "limited",
@@ -148,6 +171,43 @@ describe("fetchWithRateLimitHandling", () => {
     expect(error).toHaveProperty("scope", "user");
     expect(error).toHaveProperty("userId", "user-2");
     expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("creates a fetch wrapper that throws the common provider service-unavailable error", async () => {
+    const fetchFn = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(503, "down"));
+    const rateLimitFetch = createRateLimitAwareFetch(fetchFn, {
+      providerId: "example",
+      scope: "user",
+      userId: "user-2",
+    });
+
+    const error = await rateLimitFetch("https://api.example.com/data").catch(
+      (caughtError: unknown) => caughtError,
+    );
+
+    expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(error).toHaveProperty("providerId", "example");
+    expect(error).toHaveProperty("statusCode", 503);
+    expect(error).toHaveProperty("responseBody", "down");
+    expect(error).toHaveProperty("scope", "user");
+    expect(error).toHaveProperty("userId", "user-2");
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats 502, 503, and 504 as service-unavailable responses", async () => {
+    for (const statusCode of [502, 503, 504]) {
+      const fetchFn = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(statusCode));
+      const rateLimitFetch = createRateLimitAwareFetch(fetchFn, {
+        providerId: "example",
+      });
+
+      const error = await rateLimitFetch("https://api.example.com/data").catch(
+        (caughtError: unknown) => caughtError,
+      );
+
+      expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
+      expect(error).toHaveProperty("statusCode", statusCode);
+    }
   });
 
   it("uses provider scope and null user by default in wrapper errors", async () => {

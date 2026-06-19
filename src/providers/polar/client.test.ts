@@ -204,14 +204,14 @@ describe("PolarClient — API error responses", () => {
   it("includes plain-text error bodies in API error messages", async () => {
     const fetchFn: typeof globalThis.fetch = async () =>
       new Response("upstream unavailable", {
-        status: 502,
+        status: 500,
         headers: { "content-type": "text/plain" },
       });
 
     const client = new PolarClient("access-token", fetchFn);
 
     await expect(client.getExercises()).rejects.toThrow(
-      "Polar API error (502): upstream unavailable",
+      "Polar API error (500): upstream unavailable",
     );
   });
 });

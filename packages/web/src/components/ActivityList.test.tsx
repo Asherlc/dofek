@@ -21,6 +21,21 @@ function renderWithUnits(ui: ReactNode, unitSystem: UnitSystem = "metric") {
   );
 }
 
+const mapPreview = {
+  width: 1024,
+  height: 576,
+  tiles: [
+    {
+      url: "https://tile.openstreetmap.org/15/5241/12665.png",
+      x: 0,
+      y: 0,
+      width: 256,
+      height: 256,
+    },
+  ],
+  routePath: null,
+};
+
 describe("ActivityList", () => {
   beforeEach(() => {
     mockNavigate.mockReset();
@@ -44,7 +59,7 @@ describe("ActivityList", () => {
       location: {
         centroidLat: 37.7749,
         centroidLng: -122.4194,
-        tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
+        mapPreview,
         distanceMeters: 5000,
         elevationGainM: 120,
       },
@@ -66,13 +81,13 @@ describe("ActivityList", () => {
 
   it("renders a compact map tile when an activity has a location summary", () => {
     renderWithUnits(<ActivityList activities={mockActivities} />);
-    const image = screen.getByAltText("Activity route map summary");
-    expect(image.getAttribute("src")).toBe("https://tile.openstreetmap.org/13/1310/3166.png");
+    const image = screen.getByTestId("activity-map-preview-tile");
+    expect(image.getAttribute("src")).toBe("https://tile.openstreetmap.org/15/5241/12665.png");
   });
 
   it("allows compact map tile requests to include the page origin as the referrer", () => {
     renderWithUnits(<ActivityList activities={mockActivities} />);
-    const image = screen.getByAltText("Activity route map summary");
+    const image = screen.getByTestId("activity-map-preview-tile");
     expect(image.getAttribute("referrerpolicy")).toBe("origin");
   });
 
@@ -88,12 +103,14 @@ describe("ActivityList", () => {
             location: {
               centroidLat: 37.7749,
               centroidLng: -122.4194,
-              tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
-              routePath: [
-                { x: 27.854, y: 37.951 },
-                { x: 29.22, y: 37.088 },
-                { x: 30.585, y: 35.936 },
-              ],
+              mapPreview: {
+                ...mapPreview,
+                routePath: [
+                  { x: 278.54, y: 379.51 },
+                  { x: 292.2, y: 370.88 },
+                  { x: 305.85, y: 359.36 },
+                ],
+              },
               distanceMeters: 5000,
               elevationGainM: 120,
             },
@@ -103,37 +120,15 @@ describe("ActivityList", () => {
     );
 
     expect(screen.getByTestId("activity-route-path").getAttribute("points")).toBe(
-      "27.854,37.951 29.22,37.088 30.585,35.936",
+      "278.54,379.51 292.2,370.88 305.85,359.36",
     );
   });
 
-  it("centers compact map thumbnails around the route bounds", () => {
-    const mockActivity = mockActivities[0];
-    if (!mockActivity) throw new Error("Missing mock activity");
+  it("uses the exported map preview canvas for compact route thumbnails", () => {
+    renderWithUnits(<ActivityList activities={mockActivities} />);
 
-    renderWithUnits(
-      <ActivityList
-        activities={[
-          {
-            ...mockActivity,
-            location: {
-              centroidLat: 37.7749,
-              centroidLng: -122.4194,
-              tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
-              routePath: [
-                { x: 25, y: 30 },
-                { x: 35, y: 40 },
-              ],
-              distanceMeters: 5000,
-              elevationGainM: 120,
-            },
-          },
-        ]}
-      />,
-    );
-
-    expect(screen.getByTestId("activity-route-viewport").getAttribute("style")).toContain(
-      "translate(-25%, -37.5%) scale(2.5)",
+    expect(screen.getByTestId("activity-route-viewport").getAttribute("aria-label")).toBe(
+      "Activity route map summary",
     );
   });
 

@@ -11167,3 +11167,37 @@ new incremental tables are populated.
   reverse-engineered. Future Zepp app/API changes can break this flow again, but
   token-exchange bad requests are now preserved as reportable client/API-shape
   failures rather than hidden behind invalid-credential messaging.
+
+## 2026-06-19 — WHOOP developer workout listing service unavailable
+
+- **Symptoms:** Sentry issue `DOFEK-SERVER-3V` regressed in production with
+  `WHOOP API error (503): Encountered ServiceUnavailableException` from
+  `WhoopClient.#get` while `syncWhoopWorkouts` was resolving developer workout
+  IDs for absence reconciliation.
+- **User impact:** Affected WHOOP sync jobs failed before workout absence
+  reconciliation could complete. Sentry showed `0` impacted users for the issue
+  metadata and two production occurrences in the last 24 hours.
+- **Evidence:** The latest event occurred at `2026-06-19T14:07:32Z`; the prior
+  event occurred at `2026-06-19T09:06:40Z`. Both events were in production with
+  `provider=whoop` and the same error value. The stack path was
+  `processSyncJob` -> `WhoopProvider.sync` -> `syncWhoopWorkouts` ->
+  `resolveWhoopPresentExternalIds` -> `WhoopClient.listDeveloperWorkoutIdsInWindow`
+  -> `WhoopClient.listDeveloperWorkouts` -> `WhoopClient.#getWithRateLimitRetry`
+  -> `WhoopClient.#get`.
+- **Root cause:** WHOOP returned a transient upstream `503`, but the developer
+  workout listing retry loop only retried `WhoopRateLimitError` from `429`
+  responses. Non-429 `503` responses were plain `Error`s, so the sync job failed
+  immediately instead of retrying the recoverable upstream outage.
+- **Fix / mitigation:** Added shared `ProviderServiceUnavailableError`
+  classification for provider HTTP `502`, `503`, and `504` responses, then made
+  WHOOP's developer workout retry loop retry that common error alongside WHOOP
+  rate limits. WHOOP's direct low-level HTTP calls now create WHOOP-scoped
+  service-unavailable errors through the shared provider HTTP package.
+- **Validation:** A new regression test first failed with the exact
+  `WHOOP API error (503): Encountered ServiceUnavailableException` path, then
+  passed after the shared provider HTTP and WHOOP client fix. `pnpm vitest run
+  packages/whoop-whoop/src/client.test.ts` passed all `78` WHOOP client tests
+  locally, and `pnpm vitest run packages/provider-http/src/rate-limit.test.ts`
+  passed all `23` shared provider HTTP tests locally.
+- **Remaining risk:** Low, but the fix is only local until committed, pushed,
+  deployed, and the Sentry issue is confirmed quiet in production.

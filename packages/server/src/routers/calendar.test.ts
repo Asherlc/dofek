@@ -115,7 +115,7 @@ describe("calendarRouter", () => {
     ]);
   });
 
-  it("preserves route path points on activity location at the API boundary", async () => {
+  it("preserves exported map previews on activity location at the API boundary", async () => {
     repositoryResultMock.mockResolvedValueOnce([
       {
         date: "2026-03-18",
@@ -130,11 +130,23 @@ describe("calendarRouter", () => {
             location: {
               centroidLat: 37.7749,
               centroidLng: -122.4194,
-              tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
-              routePath: [
-                { x: 27.854, y: 37.951 },
-                { x: 29.22, y: 37.088 },
-              ],
+              mapPreview: {
+                width: 1024,
+                height: 576,
+                tiles: [
+                  {
+                    url: "https://tile.openstreetmap.org/15/5241/12665.png",
+                    x: 256,
+                    y: 160,
+                    width: 256,
+                    height: 256,
+                  },
+                ],
+                routePath: [
+                  { x: 400, y: 250 },
+                  { x: 480, y: 220 },
+                ],
+              },
               distanceMeters: 5000,
               elevationGainM: 120,
             },
@@ -163,11 +175,23 @@ describe("calendarRouter", () => {
             location: {
               centroidLat: 37.7749,
               centroidLng: -122.4194,
-              tileUrl: "https://tile.openstreetmap.org/13/1310/3166.png",
-              routePath: [
-                { x: 27.854, y: 37.951 },
-                { x: 29.22, y: 37.088 },
-              ],
+              mapPreview: {
+                width: 1024,
+                height: 576,
+                tiles: [
+                  {
+                    url: "https://tile.openstreetmap.org/15/5241/12665.png",
+                    x: 256,
+                    y: 160,
+                    width: 256,
+                    height: 256,
+                  },
+                ],
+                routePath: [
+                  { x: 400, y: 250 },
+                  { x: 480, y: 220 },
+                ],
+              },
               distanceMeters: 5000,
               elevationGainM: 120,
             },

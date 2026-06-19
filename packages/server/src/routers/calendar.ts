@@ -20,11 +20,25 @@ const routePathPointSchema = z.object({
   y: z.number(),
 });
 
+const mapPreviewTileSchema = z.object({
+  url: z.string(),
+  x: z.number(),
+  y: z.number(),
+  width: z.number(),
+  height: z.number(),
+});
+
+const mapPreviewSchema = z.object({
+  width: z.number(),
+  height: z.number(),
+  tiles: z.array(mapPreviewTileSchema),
+  routePath: z.array(routePathPointSchema).nullable(),
+});
+
 const activityLocationSchema = z.object({
   centroidLat: z.number(),
   centroidLng: z.number(),
-  tileUrl: z.string(),
-  routePath: z.array(routePathPointSchema).nullable(),
+  mapPreview: mapPreviewSchema,
   distanceMeters: z.number().nullable(),
   elevationGainM: z.number().nullable(),
 });
