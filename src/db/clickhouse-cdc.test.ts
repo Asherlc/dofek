@@ -726,7 +726,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
         },
       },
       sourcePostgresClient: {
-        async query() {},
+        async query() {
+          return { rows: [{ row_count: "1" }] };
+        },
       },
       clickHouseClient: createTestClickHouseClient(clickHouseCommands, 1),
       templateSql,
@@ -759,6 +761,55 @@ describe("PeerDB ClickHouse CDC setup", () => {
       command.startsWith("TRUNCATE TABLE"),
     );
     expect(truncateCommands).toEqual([]);
+  });
+
+  it("recreates absent raw analytics mirrors with initial copy when destination rows are incomplete", async () => {
+    const peerDbQueries: string[] = [];
+    const templateSql = await readFile("src/db/peerdb/metric-stream-cdc.sql", "utf8");
+
+    await setupClickHouseCdc({
+      peerDbClient: {
+        async query(queryText) {
+          const query = String(queryText);
+          if (query.includes("obsolete_metric_stream_mirror_name")) {
+            return { rows: [] };
+          }
+          if (query.includes("expected_mirrors(name)") && !query.includes("existing_mirror_name")) {
+            return {
+              rows: [{ name: "dofek_provider_inventory_raw_analytics" }],
+            };
+          }
+          if (query.includes("existing_mirror_name")) {
+            return { rows: [] };
+          }
+          peerDbQueries.push(query);
+          return {};
+        },
+      },
+      sourcePostgresClient: {
+        async query() {
+          return { rows: [{ row_count: "2" }] };
+        },
+      },
+      clickHouseClient: createTestClickHouseClient([], 1),
+      templateSql,
+      templateValues: {
+        clickHouseHost: "clickhouse",
+        clickHouseCredential: "clickhouse-fixture",
+        clickHousePort: 9000,
+        clickHouseUser: "default",
+        postgresDatabase: "health",
+        postgresHost: "db",
+        postgresCredential: "fixture",
+        postgresPort: 5432,
+        postgresUser: "health",
+      },
+    });
+
+    const rawFitnessMirrorQuery = peerDbQueries.find((query) =>
+      query.includes("CREATE MIRROR IF NOT EXISTS dofek_fitness_raw_analytics"),
+    );
+    expect(rawFitnessMirrorQuery).toContain("do_initial_copy = true");
   });
 
   it("recreates absent raw analytics mirrors with initial copy when destination tables are empty", async () => {

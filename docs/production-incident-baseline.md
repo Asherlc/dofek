@@ -10968,7 +10968,15 @@ new incremental tables are populated.
   `sha-752d377` reproduced the mirror loss: the post-deploy ClickHouse CDC setup
   path read PeerDB's binary `config_proto` as escaped text, treated healthy raw
   mirrors as mapping mismatches, and issued `DROP MIRROR` for
-  `dofek_fitness_raw_analytics`.
+  `dofek_fitness_raw_analytics`. A later deploy of image `sha-f7ab13b` stopped
+  dropping existing mirrors but exposed a second setup bug: when a managed mirror
+  was missing, setup disabled initial copy if any destination table in that
+  mirror group had rows. In production, `postgres_fitness.daily_metrics`,
+  `postgres_fitness.food_entry`, `postgres_fitness.health_event`, and
+  `postgres_fitness.provider` had active parts, so the recreated raw mirrors
+  skipped initial copy even though `postgres_fitness.activity`,
+  `postgres_fitness.sleep_session`, `postgres_fitness.provider_priority`, and
+  `postgres_fitness.device_priority` were empty.
 - **Fix / mitigation:** Ran the checked-in ClickHouse CDC setup path inside the
   production swarm network with explicit PeerDB/Postgres/ClickHouse host
   overrides. It recreated the three raw mirrors and slots; `pg_replication_slots`
@@ -10990,14 +10998,17 @@ new incremental tables are populated.
   CDC setup dropped raw mirrors again. Reran CDC setup after deploy completion;
   all three slots became active and the raw mirror repopulated to
   `postgres_fitness.activity = 1211` and `postgres_fitness.sleep_session = 195`.
-- **Remaining risk:** Medium. `analytics-worker` is unpaused at `1/1`, but the
-  currently deployed image still fails the activity dbt phase at
-  `analytics.deduped_activities` with ClickHouse error code 53 because
-  `absent_source_external_ids` is inferred as
-  `Array(Map(String, Nullable(String)))` while the existing serving table column
-  is `Array(Map(String, String))`. Deploy the follow-up fix that casts the dbt
-  expression to `Array(Map(String, String))` and stops CDC setup from dropping
-  existing raw mirrors based on `config_proto` token parsing.
+  After image `sha-f7ab13b` deployed, paused `analytics-worker` at `0/0`, dropped
+  the three managed raw mirrors, and reran CDC setup. The deployed setup
+  recreated slots but still left the raw activity/sleep/provider-priority
+  destination tables empty because it disabled initial copy from partial
+  destination row counts.
+- **Remaining risk:** Medium. `analytics-worker` is paused while the raw mirrors
+  are empty. Deploy the follow-up fix that compares Postgres source row counts
+  against ClickHouse destination row counts before disabling initial copy for a
+  missing raw mirror, then recreate the three raw mirrors, verify
+  `postgres_fitness.activity` and `postgres_fitness.sleep_session` have rows, and
+  restore `analytics-worker` to `1/1`.
 - **Follow-up:** Add an alert that pages on missing managed mirror catalog rows
   or zero required PeerDB slots, not just stale mirrored timestamps. Consider a
   deploy smoke check that runs the two-phase analytics dbt command to completion
