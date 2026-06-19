@@ -53,7 +53,7 @@ interface ZeppAccessCredentials {
   appName: string;
   appVersion: string;
   countryCode: string;
-  countryState?: string;
+  countryState: string;
   deviceId: string;
   headers: Record<string, string>;
   loginUrl: string;
@@ -195,9 +195,7 @@ async function performTokenExchange(
     loginBody.set("source", credentials.source);
     loginBody.set("lang", "en");
   }
-  if (credentials.countryState) {
-    loginBody.set("countryState", credentials.countryState);
-  }
+  loginBody.set("countryState", credentials.countryState);
 
   const loginResponse = await fetchFn(credentials.loginUrl, {
     method: "POST",
