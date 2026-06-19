@@ -175,6 +175,7 @@
     "downmigration",
     "pkce",
     "totp",
+    "tombstoned",
     "rwgps",
     "ridewithgps",
     "accesslink",

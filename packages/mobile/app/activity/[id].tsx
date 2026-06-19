@@ -838,7 +838,15 @@ export default function ActivityDetailScreen() {
               const link = activity.sourceLinks.find(
                 (sourceLink) => sourceLink.providerId === providerId,
               );
-              if (link) {
+              if (link?.providerAbsentAt) {
+                return (
+                  <Text key={providerId} style={styles.sourceRemoved}>
+                    {index > 0 && ", "}
+                    {link.label} (removed)
+                  </Text>
+                );
+              }
+              if (link?.url) {
                 return (
                   <View key={providerId} style={styles.sourceLinkRow}>
                     {index > 0 && <Text style={styles.source}>, </Text>}
@@ -859,6 +867,29 @@ export default function ActivityDetailScreen() {
                 </Text>
               );
             })}
+          </View>
+        )}
+        {activity.providerAbsentAt && (
+          <View style={styles.providerAbsentBanner}>
+            <Text style={styles.providerAbsentTitle}>Removed from provider sync</Text>
+            <View style={styles.providerAbsentDetails}>
+              <View style={styles.providerAbsentDetail}>
+                <Text style={styles.providerAbsentLabel}>Status</Text>
+                <Text style={styles.providerAbsentValue}>Removed</Text>
+              </View>
+              <View style={styles.providerAbsentDetail}>
+                <Text style={styles.providerAbsentLabel}>Provider</Text>
+                <Text style={styles.providerAbsentValue}>
+                  {providerSourceLabel(activity.providerId, activity.subsource)}
+                </Text>
+              </View>
+              <View style={styles.providerAbsentDetail}>
+                <Text style={styles.providerAbsentLabel}>Removed at</Text>
+                <Text style={styles.providerAbsentValue}>
+                  {formatDateLong(activity.providerAbsentAt)}
+                </Text>
+              </View>
+            </View>
           </View>
         )}
       </View>

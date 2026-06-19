@@ -6,6 +6,10 @@ import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { osmTileUrl } from "../lib/osm-tile.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import {
+  ActivitySourceAttribution,
+  type ProviderLookup,
+} from "../models/activity-source-attribution.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { getActivityRoutePreviews } from "./activity-route-preview.ts";
 
@@ -38,6 +42,11 @@ export interface CalendarActivityEntry {
   calories: number | null;
   tss: number | null;
   stats: ActivityStat[];
+  isProviderAbsent?: boolean;
+  providerId?: string;
+  providerAbsentAt?: string | null;
+  partialAbsenceSummary?: string | null;
+  tombstoneSummary?: string | null;
 }
 
 export interface CalendarDayActivities {
@@ -72,6 +81,11 @@ const activityRowSchema = z.object({
   centroid_lat: z.coerce.number().nullable(),
   centroid_lng: z.coerce.number().nullable(),
   local_date: dateStringSchema,
+  absent_source_external_ids: z
+    .array(z.record(z.string(), z.string().nullable()))
+    .optional()
+    .default([]),
+  source_external_ids: z.array(z.record(z.string(), z.string().nullable())).optional().default([]),
 });
 
 const caloriesRowSchema = z.object({
@@ -96,6 +110,23 @@ const activityTypeRowSchema = z.object({
   activity_type: z.string(),
 });
 
+const providerAbsentActivityRowSchema = activityRowSchema.extend({
+  provider_id: z.string(),
+  provider_absent_at: timestampStringSchema,
+  calories: z.coerce.number().nullable().optional(),
+});
+
+const activitySummaryMetricsRowSchema = z.object({
+  id: z.string(),
+  avg_hr: z.coerce.number().nullable(),
+  max_hr: z.coerce.number().nullable(),
+  avg_power: z.coerce.number().nullable(),
+  total_distance: z.coerce.number().nullable(),
+  elevation_gain_m: z.coerce.number().nullable(),
+  centroid_lat: z.coerce.number().nullable(),
+  centroid_lng: z.coerce.number().nullable(),
+});
+
 // ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
@@ -104,11 +135,13 @@ export interface WeekListInput {
   weeks: number;
   endDate: string;
   activityType?: string;
+  includeProviderAbsent?: boolean;
 }
 
 /** Per-activity calendar data (location for outdoor, calories + TSS otherwise). */
 export class ActivitiesCalendarRepository extends BaseRepository {
   readonly #sensorStore: ActivitySensorStore;
+  readonly #providerLookup: ProviderLookup;
 
   constructor(
     db: Pick<Database, "execute">,
@@ -116,12 +149,24 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     timezone: string,
     sensorStore: ActivitySensorStore,
     accessWindow?: ConstructorParameters<typeof BaseRepository>[3],
+    providerLookup: ProviderLookup = (providerId) => ({ name: providerId }),
   ) {
     super(db, userId, timezone, accessWindow);
     this.#sensorStore = sensorStore;
+    this.#providerLookup = providerLookup;
   }
 
   async getWeekList(input: WeekListInput): Promise<CalendarDayActivities[]> {
+    const activeDays = await this.#getActiveWeekList(input);
+    if (!input.includeProviderAbsent) {
+      return activeDays;
+    }
+
+    const hiddenDays = await this.#getProviderAbsentWeekList(input);
+    return mergeDayGroups(activeDays, hiddenDays);
+  }
+
+  async #getActiveWeekList(input: WeekListInput): Promise<CalendarDayActivities[]> {
     const days = input.weeks * 7;
     const windowStart = dateWindowStartString(input.endDate, days);
     const activityTypeFilter = activityTypeFilterSql(input);
@@ -144,6 +189,8 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             asum.elevation_gain_m AS elevation_gain_m,
             asum.centroid_lat AS centroid_lat,
             asum.centroid_lng AS centroid_lng,
+            activity.absent_source_external_ids AS absent_source_external_ids,
+            activity.source_external_ids AS source_external_ids,
             toString(toDate(toTimeZone(activity.started_at, {timezone:String}))) AS local_date
           FROM analytics.deduped_activities AS activity FINAL
           LEFT JOIN analytics.activity_summary asum
@@ -197,6 +244,11 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         calculator,
       });
 
+      const sourceAttribution = ActivitySourceAttribution.fromClickHouseRow(
+        row.source_external_ids,
+        row.absent_source_external_ids,
+      );
+
       const entry: CalendarActivityEntry = {
         id: row.id,
         name: row.name,
@@ -204,6 +256,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         startedAt: row.started_at,
         endedAt: row.ended_at,
         durationMin: Math.round(row.duration_min * 10) / 10,
+        partialAbsenceSummary: sourceAttribution.partialAbsenceSummary(this.#providerLookup),
         location:
           row.centroid_lat != null && row.centroid_lng != null
             ? {
@@ -230,6 +283,157 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     return Array.from(dayMap.entries())
       .map(([date, activities]) => ({ date, activities }))
       .sort((a, b) => (a.date < b.date ? 1 : -1));
+  }
+
+  async #getProviderAbsentWeekList(input: WeekListInput): Promise<CalendarDayActivities[]> {
+    const days = input.weeks * 7;
+    const windowStart = dateWindowStartString(input.endDate, days);
+    const activityTypeFilter = activityTypeFilterSql(input);
+    const queryParams = {
+      ...activitySummaryQueryParams(this.userId, this.timezone, windowStart, input),
+      ...this.#clickhouseTimestampAccessParams(),
+    };
+
+    const activityRows = await this.#sensorStore.query(
+      providerAbsentActivityRowSchema,
+      `SELECT
+          toString(activity.id) AS id,
+          activity.name AS name,
+          activity.activity_type AS activity_type,
+          toString(activity.started_at) AS started_at,
+          toString(activity.ended_at) AS ended_at,
+          dateDiff('second', activity.started_at, activity.ended_at) / 60.0 AS duration_min,
+          NULL AS avg_hr,
+          NULL AS max_hr,
+          NULL AS avg_power,
+          NULL AS total_distance,
+          NULL AS elevation_gain_m,
+          NULL AS centroid_lat,
+          NULL AS centroid_lng,
+          toString(toDate(toTimeZone(activity.started_at, {timezone:String}))) AS local_date,
+          activity.provider_id AS provider_id,
+          toString(activity.provider_absent_at) AS provider_absent_at,
+          coalesce(
+            toFloat64OrNull(JSONExtractRaw(activity.raw, 'calories')),
+            toFloat64OrNull(nullIf(JSONExtractString(activity.raw, 'calories'), ''))
+          ) AS calories
+        FROM postgres_fitness.activity AS activity FINAL
+        WHERE activity.user_id = {userId:UUID}
+          AND activity._peerdb_is_deleted = 0
+          AND activity.provider_absent_at IS NOT NULL
+          AND activity.ended_at IS NOT NULL
+          AND toDate(toTimeZone(activity.started_at, {timezone:String})) >= toDate({windowStart:String})
+          ${activityTypeFilter}
+          ${this.#clickhouseTimestampAccessClause()}
+        ORDER BY activity.started_at DESC`,
+      queryParams,
+    );
+
+    if (activityRows.length === 0) {
+      return [];
+    }
+
+    const activityIds = activityRows.map((row) => row.id);
+    const [summaryRows, baselineRows, routePreviewByActivityId] = await Promise.all([
+      this.#fetchSummaryMetricsByActivityId(activityIds),
+      this.#sensorStore.query(
+        baselineRowSchema,
+        `SELECT
+            up.max_hr AS max_hr,
+            up.resting_hr AS resting_hr,
+            up.ftp AS ftp
+          FROM postgres_fitness.user_profile_current up
+          WHERE up.id = {userId:UUID}`,
+        { userId: this.userId },
+      ),
+      getActivityRoutePreviews(this.#sensorStore, this.userId, activityIds),
+    ]);
+
+    const summaryByActivityId = new Map(summaryRows.map((row) => [row.id, row] as const));
+    const enrichedRows = activityRows.map((row) => {
+      const summary = summaryByActivityId.get(row.id);
+      if (!summary) return row;
+      return {
+        ...row,
+        avg_hr: summary.avg_hr,
+        max_hr: summary.max_hr,
+        avg_power: summary.avg_power,
+        total_distance: summary.total_distance,
+        elevation_gain_m: summary.elevation_gain_m,
+        centroid_lat: summary.centroid_lat,
+        centroid_lng: summary.centroid_lng,
+      };
+    });
+
+    const baseline = baselineRows[0] ?? { max_hr: null, resting_hr: null, ftp: null };
+    const calculator = new TrainingStressCalculator();
+
+    const dayMap = new Map<string, CalendarActivityEntry[]>();
+    for (const row of enrichedRows) {
+      const tss = computeActivityTss({
+        durationMin: row.duration_min,
+        avgPower: row.avg_power,
+        avgHr: row.avg_hr,
+        maxHr: row.max_hr,
+        baselineMaxHr: baseline.max_hr,
+        baselineRestingHr: baseline.resting_hr,
+        ftp: baseline.ftp,
+        calculator,
+      });
+
+      const entry: CalendarActivityEntry = {
+        id: row.id,
+        name: row.name,
+        activityType: row.activity_type,
+        startedAt: row.started_at,
+        endedAt: row.ended_at,
+        durationMin: Math.round(row.duration_min * 10) / 10,
+        location:
+          row.centroid_lat != null && row.centroid_lng != null
+            ? {
+                centroidLat: row.centroid_lat,
+                centroidLng: row.centroid_lng,
+                tileUrl:
+                  routePreviewByActivityId.get(row.id)?.tileUrl ??
+                  osmTileUrl(row.centroid_lat, row.centroid_lng),
+                routePath: routePreviewByActivityId.get(row.id)?.routePath ?? null,
+                distanceMeters: row.total_distance,
+                elevationGainM: row.elevation_gain_m,
+              }
+            : null,
+        calories: row.calories ?? null,
+        tss: tss != null ? Math.round(tss * 10) / 10 : null,
+        stats: formatActivityStats(tss, row.calories ?? null),
+        isProviderAbsent: true,
+        providerId: row.provider_id,
+        providerAbsentAt: row.provider_absent_at,
+        tombstoneSummary: ActivitySourceAttribution.hiddenActivityTombstoneSummary(
+          row.provider_id,
+          row.provider_absent_at,
+        ),
+      };
+
+      const bucket = dayMap.get(row.local_date) ?? [];
+      bucket.push(entry);
+      dayMap.set(row.local_date, bucket);
+    }
+
+    return Array.from(dayMap.entries()).map(([date, activities]) => ({ date, activities }));
+  }
+
+  #clickhouseTimestampAccessClause(): string {
+    if (this.accessWindow.kind === "full") return "";
+    return `
+          AND toDate(toTimeZone(activity.started_at, {timezone:String})) >= toDate({accessStartDate:String})
+          AND toDate(toTimeZone(activity.started_at, {timezone:String})) < toDate({accessEndDateExclusive:String})`;
+  }
+
+  #clickhouseTimestampAccessParams(): Record<string, string> {
+    if (this.accessWindow.kind === "full") return {};
+    return {
+      accessStartDate: this.accessWindow.startDate,
+      accessEndDateExclusive: this.accessWindow.endDateExclusive,
+    };
   }
 
   async getActivityOverview(input: WeekListInput): Promise<ActivityOverview> {
@@ -288,6 +492,27 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     };
   }
 
+  async #fetchSummaryMetricsByActivityId(activityIds: string[]) {
+    return this.#sensorStore.query(
+      activitySummaryMetricsRowSchema,
+      `SELECT
+          toString(activity_id) AS id,
+          avg_hr,
+          max_hr,
+          avg_power,
+          total_distance,
+          elevation_gain_m,
+          centroid_lat,
+          centroid_lng
+        FROM analytics.activity_summary_rows FINAL
+        WHERE user_id = {userId:UUID}
+          AND activity_id IN {activityIds:Array(UUID)}
+        ORDER BY refresh_version DESC
+        LIMIT 1 BY activity_id`,
+      { userId: this.userId, activityIds },
+    );
+  }
+
   async #fetchCaloriesByActivityId(activityIds: string[]) {
     if (activityIds.length === 0) return [];
     const activityIdFilter = sql.join(
@@ -307,6 +532,34 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             AND a.raw ? 'calories'`,
     );
   }
+}
+
+export function mergeDayGroups(
+  activeDays: CalendarDayActivities[],
+  hiddenDays: CalendarDayActivities[],
+): CalendarDayActivities[] {
+  const byDate = new Map<string, Map<string, CalendarActivityEntry>>();
+  for (const group of [...activeDays, ...hiddenDays]) {
+    let activitiesById = byDate.get(group.date);
+    if (!activitiesById) {
+      activitiesById = new Map();
+      byDate.set(group.date, activitiesById);
+    }
+    for (const activity of group.activities) {
+      if (!activitiesById.has(activity.id)) {
+        activitiesById.set(activity.id, activity);
+      }
+    }
+  }
+
+  return Array.from(byDate.entries())
+    .map(([date, activitiesById]) => ({
+      date,
+      activities: Array.from(activitiesById.values()).sort((left, right) =>
+        right.startedAt.localeCompare(left.startedAt),
+      ),
+    }))
+    .sort((left, right) => right.date.localeCompare(left.date));
 }
 
 function activityTypeFilterSql(input: Pick<WeekListInput, "activityType">): string {

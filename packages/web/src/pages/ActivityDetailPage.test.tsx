@@ -1,10 +1,12 @@
 /** @vitest-environment jsdom */
 
+import { formatDateTime } from "@dofek/format/format";
 import type { UnitSystem } from "@dofek/format/units";
 import { UnitConverter } from "@dofek/format/units";
 import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ActivityDetail } from "../../../server/src/models/activity.ts";
 import { UnitContext } from "../lib/unitContext.ts";
 
 const capturedOptions: Array<Record<string, unknown>> = [];
@@ -24,13 +26,19 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }));
 
-const mockActivity = {
+const mockActivity: ActivityDetail = {
+  id: "test-123",
+  notes: null,
+  maxSpeed: null,
+  elevationLoss: null,
+  sampleCount: null,
   name: "Morning Run",
   activityType: "running",
   startedAt: "2026-03-18T07:00:00Z",
   endedAt: "2026-03-18T07:45:00Z",
   providerId: "whoop",
   subsource: null,
+  providerAbsentAt: null,
   totalDistance: 10000,
   elevationGain: 200,
   avgHr: 150,
@@ -284,6 +292,28 @@ async function importPage() {
 }
 
 describe("ActivityDetailPage", () => {
+  describe("provider tombstone status", () => {
+    afterEach(() => {
+      mockActivity.providerAbsentAt = null;
+      mockActivity.providerId = "whoop";
+      mockActivity.subsource = null;
+    });
+
+    it("shows tombstone status, provider, and removed time on the detail page", async () => {
+      mockActivity.providerAbsentAt = "2026-03-05T14:30:00.000Z";
+      mockActivity.providerId = "strava";
+      mockActivity.subsource = null;
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(screen.getByText("Removed from provider sync")).toBeDefined();
+      expect(screen.getByText("Removed")).toBeDefined();
+      expect(screen.getByText("Strava")).toBeDefined();
+      expect(screen.getByText(formatDateTime("2026-03-05T14:30:00.000Z"))).toBeDefined();
+    });
+  });
+
   describe("ActivityHeader unit display", () => {
     it("shows metric distance and elevation", async () => {
       const ActivityDetailPage = await importPage();
@@ -333,6 +363,38 @@ describe("ActivityDetailPage", () => {
       renderWithUnits(<ActivityDetailPage />);
 
       expect(screen.getByText(/Strong \(via Apple Health\)/)).toBeDefined();
+
+      Object.assign(mockActivity, originalData);
+    });
+
+    it("renders removed source links without anchors", async () => {
+      const originalData = { ...mockActivity };
+      Object.assign(mockActivity, {
+        providerId: "garmin",
+        subsource: null,
+        sourceProviders: ["garmin", "strava"],
+        sourceLinks: [
+          {
+            providerId: "garmin",
+            label: "Garmin",
+            url: "https://connect.garmin.com/modern/activity/456",
+            providerAbsentAt: null,
+          },
+          {
+            providerId: "strava",
+            label: "Strava",
+            url: "https://www.strava.com/activities/123",
+            providerAbsentAt: "2026-03-05T14:30:00.000Z",
+          },
+        ],
+      });
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(screen.getByText("Strava (removed)")).toBeTruthy();
+      expect(screen.queryByRole("link", { name: "Strava" })).toBeNull();
+      expect(screen.getByRole("link", { name: "Garmin" })).toBeTruthy();
 
       Object.assign(mockActivity, originalData);
     });

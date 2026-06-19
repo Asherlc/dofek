@@ -106,6 +106,44 @@ export const styles = StyleSheet.create({
     color: colors.accent,
     textDecorationLine: "underline",
   },
+  sourceRemoved: {
+    fontSize: 12,
+    color: colors.textTertiary,
+    textDecorationLine: "line-through",
+  },
+  providerAbsentBanner: {
+    marginTop: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(245, 158, 11, 0.35)",
+    backgroundColor: "rgba(245, 158, 11, 0.12)",
+    padding: 12,
+    gap: 10,
+  },
+  providerAbsentTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  providerAbsentDetails: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  providerAbsentDetail: {
+    minWidth: 90,
+    gap: 2,
+  },
+  providerAbsentLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: colors.textTertiary,
+    textTransform: "uppercase",
+  },
+  providerAbsentValue: {
+    fontSize: 12,
+    color: colors.text,
+  },
   deleteButton: {
     backgroundColor: colors.surface,
     borderRadius: 12,

@@ -76,8 +76,10 @@ function getRouteViewportStyle(routePath?: RoutePathPoint[] | null): CSSProperti
 export function ActivitiesPage() {
   const [weeks, setWeeks] = useState(DEFAULT_WEEKS);
   const [activityType, setActivityType] = useState(ALL_ACTIVITY_TYPES);
+  const [showHidden, setShowHidden] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmRestore, setConfirmRestore] = useState(false);
   const [selectedActivityIds, setSelectedActivityIds] = useState<Set<string>>(new Set());
   const endDate = useMemo(() => formatDateYmd(), []);
   const units = useUnitConverter();
@@ -86,6 +88,7 @@ export function ActivitiesPage() {
     weeks,
     endDate,
     ...(selectedActivityType ? { activityType: selectedActivityType } : {}),
+    ...(showHidden ? { includeProviderAbsent: true } : {}),
   };
   const trpcUtils = trpc.useUtils();
   const query = trpc.calendar.weekList.useQuery(queryInput);
@@ -104,16 +107,44 @@ export function ActivitiesPage() {
       setConfirmDelete(false);
     },
   });
+  const restoreProviderAbsent = trpc.activity.restoreProviderAbsent.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        trpcUtils.calendar.weekList.invalidate(),
+        trpcUtils.calendar.activityOverview.invalidate(),
+        trpcUtils.activity.list.invalidate(),
+      ]);
+      setSelectedActivityIds(new Set());
+      setSelectMode(false);
+      setConfirmRestore(false);
+    },
+  });
 
   const dayGroups = query.data;
+  const hiddenActivityIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const day of dayGroups ?? []) {
+      for (const activity of day.activities) {
+        if (activity.isProviderAbsent) {
+          ids.add(activity.id);
+        }
+      }
+    }
+    return ids;
+  }, [dayGroups]);
   const hasActivities = dayGroups?.some((day) => day.activities.length > 0) ?? false;
   const selectedCount = selectedActivityIds.size;
+  const selectedHiddenCount = [...selectedActivityIds].filter((id) =>
+    hiddenActivityIds.has(id),
+  ).length;
+  const selectedVisibleCount = selectedCount - selectedHiddenCount;
   const subtitle = `Last ${weeks} weeks`;
 
   const cancelSelection = () => {
     setSelectedActivityIds(new Set());
     setSelectMode(false);
     setConfirmDelete(false);
+    setConfirmRestore(false);
   };
 
   const toggleSelectedActivity = (activityId: string) => {
@@ -129,8 +160,17 @@ export function ActivitiesPage() {
   };
 
   const handleConfirmDelete = () => {
-    if (selectedCount === 0) return;
-    bulkDelete.mutate({ ids: [...selectedActivityIds] });
+    if (selectedVisibleCount === 0) return;
+    bulkDelete.mutate({
+      ids: [...selectedActivityIds].filter((id) => !hiddenActivityIds.has(id)),
+    });
+  };
+
+  const handleConfirmRestore = () => {
+    if (selectedHiddenCount === 0) return;
+    restoreProviderAbsent.mutate({
+      ids: [...selectedActivityIds].filter((id) => hiddenActivityIds.has(id)),
+    });
   };
 
   const updateActivityType = (nextActivityType: string) => {
@@ -143,6 +183,11 @@ export function ActivitiesPage() {
     cancelSelection();
   };
 
+  const updateShowHidden = (nextShowHidden: boolean) => {
+    setShowHidden(nextShowHidden);
+    cancelSelection();
+  };
+
   return (
     <PageLayout title="Activities" subtitle={subtitle}>
       <div className="space-y-4">
@@ -150,19 +195,30 @@ export function ActivitiesPage() {
           activityTypes={overviewQuery.data?.activityTypes ?? []}
           activityType={activityType}
           weeks={weeks}
+          showHidden={showHidden}
           canSelect={hasActivities}
           selectMode={selectMode}
           confirmDelete={confirmDelete}
+          confirmRestore={confirmRestore}
           selectedCount={selectedCount}
+          selectedHiddenCount={selectedHiddenCount}
+          selectedVisibleCount={selectedVisibleCount}
           deletePending={bulkDelete.isPending}
+          restorePending={restoreProviderAbsent.isPending}
           onActivityTypeChange={updateActivityType}
           onWeeksChange={updateWeeks}
+          onShowHiddenChange={updateShowHidden}
           onSelect={() => setSelectMode(true)}
           onCancelSelection={cancelSelection}
           onDeleteSelected={() => setConfirmDelete(true)}
+          onRestoreSelected={() => setConfirmRestore(true)}
           onConfirmDelete={handleConfirmDelete}
+          onConfirmRestore={handleConfirmRestore}
         />
         {bulkDelete.error ? <QueryStatePanel error={bulkDelete.error} height={80} /> : null}
+        {restoreProviderAbsent.error ? (
+          <QueryStatePanel error={restoreProviderAbsent.error} height={80} />
+        ) : null}
         {overviewQuery.isLoading ? (
           <QueryStatePanel variant="loading" height={120} />
         ) : overviewQuery.isError ? (
@@ -178,7 +234,11 @@ export function ActivitiesPage() {
       ) : !dayGroups || dayGroups.length === 0 ? (
         <QueryStatePanel
           variant="empty"
-          message={`No activities in the last ${weeks} weeks.`}
+          message={
+            showHidden
+              ? `No activities in the last ${weeks} weeks, including hidden ones.`
+              : `No activities in the last ${weeks} weeks.`
+          }
           height={200}
         />
       ) : (
@@ -215,34 +275,50 @@ interface ActivityControlsProps {
   activityTypes: string[];
   activityType: string;
   weeks: number;
+  showHidden: boolean;
   canSelect: boolean;
   selectMode: boolean;
   confirmDelete: boolean;
+  confirmRestore: boolean;
   selectedCount: number;
+  selectedHiddenCount: number;
+  selectedVisibleCount: number;
   deletePending: boolean;
+  restorePending: boolean;
   onActivityTypeChange: (activityType: string) => void;
   onWeeksChange: (weeks: number) => void;
+  onShowHiddenChange: (showHidden: boolean) => void;
   onSelect: () => void;
   onCancelSelection: () => void;
   onDeleteSelected: () => void;
+  onRestoreSelected: () => void;
   onConfirmDelete: () => void;
+  onConfirmRestore: () => void;
 }
 
 function ActivityControls({
   activityTypes,
   activityType,
   weeks,
+  showHidden,
   canSelect,
   selectMode,
   confirmDelete,
+  confirmRestore,
   selectedCount,
+  selectedHiddenCount,
+  selectedVisibleCount,
   deletePending,
+  restorePending,
   onActivityTypeChange,
   onWeeksChange,
+  onShowHiddenChange,
   onSelect,
   onCancelSelection,
   onDeleteSelected,
+  onRestoreSelected,
   onConfirmDelete,
+  onConfirmRestore,
 }: ActivityControlsProps) {
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface-solid p-3">
@@ -269,26 +345,52 @@ function ActivityControls({
               <button
                 type="button"
                 onClick={onConfirmDelete}
-                disabled={deletePending || selectedCount === 0}
+                disabled={deletePending || selectedVisibleCount === 0}
                 className="px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
               >
                 {deletePending ? "Deleting..." : "Confirm Delete"}
               </button>
             </>
+          ) : confirmRestore ? (
+            <>
+              <span className="text-xs text-muted">
+                Restore selected hidden activities? They will reappear in your activity log.
+              </span>
+              <button
+                type="button"
+                onClick={onConfirmRestore}
+                disabled={restorePending || selectedHiddenCount === 0}
+                className="px-3 py-1.5 text-xs rounded bg-accent text-white hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              >
+                {restorePending ? "Restoring..." : "Confirm Restore"}
+              </button>
+            </>
           ) : (
-            <button
-              type="button"
-              onClick={onDeleteSelected}
-              disabled={deletePending || selectedCount === 0}
-              className="px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
-            >
-              Delete
-            </button>
+            <>
+              {showHidden ? (
+                <button
+                  type="button"
+                  onClick={onRestoreSelected}
+                  disabled={restorePending || selectedHiddenCount === 0}
+                  className="px-3 py-1.5 text-xs rounded bg-accent text-white hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                >
+                  Restore
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={onDeleteSelected}
+                disabled={deletePending || selectedVisibleCount === 0}
+                className="px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              >
+                Delete
+              </button>
+            </>
           )}
           <button
             type="button"
             onClick={onCancelSelection}
-            disabled={deletePending}
+            disabled={deletePending || restorePending}
             className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors cursor-pointer"
           >
             Cancel
@@ -296,6 +398,15 @@ function ActivityControls({
         </div>
       ) : null}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+        <label className="flex items-center gap-2 text-xs text-muted">
+          <input
+            type="checkbox"
+            checked={showHidden}
+            onChange={(event) => onShowHiddenChange(event.target.checked)}
+            className="h-4 w-4 accent-accent cursor-pointer"
+          />
+          Show hidden activities
+        </label>
         <label className="flex items-center gap-2 text-xs text-muted">
           Date range
           <select
@@ -337,6 +448,9 @@ interface ActivityCardProps {
     activityType: string;
     startedAt: string;
     durationMin: number;
+    isProviderAbsent?: boolean;
+    partialAbsenceSummary?: string | null;
+    tombstoneSummary?: string | null;
     location: ActivityMapTileProps["location"] | null;
     stats: { label: string; value: string }[];
   };
@@ -353,10 +467,12 @@ function ActivityCard({
   selected,
   onToggleSelected,
 }: ActivityCardProps) {
+  const isHidden = activity.isProviderAbsent === true;
   const cardClassName = [
     "card block overflow-hidden transition-colors",
     selectMode ? "cursor-pointer hover:bg-surface-elevated" : "hover:bg-surface-elevated",
     selected ? "ring-2 ring-accent bg-surface-hover" : "",
+    isHidden ? "border-l-4 border-l-amber-500/80 bg-amber-500/5" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -381,10 +497,25 @@ function ActivityCard({
             <span className="rounded border border-border bg-surface-secondary px-1.5 py-0.5 text-[11px] font-medium text-muted">
               {formatActivityTypeLabel(activity.activityType)}
             </span>
+            {isHidden ? (
+              <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                Removed
+              </span>
+            ) : null}
           </div>
           <p className="mt-1 text-xs text-muted">
             {formatTime(activity.startedAt)} · {formatDurationMinutes(activity.durationMin)}
           </p>
+          {activity.tombstoneSummary ? (
+            <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+              {activity.tombstoneSummary}
+            </p>
+          ) : null}
+          {activity.partialAbsenceSummary ? (
+            <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+              {activity.partialAbsenceSummary}
+            </p>
+          ) : null}
         </div>
         <ActivityMetricStrip activity={activity} units={units} />
       </div>

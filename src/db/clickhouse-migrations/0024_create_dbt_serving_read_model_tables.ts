@@ -50,6 +50,31 @@ const healthspanActivityZoneMinutesTableSql = `CREATE TABLE IF NOT EXISTS analyt
 ENGINE = ReplacingMergeTree(refresh_version)
 ORDER BY (user_id, activity_id)`;
 
+const dedupedActivitiesTableSql = `CREATE TABLE IF NOT EXISTS analytics.deduped_activities (
+  activity_id UUID,
+  provider_id String,
+  user_id UUID,
+  primary_activity_id UUID,
+  activity_type String,
+  started_at DateTime64(6, 'UTC'),
+  ended_at Nullable(DateTime64(6, 'UTC')),
+  source_name Nullable(String),
+  name Nullable(String),
+  notes Nullable(String),
+  timezone Nullable(String),
+  raw Nullable(String),
+  source_synced_at DateTime64(9, 'UTC'),
+  source_providers Array(String),
+  source_external_ids Array(Map(String, String)),
+  absent_source_external_ids Array(Map(String, String)),
+  member_activity_ids Array(UUID),
+  refresh_version UInt64,
+  is_deleted UInt8,
+  refreshed_at DateTime64(9, 'UTC')
+)
+ENGINE = ReplacingMergeTree(refresh_version)
+ORDER BY (user_id, activity_id)`;
+
 export function createMigration(): ClickHouseMigration {
   return {
     id: "0024_create_dbt_serving_read_model_tables",
@@ -57,6 +82,7 @@ export function createMigration(): ClickHouseMigration {
       dailyRecoveryInputsTableSql,
       dailyActivityLoadTableSql,
       healthspanActivityZoneMinutesTableSql,
+      dedupedActivitiesTableSql,
       "DROP VIEW IF EXISTS analytics.provider_stats",
       "DROP TABLE IF EXISTS analytics.provider_stats",
       buildProviderStatsTableSql(),

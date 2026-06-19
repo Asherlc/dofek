@@ -1,10 +1,12 @@
 import { TRPCError } from "@trpc/server";
+import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";
 import { endDateSchema } from "../lib/date-window.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { ActivitiesCalendarRepository } from "../repositories/activities-calendar-repository.ts";
 import { CalendarRepository } from "../repositories/calendar-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+import { ensureProvidersRegistered } from "./sync-helpers.ts";
 
 export interface CalendarDay {
   date: string;
@@ -43,6 +45,11 @@ const calendarActivityEntrySchema = z.object({
   calories: z.number().nullable(),
   tss: z.number().nullable(),
   stats: z.array(activityStatSchema),
+  isProviderAbsent: z.boolean().optional(),
+  providerId: z.string().optional(),
+  providerAbsentAt: timestampStringSchema.nullable().optional(),
+  partialAbsenceSummary: z.string().nullable().optional(),
+  tombstoneSummary: z.string().nullable().optional(),
 });
 
 const calendarDayActivitiesSchema = z.object({
@@ -54,6 +61,7 @@ const activityListInputSchema = z.object({
   weeks: z.number().int().min(1).max(52).default(4),
   endDate: endDateSchema,
   activityType: z.string().min(1).optional(),
+  includeProviderAbsent: z.boolean().default(false).optional(),
 });
 
 const activityOverviewSchema = z.object({
@@ -84,12 +92,14 @@ export const calendarRouter = router({
             "Activity calendar requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.",
         });
       }
+      await ensureProvidersRegistered();
       const repo = new ActivitiesCalendarRepository(
         ctx.db,
         ctx.userId,
         ctx.timezone,
         ctx.sensorStore,
         ctx.accessWindow,
+        getProvider,
       );
       return repo.getWeekList(input);
     }),

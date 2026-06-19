@@ -27,6 +27,7 @@ import * as createDomainDashboardTablesMigration from "./clickhouse-migrations/0
 import * as activityProviderAbsenceMigration from "./clickhouse-migrations/0029_activity_provider_absence.ts";
 import * as activityMirrorOrderKeyMigration from "./clickhouse-migrations/0030_activity_mirror_order_key.ts";
 import * as activityUserSoftDeleteMigration from "./clickhouse-migrations/0031_activity_user_soft_delete.ts";
+import * as dedupedActivitiesAbsentSourceLinksMigration from "./clickhouse-migrations/0032_deduped_activities_absent_source_links.ts";
 import { clickHouseMigrationFileNames } from "./clickhouse-migrations/registry.ts";
 import { runClickHouseMigrationStatement } from "./clickhouse-migrations/statement-runner.ts";
 import {
@@ -69,7 +70,15 @@ describe("buildClickHouseMigrationStatements", () => {
       "0029_activity_provider_absence.ts",
       "0030_activity_mirror_order_key.ts",
       "0031_activity_user_soft_delete.ts",
+      "0032_deduped_activities_absent_source_links.ts",
     ]);
+  });
+
+  it("keeps absent source link migration as a custom run", () => {
+    const migration = dedupedActivitiesAbsentSourceLinksMigration.createMigration();
+
+    expect(migration.statements).toEqual([]);
+    expect(migration.run).toBeTypeOf("function");
   });
 
   it("keeps custom-run migrations free of accidental static statements", () => {
@@ -78,6 +87,7 @@ describe("buildClickHouseMigrationStatements", () => {
     expect(repairMetricStreamBackfillMigration.createMigration().statements).toEqual([]);
     expect(restingHeartRateSleepWindowMigration.createMigration().statements).toEqual([]);
     expect(activityMirrorOrderKeyMigration.createMigration().statements).toEqual([]);
+    expect(dedupedActivitiesAbsentSourceLinksMigration.createMigration().statements).toEqual([]);
   });
 
   it("keeps the derived resting heart rate cleanup statements in its migration file", () => {
@@ -460,7 +470,7 @@ describe("runClickHouseMigrations", () => {
 
     const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
-    expect(count).toBe(31);
+    expect(count).toBe(32);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(

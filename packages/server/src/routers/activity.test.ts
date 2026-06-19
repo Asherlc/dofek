@@ -17,10 +17,13 @@ vi.mock("dofek/lib/cache", () => ({
 }));
 
 const mockEnqueueActivityDeleteAnalyticsRefresh = vi.fn().mockResolvedValue(undefined);
+const mockEnqueueActivityRestoreAnalyticsRefresh = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("dofek/jobs/queues", () => ({
   enqueueActivityDeleteAnalyticsRefresh: (...args: unknown[]) =>
     mockEnqueueActivityDeleteAnalyticsRefresh(...args),
+  enqueueActivityRestoreAnalyticsRefresh: (...args: unknown[]) =>
+    mockEnqueueActivityRestoreAnalyticsRefresh(...args),
 }));
 
 // Mock tRPC infrastructure
@@ -348,11 +351,17 @@ describe("activityRouter", () => {
       expect(result.elevationGain).toBe(300);
       expect(result.subsource).toBeNull();
       expect(result.sourceLinks).toEqual([
-        { providerId: "strava", label: "Strava", url: "https://www.strava.com/activities/99999" },
+        {
+          providerId: "strava",
+          label: "Strava",
+          url: "https://www.strava.com/activities/99999",
+          providerAbsentAt: null,
+        },
         {
           providerId: "wahoo",
           label: "Wahoo",
           url: "https://systm.wahoofitness.com/history/activity-details/42",
+          providerAbsentAt: null,
         },
       ]);
     });
@@ -776,6 +785,129 @@ describe("activityRouter", () => {
     });
   });
 
+  describe("restoreProviderAbsent", () => {
+    it("restores hidden activities and returns the restored count", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValue([
+          { id: "00000000-0000-0000-0000-000000000001" },
+          { id: "00000000-0000-0000-0000-000000000002" },
+        ]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.restoreProviderAbsent({
+          ids: ["00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002"],
+        }),
+      ).resolves.toEqual({ success: true, restoredCount: 2 });
+    });
+
+    it("invalidates activity and calendar caches after restore", async () => {
+      const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.restoreProviderAbsent({
+        ids: ["00000000-0000-0000-0000-000000000001"],
+      });
+
+      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:activity.");
+      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:calendar.");
+    });
+
+    it("enqueues an activity restore analytics refresh after restore", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValue([
+          { id: "00000000-0000-0000-0000-000000000001" },
+          { id: "00000000-0000-0000-0000-000000000002" },
+        ]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.restoreProviderAbsent({
+        ids: ["00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002"],
+      });
+
+      expect(mockEnqueueActivityRestoreAnalyticsRefresh).toHaveBeenCalledWith("user-1", [
+        "00000000-0000-0000-0000-000000000001",
+        "00000000-0000-0000-0000-000000000002",
+      ]);
+    });
+
+    it("reports restore analytics enqueue failures to Sentry without failing restore", async () => {
+      const Sentry = await import("@sentry/node");
+      vi.mocked(Sentry.captureException).mockClear();
+      const enqueueError = new Error("redis unavailable");
+      mockEnqueueActivityRestoreAnalyticsRefresh.mockRejectedValueOnce(enqueueError);
+      const execute = vi.fn().mockResolvedValue([{ id: "00000000-0000-0000-0000-000000000001" }]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.restoreProviderAbsent({
+          ids: ["00000000-0000-0000-0000-000000000001"],
+        }),
+      ).resolves.toEqual({ success: true, restoredCount: 1 });
+
+      expect(Sentry.captureException).toHaveBeenCalledWith(enqueueError, {
+        tags: { phase: "activity-restore-analytics-enqueue" },
+        extra: { userId: "user-1", activityCount: 1 },
+      });
+    });
+
+    it("throws PRECONDITION_FAILED when activity views are missing", async () => {
+      const execute = vi.fn().mockRejectedValue(
+        Object.assign(new Error('relation "fitness.v_activity" does not exist'), {
+          code: "42P01",
+        }),
+      );
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.restoreProviderAbsent({
+          ids: ["00000000-0000-0000-0000-000000000001"],
+        }),
+      ).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message:
+          "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
+      });
+    });
+
+    it("re-throws non-relation errors from restore", async () => {
+      const execute = vi.fn().mockRejectedValue(new Error("connection refused"));
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.restoreProviderAbsent({
+          ids: ["00000000-0000-0000-0000-000000000001"],
+        }),
+      ).rejects.toThrow("connection refused");
+    });
+  });
+
   describe("strengthExercises", () => {
     it("uses the configured sensor store when resolving the activity", async () => {
       const getExercisesForActivitySpy = vi
@@ -1121,7 +1253,7 @@ describe("Activity model (via router integration)", () => {
     expect(detail.name).toBe("Morning Ride");
     expect(detail.notes).toBe("Felt good");
     expect(detail.providerId).toBe("wahoo");
-    expect(detail.sourceProviders).toEqual(["wahoo", "strava"]);
+    expect(detail.sourceProviders).toEqual(["strava", "wahoo"]);
     expect(detail.sourceLinks).toHaveLength(2);
     expect(detail.sourceLinks[0]?.label).toBe("Strava");
     expect(detail.avgHr).toBe(145);
