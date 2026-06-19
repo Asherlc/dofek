@@ -93,7 +93,7 @@ export function parseRetryAfterHeader(header: string | null | undefined): number
   return Math.max(0, Math.ceil((retryAt - Date.now()) / 1000));
 }
 
-function isServiceUnavailableStatus(statusCode: number): boolean {
+export function isServiceUnavailableStatus(statusCode: number): boolean {
   return statusCode === 502 || statusCode === 503 || statusCode === 504;
 }
 

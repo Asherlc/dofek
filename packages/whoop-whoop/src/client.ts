@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   fetchWithRateLimitHandling,
+  isServiceUnavailableStatus,
   ProviderRateLimitError,
   ProviderServiceUnavailableError,
   parseRetryAfterHeader,
@@ -68,10 +69,6 @@ function createWhoopServiceUnavailableError(
     responseBody,
     retryAfterSeconds: parseRetryAfterHeader(response.headers.get("Retry-After")),
   });
-}
-
-function isWhoopServiceUnavailableStatus(statusCode: number): boolean {
-  return statusCode === 502 || statusCode === 503 || statusCode === 504;
 }
 
 // Cognito auth config (from id.whoop.com web app)
@@ -435,7 +432,7 @@ export class WhoopClient {
     }
 
     const text = await response.text();
-    if (isWhoopServiceUnavailableStatus(response.status)) {
+    if (isServiceUnavailableStatus(response.status)) {
       throw createWhoopServiceUnavailableError(response, text);
     }
     throw new Error(`WHOOP API error (${response.status}): ${text}`);
