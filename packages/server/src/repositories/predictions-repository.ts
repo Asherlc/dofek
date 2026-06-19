@@ -16,7 +16,7 @@ import type { PredictionTarget } from "../ml/features.ts";
 import { getPredictionTarget, PREDICTION_TARGETS } from "../ml/features.ts";
 import type { PredictionResult } from "../ml/predictor.ts";
 import { trainFromDataset, trainPredictor } from "../ml/predictor.ts";
-import { activityRepositoryFor, type ActivitySensorStore } from "./activity-repository.ts";
+import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 import { fetchBodyCompRows } from "./body-clickhouse.ts";
 import { fetchSleepNights } from "./clickhouse-sleep-repository.ts";
 import { fetchRestingHeartRateValuesCte, localDateString } from "./resting-heart-rate-query.ts";

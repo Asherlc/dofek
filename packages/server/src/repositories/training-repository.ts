@@ -5,7 +5,7 @@ import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
-import { activityRepositoryFor, type ActivitySensorStore } from "./activity-repository.ts";
+import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 import {
   heartRateZoneCountColumns,
   heartRateZoneSqlParams,
@@ -232,9 +232,12 @@ export class TrainingRepository extends BaseRepository {
       ORDER BY a.started_at DESC`,
       { userId: this.userId, days },
     );
-    return activityRepositoryFor(this.db, this.userId, this.timezone, this.accessWindow).filterToVisibleActivities(
-      rows,
-    );
+    return activityRepositoryFor(
+      this.db,
+      this.userId,
+      this.timezone,
+      this.accessWindow,
+    ).filterToVisibleActivities(rows);
   }
 
   async #loadRawActivityCount(

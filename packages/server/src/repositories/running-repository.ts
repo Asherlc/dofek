@@ -1,7 +1,7 @@
 import type { Database } from "dofek/db";
 import { z } from "zod";
 import { dateStringSchema } from "../lib/typed-sql.ts";
-import { activityRepositoryFor, type ActivitySensorStore } from "./activity-repository.ts";
+import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -217,10 +217,10 @@ export class RunningRepository {
       },
     );
 
-    const visibleRows = await activityRepositoryFor(this.#db, this.#userId).filterToVisibleActivities(
-      rows,
-      (row) => row.activity_id,
-    );
+    const visibleRows = await activityRepositoryFor(
+      this.#db,
+      this.#userId,
+    ).filterToVisibleActivities(rows, (row) => row.activity_id);
 
     return visibleRows.map(
       (row) =>
@@ -264,10 +264,10 @@ export class RunningRepository {
       },
     );
 
-    const visibleRows = await activityRepositoryFor(this.#db, this.#userId).filterToVisibleActivities(
-      rows,
-      (row) => row.activity_id,
-    );
+    const visibleRows = await activityRepositoryFor(
+      this.#db,
+      this.#userId,
+    ).filterToVisibleActivities(rows, (row) => row.activity_id);
 
     return visibleRows.map(
       (row) =>

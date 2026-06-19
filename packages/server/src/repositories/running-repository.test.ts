@@ -283,11 +283,11 @@ describe("PaceTrendActivity", () => {
 describe("RunningRepository", () => {
   function makeRepository(rows: Record<string, unknown>[] = []) {
     const query = vi.fn().mockResolvedValue(rows);
-    const execute = vi.fn().mockImplementation(async () =>
-      rows.flatMap((row) =>
-        row.activity_id != null ? [{ id: String(row.activity_id) }] : [],
-      ),
-    );
+    const execute = vi
+      .fn()
+      .mockImplementation(async () =>
+        rows.flatMap((row) => (row.activity_id != null ? [{ id: String(row.activity_id) }] : [])),
+      );
     const db = { execute };
     const sensorStore = {
       query,

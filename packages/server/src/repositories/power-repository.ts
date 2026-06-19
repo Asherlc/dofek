@@ -6,7 +6,7 @@ import {
   fitCriticalPower,
 } from "@dofek/training/power-analysis";
 import type { Database } from "dofek/db";
-import { activityRepositoryFor, type ActivitySensorStore } from "./activity-repository.ts";
+import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 
 // ── Repository ───────────────────────────────────────────────
 

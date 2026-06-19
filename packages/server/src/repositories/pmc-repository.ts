@@ -8,9 +8,9 @@ import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { activityRepositoryFor } from "./activity-repository.ts";
 import { PmcChartCalculator } from "./pmc-chart-calculator.ts";
 import { PmcTrainingLoadCalculator } from "./pmc-training-load-calculator.ts";
-import { activityRepositoryFor } from "./activity-repository.ts";
 import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
 
 // ---------------------------------------------------------------------------
@@ -189,10 +189,13 @@ export class PmcRepository extends BaseRepository {
   }
 
   async #loadRawActivityCount(days: number): Promise<number> {
-    return activityRepositoryFor(this.db, this.userId, this.timezone, this.accessWindow).countVisibleInWindow(
-      {
-        days,
-      },
-    );
+    return activityRepositoryFor(
+      this.db,
+      this.userId,
+      this.timezone,
+      this.accessWindow,
+    ).countVisibleInWindow({
+      days,
+    });
   }
 }

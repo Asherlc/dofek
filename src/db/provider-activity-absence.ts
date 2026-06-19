@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
-import type { SyncDatabase } from "./index.ts";
 import { queryCache } from "../lib/cache.ts";
+import type { SyncDatabase } from "./index.ts";
 import { getTokenUserId } from "./token-user-context.ts";
 
 export interface ProviderActivityAbsenceReconciliation {

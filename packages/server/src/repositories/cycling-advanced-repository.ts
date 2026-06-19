@@ -4,6 +4,7 @@ import { z } from "zod";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { activityRepositoryFor } from "./activity-repository.ts";
 import {
   ActivityVariabilityModel,
   PedalDynamicsModel,
@@ -12,7 +13,6 @@ import {
   TrainingMonotonyWeekModel,
   VerticalAscentModel,
 } from "./cycling-advanced-models.ts";
-import { activityRepositoryFor } from "./activity-repository.ts";
 import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
 
 const ENDURANCE_TYPES: string[] = [...ENDURANCE_ACTIVITY_TYPES];

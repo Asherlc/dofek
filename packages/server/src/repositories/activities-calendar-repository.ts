@@ -10,7 +10,7 @@ import {
   ActivitySourceAttribution,
   type ProviderLookup,
 } from "../models/activity-source-attribution.ts";
-import { activityRepositoryFor, type ActivitySensorStore } from "./activity-repository.ts";
+import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 import { getActivityRoutePreviews } from "./activity-route-preview.ts";
 
 // ---------------------------------------------------------------------------
@@ -533,7 +533,6 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             AND a.raw ? 'calories'`,
     );
   }
-
 }
 
 export function mergeDayGroups(

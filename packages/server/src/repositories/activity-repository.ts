@@ -262,6 +262,16 @@ export interface CountVisibleInWindowInput {
   accessWindow?: AccessWindow;
 }
 
+function readActivityId(row: unknown): string {
+  if (typeof row === "object" && row !== null && "id" in row) {
+    const { id } = row;
+    if (typeof id === "string") {
+      return id;
+    }
+  }
+  throw new Error("Activity row is missing a string id");
+}
+
 /** Factory for repositories that need activity visibility helpers without a sensor store. */
 export function activityRepositoryFor(
   db: Pick<import("dofek/db").Database, "execute">,
@@ -309,9 +319,14 @@ export class ActivityRepository extends BaseRepository {
   }
 
   /** Drops rows whose ids are not currently visible in fitness.v_activity. */
+  async filterToVisibleActivities<T extends { id: string }>(rows: readonly T[]): Promise<T[]>;
   async filterToVisibleActivities<T>(
     rows: readonly T[],
-    getActivityId: (row: T) => string = (row) => (row as { id: string }).id,
+    getActivityId: (row: T) => string,
+  ): Promise<T[]>;
+  async filterToVisibleActivities<T>(
+    rows: readonly T[],
+    getActivityId: (row: T) => string = readActivityId,
   ): Promise<T[]> {
     const visibleActivityIds = await this.resolveVisibleActivityIds(rows.map(getActivityId));
     return rows.filter((row) => visibleActivityIds.has(getActivityId(row)));

@@ -36,7 +36,9 @@ function makeDatabase(rowsOrRowSets: TestDatabaseRow[] | TestDatabaseRow[][] = [
       return caloriesRows;
     }
     if (compiled.sql.includes("fitness.v_activity")) {
-      const stringParams = compiled.params.filter((param): param is string => typeof param === "string");
+      const stringParams = compiled.params.filter(
+        (param): param is string => typeof param === "string",
+      );
       return stringParams.slice(1).map((id) => ({ id }));
     }
     return [];
