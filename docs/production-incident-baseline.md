@@ -10940,3 +10940,51 @@ new incremental tables are populated.
   the prior recorded-time lookback can still miss stream metrics in production
   until the fixed models are deployed and the affected batches are explicitly
   backfilled or rebuilt.
+
+## 2026-06-18 — Sleep heart-rate backfill exposed missing raw PeerDB mirrors
+
+- **Symptoms:** A production `dbt build --full-refresh --select
+  sleep_heart_rate_sample+` initially completed successfully but rebuilt
+  `analytics.sleep_heart_rate_sample`, `analytics.resting_heart_rate_sleep_window`,
+  `analytics.activity_vo2max_estimate`, `analytics.daily_recovery_inputs`, and
+  `analytics.daily_recovery` to zero rows.
+- **User impact:** Sleep/recovery read models were temporarily empty after the
+  first backfill attempt. The public health endpoint remained healthy, but
+  ClickHouse-backed dashboard data depended on a second backfill after CDC
+  recovery.
+- **Evidence:** Postgres source tables had data:
+  `fitness.activity = 1210` rows with latest `2026-06-19 00:19:00.58+00` and
+  `fitness.sleep_session = 195` rows with latest `2026-06-18 05:24:04.73+00`.
+  ClickHouse raw mirrors had zero rows in `postgres_fitness.activity`,
+  `postgres_fitness.sleep_session`, `postgres_fitness.sleep_stage`,
+  `postgres_fitness.daily_metrics`, provider inventory tables, and sensor
+  priority tables. `pg_replication_slots` returned zero rows. The `cdc-health`
+  service logged missing raw mirrors and missing slots for
+  `dofek_fitness_raw_analytics`, `dofek_provider_inventory_raw_analytics`, and
+  `dofek_sensor_priority_raw_analytics`.
+- **Root cause:** Partially unresolved. The immediate cause was that the managed
+  raw PeerDB mirrors and their Postgres logical replication slots were absent,
+  so dbt rebuilt downstream models from empty ClickHouse CDC sources. The
+  evidence does not yet prove why the mirrors/slots disappeared.
+- **Fix / mitigation:** Ran the checked-in ClickHouse CDC setup path inside the
+  production swarm network with explicit PeerDB/Postgres/ClickHouse host
+  overrides. It recreated the three raw mirrors and slots; `pg_replication_slots`
+  then showed all three active with `wal_status = reserved`. The raw mirrors
+  repopulated to `postgres_fitness.activity = 1210` and
+  `postgres_fitness.sleep_session = 195`. Reran the corrected branch SQL with
+  `dbt build --full-refresh --select sleep_heart_rate_sample+`; it completed
+  `PASS=7 WARN=0 ERROR=0` in 189 seconds. Final verification showed
+  `analytics.sleep_heart_rate_sample = 1,352,006`,
+  `analytics.resting_heart_rate_sleep_window = 195`,
+  `analytics.daily_recovery_inputs = 99`, and `analytics.daily_recovery = 99`.
+  A direct CDC health check returned
+  `[clickhouse-cdc-health] ok: checked 3 slots and 1 mirror`.
+- **Remaining risk:** Medium. The one-off backfill used the corrected branch SQL,
+  but production was still running image `sha-1fe83ed`, which does not include
+  the sleep activity-watermark fix. Deploy the PR containing that fix before
+  relying on scheduled `analytics-worker` runs for future activity-only sleep
+  membership changes.
+- **Follow-up:** Investigate why all managed raw PeerDB mirrors and slots were
+  absent despite PeerDB services being healthy. Add an alert that pages on
+  missing managed mirror catalog rows or zero required PeerDB slots, not just
+  stale mirrored timestamps.
