@@ -78,6 +78,10 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+function wrapTileX(tileX: number, tilesPerAxis: number): number {
+  return ((tileX % tilesPerAxis) + tilesPerAxis) % tilesPerAxis;
+}
+
 export function latLngToTile(lat: number, lng: number, zoom: number): TileCoord {
   const tilesPerAxis = 2 ** zoom;
   const maxTileIndex = tilesPerAxis - 1;
@@ -155,14 +159,15 @@ export function osmTilePreview(points: LatLngPoint[]): OsmTilePreview {
   const maxTileX = Math.floor((originPixelX + ROUTE_PREVIEW_WIDTH_PX - 1) / OSM_TILE_SIZE_PX);
   const minTileY = Math.floor(originPixelY / OSM_TILE_SIZE_PX);
   const maxTileY = Math.floor((originPixelY + ROUTE_PREVIEW_HEIGHT_PX - 1) / OSM_TILE_SIZE_PX);
-  const maxTileIndex = 2 ** selectedZoom - 1;
+  const tilesPerAxis = 2 ** selectedZoom;
+  const maxTileIndex = tilesPerAxis - 1;
   const tiles: OsmTilePreviewTile[] = [];
   for (let tileY = minTileY; tileY <= maxTileY; tileY += 1) {
     for (let tileX = minTileX; tileX <= maxTileX; tileX += 1) {
-      const clampedTileX = clamp(tileX, 0, maxTileIndex);
+      const wrappedTileX = wrapTileX(tileX, tilesPerAxis);
       const clampedTileY = clamp(tileY, 0, maxTileIndex);
       tiles.push({
-        url: `${OSM_TILE_HOST}/${selectedZoom}/${clampedTileX}/${clampedTileY}.png`,
+        url: `${OSM_TILE_HOST}/${selectedZoom}/${wrappedTileX}/${clampedTileY}.png`,
         x: roundPathCoordinate(tileX * OSM_TILE_SIZE_PX - originPixelX),
         y: roundPathCoordinate(tileY * OSM_TILE_SIZE_PX - originPixelY),
         width: OSM_TILE_SIZE_PX,

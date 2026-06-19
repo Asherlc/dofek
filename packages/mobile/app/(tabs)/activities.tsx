@@ -427,7 +427,7 @@ interface ActivityMapTileProps {
 
 function ActivityMapTile({ location }: ActivityMapTileProps) {
   const [loadFailed, setLoadFailed] = useState(false);
-  const previewScale = Math.max(
+  const previewScale = Math.min(
     TILE_SIZE / location.mapPreview.width,
     TILE_SIZE / location.mapPreview.height,
   );

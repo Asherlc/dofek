@@ -508,7 +508,11 @@ describe("ActivitiesScreen", () => {
 
     render(<ActivitiesScreen />);
 
+    const previewTile = screen.getByTestId("activity-map-preview-tile");
     expect(screen.getByTestId("activity-route-viewport")).toBeDefined();
-    expect(screen.getByTestId("activity-map-preview-tile")).toBeDefined();
+    expect(previewTile.getAttribute("style")).toContain("left: 0px");
+    expect(previewTile.getAttribute("style")).toContain("top: 21px");
+    expect(previewTile.getAttribute("style")).toContain("width: 24px");
+    expect(previewTile.getAttribute("style")).toContain("height: 24px");
   });
 });

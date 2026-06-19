@@ -187,6 +187,32 @@ describe("osmTilePreview", () => {
     expect(preview.routePath).toBeNull();
   });
 
+  it("wraps low-zoom tile columns across the antimeridian instead of repeating edge tiles", () => {
+    const preview = osmTilePreview([
+      { lat: 0, lng: -170 },
+      { lat: 0, lng: 170 },
+    ]);
+
+    expect(tilePathnames(preview.tiles.map((tile) => tile.url))).toEqual([
+      "/1/0/0.png",
+      "/1/1/0.png",
+      "/1/0/0.png",
+      "/1/1/0.png",
+      "/1/0/1.png",
+      "/1/1/1.png",
+      "/1/0/1.png",
+      "/1/1/1.png",
+      "/1/0/1.png",
+      "/1/1/1.png",
+      "/1/0/1.png",
+      "/1/1/1.png",
+    ]);
+    expect(preview.routePath).toEqual([
+      { x: 14.222, y: 256 },
+      { x: 497.778, y: 256 },
+    ]);
+  });
+
   it("uses the highest preview zoom that fits a long route inside the export", () => {
     const preview = osmTilePreview([
       { lat: 37.7749, lng: -122.4194 },
