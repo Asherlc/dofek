@@ -23,7 +23,7 @@ DBT_SLEEP_DASHBOARD_MODELS="sleep_heart_rate_sample resting_heart_rate_sleep_win
 DBT_SAFE_MODELS="$DBT_ACTIVITY_MODELS $DBT_SLEEP_DASHBOARD_MODELS"
 
 run_dbt_safe_builds() {
-  dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_ACTIVITY_MODELS
+  dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_ACTIVITY_MODELS &&
   dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_SLEEP_DASHBOARD_MODELS
 }
 

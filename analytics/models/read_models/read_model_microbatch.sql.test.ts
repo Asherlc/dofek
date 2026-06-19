@@ -73,7 +73,7 @@ describe("production analytics read-model build", () => {
     ]);
     expect(entrypoint).toContain('DBT_SAFE_MODELS="$DBT_ACTIVITY_MODELS $DBT_SLEEP_DASHBOARD_MODELS"');
     expect(entrypoint).toContain("run_dbt_safe_builds()");
-    expect(entrypoint).toContain("--select $DBT_ACTIVITY_MODELS");
+    expect(entrypoint).toContain("--select $DBT_ACTIVITY_MODELS &&");
     expect(entrypoint).toContain("--select $DBT_SLEEP_DASHBOARD_MODELS");
   });
 
@@ -89,6 +89,8 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("sleep_dirty_keys AS");
     expect(sql).toContain("sensor_dirty_keys AS");
     expect(sql).toContain("activity_dirty_keys AS");
+    expect(sql).toContain("activity_dirty_refreshes AS");
+    expect(sql).toContain("max(activity_source._peerdb_synced_at) AS activity_refreshed_at");
     expect(sql).toContain("initial_dirty_keys AS");
     expect(sql).toContain("stale_sleep_dirty_keys AS");
     expect(sql).toContain("stale_sample_tombstones AS");
@@ -314,7 +316,9 @@ describe("production analytics read-model build", () => {
     );
     expect(activityLocationSampleSql).toContain("source_refreshed_at AS refreshed_at");
     expect(activityLocationSampleSql).not.toContain("now64(9) AS refreshed_at");
-    expect(sleepHeartRateSampleSql).toContain("greatest(samples.refreshed_at, active_dirty_sleep._peerdb_synced_at)");
+    expect(sleepHeartRateSampleSql).toContain(
+      "greatest(samples.refreshed_at, active_dirty_sleep.source_refreshed_at)",
+    );
     expect(sleepHeartRateSampleSql).toContain("source_refreshed_at AS refreshed_at");
     expect(sleepHeartRateSampleSql).toContain("stale_sample_tombstones");
   });

@@ -111,17 +111,18 @@ activity_source AS (
         user_id,
         started_at,
         coalesce(ended_at, started_at + INTERVAL 12 HOUR) AS ended_at,
-        _peerdb_synced_at
+        _peerdb_synced_at,
+        _peerdb_is_deleted,
+        provider_absent_at,
+        deleted_at
     FROM {{ source('postgres_fitness', 'activity') }} FINAL
-    WHERE _peerdb_is_deleted = 0
-        AND provider_absent_at IS NULL
-        AND deleted_at IS NULL
 ),
 
-activity_dirty_keys AS (
-    SELECT DISTINCT
+activity_dirty_refreshes AS (
+    SELECT
         active_sleep.user_id AS user_id,
-        active_sleep.sleep_id AS sleep_id
+        active_sleep.sleep_id AS sleep_id,
+        max(activity_source._peerdb_synced_at) AS activity_refreshed_at
     FROM activity_source
     INNER JOIN active_sleep
         ON active_sleep.user_id = activity_source.user_id
@@ -134,6 +135,16 @@ activity_dirty_keys AS (
         {% else %}
             AND 1 = 0
         {% endif %}
+    GROUP BY
+        active_sleep.user_id,
+        active_sleep.sleep_id
+),
+
+activity_dirty_keys AS (
+    SELECT
+        user_id,
+        sleep_id
+    FROM activity_dirty_refreshes
 ),
 
 initial_dirty_keys AS (
@@ -217,12 +228,21 @@ active_dirty_sleep AS (
         active_sleep.user_id AS user_id,
         active_sleep.started_at AS started_at,
         active_sleep.ended_at AS ended_at,
-        active_sleep._peerdb_synced_at AS _peerdb_synced_at,
-        active_sleep.duration_seconds AS duration_seconds
+        active_sleep.duration_seconds AS duration_seconds,
+        greatest(
+            active_sleep._peerdb_synced_at,
+            coalesce(
+                activity_dirty_refreshes.activity_refreshed_at,
+                toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
+            )
+        ) AS source_refreshed_at
     FROM active_sleep
     INNER JOIN dirty_keys
         ON dirty_keys.user_id = active_sleep.user_id
         AND dirty_keys.sleep_id = active_sleep.sleep_id
+    LEFT JOIN activity_dirty_refreshes
+        ON activity_dirty_refreshes.user_id = active_sleep.user_id
+        AND activity_dirty_refreshes.sleep_id = active_sleep.sleep_id
     WHERE active_sleep.is_nap = FALSE
 ),
 
@@ -244,7 +264,10 @@ active_activity AS (
     FROM activity_source
     INNER JOIN sleep_activity_bounds AS bounds
         ON bounds.user_id = activity_source.user_id
-    WHERE activity_source.started_at < bounds.max_ended_at
+    WHERE activity_source._peerdb_is_deleted = 0
+        AND activity_source.provider_absent_at IS NULL
+        AND activity_source.deleted_at IS NULL
+        AND activity_source.started_at < bounds.max_ended_at
         AND activity_source.ended_at >= bounds.min_started_at
 ),
 
@@ -259,7 +282,7 @@ current_samples AS (
         samples.recorded_date AS recorded_date,
         samples.scalar AS heart_rate,
         samples.is_deleted AS is_deleted,
-        greatest(samples.refreshed_at, active_dirty_sleep._peerdb_synced_at) AS source_refreshed_at
+        greatest(samples.refreshed_at, active_dirty_sleep.source_refreshed_at) AS source_refreshed_at
     FROM {{ ref('deduped_sensor') }} AS samples
     INNER JOIN active_dirty_sleep
         ON active_dirty_sleep.user_id = samples.user_id
