@@ -257,11 +257,11 @@ describe("AmazfitZeppClient workout history", () => {
 
   it("throws a specific error for non-success HTTP responses", async () => {
     const fetchFn: typeof globalThis.fetch = async () =>
-      new Response("service unavailable", { status: 503 });
+      new Response("server error", { status: 500 });
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
     await expect(client.getWorkoutHistory()).rejects.toThrow(
-      "Amazfit/Zepp workout API error (503): service unavailable",
+      "Amazfit/Zepp workout API error (500): server error",
     );
   });
 
