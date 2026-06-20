@@ -58,7 +58,7 @@ const createCaller = createTestCallerFactory(cyclingAdvancedRouter);
 function makeCaller(rowSets: unknown[][], rawActivityCount?: number) {
   const count = rawActivityCount ?? (rowSets.length > 0 ? 1 : 0);
   return createCaller({
-    db: { execute: vi.fn().mockResolvedValue([{ raw_activity_count: count }]) },
+    db: { execute: vi.fn().mockResolvedValue([{ activity_count: count }]) },
     userId: "user-1",
     timezone: "UTC",
     sensorStore: makeSensorStore(rowSets, count),

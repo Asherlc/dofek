@@ -57,8 +57,14 @@ describe("TrainingRepository", () => {
     rows: Record<string, unknown>[] = [],
     accessWindow?: AccessWindow,
     rawActivityCount = rows.length,
+    visibleActivityIds: string[] = rows.map((row) => String(row.id)),
   ) {
-    const execute = vi.fn().mockResolvedValue([{ raw_activity_count: rawActivityCount }]);
+    const execute = vi.fn();
+    execute.mockResolvedValueOnce([{ activity_count: rawActivityCount }]);
+    if (visibleActivityIds.length > 0) {
+      execute.mockResolvedValueOnce(visibleActivityIds.map((id) => ({ id })));
+    }
+    execute.mockResolvedValue([]);
     const db = { execute };
     const sensorStore = makeSensorStore(rows, rawActivityCount);
     const repo = new TrainingRepository(db, "user-1", "UTC", sensorStore, accessWindow);
@@ -94,7 +100,7 @@ describe("TrainingRepository", () => {
         expect.stringContaining("FROM analytics.activity_summary"),
         expect.objectContaining({ days: 90, timezone: "UTC", userId: "user-1" }),
       );
-      expect(vi.mocked(sensorStore.query).mock.calls[0]?.[1]).not.toContain("analytics.v_activity");
+      expect(vi.mocked(sensorStore.query).mock.calls[0]?.[1]).toContain("analytics.v_activity");
     });
 
     it("does not add access-window filters for full access", async () => {
@@ -106,7 +112,7 @@ describe("TrainingRepository", () => {
       const params = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
 
       expect(query).toContain("FROM analytics.activity_summary");
-      expect(query).not.toContain("analytics.v_activity");
+      expect(query).toContain("analytics.v_activity");
       expect(query).not.toContain("toDateTime({accessStart:String})");
       expect(query).not.toContain("toDateTime({accessEnd:String})");
       expect(params).toEqual({ userId: "user-1", timezone: "UTC", days: 30 });
@@ -126,8 +132,8 @@ describe("TrainingRepository", () => {
       const query = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
       const params = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
 
-      expect(query).toContain("AND started_at >= toDateTime({accessStart:String})");
-      expect(query).toContain("AND started_at < toDateTime({accessEnd:String})");
+      expect(query).toContain("AND asum.started_at >= toDateTime({accessStart:String})");
+      expect(query).toContain("AND asum.started_at < toDateTime({accessEnd:String})");
       expect(params).toEqual({
         userId: "user-1",
         timezone: "UTC",
@@ -258,6 +264,36 @@ describe("TrainingRepository", () => {
       expect(result[0]?.distance_meters).toBe(10500);
     });
 
+    it("excludes activities hidden in Postgres even when ClickHouse is stale", async () => {
+      const { repo, execute } = makeRepository(
+        [
+          {
+            id: "act-hidden",
+            activity_type: "running",
+            name: "Deleted Run",
+            started_at: "2024-01-15T08:00:00Z",
+            ended_at: "2024-01-15T09:00:00Z",
+            avg_hr: 145.5,
+            max_hr: 175,
+            avg_power: null,
+            max_power: null,
+            avg_cadence: 82.3,
+            hr_samples: 3600,
+            power_samples: null,
+            distance_meters: 10500,
+          },
+        ],
+        undefined,
+        1,
+        [],
+      );
+
+      const result = await repo.getActivityStats(90);
+
+      expect(result).toEqual([]);
+      expect(executedSql(execute, 1)).toContain("FROM fitness.v_activity");
+    });
+
     it("returns activities without sensor data (null stats from LEFT JOIN)", async () => {
       const { repo } = makeRepository([
         {
@@ -325,7 +361,7 @@ describe("TrainingRepository", () => {
         .fn()
         .mockImplementation(
           async (schema: { parse: (row: unknown) => unknown }, queryText = "") => {
-            if (queryText.includes("activity_summary a")) {
+            if (queryText.includes("toString(a.activity_id) AS id")) {
               return [
                 schema.parse({
                   id: "act-1",
@@ -354,7 +390,10 @@ describe("TrainingRepository", () => {
             ];
           },
         );
-      const execute = vi.fn().mockResolvedValue([{ raw_activity_count: 1 }]);
+      const execute = vi.fn();
+      execute.mockResolvedValueOnce([{ activity_count: 1 }]);
+      execute.mockResolvedValueOnce([{ id: "act-1" }]);
+      execute.mockResolvedValue([]);
       const db = { execute };
       const sensorStore = {
         query,
@@ -372,7 +411,7 @@ describe("TrainingRepository", () => {
 
       const result = await repo.getActivityStatsAndWeeklyVolume(90);
 
-      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute).toHaveBeenCalledTimes(2);
       expect(query).toHaveBeenCalledTimes(2);
       expect(result.activities).toHaveLength(1);
       expect(result.activities[0]?.activity_type).toBe("running");
@@ -392,7 +431,7 @@ describe("TrainingRepository", () => {
         .fn()
         .mockImplementation(
           async (schema: { parse: (row: unknown) => unknown }, queryText = "") => {
-            if (queryText.includes("activity_summary a")) {
+            if (queryText.includes("toString(a.activity_id) AS id")) {
               return [
                 schema.parse({
                   id: "act-in-window",
@@ -421,7 +460,10 @@ describe("TrainingRepository", () => {
             ];
           },
         );
-      const execute = vi.fn().mockResolvedValue([{ raw_activity_count: 1 }]);
+      const execute = vi.fn();
+      execute.mockResolvedValueOnce([{ activity_count: 1 }]);
+      execute.mockResolvedValueOnce([{ id: "act-in-window" }]);
+      execute.mockResolvedValue([]);
       const db = { execute };
       const sensorStore = {
         query,
@@ -440,7 +482,7 @@ describe("TrainingRepository", () => {
       const result = await repo.getActivityStatsAndWeeklyVolume(90);
 
       const activityQuery = query.mock.calls.find((call) =>
-        String(call[1]).includes("activity_summary a"),
+        String(call[1]).includes("toString(a.activity_id) AS id"),
       );
       expect(String(activityQuery?.[1])).toContain(
         "a.started_at >= toDateTime({accessStart:String})",

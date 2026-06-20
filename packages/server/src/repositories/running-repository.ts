@@ -1,6 +1,7 @@
+import type { Database } from "dofek/db";
 import { z } from "zod";
 import { dateStringSchema } from "../lib/typed-sql.ts";
-import type { ActivitySensorStore } from "./activity-repository.ts";
+import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -152,6 +153,7 @@ const dynamicsRowSchema = z.object({
 });
 
 const paceTrendRowSchema = z.object({
+  activity_id: z.string(),
   date: dateStringSchema,
   name: z.string(),
   avg_speed: z.coerce.number(),
@@ -169,11 +171,18 @@ const paceTrendRowSchema = z.object({
  * Reads from analytics.activity_summary in ClickHouse via the sensor store.
  */
 export class RunningRepository {
+  readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
   readonly #timezone: string;
   readonly #sensorStore: ActivitySensorStore;
 
-  constructor(userId: string, timezone: string, sensorStore: ActivitySensorStore) {
+  constructor(
+    db: Pick<Database, "execute">,
+    userId: string,
+    timezone: string,
+    sensorStore: ActivitySensorStore,
+  ) {
+    this.#db = db;
     this.#userId = userId;
     this.#timezone = timezone;
     this.#sensorStore = sensorStore;
@@ -208,7 +217,12 @@ export class RunningRepository {
       },
     );
 
-    return rows.map(
+    const visibleRows = await activityRepositoryFor(
+      this.#db,
+      this.#userId,
+    ).filterToVisibleActivities(rows, (row) => row.activity_id);
+
+    return visibleRows.map(
       (row) =>
         new RunningDynamicsActivity({
           activityId: row.activity_id,
@@ -229,6 +243,7 @@ export class RunningRepository {
     const rows = await this.#sensorStore.query(
       paceTrendRowSchema,
       `SELECT
+        toString(activity_id) AS activity_id,
         toString(toDate(toTimeZone(started_at, {timezone:String}))) AS date,
         name,
         avg_speed,
@@ -249,7 +264,12 @@ export class RunningRepository {
       },
     );
 
-    return rows.map(
+    const visibleRows = await activityRepositoryFor(
+      this.#db,
+      this.#userId,
+    ).filterToVisibleActivities(rows, (row) => row.activity_id);
+
+    return visibleRows.map(
       (row) =>
         new PaceTrendActivity({
           date: row.date,

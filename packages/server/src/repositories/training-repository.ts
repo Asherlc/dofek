@@ -5,13 +5,12 @@ import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
-import type { ActivitySensorStore } from "./activity-repository.ts";
+import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 import {
   heartRateZoneCountColumns,
   heartRateZoneSqlParams,
   heartRateZoneSumColumns,
 } from "./heart-rate-zone-sql.ts";
-import { countRawActivities } from "./raw-activity-count.ts";
 import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
 
 const ENDURANCE_TYPES: string[] = [...ENDURANCE_ACTIVITY_TYPES];
@@ -119,6 +118,9 @@ export class TrainingRepository extends BaseRepository {
           nullIf(up.max_hr, 0) AS max_hr,
           coalesce(drhr.resting_hr, nullIf(up.resting_hr, 0), 60) AS resting_hr
         FROM analytics.activity_summary asum
+        INNER JOIN analytics.v_activity va
+          ON va.id = asum.activity_id
+         AND va.user_id = asum.user_id
         INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
         LEFT JOIN resting_heart_rate drhr
           ON drhr.date = toString(toDate(asum.started_at))
@@ -222,7 +224,7 @@ export class TrainingRepository extends BaseRepository {
 
   async #queryActivityStats(days: number): Promise<ActivityStatsRow[]> {
     const { predicate, params } = this.#activitySummaryAccessFilter("a");
-    return this.#sensorStore.query(
+    const rows = await this.#sensorStore.query(
       activityStatsRowSchema,
       `SELECT
         toString(a.activity_id) AS id,
@@ -245,22 +247,31 @@ export class TrainingRepository extends BaseRepository {
       ORDER BY a.started_at DESC`,
       { userId: this.userId, days, ...params },
     );
+    return activityRepositoryFor(
+      this.db,
+      this.userId,
+      this.timezone,
+      this.accessWindow,
+    ).filterToVisibleActivities(rows);
   }
 
   async #queryWeeklyVolume(days: number): Promise<WeeklyVolumeRow[]> {
-    const { predicate, params } = this.#activitySummaryAccessFilter();
+    const { predicate, params } = this.#activitySummaryAccessFilter("asum");
 
     return this.#sensorStore.query(
       weeklyVolumeRowSchema,
       `SELECT
-        toString(toMonday(toDate(toTimeZone(started_at, {timezone:String})))) AS week,
-        activity_type,
+        toString(toMonday(toDate(toTimeZone(asum.started_at, {timezone:String})))) AS week,
+        asum.activity_type,
         toInt32(count()) AS count,
-        round(sum(dateDiff('second', started_at, ended_at)) / 3600, 2) AS hours
-      FROM analytics.activity_summary
-      WHERE user_id = {userId:UUID}
-        AND started_at > now() - INTERVAL {days:Int32} DAY
-        AND ended_at IS NOT NULL
+        round(sum(dateDiff('second', asum.started_at, asum.ended_at)) / 3600, 2) AS hours
+      FROM analytics.activity_summary asum
+      INNER JOIN analytics.v_activity va
+        ON va.id = asum.activity_id
+       AND va.user_id = asum.user_id
+      WHERE asum.user_id = {userId:UUID}
+        AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+        AND asum.ended_at IS NOT NULL
         ${predicate}
       GROUP BY week, activity_type
       ORDER BY week`,
@@ -279,8 +290,12 @@ export class TrainingRepository extends BaseRepository {
     requireEndedAt = false,
     accessWindow?: AccessWindow,
   ): Promise<number> {
-    return countRawActivities(this.db, {
-      userId: this.userId,
+    return activityRepositoryFor(
+      this.db,
+      this.userId,
+      this.timezone,
+      this.accessWindow,
+    ).countVisibleInWindow({
       days,
       activityTypes,
       requireEndedAt,

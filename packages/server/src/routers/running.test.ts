@@ -38,8 +38,13 @@ import { runningRouter } from "./running.ts";
 const createCaller = createTestCallerFactory(runningRouter);
 
 function makeCaller(rows: Record<string, unknown>[] = []) {
+  const execute = vi
+    .fn()
+    .mockImplementation(async () =>
+      rows.flatMap((row) => (row.activity_id != null ? [{ id: String(row.activity_id) }] : [])),
+    );
   return createCaller({
-    db: { execute: vi.fn().mockResolvedValue(rows) },
+    db: { execute },
     userId: "user-1",
     timezone: "UTC",
     sensorStore: makeMockSensorStore(rows),
@@ -152,6 +157,7 @@ describe("runningRouter", () => {
     it("returns pace trend data", async () => {
       const rows = [
         {
+          activity_id: "run-pace-1",
           date: "2026-01-15",
           name: "Morning Run",
           avg_speed: 3.5,
@@ -175,6 +181,7 @@ describe("runningRouter", () => {
     it("returns multiple runs", async () => {
       const rows = [
         {
+          activity_id: "run-pace-1",
           date: "2026-01-10",
           name: "Easy",
           avg_speed: 3.0,
@@ -182,6 +189,7 @@ describe("runningRouter", () => {
           duration_seconds: 1667,
         },
         {
+          activity_id: "run-pace-2",
           date: "2026-01-12",
           name: "Tempo",
           avg_speed: 4.0,

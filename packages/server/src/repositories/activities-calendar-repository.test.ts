@@ -7,6 +7,8 @@ import type { CalendarActivityEntry } from "./activities-calendar-repository.ts"
 import { ActivitiesCalendarRepository, mergeDayGroups } from "./activities-calendar-repository.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 
+const dialect = new PgDialect();
+
 type TestDatabaseRow = Record<string, unknown>;
 
 function isQueuedRowSets(
@@ -16,12 +18,31 @@ function isQueuedRowSets(
 }
 
 function makeDatabase(rowsOrRowSets: TestDatabaseRow[] | TestDatabaseRow[][] = []) {
-  const rowSets = isQueuedRowSets(rowsOrRowSets) ? rowsOrRowSets : [[], rowsOrRowSets];
-  const execute = vi.fn();
-  for (const rows of rowSets) {
-    execute.mockResolvedValueOnce(rows);
+  if (isQueuedRowSets(rowsOrRowSets)) {
+    const execute = vi.fn();
+    for (const rows of rowsOrRowSets) {
+      execute.mockResolvedValueOnce(rows);
+    }
+    execute.mockResolvedValue([]);
+    return {
+      execute,
+    } satisfies Pick<Database, "execute">;
   }
-  execute.mockResolvedValue([]);
+
+  const caloriesRows = rowsOrRowSets;
+  const execute = vi.fn().mockImplementation(async (query) => {
+    const compiled = dialect.sqlToQuery(query);
+    if (compiled.sql.includes("calories")) {
+      return caloriesRows;
+    }
+    if (compiled.sql.includes("fitness.v_activity")) {
+      const stringParams = compiled.params.filter(
+        (param): param is string => typeof param === "string",
+      );
+      return stringParams.slice(1).map((id) => ({ id }));
+    }
+    return [];
+  });
   return {
     execute,
   } satisfies Pick<Database, "execute">;
@@ -79,13 +100,17 @@ function expectDedupedActivitiesWithSummaryMetrics(queryText: string | undefined
   const normalizedQueryText = normalizeSql(queryText);
   expect(normalizedQueryText).toContain("FROM analytics.deduped_activities AS activity FINAL");
   expect(normalizedQueryText).toContain("LEFT JOIN analytics.activity_summary asum");
-  expect(normalizedQueryText).not.toContain("analytics.v_activity");
 }
 
-function expectDedupedActivitiesOnly(queryText: string | undefined): void {
+function expectVisibleDedupedActivitiesWithSummaryMetrics(queryText: string | undefined): void {
+  expectDedupedActivitiesWithSummaryMetrics(queryText);
+  expect(normalizeSql(queryText)).toContain("INNER JOIN analytics.v_activity va");
+}
+
+function expectVisibleDedupedActivitiesOnly(queryText: string | undefined): void {
   const normalizedQueryText = normalizeSql(queryText);
   expect(normalizedQueryText).toContain("FROM analytics.deduped_activities AS activity FINAL");
-  expect(normalizedQueryText).not.toContain("analytics.v_activity");
+  expect(normalizedQueryText).toContain("INNER JOIN analytics.v_activity va");
 }
 
 function expectDedupedActivitiesDriveActivityListIdentity(queryText: string | undefined): void {
@@ -116,8 +141,6 @@ function makeCalendarEntry(
 }
 
 describe("ActivitiesCalendarRepository", () => {
-  const dialect = new PgDialect();
-
   it("groups activities by normalized local date and returns display-ready indoor stats", async () => {
     const database = makeDatabase([{ id: "activity-1", calories: 421.6 }]);
     const sensorStore = makeSensorStore([
@@ -382,8 +405,8 @@ describe("ActivitiesCalendarRepository", () => {
     expectDedupedActivitiesDriveActivityListIdentity(queryText);
   });
 
-  it("excludes activities already deleted in Postgres even when ClickHouse is stale", async () => {
-    const database = makeDatabase([[{ id: "activity-1", calories: null }]]);
+  it("excludes activities hidden in Postgres even when ClickHouse is stale", async () => {
+    const database = makeDatabase([[]]);
     const sensorStore = makeSensorStore([
       [makeActivityRow({ id: "activity-1" })],
       [{ max_hr: null, resting_hr: null, ftp: null }],
@@ -402,7 +425,7 @@ describe("ActivitiesCalendarRepository", () => {
     expect(database.execute).toHaveBeenCalledTimes(1);
     const sqlObject = database.execute.mock.calls[0]?.[0];
     const compiledQuery = dialect.sqlToQuery(sqlObject);
-    expect(normalizeSql(compiledQuery.sql)).toContain("deleted_at IS NOT NULL");
+    expect(normalizeSql(compiledQuery.sql)).toContain("FROM fitness.v_activity");
     expect(sensorStore.query).toHaveBeenCalledTimes(2);
   });
 
@@ -468,11 +491,11 @@ describe("ActivitiesCalendarRepository", () => {
 
     const overviewQueryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
     const typeQueryText = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
-    expectDedupedActivitiesWithSummaryMetrics(overviewQueryText);
+    expectVisibleDedupedActivitiesWithSummaryMetrics(overviewQueryText);
     expect(normalizeSql(overviewQueryText)).toContain(
       "sum(dateDiff('second', activity.started_at, activity.ended_at) / 60.0)",
     );
-    expectDedupedActivitiesOnly(typeQueryText);
+    expectVisibleDedupedActivitiesOnly(typeQueryText);
   });
 
   it("uses deduped activities as the activity overview identity source", async () => {
@@ -494,7 +517,7 @@ describe("ActivitiesCalendarRepository", () => {
 
     const overviewQueryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
     const typeQueryText = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
-    expectDedupedActivitiesWithSummaryMetrics(overviewQueryText);
+    expectVisibleDedupedActivitiesWithSummaryMetrics(overviewQueryText);
     expect(normalizeSql(overviewQueryText)).toContain(
       "sum(dateDiff('second', activity.started_at, activity.ended_at) / 60.0)",
     );

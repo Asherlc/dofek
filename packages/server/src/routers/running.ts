@@ -44,7 +44,7 @@ export const runningRouter = router({
     .input(daysInput)
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "running.dynamics");
-      const repo = new RunningRepository(ctx.userId, ctx.timezone, sensorStore);
+      const repo = new RunningRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
       return (await repo.getDynamics(input.days)).map((activity) => activity.toDetail());
     }),
 
@@ -52,7 +52,7 @@ export const runningRouter = router({
     .input(daysInput)
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "running.paceTrend");
-      const repo = new RunningRepository(ctx.userId, ctx.timezone, sensorStore);
+      const repo = new RunningRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
       return (await repo.getPaceTrend(input.days)).map((activity) => activity.toDetail());
     }),
 });

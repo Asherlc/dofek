@@ -16,7 +16,7 @@ import type { PredictionTarget } from "../ml/features.ts";
 import { getPredictionTarget, PREDICTION_TARGETS } from "../ml/features.ts";
 import type { PredictionResult } from "../ml/predictor.ts";
 import { trainFromDataset, trainPredictor } from "../ml/predictor.ts";
-import type { ActivitySensorStore } from "./activity-repository.ts";
+import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 import { fetchBodyCompRows } from "./body-clickhouse.ts";
 import { fetchSleepNights } from "./clickhouse-sleep-repository.ts";
 import { fetchRestingHeartRateValuesCte, localDateString } from "./resting-heart-rate-query.ts";
@@ -285,7 +285,12 @@ export class PredictionsRepository {
       { userId: this.#userId, days },
     );
 
-    const cardioActivities: CardioActivityRow[] = activityRows.map((row) => ({
+    const visibleActivityRows = await activityRepositoryFor(
+      this.#db,
+      this.#userId,
+    ).filterToVisibleActivities(activityRows, (row) => row.activity_id);
+
+    const cardioActivities: CardioActivityRow[] = visibleActivityRows.map((row) => ({
       date: new Date(row.started_at).toISOString().slice(0, 10),
       activityType: row.activity_type,
       durationMin: row.duration_min ?? 0,
@@ -316,11 +321,9 @@ export class PredictionsRepository {
             COUNT(*) FILTER (WHERE s.set_type = 'working') AS working_set_count,
             MAX(s.weight_kg) FILTER (WHERE s.set_type = 'working') AS max_weight,
             AVG(s.rpe) FILTER (WHERE s.set_type = 'working') AS avg_rpe
-          FROM fitness.activity a
-          JOIN fitness.strength_set s ON s.activity_id = a.id
+          FROM fitness.v_activity a
+          JOIN fitness.strength_set s ON s.activity_id = ANY(a.member_activity_ids)
           WHERE a.user_id = ${this.#userId}
-            AND a.provider_absent_at IS NULL
-            AND a.deleted_at IS NULL
             AND a.activity_type = 'strength'
             AND a.started_at > CURRENT_DATE - ${days}::int
           GROUP BY a.id, a.started_at
@@ -441,13 +444,16 @@ export class PredictionsRepository {
     return this.#sensorStore.query(
       exerciseMinutesRowSchema,
       `SELECT
-        toString(toDate(started_at)) AS date,
-        sum(dateDiff('second', first_sample_at, last_sample_at) / 60) AS exercise_minutes
-      FROM analytics.activity_summary
-      WHERE user_id = {userId:UUID}
-        AND started_at > today() - INTERVAL {days:Int32} DAY
-      GROUP BY toDate(started_at)
-      ORDER BY toDate(started_at) ASC`,
+        toString(toDate(asum.started_at)) AS date,
+        sum(dateDiff('second', asum.first_sample_at, asum.last_sample_at) / 60) AS exercise_minutes
+      FROM analytics.activity_summary asum
+      INNER JOIN analytics.v_activity va
+        ON va.id = asum.activity_id
+       AND va.user_id = asum.user_id
+      WHERE asum.user_id = {userId:UUID}
+        AND asum.started_at > today() - INTERVAL {days:Int32} DAY
+      GROUP BY toDate(asum.started_at)
+      ORDER BY toDate(asum.started_at) ASC`,
       { userId: this.#userId, days },
     );
   }

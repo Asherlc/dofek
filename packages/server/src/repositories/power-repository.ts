@@ -6,8 +6,7 @@ import {
   fitCriticalPower,
 } from "@dofek/training/power-analysis";
 import type { Database } from "dofek/db";
-import type { ActivitySensorStore } from "./activity-repository.ts";
-import { countRawActivities } from "./raw-activity-count.ts";
+import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 
 // ── Repository ───────────────────────────────────────────────
 
@@ -119,9 +118,6 @@ export class PowerRepository {
 
   async #loadRawActivityCount(days: number): Promise<number> {
     if (!this.#db) return 1;
-    return countRawActivities(this.#db, {
-      userId: this.#userId,
-      days,
-    });
+    return activityRepositoryFor(this.#db, this.#userId).countVisibleInWindow({ days });
   }
 }
