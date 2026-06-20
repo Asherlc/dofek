@@ -588,3 +588,148 @@ describe("mobileDashboard.dashboard", () => {
     expect(result.latestDate).toBeNull();
   });
 });
+
+describe("mobileDashboard.recovery", () => {
+  it("fails loudly when ClickHouse activity analytics are unavailable", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+    });
+
+    await expect(caller.recovery({ endDate: "2026-03-28" })).rejects.toThrow(
+      "mobileDashboard.recovery requires the ClickHouse activity analytics store",
+    );
+  });
+
+  it("returns consolidated recovery tab data", async () => {
+    const query = vi.fn(async (_schema: unknown, sqlText: unknown) => {
+      if (String(sqlText).includes("analytics.daily_recovery")) {
+        return [
+          {
+            date: "2026-03-28",
+            hrv: 55,
+            resting_hr: 52,
+            respiratory_rate: 14,
+            hrv_mean_30d: 50,
+            hrv_sd_30d: 5,
+            rhr_mean_30d: 54,
+            rhr_sd_30d: 2,
+            rr_mean_30d: 14,
+            rr_sd_30d: 1,
+            hrv_mean_60d: 50,
+            hrv_sd_60d: 5,
+            rhr_mean_60d: 54,
+            rhr_sd_60d: 2,
+            efficiency_pct: 90,
+          },
+        ];
+      }
+      return [];
+    });
+    const execute = vi.fn(async () => []);
+
+    const caller = createCaller({
+      db: { execute, transaction: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: {
+        query,
+        getActivitySummaries: vi.fn().mockResolvedValue([]),
+        getStream: vi.fn().mockResolvedValue([]),
+        getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+        getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+        getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+        getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+        getPaceCurveRows: vi.fn().mockResolvedValue([]),
+        refreshBodyMeasurements: vi.fn().mockResolvedValue(undefined),
+      },
+    });
+
+    const result = await caller.recovery({ days: 30, endDate: "2026-03-28" });
+
+    expect(result.readinessScore).toHaveLength(1);
+    expect(result.stress.daily).toHaveLength(1);
+    expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
+      expect.stringContaining("[mobile-dashboard] recovery timings"),
+    );
+  });
+});
+
+describe("mobileDashboard.training", () => {
+  it("fails loudly when ClickHouse activity analytics are unavailable", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+    });
+
+    await expect(caller.training({ endDate: "2026-03-28" })).rejects.toThrow(
+      "mobileDashboard.training requires the ClickHouse activity analytics store",
+    );
+  });
+
+  it("returns consolidated training tab data", async () => {
+    const query = vi.fn(async (_schema: unknown, sqlText: unknown) => {
+      const sql = String(sqlText);
+      if (sql.includes("analytics.daily_strain")) {
+        return [
+          {
+            date: "2026-03-28",
+            daily_load: 50,
+            acute_load: 350,
+            chronic_load: 300,
+            workload_ratio: 1.17,
+          },
+        ];
+      }
+      if (sql.includes("analytics.daily_recovery")) {
+        return [
+          {
+            date: "2026-03-28",
+            hrv_score: 72,
+            resting_hr_score: 68,
+            sleep_score: 80,
+            respiratory_rate_score: 74,
+          },
+        ];
+      }
+      if (sql.includes("raw_activity_count")) {
+        return [{ raw_activity_count: 0 }];
+      }
+      return [];
+    });
+    const execute = vi.fn(async () => [{ raw_activity_count: 0 }]);
+
+    const caller = createCaller({
+      db: { execute },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: {
+        query,
+        getActivitySummaries: vi.fn().mockResolvedValue([]),
+        getStream: vi.fn().mockResolvedValue([]),
+        getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+        getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+        getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+        getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+        getPaceCurveRows: vi.fn().mockResolvedValue([]),
+        refreshBodyMeasurements: vi.fn().mockResolvedValue(undefined),
+      },
+    });
+
+    const result = await caller.training({ days: 30, endDate: "2026-03-28" });
+
+    expect(result.workloadRatio.timeSeries).toHaveLength(1);
+    expect(result.strainTarget.dailyLoad).toBe(50);
+    expect(result.activities).toEqual([]);
+    expect(result.weeklyVolume).toEqual([]);
+    expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
+      expect.stringContaining("[mobile-dashboard] training timings"),
+    );
+  });
+});
