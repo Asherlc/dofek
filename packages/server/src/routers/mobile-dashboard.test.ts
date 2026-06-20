@@ -142,6 +142,8 @@ vi.mock("../logger.ts", () => ({
 
 import { logger } from "../logger.ts";
 import { computeReadinessScore } from "../repositories/training-recommendation.ts";
+import * as mobileRecoveryTab from "../services/mobile-recovery-tab.ts";
+import * as mobileTrainingTab from "../services/mobile-training-tab.ts";
 import { isRecent, mobileDashboardRouter } from "./mobile-dashboard.ts";
 
 const createCaller = createTestCallerFactory(mobileDashboardRouter);
@@ -589,6 +591,11 @@ describe("mobileDashboard.dashboard", () => {
   });
 });
 
+function parseTimingTotalMs(logMessage: unknown): number {
+  const match = String(logMessage).match(/total=(\d+)ms/);
+  return Number(match?.[1]);
+}
+
 describe("mobileDashboard.recovery", () => {
   it("fails loudly when ClickHouse activity analytics are unavailable", async () => {
     const caller = createCaller({
@@ -652,9 +659,104 @@ describe("mobileDashboard.recovery", () => {
 
     expect(result.readinessScore).toHaveLength(1);
     expect(result.stress.daily).toHaveLength(1);
-    expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
-      expect.stringContaining("[mobile-dashboard] recovery timings"),
+    const timingCall = vi
+      .mocked(logger.info)
+      .mock.calls.find((call) => String(call[0]).includes("[mobile-dashboard] recovery timings"));
+    expect(timingCall?.[0]).toEqual(expect.stringContaining("[mobile-dashboard] recovery timings"));
+    expect(parseTimingTotalMs(timingCall?.[0])).toBeLessThan(60_000);
+  });
+
+  it("defaults timezone and access window when omitted", async () => {
+    const loadSpy = vi.spyOn(mobileRecoveryTab, "loadMobileRecoveryTab").mockResolvedValue({
+      hrvVariability: [],
+      hrvBaseline: [],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: null },
+      trends: null,
+      dailyMetrics: [],
+      weight: [],
+      weightPrediction: {
+        ratePerWeek: null,
+        rateConfidence: null,
+        impliedDailyCalories: null,
+        periodDeltas: { days7: null, days14: null, days30: null },
+        goal: null,
+        projectionLine: [],
+      },
+      healthspan: {
+        healthspanScore: null,
+        yearsDelta: null,
+        metrics: [],
+        history: [],
+        trend: null,
+      },
+    });
+
+    const caller = createCaller({
+      db: { execute: vi.fn(), transaction: vi.fn() },
+      userId: "user-1",
+      sensorStore: makeSensorStore(),
+    });
+
+    await caller.recovery({ days: 30, endDate: "2026-03-28" });
+
+    expect(loadSpy).toHaveBeenCalledWith(
+      {
+        db: expect.anything(),
+        userId: "user-1",
+        timezone: "UTC",
+        accessWindow: { kind: "full", paid: true, reason: "paid_grant" },
+        sensorStore: expect.anything(),
+      },
+      30,
+      "2026-03-28",
     );
+
+    loadSpy.mockRestore();
+  });
+
+  it("preserves an explicit timezone when provided", async () => {
+    const loadSpy = vi.spyOn(mobileRecoveryTab, "loadMobileRecoveryTab").mockResolvedValue({
+      hrvVariability: [],
+      hrvBaseline: [],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: null },
+      trends: null,
+      dailyMetrics: [],
+      weight: [],
+      weightPrediction: {
+        ratePerWeek: null,
+        rateConfidence: null,
+        impliedDailyCalories: null,
+        periodDeltas: { days7: null, days14: null, days30: null },
+        goal: null,
+        projectionLine: [],
+      },
+      healthspan: {
+        healthspanScore: null,
+        yearsDelta: null,
+        metrics: [],
+        history: [],
+        trend: null,
+      },
+    });
+
+    const caller = createCaller({
+      db: { execute: vi.fn(), transaction: vi.fn() },
+      userId: "user-1",
+      timezone: "America/New_York",
+      sensorStore: makeSensorStore(),
+    });
+
+    await caller.recovery({ days: 30, endDate: "2026-03-28" });
+
+    expect(loadSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ timezone: "America/New_York" }),
+      30,
+      "2026-03-28",
+    );
+
+    loadSpy.mockRestore();
   });
 });
 
@@ -728,8 +830,103 @@ describe("mobileDashboard.training", () => {
     expect(result.strainTarget.dailyLoad).toBe(50);
     expect(result.activities).toEqual([]);
     expect(result.weeklyVolume).toEqual([]);
-    expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
-      expect.stringContaining("[mobile-dashboard] training timings"),
+    const timingCall = vi
+      .mocked(logger.info)
+      .mock.calls.find((call) => String(call[0]).includes("[mobile-dashboard] training timings"));
+    expect(timingCall?.[0]).toEqual(expect.stringContaining("[mobile-dashboard] training timings"));
+    expect(parseTimingTotalMs(timingCall?.[0])).toBeLessThan(60_000);
+  });
+
+  it("defaults timezone and access window when omitted", async () => {
+    const loadSpy = vi.spyOn(mobileTrainingTab, "loadMobileTrainingTab").mockResolvedValue({
+      workloadRatio: {
+        timeSeries: [],
+        displayedStrain: 0,
+        displayedDate: null,
+      },
+      strainTarget: {
+        targetStrain: 0,
+        currentStrain: 0,
+        currentStrainSource: "none",
+        currentPhysiologyLoad: 0,
+        progressPercent: 0,
+        zone: "Recovery",
+        explanation: "",
+        dailyLoad: 0,
+        acuteLoad: 0,
+        chronicLoad: 0,
+        workloadRatio: null,
+        readinessScore: 50,
+      },
+      activities: [],
+      weeklyVolume: [],
+      verticalAscent: [],
+    });
+
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      sensorStore: makeSensorStore(),
+    });
+
+    await caller.training({ days: 30, endDate: "2026-03-28" });
+
+    expect(loadSpy).toHaveBeenCalledWith(
+      {
+        db: expect.anything(),
+        userId: "user-1",
+        timezone: "UTC",
+        accessWindow: { kind: "full", paid: true, reason: "paid_grant" },
+        sensorStore: expect.anything(),
+      },
+      30,
+      "2026-03-28",
     );
+
+    loadSpy.mockRestore();
+  });
+
+  it("preserves an explicit timezone when provided", async () => {
+    const loadSpy = vi.spyOn(mobileTrainingTab, "loadMobileTrainingTab").mockResolvedValue({
+      workloadRatio: {
+        timeSeries: [],
+        displayedStrain: 0,
+        displayedDate: null,
+      },
+      strainTarget: {
+        targetStrain: 0,
+        currentStrain: 0,
+        currentStrainSource: "none",
+        currentPhysiologyLoad: 0,
+        progressPercent: 0,
+        zone: "Recovery",
+        explanation: "",
+        dailyLoad: 0,
+        acuteLoad: 0,
+        chronicLoad: 0,
+        workloadRatio: null,
+        readinessScore: 50,
+      },
+      activities: [],
+      weeklyVolume: [],
+      verticalAscent: [],
+    });
+
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "America/Chicago",
+      sensorStore: makeSensorStore(),
+    });
+
+    await caller.training({ days: 30, endDate: "2026-03-28" });
+
+    expect(loadSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ timezone: "America/Chicago" }),
+      30,
+      "2026-03-28",
+    );
+
+    loadSpy.mockRestore();
   });
 });

@@ -294,4 +294,211 @@ describe("loadMobileTrainingTab", () => {
     repos.trainingSpy.mockRestore();
     repos.cyclingSpy.mockRestore();
   });
+
+  it("does not add access filters when access window is full", async () => {
+    const query = makeQuery();
+    const repos = await mockTrainingRepos();
+
+    await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
+
+    const strainQuery = query.mock.calls.find((call) =>
+      String(call[1]).includes("analytics.daily_strain"),
+    );
+    const recoveryQuery = query.mock.calls.find((call) =>
+      String(call[1]).includes("analytics.daily_recovery"),
+    );
+
+    expect(String(strainQuery?.[1])).not.toContain("accessStartDate");
+    expect(String(recoveryQuery?.[1])).not.toContain("accessStartDate");
+
+    repos.trainingSpy.mockRestore();
+    repos.cyclingSpy.mockRestore();
+  });
+
+  it("uses default readiness component scores when recovery fields are null", async () => {
+    const repos = await mockTrainingRepos();
+    const query = makeQuery(
+      [
+        {
+          date: "2026-03-28",
+          daily_load: 50,
+          acute_load: 350,
+          chronic_load: 300,
+          workload_ratio: 1.17,
+        },
+      ],
+      [
+        {
+          date: "2026-03-28",
+          hrv_score: 80,
+          resting_hr_score: null,
+          sleep_score: null,
+          respiratory_rate_score: null,
+        },
+      ],
+    );
+
+    const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
+
+    expect(result.strainTarget.readinessScore).toBeGreaterThan(62);
+
+    repos.trainingSpy.mockRestore();
+    repos.cyclingSpy.mockRestore();
+  });
+
+  it("computes acute and chronic loads from rolling daily loads", async () => {
+    const repos = await mockTrainingRepos();
+    const query = makeQuery([
+      {
+        date: "2026-03-28",
+        daily_load: 70,
+        acute_load: 0,
+        chronic_load: 0,
+        workload_ratio: null,
+      },
+      {
+        date: "2026-03-27",
+        daily_load: 70,
+        acute_load: 0,
+        chronic_load: 0,
+        workload_ratio: null,
+      },
+      {
+        date: "2026-03-21",
+        daily_load: 280,
+        acute_load: 0,
+        chronic_load: 0,
+        workload_ratio: null,
+      },
+    ]);
+
+    const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
+
+    expect(result.strainTarget.dailyLoad).toBe(70);
+    expect(result.strainTarget.acuteLoad).toBe(20);
+    expect(result.strainTarget.chronicLoad).toBe(15);
+    expect(result.strainTarget.workloadRatio).toBe(1.33);
+
+    repos.trainingSpy.mockRestore();
+    repos.cyclingSpy.mockRestore();
+  });
+
+  it("uses the end-date row for daily load instead of the first strain row", async () => {
+    const repos = await mockTrainingRepos();
+    const query = makeQuery([
+      {
+        date: "2026-03-27",
+        daily_load: 999,
+        acute_load: 100,
+        chronic_load: 200,
+        workload_ratio: 0.5,
+      },
+      {
+        date: "2026-03-28",
+        daily_load: 42,
+        acute_load: 350,
+        chronic_load: 300,
+        workload_ratio: 1.17,
+      },
+    ]);
+
+    const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
+
+    expect(result.strainTarget.dailyLoad).toBe(42);
+    expect(result.strainTarget.currentStrain).toBe(StrainScore.fromRawLoad(42).value);
+
+    repos.trainingSpy.mockRestore();
+    repos.cyclingSpy.mockRestore();
+  });
+
+  it("computes progress percent from current and target strain", async () => {
+    const repos = await mockTrainingRepos();
+    const query = makeQuery([
+      {
+        date: "2026-03-28",
+        daily_load: 100,
+        acute_load: 700,
+        chronic_load: 700,
+        workload_ratio: 1,
+      },
+    ]);
+
+    const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
+
+    expect(result.strainTarget.progressPercent).toBeGreaterThan(0);
+    expect(result.strainTarget.progressPercent).toBeLessThanOrEqual(200);
+
+    repos.trainingSpy.mockRestore();
+    repos.cyclingSpy.mockRestore();
+  });
+
+  it("excludes loads exactly seven days ago from the acute window", async () => {
+    const repos = await mockTrainingRepos();
+    const query = makeQuery([
+      {
+        date: "2026-03-21",
+        daily_load: 70,
+        acute_load: 0,
+        chronic_load: 0,
+        workload_ratio: null,
+      },
+    ]);
+
+    const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
+
+    expect(result.strainTarget.acuteLoad).toBe(0);
+    expect(result.strainTarget.chronicLoad).toBe(2.5);
+
+    repos.trainingSpy.mockRestore();
+    repos.cyclingSpy.mockRestore();
+  });
+
+  it("includes loads six days ago in the acute window", async () => {
+    const repos = await mockTrainingRepos();
+    const query = makeQuery([
+      {
+        date: "2026-03-22",
+        daily_load: 70,
+        acute_load: 0,
+        chronic_load: 0,
+        workload_ratio: null,
+      },
+    ]);
+
+    const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
+
+    expect(result.strainTarget.acuteLoad).toBe(10);
+
+    repos.trainingSpy.mockRestore();
+    repos.cyclingSpy.mockRestore();
+  });
+
+  it("rounds strain target load fields to one decimal place", async () => {
+    const repos = await mockTrainingRepos();
+    const query = makeQuery([
+      {
+        date: "2026-03-28",
+        daily_load: 125.678,
+        acute_load: 0,
+        chronic_load: 0,
+        workload_ratio: null,
+      },
+      {
+        date: "2026-03-27",
+        daily_load: 33.333,
+        acute_load: 0,
+        chronic_load: 0,
+        workload_ratio: null,
+      },
+    ]);
+
+    const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
+
+    expect(result.strainTarget.dailyLoad).toBe(125.7);
+    expect(result.strainTarget.currentStrain).toBe(StrainScore.fromRawLoad(125.7).value);
+    expect(result.strainTarget.acuteLoad).toBe(22.7);
+
+    repos.trainingSpy.mockRestore();
+    repos.cyclingSpy.mockRestore();
+  });
 });

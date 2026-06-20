@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
+import { dateWindowStartString } from "../lib/date-window.ts";
 import type { DailyMetricsViewRow } from "../repositories/daily-metrics-repository.ts";
+import { fetchHealthspanRawData } from "../routers/healthspan-query.ts";
 import { loadMobileRecoveryTab } from "./mobile-recovery-tab.ts";
 
 vi.mock("dofek/personalization/storage", () => ({
@@ -517,6 +519,434 @@ describe("loadMobileRecoveryTab", () => {
       await expect(runRecoveryTab([], { goalWeight: "not-a-number" })).resolves.toMatchObject({
         weightPrediction: expect.any(Object),
       });
+    });
+
+    it("returns null HRV deviation when hrv is null", async () => {
+      const result = await runRecoveryTab([recoveryRow({ hrv: null, hrv_mean_60d: 60, hrv_sd_60d: 10 })]);
+      expect(result.stress.daily[0]?.hrvDeviation).toBeNull();
+    });
+
+    it("returns null resting HR deviation when resting_hr is null", async () => {
+      const result = await runRecoveryTab([
+        recoveryRow({ resting_hr: null, rhr_mean_60d: 60, rhr_sd_60d: 2 }),
+      ]);
+      expect(result.stress.daily[0]?.restingHrDeviation).toBeNull();
+    });
+
+    it("low HRV produces a lower readiness HRV score", async () => {
+      const result = await runRecoveryTab([
+        recoveryRow({
+          hrv: 30,
+          hrv_mean_30d: 50,
+          hrv_sd_30d: 10,
+        }),
+      ]);
+      expect(result.readinessScore[0]?.components.hrvScore).toBeLessThan(50);
+    });
+
+    it("high resting heart rate produces a lower readiness RHR score", async () => {
+      const result = await runRecoveryTab([
+        recoveryRow({
+          resting_hr: 70,
+          rhr_mean_30d: 60,
+          rhr_sd_30d: 5,
+        }),
+      ]);
+      expect(result.readinessScore[0]?.components.restingHrScore).toBeLessThan(50);
+    });
+
+    it("maps sleep efficiency directly to readiness sleep score", async () => {
+      const result = await runRecoveryTab([
+        recoveryRow({
+          hrv: null,
+          resting_hr: null,
+          respiratory_rate: null,
+          efficiency_pct: 85,
+        }),
+      ]);
+      expect(result.readinessScore[0]?.components.sleepScore).toBe(85);
+    });
+
+    it("excludes readiness rows after the end date", async () => {
+      const result = await runRecoveryTab([
+        recoveryRow({ date: "2026-03-28" }),
+        recoveryRow({ date: "2026-03-29" }),
+      ]);
+      expect(result.readinessScore.map((row) => row.date)).toEqual(["2026-03-28"]);
+    });
+
+    it("requests daily metrics with an extended lookback window", async () => {
+      const query = vi.fn(async () => []);
+      const listSpy = vi
+        .spyOn(
+          (await import("../repositories/daily-metrics-repository.ts")).DailyMetricsRepository
+            .prototype,
+          "list",
+        )
+        .mockResolvedValue([]);
+      const ctx = {
+        db: { execute: vi.fn(async () => []), transaction: vi.fn() },
+        userId: "user-1",
+        timezone: "UTC",
+        accessWindow: { kind: "full" as const, paid: true as const, reason: "paid_grant" as const },
+        sensorStore: { query },
+      };
+
+      vi.spyOn(
+        (await import("../repositories/daily-metrics-repository.ts")).DailyMetricsRepository
+          .prototype,
+        "getHrvBaseline",
+      ).mockResolvedValue([]);
+      vi.spyOn(
+        (await import("../repositories/body-analytics-repository.ts")).BodyAnalyticsRepository
+          .prototype,
+        "getSmoothedWeight",
+      ).mockResolvedValue([]);
+      vi.spyOn(
+        (await import("../repositories/body-analytics-repository.ts")).BodyAnalyticsRepository
+          .prototype,
+        "getWeightPrediction",
+      ).mockResolvedValue({
+        ratePerWeek: null,
+        rateConfidence: null,
+        impliedDailyCalories: null,
+        periodDeltas: { days7: null, days14: null, days30: null },
+        goal: null,
+        projectionLine: [],
+      });
+      vi.spyOn(
+        (await import("../repositories/settings-repository.ts")).SettingsRepository.prototype,
+        "get",
+      ).mockResolvedValue(null);
+
+      await loadMobileRecoveryTab(ctx, 30, "2026-03-28");
+
+      expect(listSpy).toHaveBeenCalledWith(90, "2026-03-28");
+      listSpy.mockRestore();
+    });
+
+    it("aggregates weekly stress from daily stress rows", async () => {
+      const result = await runRecoveryTab([
+        recoveryRow({ date: "2026-03-27", hrv: 40, hrv_mean_60d: 60, hrv_sd_60d: 10 }),
+        recoveryRow({ date: "2026-03-28", hrv: 55, hrv_mean_60d: 60, hrv_sd_60d: 10 }),
+      ]);
+      expect(result.stress.weekly.length).toBeGreaterThan(0);
+    });
+
+    it("uses sleep efficiency when computing daily stress", async () => {
+      const lowEfficiency = await runRecoveryTab([recoveryRow({ efficiency_pct: 60 })]);
+      const highEfficiency = await runRecoveryTab([recoveryRow({ efficiency_pct: 95 })]);
+      expect(lowEfficiency.stress.daily[0]?.stressScore).toBeGreaterThan(
+        highEfficiency.stress.daily[0]?.stressScore ?? 0,
+      );
+    });
+
+    it("requires seven HRV days before emitting variability rows", async () => {
+      const metrics = Array.from({ length: 6 }, (_, index) =>
+        metricRow(`2026-03-${String(23 + index).padStart(2, "0")}`, 50 + index),
+      );
+      const result = await runRecoveryTab([], { metrics });
+      expect(result.hrvVariability).toHaveLength(0);
+    });
+
+    it("high respiratory rate produces a lower readiness respiratory score", async () => {
+      const result = await runRecoveryTab([
+        recoveryRow({
+          respiratory_rate: 17,
+          rr_mean_30d: 15,
+          rr_sd_30d: 1,
+        }),
+      ]);
+      expect(result.readinessScore[0]?.components.respiratoryRateScore).toBeLessThan(50);
+    });
+
+    it("computes respiratory rate score from recovery metrics", async () => {
+      const result = await runRecoveryTab([
+        recoveryRow({
+          respiratory_rate: 13,
+          rr_mean_30d: 15,
+          rr_sd_30d: 1,
+        }),
+      ]);
+      expect(result.readinessScore[0]?.components.respiratoryRateScore).toBeGreaterThan(80);
+    });
+
+    it("returns default respiratory rate score when baseline stats are missing", async () => {
+      const result = await runRecoveryTab([
+        recoveryRow({
+          respiratory_rate: 13,
+          rr_mean_30d: null,
+          rr_sd_30d: 1,
+        }),
+      ]);
+      expect(result.readinessScore[0]?.components.respiratoryRateScore).toBe(62);
+    });
+
+    it("excludes recovery rows outside the stress window", async () => {
+      const result = await runRecoveryTab([
+        recoveryRow({
+          date: "2026-02-20",
+          hrv: 40,
+          hrv_mean_60d: 60,
+          hrv_sd_60d: 10,
+        }),
+        recoveryRow({
+          date: "2026-03-28",
+          hrv: 55,
+          hrv_mean_60d: 60,
+          hrv_sd_60d: 10,
+        }),
+      ]);
+      expect(result.stress.daily).toHaveLength(1);
+      expect(result.stress.daily[0]?.date).toBe("2026-03-28");
+    });
+
+    it("excludes readiness rows on or before the cutoff date", async () => {
+      const result = await runRecoveryTab([
+        recoveryRow({ date: "2026-02-26" }),
+        recoveryRow({ date: "2026-02-27" }),
+      ]);
+      expect(result.readinessScore.map((row) => row.date)).toEqual(["2026-02-27"]);
+    });
+
+    it("changes stress score when HRV deviation inputs change", async () => {
+      const lowHrv = await runRecoveryTab([
+        recoveryRow({ hrv: 40, hrv_mean_60d: 60, hrv_sd_60d: 10 }),
+      ]);
+      const highHrv = await runRecoveryTab([
+        recoveryRow({ hrv: 70, hrv_mean_60d: 60, hrv_sd_60d: 10 }),
+      ]);
+      expect(lowHrv.stress.daily[0]?.stressScore).not.toBe(highHrv.stress.daily[0]?.stressScore);
+    });
+
+    it("skips rows without HRV when computing variability", async () => {
+      const metrics = [
+        ...Array.from({ length: 6 }, (_, index) =>
+          metricRow(`2026-03-${String(22 + index).padStart(2, "0")}`, 50 + index),
+        ),
+        metricRow("2026-03-28", null),
+      ];
+      const result = await runRecoveryTab([], { metrics });
+      expect(result.hrvVariability).toHaveLength(0);
+    });
+
+    it("filters HRV variability rows to the requested window", async () => {
+      const metrics = Array.from({ length: 7 }, (_, index) =>
+        metricRow(`2026-02-${String(20 + index).padStart(2, "0")}`, 50 + index),
+      );
+      const result = await runRecoveryTab([], { metrics, days: 30, endDate: "2026-03-28" });
+      expect(result.hrvVariability.every((row) => row.date > "2026-02-26")).toBe(true);
+    });
+
+    it("computes an exact rolling coefficient of variation", async () => {
+      const metrics = Array.from({ length: 7 }, (_, index) =>
+        metricRow(`2026-03-${String(22 + index).padStart(2, "0")}`, 50 + index),
+      );
+      const result = await runRecoveryTab([], { metrics });
+      expect(result.hrvVariability[0]?.rollingCoefficientOfVariation).toBe(3.77);
+    });
+
+    it("uses the latest non-null SpO2 and skin temperature values", async () => {
+      const result = await runRecoveryTab([], {
+        metrics: [
+          metricRow("2026-03-27", 50, { spo2_avg: 97.5, skin_temp_c: 33.1 }),
+          metricRow("2026-03-28", 52, { spo2_avg: null, skin_temp_c: null }),
+        ],
+      });
+      expect(result.trends).toEqual({
+        latest_spo2: 97.5,
+        latest_skin_temp: 33.1,
+      });
+    });
+
+    it("filters daily metrics to the requested window", async () => {
+      const result = await runRecoveryTab([], {
+        metrics: [metricRow("2026-02-20", 50), metricRow("2026-03-28", 52)],
+      });
+      expect(result.dailyMetrics.map((row) => row.date)).toEqual(["2026-03-28"]);
+    });
+
+    it("queries recovery rows with an extended lookback window", async () => {
+      const query = vi.fn(async (_schema: unknown, sqlText: unknown, params?: unknown) => {
+        if (String(sqlText).includes("analytics.daily_recovery")) {
+          return [recoveryRow()];
+        }
+        return [];
+      });
+      const ctx = {
+        db: { execute: vi.fn(async () => []), transaction: vi.fn() },
+        userId: "user-1",
+        timezone: "UTC",
+        accessWindow: { kind: "full" as const, paid: true as const, reason: "paid_grant" as const },
+        sensorStore: { query },
+      };
+
+      vi.spyOn(
+        (await import("../repositories/daily-metrics-repository.ts")).DailyMetricsRepository
+          .prototype,
+        "list",
+      ).mockResolvedValue([]);
+      vi.spyOn(
+        (await import("../repositories/daily-metrics-repository.ts")).DailyMetricsRepository
+          .prototype,
+        "getHrvBaseline",
+      ).mockResolvedValue([]);
+      vi.spyOn(
+        (await import("../repositories/body-analytics-repository.ts")).BodyAnalyticsRepository
+          .prototype,
+        "getSmoothedWeight",
+      ).mockResolvedValue([]);
+      vi.spyOn(
+        (await import("../repositories/body-analytics-repository.ts")).BodyAnalyticsRepository
+          .prototype,
+        "getWeightPrediction",
+      ).mockResolvedValue({
+        ratePerWeek: null,
+        rateConfidence: null,
+        impliedDailyCalories: null,
+        periodDeltas: { days7: null, days14: null, days30: null },
+        goal: null,
+        projectionLine: [],
+      });
+      vi.spyOn(
+        (await import("../repositories/settings-repository.ts")).SettingsRepository.prototype,
+        "get",
+      ).mockResolvedValue(null);
+
+      await loadMobileRecoveryTab(ctx, 30, "2026-03-28");
+
+      const recoveryQuery = query.mock.calls.find((call) =>
+        String(call[1]).includes("analytics.daily_recovery"),
+      );
+      expect(recoveryQuery?.[2]).toMatchObject({
+        windowStart: dateWindowStartString("2026-03-28", 90),
+      });
+    });
+
+    it("requests at least four weeks of healthspan data", async () => {
+      await runRecoveryTab([recoveryRow()], { days: 21, endDate: "2026-03-28" });
+      expect(vi.mocked(fetchHealthspanRawData)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: "user-1",
+          timezone: "UTC",
+          accessWindow: { kind: "full", paid: true, reason: "paid_grant" },
+        }),
+        "2026-03-28",
+        28,
+      );
+    });
+
+    it("passes healthspan context through to the healthspan query", async () => {
+      const query = vi.fn(async () => []);
+      const accessWindow = {
+        kind: "full" as const,
+        paid: true as const,
+        reason: "paid_grant" as const,
+      };
+      const sensorStore = { query };
+      const ctx = {
+        db: { execute: vi.fn(async () => []), transaction: vi.fn() },
+        userId: "user-abc",
+        timezone: "Europe/London",
+        accessWindow,
+        sensorStore,
+      };
+
+      vi.spyOn(
+        (await import("../repositories/daily-metrics-repository.ts")).DailyMetricsRepository
+          .prototype,
+        "list",
+      ).mockResolvedValue([]);
+      vi.spyOn(
+        (await import("../repositories/daily-metrics-repository.ts")).DailyMetricsRepository
+          .prototype,
+        "getHrvBaseline",
+      ).mockResolvedValue([]);
+      vi.spyOn(
+        (await import("../repositories/body-analytics-repository.ts")).BodyAnalyticsRepository
+          .prototype,
+        "getSmoothedWeight",
+      ).mockResolvedValue([]);
+      vi.spyOn(
+        (await import("../repositories/body-analytics-repository.ts")).BodyAnalyticsRepository
+          .prototype,
+        "getWeightPrediction",
+      ).mockResolvedValue({
+        ratePerWeek: null,
+        rateConfidence: null,
+        impliedDailyCalories: null,
+        periodDeltas: { days7: null, days14: null, days30: null },
+        goal: null,
+        projectionLine: [],
+      });
+      vi.spyOn(
+        (await import("../repositories/settings-repository.ts")).SettingsRepository.prototype,
+        "get",
+      ).mockResolvedValue(null);
+
+      vi.mocked(fetchHealthspanRawData).mockClear();
+      await loadMobileRecoveryTab(ctx, 30, "2026-03-28");
+
+      expect(vi.mocked(fetchHealthspanRawData)).toHaveBeenCalledWith(
+        {
+          userId: "user-abc",
+          timezone: "Europe/London",
+          accessWindow,
+          sensorStore,
+        },
+        "2026-03-28",
+        35,
+      );
+    });
+
+    it("passes parsed goal weight to weight prediction", async () => {
+      const predictionSpy = vi
+        .spyOn(
+          (await import("../repositories/body-analytics-repository.ts")).BodyAnalyticsRepository
+            .prototype,
+          "getWeightPrediction",
+        )
+        .mockResolvedValue({
+          ratePerWeek: null,
+          rateConfidence: null,
+          impliedDailyCalories: null,
+          periodDeltas: { days7: null, days14: null, days30: null },
+          goal: null,
+          projectionLine: [],
+        });
+      const query = vi.fn(async () => []);
+      const ctx = {
+        db: { execute: vi.fn(async () => []), transaction: vi.fn() },
+        userId: "user-1",
+        timezone: "UTC",
+        accessWindow: { kind: "full" as const, paid: true as const, reason: "paid_grant" as const },
+        sensorStore: { query },
+      };
+
+      vi.spyOn(
+        (await import("../repositories/daily-metrics-repository.ts")).DailyMetricsRepository
+          .prototype,
+        "list",
+      ).mockResolvedValue([]);
+      vi.spyOn(
+        (await import("../repositories/daily-metrics-repository.ts")).DailyMetricsRepository
+          .prototype,
+        "getHrvBaseline",
+      ).mockResolvedValue([]);
+      vi.spyOn(
+        (await import("../repositories/body-analytics-repository.ts")).BodyAnalyticsRepository
+          .prototype,
+        "getSmoothedWeight",
+      ).mockResolvedValue([]);
+      vi.spyOn(
+        (await import("../repositories/settings-repository.ts")).SettingsRepository.prototype,
+        "get",
+      ).mockResolvedValue({ value: "72.4" });
+
+      await loadMobileRecoveryTab(ctx, 30, "2026-03-28");
+
+      expect(predictionSpy).toHaveBeenCalledWith(90, "2026-03-28", 72.4);
+      predictionSpy.mockRestore();
     });
   });
 });
