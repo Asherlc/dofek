@@ -257,7 +257,11 @@ export default function StrainScreen() {
           {(trainingQuery.isError || weeklyVolumeParsed.error) && (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Weekly Volume</Text>
-              <Text style={styles.errorText}>Failed to load weekly volume.</Text>
+              <Text style={styles.errorText}>
+                {trainingQuery.error?.message ??
+                  weeklyVolumeParsed.error?.message ??
+                  "Failed to load weekly volume."}
+              </Text>
             </View>
           )}
           {!trainingQuery.isError && !weeklyVolumeParsed.error && weeklyVolume.length > 0 && (
