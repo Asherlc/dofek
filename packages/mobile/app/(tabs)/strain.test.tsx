@@ -5,7 +5,31 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockRouterPush = vi.fn();
 
-let mockTrainingData: unknown;
+type MockTrainingData = Record<string, unknown>;
+
+let mockTrainingData: MockTrainingData;
+
+function defaultMockTrainingData(): MockTrainingData {
+  return {
+    workloadRatio: {
+      displayedStrain: 16,
+      displayedDate: "2026-03-28",
+      timeSeries: [
+        {
+          date: "2026-03-28",
+          acuteLoad: 27.4,
+          chronicLoad: 24.9,
+          workloadRatio: 1.1,
+          strain: 16,
+        },
+      ],
+    },
+    strainTarget: undefined,
+    activities: [],
+    weeklyVolume: [],
+    verticalAscent: [],
+  };
+}
 
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: mockRouterPush }),
@@ -46,30 +70,12 @@ vi.mock("../../lib/units", async () => {
 describe("StrainScreen recent activity navigation", () => {
   beforeEach(() => {
     mockRouterPush.mockReset();
-    mockTrainingData = {
-      workloadRatio: {
-        displayedStrain: 16,
-        displayedDate: "2026-03-28",
-        timeSeries: [
-          {
-            date: "2026-03-28",
-            acuteLoad: 27.4,
-            chronicLoad: 24.9,
-            workloadRatio: 1.1,
-            strain: 16,
-          },
-        ],
-      },
-      strainTarget: undefined,
-      activities: [],
-      weeklyVolume: [],
-      verticalAscent: [],
-    };
+    mockTrainingData = defaultMockTrainingData();
   });
 
   it("navigates to detail screen when a recent activity card is tapped", async () => {
     mockTrainingData = {
-      ...(mockTrainingData as object),
+      ...defaultMockTrainingData(),
       activities: [
         {
           id: 42,
@@ -96,7 +102,7 @@ describe("StrainScreen recent activity navigation", () => {
 
   it("renders strain target card when target data is available", async () => {
     mockTrainingData = {
-      ...(mockTrainingData as object),
+      ...defaultMockTrainingData(),
       strainTarget: {
         targetStrain: 14,
         currentStrain: 10,
@@ -200,7 +206,7 @@ describe("StrainScreen recent activity navigation", () => {
 
   it("navigates to activities list when tapping View all", async () => {
     mockTrainingData = {
-      ...(mockTrainingData as object),
+      ...defaultMockTrainingData(),
       activities: [
         {
           id: 42,

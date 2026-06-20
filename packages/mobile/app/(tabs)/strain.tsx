@@ -11,7 +11,7 @@ import {
   formatActivityTypeLabel,
 } from "@dofek/training/training";
 import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -242,7 +242,7 @@ export default function StrainScreen() {
           </View>
 
           {/* Vertical Ascent Rate */}
-          {(verticalAscent.length > 0) && (
+          {verticalAscent.length > 0 && (
             <View style={styles.card}>
               <ChartTitleWithTooltip
                 title="Vertical Ascent Rate"

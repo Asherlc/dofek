@@ -8,7 +8,8 @@ import {
   computeDailyStress,
   computeStressTrend,
 } from "@dofek/recovery/stress";
-import { StrainScore, zScoreToRecoveryScore } from "@dofek/scoring/scoring";
+import { zScoreToRecoveryScore } from "@dofek/scoring/scoring";
+import type { Database } from "dofek/db";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
@@ -24,10 +25,9 @@ import {
 import { fetchRestingHeartRateValuesCte } from "../repositories/resting-heart-rate-query.ts";
 import { SettingsRepository } from "../repositories/settings-repository.ts";
 import type { StressResult } from "../repositories/stress-repository.ts";
-import type { HrvVariabilityRow, ReadinessRow } from "../routers/recovery.ts";
 import { buildHealthspanResult, type HealthspanResult } from "../routers/healthspan.ts";
 import { fetchHealthspanRawData } from "../routers/healthspan-query.ts";
-import type { Database } from "dofek/db";
+import type { HrvVariabilityRow, ReadinessRow } from "../routers/recovery.ts";
 
 const recoveryRowSchema = z.object({
   date: dateStringSchema,
@@ -162,14 +162,12 @@ function computeReadinessRows(
       Number(metrics.rhr_sd_30d) > 0
     ) {
       const zRhr =
-        (Number(metrics.resting_hr) - Number(metrics.rhr_mean_30d)) /
-        Number(metrics.rhr_sd_30d);
+        (Number(metrics.resting_hr) - Number(metrics.rhr_mean_30d)) / Number(metrics.rhr_sd_30d);
       restingHrScore = zScoreToRecoveryScore(-zRhr);
     }
 
     const efficiency = metrics.efficiency_pct != null ? Number(metrics.efficiency_pct) : null;
-    const sleepScore =
-      efficiency != null ? Math.max(0, Math.min(100, Math.round(efficiency))) : 62;
+    const sleepScore = efficiency != null ? Math.max(0, Math.min(100, Math.round(efficiency))) : 62;
 
     let respiratoryRateScore = 62;
     if (
@@ -226,8 +224,7 @@ function computeStressFromRows(
       row.rhr_sd_60d != null &&
       Number(row.rhr_sd_60d) > 0
         ? Math.round(
-            ((Number(row.resting_hr) - Number(row.rhr_mean_60d)) / Number(row.rhr_sd_60d)) *
-              100,
+            ((Number(row.resting_hr) - Number(row.rhr_mean_60d)) / Number(row.rhr_sd_60d)) * 100,
           ) / 100
         : null;
     const sleepEfficiency = row.efficiency_pct != null ? Number(row.efficiency_pct) : null;
@@ -257,7 +254,9 @@ function computeHrvVariability(
   days: number,
   endDate: string,
 ): HrvVariabilityRow[] {
-  const hrvRows = rows.flatMap((row) => (row.hrv != null ? [{ date: row.date, hrv: row.hrv }] : []));
+  const hrvRows = rows.flatMap((row) =>
+    row.hrv != null ? [{ date: row.date, hrv: row.hrv }] : [],
+  );
   const computed: HrvVariabilityRow[] = [];
 
   for (let index = 0; index < hrvRows.length; index++) {
@@ -265,8 +264,7 @@ function computeHrvVariability(
     if (window.length < 7) continue;
     const values = window.map((row) => row.hrv);
     const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
-    const variance =
-      values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length;
+    const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length;
     const rollingCv = mean > 0 ? (Math.sqrt(variance) / mean) * 100 : null;
     const current = hrvRows[index];
     if (!current) continue;
@@ -274,8 +272,7 @@ function computeHrvVariability(
       date: current.date,
       hrv: Math.round(current.hrv * 10) / 10,
       rollingMean: Math.round(mean * 10) / 10,
-      rollingCoefficientOfVariation:
-        rollingCv != null ? Math.round(rollingCv * 100) / 100 : null,
+      rollingCoefficientOfVariation: rollingCv != null ? Math.round(rollingCv * 100) / 100 : null,
     });
   }
 

@@ -1,11 +1,8 @@
-import {
-  type ReadinessComponents,
-  ReadinessScore,
-} from "@dofek/recovery/readiness";
+import { type ReadinessComponents, ReadinessScore } from "@dofek/recovery/readiness";
 import { StrainScore } from "@dofek/scoring/scoring";
-import type { WorkloadRatioResult } from "../routers/recovery.ts";
 import { computeStrainTarget } from "@dofek/scoring/strain-target";
 import { selectRecentDailyLoad } from "@dofek/training/training";
+import type { Database } from "dofek/db";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
@@ -15,14 +12,13 @@ import { dateWindowStartString } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { CyclingAdvancedRepository } from "../repositories/cycling-advanced-repository.ts";
-import type { VerticalAscentRow } from "../routers/cycling-advanced.ts";
 import {
-  TrainingRepository,
   type ActivityStatsRow,
+  TrainingRepository,
   type WeeklyVolumeRow,
 } from "../repositories/training-repository.ts";
-import type { StrainTargetResult } from "../routers/recovery.ts";
-import type { Database } from "dofek/db";
+import type { VerticalAscentRow } from "../routers/cycling-advanced.ts";
+import type { StrainTargetResult, WorkloadRatioResult } from "../routers/recovery.ts";
 
 export interface MobileTrainingTabResult {
   workloadRatio: WorkloadRatioResult;
@@ -88,9 +84,7 @@ function recoveryAccessParams(accessWindow?: AccessWindow): Record<string, strin
     : {};
 }
 
-function computeWorkloadRatio(
-  rows: z.infer<typeof strainRowSchema>[],
-): WorkloadRatioResult {
+function computeWorkloadRatio(rows: z.infer<typeof strainRowSchema>[]): WorkloadRatioResult {
   const timeSeries = rows.map((row) => {
     const dailyLoad = Math.round(Number(row.daily_load) * 10) / 10;
     const acuteLoad = Math.round(Number(row.acute_load) * 10) / 10;

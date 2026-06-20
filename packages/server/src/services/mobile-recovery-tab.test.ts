@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import { loadMobileRecoveryTab } from "./mobile-recovery-tab.ts";
 
@@ -7,6 +8,10 @@ vi.mock("dofek/personalization/storage", () => ({
 
 vi.mock("../routers/healthspan-query.ts", () => ({
   fetchHealthspanRawData: vi.fn(async () => null),
+}));
+
+vi.mock("../repositories/resting-heart-rate-query.ts", () => ({
+  fetchRestingHeartRateValuesCte: vi.fn(async () => sql`SELECT 1`),
 }));
 
 describe("loadMobileRecoveryTab", () => {
@@ -48,25 +53,29 @@ describe("loadMobileRecoveryTab", () => {
 
     const metricsRepoList = vi
       .spyOn(
-        (await import("../repositories/daily-metrics-repository.ts")).DailyMetricsRepository.prototype,
+        (await import("../repositories/daily-metrics-repository.ts")).DailyMetricsRepository
+          .prototype,
         "list",
       )
       .mockResolvedValue([]);
     const metricsRepoBaseline = vi
       .spyOn(
-        (await import("../repositories/daily-metrics-repository.ts")).DailyMetricsRepository.prototype,
+        (await import("../repositories/daily-metrics-repository.ts")).DailyMetricsRepository
+          .prototype,
         "getHrvBaseline",
       )
       .mockResolvedValue([]);
     const bodyRepoWeight = vi
       .spyOn(
-        (await import("../repositories/body-analytics-repository.ts")).BodyAnalyticsRepository.prototype,
+        (await import("../repositories/body-analytics-repository.ts")).BodyAnalyticsRepository
+          .prototype,
         "getSmoothedWeight",
       )
       .mockResolvedValue([]);
     const bodyRepoPrediction = vi
       .spyOn(
-        (await import("../repositories/body-analytics-repository.ts")).BodyAnalyticsRepository.prototype,
+        (await import("../repositories/body-analytics-repository.ts")).BodyAnalyticsRepository
+          .prototype,
         "getWeightPrediction",
       )
       .mockResolvedValue({
@@ -77,10 +86,6 @@ describe("loadMobileRecoveryTab", () => {
         goal: null,
         projectionLine: [],
       });
-    vi.spyOn(
-      (await import("../repositories/resting-heart-rate-query.ts")),
-      "fetchRestingHeartRateValuesCte",
-    ).mockResolvedValue({} as never);
     vi.spyOn(
       (await import("../repositories/settings-repository.ts")).SettingsRepository.prototype,
       "get",
