@@ -227,7 +227,7 @@ describe("CyclingAdvancedRepository", () => {
   }
 
   function makeRepository(rows: Record<string, unknown>[] = [], rawActivityCount = rows.length) {
-    const execute = vi.fn().mockResolvedValue([{ raw_activity_count: rawActivityCount }]);
+    const execute = vi.fn().mockResolvedValue([{ activity_count: rawActivityCount }]);
     const sensorStore = makeSensorStore(rows, rawActivityCount);
     const repo = new CyclingAdvancedRepository({ execute }, "user-1", "UTC", sensorStore);
     return { repo, execute, sensorStore };
@@ -416,7 +416,7 @@ describe("CyclingAdvancedRepository", () => {
           ].map((row) => schema.parse(row)),
         );
       const repo = new CyclingAdvancedRepository(
-        { execute: vi.fn().mockResolvedValue([{ raw_activity_count: 1 }]) },
+        { execute: vi.fn().mockResolvedValue([{ activity_count: 1 }]) },
         "user-1",
         "UTC",
         sensorStore,

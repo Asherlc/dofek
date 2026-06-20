@@ -111,6 +111,49 @@ describe("ActivityRepository", () => {
     return { repo, execute, sensorStore };
   }
 
+  describe("activity visibility", () => {
+    it("resolveVisibleActivityIds returns ids present in v_activity", async () => {
+      const { repo, execute } = makeRepository([{ id: "activity-1" }]);
+
+      const visibleIds = await repo.resolveVisibleActivityIds(["activity-1", "activity-2"]);
+
+      expect(visibleIds).toEqual(new Set(["activity-1"]));
+      const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain("FROM fitness.v_activity");
+      expect(compiledQuery.params).toContain("user-1");
+    });
+
+    it("countVisibleInWindow counts rows in v_activity", async () => {
+      const { repo, execute } = makeRepository([{ activity_count: 4 }]);
+
+      const count = await repo.countVisibleInWindow({ days: 30 });
+
+      expect(count).toBe(4);
+      const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain("FROM fitness.v_activity");
+    });
+
+    it("resolveVisibleActivityIds skips the query when no ids are provided", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      const visibleIds = await repo.resolveVisibleActivityIds([]);
+
+      expect(visibleIds).toEqual(new Set());
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it("filterToVisibleActivities keeps only rows visible in v_activity", async () => {
+      const { repo } = makeRepository([{ id: "activity-1" }]);
+
+      const filtered = await repo.filterToVisibleActivities([
+        { id: "activity-1", name: "Run" },
+        { id: "activity-2", name: "Ride" },
+      ]);
+
+      expect(filtered).toEqual([{ id: "activity-1", name: "Run" }]);
+    });
+  });
+
   describe("list", () => {
     it("returns empty items when no data", async () => {
       const { repo } = makeRepositoryWithSensorStore([]);

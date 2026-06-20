@@ -255,6 +255,33 @@ export interface ListInput {
   activityTypes?: string[];
 }
 
+export interface CountVisibleInWindowInput {
+  days: number;
+  activityTypes?: string[];
+  requireEndedAt?: boolean;
+  accessWindow?: AccessWindow;
+}
+
+function readActivityId(row: unknown): string {
+  if (typeof row === "object" && row !== null && "id" in row) {
+    const { id } = row;
+    if (typeof id === "string") {
+      return id;
+    }
+  }
+  throw new Error("Activity row is missing a string id");
+}
+
+/** Factory for repositories that need activity visibility helpers without a sensor store. */
+export function activityRepositoryFor(
+  db: Pick<import("dofek/db").Database, "execute">,
+  userId: string,
+  timezone = "UTC",
+  accessWindow: AccessWindow = { kind: "full", paid: true, reason: "paid_grant" },
+): ActivityRepository {
+  return new ActivityRepository(db, userId, timezone, accessWindow);
+}
+
 /** Data access for activity queries. */
 export class ActivityRepository extends BaseRepository {
   readonly #sensorStore?: ActivitySensorStore;
@@ -268,6 +295,71 @@ export class ActivityRepository extends BaseRepository {
   ) {
     super(db, userId, timezone, accessWindow);
     this.#sensorStore = sensorStore;
+  }
+
+  /** Returns activity IDs currently visible in fitness.v_activity. */
+  async resolveVisibleActivityIds(activityIds: readonly string[]): Promise<Set<string>> {
+    const uniqueActivityIds = [...new Set(activityIds)];
+    if (uniqueActivityIds.length === 0) {
+      return new Set();
+    }
+
+    const activityIdFilter = sql.join(
+      uniqueActivityIds.map((activityId) => sql`${activityId}::uuid`),
+      sql`, `,
+    );
+    const rows = await this.query(
+      z.object({ id: z.string() }),
+      sql`SELECT id::text AS id
+          FROM fitness.v_activity
+          WHERE user_id = ${this.userId}::uuid
+            AND id IN (${activityIdFilter})`,
+    );
+    return new Set(rows.map((row) => row.id));
+  }
+
+  /** Drops rows whose ids are not currently visible in fitness.v_activity. */
+  async filterToVisibleActivities<T extends { id: string }>(rows: readonly T[]): Promise<T[]>;
+  async filterToVisibleActivities<T>(
+    rows: readonly T[],
+    getActivityId: (row: T) => string,
+  ): Promise<T[]>;
+  async filterToVisibleActivities<T>(
+    rows: readonly T[],
+    getActivityId: (row: T) => string = readActivityId,
+  ): Promise<T[]> {
+    const visibleActivityIds = await this.resolveVisibleActivityIds(rows.map(getActivityId));
+    return rows.filter((row) => visibleActivityIds.has(getActivityId(row)));
+  }
+
+  /** Counts visible activities in fitness.v_activity for the requested window. */
+  async countVisibleInWindow(input: CountVisibleInWindowInput): Promise<number> {
+    const activityTypePredicate =
+      input.activityTypes && input.activityTypes.length > 0
+        ? sql`AND activity_type IN (${sql.join(
+            input.activityTypes.map((activityType) => sql`${activityType}`),
+            sql`, `,
+          )})`
+        : sql``;
+    const endedAtPredicate = input.requireEndedAt ? sql`AND ended_at IS NOT NULL` : sql``;
+    const accessWindow = input.accessWindow ?? this.accessWindow;
+    const accessWindowPredicate =
+      accessWindow.kind === "limited"
+        ? sql`AND started_at >= ${accessWindow.startDate}::timestamptz
+              AND started_at < ${accessWindow.endDateExclusive}::timestamptz`
+        : sql``;
+
+    const rows = await this.query(
+      z.object({ activity_count: z.coerce.number() }),
+      sql`SELECT count(*)::int AS activity_count
+          FROM fitness.v_activity
+          WHERE user_id = ${this.userId}::uuid
+            AND started_at > CURRENT_TIMESTAMP - ${input.days}::int * INTERVAL '1 day'
+            ${endedAtPredicate}
+            ${activityTypePredicate}
+            ${accessWindowPredicate}`,
+    );
+    return rows[0]?.activity_count ?? 0;
   }
 
   /** Paginated activity list with summary metrics. */

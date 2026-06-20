@@ -71,7 +71,13 @@ function makeRepoHarness(
   timezone = "UTC",
   rawActivityCount = activityRows.length,
 ) {
-  const db = { execute: vi.fn().mockResolvedValue([{ raw_activity_count: rawActivityCount }]) };
+  const execute = vi.fn();
+  execute.mockResolvedValueOnce([{ activity_count: rawActivityCount }]);
+  if (activityRows.length > 0) {
+    execute.mockResolvedValueOnce(activityRows.map((row) => ({ id: String(row.id) })));
+  }
+  execute.mockResolvedValue([]);
+  const db = { execute };
   const sensorStore = makeSensorStore(activityRows, normalizedPowerRows);
   return {
     repo: new PmcRepository(db, "user-1", timezone, sensorStore),
@@ -173,7 +179,7 @@ describe("PmcRepository", () => {
       expect(query).toHaveBeenNthCalledWith(
         2,
         expect.anything(),
-        expect.stringContaining("INNER JOIN analytics.activity_summary a"),
+        expect.stringContaining("INNER JOIN analytics.v_activity a"),
         expect.anything(),
       );
     });

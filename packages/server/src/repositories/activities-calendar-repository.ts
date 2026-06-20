@@ -10,7 +10,7 @@ import {
   ActivitySourceAttribution,
   type ProviderLookup,
 } from "../models/activity-source-attribution.ts";
-import type { ActivitySensorStore } from "./activity-repository.ts";
+import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 import { getActivityRoutePreviews } from "./activity-route-preview.ts";
 
 // ---------------------------------------------------------------------------
@@ -90,10 +90,6 @@ const activityRowSchema = z.object({
 const caloriesRowSchema = z.object({
   id: z.string(),
   calories: z.coerce.number().nullable(),
-});
-
-const deletedActivityRowSchema = z.object({
-  id: z.string(),
 });
 
 const baselineRowSchema = z.object({
@@ -220,12 +216,12 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     ]);
 
     const activityRowsMatchingType = filterActivityRowsByType(activityRows, input.activityType);
-    const deletedActivityIds = await this.#fetchDeletedActivityIds(
-      activityRowsMatchingType.map((row) => row.id),
-    );
-    const filteredActivityRows = activityRowsMatchingType.filter(
-      (row) => !deletedActivityIds.has(row.id),
-    );
+    const filteredActivityRows = await activityRepositoryFor(
+      this.db,
+      this.userId,
+      this.timezone,
+      this.accessWindow,
+    ).filterToVisibleActivities(activityRowsMatchingType);
     const activityIds = filteredActivityRows.map((row) => row.id);
     const [caloriesRows, routePreviewByActivityId] = await Promise.all([
       this.#fetchCaloriesByActivityId(activityIds),
@@ -459,6 +455,9 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             coalesce(sum(coalesce(asum.total_distance, 0)), 0) AS total_distance_meters,
             coalesce(sum(coalesce(asum.elevation_gain_m, 0)), 0) AS total_elevation_gain_m
           FROM analytics.deduped_activities AS activity FINAL
+          INNER JOIN analytics.v_activity va
+            ON va.id = activity.activity_id
+           AND va.user_id = activity.user_id
           LEFT JOIN analytics.activity_summary asum
             ON asum.user_id = activity.user_id
            AND asum.activity_id = activity.activity_id
@@ -474,6 +473,9 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         `SELECT DISTINCT
             activity.activity_type AS activity_type
           FROM analytics.deduped_activities AS activity FINAL
+          INNER JOIN analytics.v_activity va
+            ON va.id = activity.activity_id
+           AND va.user_id = activity.user_id
           WHERE activity.user_id = {userId:UUID}
             AND activity.is_deleted = 0
             AND activity.ended_at IS NOT NULL
@@ -531,30 +533,11 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       sql`SELECT
             a.id::text AS id,
             NULLIF(a.raw->>'calories', '')::numeric AS calories
-          FROM fitness.activity a
+          FROM fitness.v_activity a
           WHERE a.user_id = ${this.userId}::uuid
-            AND a.provider_absent_at IS NULL
-            AND a.deleted_at IS NULL
             AND a.id IN (${activityIdFilter})
             AND a.raw ? 'calories'`,
     );
-  }
-
-  async #fetchDeletedActivityIds(activityIds: string[]): Promise<Set<string>> {
-    if (activityIds.length === 0) return new Set();
-    const activityIdFilter = sql.join(
-      activityIds.map((activityId) => sql`${activityId}::uuid`),
-      sql`, `,
-    );
-    const rows = await this.query(
-      deletedActivityRowSchema,
-      sql`SELECT id::text AS id
-          FROM fitness.activity
-          WHERE user_id = ${this.userId}::uuid
-            AND id IN (${activityIdFilter})
-            AND deleted_at IS NOT NULL`,
-    );
-    return new Set(rows.map((row) => row.id));
   }
 }
 

@@ -283,6 +283,12 @@ describe("PaceTrendActivity", () => {
 describe("RunningRepository", () => {
   function makeRepository(rows: Record<string, unknown>[] = []) {
     const query = vi.fn().mockResolvedValue(rows);
+    const execute = vi
+      .fn()
+      .mockImplementation(async () =>
+        rows.flatMap((row) => (row.activity_id != null ? [{ id: String(row.activity_id) }] : [])),
+      );
+    const db = { execute };
     const sensorStore = {
       query,
       getActivitySummaries: vi.fn(),
@@ -295,8 +301,8 @@ describe("RunningRepository", () => {
       getHeartRateCurveRows: vi.fn(),
       getPaceCurveRows: vi.fn(),
     };
-    const repo = new RunningRepository("user-1", "UTC", sensorStore);
-    return { repo, execute: query };
+    const repo = new RunningRepository(db, "user-1", "UTC", sensorStore);
+    return { repo, execute: query, dbExecute: execute };
   }
 
   describe("getDynamics", () => {
@@ -344,6 +350,7 @@ describe("RunningRepository", () => {
     it("returns PaceTrendActivity instances", async () => {
       const { repo } = makeRepository([
         {
+          activity_id: "run-3",
           date: "2024-06-10",
           name: "Evening Run",
           avg_speed: 4.0,

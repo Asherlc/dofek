@@ -9,7 +9,7 @@ describe("countRawActivities", () => {
     const renderedQueries: { sql: string; params: unknown[] }[] = [];
     const execute = vi.fn().mockImplementation((query: SQL) => {
       renderedQueries.push(dialect.sqlToQuery(query));
-      return Promise.resolve([{ raw_activity_count: 3 }]);
+      return Promise.resolve([{ activity_count: 3 }]);
     });
 
     const count = await countRawActivities(
@@ -30,7 +30,7 @@ describe("countRawActivities", () => {
     expect(count).toBe(3);
     expect(renderedQueries).toHaveLength(1);
     const renderedQuery = renderedQueries[0];
-    expect(renderedQuery?.sql).toContain("WHERE user_id = $1::uuid");
+    expect(renderedQuery?.sql).toContain("FROM fitness.v_activity");
     expect(renderedQuery?.sql).toContain("CURRENT_TIMESTAMP - $2::int * INTERVAL '1 day'");
     expect(renderedQuery?.sql).toContain("activity_type IN ($3)");
     expect(renderedQuery?.sql).toContain("started_at >= $4::timestamptz");

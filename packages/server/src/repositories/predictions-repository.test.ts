@@ -1441,7 +1441,7 @@ describe("PredictionsRepository predict pipeline mapping", () => {
       [[], [], [], [], [cardioRow]],
     );
     const result = await repo.predict("cardio_power", 90);
-    expect(execute.mock.calls.length).toBe(2);
+    expect(execute.mock.calls.length).toBe(3);
     expect(sensorQuery.mock.calls.length).toBe(5);
     expect(result).toBeNull();
   });

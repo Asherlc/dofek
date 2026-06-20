@@ -4,6 +4,7 @@ import { z } from "zod";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { activityRepositoryFor } from "./activity-repository.ts";
 import {
   ActivityVariabilityModel,
   PedalDynamicsModel,
@@ -12,7 +13,6 @@ import {
   TrainingMonotonyWeekModel,
   VerticalAscentModel,
 } from "./cycling-advanced-models.ts";
-import { countRawActivities } from "./raw-activity-count.ts";
 import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
 
 const ENDURANCE_TYPES: string[] = [...ENDURANCE_ACTIVITY_TYPES];
@@ -98,6 +98,9 @@ export class CyclingAdvancedRepository {
           up.max_hr AS max_hr,
           coalesce(up.resting_hr, drhr.resting_hr, 60) AS resting_hr_val
         FROM analytics.activity_summary asum
+        INNER JOIN analytics.v_activity va
+          ON va.id = asum.activity_id
+         AND va.user_id = asum.user_id
         INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
         LEFT JOIN resting_heart_rate drhr
           ON drhr.date = toString(toDate(toTimeZone(asum.started_at, {timezone:String})))
@@ -239,6 +242,9 @@ export class CyclingAdvancedRepository {
           up.max_hr AS max_hr,
           coalesce(up.resting_hr, drhr.resting_hr, 60) AS resting_hr_val
         FROM analytics.activity_summary asum
+        INNER JOIN analytics.v_activity va
+          ON va.id = asum.activity_id
+         AND va.user_id = asum.user_id
         INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
         LEFT JOIN resting_heart_rate drhr
           ON drhr.date = toString(toDate(toTimeZone(asum.started_at, {timezone:String})))
@@ -307,17 +313,17 @@ export class CyclingAdvancedRepository {
       ftpSchema,
       `WITH activity_power AS (
         SELECT
-          a.activity_id AS activity_id,
+          a.id AS activity_id,
           ds.recorded_at AS recorded_at,
           row_number() OVER (
-            PARTITION BY a.activity_id ORDER BY ds.recorded_at
+            PARTITION BY a.id ORDER BY ds.recorded_at
           ) AS rn,
           sum(coalesce(ds.scalar, 0)) OVER (
-            PARTITION BY a.activity_id ORDER BY ds.recorded_at
+            PARTITION BY a.id ORDER BY ds.recorded_at
             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
           ) AS cumsum
         FROM analytics.deduped_sensor ds
-        INNER JOIN analytics.activity_summary a
+        INNER JOIN analytics.v_activity a
           ON a.user_id = ds.user_id
          AND ds.recorded_at >= a.started_at
          AND ds.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
@@ -372,14 +378,14 @@ export class CyclingAdvancedRepository {
       variabilityRowSchema,
       `WITH rolling AS (
         SELECT
-          a.activity_id AS activity_id,
+          a.id AS activity_id,
           avg(ds.scalar) OVER (
-            PARTITION BY a.activity_id
+            PARTITION BY a.id
             ORDER BY toUnixTimestamp(ds.recorded_at)
             RANGE BETWEEN 29 PRECEDING AND CURRENT ROW
           ) AS rolling_30s_power
         FROM analytics.deduped_sensor ds
-        INNER JOIN analytics.activity_summary a
+        INNER JOIN analytics.v_activity a
           ON a.user_id = ds.user_id
          AND ds.recorded_at >= a.started_at
          AND ds.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
@@ -392,15 +398,15 @@ export class CyclingAdvancedRepository {
       ),
       grouped AS (
         SELECT
-          toString(a.activity_id) AS activity_id,
+          toString(a.id) AS activity_id,
           toString(toDate(toTimeZone(a.started_at, {timezone:String}))) AS date,
           a.name AS name,
           a.started_at AS started_at,
           round(pow(avg(pow(r.rolling_30s_power, 4)), 0.25), 1) AS np,
           round(avg(r.rolling_30s_power), 1) AS avg_power
         FROM rolling r
-        INNER JOIN analytics.activity_summary a ON a.activity_id = r.activity_id
-        GROUP BY a.activity_id, a.started_at, a.name
+        INNER JOIN analytics.v_activity a ON a.id = r.activity_id
+        GROUP BY a.id, a.started_at, a.name
         HAVING count() >= 60
       )
       SELECT
@@ -451,17 +457,17 @@ export class CyclingAdvancedRepository {
       vamRowSchema,
       `WITH altitude_points AS (
         SELECT
-          a.activity_id AS activity_id,
+          a.id AS activity_id,
           alt.scalar AS altitude,
           alt.recorded_at AS recorded_at,
           lagInFrame(alt.scalar) OVER (
-            PARTITION BY a.activity_id ORDER BY alt.recorded_at
+            PARTITION BY a.id ORDER BY alt.recorded_at
           ) AS prev_altitude,
           lagInFrame(alt.recorded_at) OVER (
-            PARTITION BY a.activity_id ORDER BY alt.recorded_at
+            PARTITION BY a.id ORDER BY alt.recorded_at
           ) AS prev_recorded_at
         FROM analytics.deduped_sensor alt
-        INNER JOIN analytics.activity_summary a
+        INNER JOIN analytics.v_activity a
           ON a.user_id = alt.user_id
          AND alt.recorded_at >= a.started_at
          AND alt.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
@@ -473,10 +479,10 @@ export class CyclingAdvancedRepository {
       ),
       grade_activities AS (
         SELECT DISTINCT
-          a.activity_id AS activity_id,
+          a.id AS activity_id,
           1 AS has_grade_samples
         FROM analytics.deduped_sensor grd
-        INNER JOIN analytics.activity_summary a
+        INNER JOIN analytics.v_activity a
           ON a.user_id = grd.user_id
          AND grd.recorded_at >= a.started_at
          AND grd.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
@@ -488,11 +494,11 @@ export class CyclingAdvancedRepository {
       ),
       grade_points AS (
         SELECT
-          a.activity_id AS activity_id,
+          a.id AS activity_id,
           grd.recorded_at AS recorded_at,
           grd.scalar AS grade
         FROM analytics.deduped_sensor grd
-        INNER JOIN analytics.activity_summary a
+        INNER JOIN analytics.v_activity a
           ON a.user_id = grd.user_id
          AND grd.recorded_at >= a.started_at
          AND grd.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
@@ -531,13 +537,13 @@ export class CyclingAdvancedRepository {
         round(sum(cs.altitude - cs.prev_altitude), 1) AS elevation_gain,
         toInt32(sum(dateDiff('second', cs.prev_recorded_at, cs.recorded_at))) AS climbing_seconds
       FROM climbing_segments cs
-      INNER JOIN analytics.activity_summary a ON a.activity_id = cs.activity_id
+      INNER JOIN analytics.v_activity a ON a.id = cs.activity_id
       WHERE cs.prev_altitude IS NOT NULL
         AND cs.prev_recorded_at IS NOT NULL
         AND cs.altitude > cs.prev_altitude
         AND cs.grade_rank = 1
         AND (NOT coalesce(cs.has_grade_samples, false) OR cs.grade > 3)
-      GROUP BY a.activity_id, a.started_at, a.name
+      GROUP BY a.id, a.started_at, a.name
       HAVING sum(dateDiff('second', cs.prev_recorded_at, cs.recorded_at)) > 60
       ORDER BY a.started_at`,
       {
@@ -570,6 +576,9 @@ export class CyclingAdvancedRepository {
         round((asum.avg_left_torque_eff + asum.avg_right_torque_eff) / 2, 1) AS avg_torque_effectiveness,
         round((asum.avg_left_pedal_smooth + asum.avg_right_pedal_smooth) / 2, 1) AS avg_pedal_smoothness
       FROM analytics.activity_summary asum
+      INNER JOIN analytics.v_activity va
+        ON va.id = asum.activity_id
+       AND va.user_id = asum.user_id
       WHERE asum.user_id = {userId:UUID}
         AND has({enduranceTypes:Array(String)}, asum.activity_type)
         AND asum.started_at > now() - INTERVAL {days:Int32} DAY
@@ -596,8 +605,7 @@ export class CyclingAdvancedRepository {
   }
 
   async #loadRawActivityCount(days: number): Promise<number> {
-    return countRawActivities(this.#db, {
-      userId: this.#userId,
+    return activityRepositoryFor(this.#db, this.#userId).countVisibleInWindow({
       days,
       activityTypes: ENDURANCE_TYPES,
     });
