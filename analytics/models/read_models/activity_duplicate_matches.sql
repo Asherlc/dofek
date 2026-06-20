@@ -26,8 +26,8 @@ tombstoned_records AS (
         coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR) AS ended_at
     FROM {{ source('postgres_fitness', 'activity') }} AS activity FINAL
     WHERE activity._peerdb_is_deleted = 0
-        AND activity.provider_absent_at IS NOT NULL
-        AND activity.deleted_at IS NULL
+        AND activity.provider_absent_at IS NOT null
+        AND activity.deleted_at IS null
 ),
 
 active_duplicate_matches AS (
@@ -86,12 +86,18 @@ active_to_tombstoned_matches AS (
 ),
 
 current_duplicate_matches AS (
-    SELECT activity_id, duplicate_activity_id, overlap_ratio
+    SELECT
+        activity_id,
+        duplicate_activity_id,
+        overlap_ratio
     FROM active_duplicate_matches
 
     UNION ALL
 
-    SELECT activity_id, duplicate_activity_id, overlap_ratio
+    SELECT
+        activity_id,
+        duplicate_activity_id,
+        overlap_ratio
     FROM active_to_tombstoned_matches
 ),
 
