@@ -14,8 +14,18 @@ import {
   markProviderActivityAbsent,
   reconcileProviderActivityAbsence,
 } from "./provider-activity-absence.ts";
+import type { SyncDatabase } from "./index.ts";
 
 const userId = "00000000-0000-0000-0000-000000000001";
+
+function makeMockDb(): SyncDatabase {
+  return {
+    select: vi.fn(),
+    insert: vi.fn(),
+    delete: vi.fn(),
+    execute: mockExecute,
+  };
+}
 
 describe("hasProviderActivityListSyncErrors", () => {
   it("returns true when an activity list fetch failed", () => {
@@ -45,7 +55,7 @@ describe("provider activity absence cache invalidation", () => {
 
   it("invalidates activity, calendar, and training caches after reconciliation", async () => {
     await reconcileProviderActivityAbsence(
-      { execute: mockExecute },
+      makeMockDb(),
       {
         providerId: "test-provider",
         windowStart: new Date("2026-03-01T00:00:00Z"),
@@ -63,7 +73,7 @@ describe("provider activity absence cache invalidation", () => {
 
   it("invalidates activity, calendar, and training caches after marking absent", async () => {
     await markProviderActivityAbsent(
-      { execute: mockExecute },
+      makeMockDb(),
       {
         providerId: "test-provider",
         externalId: "missing-activity",
