@@ -33,6 +33,7 @@ absent_group_members AS (
     FROM final_groups
     INNER JOIN {{ source('postgres_fitness', 'activity') }} AS absent FINAL
         ON absent.id = final_groups.activity_id
+        AND absent.deleted_at IS null
         AND absent.provider_absent_at IS NOT NULL
         AND absent.external_id IS NOT NULL
         AND absent.external_id != ''
