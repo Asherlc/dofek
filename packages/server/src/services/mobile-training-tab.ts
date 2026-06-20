@@ -257,3 +257,68 @@ export async function loadMobileTrainingTab(
     verticalAscent: verticalAscentModels.map((model) => model.toDetail()),
   };
 }
+
+export const mobileTrainingTabOutputSchema = z.object({
+  workloadRatio: z.object({
+    timeSeries: z.array(
+      z.object({
+        date: z.string(),
+        dailyLoad: z.number(),
+        strain: z.number(),
+        acuteLoad: z.number(),
+        chronicLoad: z.number(),
+        workloadRatio: z.number().nullable(),
+      }),
+    ),
+    displayedStrain: z.number(),
+    displayedDate: z.string().nullable(),
+  }),
+  strainTarget: z.object({
+    targetStrain: z.number(),
+    currentStrain: z.number(),
+    currentStrainSource: z.enum(["activity", "none"]).optional(),
+    currentPhysiologyLoad: z.number().nullable().optional(),
+    progressPercent: z.number(),
+    zone: z.enum(["Push", "Maintain", "Recovery"]),
+    explanation: z.string(),
+    dailyLoad: z.number().optional(),
+    acuteLoad: z.number().optional(),
+    chronicLoad: z.number().optional(),
+    workloadRatio: z.number().nullable().optional(),
+    readinessScore: z.number().optional(),
+  }),
+  activities: z.array(
+    z.object({
+      id: z.string(),
+      activity_type: z.string(),
+      name: z.string().nullable(),
+      started_at: z.string(),
+      ended_at: z.string().nullable(),
+      avg_hr: z.number().nullable(),
+      max_hr: z.number().nullable(),
+      avg_power: z.number().nullable(),
+      max_power: z.number().nullable(),
+      avg_cadence: z.number().nullable(),
+      hr_samples: z.number().nullable(),
+      power_samples: z.number().nullable(),
+      distance_meters: z.number().nullable(),
+    }),
+  ),
+  weeklyVolume: z.array(
+    z.object({
+      week: z.string(),
+      activity_type: z.string(),
+      count: z.number(),
+      hours: z.number(),
+    }),
+  ),
+  verticalAscent: z.array(
+    z.object({
+      date: z.string(),
+      activityName: z.string(),
+      verticalAscentRate: z.number(),
+      elevationGainMeters: z.number(),
+      climbingMinutes: z.number(),
+    }),
+  ),
+}) satisfies z.ZodType<MobileTrainingTabResult>;

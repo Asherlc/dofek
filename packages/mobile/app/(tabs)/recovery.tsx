@@ -218,7 +218,10 @@ export default function RecoveryScreen() {
     dailyMetricsData.length > 0 ? dailyMetricsData[dailyMetricsData.length - 1] : null;
   const stepsAvg7d =
     dailyMetricsData.length > 0
-      ? Math.round(dailyMetricsData.reduce((sum, d) => sum + (Number(d.steps) || 0), 0) / 7)
+      ? Math.round(
+          dailyMetricsData.reduce((sum, d) => sum + (Number(d.steps) || 0), 0) /
+            dailyMetricsData.length,
+        )
       : null;
 
   const [recoveryExpanded, setRecoveryExpanded] = useState(false);

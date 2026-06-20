@@ -378,3 +378,147 @@ export async function loadMobileRecoveryTab(
     healthspan: buildHealthspanResult(healthspanRaw),
   };
 }
+
+const readinessComponentsOutputSchema = z.object({
+  hrvScore: z.number(),
+  restingHrScore: z.number(),
+  sleepScore: z.number(),
+  respiratoryRateScore: z.number(),
+});
+
+const readinessRowOutputSchema = z.object({
+  date: z.string(),
+  readinessScore: z.number(),
+  components: readinessComponentsOutputSchema,
+  weights: z.object({
+    hrv: z.number(),
+    restingHr: z.number(),
+    sleep: z.number(),
+    respiratoryRate: z.number(),
+  }),
+});
+
+const stressOutputSchema = z.object({
+  daily: z.array(
+    z.object({
+      date: z.string(),
+      stressScore: z.number(),
+      hrvDeviation: z.number().nullable(),
+      restingHrDeviation: z.number().nullable(),
+      sleepEfficiency: z.number().nullable(),
+    }),
+  ),
+  weekly: z.array(
+    z.object({
+      weekStart: z.string(),
+      cumulativeStress: z.number(),
+      avgDailyStress: z.number(),
+      highStressDays: z.number(),
+    }),
+  ),
+  latestScore: z.number().nullable(),
+  trend: z.enum(["improving", "worsening", "stable"]),
+});
+
+const dailyMetricsOutputSchema = z.object({
+  date: z.string(),
+  user_id: z.string(),
+  hrv: z.number().nullable(),
+  spo2_avg: z.number().nullable(),
+  respiratory_rate_avg: z.number().nullable(),
+  skin_temp_c: z.number().nullable(),
+  steps: z.number().nullable(),
+  active_energy_kcal: z.number().nullable(),
+  basal_energy_kcal: z.number().nullable(),
+  distance_km: z.number().nullable(),
+  flights_climbed: z.number().nullable(),
+  exercise_minutes: z.number().nullable(),
+  stand_hours: z.number().nullable(),
+  walking_speed: z.number().nullable(),
+  source_providers: z.array(z.string()),
+});
+
+export const mobileRecoveryTabOutputSchema = z.object({
+  hrvVariability: z.array(
+    z.object({
+      date: z.string(),
+      hrv: z.number().nullable(),
+      rollingCoefficientOfVariation: z.number().nullable(),
+      rollingMean: z.number().nullable(),
+    }),
+  ),
+  hrvBaseline: z.array(
+    z.object({
+      date: z.string(),
+      hrv: z.number().nullable(),
+      resting_hr: z.number().nullable(),
+      mean_60d: z.number().nullable(),
+      sd_60d: z.number().nullable(),
+      mean_7d: z.number().nullable(),
+      resting_hr_mean_7d: z.number().nullable(),
+    }),
+  ),
+  readinessScore: z.array(readinessRowOutputSchema),
+  stress: stressOutputSchema,
+  trends: z
+    .object({
+      latest_spo2: z.number().nullable(),
+      latest_skin_temp: z.number().nullable(),
+    })
+    .nullable(),
+  dailyMetrics: z.array(dailyMetricsOutputSchema),
+  weight: z.array(
+    z.object({
+      date: z.string(),
+      rawWeight: z.number().nullable(),
+      smoothedWeight: z.number(),
+      weeklyChange: z.number().nullable(),
+      interpolated: z.boolean(),
+    }),
+  ),
+  weightPrediction: z.object({
+    ratePerWeek: z.number().nullable(),
+    rateConfidence: z.number().nullable(),
+    impliedDailyCalories: z.number().nullable(),
+    periodDeltas: z.object({
+      days7: z.number().nullable(),
+      days14: z.number().nullable(),
+      days30: z.number().nullable(),
+    }),
+    goal: z
+      .object({
+        goalWeightKg: z.number(),
+        remainingKg: z.number(),
+        estimatedDate: z.string().nullable(),
+        daysRemaining: z.number().nullable(),
+      })
+      .nullable(),
+    projectionLine: z.array(
+      z.object({
+        date: z.string(),
+        projectedWeight: z.number(),
+      }),
+    ),
+  }),
+  healthspan: z.object({
+    healthspanScore: z.number().nullable(),
+    yearsDelta: z.number().nullable(),
+    metrics: z.array(
+      z.object({
+        name: z.string(),
+        value: z.number().nullable(),
+        unit: z.string(),
+        score: z.number(),
+        status: z.enum(["excellent", "good", "fair", "poor"]),
+        yearsDelta: z.number(),
+      }),
+    ),
+    history: z.array(
+      z.object({
+        weekStart: z.string(),
+        score: z.number(),
+      }),
+    ),
+    trend: z.enum(["improving", "declining", "stable"]).nullable(),
+  }),
+}) satisfies z.ZodType<MobileRecoveryTabResult>;

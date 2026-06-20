@@ -516,9 +516,53 @@ describe("loadMobileRecoveryTab", () => {
     });
 
     it("ignores invalid goal weight values", async () => {
-      await expect(runRecoveryTab([], { goalWeight: "not-a-number" })).resolves.toMatchObject({
-        weightPrediction: expect.any(Object),
-      });
+      const predictionSpy = vi
+        .spyOn(
+          (await import("../repositories/body-analytics-repository.ts")).BodyAnalyticsRepository
+            .prototype,
+          "getWeightPrediction",
+        )
+        .mockResolvedValue({
+          ratePerWeek: null,
+          rateConfidence: null,
+          impliedDailyCalories: null,
+          periodDeltas: { days7: null, days14: null, days30: null },
+          goal: null,
+          projectionLine: [],
+        });
+      const query = vi.fn(async () => []);
+      const ctx = {
+        db: { execute: vi.fn(async () => []), transaction: vi.fn() },
+        userId: "user-1",
+        timezone: "UTC",
+        accessWindow: { kind: "full" as const, paid: true as const, reason: "paid_grant" as const },
+        sensorStore: { query },
+      };
+
+      vi.spyOn(
+        (await import("../repositories/daily-metrics-repository.ts")).DailyMetricsRepository
+          .prototype,
+        "list",
+      ).mockResolvedValue([]);
+      vi.spyOn(
+        (await import("../repositories/daily-metrics-repository.ts")).DailyMetricsRepository
+          .prototype,
+        "getHrvBaseline",
+      ).mockResolvedValue([]);
+      vi.spyOn(
+        (await import("../repositories/body-analytics-repository.ts")).BodyAnalyticsRepository
+          .prototype,
+        "getSmoothedWeight",
+      ).mockResolvedValue([]);
+      vi.spyOn(
+        (await import("../repositories/settings-repository.ts")).SettingsRepository.prototype,
+        "get",
+      ).mockResolvedValue({ value: "not-a-number" });
+
+      await loadMobileRecoveryTab(ctx, 30, "2026-03-28");
+
+      expect(predictionSpy).toHaveBeenCalledWith(90, "2026-03-28", null);
+      predictionSpy.mockRestore();
     });
 
     it("returns null HRV deviation when hrv is null", async () => {

@@ -148,6 +148,12 @@ import { isRecent, mobileDashboardRouter } from "./mobile-dashboard.ts";
 
 const createCaller = createTestCallerFactory(mobileDashboardRouter);
 
+const fullAccessWindow = {
+  kind: "full" as const,
+  paid: true as const,
+  reason: "paid_grant" as const,
+};
+
 describe("mobileDashboard.dashboard", () => {
   it("fails loudly when ClickHouse activity analytics are unavailable", async () => {
     const caller = createCaller({
@@ -604,9 +610,12 @@ describe("mobileDashboard.recovery", () => {
       timezone: "UTC",
     });
 
-    await expect(caller.recovery({ endDate: "2026-03-28" })).rejects.toThrow(
-      "mobileDashboard.recovery requires the ClickHouse activity analytics store",
-    );
+    await expect(caller.recovery({ endDate: "2026-03-28" })).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: expect.stringContaining(
+        "mobileDashboard.recovery requires the ClickHouse activity analytics store",
+      ),
+    });
   });
 
   it("returns consolidated recovery tab data", async () => {
@@ -640,6 +649,7 @@ describe("mobileDashboard.recovery", () => {
       db: { execute, transaction: vi.fn() },
       userId: "user-1",
       timezone: "UTC",
+      accessWindow: fullAccessWindow,
       sensorStore: {
         query,
         getActivitySummaries: vi.fn().mockResolvedValue([]),
@@ -666,12 +676,12 @@ describe("mobileDashboard.recovery", () => {
     expect(parseTimingTotalMs(timingCall?.[0])).toBeLessThan(60_000);
   });
 
-  it("defaults timezone and access window when omitted", async () => {
+  it("defaults timezone when omitted", async () => {
     const loadSpy = vi.spyOn(mobileRecoveryTab, "loadMobileRecoveryTab").mockResolvedValue({
       hrvVariability: [],
       hrvBaseline: [],
       readinessScore: [],
-      stress: { daily: [], weekly: [], latestScore: null, trend: null },
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: null,
       dailyMetrics: [],
       weight: [],
@@ -695,6 +705,7 @@ describe("mobileDashboard.recovery", () => {
     const caller = createCaller({
       db: { execute: vi.fn(), transaction: vi.fn() },
       userId: "user-1",
+      accessWindow: fullAccessWindow,
       sensorStore: makeSensorStore(),
     });
 
@@ -705,7 +716,7 @@ describe("mobileDashboard.recovery", () => {
         db: expect.anything(),
         userId: "user-1",
         timezone: "UTC",
-        accessWindow: { kind: "full", paid: true, reason: "paid_grant" },
+        accessWindow: fullAccessWindow,
         sensorStore: expect.anything(),
       },
       30,
@@ -715,12 +726,26 @@ describe("mobileDashboard.recovery", () => {
     loadSpy.mockRestore();
   });
 
+  it("fails when entitlement access window is missing", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn(), transaction: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(),
+    });
+
+    await expect(caller.recovery({ days: 30, endDate: "2026-03-28" })).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: expect.stringContaining("requires resolved entitlement access window"),
+    });
+  });
+
   it("preserves an explicit timezone when provided", async () => {
     const loadSpy = vi.spyOn(mobileRecoveryTab, "loadMobileRecoveryTab").mockResolvedValue({
       hrvVariability: [],
       hrvBaseline: [],
       readinessScore: [],
-      stress: { daily: [], weekly: [], latestScore: null, trend: null },
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: null,
       dailyMetrics: [],
       weight: [],
@@ -745,6 +770,7 @@ describe("mobileDashboard.recovery", () => {
       db: { execute: vi.fn(), transaction: vi.fn() },
       userId: "user-1",
       timezone: "America/New_York",
+      accessWindow: fullAccessWindow,
       sensorStore: makeSensorStore(),
     });
 
@@ -768,9 +794,12 @@ describe("mobileDashboard.training", () => {
       timezone: "UTC",
     });
 
-    await expect(caller.training({ endDate: "2026-03-28" })).rejects.toThrow(
-      "mobileDashboard.training requires the ClickHouse activity analytics store",
-    );
+    await expect(caller.training({ endDate: "2026-03-28" })).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: expect.stringContaining(
+        "mobileDashboard.training requires the ClickHouse activity analytics store",
+      ),
+    });
   });
 
   it("returns consolidated training tab data", async () => {
@@ -809,6 +838,7 @@ describe("mobileDashboard.training", () => {
       db: { execute },
       userId: "user-1",
       timezone: "UTC",
+      accessWindow: fullAccessWindow,
       sensorStore: {
         query,
         getActivitySummaries: vi.fn().mockResolvedValue([]),
@@ -837,7 +867,7 @@ describe("mobileDashboard.training", () => {
     expect(parseTimingTotalMs(timingCall?.[0])).toBeLessThan(60_000);
   });
 
-  it("defaults timezone and access window when omitted", async () => {
+  it("defaults timezone when omitted", async () => {
     const loadSpy = vi.spyOn(mobileTrainingTab, "loadMobileTrainingTab").mockResolvedValue({
       workloadRatio: {
         timeSeries: [],
@@ -866,6 +896,7 @@ describe("mobileDashboard.training", () => {
     const caller = createCaller({
       db: { execute: vi.fn() },
       userId: "user-1",
+      accessWindow: fullAccessWindow,
       sensorStore: makeSensorStore(),
     });
 
@@ -876,7 +907,7 @@ describe("mobileDashboard.training", () => {
         db: expect.anything(),
         userId: "user-1",
         timezone: "UTC",
-        accessWindow: { kind: "full", paid: true, reason: "paid_grant" },
+        accessWindow: fullAccessWindow,
         sensorStore: expect.anything(),
       },
       30,
@@ -884,6 +915,20 @@ describe("mobileDashboard.training", () => {
     );
 
     loadSpy.mockRestore();
+  });
+
+  it("fails when entitlement access window is missing", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(),
+    });
+
+    await expect(caller.training({ days: 30, endDate: "2026-03-28" })).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: expect.stringContaining("requires resolved entitlement access window"),
+    });
   });
 
   it("preserves an explicit timezone when provided", async () => {
@@ -916,6 +961,7 @@ describe("mobileDashboard.training", () => {
       db: { execute: vi.fn() },
       userId: "user-1",
       timezone: "America/Chicago",
+      accessWindow: fullAccessWindow,
       sensorStore: makeSensorStore(),
     });
 

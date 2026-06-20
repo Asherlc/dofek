@@ -254,19 +254,13 @@ export default function StrainScreen() {
           )}
 
           {/* Weekly volume summary */}
-          {trainingQuery.isError && (
+          {(trainingQuery.isError || weeklyVolumeParsed.error) && (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Weekly Volume</Text>
               <Text style={styles.errorText}>Failed to load weekly volume.</Text>
             </View>
           )}
-          {weeklyVolumeParsed.error && (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Weekly Volume</Text>
-              <Text style={styles.errorText}>Failed to load weekly volume.</Text>
-            </View>
-          )}
-          {weeklyVolume.length > 0 && (
+          {!trainingQuery.isError && !weeklyVolumeParsed.error && weeklyVolume.length > 0 && (
             <View style={styles.card}>
               <ChartTitleWithTooltip
                 title="Weekly Volume"

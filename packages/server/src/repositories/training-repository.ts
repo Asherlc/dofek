@@ -167,7 +167,12 @@ export class TrainingRepository extends BaseRepository {
 
   /** Per-activity summary with HR and power stats. */
   async getActivityStats(days: number): Promise<ActivityStatsRow[]> {
-    const rawActivityCount = await this.#loadRawActivityCount(days);
+    const rawActivityCount = await this.#loadRawActivityCount(
+      days,
+      undefined,
+      false,
+      this.accessWindow,
+    );
     if (rawActivityCount === 0) {
       return [];
     }
@@ -180,7 +185,12 @@ export class TrainingRepository extends BaseRepository {
     activities: ActivityStatsRow[];
     weeklyVolume: WeeklyVolumeRow[];
   }> {
-    const rawActivityCount = await this.#loadRawActivityCount(days);
+    const rawActivityCount = await this.#loadRawActivityCount(
+      days,
+      undefined,
+      false,
+      this.accessWindow,
+    );
     if (rawActivityCount === 0) {
       return { activities: [], weeklyVolume: [] };
     }
@@ -192,7 +202,26 @@ export class TrainingRepository extends BaseRepository {
     return { activities, weeklyVolume };
   }
 
+  #activitySummaryAccessFilter(tableAlias = ""): {
+    predicate: string;
+    params: Record<string, string>;
+  } {
+    const columnPrefix = tableAlias ? `${tableAlias}.` : "";
+    if (this.accessWindow.kind === "full") {
+      return { predicate: "", params: {} };
+    }
+    return {
+      predicate: `AND ${columnPrefix}started_at >= toDateTime({accessStart:String})
+       AND ${columnPrefix}started_at < toDateTime({accessEnd:String})`,
+      params: {
+        accessStart: this.accessWindow.startDate,
+        accessEnd: this.accessWindow.endDateExclusive,
+      },
+    };
+  }
+
   async #queryActivityStats(days: number): Promise<ActivityStatsRow[]> {
+    const { predicate, params } = this.#activitySummaryAccessFilter("a");
     return this.#sensorStore.query(
       activityStatsRowSchema,
       `SELECT
@@ -212,24 +241,14 @@ export class TrainingRepository extends BaseRepository {
       FROM analytics.activity_summary a
       WHERE a.user_id = {userId:UUID}
         AND a.started_at > now() - INTERVAL {days:Int32} DAY
+        ${predicate}
       ORDER BY a.started_at DESC`,
-      { userId: this.userId, days },
+      { userId: this.userId, days, ...params },
     );
   }
 
   async #queryWeeklyVolume(days: number): Promise<WeeklyVolumeRow[]> {
-    const accessWindowPredicate =
-      this.accessWindow.kind === "full"
-        ? ""
-        : `AND started_at >= toDateTime({accessStart:String})
-          AND started_at < toDateTime({accessEnd:String})`;
-    const accessWindowParams: Record<string, string> =
-      this.accessWindow.kind === "full"
-        ? {}
-        : {
-            accessStart: this.accessWindow.startDate,
-            accessEnd: this.accessWindow.endDateExclusive,
-          };
+    const { predicate, params } = this.#activitySummaryAccessFilter();
 
     return this.#sensorStore.query(
       weeklyVolumeRowSchema,
@@ -242,14 +261,14 @@ export class TrainingRepository extends BaseRepository {
       WHERE user_id = {userId:UUID}
         AND started_at > now() - INTERVAL {days:Int32} DAY
         AND ended_at IS NOT NULL
-        ${accessWindowPredicate}
+        ${predicate}
       GROUP BY week, activity_type
       ORDER BY week`,
       {
         userId: this.userId,
         timezone: this.timezone,
         days,
-        ...accessWindowParams,
+        ...params,
       },
     );
   }
