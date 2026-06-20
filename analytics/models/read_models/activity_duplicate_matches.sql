@@ -18,7 +18,19 @@ WITH source_records AS (
     WHERE is_deleted = 0
 ),
 
-current_duplicate_matches AS (
+tombstoned_records AS (
+    SELECT
+        activity.id AS activity_id,
+        activity.user_id AS user_id,
+        activity.started_at AS started_at,
+        coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR) AS ended_at
+    FROM {{ source('postgres_fitness', 'activity') }} AS activity FINAL
+    WHERE activity._peerdb_is_deleted = 0
+        AND activity.provider_absent_at IS NOT NULL
+        AND activity.deleted_at IS NULL
+),
+
+active_duplicate_matches AS (
     SELECT
         left_activity.activity_id AS activity_id,
         right_activity.activity_id AS duplicate_activity_id,
@@ -44,6 +56,43 @@ current_duplicate_matches AS (
             least(left_activity.started_at, right_activity.started_at),
             greatest(left_activity.ended_at, right_activity.ended_at)
         ), 0) > 0.8
+),
+
+active_to_tombstoned_matches AS (
+    SELECT
+        left_activity.activity_id AS activity_id,
+        right_activity.activity_id AS duplicate_activity_id,
+        dateDiff(
+            'second',
+            greatest(left_activity.started_at, right_activity.started_at),
+            least(left_activity.ended_at, right_activity.ended_at)
+        ) / nullIf(dateDiff(
+            'second',
+            least(left_activity.started_at, right_activity.started_at),
+            greatest(left_activity.ended_at, right_activity.ended_at)
+        ), 0) AS overlap_ratio
+    FROM source_records AS left_activity
+    INNER JOIN tombstoned_records AS right_activity
+        ON left_activity.user_id = right_activity.user_id
+        AND dateDiff(
+            'second',
+            greatest(left_activity.started_at, right_activity.started_at),
+            least(left_activity.ended_at, right_activity.ended_at)
+        ) / nullIf(dateDiff(
+            'second',
+            least(left_activity.started_at, right_activity.started_at),
+            greatest(left_activity.ended_at, right_activity.ended_at)
+        ), 0) > 0.8
+),
+
+current_duplicate_matches AS (
+    SELECT activity_id, duplicate_activity_id, overlap_ratio
+    FROM active_duplicate_matches
+
+    UNION ALL
+
+    SELECT activity_id, duplicate_activity_id, overlap_ratio
+    FROM active_to_tombstoned_matches
 ),
 
 existing_duplicate_matches AS (

@@ -169,28 +169,53 @@ ranked AS (
   LEFT JOIN device_priority_match
     ON device_priority_match.activity_id = active_activity.id
 ),
+tombstoned AS (
+  SELECT
+    activity.id AS id,
+    activity.user_id AS user_id,
+    activity.provider_id AS provider_id,
+    activity.external_id AS external_id,
+    activity.started_at AS started_at,
+    activity.ended_at AS ended_at,
+    activity.provider_absent_at AS provider_absent_at
+  FROM postgres_fitness.activity FINAL
+  WHERE _peerdb_is_deleted = 0
+    AND provider_absent_at IS NOT NULL
+    AND deleted_at IS NULL
+    AND external_id IS NOT NULL
+    AND external_id != ''
+),
+clusterable AS (
+  SELECT
+    ranked.id AS id,
+    ranked.user_id AS user_id,
+    ranked.started_at AS started_at,
+    coalesce(ranked.ended_at, ranked.started_at + INTERVAL 1 HOUR) AS ended_at
+  FROM ranked
+  UNION ALL
+  SELECT
+    tombstoned.id AS id,
+    tombstoned.user_id AS user_id,
+    tombstoned.started_at AS started_at,
+    coalesce(tombstoned.ended_at, tombstoned.started_at + INTERVAL 1 HOUR) AS ended_at
+  FROM tombstoned
+),
 pairs AS (
   SELECT
     left_activity.id AS id1,
     right_activity.id AS id2
-  FROM ranked AS left_activity
-  INNER JOIN ranked AS right_activity
+  FROM clusterable AS left_activity
+  INNER JOIN clusterable AS right_activity
     ON left_activity.user_id = right_activity.user_id
    AND toString(left_activity.id) < toString(right_activity.id)
    AND dateDiff(
       'second',
       greatest(left_activity.started_at, right_activity.started_at),
-      least(
-        coalesce(left_activity.ended_at, left_activity.started_at + INTERVAL 1 HOUR),
-        coalesce(right_activity.ended_at, right_activity.started_at + INTERVAL 1 HOUR)
-      )
+      least(left_activity.ended_at, right_activity.ended_at)
     ) / nullIf(dateDiff(
       'second',
       least(left_activity.started_at, right_activity.started_at),
-      greatest(
-        coalesce(left_activity.ended_at, left_activity.started_at + INTERVAL 1 HOUR),
-        coalesce(right_activity.ended_at, right_activity.started_at + INTERVAL 1 HOUR)
-      )
+      greatest(left_activity.ended_at, right_activity.ended_at)
     ), 0) > 0.8
 ),
 graph_edges AS (
@@ -205,7 +230,7 @@ connected_components AS (
     id AS activity_id,
     id AS connected_activity_id,
     [toString(id)] AS visited_activity_ids
-  FROM ranked
+  FROM clusterable
   UNION ALL
   SELECT
     connected_components.activity_id AS activity_id,
@@ -221,72 +246,24 @@ final_groups AS (
   FROM connected_components
   GROUP BY activity_id
 ),
-group_bounds AS (
-  SELECT
-    final_groups.group_id AS group_id,
-    min(ranked.started_at) AS group_started_at,
-    max(coalesce(ranked.ended_at, ranked.started_at + INTERVAL 1 HOUR)) AS group_ended_at,
-    any(ranked.user_id) AS user_id
-  FROM final_groups
-  INNER JOIN ranked
-    ON ranked.id = final_groups.activity_id
-  GROUP BY final_groups.group_id
-),
-absent_group_members AS (
-  SELECT
-    group_bounds.group_id AS group_id,
-    absent.id AS activity_id,
-    absent.provider_id AS provider_id,
-    absent.external_id AS external_id,
-    absent.provider_absent_at AS provider_absent_at
-  FROM group_bounds
-  INNER JOIN postgres_fitness.activity AS absent FINAL
-    ON absent.user_id = group_bounds.user_id
-   AND absent.provider_absent_at IS NOT NULL
-   AND absent.external_id IS NOT NULL
-   AND absent.external_id != ''
-   AND absent._peerdb_is_deleted = 0
-  LEFT JOIN final_groups AS fg_member
-    ON fg_member.group_id = group_bounds.group_id
-   AND fg_member.activity_id = absent.id
-  WHERE fg_member.activity_id IS NULL
-  AND (
-    dateDiff(
-      'second',
-      greatest(absent.started_at, group_bounds.group_started_at),
-      least(
-        coalesce(absent.ended_at, absent.started_at + INTERVAL 1 HOUR),
-        group_bounds.group_ended_at
-      )
-    ) / nullIf(
-      dateDiff(
-        'second',
-        least(
-          absent.started_at,
-          group_bounds.group_started_at
-        ),
-        greatest(coalesce(absent.ended_at, absent.started_at + INTERVAL 1 HOUR), group_bounds.group_ended_at)
-      ),
-      0
-    )
-  ) > 0.8
-),
 absent_source_links AS (
   SELECT
-    group_id,
+    final_groups.group_id AS group_id,
     groupArrayIf(
       map(
-        'providerId', provider_id,
-        'externalId', external_id,
-        'memberActivityId', toString(activity_id),
-        'providerAbsentAt', toString(provider_absent_at)
+        'providerId', tombstoned.provider_id,
+        'externalId', tombstoned.external_id,
+        'memberActivityId', toString(tombstoned.id),
+        'providerAbsentAt', toString(tombstoned.provider_absent_at)
       ),
-      provider_id IS NOT NULL
-      AND external_id IS NOT NULL
-      AND external_id != ''
+      tombstoned.provider_id IS NOT NULL
+      AND tombstoned.external_id IS NOT NULL
+      AND tombstoned.external_id != ''
     ) AS absent_source_external_ids
-  FROM absent_group_members
-  GROUP BY group_id
+  FROM final_groups
+  INNER JOIN tombstoned
+    ON tombstoned.id = final_groups.activity_id
+  GROUP BY final_groups.group_id
 ),
 best AS (
   SELECT *
@@ -325,14 +302,19 @@ merged AS (
     argMinIf(ranked.notes, ranked.priority, ranked.notes IS NOT NULL) AS notes,
     argMinIf(ranked.timezone, ranked.priority, ranked.timezone IS NOT NULL) AS timezone,
     argMinIf(ranked.raw, ranked.priority, ranked.raw IS NOT NULL) AS raw,
-    arraySort(groupUniqArray(ranked.provider_id)) AS source_providers,
-    groupArrayIf(map('providerId', ranked.provider_id, 'externalId', ranked.external_id), ranked.external_id IS NOT NULL AND ranked.external_id != '') AS source_external_ids,
+    arraySort(groupUniqArrayIf(ranked.provider_id, ranked.id IS NOT NULL)) AS source_providers,
+    groupArrayIf(
+      map('providerId', ranked.provider_id, 'externalId', ranked.external_id),
+      ranked.id IS NOT NULL
+      AND ranked.external_id IS NOT NULL
+      AND ranked.external_id != ''
+    ) AS source_external_ids,
     coalesce(any(absent_source_links.absent_source_external_ids), []) AS absent_source_external_ids,
-    groupArray(ranked.id) AS member_activity_ids
+    groupArray(final_groups.activity_id) AS member_activity_ids
   FROM best
   INNER JOIN final_groups
     ON final_groups.group_id = best.group_id
-  INNER JOIN ranked
+  LEFT JOIN ranked
     ON ranked.id = final_groups.activity_id
   LEFT JOIN absent_source_links
     ON absent_source_links.group_id = best.group_id
