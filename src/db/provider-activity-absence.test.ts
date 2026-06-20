@@ -9,12 +9,12 @@ vi.mock("../lib/cache.ts", () => ({
   },
 }));
 
+import type { SyncDatabase } from "./index.ts";
 import {
   hasProviderActivityListSyncErrors,
   markProviderActivityAbsent,
   reconcileProviderActivityAbsence,
 } from "./provider-activity-absence.ts";
-import type { SyncDatabase } from "./index.ts";
 
 const userId = "00000000-0000-0000-0000-000000000001";
 
@@ -54,16 +54,13 @@ describe("provider activity absence cache invalidation", () => {
   });
 
   it("invalidates activity, calendar, and training caches after reconciliation", async () => {
-    await reconcileProviderActivityAbsence(
-      makeMockDb(),
-      {
-        providerId: "test-provider",
-        windowStart: new Date("2026-03-01T00:00:00Z"),
-        windowEnd: new Date("2026-03-03T00:00:00Z"),
-        presentExternalIds: new Set(["present-activity"]),
-        userId,
-      },
-    );
+    await reconcileProviderActivityAbsence(makeMockDb(), {
+      providerId: "test-provider",
+      windowStart: new Date("2026-03-01T00:00:00Z"),
+      windowEnd: new Date("2026-03-03T00:00:00Z"),
+      presentExternalIds: new Set(["present-activity"]),
+      userId,
+    });
 
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:activity.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:calendar.`);
@@ -72,14 +69,11 @@ describe("provider activity absence cache invalidation", () => {
   });
 
   it("invalidates activity, calendar, and training caches after marking absent", async () => {
-    await markProviderActivityAbsent(
-      makeMockDb(),
-      {
-        providerId: "test-provider",
-        externalId: "missing-activity",
-        userId,
-      },
-    );
+    await markProviderActivityAbsent(makeMockDb(), {
+      providerId: "test-provider",
+      externalId: "missing-activity",
+      userId,
+    });
 
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:activity.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:calendar.`);
