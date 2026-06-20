@@ -51,8 +51,10 @@ services:
       REDIS_URL: redis://redis:6379
       OTEL_SERVICE_NAME: dofek-web
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${DEPLOY_ENVIRONMENT:-production}
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://collector:4318/v1/traces
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://collector:4318/v1/logs
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "0.1"
       EXPORT_R2_BUCKET: dofek-exports
       SLACK_MODE: http
     volumes:
@@ -97,8 +99,10 @@ services:
       REDIS_URL: redis://redis:6379
       OTEL_SERVICE_NAME: dofek-worker
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${DEPLOY_ENVIRONMENT:-production}
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://collector:4318/v1/traces
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://collector:4318/v1/logs
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "0.1"
       EXPORT_R2_BUCKET: dofek-exports
     volumes:
       - job_files:/app/job-files
@@ -128,8 +132,10 @@ services:
       ANALYTICS_BUILD_RETRY_DELAY_SECONDS: ${ANALYTICS_BUILD_RETRY_DELAY_SECONDS:?ANALYTICS_BUILD_RETRY_DELAY_SECONDS is required}
       OTEL_SERVICE_NAME: dofek-analytics-worker
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${DEPLOY_ENVIRONMENT:-production}
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://collector:4318/v1/traces
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://collector:4318/v1/logs
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "0.1"
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f analytics-worker || exit 1"]
       interval: 10s
@@ -156,8 +162,10 @@ services:
       CDC_HEALTH_INTERVAL_SECONDS: ${CDC_HEALTH_INTERVAL_SECONDS:-300}
       OTEL_SERVICE_NAME: dofek-cdc-health
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${DEPLOY_ENVIRONMENT:-production}
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://collector:4318/v1/traces
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://collector:4318/v1/logs
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "0.1"
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f cdc-health || exit 1"]
       interval: 10s
@@ -303,8 +311,10 @@ services:
       METRIC_STREAM_TOPIC: ${METRIC_STREAM_TOPIC:?METRIC_STREAM_TOPIC is required}
       OTEL_SERVICE_NAME: dofek-metric-stream-clickhouse-sink
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${DEPLOY_ENVIRONMENT:-production}
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://collector:4318/v1/traces
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://collector:4318/v1/logs
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "0.1"
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f metric-stream-clickhouse-sink || exit 1"]
       interval: 10s
@@ -589,7 +599,7 @@ services:
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
     configs:
-      - source: otel_collector_config
+      - source: otel_collector_config_v2
         target: /etc/otelcol-contrib/config.yaml
 
   ota:
@@ -719,7 +729,7 @@ configs:
   # Swarm config objects are immutable: when otel-collector-config.yaml changes,
   # bump this key's version suffix (e.g. _v2) so a new config object is created
   # and the collector rolls onto it — same convention as netdata_db_limits_v2.
-  otel_collector_config:
+  otel_collector_config_v2:
     file: ./otel-collector-config.yaml
   # Swarm config objects are immutable: when metric-stream-r2-archive.connect.yml
   # changes, bump this key's version suffix so a new config object is created and
