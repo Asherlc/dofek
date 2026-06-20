@@ -12,6 +12,7 @@ vi.mock("../lib/cache.ts", () => ({
 import type { SyncDatabase } from "./index.ts";
 import {
   hasProviderActivityListSyncErrors,
+  invalidateActivityVisibilityCaches,
   markProviderActivityAbsent,
   reconcileProviderActivityAbsence,
 } from "./provider-activity-absence.ts";
@@ -51,6 +52,16 @@ describe("provider activity absence cache invalidation", () => {
   beforeEach(() => {
     mockInvalidateByPrefix.mockClear();
     mockExecute.mockClear();
+  });
+
+  it("invalidates all visibility-dependent cache prefixes", async () => {
+    await invalidateActivityVisibilityCaches(userId);
+
+    expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:activity.`);
+    expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:calendar.`);
+    expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:training.`);
+    expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:running.`);
+    expect(mockInvalidateByPrefix).toHaveBeenCalledTimes(4);
   });
 
   it("invalidates activity, calendar, and training caches after reconciliation", async () => {
