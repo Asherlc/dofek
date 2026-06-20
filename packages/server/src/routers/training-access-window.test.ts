@@ -58,7 +58,7 @@ describe("trainingRouter access window gating", () => {
   });
 
   it("weeklyVolume passes accessWindow to repository (limited window returns empty)", async () => {
-    const execute = vi.fn().mockResolvedValue([{ raw_activity_count: 1 }]);
+    const execute = vi.fn().mockResolvedValue([{ activity_count: 1 }]);
     const sensorStore = makeMockSensorStore([]);
     const caller = createCaller({
       db: { execute },
@@ -106,7 +106,13 @@ describe("trainingRouter access window gating", () => {
       ],
     ]);
     const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue([{ raw_activity_count: 1 }]) },
+      db: (() => {
+        const execute = vi.fn();
+        execute.mockResolvedValueOnce([{ activity_count: 1 }]);
+        execute.mockResolvedValueOnce([{ id: "activity-1" }]);
+        execute.mockResolvedValue([]);
+        return { execute };
+      })(),
       userId: "user-1",
       timezone: "UTC",
       sensorStore,

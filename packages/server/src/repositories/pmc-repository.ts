@@ -146,7 +146,6 @@ export class PmcRepository extends BaseRepository {
         FROM analytics.deduped_sensor ds
         INNER JOIN analytics.v_activity a
           ON a.user_id = ds.user_id
-         AND a.id = ds.activity_id
          AND ds.recorded_at >= a.started_at
          AND ds.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
         WHERE ds.user_id = {userId:UUID}

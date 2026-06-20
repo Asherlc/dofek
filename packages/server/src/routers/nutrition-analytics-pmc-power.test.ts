@@ -39,6 +39,23 @@ vi.mock("../lib/endurance-types.ts", () => ({
   enduranceTypeFilter: () => ({ sql: "true" }),
 }));
 
+vi.mock("dofek/personalization/storage", () => ({
+  loadPersonalizedParams: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock("dofek/personalization/params", () => ({
+  getEffectiveParams: vi.fn().mockReturnValue({
+    exponentialMovingAverage: {
+      chronicTrainingLoadDays: 42,
+      acuteTrainingLoadDays: 7,
+    },
+    trainingImpulseConstants: {
+      genderFactor: 1.92,
+      exponent: 1.67,
+    },
+  }),
+}));
+
 vi.mock("@dofek/training/power-analysis", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
@@ -75,14 +92,9 @@ import { powerRouter } from "./power.ts";
 
 type SensorStore = import("../repositories/activity-repository.ts").ActivitySensorStore;
 
-function makeSensorStore(rows: unknown[] = [], rawActivityCount = rows.length): SensorStore {
+function makeSensorStore(rows: unknown[] = []): SensorStore {
   return {
-    query: vi.fn().mockImplementation((_schema: unknown, queryText = "") => {
-      if (String(queryText).includes("raw_activity_count")) {
-        return Promise.resolve([{ raw_activity_count: rawActivityCount }]);
-      }
-      return Promise.resolve(rows);
-    }),
+    query: vi.fn().mockResolvedValue(rows),
     getActivitySummaries: vi.fn().mockResolvedValue([]),
     getStream: vi.fn().mockResolvedValue([]),
     getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
@@ -95,8 +107,37 @@ function makeSensorStore(rows: unknown[] = [], rawActivityCount = rows.length): 
   };
 }
 
-function makeRawActivityCountDb(rawActivityCount: number) {
-  return { execute: vi.fn().mockResolvedValue([{ raw_activity_count: rawActivityCount }]) };
+function makePmcSensorStore(
+  activityRows: unknown[],
+  normalizedPowerRows: unknown[] = [],
+): SensorStore {
+  return {
+    query: vi.fn(
+      async (schema: { parse: (row: unknown) => unknown }, queryText = ""): Promise<unknown[]> => {
+        const rows = queryText.includes("rolling_30s_power") ? normalizedPowerRows : activityRows;
+        return rows.map((row) => schema.parse(row));
+      },
+    ),
+    getActivitySummaries: vi.fn().mockResolvedValue([]),
+    getStream: vi.fn().mockResolvedValue([]),
+    getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+    getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+    getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+    getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+    getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+    getPaceCurveRows: vi.fn().mockResolvedValue([]),
+  };
+}
+
+function makeRawActivityCountDb(activityCount: number, visibleIds: string[] = []) {
+  const execute = vi.fn();
+  execute.mockResolvedValueOnce([{ activity_count: activityCount }]);
+  if (visibleIds.length > 0) {
+    execute.mockResolvedValueOnce(visibleIds.map((id) => ({ id })));
+  }
+  execute.mockResolvedValue([]);
+  return { execute };
 }
 
 describe("nutritionAnalyticsRouter", () => {
@@ -258,7 +299,7 @@ describe("pmcRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
-        sensorStore: makeSensorStore([]),
+        sensorStore: makePmcSensorStore([]),
       });
       const result = await caller.chart({ days: 180 });
 
@@ -283,10 +324,13 @@ describe("pmcRouter", () => {
         },
       ];
       const caller = createCaller({
-        db: makeRawActivityCountDb(rows.length),
+        db: makeRawActivityCountDb(
+          rows.length,
+          rows.map((row) => String(row.id)),
+        ),
         userId: "user-1",
         timezone: "UTC",
-        sensorStore: makeSensorStore(rows),
+        sensorStore: makePmcSensorStore(rows),
       });
       const result = await caller.chart({ days: 180 });
 
@@ -314,11 +358,18 @@ describe("pmcRouter", () => {
           hr_samples: 3600,
         });
       }
+      const normalizedPowerRows = rows.map((row) => ({
+        activity_id: String(row.id),
+        np: 200,
+      }));
       const caller = createCaller({
-        db: makeRawActivityCountDb(rows.length),
+        db: makeRawActivityCountDb(
+          rows.length,
+          rows.map((row) => String(row.id)),
+        ),
         userId: "user-1",
         timezone: "UTC",
-        sensorStore: makeSensorStore(rows),
+        sensorStore: makePmcSensorStore(rows, normalizedPowerRows),
       });
       const result = await caller.chart({ days: 180 });
 
@@ -333,7 +384,7 @@ describe("pmcRouter", () => {
         db: { execute: vi.fn().mockResolvedValue([]) },
         userId: "user-1",
         timezone: "UTC",
-        sensorStore: makeSensorStore([]),
+        sensorStore: makePmcSensorStore([]),
         accessWindow: {
           kind: "limited",
           paid: false,

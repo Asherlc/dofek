@@ -49,7 +49,6 @@ export async function getClickHousePowerCurveSamples(
           FROM analytics.deduped_sensor AS deduped_samples
           INNER JOIN analytics.v_activity AS activity
             ON activity.user_id = deduped_samples.user_id
-           AND activity.id = deduped_samples.activity_id
            AND deduped_samples.recorded_at >= activity.started_at
            AND deduped_samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
           WHERE deduped_samples.user_id = {userId:UUID}
@@ -106,7 +105,6 @@ export async function getClickHouseNormalizedPowerSamples(
           FROM analytics.deduped_sensor AS deduped_samples
           INNER JOIN analytics.v_activity AS activity
             ON activity.user_id = deduped_samples.user_id
-           AND activity.id = deduped_samples.activity_id
            AND deduped_samples.recorded_at >= activity.started_at
            AND deduped_samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
           WHERE deduped_samples.user_id = {userId:UUID}
