@@ -522,7 +522,9 @@ describe("loadMobileRecoveryTab", () => {
     });
 
     it("returns null HRV deviation when hrv is null", async () => {
-      const result = await runRecoveryTab([recoveryRow({ hrv: null, hrv_mean_60d: 60, hrv_sd_60d: 10 })]);
+      const result = await runRecoveryTab([
+        recoveryRow({ hrv: null, hrv_mean_60d: 60, hrv_sd_60d: 10 }),
+      ]);
       expect(result.stress.daily[0]?.hrvDeviation).toBeNull();
     });
 
@@ -767,7 +769,7 @@ describe("loadMobileRecoveryTab", () => {
     });
 
     it("queries recovery rows with an extended lookback window", async () => {
-      const query = vi.fn(async (_schema: unknown, sqlText: unknown, params?: unknown) => {
+      const query = vi.fn(async (_schema: unknown, sqlText: unknown, _params?: unknown) => {
         if (String(sqlText).includes("analytics.daily_recovery")) {
           return [recoveryRow()];
         }
