@@ -85,19 +85,6 @@ export class TrainingRepository extends BaseRepository {
 
   /** Weekly training volume grouped by activity type. */
   async getWeeklyVolume(days: number): Promise<WeeklyVolumeRow[]> {
-    const accessWindowPredicate =
-      this.accessWindow.kind === "full"
-        ? ""
-        : `AND started_at >= toDateTime({accessStart:String})
-          AND started_at < toDateTime({accessEnd:String})`;
-    const accessWindowParams: Record<string, string> =
-      this.accessWindow.kind === "full"
-        ? {}
-        : {
-            accessStart: this.accessWindow.startDate,
-            accessEnd: this.accessWindow.endDateExclusive,
-          };
-
     const rawActivityCount = await this.#loadRawActivityCount(
       days,
       undefined,
@@ -108,27 +95,7 @@ export class TrainingRepository extends BaseRepository {
       return [];
     }
 
-    return this.#sensorStore.query(
-      weeklyVolumeRowSchema,
-      `SELECT
-        toString(toMonday(toDate(toTimeZone(started_at, {timezone:String})))) AS week,
-        activity_type,
-        toInt32(count()) AS count,
-        round(sum(dateDiff('second', started_at, ended_at)) / 3600, 2) AS hours
-      FROM analytics.activity_summary
-      WHERE user_id = {userId:UUID}
-        AND started_at > now() - INTERVAL {days:Int32} DAY
-        AND ended_at IS NOT NULL
-        ${accessWindowPredicate}
-      GROUP BY week, activity_type
-      ORDER BY week`,
-      {
-        userId: this.userId,
-        timezone: this.timezone,
-        days,
-        ...accessWindowParams,
-      },
-    );
+    return this.#queryWeeklyVolume(days);
   }
 
   /** HR zone distribution per week using the canonical Karvonen model. */
@@ -205,6 +172,27 @@ export class TrainingRepository extends BaseRepository {
       return [];
     }
 
+    return this.#queryActivityStats(days);
+  }
+
+  /** Activity stats and weekly volume with a single activity-count lookup. */
+  async getActivityStatsAndWeeklyVolume(days: number): Promise<{
+    activities: ActivityStatsRow[];
+    weeklyVolume: WeeklyVolumeRow[];
+  }> {
+    const rawActivityCount = await this.#loadRawActivityCount(days);
+    if (rawActivityCount === 0) {
+      return { activities: [], weeklyVolume: [] };
+    }
+
+    const [activities, weeklyVolume] = await Promise.all([
+      this.#queryActivityStats(days),
+      this.#queryWeeklyVolume(days),
+    ]);
+    return { activities, weeklyVolume };
+  }
+
+  async #queryActivityStats(days: number): Promise<ActivityStatsRow[]> {
     return this.#sensorStore.query(
       activityStatsRowSchema,
       `SELECT
@@ -226,6 +214,43 @@ export class TrainingRepository extends BaseRepository {
         AND a.started_at > now() - INTERVAL {days:Int32} DAY
       ORDER BY a.started_at DESC`,
       { userId: this.userId, days },
+    );
+  }
+
+  async #queryWeeklyVolume(days: number): Promise<WeeklyVolumeRow[]> {
+    const accessWindowPredicate =
+      this.accessWindow.kind === "full"
+        ? ""
+        : `AND started_at >= toDateTime({accessStart:String})
+          AND started_at < toDateTime({accessEnd:String})`;
+    const accessWindowParams: Record<string, string> =
+      this.accessWindow.kind === "full"
+        ? {}
+        : {
+            accessStart: this.accessWindow.startDate,
+            accessEnd: this.accessWindow.endDateExclusive,
+          };
+
+    return this.#sensorStore.query(
+      weeklyVolumeRowSchema,
+      `SELECT
+        toString(toMonday(toDate(toTimeZone(started_at, {timezone:String})))) AS week,
+        activity_type,
+        toInt32(count()) AS count,
+        round(sum(dateDiff('second', started_at, ended_at)) / 3600, 2) AS hours
+      FROM analytics.activity_summary
+      WHERE user_id = {userId:UUID}
+        AND started_at > now() - INTERVAL {days:Int32} DAY
+        AND ended_at IS NOT NULL
+        ${accessWindowPredicate}
+      GROUP BY week, activity_type
+      ORDER BY week`,
+      {
+        userId: this.userId,
+        timezone: this.timezone,
+        days,
+        ...accessWindowParams,
+      },
     );
   }
 

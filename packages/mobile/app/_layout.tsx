@@ -145,7 +145,10 @@ function AuthGate() {
           true: batchLink,
           false: splitLink({
             condition: (operation) =>
-              operation.type === "query" && operation.path === "mobileDashboard.dashboard",
+              operation.type === "query" &&
+              (operation.path === "mobileDashboard.dashboard" ||
+                operation.path === "mobileDashboard.recovery" ||
+                operation.path === "mobileDashboard.training"),
             true: dashboardQueryLink,
             false: batchLink,
           }),

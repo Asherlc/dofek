@@ -5,10 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockRouterPush = vi.fn();
 
-let mockWorkloadRatioData: unknown;
-let mockStrainTargetData: unknown;
-let mockActivities: unknown[] = [];
-let mockWeeklyVolume: unknown[] = [];
+let mockTrainingData: unknown;
 
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: mockRouterPush }),
@@ -16,32 +13,25 @@ vi.mock("expo-router", () => ({
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
-    recovery: {
-      workloadRatio: {
-        useQuery: () => ({ data: mockWorkloadRatioData, isLoading: false }),
-      },
-      strainTarget: {
-        useQuery: () => ({ data: mockStrainTargetData, isLoading: false }),
+    mobileDashboard: {
+      training: {
+        useQuery: () => ({ data: mockTrainingData, isLoading: false, isError: false, error: null }),
       },
     },
-    training: {
-      activityStats: {
-        useQuery: () => ({ data: mockActivities, isLoading: false }),
+    useUtils: () => ({
+      mobileDashboard: {
+        training: { invalidate: vi.fn() },
       },
-      weeklyVolume: {
-        useQuery: () => ({ data: mockWeeklyVolume, isLoading: false }),
-      },
-    },
-    cyclingAdvanced: {
-      verticalAscentRate: {
-        useQuery: () => ({ data: [], isLoading: false }),
-      },
-    },
+    }),
   },
 }));
 
 vi.mock("../../lib/useRefresh", () => ({
   useRefresh: () => ({ refreshing: false, onRefresh: vi.fn() }),
+}));
+
+vi.mock("../../lib/useTodayQueryDate", () => ({
+  useTodayQueryDate: () => "2026-03-28",
 }));
 
 vi.mock("../../lib/units", async () => {
@@ -56,39 +46,45 @@ vi.mock("../../lib/units", async () => {
 describe("StrainScreen recent activity navigation", () => {
   beforeEach(() => {
     mockRouterPush.mockReset();
-    mockWeeklyVolume = [];
-    mockActivities = [];
-    mockStrainTargetData = undefined;
-    mockWorkloadRatioData = {
-      displayedStrain: 16,
-      displayedDate: "2026-03-28",
-      timeSeries: [
-        {
-          date: "2026-03-28",
-          acuteLoad: 27.4,
-          chronicLoad: 24.9,
-          workloadRatio: 1.1,
-          strain: 16,
-        },
-      ],
+    mockTrainingData = {
+      workloadRatio: {
+        displayedStrain: 16,
+        displayedDate: "2026-03-28",
+        timeSeries: [
+          {
+            date: "2026-03-28",
+            acuteLoad: 27.4,
+            chronicLoad: 24.9,
+            workloadRatio: 1.1,
+            strain: 16,
+          },
+        ],
+      },
+      strainTarget: undefined,
+      activities: [],
+      weeklyVolume: [],
+      verticalAscent: [],
     };
   });
 
   it("navigates to detail screen when a recent activity card is tapped", async () => {
-    mockActivities = [
-      {
-        id: 42,
-        name: "Morning Ride",
-        activity_type: "cycling",
-        started_at: "2026-03-28T07:00:00.000Z",
-        ended_at: "2026-03-28T08:00:00.000Z",
-        avg_hr: 150,
-        max_hr: 178,
-        avg_power: 240,
-        distance_meters: 24000,
-        calories: 640,
-      },
-    ];
+    mockTrainingData = {
+      ...(mockTrainingData as object),
+      activities: [
+        {
+          id: 42,
+          name: "Morning Ride",
+          activity_type: "cycling",
+          started_at: "2026-03-28T07:00:00.000Z",
+          ended_at: "2026-03-28T08:00:00.000Z",
+          avg_hr: 150,
+          max_hr: 178,
+          avg_power: 240,
+          distance_meters: 24000,
+          calories: 640,
+        },
+      ],
+    };
 
     const { default: StrainScreen } = await import("./strain");
     render(<StrainScreen />);
@@ -99,17 +95,20 @@ describe("StrainScreen recent activity navigation", () => {
   });
 
   it("renders strain target card when target data is available", async () => {
-    mockStrainTargetData = {
-      targetStrain: 14,
-      currentStrain: 10,
-      progressPercent: 71,
-      zone: "Push",
-      explanation: "Recovery is strong (78). Push for a high-strain day to build fitness.",
-      dailyLoad: 50,
-      acuteLoad: 90,
-      chronicLoad: 80,
-      workloadRatio: 1.13,
-      readinessScore: 78,
+    mockTrainingData = {
+      ...(mockTrainingData as object),
+      strainTarget: {
+        targetStrain: 14,
+        currentStrain: 10,
+        progressPercent: 71,
+        zone: "Push",
+        explanation: "Recovery is strong (78). Push for a high-strain day to build fitness.",
+        dailyLoad: 50,
+        acuteLoad: 90,
+        chronicLoad: 80,
+        workloadRatio: 1.13,
+        readinessScore: 78,
+      },
     };
 
     const { default: StrainScreen } = await import("./strain");
@@ -122,32 +121,37 @@ describe("StrainScreen recent activity navigation", () => {
   });
 
   it("shows today's load separately from the rolling training load ratio", async () => {
-    mockStrainTargetData = {
-      targetStrain: 12,
-      currentStrain: 0,
-      progressPercent: 0,
-      zone: "Maintain",
-      explanation:
-        "Your recent training load is elevated, so today's target is capped to reduce injury risk.",
-      dailyLoad: 0,
-      acuteLoad: 133,
-      chronicLoad: 33,
-      workloadRatio: 4,
-      readinessScore: 50,
-    };
-    mockWorkloadRatioData = {
-      displayedStrain: 0,
-      displayedDate: "2026-03-28",
-      timeSeries: [
-        {
-          date: "2026-03-28",
-          dailyLoad: 0,
-          acuteLoad: 133,
-          chronicLoad: 33,
-          workloadRatio: 4,
-          strain: 0,
-        },
-      ],
+    mockTrainingData = {
+      strainTarget: {
+        targetStrain: 12,
+        currentStrain: 0,
+        progressPercent: 0,
+        zone: "Maintain",
+        explanation:
+          "Your recent training load is elevated, so today's target is capped to reduce injury risk.",
+        dailyLoad: 0,
+        acuteLoad: 133,
+        chronicLoad: 33,
+        workloadRatio: 4,
+        readinessScore: 50,
+      },
+      workloadRatio: {
+        displayedStrain: 0,
+        displayedDate: "2026-03-28",
+        timeSeries: [
+          {
+            date: "2026-03-28",
+            dailyLoad: 0,
+            acuteLoad: 133,
+            chronicLoad: 33,
+            workloadRatio: 4,
+            strain: 0,
+          },
+        ],
+      },
+      activities: [],
+      weeklyVolume: [],
+      verticalAscent: [],
     };
 
     const { default: StrainScreen } = await import("./strain");
@@ -159,20 +163,25 @@ describe("StrainScreen recent activity navigation", () => {
   });
 
   it("does not use a prior displayed strain as today's strain fallback", async () => {
-    mockStrainTargetData = undefined;
-    mockWorkloadRatioData = {
-      displayedStrain: 13,
-      displayedDate: "2026-03-27",
-      timeSeries: [
-        {
-          date: "2026-03-28",
-          dailyLoad: 0,
-          acuteLoad: 133,
-          chronicLoad: 33,
-          workloadRatio: 4,
-          strain: 0,
-        },
-      ],
+    mockTrainingData = {
+      strainTarget: undefined,
+      workloadRatio: {
+        displayedStrain: 13,
+        displayedDate: "2026-03-27",
+        timeSeries: [
+          {
+            date: "2026-03-28",
+            dailyLoad: 0,
+            acuteLoad: 133,
+            chronicLoad: 33,
+            workloadRatio: 4,
+            strain: 0,
+          },
+        ],
+      },
+      activities: [],
+      weeklyVolume: [],
+      verticalAscent: [],
     };
 
     const { default: StrainScreen } = await import("./strain");
@@ -183,8 +192,6 @@ describe("StrainScreen recent activity navigation", () => {
   });
 
   it("does not render strain target card when no target data", async () => {
-    mockStrainTargetData = undefined;
-
     const { default: StrainScreen } = await import("./strain");
     render(<StrainScreen />);
 
@@ -192,20 +199,23 @@ describe("StrainScreen recent activity navigation", () => {
   });
 
   it("navigates to activities list when tapping View all", async () => {
-    mockActivities = [
-      {
-        id: 42,
-        name: "Morning Ride",
-        activity_type: "cycling",
-        started_at: "2026-03-28T07:00:00.000Z",
-        ended_at: "2026-03-28T08:00:00.000Z",
-        avg_hr: 150,
-        max_hr: 178,
-        avg_power: 240,
-        distance_meters: 24000,
-        calories: 640,
-      },
-    ];
+    mockTrainingData = {
+      ...(mockTrainingData as object),
+      activities: [
+        {
+          id: 42,
+          name: "Morning Ride",
+          activity_type: "cycling",
+          started_at: "2026-03-28T07:00:00.000Z",
+          ended_at: "2026-03-28T08:00:00.000Z",
+          avg_hr: 150,
+          max_hr: 178,
+          avg_power: 240,
+          distance_meters: 24000,
+          calories: 640,
+        },
+      ],
+    };
 
     const { default: StrainScreen } = await import("./strain");
     render(<StrainScreen />);
@@ -216,8 +226,6 @@ describe("StrainScreen recent activity navigation", () => {
   });
 
   it("shows empty state and View all link when no activities exist", async () => {
-    mockActivities = [];
-
     const { default: StrainScreen } = await import("./strain");
     render(<StrainScreen />);
 
@@ -227,8 +235,6 @@ describe("StrainScreen recent activity navigation", () => {
   });
 
   it("navigates to activities list from View all when no activities exist", async () => {
-    mockActivities = [];
-
     const { default: StrainScreen } = await import("./strain");
     render(<StrainScreen />);
 

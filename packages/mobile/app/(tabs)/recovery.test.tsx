@@ -3,43 +3,21 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-let mockTrendsData: Record<string, unknown> | undefined;
-let mockDailyMetricsData: Record<string, unknown>[];
-let mockHrvBaselineData: Record<string, unknown>[];
-let mockHrvVariabilityData: Record<string, unknown>[];
-let mockReadinessData: Record<string, unknown>[];
+let mockRecoveryData: Record<string, unknown> | undefined;
 let sparkLinePropsCalls: Record<string, unknown>[];
-
-function q(getData: () => unknown = () => undefined) {
-  return { useQuery: () => ({ data: getData(), isLoading: false }) };
-}
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
-    recovery: {
-      hrvVariability: q(() => mockHrvVariabilityData),
-      readinessScore: q(() => mockReadinessData),
-      workloadRatio: q(() => []),
+    mobileDashboard: {
+      recovery: {
+        useQuery: () => ({ data: mockRecoveryData, isLoading: false }),
+      },
     },
-    stress: { scores: q() },
-    dailyMetrics: {
-      trends: { useQuery: () => ({ data: mockTrendsData, isLoading: false }) },
-      list: { useQuery: () => ({ data: mockDailyMetricsData, isLoading: false }) },
-      hrvBaseline: { useQuery: () => ({ data: mockHrvBaselineData, isLoading: false }) },
-    },
-    bodyAnalytics: {
-      smoothedWeight: q(() => []),
-      weightPrediction: q(() => ({
-        ratePerWeek: null,
-        rateConfidence: null,
-        impliedDailyCalories: null,
-        periodDeltas: { days7: null, days14: null, days30: null },
-        goal: null,
-        projectionLine: [],
-      })),
-    },
-    healthspan: { score: q() },
-    useUtils: () => ({ invalidate: vi.fn() }),
+    useUtils: () => ({
+      mobileDashboard: {
+        recovery: { invalidate: vi.fn() },
+      },
+    }),
   },
 }));
 
@@ -62,6 +40,10 @@ vi.mock("../../lib/units", async () => {
     useUnitConverter: () => new UnitConverter("metric"),
   };
 });
+
+vi.mock("../../lib/useRefresh", () => ({
+  useRefresh: () => ({ refreshing: false, onRefresh: vi.fn() }),
+}));
 
 vi.mock("../../theme", () => ({
   colors: {
@@ -88,20 +70,24 @@ vi.mock("../../theme", () => ({
 
 describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
   beforeEach(() => {
-    mockTrendsData = undefined;
-    mockDailyMetricsData = [];
-    mockHrvBaselineData = [];
-    mockHrvVariabilityData = [];
-    mockReadinessData = [];
+    mockRecoveryData = undefined;
     sparkLinePropsCalls = [];
   });
 
   it("displays Heart Rate Variability from the recovery HRV query", async () => {
-    mockTrendsData = { latest_hrv: 24 };
-    mockHrvVariabilityData = [
-      { date: "2026-04-05", hrv: 50, rollingMean: 48, rollingCoefficientOfVariation: 2 },
-      { date: "2026-04-06", hrv: 44, rollingMean: 44, rollingCoefficientOfVariation: 4 },
-    ];
+    mockRecoveryData = {
+      hrvVariability: [
+        { date: "2026-04-05", hrv: 50, rollingMean: 48, rollingCoefficientOfVariation: 2 },
+        { date: "2026-04-06", hrv: 44, rollingMean: 44, rollingCoefficientOfVariation: 4 },
+      ],
+      hrvBaseline: [],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: { latest_spo2: 24, latest_skin_temp: null },
+      dailyMetrics: [],
+      weight: [],
+      healthspan: { healthspanScore: null, metrics: [], trend: null },
+    };
 
     const { default: RecoveryScreen } = await import("./recovery");
     render(<RecoveryScreen />);
@@ -112,20 +98,29 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
   });
 
   it("displays Resting Heart Rate from the baseline query", async () => {
-    mockHrvBaselineData = [
-      {
-        date: "2026-04-05",
-        hrv: 50,
-        resting_hr: 56,
-        resting_hr_mean_7d: 57,
-      },
-      {
-        date: "2026-04-06",
-        hrv: 44,
-        resting_hr: 54,
-        resting_hr_mean_7d: 55,
-      },
-    ];
+    mockRecoveryData = {
+      hrvVariability: [],
+      hrvBaseline: [
+        {
+          date: "2026-04-05",
+          hrv: 50,
+          resting_hr: 56,
+          resting_hr_mean_7d: 57,
+        },
+        {
+          date: "2026-04-06",
+          hrv: 44,
+          resting_hr: 54,
+          resting_hr_mean_7d: 55,
+        },
+      ],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: null,
+      dailyMetrics: [],
+      weight: [],
+      healthspan: { healthspanScore: null, metrics: [], trend: null },
+    };
 
     const { default: RecoveryScreen } = await import("./recovery");
     render(<RecoveryScreen />);
@@ -142,8 +137,16 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
   });
 
   it("renders Blood Oxygen card when latest_spo2 is present", async () => {
-    mockTrendsData = { latest_spo2: 97 };
-    mockDailyMetricsData = [{ spo2_avg: 96 }, { spo2_avg: 97 }];
+    mockRecoveryData = {
+      hrvVariability: [],
+      hrvBaseline: [],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: { latest_spo2: 97, latest_skin_temp: null },
+      dailyMetrics: [{ spo2_avg: 96 }, { spo2_avg: 97 }],
+      weight: [],
+      healthspan: { healthspanScore: null, metrics: [], trend: null },
+    };
 
     const { default: RecoveryScreen } = await import("./recovery");
     render(<RecoveryScreen />);
@@ -153,8 +156,16 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
   });
 
   it("renders Skin Temperature card when latest_skin_temp is present", async () => {
-    mockTrendsData = { latest_skin_temp: 36.8 };
-    mockDailyMetricsData = [{ skin_temp_c: 36.6 }, { skin_temp_c: 36.8 }];
+    mockRecoveryData = {
+      hrvVariability: [],
+      hrvBaseline: [],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: { latest_spo2: null, latest_skin_temp: 36.8 },
+      dailyMetrics: [{ skin_temp_c: 36.6 }, { skin_temp_c: 36.8 }],
+      weight: [],
+      healthspan: { healthspanScore: null, metrics: [], trend: null },
+    };
 
     const { default: RecoveryScreen } = await import("./recovery");
     render(<RecoveryScreen />);
@@ -163,8 +174,16 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
   });
 
   it("does not render Blood Oxygen card when latest_spo2 is null", async () => {
-    mockTrendsData = { latest_spo2: null };
-    mockDailyMetricsData = [];
+    mockRecoveryData = {
+      hrvVariability: [],
+      hrvBaseline: [],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: { latest_spo2: null, latest_skin_temp: null },
+      dailyMetrics: [],
+      weight: [],
+      healthspan: { healthspanScore: null, metrics: [], trend: null },
+    };
 
     const { default: RecoveryScreen } = await import("./recovery");
     render(<RecoveryScreen />);
@@ -173,8 +192,16 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
   });
 
   it("does not render Skin Temperature card when latest_skin_temp is null", async () => {
-    mockTrendsData = { latest_skin_temp: null };
-    mockDailyMetricsData = [];
+    mockRecoveryData = {
+      hrvVariability: [],
+      hrvBaseline: [],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: { latest_spo2: null, latest_skin_temp: null },
+      dailyMetrics: [],
+      weight: [],
+      healthspan: { healthspanScore: null, metrics: [], trend: null },
+    };
 
     const { default: RecoveryScreen } = await import("./recovery");
     render(<RecoveryScreen />);
@@ -183,73 +210,88 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
   });
 
   it("expands recovery breakdown when recovery card is tapped", async () => {
-    mockReadinessData = [
-      {
-        date: "2026-04-05",
-        readinessScore: 72,
-        components: {
-          hrvScore: 80,
-          restingHrScore: 65,
-          sleepScore: 70,
-          respiratoryRateScore: 60,
+    mockRecoveryData = {
+      hrvVariability: [],
+      hrvBaseline: [],
+      readinessScore: [
+        {
+          date: "2026-04-05",
+          readinessScore: 72,
+          components: {
+            hrvScore: 80,
+            restingHrScore: 65,
+            sleepScore: 70,
+            respiratoryRateScore: 60,
+          },
+          weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
         },
-        weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
-      },
-      {
-        date: "2026-04-06",
-        readinessScore: 75,
-        components: {
-          hrvScore: 82,
-          restingHrScore: 68,
-          sleepScore: 72,
-          respiratoryRateScore: 63,
+        {
+          date: "2026-04-06",
+          readinessScore: 75,
+          components: {
+            hrvScore: 82,
+            restingHrScore: 68,
+            sleepScore: 72,
+            respiratoryRateScore: 63,
+          },
+          weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
         },
-        weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
-      },
-    ];
+      ],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: null,
+      dailyMetrics: [],
+      weight: [],
+      healthspan: { healthspanScore: null, metrics: [], trend: null },
+    };
 
     const { default: RecoveryScreen } = await import("./recovery");
     render(<RecoveryScreen />);
 
-    // Breakdown weight labels should not be visible initially
     expect(screen.queryByText("50%")).toBeNull();
     expect(screen.queryByText("Respiratory Rate")).toBeNull();
 
-    // Tap the recovery score to expand
     fireEvent.click(screen.getByText("75"));
 
-    // Component breakdown with weight percentages should now be visible
-    expect(screen.getByText("50%")).toBeTruthy(); // HRV weight
-    expect(screen.getByText("20%")).toBeTruthy(); // RHR weight
+    expect(screen.getByText("50%")).toBeTruthy();
+    expect(screen.getByText("20%")).toBeTruthy();
     expect(screen.getAllByText("Resting Heart Rate").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("Respiratory Rate")).toBeTruthy();
   });
 
   it("renders recovery score trend with neutral line and threshold bands", async () => {
-    mockReadinessData = [
-      {
-        date: "2026-03-29",
-        readinessScore: 58,
-        components: {
-          hrvScore: 60,
-          restingHrScore: 55,
-          sleepScore: 62,
-          respiratoryRateScore: 57,
+    mockRecoveryData = {
+      hrvVariability: [],
+      hrvBaseline: [],
+      readinessScore: [
+        {
+          date: "2026-03-29",
+          readinessScore: 58,
+          components: {
+            hrvScore: 60,
+            restingHrScore: 55,
+            sleepScore: 62,
+            respiratoryRateScore: 57,
+          },
+          weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
         },
-        weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
-      },
-      {
-        date: "2026-03-30",
-        readinessScore: 78,
-        components: {
-          hrvScore: 80,
-          restingHrScore: 76,
-          sleepScore: 77,
-          respiratoryRateScore: 79,
+        {
+          date: "2026-03-30",
+          readinessScore: 78,
+          components: {
+            hrvScore: 80,
+            restingHrScore: 76,
+            sleepScore: 77,
+            respiratoryRateScore: 79,
+          },
+          weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
         },
-        weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
-      },
-    ];
+      ],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: null,
+      dailyMetrics: [],
+      weight: [],
+      healthspan: { healthspanScore: null, metrics: [], trend: null },
+    };
 
     const { default: RecoveryScreen } = await import("./recovery");
     render(<RecoveryScreen />);

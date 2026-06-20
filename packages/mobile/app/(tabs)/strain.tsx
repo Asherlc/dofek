@@ -1,6 +1,5 @@
 import {
   formatDateShort,
-  formatDateYmd,
   formatDurationMinutes,
   formatIntensity,
   formatNumber,
@@ -32,39 +31,39 @@ import { safeParseRows } from "../../lib/safe-parse";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useRefresh } from "../../lib/useRefresh";
+import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors } from "../../theme";
 import { ActivityRowSchema, WeeklyVolumeRowSchema } from "../../types/api";
 
 export default function StrainScreen() {
   const router = useRouter();
+  const utils = trpc.useUtils();
   const [days, setDays] = useState(30);
   const units = useUnitConverter();
-  const endDate = useMemo(() => formatDateYmd(), []);
-  const workloadQuery = trpc.recovery.workloadRatio.useQuery({ days, endDate });
-  const workloadResult = workloadQuery.data;
+  const endDate = useTodayQueryDate();
+
+  const trainingQuery = trpc.mobileDashboard.training.useQuery({ days, endDate });
+  const trainingData = trainingQuery.data;
+
+  const workloadResult = trainingData?.workloadRatio;
   const workloadData = workloadResult?.timeSeries ?? [];
   const todayWorkload = workloadData[workloadData.length - 1];
+  const strainTarget = trainingData?.strainTarget;
 
-  const strainTargetQuery = trpc.recovery.strainTarget.useQuery({ days, endDate });
-  const strainTarget = strainTargetQuery.data;
-
-  const activitiesQuery = trpc.training.activityStats.useQuery({ days });
   const activitiesParsed = safeParseRows(
     ActivityRowSchema,
-    activitiesQuery.data,
+    trainingData?.activities,
     "strain:activities",
   );
   const activities = activitiesParsed.data;
 
-  const verticalAscentQuery = trpc.cyclingAdvanced.verticalAscentRate.useQuery({ days });
-
-  const weeklyVolumeQuery = trpc.training.weeklyVolume.useQuery({ days });
   const weeklyVolumeParsed = safeParseRows(
     WeeklyVolumeRowSchema,
-    weeklyVolumeQuery.data,
+    trainingData?.weeklyVolume,
     "strain:weeklyVolume",
   );
   const weeklyVolume = weeklyVolumeParsed.data;
+  const verticalAscent = trainingData?.verticalAscent ?? [];
   const collapsedWeeklyVolume = collapseWeeklyVolumeActivityTypes(weeklyVolume, 6);
   const activityTypeTotalsMap = new Map<string, number>();
   for (const row of collapsedWeeklyVolume) {
@@ -96,8 +95,10 @@ export default function StrainScreen() {
 
   const strainTrend = workloadData.map((d) => d.strain);
 
-  const isLoading = workloadQuery.isLoading;
-  const { refreshing, onRefresh } = useRefresh();
+  const isLoading = trainingQuery.isLoading;
+  const { refreshing, onRefresh } = useRefresh({
+    invalidate: () => utils.mobileDashboard.training.invalidate().then(() => undefined),
+  });
 
   return (
     <ScrollView
@@ -241,19 +242,25 @@ export default function StrainScreen() {
           </View>
 
           {/* Vertical Ascent Rate */}
-          {(verticalAscentQuery.data ?? []).length > 0 && (
+          {(verticalAscent.length > 0) && (
             <View style={styles.card}>
               <ChartTitleWithTooltip
                 title="Vertical Ascent Rate"
                 description="Climbing speed — meters gained per hour while ascending. Bubble size indicates elevation gain."
                 textStyle={styles.cardTitle}
               />
-              <VerticalAscentChart data={verticalAscentQuery.data ?? []} units={units} />
+              <VerticalAscentChart data={verticalAscent} units={units} />
             </View>
           )}
 
           {/* Weekly volume summary */}
-          {(weeklyVolumeQuery.isError || weeklyVolumeParsed.error) && (
+          {trainingQuery.isError && (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Weekly Volume</Text>
+              <Text style={styles.errorText}>Failed to load weekly volume.</Text>
+            </View>
+          )}
+          {weeklyVolumeParsed.error && (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Weekly Volume</Text>
               <Text style={styles.errorText}>Failed to load weekly volume.</Text>
@@ -304,11 +311,11 @@ export default function StrainScreen() {
                 <Text style={styles.sectionLinkButtonText}>View all</Text>
               </TouchableOpacity>
             </View>
-            {activitiesQuery.isLoading ? (
+            {trainingQuery.isLoading ? (
               <ActivityIndicator color={colors.accent} style={styles.activitiesLoader} />
-            ) : activitiesQuery.isError || activitiesParsed.error ? (
+            ) : trainingQuery.isError || activitiesParsed.error ? (
               <Text style={styles.errorText}>
-                {activitiesQuery.error?.message ?? "Failed to load activities."}
+                {trainingQuery.error?.message ?? "Failed to load activities."}
               </Text>
             ) : activities.length > 0 ? (
               <View style={styles.activitiesStack}>

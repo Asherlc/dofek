@@ -3,12 +3,14 @@ import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
 import { computeCurrentStrain } from "../lib/current-strain.ts";
-import { endDateSchema } from "../lib/date-window.ts";
+import { dateWindowInput, endDateSchema } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import type { AnomalyCheckResult } from "../repositories/anomaly-detection-repository.ts";
 import { computeReadinessScore } from "../repositories/training-recommendation.ts";
+import { loadMobileRecoveryTab } from "../services/mobile-recovery-tab.ts";
+import { loadMobileTrainingTab } from "../services/mobile-training-tab.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 import type { SleepNeedResult, SleepNight } from "./sleep-need.ts";
 
@@ -428,6 +430,50 @@ export const mobileDashboardRouter = router({
       timings.push(`total=${Math.round(performance.now() - dashboardStart)}ms`);
       logger.info(
         `[mobile-dashboard] dashboard timings userId=${ctx.userId} endDate=${endDate} ${timings.join(" ")}`,
+      );
+      return result;
+    }),
+
+  recovery: cachedProtectedQuery(CacheTTL.MEDIUM)
+    .input(dateWindowInput)
+    .query(async ({ ctx, input }) => {
+      const sensorStore = requireSensorStore(ctx.sensorStore, "mobileDashboard.recovery");
+      const tabStart = performance.now();
+      const result = await loadMobileRecoveryTab(
+        {
+          db: ctx.db,
+          userId: ctx.userId,
+          timezone: ctx.timezone ?? "UTC",
+          accessWindow: ctx.accessWindow ?? { kind: "full", paid: true, reason: "paid_grant" },
+          sensorStore,
+        },
+        input.days,
+        input.endDate,
+      );
+      logger.info(
+        `[mobile-dashboard] recovery timings userId=${ctx.userId} endDate=${input.endDate} days=${input.days} total=${Math.round(performance.now() - tabStart)}ms`,
+      );
+      return result;
+    }),
+
+  training: cachedProtectedQuery(CacheTTL.MEDIUM)
+    .input(dateWindowInput)
+    .query(async ({ ctx, input }) => {
+      const sensorStore = requireSensorStore(ctx.sensorStore, "mobileDashboard.training");
+      const tabStart = performance.now();
+      const result = await loadMobileTrainingTab(
+        {
+          db: ctx.db,
+          userId: ctx.userId,
+          timezone: ctx.timezone ?? "UTC",
+          accessWindow: ctx.accessWindow ?? { kind: "full", paid: true, reason: "paid_grant" },
+          sensorStore,
+        },
+        input.days,
+        input.endDate,
+      );
+      logger.info(
+        `[mobile-dashboard] training timings userId=${ctx.userId} endDate=${input.endDate} days=${input.days} total=${Math.round(performance.now() - tabStart)}ms`,
       );
       return result;
     }),
