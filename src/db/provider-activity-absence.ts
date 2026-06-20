@@ -34,12 +34,19 @@ function resolveUserId(userId?: string): string {
   return scopedUserId;
 }
 
+const activityVisibilityCachePrefixes = [
+  "activity.",
+  "calendar.",
+  "training.",
+  "running.",
+] satisfies readonly string[];
+
 async function invalidateActivityVisibilityCaches(userId: string): Promise<void> {
-  await Promise.allSettled([
-    queryCache.invalidateByPrefix(`${userId}:activity.`),
-    queryCache.invalidateByPrefix(`${userId}:calendar.`),
-    queryCache.invalidateByPrefix(`${userId}:training.`),
-  ]);
+  await Promise.all(
+    activityVisibilityCachePrefixes.map((cachePrefix) =>
+      queryCache.invalidateByPrefix(`${userId}:${cachePrefix}`),
+    ),
+  );
 }
 
 function presentExternalIdValues(presentExternalIds: ReadonlySet<string>): string[] {

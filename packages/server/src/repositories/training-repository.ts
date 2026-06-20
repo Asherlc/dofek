@@ -87,8 +87,8 @@ export class TrainingRepository extends BaseRepository {
     const accessWindowPredicate =
       this.accessWindow.kind === "full"
         ? ""
-        : `AND started_at >= toDateTime({accessStart:String})
-          AND started_at < toDateTime({accessEnd:String})`;
+        : `AND asum.started_at >= toDateTime({accessStart:String})
+          AND asum.started_at < toDateTime({accessEnd:String})`;
     const accessWindowParams: Record<string, string> =
       this.accessWindow.kind === "full"
         ? {}

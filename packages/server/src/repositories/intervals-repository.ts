@@ -223,9 +223,13 @@ export class IntervalsRepository {
           ai.ended_at,
           EXTRACT(EPOCH FROM (ai.ended_at - ai.started_at)) AS duration_seconds
         FROM fitness.activity_interval ai
-        JOIN fitness.v_activity a ON ai.activity_id = ANY(a.member_activity_ids)
-        WHERE ${activityId}::uuid = ANY(a.member_activity_ids)
-          AND a.user_id = ${this.#userId}
+        WHERE ai.activity_id = ${activityId}::uuid
+          AND EXISTS (
+            SELECT 1
+            FROM fitness.v_activity visible_activity
+            WHERE visible_activity.user_id = ${this.#userId}
+              AND ${activityId}::uuid = ANY(visible_activity.member_activity_ids)
+          )
         ORDER BY ai.interval_index
       `,
     );

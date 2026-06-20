@@ -1,9 +1,11 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { dateWindowStartString } from "../lib/date-window.ts";
-import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
-import { restingHeartRateClickHouseCte } from "../repositories/resting-heart-rate-query.ts";
+import {
+  MonthlyReportRepository,
+  type MonthlyReportResult,
+  type MonthSummary,
+} from "../repositories/monthly-report-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 function requireSensorStore(
@@ -19,34 +21,7 @@ function requireSensorStore(
   return sensorStore;
 }
 
-export interface MonthSummary {
-  monthStart: string;
-  trainingHours: number;
-  activityCount: number;
-  avgDailyStrain: number;
-  avgSleepMinutes: number;
-  avgRestingHr: number | null;
-  avgHrv: number | null;
-  /** Month-over-month % change in training hours (null for first month) */
-  trainingHoursTrend: number | null;
-  /** Month-over-month % change in avg sleep (null for first month) */
-  avgSleepTrend: number | null;
-}
-
-export interface MonthlyReportResult {
-  current: MonthSummary | null;
-  history: MonthSummary[];
-}
-
-const monthRowSchema = z.object({
-  month_start: dateStringSchema,
-  training_hours: z.coerce.number(),
-  activity_count: z.coerce.number(),
-  avg_daily_strain: z.coerce.number(),
-  avg_sleep_minutes: z.coerce.number(),
-  avg_resting_hr: z.coerce.number().nullable(),
-  avg_hrv: z.coerce.number().nullable(),
-});
+export type { MonthSummary, MonthlyReportResult };
 
 export const monthlyReportRouter = router({
   /**
@@ -57,113 +32,7 @@ export const monthlyReportRouter = router({
     .input(z.object({ months: z.number().min(1).max(24).default(6) }))
     .query(async ({ ctx, input }): Promise<MonthlyReportResult> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "monthlyReport.report");
-      const today = new Date().toISOString().slice(0, 10);
-      const rhrWindowStart = dateWindowStartString(today, input.months * 31 + 31);
-      const rows = await sensorStore.query(
-        monthRowSchema,
-        `WITH ${restingHeartRateClickHouseCte()},
-        per_activity AS (
-          SELECT
-            toDate(asum.started_at) AS date,
-            dateDiff('second', asum.started_at, asum.ended_at) / 3600.0 AS hours,
-            dateDiff('second', asum.started_at, asum.ended_at) / 60.0
-              * asum.avg_hr / nullIf(toFloat64(asum.max_hr), 0) AS load
-          FROM analytics.activity_summary asum
-          INNER JOIN analytics.v_activity va
-            ON va.id = asum.activity_id
-           AND va.user_id = asum.user_id
-          WHERE asum.user_id = {userId:UUID}
-            AND asum.started_at >= toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH
-            AND asum.ended_at IS NOT NULL
-            AND asum.avg_hr IS NOT NULL
-        ),
-        daily_training AS (
-          SELECT date, sum(hours) AS hours, toInt32(count()) AS count, sum(load) AS load
-          FROM per_activity
-          GROUP BY date
-        ),
-        sleep_raw AS (
-          SELECT toDate(started_at) AS date, duration_minutes
-          FROM analytics.v_sleep
-          WHERE user_id = {userId:UUID}
-            AND is_nap = false
-            AND started_at >= toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH
-        ),
-        sleep_daily AS (
-          SELECT date, max(duration_minutes) AS duration_minutes
-          FROM sleep_raw
-          GROUP BY date
-        ),
-        metrics_daily AS (
-          SELECT
-            dm.date AS date,
-            drhr.resting_hr AS resting_hr,
-            dm.hrv AS hrv
-          FROM analytics.v_daily_metrics AS dm
-          LEFT JOIN resting_heart_rate AS drhr
-            ON drhr.date = toString(dm.date)
-          WHERE dm.user_id = {userId:UUID}
-            AND dm.date >= toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH
-        ),
-        date_series AS (
-          SELECT toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH + INTERVAL number DAY AS date
-          FROM numbers(toUInt64(dateDiff('day', toStartOfMonth(today()) - INTERVAL {months:Int32} MONTH, today()) + 1))
-        )
-        SELECT
-          toString(toStartOfMonth(d.date)) AS month_start,
-          coalesce(sum(dt.hours), 0) AS training_hours,
-          toInt32(coalesce(sum(dt.count), 0)) AS activity_count,
-          coalesce(avg(dt.load), 0) AS avg_daily_strain,
-          coalesce(avg(sl.duration_minutes), 0) AS avg_sleep_minutes,
-          avg(m.resting_hr) AS avg_resting_hr,
-          avg(m.hrv) AS avg_hrv
-        FROM date_series AS d
-        LEFT JOIN daily_training dt ON dt.date = d.date
-        LEFT JOIN sleep_daily sl ON sl.date = d.date
-        LEFT JOIN metrics_daily m ON m.date = d.date
-        GROUP BY toStartOfMonth(d.date)
-        ORDER BY month_start ASC`,
-        {
-          userId: ctx.userId,
-          timezone: ctx.timezone,
-          months: input.months,
-          rhrEndDate: today,
-          rhrWindowStart,
-        },
-      );
-
-      // Build summaries with month-over-month trends
-      const summaries: MonthSummary[] = rows.map((row, idx) => {
-        const prev = idx > 0 ? rows[idx - 1] : undefined;
-
-        const trainingHours = Math.round(Number(row.training_hours) * 10) / 10;
-        const avgSleepMinutes = Math.round(Number(row.avg_sleep_minutes));
-        const prevTrainingHours = prev ? Number(prev.training_hours) : null;
-        const prevAvgSleep = prev ? Number(prev.avg_sleep_minutes) : null;
-
-        return {
-          monthStart: row.month_start,
-          trainingHours,
-          activityCount: Number(row.activity_count),
-          avgDailyStrain: Math.round(Number(row.avg_daily_strain) * 10) / 10,
-          avgSleepMinutes,
-          avgRestingHr:
-            row.avg_resting_hr != null ? Math.round(Number(row.avg_resting_hr) * 10) / 10 : null,
-          avgHrv: row.avg_hrv != null ? Math.round(Number(row.avg_hrv) * 10) / 10 : null,
-          trainingHoursTrend:
-            prevTrainingHours != null && prevTrainingHours > 0
-              ? Math.round(((trainingHours - prevTrainingHours) / prevTrainingHours) * 1000) / 10
-              : null,
-          avgSleepTrend:
-            prevAvgSleep != null && prevAvgSleep > 0
-              ? Math.round(((avgSleepMinutes - prevAvgSleep) / prevAvgSleep) * 1000) / 10
-              : null,
-        };
-      });
-
-      const current = summaries.length > 0 ? (summaries[summaries.length - 1] ?? null) : null;
-      const history = summaries.slice(0, -1);
-
-      return { current, history };
+      const repo = new MonthlyReportRepository(ctx.userId, sensorStore, ctx.timezone);
+      return repo.getReport(input.months);
     }),
 });

@@ -132,8 +132,8 @@ describe("TrainingRepository", () => {
       const query = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
       const params = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
 
-      expect(query).toContain("AND started_at >= toDateTime({accessStart:String})");
-      expect(query).toContain("AND started_at < toDateTime({accessEnd:String})");
+      expect(query).toContain("AND asum.started_at >= toDateTime({accessStart:String})");
+      expect(query).toContain("AND asum.started_at < toDateTime({accessEnd:String})");
       expect(params).toEqual({
         userId: "user-1",
         timezone: "UTC",

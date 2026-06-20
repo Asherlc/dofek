@@ -65,7 +65,8 @@ describe("provider activity absence cache invalidation", () => {
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:activity.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:calendar.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:training.`);
-    expect(mockInvalidateByPrefix).toHaveBeenCalledTimes(3);
+    expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:running.`);
+    expect(mockInvalidateByPrefix).toHaveBeenCalledTimes(4);
   });
 
   it("invalidates activity, calendar, and training caches after marking absent", async () => {
@@ -78,6 +79,7 @@ describe("provider activity absence cache invalidation", () => {
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:activity.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:calendar.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:training.`);
-    expect(mockInvalidateByPrefix).toHaveBeenCalledTimes(3);
+    expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:running.`);
+    expect(mockInvalidateByPrefix).toHaveBeenCalledTimes(4);
   });
 });
