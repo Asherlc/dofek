@@ -346,4 +346,154 @@ describe("TrainingRepository", () => {
       expect(result[0]?.ended_at).toBe("2024-01-15T15:30:00.000Z");
     });
   });
+
+  describe("getActivityStatsAndWeeklyVolume", () => {
+    it("returns empty arrays when no raw activities exist", async () => {
+      const { repo, execute, sensorStore } = makeRepository([]);
+      const result = await repo.getActivityStatsAndWeeklyVolume(90);
+      expect(result).toEqual({ activities: [], weeklyVolume: [] });
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(sensorStore.query).not.toHaveBeenCalled();
+    });
+
+    it("returns activities and weekly volume with a single activity count lookup", async () => {
+      const query = vi
+        .fn()
+        .mockImplementation(
+          async (schema: { parse: (row: unknown) => unknown }, queryText = "") => {
+            if (queryText.includes("toString(a.activity_id) AS id")) {
+              return [
+                schema.parse({
+                  id: "act-1",
+                  activity_type: "running",
+                  name: "Morning Run",
+                  started_at: "2024-01-15T08:00:00Z",
+                  ended_at: "2024-01-15T09:00:00Z",
+                  avg_hr: 145.5,
+                  max_hr: 175,
+                  avg_power: null,
+                  max_power: null,
+                  avg_cadence: 82.3,
+                  hr_samples: 3600,
+                  power_samples: null,
+                  distance_meters: 10500,
+                }),
+              ];
+            }
+            return [
+              schema.parse({
+                week: "2024-01-15",
+                activity_type: "running",
+                count: 3,
+                hours: 4.5,
+              }),
+            ];
+          },
+        );
+      const execute = vi.fn();
+      execute.mockResolvedValueOnce([{ activity_count: 1 }]);
+      execute.mockResolvedValueOnce([{ id: "act-1" }]);
+      execute.mockResolvedValue([]);
+      const db = { execute };
+      const sensorStore = {
+        query,
+        getActivitySummaries: vi.fn().mockResolvedValue([]),
+        getStream: vi.fn().mockResolvedValue([]),
+        getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+        getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+        getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+        getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+        getPaceCurveRows: vi.fn().mockResolvedValue([]),
+      };
+      const repo = new TrainingRepository(db, "user-1", "UTC", sensorStore);
+
+      const result = await repo.getActivityStatsAndWeeklyVolume(90);
+
+      expect(execute).toHaveBeenCalledTimes(2);
+      expect(query).toHaveBeenCalledTimes(2);
+      expect(result.activities).toHaveLength(1);
+      expect(result.activities[0]?.activity_type).toBe("running");
+      expect(result.weeklyVolume).toHaveLength(1);
+      expect(result.weeklyVolume[0]?.hours).toBe(4.5);
+    });
+
+    it("scopes activity stats to limited access windows", async () => {
+      const accessWindow: AccessWindow = {
+        kind: "limited",
+        paid: false,
+        reason: "free_signup_week",
+        startDate: "2024-01-01T00:00:00Z",
+        endDateExclusive: "2024-01-08T00:00:00Z",
+      };
+      const query = vi
+        .fn()
+        .mockImplementation(
+          async (schema: { parse: (row: unknown) => unknown }, queryText = "") => {
+            if (queryText.includes("toString(a.activity_id) AS id")) {
+              return [
+                schema.parse({
+                  id: "act-in-window",
+                  activity_type: "running",
+                  name: "In Window Run",
+                  started_at: "2024-01-03T08:00:00Z",
+                  ended_at: "2024-01-03T09:00:00Z",
+                  avg_hr: 145.5,
+                  max_hr: 175,
+                  avg_power: null,
+                  max_power: null,
+                  avg_cadence: 82.3,
+                  hr_samples: 3600,
+                  power_samples: null,
+                  distance_meters: 10500,
+                }),
+              ];
+            }
+            return [
+              schema.parse({
+                week: "2024-01-01",
+                activity_type: "running",
+                count: 1,
+                hours: 1,
+              }),
+            ];
+          },
+        );
+      const execute = vi.fn();
+      execute.mockResolvedValueOnce([{ activity_count: 1 }]);
+      execute.mockResolvedValueOnce([{ id: "act-in-window" }]);
+      execute.mockResolvedValue([]);
+      const db = { execute };
+      const sensorStore = {
+        query,
+        getActivitySummaries: vi.fn().mockResolvedValue([]),
+        getStream: vi.fn().mockResolvedValue([]),
+        getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+        getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+        getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+        getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+        getPaceCurveRows: vi.fn().mockResolvedValue([]),
+      };
+      const repo = new TrainingRepository(db, "user-1", "UTC", sensorStore, accessWindow);
+
+      const result = await repo.getActivityStatsAndWeeklyVolume(90);
+
+      const activityQuery = query.mock.calls.find((call) =>
+        String(call[1]).includes("toString(a.activity_id) AS id"),
+      );
+      expect(String(activityQuery?.[1])).toContain(
+        "a.started_at >= toDateTime({accessStart:String})",
+      );
+      expect(String(activityQuery?.[1])).toContain("a.started_at < toDateTime({accessEnd:String})");
+      expect(activityQuery?.[2]).toMatchObject({
+        accessStart: "2024-01-01T00:00:00Z",
+        accessEnd: "2024-01-08T00:00:00Z",
+      });
+      expect(result.activities).toHaveLength(1);
+      expect(result.activities[0]?.id).toBe("act-in-window");
+    });
+  });
 });

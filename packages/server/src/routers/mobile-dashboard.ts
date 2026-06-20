@@ -2,13 +2,22 @@ import { TRPCError } from "@trpc/server";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
+import type { AccessWindow } from "../billing/entitlement.ts";
 import { computeCurrentStrain } from "../lib/current-strain.ts";
-import { endDateSchema } from "../lib/date-window.ts";
+import { dateWindowInput, endDateSchema } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import type { AnomalyCheckResult } from "../repositories/anomaly-detection-repository.ts";
 import { computeReadinessScore } from "../repositories/training-recommendation.ts";
+import {
+  loadMobileRecoveryTab,
+  mobileRecoveryTabOutputSchema,
+} from "../services/mobile-recovery-tab.ts";
+import {
+  loadMobileTrainingTab,
+  mobileTrainingTabOutputSchema,
+} from "../services/mobile-training-tab.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 import type { SleepNeedResult, SleepNight } from "./sleep-need.ts";
 
@@ -23,6 +32,19 @@ function requireSensorStore(
     });
   }
   return sensorStore;
+}
+
+function requireAccessWindow(
+  accessWindow: AccessWindow | undefined,
+  feature: string,
+): AccessWindow {
+  if (!accessWindow) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `${feature} requires resolved entitlement access window.`,
+    });
+  }
+  return accessWindow;
 }
 
 /** Simple date comparison for server-side logic (where @dofek/format is not available). */
@@ -428,6 +450,52 @@ export const mobileDashboardRouter = router({
       timings.push(`total=${Math.round(performance.now() - dashboardStart)}ms`);
       logger.info(
         `[mobile-dashboard] dashboard timings userId=${ctx.userId} endDate=${endDate} ${timings.join(" ")}`,
+      );
+      return result;
+    }),
+
+  recovery: cachedProtectedQuery(CacheTTL.MEDIUM)
+    .input(dateWindowInput)
+    .output(mobileRecoveryTabOutputSchema)
+    .query(async ({ ctx, input }) => {
+      const sensorStore = requireSensorStore(ctx.sensorStore, "mobileDashboard.recovery");
+      const tabStart = performance.now();
+      const result = await loadMobileRecoveryTab(
+        {
+          db: ctx.db,
+          userId: ctx.userId,
+          timezone: ctx.timezone ?? "UTC",
+          accessWindow: requireAccessWindow(ctx.accessWindow, "mobileDashboard.recovery"),
+          sensorStore,
+        },
+        input.days,
+        input.endDate,
+      );
+      logger.info(
+        `[mobile-dashboard] recovery timings userId=${ctx.userId} endDate=${input.endDate} days=${input.days} total=${Math.round(performance.now() - tabStart)}ms`,
+      );
+      return result;
+    }),
+
+  training: cachedProtectedQuery(CacheTTL.MEDIUM)
+    .input(dateWindowInput)
+    .output(mobileTrainingTabOutputSchema)
+    .query(async ({ ctx, input }) => {
+      const sensorStore = requireSensorStore(ctx.sensorStore, "mobileDashboard.training");
+      const tabStart = performance.now();
+      const result = await loadMobileTrainingTab(
+        {
+          db: ctx.db,
+          userId: ctx.userId,
+          timezone: ctx.timezone ?? "UTC",
+          accessWindow: requireAccessWindow(ctx.accessWindow, "mobileDashboard.training"),
+          sensorStore,
+        },
+        input.days,
+        input.endDate,
+      );
+      logger.info(
+        `[mobile-dashboard] training timings userId=${ctx.userId} endDate=${input.endDate} days=${input.days} total=${Math.round(performance.now() - tabStart)}ms`,
       );
       return result;
     }),

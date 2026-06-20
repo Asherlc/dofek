@@ -169,14 +169,15 @@ const breakdownStyles = StyleSheet.create({
 export default function RecoveryScreen() {
   const router = useRouter();
   const units = useUnitConverter();
+  const utils = trpc.useUtils();
   const [days, setDays] = useState(30);
   const endDate = useTodayQueryDate();
 
-  // HRV trend
-  const hrvQuery = trpc.recovery.hrvVariability.useQuery({ days, endDate });
-  const hrvBaselineQuery = trpc.dailyMetrics.hrvBaseline.useQuery({ days, endDate });
-  const hrvData = hrvQuery.data ?? [];
-  const hrvBaselineData = hrvBaselineQuery.data ?? [];
+  const recoveryQuery = trpc.mobileDashboard.recovery.useQuery({ days, endDate });
+  const recoveryData = recoveryQuery.data;
+
+  const hrvData = recoveryData?.hrvVariability ?? [];
+  const hrvBaselineData = recoveryData?.hrvBaseline ?? [];
   const latestHrv = hrvData[hrvData.length - 1];
   const latestRestingHeartRate = hrvBaselineData[hrvBaselineData.length - 1];
   const hrvValues = hrvData.flatMap((d) => (d.hrv != null ? [d.hrv] : []));
@@ -186,70 +187,49 @@ export default function RecoveryScreen() {
   const hrvBaseline = latestHrv?.rollingMean;
   const restingHeartRateBaseline = latestRestingHeartRate?.resting_hr_mean_7d;
 
-  // Readiness trend
-  const readinessQuery = trpc.recovery.readinessScore.useQuery({ days });
-  const readinessData = readinessQuery.data ?? [];
+  const readinessData = recoveryData?.readinessScore ?? [];
   const readinessValues = readinessData.map((d) => d.readinessScore);
   const latestReadiness = readinessData[readinessData.length - 1];
 
-  // Stress trend
-  const stressQuery = trpc.stress.scores.useQuery({ days, endDate });
-  const stressResult = stressQuery.data;
+  const stressResult = recoveryData?.stress;
   const stressDaily = stressResult?.daily ?? [];
   const stressValues = stressDaily.map((d) => d.stressScore);
   const latestStress = stressResult?.latestScore;
   const stressTrend = stressResult?.trend;
 
-  // Daily metrics for SpO2 and skin temp
-  const trendsQuery = trpc.dailyMetrics.trends.useQuery({ days, endDate });
-  const trendsData = trendsQuery.data;
-  const dailyMetricsQuery = trpc.dailyMetrics.list.useQuery({ days, endDate });
-  const dailyMetricsData = dailyMetricsQuery.data ?? [];
+  const trendsData = recoveryData?.trends;
+  const dailyMetricsData = recoveryData?.dailyMetrics ?? [];
 
   const spo2Trend = dailyMetricsData
-    .filter((d: Record<string, unknown>) => d.spo2_avg != null)
-    .map((d: Record<string, unknown>) => Number(d.spo2_avg));
+    .filter((d) => d.spo2_avg != null)
+    .map((d) => Number(d.spo2_avg));
 
   const skinTempTrend = dailyMetricsData
-    .filter((d: Record<string, unknown>) => d.skin_temp_c != null)
-    .map((d: Record<string, unknown>) => units.convertTemperature(Number(d.skin_temp_c)));
+    .filter((d) => d.skin_temp_c != null)
+    .map((d) => units.convertTemperature(Number(d.skin_temp_c)));
 
-  // Body weight
-  const weightQuery = trpc.bodyAnalytics.smoothedWeight.useQuery({
-    days: Math.max(days, 90),
-    endDate,
-  });
-  const weightData = weightQuery.data ?? [];
+  const weightData = recoveryData?.weight ?? [];
   const latestWeight = weightData.length > 0 ? weightData[weightData.length - 1] : null;
-  const weightPrediction = trpc.bodyAnalytics.weightPrediction.useQuery({
-    days: Math.max(days, 90),
-    endDate,
-  });
+  const weightPrediction = recoveryData?.weightPrediction;
 
-  // Healthspan
-  const healthspanQuery = trpc.healthspan.score.useQuery({
-    weeks: Math.max(Math.ceil(days / 7), 4),
-    endDate,
-  });
-  const healthspan = healthspanQuery.data;
+  const healthspan = recoveryData?.healthspan;
 
-  // Steps
   const latestSteps =
     dailyMetricsData.length > 0 ? dailyMetricsData[dailyMetricsData.length - 1] : null;
   const stepsAvg7d =
     dailyMetricsData.length > 0
       ? Math.round(
-          dailyMetricsData.reduce(
-            (sum: number, d: Record<string, unknown>) => sum + (Number(d.steps) || 0),
-            0,
-          ) / 7,
+          dailyMetricsData.reduce((sum, d) => sum + (Number(d.steps) || 0), 0) /
+            dailyMetricsData.length,
         )
       : null;
 
   const [recoveryExpanded, setRecoveryExpanded] = useState(false);
 
-  const isLoading = hrvQuery.isLoading || readinessQuery.isLoading || stressQuery.isLoading;
-  const { refreshing, onRefresh } = useRefresh();
+  const isLoading = recoveryQuery.isLoading;
+  const { refreshing, onRefresh } = useRefresh({
+    invalidate: () => utils.mobileDashboard.recovery.invalidate().then(() => undefined),
+  });
 
   return (
     <ScrollView
@@ -499,32 +479,32 @@ export default function RecoveryScreen() {
                   <Text style={styles.weightValue}>
                     {formatMeasurementText(units.formatWeight(latestWeight.smoothedWeight))}
                   </Text>
-                  {weightPrediction.data?.ratePerWeek != null && (
+                  {weightPrediction?.ratePerWeek != null && (
                     <Text
                       style={[
                         styles.weightRate,
                         {
                           color:
-                            Math.abs(weightPrediction.data.ratePerWeek) < 0.05
+                            Math.abs(weightPrediction.ratePerWeek) < 0.05
                               ? colors.textSecondary
-                              : weightPrediction.data.ratePerWeek > 0
+                              : weightPrediction.ratePerWeek > 0
                                 ? colors.positive
                                 : colors.danger,
                         },
                       ]}
                     >
-                      {weightPrediction.data.ratePerWeek > 0 ? "+" : ""}
-                      {formatMeasurementText(units.formatWeight(weightPrediction.data.ratePerWeek))}
+                      {weightPrediction.ratePerWeek > 0 ? "+" : ""}
+                      {formatMeasurementText(units.formatWeight(weightPrediction.ratePerWeek))}
                       /wk
                     </Text>
                   )}
-                  {weightPrediction.data?.goal?.estimatedDate != null && (
+                  {weightPrediction?.goal?.estimatedDate != null && (
                     <Text style={styles.weightGoal}>
                       Goal:{" "}
                       {formatMeasurementText(
-                        units.formatWeight(weightPrediction.data.goal.goalWeightKg),
+                        units.formatWeight(weightPrediction.goal.goalWeightKg),
                       )}{" "}
-                      by ~{formatDateShort(weightPrediction.data.goal.estimatedDate)}
+                      by ~{formatDateShort(weightPrediction.goal.estimatedDate)}
                     </Text>
                   )}
                 </View>

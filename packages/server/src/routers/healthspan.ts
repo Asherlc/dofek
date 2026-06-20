@@ -174,7 +174,6 @@ function buildHistory(row: HealthspanRawRow): HealthspanResult["history"] {
   });
 }
 
-/** Linear regression slope of weekly scores, bucketed into a direction. */
 function computeTrend(history: HealthspanResult["history"]): HealthspanResult["trend"] {
   if (history.length < 4) return null;
 
@@ -197,6 +196,36 @@ function computeTrend(history: HealthspanResult["history"]): HealthspanResult["t
   return "stable";
 }
 
+export function buildHealthspanResult(row: HealthspanRawRow | null): HealthspanResult {
+  if (!row) {
+    return {
+      healthspanScore: null,
+      yearsDelta: null,
+      metrics: [],
+      history: [],
+      trend: null,
+    };
+  }
+
+  const metrics = buildMetrics(row);
+  const metricsWithData = metrics.filter((metric) => metric.value != null);
+  const healthspanScore =
+    metricsWithData.length >= 3
+      ? Math.round(
+          metricsWithData.reduce((sum, metric) => sum + metric.score, 0) / metricsWithData.length,
+        )
+      : null;
+  const history = buildHistory(row);
+
+  return {
+    healthspanScore,
+    yearsDelta: healthspanScore != null ? scoreToYearsDelta(healthspanScore) : null,
+    metrics,
+    history,
+    trend: computeTrend(history),
+  };
+}
+
 export const healthspanRouter = router({
   /**
    * Healthspan Score — composite longevity metric inspired by Whoop's Healthspan.
@@ -206,39 +235,7 @@ export const healthspanRouter = router({
     .input(z.object({ weeks: z.number().min(4).max(52).default(12), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<HealthspanResult> => {
       const totalDays = input.weeks * 7;
-
       const row = await fetchHealthspanRawData(ctx, input.endDate, totalDays);
-      if (!row) {
-        return {
-          healthspanScore: null,
-          yearsDelta: null,
-          metrics: [],
-          history: [],
-          trend: null,
-        };
-      }
-
-      const metrics = buildMetrics(row);
-
-      // Composite: equal weight across metrics that have real data.
-      // Require at least 3 metrics — fewer than that is not a meaningful composite.
-      const metricsWithData = metrics.filter((metric) => metric.value != null);
-      const healthspanScore =
-        metricsWithData.length >= 3
-          ? Math.round(
-              metricsWithData.reduce((sum, metric) => sum + metric.score, 0) /
-                metricsWithData.length,
-            )
-          : null;
-
-      const history = buildHistory(row);
-
-      return {
-        healthspanScore,
-        yearsDelta: healthspanScore != null ? scoreToYearsDelta(healthspanScore) : null,
-        metrics,
-        history,
-        trend: computeTrend(history),
-      };
+      return buildHealthspanResult(row);
     }),
 });

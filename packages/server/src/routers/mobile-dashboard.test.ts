@@ -142,9 +142,17 @@ vi.mock("../logger.ts", () => ({
 
 import { logger } from "../logger.ts";
 import { computeReadinessScore } from "../repositories/training-recommendation.ts";
+import * as mobileRecoveryTab from "../services/mobile-recovery-tab.ts";
+import * as mobileTrainingTab from "../services/mobile-training-tab.ts";
 import { isRecent, mobileDashboardRouter } from "./mobile-dashboard.ts";
 
 const createCaller = createTestCallerFactory(mobileDashboardRouter);
+
+const fullAccessWindow = {
+  kind: "full" as const,
+  paid: true as const,
+  reason: "paid_grant" as const,
+};
 
 describe("mobileDashboard.dashboard", () => {
   it("fails loudly when ClickHouse activity analytics are unavailable", async () => {
@@ -586,5 +594,385 @@ describe("mobileDashboard.dashboard", () => {
       date: null,
     });
     expect(result.latestDate).toBeNull();
+  });
+});
+
+function parseTimingTotalMs(logMessage: unknown): number {
+  const match = String(logMessage).match(/total=(\d+)ms/);
+  return Number(match?.[1]);
+}
+
+describe("mobileDashboard.recovery", () => {
+  it("fails loudly when ClickHouse activity analytics are unavailable", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+    });
+
+    await expect(caller.recovery({ endDate: "2026-03-28" })).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: expect.stringContaining(
+        "mobileDashboard.recovery requires the ClickHouse activity analytics store",
+      ),
+    });
+  });
+
+  it("returns consolidated recovery tab data", async () => {
+    const query = vi.fn(async (_schema: unknown, sqlText: unknown) => {
+      if (String(sqlText).includes("analytics.daily_recovery")) {
+        return [
+          {
+            date: "2026-03-28",
+            hrv: 55,
+            resting_hr: 52,
+            respiratory_rate: 14,
+            hrv_mean_30d: 50,
+            hrv_sd_30d: 5,
+            rhr_mean_30d: 54,
+            rhr_sd_30d: 2,
+            rr_mean_30d: 14,
+            rr_sd_30d: 1,
+            hrv_mean_60d: 50,
+            hrv_sd_60d: 5,
+            rhr_mean_60d: 54,
+            rhr_sd_60d: 2,
+            efficiency_pct: 90,
+          },
+        ];
+      }
+      return [];
+    });
+    const execute = vi.fn(async () => []);
+
+    const caller = createCaller({
+      db: { execute, transaction: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      accessWindow: fullAccessWindow,
+      sensorStore: {
+        query,
+        getActivitySummaries: vi.fn().mockResolvedValue([]),
+        getStream: vi.fn().mockResolvedValue([]),
+        getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+        getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+        getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+        getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+        getPaceCurveRows: vi.fn().mockResolvedValue([]),
+        refreshBodyMeasurements: vi.fn().mockResolvedValue(undefined),
+      },
+    });
+
+    const result = await caller.recovery({ days: 30, endDate: "2026-03-28" });
+
+    expect(result.readinessScore).toHaveLength(1);
+    expect(result.stress.daily).toHaveLength(1);
+    const timingCall = vi
+      .mocked(logger.info)
+      .mock.calls.find((call) => String(call[0]).includes("[mobile-dashboard] recovery timings"));
+    expect(timingCall?.[0]).toEqual(expect.stringContaining("[mobile-dashboard] recovery timings"));
+    expect(parseTimingTotalMs(timingCall?.[0])).toBeLessThan(60_000);
+  });
+
+  it("defaults timezone when omitted", async () => {
+    const loadSpy = vi.spyOn(mobileRecoveryTab, "loadMobileRecoveryTab").mockResolvedValue({
+      hrvVariability: [],
+      hrvBaseline: [],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: null,
+      dailyMetrics: [],
+      weight: [],
+      weightPrediction: {
+        ratePerWeek: null,
+        rateConfidence: null,
+        impliedDailyCalories: null,
+        periodDeltas: { days7: null, days14: null, days30: null },
+        goal: null,
+        projectionLine: [],
+      },
+      healthspan: {
+        healthspanScore: null,
+        yearsDelta: null,
+        metrics: [],
+        history: [],
+        trend: null,
+      },
+    });
+
+    const caller = createCaller({
+      db: { execute: vi.fn(), transaction: vi.fn() },
+      userId: "user-1",
+      accessWindow: fullAccessWindow,
+      sensorStore: makeSensorStore(),
+    });
+
+    await caller.recovery({ days: 30, endDate: "2026-03-28" });
+
+    expect(loadSpy).toHaveBeenCalledWith(
+      {
+        db: expect.anything(),
+        userId: "user-1",
+        timezone: "UTC",
+        accessWindow: fullAccessWindow,
+        sensorStore: expect.anything(),
+      },
+      30,
+      "2026-03-28",
+    );
+
+    loadSpy.mockRestore();
+  });
+
+  it("fails when entitlement access window is missing", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn(), transaction: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(),
+    });
+
+    await expect(caller.recovery({ days: 30, endDate: "2026-03-28" })).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: expect.stringContaining("requires resolved entitlement access window"),
+    });
+  });
+
+  it("preserves an explicit timezone when provided", async () => {
+    const loadSpy = vi.spyOn(mobileRecoveryTab, "loadMobileRecoveryTab").mockResolvedValue({
+      hrvVariability: [],
+      hrvBaseline: [],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: null,
+      dailyMetrics: [],
+      weight: [],
+      weightPrediction: {
+        ratePerWeek: null,
+        rateConfidence: null,
+        impliedDailyCalories: null,
+        periodDeltas: { days7: null, days14: null, days30: null },
+        goal: null,
+        projectionLine: [],
+      },
+      healthspan: {
+        healthspanScore: null,
+        yearsDelta: null,
+        metrics: [],
+        history: [],
+        trend: null,
+      },
+    });
+
+    const caller = createCaller({
+      db: { execute: vi.fn(), transaction: vi.fn() },
+      userId: "user-1",
+      timezone: "America/New_York",
+      accessWindow: fullAccessWindow,
+      sensorStore: makeSensorStore(),
+    });
+
+    await caller.recovery({ days: 30, endDate: "2026-03-28" });
+
+    expect(loadSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ timezone: "America/New_York" }),
+      30,
+      "2026-03-28",
+    );
+
+    loadSpy.mockRestore();
+  });
+});
+
+describe("mobileDashboard.training", () => {
+  it("fails loudly when ClickHouse activity analytics are unavailable", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+    });
+
+    await expect(caller.training({ endDate: "2026-03-28" })).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: expect.stringContaining(
+        "mobileDashboard.training requires the ClickHouse activity analytics store",
+      ),
+    });
+  });
+
+  it("returns consolidated training tab data", async () => {
+    const query = vi.fn(async (_schema: unknown, sqlText: unknown) => {
+      const sql = String(sqlText);
+      if (sql.includes("analytics.daily_strain")) {
+        return [
+          {
+            date: "2026-03-28",
+            daily_load: 50,
+            acute_load: 350,
+            chronic_load: 300,
+            workload_ratio: 1.17,
+          },
+        ];
+      }
+      if (sql.includes("analytics.daily_recovery")) {
+        return [
+          {
+            date: "2026-03-28",
+            hrv_score: 72,
+            resting_hr_score: 68,
+            sleep_score: 80,
+            respiratory_rate_score: 74,
+          },
+        ];
+      }
+      if (sql.includes("raw_activity_count")) {
+        return [{ raw_activity_count: 0 }];
+      }
+      return [];
+    });
+    const execute = vi.fn(async () => [{ raw_activity_count: 0 }]);
+
+    const caller = createCaller({
+      db: { execute },
+      userId: "user-1",
+      timezone: "UTC",
+      accessWindow: fullAccessWindow,
+      sensorStore: {
+        query,
+        getActivitySummaries: vi.fn().mockResolvedValue([]),
+        getStream: vi.fn().mockResolvedValue([]),
+        getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+        getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+        getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+        getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+        getPaceCurveRows: vi.fn().mockResolvedValue([]),
+        refreshBodyMeasurements: vi.fn().mockResolvedValue(undefined),
+      },
+    });
+
+    const result = await caller.training({ days: 30, endDate: "2026-03-28" });
+
+    expect(result.workloadRatio.timeSeries).toHaveLength(1);
+    expect(result.strainTarget.dailyLoad).toBe(50);
+    expect(result.activities).toEqual([]);
+    expect(result.weeklyVolume).toEqual([]);
+    const timingCall = vi
+      .mocked(logger.info)
+      .mock.calls.find((call) => String(call[0]).includes("[mobile-dashboard] training timings"));
+    expect(timingCall?.[0]).toEqual(expect.stringContaining("[mobile-dashboard] training timings"));
+    expect(parseTimingTotalMs(timingCall?.[0])).toBeLessThan(60_000);
+  });
+
+  it("defaults timezone when omitted", async () => {
+    const loadSpy = vi.spyOn(mobileTrainingTab, "loadMobileTrainingTab").mockResolvedValue({
+      workloadRatio: {
+        timeSeries: [],
+        displayedStrain: 0,
+        displayedDate: null,
+      },
+      strainTarget: {
+        targetStrain: 0,
+        currentStrain: 0,
+        currentStrainSource: "none",
+        currentPhysiologyLoad: 0,
+        progressPercent: 0,
+        zone: "Recovery",
+        explanation: "",
+        dailyLoad: 0,
+        acuteLoad: 0,
+        chronicLoad: 0,
+        workloadRatio: null,
+        readinessScore: 50,
+      },
+      activities: [],
+      weeklyVolume: [],
+      verticalAscent: [],
+    });
+
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      accessWindow: fullAccessWindow,
+      sensorStore: makeSensorStore(),
+    });
+
+    await caller.training({ days: 30, endDate: "2026-03-28" });
+
+    expect(loadSpy).toHaveBeenCalledWith(
+      {
+        db: expect.anything(),
+        userId: "user-1",
+        timezone: "UTC",
+        accessWindow: fullAccessWindow,
+        sensorStore: expect.anything(),
+      },
+      30,
+      "2026-03-28",
+    );
+
+    loadSpy.mockRestore();
+  });
+
+  it("fails when entitlement access window is missing", async () => {
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(),
+    });
+
+    await expect(caller.training({ days: 30, endDate: "2026-03-28" })).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: expect.stringContaining("requires resolved entitlement access window"),
+    });
+  });
+
+  it("preserves an explicit timezone when provided", async () => {
+    const loadSpy = vi.spyOn(mobileTrainingTab, "loadMobileTrainingTab").mockResolvedValue({
+      workloadRatio: {
+        timeSeries: [],
+        displayedStrain: 0,
+        displayedDate: null,
+      },
+      strainTarget: {
+        targetStrain: 0,
+        currentStrain: 0,
+        currentStrainSource: "none",
+        currentPhysiologyLoad: 0,
+        progressPercent: 0,
+        zone: "Recovery",
+        explanation: "",
+        dailyLoad: 0,
+        acuteLoad: 0,
+        chronicLoad: 0,
+        workloadRatio: null,
+        readinessScore: 50,
+      },
+      activities: [],
+      weeklyVolume: [],
+      verticalAscent: [],
+    });
+
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "America/Chicago",
+      accessWindow: fullAccessWindow,
+      sensorStore: makeSensorStore(),
+    });
+
+    await caller.training({ days: 30, endDate: "2026-03-28" });
+
+    expect(loadSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ timezone: "America/Chicago" }),
+      30,
+      "2026-03-28",
+    );
+
+    loadSpy.mockRestore();
   });
 });

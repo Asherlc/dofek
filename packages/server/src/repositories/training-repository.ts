@@ -84,19 +84,6 @@ export class TrainingRepository extends BaseRepository {
 
   /** Weekly training volume grouped by activity type. */
   async getWeeklyVolume(days: number): Promise<WeeklyVolumeRow[]> {
-    const accessWindowPredicate =
-      this.accessWindow.kind === "full"
-        ? ""
-        : `AND asum.started_at >= toDateTime({accessStart:String})
-          AND asum.started_at < toDateTime({accessEnd:String})`;
-    const accessWindowParams: Record<string, string> =
-      this.accessWindow.kind === "full"
-        ? {}
-        : {
-            accessStart: this.accessWindow.startDate,
-            accessEnd: this.accessWindow.endDateExclusive,
-          };
-
     const rawActivityCount = await this.#loadRawActivityCount(
       days,
       undefined,
@@ -107,30 +94,7 @@ export class TrainingRepository extends BaseRepository {
       return [];
     }
 
-    return this.#sensorStore.query(
-      weeklyVolumeRowSchema,
-      `SELECT
-        toString(toMonday(toDate(toTimeZone(asum.started_at, {timezone:String})))) AS week,
-        asum.activity_type,
-        toInt32(count()) AS count,
-        round(sum(dateDiff('second', asum.started_at, asum.ended_at)) / 3600, 2) AS hours
-      FROM analytics.activity_summary asum
-      INNER JOIN analytics.v_activity va
-        ON va.id = asum.activity_id
-       AND va.user_id = asum.user_id
-      WHERE asum.user_id = {userId:UUID}
-        AND asum.started_at > now() - INTERVAL {days:Int32} DAY
-        AND asum.ended_at IS NOT NULL
-        ${accessWindowPredicate}
-      GROUP BY week, activity_type
-      ORDER BY week`,
-      {
-        userId: this.userId,
-        timezone: this.timezone,
-        days,
-        ...accessWindowParams,
-      },
-    );
+    return this.#queryWeeklyVolume(days);
   }
 
   /** HR zone distribution per week using the canonical Karvonen model. */
@@ -205,11 +169,61 @@ export class TrainingRepository extends BaseRepository {
 
   /** Per-activity summary with HR and power stats. */
   async getActivityStats(days: number): Promise<ActivityStatsRow[]> {
-    const rawActivityCount = await this.#loadRawActivityCount(days);
+    const rawActivityCount = await this.#loadRawActivityCount(
+      days,
+      undefined,
+      false,
+      this.accessWindow,
+    );
     if (rawActivityCount === 0) {
       return [];
     }
 
+    return this.#queryActivityStats(days);
+  }
+
+  /** Activity stats and weekly volume with a single activity-count lookup. */
+  async getActivityStatsAndWeeklyVolume(days: number): Promise<{
+    activities: ActivityStatsRow[];
+    weeklyVolume: WeeklyVolumeRow[];
+  }> {
+    const rawActivityCount = await this.#loadRawActivityCount(
+      days,
+      undefined,
+      false,
+      this.accessWindow,
+    );
+    if (rawActivityCount === 0) {
+      return { activities: [], weeklyVolume: [] };
+    }
+
+    const [activities, weeklyVolume] = await Promise.all([
+      this.#queryActivityStats(days),
+      this.#queryWeeklyVolume(days),
+    ]);
+    return { activities, weeklyVolume };
+  }
+
+  #activitySummaryAccessFilter(tableAlias = ""): {
+    predicate: string;
+    params: Record<string, string>;
+  } {
+    const columnPrefix = tableAlias ? `${tableAlias}.` : "";
+    if (this.accessWindow.kind === "full") {
+      return { predicate: "", params: {} };
+    }
+    return {
+      predicate: `AND ${columnPrefix}started_at >= toDateTime({accessStart:String})
+       AND ${columnPrefix}started_at < toDateTime({accessEnd:String})`,
+      params: {
+        accessStart: this.accessWindow.startDate,
+        accessEnd: this.accessWindow.endDateExclusive,
+      },
+    };
+  }
+
+  async #queryActivityStats(days: number): Promise<ActivityStatsRow[]> {
+    const { predicate, params } = this.#activitySummaryAccessFilter("a");
     const rows = await this.#sensorStore.query(
       activityStatsRowSchema,
       `SELECT
@@ -229,8 +243,9 @@ export class TrainingRepository extends BaseRepository {
       FROM analytics.activity_summary a
       WHERE a.user_id = {userId:UUID}
         AND a.started_at > now() - INTERVAL {days:Int32} DAY
+        ${predicate}
       ORDER BY a.started_at DESC`,
-      { userId: this.userId, days },
+      { userId: this.userId, days, ...params },
     );
     return activityRepositoryFor(
       this.db,
@@ -238,6 +253,35 @@ export class TrainingRepository extends BaseRepository {
       this.timezone,
       this.accessWindow,
     ).filterToVisibleActivities(rows);
+  }
+
+  async #queryWeeklyVolume(days: number): Promise<WeeklyVolumeRow[]> {
+    const { predicate, params } = this.#activitySummaryAccessFilter("asum");
+
+    return this.#sensorStore.query(
+      weeklyVolumeRowSchema,
+      `SELECT
+        toString(toMonday(toDate(toTimeZone(asum.started_at, {timezone:String})))) AS week,
+        asum.activity_type,
+        toInt32(count()) AS count,
+        round(sum(dateDiff('second', asum.started_at, asum.ended_at)) / 3600, 2) AS hours
+      FROM analytics.activity_summary asum
+      INNER JOIN analytics.v_activity va
+        ON va.id = asum.activity_id
+       AND va.user_id = asum.user_id
+      WHERE asum.user_id = {userId:UUID}
+        AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+        AND asum.ended_at IS NOT NULL
+        ${predicate}
+      GROUP BY week, activity_type
+      ORDER BY week`,
+      {
+        userId: this.userId,
+        timezone: this.timezone,
+        days,
+        ...params,
+      },
+    );
   }
 
   async #loadRawActivityCount(
