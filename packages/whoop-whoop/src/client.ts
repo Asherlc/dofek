@@ -199,10 +199,7 @@ export class WhoopClient {
   }
 
   static #isRateLimitError(err: unknown): boolean {
-    return (
-      err instanceof WhoopRateLimitError ||
-      (err instanceof ProviderRateLimitError && err.providerId === "whoop")
-    );
+    return err instanceof ProviderRateLimitError && err.providerId === "whoop";
   }
 
   /**

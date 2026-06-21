@@ -1,11 +1,7 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
-import { WhoopRateLimitError } from "whoop-whoop/client";
 
-export function isWhoopRateLimitError(err: unknown): boolean {
-  return (
-    err instanceof WhoopRateLimitError ||
-    (err instanceof ProviderRateLimitError && err.providerId === "whoop")
-  );
+export function isWhoopRateLimitError(err: unknown): err is ProviderRateLimitError {
+  return err instanceof ProviderRateLimitError && err.providerId === "whoop";
 }
 
 export function findWhoopRateLimitError(
@@ -13,7 +9,7 @@ export function findWhoopRateLimitError(
 ): ProviderRateLimitError | null {
   for (const syncError of errors) {
     const cause = syncError.cause;
-    if (isWhoopRateLimitError(cause) && cause instanceof ProviderRateLimitError) {
+    if (isWhoopRateLimitError(cause)) {
       return cause;
     }
   }
