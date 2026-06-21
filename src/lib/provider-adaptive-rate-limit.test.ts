@@ -251,7 +251,7 @@ describe("RedisAdaptiveRateLimitStore", () => {
     expect(await store.getLearnedCooldownSeconds("whoop")).toBe(180);
 
     const redisStore = new RedisAdaptiveRateLimitStore(async () => ({
-      set: async (key, value, mode, _millisecondsToExpire) => {
+      set: async (key, value, _mode, _millisecondsToExpire) => {
         values.set(key, value);
         return "OK";
       },

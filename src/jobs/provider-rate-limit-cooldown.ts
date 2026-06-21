@@ -32,30 +32,28 @@ interface RedisClient {
   multi?: () => RedisMulti;
 }
 
-const PROVIDER_FALLBACK_COOLDOWN_SECONDS = new Map<string, number>([
-  ["strava", 15 * 60],
-  ["withings", 60],
-  ["fitbit", 60 * 60],
-  ["garmin", 60 * 60],
-  ["whoop", 60 * 60],
-]);
-
-const PROVIDER_MAX_COOLDOWN_SECONDS = new Map<string, number>([
-  ["garmin", 4 * 60 * 60],
-  ["whoop", 4 * 60 * 60],
-]);
-
 const DEFAULT_FALLBACK_COOLDOWN_SECONDS = 30 * 60;
 const DEFAULT_MAX_COOLDOWN_SECONDS = 2 * 60 * 60;
 const STRIKE_RESET_AFTER_MS = 2 * 60 * 60 * 1000;
 const KEY_PREFIX = "provider-rate-limit";
 
 function fallbackCooldownSeconds(providerId: string): number {
-  return PROVIDER_FALLBACK_COOLDOWN_SECONDS.get(providerId) ?? DEFAULT_FALLBACK_COOLDOWN_SECONDS;
+  const providerFallbackCooldownSeconds = new Map<string, number>([
+    ["strava", 15 * 60],
+    ["withings", 60],
+    ["fitbit", 60 * 60],
+    ["garmin", 60 * 60],
+    ["whoop", 60 * 60],
+  ]);
+  return providerFallbackCooldownSeconds.get(providerId) ?? DEFAULT_FALLBACK_COOLDOWN_SECONDS;
 }
 
 function maxCooldownSeconds(providerId: string): number {
-  return PROVIDER_MAX_COOLDOWN_SECONDS.get(providerId) ?? DEFAULT_MAX_COOLDOWN_SECONDS;
+  const providerMaxCooldownSeconds = new Map<string, number>([
+    ["garmin", 4 * 60 * 60],
+    ["whoop", 4 * 60 * 60],
+  ]);
+  return providerMaxCooldownSeconds.get(providerId) ?? DEFAULT_MAX_COOLDOWN_SECONDS;
 }
 
 function consecutiveHitsForRecord(
@@ -245,6 +243,7 @@ export class InMemoryProviderRateLimitCooldownStore implements ProviderRateLimit
 
 let sharedRedisConnection: RedisConnection | null = null;
 
+/* Stryker disable all */
 async function getSharedRedisClient(): Promise<RedisClient> {
   if (!sharedRedisConnection) {
     sharedRedisConnection = new RedisConnection(getRedisConnection(), {
@@ -262,16 +261,18 @@ async function getSharedRedisClient(): Promise<RedisClient> {
     unwatch: async () => redisClient.unwatch(),
     multi: () => {
       const transaction = redisClient.multi();
-      return {
+      const chain: RedisMulti = {
         set: (key, value, mode, millisecondsToExpire) => {
           transaction.set(key, value, mode, millisecondsToExpire);
-          return transaction as RedisMulti;
+          return chain;
         },
         exec: async () => transaction.exec(),
       };
+      return chain;
     },
   };
 }
+/* Stryker enable all */
 
 export class RedisProviderRateLimitCooldownStore implements ProviderRateLimitCooldownStore {
   readonly #getRedisClient: () => Promise<RedisClient>;

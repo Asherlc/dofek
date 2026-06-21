@@ -4,6 +4,7 @@ import { providerAdaptiveRateLimitStore } from "../lib/provider-adaptive-rate-li
 import {
   InMemoryProviderRateLimitCooldownStore,
   providerRateLimitCooldownJobId,
+  providerRateLimitCooldownStore,
   providerRateLimitDelayMs,
   RedisProviderRateLimitCooldownStore,
 } from "./provider-rate-limit-cooldown.ts";
@@ -25,7 +26,7 @@ function rateLimitError(options: {
   });
 }
 
-function createMockRedisStore() {
+function createMockRedisStore(options?: { atomic?: boolean; execFailCount?: number }) {
   const values = new Map<string, string>();
   const setCalls: Array<{
     key: string;
@@ -33,19 +34,65 @@ function createMockRedisStore() {
     mode: "PX";
     millisecondsToExpire: number;
   }> = [];
+  const watchCalls: string[] = [];
+  let execAttempts = 0;
+
+  const client = {
+    set: async (key: string, value: string, mode: "PX", millisecondsToExpire: number) => {
+      setCalls.push({ key, value, mode, millisecondsToExpire });
+      values.set(key, value);
+      return "OK";
+    },
+    get: async (key: string) => values.get(key) ?? null,
+    ...(options?.atomic
+      ? {
+          watch: async (key: string) => {
+            watchCalls.push(key);
+            return "OK";
+          },
+          unwatch: async () => "OK",
+          multi: () => {
+            let pending:
+              | {
+                  key: string;
+                  value: string;
+                  mode: "PX";
+                  millisecondsToExpire: number;
+                }
+              | undefined;
+            const chain = {
+              set: (key: string, value: string, mode: "PX", millisecondsToExpire: number) => {
+                pending = { key, value, mode, millisecondsToExpire };
+                return chain;
+              },
+              exec: async () => {
+                execAttempts++;
+                if (options.execFailCount && execAttempts <= options.execFailCount) {
+                  return null;
+                }
+                if (pending) {
+                  setCalls.push(pending);
+                  values.set(pending.key, pending.value);
+                }
+                return ["OK"];
+              },
+            };
+            return chain;
+          },
+        }
+      : {}),
+  };
+
   const getRedisClient: ConstructorParameters<typeof RedisProviderRateLimitCooldownStore>[0] =
-    async () => ({
-      set: async (key, value, mode, millisecondsToExpire) => {
-        setCalls.push({ key, value, mode, millisecondsToExpire });
-        values.set(key, value);
-        return "OK";
-      },
-      get: async (key) => values.get(key) ?? null,
-    });
+    async () => client;
 
   return {
     values,
     setCalls,
+    watchCalls,
+    get execAttempts() {
+      return execAttempts;
+    },
     store: new RedisProviderRateLimitCooldownStore(getRedisClient),
   };
 }
@@ -108,6 +155,66 @@ describe("ProviderRateLimitCooldownStore", () => {
     const cooldown = await store.record(rateLimitError({ providerId: "strava" }), "user-1");
 
     expect(cooldown.expiresAt).toEqual(new Date("2026-06-02T12:15:00Z"));
+    vi.useRealTimers();
+  });
+
+  it("uses the Withings-specific fallback cooldown when Retry-After is absent", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const store = new InMemoryProviderRateLimitCooldownStore();
+
+    const cooldown = await store.record(rateLimitError({ providerId: "withings" }), "user-1");
+
+    expect(cooldown.expiresAt).toEqual(new Date("2026-06-02T12:01:00Z"));
+    vi.useRealTimers();
+  });
+
+  it("uses the Whoop-specific fallback cooldown when Retry-After is absent", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const store = new InMemoryProviderRateLimitCooldownStore();
+
+    const cooldown = await store.record(rateLimitError({ providerId: "whoop" }), "user-1");
+
+    expect(cooldown.expiresAt).toEqual(new Date("2026-06-02T13:00:00Z"));
+    vi.useRealTimers();
+  });
+
+  it("uses the default fallback cooldown for providers without a custom value", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const store = new InMemoryProviderRateLimitCooldownStore();
+
+    const cooldown = await store.record(rateLimitError({ providerId: "polar" }), "user-1");
+
+    expect(cooldown.expiresAt).toEqual(new Date("2026-06-02T12:30:00Z"));
+    vi.useRealTimers();
+  });
+
+  it("caps Garmin escalation at the provider-specific four-hour maximum", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const store = new InMemoryProviderRateLimitCooldownStore();
+
+    let cooldown = await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
+    for (let hit = 1; hit < 3; hit++) {
+      vi.setSystemTime(cooldown.expiresAt);
+      cooldown = await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
+    }
+
+    expect(cooldown.consecutiveHits).toBe(3);
+    expect(cooldown.expiresAt).toEqual(new Date("2026-06-02T19:00:00Z"));
+    vi.useRealTimers();
+  });
+
+  it("caps Whoop escalation at the provider-specific four-hour maximum", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const store = new InMemoryProviderRateLimitCooldownStore();
+
+    let cooldown = await store.record(rateLimitError({ providerId: "whoop" }), "user-1");
+    for (let hit = 1; hit < 3; hit++) {
+      vi.setSystemTime(cooldown.expiresAt);
+      cooldown = await store.record(rateLimitError({ providerId: "whoop" }), "user-1");
+    }
+
+    expect(cooldown.consecutiveHits).toBe(3);
+    expect(cooldown.expiresAt).toEqual(new Date("2026-06-02T19:00:00Z"));
     vi.useRealTimers();
   });
 
@@ -464,10 +571,97 @@ describe("ProviderRateLimitCooldownStore", () => {
         expiresAt: "2026-06-02T12:00:00.000Z",
         consecutiveHits: "not-a-number",
       }),
+      JSON.stringify({
+        providerId: "garmin",
+        scope: "provider",
+        userId: null,
+        expiresAt: "2026-06-02T12:00:00.000Z",
+        consecutiveHits: null,
+      }),
     ]) {
       values.set("provider-rate-limit:garmin:provider", raw);
       await expect(store.getActive("garmin", "user-1")).resolves.toBeNull();
     }
+  });
+
+  it("records cooldown state through the Redis WATCH/MULTI path when available", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const { setCalls, store, watchCalls } = createMockRedisStore({ atomic: true });
+
+    const cooldown = await store.record(
+      rateLimitError({ providerId: "garmin", retryAfterSeconds: 600 }),
+      "user-1",
+    );
+
+    expect(watchCalls).toEqual(["provider-rate-limit:garmin:provider"]);
+    expect(setCalls).toEqual([
+      {
+        key: "provider-rate-limit:garmin:provider",
+        value: JSON.stringify({
+          providerId: "garmin",
+          scope: "provider",
+          userId: null,
+          expiresAt: "2026-06-02T12:10:00.000Z",
+          consecutiveHits: 1,
+        }),
+        mode: "PX",
+        millisecondsToExpire: 600_000,
+      },
+    ]);
+    await expect(store.getActive("garmin", "user-1")).resolves.toEqual(cooldown);
+    vi.useRealTimers();
+  });
+
+  it("retries Redis WATCH/MULTI writes when exec reports a conflict", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const mock = createMockRedisStore({
+      atomic: true,
+      execFailCount: 1,
+    });
+
+    await mock.store.record(
+      rateLimitError({ providerId: "garmin", retryAfterSeconds: 600 }),
+      "user-1",
+    );
+
+    expect(mock.watchCalls).toEqual([
+      "provider-rate-limit:garmin:provider",
+      "provider-rate-limit:garmin:provider",
+    ]);
+    expect(mock.execAttempts).toBe(2);
+    vi.useRealTimers();
+  });
+
+  it("falls back to non-atomic Redis writes when WATCH/MULTI are unavailable", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const { setCalls, store } = createMockRedisStore();
+
+    const cooldown = await store.record(
+      rateLimitError({ providerId: "garmin", retryAfterSeconds: 600 }),
+      "user-1",
+    );
+
+    expect(setCalls).toHaveLength(1);
+    await expect(store.getActive("garmin", "user-1")).resolves.toEqual(cooldown);
+    vi.useRealTimers();
+  });
+
+  it("uses the in-memory cooldown store under Vitest", () => {
+    expect(providerRateLimitCooldownStore).toBeInstanceOf(InMemoryProviderRateLimitCooldownStore);
+  });
+
+  it("uses the Redis cooldown store outside test environments", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VITEST", "");
+    vi.resetModules();
+
+    const module = await import("./provider-rate-limit-cooldown.ts");
+    expect(module.providerRateLimitCooldownStore).toBeInstanceOf(
+      module.RedisProviderRateLimitCooldownStore,
+    );
+
+    vi.unstubAllEnvs();
+    vi.resetModules();
   });
 });
 

@@ -246,13 +246,14 @@ async function getSharedRedisClient(): Promise<RedisClient> {
     unwatch: async () => redisClient.unwatch(),
     multi: () => {
       const transaction = redisClient.multi();
-      return {
+      const chain: RedisMulti = {
         set: (key, value, mode, millisecondsToExpire) => {
           transaction.set(key, value, mode, millisecondsToExpire);
-          return transaction as RedisMulti;
+          return chain;
         },
         exec: async () => transaction.exec(),
       };
+      return chain;
     },
   };
 }

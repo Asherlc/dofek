@@ -1421,7 +1421,10 @@ describe("Peloton — rate-limit aware fetch wiring", () => {
     new Response("rate limited", { status: 429, headers: { "Retry-After": "60" } });
 
   it("PelotonClient surfaces a 429 as a ProviderRateLimitError tagged 'peloton'", async () => {
-    const client = new PelotonClient("token", createProviderRateLimitFetch("peloton", rateLimited429));
+    const client = new PelotonClient(
+      "token",
+      createProviderRateLimitFetch("peloton", rateLimited429),
+    );
     const err = await client.getUserId().catch((caught: unknown) => caught);
     expect(err).toBeInstanceOf(ProviderRateLimitError);
     if (err instanceof ProviderRateLimitError) {

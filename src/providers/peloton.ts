@@ -407,11 +407,7 @@ export async function pelotonAutomatedLogin(
   authorizeUrl.searchParams.set("nonce", nonce);
 
   logger.info("[peloton] Initiating Auth0 login flow...");
-  let { response, location } = await followRedirects(
-    authorizeUrl.toString(),
-    jar,
-    fetchFn,
-  );
+  let { response, location } = await followRedirects(authorizeUrl.toString(), jar, fetchFn);
 
   while (location) {
     ({ response, location } = await followRedirects(location, jar, fetchFn));
