@@ -378,7 +378,12 @@ describe("Router transformation logic", () => {
       // (our test data varies 400-500 min, so if baseline is ~450, some nights are below)
       expect(data.accumulatedDebtMinutes).toBeGreaterThan(0);
       expect(typeof data.strainDebtMinutes).toBe("number");
-      expect(data.recentNights.some((night) => night.providerId === "test-provider")).toBe(true);
+      const nightsWithData = data.recentNights.filter((night) => night.actualMinutes != null);
+      expect(nightsWithData.length).toBeGreaterThan(0);
+      expect(nightsWithData.every((night) => night.providerId === "test-provider")).toBe(true);
+      expect(nightsWithData.every((night) => night.sourceProviders.includes("test-provider"))).toBe(
+        true,
+      );
     });
   });
 
