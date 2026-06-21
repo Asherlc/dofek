@@ -257,6 +257,9 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         userId: context.userId,
         ...syncWindowToJobData(syncWindow, sinceDays),
       });
+      if (!job) {
+        throw new Error(`Provider ${providerId} sync skipped: rate-limit cooldown active`);
+      }
       startWorker();
       return jsonContent({
         providerId,

@@ -1,4 +1,4 @@
-import type { ProviderRateLimitError, ProviderRateLimitScope } from "./rate-limit.ts";
+import type { ProviderRateLimitScope } from "./rate-limit-types.ts";
 
 /** Rolling window for request budget tally (5 minutes). */
 export const ADAPTIVE_RATE_WINDOW_MS = 5 * 60 * 1000;
@@ -39,21 +39,7 @@ export interface ProviderAdaptiveRateState {
   stravaDailyUsage: number | null;
 }
 
-export interface AdaptiveRateLimitStore {
-  awaitAdmission(
-    providerId: string,
-    scope: ProviderRateLimitScope,
-    userId: string | null,
-  ): Promise<void>;
-  recordSuccess(
-    providerId: string,
-    scope: ProviderRateLimitScope,
-    userId: string | null,
-    responseHeaders?: Headers,
-  ): Promise<void>;
-  recordRateLimit(error: ProviderRateLimitError): Promise<void>;
-  getLearnedCooldownSeconds(providerId: string): Promise<number | null>;
-}
+export type { AdaptiveRateLimitStore } from "./rate-limit-types.ts";
 
 export function defaultThrottleMs(providerId: string): number {
   return DEFAULT_PROVIDER_THROTTLE_MS[providerId] ?? 1_000;

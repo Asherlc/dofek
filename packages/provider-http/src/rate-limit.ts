@@ -1,67 +1,19 @@
-import type { AdaptiveRateLimitStore } from "./adaptive-rate-limit.ts";
+import type { AdaptiveRateLimitStore } from "./rate-limit-types.ts";
+import {
+  ProviderRateLimitError,
+  type ProviderHttpErrorScope,
+  type ProviderRateLimitScope,
+  ProviderServiceUnavailableError,
+} from "./rate-limit-types.ts";
 
-export interface ProviderRateLimitErrorOptions {
-  message: string;
-  providerId: string;
-  statusCode: number;
-  responseBody: string;
-  scope?: ProviderRateLimitScope;
-  userId?: string | null;
-  retryAfterSeconds?: number | null;
-}
-
-export type ProviderRateLimitScope = "provider" | "user";
-export type ProviderHttpErrorScope = ProviderRateLimitScope;
-
-export interface ProviderServiceUnavailableErrorOptions {
-  message: string;
-  providerId: string;
-  statusCode: number;
-  responseBody: string;
-  scope?: ProviderHttpErrorScope;
-  userId?: string | null;
-  retryAfterSeconds?: number | null;
-}
-
-export class ProviderRateLimitError extends Error {
-  readonly providerId: string;
-  readonly statusCode: number;
-  readonly responseBody: string;
-  readonly scope: ProviderRateLimitScope;
-  readonly userId: string | null;
-  readonly retryAfterSeconds: number | null;
-
-  constructor(options: ProviderRateLimitErrorOptions) {
-    super(options.message);
-    this.name = "ProviderRateLimitError";
-    this.providerId = options.providerId;
-    this.statusCode = options.statusCode;
-    this.responseBody = options.responseBody;
-    this.scope = options.scope ?? "provider";
-    this.userId = options.userId ?? null;
-    this.retryAfterSeconds = options.retryAfterSeconds ?? null;
-  }
-}
-
-export class ProviderServiceUnavailableError extends Error {
-  readonly providerId: string;
-  readonly statusCode: number;
-  readonly responseBody: string;
-  readonly scope: ProviderHttpErrorScope;
-  readonly userId: string | null;
-  readonly retryAfterSeconds: number | null;
-
-  constructor(options: ProviderServiceUnavailableErrorOptions) {
-    super(options.message);
-    this.name = "ProviderServiceUnavailableError";
-    this.providerId = options.providerId;
-    this.statusCode = options.statusCode;
-    this.responseBody = options.responseBody;
-    this.scope = options.scope ?? "provider";
-    this.userId = options.userId ?? null;
-    this.retryAfterSeconds = options.retryAfterSeconds ?? null;
-  }
-}
+export type {
+  AdaptiveRateLimitStore,
+  ProviderHttpErrorScope,
+  ProviderRateLimitErrorOptions,
+  ProviderRateLimitScope,
+  ProviderServiceUnavailableErrorOptions,
+} from "./rate-limit-types.ts";
+export { ProviderRateLimitError, ProviderServiceUnavailableError } from "./rate-limit-types.ts";
 
 export interface FetchRateLimitHandlingOptions {
   createRateLimitError: (response: Response, responseBody: string) => Error;
