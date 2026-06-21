@@ -107,9 +107,10 @@ describe("sleep-need router integration", () => {
 
   it("calculate includes provenance on recent nights", async () => {
     await queryCache.invalidateAll();
-    const today = new Date().toISOString().slice(0, 10);
+    const endDate = new Date();
+    endDate.setUTCDate(endDate.getUTCDate() + 1);
     const result = await query<SleepNeedResult>("sleepNeed.calculate", {
-      endDate: today,
+      endDate: endDate.toISOString().slice(0, 10),
     });
 
     const nightsWithData = result.recentNights.filter((night) => night.actualMinutes != null);
