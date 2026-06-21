@@ -1,22 +1,38 @@
+import { formatDateYmd } from "@dofek/format/format";
 import { createFileRoute } from "@tanstack/react-router";
+import { useMemo } from "react";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
+import {
+  CorrelationCard,
+  CorrelationCardSkeleton,
+  type Insight,
+} from "../../components/CorrelationCard.tsx";
 import { ChartLoadingSkeleton } from "../../components/LoadingSkeleton.tsx";
+import { PageSection } from "../../components/PageSection.tsx";
 import { PmcChart } from "../../components/PmcChart.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import { TrainingCalendar } from "../../components/TrainingCalendar.tsx";
 import { TrainingInsightsPanel } from "../../components/TrainingInsightsPanel.tsx";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
+import { filterTrainingInsights } from "../../lib/trainingInsights.ts";
 import { trpc } from "../../lib/trpc.ts";
 
 export const Route = createFileRoute("/training/")({
   component: TrainingOverview,
 });
 
-function TrainingOverview() {
+export function TrainingOverview() {
   const { days } = useTrainingDays();
+  const endDate = useMemo(() => formatDateYmd(new Date()), []);
 
   const pmcData = trpc.pmc.chart.useQuery({ days });
   const calendarData = trpc.calendar.calendarData.useQuery({ days });
+  const insightsQuery = trpc.insights.compute.useQuery({ days: Math.max(days, 90), endDate });
+
+  const trainingInsights = useMemo(() => {
+    const all: Insight[] = insightsQuery.data ?? [];
+    return filterTrainingInsights(all);
+  }, [insightsQuery.data]);
 
   return (
     <>
@@ -49,6 +65,26 @@ function TrainingOverview() {
       <Section title="Recent Activities" subtitle="All recent training activities">
         <RecentActivitiesSection />
       </Section>
+
+      {insightsQuery.isLoading && (
+        <PageSection title="Training Insights" card={false}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {["t1", "t2"].map((id) => (
+              <CorrelationCardSkeleton key={id} />
+            ))}
+          </div>
+        </PageSection>
+      )}
+
+      {!insightsQuery.isLoading && trainingInsights.length > 0 && (
+        <PageSection title="Training Insights" card={false}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {trainingInsights.map((insight) => (
+              <CorrelationCard key={insight.id} insight={insight} />
+            ))}
+          </div>
+        </PageSection>
+      )}
     </>
   );
 }

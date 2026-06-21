@@ -1,5 +1,15 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import type { SleepNeedResult } from "dofek-server/types";
 import { SleepNeedCard } from "./SleepNeedCard";
+
+const emptyProvenance: Pick<
+  SleepNeedResult["recentNights"][number],
+  "providerId" | "sourceName" | "sourceProviders"
+> = {
+  providerId: null,
+  sourceName: null,
+  sourceProviders: [],
+};
 
 const sampleData = {
   baselineMinutes: 462,
@@ -8,13 +18,55 @@ const sampleData = {
   totalNeedMinutes: 483,
   canRecommend: true,
   recentNights: [
-    { date: "2026-03-27", actualMinutes: 488, neededMinutes: 462, debtMinutes: 0 },
-    { date: "2026-03-28", actualMinutes: 505, neededMinutes: 462, debtMinutes: 0 },
-    { date: "2026-03-29", actualMinutes: 473, neededMinutes: 462, debtMinutes: 0 },
-    { date: "2026-03-30", actualMinutes: 454, neededMinutes: 462, debtMinutes: 8 },
-    { date: "2026-03-31", actualMinutes: 481, neededMinutes: 462, debtMinutes: 0 },
-    { date: "2026-04-01", actualMinutes: null, neededMinutes: 462, debtMinutes: null },
-    { date: "2026-04-02", actualMinutes: 510, neededMinutes: 462, debtMinutes: 0 },
+    {
+      date: "2026-03-27",
+      actualMinutes: 488,
+      neededMinutes: 462,
+      debtMinutes: 0,
+      ...emptyProvenance,
+    },
+    {
+      date: "2026-03-28",
+      actualMinutes: 505,
+      neededMinutes: 462,
+      debtMinutes: 0,
+      ...emptyProvenance,
+    },
+    {
+      date: "2026-03-29",
+      actualMinutes: 473,
+      neededMinutes: 462,
+      debtMinutes: 0,
+      ...emptyProvenance,
+    },
+    {
+      date: "2026-03-30",
+      actualMinutes: 454,
+      neededMinutes: 462,
+      debtMinutes: 8,
+      ...emptyProvenance,
+    },
+    {
+      date: "2026-03-31",
+      actualMinutes: 481,
+      neededMinutes: 462,
+      debtMinutes: 0,
+      ...emptyProvenance,
+    },
+    {
+      date: "2026-04-01",
+      actualMinutes: null,
+      neededMinutes: 462,
+      debtMinutes: null,
+      ...emptyProvenance,
+    },
+    {
+      date: "2026-04-02",
+      actualMinutes: 510,
+      neededMinutes: 462,
+      debtMinutes: 0,
+      ...emptyProvenance,
+    },
   ],
 };
 

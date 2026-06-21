@@ -83,6 +83,9 @@ const sleepNeedOutputSchema = z.object({
       actualMinutes: z.number().nullable(),
       neededMinutes: z.number(),
       debtMinutes: z.number().nullable(),
+      providerId: z.string().nullable(),
+      sourceName: z.string().nullable(),
+      sourceProviders: z.array(z.string()),
     }),
   ),
   canRecommend: z.boolean(),
@@ -377,6 +380,9 @@ export const mobileDashboardRouter = router({
           debtMinutes: night
             ? Math.max(0, Math.round(baselineMinutes - night.duration_minutes))
             : null,
+          providerId: null,
+          sourceName: null,
+          sourceProviders: [],
         });
       }
 
