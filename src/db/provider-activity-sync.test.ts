@@ -99,8 +99,8 @@ describe("upsertProviderActivity", () => {
       { activityType: "running" },
     );
 
-    expect(db.insert).toHaveBeenCalledWith(activity);
-    const values = db.insert.mock.results[0]?.value.values;
+    expect(vi.mocked(db.insert)).toHaveBeenCalledWith(activity);
+    const values = vi.mocked(db.insert).mock.results[0]?.value.values;
     expect(values).toHaveBeenCalledWith(
       expect.objectContaining({
         externalId: "hk:workout:abc",

@@ -695,6 +695,52 @@ describe("GarminProvider.sync()", () => {
     expect(sensorRows).toContainEqual(expect.objectContaining({ channel: "cadence", scalar: 90 }));
   });
 
+  it("syncs detail streams without activity id when upsert returns no row", async () => {
+    providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue(undefined);
+
+    const rawActivity = { activityId: 123, deviceName: "Forerunner 955" };
+    mocks.client.getActivities.mockResolvedValue([rawActivity]);
+
+    mocks.parseConnectActivity.mockReturnValue({
+      externalId: "123",
+      activityType: "running",
+      name: "Morning Run",
+      startedAt: new Date("2026-03-01T10:00:00Z"),
+      endedAt: new Date("2026-03-01T11:00:00Z"),
+      raw: rawActivity,
+    });
+
+    mocks.client.getActivityDetail.mockResolvedValue({});
+    mocks.parseActivityDetail.mockReturnValue({
+      samples: [
+        {
+          directTimestamp: 1709286000000,
+          directHeartRate: 150,
+          directPower: null,
+          directRunCadence: 85,
+          directBikeCadence: null,
+          directSpeed: null,
+          directElevation: null,
+          directLatitude: null,
+          directLongitude: null,
+          directAirTemperature: null,
+        },
+      ],
+    });
+
+    const result = await syncProvider(provider, db, new Date());
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(1);
+
+    const sensorRows = publishedMetricStreamBatches
+      .flat()
+      .filter((row) => row?.providerId === "garmin" && typeof row?.channel === "string");
+
+    expect(sensorRows.length).toBeGreaterThan(0);
+    expect(sensorRows.every((row) => row?.activityId === undefined)).toBe(true);
+  });
+
   it("reconciles provider absence using since when the activity page is partial", async () => {
     const since = new Date("2026-01-01T00:00:00Z");
     const rawActivity = { activityId: 123, deviceName: "Forerunner 955" };
