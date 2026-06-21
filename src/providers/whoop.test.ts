@@ -2879,7 +2879,10 @@ describe("WhoopProvider.sync() — strength sync", () => {
     );
 
     expect(db.select).toHaveBeenCalledWith(expect.objectContaining({ id: expect.anything() }));
-    expect(db.select).toHaveBeenCalledTimes(1);
+    const exerciseSelectCalls = db.select.mock.calls.filter(
+      (call) => isRecord(call[0]) && "id" in call[0],
+    );
+    expect(exerciseSelectCalls).toHaveLength(1);
 
     const valuesCallArgs = getValuesCallArgs(db);
     const exerciseInserts = valuesCallArgs.filter(

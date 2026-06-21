@@ -595,7 +595,7 @@ describe("StravaClient — error handling", () => {
   });
 
   it("parses an HTTP-date Retry-After header into seconds", async () => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2024-01-15T00:00:00Z"));
     const retryAt = new Date("2024-01-15T00:01:00Z").toUTCString();
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {

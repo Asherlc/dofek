@@ -261,7 +261,7 @@ export class RedisProviderRateLimitCooldownStore implements ProviderRateLimitCoo
 }
 
 export const providerRateLimitCooldownStore: ProviderRateLimitCooldownStore =
-  process.env.NODE_ENV === "test"
+  process.env.NODE_ENV === "test" || process.env.VITEST === "true"
     ? new InMemoryProviderRateLimitCooldownStore()
     : new RedisProviderRateLimitCooldownStore();
 

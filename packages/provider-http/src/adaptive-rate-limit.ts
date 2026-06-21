@@ -205,3 +205,84 @@ export function recordAdaptiveRateLimit(
     observedCooldownSeconds: observedCooldown,
   };
 }
+
+export const ADAPTIVE_RATE_STORAGE_KEY_PREFIX = "provider-adaptive-rate";
+
+export function adaptiveRateLimitStorageKey(
+  providerId: string,
+  scope: ProviderRateLimitScope,
+  userId: string | null,
+): string {
+  return scope === "provider"
+    ? `${ADAPTIVE_RATE_STORAGE_KEY_PREFIX}:${providerId}:provider`
+    : `${ADAPTIVE_RATE_STORAGE_KEY_PREFIX}:${providerId}:user:${userId ?? "unknown"}`;
+}
+
+export function serializeAdaptiveRateState(state: ProviderAdaptiveRateState): string {
+  return JSON.stringify(state);
+}
+
+export function parseAdaptiveRateState(raw: string | null): ProviderAdaptiveRateState | null {
+  if (!raw) return null;
+  const parsed: unknown = JSON.parse(raw);
+  if (typeof parsed !== "object" || parsed === null) return null;
+
+  const providerId = Reflect.get(parsed, "providerId");
+  const scope = Reflect.get(parsed, "scope");
+  const userId = Reflect.get(parsed, "userId");
+  const windowStartMs = Reflect.get(parsed, "windowStartMs");
+  const requestCount = Reflect.get(parsed, "requestCount");
+  const throttleMs = Reflect.get(parsed, "throttleMs");
+  const lastRequestMs = Reflect.get(parsed, "lastRequestMs");
+  const inferredBudget = Reflect.get(parsed, "inferredBudget");
+  const observedCooldownSeconds = Reflect.get(parsed, "observedCooldownSeconds");
+  const stravaShortLimit = Reflect.get(parsed, "stravaShortLimit");
+  const stravaShortUsage = Reflect.get(parsed, "stravaShortUsage");
+  const stravaDailyLimit = Reflect.get(parsed, "stravaDailyLimit");
+  const stravaDailyUsage = Reflect.get(parsed, "stravaDailyUsage");
+
+  if (typeof providerId !== "string") return null;
+  if (scope !== "provider" && scope !== "user") return null;
+  if (userId !== null && typeof userId !== "string") return null;
+  if (typeof windowStartMs !== "number" || !Number.isFinite(windowStartMs)) return null;
+  if (typeof requestCount !== "number" || !Number.isFinite(requestCount)) return null;
+  if (typeof throttleMs !== "number" || !Number.isFinite(throttleMs)) return null;
+  if (
+    lastRequestMs !== null &&
+    (typeof lastRequestMs !== "number" || !Number.isFinite(lastRequestMs))
+  ) {
+    return null;
+  }
+
+  return {
+    providerId,
+    scope,
+    userId,
+    windowStartMs,
+    requestCount,
+    throttleMs,
+    lastRequestMs,
+    inferredBudget:
+      typeof inferredBudget === "number" && Number.isFinite(inferredBudget) ? inferredBudget : null,
+    observedCooldownSeconds:
+      typeof observedCooldownSeconds === "number" && Number.isFinite(observedCooldownSeconds)
+        ? observedCooldownSeconds
+        : null,
+    stravaShortLimit:
+      typeof stravaShortLimit === "number" && Number.isFinite(stravaShortLimit)
+        ? stravaShortLimit
+        : null,
+    stravaShortUsage:
+      typeof stravaShortUsage === "number" && Number.isFinite(stravaShortUsage)
+        ? stravaShortUsage
+        : null,
+    stravaDailyLimit:
+      typeof stravaDailyLimit === "number" && Number.isFinite(stravaDailyLimit)
+        ? stravaDailyLimit
+        : null,
+    stravaDailyUsage:
+      typeof stravaDailyUsage === "number" && Number.isFinite(stravaDailyUsage)
+        ? stravaDailyUsage
+        : null,
+  };
+}

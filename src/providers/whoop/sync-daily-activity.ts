@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { dailyMetrics } from "../../db/schema.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
@@ -27,7 +27,7 @@ function* iterateUtcDates(start: Date, endMs: number): Generator<string> {
 export async function syncWhoopDailyActivity(
   context: WhoopSyncContext,
 ): Promise<WhoopDailyActivityResult> {
-  const { db, client, providerId, since, options } = context;
+  const { db, client, providerId, since, windowEnd, options } = context;
 
   try {
     const count = await withSyncLog(
@@ -35,10 +35,9 @@ export async function syncWhoopDailyActivity(
       providerId,
       "daily_activity",
       async () => {
-        const nowMs = Date.now();
         const stepsByDate = new Map<string, number>();
         const userId = options?.userId ?? getTokenUserId();
-        const existingDates =
+        const syncedStepDates =
           userId == null
             ? new Set<string>()
             : new Set(
@@ -47,13 +46,17 @@ export async function syncWhoopDailyActivity(
                     .select({ date: dailyMetrics.date })
                     .from(dailyMetrics)
                     .where(
-                      and(eq(dailyMetrics.userId, userId), eq(dailyMetrics.providerId, providerId)),
+                      and(
+                        eq(dailyMetrics.userId, userId),
+                        eq(dailyMetrics.providerId, providerId),
+                        isNotNull(dailyMetrics.steps),
+                      ),
                     )
                 ).map((row) => row.date),
               );
 
-        for (const date of iterateUtcDates(since, nowMs)) {
-          if (existingDates.has(date)) continue;
+        for (const date of iterateUtcDates(since, windowEnd.getTime())) {
+          if (syncedStepDates.has(date)) continue;
           const raw = await client.getStrainDeepDive(date);
           const steps = parseStrainDeepDiveSteps(raw);
           if (steps != null) {

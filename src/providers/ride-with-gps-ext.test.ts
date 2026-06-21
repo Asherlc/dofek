@@ -453,7 +453,7 @@ describe("RideWithGpsClient — Content-Type header", () => {
 });
 
 describe("RideWithGpsProvider — constructor stores fetchFn", () => {
-  it("uses the injected fetch function for API calls", () => {
+  it("uses the injected fetch function for API calls", async () => {
     const customFetch = vi.fn().mockResolvedValue(Response.json({}));
     const provider = new RideWithGpsProvider(customFetch);
     process.env.RWGPS_CLIENT_ID = "test-id";
@@ -461,7 +461,7 @@ describe("RideWithGpsProvider — constructor stores fetchFn", () => {
     const setup = provider.authSetup();
     const getUserIdentity = setup.getUserIdentity;
     expect(getUserIdentity).toBeDefined();
-    getUserIdentity?.("tok").catch((_error: unknown) => {});
+    await getUserIdentity?.("tok").catch((_error: unknown) => {});
     expect(customFetch).toHaveBeenCalled();
   });
 });

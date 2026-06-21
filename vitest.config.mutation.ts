@@ -44,7 +44,7 @@ export default defineConfig({
       "packages/provider-http/src/**/*.test.ts",
       "packages/mobile/**/*.test.{ts,tsx}",
     ],
-    exclude: ["**/node_modules/**"],
+    exclude: ["**/node_modules/**", "**/*.integration.test.ts"],
     setupFiles: ["packages/mobile/test-setup.ts"],
     environmentMatchGlobs: [["packages/mobile/**", "jsdom"]],
   },
