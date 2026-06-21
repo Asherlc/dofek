@@ -55,7 +55,9 @@ clusterable AS (
 ),
 
 pairs AS (
-  SELECT c1.id AS id1, c2.id AS id2
+  SELECT
+    c1.id AS id1,
+    c2.id AS id2
   FROM clusterable AS c1
   INNER JOIN clusterable AS c2
     ON
@@ -69,22 +71,37 @@ pairs AS (
 ),
 
 edges AS (
-  SELECT id1 AS a, id2 AS b FROM pairs
+  SELECT
+    id1 AS a,
+    id2 AS b
+  FROM pairs
   UNION ALL
-  SELECT id2 AS a, id1 AS b FROM pairs
+  SELECT
+    id2 AS a,
+    id1 AS b
+  FROM pairs
 ),
 
 clusters (activity_id, group_id, depth) AS (
-  SELECT id, id::text, 0 FROM clusterable
+  SELECT
+    id,
+    id::text,
+    0
+  FROM clusterable
   UNION
-  SELECT e.b, c.group_id, c.depth + 1
+  SELECT
+    e.b,
+    c.group_id,
+    c.depth + 1
   FROM edges AS e
-  INNER JOIN clusters AS c ON c.activity_id = e.a
+  INNER JOIN clusters AS c ON e.a = c.activity_id
   WHERE c.depth < 2
 ),
 
 final_groups AS (
-  SELECT activity_id, MIN(group_id) AS group_id
+  SELECT
+    activity_id,
+    MIN(group_id) AS group_id
   FROM clusters
   GROUP BY activity_id
 ),
@@ -192,7 +209,9 @@ merged AS (
   FROM best_per_group AS b
   LEFT JOIN absent_source_links ON b.group_id = absent_source_links.group_id
   WHERE NOT EXISTS (
-    SELECT 1 FROM tombstoned_groups AS tg WHERE tg.group_id = b.group_id
+    SELECT 1
+    FROM tombstoned_groups AS tg
+    WHERE tg.group_id = b.group_id
   )
 )
 
