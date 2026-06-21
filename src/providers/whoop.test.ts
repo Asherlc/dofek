@@ -2600,6 +2600,7 @@ describe("WhoopProvider.sync() — strength sync", () => {
       hasQueryChunks(update.raw),
     );
     expect(namedUpdate).toBeDefined();
+    expect(namedUpdate?.name).toBe("Morning Push Day");
     expect(namedUpdate?.startedAt).toEqual(namedWorkoutInsert?.startedAt);
     expect(namedUpdate?.endedAt).toEqual(namedWorkoutInsert?.endedAt);
     const namedUpdateRaw = JSON.stringify(namedUpdate?.raw);

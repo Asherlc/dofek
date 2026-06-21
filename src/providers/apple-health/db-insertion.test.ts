@@ -1448,7 +1448,7 @@ describe("upsertWorkoutBatch", () => {
   it("builds correct insert row fields", async () => {
     const start = new Date("2024-06-01T08:00:00Z");
     const end = new Date("2024-06-01T08:30:00Z");
-    const { db, capture } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
+    const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
 
     await upsertWorkoutBatch(db, "p1", [
       makeWorkout({ startDate: start, endDate: end, activityType: "cycling", sourceName: "Wahoo" }),
@@ -1536,7 +1536,7 @@ describe("upsertWorkoutBatch", () => {
   });
 
   it("populates raw JSONB with workout metrics", async () => {
-    const { db, capture } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
+    const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
 
     await upsertWorkoutBatch(db, "p1", [
       makeWorkout({

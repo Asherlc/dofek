@@ -13,9 +13,7 @@ const { publishedMetricStreamBatches } = vi.hoisted<{
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
   markProviderActivityAbsent: vi.fn().mockResolvedValue(undefined),
   finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
-  upsertProviderActivity: vi
-    .fn()
-    .mockResolvedValue({ id: "10000000-0000-4000-8000-000000000001" }),
+  upsertProviderActivity: vi.fn().mockResolvedValue({ id: "10000000-0000-4000-8000-000000000001" }),
 }));
 
 const MOCK_ACTIVITY_ID = "10000000-0000-4000-8000-000000000001";
@@ -273,7 +271,6 @@ function getRequestHeaders(value: unknown): HeadersInit | undefined {
   if (isStringRecord(headers)) return headers;
   return undefined;
 }
-
 
 function hasQueryChunks(query: unknown): query is { queryChunks: unknown[] } {
   return (

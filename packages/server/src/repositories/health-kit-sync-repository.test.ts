@@ -11,15 +11,15 @@ import {
   type SleepSample,
 } from "./health-kit-sync-repository.ts";
 
+type ProviderActivityListSyncScope = {
+  windowStart: Date;
+  windowEnd: Date;
+};
+
 const providerActivitySyncMocks = vi.hoisted(() => ({
   reconcile: vi.fn().mockResolvedValue(undefined),
   upsert: vi.fn().mockResolvedValue({ id: "activity-id" }),
-  lastScope: undefined as
-    | {
-        windowStart: Date;
-        windowEnd: Date;
-      }
-    | undefined,
+  lastScope: undefined satisfies ProviderActivityListSyncScope | undefined,
 }));
 
 vi.mock("../../../../src/db/provider-activity-sync.ts", () => ({
