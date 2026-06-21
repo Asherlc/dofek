@@ -9,7 +9,7 @@
  * - Fetch function injection for testability
  */
 
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import type { z } from "zod";
 
 /**
@@ -40,7 +40,7 @@ export class ProviderHttpClient {
   ) {
     this.accessToken = accessToken;
     this.apiBase = apiBase;
-    this.fetchFn = createRateLimitAwareFetch(fetchFn, { providerId });
+    this.fetchFn = createProviderRateLimitFetch(providerId, fetchFn);
   }
 
   /**

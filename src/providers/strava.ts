@@ -1,8 +1,5 @@
-import {
-  createRateLimitAwareFetch,
-  ProviderRateLimitError,
-  parseRetryAfterHeader,
-} from "@dofek/provider-http/rate-limit";
+import { ProviderRateLimitError, parseRetryAfterHeader } from "@dofek/provider-http/rate-limit";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { isIndoorCycling } from "@dofek/training/endurance-types";
 import {
   type CanonicalActivityType,
@@ -268,9 +265,7 @@ export class StravaClient {
     throttleMs = STRAVA_THROTTLE_MS,
   ) {
     this.#accessToken = accessToken;
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, {
-      providerId: "strava",
-      createRateLimitError: createStravaRateLimitError,
+    this.#fetchFn = createProviderRateLimitFetch("strava", fetchFn, { createRateLimitError: createStravaRateLimitError,
     });
     this.#throttleMs = throttleMs;
   }
@@ -286,7 +281,6 @@ export class StravaClient {
   }
 
   async #get<T>(path: string, params?: Record<string, string>): Promise<T> {
-    await this.#throttle();
     const url = new URL(path, STRAVA_API_BASE);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
@@ -444,9 +438,7 @@ export class StravaProvider implements WebhookProvider {
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
     throttleMs = STRAVA_THROTTLE_MS,
   ) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, {
-      providerId: "strava",
-      createRateLimitError: createStravaRateLimitError,
+    this.#fetchFn = createProviderRateLimitFetch("strava", fetchFn, { createRateLimitError: createStravaRateLimitError,
     });
     this.#throttleMs = throttleMs;
   }

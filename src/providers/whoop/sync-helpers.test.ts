@@ -37,6 +37,10 @@ vi.mock("../../db/metric-stream-writer.ts", () => ({
   writeMetricStreamBatch: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("../../db/token-user-context.ts", () => ({
+  getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
+}));
+
 function makeDb(selectedRows: unknown[] = []) {
   const chain = {
     values: vi.fn(),
@@ -51,6 +55,14 @@ function makeDb(selectedRows: unknown[] = []) {
   chain.from.mockReturnValue(chain);
   chain.where.mockReturnValue(chain);
   chain.limit.mockResolvedValue(selectedRows);
+  Object.assign(chain, {
+    then(
+      onFulfilled: (value: unknown) => unknown,
+      onRejected?: (reason: unknown) => unknown,
+    ) {
+      return Promise.resolve(selectedRows).then(onFulfilled, onRejected);
+    },
+  });
 
   const db: SyncDatabase = {
     insert: vi.fn().mockReturnValue(chain),

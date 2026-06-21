@@ -1,4 +1,4 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import type { CanonicalActivityType } from "@dofek/training/training";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
@@ -228,7 +228,7 @@ export class CorosProvider implements WebhookProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "coros" });
+    this.#fetchFn = createProviderRateLimitFetch("coros", fetchFn);
   }
 
   validate(): string | null {

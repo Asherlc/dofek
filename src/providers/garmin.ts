@@ -1,7 +1,7 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { isIndoorCycling } from "@dofek/training/endurance-types";
 import { captureException } from "@sentry/node";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { GarminApiError, GarminConnectClient, GarminRateLimitError } from "garmin-connect/client";
 import {
   parseActivityDetail,
@@ -297,9 +297,7 @@ export class GarminProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, {
-      providerId: "garmin",
-      createRateLimitError: (response, responseBody) =>
+    this.#fetchFn = createProviderRateLimitFetch("garmin", fetchFn, { createRateLimitError: (response, responseBody) =>
         new GarminRateLimitError(
           `Rate limit exceeded (${response.status}): ${responseBody}`,
           responseBody,
@@ -621,6 +619,25 @@ export class GarminProvider implements SyncProvider {
     const detailErrors = new SyncErrorTracker("activity_detail");
     const presentActivityExternalIds = new Set<string>();
 
+    const pageExternalIds = activities.map((raw) => String(raw.activityId));
+    const existingActivityIds =
+      pageExternalIds.length === 0
+        ? new Set<string>()
+        : new Set(
+            (
+              await db
+                .select({ externalId: activity.externalId })
+                .from(activity)
+                .where(
+                  and(
+                    eq(activity.userId, userId),
+                    eq(activity.providerId, this.id),
+                    inArray(activity.externalId, pageExternalIds),
+                  ),
+                )
+            ).map((row) => row.externalId),
+          );
+
     for (const raw of activities) {
       const parsed = parseConnectActivity(raw);
       presentActivityExternalIds.add(parsed.externalId);
@@ -651,6 +668,16 @@ export class GarminProvider implements SyncProvider {
             providerAbsentAt: null,
           },
         });
+
+      const needsDetail =
+        parsed.startedAt >= since &&
+        parsed.startedAt <= until &&
+        !existingActivityIds.has(parsed.externalId);
+
+      if (!needsDetail) {
+        count++;
+        continue;
+      }
 
       // Sync activity detail streams
       try {

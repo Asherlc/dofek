@@ -1,4 +1,4 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -310,7 +310,7 @@ export class BodySpecProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "bodyspec" });
+    this.#fetchFn = createProviderRateLimitFetch("bodyspec", fetchFn);
   }
 
   validate(): string | null {

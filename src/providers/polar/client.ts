@@ -1,4 +1,4 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
+import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import { POLAR_API_BASE } from "./oauth.ts";
 import type {
   PolarDailyActivity,
@@ -35,7 +35,7 @@ export class PolarClient {
 
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
     this.#accessToken = accessToken;
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "polar" });
+    this.#fetchFn = createProviderRateLimitFetch("polar", fetchFn);
   }
 
   async #get<TResponse>(

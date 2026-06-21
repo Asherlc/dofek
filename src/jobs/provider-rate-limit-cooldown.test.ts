@@ -64,6 +64,7 @@ describe("ProviderRateLimitCooldownStore", () => {
       scope: "provider",
       userId: null,
       expiresAt: new Date("2026-06-02T12:10:00Z"),
+      consecutiveHits: 1,
     });
     await expect(store.getActive("garmin", "user-2")).resolves.toEqual(cooldown);
     vi.useRealTimers();
@@ -88,6 +89,7 @@ describe("ProviderRateLimitCooldownStore", () => {
       scope: "user",
       userId: "user-1",
       expiresAt: new Date("2026-06-02T12:02:00Z"),
+      consecutiveHits: 1,
     });
     await expect(store.getActive("fitbit", "user-1")).resolves.toEqual(cooldown);
     await expect(store.getActive("fitbit", "user-2")).resolves.toBeNull();
@@ -113,7 +115,22 @@ describe("ProviderRateLimitCooldownStore", () => {
       "user-1",
     );
 
-    expect(cooldown.expiresAt).toEqual(new Date("2026-06-02T12:30:00Z"));
+    expect(cooldown.expiresAt).toEqual(new Date("2026-06-02T13:00:00Z"));
+    vi.useRealTimers();
+  });
+
+  it("escalates Garmin cooldown duration on consecutive rate-limit hits", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const store = new InMemoryProviderRateLimitCooldownStore();
+
+    const first = await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
+    expect(first.consecutiveHits).toBe(1);
+    expect(first.expiresAt).toEqual(new Date("2026-06-02T13:00:00Z"));
+
+    vi.setSystemTime(new Date("2026-06-02T13:00:00Z"));
+    const second = await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
+    expect(second.consecutiveHits).toBe(2);
+    expect(second.expiresAt).toEqual(new Date("2026-06-02T15:00:00Z"));
     vi.useRealTimers();
   });
 
@@ -161,9 +178,15 @@ describe("ProviderRateLimitCooldownStore", () => {
       "user-1",
     );
 
-    expect(result).toEqual(longer);
+    expect(result).toEqual({
+      ...longer,
+      consecutiveHits: 2,
+    });
     expect(result.expiresAt).toEqual(new Date("2026-06-02T12:10:00Z"));
-    await expect(store.getActive("garmin", "user-1")).resolves.toEqual(longer);
+    await expect(store.getActive("garmin", "user-1")).resolves.toEqual({
+      ...longer,
+      consecutiveHits: 2,
+    });
     vi.useRealTimers();
   });
 
@@ -178,6 +201,7 @@ describe("ProviderRateLimitCooldownStore", () => {
     );
 
     expect(longer.expiresAt).toEqual(new Date("2026-06-02T12:10:00Z"));
+    expect(longer.consecutiveHits).toBe(2);
     await expect(store.getActive("garmin", "user-1")).resolves.toEqual(longer);
     vi.useRealTimers();
   });
@@ -195,7 +219,10 @@ describe("ProviderRateLimitCooldownStore", () => {
       "user-1",
     );
 
-    expect(result).toEqual(longer);
+    expect(result).toEqual({
+      ...longer,
+      consecutiveHits: 2,
+    });
     // The second set still writes the longer expiry with a TTL reflecting it.
     expect(setCalls[1]).toEqual({
       key: "provider-rate-limit:garmin:provider",
@@ -204,11 +231,15 @@ describe("ProviderRateLimitCooldownStore", () => {
         scope: "provider",
         userId: null,
         expiresAt: "2026-06-02T12:10:00.000Z",
+        consecutiveHits: 2,
       }),
       mode: "PX",
       millisecondsToExpire: 600_000,
     });
-    await expect(store.getActive("garmin", "user-1")).resolves.toEqual(longer);
+    await expect(store.getActive("garmin", "user-1")).resolves.toEqual({
+      ...longer,
+      consecutiveHits: 2,
+    });
     vi.useRealTimers();
   });
 
@@ -265,6 +296,7 @@ describe("ProviderRateLimitCooldownStore", () => {
           scope: "provider",
           userId: null,
           expiresAt: "2026-06-02T12:10:00.000Z",
+          consecutiveHits: 1,
         }),
         mode: "PX",
         millisecondsToExpire: 600_000,
@@ -295,6 +327,7 @@ describe("ProviderRateLimitCooldownStore", () => {
         scope: "user",
         userId: "user-1",
         expiresAt: "2026-06-02T12:02:00.000Z",
+        consecutiveHits: 1,
       }),
       mode: "PX",
       millisecondsToExpire: 120_000,

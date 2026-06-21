@@ -1,4 +1,4 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -182,7 +182,7 @@ async function withingsTokenExchange(
   params: Record<string, string>,
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<TokenSet> {
-  const rateLimitFetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "withings" });
+  const rateLimitFetchFn = createProviderRateLimitFetch("withings", fetchFn);
   const bodyParams: Record<string, string> = {
     action: "requesttoken",
     client_id: config.clientId,
@@ -263,7 +263,7 @@ export class WithingsClient {
 
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
     this.#accessToken = accessToken;
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "withings" });
+    this.#fetchFn = createProviderRateLimitFetch("withings", fetchFn);
   }
 
   async #post<T>(path: string, params: Record<string, string>): Promise<T> {
@@ -330,7 +330,7 @@ export class WithingsProvider implements WebhookProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "withings" });
+    this.#fetchFn = createProviderRateLimitFetch("withings", fetchFn);
   }
 
   validate(): string | null {

@@ -105,4 +105,22 @@ describe("enqueueSyncJob", () => {
     await enqueueSyncJob("garmin", { userId: "user-1", providerId: "garmin", sinceDays: 1 });
     expect(mockGetActive).toHaveBeenCalledWith("garmin", "user-1");
   });
+
+  it("skips enqueue when skipWhenRateLimited is set and a cooldown is active", async () => {
+    mockGetActive.mockResolvedValue({
+      providerId: "garmin",
+      scope: "provider",
+      userId: null,
+      expiresAt: new Date("2026-06-02T12:10:00Z"),
+    });
+
+    const result = await enqueueSyncJob(
+      "garmin",
+      { userId: "user-1", providerId: "garmin", sinceDays: 1 },
+      { skipWhenRateLimited: true },
+    );
+
+    expect(result).toBeNull();
+    expect(mockProviderQueueAdd).not.toHaveBeenCalled();
+  });
 });

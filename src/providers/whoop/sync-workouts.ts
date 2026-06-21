@@ -1,5 +1,4 @@
 import { and, eq, sql } from "drizzle-orm";
-import { WhoopRateLimitError } from "whoop-whoop/client";
 import type { WhoopWorkoutRecord } from "whoop-whoop/types";
 import { parseDuringRange } from "whoop-whoop/utils";
 import { reconcileProviderActivityAbsence } from "../../db/provider-activity-absence.ts";
@@ -12,6 +11,7 @@ import {
   parseWorkout,
   resolveWhoopWorkoutExternalId,
 } from "./parsing.ts";
+import { isWhoopRateLimitError } from "./rate-limit.ts";
 import type { WhoopSyncContext } from "./sync-types.ts";
 
 export type WhoopWorkoutSyncResult = {
@@ -299,9 +299,9 @@ export async function syncWhoopStrength(
     );
     return { count, rateLimited: false };
   } catch (err) {
-    if (err instanceof WhoopRateLimitError) {
+    if (isWhoopRateLimitError(err)) {
       context.errors.push({
-        message: `strength: ${err.message}`,
+        message: `strength: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,
       });
       return { count: 0, rateLimited: true };

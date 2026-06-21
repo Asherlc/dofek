@@ -1,4 +1,5 @@
-import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { dailyMetrics, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
@@ -114,7 +115,7 @@ export class UltrahumanClient {
   constructor(token: string, email: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
     this.#token = token;
     this.#email = email;
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "ultrahuman" });
+    this.#fetchFn = createProviderRateLimitFetch("ultrahuman", fetchFn);
   }
 
   async getDailyMetrics(date: string): Promise<UltrahumanDailyMetricsResponse> {
@@ -153,7 +154,7 @@ export class UltrahumanProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "ultrahuman" });
+    this.#fetchFn = createProviderRateLimitFetch("ultrahuman", fetchFn);
   }
 
   validate(): string | null {

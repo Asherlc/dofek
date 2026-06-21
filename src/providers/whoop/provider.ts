@@ -1,4 +1,4 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
+import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import { WhoopClient } from "whoop-whoop/client";
 import type { WhoopCycle } from "whoop-whoop/types";
 import { z } from "zod";
@@ -22,6 +22,7 @@ import { syncWhoopSleepSessions, syncWhoopSleepStages } from "./sync-sleep.ts";
 import { syncWhoopHeartRateStream } from "./sync-streams.ts";
 import type { WhoopSyncContext } from "./sync-types.ts";
 import { syncWhoopStrength, syncWhoopWorkouts } from "./sync-workouts.ts";
+import { findWhoopRateLimitError, isWhoopRateLimitError } from "./rate-limit.ts";
 
 // ============================================================
 // Provider implementation
@@ -34,7 +35,7 @@ export class WhoopProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "whoop" });
+    this.#fetchFn = createProviderRateLimitFetch("whoop", fetchFn);
   }
 
   validate(): string | null {
@@ -169,6 +170,9 @@ export class WhoopProvider implements SyncProvider {
       }
       logger.info(`[whoop] Fetched ${cycles.length} total cycles`);
     } catch (err) {
+      if (isWhoopRateLimitError(err)) {
+        throw err;
+      }
       errors.push({
         message: `getCycles: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,
@@ -209,6 +213,11 @@ export class WhoopProvider implements SyncProvider {
 
     if (!rateLimited) {
       recordsSynced += await syncWhoopJournal(context);
+    }
+
+    const rateLimitError = findWhoopRateLimitError(errors);
+    if (rateLimitError) {
+      throw rateLimitError;
     }
 
     return {

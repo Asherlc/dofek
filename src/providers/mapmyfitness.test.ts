@@ -1,4 +1,5 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
@@ -141,7 +142,7 @@ describe("MapMyFitnessClient", () => {
 
   it("throws a ProviderRateLimitError with providerId on 429", async () => {
     // Kills the constructor ObjectLiteral mutant on
-    // createRateLimitAwareFetch(fetchFn, { providerId: "mapmyfitness" }) → {}.
+    // createProviderRateLimitFetch("mapmyfitness", fetchFn) → {}.
     const mockFetch = vi.fn().mockResolvedValue(new Response("slow down", { status: 429 }));
 
     const client = new MapMyFitnessClient("token", "client-id", mockFetch);

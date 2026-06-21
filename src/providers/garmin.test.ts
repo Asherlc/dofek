@@ -199,6 +199,14 @@ function createMockDb(): MockDb {
   db.values.mockReturnValue(db);
   db.onConflictDoUpdate.mockReturnValue(db);
   db.delete.mockReturnValue(db);
+  Object.assign(db, {
+    then(
+      onFulfilled: (value: unknown) => unknown,
+      onRejected?: (reason: unknown) => unknown,
+    ) {
+      return Promise.resolve([]).then(onFulfilled, onRejected);
+    },
+  });
   return db;
 }
 
@@ -651,7 +659,7 @@ describe("GarminProvider.sync()", () => {
       ],
     });
 
-    const result = await syncProvider(provider, db, new Date());
+    const result = await syncProvider(provider, db, new Date("2026-02-01T00:00:00Z"));
 
     expect(mocks.parseConnectActivity).toHaveBeenCalledWith(rawActivity);
     expect(mocks.client.getActivityDetail).toHaveBeenCalledWith(123);
@@ -688,6 +696,33 @@ describe("GarminProvider.sync()", () => {
       expect.objectContaining({ channel: "temperature", scalar: 18 }),
     );
     expect(sensorRows).toContainEqual(expect.objectContaining({ channel: "cadence", scalar: 90 }));
+  });
+
+  it("skips activity detail fetch for activities already stored in the database", async () => {
+    const rawActivity = { activityId: 123, deviceName: "Forerunner 955" };
+    mocks.client.getActivities.mockResolvedValue([rawActivity]);
+    mocks.parseConnectActivity.mockReturnValue({
+      externalId: "123",
+      activityType: "running",
+      name: "Morning Run",
+      startedAt: new Date("2026-03-01T10:00:00Z"),
+      endedAt: new Date("2026-03-01T11:00:00Z"),
+      raw: rawActivity,
+    });
+
+    Object.assign(db, {
+      then(
+        onFulfilled: (value: unknown) => unknown,
+        onRejected?: (reason: unknown) => unknown,
+      ) {
+        return Promise.resolve([{ externalId: "123" }]).then(onFulfilled, onRejected);
+      },
+    });
+
+    const result = await syncProvider(provider, db, new Date("2026-02-01T00:00:00Z"));
+
+    expect(mocks.client.getActivityDetail).not.toHaveBeenCalled();
+    expect(result.recordsSynced).toBe(1);
   });
 
   it("reconciles provider absence using since when the activity page is partial", async () => {

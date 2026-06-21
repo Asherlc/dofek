@@ -1,5 +1,6 @@
 import type { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { RedisConnection } from "bullmq";
+import { providerAdaptiveRateLimitStore } from "../lib/provider-adaptive-rate-limit.ts";
 import { getRedisConnection } from "./queues.ts";
 
 export type ProviderRateLimitCooldownScope = "provider" | "user";
@@ -9,6 +10,8 @@ export interface ProviderRateLimitCooldown {
   scope: ProviderRateLimitCooldownScope;
   userId: string | null;
   expiresAt: Date;
+  /** Number of consecutive rate-limit hits; used to escalate cooldown duration. */
+  consecutiveHits?: number;
 }
 
 export interface ProviderRateLimitCooldownStore {
@@ -25,20 +28,47 @@ const PROVIDER_FALLBACK_COOLDOWN_SECONDS = new Map<string, number>([
   ["strava", 15 * 60],
   ["withings", 60],
   ["fitbit", 60 * 60],
-  ["garmin", 30 * 60],
+  ["garmin", 60 * 60],
+  ["whoop", 60 * 60],
+]);
+
+const PROVIDER_MAX_COOLDOWN_SECONDS = new Map<string, number>([
+  ["garmin", 4 * 60 * 60],
+  ["whoop", 4 * 60 * 60],
 ]);
 
 const DEFAULT_FALLBACK_COOLDOWN_SECONDS = 30 * 60;
+const DEFAULT_MAX_COOLDOWN_SECONDS = 2 * 60 * 60;
+const STRIKE_RESET_AFTER_MS = 2 * 60 * 60 * 1000;
 const KEY_PREFIX = "provider-rate-limit";
 
 function fallbackCooldownSeconds(providerId: string): number {
   return PROVIDER_FALLBACK_COOLDOWN_SECONDS.get(providerId) ?? DEFAULT_FALLBACK_COOLDOWN_SECONDS;
 }
 
-function cooldownDurationSeconds(error: ProviderRateLimitError): number {
-  return error.retryAfterSeconds && error.retryAfterSeconds > 0
-    ? error.retryAfterSeconds
-    : fallbackCooldownSeconds(error.providerId);
+function maxCooldownSeconds(providerId: string): number {
+  return PROVIDER_MAX_COOLDOWN_SECONDS.get(providerId) ?? DEFAULT_MAX_COOLDOWN_SECONDS;
+}
+
+function consecutiveHitsForRecord(
+  previous: ProviderRateLimitCooldown | null,
+  now = new Date(),
+): number {
+  if (!previous) return 1;
+  const msSinceExpiry = now.getTime() - previous.expiresAt.getTime();
+  if (msSinceExpiry > STRIKE_RESET_AFTER_MS) return 1;
+  return (previous.consecutiveHits ?? 1) + 1;
+}
+
+function escalatedCooldownSeconds(
+  providerId: string,
+  baseSeconds: number,
+  consecutiveHits: number,
+): number {
+  if (consecutiveHits <= 1) return baseSeconds;
+  const maxSeconds = maxCooldownSeconds(providerId);
+  const escalated = baseSeconds * 2 ** (consecutiveHits - 1);
+  return Math.min(escalated, maxSeconds);
 }
 
 function cooldownKey(
@@ -57,6 +87,7 @@ function serializeCooldown(cooldown: ProviderRateLimitCooldown): string {
     scope: cooldown.scope,
     userId: cooldown.userId,
     expiresAt: cooldown.expiresAt.toISOString(),
+    consecutiveHits: cooldown.consecutiveHits,
   });
 }
 
@@ -68,6 +99,7 @@ function parseCooldown(raw: string | null): ProviderRateLimitCooldown | null {
   const scope = Reflect.get(parsed, "scope");
   const userId = Reflect.get(parsed, "userId");
   const expiresAtValue = Reflect.get(parsed, "expiresAt");
+  const consecutiveHits = Reflect.get(parsed, "consecutiveHits");
   if (typeof providerId !== "string") return null;
   if (scope !== "provider" && scope !== "user") return null;
   if (userId !== null && typeof userId !== "string") return null;
@@ -79,6 +111,10 @@ function parseCooldown(raw: string | null): ProviderRateLimitCooldown | null {
     scope,
     userId,
     expiresAt,
+    consecutiveHits:
+      typeof consecutiveHits === "number" && Number.isFinite(consecutiveHits)
+        ? consecutiveHits
+        : undefined,
   };
 }
 
@@ -102,11 +138,41 @@ function activeOrNull(
 function cooldownFromError(
   error: ProviderRateLimitError,
   fallbackUserId: string,
+  previous: ProviderRateLimitCooldown | null,
+  baseFallbackSeconds: number,
 ): ProviderRateLimitCooldown {
   const scope = error.scope;
   const userId = scope === "user" ? (error.userId ?? fallbackUserId) : null;
-  const expiresAt = new Date(Date.now() + cooldownDurationSeconds(error) * 1000);
-  return { providerId: error.providerId, scope, userId, expiresAt };
+  const consecutiveHits = consecutiveHitsForRecord(previous);
+  const durationSeconds =
+    error.retryAfterSeconds && error.retryAfterSeconds > 0
+      ? error.retryAfterSeconds
+      : escalatedCooldownSeconds(error.providerId, baseFallbackSeconds, consecutiveHits);
+  const expiresAt = new Date(Date.now() + durationSeconds * 1000);
+  return {
+    providerId: error.providerId,
+    scope,
+    userId,
+    expiresAt,
+    consecutiveHits,
+  };
+}
+
+function effectiveCooldown(
+  error: ProviderRateLimitError,
+  fallbackUserId: string,
+  previous: ProviderRateLimitCooldown | null,
+  baseFallbackSeconds: number,
+): ProviderRateLimitCooldown {
+  const next = cooldownFromError(error, fallbackUserId, previous, baseFallbackSeconds);
+  const activePrevious = activeOrNull(previous);
+  if (activePrevious && activePrevious.expiresAt > next.expiresAt) {
+    return {
+      ...activePrevious,
+      consecutiveHits: next.consecutiveHits,
+    };
+  }
+  return next;
 }
 
 export class InMemoryProviderRateLimitCooldownStore implements ProviderRateLimitCooldownStore {
@@ -116,10 +182,12 @@ export class InMemoryProviderRateLimitCooldownStore implements ProviderRateLimit
     error: ProviderRateLimitError,
     fallbackUserId: string,
   ): Promise<ProviderRateLimitCooldown> {
-    const cooldown = cooldownFromError(error, fallbackUserId);
+    const learned = await providerAdaptiveRateLimitStore.getLearnedCooldownSeconds(error.providerId);
+    const baseFallback = learned ?? fallbackCooldownSeconds(error.providerId);
+    const cooldown = cooldownFromError(error, fallbackUserId, null, baseFallback);
     const key = cooldownKey(cooldown.providerId, cooldown.scope, cooldown.userId);
-    const existing = activeOrNull(this.#cooldownRecords.get(key) ?? null);
-    const effective = laterCooldown(existing, cooldown) ?? cooldown;
+    const existing = this.#cooldownRecords.get(key) ?? null;
+    const effective = effectiveCooldown(error, fallbackUserId, existing, baseFallback);
     this.#cooldownRecords.set(key, effective);
     return effective;
   }
@@ -164,11 +232,13 @@ export class RedisProviderRateLimitCooldownStore implements ProviderRateLimitCoo
     error: ProviderRateLimitError,
     fallbackUserId: string,
   ): Promise<ProviderRateLimitCooldown> {
-    const cooldown = cooldownFromError(error, fallbackUserId);
+    const learned = await providerAdaptiveRateLimitStore.getLearnedCooldownSeconds(error.providerId);
+    const baseFallback = learned ?? fallbackCooldownSeconds(error.providerId);
+    const cooldown = cooldownFromError(error, fallbackUserId, null, baseFallback);
     const key = cooldownKey(cooldown.providerId, cooldown.scope, cooldown.userId);
     const redisClient = await this.#getRedisClient();
-    const existing = activeOrNull(parseCooldown(await redisClient.get(key)));
-    const effective = laterCooldown(existing, cooldown) ?? cooldown;
+    const previous = parseCooldown(await redisClient.get(key));
+    const effective = effectiveCooldown(error, fallbackUserId, previous, baseFallback);
     const millisecondsToExpire = providerRateLimitDelayMs(effective);
     await redisClient.set(key, serializeCooldown(effective), "PX", millisecondsToExpire);
     return effective;

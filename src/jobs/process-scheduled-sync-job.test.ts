@@ -9,7 +9,7 @@ function getMockQueue(providerId: string) {
   const existing = providerQueues.get(providerId);
   if (existing) return existing;
 
-  const queue = { add: vi.fn((..._args: unknown[]) => Promise.resolve()) };
+  const queue = { add: vi.fn((..._args: unknown[]) => Promise.resolve({ id: "job-1" })) };
   providerQueues.set(providerId, queue);
   return queue;
 }
@@ -58,6 +58,7 @@ describe("processScheduledSyncJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     providerQueues.clear();
+    mockGetActiveCooldown.mockReset();
     mockGetActiveCooldown.mockResolvedValue(null);
   });
 
@@ -157,7 +158,7 @@ describe("processScheduledSyncJob", () => {
     );
   });
 
-  it("enqueues delayed sync jobs when a provider cooldown is active", async () => {
+  it("skips enqueue when a provider cooldown is active", async () => {
     const cooldown = {
       providerId: "garmin",
       scope: "provider" as const,
@@ -172,18 +173,12 @@ describe("processScheduledSyncJob", () => {
     await Reflect.apply(processScheduledSyncJob, undefined, [{}, db]);
 
     const garminQueue = getMockQueue("garmin");
-    expect(garminQueue.add).toHaveBeenCalledWith(
-      "sync",
-      {
-        userId: "user-1",
-        providerId: "garmin",
-        sinceDays: 1,
-      },
-      expect.objectContaining({
-        attempts: 288,
-        delay: 600_000,
-        jobId: "rate-limit-delayed-job",
-      }),
+    expect(garminQueue.add).not.toHaveBeenCalled();
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "[scheduled-sync] Skipping garmin for user-1: rate-limit cooldown active",
+    );
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "[scheduled-sync] Enqueued 0 sync jobs for 1 users (1 skipped due to rate-limit cooldown)",
     );
   });
 });

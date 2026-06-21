@@ -1,4 +1,4 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
+import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import type { OAuthConfig, TokenSet } from "../../auth/oauth.ts";
 import {
   exchangeCodeForTokens,
@@ -51,7 +51,7 @@ export class WahooProvider implements WebhookProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "wahoo" });
+    this.#fetchFn = createProviderRateLimitFetch("wahoo", fetchFn);
   }
 
   validate(): string | null {

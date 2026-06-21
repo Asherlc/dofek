@@ -1,4 +1,4 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import type { CanonicalActivityType } from "@dofek/training/training";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -143,7 +143,7 @@ export class MapMyFitnessClient {
   ) {
     this.#accessToken = accessToken;
     this.#clientId = clientId;
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "mapmyfitness" });
+    this.#fetchFn = createProviderRateLimitFetch("mapmyfitness", fetchFn);
   }
 
   async #get<T>(path: string): Promise<T> {
@@ -200,7 +200,7 @@ export class MapMyFitnessProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "mapmyfitness" });
+    this.#fetchFn = createProviderRateLimitFetch("mapmyfitness", fetchFn);
   }
 
   validate(): string | null {

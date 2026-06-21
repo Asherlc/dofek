@@ -1,4 +1,4 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import type { CanonicalActivityType } from "@dofek/training/training";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
@@ -212,7 +212,7 @@ export class PelotonClient {
 
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
     this.#accessToken = accessToken;
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "peloton" });
+    this.#fetchFn = createProviderRateLimitFetch("peloton", fetchFn);
   }
 
   async #get<T>(path: string, params?: Record<string, string>): Promise<T> {
@@ -387,7 +387,7 @@ export async function pelotonAutomatedLogin(
   password: string,
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<TokenSet> {
-  const rateLimitFetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "peloton" });
+  const rateLimitFetchFn = createProviderRateLimitFetch("peloton", fetchFn);
   const config = pelotonOAuthConfig();
   const codeVerifier = generateCodeVerifier();
   const codeChallenge = generateCodeChallenge(codeVerifier);
@@ -531,7 +531,7 @@ export class PelotonProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "peloton" });
+    this.#fetchFn = createProviderRateLimitFetch("peloton", fetchFn);
   }
 
   validate(): string | null {

@@ -1,4 +1,5 @@
-import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import type { CanonicalActivityType } from "@dofek/training/training";
 import { captureException } from "@sentry/node";
 import { signInToZepp, ZeppInvalidCredentialsError } from "zepp-client/client";
@@ -350,7 +351,7 @@ export class AmazfitZeppClient {
   ) {
     this.#appToken = appToken;
     this.#userId = userId;
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "amazfit-zepp" });
+    this.#fetchFn = createProviderRateLimitFetch("amazfit-zepp", fetchFn);
     this.#apiBaseUrl = apiBaseUrl;
   }
 
@@ -439,7 +440,7 @@ export class AmazfitZeppProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "amazfit-zepp" });
+    this.#fetchFn = createProviderRateLimitFetch("amazfit-zepp", fetchFn);
   }
 
   validate(): string | null {

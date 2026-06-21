@@ -7,6 +7,11 @@ import {
 } from "./provider-rate-limit-cooldown.ts";
 import { getProviderSyncQueue, SYNC_JOB_RETRY_OPTIONS, type SyncJobData } from "./queues.ts";
 
+export type EnqueueSyncJobOptions = {
+  /** When active, skip enqueue instead of scheduling a duplicate delayed job. */
+  skipWhenRateLimited?: boolean;
+};
+
 export async function syncJobOptionsWithRateLimitCooldown(
   providerId: string,
   userId: string,
@@ -23,9 +28,14 @@ export async function syncJobOptionsWithRateLimitCooldown(
 export async function enqueueSyncJob(
   providerId: string,
   jobData: SyncJobData,
-): Promise<Job<SyncJobData>> {
-  const options = await syncJobOptionsWithRateLimitCooldown(providerId, jobData.userId);
-  return getProviderSyncQueue(providerId).add("sync", jobData, options);
+  options?: EnqueueSyncJobOptions,
+): Promise<Job<SyncJobData> | null> {
+  const cooldown = await providerRateLimitCooldownStore.getActive(providerId, jobData.userId);
+  if (cooldown && options?.skipWhenRateLimited) {
+    return null;
+  }
+  const jobOptions = await syncJobOptionsWithRateLimitCooldown(providerId, jobData.userId);
+  return getProviderSyncQueue(providerId).add("sync", jobData, jobOptions);
 }
 
 export async function scheduleDelayedSyncJob(
