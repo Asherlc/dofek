@@ -52,7 +52,9 @@ async function awaitAdmissionWithStore(
   const nowMs = Date.now();
   const state = slideAdaptiveWindow(await loadOrCreate(providerId, scope, userId), nowMs);
   await sleep(admissionDelayMs(state, nowMs));
-  await save(recordAdaptiveRequest(state, nowMs));
+  const admittedAtMs = Date.now();
+  const admittedState = slideAdaptiveWindow(state, admittedAtMs);
+  await save(recordAdaptiveRequest(admittedState, admittedAtMs));
 }
 
 async function recordSuccessWithStore(

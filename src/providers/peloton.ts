@@ -212,7 +212,7 @@ export class PelotonClient {
 
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
     this.#accessToken = accessToken;
-    this.#fetchFn = createProviderRateLimitFetch("peloton", fetchFn);
+    this.#fetchFn = fetchFn;
   }
 
   async #get<T>(path: string, params?: Record<string, string>): Promise<T> {
@@ -387,7 +387,6 @@ export async function pelotonAutomatedLogin(
   password: string,
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<TokenSet> {
-  const rateLimitFetchFn = createProviderRateLimitFetch("peloton", fetchFn);
   const config = pelotonOAuthConfig();
   const codeVerifier = generateCodeVerifier();
   const codeChallenge = generateCodeChallenge(codeVerifier);
@@ -411,11 +410,11 @@ export async function pelotonAutomatedLogin(
   let { response, location } = await followRedirects(
     authorizeUrl.toString(),
     jar,
-    rateLimitFetchFn,
+    fetchFn,
   );
 
   while (location) {
-    ({ response, location } = await followRedirects(location, jar, rateLimitFetchFn));
+    ({ response, location } = await followRedirects(location, jar, fetchFn));
   }
 
   // Parse injectedConfig from login page (contains state, csrf, nonce)
@@ -444,7 +443,7 @@ export async function pelotonAutomatedLogin(
   // Step 2: POST credentials to Auth0 login endpoint
   logger.info("[peloton] Submitting credentials...");
   const loginUrl = `${PELOTON_AUTH_DOMAIN}/usernamepassword/login`;
-  const { response: loginResp } = await followRedirects(loginUrl, jar, rateLimitFetchFn, {
+  const { response: loginResp } = await followRedirects(loginUrl, jar, fetchFn, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -490,7 +489,7 @@ export async function pelotonAutomatedLogin(
 
   // Step 4: Submit form, then follow redirects until we find ?code= in a Location header
   logger.info("[peloton] Following Auth0 redirect chain...");
-  let { location: redirectUrl } = await followRedirects(formAction, jar, rateLimitFetchFn, {
+  let { location: redirectUrl } = await followRedirects(formAction, jar, fetchFn, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(fields).toString(),
@@ -500,7 +499,7 @@ export async function pelotonAutomatedLogin(
   while (redirectUrl && maxRedirects > 0) {
     // Stop before fetching the callback URL — just read the code from it
     if (redirectUrl.includes("code=") || redirectUrl.includes("error=")) break;
-    ({ location: redirectUrl } = await followRedirects(redirectUrl, jar, rateLimitFetchFn));
+    ({ location: redirectUrl } = await followRedirects(redirectUrl, jar, fetchFn));
     maxRedirects--;
   }
 
@@ -522,7 +521,7 @@ export async function pelotonAutomatedLogin(
 
   // Step 5: Exchange code for tokens
   logger.info("[peloton] Exchanging authorization code for tokens...");
-  return exchangeCodeForTokens(config, authCode, rateLimitFetchFn, { codeVerifier });
+  return exchangeCodeForTokens(config, authCode, fetchFn, { codeVerifier });
 }
 
 export class PelotonProvider implements SyncProvider {

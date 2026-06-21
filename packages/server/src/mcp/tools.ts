@@ -252,11 +252,15 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         sinceDate,
         untilDate,
       });
-      const job = await enqueueSyncJob(providerId, {
+      const job = await enqueueSyncJob(
         providerId,
-        userId: context.userId,
-        ...syncWindowToJobData(syncWindow, sinceDays),
-      });
+        {
+          providerId,
+          userId: context.userId,
+          ...syncWindowToJobData(syncWindow, sinceDays),
+        },
+        { skipWhenRateLimited: true },
+      );
       if (!job) {
         throw new Error(`Provider ${providerId} sync skipped: rate-limit cooldown active`);
       }

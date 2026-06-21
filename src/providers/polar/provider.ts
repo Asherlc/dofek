@@ -1,5 +1,4 @@
 import type { TokenSet } from "../../auth/oauth.ts";
-import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../../logger.ts";
 import type { SyncRun } from "../sync-run.ts";
 import type { ProviderAuthSetup, SyncResult, WebhookEvent, WebhookProvider } from "../types.ts";
@@ -20,7 +19,7 @@ export class PolarProvider implements WebhookProvider {
   readonly #webhookService: PolarWebhookService;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createProviderRateLimitFetch("polar", fetchFn);
+    this.#fetchFn = fetchFn;
     this.#webhookService = new PolarWebhookService(this.#fetchFn);
   }
 

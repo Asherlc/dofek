@@ -221,11 +221,15 @@ export const syncRouter = router({
 
     const providerJobs = await Promise.all(
       providerIds.map(async (providerId) => {
-        const job = await enqueueSyncJob(providerId, {
+        const job = await enqueueSyncJob(
           providerId,
-          userId: ctx.userId,
-          ...syncWindowToJobData(syncWindow, input.sinceDays),
-        });
+          {
+            providerId,
+            userId: ctx.userId,
+            ...syncWindowToJobData(syncWindow, input.sinceDays),
+          },
+          { skipWhenRateLimited: true },
+        );
         if (!job) {
           throw new TRPCError({
             code: "TOO_MANY_REQUESTS",

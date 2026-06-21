@@ -274,6 +274,10 @@ describe("parseAdaptiveRateState", () => {
     expect(parseAdaptiveRateState("")).toBeNull();
   });
 
+  it("returns null for malformed JSON", () => {
+    expect(parseAdaptiveRateState("{not-json")).toBeNull();
+  });
+
   it("parses valid persisted state with optional Strava fields", () => {
     const state = {
       ...createInitialAdaptiveState("strava", "provider", null),

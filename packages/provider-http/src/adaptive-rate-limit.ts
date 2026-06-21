@@ -224,7 +224,12 @@ export function serializeAdaptiveRateState(state: ProviderAdaptiveRateState): st
 
 export function parseAdaptiveRateState(raw: string | null): ProviderAdaptiveRateState | null {
   if (!raw) return null;
-  const parsed: unknown = JSON.parse(raw);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
   if (typeof parsed !== "object" || parsed === null) return null;
 
   const providerId = Reflect.get(parsed, "providerId");

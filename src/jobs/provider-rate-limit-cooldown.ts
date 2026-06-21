@@ -19,9 +19,17 @@ export interface ProviderRateLimitCooldownStore {
   getActive(providerId: string, userId: string): Promise<ProviderRateLimitCooldown | null>;
 }
 
+interface RedisMulti {
+  set: (key: string, value: string, mode: "PX", millisecondsToExpire: number) => RedisMulti;
+  exec: () => Promise<unknown[] | null>;
+}
+
 interface RedisClient {
   set: (key: string, value: string, mode: "PX", millisecondsToExpire: number) => Promise<unknown>;
   get: (key: string) => Promise<string | null>;
+  watch?: (key: string) => Promise<unknown>;
+  unwatch?: () => Promise<unknown>;
+  multi?: () => RedisMulti;
 }
 
 const PROVIDER_FALLBACK_COOLDOWN_SECONDS = new Map<string, number>([
@@ -175,6 +183,36 @@ function effectiveCooldown(
   return next;
 }
 
+async function persistCooldownAtomically(
+  redisClient: RedisClient,
+  key: string,
+  computeEffective: (previous: ProviderRateLimitCooldown | null) => ProviderRateLimitCooldown,
+): Promise<ProviderRateLimitCooldown> {
+  const watch = redisClient.watch;
+  const multi = redisClient.multi;
+  if (!watch || !multi) {
+    const previous = parseCooldown(await redisClient.get(key));
+    const effective = computeEffective(previous);
+    await redisClient.set(
+      key,
+      serializeCooldown(effective),
+      "PX",
+      providerRateLimitDelayMs(effective),
+    );
+    return effective;
+  }
+
+  for (;;) {
+    await watch(key);
+    const previous = parseCooldown(await redisClient.get(key));
+    const effective = computeEffective(previous);
+    const execResult = await multi()
+      .set(key, serializeCooldown(effective), "PX", providerRateLimitDelayMs(effective))
+      .exec();
+    if (execResult) return effective;
+  }
+}
+
 export class InMemoryProviderRateLimitCooldownStore implements ProviderRateLimitCooldownStore {
   readonly #cooldownRecords = new Map<string, ProviderRateLimitCooldown>();
 
@@ -220,6 +258,18 @@ async function getSharedRedisClient(): Promise<RedisClient> {
     set: async (key, value, mode, millisecondsToExpire) =>
       redisClient.set(key, value, mode, millisecondsToExpire),
     get: async (key) => redisClient.get(key),
+    watch: async (key) => redisClient.watch(key),
+    unwatch: async () => redisClient.unwatch(),
+    multi: () => {
+      const transaction = redisClient.multi();
+      return {
+        set: (key, value, mode, millisecondsToExpire) => {
+          transaction.set(key, value, mode, millisecondsToExpire);
+          return transaction as RedisMulti;
+        },
+        exec: async () => transaction.exec(),
+      };
+    },
   };
 }
 
@@ -241,11 +291,9 @@ export class RedisProviderRateLimitCooldownStore implements ProviderRateLimitCoo
     const cooldown = cooldownFromError(error, fallbackUserId, null, baseFallback);
     const key = cooldownKey(cooldown.providerId, cooldown.scope, cooldown.userId);
     const redisClient = await this.#getRedisClient();
-    const previous = parseCooldown(await redisClient.get(key));
-    const effective = effectiveCooldown(error, fallbackUserId, previous, baseFallback);
-    const millisecondsToExpire = providerRateLimitDelayMs(effective);
-    await redisClient.set(key, serializeCooldown(effective), "PX", millisecondsToExpire);
-    return effective;
+    return persistCooldownAtomically(redisClient, key, (previous) =>
+      effectiveCooldown(error, fallbackUserId, previous, baseFallback),
+    );
   }
 
   async getActive(providerId: string, userId: string): Promise<ProviderRateLimitCooldown | null> {

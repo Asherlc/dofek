@@ -143,7 +143,7 @@ export class MapMyFitnessClient {
   ) {
     this.#accessToken = accessToken;
     this.#clientId = clientId;
-    this.#fetchFn = createProviderRateLimitFetch("mapmyfitness", fetchFn);
+    this.#fetchFn = fetchFn;
   }
 
   async #get<T>(path: string): Promise<T> {

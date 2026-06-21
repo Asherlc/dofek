@@ -241,7 +241,7 @@ export class RideWithGpsClient {
 
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
     this.#accessToken = accessToken;
-    this.#fetchFn = createProviderRateLimitFetch("ride-with-gps", fetchFn);
+    this.#fetchFn = fetchFn;
   }
 
   async #get<T>(path: string, params?: Record<string, string>): Promise<T> {

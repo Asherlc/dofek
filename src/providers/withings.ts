@@ -182,7 +182,6 @@ async function withingsTokenExchange(
   params: Record<string, string>,
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<TokenSet> {
-  const rateLimitFetchFn = createProviderRateLimitFetch("withings", fetchFn);
   const bodyParams: Record<string, string> = {
     action: "requesttoken",
     client_id: config.clientId,
@@ -191,7 +190,7 @@ async function withingsTokenExchange(
   if (config.clientSecret) bodyParams.client_secret = config.clientSecret;
   const body = new URLSearchParams(bodyParams);
 
-  const response = await rateLimitFetchFn(config.tokenUrl, {
+  const response = await fetchFn(config.tokenUrl, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: body.toString(),
@@ -263,7 +262,7 @@ export class WithingsClient {
 
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
     this.#accessToken = accessToken;
-    this.#fetchFn = createProviderRateLimitFetch("withings", fetchFn);
+    this.#fetchFn = fetchFn;
   }
 
   async #post<T>(path: string, params: Record<string, string>): Promise<T> {
@@ -403,7 +402,7 @@ export class WithingsProvider implements WebhookProvider {
     if (!config) throw new Error("WITHINGS_CLIENT_ID and WITHINGS_CLIENT_SECRET are required");
     return {
       oauthConfig: config,
-      exchangeCode: (code) => exchangeWithingsCode(config, code),
+      exchangeCode: (code) => exchangeWithingsCode(config, code, this.#fetchFn),
       apiBaseUrl: WITHINGS_API_BASE,
     };
   }
