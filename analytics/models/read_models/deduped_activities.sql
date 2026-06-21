@@ -34,8 +34,8 @@ absent_group_members AS (
     INNER JOIN {{ source('postgres_fitness', 'activity') }} AS absent FINAL
         ON absent.id = final_groups.activity_id
         AND absent.deleted_at IS null
-        AND absent.provider_absent_at IS NOT NULL
-        AND absent.external_id IS NOT NULL
+        AND absent.provider_absent_at IS NOT null
+        AND absent.external_id IS NOT null
         AND absent.external_id != ''
         AND absent._peerdb_is_deleted = 0
 ),
@@ -50,8 +50,8 @@ absent_source_links AS (
                 'memberActivityId', toString(activity_id),
                 'providerAbsentAt', toString(assumeNotNull(provider_absent_at))
             ),
-            provider_id IS NOT NULL
-            AND external_id IS NOT NULL
+            provider_id IS NOT null
+            AND external_id IS NOT null
             AND external_id != ''
         ) AS absent_source_external_ids
     FROM absent_group_members
@@ -89,19 +89,19 @@ merged AS (
         any(best.provider_id) AS provider_id,
         any(best.user_id) AS user_id,
         any(best.activity_type) AS activity_type,
-        minIf(ranked.started_at, ranked.activity_id IS NOT NULL) AS started_at,
-        maxIf(coalesce(ranked.ended_at, ranked.started_at + INTERVAL 12 HOUR), ranked.activity_id IS NOT NULL) AS ended_at,
+        minIf(ranked.started_at, ranked.activity_id IS NOT null) AS started_at,
+        maxIf(coalesce(ranked.ended_at, ranked.started_at + INTERVAL 12 HOUR), ranked.activity_id IS NOT null) AS ended_at,
         any(best.source_name) AS source_name,
-        argMinIf(ranked.name, ranked.priority, ranked.name IS NOT NULL) AS name,
-        argMinIf(ranked.notes, ranked.priority, ranked.notes IS NOT NULL) AS notes,
-        argMinIf(ranked.timezone, ranked.priority, ranked.timezone IS NOT NULL) AS timezone,
-        argMinIf(ranked.raw, ranked.priority, ranked.raw IS NOT NULL) AS raw,
-        maxIf(ranked.source_synced_at, ranked.activity_id IS NOT NULL) AS source_synced_at,
-        arraySort(groupUniqArrayIf(ranked.provider_id, ranked.activity_id IS NOT NULL)) AS source_providers,
+        argMinIf(ranked.name, ranked.priority, ranked.name IS NOT null) AS name,
+        argMinIf(ranked.notes, ranked.priority, ranked.notes IS NOT null) AS notes,
+        argMinIf(ranked.timezone, ranked.priority, ranked.timezone IS NOT null) AS timezone,
+        argMinIf(ranked.raw, ranked.priority, ranked.raw IS NOT null) AS raw,
+        maxIf(ranked.source_synced_at, ranked.activity_id IS NOT null) AS source_synced_at,
+        arraySort(groupUniqArrayIf(ranked.provider_id, ranked.activity_id IS NOT null)) AS source_providers,
         groupArrayIf(
             map('providerId', ranked.provider_id, 'externalId', ranked.external_id),
-            ranked.activity_id IS NOT NULL
-            AND ranked.external_id IS NOT NULL
+            ranked.activity_id IS NOT null
+            AND ranked.external_id IS NOT null
             AND ranked.external_id != ''
         ) AS source_external_ids,
         coalesce(
@@ -170,7 +170,7 @@ stale_deduped_activities AS (
     LEFT JOIN current_deduped_activities
         ON current_deduped_activities.activity_id = existing_deduped_activities.activity_id
         AND current_deduped_activities.user_id = existing_deduped_activities.user_id
-    WHERE current_deduped_activities.activity_id IS NULL
+    WHERE current_deduped_activities.activity_id IS null
 )
 {% endif %}
 
