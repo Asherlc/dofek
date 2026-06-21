@@ -116,6 +116,9 @@ export interface SleepPerformanceInfo extends SleepPerformanceResult {
   recommendedBedtime: string;
   /** Date of the sleep session (wake-up date), for freshness checking */
   sleepDate: string;
+  providerId: string | null;
+  sourceName: string | null;
+  sourceProviders: string[];
 }
 
 export interface SleepNeedResult {
@@ -140,6 +143,9 @@ export interface SleepNight {
   neededMinutes: number;
   /** Sleep debt for this night, or null if no data */
   debtMinutes: number | null;
+  providerId: string | null;
+  sourceName: string | null;
+  sourceProviders: string[];
 }
 
 /**
@@ -265,11 +271,15 @@ export const sleepNeedRouter = router({
         const night = nightsByDate.get(date);
         if (night) {
           const actual = Number(night.duration_minutes);
+          const sleepRow = sleepRows.find((row) => row.date === date);
           return {
             date,
             actualMinutes: Math.round(actual),
             neededMinutes: baselineMinutes,
             debtMinutes: Math.max(0, Math.round(baselineMinutes - actual)),
+            providerId: sleepRow?.provider_id ?? null,
+            sourceName: sleepRow?.source_name ?? null,
+            sourceProviders: sleepRow?.source_providers ?? [],
           };
         }
         return {
@@ -277,6 +287,9 @@ export const sleepNeedRouter = router({
           actualMinutes: null,
           neededMinutes: baselineMinutes,
           debtMinutes: null,
+          providerId: null,
+          sourceName: null,
+          sourceProviders: [],
         };
       });
 
@@ -305,14 +318,22 @@ export const sleepNeedRouter = router({
     .query(async ({ ctx, input }): Promise<SleepPerformanceInfo | null> => {
       const tz = ctx.timezone ?? "UTC";
       const sensorStore = requireSensorStore(ctx.sensorStore, "sleepNeed.performance");
-      const sleepRows = await fetchDailySleepPerformanceNights({
+      const performanceRows = await fetchDailySleepPerformanceNights({
         sensorStore,
         userId: ctx.userId,
         endDate: input.endDate,
         days: 90,
         accessWindow: ctx.accessWindow,
       });
-      const lastSleep = sleepRows.at(-1) ?? null;
+      const provenanceRows = await fetchSleepNights({
+        sensorStore,
+        userId: ctx.userId,
+        timezone: tz,
+        endDate: input.endDate,
+        days: 14,
+        accessWindow: ctx.accessWindow,
+      });
+      const lastSleep = performanceRows.at(-1) ?? null;
       if (!lastSleep || lastSleep.duration_minutes == null) {
         return null;
       }
@@ -320,7 +341,7 @@ export const sleepNeedRouter = router({
       const actualMinutes = lastSleep.duration_minutes;
       const efficiency = lastSleep.efficiency_pct ?? 85;
 
-      const durations = sleepRows
+      const durations = performanceRows
         .filter((row) => row.date !== lastSleep.date)
         .map((row) => row.duration_minutes)
         .filter((duration): duration is number => duration != null);
@@ -329,7 +350,7 @@ export const sleepNeedRouter = router({
           ? durations.reduce((sum, duration) => sum + duration, 0) / durations.length
           : 480;
 
-      const consistency = computeLatestSleepConsistency(sleepRows, lastSleep.date, tz);
+      const consistency = computeLatestSleepConsistency(performanceRows, lastSleep.date, tz);
       const stressResult = await new StressRepository(
         ctx.db,
         ctx.userId,
@@ -350,6 +371,7 @@ export const sleepNeedRouter = router({
         hasAdditionalComponents ? { consistency, lowStress } : undefined,
       );
       const recommendedBedtime = computeRecommendedBedtime("07:00", Math.round(neededMinutes));
+      const provenanceRow = provenanceRows.find((row) => row.date === lastSleep.date);
 
       return {
         ...result,
@@ -358,6 +380,9 @@ export const sleepNeedRouter = router({
         efficiency,
         recommendedBedtime,
         sleepDate: lastSleep.date,
+        providerId: provenanceRow?.provider_id ?? lastSleep.provider_id,
+        sourceName: provenanceRow?.source_name ?? null,
+        sourceProviders: provenanceRow?.source_providers ?? [],
       };
     }),
 });

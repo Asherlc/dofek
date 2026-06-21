@@ -377,6 +377,9 @@ export const mobileDashboardRouter = router({
           debtMinutes: night
             ? Math.max(0, Math.round(baselineMinutes - night.duration_minutes))
             : null,
+          providerId: null,
+          sourceName: null,
+          sourceProviders: [],
         });
       }
 

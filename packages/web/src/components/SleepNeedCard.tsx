@@ -14,6 +14,7 @@ import {
   dofekSeries,
   dofekTooltip,
 } from "../lib/chartTheme.ts";
+import { formatSleepProvenance } from "../lib/sleepSource.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface SleepNeedCardProps {
@@ -58,6 +59,12 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
         html += `<div>Needed: <b>${formatDurationMinutes(night.neededMinutes)}</b></div>`;
         if (night.debtMinutes != null && night.debtMinutes > 0) {
           html += `<div style="color:${statusColors.danger}">Debt: ${formatDurationMinutes(night.debtMinutes)}</div>`;
+        }
+        if (night.providerId) {
+          const { primary, alsoFrom } = formatSleepProvenance(night);
+          html += `<div style="color:#9ca3af;margin-top:4px">Source: ${primary}${
+            alsoFrom ? ` · also ${alsoFrom}` : ""
+          }</div>`;
         }
         return html;
       },

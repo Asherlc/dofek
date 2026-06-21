@@ -87,6 +87,8 @@ function toClickHouseSleepRows(rows: SleepNeedFixtureRow[]) {
     awake_minutes: null,
     efficiency_pct: row.efficiency_pct === undefined ? 90 : row.efficiency_pct,
     provider_id: row.provider_id ?? null,
+    source_name: null,
+    source_providers: row.provider_id ? [row.provider_id] : [],
   }));
 }
 
@@ -112,10 +114,11 @@ function createPerformanceCaller(rows: SleepNeedFixtureRow[]) {
   const sleepRows = [...rows].sort((leftRow, rightRow) =>
     leftRow.date.localeCompare(rightRow.date),
   );
+  const clickHouseRows = toClickHouseSleepRows(sleepRows);
   return createCaller({
     db: { execute: vi.fn() },
     userId: "user-1",
-    sensorStore: makeMockSensorStore([toClickHouseSleepRows(sleepRows), []]),
+    sensorStore: makeMockSensorStore([clickHouseRows, clickHouseRows, []]),
   });
 }
 
@@ -586,7 +589,8 @@ describe("sleepNeedRouter", () => {
         { date: "2026-03-14", duration_minutes: 450, efficiency_pct: 92 },
         { date: "2026-03-01", duration_minutes: 480 },
       ];
-      const sensorStore = makeMockSensorStore([toClickHouseSleepRows(rows), []]);
+      const clickHouseRows = toClickHouseSleepRows(rows);
+      const sensorStore = makeMockSensorStore([clickHouseRows, clickHouseRows, []]);
       const caller = createCaller({
         db: { execute: vi.fn() },
         userId: "user-1",
@@ -599,7 +603,9 @@ describe("sleepNeedRouter", () => {
       expect(
         queryTexts.filter((queryText) => queryText.includes("analytics.daily_sleep")),
       ).toHaveLength(1);
-      expect(queryTexts.some((queryText) => queryText.includes("analytics.v_sleep"))).toBe(false);
+      expect(
+        queryTexts.filter((queryText) => queryText.includes("analytics.v_sleep")),
+      ).toHaveLength(1);
     });
 
     it("uses the historical sleep average for provider-backed rows", async () => {
