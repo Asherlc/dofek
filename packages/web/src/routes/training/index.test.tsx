@@ -68,16 +68,14 @@ vi.mock("../../lib/trpc.ts", () => ({
 
 function makeInsight(overrides: Partial<Insight> & Pick<Insight, "id" | "action">): Insight {
   return {
-    id: overrides.id,
     type: "conditional",
     confidence: "strong",
     metric: "next-day HRV",
-    action: overrides.action,
-    message: overrides.message ?? "Test insight",
+    message: "Test insight",
     detail: "detail",
     whenTrue: { mean: 50, n: 10 },
     whenFalse: { mean: 40, n: 10 },
-    effectSize: overrides.effectSize ?? 0.5,
+    effectSize: 0.5,
     pValue: 0.01,
     ...overrides,
   };
