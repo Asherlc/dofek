@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { describe, expect, it } from "vitest";
 import { PolarClient } from "./client.ts";
 

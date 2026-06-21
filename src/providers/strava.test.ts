@@ -564,7 +564,7 @@ describe("StravaClient.getActivity", () => {
       });
     };
 
-    const client = new StravaClient("token", mockFetch, 0);
+    const client = new StravaClient("token", mockFetch);
     const result = await client.getActivity(12345678);
     expect(result.device_name).toBe("Garmin Edge 530");
     expect(result.id).toBe(12345678);
@@ -575,7 +575,7 @@ describe("StravaClient.getActivity", () => {
       return Response.json(sampleActivity);
     };
 
-    const client = new StravaClient("token", mockFetch, 0);
+    const client = new StravaClient("token", mockFetch);
     const result = await client.getActivity(12345678);
     expect(result.device_name).toBeUndefined();
   });
@@ -587,7 +587,7 @@ describe("StravaClient — error handling", () => {
       return new Response("Rate Limit Exceeded", { status: 429 });
     };
 
-    const client = new StravaClient("token", mockFetch, 0);
+    const client = new StravaClient("token", mockFetch);
     const err = await client.getActivities(0).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(StravaRateLimitError);
     expect(err).toBeInstanceOf(ProviderRateLimitError);
@@ -605,7 +605,7 @@ describe("StravaClient — error handling", () => {
       });
     };
 
-    const client = new StravaClient("token", mockFetch, 0);
+    const client = new StravaClient("token", mockFetch);
     const err = await client.getActivities(0).catch((caughtError: unknown) => caughtError);
     expect(err).toBeInstanceOf(StravaRateLimitError);
     expect(err).toHaveProperty("retryAfterSeconds", 60);
@@ -617,7 +617,7 @@ describe("StravaClient — error handling", () => {
       return new Response("Server Error", { status: 500 });
     };
 
-    const client = new StravaClient("token", mockFetch, 0);
+    const client = new StravaClient("token", mockFetch);
     await expect(client.getActivities(0)).rejects.toThrow("Strava API error (500): Server Error");
   });
 
@@ -629,7 +629,7 @@ describe("StravaClient — error handling", () => {
       });
     };
 
-    const client = new StravaClient("token", mockFetch, 0);
+    const client = new StravaClient("token", mockFetch);
     const err = await client.getActivities(0).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(StravaNotFoundError);
     expect(err).toHaveProperty("message", expect.stringContaining("/athlete/activities"));
@@ -643,7 +643,7 @@ describe("StravaClient — error handling", () => {
       });
     };
 
-    const client = new StravaClient("token", mockFetch, 0);
+    const client = new StravaClient("token", mockFetch);
     const err = await client.getActivities(0).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(StravaNotFoundError);
     expect(err).toHaveProperty("message", expect.stringContaining("/athlete/activities"));
@@ -657,7 +657,7 @@ describe("StravaClient — error handling", () => {
       });
     };
 
-    const client = new StravaClient("token", mockFetch, 0);
+    const client = new StravaClient("token", mockFetch);
     const err = await client.getActivities(0).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(StravaUnauthorizedError);
     expect(err).toHaveProperty("message", expect.stringContaining("unauthorized (401)"));
@@ -668,7 +668,7 @@ describe("StravaClient — error handling", () => {
       return new Response("Forbidden", { status: 403 });
     };
 
-    const client = new StravaClient("token", mockFetch, 0);
+    const client = new StravaClient("token", mockFetch);
     const err = await client.getActivities(0).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(StravaUnauthorizedError);
     expect(err).toHaveProperty("message", expect.stringContaining("unauthorized (403)"));
@@ -682,7 +682,7 @@ describe("StravaClient — error handling", () => {
       });
     };
 
-    const client = new StravaClient("token", mockFetch, 0);
+    const client = new StravaClient("token", mockFetch);
     await expect(client.getActivities(0)).rejects.toThrow(
       'Strava API error (500): {"message":"bad request"}',
     );
@@ -696,7 +696,7 @@ describe("StravaClient — error handling", () => {
       });
     };
 
-    const client = new StravaClient("token", mockFetch, 0);
+    const client = new StravaClient("token", mockFetch);
     await expect(client.getActivities(0)).rejects.toThrow(
       "Strava API error (500): (HTML error page)",
     );
@@ -708,7 +708,7 @@ describe("StravaClient — error handling", () => {
       return new Response(longText, { status: 500 });
     };
 
-    const client = new StravaClient("token", mockFetch, 0);
+    const client = new StravaClient("token", mockFetch);
     await expect(client.getActivities(0)).rejects.toThrow(
       `Strava API error (500): ${"x".repeat(200)}…`,
     );
@@ -716,41 +716,8 @@ describe("StravaClient — error handling", () => {
 });
 
 describe("StravaClient — request throttling", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("enforces minimum delay between consecutive API requests", async () => {
-    const callTimestamps: number[] = [];
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      callTimestamps.push(Date.now());
-      return Response.json([]);
-    };
-
-    const client = new StravaClient("token", mockFetch);
-
-    // First request — should go immediately
-    const p1 = client.getActivities(0);
-    await vi.advanceTimersByTimeAsync(0);
-    await p1;
-
-    // Second request — should be delayed by the throttle interval
-    const p2 = client.getActivities(0);
-    // Advance past the throttle delay
-    await vi.advanceTimersByTimeAsync(10_000);
-    await p2;
-
-    expect(callTimestamps).toHaveLength(2);
-    const first = callTimestamps[0] ?? 0;
-    const second = callTimestamps[1] ?? 0;
-    expect(second - first).toBeGreaterThanOrEqual(10_000);
-  });
-
   it("does not delay the first request", async () => {
+    vi.useFakeTimers();
     const callTimestamps: number[] = [];
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       callTimestamps.push(Date.now());
@@ -762,8 +729,8 @@ describe("StravaClient — request throttling", () => {
     await vi.advanceTimersByTimeAsync(0);
     await pendingRequest;
 
-    // First call should happen at time 0 (no throttle delay)
     expect(callTimestamps).toHaveLength(1);
+    vi.useRealTimers();
   });
 });
 
@@ -923,7 +890,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
   });
 
   it("returns immediately for non-activity objectType", async () => {
-    const provider = new StravaProvider(async () => new Response(), 0);
+    const provider = new StravaProvider(async () => new Response());
     const mockDb = {
       select: vi.fn(),
       insert: vi.fn(),
@@ -949,7 +916,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
   });
 
   it("returns immediately when objectId is missing", async () => {
-    const provider = new StravaProvider(async () => new Response(), 0);
+    const provider = new StravaProvider(async () => new Response());
     const mockDb = {
       select: vi.fn(),
       insert: vi.fn(),
@@ -972,7 +939,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
   });
 
   it("handles delete events by marking activity provider-absent", async () => {
-    const provider = new StravaProvider(async () => new Response(), 0);
+    const provider = new StravaProvider(async () => new Response());
 
     const mockDb = {
       select: vi.fn(),
@@ -1004,7 +971,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
   });
 
   it("handles delete event when activity not found", async () => {
-    const provider = new StravaProvider(async () => new Response(), 0);
+    const provider = new StravaProvider(async () => new Response());
 
     const mockDb = {
       select: vi.fn(),
@@ -1034,7 +1001,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
   });
 
   it("returns error when token resolution fails", async () => {
-    const provider = new StravaProvider(async () => new Response(), 0);
+    const provider = new StravaProvider(async () => new Response());
     const mockDb = {
       select: makeStravaSelectMock(null),
       insert: vi.fn(),
@@ -1099,7 +1066,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
       execute: vi.fn(),
     };
 
-    const provider = new StravaProvider(mockFetch, 0);
+    const provider = new StravaProvider(mockFetch);
     const result = await provider.syncWebhookEvent(
       mockDb,
       {
@@ -1163,7 +1130,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
       execute: vi.fn(),
     };
 
-    const provider = new StravaProvider(mockFetch, 0);
+    const provider = new StravaProvider(mockFetch);
     const result = await provider.syncWebhookEvent(
       mockDb,
       {
@@ -1206,7 +1173,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
       execute: vi.fn(),
     };
 
-    const provider = new StravaProvider(mockFetch, 0);
+    const provider = new StravaProvider(mockFetch);
     const result = await provider.syncWebhookEvent(
       mockDb,
       {
@@ -1252,7 +1219,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
       execute: vi.fn(),
     };
 
-    const provider = new StravaProvider(mockFetch, 0);
+    const provider = new StravaProvider(mockFetch);
     const result = await provider.syncWebhookEvent(
       mockDb,
       {
@@ -1284,7 +1251,7 @@ describe("StravaProvider.registerWebhook", () => {
   it("throws when STRAVA_CLIENT_ID is missing", async () => {
     delete process.env.STRAVA_CLIENT_ID;
     delete process.env.STRAVA_CLIENT_SECRET;
-    const provider = new StravaProvider(async () => new Response(), 0);
+    const provider = new StravaProvider(async () => new Response());
     await expect(
       provider.registerWebhook("https://example.com/webhook", "verify-token"),
     ).rejects.toThrow("STRAVA_CLIENT_ID");
@@ -1296,7 +1263,7 @@ describe("StravaProvider.registerWebhook", () => {
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Conflict", { status: 409 });
     };
-    const provider = new StravaProvider(mockFetch, 0);
+    const provider = new StravaProvider(mockFetch);
     await expect(
       provider.registerWebhook("https://example.com/webhook", "verify-token"),
     ).rejects.toThrow("Strava webhook registration failed (409)");
@@ -1308,7 +1275,7 @@ describe("StravaProvider.registerWebhook", () => {
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return Response.json({ id: 42 });
     };
-    const provider = new StravaProvider(mockFetch, 0);
+    const provider = new StravaProvider(mockFetch);
     const result = await provider.registerWebhook("https://example.com/webhook", "verify-token");
     expect(result.subscriptionId).toBe("42");
   });
@@ -1325,7 +1292,7 @@ describe("StravaProvider.unregisterWebhook", () => {
     delete process.env.STRAVA_CLIENT_ID;
     delete process.env.STRAVA_CLIENT_SECRET;
     const mockFetch = vi.fn();
-    const provider = new StravaProvider(mockFetch, 0);
+    const provider = new StravaProvider(mockFetch);
     await provider.unregisterWebhook("42");
     expect(mockFetch).not.toHaveBeenCalled();
   });
@@ -1336,7 +1303,7 @@ describe("StravaProvider.unregisterWebhook", () => {
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response(null, { status: 200 });
     };
-    const provider = new StravaProvider(mockFetch, 0);
+    const provider = new StravaProvider(mockFetch);
     // Should not throw
     await provider.unregisterWebhook("42");
   });
@@ -1347,7 +1314,7 @@ describe("StravaProvider.unregisterWebhook", () => {
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Not Found", { status: 404 });
     };
-    const provider = new StravaProvider(mockFetch, 0);
+    const provider = new StravaProvider(mockFetch);
     // Should not throw
     await provider.unregisterWebhook("42");
   });
@@ -1358,7 +1325,7 @@ describe("StravaProvider.unregisterWebhook", () => {
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Server Error", { status: 500 });
     };
-    const provider = new StravaProvider(mockFetch, 0);
+    const provider = new StravaProvider(mockFetch);
     // Should not throw, just logs warning
     await provider.unregisterWebhook("42");
   });
@@ -1370,7 +1337,7 @@ describe("StravaProvider.unregisterWebhook", () => {
 
 describe("StravaProvider — precise webhook string/object assertions", () => {
   it("parseWebhookPayload maps all three Strava aspect_types correctly", async () => {
-    const provider = new StravaProvider(async () => new Response(), 0);
+    const provider = new StravaProvider(async () => new Response());
 
     for (const [aspect, expected] of [
       ["create", "create"],
@@ -1388,7 +1355,7 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
   });
 
   it("parseWebhookPayload converts owner_id number to string", async () => {
-    const provider = new StravaProvider(async () => new Response(), 0);
+    const provider = new StravaProvider(async () => new Response());
     const events = provider.parseWebhookPayload({
       aspect_type: "create",
       object_type: "activity",
@@ -1399,7 +1366,7 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
   });
 
   it("parseWebhookPayload converts object_id number to string", async () => {
-    const provider = new StravaProvider(async () => new Response(), 0);
+    const provider = new StravaProvider(async () => new Response());
     const events = provider.parseWebhookPayload({
       aspect_type: "create",
       object_type: "activity",
@@ -1410,7 +1377,7 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
   });
 
   it("parseWebhookPayload treats object_id=0 as falsy (undefined)", async () => {
-    const provider = new StravaProvider(async () => new Response(), 0);
+    const provider = new StravaProvider(async () => new Response());
     const events = provider.parseWebhookPayload({
       aspect_type: "create",
       object_type: "activity",
@@ -1421,7 +1388,7 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
   });
 
   it("handleValidationChallenge echoes back the exact challenge string", async () => {
-    const provider = new StravaProvider(async () => new Response(), 0);
+    const provider = new StravaProvider(async () => new Response());
     const result = provider.handleValidationChallenge(
       {
         "hub.mode": "subscribe",
@@ -1434,7 +1401,7 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
   });
 
   it("handleValidationChallenge compares token exactly (not substring)", async () => {
-    const provider = new StravaProvider(async () => new Response(), 0);
+    const provider = new StravaProvider(async () => new Response());
     // Partial match should fail
     const result = provider.handleValidationChallenge(
       { "hub.mode": "subscribe", "hub.challenge": "abc", "hub.verify_token": "tok" },
@@ -1454,7 +1421,7 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
       return Response.json({ id: 1 });
     };
 
-    const provider = new StravaProvider(mockFetch, 0);
+    const provider = new StravaProvider(mockFetch);
     await provider.registerWebhook("https://example.com/callback", "my-verify-token");
 
     expect(capturedBody?.get("client_id")).toBe("my-client-id");
@@ -1476,7 +1443,7 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
       return Response.json({ id: 1 });
     };
 
-    const provider = new StravaProvider(mockFetch, 0);
+    const provider = new StravaProvider(mockFetch);
     await provider.registerWebhook("https://example.com/cb", "tok");
     expect(capturedUrl).toBe("https://www.strava.com/api/v3/push_subscriptions");
 
@@ -1494,7 +1461,7 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
       return Response.json({ id: 1 });
     };
 
-    const provider = new StravaProvider(mockFetch, 0);
+    const provider = new StravaProvider(mockFetch);
     await provider.registerWebhook("https://example.com/cb", "tok");
     expect(capturedHeaders).toEqual(
       expect.objectContaining({ "Content-Type": "application/x-www-form-urlencoded" }),
@@ -1514,7 +1481,7 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
       return new Response(null, { status: 200 });
     };
 
-    const provider = new StravaProvider(mockFetch, 0);
+    const provider = new StravaProvider(mockFetch);
     await provider.unregisterWebhook("sub-42");
 
     const parsed = new URL(capturedUrl);
@@ -1526,7 +1493,7 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
   });
 
   it("syncWebhookEvent returns provider as 'strava' for all paths", async () => {
-    const provider = new StravaProvider(async () => new Response(), 0);
+    const provider = new StravaProvider(async () => new Response());
     const mockDb = {
       select: vi.fn(),
       insert: vi.fn(),
@@ -1553,7 +1520,7 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
       execute: vi.fn(),
     };
 
-    const provider = new StravaProvider(async () => new Response(), 0);
+    const provider = new StravaProvider(async () => new Response());
     const result = await provider.syncWebhookEvent(
       mockDb,
       {
@@ -1577,7 +1544,7 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
   });
 
   it("syncWebhookEvent falls back to token user context when options.userId is missing", async () => {
-    const provider = new StravaProvider(async () => new Response(), 0);
+    const provider = new StravaProvider(async () => new Response());
     const mockDb = { select: vi.fn(), insert: vi.fn(), delete: vi.fn(), execute: vi.fn() };
 
     const result = await provider.syncWebhookEvent(mockDb, {
@@ -1677,7 +1644,7 @@ describe("StravaClient.getActivityStreams", () => {
       return Response.json(apiResponse);
     };
 
-    const client = new StravaClient("token", mockFetch, 0);
+    const client = new StravaClient("token", mockFetch);
     const streams = await client.getActivityStreams(12345);
 
     // Verify all 10 STREAM_KEYS are present in the result
@@ -1722,7 +1689,7 @@ describe("StravaClient.getActivityStreams", () => {
       return Response.json(apiResponse);
     };
 
-    const client = new StravaClient("token", mockFetch, 0);
+    const client = new StravaClient("token", mockFetch);
     const streams = await client.getActivityStreams(1);
 
     expect(streams.time).toBeDefined();
@@ -1739,7 +1706,7 @@ describe("StravaClient.getActivityStreams", () => {
       return Response.json([]);
     };
 
-    const client = new StravaClient("token", mockFetch, 0);
+    const client = new StravaClient("token", mockFetch);
     await client.getActivityStreams(99999);
 
     // Verify base URL is the Strava API
@@ -1778,7 +1745,7 @@ describe("StravaClient — API base URL", () => {
       return Response.json([]);
     };
 
-    const client = new StravaClient("token", mockFetch, 0);
+    const client = new StravaClient("token", mockFetch);
     await client.getActivities(0);
 
     expect(capturedUrl).toMatch(/^https:\/\/www\.strava\.com\/api\/v3\//);
@@ -1793,7 +1760,7 @@ describe("StravaClient — API base URL", () => {
       return Response.json(sampleActivity);
     };
 
-    const client = new StravaClient("token", mockFetch, 0);
+    const client = new StravaClient("token", mockFetch);
     await client.getActivity(42);
     expect(capturedUrl).toBe("https://www.strava.com/api/v3/activities/42");
   });
@@ -1808,7 +1775,7 @@ describe("StravaClient — API base URL", () => {
       return Response.json([]);
     };
 
-    const client = new StravaClient("my-secret-token", mockFetch, 0);
+    const client = new StravaClient("my-secret-token", mockFetch);
     await client.getActivities(0);
     expect(capturedHeaders).toEqual({ Authorization: "Bearer my-secret-token" });
   });
