@@ -20,9 +20,17 @@ import type {
 import { RedisConnection } from "bullmq";
 import { getRedisConnection } from "../jobs/queues.ts";
 
+interface RedisMulti {
+  set: (key: string, value: string, mode: "PX", millisecondsToExpire: number) => RedisMulti;
+  exec: () => Promise<unknown[] | null>;
+}
+
 interface RedisClient {
   set: (key: string, value: string, mode: "PX", millisecondsToExpire: number) => Promise<unknown>;
   get: (key: string) => Promise<string | null>;
+  watch?: (key: string) => Promise<unknown>;
+  unwatch?: () => Promise<unknown>;
+  multi?: () => RedisMulti;
 }
 
 type LoadOrCreate = (
@@ -55,6 +63,69 @@ async function awaitAdmissionWithStore(
   const admittedAtMs = Date.now();
   const admittedState = slideAdaptiveWindow(state, admittedAtMs);
   await save(recordAdaptiveRequest(admittedState, admittedAtMs));
+}
+
+function loadAdaptiveStateFromRedis(
+  raw: string | null,
+  providerId: string,
+  scope: ProviderRateLimitScope,
+  userId: string | null,
+  nowMs: number,
+): ProviderAdaptiveRateState {
+  return slideAdaptiveWindow(
+    parseAdaptiveRateState(raw) ?? createInitialAdaptiveState(providerId, scope, userId, nowMs),
+    nowMs,
+  );
+}
+
+async function awaitAdmissionAtomically(
+  redisClient: RedisClient,
+  providerId: string,
+  scope: ProviderRateLimitScope,
+  userId: string | null,
+): Promise<void> {
+  const key = adaptiveRateLimitStorageKey(providerId, scope, userId);
+  const watch = redisClient.watch;
+  const multi = redisClient.multi;
+  if (!watch || !multi) {
+    throw new Error("Redis client does not support atomic admission");
+  }
+
+  while (true) {
+    const planningMs = Date.now();
+    const planningState = loadAdaptiveStateFromRedis(
+      await redisClient.get(key),
+      providerId,
+      scope,
+      userId,
+      planningMs,
+    );
+    await sleep(admissionDelayMs(planningState, planningMs));
+
+    while (true) {
+      await watch(key);
+      const claimMs = Date.now();
+      const claimState = loadAdaptiveStateFromRedis(
+        await redisClient.get(key),
+        providerId,
+        scope,
+        userId,
+        claimMs,
+      );
+      const remainingDelay = admissionDelayMs(claimState, claimMs);
+      if (remainingDelay > 0) {
+        await redisClient.unwatch?.();
+        await sleep(remainingDelay);
+        break;
+      }
+
+      const nextState = recordAdaptiveRequest(claimState, claimMs);
+      const execResult = await multi()
+        .set(key, serializeAdaptiveRateState(nextState), "PX", ADAPTIVE_RATE_WINDOW_MS * 4)
+        .exec();
+      if (execResult) return;
+    }
+  }
 }
 
 async function recordSuccessWithStore(
@@ -171,6 +242,18 @@ async function getSharedRedisClient(): Promise<RedisClient> {
     set: async (key, value, mode, millisecondsToExpire) =>
       redisClient.set(key, value, mode, millisecondsToExpire),
     get: async (key) => redisClient.get(key),
+    watch: async (key) => redisClient.watch(key),
+    unwatch: async () => redisClient.unwatch(),
+    multi: () => {
+      const transaction = redisClient.multi();
+      return {
+        set: (key, value, mode, millisecondsToExpire) => {
+          transaction.set(key, value, mode, millisecondsToExpire);
+          return transaction as RedisMulti;
+        },
+        exec: async () => transaction.exec(),
+      };
+    },
   };
 }
 /* Stryker enable all */
@@ -210,6 +293,11 @@ export class RedisAdaptiveRateLimitStore implements AdaptiveRateLimitStore {
     scope: ProviderRateLimitScope,
     userId: string | null,
   ): Promise<void> {
+    const redisClient = await this.#getRedisClient();
+    if (redisClient.watch && redisClient.multi) {
+      await awaitAdmissionAtomically(redisClient, providerId, scope, userId);
+      return;
+    }
     await awaitAdmissionWithStore(
       this.#loadOrCreate.bind(this),
       this.#save.bind(this),
