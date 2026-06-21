@@ -1,5 +1,5 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
-import { describe, afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { providerAdaptiveRateLimitStore } from "../lib/provider-adaptive-rate-limit.ts";
 import {
   InMemoryProviderRateLimitCooldownStore,
