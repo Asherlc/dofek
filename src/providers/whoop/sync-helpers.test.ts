@@ -1,15 +1,21 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WhoopClient } from "whoop-whoop/client";
 import type { WhoopCycle, WhoopWorkoutRecord } from "whoop-whoop/types";
 import type { SyncDatabase } from "../../db/index.ts";
 import { writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
+import { withSyncLog } from "../../db/sync-log.ts";
 import { SyncWindow } from "../sync-window.ts";
 import { syncWhoopDailyActivity } from "./sync-daily-activity.ts";
 import { syncWhoopSleepSessions, syncWhoopSleepStages } from "./sync-sleep.ts";
 import { syncWhoopHeartRateStream } from "./sync-streams.ts";
 import type { WhoopSyncContext } from "./sync-types.ts";
-import { syncWhoopWorkouts } from "./sync-workouts.ts";
+import { syncWhoopStrength, syncWhoopWorkouts } from "./sync-workouts.ts";
+
+const tokenUserContextMocks = vi.hoisted(() => ({
+  getTokenUserId: vi.fn(() => "00000000-0000-0000-0000-000000000001"),
+}));
 
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
   reconcileProviderActivityAbsence: vi.fn().mockResolvedValue(undefined),
@@ -38,7 +44,7 @@ vi.mock("../../db/metric-stream-writer.ts", () => ({
 }));
 
 vi.mock("../../db/token-user-context.ts", () => ({
-  getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
+  getTokenUserId: tokenUserContextMocks.getTokenUserId,
 }));
 
 function makeDb(selectedRows: unknown[] = []) {
@@ -93,11 +99,21 @@ function makeContext(overrides: Partial<WhoopSyncContext> = {}): WhoopSyncContex
   };
 }
 
+function makeWhoopRateLimitError(message = "whoop API rate limit exceeded (429):") {
+  return new ProviderRateLimitError({
+    message,
+    providerId: "whoop",
+    statusCode: 429,
+    responseBody: "",
+  });
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-05-09T00:00:00.000Z"));
   vi.mocked(writeMetricStreamBatch).mockClear();
   providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockClear();
+  tokenUserContextMocks.getTokenUserId.mockReturnValue("00000000-0000-0000-0000-000000000001");
 });
 
 function makeWorkoutRecord(
@@ -205,6 +221,139 @@ describe("WHOOP sync helpers", () => {
       rateLimited: false,
     });
     expect(context.errors[0]?.message).toBe("daily_activity: network down");
+  });
+
+  it("marks daily activity sync as rate limited when the API returns 429", async () => {
+    const rateLimitError = makeWhoopRateLimitError();
+    const client = makeClient();
+    vi.spyOn(client, "getStrainDeepDive").mockRejectedValue(rateLimitError);
+    const context = makeContext({ client });
+
+    await expect(syncWhoopDailyActivity(context)).resolves.toEqual({
+      count: 0,
+      rateLimited: true,
+    });
+    expect(context.errors).toEqual([
+      {
+        message: `daily_activity: ${rateLimitError.message}`,
+        cause: rateLimitError,
+      },
+    ]);
+  });
+
+  it("skips dates that already have synced step counts for the resolved user", async () => {
+    const db = makeDb([{ date: "2026-05-01" }]);
+    const client = makeClient();
+    const getStrainDeepDive = vi.spyOn(client, "getStrainDeepDive").mockResolvedValue({
+      sections: [
+        {
+          items: [
+            {
+              type: "CONTRIBUTORS_TILE",
+              content: {
+                id: "STRAIN_CONTRIBUTORS_TILE",
+                metrics: [{ id: "CONTRIBUTORS_TILE_STEPS", status: "1,000" }],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const context = makeContext({ db: db.db, client, options: { userId: "user-1" } });
+
+    await expect(syncWhoopDailyActivity(context)).resolves.toEqual({
+      count: 1,
+      rateLimited: false,
+    });
+    expect(db.select).toHaveBeenCalled();
+    expect(getStrainDeepDive).toHaveBeenCalledTimes(1);
+    expect(getStrainDeepDive).toHaveBeenCalledWith("2026-05-02");
+    expect(db.chain.values).toHaveBeenCalledWith({
+      date: "2026-05-02",
+      providerId: "whoop",
+      steps: 1000,
+    });
+  });
+
+  it("loads synced step dates from options.userId when provided", async () => {
+    const db = makeDb([]);
+    const client = makeClient();
+    vi.spyOn(client, "getStrainDeepDive").mockResolvedValue({ sections: [] });
+    const context = makeContext({ db: db.db, client, options: { userId: "explicit-user" } });
+
+    await syncWhoopDailyActivity(context);
+
+    expect(db.select).toHaveBeenCalled();
+  });
+
+  it("loads synced step dates from the token user id when options is omitted", async () => {
+    const db = makeDb([]);
+    const client = makeClient();
+    vi.spyOn(client, "getStrainDeepDive").mockResolvedValue({ sections: [] });
+    tokenUserContextMocks.getTokenUserId.mockReturnValue("token-user");
+    const context = makeContext({ db: db.db, client, options: undefined });
+
+    await syncWhoopDailyActivity(context);
+
+    expect(db.select).toHaveBeenCalled();
+  });
+
+  it("does not query synced step dates when no user id can be resolved", async () => {
+    const db = makeDb([]);
+    const client = makeClient();
+    const getStrainDeepDive = vi.spyOn(client, "getStrainDeepDive").mockResolvedValue({
+      sections: [
+        {
+          items: [
+            {
+              type: "CONTRIBUTORS_TILE",
+              content: {
+                id: "STRAIN_CONTRIBUTORS_TILE",
+                metrics: [{ id: "CONTRIBUTORS_TILE_STEPS", status: "500" }],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    tokenUserContextMocks.getTokenUserId.mockReturnValue(null);
+    const context = makeContext({ db: db.db, client, options: undefined });
+
+    await expect(syncWhoopDailyActivity(context)).resolves.toEqual({
+      count: 2,
+      rateLimited: false,
+    });
+    expect(db.select).not.toHaveBeenCalled();
+    expect(getStrainDeepDive).toHaveBeenCalledWith("2026-05-01");
+    expect(getStrainDeepDive).toHaveBeenCalledWith("2026-05-02");
+  });
+
+  it("records strength sync rate limits without failing the whole provider sync", async () => {
+    const rateLimitError = makeWhoopRateLimitError("strength limited");
+    vi.mocked(withSyncLog).mockRejectedValueOnce(rateLimitError);
+    const context = makeContext({ cycles: [{ workouts: [makeWorkoutRecord()] }] });
+
+    await expect(syncWhoopStrength(context)).resolves.toEqual({
+      count: 0,
+      rateLimited: true,
+    });
+    expect(context.errors).toEqual([
+      {
+        message: "strength: strength limited",
+        cause: rateLimitError,
+      },
+    ]);
+  });
+
+  it("records strength sync errors without marking them rate limited", async () => {
+    vi.mocked(withSyncLog).mockRejectedValueOnce(new Error("database unavailable"));
+    const context = makeContext({ cycles: [{ workouts: [makeWorkoutRecord()] }] });
+
+    await expect(syncWhoopStrength(context)).resolves.toEqual({
+      count: 0,
+      rateLimited: false,
+    });
+    expect(context.errors[0]?.message).toBe("strength: database unavailable");
   });
 
   it("writes parsed heart-rate stream rows in weekly windows", async () => {
