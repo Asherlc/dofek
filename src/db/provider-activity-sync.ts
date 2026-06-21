@@ -118,18 +118,5 @@ export async function finishProviderActivityListSync(
   await reconcileProviderActivityAbsence(db, reconciliation);
 }
 
-export async function withProviderActivityListSync<T>(
-  scope: ProviderActivityListSyncScope,
-  fn: (sync: ProviderActivityListSync) => Promise<T>,
-  options?: { reconcile?: boolean },
-): Promise<T> {
-  const sync = new ProviderActivityListSync(scope);
-  const result = await fn(sync);
-  if (options?.reconcile !== false) {
-    await sync.reconcile();
-  }
-  return result;
-}
-
 export { hasProviderActivityListSyncErrors, markProviderActivityAbsent };
 export type { ProviderActivityAbsenceMark, ProviderActivityAbsenceReconciliation };
