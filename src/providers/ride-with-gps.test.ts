@@ -1,5 +1,6 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it } from "vitest";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import {
   mapActivityType,
   parseTrackPoints,
@@ -222,7 +223,10 @@ describe("RideWithGps — rate-limit aware fetch wiring", () => {
   });
 
   it("RideWithGpsClient surfaces a 429 as a ProviderRateLimitError tagged 'ride-with-gps'", async () => {
-    const client = new RideWithGpsClient("access-token", rateLimitedFetch);
+    const client = new RideWithGpsClient(
+      "access-token",
+      createProviderRateLimitFetch("ride-with-gps", rateLimitedFetch),
+    );
 
     const err = await client.sync("2024-01-01T00:00:00Z").catch((caught: unknown) => caught);
     expect(err).toBeInstanceOf(ProviderRateLimitError);

@@ -1,5 +1,6 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import {
   mapFitnessDiscipline,
   PelotonClient,
@@ -1420,7 +1421,7 @@ describe("Peloton — rate-limit aware fetch wiring", () => {
     new Response("rate limited", { status: 429, headers: { "Retry-After": "60" } });
 
   it("PelotonClient surfaces a 429 as a ProviderRateLimitError tagged 'peloton'", async () => {
-    const client = new PelotonClient("token", rateLimited429);
+    const client = new PelotonClient("token", createProviderRateLimitFetch("peloton", rateLimited429));
     const err = await client.getUserId().catch((caught: unknown) => caught);
     expect(err).toBeInstanceOf(ProviderRateLimitError);
     if (err instanceof ProviderRateLimitError) {
@@ -1440,9 +1441,11 @@ describe("Peloton — rate-limit aware fetch wiring", () => {
   });
 
   it("pelotonAutomatedLogin surfaces a 429 tagged 'peloton'", async () => {
-    const err = await pelotonAutomatedLogin("user@test.com", "pass", rateLimited429).catch(
-      (caught: unknown) => caught,
-    );
+    const err = await pelotonAutomatedLogin(
+      "user@test.com",
+      "pass",
+      createProviderRateLimitFetch("peloton", rateLimited429),
+    ).catch((caught: unknown) => caught);
     expect(err).toBeInstanceOf(ProviderRateLimitError);
     if (err instanceof ProviderRateLimitError) {
       expect(err.providerId).toBe("peloton");

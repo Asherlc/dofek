@@ -9,6 +9,7 @@ vi.mock("../db/token-user-context.ts", () => ({
 }));
 
 import { createMockDatabase } from "./test-helpers.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import {
   exchangeWithingsCode,
   parseMeasureGroup,
@@ -1065,9 +1066,11 @@ describe("Withings — rate-limit aware fetch wiring", () => {
   };
 
   it("token exchange surfaces a 429 as a ProviderRateLimitError tagged 'withings'", async () => {
-    const err = await exchangeWithingsCode(oauthConfig, "code", rateLimited429).catch(
-      (caught: unknown) => caught,
-    );
+    const err = await exchangeWithingsCode(
+      oauthConfig,
+      "code",
+      createProviderRateLimitFetch("withings", rateLimited429),
+    ).catch((caught: unknown) => caught);
     expect(err).toBeInstanceOf(ProviderRateLimitError);
     if (err instanceof ProviderRateLimitError) {
       expect(err.providerId).toBe("withings");
@@ -1076,7 +1079,10 @@ describe("Withings — rate-limit aware fetch wiring", () => {
   });
 
   it("WithingsClient surfaces a 429 as a ProviderRateLimitError tagged 'withings'", async () => {
-    const client = new WithingsClient("access-token", rateLimited429);
+    const client = new WithingsClient(
+      "access-token",
+      createProviderRateLimitFetch("withings", rateLimited429),
+    );
     const err = await client.getMeas(0, 1).catch((caught: unknown) => caught);
     expect(err).toBeInstanceOf(ProviderRateLimitError);
     if (err instanceof ProviderRateLimitError) {
