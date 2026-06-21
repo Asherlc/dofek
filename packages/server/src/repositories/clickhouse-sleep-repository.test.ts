@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetchDailySleepPerformanceNights } from "./clickhouse-sleep-repository.ts";
+import {
+  fetchDailySleepPerformanceNights,
+  fetchSleepNights,
+} from "./clickhouse-sleep-repository.ts";
 
 describe("fetchDailySleepPerformanceNights", () => {
   it("reads daily sleep summary rows with full access params", async () => {
@@ -59,5 +62,71 @@ describe("fetchDailySleepPerformanceNights", () => {
       accessStartDate: "2026-03-01",
       accessEndDateExclusive: "2026-03-10",
     });
+  });
+});
+
+describe("fetchSleepNights", () => {
+  it("selects provenance fields from v_sleep", async () => {
+    const query = vi.fn().mockResolvedValue([
+      {
+        date: "2026-03-14",
+        provider_id: "whoop",
+        source_name: "WHOOP 4.0",
+        source_providers: ["whoop", "apple_health"],
+        started_at: "2026-03-13T22:00:00Z",
+        ended_at: "2026-03-14T06:00:00Z",
+        duration_minutes: 480,
+        deep_minutes: 90,
+        rem_minutes: 100,
+        light_minutes: 260,
+        awake_minutes: 30,
+        efficiency_pct: 92,
+      },
+    ]);
+
+    const rows = await fetchSleepNights({
+      sensorStore: { query },
+      userId: "user-1",
+      timezone: "UTC",
+      endDate: "2026-03-15",
+      days: 30,
+    });
+
+    const queryText = String(query.mock.calls[0]?.[1]);
+    expect(queryText).toContain("source_name");
+    expect(queryText).toContain("source_providers");
+    expect(rows[0]).toMatchObject({
+      provider_id: "whoop",
+      source_name: "WHOOP 4.0",
+      source_providers: ["whoop", "apple_health"],
+    });
+  });
+
+  it("defaults missing provenance fields to null and an empty list", async () => {
+    const query = vi.fn().mockResolvedValue([
+      {
+        date: "2026-03-14",
+        provider_id: "whoop",
+        started_at: "2026-03-13T22:00:00Z",
+        ended_at: "2026-03-14T06:00:00Z",
+        duration_minutes: 480,
+        deep_minutes: null,
+        rem_minutes: null,
+        light_minutes: null,
+        awake_minutes: null,
+        efficiency_pct: 92,
+      },
+    ]);
+
+    const rows = await fetchSleepNights({
+      sensorStore: { query },
+      userId: "user-1",
+      timezone: "UTC",
+      endDate: "2026-03-15",
+      days: 30,
+    });
+
+    expect(rows[0]?.source_name).toBeNull();
+    expect(rows[0]?.source_providers).toEqual([]);
   });
 });

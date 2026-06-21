@@ -533,6 +533,41 @@ describe("sleepNeedRouter", () => {
       // Only 7 good nights with duration > 0 at 480 each
       expect(result.baselineMinutes).toBe(480);
     });
+
+    it("includes provenance on recent nights with sleep data", async () => {
+      const rows: SleepNeedFixtureRow[] = [];
+      for (let dayOffset = 7; dayOffset >= 1; dayOffset -= 1) {
+        rows.push({
+          date: addDays("2026-03-15", -dayOffset),
+          duration_minutes: 480,
+          provider_id: "whoop",
+          next_day_hrv: 50,
+          median_hrv: 45,
+          good_recovery: true,
+          yesterday_load: 0,
+        });
+      }
+
+      const caller = createCalculateCaller(rows);
+      const result = await caller.calculate({ endDate: "2026-03-15" });
+
+      for (const night of result.recentNights) {
+        expect(night.providerId).toBe("whoop");
+        expect(night.sourceName).toBeNull();
+        expect(night.sourceProviders).toEqual(["whoop"]);
+      }
+    });
+
+    it("uses null provenance for recent nights without sleep data", async () => {
+      const caller = createCalculateCaller([]);
+      const result = await caller.calculate({ endDate: "2026-03-15" });
+
+      for (const night of result.recentNights) {
+        expect(night.providerId).toBeNull();
+        expect(night.sourceName).toBeNull();
+        expect(night.sourceProviders).toEqual([]);
+      }
+    });
   });
 
   // ── performance ──────────────────────────────────────────
@@ -606,6 +641,18 @@ describe("sleepNeedRouter", () => {
       expect(
         queryTexts.filter((queryText) => queryText.includes("analytics.v_sleep")),
       ).toHaveLength(1);
+    });
+
+    it("includes provenance from v_sleep on performance response", async () => {
+      const caller = createPerformanceCaller([
+        { date: "2026-03-14", duration_minutes: 450, efficiency_pct: 92, provider_id: "whoop" },
+        { date: "2026-03-01", duration_minutes: 480, provider_id: "apple_health" },
+      ]);
+      const result = await caller.performance({ endDate: "2026-03-15" });
+
+      expect(result?.providerId).toBe("whoop");
+      expect(result?.sourceName).toBeNull();
+      expect(result?.sourceProviders).toEqual(["whoop"]);
     });
 
     it("uses the historical sleep average for provider-backed rows", async () => {
