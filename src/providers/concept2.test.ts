@@ -65,15 +65,17 @@ vi.mock("../auth/oauth.ts", () => ({
 
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
   markProviderActivityAbsent: vi.fn().mockResolvedValue(undefined),
-  reconcileProviderActivityAbsence: vi.fn().mockResolvedValue(undefined),
+  finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
+  upsertProviderActivity: vi.fn().mockResolvedValue({ id: "activity-id" }),
 }));
 
-vi.mock("../db/provider-activity-absence.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("../db/provider-activity-absence.ts")>();
+vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../db/provider-activity-sync.ts")>();
   return {
     ...original,
     markProviderActivityAbsent: providerActivityAbsenceMocks.markProviderActivityAbsent,
-    reconcileProviderActivityAbsence: providerActivityAbsenceMocks.reconcileProviderActivityAbsence,
+    finishProviderActivityListSync: providerActivityAbsenceMocks.finishProviderActivityListSync,
+    upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
   };
 });
 
@@ -203,7 +205,7 @@ describe("Concept2Provider", () => {
   afterEach(() => {
     process.env = { ...originalEnv };
     providerActivityAbsenceMocks.markProviderActivityAbsent.mockClear();
-    providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockClear();
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
   });
 
   describe("properties", () => {
@@ -533,7 +535,7 @@ describe("Concept2Provider", () => {
       expect(db.values.mock.calls).not.toContainEqual([
         expect.objectContaining({ externalId: "67890" }),
       ]);
-      expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+      expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
         db,
         expect.objectContaining({
           presentExternalIds: new Set(["12345", "11111"]),

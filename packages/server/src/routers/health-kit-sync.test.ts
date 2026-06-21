@@ -66,6 +66,11 @@ function makeExecute() {
   return vi.fn().mockResolvedValue([]);
 }
 
+const WORKOUT_SYNC_WINDOW = {
+  windowStart: "2024-01-01T00:00:00.000Z",
+  windowEnd: "2024-12-31T23:59:59.999Z",
+};
+
 function makeSample(overrides: Record<string, unknown> = {}) {
   return {
     type: "HKQuantityTypeIdentifierStepCount",
@@ -793,6 +798,7 @@ describe("healthKitSyncRouter", () => {
       });
 
       const result = await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "w1",
@@ -820,6 +826,7 @@ describe("healthKitSyncRouter", () => {
       });
 
       await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "w-link",
@@ -847,6 +854,7 @@ describe("healthKitSyncRouter", () => {
       });
 
       const result = await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "w2",
@@ -873,7 +881,7 @@ describe("healthKitSyncRouter", () => {
         timezone: "UTC",
       });
 
-      const result = await caller.pushWorkouts({ workouts: [] });
+      const result = await caller.pushWorkouts({ ...WORKOUT_SYNC_WINDOW, workouts: [] });
       expect(result.inserted).toBe(0);
     });
 
@@ -886,6 +894,7 @@ describe("healthKitSyncRouter", () => {
       });
 
       await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "w-metric",
@@ -1285,6 +1294,7 @@ describe("healthKitSyncRouter", () => {
       });
 
       await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "workout-refresh",
@@ -2484,6 +2494,7 @@ describe("healthKitSyncRouter", () => {
       });
 
       await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "w-cycling",
@@ -2518,6 +2529,7 @@ describe("healthKitSyncRouter", () => {
       });
 
       await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "w-raw-data",
@@ -2554,6 +2566,7 @@ describe("healthKitSyncRouter", () => {
       });
 
       await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "w-metadata",
@@ -2606,6 +2619,7 @@ describe("healthKitSyncRouter", () => {
       });
 
       await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "w-link-test",
@@ -2632,7 +2646,7 @@ describe("healthKitSyncRouter", () => {
         timezone: "UTC",
       });
 
-      await caller.pushWorkouts({ workouts: [] });
+      await caller.pushWorkouts({ ...WORKOUT_SYNC_WINDOW, workouts: [] });
 
       expect(JSON.stringify(execute.mock.calls)).not.toContain("fitness.metric_stream");
     });
@@ -3217,6 +3231,7 @@ describe("healthKitSyncRouter", () => {
       });
 
       await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "workout-1",

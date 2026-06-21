@@ -56,14 +56,16 @@ const { publishedMetricStreamBatches } = vi.hoisted<{
 }));
 
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
-  reconcileProviderActivityAbsence: vi.fn().mockResolvedValue(undefined),
+  finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
+  upsertProviderActivity: vi.fn().mockResolvedValue({ id: "activity-id" }),
 }));
 
-vi.mock("../db/provider-activity-absence.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("../db/provider-activity-absence.ts")>();
+vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../db/provider-activity-sync.ts")>();
   return {
     ...original,
-    reconcileProviderActivityAbsence: providerActivityAbsenceMocks.reconcileProviderActivityAbsence,
+    finishProviderActivityListSync: providerActivityAbsenceMocks.finishProviderActivityListSync,
+    upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
   };
 });
 
@@ -87,8 +89,8 @@ vi.mock("../db/token-user-context.ts", () => ({
 
 afterEach(() => {
   publishedMetricStreamBatches.length = 0;
-  providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockReset();
-  providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockResolvedValue(undefined);
+  providerActivityAbsenceMocks.finishProviderActivityListSync.mockReset();
+  providerActivityAbsenceMocks.finishProviderActivityListSync.mockResolvedValue(undefined);
 });
 
 // ============================================================
@@ -1697,7 +1699,7 @@ describe("OuraProvider.sync()", () => {
       activityTable.providerId,
       activityTable.externalId,
     ]);
-    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
         providerId: "oura",
@@ -1709,7 +1711,7 @@ describe("OuraProvider.sync()", () => {
 
   it("reports activity absence reconciliation errors without rejecting sync", async () => {
     setupEnv();
-    providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockRejectedValueOnce(
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockRejectedValueOnce(
       new Error("write failed"),
     );
     const workout = fakeWorkout();
@@ -2167,7 +2169,7 @@ describe("OuraProvider.sync()", () => {
 
     // Verify tags endpoint was actually called (phases after workout still ran)
     expect(callCount).toBe(1);
-    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).not.toHaveBeenCalled();
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
   });
 
   it("handles empty API responses gracefully", async () => {

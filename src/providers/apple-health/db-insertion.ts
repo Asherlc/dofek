@@ -2,6 +2,7 @@ import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import { isIndoorCycling } from "@dofek/training/endurance-types";
 import { eq, sql } from "drizzle-orm";
 import type { SyncDatabase } from "../../db/index.ts";
+import { upsertProviderActivity } from "../../db/provider-activity-sync.ts";
 import {
   type MetricStreamSourceRow,
   writeMetricStreamBatch,
@@ -707,44 +708,35 @@ export async function upsertWorkoutBatch(
 
   for (let i = 0; i < uniqueWorkouts.length; i += 500) {
     const batch = uniqueWorkouts.slice(i, i + 500);
-    const insertRows = batch.map((w) => {
-      const raw: Record<string, number> = { durationSeconds: w.durationSeconds };
-      if (w.distanceMeters !== undefined) raw.distanceMeters = w.distanceMeters;
-      if (w.calories !== undefined) raw.calories = w.calories;
-      if (w.avgHeartRate !== undefined) raw.avgHeartRate = w.avgHeartRate;
-      if (w.maxHeartRate !== undefined) raw.maxHeartRate = w.maxHeartRate;
-      return {
+    for (const workout of batch) {
+      const raw: Record<string, number> = { durationSeconds: workout.durationSeconds };
+      if (workout.distanceMeters !== undefined) raw.distanceMeters = workout.distanceMeters;
+      if (workout.calories !== undefined) raw.calories = workout.calories;
+      if (workout.avgHeartRate !== undefined) raw.avgHeartRate = workout.avgHeartRate;
+      if (workout.maxHeartRate !== undefined) raw.maxHeartRate = workout.maxHeartRate;
+
+      const values = {
         providerId,
-        externalId: `ah:workout:${w.startDate.toISOString()}`,
-        activityType: w.activityType,
-        startedAt: w.startDate,
-        endedAt: w.endDate,
-        name: w.activityType,
-        sourceName: w.sourceName,
+        externalId: `ah:workout:${workout.startDate.toISOString()}`,
+        activityType: workout.activityType,
+        startedAt: workout.startDate,
+        endedAt: workout.endDate,
+        name: workout.activityType,
+        sourceName: workout.sourceName,
         raw,
       };
-    });
 
-    const returned = await db
-      .insert(activity)
-      .values(insertRows)
-      .onConflictDoUpdate({
-        target: [activity.userId, activity.providerId, activity.externalId],
-        set: {
-          activityType: sql`excluded.activity_type`,
-          endedAt: sql`excluded.ended_at`,
-          sourceName: sql`coalesce(excluded.source_name, ${activity.sourceName})`,
-          raw: sql`excluded.raw`,
-          providerAbsentAt: null,
-        },
-      })
-      .returning({ id: activity.id });
+      const returned = await upsertProviderActivity(db, values, {
+        activityType: values.activityType,
+        startedAt: values.startedAt,
+        endedAt: values.endedAt,
+        name: values.name,
+        sourceName: values.sourceName,
+        raw: values.raw,
+      });
 
-    for (let j = 0; j < returned.length; j++) {
-      const ret = returned[j];
-      const work = batch[j];
-      if (ret && work) {
-        activityResults.push({ activityId: ret.id, workout: work });
+      if (returned) {
+        activityResults.push({ activityId: returned.id, workout });
       }
     }
   }

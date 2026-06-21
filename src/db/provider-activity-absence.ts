@@ -54,6 +54,13 @@ function externalIdListSql(externalIds: string[]) {
   );
 }
 
+/**
+ * Tombstone activities missing from an authoritative provider list and restore
+ * activities that reappear. Provider sync code should call this only through
+ * `finishProviderActivityListSync()` / `ProviderActivityListSync` in
+ * `provider-activity-sync.ts`. Activity upserts must not null the column on
+ * conflict or a later sync phase can undo tombstones.
+ */
 export async function reconcileProviderActivityAbsence(
   db: SyncDatabase,
   reconciliation: ProviderActivityAbsenceReconciliation,

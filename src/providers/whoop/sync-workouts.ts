@@ -2,8 +2,8 @@ import { and, eq, sql } from "drizzle-orm";
 import { WhoopRateLimitError } from "whoop-whoop/client";
 import type { WhoopWorkoutRecord } from "whoop-whoop/types";
 import { parseDuringRange } from "whoop-whoop/utils";
-import { reconcileProviderActivityAbsence } from "../../db/provider-activity-absence.ts";
-import { activity, exercise, exerciseAlias, strengthSet } from "../../db/schema.ts";
+import { finishProviderActivityListSync, upsertProviderActivity } from "../../db/provider-activity-sync.ts";
+import { exercise, exerciseAlias, strengthSet } from "../../db/schema.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { SyncWindow } from "../sync-window.ts";
 import {
@@ -77,9 +77,9 @@ export async function syncWhoopWorkouts(context: WhoopSyncContext): Promise<numb
             const parsed = parseWorkout(workoutRecord, v2TypeName);
             if (!parsed) continue;
 
-            await db
-              .insert(activity)
-              .values({
+            await upsertProviderActivity(
+              db,
+              {
                 providerId,
                 externalId: parsed.externalId,
                 activityType: parsed.activityType,
@@ -92,23 +92,20 @@ export async function syncWhoopWorkouts(context: WhoopSyncContext): Promise<numb
                   calories: parsed.calories,
                   durationSeconds: parsed.durationSeconds,
                 },
-              })
-              .onConflictDoUpdate({
-                target: [activity.userId, activity.providerId, activity.externalId],
-                set: {
-                  activityType: parsed.activityType,
-                  startedAt: parsed.startedAt,
-                  endedAt: parsed.endedAt,
-                  raw: {
-                    strain: workoutRecord.score,
-                    avgHeartRate: parsed.avgHeartRate,
-                    maxHeartRate: parsed.maxHeartRate,
-                    calories: parsed.calories,
-                    durationSeconds: parsed.durationSeconds,
-                  },
-                  providerAbsentAt: null,
+              },
+              {
+                activityType: parsed.activityType,
+                startedAt: parsed.startedAt,
+                endedAt: parsed.endedAt,
+                raw: {
+                  strain: workoutRecord.score,
+                  avgHeartRate: parsed.avgHeartRate,
+                  maxHeartRate: parsed.maxHeartRate,
+                  calories: parsed.calories,
+                  durationSeconds: parsed.durationSeconds,
                 },
-              });
+              },
+            );
             count++;
           } catch (err) {
             const activityId = resolveWhoopWorkoutExternalId(workoutRecord) ?? "unknown-workout";
@@ -120,7 +117,7 @@ export async function syncWhoopWorkouts(context: WhoopSyncContext): Promise<numb
           }
         }
         if (presentExternalIds) {
-          await reconcileProviderActivityAbsence(db, {
+          await finishProviderActivityListSync(db, {
             providerId,
             userId: options?.userId,
             windowStart: absenceWindow.since,
@@ -171,9 +168,9 @@ export async function syncWhoopStrength(
             if (!workoutDuring) continue;
             const { start: startedAt, end: endedAt } = parseDuringRange(workoutDuring);
 
-            const [activityRow] = await db
-              .insert(activity)
-              .values({
+            const activityRow = await upsertProviderActivity(
+              db,
+              {
                 providerId,
                 externalId: activityId,
                 activityType: "strength",
@@ -187,24 +184,20 @@ export async function syncWhoopStrength(
                   cardioStrainContributionPercent: parsed.cardioStrainContributionPercent,
                   mskStrainContributionPercent: parsed.mskStrainContributionPercent,
                 },
-              })
-              .onConflictDoUpdate({
-                target: [activity.userId, activity.providerId, activity.externalId],
-                set: {
-                  name: weightliftingData.name ?? null,
-                  startedAt,
-                  endedAt,
-                  raw: sql`COALESCE(fitness.activity.raw, '{}'::jsonb) || ${JSON.stringify({
-                    rawMskStrainScore: parsed.rawMskStrainScore,
-                    scaledMskStrainScore: parsed.scaledMskStrainScore,
-                    cardioStrainScore: parsed.cardioStrainScore,
-                    cardioStrainContributionPercent: parsed.cardioStrainContributionPercent,
-                    mskStrainContributionPercent: parsed.mskStrainContributionPercent,
-                  })}::jsonb`,
-                  providerAbsentAt: null,
-                },
-              })
-              .returning({ id: activity.id });
+              },
+              {
+                name: weightliftingData.name ?? null,
+                startedAt,
+                endedAt,
+                raw: sql`COALESCE(fitness.activity.raw, '{}'::jsonb) || ${JSON.stringify({
+                  rawMskStrainScore: parsed.rawMskStrainScore,
+                  scaledMskStrainScore: parsed.scaledMskStrainScore,
+                  cardioStrainScore: parsed.cardioStrainScore,
+                  cardioStrainContributionPercent: parsed.cardioStrainContributionPercent,
+                  mskStrainContributionPercent: parsed.mskStrainContributionPercent,
+                })}::jsonb`,
+              },
+            );
 
             const dbActivityId = activityRow?.id;
             if (!dbActivityId) continue;

@@ -22,9 +22,18 @@ vi.mock("../db/token-user-context.ts", () => ({
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
 
-vi.mock("../db/provider-activity-absence.ts", () => ({
+const providerActivityAbsenceMocks = vi.hoisted(() => ({
+  markProviderActivityAbsent: vi.fn().mockResolvedValue(undefined),
+  finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
+  upsertProviderActivity: vi
+    .fn()
+    .mockResolvedValue({ id: "10000000-0000-4000-8000-000000000001" }),
+}));
+
+vi.mock("../db/provider-activity-sync.ts", () => ({
   markProviderActivityAbsent: providerActivityAbsenceMocks.markProviderActivityAbsent,
-  reconcileProviderActivityAbsence: providerActivityAbsenceMocks.reconcileProviderActivityAbsence,
+  finishProviderActivityListSync: providerActivityAbsenceMocks.finishProviderActivityListSync,
+  upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
 }));
 
 const { publishedMetricStreamBatches, publishedMetricStreamReplacements } = vi.hoisted<{
@@ -33,11 +42,6 @@ const { publishedMetricStreamBatches, publishedMetricStreamReplacements } = vi.h
 }>(() => ({
   publishedMetricStreamBatches: [],
   publishedMetricStreamReplacements: [],
-}));
-
-const providerActivityAbsenceMocks = vi.hoisted(() => ({
-  markProviderActivityAbsent: vi.fn().mockResolvedValue(undefined),
-  reconcileProviderActivityAbsence: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../metric-stream/redpanda-producer.ts", () => ({
@@ -915,7 +919,11 @@ describe("StravaProvider.syncWebhookEvent", () => {
     process.env.STRAVA_CLIENT_ID = "test-id";
     process.env.STRAVA_CLIENT_SECRET = "test-secret";
     providerActivityAbsenceMocks.markProviderActivityAbsent.mockClear();
-    providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockClear();
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
+    providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
+    providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue({
+      id: "10000000-0000-4000-8000-000000000001",
+    });
   });
 
   afterEach(() => {
@@ -1114,8 +1122,16 @@ describe("StravaProvider.syncWebhookEvent", () => {
     expect(result.provider).toBe("strava");
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
-    // insert called for: activity upsert, then metric_stream batch
-    expect(mockInsert).toHaveBeenCalled();
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        externalId: "12345678",
+        sourceName: "Garmin Edge 530",
+      }),
+      expect.objectContaining({
+        sourceName: "Garmin Edge 530",
+      }),
+    );
     expect(publishedMetricStreamReplacements).toEqual([
       {
         scope: { activityId: "10000000-0000-4000-8000-000000000001" },
@@ -1236,18 +1252,11 @@ describe("StravaProvider.syncWebhookEvent", () => {
       return new Response("Not Found", { status: 404 });
     };
 
-    // Insert returns empty array (no id)
-    const mockInsert = vi.fn().mockReturnValue({
-      values: vi.fn().mockReturnValue({
-        onConflictDoUpdate: vi.fn().mockReturnValue({
-          returning: vi.fn().mockResolvedValue([]),
-        }),
-      }),
-    });
+    providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValueOnce(undefined);
 
     const mockDb = {
       select: makeStravaSelectMock(validTokenRow),
-      insert: mockInsert,
+      insert: vi.fn(),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn(),
     };

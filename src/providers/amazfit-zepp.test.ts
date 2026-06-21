@@ -41,14 +41,16 @@ vi.mock("../db/tokens.ts", async (importOriginal) => {
 const TEST_USER_ID = "11111111-1111-4111-8111-111111111111";
 
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
-  reconcileProviderActivityAbsence: vi.fn().mockResolvedValue(undefined),
+  finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
+  upsertProviderActivity: vi.fn().mockResolvedValue({ id: "activity-id" }),
 }));
 
-vi.mock("../db/provider-activity-absence.ts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../db/provider-activity-absence.ts")>();
+vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../db/provider-activity-sync.ts")>();
   return {
     ...actual,
-    reconcileProviderActivityAbsence: providerActivityAbsenceMocks.reconcileProviderActivityAbsence,
+    finishProviderActivityListSync: providerActivityAbsenceMocks.finishProviderActivityListSync,
+    upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
   };
 });
 
@@ -261,7 +263,7 @@ describe("Amazfit/Zepp provider", () => {
   afterEach(async () => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
-    providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockClear();
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
     const { loadTokens } = await import("../db/tokens.ts");
     vi.mocked(loadTokens).mockReset();
   });
@@ -710,7 +712,7 @@ describe("Amazfit/Zepp provider", () => {
         }),
       }),
     );
-    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
         providerId: "amazfit-zepp",
@@ -846,7 +848,7 @@ describe("Amazfit/Zepp provider", () => {
       activityType: "cycling",
     });
     expect(onProgress).toHaveBeenCalledWith(100, "3/3 workouts");
-    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
         providerId: "amazfit-zepp",

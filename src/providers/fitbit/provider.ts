@@ -11,7 +11,7 @@ import {
 } from "../../auth/oauth.ts";
 import { resolveOAuthTokens } from "../../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../../db/index.ts";
-import { reconcileProviderActivityAbsence } from "../../db/provider-activity-absence.ts";
+import { finishProviderActivityListSync } from "../../db/provider-activity-sync.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { ensureProvider } from "../../db/tokens.ts";
 import type { SyncRun } from "../sync-run.ts";
@@ -254,7 +254,7 @@ export class FitbitProvider implements WebhookProvider {
             offset += response.pagination.limit;
           }
 
-          await reconcileProviderActivityAbsence(db, {
+          await finishProviderActivityListSync(db, {
             providerId: this.id,
             userId: options?.userId,
             windowStart: since,

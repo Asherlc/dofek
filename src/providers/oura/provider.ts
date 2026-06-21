@@ -5,8 +5,8 @@ import { resolveOAuthTokens } from "../../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../../db/index.ts";
 import {
   hasProviderActivityListSyncErrors,
-  reconcileProviderActivityAbsence,
-} from "../../db/provider-activity-absence.ts";
+  finishProviderActivityListSync,
+} from "../../db/provider-activity-sync.ts";
 import { ensureProvider } from "../../db/tokens.ts";
 import type { SyncRun } from "../sync-run.ts";
 import type {
@@ -257,7 +257,7 @@ export class OuraProvider implements WebhookProvider {
 
     if (!hasProviderActivityListSyncErrors(errors, ["workouts:", "sessions:"])) {
       try {
-        await reconcileProviderActivityAbsence(db, {
+        await finishProviderActivityListSync(db, {
           providerId: this.id,
           userId: options?.userId,
           windowStart: since,

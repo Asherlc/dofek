@@ -1,8 +1,7 @@
 import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import { TrainerRoadClient } from "trainerroad-client/client";
 import { parseTrainerRoadActivity } from "trainerroad-client/parsing";
-import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
-import { activity } from "../db/schema.ts";
+import { finishProviderActivityListSync, upsertProviderActivity } from "../db/provider-activity-sync.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { ProviderSessionExpiredError, ProviderStoredIdentityMissingError } from "./auth-errors.ts";
@@ -109,9 +108,9 @@ export class TrainerRoadProvider implements SyncProvider {
             const parsed = parseTrainerRoadActivity(raw);
             presentActivityExternalIds.add(parsed.externalId);
             try {
-              await db
-                .insert(activity)
-                .values({
+              await upsertProviderActivity(
+                db,
+                {
                   providerId: this.id,
                   externalId: parsed.externalId,
                   activityType: parsed.activityType,
@@ -119,18 +118,15 @@ export class TrainerRoadProvider implements SyncProvider {
                   startedAt: parsed.startedAt,
                   endedAt: parsed.endedAt,
                   raw: parsed.raw,
-                })
-                .onConflictDoUpdate({
-                  target: [activity.userId, activity.providerId, activity.externalId],
-                  set: {
-                    activityType: parsed.activityType,
-                    name: parsed.name,
-                    startedAt: parsed.startedAt,
-                    endedAt: parsed.endedAt,
-                    raw: parsed.raw,
-                    providerAbsentAt: null,
-                  },
-                });
+                },
+                {
+                  activityType: parsed.activityType,
+                  name: parsed.name,
+                  startedAt: parsed.startedAt,
+                  endedAt: parsed.endedAt,
+                  raw: parsed.raw,
+                },
+              );
               count++;
             } catch (err) {
               errors.push({
@@ -141,7 +137,7 @@ export class TrainerRoadProvider implements SyncProvider {
             }
           }
 
-          await reconcileProviderActivityAbsence(db, {
+          await finishProviderActivityListSync(db, {
             providerId: this.id,
             userId: options?.userId,
             windowStart: since,

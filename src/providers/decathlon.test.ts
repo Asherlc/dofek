@@ -6,7 +6,8 @@ import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
-  reconcileProviderActivityAbsence: vi.fn().mockResolvedValue(undefined),
+  finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
+  upsertProviderActivity: vi.fn().mockResolvedValue({ id: "activity-id" }),
 }));
 
 vi.mock("../db/sync-log.ts", () => ({
@@ -40,11 +41,12 @@ vi.mock("../db/tokens.ts", () => ({
   deleteTokens: vi.fn(async () => {}),
 }));
 
-vi.mock("../db/provider-activity-absence.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("../db/provider-activity-absence.ts")>();
+vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../db/provider-activity-sync.ts")>();
   return {
     ...original,
-    reconcileProviderActivityAbsence: providerActivityAbsenceMocks.reconcileProviderActivityAbsence,
+    finishProviderActivityListSync: providerActivityAbsenceMocks.finishProviderActivityListSync,
+    upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
   };
 });
 
@@ -74,7 +76,8 @@ describe("DecathlonProvider — rate-limit aware fetch wiring", () => {
 
   afterEach(() => {
     process.env = { ...originalEnv };
-    providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockClear();
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
+    providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
   });
 
   it("surfaces a 429 as a ProviderRateLimitError tagged with providerId 'decathlon'", async () => {
@@ -136,11 +139,17 @@ describe("DecathlonProvider — rate-limit aware fetch wiring", () => {
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBe(1);
-    expect(db.values).toHaveBeenCalledWith(expect.objectContaining({ externalId: "in-window" }));
-    expect(db.values).not.toHaveBeenCalledWith(
-      expect.objectContaining({ externalId: "after-window" }),
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ externalId: "in-window" }),
+      expect.any(Object),
     );
-    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).not.toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ externalId: "after-window" }),
+      expect.any(Object),
+    );
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
         presentExternalIds: new Set(["in-window"]),

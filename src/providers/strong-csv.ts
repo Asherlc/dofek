@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
-import { activity, exercise, exerciseAlias, strengthSet } from "../db/schema.ts";
+import { finishProviderActivityListSync, upsertProviderActivity } from "../db/provider-activity-sync.ts";
+import { exercise, exerciseAlias, strengthSet } from "../db/schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { lookupExerciseMuscleGroups } from "../exercise-metadata.ts";
 import type { ImportProvider, SyncError, SyncResult } from "./types.ts";
@@ -367,6 +368,9 @@ export async function importStrongCsv(
     effectiveWeightUnit = textResult.weightUnit;
   }
   const exerciseCache = new Map<string, string>();
+  const presentExternalIds = new Set<string>();
+  let windowStart: Date | null = null;
+  let windowEnd: Date | null = null;
 
   for (const group of groups) {
     try {
@@ -377,10 +381,14 @@ export async function importStrongCsv(
       const endedAt =
         durationSeconds > 0 ? new Date(startedAt.getTime() + durationSeconds * 1000) : null;
 
-      // Upsert activity (so it shows up in the main list)
-      const [activityRow] = await db
-        .insert(activity)
-        .values({
+      presentExternalIds.add(externalId);
+      if (!windowStart || startedAt < windowStart) windowStart = startedAt;
+      const endedOrStarted = endedAt ?? startedAt;
+      if (!windowEnd || endedOrStarted > windowEnd) windowEnd = endedOrStarted;
+
+      const activityRow = await upsertProviderActivity(
+        db,
+        {
           providerId: STRONG_PROVIDER_ID,
           userId,
           externalId,
@@ -389,19 +397,15 @@ export async function importStrongCsv(
           endedAt,
           name: group.workoutName,
           notes: group.workoutNotes,
-        })
-        .onConflictDoUpdate({
-          target: [activity.userId, activity.providerId, activity.externalId],
-          set: {
-            activityType: "strength",
-            startedAt,
-            endedAt,
-            name: group.workoutName,
-            notes: group.workoutNotes,
-            providerAbsentAt: null,
-          },
-        })
-        .returning({ id: activity.id });
+        },
+        {
+          activityType: "strength",
+          startedAt,
+          endedAt,
+          name: group.workoutName,
+          notes: group.workoutNotes,
+        },
+      );
 
       const activityId = activityRow?.id;
       if (!activityId) continue;
@@ -514,6 +518,16 @@ export async function importStrongCsv(
         cause: err,
       });
     }
+  }
+
+  if (windowStart && windowEnd) {
+    await finishProviderActivityListSync(db, {
+      providerId: STRONG_PROVIDER_ID,
+      userId,
+      windowStart,
+      windowEnd: new Date(windowEnd.getTime() + 1),
+      presentExternalIds,
+    });
   }
 
   return { provider: STRONG_PROVIDER_ID, recordsSynced, errors, duration: Date.now() - start };

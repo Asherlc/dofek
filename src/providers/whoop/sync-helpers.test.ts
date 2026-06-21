@@ -12,11 +12,13 @@ import type { WhoopSyncContext } from "./sync-types.ts";
 import { syncWhoopWorkouts } from "./sync-workouts.ts";
 
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
-  reconcileProviderActivityAbsence: vi.fn().mockResolvedValue(undefined),
+  finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
+  upsertProviderActivity: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("../../db/provider-activity-absence.ts", () => ({
-  reconcileProviderActivityAbsence: providerActivityAbsenceMocks.reconcileProviderActivityAbsence,
+vi.mock("../../db/provider-activity-sync.ts", () => ({
+  finishProviderActivityListSync: providerActivityAbsenceMocks.finishProviderActivityListSync,
+  upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
 }));
 
 vi.mock("../../db/sync-log.ts", () => ({
@@ -89,7 +91,9 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-05-09T00:00:00.000Z"));
   vi.mocked(writeMetricStreamBatch).mockClear();
-  providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockClear();
+  providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
+  providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
+  providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue(undefined);
 });
 
 function makeWorkoutRecord(
@@ -397,7 +401,7 @@ describe("WHOOP sync helpers", () => {
       since: context.since,
       until: context.windowEnd,
     }).withMinimumLookback(30);
-    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
       db.db,
       {
         providerId: "whoop",
@@ -408,7 +412,7 @@ describe("WHOOP sync helpers", () => {
       },
     );
     const reconcileArgs =
-      providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mock.calls[0]?.[1];
+      providerActivityAbsenceMocks.finishProviderActivityListSync.mock.calls[0]?.[1];
     if (!reconcileArgs) throw new Error("expected reconciliation call");
     expect([...reconcileArgs.presentExternalIds].sort()).toEqual(["42", "present-workout"]);
   });
@@ -432,7 +436,7 @@ describe("WHOOP sync helpers", () => {
       since: context.since,
       until: context.windowEnd,
     }).withMinimumLookback(30);
-    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
       db.db,
       expect.objectContaining({
         userId: "user-1",
@@ -471,6 +475,6 @@ describe("WHOOP sync helpers", () => {
         cause: developerError,
       },
     ]);
-    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).not.toHaveBeenCalled();
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
   });
 });

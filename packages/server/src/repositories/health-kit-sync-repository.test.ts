@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   aggregateDailyMetricSamples,
   categorize,
@@ -10,6 +10,20 @@ import {
   isSleepStageValue,
   type SleepSample,
 } from "./health-kit-sync-repository.ts";
+
+const providerActivitySyncMocks = vi.hoisted(() => ({
+  reconcile: vi.fn().mockResolvedValue(undefined),
+  upsert: vi.fn().mockResolvedValue({ id: "activity-id" }),
+}));
+
+vi.mock("../../../../src/db/provider-activity-sync.ts", () => ({
+  ProviderActivityListSync: class {
+    upsert = providerActivitySyncMocks.upsert;
+    reconcile = providerActivitySyncMocks.reconcile;
+  },
+  finishProviderActivityListSync: vi.fn(),
+  upsertProviderActivity: vi.fn(),
+}));
 
 function makeMetricStreamPublisher() {
   return {
@@ -852,6 +866,11 @@ describe("MAX_SLEEP_SESSION_GAP_MS (90 minutes)", () => {
 });
 
 describe("workoutActivityTypeMap (via processWorkouts)", () => {
+  beforeEach(() => {
+    providerActivitySyncMocks.upsert.mockClear();
+    providerActivitySyncMocks.reconcile.mockClear();
+  });
+
   it("maps type 37 to running", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     const repo = new HealthKitSyncRepository({ execute }, "user-1");
@@ -866,10 +885,10 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
         sourceBundle: "com.apple.Health",
       },
     ]);
-    // The SQL should contain the mapped activity type "running"
-    const callArgs = execute.mock.calls[0]?.[0];
-    const queryString = String(callArgs?.queryChunks?.join?.("") ?? callArgs);
-    expect(queryString).toContain("running");
+    expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ activityType: "running" }),
+      expect.objectContaining({ activityType: "running" }),
+    );
   });
 
   it("maps type 13 to cycling", async () => {
@@ -886,9 +905,10 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
         sourceBundle: "com.apple.Health",
       },
     ]);
-    const callArgs = execute.mock.calls[0]?.[0];
-    const queryString = String(callArgs?.queryChunks?.join?.("") ?? callArgs);
-    expect(queryString).toContain("cycling");
+    expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ activityType: "cycling" }),
+      expect.objectContaining({ activityType: "cycling" }),
+    );
   });
 
   it("maps type 24 to hiking", async () => {
@@ -905,9 +925,10 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
         sourceBundle: "com.apple.Health",
       },
     ]);
-    const callArgs = execute.mock.calls[0]?.[0];
-    const queryString = String(callArgs?.queryChunks?.join?.("") ?? callArgs);
-    expect(queryString).toContain("hiking");
+    expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ activityType: "hiking" }),
+      expect.objectContaining({ activityType: "hiking" }),
+    );
   });
 
   it("maps type 46 to swimming", async () => {
@@ -924,9 +945,10 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
         sourceBundle: "com.apple.Health",
       },
     ]);
-    const callArgs = execute.mock.calls[0]?.[0];
-    const queryString = String(callArgs?.queryChunks?.join?.("") ?? callArgs);
-    expect(queryString).toContain("swimming");
+    expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ activityType: "swimming" }),
+      expect.objectContaining({ activityType: "swimming" }),
+    );
   });
 
   it("maps unknown workout type to other", async () => {
@@ -943,9 +965,10 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
         sourceBundle: "com.apple.Health",
       },
     ]);
-    const callArgs = execute.mock.calls[0]?.[0];
-    const queryString = String(callArgs?.queryChunks?.join?.("") ?? callArgs);
-    expect(queryString).toContain("other");
+    expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ activityType: "other" }),
+      expect.objectContaining({ activityType: "other" }),
+    );
   });
 });
 
@@ -1331,14 +1354,20 @@ describe("HealthKitSyncRepository", () => {
   });
 
   describe("processWorkouts", () => {
+    beforeEach(() => {
+      providerActivitySyncMocks.upsert.mockClear();
+      providerActivitySyncMocks.reconcile.mockClear();
+    });
+
     it("returns 0 for empty workouts", async () => {
       const { repository, execute } = makeRepository();
       const result = await repository.processWorkouts([]);
       expect(result).toBe(0);
       expect(execute).not.toHaveBeenCalled();
+      expect(providerActivitySyncMocks.upsert).not.toHaveBeenCalled();
     });
 
-    it("inserts workouts without touching the retired Postgres metric_stream table", async () => {
+    it("upserts workouts via shared processor without touching metric_stream", async () => {
       const { repository, execute } = makeRepository();
       const workouts = [
         {
@@ -1355,8 +1384,9 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processWorkouts(workouts);
       expect(result).toBe(1);
-      expect(execute).toHaveBeenCalledTimes(1);
-      expect(JSON.stringify(execute.mock.calls)).not.toContain("fitness.metric_stream");
+      expect(providerActivitySyncMocks.upsert).toHaveBeenCalledTimes(1);
+      expect(providerActivitySyncMocks.reconcile).toHaveBeenCalledTimes(1);
+      expect(execute).not.toHaveBeenCalled();
     });
   });
 

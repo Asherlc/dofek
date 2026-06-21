@@ -18,7 +18,7 @@ import { z } from "zod";
 import type { TokenSet } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
-import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
+import { finishProviderActivityListSync, upsertProviderActivity } from "../db/provider-activity-sync.ts";
 import { activity, dailyMetrics, sleepSession, sleepStage, userSettings } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
@@ -627,9 +627,9 @@ export class GarminProvider implements SyncProvider {
 
       const connectDeviceName = raw.deviceName ?? null;
 
-      await db
-        .insert(activity)
-        .values({
+      await upsertProviderActivity(
+        db,
+        {
           providerId: this.id,
           externalId: parsed.externalId,
           activityType: parsed.activityType,
@@ -638,19 +638,16 @@ export class GarminProvider implements SyncProvider {
           name: parsed.name,
           sourceName: connectDeviceName,
           raw: parsed.raw,
-        })
-        .onConflictDoUpdate({
-          target: [activity.userId, activity.providerId, activity.externalId],
-          set: {
-            activityType: parsed.activityType,
-            startedAt: parsed.startedAt,
-            endedAt: parsed.endedAt,
-            name: parsed.name,
-            sourceName: connectDeviceName,
-            raw: parsed.raw,
-            providerAbsentAt: null,
-          },
-        });
+        },
+        {
+          activityType: parsed.activityType,
+          startedAt: parsed.startedAt,
+          endedAt: parsed.endedAt,
+          name: parsed.name,
+          sourceName: connectDeviceName,
+          raw: parsed.raw,
+        },
+      );
 
       // Sync activity detail streams
       try {
@@ -718,7 +715,7 @@ export class GarminProvider implements SyncProvider {
     // Only reconcile when the page is partial. A full page may have more activities
     // on subsequent pages, so absence in this fetch is not authoritative.
     if (activities.length < GARMIN_ACTIVITY_PAGE_SIZE) {
-      await reconcileProviderActivityAbsence(db, {
+      await finishProviderActivityListSync(db, {
         providerId: this.id,
         userId,
         windowStart: since,

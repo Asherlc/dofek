@@ -77,7 +77,8 @@ const mocks = vi.hoisted(() => {
 
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
   markProviderActivityAbsent: vi.fn().mockResolvedValue(undefined),
-  reconcileProviderActivityAbsence: vi.fn().mockResolvedValue(undefined),
+  finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
+  upsertProviderActivity: vi.fn().mockResolvedValue({ id: "activity-id" }),
 }));
 
 vi.mock("@sentry/node", () => ({
@@ -118,9 +119,10 @@ vi.mock("../db/sync-log.ts", () => ({
   withSyncLog: mocks.withSyncLog,
 }));
 
-vi.mock("../db/provider-activity-absence.ts", () => ({
+vi.mock("../db/provider-activity-sync.ts", () => ({
   markProviderActivityAbsent: providerActivityAbsenceMocks.markProviderActivityAbsent,
-  reconcileProviderActivityAbsence: providerActivityAbsenceMocks.reconcileProviderActivityAbsence,
+  finishProviderActivityListSync: providerActivityAbsenceMocks.finishProviderActivityListSync,
+  upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
 }));
 
 vi.mock("../logger.ts", () => ({
@@ -515,7 +517,7 @@ describe("GarminProvider.sync()", () => {
     vi.clearAllMocks();
     publishedMetricStreamBatches.length = 0;
     providerActivityAbsenceMocks.markProviderActivityAbsent.mockClear();
-    providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockClear();
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
     provider = new GarminProvider();
     db = createMockDb();
 
@@ -707,7 +709,7 @@ describe("GarminProvider.sync()", () => {
 
     await syncProvider(provider, db, since);
 
-    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
         providerId: "garmin",
@@ -736,7 +738,7 @@ describe("GarminProvider.sync()", () => {
 
     await syncProvider(provider, db, since);
 
-    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).not.toHaveBeenCalled();
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
   });
 
   it("syncs sleep data", async () => {

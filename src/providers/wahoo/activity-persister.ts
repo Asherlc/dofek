@@ -1,6 +1,6 @@
 import type { SyncDatabase } from "../../db/index.ts";
 import { replaceMetricStreamBatch, writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";
-import { activity } from "../../db/schema.ts";
+import { upsertProviderActivity } from "../../db/provider-activity-sync.ts";
 import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
 import { parseFitFile } from "../../fit/parser.ts";
 import { fitRecordsToSensorSamples as fitRecordsToMetricStream } from "../../fit/records.ts";
@@ -47,27 +47,23 @@ export class WahooActivityPersister {
     const errors: SyncError[] = [];
 
     try {
-      const [row] = await this.#db
-        .insert(activity)
-        .values({
+      const row = await upsertProviderActivity(
+        this.#db,
+        {
           providerId: this.#providerId,
           externalId: parsed.externalId,
           activityType: parsed.activityType,
           startedAt: parsed.startedAt,
           endedAt: parsed.endedAt,
           name: parsed.name,
-        })
-        .onConflictDoUpdate({
-          target: [activity.userId, activity.providerId, activity.externalId],
-          set: {
-            activityType: parsed.activityType,
-            startedAt: parsed.startedAt,
-            endedAt: parsed.endedAt,
-            name: parsed.name,
-            providerAbsentAt: null,
-          },
-        })
-        .returning({ id: activity.id });
+        },
+        {
+          activityType: parsed.activityType,
+          startedAt: parsed.startedAt,
+          endedAt: parsed.endedAt,
+          name: parsed.name,
+        },
+      );
 
       const activityId = row?.id;
       if (!activityId) {

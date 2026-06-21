@@ -19,10 +19,9 @@ describe("buildActivityReadModelRefreshStatements", () => {
     expect(activitySql).toContain("tombstoned AS");
     expect(activitySql).toContain("clusterable AS");
     expect(activitySql).toContain("absent_source_links AS");
+    expect(activitySql).toContain("tombstoned_groups AS");
     expect(activitySql).toContain("INNER JOIN tombstoned");
-    expect(activitySql).toContain(
-      "coalesce(any(absent_source_links.absent_source_external_ids), []) AS absent_source_external_ids",
-    );
+    expect(activitySql).toContain("NOT IN (SELECT group_id FROM tombstoned_groups)");
     expect(statements[3]).toContain("arrayJoin(member_activity_ids)");
   });
 });

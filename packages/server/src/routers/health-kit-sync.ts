@@ -199,10 +199,19 @@ export const healthKitSyncRouter = router({
     }),
 
   pushWorkouts: protectedProcedure
-    .input(z.object({ workouts: z.array(workoutSampleSchema) }))
+    .input(
+      z.object({
+        workouts: z.array(workoutSampleSchema),
+        windowStart: z.string(),
+        windowEnd: z.string(),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       await ensureProvider(ctx.db, ctx.userId);
-      const inserted = await processWorkouts(ctx.db, ctx.userId, input.workouts);
+      const inserted = await processWorkouts(ctx.db, ctx.userId, input.workouts, {
+        windowStart: input.windowStart,
+        windowEnd: input.windowEnd,
+      });
 
       if (inserted > 0) {
         await queryCache.invalidateByPrefix(`${ctx.userId}:`);

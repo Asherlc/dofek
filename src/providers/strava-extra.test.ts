@@ -12,7 +12,8 @@ const { publishedMetricStreamBatches } = vi.hoisted<{
 
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
   markProviderActivityAbsent: vi.fn().mockResolvedValue(undefined),
-  reconcileProviderActivityAbsence: vi.fn().mockResolvedValue(undefined),
+  finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
+  upsertProviderActivity: vi.fn().mockResolvedValue({ id: "activity-id" }),
 }));
 
 vi.mock("../metric-stream/redpanda-producer.ts", () => ({
@@ -33,15 +34,16 @@ vi.mock("../db/token-user-context.ts", () => ({
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
 
-vi.mock("../db/provider-activity-absence.ts", () => ({
+vi.mock("../db/provider-activity-sync.ts", () => ({
   markProviderActivityAbsent: providerActivityAbsenceMocks.markProviderActivityAbsent,
-  reconcileProviderActivityAbsence: providerActivityAbsenceMocks.reconcileProviderActivityAbsence,
+  finishProviderActivityListSync: providerActivityAbsenceMocks.finishProviderActivityListSync,
+  upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
 }));
 
 beforeEach(() => {
   publishedMetricStreamBatches.length = 0;
   providerActivityAbsenceMocks.markProviderActivityAbsent.mockClear();
-  providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockClear();
+  providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
 });
 
 // ============================================================
@@ -227,7 +229,7 @@ describe("StravaProvider.sync", () => {
     );
     expect(result.provider).toBe("strava");
     expect(result.errors.some((e) => e.message.includes("rate limit"))).toBe(true);
-    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).not.toHaveBeenCalled();
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
   });
 });
 
@@ -374,7 +376,7 @@ describe("StravaProvider.sync — additional coverage", () => {
         String(url).includes(`/activities/${MOCK_ACTIVITY.id}/streams`),
       ),
     ).toBe(true);
-    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
       mockDb,
       expect.objectContaining({
         providerId: "strava",

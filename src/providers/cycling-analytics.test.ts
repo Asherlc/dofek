@@ -6,7 +6,8 @@ import { SyncWindow } from "./sync-window.ts";
 import { createMockDatabase } from "./test-helpers.ts";
 
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
-  reconcileProviderActivityAbsence: vi.fn().mockResolvedValue(undefined),
+  finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
+  upsertProviderActivity: vi.fn().mockResolvedValue({ id: "activity-id" }),
 }));
 
 vi.mock("../db/sync-log.ts", () => ({
@@ -40,11 +41,12 @@ vi.mock("../db/tokens.ts", () => ({
   deleteTokens: vi.fn(async () => {}),
 }));
 
-vi.mock("../db/provider-activity-absence.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("../db/provider-activity-absence.ts")>();
+vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../db/provider-activity-sync.ts")>();
   return {
     ...original,
-    reconcileProviderActivityAbsence: providerActivityAbsenceMocks.reconcileProviderActivityAbsence,
+    finishProviderActivityListSync: providerActivityAbsenceMocks.finishProviderActivityListSync,
+    upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
   };
 });
 
@@ -53,7 +55,7 @@ describe("CyclingAnalyticsProvider — rate-limit aware fetch wiring", () => {
 
   afterEach(() => {
     process.env = { ...originalEnv };
-    providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockClear();
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
   });
 
   it("surfaces a 429 as a ProviderRateLimitError tagged with providerId 'cycling_analytics'", async () => {
@@ -116,7 +118,7 @@ describe("CyclingAnalyticsProvider — rate-limit aware fetch wiring", () => {
     expect(result.recordsSynced).toBe(1);
     expect(spies.values).toHaveBeenCalledWith(expect.objectContaining({ externalId: "1" }));
     expect(spies.values).not.toHaveBeenCalledWith(expect.objectContaining({ externalId: "2" }));
-    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
         presentExternalIds: new Set(["1"]),

@@ -88,7 +88,11 @@ export interface SyncTrpcClient {
       }): Promise<{ inserted: number; errors: string[] }>;
     };
     pushWorkouts: {
-      mutate(input: { workouts: WorkoutSample[] }): Promise<{ inserted: number }>;
+      mutate(input: {
+        workouts: WorkoutSample[];
+        windowStart: string;
+        windowEnd: string;
+      }): Promise<{ inserted: number }>;
     };
     pushWorkoutRoutes: {
       mutate(input: { routes: WorkoutRoutePayload[] }): Promise<{ inserted: number }>;
@@ -174,8 +178,12 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
   // Sync workouts
   onProgress?.("Querying workouts...");
   const workouts = (await healthKit.queryWorkouts(startDate, endDate)).map(normalizeWorkout);
-  if (workouts.length > 0) {
-    const result = await trpcClient.healthKitSync.pushWorkouts.mutate({ workouts });
+  {
+    const result = await trpcClient.healthKitSync.pushWorkouts.mutate({
+      workouts,
+      windowStart: startDate,
+      windowEnd: endDate,
+    });
     totalInserted += result.inserted;
 
     // Fetch GPS routes for each workout (parallel with bounded concurrency, non-fatal errors)
@@ -212,7 +220,7 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
     );
     const routes = routeGroups.flat();
 
-    if (routes.length > 0) {
+    if (workouts.length > 0 && routes.length > 0) {
       onProgress?.(`Pushing ${routes.length} workout routes...`);
       try {
         const routeResult = await trpcClient.healthKitSync.pushWorkoutRoutes.mutate({ routes });

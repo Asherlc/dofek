@@ -18,6 +18,7 @@ import {
 } from "../../db/schema.ts";
 import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
+import { finishProviderActivityListSync } from "../../db/provider-activity-sync.ts";
 import { ensureProvider } from "../../db/tokens.ts";
 import { logger } from "../../logger.ts";
 import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
@@ -133,6 +134,7 @@ export async function runImport(
   const start = Date.now();
   const errors: SyncError[] = [];
   let recordsSynced = 0;
+  const presentWorkoutExternalIds = new Set<string>();
   const scopedUserId = getTokenUserId();
   if (!scopedUserId) {
     throw new Error("apple-health import requires user context");
@@ -224,6 +226,9 @@ export async function runImport(
         recordsSynced += sleepCount;
       },
       onWorkoutBatch: async (workouts) => {
+        for (const workout of workouts) {
+          presentWorkoutExternalIds.add(`ah:workout:${workout.startDate.toISOString()}`);
+        }
         const workoutCount = await upsertWorkoutBatch(
           db,
           providerId,
@@ -258,6 +263,14 @@ export async function runImport(
       await aggregateSpO2ToDailyMetrics(db, providerId, dailyAggregateMetricRecords);
       await aggregateSkinTempToDailyMetrics(db, providerId, dailyAggregateMetricRecords);
     }
+
+    await finishProviderActivityListSync(db, {
+      providerId,
+      userId: scopedUserId,
+      windowStart: since,
+      windowEnd: new Date(),
+      presentExternalIds: presentWorkoutExternalIds,
+    });
 
     logger.info(
       `[apple_health] Parsed ${counts.recordCount} records, ` +

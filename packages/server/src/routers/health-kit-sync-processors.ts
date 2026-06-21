@@ -2,6 +2,9 @@ import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import {
+  ProviderActivityListSync,
+} from "../../../../src/db/provider-activity-sync.ts";
+import {
   BODY_MEASUREMENT_COLUMN_TO_CHANNEL,
   SOURCE_TYPE_API,
 } from "../../../../src/db/sensor-channels.ts";
@@ -377,20 +380,37 @@ export async function processHealthEvents(
   return inserted;
 }
 
+export function appleHealthWorkoutExternalId(uuid: string): string {
+  return `hk:workout:${uuid}`;
+}
+
+export interface ProcessWorkoutsOptions {
+  windowStart: string;
+  windowEnd: string;
+}
+
 /** Process workout samples */
 export async function processWorkouts(
   db: Database,
   userId: string,
   workouts: WorkoutSample[],
+  options: ProcessWorkoutsOptions,
 ): Promise<number> {
+  const activitySync = new ProviderActivityListSync({
+    db,
+    providerId: PROVIDER_ID,
+    userId,
+    windowStart: new Date(options.windowStart),
+    windowEnd: new Date(options.windowEnd),
+  });
+
   let inserted = 0;
   for (let i = 0; i < workouts.length; i += BATCH_SIZE) {
     const batch = workouts.slice(i, i + BATCH_SIZE);
     for (const workout of batch) {
-      const externalId = `hk:workout:${workout.uuid}`;
       const activityType = workoutActivityTypeMap[workout.workoutType] ?? "other";
 
-      const rawData = JSON.stringify({
+      const rawData = {
         duration: workout.duration,
         totalEnergyBurned: workout.totalEnergyBurned,
         totalDistance: workout.totalDistance,
@@ -398,29 +418,30 @@ export async function processWorkouts(
         workoutType: workout.workoutType,
         metadata: workout.metadata,
         workoutActivities: workout.workoutActivities,
-      });
+      };
 
-      await db.execute(
-        sql`INSERT INTO fitness.activity (user_id, provider_id, external_id, activity_type, started_at, ended_at, raw)
-            VALUES (
-              ${userId},
-              ${PROVIDER_ID},
-              ${externalId},
-              ${activityType},
-              ${workout.startDate}::timestamptz,
-              ${workout.endDate}::timestamptz,
-              ${rawData}::jsonb
-            )
-            ON CONFLICT (user_id, provider_id, external_id) DO UPDATE SET
-              activity_type = ${activityType},
-              started_at = ${workout.startDate}::timestamptz,
-              ended_at = ${workout.endDate}::timestamptz,
-              raw = ${rawData}::jsonb,
-              provider_absent_at = NULL`,
+      await activitySync.upsert(
+        {
+          userId,
+          providerId: PROVIDER_ID,
+          externalId: appleHealthWorkoutExternalId(workout.uuid),
+          activityType,
+          startedAt: new Date(workout.startDate),
+          endedAt: new Date(workout.endDate),
+          raw: rawData,
+        },
+        {
+          activityType,
+          startedAt: new Date(workout.startDate),
+          endedAt: new Date(workout.endDate),
+          raw: rawData,
+        },
       );
       inserted++;
     }
   }
+
+  await activitySync.reconcile();
 
   return inserted;
 }

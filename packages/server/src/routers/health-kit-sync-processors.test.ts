@@ -1,7 +1,26 @@
 import { describe, expect, it, vi } from "vitest";
 import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/redpanda-producer.ts";
-import { processBodyMeasurements, processMetricStream } from "./health-kit-sync-processors.ts";
+import {
+  appleHealthWorkoutExternalId,
+  processBodyMeasurements,
+  processMetricStream,
+  processWorkouts,
+} from "./health-kit-sync-processors.ts";
 import type { HealthKitSample } from "./health-kit-sync-schemas.ts";
+
+const providerActivitySyncMocks = vi.hoisted(() => ({
+  reconcile: vi.fn().mockResolvedValue(undefined),
+  upsert: vi.fn().mockResolvedValue({ id: "activity-id" }),
+}));
+
+vi.mock("../../../../src/db/provider-activity-sync.ts", () => ({
+  ProviderActivityListSync: class {
+    upsert = providerActivitySyncMocks.upsert;
+    reconcile = providerActivitySyncMocks.reconcile;
+  },
+  finishProviderActivityListSync: vi.fn(),
+  upsertProviderActivity: vi.fn(),
+}));
 
 const heartRateSample = {
   type: "HKQuantityTypeIdentifierHeartRate",
@@ -80,5 +99,43 @@ describe("processBodyMeasurements", () => {
         scalar: 82.5,
       },
     ]);
+  });
+});
+
+describe("processWorkouts", () => {
+  it("reconciles apple_health workouts missing from the HealthKit sync window", async () => {
+    providerActivitySyncMocks.reconcile.mockClear();
+    providerActivitySyncMocks.upsert.mockClear();
+    const execute = vi.fn(async () => []);
+
+    await processWorkouts(
+      { execute },
+      "00000000-0000-0000-0000-000000000001",
+      [
+        {
+          uuid: "workout-1",
+          workoutType: "13",
+          startDate: "2026-06-20T21:49:00.000Z",
+          endDate: "2026-06-20T22:17:59.000Z",
+          duration: 1738,
+          totalEnergyBurned: 130,
+          totalDistance: null,
+          sourceName: "WHOOP",
+          sourceBundle: "com.whoop.app",
+        },
+      ],
+      {
+        windowStart: "2026-06-13T00:00:00.000Z",
+        windowEnd: "2026-06-21T00:00:00.000Z",
+      },
+    );
+
+    expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        externalId: appleHealthWorkoutExternalId("workout-1"),
+      }),
+      expect.any(Object),
+    );
+    expect(providerActivitySyncMocks.reconcile).toHaveBeenCalledTimes(1);
   });
 });
