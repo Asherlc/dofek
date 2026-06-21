@@ -36,6 +36,9 @@ const mockSleepPerformance = {
   efficiency: 91,
   recommendedBedtime: "22:15",
   sleepDate: today,
+  providerId: "whoop",
+  sourceName: null,
+  sourceProviders: ["whoop"],
 };
 
 const mockStrainTarget = {
@@ -157,6 +160,9 @@ export const LowRecovery: Story = {
       efficiency: 72,
       recommendedBedtime: "21:30",
       sleepDate: today,
+      providerId: "apple_health",
+      sourceName: "Apple Watch",
+      sourceProviders: ["apple_health"],
     },
   },
 };

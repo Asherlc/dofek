@@ -1,6 +1,12 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { SleepPerformanceCard } from "./SleepPerformanceCard";
 
+const sampleProvenance = {
+  providerId: "whoop",
+  sourceName: "WHOOP 4.0",
+  sourceProviders: ["whoop"],
+};
+
 const meta = {
   title: "Sleep/SleepPerformanceCard",
   component: SleepPerformanceCard,
@@ -21,6 +27,7 @@ const meta = {
       efficiency: 92,
       recommendedBedtime: "10:30 PM",
       sleepDate: "2026-04-02",
+      ...sampleProvenance,
     },
   },
 } satisfies Meta<typeof SleepPerformanceCard>;
@@ -41,6 +48,7 @@ export const Excellent: Story = {
       efficiency: 95,
       recommendedBedtime: "10:15 PM",
       sleepDate: "2026-04-02",
+      ...sampleProvenance,
     },
   },
 };
@@ -55,6 +63,9 @@ export const Poor: Story = {
       efficiency: 72,
       recommendedBedtime: "9:30 PM",
       sleepDate: "2026-04-02",
+      providerId: "apple_health",
+      sourceName: "Apple Watch",
+      sourceProviders: ["apple_health", "whoop"],
     },
   },
 };

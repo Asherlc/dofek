@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { statusColors } from "@dofek/scoring/colors";
 import { render, screen } from "@testing-library/react";
+import type { SleepNeedResult } from "dofek-server/types";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { SleepNeedCard } from "./SleepNeedCard.tsx";
@@ -14,6 +15,15 @@ vi.mock("echarts-for-react", () => ({
   },
 }));
 
+const emptyProvenance: Pick<
+  SleepNeedResult["recentNights"][number],
+  "providerId" | "sourceName" | "sourceProviders"
+> = {
+  providerId: null,
+  sourceName: null,
+  sourceProviders: [],
+};
+
 const mockData = {
   baselineMinutes: 480,
   strainDebtMinutes: 12,
@@ -21,9 +31,27 @@ const mockData = {
   totalNeedMinutes: 515,
   canRecommend: true,
   recentNights: [
-    { date: "2026-03-14", actualMinutes: 420, neededMinutes: 480, debtMinutes: 60 },
-    { date: "2026-03-15", actualMinutes: 500, neededMinutes: 480, debtMinutes: 0 },
-    { date: "2026-03-16", actualMinutes: 390, neededMinutes: 480, debtMinutes: 90 },
+    {
+      date: "2026-03-14",
+      actualMinutes: 420,
+      neededMinutes: 480,
+      debtMinutes: 60,
+      ...emptyProvenance,
+    },
+    {
+      date: "2026-03-15",
+      actualMinutes: 500,
+      neededMinutes: 480,
+      debtMinutes: 0,
+      ...emptyProvenance,
+    },
+    {
+      date: "2026-03-16",
+      actualMinutes: 390,
+      neededMinutes: 480,
+      debtMinutes: 90,
+      ...emptyProvenance,
+    },
   ],
 };
 
@@ -110,9 +138,27 @@ describe("SleepNeedCard", () => {
     const dataWithGaps = {
       ...mockData,
       recentNights: [
-        { date: "2026-03-14", actualMinutes: 420, neededMinutes: 480, debtMinutes: 60 },
-        { date: "2026-03-15", actualMinutes: null, neededMinutes: 480, debtMinutes: null },
-        { date: "2026-03-16", actualMinutes: 390, neededMinutes: 480, debtMinutes: 90 },
+        {
+          date: "2026-03-14",
+          actualMinutes: 420,
+          neededMinutes: 480,
+          debtMinutes: 60,
+          ...emptyProvenance,
+        },
+        {
+          date: "2026-03-15",
+          actualMinutes: null,
+          neededMinutes: 480,
+          debtMinutes: null,
+          ...emptyProvenance,
+        },
+        {
+          date: "2026-03-16",
+          actualMinutes: 390,
+          neededMinutes: 480,
+          debtMinutes: 90,
+          ...emptyProvenance,
+        },
       ],
     };
     render(<SleepNeedCard data={dataWithGaps} />);

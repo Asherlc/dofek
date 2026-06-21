@@ -67,6 +67,8 @@ interface SleepNeedFixtureRow {
   yesterday_load?: number;
   efficiency_pct?: number | null;
   provider_id?: string | null;
+  source_name?: string | null;
+  source_providers?: string[];
 }
 
 function addDays(dateString: string, days: number): string {
@@ -87,6 +89,8 @@ function toClickHouseSleepRows(rows: SleepNeedFixtureRow[]) {
     awake_minutes: null,
     efficiency_pct: row.efficiency_pct === undefined ? 90 : row.efficiency_pct,
     provider_id: row.provider_id ?? null,
+    source_name: row.source_name ?? null,
+    source_providers: row.source_providers ?? (row.provider_id ? [row.provider_id] : []),
   }));
 }
 
@@ -112,10 +116,32 @@ function createPerformanceCaller(rows: SleepNeedFixtureRow[]) {
   const sleepRows = [...rows].sort((leftRow, rightRow) =>
     leftRow.date.localeCompare(rightRow.date),
   );
+  const clickHouseRows = toClickHouseSleepRows(sleepRows);
   return createCaller({
     db: { execute: vi.fn() },
     userId: "user-1",
-    sensorStore: makeMockSensorStore([toClickHouseSleepRows(sleepRows), []]),
+    sensorStore: makeMockSensorStore([clickHouseRows, clickHouseRows, []]),
+  });
+}
+
+function createSplitPerformanceCaller(
+  dailyRows: SleepNeedFixtureRow[],
+  provenanceRows: SleepNeedFixtureRow[],
+) {
+  const sortedDailyRows = [...dailyRows].sort((leftRow, rightRow) =>
+    leftRow.date.localeCompare(rightRow.date),
+  );
+  const sortedProvenanceRows = [...provenanceRows].sort((leftRow, rightRow) =>
+    leftRow.date.localeCompare(rightRow.date),
+  );
+  return createCaller({
+    db: { execute: vi.fn() },
+    userId: "user-1",
+    sensorStore: makeMockSensorStore([
+      toClickHouseSleepRows(sortedDailyRows),
+      toClickHouseSleepRows(sortedProvenanceRows),
+      [],
+    ]),
   });
 }
 
@@ -530,6 +556,73 @@ describe("sleepNeedRouter", () => {
       // Only 7 good nights with duration > 0 at 480 each
       expect(result.baselineMinutes).toBe(480);
     });
+
+    it("includes provenance on recent nights with sleep data", async () => {
+      const rows: SleepNeedFixtureRow[] = [];
+      for (let dayOffset = 7; dayOffset >= 1; dayOffset -= 1) {
+        rows.push({
+          date: addDays("2026-03-15", -dayOffset),
+          duration_minutes: 480,
+          provider_id: "whoop",
+          next_day_hrv: 50,
+          median_hrv: 45,
+          good_recovery: true,
+          yesterday_load: 0,
+        });
+      }
+
+      const caller = createCalculateCaller(rows);
+      const result = await caller.calculate({ endDate: "2026-03-15" });
+
+      for (const night of result.recentNights) {
+        expect(night.providerId).toBe("whoop");
+        expect(night.sourceName).toBeNull();
+        expect(night.sourceProviders).toEqual(["whoop"]);
+      }
+    });
+
+    it("maps provenance from the matching sleep row for each recent night", async () => {
+      const rows: SleepNeedFixtureRow[] = [];
+      for (let dayOffset = 7; dayOffset >= 1; dayOffset -= 1) {
+        const date = addDays("2026-03-15", -dayOffset);
+        rows.push({
+          date,
+          duration_minutes: 480,
+          provider_id: date === "2026-03-14" ? "apple_health" : "whoop",
+          source_name: date === "2026-03-14" ? "Apple Watch" : null,
+          source_providers: date === "2026-03-14" ? ["apple_health", "whoop"] : ["whoop"],
+          next_day_hrv: 50,
+          median_hrv: 45,
+          good_recovery: true,
+          yesterday_load: 0,
+        });
+      }
+
+      const caller = createCalculateCaller(rows);
+      const result = await caller.calculate({ endDate: "2026-03-15" });
+
+      expect(result.recentNights.find((night) => night.date === "2026-03-13")).toMatchObject({
+        providerId: "whoop",
+        sourceName: null,
+        sourceProviders: ["whoop"],
+      });
+      expect(result.recentNights.find((night) => night.date === "2026-03-14")).toMatchObject({
+        providerId: "apple_health",
+        sourceName: "Apple Watch",
+        sourceProviders: ["apple_health", "whoop"],
+      });
+    });
+
+    it("uses null provenance for recent nights without sleep data", async () => {
+      const caller = createCalculateCaller([]);
+      const result = await caller.calculate({ endDate: "2026-03-15" });
+
+      for (const night of result.recentNights) {
+        expect(night.providerId).toBeNull();
+        expect(night.sourceName).toBeNull();
+        expect(night.sourceProviders).toEqual([]);
+      }
+    });
   });
 
   // ── performance ──────────────────────────────────────────
@@ -586,7 +679,8 @@ describe("sleepNeedRouter", () => {
         { date: "2026-03-14", duration_minutes: 450, efficiency_pct: 92 },
         { date: "2026-03-01", duration_minutes: 480 },
       ];
-      const sensorStore = makeMockSensorStore([toClickHouseSleepRows(rows), []]);
+      const clickHouseRows = toClickHouseSleepRows(rows);
+      const sensorStore = makeMockSensorStore([clickHouseRows, clickHouseRows, []]);
       const caller = createCaller({
         db: { execute: vi.fn() },
         userId: "user-1",
@@ -599,7 +693,84 @@ describe("sleepNeedRouter", () => {
       expect(
         queryTexts.filter((queryText) => queryText.includes("analytics.daily_sleep")),
       ).toHaveLength(1);
-      expect(queryTexts.some((queryText) => queryText.includes("analytics.v_sleep"))).toBe(false);
+      expect(
+        queryTexts.filter((queryText) => queryText.includes("analytics.v_sleep")),
+      ).toHaveLength(1);
+    });
+
+    it("includes provenance from v_sleep on performance response", async () => {
+      const caller = createPerformanceCaller([
+        {
+          date: "2026-03-14",
+          duration_minutes: 450,
+          efficiency_pct: 92,
+          provider_id: "whoop",
+          source_name: "WHOOP 4.0",
+          source_providers: ["whoop", "apple_health"],
+        },
+        { date: "2026-03-01", duration_minutes: 480, provider_id: "apple_health" },
+      ]);
+      const result = await caller.performance({ endDate: "2026-03-15" });
+
+      expect(result?.providerId).toBe("whoop");
+      expect(result?.sourceName).toBe("WHOOP 4.0");
+      expect(result?.sourceProviders).toEqual(["whoop", "apple_health"]);
+    });
+
+    it("prefers v_sleep provenance over the daily sleep summary provider", async () => {
+      const caller = createSplitPerformanceCaller(
+        [
+          {
+            date: "2026-03-14",
+            duration_minutes: 450,
+            efficiency_pct: 92,
+            provider_id: "apple_health",
+          },
+          { date: "2026-03-01", duration_minutes: 480, provider_id: "apple_health" },
+        ],
+        [
+          {
+            date: "2026-03-14",
+            duration_minutes: 450,
+            efficiency_pct: 92,
+            provider_id: "whoop",
+            source_name: "WHOOP 4.0",
+            source_providers: ["whoop", "apple_health"],
+          },
+        ],
+      );
+      const result = await caller.performance({ endDate: "2026-03-15" });
+
+      expect(result?.providerId).toBe("whoop");
+      expect(result?.sourceName).toBe("WHOOP 4.0");
+      expect(result?.sourceProviders).toEqual(["whoop", "apple_health"]);
+    });
+
+    it("falls back to daily sleep provider when v_sleep has no matching night", async () => {
+      const caller = createSplitPerformanceCaller(
+        [
+          {
+            date: "2026-03-14",
+            duration_minutes: 450,
+            efficiency_pct: 92,
+            provider_id: "apple_health",
+          },
+          { date: "2026-03-01", duration_minutes: 480, provider_id: "apple_health" },
+        ],
+        [
+          {
+            date: "2026-03-01",
+            duration_minutes: 480,
+            provider_id: "whoop",
+            source_name: "WHOOP 4.0",
+          },
+        ],
+      );
+      const result = await caller.performance({ endDate: "2026-03-15" });
+
+      expect(result?.providerId).toBe("apple_health");
+      expect(result?.sourceName).toBeNull();
+      expect(result?.sourceProviders).toEqual([]);
     });
 
     it("uses the historical sleep average for provider-backed rows", async () => {

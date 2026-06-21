@@ -1,15 +1,20 @@
 import { formatDateMedium } from "@dofek/format/format";
 import { sleepStageColors } from "@dofek/scoring/colors";
 import { dofekAxis, dofekGrid, dofekLegend, dofekSeries, dofekTooltip } from "../lib/chartTheme.ts";
+import { formatSleepProvenance } from "../lib/sleepSource.ts";
 import { DofekChart } from "./DofekChart.tsx";
 
 interface SleepData {
+  date?: string;
   started_at: string;
   duration_minutes: number | null;
   deep_minutes: number | null;
   rem_minutes: number | null;
   light_minutes: number | null;
   awake_minutes: number | null;
+  provider_id?: string | null;
+  source_name?: string | null;
+  source_providers?: string[];
 }
 
 interface SleepChartProps {
@@ -18,6 +23,8 @@ interface SleepChartProps {
 }
 
 export function SleepChart({ data, loading }: SleepChartProps) {
+  const sourceByStartedAt = new Map(data.map((row) => [row.started_at, row] as const));
+
   const option = {
     grid: dofekGrid("single", { top: 30, bottom: 40, left: 50 }),
     tooltip: dofekTooltip({
@@ -34,7 +41,20 @@ export function SleepChart({ data, loading }: SleepChartProps) {
           total += val;
           return `<span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${val}m`;
         });
-        return `<strong>${date}</strong> (${Math.floor(total / 60)}h ${total % 60}m)<br/>${lines.join("<br/>")}`;
+        const sourceRow = sourceByStartedAt.get(String(firstParam.value[0]));
+        const sourceLine = sourceRow
+          ? (() => {
+              const { primary, alsoFrom } = formatSleepProvenance({
+                provider_id: sourceRow.provider_id ?? null,
+                source_name: sourceRow.source_name ?? null,
+                source_providers: sourceRow.source_providers ?? [],
+              });
+              return `<br/><span style="color:#9ca3af">Source: ${primary}${
+                alsoFrom ? ` · also ${alsoFrom}` : ""
+              }</span>`;
+            })()
+          : "";
+        return `<strong>${date}</strong> (${Math.floor(total / 60)}h ${total % 60}m)<br/>${lines.join("<br/>")}${sourceLine}`;
       },
     }),
     xAxis: dofekAxis.time(),

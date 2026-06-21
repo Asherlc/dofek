@@ -49,6 +49,9 @@ const mockSleepPerformance = {
   efficiency: 88,
   recommendedBedtime: "22:30",
   sleepDate: today,
+  providerId: "whoop",
+  sourceName: null,
+  sourceProviders: ["whoop"],
 };
 
 /** Find the closest <button> ancestor of an element. */
@@ -559,6 +562,9 @@ describe("DailyOverview", () => {
           efficiency: 88,
           recommendedBedtime: "22:30",
           sleepDate: yesterdayStr,
+          providerId: "whoop",
+          sourceName: null,
+          sourceProviders: ["whoop"],
         }}
         readinessLoading={false}
         workloadLoading={false}
