@@ -67,10 +67,7 @@ export function parseStravaRateLimitHeaders(headers: Headers): StravaRateLimitQu
   return { shortLimit, shortUsage, dailyLimit, dailyUsage };
 }
 
-export function blendObservedCooldown(
-  previous: number | null,
-  observedSeconds: number,
-): number {
+export function blendObservedCooldown(previous: number | null, observedSeconds: number): number {
   if (!Number.isFinite(observedSeconds) || observedSeconds <= 0) return previous ?? observedSeconds;
   if (previous == null) return observedSeconds;
   return Math.round(previous * 0.7 + observedSeconds * 0.3);
@@ -123,7 +120,11 @@ export function admissionDelayMs(state: ProviderAdaptiveRateState, nowMs: number
     }
   }
 
-  if (state.providerId === "strava" && state.stravaShortLimit != null && state.stravaShortUsage != null) {
+  if (
+    state.providerId === "strava" &&
+    state.stravaShortLimit != null &&
+    state.stravaShortUsage != null
+  ) {
     const remaining = state.stravaShortLimit - state.stravaShortUsage;
     if (remaining <= 2) {
       delayMs = Math.max(delayMs, state.throttleMs * 4);

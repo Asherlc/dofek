@@ -1,8 +1,8 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
-import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { dailyMetrics, sleepSession } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { SyncError, SyncProvider, SyncResult } from "./types.ts";
 

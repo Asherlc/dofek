@@ -1,10 +1,10 @@
-import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { VeloHeroClient } from "velohero-client/client";
 import { parseVeloHeroWorkout } from "velohero-client/parsing";
 import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../logger.ts";
 import { ProviderSessionExpiredError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";

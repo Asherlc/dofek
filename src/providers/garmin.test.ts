@@ -199,14 +199,11 @@ function createMockDb(): MockDb {
   db.values.mockReturnValue(db);
   db.onConflictDoUpdate.mockReturnValue(db);
   db.delete.mockReturnValue(db);
-  Object.assign(db, {
-    then(
-      onFulfilled: (value: unknown) => unknown,
-      onRejected?: (reason: unknown) => unknown,
-    ) {
-      return Promise.resolve([]).then(onFulfilled, onRejected);
-    },
-  });
+  db.where.mockReturnValue(
+    Object.assign(Promise.resolve([]), {
+      limit: vi.fn().mockResolvedValue([]),
+    }),
+  );
   return db;
 }
 
@@ -710,14 +707,11 @@ describe("GarminProvider.sync()", () => {
       raw: rawActivity,
     });
 
-    Object.assign(db, {
-      then(
-        onFulfilled: (value: unknown) => unknown,
-        onRejected?: (reason: unknown) => unknown,
-      ) {
-        return Promise.resolve([{ externalId: "123" }]).then(onFulfilled, onRejected);
-      },
-    });
+    db.where.mockReturnValue(
+      Object.assign(Promise.resolve([{ externalId: "123" }]), {
+        limit: vi.fn().mockResolvedValue([{ externalId: "123" }]),
+      }),
+    );
 
     const result = await syncProvider(provider, db, new Date("2026-02-01T00:00:00Z"));
 

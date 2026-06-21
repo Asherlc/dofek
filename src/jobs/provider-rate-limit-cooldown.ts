@@ -182,7 +182,9 @@ export class InMemoryProviderRateLimitCooldownStore implements ProviderRateLimit
     error: ProviderRateLimitError,
     fallbackUserId: string,
   ): Promise<ProviderRateLimitCooldown> {
-    const learned = await providerAdaptiveRateLimitStore.getLearnedCooldownSeconds(error.providerId);
+    const learned = await providerAdaptiveRateLimitStore.getLearnedCooldownSeconds(
+      error.providerId,
+    );
     const baseFallback = learned ?? fallbackCooldownSeconds(error.providerId);
     const cooldown = cooldownFromError(error, fallbackUserId, null, baseFallback);
     const key = cooldownKey(cooldown.providerId, cooldown.scope, cooldown.userId);
@@ -232,7 +234,9 @@ export class RedisProviderRateLimitCooldownStore implements ProviderRateLimitCoo
     error: ProviderRateLimitError,
     fallbackUserId: string,
   ): Promise<ProviderRateLimitCooldown> {
-    const learned = await providerAdaptiveRateLimitStore.getLearnedCooldownSeconds(error.providerId);
+    const learned = await providerAdaptiveRateLimitStore.getLearnedCooldownSeconds(
+      error.providerId,
+    );
     const baseFallback = learned ?? fallbackCooldownSeconds(error.providerId);
     const cooldown = cooldownFromError(error, fallbackUserId, null, baseFallback);
     const key = cooldownKey(cooldown.providerId, cooldown.scope, cooldown.userId);

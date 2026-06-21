@@ -1,16 +1,19 @@
 import {
   ADAPTIVE_RATE_WINDOW_MS,
+  type AdaptiveRateLimitStore,
   admissionDelayMs,
   applyStravaQuota,
   createInitialAdaptiveState,
-  type AdaptiveRateLimitStore,
   type ProviderAdaptiveRateState,
   parseStravaRateLimitHeaders,
   recordAdaptiveRateLimit,
   recordAdaptiveRequest,
   slideAdaptiveWindow,
 } from "@dofek/provider-http/adaptive-rate-limit";
-import type { ProviderRateLimitError, ProviderRateLimitScope } from "@dofek/provider-http/rate-limit";
+import type {
+  ProviderRateLimitError,
+  ProviderRateLimitScope,
+} from "@dofek/provider-http/rate-limit";
 import { RedisConnection } from "bullmq";
 import { getRedisConnection } from "../jobs/queues.ts";
 
@@ -60,7 +63,10 @@ function parseState(raw: string | null): ProviderAdaptiveRateState | null {
   if (typeof windowStartMs !== "number" || !Number.isFinite(windowStartMs)) return null;
   if (typeof requestCount !== "number" || !Number.isFinite(requestCount)) return null;
   if (typeof throttleMs !== "number" || !Number.isFinite(throttleMs)) return null;
-  if (lastRequestMs !== null && (typeof lastRequestMs !== "number" || !Number.isFinite(lastRequestMs))) {
+  if (
+    lastRequestMs !== null &&
+    (typeof lastRequestMs !== "number" || !Number.isFinite(lastRequestMs))
+  ) {
     return null;
   }
 

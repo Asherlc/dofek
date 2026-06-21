@@ -1,5 +1,6 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { describe, expect, it, vi } from "vitest";
+import { providerAdaptiveRateLimitStore } from "../lib/provider-adaptive-rate-limit.ts";
 import {
   InMemoryProviderRateLimitCooldownStore,
   providerRateLimitCooldownJobId,
@@ -50,6 +51,10 @@ function createMockRedisStore() {
 }
 
 describe("ProviderRateLimitCooldownStore", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("records provider-wide cooldown state using Retry-After when present", async () => {
     vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
     const store = new InMemoryProviderRateLimitCooldownStore();
@@ -131,6 +136,84 @@ describe("ProviderRateLimitCooldownStore", () => {
     const second = await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
     expect(second.consecutiveHits).toBe(2);
     expect(second.expiresAt).toEqual(new Date("2026-06-02T15:00:00Z"));
+    vi.useRealTimers();
+  });
+
+  it("resets consecutive hits after the strike reset window elapses", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const store = new InMemoryProviderRateLimitCooldownStore();
+
+    await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
+    vi.setSystemTime(new Date("2026-06-02T15:00:01Z"));
+
+    const second = await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
+    expect(second.consecutiveHits).toBe(1);
+    vi.useRealTimers();
+  });
+
+  it("keeps escalating strikes within the strike reset window", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const store = new InMemoryProviderRateLimitCooldownStore();
+
+    await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
+    vi.setSystemTime(new Date("2026-06-02T15:00:00Z"));
+
+    const second = await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
+    expect(second.consecutiveHits).toBe(2);
+    vi.useRealTimers();
+  });
+
+  it("caps escalation at the default max cooldown for providers without a custom max", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const store = new InMemoryProviderRateLimitCooldownStore();
+
+    let cooldown = await store.record(rateLimitError({ providerId: "strava" }), "user-1");
+    for (let hit = 1; hit < 4; hit++) {
+      vi.setSystemTime(cooldown.expiresAt);
+      cooldown = await store.record(rateLimitError({ providerId: "strava" }), "user-1");
+    }
+
+    expect(cooldown.consecutiveHits).toBe(4);
+    expect(cooldown.expiresAt).toEqual(new Date("2026-06-02T15:45:00Z"));
+    vi.useRealTimers();
+  });
+
+  it("uses learned cooldown seconds from the adaptive store when Retry-After is absent", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    vi.spyOn(providerAdaptiveRateLimitStore, "getLearnedCooldownSeconds").mockResolvedValue(300);
+    const store = new InMemoryProviderRateLimitCooldownStore();
+
+    const cooldown = await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
+
+    expect(cooldown.expiresAt).toEqual(new Date("2026-06-02T12:05:00Z"));
+    vi.useRealTimers();
+  });
+
+  it("ignores negative Retry-After values and uses escalated fallback cooldown", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const store = new InMemoryProviderRateLimitCooldownStore();
+
+    const cooldown = await store.record(
+      rateLimitError({ providerId: "garmin", retryAfterSeconds: -10 }),
+      "user-1",
+    );
+
+    expect(cooldown.expiresAt).toEqual(new Date("2026-06-02T13:00:00Z"));
+    vi.useRealTimers();
+  });
+
+  it("updates consecutive hits when a new cooldown matches the active expiry", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const store = new InMemoryProviderRateLimitCooldownStore();
+
+    await store.record(rateLimitError({ providerId: "garmin", retryAfterSeconds: 600 }), "user-1");
+    const second = await store.record(
+      rateLimitError({ providerId: "garmin", retryAfterSeconds: 600 }),
+      "user-1",
+    );
+
+    expect(second.consecutiveHits).toBe(2);
+    expect(second.expiresAt).toEqual(new Date("2026-06-02T12:10:00Z"));
     vi.useRealTimers();
   });
 
@@ -336,6 +419,18 @@ describe("ProviderRateLimitCooldownStore", () => {
     vi.useRealTimers();
   });
 
+  it("uses learned cooldown seconds in Redis when Retry-After is absent", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    vi.spyOn(providerAdaptiveRateLimitStore, "getLearnedCooldownSeconds").mockResolvedValue(300);
+    const { setCalls, store } = createMockRedisStore();
+
+    const cooldown = await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
+
+    expect(cooldown.expiresAt).toEqual(new Date("2026-06-02T12:05:00Z"));
+    expect(setCalls[0]?.millisecondsToExpire).toBe(300_000);
+    vi.useRealTimers();
+  });
+
   it("ignores malformed Redis cooldown state", async () => {
     const { values, store } = createMockRedisStore();
 
@@ -361,6 +456,13 @@ describe("ProviderRateLimitCooldownStore", () => {
         scope: "provider",
         userId: null,
         expiresAt: "not-a-date",
+      }),
+      JSON.stringify({
+        providerId: "garmin",
+        scope: "provider",
+        userId: null,
+        expiresAt: "2026-06-02T12:00:00.000Z",
+        consecutiveHits: "not-a-number",
       }),
     ]) {
       values.set("provider-rate-limit:garmin:provider", raw);

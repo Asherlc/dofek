@@ -1,4 +1,3 @@
-import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { isIndoorCycling } from "@dofek/training/endurance-types";
 import {
   type CanonicalActivityType,
@@ -17,6 +16,7 @@ import { activity, userSettings } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type {
   ProviderAuthSetup,

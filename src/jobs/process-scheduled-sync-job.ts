@@ -65,6 +65,8 @@ export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, d
 
   logger.info(
     `[scheduled-sync] Enqueued ${jobCount} sync jobs for ${userProviders.size} users` +
-      (skippedDueToCooldown > 0 ? ` (${skippedDueToCooldown} skipped due to rate-limit cooldown)` : ""),
+      (skippedDueToCooldown > 0
+        ? ` (${skippedDueToCooldown} skipped due to rate-limit cooldown)`
+        : ""),
   );
 }

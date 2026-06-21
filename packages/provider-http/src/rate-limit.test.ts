@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import type { AdaptiveRateLimitStore } from "./rate-limit-types.ts";
 import {
   createRateLimitAwareFetch,
   fetchWithRateLimitHandling,
@@ -7,6 +6,7 @@ import {
   ProviderServiceUnavailableError,
   parseRetryAfterHeader,
 } from "./rate-limit.ts";
+import type { AdaptiveRateLimitStore } from "./rate-limit-types.ts";
 
 function createMockAdaptiveStore(): AdaptiveRateLimitStore & {
   awaitAdmission: ReturnType<typeof vi.fn>;

@@ -1,4 +1,3 @@
-import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import type { OAuthConfig, TokenSet } from "../../auth/oauth.ts";
 import {
   exchangeCodeForTokens,
@@ -8,6 +7,7 @@ import {
 import { resolveOAuthTokens } from "../../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../../db/index.ts";
 import { reconcileProviderActivityAbsence } from "../../db/provider-activity-absence.ts";
+import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../../logger.ts";
 import { AccessTokenExpiredError } from "../auth-errors.ts";
 import type { SyncRun } from "../sync-run.ts";

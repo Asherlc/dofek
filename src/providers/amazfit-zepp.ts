@@ -1,5 +1,4 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
-import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import type { CanonicalActivityType } from "@dofek/training/training";
 import { captureException } from "@sentry/node";
 import { signInToZepp, ZeppInvalidCredentialsError } from "zepp-client/client";
@@ -12,6 +11,7 @@ import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import {
   ProviderInvalidCredentialsError,
   ProviderStoredIdentityMissingError,

@@ -1,10 +1,10 @@
-import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { TrainerRoadClient } from "trainerroad-client/client";
 import { parseTrainerRoadActivity } from "trainerroad-client/parsing";
 import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
 import { activity } from "../db/schema.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { ProviderSessionExpiredError, ProviderStoredIdentityMissingError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";

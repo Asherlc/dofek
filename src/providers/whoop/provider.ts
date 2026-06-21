@@ -1,10 +1,10 @@
-import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import { WhoopClient } from "whoop-whoop/client";
 import type { WhoopCycle } from "whoop-whoop/types";
 import { z } from "zod";
 import type { OAuthConfig } from "../../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../../auth/oauth.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../../logger.ts";
 import { ProviderStoredIdentityMissingError } from "../auth-errors.ts";
 import type { SyncRun } from "../sync-run.ts";
@@ -15,6 +15,7 @@ import type {
   SyncProvider,
   SyncResult,
 } from "../types.ts";
+import { findWhoopRateLimitError, isWhoopRateLimitError } from "./rate-limit.ts";
 import { syncWhoopDailyActivity } from "./sync-daily-activity.ts";
 import { syncWhoopJournal } from "./sync-journal.ts";
 import { syncWhoopRecovery } from "./sync-recovery.ts";
@@ -22,7 +23,6 @@ import { syncWhoopSleepSessions, syncWhoopSleepStages } from "./sync-sleep.ts";
 import { syncWhoopHeartRateStream } from "./sync-streams.ts";
 import type { WhoopSyncContext } from "./sync-types.ts";
 import { syncWhoopStrength, syncWhoopWorkouts } from "./sync-workouts.ts";
-import { findWhoopRateLimitError, isWhoopRateLimitError } from "./rate-limit.ts";
 
 // ============================================================
 // Provider implementation

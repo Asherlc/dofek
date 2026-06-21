@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import { z } from "zod";
+import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import type { WebhookEvent } from "../types.ts";
 
 const POLAR_WEBHOOK_URL = "https://www.polaraccesslink.com/v3/webhooks";

@@ -56,10 +56,7 @@ export class GarminConnectClient {
   #displayName: string | null = null;
   #domain: string;
   #fetchFn: typeof globalThis.fetch;
-  constructor(
-    domain: string = "garmin.com",
-    fetchFn: typeof globalThis.fetch = globalThis.fetch,
-  ) {
+  constructor(domain: string = "garmin.com", fetchFn: typeof globalThis.fetch = globalThis.fetch) {
     this.#domain = domain;
     this.#fetchFn = fetchFn;
   }

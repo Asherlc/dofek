@@ -8,7 +8,9 @@ export function isWhoopRateLimitError(err: unknown): boolean {
   );
 }
 
-export function findWhoopRateLimitError(errors: Array<{ cause?: unknown }>): ProviderRateLimitError | null {
+export function findWhoopRateLimitError(
+  errors: Array<{ cause?: unknown }>,
+): ProviderRateLimitError | null {
   for (const syncError of errors) {
     const cause = syncError.cause;
     if (isWhoopRateLimitError(cause) && cause instanceof ProviderRateLimitError) {

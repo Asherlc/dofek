@@ -1,5 +1,4 @@
 import { createHmac } from "node:crypto";
-import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../../auth/oauth.ts";
 import {
@@ -14,6 +13,7 @@ import type { SyncDatabase } from "../../db/index.ts";
 import { reconcileProviderActivityAbsence } from "../../db/provider-activity-absence.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { ensureProvider } from "../../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import type { SyncRun } from "../sync-run.ts";
 import type {
   ProviderAuthSetup,

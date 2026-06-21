@@ -1,4 +1,3 @@
-import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -7,6 +6,7 @@ import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../logger.ts";
 import { ProviderAuthenticationFailedError, RefreshTokenRevokedError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";

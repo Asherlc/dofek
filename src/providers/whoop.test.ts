@@ -1,5 +1,4 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
-import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WhoopClient } from "whoop-whoop/client";
 import type {

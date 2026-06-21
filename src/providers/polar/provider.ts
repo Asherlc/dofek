@@ -1,5 +1,5 @@
-import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import type { TokenSet } from "../../auth/oauth.ts";
+import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../../logger.ts";
 import type { SyncRun } from "../sync-run.ts";
 import type { ProviderAuthSetup, SyncResult, WebhookEvent, WebhookProvider } from "../types.ts";

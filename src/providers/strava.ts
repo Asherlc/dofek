@@ -1,5 +1,4 @@
 import { ProviderRateLimitError, parseRetryAfterHeader } from "@dofek/provider-http/rate-limit";
-import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { isIndoorCycling } from "@dofek/training/endurance-types";
 import {
   type CanonicalActivityType,
@@ -24,6 +23,7 @@ import {
 import { activity } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../logger.ts";
 import { ProviderAuthorizationFailedError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
@@ -256,28 +256,12 @@ export const STRAVA_THROTTLE_MS = 10_000;
 export class StravaClient {
   #accessToken: string;
   #fetchFn: typeof globalThis.fetch;
-  #lastRequestTime = 0;
-  #throttleMs: number;
 
-  constructor(
-    accessToken: string,
-    fetchFn: typeof globalThis.fetch = globalThis.fetch,
-    throttleMs = STRAVA_THROTTLE_MS,
-  ) {
+  constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
     this.#accessToken = accessToken;
-    this.#fetchFn = createProviderRateLimitFetch("strava", fetchFn, { createRateLimitError: createStravaRateLimitError,
+    this.#fetchFn = createProviderRateLimitFetch("strava", fetchFn, {
+      createRateLimitError: createStravaRateLimitError,
     });
-    this.#throttleMs = throttleMs;
-  }
-
-  async #throttle(): Promise<void> {
-    if (this.#throttleMs <= 0) return;
-    const now = Date.now();
-    const elapsed = now - this.#lastRequestTime;
-    if (this.#lastRequestTime > 0 && elapsed < this.#throttleMs) {
-      await new Promise((resolve) => setTimeout(resolve, this.#throttleMs - elapsed));
-    }
-    this.#lastRequestTime = Date.now();
   }
 
   async #get<T>(path: string, params?: Record<string, string>): Promise<T> {
@@ -432,15 +416,11 @@ export class StravaProvider implements WebhookProvider {
   readonly name = "Strava";
   readonly webhookScope = "app" as const;
   #fetchFn: typeof globalThis.fetch;
-  #throttleMs: number;
 
-  constructor(
-    fetchFn: typeof globalThis.fetch = globalThis.fetch,
-    throttleMs = STRAVA_THROTTLE_MS,
-  ) {
-    this.#fetchFn = createProviderRateLimitFetch("strava", fetchFn, { createRateLimitError: createStravaRateLimitError,
+  constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
+    this.#fetchFn = createProviderRateLimitFetch("strava", fetchFn, {
+      createRateLimitError: createStravaRateLimitError,
     });
-    this.#throttleMs = throttleMs;
   }
 
   validate(): string | null {
@@ -645,7 +625,7 @@ export class StravaProvider implements WebhookProvider {
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new StravaClient(tokens.accessToken, this.#fetchFn, this.#throttleMs);
+    const client = new StravaClient(tokens.accessToken, this.#fetchFn);
 
     // Fetch the single activity detail (1 API call)
     const detail = await client.getActivity(activityExternalId);
@@ -739,7 +719,7 @@ export class StravaProvider implements WebhookProvider {
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new StravaClient(tokens.accessToken, this.#fetchFn, this.#throttleMs);
+    const client = new StravaClient(tokens.accessToken, this.#fetchFn);
     const since = window.since;
     const syncWindowEnd = window.until;
 

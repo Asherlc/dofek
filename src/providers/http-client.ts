@@ -9,8 +9,8 @@
  * - Fetch function injection for testability
  */
 
-import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import type { z } from "zod";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 
 /**
  * Base class for providers that make HTTP requests with bearer token auth.

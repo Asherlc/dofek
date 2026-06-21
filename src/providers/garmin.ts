@@ -1,4 +1,3 @@
-import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { isIndoorCycling } from "@dofek/training/endurance-types";
 import { captureException } from "@sentry/node";
 import { and, eq, inArray } from "drizzle-orm";
@@ -24,6 +23,7 @@ import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { isRetryableInfraError } from "../lib/retryable-infra-error.ts";
 import { logger } from "../logger.ts";
 import { ProviderAuthenticationFailedError } from "./auth-errors.ts";
@@ -297,7 +297,8 @@ export class GarminProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createProviderRateLimitFetch("garmin", fetchFn, { createRateLimitError: (response, responseBody) =>
+    this.#fetchFn = createProviderRateLimitFetch("garmin", fetchFn, {
+      createRateLimitError: (response, responseBody) =>
         new GarminRateLimitError(
           `Rate limit exceeded (${response.status}): ${responseBody}`,
           responseBody,

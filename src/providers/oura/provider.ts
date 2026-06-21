@@ -1,4 +1,3 @@
-import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import { z } from "zod";
 import { exchangeCodeForTokens } from "../../auth/oauth.ts";
 import { resolveOAuthTokens } from "../../auth/resolve-tokens.ts";
@@ -8,6 +7,7 @@ import {
   reconcileProviderActivityAbsence,
 } from "../../db/provider-activity-absence.ts";
 import { ensureProvider } from "../../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import type { SyncRun } from "../sync-run.ts";
 import type {
   ProviderAuthSetup,

@@ -53,16 +53,12 @@ function makeDb(selectedRows: unknown[] = []) {
   chain.values.mockReturnValue(chain);
   chain.onConflictDoUpdate.mockResolvedValue(undefined);
   chain.from.mockReturnValue(chain);
-  chain.where.mockReturnValue(chain);
+  chain.where.mockReturnValue(
+    Object.assign(Promise.resolve(selectedRows), {
+      limit: vi.fn().mockResolvedValue(selectedRows),
+    }),
+  );
   chain.limit.mockResolvedValue(selectedRows);
-  Object.assign(chain, {
-    then(
-      onFulfilled: (value: unknown) => unknown,
-      onRejected?: (reason: unknown) => unknown,
-    ) {
-      return Promise.resolve(selectedRows).then(onFulfilled, onRejected);
-    },
-  });
 
   const db: SyncDatabase = {
     insert: vi.fn().mockReturnValue(chain),

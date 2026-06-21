@@ -1,7 +1,7 @@
 import type { AdaptiveRateLimitStore } from "./rate-limit-types.ts";
 import {
-  ProviderRateLimitError,
   type ProviderHttpErrorScope,
+  ProviderRateLimitError,
   type ProviderRateLimitScope,
   ProviderServiceUnavailableError,
 } from "./rate-limit-types.ts";
@@ -13,7 +13,7 @@ export type {
   ProviderRateLimitScope,
   ProviderServiceUnavailableErrorOptions,
 } from "./rate-limit-types.ts";
-export { ProviderRateLimitError, ProviderServiceUnavailableError } from "./rate-limit-types.ts";
+export { ProviderRateLimitError, ProviderServiceUnavailableError };
 
 export interface FetchRateLimitHandlingOptions {
   createRateLimitError: (response: Response, responseBody: string) => Error;

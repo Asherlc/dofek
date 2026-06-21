@@ -1,4 +1,3 @@
-import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import type { CanonicalActivityType } from "@dofek/training/training";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
@@ -13,6 +12,7 @@ import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { parseFitFile } from "../fit/parser.ts";
 import { fitRecordsToSensorSamples } from "../fit/records.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../logger.ts";
 import { ProviderHttpClient } from "./http-client.ts";
 import type { SyncRun } from "./sync-run.ts";

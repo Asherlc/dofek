@@ -1,4 +1,3 @@
-import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { z } from "zod";
 import { ZWIFT_API_BASE, ZwiftClient } from "zwift-client/client";
 import { parseZwiftActivity, parseZwiftFitnessData } from "zwift-client/parsing";
@@ -9,6 +8,7 @@ import { activity } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../logger.ts";
 import {
   ProviderAuthenticationFailedError,
