@@ -16,12 +16,10 @@ describe("buildActivityReadModelRefreshStatements", () => {
       throw new Error("Expected activity read model statement");
     }
     const activitySql = activityStatement.replace(/\s+/g, " ");
-    expect(activitySql).toContain("absent_group_members");
+    expect(activitySql).toContain("tombstoned AS");
+    expect(activitySql).toContain("clusterable AS");
     expect(activitySql).toContain("absent_source_links AS");
-    expect(activitySql).toContain("least( absent.started_at, group_bounds.group_started_at )");
-    expect(activitySql).toContain(
-      "greatest(coalesce(absent.ended_at, absent.started_at + INTERVAL 1 HOUR), group_bounds.group_ended_at)",
-    );
+    expect(activitySql).toContain("INNER JOIN tombstoned");
     expect(activitySql).toContain(
       "coalesce(any(absent_source_links.absent_source_external_ids), []) AS absent_source_external_ids",
     );

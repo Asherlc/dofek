@@ -167,6 +167,7 @@ describe("production analytics read-model build", () => {
     expect(matchesSql).toContain("materialized='incremental'");
     expect(matchesSql).toContain("ref('activity_source_records')");
     expect(matchesSql).toContain("current_duplicate_matches AS");
+    expect(matchesSql).toContain("active_to_tombstoned_matches AS");
     expect(matchesSql).toContain("overlap_ratio");
 
     expect(groupsSql).toContain("materialized='incremental'");
@@ -300,9 +301,9 @@ describe("production analytics read-model build", () => {
     expect(matchesSql).toContain("greatest(left_activity.started_at, right_activity.started_at)");
     expect(matchesSql).toContain("least(left_activity.ended_at, right_activity.ended_at)");
 
-    expect(dedupedActivitiesSql).toContain("min(ranked.started_at) AS started_at");
-    expect(dedupedActivitiesSql).toContain("max(coalesce(ranked.ended_at, ranked.started_at + INTERVAL 12 HOUR)) AS ended_at");
-    expect(dedupedActivitiesSql).toContain("max(ranked.source_synced_at) AS source_synced_at");
+    expect(dedupedActivitiesSql).toContain("minIf(ranked.started_at, ranked.activity_id IS NOT null) AS started_at");
+    expect(dedupedActivitiesSql).toContain("maxIf(coalesce(ranked.ended_at, ranked.started_at + INTERVAL 12 HOUR), ranked.activity_id IS NOT null) AS ended_at");
+    expect(dedupedActivitiesSql).toContain("maxIf(ranked.source_synced_at, ranked.activity_id IS NOT null) AS source_synced_at");
   });
 
   it("carries upstream source freshness through lookback microbatch intermediaries", () => {

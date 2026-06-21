@@ -368,6 +368,78 @@ describe("Activity summary deduplication", () => {
     );
   });
 
+  it("surfaces tombstoned provider sources on overlapping deduped activities", async () => {
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES ('whoop', 'WHOOP', ${TEST_USER_ID})
+          ON CONFLICT DO NOTHING`,
+    );
+
+    const startedAt = "2026-01-15T10:00:00Z";
+    const endedAt = "2026-01-15T10:30:00Z";
+    const wahooInsert = await testCtx.db.execute<{ id: string }>(
+      sql`INSERT INTO fitness.activity (
+            provider_id, user_id, activity_type, started_at, ended_at, name
+          ) VALUES (
+            'wahoo', ${TEST_USER_ID}, 'cycling',
+            ${startedAt}::timestamptz,
+            ${endedAt}::timestamptz,
+            'Tombstone Dedup Ride'
+          ) RETURNING id`,
+    );
+    const wahooActivityId = wahooInsert[0]?.id;
+
+    const whoopInsert = await testCtx.db.execute<{ id: string }>(
+      sql`INSERT INTO fitness.activity (
+            provider_id, user_id, activity_type, started_at, ended_at, external_id, provider_absent_at
+          ) VALUES (
+            'whoop', ${TEST_USER_ID}, 'cycling',
+            ${startedAt}::timestamptz,
+            ${endedAt}::timestamptz,
+            'whoop-tombstone-dedup',
+            NOW()
+          ) RETURNING id`,
+    );
+    const whoopActivityId = whoopInsert[0]?.id;
+
+    try {
+      expect(wahooActivityId).toBeDefined();
+      expect(whoopActivityId).toBeDefined();
+
+      const viewRows = await testCtx.db.execute<{
+        id: string;
+        absent_source_external_ids: Array<Record<string, string>>;
+        member_activity_ids: string[];
+      }>(
+        sql`SELECT
+              id,
+              absent_source_external_ids,
+              member_activity_ids::text[] AS member_activity_ids
+            FROM fitness.v_activity
+            WHERE user_id = ${TEST_USER_ID}
+              AND ${wahooActivityId}::uuid = ANY(member_activity_ids)
+            LIMIT 1`,
+      );
+
+      const viewRow = viewRows[0];
+      expect(viewRow?.member_activity_ids).toEqual(
+        expect.arrayContaining([wahooActivityId, whoopActivityId]),
+      );
+      expect(viewRow?.absent_source_external_ids).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            providerId: "whoop",
+            externalId: "whoop-tombstone-dedup",
+          }),
+        ]),
+      );
+    } finally {
+      await testCtx.db.execute(
+        sql`DELETE FROM fitness.activity WHERE id IN (${wahooActivityId}::uuid, ${whoopActivityId}::uuid)`,
+      );
+    }
+  });
+
   it("soft-deletes all raw member rows when deleting a deduped activity member", async () => {
     const inserted = await testCtx.db.execute<{ id: string; provider_id: string }>(
       sql`INSERT INTO fitness.activity (

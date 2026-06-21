@@ -179,6 +179,7 @@
     "pkce",
     "totp",
     "tombstoned",
+    "clusterable",
     "rwgps",
     "ridewithgps",
     "accesslink",

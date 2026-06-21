@@ -24,20 +24,46 @@ WITH RECURSIVE ranked AS (
   WHERE a.provider_absent_at IS NULL
     AND a.deleted_at IS NULL
 ),
+tombstoned AS (
+  SELECT
+    a.id,
+    a.user_id,
+    a.provider_id,
+    a.external_id,
+    a.started_at,
+    a.ended_at,
+    a.provider_absent_at
+  FROM fitness.activity a
+  WHERE a.provider_absent_at IS NOT NULL
+    AND a.deleted_at IS NULL
+    AND a.external_id IS NOT NULL
+    AND a.external_id <> ''
+),
+clusterable AS (
+  SELECT
+    r.id,
+    r.user_id,
+    r.started_at,
+    COALESCE(r.ended_at, r.started_at + interval '1 hour') AS ended_at
+  FROM ranked r
+  UNION ALL
+  SELECT
+    t.id,
+    t.user_id,
+    t.started_at,
+    COALESCE(t.ended_at, t.started_at + interval '1 hour') AS ended_at
+  FROM tombstoned t
+),
 pairs AS (
-  SELECT r1.id AS id1, r2.id AS id2
-  FROM ranked r1
-  JOIN ranked r2
-    ON r1.user_id = r2.user_id
-    AND r1.id < r2.id
+  SELECT c1.id AS id1, c2.id AS id2
+  FROM clusterable c1
+  JOIN clusterable c2
+    ON c1.user_id = c2.user_id
+    AND c1.id < c2.id
     AND EXTRACT(EPOCH FROM (
-      LEAST(COALESCE(r1.ended_at, r1.started_at + interval '1 hour'),
-            COALESCE(r2.ended_at, r2.started_at + interval '1 hour'))
-      - GREATEST(r1.started_at, r2.started_at)
+      LEAST(c1.ended_at, c2.ended_at) - GREATEST(c1.started_at, c2.started_at)
     )) / NULLIF(EXTRACT(EPOCH FROM (
-      GREATEST(COALESCE(r1.ended_at, r1.started_at + interval '1 hour'),
-               COALESCE(r2.ended_at, r2.started_at + interval '1 hour'))
-      - LEAST(r1.started_at, r2.started_at)
+      GREATEST(c1.ended_at, c2.ended_at) - LEAST(c1.started_at, c2.started_at)
     )), 0) > 0.8
 ),
 edges AS (
@@ -46,7 +72,7 @@ edges AS (
   SELECT id2 AS a, id1 AS b FROM pairs
 ),
 clusters(activity_id, group_id, depth) AS (
-  SELECT id, id::text, 0 FROM ranked
+  SELECT id, id::text, 0 FROM clusterable
   UNION
   SELECT e.b, c.group_id, c.depth + 1
   FROM edges e
@@ -73,62 +99,21 @@ best_per_group AS (
   JOIN ranked r ON r.id = fg.activity_id
   ORDER BY fg.group_id, r.prio ASC, r.id ASC
 ),
-group_bounds AS (
-  SELECT
-    fg.group_id,
-    MIN(r.started_at) AS group_started_at,
-    MAX(COALESCE(r.ended_at, r.started_at + interval '1 hour')) AS group_ended_at
-  FROM final_groups fg
-  JOIN ranked r ON r.id = fg.activity_id
-  GROUP BY fg.group_id
-),
-absent_candidates AS (
-  SELECT
-    id,
-    provider_id,
-    user_id,
-    external_id,
-    started_at,
-    ended_at,
-    provider_absent_at
-  FROM fitness.activity
-  WHERE provider_absent_at IS NOT NULL
-    AND external_id IS NOT NULL
-    AND external_id <> ''
-),
 absent_source_links AS (
   SELECT
-    b.group_id,
+    fg.group_id,
     jsonb_agg(
       jsonb_build_object(
-        'providerId', absent.provider_id,
-        'externalId', absent.external_id,
-        'memberActivityId', absent.id,
-        'providerAbsentAt', absent.provider_absent_at
+        'providerId', t.provider_id,
+        'externalId', t.external_id,
+        'memberActivityId', t.id,
+        'providerAbsentAt', t.provider_absent_at
       )
-      ORDER BY absent.provider_id
+      ORDER BY t.provider_id
     ) AS absent_source_external_ids
-  FROM best_per_group b
-  JOIN group_bounds bounds ON bounds.group_id = b.group_id
-  JOIN absent_candidates absent ON absent.user_id = b.user_id
-  WHERE NOT EXISTS (
-      SELECT 1
-      FROM final_groups fg_member
-      WHERE fg_member.group_id = b.group_id
-        AND fg_member.activity_id = absent.id
-    )
-    AND EXTRACT(EPOCH FROM (
-      LEAST(
-        COALESCE(absent.ended_at, absent.started_at + interval '1 hour'),
-        bounds.group_ended_at
-      ) - GREATEST(absent.started_at, bounds.group_started_at)
-    )) / NULLIF(EXTRACT(EPOCH FROM (
-      GREATEST(
-        COALESCE(absent.ended_at, absent.started_at + interval '1 hour'),
-        bounds.group_ended_at
-      ) - LEAST(absent.started_at, bounds.group_started_at)
-    )), 0) > 0.8
-  GROUP BY b.group_id
+  FROM final_groups fg
+  JOIN tombstoned t ON t.id = fg.activity_id
+  GROUP BY fg.group_id
 ),
 merged AS (
   SELECT
