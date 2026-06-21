@@ -597,6 +597,14 @@ describe("runImport (control-flow mutation killers)", () => {
       aggregateSkinTempToDailyMetrics,
     }));
 
+    vi.doMock("../../db/provider-activity-sync.ts", async (importOriginal) => {
+      const original = await importOriginal<typeof import("../../db/provider-activity-sync.ts")>();
+      return {
+        ...original,
+        finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
+      };
+    });
+
     vi.doMock("./streaming.ts", () => ({
       streamHealthExport: vi.fn(
         async (
@@ -617,7 +625,7 @@ describe("runImport (control-flow mutation killers)", () => {
             { type: "unknown.type" },
           ]);
           await handlers.onSleepBatch([{}]);
-          await handlers.onWorkoutBatch([{}]);
+          await handlers.onWorkoutBatch([{ startDate: new Date("2026-03-01T10:00:00Z") }]);
           await handlers.onCategoryBatch([
             {
               type: "category.type",

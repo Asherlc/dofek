@@ -56,6 +56,8 @@ describe("CyclingAnalyticsProvider — rate-limit aware fetch wiring", () => {
   afterEach(() => {
     process.env = { ...originalEnv };
     providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
+    providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
+    providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue({ id: "activity-id" });
   });
 
   it("surfaces a 429 as a ProviderRateLimitError tagged with providerId 'cycling_analytics'", async () => {
@@ -106,7 +108,7 @@ describe("CyclingAnalyticsProvider — rate-limit aware fetch wiring", () => {
       return new Response("not found", { status: 404 });
     };
 
-    const { db, spies } = createMockDatabase();
+    const { db } = createMockDatabase();
     const result = await new CyclingAnalyticsProvider(mockFetch).sync(
       new SyncRun({
         db,
@@ -116,8 +118,16 @@ describe("CyclingAnalyticsProvider — rate-limit aware fetch wiring", () => {
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBe(1);
-    expect(spies.values).toHaveBeenCalledWith(expect.objectContaining({ externalId: "1" }));
-    expect(spies.values).not.toHaveBeenCalledWith(expect.objectContaining({ externalId: "2" }));
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ externalId: "1" }),
+      expect.anything(),
+    );
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).not.toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ externalId: "2" }),
+      expect.anything(),
+    );
     expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
