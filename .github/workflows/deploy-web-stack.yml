@@ -698,7 +698,7 @@ jobs:
 
       - name: Deploy ClickHouse consumer services
         id: deploy_stack_full
-        if: always() && steps.deploy_stack_quiesced.outcome == 'success'
+        if: always() && steps.deploy_stack_quiesced.conclusion != 'skipped'
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
@@ -740,13 +740,9 @@ jobs:
                   exit 1
                   ;;
                 paused)
-                  running="${replicas%%/*}"
-                  if [ "$running" -eq 0 ]; then
-                    docker service ps "$service_name" --no-trunc
-                    echo "::error::${service_name} update is paused with no running tasks"
-                    exit 1
-                  fi
-                  echo "::warning::${service_name} update is paused but has running tasks; continuing"
+                  docker service ps "$service_name" --no-trunc
+                  echo "::error::${service_name} update is paused"
+                  exit 1
                   ;;
               esac
               if [ "$replicas" = "${desired_replicas}/${desired_replicas}" ] && {
