@@ -14,7 +14,7 @@ import type { WhoopSyncContext } from "./sync-types.ts";
 import { syncWhoopStrength, syncWhoopWorkouts } from "./sync-workouts.ts";
 
 const tokenUserContextMocks = vi.hoisted(() => ({
-  getTokenUserId: vi.fn(() => "00000000-0000-0000-0000-000000000001"),
+  getTokenUserId: vi.fn((): string | undefined => "00000000-0000-0000-0000-000000000001"),
 }));
 
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
@@ -316,7 +316,7 @@ describe("WHOOP sync helpers", () => {
         },
       ],
     });
-    tokenUserContextMocks.getTokenUserId.mockReturnValue(null);
+    tokenUserContextMocks.getTokenUserId.mockReturnValue(undefined);
     const context = makeContext({ db: db.db, client, options: undefined });
 
     await expect(syncWhoopDailyActivity(context)).resolves.toEqual({
