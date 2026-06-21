@@ -12,7 +12,10 @@ const clickHouseSleepNightSchema = z
     date: z.string(),
     provider_id: z.string().nullable().optional(),
     source_name: z.string().nullable().optional(),
-    source_providers: z.array(z.string()).optional().default([]),
+    source_providers: z
+      .preprocess((value) => (value == null ? [] : value), z.array(z.string()))
+      .optional()
+      .default([]),
     started_at: z.string().optional(),
     ended_at: z.string().nullable().optional(),
     duration_minutes: nullableNumberSchema,

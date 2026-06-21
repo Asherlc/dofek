@@ -100,6 +100,25 @@ describe("sleep-need router integration", () => {
     expect(result?.efficiency).toBeCloseTo(87.5, 0);
     // Definitively NOT the null-fallback value of 85
     expect(result?.efficiency).not.toBe(85);
+    expect(result?.providerId).toBe("apple_health");
+    expect(result?.sourceName).toBeNull();
+    expect(result?.sourceProviders).toEqual(["apple_health"]);
+  });
+
+  it("calculate includes provenance on recent nights", async () => {
+    await queryCache.invalidateAll();
+    const today = new Date().toISOString().slice(0, 10);
+    const result = await query<SleepNeedResult>("sleepNeed.calculate", {
+      endDate: today,
+    });
+
+    const nightsWithData = result.recentNights.filter((night) => night.actualMinutes != null);
+    expect(nightsWithData.length).toBeGreaterThan(0);
+    for (const night of nightsWithData) {
+      expect(night.providerId).toBe("apple_health");
+      expect(night.sourceName).toBeNull();
+      expect(night.sourceProviders).toEqual(["apple_health"]);
+    }
   });
 
   it("performance returns deduped sleep data from v_sleep", async () => {

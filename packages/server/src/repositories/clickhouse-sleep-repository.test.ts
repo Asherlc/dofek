@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   fetchDailySleepPerformanceNights,
+  fetchLatestSleepNight,
   fetchSleepNights,
 } from "./clickhouse-sleep-repository.ts";
 
@@ -128,5 +129,69 @@ describe("fetchSleepNights", () => {
 
     expect(rows[0]?.source_name).toBeNull();
     expect(rows[0]?.source_providers).toEqual([]);
+  });
+
+  it("defaults null provenance fields to null and an empty list", async () => {
+    const query = vi.fn().mockResolvedValue([
+      {
+        date: "2026-03-14",
+        provider_id: "whoop",
+        source_name: null,
+        source_providers: null,
+        started_at: "2026-03-13T22:00:00Z",
+        ended_at: "2026-03-14T06:00:00Z",
+        duration_minutes: 480,
+        deep_minutes: null,
+        rem_minutes: null,
+        light_minutes: null,
+        awake_minutes: null,
+        efficiency_pct: 92,
+      },
+    ]);
+
+    const rows = await fetchSleepNights({
+      sensorStore: { query },
+      userId: "user-1",
+      timezone: "UTC",
+      endDate: "2026-03-15",
+      days: 30,
+    });
+
+    expect(rows[0]?.source_name).toBeNull();
+    expect(rows[0]?.source_providers).toEqual([]);
+  });
+
+  it("selects provenance fields from latest sleep night query", async () => {
+    const query = vi.fn().mockResolvedValue([
+      {
+        date: "2026-03-14",
+        provider_id: "whoop",
+        source_name: "WHOOP 4.0",
+        source_providers: ["whoop"],
+        started_at: "2026-03-13T22:00:00Z",
+        ended_at: "2026-03-14T06:00:00Z",
+        duration_minutes: 480,
+        deep_minutes: null,
+        rem_minutes: null,
+        light_minutes: null,
+        awake_minutes: null,
+        efficiency_pct: 92,
+      },
+    ]);
+
+    const row = await fetchLatestSleepNight({
+      sensorStore: { query },
+      userId: "user-1",
+      timezone: "UTC",
+    });
+
+    const queryText = String(query.mock.calls[0]?.[1]);
+    expect(queryText).toContain("source_name");
+    expect(queryText).toContain("source_providers");
+    expect(row).toMatchObject({
+      provider_id: "whoop",
+      source_name: "WHOOP 4.0",
+      source_providers: ["whoop"],
+    });
   });
 });

@@ -124,6 +124,27 @@ function createPerformanceCaller(rows: SleepNeedFixtureRow[]) {
   });
 }
 
+function createSplitPerformanceCaller(
+  dailyRows: SleepNeedFixtureRow[],
+  provenanceRows: SleepNeedFixtureRow[],
+) {
+  const sortedDailyRows = [...dailyRows].sort((leftRow, rightRow) =>
+    leftRow.date.localeCompare(rightRow.date),
+  );
+  const sortedProvenanceRows = [...provenanceRows].sort((leftRow, rightRow) =>
+    leftRow.date.localeCompare(rightRow.date),
+  );
+  return createCaller({
+    db: { execute: vi.fn() },
+    userId: "user-1",
+    sensorStore: makeMockSensorStore([
+      toClickHouseSleepRows(sortedDailyRows),
+      toClickHouseSleepRows(sortedProvenanceRows),
+      [],
+    ]),
+  });
+}
+
 describe("sleepNeedRouter", () => {
   // ── calculate ──────────────────────────────────────────
 
@@ -694,6 +715,62 @@ describe("sleepNeedRouter", () => {
       expect(result?.providerId).toBe("whoop");
       expect(result?.sourceName).toBe("WHOOP 4.0");
       expect(result?.sourceProviders).toEqual(["whoop", "apple_health"]);
+    });
+
+    it("prefers v_sleep provenance over the daily sleep summary provider", async () => {
+      const caller = createSplitPerformanceCaller(
+        [
+          {
+            date: "2026-03-14",
+            duration_minutes: 450,
+            efficiency_pct: 92,
+            provider_id: "apple_health",
+          },
+          { date: "2026-03-01", duration_minutes: 480, provider_id: "apple_health" },
+        ],
+        [
+          {
+            date: "2026-03-14",
+            duration_minutes: 450,
+            efficiency_pct: 92,
+            provider_id: "whoop",
+            source_name: "WHOOP 4.0",
+            source_providers: ["whoop", "apple_health"],
+          },
+        ],
+      );
+      const result = await caller.performance({ endDate: "2026-03-15" });
+
+      expect(result?.providerId).toBe("whoop");
+      expect(result?.sourceName).toBe("WHOOP 4.0");
+      expect(result?.sourceProviders).toEqual(["whoop", "apple_health"]);
+    });
+
+    it("falls back to daily sleep provider when v_sleep has no matching night", async () => {
+      const caller = createSplitPerformanceCaller(
+        [
+          {
+            date: "2026-03-14",
+            duration_minutes: 450,
+            efficiency_pct: 92,
+            provider_id: "apple_health",
+          },
+          { date: "2026-03-01", duration_minutes: 480, provider_id: "apple_health" },
+        ],
+        [
+          {
+            date: "2026-03-01",
+            duration_minutes: 480,
+            provider_id: "whoop",
+            source_name: "WHOOP 4.0",
+          },
+        ],
+      );
+      const result = await caller.performance({ endDate: "2026-03-15" });
+
+      expect(result?.providerId).toBe("apple_health");
+      expect(result?.sourceName).toBeNull();
+      expect(result?.sourceProviders).toEqual([]);
     });
 
     it("uses the historical sleep average for provider-backed rows", async () => {
