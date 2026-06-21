@@ -209,4 +209,57 @@ describe("importStrongCsv() (integration)", () => {
     expect(activities[0]?.name).toBe("Push Day");
     expect(activities[0]?.startedAt).toEqual(new Date("2026-03-01 10:00:00"));
   });
+
+  it("tombstones workouts missing from the computed import window", async () => {
+    const firstImport = `${STRONG_CSV_HEADER}
+2026-04-10 10:30:00,Strong Missing Middle,30m,Bench Press (Barbell),1,100,8,,,,,,7
+2026-04-10 12:05:00,Strong Missing During Late Workout,10m,Deadlift (Barbell),1,140,5,,,,,,8`;
+    const authoritativeImport = `${STRONG_CSV_HEADER}
+2026-04-10 10:00:00,Strong Present Early,1h 0m,Bench Press (Barbell),1,100,8,,,,,,7
+2026-04-10 12:00:00,Strong Present Late,15m,Deadlift (Barbell),1,140,5,,,,,,8`;
+
+    await importStrongCsv(ctx.db, firstImport, TEST_USER_ID, "kg");
+    await importStrongCsv(ctx.db, authoritativeImport, TEST_USER_ID, "kg");
+
+    const activities = await ctx.db
+      .select()
+      .from(activity)
+      .where(eq(activity.providerId, STRONG_PROVIDER_ID));
+    const missingMiddle = activities.find((row) => row.name === "Strong Missing Middle");
+    const missingDuringLateWorkout = activities.find(
+      (row) => row.name === "Strong Missing During Late Workout",
+    );
+    const presentEarly = activities.find((row) => row.name === "Strong Present Early");
+    const presentLate = activities.find((row) => row.name === "Strong Present Late");
+
+    expect(missingMiddle?.providerAbsentAt).toBeInstanceOf(Date);
+    expect(missingDuringLateWorkout?.providerAbsentAt).toBeInstanceOf(Date);
+    expect(presentEarly?.providerAbsentAt).toBeNull();
+    expect(presentLate?.providerAbsentAt).toBeNull();
+  });
+
+  it("uses the latest workout end when reconciling unsorted Strong CSV rows", async () => {
+    const firstImport = `${STRONG_CSV_HEADER}
+2026-04-11 12:05:00,Strong Unsorted Missing During Late Workout,10m,Deadlift (Barbell),1,140,5,,,,,,8`;
+    const authoritativeImport = `${STRONG_CSV_HEADER}
+2026-04-11 12:00:00,Strong Unsorted Present Late,15m,Deadlift (Barbell),1,140,5,,,,,,8
+2026-04-11 10:00:00,Strong Unsorted Present Early,1h 0m,Bench Press (Barbell),1,100,8,,,,,,7`;
+
+    await importStrongCsv(ctx.db, firstImport, TEST_USER_ID, "kg");
+    await importStrongCsv(ctx.db, authoritativeImport, TEST_USER_ID, "kg");
+
+    const activities = await ctx.db
+      .select()
+      .from(activity)
+      .where(eq(activity.providerId, STRONG_PROVIDER_ID));
+    const missingDuringLateWorkout = activities.find(
+      (row) => row.name === "Strong Unsorted Missing During Late Workout",
+    );
+    const presentLate = activities.find((row) => row.name === "Strong Unsorted Present Late");
+    const presentEarly = activities.find((row) => row.name === "Strong Unsorted Present Early");
+
+    expect(missingDuringLateWorkout?.providerAbsentAt).toBeInstanceOf(Date);
+    expect(presentLate?.providerAbsentAt).toBeNull();
+    expect(presentEarly?.providerAbsentAt).toBeNull();
+  });
 });

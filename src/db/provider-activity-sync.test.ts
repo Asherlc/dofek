@@ -55,6 +55,20 @@ describe("upsertProviderActivity", () => {
       },
     });
   });
+
+  it("throws when upserting an activity without an external id", async () => {
+    await expect(
+      upsertProviderActivity(
+        makeMockDb(),
+        {
+          providerId: "apple_health",
+          activityType: "running",
+          startedAt: new Date("2026-06-20T21:49:00Z"),
+        },
+        { activityType: "running" },
+      ),
+    ).rejects.toThrow("Provider activity upsert requires externalId");
+  });
 });
 
 describe("ProviderActivityListSync", () => {
@@ -92,6 +106,23 @@ describe("ProviderActivityListSync", () => {
     });
   });
 
+  it("tracks only non-empty trimmed external ids", () => {
+    const sync = new ProviderActivityListSync({
+      db: makeMockDb(),
+      providerId: "whoop",
+      windowStart: new Date("2026-06-01T00:00:00Z"),
+      windowEnd: new Date("2026-06-21T00:00:00Z"),
+    });
+
+    sync.trackPresent(null);
+    sync.trackPresent(undefined);
+    sync.trackPresent("");
+    sync.trackPresent("   ");
+    sync.trackPresent(" whoop-workout-1 ");
+
+    expect([...sync.presentExternalIds]).toEqual(["whoop-workout-1"]);
+  });
+
   it("allows overriding the authoritative present list", async () => {
     const db = makeMockDb();
     const sync = new ProviderActivityListSync({
@@ -101,15 +132,52 @@ describe("ProviderActivityListSync", () => {
       windowEnd: new Date("2026-06-21T00:00:00Z"),
     });
 
-    sync.replacePresentExternalIds(["whoop-workout-1"]);
+    sync.trackPresent("stale-workout");
+    sync.replacePresentExternalIds([" whoop-workout-1 ", "", "   "]);
     await sync.reconcile();
 
+    expect([...sync.presentExternalIds]).toEqual(["whoop-workout-1"]);
     expect(mockReconcile).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
         presentExternalIds: new Set(["whoop-workout-1"]),
       }),
     );
+  });
+
+  it("does not reconcile when reconciliation is disabled", async () => {
+    const sync = new ProviderActivityListSync({
+      db: makeMockDb(),
+      providerId: "apple_health",
+      windowStart: new Date("2026-06-13T00:00:00Z"),
+      windowEnd: new Date("2026-06-21T00:00:00Z"),
+    });
+
+    sync.trackPresent("hk:workout:present");
+    sync.disableReconciliation();
+    await sync.reconcile();
+
+    expect(mockReconcile).not.toHaveBeenCalled();
+  });
+
+  it("throws when list-scoped upsert is missing an external id", async () => {
+    const sync = new ProviderActivityListSync({
+      db: makeMockDb(),
+      providerId: "apple_health",
+      windowStart: new Date("2026-06-13T00:00:00Z"),
+      windowEnd: new Date("2026-06-21T00:00:00Z"),
+    });
+
+    await expect(
+      sync.upsert(
+        {
+          providerId: "apple_health",
+          activityType: "running",
+          startedAt: new Date("2026-06-20T21:49:00Z"),
+        },
+        { activityType: "running" },
+      ),
+    ).rejects.toThrow("Provider activity upsert requires externalId");
   });
 });
 
