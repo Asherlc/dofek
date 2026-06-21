@@ -409,12 +409,18 @@ describe("mobileDashboard.dashboard", () => {
       actualMinutes: 600,
       neededMinutes: 525,
       debtMinutes: 0,
+      providerId: null,
+      sourceName: null,
+      sourceProviders: [],
     });
     expect(result.sleepNeed?.recentNights[6]).toEqual({
       date: "2026-03-27",
       actualMinutes: 420,
       neededMinutes: 525,
       debtMinutes: 105,
+      providerId: null,
+      sourceName: null,
+      sourceProviders: [],
     });
   });
 
