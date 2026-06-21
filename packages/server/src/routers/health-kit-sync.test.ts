@@ -804,6 +804,38 @@ describe("healthKitSyncRouter", () => {
   });
 
   describe("pushWorkouts", () => {
+    it("rejects inverted sync window bounds", async () => {
+      const caller = createCaller({
+        db: { execute: makeExecute() },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.pushWorkouts({
+          windowStart: "2024-12-31T23:59:59.999Z",
+          windowEnd: "2024-01-01T00:00:00.000Z",
+          workouts: [],
+        }),
+      ).rejects.toThrow("windowEnd must be after windowStart");
+    });
+
+    it("rejects equal sync window bounds", async () => {
+      const caller = createCaller({
+        db: { execute: makeExecute() },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.pushWorkouts({
+          windowStart: "2024-01-15T10:00:00.000Z",
+          windowEnd: "2024-01-15T10:00:00.000Z",
+          workouts: [],
+        }),
+      ).rejects.toThrow("windowEnd must be after windowStart");
+    });
+
     it("processes workout samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({

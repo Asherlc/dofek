@@ -8,15 +8,15 @@ import {
 } from "./health-kit-sync-processors.ts";
 import type { HealthKitSample } from "./health-kit-sync-schemas.ts";
 
+type ProviderActivityListSyncScope = {
+  windowStart: Date;
+  windowEnd: Date;
+};
+
 const providerActivitySyncMocks = vi.hoisted(() => ({
   reconcile: vi.fn().mockResolvedValue(undefined),
   upsert: vi.fn().mockResolvedValue({ id: "activity-id" }),
-  scope: undefined as
-    | {
-        windowStart: Date;
-        windowEnd: Date;
-      }
-    | undefined,
+  scope: undefined satisfies ProviderActivityListSyncScope | undefined,
 }));
 
 vi.mock("../../../../src/db/provider-activity-sync.ts", () => ({

@@ -3,9 +3,9 @@ import type { SyncDatabase } from "./index.ts";
 import {
   hasProviderActivityListSyncErrors,
   markProviderActivityAbsent,
+  markProviderActivityPresent,
   type ProviderActivityAbsenceMark,
   type ProviderActivityAbsenceReconciliation,
-  markProviderActivityPresent,
   reconcileProviderActivityAbsence,
 } from "./provider-activity-absence.ts";
 import { activity } from "./schema.ts";
@@ -137,5 +137,9 @@ export async function finishProviderActivityListSync(
   await reconcileProviderActivityAbsence(db, reconciliation);
 }
 
-export { hasProviderActivityListSyncErrors, markProviderActivityAbsent, markProviderActivityPresent };
+export {
+  hasProviderActivityListSyncErrors,
+  markProviderActivityAbsent,
+  markProviderActivityPresent,
+};
 export type { ProviderActivityAbsenceMark, ProviderActivityAbsenceReconciliation };

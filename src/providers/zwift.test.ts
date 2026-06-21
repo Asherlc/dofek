@@ -16,6 +16,34 @@ vi.mock("../db/token-user-context.ts", () => ({
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
 
+const providerActivityAbsenceMocks = vi.hoisted(() => ({
+  finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
+  upsertProviderActivity: vi.fn().mockResolvedValue({ id: "activity-id" }),
+}));
+
+vi.mock("../db/sync-log.ts", () => ({
+  withSyncLog: vi.fn(
+    async (
+      _db: unknown,
+      _providerId: string,
+      _dataType: string,
+      fn: () => Promise<{ recordCount: number; result: unknown }>,
+    ) => {
+      const { result } = await fn();
+      return result;
+    },
+  ),
+}));
+
+vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../db/provider-activity-sync.ts")>();
+  return {
+    ...original,
+    finishProviderActivityListSync: providerActivityAbsenceMocks.finishProviderActivityListSync,
+    upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
+  };
+});
+
 import { ZwiftProvider } from "./zwift.ts";
 
 // ============================================================
@@ -382,6 +410,11 @@ describe("ZwiftProvider.sync() — token resolution", () => {
 });
 
 describe("ZwiftProvider.sync() — activity sync", () => {
+  beforeEach(() => {
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
+    providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
+  });
+
   it("syncs activities and metric streams", async () => {
     MockZwiftClient.activities = [sampleActivity];
     MockZwiftClient.activityDetail = {
@@ -465,6 +498,63 @@ describe("ZwiftProvider.sync() — activity sync", () => {
     );
     expect(result.provider).toBe("zwift");
     // Old activity skipped
+  });
+
+  it("skips activities after the sync window end", async () => {
+    MockZwiftClient.activities = [
+      {
+        id: 100,
+        name: "In Window",
+        sport: "CYCLING",
+        startDate: "2026-03-01T08:00:00Z",
+        endDate: "2026-03-01T09:00:00Z",
+      },
+      {
+        id: 200,
+        name: "After Window",
+        sport: "CYCLING",
+        startDate: "2026-03-03T08:00:00Z",
+        endDate: "2026-03-03T09:00:00Z",
+      },
+    ];
+    MockZwiftClient.powerCurve = {};
+    MockZwiftClient.activityDetail = { fitnessData: {} };
+
+    const db = makeMockDb({
+      tokens: {
+        accessToken: "valid-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2099-01-01"),
+        scopes: "athleteId:12345",
+      },
+    });
+
+    const provider = new ZwiftProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(1);
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ externalId: "100" }),
+      expect.any(Object),
+    );
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).not.toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ externalId: "200" }),
+      expect.any(Object),
+    );
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        presentExternalIds: new Set(["100"]),
+      }),
+    );
   });
 });
 

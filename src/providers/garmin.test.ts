@@ -518,6 +518,9 @@ describe("GarminProvider.sync()", () => {
     publishedMetricStreamBatches.length = 0;
     providerActivityAbsenceMocks.markProviderActivityAbsent.mockClear();
     providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
+    providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue({
+      id: "10000000-0000-4000-8000-000000000001",
+    });
     provider = new GarminProvider();
     db = createMockDb();
 

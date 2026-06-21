@@ -14,6 +14,7 @@ import {
   hasProviderActivityListSyncErrors,
   invalidateActivityVisibilityCaches,
   markProviderActivityAbsent,
+  markProviderActivityPresent,
   reconcileProviderActivityAbsence,
 } from "./provider-activity-absence.ts";
 
@@ -87,6 +88,21 @@ describe("provider activity absence cache invalidation", () => {
       userId,
     });
 
+    expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:activity.`);
+    expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:calendar.`);
+    expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:training.`);
+    expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:running.`);
+    expect(mockInvalidateByPrefix).toHaveBeenCalledTimes(4);
+  });
+
+  it("invalidates activity, calendar, and training caches after marking present", async () => {
+    await markProviderActivityPresent(makeMockDb(), {
+      providerId: "test-provider",
+      externalId: "restored-activity",
+      userId,
+    });
+
+    expect(mockExecute).toHaveBeenCalledTimes(1);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:activity.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:calendar.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:training.`);

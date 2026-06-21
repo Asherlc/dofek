@@ -1496,6 +1496,56 @@ describe("HealthKitSyncRepository", () => {
       expect(providerActivitySyncMocks.reconcile).not.toHaveBeenCalled();
     });
 
+    it("throws when explicit workout sync window is invalid", async () => {
+      const { repository } = makeRepository();
+      await expect(
+        repository.processWorkouts(
+          [
+            {
+              uuid: "w-window",
+              workoutType: "35",
+              startDate: "2024-01-15T11:00:00Z",
+              endDate: "2024-01-15T12:00:00Z",
+              duration: 3600,
+              sourceName: "Apple Watch",
+              sourceBundle: "com.apple.Health",
+            },
+          ],
+          {
+            windowStart: "not-a-date",
+            windowEnd: "2024-01-15T12:00:00Z",
+          },
+        ),
+      ).rejects.toThrow("Invalid workout sync window");
+
+      expect(providerActivitySyncMocks.reconcile).not.toHaveBeenCalled();
+    });
+
+    it("throws when explicit workout sync window ends before it starts", async () => {
+      const { repository } = makeRepository();
+      await expect(
+        repository.processWorkouts(
+          [
+            {
+              uuid: "w-window",
+              workoutType: "35",
+              startDate: "2024-01-15T10:00:00Z",
+              endDate: "2024-01-15T11:00:00Z",
+              duration: 3600,
+              sourceName: "Apple Watch",
+              sourceBundle: "com.apple.Health",
+            },
+          ],
+          {
+            windowStart: "2024-01-15T12:00:00Z",
+            windowEnd: "2024-01-15T10:00:00Z",
+          },
+        ),
+      ).rejects.toThrow("Invalid workout sync window");
+
+      expect(providerActivitySyncMocks.reconcile).not.toHaveBeenCalled();
+    });
+
     it("upserts workouts via shared processor without touching metric_stream", async () => {
       const { repository, execute } = makeRepository();
       const workouts = [

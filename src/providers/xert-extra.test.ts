@@ -7,6 +7,45 @@ vi.mock("../db/token-user-context.ts", () => ({
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
 
+const providerActivityAbsenceMocks = vi.hoisted(() => ({
+  finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
+  upsertProviderActivity: vi.fn().mockResolvedValue({ id: "activity-id" }),
+}));
+
+vi.mock("../db/sync-log.ts", () => ({
+  withSyncLog: vi.fn(
+    async (
+      _db: unknown,
+      _providerId: string,
+      _dataType: string,
+      fn: () => Promise<{ recordCount: number; result: unknown }>,
+    ) => {
+      const { result } = await fn();
+      return result;
+    },
+  ),
+}));
+
+vi.mock("../db/tokens.ts", () => ({
+  ensureProvider: vi.fn(async () => "xert"),
+  loadTokens: vi.fn(async () => ({
+    accessToken: "valid-access-token",
+    refreshToken: "valid-refresh-token",
+    expiresAt: new Date("2027-01-01T00:00:00Z"),
+    scopes: null,
+  })),
+  saveTokens: vi.fn(async () => {}),
+}));
+
+vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../db/provider-activity-sync.ts")>();
+  return {
+    ...original,
+    finishProviderActivityListSync: providerActivityAbsenceMocks.finishProviderActivityListSync,
+    upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
+  };
+});
+
 import { getProviderAuthType } from "./types.ts";
 import {
   mapXertSport,
@@ -198,5 +237,92 @@ describe("XertProvider", () => {
       new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
     );
     expect(result.errors.length).toBeGreaterThan(0);
+  });
+
+  it("skips activities after the sync window end", async () => {
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
+    providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
+
+    const inWindowStart = Math.floor(new Date("2026-03-01T08:00:00Z").getTime() / 1000);
+    const afterWindowStart = Math.floor(new Date("2026-03-03T08:00:00Z").getTime() / 1000);
+    const mockFetch: typeof globalThis.fetch = async () =>
+      Response.json([
+        {
+          id: 100,
+          name: "In Window",
+          sport: "Cycling",
+          startTimestamp: inWindowStart,
+          endTimestamp: inWindowStart + 3600,
+          duration: 3600,
+          distance: 30000,
+          power_avg: 200,
+          power_max: 400,
+          power_normalized: 210,
+          heartrate_avg: 150,
+          heartrate_max: 170,
+          cadence_avg: 85,
+          cadence_max: 100,
+          calories: 800,
+          elevation_gain: 200,
+          elevation_loss: 180,
+          xss: 90,
+          focus: 3,
+          difficulty: 2,
+        },
+        {
+          id: 200,
+          name: "After Window",
+          sport: "Cycling",
+          startTimestamp: afterWindowStart,
+          endTimestamp: afterWindowStart + 3600,
+          duration: 3600,
+          distance: 30000,
+          power_avg: 200,
+          power_max: 400,
+          power_normalized: 210,
+          heartrate_avg: 150,
+          heartrate_max: 170,
+          cadence_avg: 85,
+          cadence_max: 100,
+          calories: 800,
+          elevation_gain: 200,
+          elevation_loss: 180,
+          xss: 90,
+          focus: 3,
+          difficulty: 2,
+        },
+      ]);
+
+    const db = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+    const result = await new XertProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(1);
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ externalId: "100" }),
+      expect.any(Object),
+    );
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).not.toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ externalId: "200" }),
+      expect.any(Object),
+    );
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        presentExternalIds: new Set(["100"]),
+      }),
+    );
   });
 });

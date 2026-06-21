@@ -69,6 +69,44 @@ describe("upsertProviderActivity", () => {
       ),
     ).rejects.toThrow("Provider activity upsert requires externalId");
   });
+
+  it("throws when upserting an activity with a whitespace-only external id", async () => {
+    await expect(
+      upsertProviderActivity(
+        makeMockDb(),
+        {
+          providerId: "apple_health",
+          externalId: "   ",
+          activityType: "running",
+          startedAt: new Date("2026-06-20T21:49:00Z"),
+        },
+        { activityType: "running" },
+      ),
+    ).rejects.toThrow("Provider activity upsert requires externalId");
+  });
+
+  it("trims external ids before insert", async () => {
+    const onConflictDoUpdate = vi.fn();
+    const db = makeMockDb(onConflictDoUpdate);
+    await upsertProviderActivity(
+      db,
+      {
+        providerId: "apple_health",
+        externalId: " hk:workout:abc ",
+        activityType: "running",
+        startedAt: new Date("2026-06-20T21:49:00Z"),
+      },
+      { activityType: "running" },
+    );
+
+    expect(db.insert).toHaveBeenCalledWith(activity);
+    const values = db.insert.mock.results[0]?.value.values;
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        externalId: "hk:workout:abc",
+      }),
+    );
+  });
 });
 
 describe("ProviderActivityListSync", () => {

@@ -3,8 +3,8 @@ import { queryCache } from "dofek/lib/cache";
 import { healthKitPushTotal, healthKitRecordsTotal } from "dofek/sync-metrics";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { logger } from "../logger.ts";
 import { timestampStringSchema } from "../lib/typed-sql.ts";
+import { logger } from "../logger.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 import {
   aggregateSkinTempToDailyMetrics,
