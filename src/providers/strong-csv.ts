@@ -1,10 +1,7 @@
 import { createHash } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
-import {
-  finishProviderActivityListSync,
-  upsertProviderActivity,
-} from "../db/provider-activity-sync.ts";
+import { upsertProviderActivity } from "../db/provider-activity-sync.ts";
 import { exercise, exerciseAlias, strengthSet } from "../db/schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { lookupExerciseMuscleGroups } from "../exercise-metadata.ts";
@@ -371,9 +368,6 @@ export async function importStrongCsv(
     effectiveWeightUnit = textResult.weightUnit;
   }
   const exerciseCache = new Map<string, string>();
-  const presentExternalIds = new Set<string>();
-  let windowStart: Date | null = null;
-  let windowEnd: Date | null = null;
 
   for (const group of groups) {
     try {
@@ -383,11 +377,6 @@ export async function importStrongCsv(
       const durationSeconds = parseDurationString(group.duration);
       const endedAt =
         durationSeconds > 0 ? new Date(startedAt.getTime() + durationSeconds * 1000) : null;
-
-      presentExternalIds.add(externalId);
-      if (!windowStart || startedAt < windowStart) windowStart = startedAt;
-      const endedOrStarted = endedAt ?? startedAt;
-      if (!windowEnd || endedOrStarted > windowEnd) windowEnd = endedOrStarted;
 
       const activityRow = await upsertProviderActivity(
         db,
@@ -521,16 +510,6 @@ export async function importStrongCsv(
         cause: err,
       });
     }
-  }
-
-  if (windowStart && windowEnd) {
-    await finishProviderActivityListSync(db, {
-      providerId: STRONG_PROVIDER_ID,
-      userId,
-      windowStart,
-      windowEnd: new Date(windowEnd.getTime() + 1),
-      presentExternalIds,
-    });
   }
 
   return { provider: STRONG_PROVIDER_ID, recordsSynced, errors, duration: Date.now() - start };

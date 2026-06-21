@@ -12,13 +12,9 @@ import {
   type MetricStreamEventPublisher,
 } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
+import { computeBoundsFromIsoTimestamps } from "../lib/health-kit-sync-helpers.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
-import {
-  computeBoundsFromIsoTimestamps,
-  processWorkouts as processWorkoutsShared,
-} from "../routers/health-kit-sync-processors.ts";
-
-export { computeBoundsFromIsoTimestamps };
+import { processWorkouts as processWorkoutsShared } from "../routers/health-kit-sync-processors.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -601,14 +597,26 @@ export class HealthKitSyncRepository {
       const bounds = computeBoundsFromIsoTimestamps(
         workouts.flatMap((workout) => [workout.startDate, workout.endDate]),
       );
-      if (!bounds) return 0;
+      if (!bounds) {
+        throw new Error("Cannot derive workout sync window from workout timestamps");
+      }
       windowStart = windowStart ?? bounds.startAt;
       windowEnd = windowEnd ?? bounds.endAt;
     }
 
+    const parsedWindowStart = new Date(windowStart);
+    const parsedWindowEnd = new Date(windowEnd);
+    if (
+      Number.isNaN(parsedWindowStart.getTime()) ||
+      Number.isNaN(parsedWindowEnd.getTime()) ||
+      parsedWindowStart >= parsedWindowEnd
+    ) {
+      throw new Error("Invalid workout sync window");
+    }
+
     return processWorkoutsShared(this.#db, this.#userId, workouts, {
-      windowStart,
-      windowEnd,
+      windowStart: parsedWindowStart.toISOString(),
+      windowEnd: parsedWindowEnd.toISOString(),
     });
   }
 

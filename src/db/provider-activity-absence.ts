@@ -119,3 +119,21 @@ export async function markProviderActivityAbsent(
 
   await invalidateActivityVisibilityCaches(userId);
 }
+
+export async function markProviderActivityPresent(
+  db: SyncDatabase,
+  mark: ProviderActivityAbsenceMark,
+): Promise<void> {
+  const userId = resolveUserId(mark.userId);
+  await db.execute(sql`
+    UPDATE fitness.activity
+    SET provider_absent_at = NULL
+    WHERE user_id = ${userId}
+      AND provider_id = ${mark.providerId}
+      AND external_id = ${mark.externalId}
+      AND provider_absent_at IS NOT NULL
+      AND deleted_at IS NULL
+  `);
+
+  await invalidateActivityVisibilityCaches(userId);
+}

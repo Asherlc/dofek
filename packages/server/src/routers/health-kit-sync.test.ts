@@ -66,11 +66,9 @@ vi.mock("../trpc.ts", async () => {
 });
 
 import { healthKitPushTotal, healthKitRecordsTotal } from "dofek/sync-metrics";
+import { computeBoundsFromIsoTimestamps } from "../lib/health-kit-sync-helpers.ts";
 import { healthKitSyncRouter } from "./health-kit-sync.ts";
-import {
-  aggregateDailyMetricSamples,
-  computeBoundsFromIsoTimestamps,
-} from "./health-kit-sync-processors.ts";
+import { aggregateDailyMetricSamples } from "./health-kit-sync-processors.ts";
 import type { SleepSample } from "./health-kit-sync-schemas.ts";
 import { deriveSleepSessionsFromStages, isSleepStageValue } from "./health-kit-sync-sleep.ts";
 

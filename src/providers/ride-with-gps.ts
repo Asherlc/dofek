@@ -14,6 +14,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { replaceMetricStreamBatch } from "../db/metric-stream-writer.ts";
 import {
   markProviderActivityAbsent,
+  markProviderActivityPresent,
   upsertProviderActivity,
 } from "../db/provider-activity-sync.ts";
 import { userSettings } from "../db/schema.ts";
@@ -491,6 +492,12 @@ export class RideWithGpsProvider implements SyncProvider {
             raw: parsed.raw,
           },
         );
+
+        await markProviderActivityPresent(db, {
+          providerId: this.id,
+          externalId: parsed.externalId,
+          userId: scopedUserId,
+        });
 
         const activityId = activityRow?.id;
         if (!activityId) continue;

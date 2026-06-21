@@ -11,10 +11,19 @@ import type { HealthKitSample } from "./health-kit-sync-schemas.ts";
 const providerActivitySyncMocks = vi.hoisted(() => ({
   reconcile: vi.fn().mockResolvedValue(undefined),
   upsert: vi.fn().mockResolvedValue({ id: "activity-id" }),
+  scope: undefined as
+    | {
+        windowStart: Date;
+        windowEnd: Date;
+      }
+    | undefined,
 }));
 
 vi.mock("../../../../src/db/provider-activity-sync.ts", () => ({
   ProviderActivityListSync: class {
+    constructor(scope: { windowStart: Date; windowEnd: Date }) {
+      providerActivitySyncMocks.scope = scope;
+    }
     upsert = providerActivitySyncMocks.upsert;
     reconcile = providerActivitySyncMocks.reconcile;
   },
@@ -106,6 +115,7 @@ describe("processWorkouts", () => {
   it("reconciles apple_health workouts missing from the HealthKit sync window", async () => {
     providerActivitySyncMocks.reconcile.mockClear();
     providerActivitySyncMocks.upsert.mockClear();
+    providerActivitySyncMocks.scope = undefined;
     const execute = vi.fn(async () => []);
 
     await processWorkouts(
@@ -137,5 +147,11 @@ describe("processWorkouts", () => {
       expect.any(Object),
     );
     expect(providerActivitySyncMocks.reconcile).toHaveBeenCalledTimes(1);
+    expect(providerActivitySyncMocks.scope?.windowStart.toISOString()).toBe(
+      "2026-06-13T00:00:00.000Z",
+    );
+    expect(providerActivitySyncMocks.scope?.windowEnd.toISOString()).toBe(
+      "2026-06-21T00:00:00.000Z",
+    );
   });
 });

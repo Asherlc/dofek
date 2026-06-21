@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { computeBoundsFromIsoTimestamps } from "../lib/health-kit-sync-helpers.ts";
 import {
   aggregateDailyMetricSamples,
   categorize,
-  computeBoundsFromIsoTimestamps,
   deriveSleepSessionsFromStages,
   extractDate,
   type HealthKitSample,
@@ -1477,21 +1477,22 @@ describe("HealthKitSyncRepository", () => {
       );
     });
 
-    it("returns 0 when workout timestamps cannot derive bounds", async () => {
+    it("throws when workout timestamps cannot derive bounds", async () => {
       const { repository } = makeRepository();
-      const result = await repository.processWorkouts([
-        {
-          uuid: "w-invalid",
-          workoutType: "35",
-          startDate: "invalid",
-          endDate: "invalid",
-          duration: 3600,
-          sourceName: "Apple Watch",
-          sourceBundle: "com.apple.Health",
-        },
-      ]);
+      await expect(
+        repository.processWorkouts([
+          {
+            uuid: "w-invalid",
+            workoutType: "35",
+            startDate: "invalid",
+            endDate: "invalid",
+            duration: 3600,
+            sourceName: "Apple Watch",
+            sourceBundle: "com.apple.Health",
+          },
+        ]),
+      ).rejects.toThrow("Cannot derive workout sync window from workout timestamps");
 
-      expect(result).toBe(0);
       expect(providerActivitySyncMocks.reconcile).not.toHaveBeenCalled();
     });
 

@@ -189,6 +189,7 @@ export async function syncWhoopStrength(
                 },
               },
               {
+                activityType: "strength",
                 name: weightliftingData.name ?? null,
                 startedAt,
                 endedAt,

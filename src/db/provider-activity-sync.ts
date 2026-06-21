@@ -5,6 +5,7 @@ import {
   markProviderActivityAbsent,
   type ProviderActivityAbsenceMark,
   type ProviderActivityAbsenceReconciliation,
+  markProviderActivityPresent,
   reconcileProviderActivityAbsence,
 } from "./provider-activity-absence.ts";
 import { activity } from "./schema.ts";
@@ -27,6 +28,23 @@ export interface ProviderActivityListSyncScope {
   windowStart: Date;
   windowEnd: Date;
   userId?: string;
+}
+
+function requireExternalId(externalId: string | null | undefined): string {
+  const normalizedExternalId = externalId?.trim();
+  if (!normalizedExternalId) {
+    throw new Error("Provider activity upsert requires externalId");
+  }
+  return normalizedExternalId;
+}
+
+function normalizeProviderActivityInsert(
+  values: ProviderActivityInsert,
+  normalizedExternalId: string,
+): ProviderActivityInsert {
+  return values.externalId === normalizedExternalId
+    ? values
+    : { ...values, externalId: normalizedExternalId };
 }
 
 /**
@@ -69,11 +87,14 @@ export class ProviderActivityListSync {
     values: ProviderActivityInsert,
     update: ProviderActivityConflictUpdate,
   ): Promise<{ id: string } | undefined> {
-    if (!values.externalId) {
-      throw new Error("Provider activity upsert requires externalId");
-    }
-    this.trackPresent(values.externalId);
-    return upsertProviderActivity(this.#scope.db, values, update);
+    const normalizedExternalId = requireExternalId(values.externalId);
+    const row = await upsertProviderActivity(
+      this.#scope.db,
+      normalizeProviderActivityInsert(values, normalizedExternalId),
+      update,
+    );
+    this.trackPresent(normalizedExternalId);
+    return row;
   }
 
   async reconcile(presentExternalIds?: ReadonlySet<string>): Promise<void> {
@@ -94,13 +115,11 @@ export async function upsertProviderActivity(
   values: ProviderActivityInsert,
   update: ProviderActivityConflictUpdate,
 ): Promise<{ id: string } | undefined> {
-  if (!values.externalId) {
-    throw new Error("Provider activity upsert requires externalId");
-  }
+  const normalizedExternalId = requireExternalId(values.externalId);
 
   const [row] = await db
     .insert(activity)
-    .values(values)
+    .values(normalizeProviderActivityInsert(values, normalizedExternalId))
     .onConflictDoUpdate({
       target: [activity.userId, activity.providerId, activity.externalId],
       set: update,
@@ -118,5 +137,5 @@ export async function finishProviderActivityListSync(
   await reconcileProviderActivityAbsence(db, reconciliation);
 }
 
-export { hasProviderActivityListSyncErrors, markProviderActivityAbsent };
+export { hasProviderActivityListSyncErrors, markProviderActivityAbsent, markProviderActivityPresent };
 export type { ProviderActivityAbsenceMark, ProviderActivityAbsenceReconciliation };

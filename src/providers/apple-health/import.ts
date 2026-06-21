@@ -135,6 +135,7 @@ export async function runImport(
   const errors: SyncError[] = [];
   let recordsSynced = 0;
   const presentWorkoutExternalIds = new Set<string>();
+  let latestWorkoutTimestamp: Date | null = null;
   const scopedUserId = getTokenUserId();
   if (!scopedUserId) {
     throw new Error("apple-health import requires user context");
@@ -228,6 +229,10 @@ export async function runImport(
       onWorkoutBatch: async (workouts) => {
         for (const workout of workouts) {
           presentWorkoutExternalIds.add(`ah:workout:${workout.startDate.toISOString()}`);
+          const workoutEnd = workout.endDate ?? workout.startDate;
+          if (!latestWorkoutTimestamp || workoutEnd > latestWorkoutTimestamp) {
+            latestWorkoutTimestamp = workoutEnd;
+          }
         }
         const workoutCount = await upsertWorkoutBatch(
           db,
@@ -268,7 +273,7 @@ export async function runImport(
       providerId,
       userId: scopedUserId,
       windowStart: since,
-      windowEnd: new Date(),
+      windowEnd: latestWorkoutTimestamp ?? since,
       presentExternalIds: presentWorkoutExternalIds,
     });
 

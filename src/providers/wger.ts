@@ -201,6 +201,9 @@ export class WgerProvider implements SyncProvider {
                 url = null;
                 break;
               }
+              if (sessionDate >= syncWindowEnd) {
+                continue;
+              }
 
               const parsed = parseWgerWorkoutSession(raw);
               presentActivityExternalIds.add(parsed.externalId);

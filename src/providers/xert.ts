@@ -284,6 +284,9 @@ export class XertProvider implements SyncProvider {
 
             for (const rawActivity of data) {
               const parsed = parseXertActivity(rawActivity);
+              if (parsed.startedAt < since || parsed.startedAt >= syncWindowEnd) {
+                continue;
+              }
               presentActivityExternalIds.add(parsed.externalId);
               try {
                 await upsertProviderActivity(

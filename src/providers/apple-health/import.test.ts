@@ -668,6 +668,7 @@ describe("runImport (control-flow mutation killers)", () => {
       db,
       expect.objectContaining({
         providerId: "apple_health",
+        windowEnd: new Date("2026-03-01T10:00:00.000Z"),
         presentExternalIds: new Set(["ah:workout:2026-03-01T10:00:00.000Z"]),
       }),
     );

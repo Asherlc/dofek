@@ -980,6 +980,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     );
 
     expect(result.errors).toHaveLength(0);
+    expect(result.duration).toBeLessThan(60_000);
 
     const staleRows = await ctx.db
       .select()

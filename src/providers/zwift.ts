@@ -255,6 +255,9 @@ export class ZwiftProvider implements SyncProvider {
                 done = true;
                 break;
               }
+              if (actStart >= syncWindowEnd) {
+                continue;
+              }
 
               const parsed = parseZwiftActivity(raw);
               presentActivityExternalIds.add(parsed.externalId);

@@ -4,6 +4,7 @@ import { healthKitPushTotal, healthKitRecordsTotal } from "dofek/sync-metrics";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { logger } from "../logger.ts";
+import { timestampStringSchema } from "../lib/typed-sql.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 import {
   aggregateSkinTempToDailyMetrics,
@@ -200,11 +201,20 @@ export const healthKitSyncRouter = router({
 
   pushWorkouts: protectedProcedure
     .input(
-      z.object({
-        workouts: z.array(workoutSampleSchema),
-        windowStart: z.string(),
-        windowEnd: z.string(),
-      }),
+      z
+        .object({
+          workouts: z.array(workoutSampleSchema),
+          windowStart: timestampStringSchema,
+          windowEnd: timestampStringSchema,
+        })
+        .refine(
+          ({ windowStart, windowEnd }) =>
+            new Date(windowStart).getTime() < new Date(windowEnd).getTime(),
+          {
+            message: "windowEnd must be after windowStart",
+            path: ["windowEnd"],
+          },
+        ),
     )
     .mutation(async ({ ctx, input }) => {
       await ensureProvider(ctx.db, ctx.userId);
