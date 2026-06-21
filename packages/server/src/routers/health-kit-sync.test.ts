@@ -11,6 +11,11 @@ const { mockInvalidateByPrefix, mockMetricStreamPublishRows, mockPublishedMetric
     };
   });
 
+const providerActivitySyncMocks = vi.hoisted(() => ({
+  reconcile: vi.fn().mockResolvedValue(undefined),
+  upsert: vi.fn().mockResolvedValue({ id: "activity-id" }),
+}));
+
 vi.mock("dofek/sync-metrics", () => ({
   healthKitRecordsTotal: { add: vi.fn() },
   healthKitPushTotal: { add: vi.fn() },
@@ -36,6 +41,15 @@ vi.mock("../../../../src/metric-stream/redpanda-producer.ts", () => ({
   getDefaultMetricStreamEventPublisher: async () => ({
     publishRows: mockMetricStreamPublishRows,
   }),
+}));
+
+vi.mock("../../../../src/db/provider-activity-sync.ts", () => ({
+  ProviderActivityListSync: class {
+    upsert = providerActivitySyncMocks.upsert;
+    reconcile = providerActivitySyncMocks.reconcile;
+  },
+  finishProviderActivityListSync: vi.fn(),
+  upsertProviderActivity: vi.fn(),
 }));
 
 vi.mock("../trpc.ts", async () => {
@@ -102,6 +116,9 @@ describe("healthKitSyncRouter", () => {
     mockInvalidateByPrefix.mockClear();
     mockMetricStreamPublishRows.mockReset();
     mockPublishedMetricStreamRowBatches.length = 0;
+    providerActivitySyncMocks.reconcile.mockClear();
+    providerActivitySyncMocks.upsert.mockClear();
+    providerActivitySyncMocks.upsert.mockResolvedValue({ id: "activity-id" });
     mockMetricStreamPublishRows.mockImplementation(async (rows: readonly unknown[]) => {
       const publishedRows = [...rows];
       mockPublishedMetricStreamRowBatches.push(publishedRows);
@@ -2510,14 +2527,11 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      // Verify the SQL contains "cycling" as the activity type (not "other")
-      const insertCall = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return serialized.includes("fitness.activity") && serialized.includes("INSERT");
-      });
-      expect(insertCall).toBeDefined();
-      const serialized = JSON.stringify(insertCall?.[0]);
-      expect(serialized).toContain("cycling");
+      // Workouts upsert through ProviderActivityListSync instead of raw SQL inserts.
+      expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ activityType: "cycling" }),
+        expect.objectContaining({ activityType: "cycling" }),
+      );
     });
 
     it("includes raw workout data in JSON (kills JSON.stringify({}) mutation)", async () => {
@@ -2545,16 +2559,22 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      const insertCall = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return serialized.includes("fitness.activity") && serialized.includes("INSERT");
-      });
-      expect(insertCall).toBeDefined();
-      const serialized = JSON.stringify(insertCall?.[0]);
-      // Raw data should contain workout properties, not an empty object
-      expect(serialized).toContain("3600"); // duration
-      expect(serialized).toContain("500"); // totalEnergyBurned
-      expect(serialized).toContain("10000"); // totalDistance
+      expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          raw: expect.objectContaining({
+            duration: 3600,
+            totalEnergyBurned: 500,
+            totalDistance: 10000,
+          }),
+        }),
+        expect.objectContaining({
+          raw: expect.objectContaining({
+            duration: 3600,
+            totalEnergyBurned: 500,
+            totalDistance: 10000,
+          }),
+        }),
+      );
     });
 
     it("stores workout metadata and workoutActivities in raw JSON column", async () => {
@@ -2595,19 +2615,23 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      const insertCall = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return serialized.includes("fitness.activity") && serialized.includes("INSERT");
-      });
-      expect(insertCall).toBeDefined();
-      const serialized = JSON.stringify(insertCall?.[0]);
-      // Workout metadata should be preserved in raw JSON
-      expect(serialized).toContain("Bench Press");
-      expect(serialized).toContain("HKIndoorWorkout");
-      // Workout activities should be preserved in raw JSON
-      expect(serialized).toContain("activity-1");
-      expect(serialized).toContain("Barbell Bench Press");
-      expect(serialized).toContain("exerciseName");
+      expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          raw: expect.objectContaining({
+            metadata: expect.objectContaining({
+              HKIndoorWorkout: 1,
+              "some-custom-key": "Bench Press",
+            }),
+            workoutActivities: [
+              expect.objectContaining({
+                uuid: "activity-1",
+                metadata: expect.objectContaining({ exerciseName: "Barbell Bench Press" }),
+              }),
+            ],
+          }),
+        }),
+        expect.anything(),
+      );
     });
 
     it("does not touch the retired Postgres metric_stream table after processing workouts", async () => {
