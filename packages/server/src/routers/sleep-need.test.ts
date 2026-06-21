@@ -569,8 +569,7 @@ describe("sleepNeedRouter", () => {
           duration_minutes: 480,
           provider_id: date === "2026-03-14" ? "apple_health" : "whoop",
           source_name: date === "2026-03-14" ? "Apple Watch" : null,
-          source_providers:
-            date === "2026-03-14" ? ["apple_health", "whoop"] : ["whoop"],
+          source_providers: date === "2026-03-14" ? ["apple_health", "whoop"] : ["whoop"],
           next_day_hrv: 50,
           median_hrv: 45,
           good_recovery: true,
