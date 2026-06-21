@@ -13,8 +13,8 @@ import { PmcChart } from "../../components/PmcChart.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import { TrainingCalendar } from "../../components/TrainingCalendar.tsx";
 import { TrainingInsightsPanel } from "../../components/TrainingInsightsPanel.tsx";
-import { filterTrainingInsights } from "../../lib/trainingInsights.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
+import { filterTrainingInsights } from "../../lib/trainingInsights.ts";
 import { trpc } from "../../lib/trpc.ts";
 
 export const Route = createFileRoute("/training/")({
