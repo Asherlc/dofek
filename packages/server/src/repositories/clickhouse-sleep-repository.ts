@@ -11,6 +11,11 @@ const clickHouseSleepNightSchema = z
   .object({
     date: z.string(),
     provider_id: z.string().nullable().optional(),
+    source_name: z.string().nullable().optional(),
+    source_providers: z
+      .preprocess((value) => (value == null ? [] : value), z.array(z.string()))
+      .optional()
+      .default([]),
     started_at: z.string().optional(),
     ended_at: z.string().nullable().optional(),
     duration_minutes: nullableNumberSchema,
@@ -23,6 +28,8 @@ const clickHouseSleepNightSchema = z
   .transform((row) => ({
     ...row,
     provider_id: row.provider_id ?? null,
+    source_name: row.source_name ?? null,
+    source_providers: row.source_providers ?? [],
     started_at: row.started_at ?? `${row.date}T12:00:00`,
     ended_at: row.ended_at ?? null,
   }));
@@ -94,6 +101,8 @@ export async function fetchSleepNights(
     `SELECT
       date,
       provider_id,
+      source_name,
+      source_providers,
       formatDateTime(started_at_dt, '%FT%TZ', 'UTC') AS started_at,
       if(isNull(ended_at_dt), NULL, formatDateTime(ended_at_dt, '%FT%TZ', 'UTC')) AS ended_at,
       duration_minutes,
@@ -106,6 +115,8 @@ export async function fetchSleepNights(
       SELECT
         toString(toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR)) AS date,
         provider_id,
+        source_name,
+        source_providers,
         started_at AS started_at_dt,
         ended_at AS ended_at_dt,
         duration_minutes,
@@ -187,6 +198,8 @@ export async function fetchLatestSleepNight(input: {
     `SELECT
       date,
       provider_id,
+      source_name,
+      source_providers,
       formatDateTime(started_at_dt, '%FT%TZ', 'UTC') AS started_at,
       if(isNull(ended_at_dt), NULL, formatDateTime(ended_at_dt, '%FT%TZ', 'UTC')) AS ended_at,
       duration_minutes,
@@ -199,6 +212,8 @@ export async function fetchLatestSleepNight(input: {
       SELECT
         toString(toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR)) AS date,
         provider_id,
+        source_name,
+        source_providers,
         started_at AS started_at_dt,
         ended_at AS ended_at_dt,
         duration_minutes,

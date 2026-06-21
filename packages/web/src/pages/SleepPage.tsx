@@ -9,6 +9,7 @@ import { Hypnogram } from "../components/Hypnogram.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { PageSection } from "../components/PageSection.tsx";
 import { SleepChart } from "../components/SleepChart.tsx";
+import { SleepDataSourcesTable } from "../components/SleepDataSourcesTable.tsx";
 import { SleepNeedCard } from "../components/SleepNeedCard.tsx";
 import { SleepPerformanceCard } from "../components/SleepPerformanceCard.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
@@ -17,6 +18,7 @@ import { trpc } from "../lib/trpc.ts";
 import { assertRows } from "../lib/utils.ts";
 
 const sleepRowSchema = z.object({
+  date: z.string().optional(),
   started_at: z.string(),
   duration_minutes: z.number().nullable(),
   deep_minutes: z.number().nullable(),
@@ -24,6 +26,9 @@ const sleepRowSchema = z.object({
   light_minutes: z.number().nullable(),
   awake_minutes: z.number().nullable(),
   efficiency_pct: z.number().nullable(),
+  provider_id: z.string().nullable().optional(),
+  source_name: z.string().nullable().optional(),
+  source_providers: z.array(z.string()).optional().default([]),
 });
 
 function isSleepInsight(metric: string): boolean {
@@ -47,6 +52,19 @@ export function SleepPage() {
       .sort((a, b) => Math.abs(b.effectSize) - Math.abs(a.effectSize));
   }, [insightsQuery.data]);
 
+  const sleepRows = assertRows(sleepData.data, sleepRowSchema);
+  const sourceRows = useMemo(
+    () =>
+      sleepRows.map((row) => ({
+        date: row.date ?? row.started_at.slice(0, 10),
+        durationMinutes: row.duration_minutes,
+        providerId: row.provider_id ?? null,
+        sourceName: row.source_name ?? null,
+        sourceProviders: row.source_providers ?? [],
+      })),
+    [sleepRows],
+  );
+
   return (
     <PageLayout
       headerChildren={<TimeRangeSelector days={days} onChange={setDays} />}
@@ -61,10 +79,15 @@ export function SleepPage() {
 
       {/* Sleep Stage Chart */}
       <PageSection title="Sleep Stages">
-        <SleepChart
-          data={assertRows(sleepData.data, sleepRowSchema)}
-          loading={sleepData.isLoading}
-        />
+        <SleepChart data={sleepRows} loading={sleepData.isLoading} />
+      </PageSection>
+
+      {/* Data Sources */}
+      <PageSection
+        title="Data Sources"
+        subtitle="Which provider and device supplied each night's sleep data"
+      >
+        <SleepDataSourcesTable rows={sourceRows} loading={sleepData.isLoading} />
       </PageSection>
 
       {/* Last Night Hypnogram */}
