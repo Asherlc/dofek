@@ -288,6 +288,8 @@ jobs:
         run: |
           node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
             docker stack config $STACK_FILE_FLAGS >/dev/null
+          node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
+            docker stack config $STACK_FILE_FLAGS -c deploy/stack.cdc-quiesce.yml >/dev/null
 
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -470,13 +472,13 @@ jobs:
           cleanup_migration_container
           echo "Migration succeeded."
 
-      - name: Deploy stack
-        id: deploy_stack
+      - name: Deploy stack without ClickHouse consumers
+        id: deploy_stack_quiesced
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
           set +e
-          timeout 20m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy $STACK_FILE_FLAGS --with-registry-auth --prune --detach=true "$STACK_NAME"
+          timeout 20m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy $STACK_FILE_FLAGS -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true "$STACK_NAME"
           status=$?
           set -e
           if [ "$status" -eq 124 ]; then
@@ -487,7 +489,7 @@ jobs:
           fi
 
           wait_deadline_seconds=$((SECONDS + 1200))
-          for service in web worker analytics-worker clickhouse; do
+          for service in web worker analytics-worker metric-stream-clickhouse-sink clickhouse; do
             service_name="${STACK_NAME}_${service}"
             while true; do
               update_state="$(
@@ -535,14 +537,6 @@ jobs:
               sleep 10
             done
           done
-
-      - name: Prune obsolete images post-deploy
-        if: ${{ steps.deploy_stack.outcome == 'success' }}
-        run: docker image prune -af
-
-      - name: Report Docker disk usage post-prune
-        if: ${{ steps.deploy_stack.outcome == 'success' }}
-        run: docker system df
 
       - name: Wait for Postgres writable after stack deploy
         run: |
@@ -691,6 +685,7 @@ jobs:
               --type Text
 
       - name: Configure ClickHouse CDC
+        id: configure_clickhouse_cdc
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
@@ -700,6 +695,77 @@ jobs:
             --entrypoint sh \
             "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --experimental-transform-types --enable-source-maps --disable-warning=ExperimentalWarning src/db/setup-clickhouse-cdc.ts'
+
+      - name: Deploy ClickHouse consumer services
+        id: deploy_stack_full
+        if: always() && steps.deploy_stack_quiesced.conclusion != 'skipped'
+        env:
+          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          set +e
+          timeout 20m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy $STACK_FILE_FLAGS --with-registry-auth --prune --detach=true "$STACK_NAME"
+          status=$?
+          set -e
+          if [ "$status" -eq 124 ]; then
+            echo "::error::docker stack deploy exceeded 20m"
+          fi
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+
+          wait_deadline_seconds=$((SECONDS + 1200))
+          for service in analytics-worker metric-stream-clickhouse-sink; do
+            service_name="${STACK_NAME}_${service}"
+            while true; do
+              update_state="$(
+                docker service inspect "$service_name" \
+                  --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{end}}'
+              )"
+              image="$(
+                docker service inspect "$service_name" \
+                  --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'
+              )"
+              desired_replicas="$(
+                docker service inspect "$service_name" \
+                  --format '{{if .Spec.Mode.Replicated}}{{.Spec.Mode.Replicated.Replicas}}{{end}}'
+              )"
+              replicas="$(
+                docker service ls --filter "name=${service_name}" --format '{{.Replicas}}'
+              )"
+              echo "${service_name} image=${image} replicas=${replicas} update_state=${update_state:-none}"
+              case "$update_state" in
+                rollback_*)
+                  docker service ps "$service_name" --no-trunc
+                  echo "::error::${service_name} did not finish deployment cleanly; update_state=${update_state}"
+                  exit 1
+                  ;;
+                paused)
+                  docker service ps "$service_name" --no-trunc
+                  echo "::error::${service_name} update is paused"
+                  exit 1
+                  ;;
+              esac
+              if [ "$replicas" = "${desired_replicas}/${desired_replicas}" ] && {
+                [ -z "$update_state" ] || [ "$update_state" = "completed" ]
+              }; then
+                break
+              fi
+              if [ "$SECONDS" -ge "$wait_deadline_seconds" ]; then
+                docker service ps "$service_name" --no-trunc
+                echo "::error::${service_name} did not converge before timeout"
+                exit 124
+              fi
+              sleep 10
+            done
+          done
+
+      - name: Prune obsolete images post-deploy
+        if: ${{ steps.deploy_stack_full.outcome == 'success' }}
+        run: docker image prune -af
+
+      - name: Report Docker disk usage post-prune
+        if: ${{ steps.deploy_stack_full.outcome == 'success' }}
+        run: docker system df
 
       - uses: ./.github/actions/append-dispatcher-run-summary
         if: always()
