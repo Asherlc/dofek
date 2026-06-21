@@ -579,6 +579,7 @@ describe("runImport (control-flow mutation killers)", () => {
     const upsertWorkoutBatch = vi.fn().mockResolvedValue(3);
     const aggregateSpO2ToDailyMetrics = vi.fn().mockResolvedValue(undefined);
     const aggregateSkinTempToDailyMetrics = vi.fn().mockResolvedValue(undefined);
+    const finishProviderActivityListSync = vi.fn().mockResolvedValue(undefined);
 
     vi.doMock("./db-insertion.ts", () => ({
       METRIC_STREAM_TYPES: { "metric.type": true },
@@ -601,7 +602,7 @@ describe("runImport (control-flow mutation killers)", () => {
       const original = await importOriginal<typeof import("../../db/provider-activity-sync.ts")>();
       return {
         ...original,
-        finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
+        finishProviderActivityListSync,
       };
     });
 
@@ -663,6 +664,13 @@ describe("runImport (control-flow mutation killers)", () => {
     expect(upsertWorkoutBatch).toHaveBeenCalledTimes(1);
     expect(aggregateSpO2ToDailyMetrics).toHaveBeenCalledTimes(1);
     expect(aggregateSkinTempToDailyMetrics).toHaveBeenCalledTimes(1);
+    expect(finishProviderActivityListSync).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        providerId: "apple_health",
+        presentExternalIds: new Set(["ah:workout:2026-03-01T10:00:00.000Z"]),
+      }),
+    );
   });
 
   it("aggregates only metric records collected across multiple record batches", async () => {

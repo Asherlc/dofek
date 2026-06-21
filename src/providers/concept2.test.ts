@@ -127,6 +127,18 @@ function findUpsertValues(
   return undefined;
 }
 
+function findUpsertUpdate(
+  predicate: (update: Record<string, unknown>) => boolean,
+): Record<string, unknown> | undefined {
+  for (const call of providerActivityAbsenceMocks.upsertProviderActivity.mock.calls) {
+    const update = call[2];
+    if (isRecord(update) && predicate(update)) {
+      return update;
+    }
+  }
+  return undefined;
+}
+
 // ============================================================
 // Parsing tests
 // ============================================================
@@ -381,6 +393,17 @@ describe("Concept2Provider", () => {
       );
       expect(val?.activityType).toBe("rowing");
       expect(val?.name).toBe("Rower FixedDistSplits");
+
+      const update = findUpsertUpdate((rec) => rec.activityType === "rowing");
+      expect(update).toEqual(
+        expect.objectContaining({
+          activityType: "rowing",
+          name: "Rower FixedDistSplits",
+          startedAt: val?.startedAt,
+          endedAt: val?.endedAt,
+          raw: val?.raw,
+        }),
+      );
     });
 
     it("returns 0 records for non-result objectType", async () => {

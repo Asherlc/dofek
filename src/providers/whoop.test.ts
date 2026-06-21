@@ -203,6 +203,15 @@ function isRecord(val: unknown): val is Record<string, unknown> {
   return val !== null && typeof val === "object" && !Array.isArray(val);
 }
 
+function hasQueryChunks(query: unknown): query is { queryChunks: unknown[] } {
+  return (
+    query !== null &&
+    typeof query === "object" &&
+    "queryChunks" in query &&
+    Array.isArray(query.queryChunks)
+  );
+}
+
 function findUpsertValues(
   predicate: (values: Record<string, unknown>) => boolean,
 ): Record<string, unknown> | undefined {
@@ -225,6 +234,26 @@ function findUpsertUpdate(
     }
   }
   return undefined;
+}
+
+function findUpsertUpdateForExternalId(
+  externalId: string,
+  predicate?: (update: Record<string, unknown>) => boolean,
+): Record<string, unknown> | undefined {
+  let match: Record<string, unknown> | undefined;
+  for (const call of providerActivityAbsenceMocks.upsertProviderActivity.mock.calls) {
+    const values = call[1];
+    const update = call[2];
+    if (
+      isRecord(values) &&
+      values.externalId === externalId &&
+      isRecord(update) &&
+      (!predicate || predicate(update))
+    ) {
+      match = update;
+    }
+  }
+  return match;
 }
 
 /** Type guard: value is a non-empty array of record objects */
@@ -2406,8 +2435,15 @@ describe("WhoopProvider.sync() — strength sync", () => {
     expect(strengthActivityInsert?.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
     expect(strengthActivityInsert?.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
 
-    const strengthUpdate = findUpsertUpdate((rec) => "raw" in rec);
+    const strengthUpdate = findUpsertUpdateForExternalId("w-str-1", (update) =>
+      hasQueryChunks(update.raw),
+    );
     expect(strengthUpdate).toBeDefined();
+    expect(strengthUpdate?.startedAt).toEqual(strengthActivityInsert?.startedAt);
+    expect(strengthUpdate?.endedAt).toEqual(strengthActivityInsert?.endedAt);
+    expect(JSON.stringify(strengthUpdate?.raw)).toContain("rawMskStrainScore");
+    expect(JSON.stringify(strengthUpdate?.raw)).toContain("scaledMskStrainScore");
+    expect(JSON.stringify(strengthUpdate?.raw)).toContain("cardioStrainScore");
 
     const valuesCallArgs = getValuesCallArgs(db);
     const exerciseAliasInsert = findValuesRecord(
@@ -2560,8 +2596,17 @@ describe("WhoopProvider.sync() — strength sync", () => {
       expect(namedWorkoutInsert.raw.mskStrainContributionPercent).toBe(60);
     }
 
-    const namedUpdate = findUpsertUpdate((rec) => rec.name === "Morning Push Day");
+    const namedUpdate = findUpsertUpdateForExternalId("w-named-1", (update) =>
+      hasQueryChunks(update.raw),
+    );
     expect(namedUpdate).toBeDefined();
+    expect(namedUpdate?.startedAt).toEqual(namedWorkoutInsert?.startedAt);
+    expect(namedUpdate?.endedAt).toEqual(namedWorkoutInsert?.endedAt);
+    const namedUpdateRaw = JSON.stringify(namedUpdate?.raw);
+    expect(namedUpdateRaw).toContain("rawMskStrainScore");
+    expect(namedUpdateRaw).toContain("5.2");
+    expect(namedUpdateRaw).toContain("3.1");
+    expect(namedUpdateRaw).toContain("mskStrainContributionPercent");
   });
 
   it("skips exercise/set processing when returning yields no activityId", async () => {

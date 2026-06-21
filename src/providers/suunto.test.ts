@@ -291,6 +291,24 @@ describe("SuuntoProvider.syncWebhookEvent", () => {
     expect(result.provider).toBe("suunto");
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        externalId: "suunto-w-123",
+        activityType: "cycling",
+        name: "Morning Ride",
+      }),
+      expect.objectContaining({
+        activityType: "cycling",
+        name: "Morning Ride",
+        startedAt: new Date("2024-03-01T11:00:00.000Z"),
+        endedAt: new Date("2024-03-01T12:00:00.000Z"),
+        raw: expect.objectContaining({
+          totalDistance: 30000,
+          totalTime: 3600,
+        }),
+      }),
+    );
     // insert called for: ensureProvider + withSyncLog(logSync) + activity upsert
     expect(mockInsert).toHaveBeenCalled();
   });

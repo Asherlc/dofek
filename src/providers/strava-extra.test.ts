@@ -13,8 +13,12 @@ const { publishedMetricStreamBatches } = vi.hoisted<{
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
   markProviderActivityAbsent: vi.fn().mockResolvedValue(undefined),
   finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
-  upsertProviderActivity: vi.fn().mockResolvedValue({ id: "activity-id" }),
+  upsertProviderActivity: vi
+    .fn()
+    .mockResolvedValue({ id: "10000000-0000-4000-8000-000000000001" }),
 }));
+
+const MOCK_ACTIVITY_ID = "10000000-0000-4000-8000-000000000001";
 
 vi.mock("../metric-stream/redpanda-producer.ts", () => ({
   getDefaultMetricStreamEventPublisher: async () => ({
@@ -44,6 +48,8 @@ beforeEach(() => {
   publishedMetricStreamBatches.length = 0;
   providerActivityAbsenceMocks.markProviderActivityAbsent.mockClear();
   providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
+  providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
+  providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue({ id: MOCK_ACTIVITY_ID });
 });
 
 // ============================================================
@@ -268,17 +274,14 @@ function getRequestHeaders(value: unknown): HeadersInit | undefined {
   return undefined;
 }
 
-function getProviderId(value: unknown): string | undefined {
-  if (typeof value !== "object" || value === null || !("providerId" in value)) return undefined;
-  const providerId = Reflect.get(value, "providerId");
-  return typeof providerId === "string" ? providerId : undefined;
-}
 
-function getSetSourceName(value: unknown): unknown {
-  if (typeof value !== "object" || value === null || !("set" in value)) return undefined;
-  const set = Reflect.get(value, "set");
-  if (typeof set !== "object" || set === null || !("sourceName" in set)) return undefined;
-  return Reflect.get(set, "sourceName");
+function hasQueryChunks(query: unknown): query is { queryChunks: unknown[] } {
+  return (
+    query !== null &&
+    typeof query === "object" &&
+    "queryChunks" in query &&
+    Array.isArray(query.queryChunks)
+  );
 }
 
 function createMockDb(tokenRows = [VALID_TOKEN]): SyncDatabase {
@@ -415,76 +418,32 @@ describe("StravaProvider.sync — additional coverage", () => {
       return Promise.resolve(Response.json([]));
     });
 
-    const activityInsertPayloads: unknown[] = [];
-    const upsertConfigs: unknown[] = [];
-    const insertValuesMock = vi.fn().mockImplementation((payload: unknown) => {
-      if (Array.isArray(payload)) {
-        return {
-          onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
-          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
-        };
-      }
-      if (getProviderId(payload) === "strava") {
-        activityInsertPayloads.push(payload);
-      }
-      return {
-        onConflictDoUpdate: vi.fn().mockImplementation((config: unknown) => {
-          upsertConfigs.push(config);
-          return {
-            returning: vi.fn().mockResolvedValue([{ id: "10000000-0000-4000-8000-000000000003" }]),
-          };
-        }),
-        onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
-      };
-    });
-
-    const mockDb: SyncDatabase = {
-      select: vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue([VALID_TOKEN]),
-          }),
-        }),
-      }),
-      insert: vi.fn().mockReturnValue({
-        values: insertValuesMock,
-      }),
-      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
-      execute: vi.fn().mockResolvedValue([]),
-    };
-
+    const mockDb = createMockDb();
     const provider = new StravaProvider(mockFetch, 0);
     const result = await provider.sync(
       new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
     );
 
     expect(result.errors).toHaveLength(0);
-    expect(activityInsertPayloads).toHaveLength(2);
-    expect(activityInsertPayloads[0]).toMatchObject({
+    const upsertCalls = providerActivityAbsenceMocks.upsertProviderActivity.mock.calls;
+    expect(upsertCalls).toHaveLength(2);
+    expect(upsertCalls[0]?.[1]).toMatchObject({
       providerId: "strava",
       externalId: String(MOCK_ACTIVITY.id),
       raw: { id: MOCK_ACTIVITY.id },
     });
-    expect(activityInsertPayloads[1]).toMatchObject({
+    expect(upsertCalls[1]?.[1]).toMatchObject({
       providerId: "strava",
       externalId: String(secondActivity.id),
       raw: { id: secondActivity.id },
     });
-    expect(upsertConfigs).toHaveLength(2);
-    expect(upsertConfigs[0]).toMatchObject({
-      target: expect.arrayContaining([expect.anything(), expect.anything()]),
-      set: expect.objectContaining({
-        raw: expect.objectContaining({ id: MOCK_ACTIVITY.id }),
-      }),
+    expect(upsertCalls[0]?.[2]).toMatchObject({
+      raw: expect.objectContaining({ id: MOCK_ACTIVITY.id }),
     });
-    expect(upsertConfigs[1]).toMatchObject({
-      target: expect.arrayContaining([expect.anything(), expect.anything()]),
-      set: expect.objectContaining({
-        raw: expect.objectContaining({ id: secondActivity.id }),
-      }),
+    expect(upsertCalls[1]?.[2]).toMatchObject({
+      raw: expect.objectContaining({ id: secondActivity.id }),
     });
-    const firstSetSourceName = getSetSourceName(upsertConfigs[0]);
-    expect(firstSetSourceName).toBeDefined();
+    expect(hasQueryChunks(upsertCalls[0]?.[2]?.sourceName)).toBe(true);
   });
 
   it("converts since date to epoch seconds using division by 1000", async () => {
@@ -933,46 +892,14 @@ describe("StravaProvider.sync — additional coverage", () => {
       return Promise.resolve(Response.json([]));
     });
 
-    const returningMock = vi.fn().mockResolvedValue([]);
-    const insertValuesMock = vi.fn().mockImplementation((payload: unknown) => {
-      if (Array.isArray(payload)) {
-        return {
-          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
-        };
-      }
-      return {
-        onConflictDoUpdate: vi.fn().mockReturnValue({
-          returning: returningMock,
-        }),
-        onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
-      };
-    });
+    providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValueOnce(undefined);
 
-    const mockDb: SyncDatabase = {
-      select: vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue([VALID_TOKEN]),
-          }),
-        }),
-      }),
-      insert: vi.fn().mockReturnValue({
-        values: insertValuesMock,
-      }),
-      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
-      execute: vi.fn().mockResolvedValue([]),
-    };
-
+    const mockDb = createMockDb();
     const provider = new StravaProvider(mockFetch, 0);
     const result = await provider.sync(
       new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
     );
 
-    expect(returningMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: expect.anything(),
-      }),
-    );
     expect(
       mockFetch.mock.calls.some(([url]) =>
         String(url).includes(`/activities/${MOCK_ACTIVITY.id}/streams`),

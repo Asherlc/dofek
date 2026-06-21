@@ -14,10 +14,22 @@ import {
 const providerActivitySyncMocks = vi.hoisted(() => ({
   reconcile: vi.fn().mockResolvedValue(undefined),
   upsert: vi.fn().mockResolvedValue({ id: "activity-id" }),
+  lastScope: undefined as
+    | {
+        windowStart: Date;
+        windowEnd: Date;
+      }
+    | undefined,
 }));
 
 vi.mock("../../../../src/db/provider-activity-sync.ts", () => ({
   ProviderActivityListSync: class {
+    constructor(scope: {
+      windowStart: Date;
+      windowEnd: Date;
+    }) {
+      providerActivitySyncMocks.lastScope = scope;
+    }
     upsert = providerActivitySyncMocks.upsert;
     reconcile = providerActivitySyncMocks.reconcile;
   },
@@ -1357,6 +1369,7 @@ describe("HealthKitSyncRepository", () => {
     beforeEach(() => {
       providerActivitySyncMocks.upsert.mockClear();
       providerActivitySyncMocks.reconcile.mockClear();
+      providerActivitySyncMocks.lastScope = undefined;
     });
 
     it("returns 0 for empty workouts", async () => {
@@ -1365,6 +1378,121 @@ describe("HealthKitSyncRepository", () => {
       expect(result).toBe(0);
       expect(execute).not.toHaveBeenCalled();
       expect(providerActivitySyncMocks.upsert).not.toHaveBeenCalled();
+      expect(providerActivitySyncMocks.reconcile).not.toHaveBeenCalled();
+    });
+
+    it("returns 0 for empty workouts without reconciling when explicit window options are provided", async () => {
+      const { repository } = makeRepository();
+      const result = await repository.processWorkouts([], {
+        windowStart: "2024-01-15T10:00:00Z",
+        windowEnd: "2024-01-15T11:00:00Z",
+      });
+      expect(result).toBe(0);
+      expect(providerActivitySyncMocks.reconcile).not.toHaveBeenCalled();
+    });
+
+    it("passes explicit workout window options to the shared processor", async () => {
+      const { repository } = makeRepository();
+      const workouts = [
+        {
+          uuid: "w-window",
+          workoutType: "35",
+          startDate: "2024-01-15T10:00:00Z",
+          endDate: "2024-01-15T11:00:00Z",
+          duration: 3600,
+          sourceName: "Apple Watch",
+          sourceBundle: "com.apple.Health",
+        },
+      ];
+
+      await repository.processWorkouts(workouts, {
+        windowStart: "2024-01-10T00:00:00Z",
+        windowEnd: "2024-01-20T00:00:00Z",
+      });
+
+      expect(providerActivitySyncMocks.lastScope?.windowStart).toEqual(
+        new Date("2024-01-10T00:00:00Z"),
+      );
+      expect(providerActivitySyncMocks.lastScope?.windowEnd).toEqual(
+        new Date("2024-01-20T00:00:00Z"),
+      );
+    });
+
+    it("derives workout window bounds from workout timestamps when options are omitted", async () => {
+      const { repository } = makeRepository();
+      const workouts = [
+        {
+          uuid: "w-bounds-1",
+          workoutType: "35",
+          startDate: "2024-01-15T10:00:00Z",
+          endDate: "2024-01-15T11:00:00Z",
+          duration: 3600,
+          sourceName: "Apple Watch",
+          sourceBundle: "com.apple.Health",
+        },
+        {
+          uuid: "w-bounds-2",
+          workoutType: "13",
+          startDate: "2024-01-17T08:00:00Z",
+          endDate: "2024-01-17T09:00:00Z",
+          duration: 3600,
+          sourceName: "Apple Watch",
+          sourceBundle: "com.apple.Health",
+        },
+      ];
+
+      await repository.processWorkouts(workouts);
+
+      expect(providerActivitySyncMocks.lastScope?.windowStart).toEqual(
+        new Date("2024-01-15T10:00:00.000Z"),
+      );
+      expect(providerActivitySyncMocks.lastScope?.windowEnd).toEqual(
+        new Date("2024-01-17T09:00:00.000Z"),
+      );
+    });
+
+    it("derives missing windowEnd from workout timestamps when only windowStart is provided", async () => {
+      const { repository } = makeRepository();
+      const workouts = [
+        {
+          uuid: "w-partial-window",
+          workoutType: "35",
+          startDate: "2024-01-15T10:00:00Z",
+          endDate: "2024-01-15T11:00:00Z",
+          duration: 3600,
+          sourceName: "Apple Watch",
+          sourceBundle: "com.apple.Health",
+        },
+      ];
+
+      await repository.processWorkouts(workouts, {
+        windowStart: "2024-01-01T00:00:00Z",
+      });
+
+      expect(providerActivitySyncMocks.lastScope?.windowStart).toEqual(
+        new Date("2024-01-01T00:00:00Z"),
+      );
+      expect(providerActivitySyncMocks.lastScope?.windowEnd).toEqual(
+        new Date("2024-01-15T11:00:00.000Z"),
+      );
+    });
+
+    it("returns 0 when workout timestamps cannot derive bounds", async () => {
+      const { repository } = makeRepository();
+      const result = await repository.processWorkouts([
+        {
+          uuid: "w-invalid",
+          workoutType: "35",
+          startDate: "invalid",
+          endDate: "invalid",
+          duration: 3600,
+          sourceName: "Apple Watch",
+          sourceBundle: "com.apple.Health",
+        },
+      ]);
+
+      expect(result).toBe(0);
+      expect(providerActivitySyncMocks.reconcile).not.toHaveBeenCalled();
     });
 
     it("upserts workouts via shared processor without touching metric_stream", async () => {
