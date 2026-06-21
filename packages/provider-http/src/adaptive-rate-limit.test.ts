@@ -3,6 +3,7 @@ import {
   ADAPTIVE_RATE_WINDOW_MS,
   ADAPTIVE_THROTTLE_MAX_MS,
   ADAPTIVE_THROTTLE_MIN_MS,
+  adaptiveRateLimitStorageKey,
   admissionDelayMs,
   applyStravaQuota,
   blendObservedCooldown,
@@ -11,13 +12,12 @@ import {
   defaultThrottleMs,
   increaseThrottleMs,
   learnInferredBudget,
+  parseAdaptiveRateState,
   parseStravaRateLimitHeaders,
   recordAdaptiveRateLimit,
   recordAdaptiveRequest,
   serializeAdaptiveRateState,
   slideAdaptiveWindow,
-  adaptiveRateLimitStorageKey,
-  parseAdaptiveRateState,
 } from "./adaptive-rate-limit.ts";
 
 describe("defaultThrottleMs", () => {

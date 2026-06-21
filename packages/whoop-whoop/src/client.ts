@@ -198,10 +198,6 @@ export class WhoopClient {
     this.#onRequest = onRequest;
   }
 
-  static #isRateLimitError(err: unknown): boolean {
-    return err instanceof ProviderRateLimitError && err.providerId === "whoop";
-  }
-
   /**
    * Step 1: Sign in with email + password via Cognito USER_PASSWORD_AUTH.
    * Returns either tokens (no MFA) or an MFA challenge session.
@@ -454,14 +450,11 @@ export class WhoopClient {
       try {
         return await this.#get<T>(url, params, attempt);
       } catch (err) {
-        if (WhoopClient.#isRateLimitError(err)) {
-          throw err;
+        if (err instanceof ProviderServiceUnavailableError && attempt < maxRetries) {
+          attempt++;
+          continue;
         }
-        const shouldRetry = err instanceof ProviderServiceUnavailableError;
-        if (!shouldRetry || attempt >= maxRetries) {
-          throw err;
-        }
-        attempt++;
+        throw err;
       }
     }
   }

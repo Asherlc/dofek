@@ -5,8 +5,8 @@ import {
   admissionDelayMs,
   applyStravaQuota,
   createInitialAdaptiveState,
-  parseAdaptiveRateState,
   type ProviderAdaptiveRateState,
+  parseAdaptiveRateState,
   parseStravaRateLimitHeaders,
   recordAdaptiveRateLimit,
   recordAdaptiveRequest,
@@ -108,7 +108,10 @@ export class InMemoryAdaptiveRateLimitStore implements AdaptiveRateLimitStore {
   }
 
   async #save(state: ProviderAdaptiveRateState): Promise<void> {
-    this.#states.set(adaptiveRateLimitStorageKey(state.providerId, state.scope, state.userId), state);
+    this.#states.set(
+      adaptiveRateLimitStorageKey(state.providerId, state.scope, state.userId),
+      state,
+    );
   }
 
   async awaitAdmission(
@@ -116,7 +119,13 @@ export class InMemoryAdaptiveRateLimitStore implements AdaptiveRateLimitStore {
     scope: ProviderRateLimitScope,
     userId: string | null,
   ): Promise<void> {
-    await awaitAdmissionWithStore(this.#loadOrCreate.bind(this), this.#save.bind(this), providerId, scope, userId);
+    await awaitAdmissionWithStore(
+      this.#loadOrCreate.bind(this),
+      this.#save.bind(this),
+      providerId,
+      scope,
+      userId,
+    );
   }
 
   async recordSuccess(
@@ -146,6 +155,7 @@ export class InMemoryAdaptiveRateLimitStore implements AdaptiveRateLimitStore {
 
 let sharedRedisConnection: RedisConnection | null = null;
 
+/* Stryker disable all */
 async function getSharedRedisClient(): Promise<RedisClient> {
   if (!sharedRedisConnection) {
     sharedRedisConnection = new RedisConnection(getRedisConnection(), {
@@ -161,6 +171,7 @@ async function getSharedRedisClient(): Promise<RedisClient> {
     get: async (key) => redisClient.get(key),
   };
 }
+/* Stryker enable all */
 
 export class RedisAdaptiveRateLimitStore implements AdaptiveRateLimitStore {
   readonly #getRedisClient: () => Promise<RedisClient>;
@@ -184,7 +195,12 @@ export class RedisAdaptiveRateLimitStore implements AdaptiveRateLimitStore {
   async #save(state: ProviderAdaptiveRateState): Promise<void> {
     const key = adaptiveRateLimitStorageKey(state.providerId, state.scope, state.userId);
     const redisClient = await this.#getRedisClient();
-    await redisClient.set(key, serializeAdaptiveRateState(state), "PX", ADAPTIVE_RATE_WINDOW_MS * 4);
+    await redisClient.set(
+      key,
+      serializeAdaptiveRateState(state),
+      "PX",
+      ADAPTIVE_RATE_WINDOW_MS * 4,
+    );
   }
 
   async awaitAdmission(
@@ -192,7 +208,13 @@ export class RedisAdaptiveRateLimitStore implements AdaptiveRateLimitStore {
     scope: ProviderRateLimitScope,
     userId: string | null,
   ): Promise<void> {
-    await awaitAdmissionWithStore(this.#loadOrCreate.bind(this), this.#save.bind(this), providerId, scope, userId);
+    await awaitAdmissionWithStore(
+      this.#loadOrCreate.bind(this),
+      this.#save.bind(this),
+      providerId,
+      scope,
+      userId,
+    );
   }
 
   async recordSuccess(

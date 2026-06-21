@@ -1,6 +1,35 @@
-import { ADAPTIVE_RATE_WINDOW_MS } from "@dofek/provider-http/adaptive-rate-limit";
+import {
+  ADAPTIVE_RATE_WINDOW_MS,
+  createInitialAdaptiveState,
+} from "@dofek/provider-http/adaptive-rate-limit";
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const sharedRedisMocks = vi.hoisted(() => ({
+  set: vi.fn().mockResolvedValue("OK"),
+  get: vi.fn().mockResolvedValue(null),
+  RedisConnection: vi.fn().mockImplementation(() => ({
+    get client() {
+      return Promise.resolve({
+        set: (...args: unknown[]) => sharedRedisMocks.set(...args),
+        get: (...args: unknown[]) => sharedRedisMocks.get(...args),
+      });
+    },
+  })),
+}));
+
+vi.mock("bullmq", () => ({
+  RedisConnection: sharedRedisMocks.RedisConnection,
+}));
+
+vi.mock("../jobs/queues.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../jobs/queues.ts")>();
+  return {
+    ...original,
+    getRedisConnection: vi.fn().mockReturnValue({}),
+  };
+});
+
 import {
   InMemoryAdaptiveRateLimitStore,
   providerAdaptiveRateLimitStore,
@@ -32,14 +61,15 @@ function createMockRedisAdaptiveStore() {
     mode: "PX";
     millisecondsToExpire: number;
   }> = [];
-  const getRedisClient: ConstructorParameters<typeof RedisAdaptiveRateLimitStore>[0] = async () => ({
-    set: async (key, value, mode, millisecondsToExpire) => {
-      setCalls.push({ key, value, mode, millisecondsToExpire });
-      values.set(key, value);
-      return "OK";
-    },
-    get: async (key) => values.get(key) ?? null,
-  });
+  const getRedisClient: ConstructorParameters<typeof RedisAdaptiveRateLimitStore>[0] =
+    async () => ({
+      set: async (key, value, mode, millisecondsToExpire) => {
+        setCalls.push({ key, value, mode, millisecondsToExpire });
+        values.set(key, value);
+        return "OK";
+      },
+      get: async (key) => values.get(key) ?? null,
+    });
 
   return {
     values,
@@ -112,6 +142,48 @@ describe("InMemoryAdaptiveRateLimitStore", () => {
     await store.awaitAdmission("garmin", "provider", null);
   });
 
+  it("tracks in-memory admission delays outside vitest", async () => {
+    vi.stubEnv("VITEST", "");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const store = new InMemoryAdaptiveRateLimitStore();
+
+    const firstAdmission = store.awaitAdmission("whoop", "provider", null);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await firstAdmission;
+    vi.setSystemTime(500);
+    const secondAdmission = store.awaitAdmission("whoop", "provider", null);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await secondAdmission;
+
+    expect(
+      setTimeoutSpy.mock.calls.some(([, delay]) => typeof delay === "number" && delay > 0),
+    ).toBe(true);
+  });
+
+  it("stores Strava quota fields in the in-memory store", async () => {
+    vi.stubEnv("VITEST", "");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.useFakeTimers();
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const store = new InMemoryAdaptiveRateLimitStore();
+    const headers = new Headers({
+      "X-RateLimit-Limit": "100,1000",
+      "X-RateLimit-Usage": "99,900",
+    });
+
+    await store.recordSuccess("strava", "provider", null, headers);
+    const admission = store.awaitAdmission("strava", "provider", null);
+    await vi.advanceTimersByTimeAsync(120_000);
+    await admission;
+
+    expect(
+      setTimeoutSpy.mock.calls.some(([, delay]) => typeof delay === "number" && delay >= 40_000),
+    ).toBe(true);
+  });
+
   it("records success without response headers", async () => {
     const store = new InMemoryAdaptiveRateLimitStore();
     await store.recordSuccess("whoop", "provider", null);
@@ -134,6 +206,34 @@ describe("RedisAdaptiveRateLimitStore", () => {
     expect(setCalls[0]?.mode).toBe("PX");
     expect(setCalls[0]?.millisecondsToExpire).toBe(ADAPTIVE_RATE_WINDOW_MS * 4);
     expect(setCalls[0]?.value).toContain('"providerId":"garmin"');
+    const saved = JSON.parse(setCalls.at(-1)?.value ?? "{}");
+    expect(saved.requestCount).toBe(1);
+  });
+
+  it("increments request count after admission", async () => {
+    const { store, setCalls } = createMockRedisAdaptiveStore();
+
+    await store.awaitAdmission("whoop", "provider", null);
+    await store.awaitAdmission("whoop", "provider", null);
+
+    const saved = JSON.parse(setCalls.at(-1)?.value ?? "{}");
+    expect(saved.requestCount).toBe(2);
+  });
+
+  it("stores Strava quota fields after recordSuccess", async () => {
+    const { store, setCalls } = createMockRedisAdaptiveStore();
+    const headers = new Headers({
+      "X-RateLimit-Limit": "100,1000",
+      "X-RateLimit-Usage": "95,400",
+    });
+
+    await store.recordSuccess("strava", "provider", null, headers);
+
+    const saved = JSON.parse(setCalls.at(-1)?.value ?? "{}");
+    expect(saved.stravaShortLimit).toBe(100);
+    expect(saved.stravaShortUsage).toBe(95);
+    expect(saved.stravaDailyLimit).toBe(1000);
+    expect(saved.stravaDailyUsage).toBe(400);
   });
 
   it("uses user-scoped keys when scope is user", async () => {
@@ -151,7 +251,7 @@ describe("RedisAdaptiveRateLimitStore", () => {
     expect(await store.getLearnedCooldownSeconds("whoop")).toBe(180);
 
     const redisStore = new RedisAdaptiveRateLimitStore(async () => ({
-      set: async (key, value, mode, ms) => {
+      set: async (key, value, mode, _millisecondsToExpire) => {
         values.set(key, value);
         return "OK";
       },
@@ -191,14 +291,51 @@ describe("RedisAdaptiveRateLimitStore", () => {
   });
 
   it("records Strava quota from Redis-backed success responses", async () => {
-    const { store } = createMockRedisAdaptiveStore();
+    const { store, setCalls } = createMockRedisAdaptiveStore();
     const headers = new Headers({
       "X-RateLimit-Limit": "100,1000",
       "X-RateLimit-Usage": "99,900",
     });
 
     await store.recordSuccess("strava", "provider", null, headers);
-    await store.awaitAdmission("strava", "provider", null);
+
+    const saved = JSON.parse(setCalls.at(-1)?.value ?? "{}");
+    expect(saved.stravaShortUsage).toBe(99);
+    expect(saved.stravaDailyUsage).toBe(900);
+  });
+
+  it("records provider-scoped rate limits under the provider key", async () => {
+    const { store, setCalls } = createMockRedisAdaptiveStore();
+
+    await store.recordRateLimit(
+      rateLimitError({
+        providerId: "whoop",
+        scope: "provider",
+        userId: "user-1",
+        retryAfterSeconds: 90,
+      }),
+    );
+
+    expect(setCalls.some((call) => call.key === "provider-adaptive-rate:whoop:provider")).toBe(
+      true,
+    );
+    expect(setCalls.some((call) => call.key === "provider-adaptive-rate:whoop:user:user-1")).toBe(
+      false,
+    );
+  });
+
+  it("does not apply Strava quota headers to other providers", async () => {
+    const { store, setCalls } = createMockRedisAdaptiveStore();
+    const headers = new Headers({
+      "X-RateLimit-Limit": "100,1000",
+      "X-RateLimit-Usage": "95,400",
+    });
+
+    await store.recordSuccess("garmin", "provider", null, headers);
+
+    const saved = JSON.parse(setCalls.at(-1)?.value ?? "{}");
+    expect(saved.stravaShortUsage).toBeNull();
+    expect(saved.stravaDailyUsage).toBeNull();
   });
 
   it("records user-scoped rate limits through Redis", async () => {
@@ -215,6 +352,9 @@ describe("RedisAdaptiveRateLimitStore", () => {
 
     expect(setCalls.some((call) => call.key === "provider-adaptive-rate:fitbit:user:user-9")).toBe(
       true,
+    );
+    expect(setCalls.some((call) => call.key === "provider-adaptive-rate:fitbit:provider")).toBe(
+      false,
     );
   });
 
@@ -314,7 +454,73 @@ describe("RedisAdaptiveRateLimitStore", () => {
 });
 
 describe("providerAdaptiveRateLimitStore", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("uses the in-memory store under vitest", () => {
-    expect(providerAdaptiveRateLimitStore).toBeInstanceOf(InMemoryAdaptiveRateLimitStore);
+    expect(providerAdaptiveRateLimitStore.constructor.name).toBe("InMemoryAdaptiveRateLimitStore");
+  });
+
+  it("initializes the exported store from the active test environment", async () => {
+    vi.resetModules();
+    const mod = await import("./provider-adaptive-rate-limit.ts");
+    expect(mod.providerAdaptiveRateLimitStore.constructor.name).toBe(
+      "InMemoryAdaptiveRateLimitStore",
+    );
+  });
+
+  it("uses the Redis store outside test environments", async () => {
+    vi.stubEnv("VITEST", "");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.resetModules();
+    const mod = await import("./provider-adaptive-rate-limit.ts");
+    expect(mod.providerAdaptiveRateLimitStore.constructor.name).toBe("RedisAdaptiveRateLimitStore");
+  });
+
+  it("waits for admission delay outside test environments", async () => {
+    vi.stubEnv("VITEST", "");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.useFakeTimers();
+    vi.setSystemTime(5_000);
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const { store, values } = createMockRedisAdaptiveStore();
+    values.set(
+      "provider-adaptive-rate:garmin:provider",
+      JSON.stringify({
+        ...createInitialAdaptiveState("garmin", "provider", null, 1_000),
+        throttleMs: 5_000,
+        lastRequestMs: 1_000,
+      }),
+    );
+
+    const admission = store.awaitAdmission("garmin", "provider", null);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await admission;
+
+    expect(setTimeoutSpy).toHaveBeenCalled();
+    expect(
+      setTimeoutSpy.mock.calls.some(([, delay]) => typeof delay === "number" && delay > 0),
+    ).toBe(true);
+    expect(
+      JSON.parse(values.get("provider-adaptive-rate:garmin:provider") ?? "{}").requestCount,
+    ).toBe(1);
+  });
+
+  it("still skips admission delay when NODE_ENV is test but VITEST is unset", async () => {
+    vi.stubEnv("VITEST", "");
+    vi.stubEnv("NODE_ENV", "test");
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const store = new InMemoryAdaptiveRateLimitStore();
+
+    await store.awaitAdmission("whoop", "provider", null);
+    vi.setSystemTime(100);
+    const secondAdmission = store.awaitAdmission("whoop", "provider", null);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await secondAdmission;
+
+    expect(setTimeoutSpy).not.toHaveBeenCalled();
   });
 });

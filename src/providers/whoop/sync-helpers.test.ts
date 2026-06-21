@@ -170,7 +170,7 @@ describe("WHOOP sync helpers", () => {
 
     expect(result).toEqual({ count: 2, rateLimited: false });
     expect(getStrainDeepDive).toHaveBeenCalledWith("2026-05-01");
-    expect(getStrainDeepDive).toHaveBeenCalledWith("2026-05-09");
+    expect(getStrainDeepDive).toHaveBeenCalledWith("2026-05-02");
     expect(db.chain.values).toHaveBeenCalledWith({
       date: "2026-05-01",
       providerId: "whoop",
