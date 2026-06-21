@@ -17,13 +17,14 @@ export function formatProviderId(id: string): string {
     .join(" ");
 }
 
-export function formatSleepProvenance(
-  row: SleepProvenance | SleepProvenanceSnakeCase,
-): { primary: string; alsoFrom: string | null } {
+export function formatSleepProvenance(row: SleepProvenance | SleepProvenanceSnakeCase): {
+  primary: string;
+  alsoFrom: string | null;
+} {
   const providerId = "providerId" in row ? row.providerId : row.provider_id;
   const sourceName = "sourceName" in row ? row.sourceName : row.source_name;
   const sourceProviders =
-    "sourceProviders" in row ? row.sourceProviders : row.source_providers ?? [];
+    "sourceProviders" in row ? row.sourceProviders : (row.source_providers ?? []);
 
   const provider = providerId ? formatProviderId(providerId) : "Unknown";
   const primary =

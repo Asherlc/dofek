@@ -49,9 +49,7 @@ export function SleepDataSourcesTable({ rows, loading }: SleepDataSourcesTablePr
                   {formatDateMedium(row.date)}
                 </td>
                 <td className="py-2 pr-4 text-muted tabular-nums whitespace-nowrap">
-                  {row.durationMinutes != null
-                    ? formatDurationMinutes(row.durationMinutes)
-                    : "—"}
+                  {row.durationMinutes != null ? formatDurationMinutes(row.durationMinutes) : "—"}
                 </td>
                 <td className="py-2 pr-4 text-foreground whitespace-nowrap">{primary}</td>
                 <td className="py-2 text-subtle text-xs whitespace-nowrap">{alsoFrom ?? "—"}</td>

@@ -72,7 +72,7 @@ function populationStddev(values: number[]): number | null {
 }
 
 function computeLatestSleepConsistency(
-  sleepRows: ClickHouseSleepNight[],
+  sleepRows: Array<Pick<ClickHouseSleepNight, "date" | "started_at" | "ended_at">>,
   sleepDate: string,
   timezone: string,
 ): number | null {
