@@ -14,10 +14,11 @@ import {
   ProviderActivityListSync,
   upsertProviderActivity,
 } from "./provider-activity-sync.ts";
+import { activity } from "./schema.ts";
 
-function makeMockDb(): SyncDatabase {
+function makeMockDb(onConflictDoUpdate = vi.fn()): SyncDatabase {
   const returning = vi.fn().mockResolvedValue([{ id: "activity-id" }]);
-  const onConflictDoUpdate = vi.fn().mockReturnValue({ returning });
+  onConflictDoUpdate.mockReturnValue({ returning });
   const values = vi.fn().mockReturnValue({ onConflictDoUpdate });
   const insert = vi.fn().mockReturnValue({ values });
 
@@ -26,12 +27,13 @@ function makeMockDb(): SyncDatabase {
     insert,
     delete: vi.fn(),
     execute: mockExecute,
-  } as unknown as SyncDatabase;
+  };
 }
 
 describe("upsertProviderActivity", () => {
   it("does not include providerAbsentAt in conflict updates", async () => {
-    const db = makeMockDb();
+    const onConflictDoUpdate = vi.fn();
+    const db = makeMockDb(onConflictDoUpdate);
     await upsertProviderActivity(
       db,
       {
@@ -46,11 +48,11 @@ describe("upsertProviderActivity", () => {
       },
     );
 
-    const insert = db.insert as unknown as ReturnType<typeof vi.fn>;
-    const onConflictDoUpdate = insert.mock.results[0]?.value.values.mock.results[0]?.value
-      .onConflictDoUpdate as ReturnType<typeof vi.fn>;
-    expect(onConflictDoUpdate.mock.calls[0]?.[0]?.set).toEqual({
-      activityType: "running",
+    expect(onConflictDoUpdate).toHaveBeenCalledWith({
+      target: [activity.userId, activity.providerId, activity.externalId],
+      set: {
+        activityType: "running",
+      },
     });
   });
 });

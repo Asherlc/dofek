@@ -25,9 +25,7 @@ vi.mock("../db/token-user-context.ts", () => ({
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
   markProviderActivityAbsent: vi.fn().mockResolvedValue(undefined),
   finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
-  upsertProviderActivity: vi
-    .fn()
-    .mockResolvedValue({ id: "10000000-0000-4000-8000-000000000001" }),
+  upsertProviderActivity: vi.fn().mockResolvedValue({ id: "10000000-0000-4000-8000-000000000001" }),
 }));
 
 vi.mock("../db/provider-activity-sync.ts", () => ({

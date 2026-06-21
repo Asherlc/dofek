@@ -2,7 +2,6 @@ import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provid
 import { captureException } from "@sentry/node";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ZeppInvalidCredentialsError } from "zepp-client/client";
-import { activity as activityTable } from "../db/schema.ts";
 import { runWithTokenUser } from "../db/token-user-context.ts";
 import {
   AmazfitZeppClient,
@@ -586,7 +585,7 @@ describe("Amazfit/Zepp provider", () => {
   it("syncs every workout summary returned by Zepp history as activities", async () => {
     await mockStoredZeppCredentials();
 
-    const { db, spies } = createMockDatabase();
+    const { db } = createMockDatabase();
     const startedAt = new Date("2026-02-06T14:00:00.000Z");
     const endedAt = new Date("2026-02-06T15:00:00.000Z");
     const secondStartedAt = new Date(startedAt.getTime() + 7200 * 1000);
@@ -677,7 +676,8 @@ describe("Amazfit/Zepp provider", () => {
     expect(result.recordsSynced).toBe(3);
     expect(historyRequests).toHaveLength(2);
     expect(historyRequests[1]).toContain(`trackid=${secondPageCursor}`);
-    expect(spies.values).toHaveBeenCalledWith(
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
+      db,
       expect.objectContaining({
         providerId: "amazfit-zepp",
         userId: TEST_USER_ID,
@@ -687,29 +687,31 @@ describe("Amazfit/Zepp provider", () => {
         endedAt,
         sourceName: "Zepp",
       }),
+      expect.objectContaining({
+        activityType: "running",
+        startedAt,
+        endedAt,
+        sourceName: "Zepp",
+      }),
     );
-    expect(spies.values).toHaveBeenCalledWith(
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
+      db,
       expect.objectContaining({
         activityType: "cycling",
         externalId: String(secondStartedAt.getTime() / 1000),
       }),
+      expect.objectContaining({
+        activityType: "cycling",
+      }),
     );
-    expect(spies.values).toHaveBeenCalledWith(
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
+      db,
       expect.objectContaining({
         activityType: "other",
         externalId: String(thirdStartedAt.getTime() / 1000),
       }),
-    );
-    expect(spies.onConflictDoUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
-        target: [activityTable.userId, activityTable.providerId, activityTable.externalId],
-        set: expect.objectContaining({
-          activityType: "running",
-          startedAt,
-          endedAt,
-          sourceName: "Zepp",
-          providerAbsentAt: null,
-        }),
+        activityType: "other",
       }),
     );
     expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
@@ -729,7 +731,7 @@ describe("Amazfit/Zepp provider", () => {
   it("derives workout endedAt from run_time when end_time is missing", async () => {
     await mockStoredZeppCredentials();
 
-    const { db, spies } = createMockDatabase();
+    const { db } = createMockDatabase();
     const startedAt = new Date("2026-02-06T14:00:00.000Z");
     const fetchFn: typeof globalThis.fetch = async (input) => {
       const url = String(input);
@@ -765,7 +767,13 @@ describe("Amazfit/Zepp provider", () => {
 
     expect(result.errors).toEqual([]);
     expect(result.recordsSynced).toBe(1);
-    expect(spies.values).toHaveBeenCalledWith(
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        activityType: "walking",
+        startedAt,
+        endedAt: new Date("2026-02-06T15:00:00.000Z"),
+      }),
       expect.objectContaining({
         activityType: "walking",
         startedAt,
@@ -777,7 +785,7 @@ describe("Amazfit/Zepp provider", () => {
   it("skips workouts outside the sync window", async () => {
     await mockStoredZeppCredentials();
 
-    const { db, spies } = createMockDatabase();
+    const { db } = createMockDatabase();
     const onProgress = vi.fn();
     const inWindowStartedAt = new Date("2026-02-06T14:00:00.000Z");
     const beforeWindowStartedAt = new Date("2026-01-31T14:00:00.000Z");
@@ -836,14 +844,11 @@ describe("Amazfit/Zepp provider", () => {
 
     expect(result.errors).toEqual([]);
     expect(result.recordsSynced).toBe(1);
-    const activityInserts = spies.values.mock.calls
-      .map(([value]) => value)
-      .filter(
-        (value): value is Record<string, unknown> =>
-          typeof value === "object" && value !== null && "activityType" in value,
-      );
-    expect(activityInserts).toHaveLength(1);
-    expect(activityInserts[0]).toMatchObject({
+    const activityUpserts = providerActivityAbsenceMocks.upsertProviderActivity.mock.calls.map(
+      (call) => call[1],
+    );
+    expect(activityUpserts).toHaveLength(1);
+    expect(activityUpserts[0]).toMatchObject({
       externalId: String(inWindowStartedAt.getTime() / 1000),
       activityType: "cycling",
     });
@@ -985,14 +990,14 @@ describe("Amazfit/Zepp provider", () => {
   it("records per-workout insert failures and continues", async () => {
     await mockStoredZeppCredentials();
 
-    const { db, spies } = createMockDatabase();
+    const { db } = createMockDatabase();
     let activityUpserts = 0;
-    spies.onConflictDoUpdate.mockImplementation(() => {
+    providerActivityAbsenceMocks.upsertProviderActivity.mockImplementation(async () => {
       activityUpserts++;
       if (activityUpserts === 2) {
         throw new Error("activity insert failed");
       }
-      return { returning: vi.fn().mockResolvedValue([]) };
+      return { id: "activity-id" };
     });
     const startedAt = new Date("2026-02-06T14:00:00.000Z");
     const endedAt = new Date("2026-02-06T15:00:00.000Z");

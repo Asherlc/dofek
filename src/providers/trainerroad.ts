@@ -1,7 +1,10 @@
 import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import { TrainerRoadClient } from "trainerroad-client/client";
 import { parseTrainerRoadActivity } from "trainerroad-client/parsing";
-import { finishProviderActivityListSync, upsertProviderActivity } from "../db/provider-activity-sync.ts";
+import {
+  finishProviderActivityListSync,
+  upsertProviderActivity,
+} from "../db/provider-activity-sync.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { ProviderSessionExpiredError, ProviderStoredIdentityMissingError } from "./auth-errors.ts";

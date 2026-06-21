@@ -4,8 +4,8 @@ import { exchangeCodeForTokens } from "../../auth/oauth.ts";
 import { resolveOAuthTokens } from "../../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../../db/index.ts";
 import {
-  hasProviderActivityListSyncErrors,
   finishProviderActivityListSync,
+  hasProviderActivityListSyncErrors,
 } from "../../db/provider-activity-sync.ts";
 import { ensureProvider } from "../../db/tokens.ts";
 import type { SyncRun } from "../sync-run.ts";

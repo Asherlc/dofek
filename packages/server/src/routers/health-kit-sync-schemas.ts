@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { activity } from "../../../../src/db/schema.ts";
 import type { protectedProcedure } from "../trpc.ts";
 
 export const PROVIDER_ID = "apple_health";
@@ -146,6 +147,8 @@ export const metricStreamTypes: Record<string, { column: string }> = {
   HKQuantityTypeIdentifierAppleSleepingWristTemperature: { column: "skin_temperature" },
 };
 
+type WorkoutActivityType = (typeof activity.$inferInsert)["activityType"];
+
 /**
  * HKWorkoutActivityType rawValue → canonical snake_case activity type.
  *
@@ -154,7 +157,7 @@ export const metricStreamTypes: Record<string, { column: string }> = {
  *
  * Reference: https://developer.apple.com/documentation/healthkit/hkworkoutactivitytype
  */
-export const workoutActivityTypeMap: Record<string, string> = {
+export const workoutActivityTypeMap: Record<string, WorkoutActivityType> = {
   "1": "american_football",
   "2": "archery",
   "3": "australian_football",

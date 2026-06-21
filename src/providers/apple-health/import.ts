@@ -6,6 +6,7 @@ import sax from "sax";
 import yauzl from "yauzl";
 import type { SyncDatabase } from "../../db/index.ts";
 import { replaceMetricStreamBatch } from "../../db/metric-stream-writer.ts";
+import { finishProviderActivityListSync } from "../../db/provider-activity-sync.ts";
 import {
   allergyIntolerance,
   condition,
@@ -18,7 +19,6 @@ import {
 } from "../../db/schema.ts";
 import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
-import { finishProviderActivityListSync } from "../../db/provider-activity-sync.ts";
 import { ensureProvider } from "../../db/tokens.ts";
 import { logger } from "../../logger.ts";
 import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";

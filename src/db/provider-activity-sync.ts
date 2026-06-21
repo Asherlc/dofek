@@ -1,13 +1,13 @@
 import type { SQL } from "drizzle-orm";
 import type { SyncDatabase } from "./index.ts";
-import { activity } from "./schema.ts";
 import {
   hasProviderActivityListSyncErrors,
   markProviderActivityAbsent,
-  reconcileProviderActivityAbsence,
   type ProviderActivityAbsenceMark,
   type ProviderActivityAbsenceReconciliation,
+  reconcileProviderActivityAbsence,
 } from "./provider-activity-absence.ts";
+import { activity } from "./schema.ts";
 
 export type ProviderActivityInsert = typeof activity.$inferInsert;
 

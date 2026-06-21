@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -15,9 +15,7 @@ const ALLOWED_TOMBSTONE_CLEAR_PATHS = new Set([
   "packages/server/src/repositories/activity-repository.ts",
 ]);
 
-const ALLOWED_ACTIVITY_INSERT_PATHS = new Set([
-  "src/db/provider-activity-sync.ts",
-]);
+const ALLOWED_ACTIVITY_INSERT_PATHS = new Set(["src/db/provider-activity-sync.ts"]);
 
 function collectSourceFiles(directory: string): string[] {
   const entries = readdirSync(directory);
@@ -44,9 +42,11 @@ describe("provider activity sync policy", () => {
       for (const filePath of collectSourceFiles(root)) {
         const relativePath = relative(REPO_ROOT, filePath);
         const contents = readFileSync(filePath, "utf8");
-        if (contents.includes('from "../db/provider-activity-absence.ts"')
-          || contents.includes('from "../../db/provider-activity-absence.ts"')
-          || contents.includes('from "../../../../src/db/provider-activity-absence.ts"')) {
+        if (
+          contents.includes('from "../db/provider-activity-absence.ts"') ||
+          contents.includes('from "../../db/provider-activity-absence.ts"') ||
+          contents.includes('from "../../../../src/db/provider-activity-absence.ts"')
+        ) {
           violations.push(relativePath);
         }
       }
@@ -64,7 +64,10 @@ describe("provider activity sync policy", () => {
         if (ALLOWED_TOMBSTONE_CLEAR_PATHS.has(relativePath)) continue;
 
         const contents = readFileSync(filePath, "utf8");
-        if (/providerAbsentAt:\s*null/.test(contents) || /provider_absent_at\s*=\s*NULL/i.test(contents)) {
+        if (
+          /providerAbsentAt:\s*null/.test(contents) ||
+          /provider_absent_at\s*=\s*NULL/i.test(contents)
+        ) {
           violations.push(relativePath);
         }
       }

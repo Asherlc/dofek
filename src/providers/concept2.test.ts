@@ -111,17 +111,20 @@ function createMockDb() {
   return Object.assign(db, chain, { deleteFn, whereChain });
 }
 
-const recordSchema = z.record(z.string(), z.unknown());
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
 
-function findValuesCall(
-  db: ReturnType<typeof createMockDb>,
-  predicate: (val: Record<string, unknown>) => boolean,
-): Record<string, unknown> {
-  for (const c of db.values.mock.calls) {
-    const parsed = recordSchema.safeParse(c[0]);
-    if (parsed.success && predicate(parsed.data)) return parsed.data;
+function findUpsertValues(
+  predicate: (values: Record<string, unknown>) => boolean,
+): Record<string, unknown> | undefined {
+  for (const call of providerActivityAbsenceMocks.upsertProviderActivity.mock.calls) {
+    const values = call[1];
+    if (isRecord(values) && predicate(values)) {
+      return values;
+    }
   }
-  throw new Error("No matching values call found");
+  return undefined;
 }
 
 // ============================================================
@@ -373,12 +376,11 @@ describe("Concept2Provider", () => {
       expect(result.errors).toHaveLength(0);
       expect(result.recordsSynced).toBe(1);
 
-      const val = findValuesCall(
-        db,
-        (v) => v.externalId === "12345" && v.providerId === "concept2",
+      const val = findUpsertValues(
+        (values) => values.externalId === "12345" && values.providerId === "concept2",
       );
-      expect(val.activityType).toBe("rowing");
-      expect(val.name).toBe("Rower FixedDistSplits");
+      expect(val?.activityType).toBe("rowing");
+      expect(val?.name).toBe("Rower FixedDistSplits");
     });
 
     it("returns 0 records for non-result objectType", async () => {
@@ -530,11 +532,13 @@ describe("Concept2Provider", () => {
 
       expect(result.errors).toHaveLength(0);
       expect(result.recordsSynced).toBe(2);
-      expect(findValuesCall(db, (value) => value.externalId === "12345")).toBeDefined();
-      expect(findValuesCall(db, (value) => value.externalId === "11111")).toBeDefined();
-      expect(db.values.mock.calls).not.toContainEqual([
+      expect(findUpsertValues((value) => value.externalId === "12345")).toBeDefined();
+      expect(findUpsertValues((value) => value.externalId === "11111")).toBeDefined();
+      expect(providerActivityAbsenceMocks.upsertProviderActivity).not.toHaveBeenCalledWith(
+        db,
         expect.objectContaining({ externalId: "67890" }),
-      ]);
+        expect.any(Object),
+      );
       expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
         db,
         expect.objectContaining({

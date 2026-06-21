@@ -2,15 +2,14 @@ import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import { isIndoorCycling } from "@dofek/training/endurance-types";
 import { eq, sql } from "drizzle-orm";
 import type { SyncDatabase } from "../../db/index.ts";
-import { upsertProviderActivity } from "../../db/provider-activity-sync.ts";
 import {
   type MetricStreamSourceRow,
   writeMetricStreamBatch,
   writeMetricStreamBatchForScope,
 } from "../../db/metric-stream-writer.ts";
 import { NUTRIENT_ID_MAP } from "../../db/nutrient-columns.ts";
+import { upsertProviderActivity } from "../../db/provider-activity-sync.ts";
 import {
-  activity,
   dailyMetrics,
   foodEntry,
   foodEntryNutrient,

@@ -21,8 +21,8 @@ import {
   writeMetricStreamBatch,
 } from "../db/metric-stream-writer.ts";
 import {
-  markProviderActivityAbsent,
   finishProviderActivityListSync,
+  markProviderActivityAbsent,
   upsertProviderActivity,
 } from "../db/provider-activity-sync.ts";
 import { activity } from "../db/schema.ts";

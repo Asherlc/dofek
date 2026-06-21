@@ -2,7 +2,10 @@ import { and, eq, sql } from "drizzle-orm";
 import { WhoopRateLimitError } from "whoop-whoop/client";
 import type { WhoopWorkoutRecord } from "whoop-whoop/types";
 import { parseDuringRange } from "whoop-whoop/utils";
-import { finishProviderActivityListSync, upsertProviderActivity } from "../../db/provider-activity-sync.ts";
+import {
+  finishProviderActivityListSync,
+  upsertProviderActivity,
+} from "../../db/provider-activity-sync.ts";
 import { exercise, exerciseAlias, strengthSet } from "../../db/schema.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { SyncWindow } from "../sync-window.ts";

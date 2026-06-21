@@ -2,10 +2,7 @@ import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { SyncDatabase } from "../../../../src/db/index.ts";
-import {
-  type ProviderActivityInsert,
-  ProviderActivityListSync,
-} from "../../../../src/db/provider-activity-sync.ts";
+import { ProviderActivityListSync } from "../../../../src/db/provider-activity-sync.ts";
 import {
   BODY_MEASUREMENT_COLUMN_TO_CHANNEL,
   SOURCE_TYPE_API,
@@ -410,8 +407,7 @@ export async function processWorkouts(
   for (let i = 0; i < workouts.length; i += BATCH_SIZE) {
     const batch = workouts.slice(i, i + BATCH_SIZE);
     for (const workout of batch) {
-      const activityType = (workoutActivityTypeMap[workout.workoutType] ??
-        "other") as ProviderActivityInsert["activityType"];
+      const activityType = workoutActivityTypeMap[workout.workoutType] ?? "other";
 
       const rawData = {
         duration: workout.duration,

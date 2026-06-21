@@ -1,7 +1,10 @@
 import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import { VeloHeroClient } from "velohero-client/client";
 import { parseVeloHeroWorkout } from "velohero-client/parsing";
-import { finishProviderActivityListSync, upsertProviderActivity } from "../db/provider-activity-sync.ts";
+import {
+  finishProviderActivityListSync,
+  upsertProviderActivity,
+} from "../db/provider-activity-sync.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { logger } from "../logger.ts";

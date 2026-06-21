@@ -985,10 +985,7 @@ describe("WhoopProvider.sync() (integration)", () => {
       .select()
       .from(activity)
       .where(
-        and(
-          eq(activity.providerId, "whoop"),
-          eq(activity.externalId, "whoop-stale-strength-uuid"),
-        ),
+        and(eq(activity.providerId, "whoop"), eq(activity.externalId, "whoop-stale-strength-uuid")),
       );
 
     expect(staleRows[0]?.providerAbsentAt).toBeInstanceOf(Date);

@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
-import { finishProviderActivityListSync, upsertProviderActivity } from "../db/provider-activity-sync.ts";
+import {
+  finishProviderActivityListSync,
+  upsertProviderActivity,
+} from "../db/provider-activity-sync.ts";
 import { exercise, exerciseAlias, strengthSet } from "../db/schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { lookupExerciseMuscleGroups } from "../exercise-metadata.ts";

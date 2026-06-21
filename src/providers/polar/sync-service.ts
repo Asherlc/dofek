@@ -3,7 +3,10 @@ import type { TokenSet } from "../../auth/oauth.ts";
 import { refreshAccessToken } from "../../auth/oauth.ts";
 import type { SyncDatabase } from "../../db/index.ts";
 import { replaceMetricStreamBatch } from "../../db/metric-stream-writer.ts";
-import { finishProviderActivityListSync, upsertProviderActivity } from "../../db/provider-activity-sync.ts";
+import {
+  finishProviderActivityListSync,
+  upsertProviderActivity,
+} from "../../db/provider-activity-sync.ts";
 import { dailyMetrics, sleepSession, sleepStage } from "../../db/schema.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { withSyncLog } from "../../db/sync-log.ts";

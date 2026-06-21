@@ -6,8 +6,8 @@ import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import {
-  markProviderActivityAbsent,
   finishProviderActivityListSync,
+  markProviderActivityAbsent,
   upsertProviderActivity,
 } from "../db/provider-activity-sync.ts";
 import { withSyncLog } from "../db/sync-log.ts";
