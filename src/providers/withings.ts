@@ -1,7 +1,4 @@
-import {
-  createRateLimitAwareFetch,
-  ProviderRateLimitError,
-} from "@dofek/provider-http/rate-limit";
+import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { getOAuthRedirectUri } from "../auth/oauth.ts";
