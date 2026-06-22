@@ -7,6 +7,7 @@ import { resolveAccessWindow } from "../billing/entitlement.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { adminProcedure, router } from "../trpc.ts";
+import { getProviderRateLimitStatusFromRedis } from "dofek/admin/provider-rate-limit-status";
 
 // ── Schemas for admin queries ──
 
@@ -620,5 +621,10 @@ export const adminRouter = router({
           GROUP BY provider_id
           ORDER BY failed DESC, total DESC`,
     );
+  }),
+
+  /** Live provider rate-limit estimations from Redis adaptive state and cooldowns */
+  rateLimits: adminProcedure.query(async () => {
+    return getProviderRateLimitStatusFromRedis();
   }),
 });

@@ -98,7 +98,7 @@ function serializeCooldown(cooldown: ProviderRateLimitCooldown): string {
   });
 }
 
-function parseCooldown(raw: string | null): ProviderRateLimitCooldown | null {
+export function parseProviderRateLimitCooldown(raw: string | null): ProviderRateLimitCooldown | null {
   if (!raw) return null;
   const parsed: unknown = JSON.parse(raw);
   if (typeof parsed !== "object" || parsed === null) return null;
@@ -190,7 +190,7 @@ async function persistCooldownAtomically(
   const watch = redisClient.watch;
   const multi = redisClient.multi;
   if (!watch || !multi) {
-    const previous = parseCooldown(await redisClient.get(key));
+    const previous = parseProviderRateLimitCooldown(await redisClient.get(key));
     const effective = computeEffective(previous);
     await redisClient.set(
       key,
@@ -204,7 +204,7 @@ async function persistCooldownAtomically(
   let retries = 0;
   for (;;) {
     await watch(key);
-    const previous = parseCooldown(await redisClient.get(key));
+    const previous = parseProviderRateLimitCooldown(await redisClient.get(key));
     const effective = computeEffective(previous);
     const execResult = await multi()
       .set(key, serializeCooldown(effective), "PX", providerRateLimitDelayMs(effective))
@@ -311,8 +311,8 @@ export class RedisProviderRateLimitCooldownStore implements ProviderRateLimitCoo
       redisClient.get(cooldownKey(providerId, "provider", null)),
       redisClient.get(cooldownKey(providerId, "user", userId)),
     ]);
-    const providerCooldown = activeOrNull(parseCooldown(providerRaw));
-    const userCooldown = activeOrNull(parseCooldown(userRaw));
+    const providerCooldown = activeOrNull(parseProviderRateLimitCooldown(providerRaw));
+    const userCooldown = activeOrNull(parseProviderRateLimitCooldown(userRaw));
     return laterCooldown(providerCooldown, userCooldown);
   }
 }
