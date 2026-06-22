@@ -139,7 +139,7 @@ export class PmcRepository extends BaseRepository {
         SELECT
           a.activity_id AS activity_id,
           avg(ds.scalar) OVER (
-            PARTITION BY a.id
+            PARTITION BY a.activity_id
             ORDER BY toUnixTimestamp(ds.recorded_at)
             RANGE BETWEEN 29 PRECEDING AND CURRENT ROW
           ) AS rolling_30s_power
