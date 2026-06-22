@@ -11,6 +11,13 @@ interface MockRedisEntry {
   expiresAtMs?: number;
 }
 
+function matchesRedisScanPattern(key: string, pattern: string): boolean {
+  if (pattern.endsWith("*")) {
+    return key.startsWith(pattern.slice(0, -1));
+  }
+  return key === pattern;
+}
+
 class MockRedisReader {
   readonly #entries = new Map<string, MockRedisEntry>();
 
@@ -32,8 +39,7 @@ class MockRedisReader {
     _countKeyword: "COUNT",
     _count: string,
   ): Promise<[string, string[]]> {
-    const regex = new RegExp(`^${pattern.replaceAll("*", ".*")}$`);
-    const keys = [...this.#entries.keys()].filter((key) => regex.test(key));
+    const keys = [...this.#entries.keys()].filter((key) => matchesRedisScanPattern(key, pattern));
     if (cursor !== "0") return ["0", []];
     return ["0", keys];
   }
