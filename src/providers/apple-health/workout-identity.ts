@@ -2,9 +2,6 @@
 
 export const APPLE_HEALTH_PROVIDER_ID = "apple_health";
 
-export const HK_METADATA_SYNC_IDENTIFIER = "HKMetadataKeySyncIdentifier";
-export const HK_METADATA_SYNC_VERSION = "HKMetadataKeySyncVersion";
-
 export interface AppleHealthWorkoutIdentityInput {
   syncIdentifier?: string | number | null;
   startedAt: Date;
