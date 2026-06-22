@@ -11251,6 +11251,11 @@ new incremental tables are populated.
   `pg_is_in_recovery() = false`, and the authenticated tRPC probe returned the
   expected `401 Not authenticated` rather than timing out. Terraform apply run
   `27988330786` planned and created `cloudflare_dns_record.dofek_asherlc`.
+  Follow-up checks showed public and authoritative DNS had the correct A
+  records, but the local router resolver still served a cached negative A
+  response while AAAA records were available. macOS then cached the negative A
+  result and tried unreachable IPv6 addresses, causing `curl -6` to fail with
+  `No route to host` and `curl -4` to fail with `Could not resolve host`.
 - **Root cause:** The Cloudflare `dofek.asherlc.com` A record was absent from
   live DNS despite being declared in `deploy/dns.tf` and present in Terraform
   state. The exact deletion/drift mechanism was not identified during the
@@ -11262,6 +11267,8 @@ new incremental tables are populated.
   returned `NOERROR` with Cloudflare edge A records, and both Cloudflare and
   Google DNS-over-HTTPS `curl` probes to
   `https://dofek.asherlc.com/healthz` returned `200 {"status":"ok"}`.
-- **Remaining risk:** Low for public DNS resolvers. Some local resolvers still
-  returned the old negative result immediately after repair, so affected clients
-  may need normal DNS cache expiration before `dofek.asherlc.com` works.
+- **Remaining risk:** Low for public DNS resolvers. Clients that queried during
+  the missing-record window may cache the negative A response for the
+  `asherlc.com` SOA negative TTL, and browsers on IPv6-unrouted networks may
+  continue failing until the client/router DNS cache is flushed after the router
+  cache expires.
