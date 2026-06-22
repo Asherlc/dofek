@@ -368,7 +368,7 @@ describe("Activity summary deduplication", () => {
     );
   });
 
-  it("surfaces tombstoned provider sources on overlapping deduped activities", async () => {
+  it("hides deduped activities when any grouped provider source is tombstoned", async () => {
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
           VALUES ('whoop', 'WHOOP', ${TEST_USER_ID})
@@ -408,31 +408,14 @@ describe("Activity summary deduplication", () => {
 
       const viewRows = await testCtx.db.execute<{
         id: string;
-        absent_source_external_ids: Array<Record<string, string>>;
-        member_activity_ids: string[];
       }>(
-        sql`SELECT
-              id,
-              absent_source_external_ids,
-              member_activity_ids::text[] AS member_activity_ids
+        sql`SELECT id
             FROM fitness.v_activity
             WHERE user_id = ${TEST_USER_ID}
-              AND ${wahooActivityId}::uuid = ANY(member_activity_ids)
-            LIMIT 1`,
+              AND ${wahooActivityId}::uuid = ANY(member_activity_ids)`,
       );
 
-      const viewRow = viewRows[0];
-      expect(viewRow?.member_activity_ids).toEqual(
-        expect.arrayContaining([wahooActivityId, whoopActivityId]),
-      );
-      expect(viewRow?.absent_source_external_ids).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            providerId: "whoop",
-            externalId: "whoop-tombstone-dedup",
-          }),
-        ]),
-      );
+      expect(viewRows).toHaveLength(0);
     } finally {
       await testCtx.db.execute(
         sql`DELETE FROM fitness.activity WHERE id IN (${wahooActivityId}::uuid, ${whoopActivityId}::uuid)`,

@@ -77,7 +77,8 @@ const mocks = vi.hoisted(() => {
 
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
   markProviderActivityAbsent: vi.fn().mockResolvedValue(undefined),
-  reconcileProviderActivityAbsence: vi.fn().mockResolvedValue(undefined),
+  finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
+  upsertProviderActivity: vi.fn().mockResolvedValue({ id: "activity-id" }),
 }));
 
 vi.mock("@sentry/node", () => ({
@@ -118,9 +119,10 @@ vi.mock("../db/sync-log.ts", () => ({
   withSyncLog: mocks.withSyncLog,
 }));
 
-vi.mock("../db/provider-activity-absence.ts", () => ({
+vi.mock("../db/provider-activity-sync.ts", () => ({
   markProviderActivityAbsent: providerActivityAbsenceMocks.markProviderActivityAbsent,
-  reconcileProviderActivityAbsence: providerActivityAbsenceMocks.reconcileProviderActivityAbsence,
+  finishProviderActivityListSync: providerActivityAbsenceMocks.finishProviderActivityListSync,
+  upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
 }));
 
 vi.mock("../logger.ts", () => ({
@@ -530,7 +532,10 @@ describe("GarminProvider.sync()", () => {
     vi.clearAllMocks();
     publishedMetricStreamBatches.length = 0;
     providerActivityAbsenceMocks.markProviderActivityAbsent.mockClear();
-    providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockClear();
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
+    providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue({
+      id: "10000000-0000-4000-8000-000000000001",
+    });
     provider = new GarminProvider();
     db = createMockDb();
 
@@ -729,6 +734,52 @@ describe("GarminProvider.sync()", () => {
     expect(result.recordsSynced).toBe(1);
   });
 
+  it("syncs detail streams without activity id when upsert returns no row", async () => {
+    providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue(undefined);
+
+    const rawActivity = { activityId: 123, deviceName: "Forerunner 955" };
+    mocks.client.getActivities.mockResolvedValue([rawActivity]);
+
+    mocks.parseConnectActivity.mockReturnValue({
+      externalId: "123",
+      activityType: "running",
+      name: "Morning Run",
+      startedAt: new Date("2026-03-01T10:00:00Z"),
+      endedAt: new Date("2026-03-01T11:00:00Z"),
+      raw: rawActivity,
+    });
+
+    mocks.client.getActivityDetail.mockResolvedValue({});
+    mocks.parseActivityDetail.mockReturnValue({
+      samples: [
+        {
+          directTimestamp: 1709286000000,
+          directHeartRate: 150,
+          directPower: null,
+          directRunCadence: 85,
+          directBikeCadence: null,
+          directSpeed: null,
+          directElevation: null,
+          directLatitude: null,
+          directLongitude: null,
+          directAirTemperature: null,
+        },
+      ],
+    });
+
+    const result = await syncProvider(provider, db, new Date("2026-02-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(1);
+
+    const sensorRows = publishedMetricStreamBatches
+      .flat()
+      .filter((row) => row?.providerId === "garmin" && typeof row?.channel === "string");
+
+    expect(sensorRows.length).toBeGreaterThan(0);
+    expect(sensorRows.every((row) => row?.activityId === undefined)).toBe(true);
+  });
+
   it("fetches activity detail when startedAt equals the sync window start", async () => {
     const since = new Date("2026-03-01T00:00:00.000Z");
     const until = new Date("2026-03-31T23:59:59.999Z");
@@ -838,7 +889,7 @@ describe("GarminProvider.sync()", () => {
 
     await syncProvider(provider, db, since);
 
-    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
         providerId: "garmin",
@@ -867,7 +918,7 @@ describe("GarminProvider.sync()", () => {
 
     await syncProvider(provider, db, since);
 
-    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).not.toHaveBeenCalled();
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
   });
 
   it("syncs sleep data", async () => {

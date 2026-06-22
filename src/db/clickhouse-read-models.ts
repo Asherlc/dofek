@@ -265,6 +265,12 @@ absent_source_links AS (
     ON tombstoned.id = final_groups.activity_id
   GROUP BY final_groups.group_id
 ),
+tombstoned_groups AS (
+  SELECT DISTINCT final_groups.group_id AS group_id
+  FROM final_groups
+  INNER JOIN tombstoned
+    ON tombstoned.id = final_groups.activity_id
+),
 best AS (
   SELECT *
   FROM (
@@ -318,6 +324,7 @@ merged AS (
     ON ranked.id = final_groups.activity_id
   LEFT JOIN absent_source_links
     ON absent_source_links.group_id = best.group_id
+  WHERE best.group_id NOT IN (SELECT group_id FROM tombstoned_groups)
   GROUP BY best.group_id, best.canonical_id
 )
 SELECT

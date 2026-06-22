@@ -17,9 +17,10 @@ import {
   writeMetricStreamBatch,
 } from "../db/metric-stream-writer.ts";
 import {
+  finishProviderActivityListSync,
   markProviderActivityAbsent,
-  reconcileProviderActivityAbsence,
-} from "../db/provider-activity-absence.ts";
+  upsertProviderActivity,
+} from "../db/provider-activity-sync.ts";
 import { activity } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
@@ -632,9 +633,9 @@ export class StravaProvider implements WebhookProvider {
     const parsed = parseStravaActivity(detail);
 
     // Upsert the activity row
-    const [row] = await db
-      .insert(activity)
-      .values({
+    const row = await upsertProviderActivity(
+      db,
+      {
         providerId: this.id,
         externalId: parsed.externalId,
         activityType: parsed.activityType,
@@ -643,20 +644,16 @@ export class StravaProvider implements WebhookProvider {
         name: parsed.name,
         sourceName: detail.device_name,
         raw: detail,
-      })
-      .onConflictDoUpdate({
-        target: [activity.userId, activity.providerId, activity.externalId],
-        set: {
-          activityType: parsed.activityType,
-          startedAt: parsed.startedAt,
-          endedAt: parsed.endedAt,
-          name: parsed.name,
-          sourceName: detail.device_name,
-          raw: detail,
-          providerAbsentAt: null,
-        },
-      })
-      .returning({ id: activity.id });
+      },
+      {
+        activityType: parsed.activityType,
+        startedAt: parsed.startedAt,
+        endedAt: parsed.endedAt,
+        name: parsed.name,
+        sourceName: detail.device_name,
+        raw: detail,
+      },
+    );
 
     recordsSynced++;
     const activityId = row?.id;
@@ -808,9 +805,9 @@ export class StravaProvider implements WebhookProvider {
             }
           }
 
-          const [row] = await db
-            .insert(activity)
-            .values({
+          const row = await upsertProviderActivity(
+            db,
+            {
               providerId: this.id,
               externalId: act.externalId,
               activityType: act.activityType,
@@ -819,20 +816,16 @@ export class StravaProvider implements WebhookProvider {
               name: act.name,
               sourceName,
               raw: rawActivities.find((r) => String(r.id) === act.externalId),
-            })
-            .onConflictDoUpdate({
-              target: [activity.userId, activity.providerId, activity.externalId],
-              set: {
-                activityType: act.activityType,
-                startedAt: act.startedAt,
-                endedAt: act.endedAt,
-                name: act.name,
-                sourceName: sql`coalesce(excluded.source_name, ${activity.sourceName})`,
-                raw: rawActivities.find((r) => String(r.id) === act.externalId),
-                providerAbsentAt: null,
-              },
-            })
-            .returning({ id: activity.id });
+            },
+            {
+              activityType: act.activityType,
+              startedAt: act.startedAt,
+              endedAt: act.endedAt,
+              name: act.name,
+              sourceName: sql`coalesce(excluded.source_name, ${activity.sourceName})`,
+              raw: rawActivities.find((r) => String(r.id) === act.externalId),
+            },
+          );
 
           recordsSynced++;
           // no-mutate: Progress reporting is UX-only and can't fail in a testable way
@@ -908,7 +901,7 @@ export class StravaProvider implements WebhookProvider {
     }
 
     if (!shouldStop) {
-      await reconcileProviderActivityAbsence(db, {
+      await finishProviderActivityListSync(db, {
         providerId: this.id,
         userId: options.userId,
         windowStart: since,

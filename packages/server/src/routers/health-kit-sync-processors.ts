@@ -1,6 +1,8 @@
 import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import type { SyncDatabase } from "../../../../src/db/index.ts";
+import { ProviderActivityListSync } from "../../../../src/db/provider-activity-sync.ts";
 import {
   BODY_MEASUREMENT_COLUMN_TO_CHANNEL,
   SOURCE_TYPE_API,
@@ -12,6 +14,7 @@ import {
 } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
 import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
+import { computeBoundsFromIsoTimestamps } from "../lib/health-kit-sync-helpers.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import {
@@ -46,26 +49,7 @@ function extractDate(isoString: string): string {
   return isoString.slice(0, 10);
 }
 
-export function computeBoundsFromIsoTimestamps(
-  timestamps: string[],
-): { startAt: string; endAt: string } | null {
-  if (timestamps.length === 0) return null;
-
-  let minTs = Number.POSITIVE_INFINITY;
-  let maxTs = Number.NEGATIVE_INFINITY;
-  for (const ts of timestamps) {
-    const ms = Date.parse(ts);
-    if (Number.isNaN(ms)) continue;
-    if (ms < minTs) minTs = ms;
-    if (ms > maxTs) maxTs = ms;
-  }
-
-  if (!Number.isFinite(minTs) || !Number.isFinite(maxTs)) return null;
-  return {
-    startAt: new Date(minTs).toISOString(),
-    endAt: new Date(maxTs).toISOString(),
-  };
-}
+export { computeBoundsFromIsoTimestamps };
 
 function dateInTimezone(timestamp: string, timezone: string): string {
   const date = new Date(timestamp);
@@ -377,20 +361,37 @@ export async function processHealthEvents(
   return inserted;
 }
 
+export function appleHealthWorkoutExternalId(uuid: string): string {
+  return `hk:workout:${uuid}`;
+}
+
+export interface ProcessWorkoutsOptions {
+  windowStart: string;
+  windowEnd: string;
+}
+
 /** Process workout samples */
 export async function processWorkouts(
-  db: Database,
+  db: SyncDatabase,
   userId: string,
   workouts: WorkoutSample[],
+  options: ProcessWorkoutsOptions,
 ): Promise<number> {
+  const activitySync = new ProviderActivityListSync({
+    db,
+    providerId: PROVIDER_ID,
+    userId,
+    windowStart: new Date(options.windowStart),
+    windowEnd: new Date(options.windowEnd),
+  });
+
   let inserted = 0;
   for (let i = 0; i < workouts.length; i += BATCH_SIZE) {
     const batch = workouts.slice(i, i + BATCH_SIZE);
     for (const workout of batch) {
-      const externalId = `hk:workout:${workout.uuid}`;
       const activityType = workoutActivityTypeMap[workout.workoutType] ?? "other";
 
-      const rawData = JSON.stringify({
+      const rawData = {
         duration: workout.duration,
         totalEnergyBurned: workout.totalEnergyBurned,
         totalDistance: workout.totalDistance,
@@ -398,29 +399,30 @@ export async function processWorkouts(
         workoutType: workout.workoutType,
         metadata: workout.metadata,
         workoutActivities: workout.workoutActivities,
-      });
+      };
 
-      await db.execute(
-        sql`INSERT INTO fitness.activity (user_id, provider_id, external_id, activity_type, started_at, ended_at, raw)
-            VALUES (
-              ${userId},
-              ${PROVIDER_ID},
-              ${externalId},
-              ${activityType},
-              ${workout.startDate}::timestamptz,
-              ${workout.endDate}::timestamptz,
-              ${rawData}::jsonb
-            )
-            ON CONFLICT (user_id, provider_id, external_id) DO UPDATE SET
-              activity_type = ${activityType},
-              started_at = ${workout.startDate}::timestamptz,
-              ended_at = ${workout.endDate}::timestamptz,
-              raw = ${rawData}::jsonb,
-              provider_absent_at = NULL`,
+      await activitySync.upsert(
+        {
+          userId,
+          providerId: PROVIDER_ID,
+          externalId: appleHealthWorkoutExternalId(workout.uuid),
+          activityType,
+          startedAt: new Date(workout.startDate),
+          endedAt: new Date(workout.endDate),
+          raw: rawData,
+        },
+        {
+          activityType,
+          startedAt: new Date(workout.startDate),
+          endedAt: new Date(workout.endDate),
+          raw: rawData,
+        },
       );
       inserted++;
     }
   }
+
+  await activitySync.reconcile();
 
   return inserted;
 }

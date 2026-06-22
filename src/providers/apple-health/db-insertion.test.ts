@@ -34,6 +34,10 @@ const { metricStreamCapture } = vi.hoisted<{
   },
 }));
 
+const providerActivityAbsenceMocks = vi.hoisted(() => ({
+  upsertProviderActivity: vi.fn(),
+}));
+
 vi.mock("../../metric-stream/redpanda-producer.ts", () => ({
   getDefaultMetricStreamEventPublisher: async () => ({
     publishRows: async (rows: readonly Record<string, unknown>[], partitionKey?: string) => {
@@ -70,6 +74,14 @@ vi.mock("../../db/token-user-context.ts", () => ({
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
 
+vi.mock("../../db/provider-activity-sync.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../db/provider-activity-sync.ts")>();
+  return {
+    ...original,
+    upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
+  };
+});
+
 // ---------------------------------------------------------------------------
 // Mock DB helper
 // ---------------------------------------------------------------------------
@@ -79,12 +91,36 @@ interface MockInsertCapture {
   partitionKeys: Array<string | undefined>;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function findActivityUpsertValues(
+  predicate: (values: Record<string, unknown>) => boolean,
+): Record<string, unknown> | undefined {
+  for (const call of providerActivityAbsenceMocks.upsertProviderActivity.mock.calls) {
+    const values = call[1];
+    if (isRecord(values) && predicate(values)) return values;
+  }
+  return undefined;
+}
+
 function createMockDb(returningData: Record<string, unknown>[] = []): {
   db: SyncDatabase;
   capture: MockInsertCapture;
 } {
   const capture: MockInsertCapture = { values: [], partitionKeys: [] };
   metricStreamCapture.current = capture;
+
+  let returnIndex = 0;
+  providerActivityAbsenceMocks.upsertProviderActivity.mockReset();
+  providerActivityAbsenceMocks.upsertProviderActivity.mockImplementation(async () => {
+    const template = returningData[returnIndex] ??
+      returningData[returningData.length - 1] ?? { id: "10000000-0000-4000-8000-000000000001" };
+    returnIndex += 1;
+    if (template.id === undefined) return undefined;
+    return { id: String(template.id) };
+  });
 
   function makeChainable(): Promise<undefined> {
     return Object.assign(Promise.resolve(undefined), {
@@ -1412,13 +1448,15 @@ describe("upsertWorkoutBatch", () => {
   it("builds correct insert row fields", async () => {
     const start = new Date("2024-06-01T08:00:00Z");
     const end = new Date("2024-06-01T08:30:00Z");
-    const { db, capture } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
+    const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
 
     await upsertWorkoutBatch(db, "p1", [
       makeWorkout({ startDate: start, endDate: end, activityType: "cycling", sourceName: "Wahoo" }),
     ]);
 
-    expect(capture.values[0]?.[0]).toMatchObject({
+    expect(
+      findActivityUpsertValues((row) => row.externalId === `ah:workout:${start.toISOString()}`),
+    ).toMatchObject({
       providerId: "p1",
       externalId: `ah:workout:${start.toISOString()}`,
       activityType: "cycling",
@@ -1444,9 +1482,9 @@ describe("upsertWorkoutBatch", () => {
       upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [location] })]),
     );
 
-    // First insert is the activity, second is metric_stream rows.
-    expect(capture.values).toHaveLength(2);
-    expect(capture.values[1]).toContainEqual(
+    // Activity upsert goes through upsertProviderActivity; capture only has metric_stream rows.
+    expect(capture.values).toHaveLength(1);
+    expect(capture.values[0]).toContainEqual(
       expect.objectContaining({
         providerId: "p1",
         activityId,
@@ -1455,7 +1493,7 @@ describe("upsertWorkoutBatch", () => {
         metadata: { horizontal_accuracy_m: 5.2 },
       }),
     );
-    expect(capture.values[1]).toContainEqual(
+    expect(capture.values[0]).toContainEqual(
       expect.objectContaining({
         providerId: "p1",
         activityId,
@@ -1463,7 +1501,7 @@ describe("upsertWorkoutBatch", () => {
         scalar: 10.5,
       }),
     );
-    expect(capture.values[1]).toContainEqual(
+    expect(capture.values[0]).toContainEqual(
       expect.objectContaining({
         providerId: "p1",
         activityId,
@@ -1478,8 +1516,7 @@ describe("upsertWorkoutBatch", () => {
 
     await upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [] })]);
 
-    // Only the activity insert, no GPS insert
-    expect(capture.values).toHaveLength(1);
+    expect(capture.values).toHaveLength(0);
   });
 
   it("handles undefined horizontalAccuracy in GPS", async () => {
@@ -1494,12 +1531,12 @@ describe("upsertWorkoutBatch", () => {
       upsertWorkoutBatch(db, "p1", [makeWorkout({ routeLocations: [loc] })]),
     );
 
-    const locationRow = capture.values[1]?.find((row) => row.channel === "location");
+    const locationRow = capture.values[0]?.find((row) => row.channel === "location");
     expect(locationRow?.metadata).toBeNull();
   });
 
   it("populates raw JSONB with workout metrics", async () => {
-    const { db, capture } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
+    const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
 
     await upsertWorkoutBatch(db, "p1", [
       makeWorkout({
@@ -1511,25 +1548,21 @@ describe("upsertWorkoutBatch", () => {
       }),
     ]);
 
-    expect(capture.values[0]?.[0]).toMatchObject({
-      raw: {
-        distanceMeters: 5200,
-        calories: 320,
-        avgHeartRate: 148,
-        maxHeartRate: 182,
-        durationSeconds: 1830,
-      },
+    expect(findActivityUpsertValues(() => true)?.raw).toMatchObject({
+      distanceMeters: 5200,
+      calories: 320,
+      avgHeartRate: 148,
+      maxHeartRate: 182,
+      durationSeconds: 1830,
     });
   });
 
   it("omits undefined optional fields from raw JSONB", async () => {
-    const { db, capture } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
+    const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
 
     await upsertWorkoutBatch(db, "p1", [makeWorkout()]);
 
-    const row = capture.values[0]?.[0];
-    expect(row?.raw).toBeDefined();
-    const raw = row?.raw;
+    const raw = findActivityUpsertValues(() => true)?.raw;
     expect(raw).toMatchObject({ durationSeconds: 1800 });
     expect(raw).not.toHaveProperty("distanceMeters");
     expect(raw).not.toHaveProperty("calories");

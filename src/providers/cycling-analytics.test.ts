@@ -1,12 +1,18 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CyclingAnalyticsProvider } from "./cycling-analytics.ts";
+import { loadTokens } from "../db/tokens.ts";
+import {
+  CyclingAnalyticsProvider,
+  cyclingAnalyticsOAuthConfig,
+  parseCyclingAnalyticsRide,
+} from "./cycling-analytics.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 import { createMockDatabase } from "./test-helpers.ts";
 
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
-  reconcileProviderActivityAbsence: vi.fn().mockResolvedValue(undefined),
+  finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
+  upsertProviderActivity: vi.fn().mockResolvedValue({ id: "activity-id" }),
 }));
 
 vi.mock("../db/sync-log.ts", () => ({
@@ -40,11 +46,12 @@ vi.mock("../db/tokens.ts", () => ({
   deleteTokens: vi.fn(async () => {}),
 }));
 
-vi.mock("../db/provider-activity-absence.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("../db/provider-activity-absence.ts")>();
+vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../db/provider-activity-sync.ts")>();
   return {
     ...original,
-    reconcileProviderActivityAbsence: providerActivityAbsenceMocks.reconcileProviderActivityAbsence,
+    finishProviderActivityListSync: providerActivityAbsenceMocks.finishProviderActivityListSync,
+    upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
   };
 });
 
@@ -53,7 +60,9 @@ describe("CyclingAnalyticsProvider — rate-limit aware fetch wiring", () => {
 
   afterEach(() => {
     process.env = { ...originalEnv };
-    providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockClear();
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
+    providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
+    providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue({ id: "activity-id" });
   });
 
   it("surfaces a 429 as a ProviderRateLimitError tagged with providerId 'cycling_analytics'", async () => {
@@ -104,7 +113,7 @@ describe("CyclingAnalyticsProvider — rate-limit aware fetch wiring", () => {
       return new Response("not found", { status: 404 });
     };
 
-    const { db, spies } = createMockDatabase();
+    const { db } = createMockDatabase();
     const result = await new CyclingAnalyticsProvider(mockFetch).sync(
       new SyncRun({
         db,
@@ -114,9 +123,17 @@ describe("CyclingAnalyticsProvider — rate-limit aware fetch wiring", () => {
 
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBe(1);
-    expect(spies.values).toHaveBeenCalledWith(expect.objectContaining({ externalId: "1" }));
-    expect(spies.values).not.toHaveBeenCalledWith(expect.objectContaining({ externalId: "2" }));
-    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ externalId: "1" }),
+      expect.anything(),
+    );
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).not.toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ externalId: "2" }),
+      expect.anything(),
+    );
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
         presentExternalIds: new Set(["1"]),
@@ -169,5 +186,158 @@ describe("CyclingAnalyticsProvider — rate-limit aware fetch wiring", () => {
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("activity:");
+  });
+});
+
+describe("parseCyclingAnalyticsRide — edge cases", () => {
+  it("handles ride with minimal fields", () => {
+    const ride = {
+      id: 1,
+      title: "Quick Spin",
+      date: "2026-03-01T10:00:00Z",
+      duration: 1800,
+    };
+
+    const parsed = parseCyclingAnalyticsRide(ride);
+    expect(parsed.externalId).toBe("1");
+    expect(parsed.activityType).toBe("cycling");
+    expect(parsed.name).toBe("Quick Spin");
+    expect(parsed.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
+    expect(parsed.endedAt).toEqual(new Date("2026-03-01T10:30:00Z"));
+    expect(parsed.raw.distance).toBeUndefined();
+    expect(parsed.raw.averagePower).toBeUndefined();
+    expect(parsed.raw.calories).toBeUndefined();
+    expect(parsed.raw.trainingStressScore).toBeUndefined();
+  });
+
+  it("includes all raw fields when present", () => {
+    const ride = {
+      id: 99,
+      title: "Full Ride",
+      date: "2026-03-01T08:00:00Z",
+      duration: 7200,
+      distance: 60000,
+      average_power: 200,
+      normalized_power: 220,
+      max_power: 500,
+      average_heart_rate: 145,
+      max_heart_rate: 180,
+      average_cadence: 88,
+      max_cadence: 115,
+      elevation_gain: 500,
+      elevation_loss: 490,
+      average_speed: 8.33,
+      max_speed: 15.0,
+      calories: 1200,
+      training_stress_score: 150,
+      intensity_factor: 0.9,
+    };
+
+    const parsed = parseCyclingAnalyticsRide(ride);
+    expect(parsed.raw.normalizedPower).toBe(220);
+    expect(parsed.raw.maxPower).toBe(500);
+    expect(parsed.raw.averageCadence).toBe(88);
+    expect(parsed.raw.maxCadence).toBe(115);
+    expect(parsed.raw.elevationGain).toBe(500);
+    expect(parsed.raw.elevationLoss).toBe(490);
+    expect(parsed.raw.averageSpeed).toBe(8.33);
+    expect(parsed.raw.maxSpeed).toBe(15.0);
+    expect(parsed.raw.intensityFactor).toBe(0.9);
+  });
+});
+
+describe("cyclingAnalyticsOAuthConfig", () => {
+  const originalEnv = { ...process.env };
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("returns null when CYCLING_ANALYTICS_CLIENT_ID is not set", () => {
+    delete process.env.CYCLING_ANALYTICS_CLIENT_ID;
+    delete process.env.CYCLING_ANALYTICS_CLIENT_SECRET;
+    expect(cyclingAnalyticsOAuthConfig()).toBeNull();
+  });
+
+  it("returns null when CYCLING_ANALYTICS_CLIENT_SECRET is not set", () => {
+    process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
+    delete process.env.CYCLING_ANALYTICS_CLIENT_SECRET;
+    expect(cyclingAnalyticsOAuthConfig()).toBeNull();
+  });
+
+  it("returns config when both env vars are set", () => {
+    process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
+    process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-secret";
+    const config = cyclingAnalyticsOAuthConfig();
+    expect(config).not.toBeNull();
+    expect(config?.clientId).toBe("test-id");
+    expect(config?.clientSecret).toBe("test-secret");
+    expect(config?.scopes).toEqual([]);
+  });
+
+  it("uses custom OAUTH_REDIRECT_URI when set", () => {
+    process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
+    process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-secret";
+    process.env.OAUTH_REDIRECT_URI = "https://example.com/callback";
+    const config = cyclingAnalyticsOAuthConfig();
+    expect(config?.redirectUri).toBe("https://example.com/callback");
+  });
+
+  it("uses default redirect URI when OAUTH_REDIRECT_URI is not set", () => {
+    process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
+    process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-secret";
+    delete process.env.OAUTH_REDIRECT_URI;
+    const config = cyclingAnalyticsOAuthConfig();
+    expect(config?.redirectUri).toBe("https://dofek.asherlc.com/callback");
+  });
+});
+
+describe("CyclingAnalyticsProvider", () => {
+  const originalEnv = { ...process.env };
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("validate returns error when CYCLING_ANALYTICS_CLIENT_ID is missing", () => {
+    delete process.env.CYCLING_ANALYTICS_CLIENT_ID;
+    delete process.env.CYCLING_ANALYTICS_CLIENT_SECRET;
+    expect(new CyclingAnalyticsProvider().validate()).toContain("CYCLING_ANALYTICS_CLIENT_ID");
+  });
+
+  it("validate returns error when CYCLING_ANALYTICS_CLIENT_SECRET is missing", () => {
+    process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
+    delete process.env.CYCLING_ANALYTICS_CLIENT_SECRET;
+    expect(new CyclingAnalyticsProvider().validate()).toContain("CYCLING_ANALYTICS_CLIENT_SECRET");
+  });
+
+  it("validate returns null when both are set", () => {
+    process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
+    process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-secret";
+    expect(new CyclingAnalyticsProvider().validate()).toBeNull();
+  });
+
+  it("authSetup returns auth setup with OAuth config", () => {
+    process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
+    process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-secret";
+    const setup = new CyclingAnalyticsProvider().authSetup();
+    expect(setup.oauthConfig?.clientId).toBe("test-id");
+    expect(setup.exchangeCode).toBeTypeOf("function");
+    expect(setup.apiBaseUrl).toContain("cyclinganalytics.com");
+  });
+
+  it("authSetup throws when env vars are missing", () => {
+    delete process.env.CYCLING_ANALYTICS_CLIENT_ID;
+    delete process.env.CYCLING_ANALYTICS_CLIENT_SECRET;
+    expect(() => new CyclingAnalyticsProvider().authSetup()).toThrow("CYCLING_ANALYTICS_CLIENT_ID");
+  });
+
+  it("sync returns error when no tokens", async () => {
+    process.env.CYCLING_ANALYTICS_CLIENT_ID = "id";
+    process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "secret";
+    vi.mocked(loadTokens).mockResolvedValueOnce(null);
+    const { db } = createMockDatabase();
+    const result = await new CyclingAnalyticsProvider().sync(
+      new SyncRun({ db, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
+    expect(result.errors.length).toBeGreaterThan(0);
   });
 });

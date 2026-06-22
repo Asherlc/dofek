@@ -6,7 +6,7 @@ import {
 } from "../../auth/oauth.ts";
 import { resolveOAuthTokens } from "../../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../../db/index.ts";
-import { reconcileProviderActivityAbsence } from "../../db/provider-activity-absence.ts";
+import { finishProviderActivityListSync } from "../../db/provider-activity-sync.ts";
 import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../../logger.ts";
 import { AccessTokenExpiredError } from "../auth-errors.ts";
@@ -336,7 +336,7 @@ export class WahooProvider implements WebhookProvider {
       page++;
     }
 
-    await reconcileProviderActivityAbsence(db, {
+    await finishProviderActivityListSync(db, {
       providerId: this.id,
       userId: options?.userId,
       windowStart: since,
