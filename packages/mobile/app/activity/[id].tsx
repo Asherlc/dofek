@@ -6,7 +6,7 @@ import {
   formatTimeOnly,
 } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
-import { providerSourceLabel } from "@dofek/providers/providers";
+import { providerAbsentExplanation, providerSourceLabel } from "@dofek/providers/providers";
 import { activityMetricColors } from "@dofek/scoring/colors";
 import { getActivityIconInfo } from "@dofek/training/activity-icons";
 import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
@@ -884,6 +884,9 @@ export default function ActivityDetailScreen() {
                 </Text>
               </View>
             </View>
+            <Text style={styles.providerAbsentExplanation}>
+              {providerAbsentExplanation(activity.providerId, activity.subsource)}
+            </Text>
           </View>
         )}
       </View>

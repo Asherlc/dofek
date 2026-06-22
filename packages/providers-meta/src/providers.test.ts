@@ -6,6 +6,7 @@ import {
   providerLabel,
   providerLogoType,
   providerSourceLabel,
+  providerAbsentExplanation,
   SVG_LOGOS,
 } from "./providers.ts";
 
@@ -48,6 +49,19 @@ describe("providerSourceLabel", () => {
   it("falls back to the provider label in other cases", () => {
     expect(providerSourceLabel("apple_health", null)).toBe("Apple Health");
     expect(providerSourceLabel("whoop", "Strong")).toBe("WHOOP");
+  });
+});
+
+describe("providerAbsentExplanation", () => {
+  it("clarifies Apple Health subsource tombstones do not delete the upstream app activity", () => {
+    expect(providerAbsentExplanation("apple_health", "Strava")).toContain("Apple Health copy");
+    expect(providerAbsentExplanation("apple_health", "Strava")).toContain(
+      "does not mean Strava deleted",
+    );
+  });
+
+  it("uses the provider label for other providers", () => {
+    expect(providerAbsentExplanation("strava", null)).toContain("Strava");
   });
 });
 

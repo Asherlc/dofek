@@ -87,4 +87,83 @@ describe("reconcileProviderActivityAbsence", () => {
 
     expect(rows[0]?.providerAbsentAt).toBeNull();
   });
+
+  it("does not tombstone activities when the provider list is empty", async () => {
+    await ctx.db.insert(activity).values({
+      providerId: "provider-absence-test",
+      externalId: "empty-list-activity",
+      activityType: "running",
+      startedAt: new Date("2026-03-06T10:00:00Z"),
+    });
+
+    await reconcileProviderActivityAbsence(ctx.db, {
+      providerId: "provider-absence-test",
+      windowStart: new Date("2026-03-06T00:00:00Z"),
+      windowEnd: new Date("2026-03-07T00:00:00Z"),
+      presentExternalIds: new Set(),
+    });
+
+    const rows = await ctx.db
+      .select()
+      .from(activity)
+      .where(
+        and(
+          eq(activity.providerId, "provider-absence-test"),
+          eq(activity.externalId, "empty-list-activity"),
+        ),
+      );
+
+    expect(rows[0]?.providerAbsentAt).toBeNull();
+  });
+
+  it("does not tombstone older apple_health duplicates when the sync identifier is still present", async () => {
+    await ensureProvider(ctx.db, "apple_health", "Apple Health");
+
+    await ctx.db.insert(activity).values([
+      {
+        providerId: "apple_health",
+        externalId: "hk:workout:old-strava-uuid",
+        activityType: "cycling",
+        startedAt: new Date("2026-03-06T10:00:00Z"),
+        endedAt: new Date("2026-03-06T11:00:00Z"),
+        raw: {
+          sourceName: "Strava",
+          metadata: { HKMetadataKeySyncIdentifier: "19016909441", HKMetadataKeySyncVersion: 1 },
+        },
+      },
+      {
+        providerId: "apple_health",
+        externalId: "hk:workout:new-strava-uuid",
+        activityType: "cycling",
+        startedAt: new Date("2026-03-06T10:00:00Z"),
+        endedAt: new Date("2026-03-06T11:00:00Z"),
+        raw: {
+          sourceName: "Strava",
+          metadata: { HKMetadataKeySyncIdentifier: "19016909441", HKMetadataKeySyncVersion: 2 },
+        },
+      },
+    ]);
+
+    await reconcileProviderActivityAbsence(ctx.db, {
+      providerId: "apple_health",
+      windowStart: new Date("2026-03-06T00:00:00Z"),
+      windowEnd: new Date("2026-03-07T00:00:00Z"),
+      presentExternalIds: new Set(["hk:workout:new-strava-uuid"]),
+      presentAppleHealthIdentities: [
+        {
+          syncIdentifier: "19016909441",
+          startedAt: new Date("2026-03-06T10:00:00Z"),
+          endedAt: new Date("2026-03-06T11:00:00Z"),
+          sourceName: "Strava",
+        },
+      ],
+    });
+
+    const rows = await ctx.db
+      .select()
+      .from(activity)
+      .where(eq(activity.providerId, "apple_health"));
+
+    expect(rows.every((row) => row.providerAbsentAt == null)).toBe(true);
+  });
 });

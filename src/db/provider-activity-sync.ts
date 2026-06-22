@@ -97,7 +97,10 @@ export class ProviderActivityListSync {
     return row;
   }
 
-  async reconcile(presentExternalIds?: ReadonlySet<string>): Promise<void> {
+  async reconcile(
+    presentExternalIds?: ReadonlySet<string>,
+    options?: Pick<ProviderActivityAbsenceReconciliation, "presentAppleHealthIdentities">,
+  ): Promise<void> {
     if (this.#reconciliationDisabled) return;
     await finishProviderActivityListSync(this.#scope.db, {
       providerId: this.#scope.providerId,
@@ -105,6 +108,7 @@ export class ProviderActivityListSync {
       windowStart: this.#scope.windowStart,
       windowEnd: this.#scope.windowEnd,
       presentExternalIds: presentExternalIds ?? this.#presentExternalIds,
+      presentAppleHealthIdentities: options?.presentAppleHealthIdentities,
     });
   }
 }

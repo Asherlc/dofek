@@ -6,7 +6,7 @@ import {
   formatTimeOnly,
 } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
-import { providerSourceLabel } from "@dofek/providers/providers";
+import { providerAbsentExplanation, providerSourceLabel } from "@dofek/providers/providers";
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
 import {
   computeIntensities,
@@ -323,8 +323,8 @@ export function ProviderAbsentBanner({ activity }: { activity: ActivityDetail })
         </div>
       </dl>
       <p className="mt-3 text-xs text-amber-800/80 dark:text-amber-200/80">
-        This activity was hidden because {providerLabel} reported it as deleted or missing. You can
-        restore it from the activities page while showing hidden activities.
+        {providerAbsentExplanation(activity.providerId, activity.subsource)} You can restore it
+        from the activities page while showing hidden activities.
       </p>
     </div>
   );

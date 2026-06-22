@@ -4,6 +4,10 @@ import { z } from "zod";
 import type { SyncDatabase } from "../../../../src/db/index.ts";
 import { ProviderActivityListSync } from "../../../../src/db/provider-activity-sync.ts";
 import {
+  buildAppleHealthWorkoutIdentity,
+  collectAppleHealthWorkoutIdentities,
+} from "../../../../src/providers/apple-health/workout-identity.ts";
+import {
   BODY_MEASUREMENT_COLUMN_TO_CHANNEL,
   SOURCE_TYPE_API,
 } from "../../../../src/db/sensor-channels.ts";
@@ -422,7 +426,18 @@ export async function processWorkouts(
     }
   }
 
-  await activitySync.reconcile();
+  await activitySync.reconcile(undefined, {
+    presentAppleHealthIdentities: collectAppleHealthWorkoutIdentities(
+      workouts.map((workout) =>
+        buildAppleHealthWorkoutIdentity({
+          syncIdentifier: workout.metadata?.HKMetadataKeySyncIdentifier,
+          startedAt: new Date(workout.startDate),
+          endedAt: new Date(workout.endDate),
+          sourceName: workout.sourceName,
+        }),
+      ),
+    ),
+  });
 
   return inserted;
 }
