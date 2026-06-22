@@ -78,8 +78,13 @@ describe("ActivityCard", () => {
   });
 
   it("shows default icon for unknown activity types", () => {
-    render(<ActivityCard {...baseProps} activityType="paddleboarding" />);
+    render(<ActivityCard {...baseProps} activityType="archery" />);
     expect(screen.getByText("\u{26A1}")).toBeTruthy();
+  });
+
+  it("shows water icon for paddle sports", () => {
+    render(<ActivityCard {...baseProps} activityType="paddleboarding" />);
+    expect(screen.getByText("\u{1F3C4}")).toBeTruthy();
   });
 
   it("parses postgres-style space-separated timestamps", () => {

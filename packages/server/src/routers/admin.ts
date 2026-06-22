@@ -1,5 +1,6 @@
 import { PROVIDER_GUIDE_SETTINGS_KEY } from "@dofek/onboarding/provider-guide";
 import { TRPCError } from "@trpc/server";
+import { getProviderRateLimitStatusFromRedis } from "dofek/admin/provider-rate-limit-status";
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -620,5 +621,10 @@ export const adminRouter = router({
           GROUP BY provider_id
           ORDER BY failed DESC, total DESC`,
     );
+  }),
+
+  /** Live provider rate-limit estimations from Redis adaptive state and cooldowns */
+  rateLimits: adminProcedure.query(async () => {
+    return getProviderRateLimitStatusFromRedis();
   }),
 });

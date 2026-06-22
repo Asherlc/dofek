@@ -34,6 +34,33 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
+vi.mock("dofek/admin/provider-rate-limit-status", () => ({
+  getProviderRateLimitStatusFromRedis: vi.fn(async () => [
+    {
+      providerId: "strava",
+      scope: "provider",
+      userId: null,
+      syncTier: "realtime",
+      concurrency: 2,
+      queueLimiterMax: 90,
+      queueLimiterDurationMs: 900_000,
+      defaultThrottleMs: 10_000,
+      throttleMs: 8_000,
+      inferredBudget: 35,
+      observedCooldownSeconds: 900,
+      requestCount: 12,
+      windowStartMs: Date.now(),
+      stravaShortUsage: 42,
+      stravaShortLimit: 100,
+      stravaDailyUsage: 120,
+      stravaDailyLimit: 1_000,
+      cooldownExpiresAt: null,
+      consecutiveHits: null,
+      hasLiveState: true,
+    },
+  ]),
+}));
+
 import { adminRouter } from "./admin.ts";
 
 const createCaller = createTestCallerFactory(adminRouter);
@@ -568,6 +595,16 @@ describe("adminRouter", () => {
         failed: 2,
         last_sync: "2024-01-01T00:00:00Z",
       });
+    });
+  });
+
+  describe("rateLimits", () => {
+    it("returns live provider rate-limit estimations", async () => {
+      const caller = makeCaller(vi.fn());
+      const result = await caller.rateLimits();
+      expect(result).toHaveLength(1);
+      expect(result[0]?.providerId).toBe("strava");
+      expect(result[0]?.inferredBudget).toBe(35);
     });
   });
 });

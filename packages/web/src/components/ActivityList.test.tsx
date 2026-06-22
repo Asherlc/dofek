@@ -124,6 +124,26 @@ describe("ActivityList", () => {
     );
   });
 
+  it("renders a compact type icon when an activity has no location summary", () => {
+    const activityWithoutLocation: Activity[] = [
+      {
+        id: "4",
+        started_at: "2026-03-18T09:00:00Z",
+        ended_at: "2026-03-18T09:45:00Z",
+        activity_type: "indoor_cycling",
+        name: "Trainer Ride",
+        provider_id: "strava",
+        source_providers: ["strava"],
+        distance_meters: null,
+        calories: 400,
+      },
+    ];
+
+    renderWithUnits(<ActivityList activities={activityWithoutLocation} />);
+    expect(screen.getByTestId("activity-type-icon")).toBeDefined();
+    expect(screen.getByLabelText("Indoor Cycling activity")).toBeDefined();
+  });
+
   it("uses the exported map preview canvas for compact route thumbnails", () => {
     renderWithUnits(<ActivityList activities={mockActivities} />);
 

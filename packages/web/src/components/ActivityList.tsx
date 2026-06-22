@@ -10,6 +10,7 @@ import { useState } from "react";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import type { ActivityMapPreview } from "./ActivityMapTile.tsx";
 import { ActivityTable, type ActivityTableColumn } from "./ActivityTable.tsx";
+import { ActivityTypeIcon } from "./ActivityTypeIcon.tsx";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 export interface Activity {
@@ -146,7 +147,9 @@ export function ActivityList({
       headerClassName: "pb-2 pr-4 whitespace-nowrap",
       cellClassName: "py-2 pr-4 whitespace-nowrap",
       renderCell: (activity) => {
-        if (!activity.location) return "—";
+        if (!activity.location) {
+          return <ActivityTypeIcon activityType={activity.activity_type} variant="compact" />;
+        }
         const { mapPreview } = activity.location;
 
         return (
