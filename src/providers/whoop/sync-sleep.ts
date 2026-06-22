@@ -112,6 +112,38 @@ export async function syncWhoopSleepSessions(context: WhoopSyncContext): Promise
   }
 }
 
+export async function syncWhoopSleepStagesForId(
+  context: WhoopSyncContext,
+  sleepId: string,
+): Promise<number> {
+  const { db, client, providerId } = context;
+  const record = await client.getSleep(sleepId);
+  if (!record.stages || record.stages.length === 0) return 0;
+
+  const stages = parseSleepStages(record);
+  if (stages.length === 0) return 0;
+
+  const sessionRows = await db
+    .select({ id: sleepSession.id })
+    .from(sleepSession)
+    .where(and(eq(sleepSession.providerId, providerId), eq(sleepSession.externalId, sleepId)))
+    .limit(1);
+
+  const sessionId = sessionRows[0]?.id;
+  if (!sessionId) return 0;
+
+  await db.delete(sleepStage).where(eq(sleepStage.sessionId, sessionId));
+  await db.insert(sleepStage).values(
+    stages.map((stage) => ({
+      sessionId,
+      stage: stage.stage,
+      startedAt: stage.startedAt,
+      endedAt: stage.endedAt,
+    })),
+  );
+  return 1;
+}
+
 export async function syncWhoopSleepStages(
   context: WhoopSyncContext,
 ): Promise<WhoopSleepStagesSyncResult> {
@@ -156,33 +188,7 @@ export async function syncWhoopSleepStages(
           if (syncedSleepIds.has(sleepId)) continue;
 
           try {
-            const record = await client.getSleep(sleepId);
-            if (!record.stages || record.stages.length === 0) continue;
-
-            const stages = parseSleepStages(record);
-            if (stages.length === 0) continue;
-
-            const sessionRows = await db
-              .select({ id: sleepSession.id })
-              .from(sleepSession)
-              .where(
-                and(eq(sleepSession.providerId, providerId), eq(sleepSession.externalId, sleepId)),
-              )
-              .limit(1);
-
-            const sessionId = sessionRows[0]?.id;
-            if (!sessionId) continue;
-
-            await db.delete(sleepStage).where(eq(sleepStage.sessionId, sessionId));
-            await db.insert(sleepStage).values(
-              stages.map((stage) => ({
-                sessionId,
-                stage: stage.stage,
-                startedAt: stage.startedAt,
-                endedAt: stage.endedAt,
-              })),
-            );
-            count++;
+            count += await syncWhoopSleepStagesForId(context, sleepId);
           } catch (err) {
             if (isWhoopRateLimitError(err)) {
               context.errors.push({

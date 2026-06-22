@@ -10,10 +10,33 @@ export const ADAPTIVE_THROTTLE_INCREASE_FACTOR = 2;
 export const ADAPTIVE_BUDGET_SAFETY_RATIO = 0.8;
 export const ADAPTIVE_DEFAULT_INFERRED_BUDGET = 40;
 
+/**
+ * Minimum rolling-window requests observed at a 429 before shrinking inferred budget.
+ * Step-chain sync jobs may hit a limit after only a few HTTP calls in a fresh window;
+ * skipping early learning avoids permanent over-throttling.
+ */
+export const ADAPTIVE_MIN_REQUESTS_FOR_BUDGET_LEARNING = 8;
+
 export const DEFAULT_PROVIDER_THROTTLE_MS: Readonly<Record<string, number>> = {
   strava: 10_000,
   garmin: 2_000,
   whoop: 1_000,
+};
+
+/** Providers that run one BullMQ job per sync step (not one job per full sync). */
+export const STEP_CHAIN_SYNC_PROVIDERS: ReadonlySet<string> = new Set(["whoop"]);
+
+/**
+ * Typical HTTP calls per step-chain sync job (auth refresh, bootstrap, one data call).
+ * Used to align BullMQ job pacing with HTTP-level adaptive budgets.
+ */
+export const DEFAULT_HTTP_REQUESTS_PER_SYNC_JOB: Readonly<Record<string, number>> = {
+  whoop: 3,
+};
+
+/** Seed inferred budgets for step-chain providers before the first 429 observation. */
+export const DEFAULT_PROVIDER_INFERRED_BUDGET: Readonly<Record<string, number>> = {
+  whoop: ADAPTIVE_DEFAULT_INFERRED_BUDGET,
 };
 
 export interface StravaRateLimitQuota {
@@ -43,6 +66,18 @@ export type { AdaptiveRateLimitStore } from "./rate-limit-types.ts";
 
 export function defaultThrottleMs(providerId: string): number {
   return DEFAULT_PROVIDER_THROTTLE_MS[providerId] ?? 1_000;
+}
+
+export function defaultInferredBudget(providerId: string): number | null {
+  return DEFAULT_PROVIDER_INFERRED_BUDGET[providerId] ?? null;
+}
+
+export function httpRequestsPerSyncJob(providerId: string): number {
+  return DEFAULT_HTTP_REQUESTS_PER_SYNC_JOB[providerId] ?? 1;
+}
+
+export function isStepChainSyncProvider(providerId: string): boolean {
+  return STEP_CHAIN_SYNC_PROVIDERS.has(providerId);
 }
 
 export function parseStravaRateLimitHeaders(headers: Headers): StravaRateLimitQuota | null {
@@ -96,8 +131,12 @@ export function increaseThrottleMs(throttleMs: number): number {
 export function learnInferredBudget(
   current: number | null,
   requestsAtLimit: number,
+  providerId?: string,
 ): number | null {
   if (requestsAtLimit <= 0) return current;
+  if (requestsAtLimit < ADAPTIVE_MIN_REQUESTS_FOR_BUDGET_LEARNING) {
+    return current ?? (providerId ? defaultInferredBudget(providerId) : null);
+  }
   const candidate = Math.max(1, requestsAtLimit - 1);
   if (current == null) return candidate;
   return Math.min(current, candidate);
@@ -115,7 +154,13 @@ export function admissionDelayMs(state: ProviderAdaptiveRateState, nowMs: number
 
   if (state.inferredBudget != null) {
     const softCap = Math.floor(state.inferredBudget * ADAPTIVE_BUDGET_SAFETY_RATIO);
-    if (state.requestCount >= softCap) {
+    const effectiveRequestCount = isStepChainSyncProvider(state.providerId)
+      ? Math.ceil(state.requestCount / httpRequestsPerSyncJob(state.providerId))
+      : state.requestCount;
+    const effectiveSoftCap = isStepChainSyncProvider(state.providerId)
+      ? Math.max(1, Math.floor(softCap / httpRequestsPerSyncJob(state.providerId)))
+      : softCap;
+    if (effectiveRequestCount >= effectiveSoftCap) {
       delayMs = Math.max(delayMs, state.throttleMs);
     }
   }
@@ -154,7 +199,7 @@ export function createInitialAdaptiveState(
     requestCount: 0,
     throttleMs: defaultThrottleMs(providerId),
     lastRequestMs: null,
-    inferredBudget: null,
+    inferredBudget: defaultInferredBudget(providerId),
     observedCooldownSeconds: null,
     stravaShortLimit: null,
     stravaShortUsage: null,
@@ -201,7 +246,11 @@ export function recordAdaptiveRateLimit(
   return {
     ...state,
     throttleMs: increaseThrottleMs(state.throttleMs),
-    inferredBudget: learnInferredBudget(state.inferredBudget, state.requestCount),
+    inferredBudget: learnInferredBudget(
+      state.inferredBudget,
+      state.requestCount,
+      state.providerId,
+    ),
     observedCooldownSeconds: observedCooldown,
   };
 }

@@ -1,28 +1,17 @@
 import { WhoopClient } from "whoop-whoop/client";
-import type { WhoopCycle } from "whoop-whoop/types";
 import { z } from "zod";
 import type { OAuthConfig } from "../../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../../auth/oauth.ts";
-import { ensureProvider, loadTokens, saveTokens } from "../../db/tokens.ts";
+import { ensureProvider } from "../../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
-import { logger } from "../../logger.ts";
-import { ProviderStoredIdentityMissingError } from "../auth-errors.ts";
 import type { SyncRun } from "../sync-run.ts";
 import type {
   ProviderAuthSetup,
   ProviderIdentity,
-  SyncError,
   SyncProvider,
   SyncResult,
 } from "../types.ts";
-import { findWhoopRateLimitError, isWhoopRateLimitError } from "./rate-limit.ts";
-import { syncWhoopDailyActivity } from "./sync-daily-activity.ts";
-import { syncWhoopJournal } from "./sync-journal.ts";
-import { syncWhoopRecovery } from "./sync-recovery.ts";
-import { syncWhoopSleepSessions, syncWhoopSleepStages } from "./sync-sleep.ts";
-import { syncWhoopHeartRateStream } from "./sync-streams.ts";
-import type { WhoopSyncContext } from "./sync-types.ts";
-import { syncWhoopStrength, syncWhoopWorkouts } from "./sync-workouts.ts";
+import { runWhoopOrchestratedSync } from "./sync-orchestrator.ts";
 
 // ============================================================
 // Provider implementation
@@ -93,140 +82,8 @@ export class WhoopProvider implements SyncProvider {
   }
 
   async sync(run: SyncRun): Promise<SyncResult> {
-    const { db, window, options } = run;
     const start = Date.now();
-    const errors: SyncError[] = [];
-    let recordsSynced = 0;
-
-    await ensureProvider(db, this.id, this.name);
-
-    let client: WhoopClient;
-    try {
-      // Try loading stored tokens from DB
-      const stored = await loadTokens(db, this.id);
-      if (!stored?.refreshToken) {
-        throw new Error("WHOOP not connected — authenticate via the web UI");
-      }
-
-      // Extract stored userId from scopes (saved as "userId:12345" during auth)
-      const storedUserIdMatch = stored.scopes?.match(/userId:(\d+)/);
-      const storedUserId = storedUserIdMatch ? Number(storedUserIdMatch[1]) : null;
-
-      // Refresh the access token using the stored refresh token
-      const token = await WhoopClient.refreshAccessToken(stored.refreshToken, this.#fetchFn);
-
-      // Use the stored userId if available, otherwise use the one from bootstrap
-      const userId = storedUserId ?? token.userId;
-      if (!userId) {
-        throw new ProviderStoredIdentityMissingError("WHOOP", "user ID");
-      }
-
-      // Save the refreshed tokens back to DB, preserving the userId in scopes
-      const scopes = `userId:${userId}`;
-      await saveTokens(db, this.id, {
-        accessToken: token.accessToken,
-        refreshToken: token.refreshToken,
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // assume ~24h expiry
-        scopes,
-      });
-
-      client = new WhoopClient(
-        { accessToken: token.accessToken, refreshToken: token.refreshToken, userId },
-        this.#fetchFn,
-        (event) => {
-          const logMethod = event.status === 429 ? "warn" : "info";
-          logger[logMethod]("[whoop] API request", {
-            whoopUserId: event.userId,
-            endpoint: event.endpoint,
-            status: event.status,
-            attempt: event.attempt,
-            retryAfterSeconds: event.retryAfterSeconds,
-            timestamp: event.timestamp.toISOString(),
-          });
-        },
-      );
-    } catch (err) {
-      errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
-      return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
-    }
-
-    // --- Fetch all cycles (recovery + sleep + workouts embedded) ---
-    // WHOOP API limits cycle queries to 200-day windows
-    const MAX_CYCLE_WINDOW_MS = 200 * 24 * 60 * 60 * 1000;
-    const cycles: WhoopCycle[] = [];
-    const since = window.since;
-    const syncWindowEnd = window.until;
-    const windowEndMs = syncWindowEnd.getTime();
-    try {
-      let windowStart = since.getTime();
-      while (windowStart < windowEndMs) {
-        const windowEnd = Math.min(windowStart + MAX_CYCLE_WINDOW_MS, windowEndMs);
-        const startStr = new Date(windowStart).toISOString();
-        const endStr = new Date(windowEnd).toISOString();
-        logger.info(`[whoop] Fetching cycles ${startStr} → ${endStr}`);
-        const chunk = await client.getCycles(startStr, endStr);
-        cycles.push(...chunk);
-        windowStart = windowEnd;
-      }
-      logger.info(`[whoop] Fetched ${cycles.length} total cycles`);
-    } catch (err) {
-      if (isWhoopRateLimitError(err)) {
-        throw err;
-      }
-      errors.push({
-        message: `getCycles: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
-      });
-      return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
-    }
-
-    const context: WhoopSyncContext = {
-      db,
-      client,
-      cycles,
-      providerId: this.id,
-      since,
-      windowEnd: syncWindowEnd,
-      options,
-      errors,
-    };
-
-    recordsSynced += await syncWhoopRecovery(context);
-
-    const dailyActivityResult = await syncWhoopDailyActivity(context);
-    recordsSynced += dailyActivityResult.count;
-    let rateLimited = dailyActivityResult.rateLimited;
-
-    recordsSynced += await syncWhoopSleepSessions(context);
-    const sleepStagesResult = await syncWhoopSleepStages(context);
-    recordsSynced += sleepStagesResult.count;
-    rateLimited ||= sleepStagesResult.rateLimited;
-    recordsSynced += await syncWhoopWorkouts(context);
-
-    const strengthResult = await syncWhoopStrength(context);
-    recordsSynced += strengthResult.count;
-    rateLimited ||= strengthResult.rateLimited;
-
-    if (!rateLimited) {
-      const heartRateResult = await syncWhoopHeartRateStream(context);
-      recordsSynced += heartRateResult.count;
-      rateLimited ||= heartRateResult.rateLimited;
-    }
-
-    if (!rateLimited) {
-      recordsSynced += await syncWhoopJournal(context);
-    }
-
-    const rateLimitError = findWhoopRateLimitError(errors);
-    if (rateLimitError) {
-      throw rateLimitError;
-    }
-
-    return {
-      provider: this.id,
-      recordsSynced,
-      errors,
-      duration: Date.now() - start,
-    };
+    await ensureProvider(run.db, this.id, this.name);
+    return runWhoopOrchestratedSync(run, this.#fetchFn, start);
   }
 }

@@ -4,6 +4,7 @@ import { withSyncLog } from "../../db/sync-log.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { parseStrainDeepDiveSteps } from "./parsing.ts";
 import { isWhoopRateLimitError } from "./rate-limit.ts";
+import { iterateUtcDates } from "./sync-step-plan.ts";
 import type { WhoopSyncContext } from "./sync-types.ts";
 
 export type WhoopDailyActivityResult = {
@@ -11,17 +12,28 @@ export type WhoopDailyActivityResult = {
   rateLimited: boolean;
 };
 
-function* iterateUtcDates(start: Date, endMs: number): Generator<string> {
-  const cursor = new Date(
-    Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()),
-  );
-  const end = new Date(endMs);
-  const endDay = Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate());
+export async function syncWhoopStrainDeepDiveForDate(
+  context: WhoopSyncContext,
+  date: string,
+): Promise<number> {
+  const { db, client, providerId, options } = context;
+  const raw = await client.getStrainDeepDive(date);
+  const steps = parseStrainDeepDiveSteps(raw);
+  if (steps == null) return 0;
 
-  while (cursor.getTime() <= endDay) {
-    yield cursor.toISOString().slice(0, 10);
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
+  await db
+    .insert(dailyMetrics)
+    .values({ date, providerId, steps })
+    .onConflictDoUpdate({
+      target: [
+        dailyMetrics.userId,
+        dailyMetrics.date,
+        dailyMetrics.providerId,
+        dailyMetrics.sourceName,
+      ],
+      set: { steps },
+    });
+  return 1;
 }
 
 export async function syncWhoopDailyActivity(

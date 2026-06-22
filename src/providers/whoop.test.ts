@@ -20,7 +20,6 @@ import {
   parseWorkout,
 } from "./whoop/parsing.ts";
 import { WhoopProvider } from "./whoop/provider.ts";
-import * as syncDailyActivityModule from "./whoop/sync-daily-activity.ts";
 
 const { publishedMetricStreamBatches } = vi.hoisted<{
   publishedMetricStreamBatches: Record<string, unknown>[][];
@@ -95,21 +94,26 @@ function makeChainableMock(resolvedValue: unknown = []) {
   const deleteFn = vi.fn();
   const executeFn = vi.fn().mockResolvedValue([]);
 
-  // Self-referencing chain: each method returns the mock object
+  const limitFn = vi.fn().mockResolvedValue(resolvedValue);
+  const whereResult = Object.assign(Promise.resolve(resolvedValue), {
+    limit: limitFn,
+  });
+
   const chain = {
     values: vi.fn(),
     onConflictDoUpdate: vi.fn(),
     onConflictDoNothing: vi.fn().mockResolvedValue(resolvedValue),
     returning: vi.fn().mockResolvedValue(resolvedValue),
     from: vi.fn(),
-    where: vi.fn(),
-    limit: vi.fn().mockResolvedValue(resolvedValue),
+    innerJoin: vi.fn(),
+    where: vi.fn().mockReturnValue(whereResult),
+    limit: limitFn,
   };
 
-  // Make each chain method return the chain for fluent chaining
-  for (const fn of Object.values(chain)) {
-    fn.mockReturnValue(chain);
-  }
+  chain.values.mockReturnValue(chain);
+  chain.onConflictDoUpdate.mockReturnValue(chain);
+  chain.from.mockReturnValue(chain);
+  chain.innerJoin.mockReturnValue(chain);
   selectFn.mockReturnValue(chain);
   insertFn.mockReturnValue(chain);
   deleteFn.mockReturnValue(chain);
@@ -205,6 +209,11 @@ function makeSyncMockFetch(options: {
         return Promise.resolve(new Response("Journal error", { status: 500 }));
       }
       return Promise.resolve(Response.json(options.journalData ?? []));
+    }
+
+    // Developer workout list (activity absence reconciliation)
+    if (url.includes("developer/v2/activity/workout")) {
+      return Promise.resolve(Response.json({ records: [], next_token: null }));
     }
 
     return Promise.resolve(new Response("Not found", { status: 404 }));
@@ -767,7 +776,7 @@ describe("WhoopProvider.sync() — token resolution", () => {
 
   it("returns error when refreshToken is missing", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "tok",
       refreshToken: "",
       expiresAt: futureExpiry,
@@ -790,7 +799,7 @@ describe("WhoopProvider.sync() — token resolution", () => {
 
   it("returns error when user ID not found after refresh", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "tok",
       refreshToken: "ref",
       expiresAt: futureExpiry,
@@ -830,7 +839,7 @@ describe("WhoopProvider.sync() — token resolution", () => {
 
   it("uses stored userId from scopes when available", async () => {
     const { loadTokens, saveTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "tok",
       refreshToken: "ref",
       expiresAt: futureExpiry,
@@ -859,7 +868,7 @@ describe("WhoopProvider.sync() — token resolution", () => {
 describe("WhoopProvider.sync() — cycles error", () => {
   it("returns error when getCycles fails", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "tok",
       refreshToken: "ref",
       expiresAt: futureExpiry,
@@ -883,7 +892,7 @@ describe("WhoopProvider.sync() — cycles error", () => {
 
   it("rethrows rate limit errors from getCycles", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "tok",
       refreshToken: "ref",
       expiresAt: futureExpiry,
@@ -910,30 +919,14 @@ describe("WhoopProvider.sync() — cycles error", () => {
 
   it("rethrows collected rate limit errors from sub-syncs", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "tok",
       refreshToken: "ref",
       expiresAt: futureExpiry,
       scopes: "userId:42",
     });
 
-    const rateLimitError = new ProviderRateLimitError({
-      message: "WHOOP API rate limit exceeded (429):",
-      providerId: "whoop",
-      statusCode: 429,
-      responseBody: "",
-    });
-    vi.spyOn(syncDailyActivityModule, "syncWhoopDailyActivity").mockImplementationOnce(
-      async (context) => {
-        context.errors.push({
-          message: `daily_activity: ${rateLimitError.message}`,
-          cause: rateLimitError,
-        });
-        return { count: 0, rateLimited: true };
-      },
-    );
-
-    const mockFetch = makeSyncMockFetch({ cycles: [] });
+    const mockFetch = makeSyncMockFetch({ cycles: [], strainRateLimit: true });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
 
@@ -945,14 +938,14 @@ describe("WhoopProvider.sync() — cycles error", () => {
           userId: "00000000-0000-0000-0000-000000000001",
         }),
       ),
-    ).rejects.toBe(rateLimitError);
+    ).rejects.toMatchObject({ providerId: "whoop", statusCode: 429 });
   });
 });
 
 describe("WhoopProvider.sync() — recovery sync", () => {
   it("syncs recovery data from scored cycles", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "tok",
       refreshToken: "ref",
       expiresAt: futureExpiry,
@@ -1007,7 +1000,7 @@ describe("WhoopProvider.sync() — recovery sync", () => {
 
   it("uses created_at date fallback when days array is empty", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "tok",
       refreshToken: "ref",
       expiresAt: futureExpiry,
@@ -1057,7 +1050,7 @@ describe("WhoopProvider.sync() — recovery sync", () => {
 
   it("skips unscored recovery cycles", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "tok",
       refreshToken: "ref",
       expiresAt: futureExpiry,
@@ -1100,7 +1093,7 @@ describe("WhoopProvider.sync() — recovery sync", () => {
 
   it("logs info (not warn) for unscored recovery with undefined state", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "tok",
       refreshToken: "ref",
       expiresAt: futureExpiry,
@@ -1151,7 +1144,7 @@ describe("WhoopProvider.sync() — recovery sync", () => {
 
   it("warns when SCORED recovery has no parseable biometric data", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "tok",
       refreshToken: "ref",
       expiresAt: futureExpiry,
@@ -1199,7 +1192,7 @@ describe("WhoopProvider.sync() — recovery sync", () => {
 describe("WhoopProvider.sync() — workout collection from cycles", () => {
   it("collects workouts from strain.workouts fallback", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "tok",
       refreshToken: "ref",
       expiresAt: futureExpiry,
@@ -1762,7 +1755,7 @@ describe("WhoopProvider.sync() — sleep sync", () => {
 
   it("syncs inline sleep from cycle.sleeps array", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -1818,7 +1811,7 @@ describe("WhoopProvider.sync() — sleep sync", () => {
 
   it("refreshes v_sleep after syncing complete inline sleep records", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -1855,7 +1848,7 @@ describe("WhoopProvider.sync() — sleep sync", () => {
 
   it("skips incomplete (non-complete state) sleep records", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -1895,7 +1888,7 @@ describe("WhoopProvider.sync() — sleep sync", () => {
 
   it("skips cycles without sleeps array", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -1936,7 +1929,7 @@ describe("WhoopProvider.sync() — sleep sync", () => {
 
   it("skips inline sleep records that fail schema validation", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -1975,7 +1968,7 @@ describe("WhoopProvider.sync() — sleep sync", () => {
 
   it("skips inline sleep with invalid timestamps and logs a warning", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -2038,7 +2031,7 @@ describe("WhoopProvider.sync() — sleep sync", () => {
 describe("WhoopProvider.sync() — HR stream sync", () => {
   it("syncs heart rate data in batches", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -2091,7 +2084,7 @@ describe("WhoopProvider.sync() — HR stream sync", () => {
 
   it("batches HR data into chunks of 500", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -2137,7 +2130,7 @@ describe("WhoopProvider.sync() — HR stream sync", () => {
 
   it("handles empty HR data", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -2170,7 +2163,7 @@ describe("WhoopProvider.sync() — HR stream sync", () => {
 describe("WhoopProvider.sync() — journal sync", () => {
   it("syncs journal entries", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -2276,7 +2269,7 @@ describe("WhoopProvider.sync() — journal sync", () => {
 
   it("formats multi-word snake_case question names to Title Case", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -2325,7 +2318,7 @@ describe("WhoopProvider.sync() — journal sync", () => {
 
   it("uses provided userId from sync options", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -2372,7 +2365,7 @@ describe("WhoopProvider.sync() — journal sync", () => {
 
   it("records error when journal fetch fails", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -2402,7 +2395,7 @@ describe("WhoopProvider.sync() — journal sync", () => {
 describe("WhoopProvider.sync() — strength sync", () => {
   it("syncs weightlifting exercises and sets from workouts", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -2573,7 +2566,7 @@ describe("WhoopProvider.sync() — strength sync", () => {
 
   it("uses workout name from weightlifting data when available", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -2693,7 +2686,7 @@ describe("WhoopProvider.sync() — strength sync", () => {
 
   it("skips exercise/set processing when returning yields no activityId", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -2801,7 +2794,7 @@ describe("WhoopProvider.sync() — strength sync", () => {
 
   it("skips workouts with no weightlifting data (404)", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -2856,7 +2849,7 @@ describe("WhoopProvider.sync() — strength sync", () => {
 
   it("reuses cached exercise id for duplicate provider exercise ids", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),
@@ -2987,7 +2980,7 @@ describe("WhoopProvider.sync() — strength sync", () => {
 
   it("records unresolved exercise when lookup returns no row and avoids set insert", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValueOnce({
+    vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "test",
       refreshToken: "test-refresh",
       expiresAt: new Date("2027-01-01"),

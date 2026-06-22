@@ -27,6 +27,8 @@ export interface SyncOptions {
   checkpoint?: SyncCheckpointStore;
   /** Optional publisher override for metric-stream writers. */
   metricStreamPublisher?: MetricStreamEventPublisher;
+  /** Enqueue the next step of a multi-job provider sync (e.g. WHOOP). */
+  enqueueSyncContinuation?: (checkpoint: unknown) => Promise<void>;
 }
 
 export type SyncRunParams = {

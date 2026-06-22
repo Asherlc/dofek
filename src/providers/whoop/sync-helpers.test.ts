@@ -710,3 +710,27 @@ describe("WHOOP sync helpers", () => {
     expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
   });
 });
+
+describe("applyRateLimitToCheckpoint", () => {
+  it("drops remaining HR and journal steps after a rate limit", async () => {
+    const { applyRateLimitToCheckpoint } = await import("./sync-checkpoint.ts");
+    const checkpoint = applyRateLimitToCheckpoint({
+      runId: "run-1",
+      recordsSynced: 5,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: [],
+      apiSteps: [
+        { type: "strain_deep_dive", date: "2026-03-01" },
+        { type: "heart_rate", start: "2026-03-01T00:00:00.000Z", end: "2026-03-08T00:00:00.000Z" },
+        { type: "journal" },
+      ],
+      apiStepIndex: 0,
+      presentExternalIds: [],
+      skipRemainingAfterRateLimit: false,
+    });
+
+    expect(checkpoint.skipRemainingAfterRateLimit).toBe(true);
+    expect(checkpoint.apiSteps).toEqual([{ type: "strain_deep_dive", date: "2026-03-01" }]);
+  });
+});
