@@ -115,6 +115,11 @@ absent_source_links AS (
   JOIN tombstoned t ON t.id = fg.activity_id
   GROUP BY fg.group_id
 ),
+tombstoned_groups AS (
+  SELECT DISTINCT fg.group_id
+  FROM final_groups fg
+  JOIN tombstoned t ON t.id = fg.activity_id
+),
 merged AS (
   SELECT
     b.canonical_id,
@@ -160,6 +165,9 @@ merged AS (
     absent_source_links.absent_source_external_ids
   FROM best_per_group b
   LEFT JOIN absent_source_links ON absent_source_links.group_id = b.group_id
+  WHERE NOT EXISTS (
+    SELECT 1 FROM tombstoned_groups tg WHERE tg.group_id = b.group_id
+  )
 )
 SELECT
   m.canonical_id AS id,

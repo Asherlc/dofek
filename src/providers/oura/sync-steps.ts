@@ -1,7 +1,8 @@
 import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../../db/index.ts";
 import { writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";
-import { activity, dailyMetrics, healthEvent, sleepSession } from "../../db/schema.ts";
+import { upsertProviderActivity } from "../../db/provider-activity-sync.ts";
+import { dailyMetrics, healthEvent, sleepSession } from "../../db/schema.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import type { SyncError, SyncOptions } from "../types.ts";
@@ -121,9 +122,9 @@ export async function syncWorkouts(context: SyncStepContext): Promise<number> {
         for (const workout of allWorkouts) {
           context.activityPresentExternalIds?.add(workout.id);
           try {
-            await db
-              .insert(activity)
-              .values({
+            await upsertProviderActivity(
+              db,
+              {
                 providerId,
                 externalId: workout.id,
                 activityType: mapOuraActivityType(workout.activity),
@@ -131,18 +132,15 @@ export async function syncWorkouts(context: SyncStepContext): Promise<number> {
                 endedAt: new Date(workout.end_datetime),
                 name: workout.label,
                 raw: workout,
-              })
-              .onConflictDoUpdate({
-                target: [activity.userId, activity.providerId, activity.externalId],
-                set: {
-                  activityType: mapOuraActivityType(workout.activity),
-                  startedAt: new Date(workout.start_datetime),
-                  endedAt: new Date(workout.end_datetime),
-                  name: workout.label,
-                  raw: workout,
-                  providerAbsentAt: null,
-                },
-              });
+              },
+              {
+                activityType: mapOuraActivityType(workout.activity),
+                startedAt: new Date(workout.start_datetime),
+                endedAt: new Date(workout.end_datetime),
+                name: workout.label,
+                raw: workout,
+              },
+            );
             count++;
           } catch (err) {
             errors.push({
@@ -184,9 +182,9 @@ export async function syncSessions(context: SyncStepContext): Promise<number> {
           context.activityPresentExternalIds?.add(session.id);
           try {
             const sessionActivityType = mapOuraSessionType(session.type);
-            await db
-              .insert(activity)
-              .values({
+            await upsertProviderActivity(
+              db,
+              {
                 providerId,
                 externalId: session.id,
                 activityType: sessionActivityType,
@@ -194,18 +192,15 @@ export async function syncSessions(context: SyncStepContext): Promise<number> {
                 endedAt: new Date(session.end_datetime),
                 name: session.type,
                 raw: session,
-              })
-              .onConflictDoUpdate({
-                target: [activity.userId, activity.providerId, activity.externalId],
-                set: {
-                  activityType: sessionActivityType,
-                  startedAt: new Date(session.start_datetime),
-                  endedAt: new Date(session.end_datetime),
-                  name: session.type,
-                  raw: session,
-                  providerAbsentAt: null,
-                },
-              });
+              },
+              {
+                activityType: sessionActivityType,
+                startedAt: new Date(session.start_datetime),
+                endedAt: new Date(session.end_datetime),
+                name: session.type,
+                raw: session,
+              },
+            );
             count++;
           } catch (err) {
             errors.push({

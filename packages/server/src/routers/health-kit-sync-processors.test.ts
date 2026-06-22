@@ -1,7 +1,35 @@
 import { describe, expect, it, vi } from "vitest";
 import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/redpanda-producer.ts";
-import { processBodyMeasurements, processMetricStream } from "./health-kit-sync-processors.ts";
+import {
+  appleHealthWorkoutExternalId,
+  processBodyMeasurements,
+  processMetricStream,
+  processWorkouts,
+} from "./health-kit-sync-processors.ts";
 import type { HealthKitSample } from "./health-kit-sync-schemas.ts";
+
+type ProviderActivityListSyncScope = {
+  windowStart: Date;
+  windowEnd: Date;
+};
+
+const providerActivitySyncMocks = vi.hoisted(() => ({
+  reconcile: vi.fn().mockResolvedValue(undefined),
+  upsert: vi.fn().mockResolvedValue({ id: "activity-id" }),
+  scope: undefined satisfies ProviderActivityListSyncScope | undefined,
+}));
+
+vi.mock("../../../../src/db/provider-activity-sync.ts", () => ({
+  ProviderActivityListSync: class {
+    constructor(scope: { windowStart: Date; windowEnd: Date }) {
+      providerActivitySyncMocks.scope = scope;
+    }
+    upsert = providerActivitySyncMocks.upsert;
+    reconcile = providerActivitySyncMocks.reconcile;
+  },
+  finishProviderActivityListSync: vi.fn(),
+  upsertProviderActivity: vi.fn(),
+}));
 
 const heartRateSample = {
   type: "HKQuantityTypeIdentifierHeartRate",
@@ -80,5 +108,50 @@ describe("processBodyMeasurements", () => {
         scalar: 82.5,
       },
     ]);
+  });
+});
+
+describe("processWorkouts", () => {
+  it("reconciles apple_health workouts missing from the HealthKit sync window", async () => {
+    providerActivitySyncMocks.reconcile.mockClear();
+    providerActivitySyncMocks.upsert.mockClear();
+    providerActivitySyncMocks.scope = undefined;
+    const execute = vi.fn(async () => []);
+
+    await processWorkouts(
+      { execute },
+      "00000000-0000-0000-0000-000000000001",
+      [
+        {
+          uuid: "workout-1",
+          workoutType: "13",
+          startDate: "2026-06-20T21:49:00.000Z",
+          endDate: "2026-06-20T22:17:59.000Z",
+          duration: 1738,
+          totalEnergyBurned: 130,
+          totalDistance: null,
+          sourceName: "WHOOP",
+          sourceBundle: "com.whoop.app",
+        },
+      ],
+      {
+        windowStart: "2026-06-13T00:00:00.000Z",
+        windowEnd: "2026-06-21T00:00:00.000Z",
+      },
+    );
+
+    expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        externalId: appleHealthWorkoutExternalId("workout-1"),
+      }),
+      expect.any(Object),
+    );
+    expect(providerActivitySyncMocks.reconcile).toHaveBeenCalledTimes(1);
+    expect(providerActivitySyncMocks.scope?.windowStart.toISOString()).toBe(
+      "2026-06-13T00:00:00.000Z",
+    );
+    expect(providerActivitySyncMocks.scope?.windowEnd.toISOString()).toBe(
+      "2026-06-21T00:00:00.000Z",
+    );
   });
 });

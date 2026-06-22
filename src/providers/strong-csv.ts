@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
-import { activity, exercise, exerciseAlias, strengthSet } from "../db/schema.ts";
+import { upsertProviderActivity } from "../db/provider-activity-sync.ts";
+import { exercise, exerciseAlias, strengthSet } from "../db/schema.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { lookupExerciseMuscleGroups } from "../exercise-metadata.ts";
 import type { ImportProvider, SyncError, SyncResult } from "./types.ts";
@@ -377,10 +378,9 @@ export async function importStrongCsv(
       const endedAt =
         durationSeconds > 0 ? new Date(startedAt.getTime() + durationSeconds * 1000) : null;
 
-      // Upsert activity (so it shows up in the main list)
-      const [activityRow] = await db
-        .insert(activity)
-        .values({
+      const activityRow = await upsertProviderActivity(
+        db,
+        {
           providerId: STRONG_PROVIDER_ID,
           userId,
           externalId,
@@ -389,19 +389,15 @@ export async function importStrongCsv(
           endedAt,
           name: group.workoutName,
           notes: group.workoutNotes,
-        })
-        .onConflictDoUpdate({
-          target: [activity.userId, activity.providerId, activity.externalId],
-          set: {
-            activityType: "strength",
-            startedAt,
-            endedAt,
-            name: group.workoutName,
-            notes: group.workoutNotes,
-            providerAbsentAt: null,
-          },
-        })
-        .returning({ id: activity.id });
+        },
+        {
+          activityType: "strength",
+          startedAt,
+          endedAt,
+          name: group.workoutName,
+          notes: group.workoutNotes,
+        },
+      );
 
       const activityId = activityRow?.id;
       if (!activityId) continue;

@@ -11,8 +11,10 @@ import {
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { replaceMetricStreamBatch } from "../db/metric-stream-writer.ts";
-import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
-import { activity } from "../db/schema.ts";
+import {
+  finishProviderActivityListSync,
+  upsertProviderActivity,
+} from "../db/provider-activity-sync.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
@@ -622,9 +624,9 @@ export class PelotonProvider implements SyncProvider {
             // Upsert the activity first so we have an ID for metric stream events
             let activityId: string | null = null;
             try {
-              const [row] = await db
-                .insert(activity)
-                .values({
+              const row = await upsertProviderActivity(
+                db,
+                {
                   providerId: this.id,
                   externalId: parsed.externalId,
                   activityType: parsed.activityType,
@@ -634,21 +636,17 @@ export class PelotonProvider implements SyncProvider {
                   timezone: parsed.timezone,
                   stravaId: parsed.stravaId,
                   raw: parsed.raw,
-                })
-                .onConflictDoUpdate({
-                  target: [activity.userId, activity.providerId, activity.externalId],
-                  set: {
-                    activityType: parsed.activityType,
-                    startedAt: parsed.startedAt,
-                    endedAt: parsed.endedAt,
-                    name: parsed.name,
-                    timezone: parsed.timezone,
-                    stravaId: parsed.stravaId,
-                    raw: parsed.raw,
-                    providerAbsentAt: null,
-                  },
-                })
-                .returning({ id: activity.id });
+                },
+                {
+                  activityType: parsed.activityType,
+                  startedAt: parsed.startedAt,
+                  endedAt: parsed.endedAt,
+                  name: parsed.name,
+                  timezone: parsed.timezone,
+                  stravaId: parsed.stravaId,
+                  raw: parsed.raw,
+                },
+              );
 
               activityId = row?.id ?? null;
               workoutCount++;
@@ -729,7 +727,7 @@ export class PelotonProvider implements SyncProvider {
         }
 
         logger.info(`[peloton] ${workoutCount} workouts, ${streamCount} metric stream rows`);
-        await reconcileProviderActivityAbsence(db, {
+        await finishProviderActivityListSync(db, {
           providerId: this.id,
           userId,
           windowStart: since,

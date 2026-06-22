@@ -11,6 +11,11 @@ import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
 import { makeMockSensorStore } from "./test-helpers.ts";
 
+const WORKOUT_SYNC_WINDOW = {
+  windowStart: "2025-06-01T00:00:00.000Z",
+  windowEnd: "2025-07-01T00:00:00.000Z",
+};
+
 describe("HealthKit sync router", () => {
   let server: ReturnType<import("express").Express["listen"]>;
   let baseUrl: string;
@@ -414,6 +419,7 @@ describe("HealthKit sync router", () => {
   describe("pushWorkouts", () => {
     it("creates activity records from workout samples", async () => {
       const result = await mutate("healthKitSync.pushWorkouts", {
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "workout-uuid-1",
@@ -442,6 +448,7 @@ describe("HealthKit sync router", () => {
 
     it("maps unknown workout types to 'other'", async () => {
       const result = await mutate("healthKitSync.pushWorkouts", {
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "workout-uuid-unknown",
@@ -466,6 +473,47 @@ describe("HealthKit sync router", () => {
       );
       expect(rows.length).toBe(1);
       expect(rows[0]?.activity_type).toBe("other");
+    });
+
+    it("tombstones apple_health workouts missing from a later HealthKit sync window", async () => {
+      await mutate("healthKitSync.pushWorkouts", {
+        ...WORKOUT_SYNC_WINDOW,
+        workouts: [
+          {
+            uuid: "removed-workout-uuid",
+            workoutType: "31",
+            startDate: "2025-06-20T21:49:00Z",
+            endDate: "2025-06-20T22:17:59Z",
+            duration: 1738,
+            totalEnergyBurned: 130,
+            totalDistance: null,
+            sourceName: "WHOOP",
+            sourceBundle: "com.whoop.app",
+          },
+        ],
+      });
+
+      await mutate("healthKitSync.pushWorkouts", {
+        ...WORKOUT_SYNC_WINDOW,
+        workouts: [],
+      });
+
+      const rows = await testCtx.db.execute(
+        sql`SELECT provider_absent_at
+            FROM fitness.activity
+            WHERE provider_id = 'apple_health'
+              AND external_id = 'hk:workout:removed-workout-uuid'`,
+      );
+      expect(rows[0]?.provider_absent_at).not.toBeNull();
+
+      const visibleRows = await testCtx.db.execute(
+        sql`SELECT v.id
+            FROM fitness.v_activity v
+            INNER JOIN fitness.activity a
+              ON a.id = ANY(v.member_activity_ids)
+            WHERE a.external_id = 'hk:workout:removed-workout-uuid'`,
+      );
+      expect(visibleRows).toHaveLength(0);
     });
   });
 
@@ -581,6 +629,7 @@ describe("HealthKit sync router", () => {
   describe("pushWorkoutRoutes", () => {
     it("preserves the route source name on location metric rows", async () => {
       await mutate("healthKitSync.pushWorkouts", {
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "route-source-workout-1",
@@ -668,8 +717,8 @@ describe("HealthKit sync router", () => {
         },
       ];
 
-      await mutate("healthKitSync.pushWorkouts", { workouts });
-      await mutate("healthKitSync.pushWorkouts", { workouts });
+      await mutate("healthKitSync.pushWorkouts", { ...WORKOUT_SYNC_WINDOW, workouts });
+      await mutate("healthKitSync.pushWorkouts", { ...WORKOUT_SYNC_WINDOW, workouts });
 
       const rows = await testCtx.db.execute(
         sql`SELECT * FROM fitness.activity

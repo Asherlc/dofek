@@ -14,6 +14,33 @@ vi.mock("../db/token-user-context.ts", () => ({
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
 
+const providerActivityAbsenceMocks = vi.hoisted(() => ({
+  upsertProviderActivity: vi.fn().mockResolvedValue({ id: "activity-id" }),
+}));
+
+vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../db/provider-activity-sync.ts")>();
+  return {
+    ...original,
+    upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
+  };
+});
+
+function createWebhookDb() {
+  const chain = {
+    values: vi.fn().mockReturnValue({
+      onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
+      onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+    }),
+  };
+  return {
+    select: vi.fn(),
+    insert: vi.fn().mockReturnValue(chain),
+    delete: vi.fn(),
+    execute: vi.fn(),
+  };
+}
+
 describe("mapSuuntoActivityType", () => {
   it("maps all known activity types", () => {
     expect(mapSuuntoActivityType(2)).toBe("running");
@@ -264,37 +291,32 @@ describe("SuuntoProvider.syncWebhookEvent", () => {
     expect(result.provider).toBe("suunto");
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        externalId: "suunto-w-123",
+        activityType: "cycling",
+        name: "Morning Ride",
+      }),
+      expect.objectContaining({
+        activityType: "cycling",
+        name: "Morning Ride",
+        startedAt: new Date("2024-03-01T11:00:00.000Z"),
+        endedAt: new Date("2024-03-01T12:00:00.000Z"),
+        raw: expect.objectContaining({
+          totalDistance: 30000,
+          totalTime: 3600,
+        }),
+      }),
+    );
     // insert called for: ensureProvider + withSyncLog(logSync) + activity upsert
     expect(mockInsert).toHaveBeenCalled();
   });
 
   it("collects DB insert errors without crashing", async () => {
     const dbError = new Error("DB connection lost");
-    let insertCallCount = 0;
-    const mockInsert = vi.fn().mockReturnValue({
-      values: vi.fn().mockImplementation(() => {
-        insertCallCount++;
-        // First insert call is ensureProvider — let it succeed.
-        // Second insert call is the activity inside withSyncLog — make it fail.
-        // Third+ calls are logSync — let them succeed.
-        if (insertCallCount === 2) {
-          return {
-            onConflictDoUpdate: vi.fn().mockRejectedValue(dbError),
-            onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
-          };
-        }
-        return {
-          onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
-          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
-        };
-      }),
-    });
-    const mockDb = {
-      select: vi.fn(),
-      insert: mockInsert,
-      delete: vi.fn(),
-      execute: vi.fn(),
-    };
+    providerActivityAbsenceMocks.upsertProviderActivity.mockRejectedValueOnce(dbError);
+    const mockDb = createWebhookDb();
 
     const provider = new SuuntoProvider(async () => new Response());
     const result = await provider.syncWebhookEvent(mockDb, {
@@ -465,28 +487,8 @@ describe("SuuntoProvider — precise webhook assertions", () => {
 
   it("syncWebhookEvent returns error externalId from parsed workout", async () => {
     const dbError = new Error("Test error");
-    let insertCallCount = 0;
-    const mockInsert = vi.fn().mockReturnValue({
-      values: vi.fn().mockImplementation(() => {
-        insertCallCount++;
-        if (insertCallCount === 2) {
-          return {
-            onConflictDoUpdate: vi.fn().mockRejectedValue(dbError),
-            onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
-          };
-        }
-        return {
-          onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
-          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
-        };
-      }),
-    });
-    const mockDb = {
-      select: vi.fn(),
-      insert: mockInsert,
-      delete: vi.fn(),
-      execute: vi.fn(),
-    };
+    providerActivityAbsenceMocks.upsertProviderActivity.mockRejectedValueOnce(dbError);
+    const mockDb = createWebhookDb();
 
     const provider = new SuuntoProvider(async () => new Response());
     const result = await provider.syncWebhookEvent(mockDb, {

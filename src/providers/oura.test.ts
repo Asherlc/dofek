@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import {
-  activity as activityTable,
   dailyMetrics as dailyMetricsTable,
   healthEvent as healthEventTable,
   sleepSession as sleepSessionTable,
@@ -56,14 +55,16 @@ const { publishedMetricStreamBatches } = vi.hoisted<{
 }));
 
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
-  reconcileProviderActivityAbsence: vi.fn().mockResolvedValue(undefined),
+  finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
+  upsertProviderActivity: vi.fn().mockResolvedValue({ id: "activity-id" }),
 }));
 
-vi.mock("../db/provider-activity-absence.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("../db/provider-activity-absence.ts")>();
+vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../db/provider-activity-sync.ts")>();
   return {
     ...original,
-    reconcileProviderActivityAbsence: providerActivityAbsenceMocks.reconcileProviderActivityAbsence,
+    finishProviderActivityListSync: providerActivityAbsenceMocks.finishProviderActivityListSync,
+    upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
   };
 });
 
@@ -87,8 +88,10 @@ vi.mock("../db/token-user-context.ts", () => ({
 
 afterEach(() => {
   publishedMetricStreamBatches.length = 0;
-  providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockReset();
-  providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockResolvedValue(undefined);
+  providerActivityAbsenceMocks.finishProviderActivityListSync.mockReset();
+  providerActivityAbsenceMocks.finishProviderActivityListSync.mockResolvedValue(undefined);
+  providerActivityAbsenceMocks.upsertProviderActivity.mockReset();
+  providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue({ id: "activity-id" });
 });
 
 // ============================================================
@@ -245,6 +248,17 @@ function findValuesCall(
     if (parsed.success && predicate(parsed.data)) return parsed.data;
   }
   throw new Error("No matching values call found");
+}
+
+function findUpsertValues(
+  predicate: (values: Record<string, unknown>) => boolean,
+): Record<string, unknown> {
+  for (const call of providerActivityAbsenceMocks.upsertProviderActivity.mock.calls) {
+    const values = call[1];
+    const parsed = recordSchema.safeParse(values);
+    if (parsed.success && predicate(parsed.data)) return parsed.data;
+  }
+  throw new Error("No matching upsert values call found");
 }
 
 /**
@@ -1682,9 +1696,7 @@ describe("OuraProvider.sync()", () => {
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
 
-    // Verify workout values
-    const val = findValuesCall(
-      db,
+    const val = findUpsertValues(
       (v) => v.externalId === "workout-001" && v.activityType === "running",
     );
     expect(val.providerId).toBe("oura");
@@ -1692,12 +1704,7 @@ describe("OuraProvider.sync()", () => {
     expect(val.startedAt).toEqual(new Date("2026-03-01T08:00:00+00:00"));
     expect(val.endedAt).toEqual(new Date("2026-03-01T08:30:00+00:00"));
     expect(val.raw).toEqual(workout);
-    expectConflictTarget(db, [
-      activityTable.userId,
-      activityTable.providerId,
-      activityTable.externalId,
-    ]);
-    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).toHaveBeenCalledWith(
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
         providerId: "oura",
@@ -1709,7 +1716,7 @@ describe("OuraProvider.sync()", () => {
 
   it("reports activity absence reconciliation errors without rejecting sync", async () => {
     setupEnv();
-    providerActivityAbsenceMocks.reconcileProviderActivityAbsence.mockRejectedValueOnce(
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockRejectedValueOnce(
       new Error("write failed"),
     );
     const workout = fakeWorkout();
@@ -1742,8 +1749,7 @@ describe("OuraProvider.sync()", () => {
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
 
-    const val = findValuesCall(
-      db,
+    const val = findUpsertValues(
       (v) => v.externalId === "session-001" && v.activityType === "meditation",
     );
     expect(val.providerId).toBe("oura");
@@ -1751,11 +1757,6 @@ describe("OuraProvider.sync()", () => {
     expect(val.startedAt).toEqual(new Date("2026-03-01T07:00:00+00:00"));
     expect(val.endedAt).toEqual(new Date("2026-03-01T07:15:00+00:00"));
     expect(val.raw).toEqual(session);
-    expectConflictTarget(db, [
-      activityTable.userId,
-      activityTable.providerId,
-      activityTable.externalId,
-    ]);
   });
 
   it("maps breathing sessions to breathwork activity type", async () => {
@@ -1770,7 +1771,7 @@ describe("OuraProvider.sync()", () => {
     );
 
     expect(result.errors).toHaveLength(0);
-    const value = findValuesCall(db, (record) => record.externalId === "session-breathing");
+    const value = findUpsertValues((record) => record.externalId === "session-breathing");
     expect(value.activityType).toBe("breathwork");
   });
 
@@ -2167,7 +2168,7 @@ describe("OuraProvider.sync()", () => {
 
     // Verify tags endpoint was actually called (phases after workout still ran)
     expect(callCount).toBe(1);
-    expect(providerActivityAbsenceMocks.reconcileProviderActivityAbsence).not.toHaveBeenCalled();
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
   });
 
   it("handles empty API responses gracefully", async () => {
@@ -2584,27 +2585,9 @@ describe("OuraProvider.syncWebhookEvent()", () => {
     expect(result.recordsSynced).toBe(1);
     expectReasonableDuration(result.duration);
 
-    const val = findValuesCall(
-      db,
-      (v) => v.externalId === "workout-001" && v.providerId === "oura",
-    );
+    const val = findUpsertValues((v) => v.externalId === "workout-001" && v.providerId === "oura");
     expect(val.activityType).toBe("running");
     expect(val.name).toBe("Morning Run");
-    expectConflictTarget(db, [
-      activityTable.userId,
-      activityTable.providerId,
-      activityTable.externalId,
-    ]);
-    expectConflictSetContainsKey(
-      db,
-      [activityTable.userId, activityTable.providerId, activityTable.externalId],
-      "activityType",
-    );
-    expectConflictSetContainsKey(
-      db,
-      [activityTable.userId, activityTable.providerId, activityTable.externalId],
-      "raw",
-    );
   });
 
   it("syncs sessions when data_type is session", async () => {
@@ -2627,22 +2610,9 @@ describe("OuraProvider.syncWebhookEvent()", () => {
     expect(result.recordsSynced).toBe(1);
     expectReasonableDuration(result.duration);
 
-    const val = findValuesCall(
-      db,
-      (v) => v.externalId === "session-001" && v.providerId === "oura",
-    );
+    const val = findUpsertValues((v) => v.externalId === "session-001" && v.providerId === "oura");
     expect(val.activityType).toBe("meditation");
     expect(val.name).toBe("meditation");
-    expectConflictTarget(db, [
-      activityTable.userId,
-      activityTable.providerId,
-      activityTable.externalId,
-    ]);
-    expectConflictSetContainsKey(
-      db,
-      [activityTable.userId, activityTable.providerId, activityTable.externalId],
-      "activityType",
-    );
   });
 
   it("syncs sleep when data_type is daily_sleep", async () => {

@@ -27,6 +27,11 @@ const { publishedMetricStreamBatches } = vi.hoisted<{
   publishedMetricStreamBatches: [],
 }));
 
+const providerActivityAbsenceMocks = vi.hoisted(() => ({
+  finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
+  upsertProviderActivity: vi.fn().mockResolvedValue({ id: "workout-uuid-1" }),
+}));
+
 vi.mock("../metric-stream/redpanda-producer.ts", () => ({
   getDefaultMetricStreamEventPublisher: async () => ({
     publishRows: async (rows: readonly Record<string, unknown>[]) => {
@@ -61,6 +66,15 @@ vi.mock("../db/tokens.ts", () => ({
   saveTokens: vi.fn(),
 }));
 
+vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../db/provider-activity-sync.ts")>();
+  return {
+    ...original,
+    finishProviderActivityListSync: providerActivityAbsenceMocks.finishProviderActivityListSync,
+    upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
+  };
+});
+
 vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
@@ -68,6 +82,10 @@ vi.mock("../db/token-user-context.ts", () => ({
 
 beforeEach(() => {
   publishedMetricStreamBatches.length = 0;
+  providerActivityAbsenceMocks.finishProviderActivityListSync.mockReset();
+  providerActivityAbsenceMocks.finishProviderActivityListSync.mockResolvedValue(undefined);
+  providerActivityAbsenceMocks.upsertProviderActivity.mockReset();
+  providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue({ id: "workout-uuid-1" });
 });
 
 function makeChainableMock(resolvedValue: unknown = []) {
@@ -183,6 +201,59 @@ function makeSyncMockFetch(options: {
 /** Type guard: value is a non-null, non-array object with string keys */
 function isRecord(val: unknown): val is Record<string, unknown> {
   return val !== null && typeof val === "object" && !Array.isArray(val);
+}
+
+function hasQueryChunks(query: unknown): query is { queryChunks: unknown[] } {
+  return (
+    query !== null &&
+    typeof query === "object" &&
+    "queryChunks" in query &&
+    Array.isArray(query.queryChunks)
+  );
+}
+
+function findUpsertValues(
+  predicate: (values: Record<string, unknown>) => boolean,
+): Record<string, unknown> | undefined {
+  for (const call of providerActivityAbsenceMocks.upsertProviderActivity.mock.calls) {
+    const values = call[1];
+    if (isRecord(values) && predicate(values)) {
+      return values;
+    }
+  }
+  return undefined;
+}
+
+function findUpsertUpdate(
+  predicate: (update: Record<string, unknown>) => boolean,
+): Record<string, unknown> | undefined {
+  for (const call of providerActivityAbsenceMocks.upsertProviderActivity.mock.calls) {
+    const update = call[2];
+    if (isRecord(update) && predicate(update)) {
+      return update;
+    }
+  }
+  return undefined;
+}
+
+function findUpsertUpdateForExternalId(
+  externalId: string,
+  predicate?: (update: Record<string, unknown>) => boolean,
+): Record<string, unknown> | undefined {
+  let match: Record<string, unknown> | undefined;
+  for (const call of providerActivityAbsenceMocks.upsertProviderActivity.mock.calls) {
+    const values = call[1];
+    const update = call[2];
+    if (
+      isRecord(values) &&
+      values.externalId === externalId &&
+      isRecord(update) &&
+      (!predicate || predicate(update))
+    ) {
+      match = update;
+    }
+  }
+  return match;
 }
 
 /** Type guard: value is a non-empty array of record objects */
@@ -1092,9 +1163,7 @@ describe("WhoopProvider.sync() — workout collection from cycles", () => {
     expect(result.recordsSynced).toBeGreaterThanOrEqual(0);
 
     // Verify the activity values contain correct fields from the workout
-    const valuesCallArgs = getValuesCallArgs(db);
-    const activityInsert = findValuesRecord(
-      valuesCallArgs,
+    const activityInsert = findUpsertValues(
       (rec) => rec.externalId === "w-1" && rec.activityType !== undefined,
     );
     expect(activityInsert).toBeDefined();
@@ -1113,30 +1182,16 @@ describe("WhoopProvider.sync() — workout collection from cycles", () => {
       expect(activityInsert.raw.durationSeconds).toBe(3600);
     }
 
-    // Verify onConflictDoUpdate was called with correct target and set for the activity upsert
-    const conflictArgs = getOnConflictArgs(db);
-    expect(conflictArgs.length).toBeGreaterThanOrEqual(1);
-    const activityConflict = findOnConflictRecord(conflictArgs, (rec) => {
-      return isRecord(rec.set) && "activityType" in rec.set && "endedAt" in rec.set;
-    });
-    expect(activityConflict).toBeDefined();
-    // target should be an array (providerId + externalId columns)
-    expect(Array.isArray(activityConflict?.target)).toBe(true);
-    if (Array.isArray(activityConflict?.target)) {
-      expect(activityConflict.target.length).toBe(3);
-    }
-    // set should contain all updatable fields
-    expect(isRecord(activityConflict?.set)).toBe(true);
-    if (isRecord(activityConflict?.set)) {
-      expect(activityConflict.set.activityType).toBe("running");
-      expect(activityConflict.set.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
-      expect(activityConflict.set.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
-      expect(activityConflict.set.raw).toBeDefined();
-      if (isRecord(activityConflict.set.raw)) {
-        expect(activityConflict.set.raw.strain).toBe(10);
-        expect(activityConflict.set.raw.avgHeartRate).toBe(150);
-        expect(activityConflict.set.raw.maxHeartRate).toBe(180);
-      }
+    const activityUpdate = findUpsertUpdate((rec) => "activityType" in rec && "endedAt" in rec);
+    expect(activityUpdate).toBeDefined();
+    expect(activityUpdate?.activityType).toBe("running");
+    expect(activityUpdate?.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
+    expect(activityUpdate?.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
+    expect(activityUpdate?.raw).toBeDefined();
+    if (isRecord(activityUpdate?.raw)) {
+      expect(activityUpdate.raw.strain).toBe(10);
+      expect(activityUpdate.raw.avgHeartRate).toBe(150);
+      expect(activityUpdate.raw.maxHeartRate).toBe(180);
     }
   });
 });
@@ -2359,25 +2414,6 @@ describe("WhoopProvider.sync() — strength sync", () => {
     });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    // The chain mock methods return the chain object. Use mockResolvedValueOnce
-    // on the original chain mocks (accessible via db before override) to queue
-    // specific return values that take priority over the default mockReturnValue.
-    //
-    // Sync calls these in order:
-    // 1. Recovery: insert().values().onConflictDoUpdate() — no recovery here
-    // 2. Workouts: insert().values().onConflictDoUpdate() — 1 workout
-    // 3. Strength: insert().values().onConflictDoUpdate().returning() — needs activity ID
-    //    then select().from().where().limit() — needs exercise ID
-    //
-    // Queue returning() to return activity UUID on the activity upsert in strength block.
-    // The first returning() call is from the workout activity insert — returns []
-    // (no ID needed). The second is from strength block activity upsert.
-    db.onConflictDoUpdate.mockReturnValueOnce(db).mockReturnValueOnce(db);
-    // First onConflictDoUpdate is the first activity workout insert (doesn't use returning)
-    // The first workout insert chain is: insert().values().onConflictDoUpdate()
-    // The second (strength-enriched) activity insert chain is: insert().values().onConflictDoUpdate().returning()
-    db.returning.mockResolvedValueOnce([{ id: "workout-uuid-1" }]);
-    // select().from().where().limit() for exercise lookup
     db.limit.mockResolvedValueOnce([{ id: "exercise-uuid-1" }]);
     const result = await provider.sync(
       new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
@@ -2387,10 +2423,7 @@ describe("WhoopProvider.sync() — strength sync", () => {
     // Should have synced the strength workout (1 strength record)
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
 
-    // Verify activity upsert in strength block (providerId + externalId)
-    const valuesCallArgs = getValuesCallArgs(db);
-    const strengthActivityInsert = findValuesRecord(
-      valuesCallArgs,
+    const strengthActivityInsert = findUpsertValues(
       (rec) =>
         rec.externalId === "w-str-1" &&
         rec.startedAt !== undefined &&
@@ -2402,36 +2435,17 @@ describe("WhoopProvider.sync() — strength sync", () => {
     expect(strengthActivityInsert?.startedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
     expect(strengthActivityInsert?.endedAt).toEqual(new Date("2026-03-01T11:00:00Z"));
 
-    // Verify onConflictDoUpdate was called for activity with correct target and set
-    const conflictArgs = getOnConflictArgs(db);
-    const strengthConflict = findOnConflictRecord(conflictArgs, (rec) => {
-      return isRecord(rec.set) && "raw" in rec.set;
-    });
-    expect(strengthConflict).toBeDefined();
-    // target should be an array (providerId + externalId)
-    expect(Array.isArray(strengthConflict?.target)).toBe(true);
-    if (Array.isArray(strengthConflict?.target)) {
-      expect(strengthConflict.target.length).toBe(3);
-    }
-    // set should contain the updatable fields
-    expect(isRecord(strengthConflict?.set)).toBe(true);
-    if (isRecord(strengthConflict?.set)) {
-      expect(strengthConflict.set).toHaveProperty("raw");
-    }
-
-    // Verify returning was called with { id: ... } argument
-    expect(db.returning).toHaveBeenCalled();
-    const returningCallArgs = db.returning.mock.calls;
-    // Find the returning call with an id field
-    const returningWithId = returningCallArgs.find(
-      (call: unknown[]) => isRecord(call[0]) && "id" in call[0],
+    const strengthUpdate = findUpsertUpdateForExternalId("w-str-1", (update) =>
+      hasQueryChunks(update.raw),
     );
-    expect(returningWithId).toBeDefined();
-    if (Array.isArray(returningWithId) && returningWithId.length > 0) {
-      expect(returningWithId[0]).toHaveProperty("id");
-    }
+    expect(strengthUpdate).toBeDefined();
+    expect(strengthUpdate?.startedAt).toEqual(strengthActivityInsert?.startedAt);
+    expect(strengthUpdate?.endedAt).toEqual(strengthActivityInsert?.endedAt);
+    expect(JSON.stringify(strengthUpdate?.raw)).toContain("rawMskStrainScore");
+    expect(JSON.stringify(strengthUpdate?.raw)).toContain("scaledMskStrainScore");
+    expect(JSON.stringify(strengthUpdate?.raw)).toContain("cardioStrainScore");
 
-    // Verify exercise alias insert happened
+    const valuesCallArgs = getValuesCallArgs(db);
     const exerciseAliasInsert = findValuesRecord(
       valuesCallArgs,
       (rec) =>
@@ -2564,8 +2578,6 @@ describe("WhoopProvider.sync() — strength sync", () => {
     });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    db.onConflictDoUpdate.mockReturnValueOnce(db).mockReturnValueOnce(db);
-    db.returning.mockResolvedValueOnce([{ id: "workout-uuid-named" }]);
     db.limit.mockResolvedValueOnce([{ id: "exercise-uuid-named" }]);
     const result = await provider.sync(
       new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
@@ -2574,27 +2586,28 @@ describe("WhoopProvider.sync() — strength sync", () => {
     expect(result.provider).toBe("whoop");
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
 
-    // Verify the activity insert has the workout name (not null)
-    const valuesCallArgs = getValuesCallArgs(db);
-    const namedWorkoutInsert = findValuesRecord(
-      valuesCallArgs,
-      (rec) => rec.externalId === "w-named-1" && "name" in rec && rec.startedAt !== undefined,
+    const namedWorkoutInsert = findUpsertValues(
+      (rec) => rec.externalId === "w-named-1" && rec.name === "Morning Push Day",
     );
     expect(namedWorkoutInsert).toBeDefined();
-    // name should be "Morning Push Day" (not null, not && null)
-    expect(namedWorkoutInsert?.name).toBe("Morning Push Day");
     if (isRecord(namedWorkoutInsert?.raw)) {
-      expect(namedWorkoutInsert?.raw.rawMskStrainScore).toBe(5.2);
-      expect(namedWorkoutInsert?.raw.scaledMskStrainScore).toBe(3.1);
-      expect(namedWorkoutInsert?.raw.mskStrainContributionPercent).toBe(60);
+      expect(namedWorkoutInsert.raw.rawMskStrainScore).toBe(5.2);
+      expect(namedWorkoutInsert.raw.scaledMskStrainScore).toBe(3.1);
+      expect(namedWorkoutInsert.raw.mskStrainContributionPercent).toBe(60);
     }
 
-    // Verify the onConflictDoUpdate set also has the name
-    const conflictArgs = getOnConflictArgs(db);
-    const namedConflict = findOnConflictRecord(conflictArgs, (rec) => {
-      return isRecord(rec.set) && rec.set.name === "Morning Push Day";
-    });
-    expect(namedConflict).toBeDefined();
+    const namedUpdate = findUpsertUpdateForExternalId("w-named-1", (update) =>
+      hasQueryChunks(update.raw),
+    );
+    expect(namedUpdate).toBeDefined();
+    expect(namedUpdate?.name).toBe("Morning Push Day");
+    expect(namedUpdate?.startedAt).toEqual(namedWorkoutInsert?.startedAt);
+    expect(namedUpdate?.endedAt).toEqual(namedWorkoutInsert?.endedAt);
+    const namedUpdateRaw = JSON.stringify(namedUpdate?.raw);
+    expect(namedUpdateRaw).toContain("rawMskStrainScore");
+    expect(namedUpdateRaw).toContain("5.2");
+    expect(namedUpdateRaw).toContain("3.1");
+    expect(namedUpdateRaw).toContain("mskStrainContributionPercent");
   });
 
   it("skips exercise/set processing when returning yields no activityId", async () => {
@@ -2684,10 +2697,9 @@ describe("WhoopProvider.sync() — strength sync", () => {
     });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    // Both inserts (workout and strength) now target activity table
-    db.onConflictDoUpdate.mockReturnValueOnce(db).mockReturnValueOnce(db);
-    // returning() yields empty array → row?.id is undefined → !activityId is true → skip
-    db.returning.mockResolvedValueOnce([]);
+    providerActivityAbsenceMocks.upsertProviderActivity
+      .mockResolvedValueOnce({ id: "workout-uuid-1" })
+      .mockResolvedValueOnce(undefined);
     const result = await provider.sync(
       new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
     );
@@ -2753,10 +2765,8 @@ describe("WhoopProvider.sync() — strength sync", () => {
     const strengthErrors = result.errors.filter((e) => e.message.includes("Strength"));
     expect(strengthErrors).toHaveLength(0);
 
-    // Verify no strength-enriched activity insert happened
-    const valuesCallArgs = getValuesCallArgs(db);
-    const strengthActivityInsert = findValuesRecord(
-      valuesCallArgs,
+    // Verify no strength-enriched activity upsert happened
+    const strengthActivityInsert = findUpsertValues(
       (rec) =>
         rec.externalId === "w-cardio-1" && isRecord(rec.raw) && "rawMskStrainScore" in rec.raw,
     );
@@ -2870,8 +2880,9 @@ describe("WhoopProvider.sync() — strength sync", () => {
     });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    db.onConflictDoUpdate.mockReturnValueOnce(db).mockReturnValueOnce(db);
-    db.returning.mockResolvedValueOnce([{ id: "workout-uuid-cache" }]);
+    providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue({
+      id: "workout-uuid-cache",
+    });
     db.limit.mockResolvedValue([{ id: "exercise-uuid-cache" }]);
 
     await provider.sync(
@@ -2975,8 +2986,9 @@ describe("WhoopProvider.sync() — strength sync", () => {
     });
     const provider = new WhoopProvider(mockFetch);
     const db = makeChainableMock();
-    db.onConflictDoUpdate.mockReturnValueOnce(db).mockReturnValueOnce(db);
-    db.returning.mockResolvedValueOnce([{ id: "workout-uuid-missing" }]);
+    providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue({
+      id: "workout-uuid-missing",
+    });
     db.limit.mockResolvedValueOnce([]);
 
     const result = await provider.sync(

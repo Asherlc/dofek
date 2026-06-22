@@ -1,7 +1,7 @@
 import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
-import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import type { SyncDatabase } from "../../../../src/db/index.ts";
 import {
   BODY_MEASUREMENT_COLUMN_TO_CHANNEL,
   SOURCE_TYPE_API,
@@ -12,8 +12,9 @@ import {
   type MetricStreamEventPublisher,
 } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
+import { computeBoundsFromIsoTimestamps } from "../lib/health-kit-sync-helpers.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
-import { workoutActivityTypeMap } from "../routers/health-kit-sync-schemas.ts";
+import { processWorkouts as processWorkoutsShared } from "../routers/health-kit-sync-processors.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -186,27 +187,6 @@ const HEALTHKIT_STAGE_MAP: Record<string, string> = {
 /** Extract date string (YYYY-MM-DD) from an ISO timestamp. */
 export function extractDate(isoString: string): string {
   return isoString.slice(0, 10);
-}
-
-export function computeBoundsFromIsoTimestamps(
-  timestamps: string[],
-): { startAt: string; endAt: string } | null {
-  if (timestamps.length === 0) return null;
-
-  let minTs = Number.POSITIVE_INFINITY;
-  let maxTs = Number.NEGATIVE_INFINITY;
-  for (const ts of timestamps) {
-    const milliseconds = Date.parse(ts);
-    if (Number.isNaN(milliseconds)) continue;
-    if (milliseconds < minTs) minTs = milliseconds;
-    if (milliseconds > maxTs) maxTs = milliseconds;
-  }
-
-  if (!Number.isFinite(minTs) || !Number.isFinite(maxTs)) return null;
-  return {
-    startAt: new Date(minTs).toISOString(),
-    endAt: new Date(maxTs).toISOString(),
-  };
 }
 
 function parseIsoTimestamp(value: string): number | null {
@@ -409,12 +389,12 @@ export function aggregateDailyMetricSamples(
 
 /** Data access for HealthKit sync operations (inserts, upserts, batch writes). */
 export class HealthKitSyncRepository {
-  readonly #db: Pick<Database, "execute">;
+  readonly #db: SyncDatabase;
   readonly #userId: string;
   readonly #metricStreamPublisher?: MetricStreamEventPublisher;
 
   constructor(
-    db: Pick<Database, "execute">,
+    db: SyncDatabase,
     userId: string,
     metricStreamPublisher?: MetricStreamEventPublisher,
   ) {
@@ -605,44 +585,39 @@ export class HealthKitSyncRepository {
   }
 
   /** Process workout samples */
-  async processWorkouts(workouts: WorkoutSample[]): Promise<number> {
-    let inserted = 0;
-    for (let index = 0; index < workouts.length; index += BATCH_SIZE) {
-      const batch = workouts.slice(index, index + BATCH_SIZE);
-      for (const workout of batch) {
-        const externalId = `hk:workout:${workout.uuid}`;
-        const activityType = workoutActivityTypeMap[workout.workoutType] ?? "other";
+  async processWorkouts(
+    workouts: WorkoutSample[],
+    options?: { windowStart?: string; windowEnd?: string },
+  ): Promise<number> {
+    if (workouts.length === 0) return 0;
 
-        const rawData = JSON.stringify({
-          duration: workout.duration,
-          totalEnergyBurned: workout.totalEnergyBurned,
-          totalDistance: workout.totalDistance,
-          sourceName: workout.sourceName,
-          workoutType: workout.workoutType,
-        });
-
-        await this.#db.execute(
-          sql`INSERT INTO fitness.activity (user_id, provider_id, external_id, activity_type, started_at, ended_at, raw)
-              VALUES (
-                ${this.#userId},
-                ${PROVIDER_ID},
-                ${externalId},
-                ${activityType},
-                ${workout.startDate}::timestamptz,
-                ${workout.endDate}::timestamptz,
-                ${rawData}::jsonb
-              )
-              ON CONFLICT (user_id, provider_id, external_id) DO UPDATE SET
-                activity_type = ${activityType},
-                started_at = ${workout.startDate}::timestamptz,
-                ended_at = ${workout.endDate}::timestamptz,
-                provider_absent_at = NULL`,
-        );
-        inserted++;
+    let windowStart = options?.windowStart;
+    let windowEnd = options?.windowEnd;
+    if (!windowStart || !windowEnd) {
+      const bounds = computeBoundsFromIsoTimestamps(
+        workouts.flatMap((workout) => [workout.startDate, workout.endDate]),
+      );
+      if (!bounds) {
+        throw new Error("Cannot derive workout sync window from workout timestamps");
       }
+      windowStart = windowStart ?? bounds.startAt;
+      windowEnd = windowEnd ?? bounds.endAt;
     }
 
-    return inserted;
+    const parsedWindowStart = new Date(windowStart);
+    const parsedWindowEnd = new Date(windowEnd);
+    if (
+      Number.isNaN(parsedWindowStart.getTime()) ||
+      Number.isNaN(parsedWindowEnd.getTime()) ||
+      parsedWindowStart >= parsedWindowEnd
+    ) {
+      throw new Error("Invalid workout sync window");
+    }
+
+    return processWorkoutsShared(this.#db, this.#userId, workouts, {
+      windowStart: parsedWindowStart.toISOString(),
+      windowEnd: parsedWindowEnd.toISOString(),
+    });
   }
 
   /** Process sleep samples, grouping by inBed boundaries */

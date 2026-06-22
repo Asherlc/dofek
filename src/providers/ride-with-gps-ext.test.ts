@@ -1008,7 +1008,9 @@ describe("RideWithGpsProvider — sync", () => {
       providerId: "ride-with-gps",
       sourceType: "api",
     });
-    expect(db.execute).not.toHaveBeenCalled();
+    expect(db.execute).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(db.execute.mock.calls[0]?.[0])).toContain("provider_absent_at = NULL");
+    expect(JSON.stringify(db.execute.mock.calls[0]?.[0])).toContain("42");
   });
 
   it("skips metric inserts when activity upsert returns no id", async () => {

@@ -1,6 +1,7 @@
 import type { SyncDatabase } from "../../db/index.ts";
 import { replaceMetricStreamBatch } from "../../db/metric-stream-writer.ts";
-import { activity, dailyMetrics, sleepSession } from "../../db/schema.ts";
+import { upsertProviderActivity } from "../../db/provider-activity-sync.ts";
+import { dailyMetrics, sleepSession } from "../../db/schema.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { logger } from "../../logger.ts";
 import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
@@ -24,9 +25,9 @@ export async function persistActivity(
 ): Promise<{ errors: SyncError[] }> {
   const errors: SyncError[] = [];
 
-  const [row] = await db
-    .insert(activity)
-    .values({
+  const row = await upsertProviderActivity(
+    db,
+    {
       providerId: PROVIDER_ID,
       externalId: parsed.externalId,
       activityType: parsed.activityType,
@@ -34,19 +35,15 @@ export async function persistActivity(
       endedAt: parsed.endedAt,
       name: parsed.name,
       raw: raw,
-    })
-    .onConflictDoUpdate({
-      target: [activity.userId, activity.providerId, activity.externalId],
-      set: {
-        activityType: parsed.activityType,
-        startedAt: parsed.startedAt,
-        endedAt: parsed.endedAt,
-        name: parsed.name,
-        raw: raw,
-        providerAbsentAt: null,
-      },
-    })
-    .returning({ id: activity.id });
+    },
+    {
+      activityType: parsed.activityType,
+      startedAt: parsed.startedAt,
+      endedAt: parsed.endedAt,
+      name: parsed.name,
+      raw: raw,
+    },
+  );
 
   const activityId = row?.id;
 

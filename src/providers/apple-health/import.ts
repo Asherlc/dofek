@@ -6,6 +6,7 @@ import sax from "sax";
 import yauzl from "yauzl";
 import type { SyncDatabase } from "../../db/index.ts";
 import { replaceMetricStreamBatch } from "../../db/metric-stream-writer.ts";
+import { finishProviderActivityListSync } from "../../db/provider-activity-sync.ts";
 import {
   allergyIntolerance,
   condition,
@@ -133,6 +134,8 @@ export async function runImport(
   const start = Date.now();
   const errors: SyncError[] = [];
   let recordsSynced = 0;
+  const presentWorkoutExternalIds = new Set<string>();
+  let latestWorkoutTimestamp: Date | null = null;
   const scopedUserId = getTokenUserId();
   if (!scopedUserId) {
     throw new Error("apple-health import requires user context");
@@ -224,6 +227,13 @@ export async function runImport(
         recordsSynced += sleepCount;
       },
       onWorkoutBatch: async (workouts) => {
+        for (const workout of workouts) {
+          presentWorkoutExternalIds.add(`ah:workout:${workout.startDate.toISOString()}`);
+          const workoutEnd = workout.endDate ?? workout.startDate;
+          if (!latestWorkoutTimestamp || workoutEnd > latestWorkoutTimestamp) {
+            latestWorkoutTimestamp = workoutEnd;
+          }
+        }
         const workoutCount = await upsertWorkoutBatch(
           db,
           providerId,
@@ -258,6 +268,14 @@ export async function runImport(
       await aggregateSpO2ToDailyMetrics(db, providerId, dailyAggregateMetricRecords);
       await aggregateSkinTempToDailyMetrics(db, providerId, dailyAggregateMetricRecords);
     }
+
+    await finishProviderActivityListSync(db, {
+      providerId,
+      userId: scopedUserId,
+      windowStart: since,
+      windowEnd: latestWorkoutTimestamp ?? since,
+      presentExternalIds: presentWorkoutExternalIds,
+    });
 
     logger.info(
       `[apple_health] Parsed ${counts.recordCount} records, ` +

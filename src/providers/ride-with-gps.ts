@@ -12,8 +12,12 @@ import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { replaceMetricStreamBatch } from "../db/metric-stream-writer.ts";
-import { markProviderActivityAbsent } from "../db/provider-activity-absence.ts";
-import { activity, userSettings } from "../db/schema.ts";
+import {
+  markProviderActivityAbsent,
+  markProviderActivityPresent,
+  upsertProviderActivity,
+} from "../db/provider-activity-sync.ts";
+import { userSettings } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
@@ -465,9 +469,9 @@ export class RideWithGpsProvider implements SyncProvider {
         const parsed = parseTripToActivity(trip);
 
         // Upsert activity
-        const [activityRow] = await db
-          .insert(activity)
-          .values({
+        const activityRow = await upsertProviderActivity(
+          db,
+          {
             providerId: this.id,
             externalId: parsed.externalId,
             activityType: parsed.activityType,
@@ -477,21 +481,23 @@ export class RideWithGpsProvider implements SyncProvider {
             notes: parsed.notes,
             sourceName: parsed.sourceName,
             raw: parsed.raw,
-          })
-          .onConflictDoUpdate({
-            target: [activity.userId, activity.providerId, activity.externalId],
-            set: {
-              activityType: parsed.activityType,
-              startedAt: parsed.startedAt,
-              endedAt: parsed.endedAt,
-              name: parsed.name,
-              notes: parsed.notes,
-              sourceName: parsed.sourceName,
-              raw: parsed.raw,
-              providerAbsentAt: null,
-            },
-          })
-          .returning({ id: activity.id });
+          },
+          {
+            activityType: parsed.activityType,
+            startedAt: parsed.startedAt,
+            endedAt: parsed.endedAt,
+            name: parsed.name,
+            notes: parsed.notes,
+            sourceName: parsed.sourceName,
+            raw: parsed.raw,
+          },
+        );
+
+        await markProviderActivityPresent(db, {
+          providerId: this.id,
+          externalId: parsed.externalId,
+          userId: scopedUserId,
+        });
 
         const activityId = activityRow?.id;
         if (!activityId) continue;

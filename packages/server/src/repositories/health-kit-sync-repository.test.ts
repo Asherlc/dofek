@@ -1,8 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { computeBoundsFromIsoTimestamps } from "../lib/health-kit-sync-helpers.ts";
 import {
   aggregateDailyMetricSamples,
   categorize,
-  computeBoundsFromIsoTimestamps,
   deriveSleepSessionsFromStages,
   extractDate,
   type HealthKitSample,
@@ -10,6 +10,32 @@ import {
   isSleepStageValue,
   type SleepSample,
 } from "./health-kit-sync-repository.ts";
+
+type ProviderActivityListSyncScope = {
+  windowStart: Date;
+  windowEnd: Date;
+};
+
+const providerActivitySyncMocks = vi.hoisted(() => ({
+  reconcile: vi.fn().mockResolvedValue(undefined),
+  upsert: vi.fn().mockResolvedValue({ id: "activity-id" }),
+  lastScope: undefined satisfies ProviderActivityListSyncScope | undefined,
+}));
+
+vi.mock("../../../../src/db/provider-activity-sync.ts", () => ({
+  ProviderActivityListSync: class {
+    constructor(scope: {
+      windowStart: Date;
+      windowEnd: Date;
+    }) {
+      providerActivitySyncMocks.lastScope = scope;
+    }
+    upsert = providerActivitySyncMocks.upsert;
+    reconcile = providerActivitySyncMocks.reconcile;
+  },
+  finishProviderActivityListSync: vi.fn(),
+  upsertProviderActivity: vi.fn(),
+}));
 
 function makeMetricStreamPublisher() {
   return {
@@ -852,6 +878,11 @@ describe("MAX_SLEEP_SESSION_GAP_MS (90 minutes)", () => {
 });
 
 describe("workoutActivityTypeMap (via processWorkouts)", () => {
+  beforeEach(() => {
+    providerActivitySyncMocks.upsert.mockClear();
+    providerActivitySyncMocks.reconcile.mockClear();
+  });
+
   it("maps type 37 to running", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     const repo = new HealthKitSyncRepository({ execute }, "user-1");
@@ -866,10 +897,10 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
         sourceBundle: "com.apple.Health",
       },
     ]);
-    // The SQL should contain the mapped activity type "running"
-    const callArgs = execute.mock.calls[0]?.[0];
-    const queryString = String(callArgs?.queryChunks?.join?.("") ?? callArgs);
-    expect(queryString).toContain("running");
+    expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ activityType: "running" }),
+      expect.objectContaining({ activityType: "running" }),
+    );
   });
 
   it("maps type 13 to cycling", async () => {
@@ -886,9 +917,10 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
         sourceBundle: "com.apple.Health",
       },
     ]);
-    const callArgs = execute.mock.calls[0]?.[0];
-    const queryString = String(callArgs?.queryChunks?.join?.("") ?? callArgs);
-    expect(queryString).toContain("cycling");
+    expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ activityType: "cycling" }),
+      expect.objectContaining({ activityType: "cycling" }),
+    );
   });
 
   it("maps type 24 to hiking", async () => {
@@ -905,9 +937,10 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
         sourceBundle: "com.apple.Health",
       },
     ]);
-    const callArgs = execute.mock.calls[0]?.[0];
-    const queryString = String(callArgs?.queryChunks?.join?.("") ?? callArgs);
-    expect(queryString).toContain("hiking");
+    expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ activityType: "hiking" }),
+      expect.objectContaining({ activityType: "hiking" }),
+    );
   });
 
   it("maps type 46 to swimming", async () => {
@@ -924,9 +957,10 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
         sourceBundle: "com.apple.Health",
       },
     ]);
-    const callArgs = execute.mock.calls[0]?.[0];
-    const queryString = String(callArgs?.queryChunks?.join?.("") ?? callArgs);
-    expect(queryString).toContain("swimming");
+    expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ activityType: "swimming" }),
+      expect.objectContaining({ activityType: "swimming" }),
+    );
   });
 
   it("maps unknown workout type to other", async () => {
@@ -943,9 +977,10 @@ describe("workoutActivityTypeMap (via processWorkouts)", () => {
         sourceBundle: "com.apple.Health",
       },
     ]);
-    const callArgs = execute.mock.calls[0]?.[0];
-    const queryString = String(callArgs?.queryChunks?.join?.("") ?? callArgs);
-    expect(queryString).toContain("other");
+    expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ activityType: "other" }),
+      expect.objectContaining({ activityType: "other" }),
+    );
   });
 });
 
@@ -1331,14 +1366,187 @@ describe("HealthKitSyncRepository", () => {
   });
 
   describe("processWorkouts", () => {
+    beforeEach(() => {
+      providerActivitySyncMocks.upsert.mockClear();
+      providerActivitySyncMocks.reconcile.mockClear();
+      providerActivitySyncMocks.lastScope = undefined;
+    });
+
     it("returns 0 for empty workouts", async () => {
       const { repository, execute } = makeRepository();
       const result = await repository.processWorkouts([]);
       expect(result).toBe(0);
       expect(execute).not.toHaveBeenCalled();
+      expect(providerActivitySyncMocks.upsert).not.toHaveBeenCalled();
+      expect(providerActivitySyncMocks.reconcile).not.toHaveBeenCalled();
     });
 
-    it("inserts workouts without touching the retired Postgres metric_stream table", async () => {
+    it("returns 0 for empty workouts without reconciling when explicit window options are provided", async () => {
+      const { repository } = makeRepository();
+      const result = await repository.processWorkouts([], {
+        windowStart: "2024-01-15T10:00:00Z",
+        windowEnd: "2024-01-15T11:00:00Z",
+      });
+      expect(result).toBe(0);
+      expect(providerActivitySyncMocks.reconcile).not.toHaveBeenCalled();
+    });
+
+    it("passes explicit workout window options to the shared processor", async () => {
+      const { repository } = makeRepository();
+      const workouts = [
+        {
+          uuid: "w-window",
+          workoutType: "35",
+          startDate: "2024-01-15T10:00:00Z",
+          endDate: "2024-01-15T11:00:00Z",
+          duration: 3600,
+          sourceName: "Apple Watch",
+          sourceBundle: "com.apple.Health",
+        },
+      ];
+
+      await repository.processWorkouts(workouts, {
+        windowStart: "2024-01-10T00:00:00Z",
+        windowEnd: "2024-01-20T00:00:00Z",
+      });
+
+      expect(providerActivitySyncMocks.lastScope?.windowStart).toEqual(
+        new Date("2024-01-10T00:00:00Z"),
+      );
+      expect(providerActivitySyncMocks.lastScope?.windowEnd).toEqual(
+        new Date("2024-01-20T00:00:00Z"),
+      );
+    });
+
+    it("derives workout window bounds from workout timestamps when options are omitted", async () => {
+      const { repository } = makeRepository();
+      const workouts = [
+        {
+          uuid: "w-bounds-1",
+          workoutType: "35",
+          startDate: "2024-01-15T10:00:00Z",
+          endDate: "2024-01-15T11:00:00Z",
+          duration: 3600,
+          sourceName: "Apple Watch",
+          sourceBundle: "com.apple.Health",
+        },
+        {
+          uuid: "w-bounds-2",
+          workoutType: "13",
+          startDate: "2024-01-17T08:00:00Z",
+          endDate: "2024-01-17T09:00:00Z",
+          duration: 3600,
+          sourceName: "Apple Watch",
+          sourceBundle: "com.apple.Health",
+        },
+      ];
+
+      await repository.processWorkouts(workouts);
+
+      expect(providerActivitySyncMocks.lastScope?.windowStart).toEqual(
+        new Date("2024-01-15T10:00:00.000Z"),
+      );
+      expect(providerActivitySyncMocks.lastScope?.windowEnd).toEqual(
+        new Date("2024-01-17T09:00:00.000Z"),
+      );
+    });
+
+    it("derives missing windowEnd from workout timestamps when only windowStart is provided", async () => {
+      const { repository } = makeRepository();
+      const workouts = [
+        {
+          uuid: "w-partial-window",
+          workoutType: "35",
+          startDate: "2024-01-15T10:00:00Z",
+          endDate: "2024-01-15T11:00:00Z",
+          duration: 3600,
+          sourceName: "Apple Watch",
+          sourceBundle: "com.apple.Health",
+        },
+      ];
+
+      await repository.processWorkouts(workouts, {
+        windowStart: "2024-01-01T00:00:00Z",
+      });
+
+      expect(providerActivitySyncMocks.lastScope?.windowStart).toEqual(
+        new Date("2024-01-01T00:00:00Z"),
+      );
+      expect(providerActivitySyncMocks.lastScope?.windowEnd).toEqual(
+        new Date("2024-01-15T11:00:00.000Z"),
+      );
+    });
+
+    it("throws when workout timestamps cannot derive bounds", async () => {
+      const { repository } = makeRepository();
+      await expect(
+        repository.processWorkouts([
+          {
+            uuid: "w-invalid",
+            workoutType: "35",
+            startDate: "invalid",
+            endDate: "invalid",
+            duration: 3600,
+            sourceName: "Apple Watch",
+            sourceBundle: "com.apple.Health",
+          },
+        ]),
+      ).rejects.toThrow("Cannot derive workout sync window from workout timestamps");
+
+      expect(providerActivitySyncMocks.reconcile).not.toHaveBeenCalled();
+    });
+
+    it("throws when explicit workout sync window is invalid", async () => {
+      const { repository } = makeRepository();
+      await expect(
+        repository.processWorkouts(
+          [
+            {
+              uuid: "w-window",
+              workoutType: "35",
+              startDate: "2024-01-15T11:00:00Z",
+              endDate: "2024-01-15T12:00:00Z",
+              duration: 3600,
+              sourceName: "Apple Watch",
+              sourceBundle: "com.apple.Health",
+            },
+          ],
+          {
+            windowStart: "not-a-date",
+            windowEnd: "2024-01-15T12:00:00Z",
+          },
+        ),
+      ).rejects.toThrow("Invalid workout sync window");
+
+      expect(providerActivitySyncMocks.reconcile).not.toHaveBeenCalled();
+    });
+
+    it("throws when explicit workout sync window ends before it starts", async () => {
+      const { repository } = makeRepository();
+      await expect(
+        repository.processWorkouts(
+          [
+            {
+              uuid: "w-window",
+              workoutType: "35",
+              startDate: "2024-01-15T10:00:00Z",
+              endDate: "2024-01-15T11:00:00Z",
+              duration: 3600,
+              sourceName: "Apple Watch",
+              sourceBundle: "com.apple.Health",
+            },
+          ],
+          {
+            windowStart: "2024-01-15T12:00:00Z",
+            windowEnd: "2024-01-15T10:00:00Z",
+          },
+        ),
+      ).rejects.toThrow("Invalid workout sync window");
+
+      expect(providerActivitySyncMocks.reconcile).not.toHaveBeenCalled();
+    });
+
+    it("upserts workouts via shared processor without touching metric_stream", async () => {
       const { repository, execute } = makeRepository();
       const workouts = [
         {
@@ -1355,8 +1563,9 @@ describe("HealthKitSyncRepository", () => {
       ];
       const result = await repository.processWorkouts(workouts);
       expect(result).toBe(1);
-      expect(execute).toHaveBeenCalledTimes(1);
-      expect(JSON.stringify(execute.mock.calls)).not.toContain("fitness.metric_stream");
+      expect(providerActivitySyncMocks.upsert).toHaveBeenCalledTimes(1);
+      expect(providerActivitySyncMocks.reconcile).toHaveBeenCalledTimes(1);
+      expect(execute).not.toHaveBeenCalled();
     });
   });
 
