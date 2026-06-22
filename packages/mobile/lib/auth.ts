@@ -56,6 +56,60 @@ export async function fetchConfiguredProviders(serverUrl: string): Promise<Confi
   return ConfiguredProvidersSchema.parse(data);
 }
 
+async function submitPasswordAuth(
+  serverUrl: string,
+  path: "/auth/login/password" | "/auth/register",
+  body: Record<string, string | undefined>,
+): Promise<string> {
+  const response = await fetch(`${serverUrl}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  const data: unknown = await response.json().catch(() => null);
+  const parsed = z
+    .object({
+      session: z.string(),
+      error: z.string().optional(),
+    })
+    .safeParse(data);
+
+  if (!response.ok) {
+    throw new Error(
+      parsed.success && parsed.data.error ? parsed.data.error : "Authentication failed",
+    );
+  }
+  if (!parsed.success || !parsed.data.session) {
+    throw new Error("Authentication failed");
+  }
+  return parsed.data.session;
+}
+
+export async function loginWithPassword(
+  serverUrl: string,
+  email: string,
+  password: string,
+): Promise<string> {
+  return submitPasswordAuth(serverUrl, "/auth/login/password", { email, password });
+}
+
+export async function registerWithPassword(
+  serverUrl: string,
+  email: string,
+  password: string,
+  name?: string,
+): Promise<string> {
+  return submitPasswordAuth(serverUrl, "/auth/register", {
+    email,
+    password,
+    name,
+  });
+}
+
 /** Start OAuth login via system browser. Returns the session token on success, null if cancelled. */
 export async function startOAuthLogin(
   serverUrl: string,

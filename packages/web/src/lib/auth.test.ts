@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchConfiguredProviders, fetchCurrentUser, logout } from "./auth.ts";
+import { fetchConfiguredProviders, fetchCurrentUser, loginWithPassword, logout } from "./auth.ts";
 
 function mockResponse(props: Partial<Response>): Response {
   return {
@@ -112,6 +112,47 @@ describe("fetchConfiguredProviders", () => {
       }),
     );
     await expect(fetchConfiguredProviders()).rejects.toThrow("404");
+  });
+});
+
+describe("loginWithPassword", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+    vi.stubGlobal("window", { location: { href: "" } });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("posts credentials and returns redirect path", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse({
+        ok: true,
+        json: () => Promise.resolve({ session: "sess-1", redirect: "/dashboard" }),
+      }),
+    );
+
+    const result = await loginWithPassword({
+      email: "user@example.com",
+      password: "password123",
+      returnTo: "/dashboard",
+    });
+
+    expect(result).toEqual({ redirect: "/dashboard" });
+    expect(fetch).toHaveBeenCalledWith("/auth/login/password", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({
+        email: "user@example.com",
+        password: "password123",
+        return_to: "/dashboard",
+      }),
+    });
   });
 });
 

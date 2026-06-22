@@ -18,6 +18,8 @@ entity "activity" {
   timezone : text
   strava_id : text
   raw : jsonb
+  provider_absent_at : timestamp
+  deleted_at : timestamp
   created_at : timestamp
 }
 
@@ -640,6 +642,15 @@ entity "user_billing" {
   updated_at : timestamp
 }
 
+entity "user_password_credential" {
+  * user_id : uuid <<PK>>
+  --
+  email : text
+  password_hash : text
+  created_at : timestamp
+  updated_at : timestamp
+}
+
 entity "user_profile" {
   * id : uuid <<PK>>
   --
@@ -733,6 +744,7 @@ nutrient ||--o{ supplement_nutrient
 provider ||--o{ sync_log
 user_profile ||--o{ sync_log
 user_profile ||--o{ user_billing
+user_profile ||--o{ user_password_credential
 user_profile ||--o{ user_settings
 provider ||--o{ webhook_subscription
 

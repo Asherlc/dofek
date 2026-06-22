@@ -33,6 +33,24 @@ vi.mock("../auth/providers.ts", () => ({
   generateCodeVerifier: vi.fn(() => "mock-verifier"),
 }));
 
+vi.mock("../auth/password-credential.ts", () => ({
+  registerPasswordUser: vi.fn(() => Promise.resolve({ userId: "user-1", isNewUser: true })),
+  authenticatePasswordUser: vi.fn(() => Promise.resolve({ userId: "user-1" })),
+  DuplicateEmailError: class DuplicateEmailError extends Error {
+    constructor() {
+      super("An account with this email already exists");
+      this.name = "DuplicateEmailError";
+    }
+  },
+  InvalidCredentialsError: class InvalidCredentialsError extends Error {
+    constructor() {
+      super("Invalid email or password");
+      this.name = "InvalidCredentialsError";
+    }
+  },
+  isPasswordAuthEnabled: vi.fn(() => true),
+}));
+
 vi.mock("../auth/session.ts", () => ({
   createSession: vi.fn(() =>
     Promise.resolve({ sessionId: "sess-1", expiresAt: new Date("2027-01-01") }),
@@ -158,7 +176,11 @@ async function request(
   app: express.Express,
   method: "get" | "post",
   path: string,
-  options?: { formBody?: Record<string, string>; headers?: Record<string, string> },
+  options?: {
+    formBody?: Record<string, string>;
+    jsonBody?: unknown;
+    headers?: Record<string, string>;
+  },
 ): Promise<{
   status: number;
   body: string;
@@ -172,6 +194,9 @@ async function request(
       if (options?.formBody) {
         fetchOptions.body = new URLSearchParams(options.formBody).toString();
         fetchHeaders["Content-Type"] = "application/x-www-form-urlencoded";
+      } else if (options?.jsonBody !== undefined) {
+        fetchOptions.body = JSON.stringify(options.jsonBody);
+        fetchHeaders["Content-Type"] = "application/json";
       }
       if (Object.keys(fetchHeaders).length > 0) {
         fetchOptions.headers = fetchHeaders;
@@ -211,6 +236,45 @@ describe("createAuthRouter", () => {
       expect(data.identity).toEqual(["google"]);
       expect(data.data).toEqual([]);
       expect(data.nativeApple).toBe(false);
+      expect(data.password).toBe(true);
+    });
+  });
+
+  describe("POST /auth/register", () => {
+    it("creates a session for a new password user", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/auth/register", {
+        headers: { Accept: "application/json" },
+        jsonBody: {
+          email: "new@example.com",
+          password: "password123",
+          name: "New User",
+        },
+      });
+
+      expect(res.status).toBe(200);
+      const data = JSON.parse(res.body);
+      expect(data.session).toBe("sess-1");
+      expect(data.redirect).toBe("/");
+      expect(setSessionCookie).toHaveBeenCalled();
+    });
+  });
+
+  describe("POST /auth/login/password", () => {
+    it("creates a session for valid credentials", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/auth/login/password", {
+        headers: { Accept: "application/json" },
+        jsonBody: {
+          email: "new@example.com",
+          password: "password123",
+        },
+      });
+
+      expect(res.status).toBe(200);
+      const data = JSON.parse(res.body);
+      expect(data.session).toBe("sess-1");
+      expect(setSessionCookie).toHaveBeenCalled();
     });
   });
 

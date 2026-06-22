@@ -1,18 +1,29 @@
 import { providerLabel } from "@dofek/providers/providers";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  ActivityIndicator,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { ProviderLogo } from "../components/ProviderLogo";
 import {
   type ConfiguredProviders,
   fetchConfiguredProviders,
   isNativeAppleSignInAvailable,
+  loginWithPassword,
+  registerWithPassword,
   startNativeAppleSignIn,
   startOAuthLogin,
 } from "../lib/auth";
 import { useAuth } from "../lib/auth-context";
 import { captureException } from "../lib/telemetry";
 import { colors } from "../theme";
+
+type AuthMode = "login" | "register";
 
 function hasCancelCode(
   err: unknown,
@@ -30,6 +41,10 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
+  const [authMode, setAuthMode] = useState<AuthMode>("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -62,7 +77,6 @@ export default function LoginScreen() {
     try {
       let token: string | null;
 
-      // Use native Apple Sign In on iOS for the apple identity provider
       if (providerId === "apple" && !isDataProvider && nativeAppleSignInAvailable) {
         token = await startNativeAppleSignIn(serverUrl);
       } else {
@@ -73,7 +87,6 @@ export default function LoginScreen() {
         await onLoginSuccess(token);
       }
     } catch (err: unknown) {
-      // User cancelled native Apple Sign In — not an error
       const isCancel =
         (err instanceof Error &&
           (err.message.includes("ERR_CANCELED") || err.message.includes("ERR_REQUEST_CANCELED"))) ||
@@ -89,19 +102,40 @@ export default function LoginScreen() {
     }
   }
 
+  async function handlePasswordAuth() {
+    if (!serverUrl || loggingIn) return;
+
+    setLoggingIn(true);
+    setError(null);
+
+    try {
+      const token =
+        authMode === "register"
+          ? await registerWithPassword(serverUrl, email.trim(), password, name.trim() || undefined)
+          : await loginWithPassword(serverUrl, email.trim(), password);
+      await onLoginSuccess(token);
+    } catch (err: unknown) {
+      captureException(err, { source: "login-screen-password-auth" });
+      setError(err instanceof Error ? err.message : "Authentication failed");
+    } finally {
+      setLoggingIn(false);
+    }
+  }
+
   const useNativeApple =
     nativeAppleSignInAvailable &&
     (providers?.identity.includes("apple") ?? false) &&
     (providers?.nativeApple ?? false);
   const allProviders = providers
     ? [
-        // Exclude Apple from generic list when native sign-in is available
         ...providers.identity
           .filter((id) => !(useNativeApple && id === "apple"))
           .map((id) => ({ id, isData: false })),
         ...providers.data.map((id) => ({ id, isData: true })),
       ]
     : [];
+  const showPasswordAuth = providers?.password ?? false;
+  const showOAuthProviders = allProviders.length > 0 || useNativeApple;
 
   return (
     <View style={styles.container}>
@@ -117,10 +151,98 @@ export default function LoginScreen() {
 
         {loading ? (
           <ActivityIndicator color={colors.accent} style={styles.spinner} />
-        ) : allProviders.length === 0 && !useNativeApple ? (
+        ) : !showPasswordAuth && !showOAuthProviders ? (
           <Text style={styles.noProviders}>No login providers configured on this server.</Text>
         ) : (
           <View style={styles.providerList}>
+            {showPasswordAuth ? (
+              <View style={styles.passwordSection}>
+                <View style={styles.modeToggle}>
+                  <TouchableOpacity
+                    style={[styles.modeButton, authMode === "login" && styles.modeButtonActive]}
+                    onPress={() => setAuthMode("login")}
+                    disabled={loggingIn}
+                  >
+                    <Text
+                      style={[
+                        styles.modeButtonText,
+                        authMode === "login" && styles.modeButtonTextActive,
+                      ]}
+                    >
+                      Sign in
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modeButton, authMode === "register" && styles.modeButtonActive]}
+                    onPress={() => setAuthMode("register")}
+                    disabled={loggingIn}
+                  >
+                    <Text
+                      style={[
+                        styles.modeButtonText,
+                        authMode === "register" && styles.modeButtonTextActive,
+                      ]}
+                    >
+                      Create account
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {authMode === "register" ? (
+                  <TextInput
+                    style={styles.input}
+                    value={name}
+                    onChangeText={setName}
+                    placeholder="Name"
+                    placeholderTextColor={colors.textSecondary}
+                    autoCapitalize="words"
+                    autoComplete="name"
+                    editable={!loggingIn}
+                  />
+                ) : null}
+                <TextInput
+                  style={styles.input}
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder="Email"
+                  placeholderTextColor={colors.textSecondary}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoComplete="email"
+                  editable={!loggingIn}
+                />
+                <TextInput
+                  style={styles.input}
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder="Password"
+                  placeholderTextColor={colors.textSecondary}
+                  secureTextEntry
+                  autoComplete={authMode === "register" ? "new-password" : "password"}
+                  editable={!loggingIn}
+                />
+                <TouchableOpacity
+                  style={styles.passwordButton}
+                  onPress={handlePasswordAuth}
+                  disabled={loggingIn || !email.trim() || !password}
+                >
+                  <Text style={styles.passwordButtonText}>
+                    {loggingIn
+                      ? authMode === "register"
+                        ? "Creating account..."
+                        : "Signing in..."
+                      : authMode === "register"
+                        ? "Create account"
+                        : "Sign in with email"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
+            {showPasswordAuth && showOAuthProviders ? (
+              <Text style={styles.dividerText}>or continue with</Text>
+            ) : null}
+
             {useNativeApple ? (
               <AppleAuthentication.AppleAuthenticationButton
                 buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
@@ -193,6 +315,63 @@ const styles = StyleSheet.create({
   },
   providerList: {
     gap: 12,
+  },
+  passwordSection: {
+    gap: 12,
+    marginBottom: 4,
+  },
+  modeToggle: {
+    flexDirection: "row",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.surfaceSecondary,
+    overflow: "hidden",
+  },
+  modeButton: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: "center",
+    backgroundColor: colors.surface,
+  },
+  modeButtonActive: {
+    backgroundColor: colors.surfaceSecondary,
+  },
+  modeButtonText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  modeButtonTextActive: {
+    color: colors.text,
+  },
+  input: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: colors.surfaceSecondary,
+    color: colors.text,
+    fontSize: 15,
+  },
+  passwordButton: {
+    backgroundColor: colors.accent,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  passwordButtonText: {
+    color: colors.background,
+    fontSize: 15,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  dividerText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    textAlign: "center",
+    textTransform: "uppercase",
+    letterSpacing: 1,
   },
   appleButton: {
     height: 48,

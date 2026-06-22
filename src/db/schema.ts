@@ -1125,6 +1125,24 @@ export const slackInstallation = fitness.table(
 );
 
 // ============================================================
+// Password credentials — email/password login for Dofek accounts
+// ============================================================
+
+export const userPasswordCredential = fitness.table(
+  "user_password_credential",
+  {
+    userId: uuid("user_id")
+      .primaryKey()
+      .references(() => userProfile.id, { onDelete: "cascade" }),
+    email: text("email").notNull().unique(),
+    passwordHash: text("password_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("user_password_credential_email_idx").on(table.email)],
+);
+
+// ============================================================
 // Sessions — database-backed session tokens
 // ============================================================
 

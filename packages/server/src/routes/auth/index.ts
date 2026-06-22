@@ -10,6 +10,7 @@ import {
 import { handleIdentityCallback } from "./identity-callback.ts";
 import { handleIdentityLink } from "./identity-link.ts";
 import { handleIdentityLogin } from "./identity-login.ts";
+import { handlePasswordLogin, handlePasswordRegister } from "./password-auth.ts";
 import { handleGetAuthProviders } from "./providers-list.ts";
 import { handleGetMe, handleLogout } from "./session.ts";
 import { authRateLimiter, initAuthStores } from "./shared.ts";
@@ -47,6 +48,10 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
     express.json(),
     handleAppleNativeSignIn,
   );
+
+  // Email/password authentication
+  router.post("/auth/register", authRateLimiter, express.json(), handlePasswordRegister);
+  router.post("/auth/login/password", authRateLimiter, express.json(), handlePasswordLogin);
 
   // Session management
   router.post("/auth/logout", handleLogout);

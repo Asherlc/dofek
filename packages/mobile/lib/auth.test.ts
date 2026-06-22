@@ -5,7 +5,9 @@ import {
   fetchConfiguredProviders,
   fetchCurrentUser,
   isNativeAppleSignInAvailable,
+  loginWithPassword,
   logout,
+  registerWithPassword,
   startNativeAppleSignIn,
 } from "./auth";
 
@@ -277,6 +279,55 @@ describe("startNativeAppleSignIn", () => {
     vi.mocked(fetch).mockResolvedValueOnce(new Response("Apple Sign In failed", { status: 500 }));
 
     await expect(startNativeAppleSignIn("https://srv")).rejects.toThrow("Apple Sign In failed");
+  });
+});
+
+describe("loginWithPassword", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns session token on success", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ session: "sess-password-1", redirect: "/" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    const token = await loginWithPassword("https://srv", "user@example.com", "password123");
+    expect(token).toBe("sess-password-1");
+  });
+});
+
+describe("registerWithPassword", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns session token on success", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ session: "sess-register-1", redirect: "/" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    const token = await registerWithPassword(
+      "https://srv",
+      "user@example.com",
+      "password123",
+      "User",
+    );
+    expect(token).toBe("sess-register-1");
   });
 });
 
