@@ -81,7 +81,8 @@
     "./personalization/refit": "./src/personalization/refit.ts",
     "./sync-metrics": "./src/sync-metrics.ts",
     "./exercise-metadata": "./src/exercise-metadata.ts",
-    "./lib/cache": "./src/lib/cache.ts"
+    "./lib/cache": "./src/lib/cache.ts",
+    "./admin/provider-rate-limit-status": "./src/admin/provider-rate-limit-status.ts"
   },
   "scripts": {
     "dev": "./scripts/with-env.sh tsx src/index.ts",
