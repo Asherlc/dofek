@@ -20,6 +20,7 @@ import {
   parseWorkout,
 } from "./whoop/parsing.ts";
 import { WhoopProvider } from "./whoop/provider.ts";
+import { runWhoopOrchestratedSync } from "./whoop/sync-orchestrator.ts";
 
 const { publishedMetricStreamBatches } = vi.hoisted<{
   publishedMetricStreamBatches: Record<string, unknown>[][];
@@ -142,6 +143,9 @@ function makeSyncMockFetch(options: {
   cyclesError?: boolean;
   cyclesRateLimit?: boolean;
   strainRateLimit?: boolean;
+  strainSteps?: number;
+  sleepRateLimit?: boolean;
+  developerWorkoutsError?: boolean;
 }) {
   const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL, _init?: RequestInit) => {
     const url = input.toString();
@@ -176,11 +180,38 @@ function makeSyncMockFetch(options: {
       if (options.strainRateLimit) {
         return Promise.resolve(new Response("rate limited", { status: 429 }));
       }
+      if (options.strainSteps != null) {
+        return Promise.resolve(
+          Response.json({
+            sections: [
+              {
+                items: [
+                  {
+                    type: "CONTRIBUTORS_TILE",
+                    content: {
+                      id: "STRAIN_CONTRIBUTORS_TILE",
+                      metrics: [
+                        {
+                          id: "CONTRIBUTORS_TILE_STEPS",
+                          status: options.strainSteps.toLocaleString("en-US"),
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            ],
+          }),
+        );
+      }
       return Promise.resolve(Response.json({ sections: [] }));
     }
 
     // Sleep by ID (sleep-service/v1/sleep-events?activityId=...)
     if (url.includes("sleep-service")) {
+      if (options.sleepRateLimit) {
+        return Promise.resolve(new Response("rate limited", { status: 429 }));
+      }
       if (options.sleepError) {
         return Promise.resolve(new Response("Sleep error", { status: 500 }));
       }
@@ -213,6 +244,9 @@ function makeSyncMockFetch(options: {
 
     // Developer workout list (activity absence reconciliation)
     if (url.includes("developer/v2/activity/workout")) {
+      if (options.developerWorkoutsError) {
+        return Promise.resolve(new Response("developer error", { status: 500 }));
+      }
       return Promise.resolve(Response.json({ records: [], next_token: null }));
     }
 
@@ -754,6 +788,42 @@ describe("WHOOP Provider — parsing", () => {
 // Default future expiry for token mocks
 const futureExpiry = new Date("2099-01-01T00:00:00Z");
 
+async function mockStoredWhoopTokens(scopes = "userId:42") {
+  const { loadTokens } = await import("../db/tokens.ts");
+  vi.mocked(loadTokens).mockResolvedValue({
+    accessToken: "tok",
+    refreshToken: "ref",
+    expiresAt: futureExpiry,
+    scopes,
+  });
+}
+
+function makeCheckpointStore(initial: unknown) {
+  let current = initial;
+  const saved: unknown[] = [];
+  const store = {
+    load: vi.fn(async () => current),
+    save: vi.fn(async (checkpoint: unknown) => {
+      current = checkpoint;
+      saved.push(checkpoint);
+    }),
+    clear: vi.fn(async () => {
+      current = null;
+    }),
+  };
+  return { store, saved };
+}
+
+function requireRecord(value: unknown, message: string): Record<string, unknown> {
+  if (!isRecord(value)) throw new Error(message);
+  return value;
+}
+
+function requireArray(value: unknown, message: string): unknown[] {
+  if (!Array.isArray(value)) throw new Error(message);
+  return value;
+}
+
 describe("WhoopProvider.sync() — token resolution", () => {
   it("returns error when no tokens are stored", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
@@ -939,6 +1009,374 @@ describe("WhoopProvider.sync() — cycles error", () => {
         }),
       ),
     ).rejects.toMatchObject({ providerId: "whoop", statusCode: 429 });
+  });
+});
+
+describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("logs successful WHOOP API requests as info", async () => {
+    await mockStoredWhoopTokens();
+    const { logger } = await import("../logger.ts");
+    const infoSpy = vi.spyOn(logger, "info");
+    const warnSpy = vi.spyOn(logger, "warn");
+    const { store } = makeCheckpointStore(null);
+    const enqueueSyncContinuation = vi.fn(async () => undefined);
+
+    const provider = new WhoopProvider(makeSyncMockFetch({ cycles: [] }));
+    await provider.sync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+        enqueueSyncContinuation,
+      }),
+    );
+
+    expect(infoSpy).toHaveBeenCalledWith(
+      "[whoop] API request",
+      expect.objectContaining({
+        whoopUserId: 42,
+        endpoint: "/core-details-bff/v0/cycles/details",
+        status: 200,
+        attempt: 0,
+        retryAfterSeconds: null,
+      }),
+    );
+    const apiWarnings = warnSpy.mock.calls.filter(
+      (call) => String(call[0]) === "[whoop] API request",
+    );
+    expect(apiWarnings).toHaveLength(0);
+
+    infoSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it("logs WHOOP client 429 responses as warnings", async () => {
+    await mockStoredWhoopTokens();
+    const { logger } = await import("../logger.ts");
+    const infoSpy = vi.spyOn(logger, "info");
+    const warnSpy = vi.spyOn(logger, "warn");
+    const { store } = makeCheckpointStore(null);
+
+    await expect(
+      runWhoopOrchestratedSync(
+        new SyncRun({
+          db: makeChainableMock(),
+          window: SyncWindow.fromDateRange({
+            sinceDate: "2026-03-01",
+            untilDate: "2026-03-01",
+          }),
+          checkpoint: store,
+        }),
+        makeSyncMockFetch({ cyclesRateLimit: true }),
+        Date.now(),
+      ),
+    ).rejects.toMatchObject({
+      providerId: "whoop",
+      statusCode: 429,
+    });
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[whoop] API request",
+      expect.objectContaining({
+        endpoint: "/core-details-bff/v0/cycles/details",
+        status: 429,
+      }),
+    );
+    expect(infoSpy).not.toHaveBeenCalledWith(
+      "[whoop] API request",
+      expect.objectContaining({ status: 429 }),
+    );
+
+    infoSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it("enqueues a continuation after fetching a bootstrap cycle chunk", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-10T00:00:00Z"));
+    await mockStoredWhoopTokens();
+
+    const { store, saved } = makeCheckpointStore(null);
+    const enqueueSyncContinuation = vi.fn(async () => undefined);
+    const onProgress = vi.fn();
+    const provider = new WhoopProvider(
+      makeSyncMockFetch({
+        cycles: [{ days: ["2026-03-01"], recovery: null, sleep: null, workouts: [] }],
+      }),
+    );
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+        enqueueSyncContinuation,
+        onProgress,
+      }),
+    );
+
+    expect(result).toEqual({
+      provider: "whoop",
+      recordsSynced: 0,
+      errors: [],
+      duration: 0,
+      continued: true,
+    });
+    expect(onProgress).toHaveBeenCalledWith(0, "Fetching cycles");
+    expect(store.clear).not.toHaveBeenCalled();
+    expect(enqueueSyncContinuation).toHaveBeenCalledTimes(1);
+
+    const savedCheckpoint = requireRecord(saved[0], "expected saved bootstrap checkpoint");
+    expect(savedCheckpoint.phase).toBe("bootstrap");
+    expect(savedCheckpoint.cycleFetchCursorMs).toBeNull();
+    expect(requireArray(savedCheckpoint.cycles, "expected saved cycles")).toHaveLength(1);
+  });
+
+  it("persists queued bootstrap cycles without fetching WHOOP again", async () => {
+    await mockStoredWhoopTokens();
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockClear();
+
+    const initialCheckpoint = {
+      runId: "run-bootstrap-persist",
+      recordsSynced: 0,
+      phase: "bootstrap",
+      cycleFetchCursorMs: null,
+      cycles: [{ days: ["2026-03-01"], recovery: null, sleep: null, workouts: [] }],
+      apiSteps: [],
+      apiStepIndex: 0,
+      presentExternalIds: [],
+      skipRemainingAfterRateLimit: false,
+    };
+    const { store, saved } = makeCheckpointStore(initialCheckpoint);
+    const enqueueSyncContinuation = vi.fn(async () => undefined);
+    const onProgress = vi.fn();
+    const unexpectedFetch: typeof globalThis.fetch = (input: RequestInfo | URL) =>
+      Promise.reject(new Error(`unexpected fetch ${String(input)}`));
+
+    const provider = new WhoopProvider(unexpectedFetch);
+    const result = await provider.sync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+        enqueueSyncContinuation,
+        onProgress,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      provider: "whoop",
+      recordsSynced: 0,
+      errors: [],
+      continued: true,
+    });
+    expect(onProgress).toHaveBeenCalledWith(0, "Persisting cycle data");
+    expect(loadTokens).not.toHaveBeenCalled();
+    expect(store.clear).not.toHaveBeenCalled();
+    expect(enqueueSyncContinuation).toHaveBeenCalledTimes(1);
+
+    const savedCheckpoint = requireRecord(saved[0], "expected saved API checkpoint");
+    expect(savedCheckpoint.phase).toBe("api");
+    expect(savedCheckpoint.cycleFetchCursorMs).toBeNull();
+    expect(
+      requireArray(savedCheckpoint.apiSteps, "expected planned API steps").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("clears the checkpoint after the final API step completes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-10T00:00:00Z"));
+    await mockStoredWhoopTokens();
+
+    const initialCheckpoint = {
+      runId: "run-final-step",
+      recordsSynced: 0,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: [],
+      apiSteps: [{ type: "strain_deep_dive", date: "2026-03-01" }],
+      apiStepIndex: 0,
+      presentExternalIds: [],
+      skipRemainingAfterRateLimit: false,
+    };
+    const { store, saved } = makeCheckpointStore(initialCheckpoint);
+    const enqueueSyncContinuation = vi.fn(async () => undefined);
+    const onProgress = vi.fn();
+    const db = makeChainableMock();
+    const provider = new WhoopProvider(makeSyncMockFetch({ strainSteps: 7421 }));
+
+    const result = await provider.sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+        enqueueSyncContinuation,
+        onProgress,
+      }),
+    );
+
+    expect(result).toEqual({
+      provider: "whoop",
+      recordsSynced: 1,
+      errors: [],
+      duration: 0,
+      continued: false,
+    });
+    expect(onProgress).toHaveBeenCalledWith(0, "Daily steps 2026-03-01");
+    expect(enqueueSyncContinuation).not.toHaveBeenCalled();
+    expect(store.clear).toHaveBeenCalledTimes(1);
+
+    const savedCheckpoint = requireRecord(saved[0], "expected saved final checkpoint");
+    expect(savedCheckpoint.phase).toBe("done");
+    expect(savedCheckpoint.apiStepIndex).toBe(1);
+    expect(savedCheckpoint.recordsSynced).toBe(1);
+  });
+
+  it("uses the fallback journal label when an API checkpoint is already exhausted", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-10T00:00:00Z"));
+    await mockStoredWhoopTokens();
+
+    const initialCheckpoint = {
+      runId: "run-exhausted-api",
+      recordsSynced: 3,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: [],
+      apiSteps: [{ type: "journal" }],
+      apiStepIndex: 1,
+      presentExternalIds: [],
+      skipRemainingAfterRateLimit: false,
+    };
+    const { store } = makeCheckpointStore(initialCheckpoint);
+    const onProgress = vi.fn();
+    const provider = new WhoopProvider(makeSyncMockFetch({ journalData: [] }));
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+        onProgress,
+      }),
+    );
+
+    expect(result).toEqual({
+      provider: "whoop",
+      recordsSynced: 3,
+      errors: [],
+      duration: 0,
+      continued: false,
+    });
+    expect(onProgress).toHaveBeenCalledWith(99, "Journal");
+    expect(store.clear).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies rate-limit checkpoint state when an API step is rate limited", async () => {
+    await mockStoredWhoopTokens();
+    const initialCheckpoint = {
+      runId: "run-sleep-rate-limit",
+      recordsSynced: 0,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: [],
+      apiSteps: [
+        { type: "sleep_stages", sleepId: "sleep-1" },
+        { type: "heart_rate", start: "2026-03-01T00:00:00.000Z", end: "2026-03-01T01:00:00.000Z" },
+        { type: "journal" },
+      ],
+      apiStepIndex: 0,
+      presentExternalIds: [],
+      skipRemainingAfterRateLimit: false,
+    };
+    const { store, saved } = makeCheckpointStore(initialCheckpoint);
+    const provider = new WhoopProvider(makeSyncMockFetch({ sleepRateLimit: true }));
+
+    await expect(
+      provider.sync(
+        new SyncRun({
+          db: makeChainableMock(),
+          window: SyncWindow.fromDateRange({
+            sinceDate: "2026-03-01",
+            untilDate: "2026-03-01",
+          }),
+          checkpoint: store,
+        }),
+      ),
+    ).rejects.toMatchObject({
+      providerId: "whoop",
+      statusCode: 429,
+    });
+
+    const savedCheckpoint = requireRecord(saved[0], "expected rate-limited checkpoint");
+    expect(savedCheckpoint.skipRemainingAfterRateLimit).toBe(true);
+    expect(savedCheckpoint.apiStepIndex).toBe(0);
+    expect(requireArray(savedCheckpoint.apiSteps, "expected retained API steps")).toHaveLength(1);
+    expect(store.clear).not.toHaveBeenCalled();
+  });
+
+  it("returns a hard failure for developer workout API errors", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-10T00:00:00Z"));
+    await mockStoredWhoopTokens();
+
+    const initialCheckpoint = {
+      runId: "run-developer-workouts-error",
+      recordsSynced: 0,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: [],
+      apiSteps: [{ type: "developer_workouts" }],
+      apiStepIndex: 0,
+      presentExternalIds: [],
+      skipRemainingAfterRateLimit: false,
+    };
+    const { store } = makeCheckpointStore(initialCheckpoint);
+    const provider = new WhoopProvider(makeSyncMockFetch({ developerWorkoutsError: true }));
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+      }),
+    );
+
+    expect(result).toEqual({
+      provider: "whoop",
+      recordsSynced: 0,
+      errors: [
+        expect.objectContaining({
+          message: "WHOOP API error (500): developer error",
+        }),
+      ],
+      duration: 0,
+      continued: false,
+    });
+    expect(store.clear).not.toHaveBeenCalled();
   });
 });
 
