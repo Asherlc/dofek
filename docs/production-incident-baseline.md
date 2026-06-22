@@ -11236,3 +11236,32 @@ new incremental tables are populated.
   are checked after rollout. Other analytics routes still reference
   `analytics.v_activity`; they should be audited separately, but they were not
   on the reported `/activities` and `/training` request paths.
+
+## 2026-06-22 — Dofek asherlc.com DNS record missing
+
+- **Symptoms:** `https://dofek.asherlc.com/healthz` and
+  `https://ota.dofek.asherlc.com/` failed with DNS resolution errors, while
+  `https://dofek.fit/healthz`, `https://www.dofek.fit/healthz`, and
+  `https://dofek.live/healthz` returned `200 {"status":"ok"}`.
+- **User impact:** Users relying on `dofek.asherlc.com` could not reach the
+  app. Users on `dofek.fit` and `dofek.live` were not affected.
+- **Evidence:** `dig @1.1.1.1 +short dofek.asherlc.com` returned no records
+  before remediation. Production Swarm was healthy (`dofek_web` `2/2`,
+  `dofek_db` `1/1`, `dofek_traefik` `1/1`), Postgres returned
+  `pg_is_in_recovery() = false`, and the authenticated tRPC probe returned the
+  expected `401 Not authenticated` rather than timing out. Terraform apply run
+  `27988330786` planned and created `cloudflare_dns_record.dofek_asherlc`.
+- **Root cause:** The Cloudflare `dofek.asherlc.com` A record was absent from
+  live DNS despite being declared in `deploy/dns.tf` and present in Terraform
+  state. The exact deletion/drift mechanism was not identified during the
+  recovery window.
+- **Fix / mitigation:** Re-ran the production Terraform workflow on `main`,
+  which recreated `cloudflare_dns_record.dofek_asherlc` pointing at the current
+  OCI host configuration.
+- **Validation:** After Terraform applied, `dig @1.1.1.1 dofek.asherlc.com`
+  returned `NOERROR` with Cloudflare edge A records, and both Cloudflare and
+  Google DNS-over-HTTPS `curl` probes to
+  `https://dofek.asherlc.com/healthz` returned `200 {"status":"ok"}`.
+- **Remaining risk:** Low for public DNS resolvers. Some local resolvers still
+  returned the old negative result immediately after repair, so affected clients
+  may need normal DNS cache expiration before `dofek.asherlc.com` works.
