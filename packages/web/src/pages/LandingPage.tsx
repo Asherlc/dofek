@@ -23,7 +23,7 @@ const FEATURED_PROVIDERS = [
   { id: "concept2", label: "Concept2", ext: "png" },
   { id: "ride-with-gps", label: "Ride with GPS", ext: "png" },
   { id: "komoot", label: "Komoot", ext: "svg" },
-  { id: "fatsecret", label: "FatSecret", ext: "png" },
+  { id: "fatsecret", label: "fatsecret", ext: "png" },
   { id: "strong-csv", label: "Strong", ext: "png" },
   { id: "cronometer-csv", label: "Cronometer", ext: "png" },
   { id: "ultrahuman", label: "Ultrahuman", ext: "png" },
@@ -831,7 +831,7 @@ function Footer() {
             rel="noopener noreferrer"
             className="text-xs font-medium text-[#6b8178] transition-colors hover:text-foreground"
           >
-            Powered by FatSecret
+            Powered by fatsecret Platform API
           </a>
         </div>
         <div className="flex items-center gap-4 text-xs text-[#6b8178]">
