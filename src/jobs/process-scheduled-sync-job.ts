@@ -35,6 +35,7 @@ export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, d
   }
 
   let jobCount = 0;
+  let skippedDueToCooldown = 0;
 
   for (const [userId, providerIds] of userProviders) {
     for (const providerId of providerIds) {
@@ -50,10 +51,22 @@ export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, d
         sinceDays: provider?.scheduledSyncLookbackDays ?? 1,
       };
 
-      await enqueueSyncJob(providerId, jobData);
+      const job = await enqueueSyncJob(providerId, jobData, { skipWhenRateLimited: true });
+      if (!job) {
+        skippedDueToCooldown++;
+        logger.info(
+          `[scheduled-sync] Skipping ${providerId} for ${userId}: rate-limit cooldown active`,
+        );
+        continue;
+      }
       jobCount++;
     }
   }
 
-  logger.info(`[scheduled-sync] Enqueued ${jobCount} sync jobs for ${userProviders.size} users`);
+  logger.info(
+    `[scheduled-sync] Enqueued ${jobCount} sync jobs for ${userProviders.size} users` +
+      (skippedDueToCooldown > 0
+        ? ` (${skippedDueToCooldown} skipped due to rate-limit cooldown)`
+        : ""),
+  );
 }

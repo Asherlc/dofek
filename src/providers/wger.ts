@@ -1,15 +1,17 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import type { CanonicalActivityType } from "@dofek/training/training";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
-import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
-import { activity } from "../db/schema.ts";
+import {
+  finishProviderActivityListSync,
+  upsertProviderActivity,
+} from "../db/provider-activity-sync.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
@@ -116,7 +118,7 @@ export class WgerProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "wger" });
+    this.#fetchFn = createProviderRateLimitFetch("wger", fetchFn);
   }
 
   validate(): string | null {
@@ -199,30 +201,30 @@ export class WgerProvider implements SyncProvider {
                 url = null;
                 break;
               }
+              if (sessionDate >= syncWindowEnd) {
+                continue;
+              }
 
               const parsed = parseWgerWorkoutSession(raw);
               presentActivityExternalIds.add(parsed.externalId);
               try {
-                await db
-                  .insert(activity)
-                  .values({
+                await upsertProviderActivity(
+                  db,
+                  {
                     providerId: this.id,
                     externalId: parsed.externalId,
                     activityType: parsed.activityType,
                     name: parsed.name,
                     startedAt: parsed.startedAt,
                     raw: parsed.raw,
-                  })
-                  .onConflictDoUpdate({
-                    target: [activity.userId, activity.providerId, activity.externalId],
-                    set: {
-                      activityType: parsed.activityType,
-                      name: parsed.name,
-                      startedAt: parsed.startedAt,
-                      raw: parsed.raw,
-                      providerAbsentAt: null,
-                    },
-                  });
+                  },
+                  {
+                    activityType: parsed.activityType,
+                    name: parsed.name,
+                    startedAt: parsed.startedAt,
+                    raw: parsed.raw,
+                  },
+                );
                 count++;
               } catch (err) {
                 errors.push({
@@ -238,7 +240,7 @@ export class WgerProvider implements SyncProvider {
             }
           }
 
-          await reconcileProviderActivityAbsence(db, {
+          await finishProviderActivityListSync(db, {
             providerId: this.id,
             userId: options?.userId,
             windowStart: since,

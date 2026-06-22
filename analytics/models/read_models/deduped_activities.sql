@@ -58,6 +58,11 @@ absent_source_links AS (
     GROUP BY group_id
 ),
 
+tombstoned_groups AS (
+    SELECT DISTINCT group_id
+    FROM absent_group_members
+),
+
 best AS (
     SELECT *
     FROM (
@@ -138,6 +143,7 @@ current_deduped_activities AS (
         absent_source_external_ids,
         member_activity_ids
     FROM merged
+    WHERE group_id NOT IN (SELECT group_id FROM tombstoned_groups)
 )
 
 {% if is_incremental() %}

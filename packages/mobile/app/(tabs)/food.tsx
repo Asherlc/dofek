@@ -130,7 +130,7 @@ export default function FoodScreen() {
     deleteMutation.mutate({ id });
   }
 
-  function handleOpenFatSecret() {
+  function handleOpenFatsecretWebsite() {
     void Linking.openURL(FATSECRET_URL);
   }
 
@@ -342,11 +342,13 @@ export default function FoodScreen() {
         )}
         <Pressable
           accessibilityRole="link"
-          accessibilityLabel="Powered by FatSecret"
-          onPress={handleOpenFatSecret}
+          accessibilityLabel="Powered by fatsecret nutrition API (www.fatsecret.com)"
+          onPress={handleOpenFatsecretWebsite}
           style={styles.fatsecretAttributionLink}
         >
-          <Text style={styles.fatsecretAttribution}>Powered by FatSecret</Text>
+          <Text style={styles.fatsecretAttribution}>
+            Powered by fatsecret nutrition API (www.fatsecret.com)
+          </Text>
         </Pressable>
       </ScrollView>
     </View>

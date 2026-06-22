@@ -829,37 +829,16 @@ describe("WhoopClient.listDeveloperWorkouts", () => {
     await expect(client.listDeveloperWorkouts()).rejects.toThrow();
   });
 
-  it("retries rate-limited developer workout requests before succeeding", async () => {
+  it("does not retry rate-limited developer workout requests", async () => {
     const fetchFn = vi
       .fn<typeof globalThis.fetch>()
-      .mockResolvedValueOnce(
+      .mockResolvedValue(
         createMockResponse({ status: 429, ok: false, text: "slow down", body: "slow down" }),
-      )
-      .mockResolvedValueOnce(
-        createMockResponse({ status: 429, ok: false, text: "still slow", body: "still slow" }),
-      )
-      .mockResolvedValueOnce(
-        createMockResponse({
-          status: 200,
-          ok: true,
-          body: {
-            records: [
-              {
-                id: "after-retry",
-                start: "2024-01-15T10:00:00Z",
-                end: "2024-01-15T11:00:00Z",
-              },
-            ],
-            next_token: null,
-          },
-        }),
       );
     const client = new WhoopClient(makeToken(), fetchFn);
 
-    const result = await client.listDeveloperWorkouts();
-
-    expect(result.records.map((record) => record.id)).toEqual(["after-retry"]);
-    expect(fetchFn).toHaveBeenCalledTimes(3);
+    await expect(client.listDeveloperWorkouts()).rejects.toBeInstanceOf(WhoopRateLimitError);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
   it("retries service-unavailable developer workout requests before succeeding", async () => {
@@ -905,7 +884,7 @@ describe("WhoopClient.listDeveloperWorkouts", () => {
     expect(fetchFn).toHaveBeenCalledTimes(3);
   });
 
-  it("throws the rate-limit error after exhausting developer workout retries", async () => {
+  it("throws the rate-limit error without retrying developer workout requests", async () => {
     const fetchFn = vi
       .fn<typeof globalThis.fetch>()
       .mockImplementation(() =>
@@ -916,7 +895,7 @@ describe("WhoopClient.listDeveloperWorkouts", () => {
     const client = new WhoopClient(makeToken(), fetchFn);
 
     await expect(client.listDeveloperWorkouts()).rejects.toBeInstanceOf(WhoopRateLimitError);
-    expect(fetchFn).toHaveBeenCalledTimes(4);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
   it("throws the common service-unavailable error after exhausting developer workout retries", async () => {

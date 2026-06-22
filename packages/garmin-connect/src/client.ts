@@ -10,11 +10,7 @@
  * 6. All API calls use OAuth2 Bearer token
  */
 
-import {
-  createRateLimitAwareFetch,
-  ProviderRateLimitError,
-  parseRetryAfterHeader,
-} from "@dofek/provider-http/rate-limit";
+import { ProviderRateLimitError, parseRetryAfterHeader } from "@dofek/provider-http/rate-limit";
 import { buildOAuth1Header } from "./oauth1.ts";
 import type {
   BodyBatteryDay,
@@ -45,6 +41,10 @@ const OAUTH_CONSUMER_URL = "https://thegarth.s3.amazonaws.com/oauth_consumer.jso
 const USER_AGENT = "com.garmin.android.apps.connectmobile";
 const API_USER_AGENT = "GCM-iOS-5.19.1.2";
 
+/** Minimum delay between consecutive Connect API requests (ms).
+ *  Garmin's unofficial API rate limits aggressively; 2s keeps bursts under control. */
+export const GARMIN_CONNECT_THROTTLE_MS = 2_000;
+
 const CSRF_RE = /name="_csrf"\s+value="(.+?)"/;
 const TITLE_RE = /<title>(.+?)<\/title>/;
 const TICKET_RE = /embed\?ticket=([^"]+)"/;
@@ -56,18 +56,9 @@ export class GarminConnectClient {
   #displayName: string | null = null;
   #domain: string;
   #fetchFn: typeof globalThis.fetch;
-
   constructor(domain: string = "garmin.com", fetchFn: typeof globalThis.fetch = globalThis.fetch) {
     this.#domain = domain;
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, {
-      providerId: "garmin",
-      createRateLimitError: (response, responseBody) =>
-        new GarminRateLimitError(
-          `Rate limit exceeded (${response.status}): ${responseBody}`,
-          responseBody,
-          response.headers?.get?.("Retry-After"),
-        ),
-    });
+    this.#fetchFn = fetchFn;
   }
 
   // ============================================================
@@ -346,12 +337,15 @@ export class GarminConnectClient {
       throw new GarminAuthError("Authentication failed (401)");
     }
 
-    if (response.status === 429) {
-      throw new GarminRateLimitError("Rate limit exceeded (429)");
-    }
-
     if (!response.ok) {
       const text = await response.text();
+      if (response.status === 429) {
+        throw new GarminRateLimitError(
+          `Rate limit exceeded (${response.status}): ${text}`,
+          text,
+          response.headers?.get?.("Retry-After"),
+        );
+      }
       throw new GarminApiError(`API error (${response.status}): ${text}`, response.status);
     }
 

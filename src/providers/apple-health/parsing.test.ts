@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseHealthDate } from "./dates.ts";
+import { extractCalendarDay, parseHealthDate } from "./dates.ts";
 import { parseCategoryRecord, parseRecord, parseRouteLocation } from "./records.ts";
 import { parseSleepAnalysis } from "./sleep.ts";
 import {
@@ -8,6 +8,7 @@ import {
   parseActivitySummary,
   parseWorkout,
   parseWorkoutStatistics,
+  type WorkoutStatistics,
 } from "./workouts.ts";
 
 // ============================================================
@@ -284,8 +285,8 @@ describe("Apple Health Provider -- parsing", () => {
 
     it("parses Apple Health date format with timezone", () => {
       const result = parseRecord(heartRateAttrs);
-      // "2024-03-01 10:30:00 -0500" should parse correctly
       expect(result?.startDate.getTime()).not.toBeNaN();
+      expect(result?.startDateCalendarDay).toBe("2024-03-01");
     });
   });
 
@@ -360,6 +361,55 @@ describe("Apple Health Provider -- parsing", () => {
         workoutActivityType: "HKWorkoutActivityTypeHiking",
       });
       expect(hiking.activityType).toBe("hiking");
+
+      const yoga = parseWorkout({
+        ...workoutAttrs,
+        workoutActivityType: "HKWorkoutActivityTypeYoga",
+      });
+      expect(yoga.activityType).toBe("yoga");
+
+      const rowing = parseWorkout({
+        ...workoutAttrs,
+        workoutActivityType: "HKWorkoutActivityTypeRowing",
+      });
+      expect(rowing.activityType).toBe("rowing");
+
+      const elliptical = parseWorkout({
+        ...workoutAttrs,
+        workoutActivityType: "HKWorkoutActivityTypeElliptical",
+      });
+      expect(elliptical.activityType).toBe("elliptical");
+
+      const hiit = parseWorkout({
+        ...workoutAttrs,
+        workoutActivityType: "HKWorkoutActivityTypeHighIntensityIntervalTraining",
+      });
+      expect(hiit.activityType).toBe("hiit");
+
+      const strength = parseWorkout({
+        ...workoutAttrs,
+        workoutActivityType: "HKWorkoutActivityTypeTraditionalStrengthTraining",
+      });
+      expect(strength.activityType).toBe("strength_training");
+    });
+
+    it("parses a cycling workout with unit conversions", () => {
+      const workout = parseWorkout({
+        workoutActivityType: "HKWorkoutActivityTypeCycling",
+        sourceName: "Apple Watch",
+        duration: "60",
+        durationUnit: "min",
+        totalDistance: "30",
+        totalDistanceUnit: "km",
+        totalEnergyBurned: "500.5",
+        startDate: "2024-03-01 08:00:00 -0500",
+        endDate: "2024-03-01 09:00:00 -0500",
+      });
+      expect(workout.activityType).toBe("cycling");
+      expect(workout.durationSeconds).toBe(3600);
+      expect(workout.distanceMeters).toBe(30000);
+      expect(workout.calories).toBe(501);
+      expect(workout.sourceName).toBe("Apple Watch");
     });
 
     it("handles missing optional fields", () => {
@@ -417,6 +467,7 @@ describe("Apple Health Provider -- parsing", () => {
         type: "HKQuantityTypeIdentifierHeartRate",
         startDate: "2024-03-01 18:00:00 -0500",
         endDate: "2024-03-01 18:30:00 -0500",
+        sum: "14400",
         average: "145",
         minimum: "120",
         maximum: "175",
@@ -425,6 +476,7 @@ describe("Apple Health Provider -- parsing", () => {
       const result = parseWorkoutStatistics(attrs);
       expect(result).not.toBeNull();
       expect(result?.type).toBe("HKQuantityTypeIdentifierHeartRate");
+      expect(result?.sum).toBe(14400);
       expect(result?.average).toBe(145);
       expect(result?.minimum).toBe(120);
       expect(result?.maximum).toBe(175);
@@ -485,6 +537,36 @@ describe("Apple Health Provider -- parsing", () => {
       ]);
 
       expect(workout.calories).toBe(originalCalories);
+    });
+
+    it("enriches workout with heart rate stats using typed statistics", () => {
+      const workout = parseWorkout({
+        workoutActivityType: "HKWorkoutActivityTypeCycling",
+        startDate: "2024-03-01 08:00:00 -0500",
+        endDate: "2024-03-01 09:00:00 -0500",
+      });
+
+      const stats: WorkoutStatistics[] = [
+        { type: "HKQuantityTypeIdentifierHeartRate", average: 150.4, maximum: 185.7 },
+      ];
+
+      enrichWorkoutFromStats(workout, stats);
+      expect(workout.avgHeartRate).toBe(150);
+      expect(workout.maxHeartRate).toBe(186);
+    });
+
+    it("enriches workout with active energy when calories not set", () => {
+      const workout = parseWorkout({
+        startDate: "2024-03-01 08:00:00 -0500",
+        endDate: "2024-03-01 09:00:00 -0500",
+      });
+
+      const stats: WorkoutStatistics[] = [
+        { type: "HKQuantityTypeIdentifierActiveEnergyBurned", sum: 450.6 },
+      ];
+
+      enrichWorkoutFromStats(workout, stats);
+      expect(workout.calories).toBe(451);
     });
   });
 
@@ -708,13 +790,13 @@ describe("parseHealthDate -- edge cases", () => {
   it("parses standard Apple Health format", () => {
     const date = parseHealthDate("2024-03-01 10:30:00 -0500");
     expect(date).toBeInstanceOf(Date);
-    expect(date.getTime()).not.toBeNaN();
+    expect(date.toISOString()).toBe("2024-03-01T15:30:00.000Z");
   });
 
   it("falls back to Date constructor for non-standard format", () => {
     const date = parseHealthDate("2024-03-01T10:30:00Z");
     expect(date).toBeInstanceOf(Date);
-    expect(date.getTime()).not.toBeNaN();
+    expect(date.toISOString()).toBe("2024-03-01T10:30:00.000Z");
   });
 
   it("handles positive timezone offset", () => {
@@ -723,9 +805,28 @@ describe("parseHealthDate -- edge cases", () => {
     expect(date.getTime()).not.toBeNaN();
   });
 
+  it("parses positive timezone offset with exact UTC conversion", () => {
+    const date = parseHealthDate("2024-06-15 14:00:00 +0200");
+    expect(date.toISOString()).toBe("2024-06-15T12:00:00.000Z");
+  });
+
   it("handles empty string gracefully", () => {
     const date = parseHealthDate("");
     expect(date).toBeInstanceOf(Date);
+  });
+});
+
+describe("extractCalendarDay", () => {
+  it("extracts day from Apple Health date format", () => {
+    expect(extractCalendarDay("2024-03-01 23:30:00 -0800")).toBe("2024-03-01");
+  });
+
+  it("extracts day from ISO timestamp", () => {
+    expect(extractCalendarDay("2024-03-01T23:30:00-08:00")).toBe("2024-03-01");
+  });
+
+  it("returns null for invalid date strings", () => {
+    expect(extractCalendarDay("not-a-date")).toBeNull();
   });
 });
 

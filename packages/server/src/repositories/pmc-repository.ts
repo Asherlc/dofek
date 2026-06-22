@@ -137,19 +137,20 @@ export class PmcRepository extends BaseRepository {
       normalizedPowerRowSchema,
       `WITH rolling AS (
         SELECT
-          a.id AS activity_id,
+          a.activity_id AS activity_id,
           avg(ds.scalar) OVER (
-            PARTITION BY a.id
+            PARTITION BY a.activity_id
             ORDER BY toUnixTimestamp(ds.recorded_at)
             RANGE BETWEEN 29 PRECEDING AND CURRENT ROW
           ) AS rolling_30s_power
         FROM analytics.deduped_sensor ds
-        INNER JOIN analytics.v_activity a
+        INNER JOIN analytics.deduped_activities a FINAL
           ON a.user_id = ds.user_id
          AND ds.recorded_at >= a.started_at
          AND ds.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
         WHERE ds.user_id = {userId:UUID}
           AND a.started_at > now() - INTERVAL {queryDays:Int32} DAY
+          AND a.is_deleted = 0
           AND ds.channel = 'power'
           AND ds.scalar > 0
           AND ds.is_deleted = 0

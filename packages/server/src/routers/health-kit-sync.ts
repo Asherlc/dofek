@@ -3,6 +3,7 @@ import { queryCache } from "dofek/lib/cache";
 import { healthKitPushTotal, healthKitRecordsTotal } from "dofek/sync-metrics";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { timestampStringSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 import {
@@ -199,10 +200,28 @@ export const healthKitSyncRouter = router({
     }),
 
   pushWorkouts: protectedProcedure
-    .input(z.object({ workouts: z.array(workoutSampleSchema) }))
+    .input(
+      z
+        .object({
+          workouts: z.array(workoutSampleSchema),
+          windowStart: timestampStringSchema,
+          windowEnd: timestampStringSchema,
+        })
+        .refine(
+          ({ windowStart, windowEnd }) =>
+            new Date(windowStart).getTime() < new Date(windowEnd).getTime(),
+          {
+            message: "windowEnd must be after windowStart",
+            path: ["windowEnd"],
+          },
+        ),
+    )
     .mutation(async ({ ctx, input }) => {
       await ensureProvider(ctx.db, ctx.userId);
-      const inserted = await processWorkouts(ctx.db, ctx.userId, input.workouts);
+      const inserted = await processWorkouts(ctx.db, ctx.userId, input.workouts, {
+        windowStart: input.windowStart,
+        windowEnd: input.windowEnd,
+      });
 
       if (inserted > 0) {
         await queryCache.invalidateByPrefix(`${ctx.userId}:`);

@@ -870,6 +870,128 @@ describe("WhoopProvider.sync() (integration)", () => {
     expect(presentRows[0]?.providerAbsentAt).toBeNull();
   });
 
+  it("keeps tombstones after a later sync phase upserts stale provider data", async () => {
+    await ctx.db
+      .insert(activity)
+      .values({
+        providerId: "whoop",
+        externalId: "whoop-stale-strength-uuid",
+        activityType: "strength",
+        startedAt: new Date("2026-03-10T10:00:00Z"),
+      })
+      .onConflictDoUpdate({
+        target: [activity.userId, activity.providerId, activity.externalId],
+        set: {
+          providerAbsentAt: null,
+        },
+      });
+
+    const cycles = [
+      fakeCycle({
+        id: 303,
+        days: ["2026-03-10"],
+        workouts: [
+          {
+            activity_id: "whoop-stale-strength-uuid",
+            during: "['2026-03-10T10:00:00Z','2026-03-10T11:00:00Z')",
+            timezone_offset: "-05:00",
+            sport_id: 45,
+            average_heart_rate: 130,
+            max_heart_rate: 160,
+            kilojoules: 1200,
+            percent_recorded: 100,
+            score: 8.5,
+          },
+        ],
+      }),
+    ];
+
+    const weightliftingPayload = {
+      activity_id: "whoop-stale-strength-uuid",
+      user_id: 10129,
+      during: "['2026-03-10T10:00:00Z','2026-03-10T11:00:00Z')",
+      total_effective_volume_kg: 600,
+      raw_msk_strain_score: 8,
+      scaled_msk_strain_score: 7.5,
+      cardio_strain_score: 4,
+      cardio_strain_contribution_percent: 30,
+      msk_strain_contribution_percent: 70,
+      zone_durations: {
+        zone0_to10_duration: 0,
+        zone10_to20_duration: 0,
+        zone20_to30_duration: 0,
+        zone30_to40_duration: 0,
+        zone40_to50_duration: 0,
+        zone50_to60_duration: 0,
+        zone60_to70_duration: 0,
+        zone70_to80_duration: 0,
+        zone80_to90_duration: 0,
+        zone90_to100_duration: 0,
+      },
+      workout_groups: [
+        {
+          workout_exercises: [
+            {
+              sets: [
+                {
+                  weight_kg: 60,
+                  number_of_reps: 10,
+                  msk_total_volume_kg: 600,
+                  time_in_seconds: 0,
+                  during: "['2026-03-10T10:05:00Z','2026-03-10T10:05:30Z')",
+                  complete: true,
+                },
+              ],
+              exercise_details: {
+                exercise_id: "BENCHPRESS",
+                name: "Bench Press",
+                equipment: "BARBELL",
+                exercise_type: "STRENGTH",
+                muscle_groups: ["CHEST"],
+                volume_input_format: "REPS",
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    server.use(
+      http.get(
+        "https://api.prod.whoop.com/weightlifting-service/v2/weightlifting-workout/:activityId",
+        ({ params }) => {
+          if (params.activityId === "whoop-stale-strength-uuid") {
+            return HttpResponse.json(weightliftingPayload);
+          }
+          return new HttpResponse("Not found", { status: 404 });
+        },
+      ),
+      ...whoopHandlers(cycles, {
+        developerWorkouts: [],
+      }),
+    );
+    const provider = new WhoopProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-10T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.duration).toBeLessThan(60_000);
+
+    const staleRows = await ctx.db
+      .select()
+      .from(activity)
+      .where(
+        and(eq(activity.providerId, "whoop"), eq(activity.externalId, "whoop-stale-strength-uuid")),
+      );
+
+    expect(staleRows[0]?.providerAbsentAt).toBeInstanceOf(Date);
+  });
+
   it("uses stored userId from scopes when bootstrap returns no user ID", async () => {
     // Save tokens with userId in scopes (as the auth flow does)
     await saveTokens(ctx.db, "whoop", {

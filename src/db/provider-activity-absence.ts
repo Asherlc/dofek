@@ -54,6 +54,13 @@ function externalIdListSql(externalIds: string[]) {
   );
 }
 
+/**
+ * Tombstone activities missing from an authoritative provider list and restore
+ * activities that reappear. Provider sync code should call this only through
+ * `finishProviderActivityListSync()` / `ProviderActivityListSync` in
+ * `provider-activity-sync.ts`. Activity upserts must not null the column on
+ * conflict or a later sync phase can undo tombstones.
+ */
 export async function reconcileProviderActivityAbsence(
   db: SyncDatabase,
   reconciliation: ProviderActivityAbsenceReconciliation,
@@ -107,6 +114,24 @@ export async function markProviderActivityAbsent(
       AND provider_id = ${mark.providerId}
       AND external_id = ${mark.externalId}
       AND provider_absent_at IS NULL
+      AND deleted_at IS NULL
+  `);
+
+  await invalidateActivityVisibilityCaches(userId);
+}
+
+export async function markProviderActivityPresent(
+  db: SyncDatabase,
+  mark: ProviderActivityAbsenceMark,
+): Promise<void> {
+  const userId = resolveUserId(mark.userId);
+  await db.execute(sql`
+    UPDATE fitness.activity
+    SET provider_absent_at = NULL
+    WHERE user_id = ${userId}
+      AND provider_id = ${mark.providerId}
+      AND external_id = ${mark.externalId}
+      AND provider_absent_at IS NOT NULL
       AND deleted_at IS NULL
   `);
 

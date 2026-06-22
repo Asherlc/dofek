@@ -1,65 +1,19 @@
-export interface ProviderRateLimitErrorOptions {
-  message: string;
-  providerId: string;
-  statusCode: number;
-  responseBody: string;
-  scope?: ProviderRateLimitScope;
-  userId?: string | null;
-  retryAfterSeconds?: number | null;
-}
+import type { AdaptiveRateLimitStore } from "./rate-limit-types.ts";
+import {
+  type ProviderHttpErrorScope,
+  ProviderRateLimitError,
+  type ProviderRateLimitScope,
+  ProviderServiceUnavailableError,
+} from "./rate-limit-types.ts";
 
-export type ProviderRateLimitScope = "provider" | "user";
-export type ProviderHttpErrorScope = ProviderRateLimitScope;
-
-export interface ProviderServiceUnavailableErrorOptions {
-  message: string;
-  providerId: string;
-  statusCode: number;
-  responseBody: string;
-  scope?: ProviderHttpErrorScope;
-  userId?: string | null;
-  retryAfterSeconds?: number | null;
-}
-
-export class ProviderRateLimitError extends Error {
-  readonly providerId: string;
-  readonly statusCode: number;
-  readonly responseBody: string;
-  readonly scope: ProviderRateLimitScope;
-  readonly userId: string | null;
-  readonly retryAfterSeconds: number | null;
-
-  constructor(options: ProviderRateLimitErrorOptions) {
-    super(options.message);
-    this.name = "ProviderRateLimitError";
-    this.providerId = options.providerId;
-    this.statusCode = options.statusCode;
-    this.responseBody = options.responseBody;
-    this.scope = options.scope ?? "provider";
-    this.userId = options.userId ?? null;
-    this.retryAfterSeconds = options.retryAfterSeconds ?? null;
-  }
-}
-
-export class ProviderServiceUnavailableError extends Error {
-  readonly providerId: string;
-  readonly statusCode: number;
-  readonly responseBody: string;
-  readonly scope: ProviderHttpErrorScope;
-  readonly userId: string | null;
-  readonly retryAfterSeconds: number | null;
-
-  constructor(options: ProviderServiceUnavailableErrorOptions) {
-    super(options.message);
-    this.name = "ProviderServiceUnavailableError";
-    this.providerId = options.providerId;
-    this.statusCode = options.statusCode;
-    this.responseBody = options.responseBody;
-    this.scope = options.scope ?? "provider";
-    this.userId = options.userId ?? null;
-    this.retryAfterSeconds = options.retryAfterSeconds ?? null;
-  }
-}
+export type {
+  AdaptiveRateLimitStore,
+  ProviderHttpErrorScope,
+  ProviderRateLimitErrorOptions,
+  ProviderRateLimitScope,
+  ProviderServiceUnavailableErrorOptions,
+} from "./rate-limit-types.ts";
+export { ProviderRateLimitError, ProviderServiceUnavailableError };
 
 export interface FetchRateLimitHandlingOptions {
   createRateLimitError: (response: Response, responseBody: string) => Error;
@@ -72,6 +26,7 @@ export interface RateLimitAwareFetchOptions {
   userId?: string | null;
   createRateLimitError?: (response: Response, responseBody: string) => Error;
   createServiceUnavailableError?: (response: Response, responseBody: string) => Error;
+  adaptiveStore?: AdaptiveRateLimitStore;
 }
 
 const rateLimitAwareFetches = new WeakSet<typeof globalThis.fetch>();
@@ -167,29 +122,48 @@ export function createRateLimitAwareFetch(
 ): typeof globalThis.fetch {
   if (rateLimitAwareFetches.has(fetchFn)) return fetchFn;
 
-  const rateLimitFetch: typeof globalThis.fetch = (input, init) =>
-    fetchWithRateLimitHandling(fetchFn, input, init, {
-      createRateLimitError:
-        options.createRateLimitError ??
-        ((response, responseBody) =>
-          createDefaultRateLimitError(
-            options.providerId,
-            options.scope ?? "provider",
-            options.userId ?? null,
-            response,
-            responseBody,
-          )),
-      createServiceUnavailableError:
-        options.createServiceUnavailableError ??
-        ((response, responseBody) =>
-          createDefaultServiceUnavailableError(
-            options.providerId,
-            options.scope ?? "provider",
-            options.userId ?? null,
-            response,
-            responseBody,
-          )),
-    });
+  const rateLimitFetch: typeof globalThis.fetch = async (input, init) => {
+    const scope = options.scope ?? "provider";
+    const userId = options.userId ?? null;
+    if (options.adaptiveStore) {
+      await options.adaptiveStore.awaitAdmission(options.providerId, scope, userId);
+    }
+
+    try {
+      const response = await fetchWithRateLimitHandling(fetchFn, input, init, {
+        createRateLimitError:
+          options.createRateLimitError ??
+          ((response, responseBody) =>
+            createDefaultRateLimitError(options.providerId, scope, userId, response, responseBody)),
+        createServiceUnavailableError:
+          options.createServiceUnavailableError ??
+          ((response, responseBody) =>
+            createDefaultServiceUnavailableError(
+              options.providerId,
+              scope,
+              userId,
+              response,
+              responseBody,
+            )),
+      });
+
+      if (options.adaptiveStore && response.ok) {
+        await options.adaptiveStore.recordSuccess(
+          options.providerId,
+          scope,
+          userId,
+          response.headers,
+        );
+      }
+
+      return response;
+    } catch (err) {
+      if (options.adaptiveStore && err instanceof ProviderRateLimitError) {
+        await options.adaptiveStore.recordRateLimit(err);
+      }
+      throw err;
+    }
+  };
   rateLimitAwareFetches.add(rateLimitFetch);
   return rateLimitFetch;
 }

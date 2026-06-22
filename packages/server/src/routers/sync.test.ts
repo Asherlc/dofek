@@ -141,6 +141,7 @@ vi.mock("dofek/db/schema", () => ({
   },
 }));
 
+import * as enqueueSyncJobModule from "dofek/jobs/enqueue-sync-job";
 import {
   logsInput,
   sanitizeErrorMessage,
@@ -797,6 +798,22 @@ describe("syncRouter", () => {
       expect(result.jobId).toMatch(/^job-wahoo-\d+$/);
       expect(result.jobIds).toHaveLength(1);
       expect(result.providerJobs[0]?.providerId).toBe("wahoo");
+    });
+
+    it("returns TOO_MANY_REQUESTS when sync enqueue is skipped for rate-limit cooldown", async () => {
+      mockGetAllProviders.mockReturnValue([{ id: "wahoo", name: "Wahoo", validate: () => null }]);
+      vi.spyOn(enqueueSyncJobModule, "enqueueSyncJob").mockResolvedValueOnce(null);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.triggerSync({ providerId: "wahoo" })).rejects.toMatchObject({
+        code: "TOO_MANY_REQUESTS",
+        message: "Provider wahoo sync skipped: rate-limit cooldown active",
+      });
     });
   });
 

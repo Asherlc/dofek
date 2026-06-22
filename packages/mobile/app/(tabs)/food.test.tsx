@@ -153,12 +153,16 @@ describe("FoodScreen AI meal confirmation", () => {
     });
   });
 
-  it("opens FatSecret when pressing the food screen attribution", async () => {
+  it("opens fatsecret when pressing the food screen attribution", async () => {
     const { default: FoodScreen } = await import("./food");
 
     render(<FoodScreen />);
 
-    fireEvent.click(screen.getByRole("link", { name: "Powered by FatSecret" }));
+    fireEvent.click(
+      screen.getByRole("link", {
+        name: "Powered by fatsecret nutrition API (www.fatsecret.com)",
+      }),
+    );
 
     expect(Linking.openURL).toHaveBeenCalledWith("https://www.fatsecret.com/");
   });

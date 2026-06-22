@@ -221,11 +221,21 @@ export const syncRouter = router({
 
     const providerJobs = await Promise.all(
       providerIds.map(async (providerId) => {
-        const job = await enqueueSyncJob(providerId, {
+        const job = await enqueueSyncJob(
           providerId,
-          userId: ctx.userId,
-          ...syncWindowToJobData(syncWindow, input.sinceDays),
-        });
+          {
+            providerId,
+            userId: ctx.userId,
+            ...syncWindowToJobData(syncWindow, input.sinceDays),
+          },
+          { skipWhenRateLimited: true },
+        );
+        if (!job) {
+          throw new TRPCError({
+            code: "TOO_MANY_REQUESTS",
+            message: `Provider ${providerId} sync skipped: rate-limit cooldown active`,
+          });
+        }
         const jobId = toJobId(job.id, providerId);
         return {
           providerId,

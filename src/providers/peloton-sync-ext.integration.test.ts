@@ -600,6 +600,7 @@ describe("pelotonAutomatedLogin", () => {
     `;
 
     let step = 0;
+    let tokenRequestBody: string | null = null;
 
     loginServer.use(
       http.get("https://auth.onepeloton.com/authorize", () => {
@@ -639,8 +640,9 @@ describe("pelotonAutomatedLogin", () => {
           },
         });
       }),
-      http.post("https://auth.onepeloton.com/oauth/token", () => {
+      http.post("https://auth.onepeloton.com/oauth/token", async ({ request }) => {
         step = 6;
+        tokenRequestBody = await request.text();
         return HttpResponse.json({
           access_token: "new-access-token",
           refresh_token: "new-refresh-token",
@@ -655,6 +657,10 @@ describe("pelotonAutomatedLogin", () => {
     expect(step).toBe(6);
     expect(tokens.accessToken).toBe("new-access-token");
     expect(tokens.refreshToken).toBe("new-refresh-token");
+    expect(tokenRequestBody).toContain("code_verifier=");
+    const verifierMatch = /(?:^|&)code_verifier=([^&]+)/.exec(tokenRequestBody ?? "");
+    expect(verifierMatch?.[1]).toBeDefined();
+    expect(verifierMatch?.[1]).not.toBe("undefined");
   });
 
   it("throws when injectedConfig is not found in login page", async () => {

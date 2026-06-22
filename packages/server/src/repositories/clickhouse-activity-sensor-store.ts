@@ -155,9 +155,6 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
           centroid_lat,
           centroid_lng
         FROM analytics.activity_summary asum
-        INNER JOIN analytics.v_activity va
-          ON va.id = asum.activity_id
-         AND va.user_id = asum.user_id
         WHERE asum.activity_id IN (
           SELECT arrayJoin(CAST({activityIds:Array(String)}, 'Array(UUID)'))
         )
@@ -206,21 +203,21 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
       query: `
         WITH activity_samples AS (
           SELECT
-            activity.id AS activity_id,
+            activity.activity_id AS activity_id,
             deduped_samples.recorded_at AS recorded_at,
             deduped_samples.scalar AS heart_rate,
             toString(toDate(toTimeZone(activity.started_at, {timezone:String}))) AS activity_date,
             row_number() OVER (
-              PARTITION BY activity.id
+              PARTITION BY activity.activity_id
               ORDER BY deduped_samples.recorded_at
             ) AS row_number,
             sum(deduped_samples.scalar) OVER (
-              PARTITION BY activity.id
+              PARTITION BY activity.activity_id
               ORDER BY deduped_samples.recorded_at
               ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
             ) AS cumulative_sum
           FROM analytics.deduped_sensor AS deduped_samples
-          INNER JOIN analytics.v_activity AS activity
+          INNER JOIN analytics.deduped_activities AS activity FINAL
             ON activity.user_id = deduped_samples.user_id
           WHERE deduped_samples.user_id = {userId:UUID}
             AND deduped_samples.channel = 'heart_rate'
@@ -229,6 +226,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             AND deduped_samples.recorded_at >= activity.started_at
             AND deduped_samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
             AND activity.started_at > now() - toIntervalDay({days:UInt32})
+            AND activity.is_deleted = 0
             AND has({enduranceActivityTypes:Array(String)}, activity.activity_type)
         ),
         sample_rate AS (
@@ -293,21 +291,21 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
       query: `
         WITH activity_samples AS (
           SELECT
-            activity.id AS activity_id,
+            activity.activity_id AS activity_id,
             deduped_samples.recorded_at AS recorded_at,
             deduped_samples.scalar AS speed,
             toString(toDate(toTimeZone(activity.started_at, {timezone:String}))) AS activity_date,
             row_number() OVER (
-              PARTITION BY activity.id
+              PARTITION BY activity.activity_id
               ORDER BY deduped_samples.recorded_at
             ) AS row_number,
             sum(deduped_samples.scalar) OVER (
-              PARTITION BY activity.id
+              PARTITION BY activity.activity_id
               ORDER BY deduped_samples.recorded_at
               ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
             ) AS cumulative_sum
           FROM analytics.deduped_sensor AS deduped_samples
-          INNER JOIN analytics.v_activity AS activity
+          INNER JOIN analytics.deduped_activities AS activity FINAL
             ON activity.user_id = deduped_samples.user_id
           WHERE deduped_samples.user_id = {userId:UUID}
             AND deduped_samples.channel = 'speed'
@@ -316,6 +314,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             AND deduped_samples.recorded_at >= activity.started_at
             AND deduped_samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
             AND activity.started_at > now() - toIntervalDay({days:UInt32})
+            AND activity.is_deleted = 0
             AND has({enduranceActivityTypes:Array(String)}, activity.activity_type)
         ),
         sample_rate AS (

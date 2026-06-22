@@ -1,4 +1,3 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import type { CanonicalActivityType } from "@dofek/training/training";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
@@ -6,13 +5,17 @@ import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { replaceMetricStreamBatch } from "../db/metric-stream-writer.ts";
-import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
-import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
+import {
+  finishProviderActivityListSync,
+  upsertProviderActivity,
+} from "../db/provider-activity-sync.ts";
+import { dailyMetrics, sleepSession } from "../db/schema.ts";
 import { SOURCE_TYPE_FILE } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { parseFitFile } from "../fit/parser.ts";
 import { fitRecordsToSensorSamples } from "../fit/records.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../logger.ts";
 import { ProviderHttpClient } from "./http-client.ts";
 import type { SyncRun } from "./sync-run.ts";
@@ -228,7 +231,7 @@ export class CorosProvider implements WebhookProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "coros" });
+    this.#fetchFn = createProviderRateLimitFetch("coros", fetchFn);
   }
 
   validate(): string | null {
@@ -359,9 +362,9 @@ export class CorosProvider implements WebhookProvider {
             const parsed = parseCorosWorkout(raw);
             presentActivityExternalIds.add(parsed.externalId);
             try {
-              const [row] = await db
-                .insert(activity)
-                .values({
+              const row = await upsertProviderActivity(
+                db,
+                {
                   providerId: this.id,
                   externalId: parsed.externalId,
                   activityType: parsed.activityType,
@@ -369,19 +372,15 @@ export class CorosProvider implements WebhookProvider {
                   startedAt: parsed.startedAt,
                   endedAt: parsed.endedAt,
                   raw: parsed.raw,
-                })
-                .onConflictDoUpdate({
-                  target: [activity.userId, activity.providerId, activity.externalId],
-                  set: {
-                    activityType: parsed.activityType,
-                    name: parsed.name,
-                    startedAt: parsed.startedAt,
-                    endedAt: parsed.endedAt,
-                    raw: parsed.raw,
-                    providerAbsentAt: null,
-                  },
-                })
-                .returning({ id: activity.id });
+                },
+                {
+                  activityType: parsed.activityType,
+                  name: parsed.name,
+                  startedAt: parsed.startedAt,
+                  endedAt: parsed.endedAt,
+                  raw: parsed.raw,
+                },
+              );
 
               const activityId = row?.id;
 
@@ -428,7 +427,7 @@ export class CorosProvider implements WebhookProvider {
             }
           }
 
-          await reconcileProviderActivityAbsence(db, {
+          await finishProviderActivityListSync(db, {
             providerId: this.id,
             userId: options?.userId,
             windowStart: since,

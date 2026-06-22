@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 
@@ -15,6 +15,34 @@ vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "user-1",
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
+
+const providerActivityAbsenceMocks = vi.hoisted(() => ({
+  finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
+  upsertProviderActivity: vi.fn().mockResolvedValue({ id: "activity-id" }),
+}));
+
+vi.mock("../db/sync-log.ts", () => ({
+  withSyncLog: vi.fn(
+    async (
+      _db: unknown,
+      _providerId: string,
+      _dataType: string,
+      fn: () => Promise<{ recordCount: number; result: unknown }>,
+    ) => {
+      const { result } = await fn();
+      return result;
+    },
+  ),
+}));
+
+vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../db/provider-activity-sync.ts")>();
+  return {
+    ...original,
+    finishProviderActivityListSync: providerActivityAbsenceMocks.finishProviderActivityListSync,
+    upsertProviderActivity: providerActivityAbsenceMocks.upsertProviderActivity,
+  };
+});
 
 import { ZwiftProvider } from "./zwift.ts";
 
@@ -382,6 +410,11 @@ describe("ZwiftProvider.sync() — token resolution", () => {
 });
 
 describe("ZwiftProvider.sync() — activity sync", () => {
+  beforeEach(() => {
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
+    providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
+  });
+
   it("syncs activities and metric streams", async () => {
     MockZwiftClient.activities = [sampleActivity];
     MockZwiftClient.activityDetail = {
@@ -465,6 +498,63 @@ describe("ZwiftProvider.sync() — activity sync", () => {
     );
     expect(result.provider).toBe("zwift");
     // Old activity skipped
+  });
+
+  it("skips activities after the sync window end", async () => {
+    MockZwiftClient.activities = [
+      {
+        id: 100,
+        name: "In Window",
+        sport: "CYCLING",
+        startDate: "2026-03-01T08:00:00Z",
+        endDate: "2026-03-01T09:00:00Z",
+      },
+      {
+        id: 200,
+        name: "After Window",
+        sport: "CYCLING",
+        startDate: "2026-03-03T08:00:00Z",
+        endDate: "2026-03-03T09:00:00Z",
+      },
+    ];
+    MockZwiftClient.powerCurve = {};
+    MockZwiftClient.activityDetail = { fitnessData: {} };
+
+    const db = makeMockDb({
+      tokens: {
+        accessToken: "valid-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2099-01-01"),
+        scopes: "athleteId:12345",
+      },
+    });
+
+    const provider = new ZwiftProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(1);
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ externalId: "100" }),
+      expect.any(Object),
+    );
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).not.toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ externalId: "200" }),
+      expect.any(Object),
+    );
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        presentExternalIds: new Set(["100"]),
+      }),
+    );
   });
 });
 
@@ -567,5 +657,176 @@ describe("ZwiftProvider.authSetup() — automatedLogin", () => {
     await expect(setup.automatedLogin?.("rider@example.com", "fake-test-pw")).rejects.toThrow(
       "athlete ID",
     );
+  });
+});
+
+describe("ZwiftProvider", () => {
+  it("validate returns null", () => {
+    expect(new ZwiftProvider().validate()).toBeNull();
+  });
+
+  it("authSetup returns credential-only configuration", () => {
+    const setup = new ZwiftProvider().authSetup();
+    expect(setup.automatedLogin).toBeTypeOf("function");
+    expect(setup.oauthConfig).toBeUndefined();
+    expect(setup.exchangeCode).toBeUndefined();
+  });
+
+  it("sync returns error when no tokens stored", async () => {
+    const mockDb = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      }),
+      insert: vi.fn().mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+          onConflictDoUpdate: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      }),
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+
+    const provider = new ZwiftProvider();
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
+    expect(result.provider).toBe("zwift");
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors[0]?.message).toContain("not connected");
+  });
+
+  it("sync returns error when athleteId missing from stored tokens and JWT has no sub", async () => {
+    const mockDb = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([
+              {
+                providerId: "zwift",
+                accessToken: "not-a-jwt",
+                refreshToken: "refresh",
+                expiresAt: new Date("2099-01-01"),
+                scopes: null,
+              },
+            ]),
+          }),
+        }),
+      }),
+      insert: vi.fn().mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+          onConflictDoUpdate: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      }),
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+
+    const provider = new ZwiftProvider();
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
+    expect(result.errors[0]?.message).toContain("athlete ID not found");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "authentication_failed" });
+  });
+
+  it("self-heals missing scopes by extracting athleteId from JWT sub claim", async () => {
+    const header = Buffer.from(JSON.stringify({ alg: "RS256" })).toString("base64url");
+    const payload = Buffer.from(JSON.stringify({ sub: "12345" })).toString("base64url");
+    const fakeJwt = `${header}.${payload}.fake-signature`;
+
+    const mockDb = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([
+              {
+                providerId: "zwift",
+                accessToken: fakeJwt,
+                refreshToken: "refresh",
+                expiresAt: new Date("2099-01-01"),
+                scopes: null,
+              },
+            ]),
+          }),
+        }),
+      }),
+      insert: vi.fn().mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+          onConflictDoUpdate: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      }),
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+
+    MockZwiftClient.activities = [];
+    MockZwiftClient.powerCurve = {};
+
+    const mockFetch: typeof globalThis.fetch = vi.fn(async () => {
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+
+    const provider = new ZwiftProvider(mockFetch);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
+
+    const athleteIdErrors = result.errors.filter((error) =>
+      error.message.includes("athlete ID not found"),
+    );
+    expect(athleteIdErrors).toHaveLength(0);
+  });
+
+  it("sync returns error when token expired and no refresh token", async () => {
+    const mockDb = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([
+              {
+                providerId: "zwift",
+                accessToken: "old-token",
+                refreshToken: null,
+                expiresAt: new Date("2020-01-01"),
+                scopes: "athleteId:12345",
+              },
+            ]),
+          }),
+        }),
+      }),
+      insert: vi.fn().mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+          onConflictDoUpdate: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      }),
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+
+    const provider = new ZwiftProvider();
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
+    expect(result.errors[0]?.message).toContain("Zwift authentication failed.");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "authentication_failed" });
   });
 });

@@ -25,7 +25,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   cycling_analytics: "Cycling Analytics",
   decathlon: "Decathlon",
   "eight-sleep": "Eight Sleep",
-  fatsecret: "FatSecret",
+  fatsecret: "fatsecret",
   mapmyfitness: "MapMyFitness",
   ultrahuman: "Ultrahuman",
   "amazfit-zepp": "Amazfit/Zepp",

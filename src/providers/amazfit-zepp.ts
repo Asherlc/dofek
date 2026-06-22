@@ -1,16 +1,20 @@
-import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import type { CanonicalActivityType } from "@dofek/training/training";
 import { captureException } from "@sentry/node";
 import { signInToZepp, ZeppInvalidCredentialsError } from "zepp-client/client";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
-import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
-import { activity, dailyMetrics, sleepSession } from "../db/schema.ts";
+import {
+  finishProviderActivityListSync,
+  upsertProviderActivity,
+} from "../db/provider-activity-sync.ts";
+import { dailyMetrics, sleepSession } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import {
   ProviderInvalidCredentialsError,
   ProviderStoredIdentityMissingError,
@@ -350,7 +354,7 @@ export class AmazfitZeppClient {
   ) {
     this.#appToken = appToken;
     this.#userId = userId;
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "amazfit-zepp" });
+    this.#fetchFn = createProviderRateLimitFetch("amazfit-zepp", fetchFn);
     this.#apiBaseUrl = apiBaseUrl;
   }
 
@@ -439,7 +443,7 @@ export class AmazfitZeppProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "amazfit-zepp" });
+    this.#fetchFn = createProviderRateLimitFetch("amazfit-zepp", fetchFn);
   }
 
   validate(): string | null {
@@ -652,9 +656,9 @@ export class AmazfitZeppProvider implements SyncProvider {
               const isWithinWindow = parsed.startedAt >= since && parsed.startedAt <= window.until;
               if (isWithinWindow) {
                 presentActivityExternalIds.add(parsed.externalId);
-                await db
-                  .insert(activity)
-                  .values({
+                await upsertProviderActivity(
+                  db,
+                  {
                     providerId: this.id,
                     userId: scopedUserId,
                     externalId: parsed.externalId,
@@ -663,18 +667,15 @@ export class AmazfitZeppProvider implements SyncProvider {
                     endedAt: parsed.endedAt,
                     sourceName: AMAZFIT_ZEPP_SOURCE_NAME,
                     raw: summary,
-                  })
-                  .onConflictDoUpdate({
-                    target: [activity.userId, activity.providerId, activity.externalId],
-                    set: {
-                      activityType: parsed.activityType,
-                      startedAt: parsed.startedAt,
-                      endedAt: parsed.endedAt,
-                      sourceName: AMAZFIT_ZEPP_SOURCE_NAME,
-                      raw: summary,
-                      providerAbsentAt: null,
-                    },
-                  });
+                  },
+                  {
+                    activityType: parsed.activityType,
+                    startedAt: parsed.startedAt,
+                    endedAt: parsed.endedAt,
+                    sourceName: AMAZFIT_ZEPP_SOURCE_NAME,
+                    raw: summary,
+                  },
+                );
                 synced++;
               }
             } catch (error: unknown) {
@@ -693,7 +694,7 @@ export class AmazfitZeppProvider implements SyncProvider {
           }
           if (summaries.length === 0) onProgress?.(100, "0/0 workouts");
 
-          await reconcileProviderActivityAbsence(db, {
+          await finishProviderActivityListSync(db, {
             providerId: this.id,
             userId: scopedUserId,
             windowStart: since,

@@ -102,15 +102,10 @@ function expectDedupedActivitiesWithSummaryMetrics(queryText: string | undefined
   expect(normalizedQueryText).toContain("LEFT JOIN analytics.activity_summary asum");
 }
 
-function expectVisibleDedupedActivitiesWithSummaryMetrics(queryText: string | undefined): void {
-  expectDedupedActivitiesWithSummaryMetrics(queryText);
-  expect(normalizeSql(queryText)).toContain("INNER JOIN analytics.v_activity va");
-}
-
 function expectVisibleDedupedActivitiesOnly(queryText: string | undefined): void {
   const normalizedQueryText = normalizeSql(queryText);
   expect(normalizedQueryText).toContain("FROM analytics.deduped_activities AS activity FINAL");
-  expect(normalizedQueryText).toContain("INNER JOIN analytics.v_activity va");
+  expect(normalizedQueryText).not.toContain("analytics.v_activity");
 }
 
 function expectDedupedActivitiesDriveActivityListIdentity(queryText: string | undefined): void {
@@ -491,7 +486,8 @@ describe("ActivitiesCalendarRepository", () => {
 
     const overviewQueryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
     const typeQueryText = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
-    expectVisibleDedupedActivitiesWithSummaryMetrics(overviewQueryText);
+    expectDedupedActivitiesWithSummaryMetrics(overviewQueryText);
+    expect(normalizeSql(overviewQueryText)).not.toContain("analytics.v_activity");
     expect(normalizeSql(overviewQueryText)).toContain(
       "sum(dateDiff('second', activity.started_at, activity.ended_at) / 60.0)",
     );
@@ -517,7 +513,8 @@ describe("ActivitiesCalendarRepository", () => {
 
     const overviewQueryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
     const typeQueryText = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
-    expectVisibleDedupedActivitiesWithSummaryMetrics(overviewQueryText);
+    expectDedupedActivitiesWithSummaryMetrics(overviewQueryText);
+    expect(normalizeSql(overviewQueryText)).not.toContain("analytics.v_activity");
     expect(normalizeSql(overviewQueryText)).toContain(
       "sum(dateDiff('second', activity.started_at, activity.ended_at) / 60.0)",
     );

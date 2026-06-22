@@ -1,5 +1,4 @@
 import { createHmac } from "node:crypto";
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../../auth/oauth.ts";
 import {
@@ -11,9 +10,10 @@ import {
 } from "../../auth/oauth.ts";
 import { resolveOAuthTokens } from "../../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../../db/index.ts";
-import { reconcileProviderActivityAbsence } from "../../db/provider-activity-absence.ts";
+import { finishProviderActivityListSync } from "../../db/provider-activity-sync.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { ensureProvider } from "../../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import type { SyncRun } from "../sync-run.ts";
 import type {
   ProviderAuthSetup,
@@ -81,7 +81,7 @@ export class FitbitProvider implements WebhookProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "fitbit" });
+    this.#fetchFn = createProviderRateLimitFetch("fitbit", fetchFn);
   }
 
   validate(): string | null {
@@ -254,7 +254,7 @@ export class FitbitProvider implements WebhookProvider {
             offset += response.pagination.limit;
           }
 
-          await reconcileProviderActivityAbsence(db, {
+          await finishProviderActivityListSync(db, {
             providerId: this.id,
             userId: options?.userId,
             windowStart: since,

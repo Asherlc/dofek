@@ -22,6 +22,8 @@ import type {
 
 const WHOOP_API_BASE = "https://api.prod.whoop.com";
 const WHOOP_API_VERSION = "7";
+/** Minimum delay between consecutive WHOOP API requests (ms). */
+export const WHOOP_API_THROTTLE_MS = 1_000;
 const WHOOP_AUTH_ORIGIN = "https://id.whoop.com";
 const WHOOP_AUTH_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:150.0) Gecko/20100101 Firefox/150.0";
@@ -448,12 +450,11 @@ export class WhoopClient {
       try {
         return await this.#get<T>(url, params, attempt);
       } catch (err) {
-        const shouldRetry =
-          err instanceof WhoopRateLimitError || err instanceof ProviderServiceUnavailableError;
-        if (!shouldRetry || attempt >= maxRetries) {
-          throw err;
+        if (err instanceof ProviderServiceUnavailableError && attempt < maxRetries) {
+          attempt++;
+          continue;
         }
-        attempt++;
+        throw err;
       }
     }
   }

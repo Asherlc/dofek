@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./rate-limit": "./src/rate-limit.ts"
+    "./rate-limit": "./src/rate-limit.ts",
+    "./adaptive-rate-limit": "./src/adaptive-rate-limit.ts"
   }
 }

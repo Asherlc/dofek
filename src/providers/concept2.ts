@@ -1,4 +1,3 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import type { CanonicalActivityType } from "@dofek/training/training";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
@@ -6,13 +5,14 @@ import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import {
+  finishProviderActivityListSync,
   markProviderActivityAbsent,
-  reconcileProviderActivityAbsence,
-} from "../db/provider-activity-absence.ts";
-import { activity } from "../db/schema.ts";
+  upsertProviderActivity,
+} from "../db/provider-activity-sync.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { ProviderHttpClient } from "./http-client.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type {
@@ -112,6 +112,7 @@ export function mapConcept2Type(type: string): CanonicalActivityType {
     case "skierg":
       return "skiing";
     case "bikerg":
+    case "bikeerg":
       return "cycling";
     default:
       return "rowing";
@@ -200,7 +201,7 @@ export class Concept2Provider implements WebhookProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "concept2" });
+    this.#fetchFn = createProviderRateLimitFetch("concept2", fetchFn);
   }
 
   validate(): string | null {
@@ -317,9 +318,9 @@ export class Concept2Provider implements WebhookProvider {
         "activity",
         async () => {
           const parsed = parseConcept2Result(parseResult.data);
-          await db
-            .insert(activity)
-            .values({
+          await upsertProviderActivity(
+            db,
+            {
               providerId: this.id,
               externalId: parsed.externalId,
               activityType: parsed.activityType,
@@ -327,18 +328,15 @@ export class Concept2Provider implements WebhookProvider {
               startedAt: parsed.startedAt,
               endedAt: parsed.endedAt,
               raw: parsed.raw,
-            })
-            .onConflictDoUpdate({
-              target: [activity.userId, activity.providerId, activity.externalId],
-              set: {
-                activityType: parsed.activityType,
-                name: parsed.name,
-                startedAt: parsed.startedAt,
-                endedAt: parsed.endedAt,
-                raw: parsed.raw,
-                providerAbsentAt: null,
-              },
-            });
+            },
+            {
+              activityType: parsed.activityType,
+              name: parsed.name,
+              startedAt: parsed.startedAt,
+              endedAt: parsed.endedAt,
+              raw: parsed.raw,
+            },
+          );
           return { recordCount: 1, result: 1 };
         },
         options?.userId,
@@ -418,9 +416,9 @@ export class Concept2Provider implements WebhookProvider {
               }
               presentActivityExternalIds.add(parsed.externalId);
               try {
-                await db
-                  .insert(activity)
-                  .values({
+                await upsertProviderActivity(
+                  db,
+                  {
                     providerId: this.id,
                     externalId: parsed.externalId,
                     activityType: parsed.activityType,
@@ -428,18 +426,15 @@ export class Concept2Provider implements WebhookProvider {
                     startedAt: parsed.startedAt,
                     endedAt: parsed.endedAt,
                     raw: parsed.raw,
-                  })
-                  .onConflictDoUpdate({
-                    target: [activity.userId, activity.providerId, activity.externalId],
-                    set: {
-                      activityType: parsed.activityType,
-                      name: parsed.name,
-                      startedAt: parsed.startedAt,
-                      endedAt: parsed.endedAt,
-                      raw: parsed.raw,
-                      providerAbsentAt: null,
-                    },
-                  });
+                  },
+                  {
+                    activityType: parsed.activityType,
+                    name: parsed.name,
+                    startedAt: parsed.startedAt,
+                    endedAt: parsed.endedAt,
+                    raw: parsed.raw,
+                  },
+                );
                 count++;
               } catch (err) {
                 errors.push({
@@ -453,7 +448,7 @@ export class Concept2Provider implements WebhookProvider {
             page++;
           }
 
-          await reconcileProviderActivityAbsence(db, {
+          await finishProviderActivityListSync(db, {
             providerId: this.id,
             userId: options?.userId,
             windowStart: since,

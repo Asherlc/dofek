@@ -1,4 +1,3 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import type { TokenSet } from "../../auth/oauth.ts";
 import { logger } from "../../logger.ts";
 import type { SyncRun } from "../sync-run.ts";
@@ -20,7 +19,7 @@ export class PolarProvider implements WebhookProvider {
   readonly #webhookService: PolarWebhookService;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "polar" });
+    this.#fetchFn = fetchFn;
     this.#webhookService = new PolarWebhookService(this.#fetchFn);
   }
 

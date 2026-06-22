@@ -1,5 +1,6 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it } from "vitest";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import {
   MapMyFitnessClient,
   MapMyFitnessProvider,
@@ -679,7 +680,11 @@ describe("MapMyFitnessClient — error handling", () => {
       return new Response("Rate limit exceeded", { status: 429 });
     };
 
-    const client = new MapMyFitnessClient("token", "client-id", mockFetch);
+    const client = new MapMyFitnessClient(
+      "token",
+      "client-id",
+      createProviderRateLimitFetch("mapmyfitness", mockFetch),
+    );
     const error = await client
       .getWorkouts("-", "2026-03-01T00:00:00Z", "2026-03-02T00:00:00Z")
       .catch((caughtError: unknown) => caughtError);

@@ -11,6 +11,11 @@ const { mockInvalidateByPrefix, mockMetricStreamPublishRows, mockPublishedMetric
     };
   });
 
+const providerActivitySyncMocks = vi.hoisted(() => ({
+  reconcile: vi.fn().mockResolvedValue(undefined),
+  upsert: vi.fn().mockResolvedValue({ id: "activity-id" }),
+}));
+
 vi.mock("dofek/sync-metrics", () => ({
   healthKitRecordsTotal: { add: vi.fn() },
   healthKitPushTotal: { add: vi.fn() },
@@ -38,6 +43,15 @@ vi.mock("../../../../src/metric-stream/redpanda-producer.ts", () => ({
   }),
 }));
 
+vi.mock("../../../../src/db/provider-activity-sync.ts", () => ({
+  ProviderActivityListSync: class {
+    upsert = providerActivitySyncMocks.upsert;
+    reconcile = providerActivitySyncMocks.reconcile;
+  },
+  finishProviderActivityListSync: vi.fn(),
+  upsertProviderActivity: vi.fn(),
+}));
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
@@ -52,11 +66,9 @@ vi.mock("../trpc.ts", async () => {
 });
 
 import { healthKitPushTotal, healthKitRecordsTotal } from "dofek/sync-metrics";
+import { computeBoundsFromIsoTimestamps } from "../lib/health-kit-sync-helpers.ts";
 import { healthKitSyncRouter } from "./health-kit-sync.ts";
-import {
-  aggregateDailyMetricSamples,
-  computeBoundsFromIsoTimestamps,
-} from "./health-kit-sync-processors.ts";
+import { aggregateDailyMetricSamples } from "./health-kit-sync-processors.ts";
 import type { SleepSample } from "./health-kit-sync-schemas.ts";
 import { deriveSleepSessionsFromStages, isSleepStageValue } from "./health-kit-sync-sleep.ts";
 
@@ -65,6 +77,11 @@ const createCaller = createTestCallerFactory(healthKitSyncRouter);
 function makeExecute() {
   return vi.fn().mockResolvedValue([]);
 }
+
+const WORKOUT_SYNC_WINDOW = {
+  windowStart: "2024-01-01T00:00:00.000Z",
+  windowEnd: "2024-12-31T23:59:59.999Z",
+};
 
 function makeSample(overrides: Record<string, unknown> = {}) {
   return {
@@ -97,6 +114,9 @@ describe("healthKitSyncRouter", () => {
     mockInvalidateByPrefix.mockClear();
     mockMetricStreamPublishRows.mockReset();
     mockPublishedMetricStreamRowBatches.length = 0;
+    providerActivitySyncMocks.reconcile.mockClear();
+    providerActivitySyncMocks.upsert.mockClear();
+    providerActivitySyncMocks.upsert.mockResolvedValue({ id: "activity-id" });
     mockMetricStreamPublishRows.mockImplementation(async (rows: readonly unknown[]) => {
       const publishedRows = [...rows];
       mockPublishedMetricStreamRowBatches.push(publishedRows);
@@ -784,6 +804,38 @@ describe("healthKitSyncRouter", () => {
   });
 
   describe("pushWorkouts", () => {
+    it("rejects inverted sync window bounds", async () => {
+      const caller = createCaller({
+        db: { execute: makeExecute() },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.pushWorkouts({
+          windowStart: "2024-12-31T23:59:59.999Z",
+          windowEnd: "2024-01-01T00:00:00.000Z",
+          workouts: [],
+        }),
+      ).rejects.toThrow("windowEnd must be after windowStart");
+    });
+
+    it("rejects equal sync window bounds", async () => {
+      const caller = createCaller({
+        db: { execute: makeExecute() },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.pushWorkouts({
+          windowStart: "2024-01-15T10:00:00.000Z",
+          windowEnd: "2024-01-15T10:00:00.000Z",
+          workouts: [],
+        }),
+      ).rejects.toThrow("windowEnd must be after windowStart");
+    });
+
     it("processes workout samples", async () => {
       const execute = makeExecute();
       const caller = createCaller({
@@ -793,6 +845,7 @@ describe("healthKitSyncRouter", () => {
       });
 
       const result = await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "w1",
@@ -820,6 +873,7 @@ describe("healthKitSyncRouter", () => {
       });
 
       await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "w-link",
@@ -847,6 +901,7 @@ describe("healthKitSyncRouter", () => {
       });
 
       const result = await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "w2",
@@ -873,7 +928,7 @@ describe("healthKitSyncRouter", () => {
         timezone: "UTC",
       });
 
-      const result = await caller.pushWorkouts({ workouts: [] });
+      const result = await caller.pushWorkouts({ ...WORKOUT_SYNC_WINDOW, workouts: [] });
       expect(result.inserted).toBe(0);
     });
 
@@ -886,6 +941,7 @@ describe("healthKitSyncRouter", () => {
       });
 
       await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "w-metric",
@@ -1285,6 +1341,7 @@ describe("healthKitSyncRouter", () => {
       });
 
       await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "workout-refresh",
@@ -2484,6 +2541,7 @@ describe("healthKitSyncRouter", () => {
       });
 
       await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "w-cycling",
@@ -2499,14 +2557,11 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      // Verify the SQL contains "cycling" as the activity type (not "other")
-      const insertCall = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return serialized.includes("fitness.activity") && serialized.includes("INSERT");
-      });
-      expect(insertCall).toBeDefined();
-      const serialized = JSON.stringify(insertCall?.[0]);
-      expect(serialized).toContain("cycling");
+      // Workouts upsert through ProviderActivityListSync instead of raw SQL inserts.
+      expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ activityType: "cycling" }),
+        expect.objectContaining({ activityType: "cycling" }),
+      );
     });
 
     it("includes raw workout data in JSON (kills JSON.stringify({}) mutation)", async () => {
@@ -2518,6 +2573,7 @@ describe("healthKitSyncRouter", () => {
       });
 
       await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "w-raw-data",
@@ -2533,16 +2589,22 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      const insertCall = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return serialized.includes("fitness.activity") && serialized.includes("INSERT");
-      });
-      expect(insertCall).toBeDefined();
-      const serialized = JSON.stringify(insertCall?.[0]);
-      // Raw data should contain workout properties, not an empty object
-      expect(serialized).toContain("3600"); // duration
-      expect(serialized).toContain("500"); // totalEnergyBurned
-      expect(serialized).toContain("10000"); // totalDistance
+      expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          raw: expect.objectContaining({
+            duration: 3600,
+            totalEnergyBurned: 500,
+            totalDistance: 10000,
+          }),
+        }),
+        expect.objectContaining({
+          raw: expect.objectContaining({
+            duration: 3600,
+            totalEnergyBurned: 500,
+            totalDistance: 10000,
+          }),
+        }),
+      );
     });
 
     it("stores workout metadata and workoutActivities in raw JSON column", async () => {
@@ -2554,6 +2616,7 @@ describe("healthKitSyncRouter", () => {
       });
 
       await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "w-metadata",
@@ -2582,19 +2645,23 @@ describe("healthKitSyncRouter", () => {
         ],
       });
 
-      const insertCall = execute.mock.calls.find((call: unknown[]) => {
-        const serialized = JSON.stringify(call[0]);
-        return serialized.includes("fitness.activity") && serialized.includes("INSERT");
-      });
-      expect(insertCall).toBeDefined();
-      const serialized = JSON.stringify(insertCall?.[0]);
-      // Workout metadata should be preserved in raw JSON
-      expect(serialized).toContain("Bench Press");
-      expect(serialized).toContain("HKIndoorWorkout");
-      // Workout activities should be preserved in raw JSON
-      expect(serialized).toContain("activity-1");
-      expect(serialized).toContain("Barbell Bench Press");
-      expect(serialized).toContain("exerciseName");
+      expect(providerActivitySyncMocks.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          raw: expect.objectContaining({
+            metadata: expect.objectContaining({
+              HKIndoorWorkout: 1,
+              "some-custom-key": "Bench Press",
+            }),
+            workoutActivities: [
+              expect.objectContaining({
+                uuid: "activity-1",
+                metadata: expect.objectContaining({ exerciseName: "Barbell Bench Press" }),
+              }),
+            ],
+          }),
+        }),
+        expect.anything(),
+      );
     });
 
     it("does not touch the retired Postgres metric_stream table after processing workouts", async () => {
@@ -2606,6 +2673,7 @@ describe("healthKitSyncRouter", () => {
       });
 
       await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "w-link-test",
@@ -2632,7 +2700,7 @@ describe("healthKitSyncRouter", () => {
         timezone: "UTC",
       });
 
-      await caller.pushWorkouts({ workouts: [] });
+      await caller.pushWorkouts({ ...WORKOUT_SYNC_WINDOW, workouts: [] });
 
       expect(JSON.stringify(execute.mock.calls)).not.toContain("fitness.metric_stream");
     });
@@ -3217,6 +3285,7 @@ describe("healthKitSyncRouter", () => {
       });
 
       await caller.pushWorkouts({
+        ...WORKOUT_SYNC_WINDOW,
         workouts: [
           {
             uuid: "workout-1",

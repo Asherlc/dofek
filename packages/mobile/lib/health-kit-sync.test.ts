@@ -309,6 +309,8 @@ describe("syncHealthKitToServer", () => {
     const workoutCall = client.healthKitSync.pushWorkouts.mutate.mock.calls[0];
     expect(workoutCall[0].workouts[0].totalEnergyBurned).toBeNull();
     expect(workoutCall[0].workouts[0].totalDistance).toBeNull();
+    expect(workoutCall[0].windowStart).toEqual(expect.any(String));
+    expect(workoutCall[0].windowEnd).toEqual(expect.any(String));
   });
 
   it("passes through workout metadata and workoutActivities to server", async () => {

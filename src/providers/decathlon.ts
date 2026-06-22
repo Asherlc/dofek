@@ -1,14 +1,16 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import type { CanonicalActivityType } from "@dofek/training/training";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
-import { activity } from "../db/schema.ts";
+import {
+  finishProviderActivityListSync,
+  upsertProviderActivity,
+} from "../db/provider-activity-sync.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
@@ -151,7 +153,7 @@ export class DecathlonProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "decathlon" });
+    this.#fetchFn = createProviderRateLimitFetch("decathlon", fetchFn);
   }
 
   validate(): string | null {
@@ -242,9 +244,9 @@ export class DecathlonProvider implements SyncProvider {
               }
               presentActivityExternalIds.add(parsed.externalId);
               try {
-                await db
-                  .insert(activity)
-                  .values({
+                await upsertProviderActivity(
+                  db,
+                  {
                     providerId: this.id,
                     externalId: parsed.externalId,
                     activityType: parsed.activityType,
@@ -252,18 +254,15 @@ export class DecathlonProvider implements SyncProvider {
                     startedAt: parsed.startedAt,
                     endedAt: parsed.endedAt,
                     raw: parsed.raw,
-                  })
-                  .onConflictDoUpdate({
-                    target: [activity.userId, activity.providerId, activity.externalId],
-                    set: {
-                      activityType: parsed.activityType,
-                      name: parsed.name,
-                      startedAt: parsed.startedAt,
-                      endedAt: parsed.endedAt,
-                      raw: parsed.raw,
-                      providerAbsentAt: null,
-                    },
-                  });
+                  },
+                  {
+                    activityType: parsed.activityType,
+                    name: parsed.name,
+                    startedAt: parsed.startedAt,
+                    endedAt: parsed.endedAt,
+                    raw: parsed.raw,
+                  },
+                );
                 count++;
               } catch (err) {
                 errors.push({
@@ -275,7 +274,7 @@ export class DecathlonProvider implements SyncProvider {
             }
           }
 
-          await reconcileProviderActivityAbsence(db, {
+          await finishProviderActivityListSync(db, {
             providerId: this.id,
             userId: options?.userId,
             windowStart: since,

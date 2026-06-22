@@ -1,4 +1,4 @@
-import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { getOAuthRedirectUri } from "../../auth/oauth.ts";
@@ -6,6 +6,7 @@ import { nutrientAmountEntriesFromLegacyFields } from "../../db/nutrient-columns
 import { foodEntry, foodEntryNutrient } from "../../db/schema.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { ensureProvider } from "../../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../../logger.ts";
 import type { SyncRun } from "../sync-run.ts";
 import type { SyncError, SyncProvider, SyncResult } from "../types.ts";
@@ -36,7 +37,7 @@ export class FatSecretProvider implements SyncProvider {
   constructor(fetchFn: FetchFn = globalThis.fetch) {
     this.#consumerKey = process.env.FATSECRET_CONSUMER_KEY ?? null;
     this.#consumerSecret = process.env.FATSECRET_CONSUMER_SECRET ?? null;
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "fatsecret" });
+    this.#fetchFn = createProviderRateLimitFetch("fatsecret", fetchFn);
   }
 
   validate(): string | null {

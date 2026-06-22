@@ -1,8 +1,8 @@
-import { WhoopRateLimitError } from "whoop-whoop/client";
 import { writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { parseHeartRateValues } from "./parsing.ts";
+import { isWhoopRateLimitError } from "./rate-limit.ts";
 import type { WhoopSyncContext } from "./sync-types.ts";
 
 export type WhoopStreamSyncResult = {
@@ -57,9 +57,9 @@ export async function syncWhoopHeartRateStream(
     );
     return { count, rateLimited: false };
   } catch (err) {
-    if (err instanceof WhoopRateLimitError) {
+    if (isWhoopRateLimitError(err)) {
       context.errors.push({
-        message: `hr_stream: ${err.message}`,
+        message: `hr_stream: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,
       });
       return { count: 0, rateLimited: true };

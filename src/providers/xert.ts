@@ -1,14 +1,16 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import type { CanonicalActivityType } from "@dofek/training/training";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { reconcileProviderActivityAbsence } from "../db/provider-activity-absence.ts";
-import { activity } from "../db/schema.ts";
+import {
+  finishProviderActivityListSync,
+  upsertProviderActivity,
+} from "../db/provider-activity-sync.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
@@ -131,7 +133,7 @@ export async function signInToXert(
   password: string,
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<TokenSet> {
-  const rateLimitFetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "xert" });
+  const rateLimitFetchFn = createProviderRateLimitFetch("xert", fetchFn);
   const clientId = process.env.XERT_CLIENT_ID ?? "xert_public";
   const clientSecret = process.env.XERT_CLIENT_SECRET ?? "xert_public";
 
@@ -195,7 +197,7 @@ export class XertProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "xert" });
+    this.#fetchFn = createProviderRateLimitFetch("xert", fetchFn);
   }
 
   validate(): string | null {
@@ -282,11 +284,14 @@ export class XertProvider implements SyncProvider {
 
             for (const rawActivity of data) {
               const parsed = parseXertActivity(rawActivity);
+              if (parsed.startedAt < since || parsed.startedAt >= syncWindowEnd) {
+                continue;
+              }
               presentActivityExternalIds.add(parsed.externalId);
               try {
-                await db
-                  .insert(activity)
-                  .values({
+                await upsertProviderActivity(
+                  db,
+                  {
                     providerId: this.id,
                     externalId: parsed.externalId,
                     activityType: parsed.activityType,
@@ -294,18 +299,15 @@ export class XertProvider implements SyncProvider {
                     startedAt: parsed.startedAt,
                     endedAt: parsed.endedAt,
                     raw: parsed.raw,
-                  })
-                  .onConflictDoUpdate({
-                    target: [activity.userId, activity.providerId, activity.externalId],
-                    set: {
-                      activityType: parsed.activityType,
-                      name: parsed.name,
-                      startedAt: parsed.startedAt,
-                      endedAt: parsed.endedAt,
-                      raw: parsed.raw,
-                      providerAbsentAt: null,
-                    },
-                  });
+                  },
+                  {
+                    activityType: parsed.activityType,
+                    name: parsed.name,
+                    startedAt: parsed.startedAt,
+                    endedAt: parsed.endedAt,
+                    raw: parsed.raw,
+                  },
+                );
                 count++;
               } catch (err) {
                 errors.push({
@@ -319,7 +321,7 @@ export class XertProvider implements SyncProvider {
             page++;
           }
 
-          await reconcileProviderActivityAbsence(db, {
+          await finishProviderActivityListSync(db, {
             providerId: this.id,
             userId: options?.userId,
             windowStart: since,
