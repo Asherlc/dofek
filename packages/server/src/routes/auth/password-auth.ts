@@ -63,7 +63,7 @@ export async function handlePasswordRegister(req: Request, res: Response): Promi
     }
 
     setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
-    res.redirect(returnTo ?? "/");
+    res.redirect("/");
   } catch (error: unknown) {
     if (error instanceof DuplicateEmailError) {
       sendAuthError(res, 409, error.message);
@@ -109,7 +109,7 @@ export async function handlePasswordLogin(req: Request, res: Response): Promise<
     }
 
     setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
-    res.redirect(returnTo ?? "/");
+    res.redirect("/");
   } catch (error: unknown) {
     if (error instanceof InvalidCredentialsError) {
       sendAuthError(res, 401, error.message);

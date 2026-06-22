@@ -148,15 +148,14 @@ describe("handlePasswordRegister", () => {
     });
   });
 
-  it("redirects after registration when json is not requested", async () => {
-    mockSanitizeReturnTo.mockReturnValue("/onboarding");
+  it("redirects to home after registration when json is not requested", async () => {
     const { req, res } = createMockReqRes({
       body: { email: "user@example.com", password: "password123", return_to: "/onboarding" },
     });
 
     await handlePasswordRegister(req, res);
 
-    expect(res.redirect).toHaveBeenCalledWith("/onboarding");
+    expect(res.redirect).toHaveBeenCalledWith("/");
   });
 
   it("uses content-type json to detect json responses", async () => {
@@ -268,8 +267,7 @@ describe("handlePasswordLogin", () => {
     });
   });
 
-  it("redirects after login when json is not requested", async () => {
-    mockSanitizeReturnTo.mockReturnValue("/dashboard");
+  it("redirects to home after login when json is not requested", async () => {
     const { req, res } = createMockReqRes({
       body: { email: "user@example.com", password: "password123" },
       query: { return_to: "/dashboard" },
@@ -277,7 +275,7 @@ describe("handlePasswordLogin", () => {
 
     await handlePasswordLogin(req, res);
 
-    expect(res.redirect).toHaveBeenCalledWith("/dashboard");
+    expect(res.redirect).toHaveBeenCalledWith("/");
   });
 
   it("returns 401 for invalid credentials", async () => {

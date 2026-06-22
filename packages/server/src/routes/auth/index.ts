@@ -23,7 +23,7 @@ export function createAuthRouter(database: import("dofek/db").Database): Router 
   // Route registration order matters for Express — preserve the same order as the original file.
 
   // Providers list
-  router.get("/api/auth/providers", handleGetAuthProviders);
+  router.get("/api/auth/providers", authRateLimiter, handleGetAuthProviders);
 
   // Identity login
   router.get("/auth/login/:provider", authRateLimiter, handleIdentityLogin);
