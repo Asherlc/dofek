@@ -160,8 +160,7 @@ describe("mapConcept2Type", () => {
 
   it("maps bikerg to cycling", () => {
     expect(mapConcept2Type("bikerg")).toBe("cycling");
-    // Note: "BikeErg" lowercases to "bikeerg" (two e's), which doesn't match "bikerg"
-    expect(mapConcept2Type("BikeErg")).toBe("rowing");
+    expect(mapConcept2Type("BikeErg")).toBe("cycling");
   });
 
   it("defaults to rowing for unknown types", () => {

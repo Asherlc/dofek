@@ -47,6 +47,7 @@ vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
 });
 
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import { loadTokens } from "../db/tokens.ts";
 import {
   parseWgerWeightEntry,
   parseWgerWorkoutSession,
@@ -168,6 +169,10 @@ describe("WgerProvider", () => {
   it("sync returns error when no tokens", async () => {
     process.env.WGER_CLIENT_ID = "id";
     process.env.WGER_CLIENT_SECRET = "secret";
+    vi.mocked(loadTokens).mockResolvedValueOnce(null);
+    const mockFetch = vi.fn<typeof globalThis.fetch>(async () => {
+      throw new Error("fetch should not be called when tokens are missing");
+    });
     const mockDb = {
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
@@ -187,10 +192,11 @@ describe("WgerProvider", () => {
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
     };
-    const result = await new WgerProvider().sync(
+    const result = await new WgerProvider(mockFetch).sync(
       new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
     );
     expect(result.errors.length).toBeGreaterThan(0);
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it("skips workout sessions after the sync window end", async () => {

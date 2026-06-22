@@ -1,5 +1,5 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 
@@ -144,6 +144,16 @@ describe("parseXertActivity — edge cases", () => {
 });
 
 describe("xertOAuthConfig", () => {
+  let originalEnv: NodeJS.ProcessEnv;
+
+  beforeEach(() => {
+    originalEnv = { ...process.env };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
   it("returns config with default public client credentials", () => {
     const config = xertOAuthConfig();
     expect(config).not.toBeNull();
@@ -152,13 +162,11 @@ describe("xertOAuthConfig", () => {
   });
 
   it("uses custom env vars when set", () => {
-    const originalEnv = { ...process.env };
     process.env.XERT_CLIENT_ID = "custom-id";
     process.env.XERT_CLIENT_SECRET = "custom-secret";
     const config = xertOAuthConfig();
     expect(config?.clientId).toBe("custom-id");
     expect(config?.clientSecret).toBe("custom-secret");
-    process.env = { ...originalEnv };
   });
 });
 

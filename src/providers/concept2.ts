@@ -112,6 +112,7 @@ export function mapConcept2Type(type: string): CanonicalActivityType {
     case "skierg":
       return "skiing";
     case "bikerg":
+    case "bikeerg":
       return "cycling";
     default:
       return "rowing";
