@@ -15,6 +15,7 @@ describe("PROVIDER_LABELS", () => {
     expect(PROVIDER_LABELS.whoop).toBe("WHOOP");
     expect(PROVIDER_LABELS["ride-with-gps"]).toBe("Ride with GPS");
     expect(PROVIDER_LABELS["cronometer-csv"]).toBe("Cronometer");
+    expect(PROVIDER_LABELS.fatsecret).toBe("fatsecret");
     expect(PROVIDER_LABELS.apple_health).toBe("Apple Health");
   });
 
