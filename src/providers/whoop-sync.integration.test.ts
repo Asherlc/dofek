@@ -1308,6 +1308,15 @@ describe("WhoopProvider.sync() (integration)", () => {
       http.get("https://api.prod.whoop.com/metrics-service/v1/metrics/user/:userId", () => {
         return HttpResponse.json({ values: [] });
       }),
+      http.get("https://api.prod.whoop.com/developer/v2/activity/workout", () => {
+        return HttpResponse.json({ records: [], next_token: null });
+      }),
+      http.get(
+        "https://api.prod.whoop.com/weightlifting-service/v2/weightlifting-workout/:id",
+        () => {
+          return new HttpResponse("Not found", { status: 404 });
+        },
+      ),
       http.get("https://api.prod.whoop.com/home-service/v1/deep-dive/strain", () => {
         return HttpResponse.json({ sections: [] });
       }),
