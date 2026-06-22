@@ -69,7 +69,7 @@ vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
 });
 
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
-import { z, ZodError } from "zod";
+import { ZodError, z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import {
   Concept2Client,
@@ -586,7 +586,10 @@ describe("Concept2Provider", () => {
       };
 
       const result = await new Concept2Provider().sync(
-        new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+        new SyncRun({
+          db: mockDb,
+          window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+        }),
       );
       expect(result.provider).toBe("concept2");
       expect(result.errors.length).toBeGreaterThan(0);

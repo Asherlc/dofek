@@ -1,5 +1,6 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { loadTokens } from "../db/tokens.ts";
 import {
   CyclingAnalyticsProvider,
   cyclingAnalyticsOAuthConfig,
@@ -7,7 +8,6 @@ import {
 } from "./cycling-analytics.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
-import { loadTokens } from "../db/tokens.ts";
 import { createMockDatabase } from "./test-helpers.ts";
 
 const providerActivityAbsenceMocks = vi.hoisted(() => ({

@@ -411,7 +411,10 @@ describe("CorosProvider", () => {
       };
 
       const result = await new CorosProvider().sync(
-        new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+        new SyncRun({
+          db: mockDb,
+          window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+        }),
       );
       expect(result.provider).toBe("coros");
       expect(result.errors.length).toBeGreaterThan(0);

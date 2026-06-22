@@ -3001,4 +3001,3 @@ describe("mapStravaActivityType — additional types", () => {
     expect(mapStravaActivityType("RockClimbing")).toBe("climbing");
   });
 });
-
