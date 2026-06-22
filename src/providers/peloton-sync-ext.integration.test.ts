@@ -600,7 +600,7 @@ describe("pelotonAutomatedLogin", () => {
     `;
 
     let step = 0;
-    let tokenRequestBody = "";
+    let tokenRequestBody: string | null = null;
 
     loginServer.use(
       http.get("https://auth.onepeloton.com/authorize", () => {

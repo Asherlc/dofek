@@ -612,6 +612,26 @@ describe("ProviderRateLimitCooldownStore", () => {
     vi.useRealTimers();
   });
 
+  it("throws when Redis WATCH/MULTI writes exceed the retry limit", async () => {
+    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
+    const mock = createMockRedisStore({
+      atomic: true,
+      execFailCount: Number.POSITIVE_INFINITY,
+    });
+
+    await expect(
+      mock.store.record(
+        rateLimitError({ providerId: "garmin", retryAfterSeconds: 600 }),
+        "user-1",
+      ),
+    ).rejects.toThrow(
+      "Failed to persist rate-limit cooldown for provider-rate-limit:garmin:provider after 10 Redis transaction conflicts",
+    );
+
+    expect(mock.execAttempts).toBe(10);
+    vi.useRealTimers();
+  });
+
   it("retries Redis WATCH/MULTI writes when exec reports a conflict", async () => {
     vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
     const mock = createMockRedisStore({

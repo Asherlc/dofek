@@ -35,6 +35,7 @@ interface RedisClient {
 const DEFAULT_FALLBACK_COOLDOWN_SECONDS = 30 * 60;
 const DEFAULT_MAX_COOLDOWN_SECONDS = 2 * 60 * 60;
 const STRIKE_RESET_AFTER_MS = 2 * 60 * 60 * 1000;
+const MAX_COOLDOWN_RETRIES = 10;
 const KEY_PREFIX = "provider-rate-limit";
 
 function fallbackCooldownSeconds(providerId: string): number {
@@ -200,6 +201,7 @@ async function persistCooldownAtomically(
     return effective;
   }
 
+  let retries = 0;
   for (;;) {
     await watch(key);
     const previous = parseCooldown(await redisClient.get(key));
@@ -208,6 +210,12 @@ async function persistCooldownAtomically(
       .set(key, serializeCooldown(effective), "PX", providerRateLimitDelayMs(effective))
       .exec();
     if (execResult) return effective;
+    retries++;
+    if (retries >= MAX_COOLDOWN_RETRIES) {
+      throw new Error(
+        `Failed to persist rate-limit cooldown for ${key} after ${MAX_COOLDOWN_RETRIES} Redis transaction conflicts`,
+      );
+    }
   }
 }
 
