@@ -53,7 +53,7 @@ function rateLimitError(options: {
   });
 }
 
-function createMockRedisAdaptiveStore() {
+function createMockRedisAdaptiveStore(options?: { atomic?: boolean; execFailCount?: number }) {
   const values = new Map<string, string>();
   const setCalls: Array<{
     key: string;
@@ -61,19 +61,65 @@ function createMockRedisAdaptiveStore() {
     mode: "PX";
     millisecondsToExpire: number;
   }> = [];
-  const getRedisClient: ConstructorParameters<typeof RedisAdaptiveRateLimitStore>[0] =
-    async () => ({
-      set: async (key, value, mode, millisecondsToExpire) => {
-        setCalls.push({ key, value, mode, millisecondsToExpire });
-        values.set(key, value);
-        return "OK";
-      },
-      get: async (key) => values.get(key) ?? null,
-    });
+  const watchCalls: string[] = [];
+  let execAttempts = 0;
+
+  const client = {
+    set: async (key: string, value: string, mode: "PX", millisecondsToExpire: number) => {
+      setCalls.push({ key, value, mode, millisecondsToExpire });
+      values.set(key, value);
+      return "OK";
+    },
+    get: async (key: string) => values.get(key) ?? null,
+    ...(options?.atomic
+      ? {
+          watch: async (key: string) => {
+            watchCalls.push(key);
+            return "OK";
+          },
+          unwatch: async () => "OK",
+          multi: () => {
+            let pending:
+              | {
+                  key: string;
+                  value: string;
+                  mode: "PX";
+                  millisecondsToExpire: number;
+                }
+              | undefined;
+            const chain = {
+              set: (key: string, value: string, mode: "PX", millisecondsToExpire: number) => {
+                pending = { key, value, mode, millisecondsToExpire };
+                return chain;
+              },
+              exec: async () => {
+                execAttempts++;
+                if (options.execFailCount && execAttempts <= options.execFailCount) {
+                  return null;
+                }
+                if (pending) {
+                  setCalls.push(pending);
+                  values.set(pending.key, pending.value);
+                }
+                return ["OK"];
+              },
+            };
+            return chain;
+          },
+        }
+      : {}),
+  };
+
+  const getRedisClient: ConstructorParameters<typeof RedisAdaptiveRateLimitStore>[0] = async () =>
+    client;
 
   return {
     values,
     setCalls,
+    watchCalls,
+    get execAttempts() {
+      return execAttempts;
+    },
     store: new RedisAdaptiveRateLimitStore(getRedisClient),
   };
 }
@@ -450,6 +496,49 @@ describe("RedisAdaptiveRateLimitStore", () => {
     const saved = JSON.parse(values.get("provider-adaptive-rate:garmin:provider") ?? "{}");
     expect(saved.inferredBudget).toBeNull();
     expect(saved.observedCooldownSeconds).toBeNull();
+  });
+
+  it("uses atomic Redis WATCH/MULTI admission when available", async () => {
+    const mock = createMockRedisAdaptiveStore({ atomic: true });
+
+    await mock.store.awaitAdmission("garmin", "provider", null);
+
+    expect(mock.watchCalls).toEqual(["provider-adaptive-rate:garmin:provider"]);
+    const saved = JSON.parse(mock.values.get("provider-adaptive-rate:garmin:provider") ?? "{}");
+    expect(saved.requestCount).toBe(1);
+  });
+
+  it("retries atomic Redis admission when exec reports a conflict", async () => {
+    const mock = createMockRedisAdaptiveStore({ atomic: true, execFailCount: 1 });
+
+    await mock.store.awaitAdmission("garmin", "provider", null);
+
+    expect(mock.watchCalls).toEqual([
+      "provider-adaptive-rate:garmin:provider",
+      "provider-adaptive-rate:garmin:provider",
+    ]);
+    expect(mock.execAttempts).toBe(2);
+  });
+
+  it("creates fresh adaptive state when Redis returns null during atomic admission", async () => {
+    const mock = createMockRedisAdaptiveStore({ atomic: true });
+
+    await mock.store.awaitAdmission("whoop", "provider", null);
+
+    const saved = JSON.parse(mock.values.get("provider-adaptive-rate:whoop:provider") ?? "{}");
+    expect(saved.providerId).toBe("whoop");
+    expect(saved.requestCount).toBe(1);
+  });
+
+  it("creates fresh adaptive state when Redis payload is invalid during atomic admission", async () => {
+    const mock = createMockRedisAdaptiveStore({ atomic: true });
+    mock.values.set("provider-adaptive-rate:garmin:provider", "not-json");
+
+    await mock.store.awaitAdmission("garmin", "provider", null);
+
+    const saved = JSON.parse(mock.values.get("provider-adaptive-rate:garmin:provider") ?? "{}");
+    expect(saved.scope).toBe("provider");
+    expect(saved.requestCount).toBe(1);
   });
 });
 
