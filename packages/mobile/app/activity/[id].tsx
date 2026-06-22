@@ -8,8 +8,8 @@ import {
 import type { UnitConverter } from "@dofek/format/units";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { activityMetricColors } from "@dofek/scoring/colors";
-import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
 import { getActivityIconInfo } from "@dofek/training/activity-icons";
+import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
 import { cadenceUnit, formatActivityTypeLabel, isCyclingActivity } from "@dofek/training/training";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useState } from "react";

@@ -9,8 +9,8 @@ import { formatActivityTypeLabel } from "@dofek/training/training";
 import { useState } from "react";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import type { ActivityMapPreview } from "./ActivityMapTile.tsx";
-import { ActivityTypeIcon } from "./ActivityTypeIcon.tsx";
 import { ActivityTable, type ActivityTableColumn } from "./ActivityTable.tsx";
+import { ActivityTypeIcon } from "./ActivityTypeIcon.tsx";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 export interface Activity {

@@ -22,8 +22,8 @@ import {
   View,
 } from "react-native";
 import Svg, { Polyline } from "react-native-svg";
-import { QueryStatePanel } from "../../components/QueryStatePanel";
 import { ActivityTypeIcon } from "../../components/ActivityTypeIcon";
+import { QueryStatePanel } from "../../components/QueryStatePanel";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useRefresh } from "../../lib/useRefresh";

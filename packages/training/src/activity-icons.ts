@@ -35,7 +35,11 @@ const CATEGORY_INFO: Record<
   strength: { emoji: "\u{1F3CB}\u{FE0F}", gradientFrom: "#7c3aed", gradientTo: "#6d28d9" },
   yoga: { emoji: "\u{1F9D8}", gradientFrom: "#db2777", gradientTo: "#be185d" },
   hiit: { emoji: "\u{1F4A5}", gradientFrom: "#dc2626", gradientTo: "#b91c1c" },
-  elliptical: { emoji: "\u{1F3C3}\u{200D}\u{2642}\u{FE0F}", gradientFrom: "#059669", gradientTo: "#047857" },
+  elliptical: {
+    emoji: "\u{1F3C3}\u{200D}\u{2642}\u{FE0F}",
+    gradientFrom: "#059669",
+    gradientTo: "#047857",
+  },
   rowing: { emoji: "\u{1F6A3}", gradientFrom: "#0284c7", gradientTo: "#0369a1" },
   winter: { emoji: "\u{26F7}\u{FE0F}", gradientFrom: "#6366f1", gradientTo: "#4f46e5" },
   climbing: { emoji: "\u{1F9D7}", gradientFrom: "#78716c", gradientTo: "#57534e" },
@@ -51,7 +55,8 @@ export function resolveActivityIconCategory(activityType: string): ActivityIconC
   if (isCyclingActivity(lower)) return "cycling";
   if (lower.includes("run") || lower.includes("trail")) return "running";
   if (lower.includes("swim") || lower.includes("triathlon")) return "swimming";
-  if (lower.includes("walk") || lower.includes("hike") || lower.includes("stair")) return "walking";
+  if (lower.includes("walk") || lower.includes("hiking") || lower.includes("stair"))
+    return "walking";
   if (
     lower.includes("strength") ||
     lower.includes("weight") ||
@@ -77,10 +82,10 @@ export function resolveActivityIconCategory(activityType: string): ActivityIconC
     return "hiit";
   }
   if (lower.includes("elliptical")) return "elliptical";
-  if (lower.includes("row")) return "rowing";
+  if (lower.includes("rowing")) return "rowing";
   if (
     lower.includes("ski") ||
-    lower.includes("skate") ||
+    lower.includes("skating") ||
     lower.includes("snow") ||
     lower.includes("curling") ||
     lower.includes("ice_hockey")
@@ -117,7 +122,7 @@ export function resolveActivityIconCategory(activityType: string): ActivityIconC
   ) {
     return "team";
   }
-  if (lower.includes("danc")) return "dance";
+  if (lower === "dance" || lower === "dancing") return "dance";
 
   return "other";
 }
