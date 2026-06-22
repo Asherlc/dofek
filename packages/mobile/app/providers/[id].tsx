@@ -1,4 +1,9 @@
-import { formatDurationSeconds, formatRelativeTime, formatTime } from "@dofek/format/format";
+import {
+  formatDurationSeconds,
+  formatRelativeTime,
+  formatTableCellValue,
+  formatTime,
+} from "@dofek/format/format";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { DATA_TYPE_LABELS } from "@dofek/providers/provider-stats";
 import { statusColors } from "@dofek/scoring/colors";
@@ -42,14 +47,7 @@ function formatColumnName(col: string): string {
 }
 
 function formatCellValue(value: unknown): string {
-  if (value === null || value === undefined) return "\u2014";
-  if (typeof value === "boolean") return value ? "Yes" : "No";
-  if (typeof value === "object") return JSON.stringify(value);
-  const str = String(value);
-  if (/^\d{4}-\d{2}-\d{2}T/.test(str)) {
-    return formatTime(str);
-  }
-  return str;
+  return formatTableCellValue(value);
 }
 
 // ── Record Detail Modal ──

@@ -1,4 +1,4 @@
-import { formatPace } from "@dofek/format/format";
+import { formatDateMedium, formatPace } from "@dofek/format/format";
 import type { ActivityComparisonRow } from "dofek-server/types";
 import {
   dofekAxis,
@@ -47,7 +47,7 @@ export function ActivityComparisonChart({ data, loading }: ActivityComparisonCha
         const seriesName = String(params.seriesName ?? "");
         return [
           `<strong>${seriesName}</strong>`,
-          `Date: ${date}`,
+          `Date: ${formatDateMedium(date)}`,
           `Pace: ${formatPace(pace)} ${units.paceLabel}`,
         ].join("<br/>");
       },

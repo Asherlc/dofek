@@ -1,4 +1,5 @@
 import type { UnitConverter } from "@dofek/format/units";
+import { formatDateMedium, formatNumber, formatPace } from "@dofek/format/format";
 import { createFileRoute } from "@tanstack/react-router";
 import { ActivityTable, type ActivityTableColumn } from "../../components/ActivityTable.tsx";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
@@ -20,8 +21,6 @@ import { useUnitConverter } from "../../lib/unitContext.ts";
 export const Route = createFileRoute("/training/running")({
   component: RunningTab,
 });
-
-import { formatNumber, formatPace } from "@dofek/format/format";
 
 const RUNNING_ACTIVITY_TYPES = ["running", "trail_running"] as const;
 
@@ -188,7 +187,7 @@ function PaceTrendChart({
         if (!dataPoint) return "";
         return [
           `<strong>${dataPoint.activityName}</strong>`,
-          `${dataPoint.date}`,
+          formatDateMedium(dataPoint.date),
           `Pace: ${formatPace(units.convertPace(dataPoint.paceSecondsPerKm))} ${units.paceLabel}`,
           `Distance: ${formatNumber(units.convertDistance(dataPoint.distanceKm))} ${units.distanceLabel} · ${dataPoint.durationMinutes} min`,
         ].join("<br/>");
@@ -252,7 +251,7 @@ function CadenceTrendChart({ data, loading }: { data: DynamicsRow[]; loading: bo
       formatter: (params: { data: [string, number]; dataIndex: number }) => {
         const dataPoint = data[params.dataIndex];
         if (!dataPoint) return "";
-        return `<strong>${dataPoint.activityName}</strong><br/>${dataPoint.date}<br/>Cadence: ${dataPoint.cadence} spm`;
+        return `<strong>${dataPoint.activityName}</strong><br/>${formatDateMedium(dataPoint.date)}<br/>Cadence: ${dataPoint.cadence} spm`;
       },
     }),
     xAxis: dofekAxis.time(),
@@ -310,7 +309,7 @@ function RunningDynamicsTable({
       label: "Date",
       headerClassName: "py-2 pr-3",
       cellClassName: "py-1.5 pr-3 text-subtle",
-      renderCell: (row) => row.date,
+      renderCell: (row) => formatDateMedium(row.date),
     },
     {
       key: "activity",

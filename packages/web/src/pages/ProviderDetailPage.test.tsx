@@ -135,6 +135,10 @@ describe("formatCellValue", () => {
     expect(result.length).toBeGreaterThan(0);
   });
 
+  it("formats YYYY-MM-DD date strings", () => {
+    expect(formatCellValue("2024-03-15")).toBe("Mar 15, 2024");
+  });
+
   it("returns plain strings as-is", () => {
     expect(formatCellValue("hello")).toBe("hello");
   });

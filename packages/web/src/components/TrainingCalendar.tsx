@@ -1,4 +1,4 @@
-import { formatDurationMinutes } from "@dofek/format/format";
+import { formatDateMedium, formatDurationMinutes } from "@dofek/format/format";
 import { statusColors, surfaceColors } from "@dofek/scoring/colors";
 import type { CalendarDay } from "dofek-server/types";
 import { chartThemeColors, dofekTooltip } from "../lib/chartTheme.ts";
@@ -42,10 +42,10 @@ export function TrainingCalendar({ data, height = 180 }: TrainingCalendarProps) 
         const date = String(rawValue[0] ?? "");
         const minutes = Number(rawValue[1] ?? 0);
         const day = dayMap.get(date);
-        if (!day) return date;
+        if (!day) return formatDateMedium(date);
         const types = day.activityTypes.join(", ");
         return [
-          `<strong>${date}</strong>`,
+          `<strong>${formatDateMedium(date)}</strong>`,
           `Activities: ${day.activityCount}`,
           `Duration: ${formatDurationMinutes(minutes)}`,
           `Types: ${types}`,

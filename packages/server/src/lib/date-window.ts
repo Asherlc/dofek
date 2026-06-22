@@ -1,3 +1,4 @@
+import { formatDateYmd, formatDateYmdInTimeZone } from "@dofek/format/format";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 
@@ -15,7 +16,7 @@ export const endDateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD date")
   .optional()
-  .transform((d) => d ?? todayYmd());
+  .transform((d) => d ?? formatDateYmd());
 
 /** Standard date-windowed input: `days` lookback from `endDate`. */
 export const dateWindowInput = z.object({
@@ -23,10 +24,10 @@ export const dateWindowInput = z.object({
   endDate: endDateSchema,
 });
 
-/** Current date in YYYY-MM-DD (server-local timezone). */
-function todayYmd(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+export function dateWindowStartString(endDate: string, days: number): string {
+  const windowStart = new Date(`${endDate}T00:00:00Z`);
+  windowStart.setUTCDate(windowStart.getUTCDate() - days);
+  return formatDateYmdInTimeZone(windowStart, "UTC");
 }
 
 /**
@@ -38,12 +39,6 @@ function todayYmd(): string {
  */
 export function dateWindowStart(endDate: string, days: number): SQL {
   return sql`${endDate}::date - ${days}::int`;
-}
-
-export function dateWindowStartString(endDate: string, days: number): string {
-  const windowStart = new Date(`${endDate}T00:00:00Z`);
-  windowStart.setUTCDate(windowStart.getUTCDate() - days);
-  return windowStart.toISOString().slice(0, 10);
 }
 
 /**
