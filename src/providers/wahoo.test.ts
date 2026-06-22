@@ -2280,7 +2280,7 @@ describe("WahooProvider.sync — FIT file download error", () => {
         return Promise.resolve(Response.json(workoutsResponse));
       }
       // FIT CDN URL returns 404
-      if (urlStr.includes("cdn.wahoo.com")) {
+      if (urlStr === "https://cdn.wahoo.com/files/123.fit") {
         return Promise.resolve(new Response("Not Found", { status: 404 }));
       }
       return Promise.resolve(new Response("Not Found", { status: 404 }));
