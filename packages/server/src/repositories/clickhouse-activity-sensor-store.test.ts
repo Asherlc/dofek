@@ -87,7 +87,7 @@ describe("ClickHouseActivitySensorStore", () => {
       }),
     );
     const queryText = query.mock.calls[0]?.[0]?.query;
-    expect(queryText).toContain("analytics.v_activity");
+    expect(queryText).not.toContain("analytics.v_activity");
     expect(queryText).toContain(
       "activity_id IN (\n          SELECT arrayJoin(CAST({activityIds:Array(String)}, 'Array(UUID)'))",
     );
@@ -99,7 +99,9 @@ describe("ClickHouseActivitySensorStore", () => {
     await store.getPowerCurveSamples(90, window.userId, "UTC");
 
     const queryText = query.mock.calls[0]?.[0]?.query;
-    expect(queryText).toContain("analytics.v_activity");
+    expect(queryText).toContain("analytics.deduped_activities");
+    expect(queryText).not.toContain("analytics.v_activity");
+    expect(queryText).toContain("activity.activity_id AS activity_id");
     expect(queryText).toContain("analytics.deduped_sensor");
   });
 
@@ -109,7 +111,9 @@ describe("ClickHouseActivitySensorStore", () => {
     await store.getNormalizedPowerSamples(365, window.userId, "UTC");
 
     const queryText = query.mock.calls[0]?.[0]?.query;
-    expect(queryText).toContain("analytics.v_activity");
+    expect(queryText).toContain("analytics.deduped_activities");
+    expect(queryText).not.toContain("analytics.v_activity");
+    expect(queryText).toContain("activity.activity_id AS activity_id");
     expect(queryText).toContain("analytics.deduped_sensor");
   });
 
@@ -251,6 +255,9 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).toContain(
       "greatest(1, toInt32(round(duration_values.duration_s / sample_rate.interval_s)))",
     );
+    expect(queryText).toContain("analytics.deduped_activities");
+    expect(queryText).toContain("activity.activity_id AS activity_id");
+    expect(queryText).not.toContain("analytics.v_activity");
   });
 
   it("clamps pace duration windows to at least one sample", async () => {
@@ -262,5 +269,8 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).toContain(
       "greatest(1, toInt32(round(duration_values.duration_s / sample_rate.interval_s)))",
     );
+    expect(queryText).toContain("analytics.deduped_activities");
+    expect(queryText).toContain("activity.activity_id AS activity_id");
+    expect(queryText).not.toContain("analytics.v_activity");
   });
 });
