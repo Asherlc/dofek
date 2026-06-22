@@ -118,15 +118,16 @@ export class TrainingRepository extends BaseRepository {
           nullIf(up.max_hr, 0) AS max_hr,
           coalesce(drhr.resting_hr, nullIf(up.resting_hr, 0), 60) AS resting_hr
         FROM analytics.activity_summary asum
-        INNER JOIN analytics.v_activity va
-          ON va.id = asum.activity_id
-         AND va.user_id = asum.user_id
+        INNER JOIN analytics.deduped_activities activity FINAL
+          ON activity.activity_id = asum.activity_id
+         AND activity.user_id = asum.user_id
         INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
         LEFT JOIN resting_heart_rate drhr
           ON drhr.date = toString(toDate(asum.started_at))
         WHERE asum.user_id = {userId:UUID}
           AND has({enduranceTypes:Array(String)}, asum.activity_type)
           AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+          AND activity.is_deleted = 0
           AND up.max_hr > 0
       ),
       zone_counts AS (
@@ -266,12 +267,13 @@ export class TrainingRepository extends BaseRepository {
         toInt32(count()) AS count,
         round(sum(dateDiff('second', asum.started_at, asum.ended_at)) / 3600, 2) AS hours
       FROM analytics.activity_summary asum
-      INNER JOIN analytics.v_activity va
-        ON va.id = asum.activity_id
-       AND va.user_id = asum.user_id
+      INNER JOIN analytics.deduped_activities activity FINAL
+        ON activity.activity_id = asum.activity_id
+       AND activity.user_id = asum.user_id
       WHERE asum.user_id = {userId:UUID}
         AND asum.started_at > now() - INTERVAL {days:Int32} DAY
         AND asum.ended_at IS NOT NULL
+        AND activity.is_deleted = 0
         ${predicate}
       GROUP BY week, activity_type
       ORDER BY week`,

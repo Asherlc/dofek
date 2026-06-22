@@ -11201,3 +11201,38 @@ new incremental tables are populated.
   passed all `23` shared provider HTTP tests locally.
 - **Remaining risk:** Low, but the fix is only local until committed, pushed,
   deployed, and the Sentry issue is confirmed quiet in production.
+
+## 2026-06-22 — Activities and training pages stalled on ClickHouse activity view
+
+- **Symptoms:** `https://dofek.asherlc.com/activities` and `/training` loaded
+  very slowly. The static SPA document returned in about 40 ms, but app data
+  queries stalled after render.
+- **User impact:** Activity log and training pages could hang for minutes or
+  fail while ClickHouse query memory climbed.
+- **Evidence:** Production ClickHouse had active API queries running for
+  198-201 seconds, each reading 5.7-7.1 million rows and 1.6-2.0 GB. Recent
+  `system.query_log` entries showed the same query families failing with
+  exception code `241` after 155-368 seconds and up to 11.6 GB memory. A direct
+  `SELECT count() FROM analytics.v_activity` timed out at 90 seconds, while
+  `analytics.deduped_activities FINAL` and `analytics.activity_summary` counts
+  returned in about 5-6 ms. Fixed-shape production probes ran in 86 ms
+  (activity overview), 88 ms (weekly volume), and 183 ms (PMC rolling power).
+- **Root cause:** Request-path queries joined `analytics.v_activity`, a
+  recursive ClickHouse dedupe/visibility view. The view recomputed activity
+  grouping on every request, so otherwise small activity-summary queries scanned
+  millions of intermediate rows.
+- **Fix / mitigation:** Killed six long-running non-dbt ClickHouse API queries
+  to clear the immediate pile-up. Updated the activity calendar, training
+  volume/zones, PMC chart, activity summary hydration, and power/pace/heart-rate
+  curve query paths to use materialized `analytics.deduped_activities` and
+  `analytics.activity_summary` data instead of `analytics.v_activity`.
+- **Validation:** Focused repository tests passed:
+  `pnpm vitest run packages/server/src/repositories/training-repository.test.ts
+  packages/server/src/repositories/activities-calendar-repository.test.ts
+  packages/server/src/repositories/pmc-repository.test.ts
+  packages/server/src/repositories/clickhouse-activity-sensor-store.test.ts`.
+  `cd packages/server && pnpm tsc --noEmit` passed.
+- **Remaining risk:** Medium until this branch is deployed and production pages
+  are checked after rollout. Other analytics routes still reference
+  `analytics.v_activity`; they should be audited separately, but they were not
+  on the reported `/activities` and `/training` request paths.

@@ -179,9 +179,11 @@ describe("PmcRepository", () => {
       expect(query).toHaveBeenNthCalledWith(
         2,
         expect.anything(),
-        expect.stringContaining("INNER JOIN analytics.v_activity a"),
+        expect.stringContaining("INNER JOIN analytics.deduped_activities a"),
         expect.anything(),
       );
+      expect(vi.mocked(query).mock.calls[1]?.[1]).not.toContain("analytics.v_activity");
+      expect(vi.mocked(query).mock.calls[1]?.[1]).toContain("a.activity_id AS activity_id");
     });
 
     it("returns chart data built from ClickHouse rows", async () => {

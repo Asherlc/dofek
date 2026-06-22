@@ -455,9 +455,6 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             coalesce(sum(coalesce(asum.total_distance, 0)), 0) AS total_distance_meters,
             coalesce(sum(coalesce(asum.elevation_gain_m, 0)), 0) AS total_elevation_gain_m
           FROM analytics.deduped_activities AS activity FINAL
-          INNER JOIN analytics.v_activity va
-            ON va.id = activity.activity_id
-           AND va.user_id = activity.user_id
           LEFT JOIN analytics.activity_summary asum
             ON asum.user_id = activity.user_id
            AND asum.activity_id = activity.activity_id
@@ -473,9 +470,6 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         `SELECT DISTINCT
             activity.activity_type AS activity_type
           FROM analytics.deduped_activities AS activity FINAL
-          INNER JOIN analytics.v_activity va
-            ON va.id = activity.activity_id
-           AND va.user_id = activity.user_id
           WHERE activity.user_id = {userId:UUID}
             AND activity.is_deleted = 0
             AND activity.ended_at IS NOT NULL

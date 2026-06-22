@@ -100,7 +100,10 @@ describe("TrainingRepository", () => {
         expect.stringContaining("FROM analytics.activity_summary"),
         expect.objectContaining({ days: 90, timezone: "UTC", userId: "user-1" }),
       );
-      expect(vi.mocked(sensorStore.query).mock.calls[0]?.[1]).toContain("analytics.v_activity");
+      expect(vi.mocked(sensorStore.query).mock.calls[0]?.[1]).toContain(
+        "analytics.deduped_activities",
+      );
+      expect(vi.mocked(sensorStore.query).mock.calls[0]?.[1]).not.toContain("analytics.v_activity");
     });
 
     it("does not add access-window filters for full access", async () => {
@@ -112,7 +115,8 @@ describe("TrainingRepository", () => {
       const params = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
 
       expect(query).toContain("FROM analytics.activity_summary");
-      expect(query).toContain("analytics.v_activity");
+      expect(query).toContain("analytics.deduped_activities");
+      expect(query).not.toContain("analytics.v_activity");
       expect(query).not.toContain("toDateTime({accessStart:String})");
       expect(query).not.toContain("toDateTime({accessEnd:String})");
       expect(params).toEqual({ userId: "user-1", timezone: "UTC", days: 30 });
