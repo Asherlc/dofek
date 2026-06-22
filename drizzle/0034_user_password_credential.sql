@@ -8,5 +8,3 @@ CREATE TABLE fitness.user_password_credential (
   CONSTRAINT user_password_credential_user_id_fkey FOREIGN KEY (user_id) REFERENCES fitness.user_profile (id) ON DELETE CASCADE,
   CONSTRAINT user_password_credential_email_key UNIQUE (email)
 );
-
-CREATE INDEX user_password_credential_email_idx ON fitness.user_password_credential USING btree (email);

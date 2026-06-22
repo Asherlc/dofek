@@ -994,10 +994,6 @@ table fitness.user_password_credential {
   password_hash text [not null]
   created_at "timestamp with time zone" [not null, default: `now()`]
   updated_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-    email [name: 'user_password_credential_email_idx']
-  }
 }
 
 table fitness.user_profile {
