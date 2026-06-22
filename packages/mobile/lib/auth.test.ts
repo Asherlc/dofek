@@ -302,6 +302,32 @@ describe("loginWithPassword", () => {
     const token = await loginWithPassword("https://srv", "user@example.com", "password123");
     expect(token).toBe("sess-password-1");
   });
+
+  it("throws server error message when login fails", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "Invalid email or password", redirect: "/" }), {
+        status: 401,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    await expect(loginWithPassword("https://srv", "user@example.com", "wrong")).rejects.toThrow(
+      "Invalid email or password",
+    );
+  });
+
+  it("throws generic message when login fails without error body", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response("not json", {
+        status: 500,
+        headers: { "content-type": "text/plain" },
+      }),
+    );
+
+    await expect(
+      loginWithPassword("https://srv", "user@example.com", "password123"),
+    ).rejects.toThrow("Authentication failed");
+  });
 });
 
 describe("registerWithPassword", () => {
@@ -328,6 +354,32 @@ describe("registerWithPassword", () => {
       "User",
     );
     expect(token).toBe("sess-register-1");
+  });
+
+  it("throws server error message when registration fails", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "An account with this email already exists" }), {
+        status: 409,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    await expect(
+      registerWithPassword("https://srv", "user@example.com", "password123", "User"),
+    ).rejects.toThrow("An account with this email already exists");
+  });
+
+  it("throws generic message when registration response is invalid", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ redirect: "/" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    await expect(
+      registerWithPassword("https://srv", "user@example.com", "password123", "User"),
+    ).rejects.toThrow("Authentication failed");
   });
 });
 

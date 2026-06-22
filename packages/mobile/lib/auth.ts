@@ -77,10 +77,13 @@ async function submitPasswordAuth(
       error: z.string().optional(),
     })
     .safeParse(data);
+  const errorParsed = z.object({ error: z.string().optional() }).safeParse(data);
 
   if (!response.ok) {
     throw new Error(
-      parsed.success && parsed.data.error ? parsed.data.error : "Authentication failed",
+      errorParsed.success && errorParsed.data.error
+        ? errorParsed.data.error
+        : "Authentication failed",
     );
   }
   if (!parsed.success || !parsed.data.session) {
