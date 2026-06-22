@@ -1,5 +1,5 @@
-import type { UnitConverter } from "@dofek/format/units";
 import { formatDateMedium, formatNumber, formatPace } from "@dofek/format/format";
+import type { UnitConverter } from "@dofek/format/units";
 import { createFileRoute } from "@tanstack/react-router";
 import { ActivityTable, type ActivityTableColumn } from "../../components/ActivityTable.tsx";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
