@@ -10,7 +10,7 @@ import {
   listWhoopStepDatesNeedingSteps,
   planWhoopApiSteps,
 } from "./sync-step-plan.ts";
-import type { WhoopPersistenceContext } from "./sync-types.ts";
+import type { WhoopSyncContext } from "./sync-types.ts";
 
 const tokenUserContextMocks = vi.hoisted(() => ({
   getTokenUserId: vi.fn((): string | undefined => "00000000-0000-0000-0000-000000000001"),
@@ -75,7 +75,7 @@ function makeClient() {
   });
 }
 
-function makeContext(overrides: Partial<WhoopPersistenceContext> = {}): WhoopPersistenceContext {
+function makeContext(overrides: Partial<WhoopSyncContext> = {}): WhoopSyncContext {
   const { db } = makeDb();
   return {
     db,
@@ -155,6 +155,14 @@ describe("WHOOP sync step planning", () => {
       "2026-05-02",
       "2026-05-03",
     ]);
+  });
+
+  it("returns no sleep ids when cycles contain no sleep records", async () => {
+    const db = makeDb([]);
+    const context = makeContext({ db: db.db, cycles: [{ workouts: [makeWorkoutRecord()] }] });
+
+    await expect(listWhoopSleepIdsNeedingStages(context)).resolves.toEqual([]);
+    expect(db.select).not.toHaveBeenCalled();
   });
 
   it("lists only sleep ids that still need stage rows synced", async () => {

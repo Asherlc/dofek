@@ -887,6 +887,8 @@ describe("processSyncJob", () => {
       "sync",
       expect.objectContaining({
         providerId: "whoop",
+        sinceIso: expect.any(String),
+        untilIso: expect.any(String),
         checkpoint: continuationCheckpoint,
       }),
       expect.any(Object),

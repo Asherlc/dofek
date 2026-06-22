@@ -88,7 +88,7 @@ export async function fetchWhoopDeveloperWorkoutsPage(
   return {
     presentIds,
     nextToken: page.next_token ?? null,
-    reachedWindowStart: oldestStartMs < absenceWindow.since.getTime(),
+    reachedWindowStart: oldestStartMs <= absenceWindow.since.getTime(),
   };
 }
 
@@ -310,8 +310,6 @@ export async function syncWhoopStrength(
             const dbActivityId = activityRow?.id;
             if (!dbActivityId) continue;
 
-            await db.delete(strengthSet).where(eq(strengthSet.activityId, dbActivityId));
-
             const setRows: (typeof strengthSet.$inferInsert)[] = [];
             for (const exerciseRecord of parsed.exercises) {
               const cacheKey = exerciseRecord.providerExerciseId;
@@ -382,6 +380,7 @@ export async function syncWhoopStrength(
             }
 
             if (setRows.length > 0) {
+              await db.delete(strengthSet).where(eq(strengthSet.activityId, dbActivityId));
               await db.insert(strengthSet).values(setRows);
             }
             count++;
@@ -472,8 +471,6 @@ export async function syncWhoopStrengthForActivity(
   const dbActivityId = activityRow?.id;
   if (!dbActivityId) return 0;
 
-  await db.delete(strengthSet).where(eq(strengthSet.activityId, dbActivityId));
-
   const setRows: (typeof strengthSet.$inferInsert)[] = [];
   for (const exerciseRecord of parsed.exercises) {
     const cacheKey = exerciseRecord.providerExerciseId;
@@ -543,6 +540,7 @@ export async function syncWhoopStrengthForActivity(
   }
 
   if (setRows.length > 0) {
+    await db.delete(strengthSet).where(eq(strengthSet.activityId, dbActivityId));
     await db.insert(strengthSet).values(setRows);
   }
   return 1;

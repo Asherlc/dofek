@@ -112,7 +112,10 @@ export async function syncWhoopSleepStagesForId(
   context: WhoopSyncContext,
   sleepId: string,
 ): Promise<number> {
-  const { db, client, providerId } = context;
+  const { db, client, providerId, options } = context;
+  const userId = options?.userId ?? getTokenUserId();
+  if (!userId) return 0;
+
   const record = await client.getSleep(sleepId);
   if (!record.stages || record.stages.length === 0) return 0;
 
@@ -122,7 +125,13 @@ export async function syncWhoopSleepStagesForId(
   const sessionRows = await db
     .select({ id: sleepSession.id })
     .from(sleepSession)
-    .where(and(eq(sleepSession.providerId, providerId), eq(sleepSession.externalId, sleepId)))
+    .where(
+      and(
+        eq(sleepSession.userId, userId),
+        eq(sleepSession.providerId, providerId),
+        eq(sleepSession.externalId, sleepId),
+      ),
+    )
     .limit(1);
 
   const sessionId = sessionRows[0]?.id;
@@ -196,6 +205,10 @@ export async function syncWhoopSleepStages(
                 result: { count, rateLimited: true },
               };
             }
+            context.errors.push({
+              message: `sleep_stages(${sleepId}): ${err instanceof Error ? err.message : String(err)}`,
+              cause: err,
+            });
             logger.warn(`[whoop] Failed to fetch sleep stages for ${sleepId}: ${err}`);
           }
         }

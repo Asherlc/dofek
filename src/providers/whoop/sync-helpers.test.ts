@@ -716,7 +716,7 @@ describe("WHOOP sync helpers", () => {
     expect(getSleep).not.toHaveBeenCalled();
   });
 
-  it("does not skip sleep stage fetches when no user id is available", async () => {
+  it("skips sleep stage fetches when no user id is available", async () => {
     tokenUserContextMocks.getTokenUserId.mockReturnValue(undefined);
     const db = makeDb([{ externalId: "123" }]);
     const client = makeClient();
@@ -732,7 +732,7 @@ describe("WHOOP sync helpers", () => {
       count: 0,
       rateLimited: false,
     });
-    expect(getSleep).toHaveBeenCalledWith("123");
+    expect(getSleep).not.toHaveBeenCalled();
   });
 
   it("continues syncing other sleep ids after a non-rate-limit fetch failure", async () => {
@@ -751,7 +751,12 @@ describe("WHOOP sync helpers", () => {
       count: 1,
       rateLimited: false,
     });
-    expect(context.errors).toHaveLength(0);
+    expect(context.errors).toEqual([
+      expect.objectContaining({
+        message: expect.stringContaining("sleep_stages(123)"),
+        cause: expect.any(Error),
+      }),
+    ]);
   });
 
   it("returns rate limited when sync log wrapping throws a WHOOP rate limit", async () => {

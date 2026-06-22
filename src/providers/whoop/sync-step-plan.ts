@@ -1,4 +1,4 @@
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, lte } from "drizzle-orm";
 import type { WhoopCycle, WhoopWorkoutRecord } from "whoop-whoop/types";
 import { dailyMetrics, sleepSession, sleepStage } from "../../db/schema.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
@@ -31,6 +31,8 @@ export async function listWhoopStepDatesNeedingSteps(
   context: Pick<WhoopSyncContext, "db" | "providerId" | "since" | "windowEnd" | "options">,
 ): Promise<string[]> {
   const userId = context.options?.userId ?? getTokenUserId();
+  const sinceDate = context.since.toISOString().slice(0, 10);
+  const untilDate = context.windowEnd.toISOString().slice(0, 10);
   const syncedStepDates =
     userId == null
       ? new Set<string>()
@@ -44,6 +46,8 @@ export async function listWhoopStepDatesNeedingSteps(
                   eq(dailyMetrics.userId, userId),
                   eq(dailyMetrics.providerId, context.providerId),
                   isNotNull(dailyMetrics.steps),
+                  gte(dailyMetrics.date, sinceDate),
+                  lte(dailyMetrics.date, untilDate),
                 ),
               )
           ).map((row) => row.date),
@@ -68,6 +72,11 @@ export async function listWhoopSleepIdsNeedingStages(
     }
   }
 
+  if (sleepIds.size === 0) {
+    return [];
+  }
+
+  const candidateSleepIds = [...sleepIds];
   const userId = context.options?.userId ?? getTokenUserId();
   const syncedSleepIds =
     userId == null
@@ -83,6 +92,7 @@ export async function listWhoopSleepIdsNeedingStages(
                   eq(sleepSession.userId, userId),
                   eq(sleepSession.providerId, context.providerId),
                   isNotNull(sleepSession.externalId),
+                  inArray(sleepSession.externalId, candidateSleepIds),
                 ),
               )
           )

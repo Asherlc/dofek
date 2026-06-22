@@ -111,6 +111,31 @@ describe("WHOOP sync checkpoint", () => {
     expect(checkpoint.apiSteps).toEqual([{ type: "strain_deep_dive", date: "2026-03-01" }]);
   });
 
+  it("does not keep heart_rate or journal as the current step after a rate limit", () => {
+    const checkpoint = applyRateLimitToCheckpoint({
+      runId: "run-1",
+      recordsSynced: 5,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: [],
+      apiSteps: [
+        { type: "strain_deep_dive", date: "2026-03-01" },
+        { type: "sleep_stages", sleepId: "sleep-1" },
+        { type: "heart_rate", start: "2026-03-01T00:00:00.000Z", end: "2026-03-08T00:00:00.000Z" },
+        { type: "journal" },
+      ],
+      apiStepIndex: 2,
+      presentExternalIds: [],
+      skipRemainingAfterRateLimit: false,
+    });
+
+    expect(checkpoint.skipRemainingAfterRateLimit).toBe(true);
+    expect(checkpoint.apiSteps).toEqual([
+      { type: "strain_deep_dive", date: "2026-03-01" },
+      { type: "sleep_stages", sleepId: "sleep-1" },
+    ]);
+  });
+
   it("keeps non-HR tail steps after the current API step index", () => {
     const checkpoint = applyRateLimitToCheckpoint({
       runId: "run-1",

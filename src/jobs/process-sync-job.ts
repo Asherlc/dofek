@@ -215,6 +215,8 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
               await enqueueSyncJob(provider.id, {
                 ...job.data,
                 providerId: provider.id,
+                sinceIso: since.toISOString(),
+                untilIso: until.toISOString(),
                 checkpoint,
               });
             },

@@ -41,8 +41,9 @@ async function createWhoopClient(
   db: SyncRun["db"],
   providerId: string,
   fetchFn: typeof globalThis.fetch,
+  runUserId?: string,
 ): Promise<WhoopClient> {
-  const stored = await loadTokens(db, providerId);
+  const stored = await loadTokens(db, providerId, runUserId);
   if (!stored?.refreshToken) {
     throw new Error("WHOOP not connected — authenticate via the web UI");
   }
@@ -55,12 +56,17 @@ async function createWhoopClient(
     throw new ProviderStoredIdentityMissingError("WHOOP", "user ID");
   }
 
-  await saveTokens(db, providerId, {
-    accessToken: token.accessToken,
-    refreshToken: token.refreshToken,
-    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-    scopes: `userId:${userId}`,
-  });
+  await saveTokens(
+    db,
+    providerId,
+    {
+      accessToken: token.accessToken,
+      refreshToken: token.refreshToken,
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      scopes: `userId:${userId}`,
+    },
+    runUserId,
+  );
 
   return new WhoopClient(
     { accessToken: token.accessToken, refreshToken: token.refreshToken, userId },
@@ -345,6 +351,9 @@ async function runApiStep(
     if (isWhoopRateLimitError(err)) {
       throw err;
     }
+    if (step.type === "developer_workouts") {
+      throw err;
+    }
     errors.push({
       message: `${syncErrorLabelForStep(step)}: ${err instanceof Error ? err.message : String(err)}`,
       cause: err,
@@ -382,13 +391,13 @@ async function runWhoopSyncStep(
     const needsFetch =
       checkpoint.cycleFetchCursorMs != null && checkpoint.cycleFetchCursorMs < windowEndMs;
     if (needsFetch) {
-      const client = await createWhoopClient(run.db, "whoop", fetchFn);
+      const client = await createWhoopClient(run.db, "whoop", fetchFn, run.options.userId);
       return runBootstrapStep(run, checkpoint, client, errors);
     }
     return runBootstrapPersist(run, checkpoint, errors);
   }
 
-  const client = await createWhoopClient(run.db, "whoop", fetchFn);
+  const client = await createWhoopClient(run.db, "whoop", fetchFn, run.options.userId);
   if (checkpoint.phase === "api") {
     return runApiStep(run, checkpoint, client, errors);
   }

@@ -77,7 +77,7 @@ export class WhoopProvider implements SyncProvider {
 
   async sync(run: SyncRun): Promise<SyncResult> {
     const start = Date.now();
-    await ensureProvider(run.db, this.id, this.name);
+    await ensureProvider(run.db, this.id, this.name, undefined, run.options.userId);
     return runWhoopOrchestratedSync(run, this.#fetchFn, start);
   }
 }
