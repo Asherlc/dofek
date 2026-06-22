@@ -1,4 +1,7 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
+import {
+  createRateLimitAwareFetch,
+  ProviderRateLimitError,
+} from "@dofek/provider-http/rate-limit";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -7,6 +10,7 @@ import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { isRetryableInfraError } from "../lib/retryable-infra-error.ts";
 import { logger } from "../logger.ts";
 import { ProviderAuthenticationFailedError, RefreshTokenRevokedError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
@@ -158,6 +162,10 @@ class WithingsApiError extends Error {
 
 function isWithingsAccessTokenRejected(error: unknown): boolean {
   return error instanceof WithingsApiError && error.status === 401;
+}
+
+function throwIfProviderSyncAbortError(error: unknown): void {
+  if (isRetryableInfraError(error) || error instanceof ProviderRateLimitError) throw error;
 }
 
 export function withingsOAuthConfig(host?: string): OAuthConfig | null {
@@ -459,6 +467,7 @@ export class WithingsProvider implements WebhookProvider {
     try {
       tokens = await this.#resolveTokens(db);
     } catch (err) {
+      throwIfProviderSyncAbortError(err);
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
@@ -529,6 +538,7 @@ export class WithingsProvider implements WebhookProvider {
                 );
                 count++;
               } catch (err) {
+                throwIfProviderSyncAbortError(err);
                 errors.push({
                   message: err instanceof Error ? err.message : String(err),
                   externalId: parsed.externalId,
@@ -547,6 +557,7 @@ export class WithingsProvider implements WebhookProvider {
       );
       recordsSynced += measCount;
     } catch (err) {
+      throwIfProviderSyncAbortError(err);
       errors.push({
         message: `metric_stream: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,
