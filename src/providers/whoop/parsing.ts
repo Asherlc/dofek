@@ -153,9 +153,36 @@ export type InlineSleepRecord = z.infer<typeof inlineSleepSchema>;
  * This is the primary sleep parsing path since the sleep-service endpoint
  * changed to return raw stage arrays instead of summary objects.
  */
+/**
+ * Prefer the WHOOP sleep activity id for main sleeps so stage sync can match
+ * sessions without a separate lookup key. Naps and cycles without ids keep the
+ * inline fallback external id.
+ */
+export function resolveInlineSleepExternalId(
+  cycle: WhoopCycle,
+  record: InlineSleepRecord,
+  sleepIndex: number,
+): string {
+  if (record.significant !== false) {
+    const numericId = cycle.recovery?.sleep_id ?? cycle.sleep?.id;
+    if (numericId != null) {
+      return String(numericId);
+    }
+  }
+
+  let range: { start: Date };
+  try {
+    range = parseDuringRange(record.during);
+  } catch {
+    return `inline-unknown-${sleepIndex}`;
+  }
+  return `inline-${range.start.toISOString()}-${sleepIndex}`;
+}
+
 export function parseInlineSleep(
   record: InlineSleepRecord,
   sleepIndex: number,
+  externalId?: string,
 ): ParsedSleep | null {
   let range: { start: Date; end: Date };
   try {
@@ -170,7 +197,7 @@ export function parseInlineSleep(
   const durationMilli = record.time_in_bed - record.wake_duration;
 
   return {
-    externalId: `inline-${range.start.toISOString()}-${sleepIndex}`,
+    externalId: externalId ?? `inline-${range.start.toISOString()}-${sleepIndex}`,
     startedAt: range.start,
     endedAt: range.end,
     durationMinutes: milliToMinutes(durationMilli),

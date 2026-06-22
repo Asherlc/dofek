@@ -198,7 +198,9 @@ export class WhoopProvider implements SyncProvider {
     let rateLimited = dailyActivityResult.rateLimited;
 
     recordsSynced += await syncWhoopSleepSessions(context);
-    recordsSynced += await syncWhoopSleepStages(context);
+    const sleepStagesResult = await syncWhoopSleepStages(context);
+    recordsSynced += sleepStagesResult.count;
+    rateLimited ||= sleepStagesResult.rateLimited;
     recordsSynced += await syncWhoopWorkouts(context);
 
     const strengthResult = await syncWhoopStrength(context);
