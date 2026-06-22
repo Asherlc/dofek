@@ -748,9 +748,39 @@ describe("processSyncJob", () => {
 
     await expect(runSyncJob(job, mockDb)).rejects.toThrow("database system is in recovery mode");
 
+    expect(mockCaptureException).toHaveBeenCalledWith(infraError, {
+      tags: { provider: "garmin", retryable: "true" },
+      level: "warning",
+    });
     expect(mockLogSync).not.toHaveBeenCalled();
     expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
     expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
+  });
+
+  it("rethrows retryable infrastructure errors returned in sync results", async () => {
+    const cause = Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" });
+    const fetchError = new TypeError("fetch failed", { cause });
+    const provider = createMockProvider({
+      id: "withings",
+      name: "Withings",
+      sync: vi.fn().mockResolvedValue({
+        provider: "withings",
+        recordsSynced: 0,
+        errors: [{ message: "metric_stream: fetch failed", cause: fetchError }],
+        duration: 50,
+      }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await expect(runSyncJob(createMockJob({ providerId: "withings" }), mockDb)).rejects.toThrow(
+      "fetch failed",
+    );
+
+    expect(mockCaptureException).toHaveBeenCalledWith(fetchError, {
+      tags: { provider: "withings", retryable: "true" },
+      level: "warning",
+    });
+    expect(mockLogSync).not.toHaveBeenCalled();
   });
 
   it("reports returned sync errors to Sentry", async () => {

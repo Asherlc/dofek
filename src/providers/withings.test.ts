@@ -1091,7 +1091,7 @@ describe("Withings — rate-limit aware fetch wiring", () => {
     }
   });
 
-  it("provider sync surfaces a 429 from its fetch as an error tagged 'withings'", async () => {
+  it("provider sync rethrows a 429 from its fetch as a ProviderRateLimitError", async () => {
     process.env.WITHINGS_CLIENT_ID = "test-id";
     process.env.WITHINGS_CLIENT_SECRET = "test-secret";
 
@@ -1106,15 +1106,36 @@ describe("Withings — rate-limit aware fetch wiring", () => {
     });
 
     const provider = new WithingsProvider(rateLimited429);
-    const result = await provider.sync(
-      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
-    );
+    await expect(
+      provider.sync(
+        new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+      ),
+    ).rejects.toBeInstanceOf(ProviderRateLimitError);
+  });
 
-    expect(result.errors).toHaveLength(1);
-    const cause = result.errors[0]?.cause;
-    expect(cause).toBeInstanceOf(ProviderRateLimitError);
-    if (cause instanceof ProviderRateLimitError) {
-      expect(cause.providerId).toBe("withings");
-    }
+  it("provider sync rethrows retryable infrastructure errors instead of collecting them", async () => {
+    process.env.WITHINGS_CLIENT_ID = "test-id";
+    process.env.WITHINGS_CLIENT_SECRET = "test-secret";
+
+    const cause = Object.assign(new Error("connect ETIMEDOUT"), { code: "ETIMEDOUT" });
+    const fetchError = new TypeError("fetch failed", { cause });
+    const timedOutFetch: typeof globalThis.fetch = vi.fn().mockRejectedValue(fetchError);
+
+    const { db } = createMockDatabase({
+      tokensResult: [
+        {
+          accessToken: "valid-token",
+          refreshToken: "refresh-token",
+          expiresAt: new Date(Date.now() + 3_600_000),
+        },
+      ],
+    });
+
+    const provider = new WithingsProvider(timedOutFetch);
+    await expect(
+      provider.sync(
+        new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+      ),
+    ).rejects.toThrow("fetch failed");
   });
 });

@@ -301,7 +301,10 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
 
       if (isRetryableInfraError(err)) {
         const message = err instanceof Error ? err.message : String(err);
-        Sentry.captureException(err, { tags: { provider: provider.id, retryable: "true" } });
+        Sentry.captureException(err, {
+          tags: { provider: provider.id, retryable: "true" },
+          level: "warning",
+        });
         providerStatus[provider.id] = {
           status: "running",
           message: "Infrastructure unavailable; retrying",
