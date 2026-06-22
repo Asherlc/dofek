@@ -119,6 +119,11 @@ describe("learnInferredBudget", () => {
     expect(learnInferredBudget(30, 0)).toBe(30);
     expect(learnInferredBudget(null, 0)).toBeNull();
   });
+
+  it("uses the provider default budget when samples are too sparse for step-chain sync", () => {
+    expect(learnInferredBudget(null, 3, "whoop")).toBe(40);
+    expect(learnInferredBudget(40, 5, "whoop")).toBe(40);
+  });
 });
 
 describe("admissionDelayMs", () => {
@@ -139,6 +144,19 @@ describe("admissionDelayMs", () => {
       requestCount: 8,
     };
     expect(admissionDelayMs(state, 0)).toBe(1000);
+  });
+
+  it("paces step-chain providers by sync job rather than raw HTTP call count", () => {
+    const state = {
+      ...createInitialAdaptiveState("whoop", "provider", null, 0),
+      throttleMs: 1000,
+      inferredBudget: 40,
+      requestCount: 20,
+    };
+    expect(admissionDelayMs(state, 0)).toBe(0);
+
+    const throttled = { ...state, requestCount: 30 };
+    expect(admissionDelayMs(throttled, 0)).toBe(1000);
   });
 
   it("paces Strava requests when short quota is nearly exhausted", () => {
@@ -191,7 +209,13 @@ describe("createInitialAdaptiveState", () => {
       windowStartMs: 1234,
       requestCount: 0,
       throttleMs: 1000,
+      inferredBudget: 40,
     });
+  });
+
+  it("seeds step-chain providers with a default inferred budget", () => {
+    const state = createInitialAdaptiveState("whoop", "provider", null);
+    expect(state.inferredBudget).toBe(40);
   });
 });
 

@@ -4,11 +4,16 @@ import { WhoopClient } from "whoop-whoop/client";
 import type { WhoopCycle, WhoopWorkoutRecord } from "whoop-whoop/types";
 import type { SyncDatabase } from "../../db/index.ts";
 import { writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";
+import { sleepSession } from "../../db/schema.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { SyncWindow } from "../sync-window.ts";
 import { syncWhoopDailyActivity } from "./sync-daily-activity.ts";
-import { syncWhoopSleepSessions, syncWhoopSleepStages } from "./sync-sleep.ts";
+import {
+  syncWhoopSleepSessions,
+  syncWhoopSleepStages,
+  syncWhoopSleepStagesForId,
+} from "./sync-sleep.ts";
 import { syncWhoopHeartRateStream } from "./sync-streams.ts";
 import type { WhoopSyncContext } from "./sync-types.ts";
 import { syncWhoopStrength, syncWhoopWorkouts } from "./sync-workouts.ts";
@@ -54,6 +59,7 @@ function makeDb(selectedRows: unknown[] = []) {
     values: vi.fn(),
     onConflictDoUpdate: vi.fn(),
     from: vi.fn(),
+    innerJoin: vi.fn(),
     where: vi.fn(),
     limit: vi.fn(),
   };
@@ -61,6 +67,7 @@ function makeDb(selectedRows: unknown[] = []) {
   chain.values.mockReturnValue(chain);
   chain.onConflictDoUpdate.mockResolvedValue(undefined);
   chain.from.mockReturnValue(chain);
+  chain.innerJoin.mockReturnValue(chain);
   chain.where.mockReturnValue(
     Object.assign(Promise.resolve(selectedRows), {
       limit: vi.fn().mockResolvedValue(selectedRows),
@@ -117,8 +124,38 @@ beforeEach(() => {
   providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
   providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
   providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue(undefined);
+  tokenUserContextMocks.getTokenUserId.mockClear();
   tokenUserContextMocks.getTokenUserId.mockReturnValue("00000000-0000-0000-0000-000000000001");
+  vi.mocked(withSyncLog).mockImplementation(
+    async (
+      _db: unknown,
+      _providerId: string,
+      _dataType: string,
+      callback: () => Promise<{ recordCount: number; result: unknown }>,
+    ) => {
+      const result = await callback();
+      return result.result;
+    },
+  );
 });
+
+function makeWhoopSleepRecord(
+  overrides: Partial<{
+    id: number;
+    stages: Array<{ stage: string; during: string }> | undefined;
+  }> = {},
+) {
+  return {
+    id: 123,
+    user_id: 123,
+    created_at: "2026-05-01T00:00:00.000Z",
+    updated_at: "2026-05-01T00:00:00.000Z",
+    timezone_offset: "Z",
+    nap: false,
+    stages: [{ stage: "slow_wave", during: "['2026-05-01T04:00:00Z','2026-05-01T05:00:00Z')" }],
+    ...overrides,
+  };
+}
 
 function makeWorkoutRecord(
   overrides: Partial<{
@@ -395,6 +432,40 @@ describe("WHOOP sync helpers", () => {
     expect(context.errors[0]?.message).toBe("hr_stream: offline");
   });
 
+  it("uses the WHOOP sleep id as externalId for main inline sleeps", async () => {
+    const db = makeDb();
+    const cycles: WhoopCycle[] = [
+      {
+        sleep: { id: 12345 },
+        recovery: {
+          sleep_id: 12345,
+          user_id: 123,
+          created_at: "2026-05-01T00:00:00.000Z",
+          updated_at: "2026-05-01T00:00:00.000Z",
+        },
+        sleeps: [
+          {
+            during: "['2026-05-01T04:00:00Z','2026-05-01T12:00:00Z')",
+            state: "complete",
+            time_in_bed: 28_800_000,
+            wake_duration: 1_800_000,
+            light_sleep_duration: 12_000_000,
+            slow_wave_sleep_duration: 6_000_000,
+            rem_sleep_duration: 7_200_000,
+          },
+        ],
+      },
+    ];
+    const context = makeContext({ db: db.db, cycles });
+
+    await expect(syncWhoopSleepSessions(context)).resolves.toBe(1);
+    expect(db.chain.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        externalId: "12345",
+      }),
+    );
+  });
+
   it("syncs complete inline sleep sessions and skips invalid or incomplete rows", async () => {
     const db = makeDb();
     const cycles: WhoopCycle[] = [
@@ -474,7 +545,7 @@ describe("WHOOP sync helpers", () => {
       cycles,
     });
 
-    await expect(syncWhoopSleepStages(context)).resolves.toBe(1);
+    await expect(syncWhoopSleepStages(context)).resolves.toEqual({ count: 1, rateLimited: false });
     expect(getSleep).toHaveBeenCalledWith("123");
     expect(db.chain.values).toHaveBeenCalledWith([
       {
@@ -508,7 +579,10 @@ describe("WHOOP sync helpers", () => {
       cycles: [{ sleep: { id: 456 } }],
     });
 
-    await expect(syncWhoopSleepStages(firstContext)).resolves.toBe(0);
+    await expect(syncWhoopSleepStages(firstContext)).resolves.toEqual({
+      count: 0,
+      rateLimited: false,
+    });
 
     const db = makeDb([]);
     const stageClient = makeClient();
@@ -527,8 +601,186 @@ describe("WHOOP sync helpers", () => {
       cycles: [{ sleep: { id: 789 } }],
     });
 
-    await expect(syncWhoopSleepStages(secondContext)).resolves.toBe(0);
+    await expect(syncWhoopSleepStages(secondContext)).resolves.toEqual({
+      count: 0,
+      rateLimited: false,
+    });
     expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("skips sleep stage API calls when stages are already stored", async () => {
+    const db = makeDb([{ externalId: "123" }]);
+    const client = makeClient();
+    const getSleep = vi.spyOn(client, "getSleep");
+    const context = makeContext({
+      db: db.db,
+      client,
+      cycles: [{ sleep: { id: 123 } }],
+    });
+
+    await expect(syncWhoopSleepStages(context)).resolves.toEqual({
+      count: 0,
+      rateLimited: false,
+    });
+    expect(getSleep).not.toHaveBeenCalled();
+  });
+
+  it("propagates WHOOP rate limits from sleep stage fetches", async () => {
+    const client = makeClient();
+    const rateLimitError = makeWhoopRateLimitError("sleep stages limited");
+    vi.spyOn(client, "getSleep").mockRejectedValue(rateLimitError);
+    const context = makeContext({
+      client,
+      cycles: [{ sleep: { id: 123 } }],
+    });
+
+    await expect(syncWhoopSleepStages(context)).resolves.toEqual({
+      count: 0,
+      rateLimited: true,
+    });
+    expect(context.errors[0]?.cause).toBe(rateLimitError);
+  });
+
+  it("syncWhoopSleepStagesForId returns 0 without persisting unmapped stage rows", async () => {
+    const db = makeDb([{ id: "session-1" }]);
+    const client = makeClient();
+    vi.spyOn(client, "getSleep").mockResolvedValue(
+      makeWhoopSleepRecord({
+        stages: [{ stage: "unknown", during: "['2026-05-01T04:00:00Z','2026-05-01T05:00:00Z')" }],
+      }),
+    );
+    const context = makeContext({ db: db.db, client });
+
+    await expect(syncWhoopSleepStagesForId(context, "123")).resolves.toBe(0);
+    expect(db.chain.values).not.toHaveBeenCalled();
+  });
+
+  it("syncWhoopSleepStagesForId returns 0 when the API record has no stage rows", async () => {
+    const db = makeDb([{ id: "session-1" }]);
+    const client = makeClient();
+    vi.spyOn(client, "getSleep").mockResolvedValue(makeWhoopSleepRecord({ stages: undefined }));
+    const context = makeContext({ db: db.db, client });
+
+    await expect(syncWhoopSleepStagesForId(context, "123")).resolves.toBe(0);
+    expect(db.select).not.toHaveBeenCalled();
+  });
+
+  it("syncWhoopSleepStagesForId returns 0 when no local session matches the sleep id", async () => {
+    const db = makeDb([]);
+    const client = makeClient();
+    vi.spyOn(client, "getSleep").mockResolvedValue(makeWhoopSleepRecord());
+    const context = makeContext({ db: db.db, client });
+
+    await expect(syncWhoopSleepStagesForId(context, "123")).resolves.toBe(0);
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("prefers sync option user id over token context when skipping synced sleep stages", async () => {
+    tokenUserContextMocks.getTokenUserId.mockReturnValue("token-user-id");
+    const db = makeDb([{ externalId: "123" }]);
+    const client = makeClient();
+    const getSleep = vi.spyOn(client, "getSleep");
+    const context = makeContext({
+      db: db.db,
+      client,
+      options: { userId: "options-user-id" },
+      cycles: [{ sleep: { id: 123 } }],
+    });
+
+    await expect(syncWhoopSleepStages(context)).resolves.toEqual({
+      count: 0,
+      rateLimited: false,
+    });
+    expect(tokenUserContextMocks.getTokenUserId).not.toHaveBeenCalled();
+    expect(getSleep).not.toHaveBeenCalled();
+    expect(db.select).toHaveBeenCalledWith({ externalId: sleepSession.externalId });
+  });
+
+  it("falls back to token user id when sync options omit userId", async () => {
+    tokenUserContextMocks.getTokenUserId.mockReturnValue("token-user-id");
+    const db = makeDb([{ externalId: "123" }]);
+    const client = makeClient();
+    const getSleep = vi.spyOn(client, "getSleep");
+    const context = makeContext({
+      db: db.db,
+      client,
+      options: undefined,
+      cycles: [{ sleep: { id: 123 } }],
+    });
+
+    await expect(syncWhoopSleepStages(context)).resolves.toEqual({
+      count: 0,
+      rateLimited: false,
+    });
+    expect(tokenUserContextMocks.getTokenUserId).toHaveBeenCalled();
+    expect(getSleep).not.toHaveBeenCalled();
+  });
+
+  it("skips sleep stage fetches when no user id is available", async () => {
+    tokenUserContextMocks.getTokenUserId.mockReturnValue(undefined);
+    const db = makeDb([{ externalId: "123" }]);
+    const client = makeClient();
+    const getSleep = vi.spyOn(client, "getSleep").mockResolvedValue(makeWhoopSleepRecord());
+    const context = makeContext({
+      db: db.db,
+      client,
+      options: undefined,
+      cycles: [{ sleep: { id: 123 } }],
+    });
+
+    await expect(syncWhoopSleepStages(context)).resolves.toEqual({
+      count: 0,
+      rateLimited: false,
+    });
+    expect(getSleep).not.toHaveBeenCalled();
+  });
+
+  it("continues syncing other sleep ids after a non-rate-limit fetch failure", async () => {
+    const db = makeDb([{ id: "session-1" }]);
+    const client = makeClient();
+    vi.spyOn(client, "getSleep")
+      .mockRejectedValueOnce(new Error("network blip"))
+      .mockResolvedValueOnce(makeWhoopSleepRecord({ id: 456 }));
+    const context = makeContext({
+      db: db.db,
+      client,
+      cycles: [{ sleep: { id: 123 } }, { sleep: { id: 456 } }],
+    });
+
+    await expect(syncWhoopSleepStages(context)).resolves.toEqual({
+      count: 1,
+      rateLimited: false,
+    });
+    expect(context.errors).toEqual([
+      expect.objectContaining({
+        message: expect.stringContaining("sleep_stages(123)"),
+        cause: expect.any(Error),
+      }),
+    ]);
+  });
+
+  it("returns rate limited when sync log wrapping throws a WHOOP rate limit", async () => {
+    const rateLimitError = makeWhoopRateLimitError("wrapper limited");
+    vi.mocked(withSyncLog).mockRejectedValueOnce(rateLimitError);
+    const context = makeContext({ cycles: [{ sleep: { id: 123 } }] });
+
+    await expect(syncWhoopSleepStages(context)).resolves.toEqual({
+      count: 0,
+      rateLimited: true,
+    });
+    expect(context.errors[0]?.cause).toBe(rateLimitError);
+  });
+
+  it("returns a zero count when sync log wrapping fails for other reasons", async () => {
+    const syncError = new Error("database unavailable");
+    vi.mocked(withSyncLog).mockRejectedValueOnce(syncError);
+    const context = makeContext({ cycles: [{ sleep: { id: 123 } }] });
+
+    await expect(syncWhoopSleepStages(context)).resolves.toEqual({
+      count: 0,
+      rateLimited: false,
+    });
+    expect(context.errors[0]?.cause).toBe(syncError);
   });
 
   it("reconciles provider absence using developer workout ids in the sync window", async () => {

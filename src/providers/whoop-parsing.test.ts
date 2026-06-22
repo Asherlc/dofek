@@ -22,6 +22,7 @@ import {
   parseWeightliftingWorkout,
   parseWorkout,
   resolveActivityType,
+  resolveInlineSleepExternalId,
 } from "./whoop/parsing.ts";
 
 // ============================================================
@@ -356,6 +357,22 @@ describe("parseInlineSleep — BFF v0 cycle.sleeps format", () => {
     const parsed1 = parseInlineSleep(inlineSleep(), 1);
     expect(parsed0?.externalId).not.toBe(parsed1?.externalId);
     expect(parsed0?.externalId).toContain("inline-");
+  });
+
+  it("resolveInlineSleepExternalId prefers WHOOP sleep ids for main sleeps", () => {
+    const cycle = {
+      sleep: { id: 12345 },
+      recovery: {
+        sleep_id: 12345,
+        user_id: 10129,
+        created_at: "2026-03-01T00:00:00Z",
+        updated_at: "2026-03-01T00:00:00Z",
+      },
+    };
+    expect(resolveInlineSleepExternalId(cycle, inlineSleep(), 0)).toBe("12345");
+    expect(resolveInlineSleepExternalId(cycle, inlineSleep({ significant: false }), 1)).toContain(
+      "inline-",
+    );
   });
 
   it("handles missing optional fields", () => {

@@ -488,6 +488,49 @@ describe("WhoopProvider.sync() (integration)", () => {
   });
 
   it("syncs per-stage timings into sleep_stage when session exists for sleep id", async () => {
+    server.use(
+      ...whoopHandlers([fakeCycle()], {
+        sleepDetailByActivityId: {
+          "10235": {
+            ...fakeSleepResponse,
+            stages: [
+              { stage: "light", during: "['2026-02-28T23:00:00Z','2026-02-28T23:30:00Z')" },
+              { stage: "deep", during: "['2026-02-28T23:30:00Z','2026-03-01T01:00:00Z')" },
+            ],
+          },
+        },
+      }),
+    );
+
+    const provider = new WhoopProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+
+    expect(
+      result.errors.filter((syncError) => syncError.message.includes("sleep_stages")),
+    ).toHaveLength(0);
+
+    const sessions = await ctx.db
+      .select({ id: sleepSession.id })
+      .from(sleepSession)
+      .where(and(eq(sleepSession.providerId, "whoop"), eq(sleepSession.externalId, "10235")));
+    const sessionId = sessions[0]?.id;
+    if (!sessionId) throw new Error("expected synced sleep session with WHOOP sleep id");
+
+    const stageRows = await ctx.db
+      .select()
+      .from(sleepStage)
+      .where(eq(sleepStage.sessionId, sessionId));
+    expect(stageRows).toHaveLength(2);
+    expect(stageRows.map((row) => row.stage).sort()).toEqual(["deep", "light"]);
+  });
+
+  it("syncs per-stage timings into sleep_stage when session exists for sleep id (legacy seed path)", async () => {
     const existingSessions = await ctx.db
       .select({ id: sleepSession.id })
       .from(sleepSession)
@@ -1211,6 +1254,9 @@ describe("WhoopProvider.sync() (integration)", () => {
       http.get("https://api.prod.whoop.com/metrics-service/v1/metrics/user/:userId", () => {
         return new HttpResponse("Internal Server Error", { status: 500 });
       }),
+      http.get("https://api.prod.whoop.com/developer/v2/activity/workout", () => {
+        return HttpResponse.json({ records: [], next_token: null });
+      }),
       http.get("https://api.prod.whoop.com/home-service/v1/deep-dive/strain", () => {
         return HttpResponse.json({ sections: [] });
       }),
@@ -1262,6 +1308,15 @@ describe("WhoopProvider.sync() (integration)", () => {
       http.get("https://api.prod.whoop.com/metrics-service/v1/metrics/user/:userId", () => {
         return HttpResponse.json({ values: [] });
       }),
+      http.get("https://api.prod.whoop.com/developer/v2/activity/workout", () => {
+        return HttpResponse.json({ records: [], next_token: null });
+      }),
+      http.get(
+        "https://api.prod.whoop.com/weightlifting-service/v2/weightlifting-workout/:id",
+        () => {
+          return new HttpResponse("Not found", { status: 404 });
+        },
+      ),
       http.get("https://api.prod.whoop.com/home-service/v1/deep-dive/strain", () => {
         return HttpResponse.json({ sections: [] });
       }),

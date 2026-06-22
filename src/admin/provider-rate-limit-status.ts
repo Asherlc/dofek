@@ -1,5 +1,6 @@
 import {
   ADAPTIVE_RATE_STORAGE_KEY_PREFIX,
+  defaultInferredBudget,
   defaultThrottleMs,
   type ProviderAdaptiveRateState,
   parseAdaptiveRateState,
@@ -144,7 +145,8 @@ function parseScopedRedisKey(key: string, prefix: string): ScopedRedisKey | null
 function shouldIncludeUserAdaptiveRow(state: ProviderAdaptiveRateState, nowMs: number): boolean {
   const slid = slideAdaptiveWindow(state, nowMs);
   if (slid.requestCount > 0) return true;
-  if (slid.inferredBudget != null) return true;
+  const defaultBudget = defaultInferredBudget(slid.providerId);
+  if (slid.inferredBudget != null && slid.inferredBudget !== defaultBudget) return true;
   if (slid.observedCooldownSeconds != null) return true;
   if (slid.throttleMs !== defaultThrottleMs(slid.providerId)) return true;
   if (slid.stravaShortLimit != null || slid.stravaDailyLimit != null) return true;

@@ -59,9 +59,11 @@ describe("getProviderQueueConfig", () => {
     expect(config.concurrency).toBe(1);
   });
 
-  it("returns frequent tier for whoop", () => {
+  it("returns frequent tier for whoop with step-chain job limiter", () => {
     const config = getProviderQueueConfig("whoop");
     expect(config.syncTier).toBe("frequent");
+    expect(config.concurrency).toBe(1);
+    expect(config.limiter).toEqual({ max: 1, duration: 1_000 });
   });
 });
 

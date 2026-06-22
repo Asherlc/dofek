@@ -18,7 +18,7 @@ import {
   syncOperationsTotal,
   syncRecordsTotal,
 } from "../sync-metrics.ts";
-import { scheduleDelayedSyncJob } from "./enqueue-sync-job.ts";
+import { enqueueSyncJob, scheduleDelayedSyncJob } from "./enqueue-sync-job.ts";
 import { providerRateLimitCooldownStore } from "./provider-rate-limit-cooldown.ts";
 import type { SyncJobData } from "./queues.ts";
 import { syncWindowFromJobData } from "./sync-job-window.ts";
@@ -138,6 +138,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
 
   let completedCount = 0;
   const totalProviders = providers.length;
+  let syncRunContinued = false;
 
   for (const provider of providers) {
     providerStatus[provider.id] = { status: "running" };
@@ -210,9 +211,30 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
             },
             userId: job.data.userId,
             checkpoint: createCheckpointStore(job),
+            enqueueSyncContinuation: async (checkpoint) => {
+              await enqueueSyncJob(provider.id, {
+                ...job.data,
+                providerId: provider.id,
+                sinceIso: since.toISOString(),
+                untilIso: until.toISOString(),
+                checkpoint,
+              });
+            },
           }),
         ),
       );
+      if (result.continued) {
+        syncRunContinued = true;
+        providerStatus[provider.id] = {
+          status: "running",
+          message: `${result.recordsSynced} synced so far`,
+        };
+        await job.updateProgress({
+          providers: providerStatus,
+          percentage: computePercentage(completedCount, 50, totalProviders),
+        });
+        continue;
+      }
       const rateLimitError = firstProviderRateLimitError(result.errors);
       if (rateLimitError) {
         throw rateLimitError;
@@ -343,6 +365,10 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
       syncDuration.record(durationMs, { provider: provider.id, data_type: "sync" });
       syncErrorsTotal.add(1, { provider: provider.id, data_type: "sync" });
     }
+  }
+
+  if (syncRunContinued) {
+    return;
   }
 
   try {

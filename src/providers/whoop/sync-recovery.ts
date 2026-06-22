@@ -2,9 +2,9 @@ import { dailyMetrics } from "../../db/schema.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { logger } from "../../logger.ts";
 import { parseRecovery, resolveRecoveryState } from "./parsing.ts";
-import type { WhoopSyncContext } from "./sync-types.ts";
+import type { WhoopPersistenceContext } from "./sync-types.ts";
 
-export async function syncWhoopRecovery(context: WhoopSyncContext): Promise<number> {
+export async function syncWhoopRecovery(context: WhoopPersistenceContext): Promise<number> {
   const { db, cycles, providerId, options } = context;
 
   try {

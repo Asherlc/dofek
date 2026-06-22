@@ -27,6 +27,8 @@ export interface SyncOptions {
   checkpoint?: SyncCheckpointStore;
   /** Optional publisher override for metric-stream writers. */
   metricStreamPublisher?: MetricStreamEventPublisher;
+  /** Enqueue the next step of a multi-job provider sync (e.g. WHOOP). */
+  enqueueSyncContinuation?: (checkpoint: unknown) => Promise<void>;
 }
 
 export type SyncRunParams = {
@@ -47,9 +49,16 @@ export class SyncRun {
     userId,
     checkpoint,
     metricStreamPublisher,
+    enqueueSyncContinuation,
   }: SyncRunParams) {
     this.db = db;
     this.window = window;
-    this.options = { onProgress, userId, checkpoint, metricStreamPublisher };
+    this.options = {
+      onProgress,
+      userId,
+      checkpoint,
+      metricStreamPublisher,
+      enqueueSyncContinuation,
+    };
   }
 }

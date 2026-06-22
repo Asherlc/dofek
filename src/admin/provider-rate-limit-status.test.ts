@@ -127,8 +127,8 @@ describe("getProviderRateLimitStatus", () => {
     });
     expect(whoop).toMatchObject({
       providerId: "whoop",
-      queueLimiterMax: null,
-      queueLimiterDurationMs: null,
+      queueLimiterMax: 1,
+      queueLimiterDurationMs: 1_000,
       defaultThrottleMs: 1_000,
     });
   });

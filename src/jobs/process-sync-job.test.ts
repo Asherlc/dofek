@@ -862,6 +862,46 @@ describe("processSyncJob", () => {
     expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
   });
 
+  it("enqueues a continuation job and skips post-sync when sync returns continued", async () => {
+    const continuationCheckpoint = { phase: "api", apiStepIndex: 2 };
+    const provider = createMockProvider({
+      id: "whoop",
+      name: "WHOOP",
+      sync: vi.fn().mockImplementation(async (run: SyncRun): Promise<SyncResult> => {
+        await run.options.enqueueSyncContinuation?.(continuationCheckpoint);
+        return {
+          provider: "whoop",
+          recordsSynced: 4,
+          errors: [],
+          duration: 12,
+          continued: true,
+        };
+      }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    const job = createMockJob({ providerId: "whoop" });
+    await runSyncJob(job, mockDb);
+
+    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      expect.objectContaining({
+        providerId: "whoop",
+        sinceIso: expect.any(String),
+        untilIso: expect.any(String),
+        checkpoint: continuationCheckpoint,
+      }),
+      expect.any(Object),
+    );
+    expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
+    expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
+    expect(job.updateProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providers: { whoop: { status: "running", message: "4 synced so far" } },
+      }),
+    );
+  });
+
   it("continues when global post-sync enqueue fails", async () => {
     mockGetEnabledSyncProviders.mockReturnValue([]);
     mockEnqueueDebouncedPostSyncMaintenance.mockRejectedValue(new Error("queue gone"));

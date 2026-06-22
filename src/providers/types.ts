@@ -69,6 +69,8 @@ export interface SyncResult {
   recordsSynced: number;
   errors: SyncError[];
   duration: number;
+  /** When true, more BullMQ jobs will run to finish this sync run. */
+  continued?: boolean;
 }
 
 export interface SyncError {

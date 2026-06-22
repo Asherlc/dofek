@@ -75,7 +75,9 @@ const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map
   ["mapmyfitness", realtimeProvider()],
 
   // ── Frequent tier ──
-  ["whoop", frequentProvider()],
+  // WHOOP sync is step-chained: one BullMQ job ≈ one API step (~3 HTTP calls with auth).
+  // Job limiter paces steps; adaptive fetch paces individual HTTP calls.
+  ["whoop", frequentProvider(1, { max: 1, duration: 1_000 })],
   ["oura", frequentProvider()],
   ["peloton", frequentProvider()],
   ["ultrahuman", frequentProvider()],
