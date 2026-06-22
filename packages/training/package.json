@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./activity-icons": "./src/activity-icons.ts",
     "./training": "./src/training.ts",
     "./workout-recommendation": "./src/workout-recommendation.ts",
     "./training-load": "./src/training-load.ts",

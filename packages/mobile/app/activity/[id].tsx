@@ -8,6 +8,7 @@ import {
 import type { UnitConverter } from "@dofek/format/units";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { activityMetricColors } from "@dofek/scoring/colors";
+import { getActivityIconInfo } from "@dofek/training/activity-icons";
 import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
 import { cadenceUnit, formatActivityTypeLabel, isCyclingActivity } from "@dofek/training/training";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -64,14 +65,7 @@ function isStrengthActivityType(activityType: string): boolean {
 }
 
 function activityIcon(type: string): string {
-  const lower = type.toLowerCase();
-  if (lower.includes("run")) return "\u{1F3C3}";
-  if (lower.includes("cycl") || lower.includes("bike")) return "\u{1F6B4}";
-  if (lower.includes("swim")) return "\u{1F3CA}";
-  if (lower.includes("walk") || lower.includes("hike")) return "\u{1F6B6}";
-  if (lower.includes("strength") || lower.includes("weight")) return "\u{1F3CB}";
-  if (lower.includes("yoga")) return "\u{1F9D8}";
-  return "\u{26A1}";
+  return getActivityIconInfo(type).emoji;
 }
 
 // ── Inline Chart Components ──

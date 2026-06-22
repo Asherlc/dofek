@@ -12,6 +12,7 @@ import { formatActivityTypeLabel } from "@dofek/training/training";
 import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { type ActivityMapLocation, ActivityMapTile } from "../components/ActivityMapTile.tsx";
+import { ActivityTypeIcon } from "../components/ActivityTypeIcon.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { trpc } from "../lib/trpc.ts";
@@ -449,7 +450,11 @@ function ActivityCard({
 
   const content = (
     <div className="flex h-full flex-col">
-      {activity.location ? <ActivityMapTile location={activity.location} /> : null}
+      {activity.location ? (
+        <ActivityMapTile location={activity.location} />
+      ) : (
+        <ActivityTypeIcon activityType={activity.activityType} variant="card" />
+      )}
       <div className="flex min-w-0 flex-1 flex-col gap-3 p-3 sm:p-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
