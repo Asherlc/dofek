@@ -11,14 +11,14 @@ import {
   resolveInlineSleepExternalId,
 } from "./parsing.ts";
 import { isWhoopRateLimitError } from "./rate-limit.ts";
-import type { WhoopSyncContext } from "./sync-types.ts";
+import type { WhoopPersistenceContext, WhoopSyncContext } from "./sync-types.ts";
 
 export type WhoopSleepStagesSyncResult = {
   count: number;
   rateLimited: boolean;
 };
 
-export async function syncWhoopSleepSessions(context: WhoopSyncContext): Promise<number> {
+export async function syncWhoopSleepSessions(context: WhoopPersistenceContext): Promise<number> {
   const { db, cycles, providerId, options } = context;
 
   try {
@@ -39,11 +39,7 @@ export async function syncWhoopSleepSessions(context: WhoopSyncContext): Promise
               );
               continue;
             }
-            const externalId = resolveInlineSleepExternalId(
-              cycle,
-              parseResult.data,
-              sleepIndex,
-            );
+            const externalId = resolveInlineSleepExternalId(cycle, parseResult.data, sleepIndex);
             const parsed = parseInlineSleep(parseResult.data, sleepIndex, externalId);
             sleepIndex++;
             if (!parsed) {
@@ -147,7 +143,7 @@ export async function syncWhoopSleepStagesForId(
 export async function syncWhoopSleepStages(
   context: WhoopSyncContext,
 ): Promise<WhoopSleepStagesSyncResult> {
-  const { db, client, cycles, providerId, options } = context;
+  const { db, cycles, providerId, options } = context;
 
   try {
     const result = await withSyncLog(

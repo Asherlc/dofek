@@ -49,9 +49,16 @@ export class SyncRun {
     userId,
     checkpoint,
     metricStreamPublisher,
+    enqueueSyncContinuation,
   }: SyncRunParams) {
     this.db = db;
     this.window = window;
-    this.options = { onProgress, userId, checkpoint, metricStreamPublisher };
+    this.options = {
+      onProgress,
+      userId,
+      checkpoint,
+      metricStreamPublisher,
+      enqueueSyncContinuation,
+    };
   }
 }

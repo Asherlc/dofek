@@ -87,7 +87,7 @@ export async function fetchWhoopDeveloperWorkoutsPage(
 
   return {
     presentIds,
-    nextToken: page.next_token,
+    nextToken: page.next_token ?? null,
     reachedWindowStart: oldestStartMs < absenceWindow.since.getTime(),
   };
 }

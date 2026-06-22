@@ -246,11 +246,7 @@ export function recordAdaptiveRateLimit(
   return {
     ...state,
     throttleMs: increaseThrottleMs(state.throttleMs),
-    inferredBudget: learnInferredBudget(
-      state.inferredBudget,
-      state.requestCount,
-      state.providerId,
-    ),
+    inferredBudget: learnInferredBudget(state.inferredBudget, state.requestCount, state.providerId),
     observedCooldownSeconds: observedCooldown,
   };
 }

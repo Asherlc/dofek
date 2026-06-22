@@ -4,7 +4,7 @@ import { dailyMetrics, sleepSession, sleepStage } from "../../db/schema.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { extractSleepIdsFromCycle, resolveWhoopWorkoutExternalId } from "./parsing.ts";
 import type { WhoopSyncStep } from "./sync-checkpoint.ts";
-import type { WhoopSyncContext } from "./sync-types.ts";
+import type { WhoopPersistenceContext, WhoopSyncContext } from "./sync-types.ts";
 
 export function* iterateUtcDates(start: Date, endMs: number): Generator<string> {
   const cursor = new Date(
@@ -93,7 +93,10 @@ export async function listWhoopSleepIdsNeedingStages(
   return [...sleepIds].filter((id) => !syncedSleepIds.has(id));
 }
 
-export function listWhoopHeartRateWindows(since: Date, untilMs: number): Array<{ start: string; end: string }> {
+export function listWhoopHeartRateWindows(
+  since: Date,
+  untilMs: number,
+): Array<{ start: string; end: string }> {
   const weekMs = 7 * 24 * 60 * 60 * 1000;
   const windows: Array<{ start: string; end: string }> = [];
   let windowStart = since.getTime();
@@ -109,7 +112,7 @@ export function listWhoopHeartRateWindows(since: Date, untilMs: number): Array<{
 }
 
 export async function planWhoopApiSteps(
-  context: WhoopSyncContext,
+  context: WhoopPersistenceContext,
   skipRemainingAfterRateLimit: boolean,
 ): Promise<WhoopSyncStep[]> {
   const steps: WhoopSyncStep[] = [];

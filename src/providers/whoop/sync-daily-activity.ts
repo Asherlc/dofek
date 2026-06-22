@@ -16,7 +16,7 @@ export async function syncWhoopStrainDeepDiveForDate(
   context: WhoopSyncContext,
   date: string,
 ): Promise<number> {
-  const { db, client, providerId, options } = context;
+  const { db, client, providerId } = context;
   const raw = await client.getStrainDeepDive(date);
   const steps = parseStrainDeepDiveSteps(raw);
   if (steps == null) return 0;

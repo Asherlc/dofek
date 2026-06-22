@@ -19,9 +19,9 @@ import { syncWhoopStrainDeepDiveForDate } from "./sync-daily-activity.ts";
 import { syncWhoopJournal } from "./sync-journal.ts";
 import { syncWhoopRecovery } from "./sync-recovery.ts";
 import { syncWhoopSleepSessions, syncWhoopSleepStagesForId } from "./sync-sleep.ts";
-import { syncWhoopHeartRateForWindow } from "./sync-streams.ts";
 import { planWhoopApiSteps } from "./sync-step-plan.ts";
-import type { WhoopSyncContext } from "./sync-types.ts";
+import { syncWhoopHeartRateForWindow } from "./sync-streams.ts";
+import type { WhoopPersistenceContext, WhoopSyncContext } from "./sync-types.ts";
 import {
   fetchWhoopDeveloperWorkoutsPage,
   persistWhoopWorkoutsFromCycles,
@@ -79,6 +79,22 @@ async function createWhoopClient(
   );
 }
 
+function makeBootstrapContext(
+  run: SyncRun,
+  cycles: WhoopSyncCheckpoint["cycles"],
+  errors: SyncError[],
+): WhoopPersistenceContext {
+  return {
+    db: run.db,
+    cycles,
+    providerId: "whoop",
+    since: run.window.since,
+    windowEnd: run.window.until,
+    options: run.options,
+    errors,
+  };
+}
+
 function makeContext(
   run: SyncRun,
   client: WhoopClient,
@@ -133,17 +149,24 @@ function describeStep(step: WhoopSyncStep | "bootstrap_cycles" | "bootstrap_pers
   }
 }
 
+type WhoopStepDescription = WhoopSyncStep | "bootstrap_cycles" | "bootstrap_persist";
+
+function resolveStepDescription(checkpoint: WhoopSyncCheckpoint): WhoopStepDescription {
+  if (checkpoint.phase === "bootstrap") {
+    return checkpoint.cycleFetchCursorMs == null && checkpoint.cycles.length > 0
+      ? "bootstrap_persist"
+      : "bootstrap_cycles";
+  }
+  const fallbackJournalStep: WhoopSyncStep = { type: "journal" };
+  return checkpoint.apiSteps[checkpoint.apiStepIndex] ?? fallbackJournalStep;
+}
+
 async function runBootstrapPersist(
   run: SyncRun,
   checkpoint: WhoopSyncCheckpoint,
   errors: SyncError[],
 ): Promise<WhoopOrchestratorResult> {
-  const context = makeContext(
-    run,
-    null as unknown as WhoopClient,
-    checkpoint.cycles,
-    errors,
-  );
+  const context = makeBootstrapContext(run, checkpoint.cycles, errors);
   checkpoint.recordsSynced += await syncWhoopRecovery(context);
   checkpoint.recordsSynced += await syncWhoopSleepSessions(context);
 
@@ -393,23 +416,16 @@ export async function runWhoopOrchestratedSync(
 
   try {
     while (true) {
-      const stepDescription =
-        checkpoint.phase === "bootstrap"
-          ? checkpoint.cycleFetchCursorMs == null && checkpoint.cycles.length > 0
-            ? "bootstrap_persist"
-            : "bootstrap_cycles"
-          : (checkpoint.apiSteps[checkpoint.apiStepIndex] ?? { type: "journal" as const });
+      const stepDescription = resolveStepDescription(checkpoint);
 
       run.options.onProgress?.(
         checkpoint.phase === "done"
           ? 100
           : Math.min(
               99,
-              Math.round(
-                (checkpoint.apiStepIndex / Math.max(checkpoint.apiSteps.length, 1)) * 100,
-              ),
+              Math.round((checkpoint.apiStepIndex / Math.max(checkpoint.apiSteps.length, 1)) * 100),
             ),
-        describeStep(stepDescription as WhoopSyncStep | "bootstrap_cycles" | "bootstrap_persist"),
+        describeStep(stepDescription),
       );
 
       const outcome = await runWhoopSyncStep(run, checkpoint, fetchFn);

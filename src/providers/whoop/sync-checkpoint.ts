@@ -4,6 +4,10 @@ import { z } from "zod";
 
 export const WHOOP_CYCLE_WINDOW_MS = 200 * 24 * 60 * 60 * 1000;
 
+const whoopCycleSchema = z.custom<WhoopCycle>(
+  (value): value is WhoopCycle => typeof value === "object" && value !== null,
+);
+
 const whoopSyncStepSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("strain_deep_dive"), date: z.string() }),
   z.object({ type: z.literal("sleep_stages"), sleepId: z.string() }),
@@ -24,16 +28,14 @@ export const whoopSyncCheckpointSchema = z.object({
   recordsSynced: z.number().default(0),
   phase: z.enum(["bootstrap", "api", "done"]),
   cycleFetchCursorMs: z.number().nullable().optional(),
-  cycles: z.array(z.unknown()).default([]),
+  cycles: z.array(whoopCycleSchema).default([]),
   apiSteps: z.array(whoopSyncStepSchema).default([]),
   apiStepIndex: z.number().default(0),
   presentExternalIds: z.array(z.string()).default([]),
   skipRemainingAfterRateLimit: z.boolean().default(false),
 });
 
-export type WhoopSyncCheckpoint = z.infer<typeof whoopSyncCheckpointSchema> & {
-  cycles: WhoopCycle[];
-};
+export type WhoopSyncCheckpoint = z.infer<typeof whoopSyncCheckpointSchema>;
 
 export function createWhoopSyncCheckpoint(windowStartMs: number): WhoopSyncCheckpoint {
   return {
@@ -52,10 +54,7 @@ export function createWhoopSyncCheckpoint(windowStartMs: number): WhoopSyncCheck
 export function parseWhoopSyncCheckpoint(raw: unknown): WhoopSyncCheckpoint | null {
   const parsed = whoopSyncCheckpointSchema.safeParse(raw);
   if (!parsed.success) return null;
-  return {
-    ...parsed.data,
-    cycles: parsed.data.cycles as WhoopCycle[],
-  };
+  return parsed.data;
 }
 
 /** Drop low-priority tail steps after a 429 so retries focus on core data. */

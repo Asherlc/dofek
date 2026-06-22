@@ -1,16 +1,10 @@
-import { WhoopClient } from "whoop-whoop/client";
 import { z } from "zod";
 import type { OAuthConfig } from "../../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../../auth/oauth.ts";
 import { ensureProvider } from "../../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import type { SyncRun } from "../sync-run.ts";
-import type {
-  ProviderAuthSetup,
-  ProviderIdentity,
-  SyncProvider,
-  SyncResult,
-} from "../types.ts";
+import type { ProviderAuthSetup, ProviderIdentity, SyncProvider, SyncResult } from "../types.ts";
 import { runWhoopOrchestratedSync } from "./sync-orchestrator.ts";
 
 // ============================================================
