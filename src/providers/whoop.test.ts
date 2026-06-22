@@ -20,6 +20,7 @@ import {
   parseWorkout,
 } from "./whoop/parsing.ts";
 import { WhoopProvider } from "./whoop/provider.ts";
+import * as syncDailyActivityModule from "./whoop/sync-daily-activity.ts";
 
 const { publishedMetricStreamBatches } = vi.hoisted<{
   publishedMetricStreamBatches: Record<string, unknown>[][];
@@ -135,6 +136,8 @@ function makeSyncMockFetch(options: {
   hrError?: boolean;
   journalError?: boolean;
   cyclesError?: boolean;
+  cyclesRateLimit?: boolean;
+  strainRateLimit?: boolean;
 }) {
   const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL, _init?: RequestInit) => {
     const url = input.toString();
@@ -155,10 +158,21 @@ function makeSyncMockFetch(options: {
 
     // Cycles (core-details-bff/v0/cycles/details)
     if (url.includes("cycles/details")) {
+      if (options.cyclesRateLimit) {
+        return Promise.resolve(new Response("rate limited", { status: 429 }));
+      }
       if (options.cyclesError) {
         return Promise.resolve(new Response("Server error", { status: 500 }));
       }
       return Promise.resolve(Response.json(options.cycles ?? []));
+    }
+
+    // Strain deep dive (daily steps)
+    if (url.includes("deep-dive/strain")) {
+      if (options.strainRateLimit) {
+        return Promise.resolve(new Response("rate limited", { status: 429 }));
+      }
+      return Promise.resolve(Response.json({ sections: [] }));
     }
 
     // Sleep by ID (sleep-service/v1/sleep-events?activityId=...)
@@ -865,6 +879,73 @@ describe("WhoopProvider.sync() — cycles error", () => {
 
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("getCycles");
+  });
+
+  it("rethrows rate limit errors from getCycles", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValueOnce({
+      accessToken: "tok",
+      refreshToken: "ref",
+      expiresAt: futureExpiry,
+      scopes: "userId:42",
+    });
+
+    const mockFetch = makeSyncMockFetch({ cyclesRateLimit: true });
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+
+    await expect(
+      provider.sync(
+        new SyncRun({
+          db: db,
+          window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+          userId: "00000000-0000-0000-0000-000000000001",
+        }),
+      ),
+    ).rejects.toMatchObject({
+      providerId: "whoop",
+      statusCode: 429,
+    });
+  });
+
+  it("rethrows collected rate limit errors from sub-syncs", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValueOnce({
+      accessToken: "tok",
+      refreshToken: "ref",
+      expiresAt: futureExpiry,
+      scopes: "userId:42",
+    });
+
+    const rateLimitError = new ProviderRateLimitError({
+      message: "WHOOP API rate limit exceeded (429):",
+      providerId: "whoop",
+      statusCode: 429,
+      responseBody: "",
+    });
+    vi.spyOn(syncDailyActivityModule, "syncWhoopDailyActivity").mockImplementationOnce(
+      async (context) => {
+        context.errors.push({
+          message: `daily_activity: ${rateLimitError.message}`,
+          cause: rateLimitError,
+        });
+        return { count: 0, rateLimited: true };
+      },
+    );
+
+    const mockFetch = makeSyncMockFetch({ cycles: [] });
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+
+    await expect(
+      provider.sync(
+        new SyncRun({
+          db: db,
+          window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+          userId: "00000000-0000-0000-0000-000000000001",
+        }),
+      ),
+    ).rejects.toBe(rateLimitError);
   });
 });
 
@@ -2890,7 +2971,12 @@ describe("WhoopProvider.sync() — strength sync", () => {
     );
 
     expect(db.select).toHaveBeenCalledWith(expect.objectContaining({ id: expect.anything() }));
-    expect(db.select).toHaveBeenCalledTimes(1);
+    const exerciseSelectCalls = vi
+      .mocked(db.select)
+      .mock.calls.filter(
+        (call: Parameters<typeof db.select>) => isRecord(call[0]) && "id" in call[0],
+      );
+    expect(exerciseSelectCalls).toHaveLength(1);
 
     const valuesCallArgs = getValuesCallArgs(db);
     const exerciseInserts = valuesCallArgs.filter(

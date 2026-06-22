@@ -179,7 +179,7 @@ describe("StravaProvider.sync() (integration)", () => {
 
     server.use(...stravaHandlers(activities));
 
-    const provider = new StravaProvider(globalThis.fetch, 0);
+    const provider = new StravaProvider(globalThis.fetch);
     const since = new Date("2026-02-01T00:00:00Z");
     const result = await provider.sync(
       new SyncRun({
@@ -230,7 +230,7 @@ describe("StravaProvider.sync() (integration)", () => {
 
     server.use(...stravaHandlers(activities));
 
-    const provider = new StravaProvider(globalThis.fetch, 0);
+    const provider = new StravaProvider(globalThis.fetch);
     await provider.sync(
       new SyncRun({
         db: ctx.db,
@@ -261,7 +261,7 @@ describe("StravaProvider.sync() (integration)", () => {
 
     server.use(...stravaHandlers([]));
 
-    const provider = new StravaProvider(globalThis.fetch, 0);
+    const provider = new StravaProvider(globalThis.fetch);
     await provider.sync(
       new SyncRun({
         db: ctx.db,
@@ -287,7 +287,7 @@ describe("StravaProvider.sync() (integration)", () => {
 
     server.use(...stravaHandlers(activities, { streamsError: true }));
 
-    const provider = new StravaProvider(globalThis.fetch, 0);
+    const provider = new StravaProvider(globalThis.fetch);
     const result = await provider.sync(
       new SyncRun({
         db: ctx.db,
@@ -321,7 +321,7 @@ describe("StravaProvider.sync() (integration)", () => {
 
     server.use(...stravaHandlers(activities, { rateLimited: true }));
 
-    const provider = new StravaProvider(globalThis.fetch, 0);
+    const provider = new StravaProvider(globalThis.fetch);
     const result = await provider.sync(
       new SyncRun({
         db: ctx.db,
@@ -340,7 +340,7 @@ describe("StravaProvider.sync() (integration)", () => {
     const { oauthToken } = await import("../db/schema.ts");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "strava"));
 
-    const provider = new StravaProvider(globalThis.fetch, 0);
+    const provider = new StravaProvider(globalThis.fetch);
     const result = await provider.sync(
       new SyncRun({
         db: ctx.db,

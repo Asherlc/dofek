@@ -1,4 +1,3 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import type { OAuthConfig, TokenSet } from "../../auth/oauth.ts";
 import {
   exchangeCodeForTokens,
@@ -8,6 +7,7 @@ import {
 import { resolveOAuthTokens } from "../../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../../db/index.ts";
 import { finishProviderActivityListSync } from "../../db/provider-activity-sync.ts";
+import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../../logger.ts";
 import { AccessTokenExpiredError } from "../auth-errors.ts";
 import type { SyncRun } from "../sync-run.ts";
@@ -51,7 +51,7 @@ export class WahooProvider implements WebhookProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "wahoo" });
+    this.#fetchFn = createProviderRateLimitFetch("wahoo", fetchFn);
   }
 
   validate(): string | null {

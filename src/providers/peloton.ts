@@ -1,4 +1,3 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import type { CanonicalActivityType } from "@dofek/training/training";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
@@ -18,6 +17,7 @@ import {
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../logger.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
@@ -214,7 +214,7 @@ export class PelotonClient {
 
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
     this.#accessToken = accessToken;
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "peloton" });
+    this.#fetchFn = fetchFn;
   }
 
   async #get<T>(path: string, params?: Record<string, string>): Promise<T> {
@@ -389,7 +389,6 @@ export async function pelotonAutomatedLogin(
   password: string,
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<TokenSet> {
-  const rateLimitFetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "peloton" });
   const config = pelotonOAuthConfig();
   const codeVerifier = generateCodeVerifier();
   const codeChallenge = generateCodeChallenge(codeVerifier);
@@ -410,14 +409,10 @@ export async function pelotonAutomatedLogin(
   authorizeUrl.searchParams.set("nonce", nonce);
 
   logger.info("[peloton] Initiating Auth0 login flow...");
-  let { response, location } = await followRedirects(
-    authorizeUrl.toString(),
-    jar,
-    rateLimitFetchFn,
-  );
+  let { response, location } = await followRedirects(authorizeUrl.toString(), jar, fetchFn);
 
   while (location) {
-    ({ response, location } = await followRedirects(location, jar, rateLimitFetchFn));
+    ({ response, location } = await followRedirects(location, jar, fetchFn));
   }
 
   // Parse injectedConfig from login page (contains state, csrf, nonce)
@@ -446,7 +441,7 @@ export async function pelotonAutomatedLogin(
   // Step 2: POST credentials to Auth0 login endpoint
   logger.info("[peloton] Submitting credentials...");
   const loginUrl = `${PELOTON_AUTH_DOMAIN}/usernamepassword/login`;
-  const { response: loginResp } = await followRedirects(loginUrl, jar, rateLimitFetchFn, {
+  const { response: loginResp } = await followRedirects(loginUrl, jar, fetchFn, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -492,7 +487,7 @@ export async function pelotonAutomatedLogin(
 
   // Step 4: Submit form, then follow redirects until we find ?code= in a Location header
   logger.info("[peloton] Following Auth0 redirect chain...");
-  let { location: redirectUrl } = await followRedirects(formAction, jar, rateLimitFetchFn, {
+  let { location: redirectUrl } = await followRedirects(formAction, jar, fetchFn, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(fields).toString(),
@@ -502,7 +497,7 @@ export async function pelotonAutomatedLogin(
   while (redirectUrl && maxRedirects > 0) {
     // Stop before fetching the callback URL — just read the code from it
     if (redirectUrl.includes("code=") || redirectUrl.includes("error=")) break;
-    ({ location: redirectUrl } = await followRedirects(redirectUrl, jar, rateLimitFetchFn));
+    ({ location: redirectUrl } = await followRedirects(redirectUrl, jar, fetchFn));
     maxRedirects--;
   }
 
@@ -524,7 +519,7 @@ export async function pelotonAutomatedLogin(
 
   // Step 5: Exchange code for tokens
   logger.info("[peloton] Exchanging authorization code for tokens...");
-  return exchangeCodeForTokens(config, authCode, rateLimitFetchFn, { codeVerifier });
+  return exchangeCodeForTokens(config, authCode, fetchFn, { codeVerifier });
 }
 
 export class PelotonProvider implements SyncProvider {
@@ -533,7 +528,7 @@ export class PelotonProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "peloton" });
+    this.#fetchFn = createProviderRateLimitFetch("peloton", fetchFn);
   }
 
   validate(): string | null {

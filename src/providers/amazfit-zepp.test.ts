@@ -1,8 +1,9 @@
-import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { captureException } from "@sentry/node";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ZeppInvalidCredentialsError } from "zepp-client/client";
 import { runWithTokenUser } from "../db/token-user-context.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import {
   AmazfitZeppClient,
   AmazfitZeppProvider,
@@ -17,11 +18,11 @@ import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 import { createCapturingMetricStreamPublisher, createMockDatabase } from "./test-helpers.ts";
 
-vi.mock("@dofek/provider-http/rate-limit", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@dofek/provider-http/rate-limit")>();
+vi.mock("../lib/provider-rate-limit-fetch.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/provider-rate-limit-fetch.ts")>();
   return {
     ...actual,
-    createRateLimitAwareFetch: vi.fn(actual.createRateLimitAwareFetch),
+    createProviderRateLimitFetch: vi.fn(actual.createProviderRateLimitFetch),
   };
 });
 
@@ -1355,9 +1356,7 @@ describe("AmazfitZeppProvider auth", () => {
 
   it("wraps fetch with amazfit-zepp rate limit config", () => {
     new AmazfitZeppProvider();
-    expect(createRateLimitAwareFetch).toHaveBeenCalledWith(expect.any(Function), {
-      providerId: "amazfit-zepp",
-    });
+    expect(createProviderRateLimitFetch).toHaveBeenCalledWith("amazfit-zepp", expect.any(Function));
   });
 
   it("authSetup returns credential configuration", () => {

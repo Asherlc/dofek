@@ -1,4 +1,3 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import { isIndoorCycling } from "@dofek/training/endurance-types";
 import {
   type CanonicalActivityType,
@@ -21,6 +20,7 @@ import { userSettings } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type {
   ProviderAuthSetup,
@@ -245,7 +245,7 @@ export class RideWithGpsClient {
 
   constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
     this.#accessToken = accessToken;
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "ride-with-gps" });
+    this.#fetchFn = fetchFn;
   }
 
   async #get<T>(path: string, params?: Record<string, string>): Promise<T> {
@@ -334,7 +334,7 @@ export class RideWithGpsProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "ride-with-gps" });
+    this.#fetchFn = createProviderRateLimitFetch("ride-with-gps", fetchFn);
   }
 
   validate(): string | null {

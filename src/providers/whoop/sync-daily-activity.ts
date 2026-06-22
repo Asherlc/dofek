@@ -1,7 +1,9 @@
-import { WhoopRateLimitError } from "whoop-whoop/client";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { dailyMetrics } from "../../db/schema.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
+import { getTokenUserId } from "../../db/token-user-context.ts";
 import { parseStrainDeepDiveSteps } from "./parsing.ts";
+import { isWhoopRateLimitError } from "./rate-limit.ts";
 import type { WhoopSyncContext } from "./sync-types.ts";
 
 export type WhoopDailyActivityResult = {
@@ -25,7 +27,7 @@ function* iterateUtcDates(start: Date, endMs: number): Generator<string> {
 export async function syncWhoopDailyActivity(
   context: WhoopSyncContext,
 ): Promise<WhoopDailyActivityResult> {
-  const { db, client, providerId, since, options } = context;
+  const { db, client, providerId, since, windowEnd, options } = context;
 
   try {
     const count = await withSyncLog(
@@ -33,10 +35,28 @@ export async function syncWhoopDailyActivity(
       providerId,
       "daily_activity",
       async () => {
-        const nowMs = Date.now();
         const stepsByDate = new Map<string, number>();
+        const userId = options?.userId ?? getTokenUserId();
+        const syncedStepDates =
+          userId == null
+            ? new Set<string>()
+            : new Set(
+                (
+                  await db
+                    .select({ date: dailyMetrics.date })
+                    .from(dailyMetrics)
+                    .where(
+                      and(
+                        eq(dailyMetrics.userId, userId),
+                        eq(dailyMetrics.providerId, providerId),
+                        isNotNull(dailyMetrics.steps),
+                      ),
+                    )
+                ).map((row) => row.date),
+              );
 
-        for (const date of iterateUtcDates(since, nowMs)) {
+        for (const date of iterateUtcDates(since, windowEnd.getTime())) {
+          if (syncedStepDates.has(date)) continue;
           const raw = await client.getStrainDeepDive(date);
           const steps = parseStrainDeepDiveSteps(raw);
           if (steps != null) {
@@ -65,7 +85,11 @@ export async function syncWhoopDailyActivity(
     );
     return { count, rateLimited: false };
   } catch (err) {
-    if (err instanceof WhoopRateLimitError) {
+    if (isWhoopRateLimitError(err)) {
+      context.errors.push({
+        message: `daily_activity: ${err instanceof Error ? err.message : String(err)}`,
+        cause: err,
+      });
       return { count: 0, rateLimited: true };
     }
     context.errors.push({

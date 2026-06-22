@@ -80,6 +80,8 @@ vi.mock("dofek/providers/registry", () => ({
   registerProvider: vi.fn(),
 }));
 
+import * as enqueueSyncJobModule from "dofek/jobs/enqueue-sync-job";
+
 vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
 }));
@@ -712,6 +714,7 @@ describe("createMcpRouter", () => {
 
   it("enqueues provider sync jobs for configured providers", async () => {
     authorizeMcpToken();
+    const enqueueSpy = vi.spyOn(enqueueSyncJobModule, "enqueueSyncJob");
     toolTestMocks.getAllProviders.mockReturnValue([
       {
         id: "strava",
@@ -729,6 +732,15 @@ describe("createMcpRouter", () => {
       }),
     });
 
+    expect(enqueueSpy).toHaveBeenCalledWith(
+      "wahoo",
+      expect.objectContaining({
+        providerId: "wahoo",
+        sinceDays: 7,
+        userId: "user-id",
+      }),
+      { skipWhenRateLimited: true },
+    );
     expect(toolTestMocks.getProviderSyncQueue).toHaveBeenCalledWith("wahoo");
     expect(toolTestMocks.queueAdd).toHaveBeenCalledWith(
       "sync",
@@ -749,6 +761,30 @@ describe("createMcpRouter", () => {
       queueName: "sync-wahoo",
       status: "queued",
     });
+  });
+
+  it("returns a tool error when sync enqueue is skipped for rate-limit cooldown", async () => {
+    authorizeMcpToken();
+    vi.spyOn(enqueueSyncJobModule, "enqueueSyncJob").mockResolvedValueOnce(null);
+    toolTestMocks.getAllProviders.mockReturnValue([
+      { id: "wahoo", name: "Wahoo", validate: () => null },
+    ]);
+
+    const response = await request(createTestApp(), {
+      authorization: "Bearer good-token",
+      body: createToolCallRequest("start_provider_sync", {
+        providerId: "wahoo",
+        sinceDays: 7,
+      }),
+    });
+
+    const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
+    expect(parsedResponse.result.isError).toBe(true);
+    expect(parsedResponse.result.content[0]?.text).toBe(
+      "Provider wahoo sync skipped: rate-limit cooldown active",
+    );
+    expect(toolTestMocks.queueAdd).not.toHaveBeenCalled();
+    expect(toolTestMocks.startWorker).not.toHaveBeenCalled();
   });
 
   it("returns tool errors for unknown providers", async () => {

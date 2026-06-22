@@ -1,4 +1,3 @@
-import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import { TrainerRoadClient } from "trainerroad-client/client";
 import { parseTrainerRoadActivity } from "trainerroad-client/parsing";
 import {
@@ -7,6 +6,7 @@ import {
 } from "../db/provider-activity-sync.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { ProviderSessionExpiredError, ProviderStoredIdentityMissingError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
@@ -31,7 +31,7 @@ export class TrainerRoadProvider implements SyncProvider {
   #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "trainerroad" });
+    this.#fetchFn = createProviderRateLimitFetch("trainerroad", fetchFn);
   }
 
   validate(): string | null {
