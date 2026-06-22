@@ -1,5 +1,6 @@
 import { PROVIDER_GUIDE_SETTINGS_KEY } from "@dofek/onboarding/provider-guide";
 import { TRPCError } from "@trpc/server";
+import { getProviderRateLimitStatusFromRedis } from "dofek/admin/provider-rate-limit-status";
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -7,7 +8,6 @@ import { resolveAccessWindow } from "../billing/entitlement.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { adminProcedure, router } from "../trpc.ts";
-import { getProviderRateLimitStatusFromRedis } from "dofek/admin/provider-rate-limit-status";
 
 // ── Schemas for admin queries ──
 

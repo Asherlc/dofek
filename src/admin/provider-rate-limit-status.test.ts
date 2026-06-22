@@ -21,9 +21,13 @@ class MockRedisReader {
     return entry.value;
   }
 
-  async scan(cursor: string, ...args: string[]): Promise<[string, string[]]> {
-    const patternIndex = args.indexOf("MATCH");
-    const pattern = patternIndex >= 0 ? args[patternIndex + 1] : "*";
+  async scan(
+    cursor: string,
+    _matchKeyword: "MATCH",
+    pattern: string,
+    _countKeyword: "COUNT",
+    _count: string,
+  ): Promise<[string, string[]]> {
     const regex = new RegExp(`^${pattern.replaceAll("*", ".*")}$`);
     const keys = [...this.#entries.keys()].filter((key) => regex.test(key));
     if (cursor !== "0") return ["0", []];

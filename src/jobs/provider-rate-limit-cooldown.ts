@@ -98,7 +98,9 @@ function serializeCooldown(cooldown: ProviderRateLimitCooldown): string {
   });
 }
 
-export function parseProviderRateLimitCooldown(raw: string | null): ProviderRateLimitCooldown | null {
+export function parseProviderRateLimitCooldown(
+  raw: string | null,
+): ProviderRateLimitCooldown | null {
   if (!raw) return null;
   const parsed: unknown = JSON.parse(raw);
   if (typeof parsed !== "object" || parsed === null) return null;

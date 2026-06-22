@@ -1,15 +1,12 @@
 import {
   ADAPTIVE_RATE_STORAGE_KEY_PREFIX,
-  type ProviderAdaptiveRateState,
   defaultThrottleMs,
+  type ProviderAdaptiveRateState,
   parseAdaptiveRateState,
   slideAdaptiveWindow,
 } from "@dofek/provider-http/adaptive-rate-limit";
 import { RedisConnection } from "bullmq";
-import {
-  getConfiguredProviderIds,
-  getProviderQueueConfig,
-} from "../jobs/provider-queue-config.ts";
+import { getConfiguredProviderIds, getProviderQueueConfig } from "../jobs/provider-queue-config.ts";
 import {
   type ProviderRateLimitCooldown,
   parseProviderRateLimitCooldown,
@@ -49,7 +46,13 @@ interface ScopedRedisKey {
 
 interface RedisReader {
   get: (key: string) => Promise<string | null>;
-  scan: (cursor: string, ...args: string[]) => Promise<[string, string[]]>;
+  scan: (
+    cursor: string,
+    matchKeyword: "MATCH",
+    pattern: string,
+    countKeyword: "COUNT",
+    count: string,
+  ) => Promise<[string, string[]]>;
 }
 
 function rowKey(providerId: string, scope: "provider" | "user", userId: string | null): string {
@@ -152,7 +155,7 @@ async function scanKeys(redis: RedisReader, pattern: string): Promise<string[]> 
   const keys: string[] = [];
   let cursor = "0";
   do {
-    const [nextCursor, batch] = await redis.scan(cursor, "MATCH", pattern, "COUNT", 100);
+    const [nextCursor, batch] = await redis.scan(cursor, "MATCH", pattern, "COUNT", "100");
     cursor = nextCursor;
     keys.push(...batch);
   } while (cursor !== "0");
@@ -195,7 +198,8 @@ export async function getProviderRateLimitStatus(
     if (parsed.scope === "user" && !shouldIncludeUserAdaptiveRow(state, nowMs)) continue;
 
     const keyForRow = rowKey(parsed.providerId, parsed.scope, parsed.userId);
-    const existing = rows.get(keyForRow) ?? buildBaseRow(parsed.providerId, parsed.scope, parsed.userId);
+    const existing =
+      rows.get(keyForRow) ?? buildBaseRow(parsed.providerId, parsed.scope, parsed.userId);
     rows.set(keyForRow, applyAdaptiveState(existing, state, nowMs));
   }
 
@@ -209,7 +213,8 @@ export async function getProviderRateLimitStatus(
     if (!cooldown || cooldown.expiresAt <= now) continue;
 
     const keyForRow = rowKey(parsed.providerId, parsed.scope, parsed.userId);
-    const existing = rows.get(keyForRow) ?? buildBaseRow(parsed.providerId, parsed.scope, parsed.userId);
+    const existing =
+      rows.get(keyForRow) ?? buildBaseRow(parsed.providerId, parsed.scope, parsed.userId);
     rows.set(keyForRow, applyCooldown(existing, cooldown, now));
   }
 
@@ -229,7 +234,8 @@ async function getSharedRedisReader(): Promise<RedisReader> {
   const redisClient = await sharedRedisConnection.client;
   return {
     get: async (key) => redisClient.get(key),
-    scan: async (cursor, ...args) => redisClient.scan(cursor, ...args),
+    scan: async (cursor, matchKeyword, pattern, countKeyword, count) =>
+      redisClient.scan(cursor, matchKeyword, pattern, countKeyword, count),
   };
 }
 
