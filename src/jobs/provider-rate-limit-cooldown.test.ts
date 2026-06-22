@@ -620,10 +620,7 @@ describe("ProviderRateLimitCooldownStore", () => {
     });
 
     await expect(
-      mock.store.record(
-        rateLimitError({ providerId: "garmin", retryAfterSeconds: 600 }),
-        "user-1",
-      ),
+      mock.store.record(rateLimitError({ providerId: "garmin", retryAfterSeconds: 600 }), "user-1"),
     ).rejects.toThrow(
       "Failed to persist rate-limit cooldown for provider-rate-limit:garmin:provider after 10 Redis transaction conflicts",
     );

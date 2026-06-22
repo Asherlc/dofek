@@ -658,7 +658,7 @@ describe("pelotonAutomatedLogin", () => {
     expect(tokens.accessToken).toBe("new-access-token");
     expect(tokens.refreshToken).toBe("new-refresh-token");
     expect(tokenRequestBody).toContain("code_verifier=");
-    const verifierMatch = tokenRequestBody.match(/(?:^|&)code_verifier=([^&]+)/);
+    const verifierMatch = /(?:^|&)code_verifier=([^&]+)/.exec(tokenRequestBody ?? "");
     expect(verifierMatch?.[1]).toBeDefined();
     expect(verifierMatch?.[1]).not.toBe("undefined");
   });
