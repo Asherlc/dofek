@@ -1,5 +1,6 @@
 import { formatDurationRange, formatNumber, formatTimeOnly } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
+import { getActivityIconInfo } from "@dofek/training/activity-icons";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme";
@@ -17,17 +18,7 @@ interface ActivityCardProps {
 }
 
 function activityIcon(type: string): string {
-  const lower = type.toLowerCase();
-  if (lower.includes("run")) return "\u{1F3C3}";
-  if (lower.includes("cycl") || lower.includes("bike")) return "\u{1F6B4}";
-  if (lower.includes("swim")) return "\u{1F3CA}";
-  if (lower.includes("walk") || lower.includes("hike")) return "\u{1F6B6}";
-  if (lower.includes("strength") || lower.includes("weight")) return "\u{1F3CB}";
-  if (lower.includes("yoga")) return "\u{1F9D8}";
-  if (lower.includes("hiit")) return "\u{1F4A5}";
-  if (lower.includes("elliptical")) return "\u{1F3C3}\u{200D}\u{2642}\u{FE0F}";
-  if (lower.includes("row")) return "\u{1F6A3}";
-  return "\u{26A1}";
+  return getActivityIconInfo(type).emoji;
 }
 
 function Stat({ value, label, unit }: { value: string | number; label: string; unit?: string }) {

@@ -302,6 +302,20 @@ describe("ActivitiesPage", () => {
     });
   });
 
+  it("renders a type icon when an activity has no location data", () => {
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity()] }],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesPage />);
+
+    expect(screen.getByTestId("activity-type-icon")).toBeDefined();
+    expect(screen.getByLabelText("Indoor Cycling activity")).toBeDefined();
+  });
+
   it("renders a map tile when an activity includes location data", () => {
     mockQuery = {
       data: [

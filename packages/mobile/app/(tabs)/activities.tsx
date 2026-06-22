@@ -23,6 +23,7 @@ import {
 } from "react-native";
 import Svg, { Polyline } from "react-native-svg";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
+import { ActivityTypeIcon } from "../../components/ActivityTypeIcon";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useRefresh } from "../../lib/useRefresh";
@@ -236,7 +237,11 @@ export default function ActivitiesScreen() {
                     </Text>
                     <ActivityMetricStrip activity={activity} units={units} />
                   </View>
-                  {activity.location ? <ActivityMapTile location={activity.location} /> : null}
+                  {activity.location ? (
+                    <ActivityMapTile location={activity.location} />
+                  ) : (
+                    <ActivityTypeIcon activityType={activity.activityType} />
+                  )}
                 </View>
               </TouchableOpacity>
             ))}
