@@ -1,3 +1,4 @@
+import { formatDateShort } from "@dofek/format/format";
 import { formatMeasurementText } from "@dofek/format/units";
 import type { ReactNode } from "react";
 import { useUnitConverter } from "../lib/unitContext.ts";
@@ -22,17 +23,12 @@ export interface TrainingSleepComparisonPoint {
   sleepConsistency: number;
 }
 
-const dashboardDateFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  timeZone: "UTC",
-});
-
 export function formatDashboardRange(endDate: string, days: number): string {
   const end = new Date(`${endDate}T12:00:00Z`);
   const start = new Date(end);
   start.setUTCDate(end.getUTCDate() - days + 1);
-  return `${dashboardDateFormatter.format(start)} - ${dashboardDateFormatter.format(end)}`;
+  const utc = { timeZone: "UTC" as const };
+  return `${formatDateShort(start, utc)} - ${formatDateShort(end, utc)}`;
 }
 
 export function correlationStrengthLabel(effectSize: number | null | undefined): string {
@@ -74,7 +70,7 @@ interface RestingHeartRateTone {
 }
 
 function formatChartDate(date: string): string {
-  return dashboardDateFormatter.format(new Date(`${date}T12:00:00Z`));
+  return formatDateShort(date, { timeZone: "UTC" });
 }
 
 function formatChartNumber(value: number): string {

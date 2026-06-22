@@ -31,6 +31,7 @@ import {
   formatSleepDebtInline,
   formatSpO2,
   formatSpO2Measurement,
+  formatTableCellValue,
   formatTime,
   formatTimeOnly,
   formatTrainingLoad,
@@ -455,6 +456,39 @@ describe("formatTime", () => {
     const result = formatTime("2024-03-15 14:30:00+00");
     expect(result).toContain("Mar");
     expect(result).toContain("15");
+  });
+});
+
+describe("formatTableCellValue", () => {
+  it("returns em dash for null and undefined", () => {
+    expect(formatTableCellValue(null)).toBe("—");
+    expect(formatTableCellValue(undefined)).toBe("—");
+  });
+
+  it("formats booleans and objects", () => {
+    expect(formatTableCellValue(true)).toBe("Yes");
+    expect(formatTableCellValue(false)).toBe("No");
+    expect(formatTableCellValue({ foo: 1 })).toBe('{"foo":1}');
+  });
+
+  it("formats YYYY-MM-DD date strings", () => {
+    expect(formatTableCellValue("2024-03-15")).toBe("Mar 15, 2024");
+  });
+
+  it("formats ISO and postgres timestamp strings", () => {
+    const iso = formatTableCellValue("2024-03-15T10:30:00Z");
+    expect(iso).not.toBe("2024-03-15T10:30:00Z");
+    expect(iso).toContain("Mar");
+    expect(iso).toContain("15");
+
+    const postgres = formatTableCellValue("2024-03-15 10:30:00+00");
+    expect(postgres).not.toBe("2024-03-15 10:30:00+00");
+    expect(postgres).toContain("Mar");
+  });
+
+  it("returns plain strings and numbers unchanged", () => {
+    expect(formatTableCellValue("hello")).toBe("hello");
+    expect(formatTableCellValue(42)).toBe("42");
   });
 });
 

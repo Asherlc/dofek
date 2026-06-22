@@ -1,3 +1,4 @@
+import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import { useMemo, useState } from "react";
 import { z } from "zod";
 import {
@@ -56,7 +57,7 @@ export function SleepPage() {
   const sourceRows = useMemo(
     () =>
       sleepRows.map((row) => ({
-        date: row.date ?? row.started_at.slice(0, 10),
+        date: row.date ?? formatDateYmdInTimeZone(row.started_at, "UTC"),
         durationMinutes: row.duration_minutes,
         providerId: row.provider_id ?? null,
         sourceName: row.source_name ?? null,

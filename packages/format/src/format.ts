@@ -215,6 +215,24 @@ export function formatTime(iso: string): string {
   return formatDateTime(iso);
 }
 
+const dateOnlyValuePattern = /^(\d{4})-(\d{2})-(\d{2})$/;
+const dateTimeValuePattern = /^(\d{4})-(\d{2})-(\d{2})[ T]/;
+
+/** Format a database/API value for display in table cells and detail modals. */
+export function formatTableCellValue(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "object") return JSON.stringify(value);
+  const str = String(value);
+  if (dateOnlyValuePattern.test(str)) {
+    return formatDateMedium(str);
+  }
+  if (dateTimeValuePattern.test(str) && parseValidDate(str)) {
+    return formatDateTime(str);
+  }
+  return str;
+}
+
 /** Format a number with a fixed number of decimal places. Returns "--" for non-finite values. */
 export function formatNumber(value: number, decimals = 1): string {
   if (!Number.isFinite(value)) return "--";

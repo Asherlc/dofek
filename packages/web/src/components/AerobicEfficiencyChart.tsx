@@ -1,4 +1,4 @@
-import { formatNumber } from "@dofek/format/format";
+import { formatDateMedium, formatNumber } from "@dofek/format/format";
 import { statusColors } from "@dofek/scoring/colors";
 import type { AerobicEfficiencyActivity } from "dofek-server/types";
 import {
@@ -150,7 +150,7 @@ export function AerobicEfficiencyChart({
         const mins = Math.round(z2Samples / 60);
         return [
           `<strong>${String(data.name)}</strong>`,
-          `Date: ${date}`,
+          `Date: ${formatDateMedium(date)}`,
           `Efficiency: ${formatNumber(ef, 3)} W/bpm`,
           `Avg Power (Zone 2): ${String(data.avgPower)}W`,
           `Avg Heart Rate (Zone 2): ${String(data.avgHr)} bpm`,

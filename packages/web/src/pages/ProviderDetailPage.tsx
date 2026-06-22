@@ -2,6 +2,7 @@ import {
   formatDateYmd,
   formatDurationSeconds,
   formatRelativeTime,
+  formatTableCellValue,
   formatTime,
 } from "@dofek/format/format";
 import { DATA_TYPE_LABELS, type ProviderStats } from "@dofek/providers/provider-stats";
@@ -789,13 +790,5 @@ export function formatColumnName(col: string): string {
 }
 
 export function formatCellValue(value: unknown): string {
-  if (value === null || value === undefined) return "—";
-  if (typeof value === "boolean") return value ? "Yes" : "No";
-  if (typeof value === "object") return JSON.stringify(value);
-  const str = String(value);
-  // Format ISO dates
-  if (/^\d{4}-\d{2}-\d{2}T/.test(str)) {
-    return formatTime(str);
-  }
-  return str;
+  return formatTableCellValue(value);
 }

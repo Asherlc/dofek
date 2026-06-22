@@ -1,3 +1,4 @@
+import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import { TRPCError } from "@trpc/server";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
@@ -47,18 +48,17 @@ function requireAccessWindow(
   return accessWindow;
 }
 
-/** Simple date comparison for server-side logic (where @dofek/format is not available). */
+function addDays(dateString: string, days: number): string {
+  const date = new Date(`${dateString}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return formatDateYmdInTimeZone(date, "UTC");
+}
+
 export function isRecent(dateStr: string, anchorDateStr: string): boolean {
   const date = new Date(`${dateStr}T12:00:00Z`);
   const anchor = new Date(`${anchorDateStr}T12:00:00Z`);
   const diffDays = Math.round((anchor.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
   return diffDays >= 0 && diffDays <= 1;
-}
-
-function addDays(dateString: string, days: number): string {
-  const date = new Date(`${dateString}T12:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
 }
 
 function isWithinLookbackDays(
@@ -371,7 +371,7 @@ export const mobileDashboardRouter = router({
       for (let i = 7; i >= 1; i--) {
         const nightDate = new Date(anchorDate);
         nightDate.setUTCDate(nightDate.getUTCDate() - i);
-        const dateStr = nightDate.toISOString().slice(0, 10);
+        const dateStr = formatDateYmdInTimeZone(nightDate, "UTC");
         const night = nightsByDate.get(dateStr);
         recentNights.push({
           date: dateStr,
@@ -386,7 +386,10 @@ export const mobileDashboardRouter = router({
         });
       }
 
-      const yesterdayStr = new Date(anchorDate.getTime() - 86400000).toISOString().slice(0, 10);
+      const yesterdayStr = formatDateYmdInTimeZone(
+        new Date(anchorDate.getTime() - 86400000),
+        "UTC",
+      );
 
       const sleepNeedResult: SleepNeedResult | null =
         sleepBaselineRows.length > 0
