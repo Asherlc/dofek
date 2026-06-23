@@ -14,14 +14,12 @@ describe("OnboardingScreen", () => {
     mockRouterPush.mockClear();
   });
 
-  it("renders shared goals and setup steps", () => {
+  it("renders first-run setup actions", () => {
     render(<OnboardingScreen />);
 
-    expect(screen.getByText("Set up Dofek")).toBeTruthy();
-    expect(screen.getByText("Understand training")).toBeTruthy();
-    expect(screen.getByText("Improve recovery")).toBeTruthy();
-    expect(screen.getByText("Connect your data sources")).toBeTruthy();
-    expect(screen.getByText("Review your first insight")).toBeTruthy();
+    expect(screen.getByText("Set up Dofek with your real data")).toBeTruthy();
+    expect(screen.getByText("Connect your sources")).toBeTruthy();
+    expect(screen.getByText("Check your dashboard")).toBeTruthy();
   });
 
   it("navigates to provider setup", () => {
@@ -30,13 +28,5 @@ describe("OnboardingScreen", () => {
     fireEvent.click(screen.getByText("Set up data sources"));
 
     expect(mockRouterPush).toHaveBeenCalledWith("/providers");
-  });
-
-  it("marks a selected goal", () => {
-    render(<OnboardingScreen />);
-
-    fireEvent.click(screen.getByText("Track nutrition"));
-
-    expect(screen.getByText("Selected: Track nutrition")).toBeTruthy();
   });
 });

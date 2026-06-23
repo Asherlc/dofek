@@ -1,31 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { GET_STARTED_GOALS, GET_STARTED_STEPS } from "./get-started-flow";
-
-describe("GET_STARTED_GOALS", () => {
-  it("offers focused setup goals for new users", () => {
-    expect(GET_STARTED_GOALS.map((goal) => goal.id)).toEqual([
-      "training",
-      "recovery",
-      "nutrition",
-      "full-picture",
-    ]);
-  });
-
-  it("uses readable labels and descriptions", () => {
-    for (const goal of GET_STARTED_GOALS) {
-      expect(goal.title.length).toBeGreaterThan(0);
-      expect(goal.description.length).toBeGreaterThan(0);
-      expect(goal.description).not.toMatch(/\b(CTL|ATL|TSB|ACWR|FTP|HRV|EF|NP|VI|IF|PI|CP)\b/);
-    }
-  });
-});
+import { GET_STARTED_STEPS, IOS_TESTFLIGHT_INVITE } from "./get-started-flow";
 
 describe("GET_STARTED_STEPS", () => {
-  it("guides users from goal choice to first insight", () => {
+  it("guides users through functional setup steps", () => {
     expect(GET_STARTED_STEPS.map((step) => step.id)).toEqual([
-      "choose-goal",
       "connect-sources",
-      "set-up-mobile",
       "review-first-insight",
     ]);
   });
@@ -34,6 +13,8 @@ describe("GET_STARTED_STEPS", () => {
     expect(GET_STARTED_STEPS).toContainEqual(
       expect.objectContaining({
         id: "connect-sources",
+        title: "Connect your sources",
+        description: "Choose the apps and devices you already use so Dofek can start syncing data.",
         actionLabel: "Set up data sources",
         webPath: "/settings",
         mobilePath: "/providers",
@@ -42,10 +23,23 @@ describe("GET_STARTED_STEPS", () => {
     expect(GET_STARTED_STEPS).toContainEqual(
       expect.objectContaining({
         id: "review-first-insight",
+        title: "Check your dashboard",
+        description:
+          "Once data is connected, the dashboard shows what is ready and what still needs time.",
         actionLabel: "Open dashboard",
         webPath: "/dashboard",
         mobilePath: "/(tabs)",
       }),
     );
+  });
+
+  it("includes the public TestFlight invite link for web onboarding", () => {
+    expect(IOS_TESTFLIGHT_INVITE).toEqual({
+      title: "Get the iOS app",
+      description:
+        "Install Dofek on your iPhone or iPad through TestFlight to sync Apple Health and use mobile features.",
+      actionLabel: "Open TestFlight invite",
+      url: "https://testflight.apple.com/join/FXywHr9c",
+    });
   });
 });
