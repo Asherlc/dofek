@@ -3,7 +3,6 @@ import { autoMealType } from "@dofek/nutrition/meal";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
-  Linking,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -15,6 +14,7 @@ import {
 } from "react-native";
 import { MacroSummary } from "../../components/MacroSummary";
 import { MealSection } from "../../components/MealSection";
+import { openExternalUrl } from "../../lib/open-external-url";
 import { safeParseRows } from "../../lib/safe-parse";
 import { captureException, logger } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
@@ -131,7 +131,7 @@ export default function FoodScreen() {
   }
 
   function handleOpenFatsecretWebsite() {
-    void Linking.openURL(FATSECRET_URL);
+    void openExternalUrl(FATSECRET_URL, "food");
   }
 
   async function handleLogAiMeal() {
