@@ -2087,12 +2087,14 @@ describe("createAuthRouter", () => {
           name: "Runner",
         }),
       );
-      vi.mocked(resolveOrCreateUser).mockImplementationOnce((_db, _providerId, identity, _linkUserId, options) => {
-        if (!identity.email && options?.requireEmailForNewUser) {
-          return Promise.reject(new MissingEmailForSignupError("Strava"));
-        }
-        return Promise.resolve({ userId: "user-1", isNewUser: false });
-      });
+      vi.mocked(resolveOrCreateUser).mockImplementationOnce(
+        (_db, _providerId, identity, _linkUserId, options) => {
+          if (!identity.email && options?.requireEmailForNewUser) {
+            return Promise.reject(new MissingEmailForSignupError("Strava"));
+          }
+          return Promise.resolve({ userId: "user-1", isNewUser: false });
+        },
+      );
       vi.mocked(getAllProviders).mockReturnValue([
         {
           id: "strava",
