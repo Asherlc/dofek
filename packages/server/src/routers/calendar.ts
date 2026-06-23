@@ -1,5 +1,4 @@
 import { TRPCError } from "@trpc/server";
-import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";
 import { endDateSchema } from "../lib/date-window.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
@@ -120,7 +119,6 @@ export const calendarRouter = router({
         ctx.timezone,
         ctx.sensorStore,
         ctx.accessWindow,
-        getProvider,
       );
       return repo.getWeekList(input);
     }),

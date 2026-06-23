@@ -66,9 +66,7 @@ describe("providerAbsent summaries", () => {
   it("formats partial absence summaries with provider labels", () => {
     const removedAt = "2026-03-05T14:30:00.000Z";
     expect(
-      formatProviderPartialAbsenceSummary([
-        { providerId: "strava", providerAbsentAt: removedAt },
-      ]),
+      formatProviderPartialAbsenceSummary([{ providerId: "strava", providerAbsentAt: removedAt }]),
     ).toBe(`Strava removed · ${formatDateTime(removedAt)}`);
   });
 

@@ -447,10 +447,7 @@ function ActivityCard({
   const isHidden = activity.isProviderAbsent === true;
   const tombstoneSummary =
     isHidden && activity.providerId && activity.providerAbsentAt
-      ? formatProviderAbsentTombstoneSummary(
-          activity.providerId,
-          activity.providerAbsentAt,
-        )
+      ? formatProviderAbsentTombstoneSummary(activity.providerId, activity.providerAbsentAt)
       : null;
   const partialAbsenceSummary = formatProviderPartialAbsenceSummary(
     activity.partialAbsentSources ?? [],
@@ -499,9 +496,7 @@ function ActivityCard({
             {formatTime(activity.startedAt)} · {formatDurationMinutes(activity.durationMin)}
           </p>
           {tombstoneSummary ? (
-            <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
-              {tombstoneSummary}
-            </p>
+            <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">{tombstoneSummary}</p>
           ) : null}
           {partialAbsenceSummary ? (
             <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">

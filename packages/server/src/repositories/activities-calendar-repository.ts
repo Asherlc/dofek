@@ -1,4 +1,4 @@
-import { type ProviderAbsentSource } from "@dofek/providers/providers";
+import type { ProviderAbsentSource } from "@dofek/providers/providers";
 import { TrainingStressCalculator } from "@dofek/training/training-load";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
@@ -7,10 +7,7 @@ import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { type OsmTilePreview, osmTilePreview } from "../lib/osm-tile.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
-import {
-  ActivitySourceAttribution,
-  type ProviderLookup,
-} from "../models/activity-source-attribution.ts";
+import { ActivitySourceAttribution } from "../models/activity-source-attribution.ts";
 import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 import { getActivityRoutePreviews } from "./activity-route-preview.ts";
 
@@ -140,7 +137,6 @@ export interface WeekListInput {
 /** Per-activity calendar data (location for outdoor, calories + TSS otherwise). */
 export class ActivitiesCalendarRepository extends BaseRepository {
   readonly #sensorStore: ActivitySensorStore;
-  readonly #providerLookup: ProviderLookup;
 
   constructor(
     db: Pick<Database, "execute">,
@@ -148,11 +144,9 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     timezone: string,
     sensorStore: ActivitySensorStore,
     accessWindow?: ConstructorParameters<typeof BaseRepository>[3],
-    providerLookup: ProviderLookup = (providerId) => ({ name: providerId }),
   ) {
     super(db, userId, timezone, accessWindow);
     this.#sensorStore = sensorStore;
-    this.#providerLookup = providerLookup;
   }
 
   async getWeekList(input: WeekListInput): Promise<CalendarDayActivities[]> {

@@ -843,16 +843,7 @@ describe("ActivitiesCalendarRepository", () => {
       [{ max_hr: null, resting_hr: null, ftp: null }],
       [],
     ]);
-    const providerLookup = (providerId: string) =>
-      providerId === "strava" ? { name: "Strava" } : { name: providerId };
-    const repository = new ActivitiesCalendarRepository(
-      database,
-      "user-1",
-      "UTC",
-      sensorStore,
-      undefined,
-      providerLookup,
-    );
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
     const result = await repository.getWeekList({
       weeks: 1,
@@ -1091,8 +1082,6 @@ describe("ActivitiesCalendarRepository", () => {
 
   it("includes partial absence summaries for canonical activities with absent source links", async () => {
     const database = makeDatabase([]);
-    const providerLookup = (providerId: string) =>
-      providerId === "strava" ? { name: "Strava" } : { name: providerId };
     const sensorStore = makeSensorStore([
       [
         makeActivityRow({
@@ -1116,14 +1105,7 @@ describe("ActivitiesCalendarRepository", () => {
       [{ max_hr: null, resting_hr: null, ftp: 250 }],
       [],
     ]);
-    const repository = new ActivitiesCalendarRepository(
-      database,
-      "user-1",
-      "UTC",
-      sensorStore,
-      undefined,
-      providerLookup,
-    );
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
     const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
 

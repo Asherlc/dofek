@@ -1,5 +1,5 @@
 import { formatDateTime } from "@dofek/format/format";
-import { providerSourceLabel, type ProviderAbsentSource } from "@dofek/providers/providers";
+import { type ProviderAbsentSource, providerSourceLabel } from "@dofek/providers/providers";
 
 export interface SourceExternalIdEntry {
   providerId: string;
