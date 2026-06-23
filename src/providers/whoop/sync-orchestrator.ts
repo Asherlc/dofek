@@ -1,9 +1,12 @@
 import { WhoopClient } from "whoop-whoop/client";
 import { withSyncLog } from "../../db/sync-log.ts";
-import { loadTokens, saveTokens } from "../../db/tokens.ts";
+import { deleteTokens, loadTokens, saveTokens } from "../../db/tokens.ts";
 import { runWithSyncStepAdmission } from "../../lib/sync-step-admission-context.ts";
 import { logger } from "../../logger.ts";
-import { ProviderStoredIdentityMissingError } from "../auth-errors.ts";
+import {
+  ProviderStoredIdentityMissingError,
+  RefreshTokenRevokedError,
+} from "../auth-errors.ts";
 import type { SyncRun } from "../sync-run.ts";
 import { SyncWindow } from "../sync-window.ts";
 import type { SyncError, SyncResult } from "../types.ts";
@@ -38,6 +41,11 @@ type WhoopOrchestratorResult = {
   complete: boolean;
 };
 
+function isWhoopRefreshTokenRevoked(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("NotAuthorizedException");
+}
+
 async function createWhoopClient(
   db: SyncRun["db"],
   providerId: string,
@@ -51,8 +59,42 @@ async function createWhoopClient(
 
   const storedUserIdMatch = stored.scopes?.match(/userId:(\d+)/);
   const storedUserId = storedUserIdMatch ? Number(storedUserIdMatch[1]) : null;
-  const token = await WhoopClient.refreshAccessToken(stored.refreshToken, fetchFn);
-  const userId = storedUserId ?? token.userId;
+  const accessTokenStillValid = stored.expiresAt > new Date();
+
+  if (accessTokenStillValid && storedUserId != null) {
+    return new WhoopClient(
+      {
+        accessToken: stored.accessToken,
+        refreshToken: stored.refreshToken,
+        userId: storedUserId,
+      },
+      fetchFn,
+      createWhoopRequestLogger(),
+    );
+  }
+
+  let accessToken = stored.accessToken;
+  let refreshToken = stored.refreshToken;
+  let userId = storedUserId;
+
+  try {
+    const refreshed = await WhoopClient.refreshAccessToken(stored.refreshToken, fetchFn);
+    accessToken = refreshed.accessToken;
+    refreshToken = refreshed.refreshToken;
+    userId = storedUserId ?? refreshed.userId;
+  } catch (error: unknown) {
+    if (isWhoopRefreshTokenRevoked(error)) {
+      logger.warn(
+        "[whoop] Cognito refresh token rejected — deleting stored tokens. User must reconnect WHOOP.",
+      );
+      await deleteTokens(db, providerId, runUserId);
+      throw new RefreshTokenRevokedError("WHOOP", {
+        cause: error instanceof Error ? error : undefined,
+      });
+    }
+    throw error;
+  }
+
   if (!userId) {
     throw new ProviderStoredIdentityMissingError("WHOOP", "user ID");
   }
@@ -61,29 +103,36 @@ async function createWhoopClient(
     db,
     providerId,
     {
-      accessToken: token.accessToken,
-      refreshToken: token.refreshToken,
+      accessToken,
+      refreshToken,
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       scopes: `userId:${userId}`,
     },
     runUserId,
   );
 
-  return new WhoopClient(
-    { accessToken: token.accessToken, refreshToken: token.refreshToken, userId },
-    fetchFn,
-    (event) => {
-      const logMethod = event.status === 429 ? "warn" : "info";
-      logger[logMethod]("[whoop] API request", {
-        whoopUserId: event.userId,
-        endpoint: event.endpoint,
-        status: event.status,
-        attempt: event.attempt,
-        retryAfterSeconds: event.retryAfterSeconds,
-        timestamp: event.timestamp.toISOString(),
-      });
-    },
-  );
+  return new WhoopClient({ accessToken, refreshToken, userId }, fetchFn, createWhoopRequestLogger());
+}
+
+function createWhoopRequestLogger(): (event: {
+  userId: number;
+  endpoint: string;
+  status: number;
+  attempt: number;
+  retryAfterSeconds: number | null;
+  timestamp: Date;
+}) => void {
+  return (event) => {
+    const logMethod = event.status === 429 ? "warn" : "info";
+    logger[logMethod]("[whoop] API request", {
+      whoopUserId: event.userId,
+      endpoint: event.endpoint,
+      status: event.status,
+      attempt: event.attempt,
+      retryAfterSeconds: event.retryAfterSeconds,
+      timestamp: event.timestamp.toISOString(),
+    });
+  };
 }
 
 function makeBootstrapContext(

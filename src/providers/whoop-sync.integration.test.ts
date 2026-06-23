@@ -1077,7 +1077,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     await saveTokens(ctx.db, "whoop", {
       accessToken: "fake-access",
       refreshToken: "fake-refresh",
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      expiresAt: new Date("2020-01-01T00:00:00Z"),
       scopes: "userId:10129",
     });
 
@@ -1196,6 +1196,12 @@ describe("WhoopProvider.sync() (integration)", () => {
   });
 
   it("handles auth failure gracefully", async () => {
+    await saveTokens(ctx.db, "whoop", {
+      accessToken: "fake-access",
+      refreshToken: "fake-refresh",
+      expiresAt: new Date("2020-01-01T00:00:00Z"),
+      scopes: "userId:10129",
+    });
     server.use(...whoopHandlers([], { authError: true }));
     const provider = new WhoopProvider();
     const result = await provider.sync(
@@ -1207,7 +1213,18 @@ describe("WhoopProvider.sync() (integration)", () => {
     );
 
     expect(result.errors.length).toBeGreaterThan(0);
-    expect(result.errors[0]?.message).toMatch(/refresh failed|auth/i);
+    expect(result.errors[0]?.message).toContain("refresh token was revoked or expired");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "refresh_token_revoked" });
+
+    const { loadTokens } = await import("../db/tokens.ts");
+    await expect(loadTokens(ctx.db, "whoop")).resolves.toBeNull();
+
+    await saveTokens(ctx.db, "whoop", {
+      accessToken: "fake-access",
+      refreshToken: "fake-refresh",
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      scopes: "userId:10129",
+    });
   });
 
   it("continues syncing other data types if workout sync fails", async () => {

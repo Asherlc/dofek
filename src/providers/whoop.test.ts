@@ -65,6 +65,7 @@ vi.mock("../db/tokens.ts", () => ({
   ensureProvider: vi.fn(),
   loadTokens: vi.fn(),
   saveTokens: vi.fn(),
+  deleteTokens: vi.fn(),
 }));
 
 vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
@@ -872,7 +873,7 @@ describe("WhoopProvider.sync() — token resolution", () => {
     vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "tok",
       refreshToken: "ref",
-      expiresAt: futureExpiry,
+      expiresAt: new Date("2020-01-01T00:00:00Z"),
       scopes: null,
     });
 
@@ -907,6 +908,88 @@ describe("WhoopProvider.sync() — token resolution", () => {
     expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "authentication_failed" });
   });
 
+  it("reuses a valid access token without calling Cognito refresh", async () => {
+    const { loadTokens, saveTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "tok",
+      refreshToken: "ref",
+      expiresAt: futureExpiry,
+      scopes: "userId:12345",
+    });
+
+    let cognitoCalls = 0;
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      if (url.includes("auth-service/v3/whoop")) {
+        cognitoCalls += 1;
+        return Promise.resolve(
+          Response.json({
+            AuthenticationResult: { AccessToken: "new-tok", RefreshToken: "new-ref" },
+          }),
+        );
+      }
+      return makeSyncMockFetch({ cycles: [] })(input, init);
+    };
+
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(cognitoCalls).toBe(0);
+    expect(saveTokens).not.toHaveBeenCalled();
+  });
+
+  it("deletes stored tokens when Cognito rejects the refresh token", async () => {
+    const { deleteTokens, loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "tok",
+      refreshToken: "ref",
+      expiresAt: new Date("2020-01-01T00:00:00Z"),
+      scopes: "userId:12345",
+    });
+
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes("auth-service/v3/whoop")) {
+        return Promise.resolve(
+          Response.json(
+            {
+              __type: "NotAuthorizedException",
+              message: "Incorrect username or password.",
+            },
+            { status: 400 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response("Not found", { status: 404 }));
+    };
+
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
+
+    expect(deleteTokens).toHaveBeenCalledWith(
+      db,
+      "whoop",
+      "00000000-0000-0000-0000-000000000001",
+    );
+    expect(result.errors[0]?.message).toContain("refresh token was revoked or expired");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "refresh_token_revoked" });
+  });
+
   it("uses stored userId from scopes when available", async () => {
     const { loadTokens, saveTokens } = await import("../db/tokens.ts");
     vi.mocked(loadTokens).mockResolvedValue({
@@ -928,10 +1011,7 @@ describe("WhoopProvider.sync() — token resolution", () => {
     );
 
     expect(result.provider).toBe("whoop");
-    // saveTokens should have been called with userId:12345 in scopes
-    expect(saveTokens).toHaveBeenCalled();
-    const savedScopes = vi.mocked(saveTokens).mock.calls[0]?.[2]?.scopes;
-    expect(savedScopes).toBe("userId:12345");
+    expect(saveTokens).not.toHaveBeenCalled();
   });
 });
 
