@@ -1,11 +1,11 @@
-import { sql, type SQL } from "drizzle-orm";
+import { type SQL, sql } from "drizzle-orm";
 import { queryCache } from "../lib/cache.ts";
-import type { SyncDatabase } from "./index.ts";
-import { getTokenUserId } from "./token-user-context.ts";
 import {
   APPLE_HEALTH_PROVIDER_ID,
   type AppleHealthWorkoutIdentity,
 } from "../providers/apple-health/workout-identity.ts";
+import type { SyncDatabase } from "./index.ts";
+import { getTokenUserId } from "./token-user-context.ts";
 
 export interface ProviderActivityAbsenceReconciliation {
   providerId: string;

@@ -77,7 +77,7 @@ effective_tombstoned AS (
           'time:' || a.started_at::text || ':' || COALESCE(a.ended_at::text, '') || ':' || COALESCE(a.raw->>'sourceName', a.source_name, '')
         )
         AND (
-          sib.provider_absent_at IS NULL
+          sib.provider_absent_at IS NULL AND deleted_at IS NULL
           OR COALESCE((sib.raw->'metadata'->>'HKMetadataKeySyncVersion')::bigint, 0)
              > COALESCE((a.raw->'metadata'->>'HKMetadataKeySyncVersion')::bigint, 0)
           OR (

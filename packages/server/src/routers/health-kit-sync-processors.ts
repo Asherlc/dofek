@@ -4,10 +4,6 @@ import { z } from "zod";
 import type { SyncDatabase } from "../../../../src/db/index.ts";
 import { ProviderActivityListSync } from "../../../../src/db/provider-activity-sync.ts";
 import {
-  buildAppleHealthWorkoutIdentity,
-  collectAppleHealthWorkoutIdentities,
-} from "../../../../src/providers/apple-health/workout-identity.ts";
-import {
   BODY_MEASUREMENT_COLUMN_TO_CHANNEL,
   SOURCE_TYPE_API,
 } from "../../../../src/db/sensor-channels.ts";
@@ -17,6 +13,10 @@ import {
   type MetricStreamEventPublisher,
 } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
+import {
+  buildAppleHealthWorkoutIdentity,
+  collectAppleHealthWorkoutIdentities,
+} from "../../../../src/providers/apple-health/workout-identity.ts";
 import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
 import { computeBoundsFromIsoTimestamps } from "../lib/health-kit-sync-helpers.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";

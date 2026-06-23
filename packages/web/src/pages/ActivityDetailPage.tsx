@@ -323,8 +323,8 @@ export function ProviderAbsentBanner({ activity }: { activity: ActivityDetail })
         </div>
       </dl>
       <p className="mt-3 text-xs text-amber-800/80 dark:text-amber-200/80">
-        {providerAbsentExplanation(activity.providerId, activity.subsource)} You can restore it
-        from the activities page while showing hidden activities.
+        {providerAbsentExplanation(activity.providerId, activity.subsource)} You can restore it from
+        the activities page while showing hidden activities.
       </p>
     </div>
   );

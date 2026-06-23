@@ -3,10 +3,10 @@ import {
   BRAND_COLORS,
   PNG_LOGOS,
   PROVIDER_LABELS,
+  providerAbsentExplanation,
   providerLabel,
   providerLogoType,
   providerSourceLabel,
-  providerAbsentExplanation,
   SVG_LOGOS,
 } from "./providers.ts";
 
@@ -62,6 +62,15 @@ describe("providerAbsentExplanation", () => {
 
   it("uses the provider label for other providers", () => {
     expect(providerAbsentExplanation("strava", null)).toContain("Strava");
+  });
+
+  it("does not use the Apple Health duplicate explanation without a subsource", () => {
+    expect(providerAbsentExplanation("apple_health", null)).not.toContain("Apple Health copy");
+    expect(providerAbsentExplanation("apple_health", "")).not.toContain("Apple Health copy");
+  });
+
+  it("does not use the Apple Health duplicate explanation for non-Apple Health providers", () => {
+    expect(providerAbsentExplanation("strava", "Garmin")).not.toContain("Apple Health copy");
   });
 });
 

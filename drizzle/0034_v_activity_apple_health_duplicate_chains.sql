@@ -80,7 +80,7 @@ effective_tombstoned AS (
           || COALESCE(a.raw ->> 'sourceName', a.source_name, '')
         )
         AND (
-          sib.provider_absent_at IS null
+          sib.provider_absent_at IS null AND deleted_at IS null
           OR COALESCE((sib.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::bigint, 0)
           > COALESCE((a.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::bigint, 0)
           OR (
