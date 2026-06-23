@@ -122,10 +122,6 @@ async function awaitAdmissionAtomically(
   scope: ProviderRateLimitScope,
   userId: string | null,
 ): Promise<void> {
-  if (shouldUseSyncStepThrottleOnly(providerId)) {
-    throw new Error("Atomic admission does not support sync-step throttle-only requests");
-  }
-
   const key = adaptiveRateLimitStorageKey(providerId, scope, userId);
   const watch = redisClient.watch;
   const multi = redisClient.multi;
