@@ -1,7 +1,9 @@
 import { formatDateYmd } from "@dofek/format/format";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { httpBatchLink } from "@trpc/client";
 import { View } from "react-native";
+import { trpc } from "../../lib/trpc";
 import ActivitiesScreen from "./activities";
 
 const mapPreview = {
@@ -128,9 +130,10 @@ function createSeededProviders() {
 
   const today = formatDateYmd();
   const yesterday = formatDateYmd(new Date(Date.now() - 86_400_000));
+  const queryInput = { weeks: 4, endDate: today };
 
   queryClient.setQueryData(
-    [["calendar", "weekList"], { input: { weeks: 4, endDate: today }, type: "query" }],
+    [["calendar", "weekList"], { input: queryInput, type: "query" }],
     [
       {
         date: today,
@@ -181,17 +184,39 @@ function createSeededProviders() {
     ],
   );
 
+  queryClient.setQueryData(
+    [["calendar", "activityOverview"], { input: queryInput, type: "query" }],
+    {
+      activityCount: 2,
+      totalMinutes: 135,
+      totalDistanceMeters: 32400,
+      totalElevationGainM: 412,
+      activityTypes: ["road_cycling", "strength"],
+    },
+  );
+
   return { queryClient };
 }
 
 function MockProviders({ children }: { children: React.ReactNode }) {
   const { queryClient } = createSeededProviders();
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  const trpcClient = trpc.createClient({
+    links: [httpBatchLink({ url: "http://127.0.0.1/storybook-trpc" })],
+  });
+
+  return (
+    <trpc.Provider client={trpcClient} queryClient={queryClient}>
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    </trpc.Provider>
+  );
 }
 
 const meta = {
   title: "Pages/Activities",
   component: ActivitiesScreen,
+  parameters: {
+    layout: "fullscreen",
+  },
   decorators: [
     (Story) => (
       <MockProviders>

@@ -1,6 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { httpBatchLink } from "@trpc/client";
 import { View } from "react-native";
+import { AuthProvider } from "../lib/auth-context";
+import { trpc } from "../lib/trpc";
 import SettingsScreen from "./settings";
 
 function createSeededProviders() {
@@ -61,6 +64,10 @@ function createSeededProviders() {
     ],
   );
 
+  queryClient.setQueryData([["auth", "passwordCredentialStatus"], { type: "query" }], {
+    hasPassword: true,
+  });
+
   // settings.get (unitSystem)
   queryClient.setQueryData([["settings", "get"], { input: { key: "unitSystem" }, type: "query" }], {
     key: "unitSystem",
@@ -118,12 +125,25 @@ function createSeededProviders() {
 
 function MockProviders({ children }: { children: React.ReactNode }) {
   const { queryClient } = createSeededProviders();
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  const trpcClient = trpc.createClient({
+    links: [httpBatchLink({ url: "http://127.0.0.1/storybook-trpc" })],
+  });
+
+  return (
+    <trpc.Provider client={trpcClient} queryClient={queryClient}>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
+    </trpc.Provider>
+  );
 }
 
 const meta = {
   title: "Pages/Settings",
   component: SettingsScreen,
+  parameters: {
+    layout: "fullscreen",
+  },
   decorators: [
     (Story) => (
       <MockProviders>

@@ -71,6 +71,7 @@
     {
       "includes": [
         "scripts/**",
+        "packages/mobile/scripts/**",
         "packages/mobile/lib/telemetry.ts",
         "packages/mobile/test-setup.ts",
         "packages/server/src/lib/start-worker.ts",

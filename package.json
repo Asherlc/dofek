@@ -136,6 +136,7 @@
     "storybook:mobile:ios": "pnpm --filter dofek-mobile storybook:ios",
     "storybook:mobile:web": "pnpm --filter dofek-mobile storybook:web",
     "storybook:mobile:build": "pnpm --filter dofek-mobile build-storybook",
+    "app-store:mobile:screenshots": "pnpm --filter dofek-mobile app-store:assets",
     "size": "size-limit",
     "depcruise": "depcruise --config .dependency-cruiser.cjs src/ packages/",
     "spellcheck": "cspell --no-progress",

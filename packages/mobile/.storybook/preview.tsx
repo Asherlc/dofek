@@ -3,11 +3,20 @@ import { View } from "react-native";
 
 const preview: Preview = {
   decorators: [
-    (Story) => (
-      <View style={{ flex: 1, backgroundColor: "#eef3ed", padding: 16 }}>
-        <Story />
-      </View>
-    ),
+    (Story, context) => {
+      const isFullscreen = context.parameters.layout === "fullscreen";
+      return (
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "#eef3ed",
+            ...(isFullscreen ? {} : { padding: 16 }),
+          }}
+        >
+          <Story />
+        </View>
+      );
+    },
   ],
   parameters: {
     layout: "centered",
