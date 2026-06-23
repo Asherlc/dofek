@@ -79,7 +79,7 @@ async function submitPasswordAuth(
   const parsed = z
     .object({
       session: z.string(),
-      isNewUser: z.boolean().default(false),
+      isNewUser: z.boolean(),
       error: z.string().optional(),
     })
     .safeParse(data);
@@ -165,10 +165,14 @@ export async function startOAuthLogin(
   // Extract session token from the redirect URL
   const url = new URL(result.url);
   const session = url.searchParams.get("session");
+  const newUserParam = url.searchParams.get("new_user");
   if (!session) return null;
+  if (newUserParam !== "true" && newUserParam !== "false") {
+    throw new Error("Authentication failed");
+  }
   return {
     session,
-    isNewUser: url.searchParams.get("new_user") === "true",
+    isNewUser: newUserParam === "true",
   };
 }
 
@@ -224,10 +228,11 @@ export async function startNativeAppleSignIn(serverUrl: string): Promise<AuthRes
   }
 
   const data: unknown = await response.json();
-  const parsed = z
-    .object({ session: z.string(), isNewUser: z.boolean().default(false) })
-    .safeParse(data);
-  return parsed.success ? { session: parsed.data.session, isNewUser: parsed.data.isNewUser } : null;
+  const parsed = z.object({ session: z.string(), isNewUser: z.boolean() }).safeParse(data);
+  if (!parsed.success) {
+    throw new Error("Apple Sign In failed: invalid response");
+  }
+  return { session: parsed.data.session, isNewUser: parsed.data.isNewUser };
 }
 
 /** Log out: delete session on server and clear local token. */

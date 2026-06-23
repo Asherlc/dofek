@@ -65,9 +65,8 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
 
     if (pending.mobileScheme && isValidMobileScheme(pending.mobileScheme)) {
       logger.info(`[auth] User ${userId} completed signup via ${pending.providerId} (mobile)`);
-      const newUserParam = isNewUser ? "&new_user=true" : "";
       res.redirect(
-        `${pending.mobileScheme}://auth/callback?session=${sessionInfo.sessionId}${newUserParam}`,
+        `${pending.mobileScheme}://auth/callback?session=${sessionInfo.sessionId}&new_user=${isNewUser}`,
       );
       return;
     }

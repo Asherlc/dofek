@@ -284,6 +284,30 @@ describe("startNativeAppleSignIn", () => {
 
     await expect(startNativeAppleSignIn("https://srv")).rejects.toThrow("Apple Sign In failed");
   });
+
+  it("throws when server response omits isNewUser", async () => {
+    mockSignInAsync.mockResolvedValueOnce({
+      user: "apple-user-123",
+      authorizationCode: "native-auth-code",
+      identityToken: "native-identity-token",
+      fullName: null,
+      email: null,
+      state: null,
+      realUserStatus: 1,
+      authorizedScopes: [],
+    });
+
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ session: "sess-native-123" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    await expect(startNativeAppleSignIn("https://srv")).rejects.toThrow(
+      "Apple Sign In failed: invalid response",
+    );
+  });
 });
 
 describe("startOAuthLogin", () => {
@@ -303,6 +327,32 @@ describe("startOAuthLogin", () => {
     expect(WebBrowser.openAuthSessionAsync).toHaveBeenCalledWith(
       "https://srv/auth/login/google?redirect_scheme=dofek",
       "dofek://auth/callback",
+    );
+  });
+
+  it("uses data-provider auth path when isDataProvider is true", async () => {
+    vi.mocked(WebBrowser.openAuthSessionAsync).mockResolvedValueOnce({
+      type: "success",
+      url: "dofek://auth/callback?session=sess-data-1&new_user=false",
+    });
+
+    const result = await startOAuthLogin("https://srv", "strava", true);
+
+    expect(result).toEqual({ session: "sess-data-1", isNewUser: false });
+    expect(WebBrowser.openAuthSessionAsync).toHaveBeenCalledWith(
+      "https://srv/auth/login/data/strava?redirect_scheme=dofek",
+      "dofek://auth/callback",
+    );
+  });
+
+  it("throws when OAuth callback is missing new_user", async () => {
+    vi.mocked(WebBrowser.openAuthSessionAsync).mockResolvedValueOnce({
+      type: "success",
+      url: "dofek://auth/callback?session=sess-oauth-1",
+    });
+
+    await expect(startOAuthLogin("https://srv", "google", false)).rejects.toThrow(
+      "Authentication failed",
     );
   });
 
@@ -326,14 +376,30 @@ describe("loginWithPassword", () => {
 
   it("returns auth result on success", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ session: "sess-password-1", isNewUser: false, redirect: "/" }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+
+    const result = await loginWithPassword("https://srv", "user@example.com", "password123");
+    expect(result).toEqual({ session: "sess-password-1", isNewUser: false });
+  });
+
+  it("throws when login response omits isNewUser", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
       new Response(JSON.stringify({ session: "sess-password-1", redirect: "/" }), {
         status: 200,
         headers: { "content-type": "application/json" },
       }),
     );
 
-    const result = await loginWithPassword("https://srv", "user@example.com", "password123");
-    expect(result).toEqual({ session: "sess-password-1", isNewUser: false });
+    await expect(
+      loginWithPassword("https://srv", "user@example.com", "password123"),
+    ).rejects.toThrow("Authentication failed");
   });
 
   it("throws server error message when login fails", async () => {

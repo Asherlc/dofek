@@ -164,9 +164,8 @@ export async function handleIdentityCallback(
       // Mobile: redirect to app via deep link with session token
       if (mobileScheme && isValidMobileScheme(mobileScheme)) {
         logger.info(`[auth] User ${userId} logged in via ${providerName} (mobile)`);
-        const newUserParam = isNewUser ? "&new_user=true" : "";
         res.redirect(
-          `${mobileScheme}://auth/callback?session=${sessionInfo.sessionId}${newUserParam}`,
+          `${mobileScheme}://auth/callback?session=${sessionInfo.sessionId}&new_user=${isNewUser}`,
         );
         return;
       }

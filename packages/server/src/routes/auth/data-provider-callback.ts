@@ -267,9 +267,8 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
           // Mobile: redirect to app via deep link with session token
           if (stateEntry.mobileScheme && isValidMobileScheme(stateEntry.mobileScheme)) {
             logger.info(`[auth] User ${userId} logged in via data provider ${providerId} (mobile)`);
-            const newUserParam = isNewUser ? "&new_user=true" : "";
             res.redirect(
-              `${stateEntry.mobileScheme}://auth/callback?session=${sessionInfo.sessionId}${newUserParam}`,
+              `${stateEntry.mobileScheme}://auth/callback?session=${sessionInfo.sessionId}&new_user=${isNewUser}`,
             );
             return;
           }
