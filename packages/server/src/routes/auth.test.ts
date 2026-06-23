@@ -66,7 +66,7 @@ vi.mock("../auth/account-linking.ts", () => ({
       this.name = "MissingEmailForSignupError";
     }
   },
-  resolveOrCreateUser: vi.fn(() => Promise.resolve({ userId: "user-1" })),
+  resolveOrCreateUser: vi.fn(() => Promise.resolve({ userId: "user-1", isNewUser: false })),
 }));
 
 vi.mock("dofek/lib/cache", () => ({
@@ -255,7 +255,8 @@ describe("createAuthRouter", () => {
       expect(res.status).toBe(200);
       const data = JSON.parse(res.body);
       expect(data.session).toBe("sess-1");
-      expect(data.redirect).toBe("/");
+      expect(data.redirect).toBe("/?newUser=true");
+      expect(data.isNewUser).toBe(true);
       expect(setSessionCookie).toHaveBeenCalled();
     });
   });
@@ -274,6 +275,7 @@ describe("createAuthRouter", () => {
       expect(res.status).toBe(200);
       const data = JSON.parse(res.body);
       expect(data.session).toBe("sess-1");
+      expect(data.isNewUser).toBe(false);
       expect(setSessionCookie).toHaveBeenCalled();
     });
   });
@@ -529,6 +531,38 @@ describe("createAuthRouter", () => {
       );
       expect(res.status).toBe(302);
       expect(res.headers.location).toBe("/dashboard?providerGuide=true");
+    });
+
+    it("marks new identity users in the default redirect when no return_to is stored", async () => {
+      const mockValidate = vi.fn(() =>
+        Promise.resolve({
+          tokens: {},
+          user: { sub: "goog-new", email: "new@test.com", name: "New User" },
+        }),
+      );
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
+        validateCallback: mockValidate,
+      });
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: "google:state123",
+        codeVerifier: "verifier123",
+      });
+      vi.mocked(getPostLoginRedirectCookie).mockReturnValue(undefined);
+      vi.mocked(resolveOrCreateUser).mockResolvedValueOnce({
+        userId: "new-user-1",
+        isNewUser: true,
+      });
+
+      const { app } = createTestApp();
+      const res = await request(
+        app,
+        "get",
+        "/auth/callback/google?code=authcode&state=google:state123",
+      );
+
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe("/?newUser=true");
     });
 
     it("invalidates linked accounts cache after successful identity linking", async () => {
@@ -1896,6 +1930,62 @@ describe("createAuthRouter", () => {
       expect(setSessionCookie).toHaveBeenCalled();
     });
 
+    it("marks new data-provider login users in the default redirect", async () => {
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "new-login-access-token",
+          refreshToken: "new-login-refresh-token",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      const mockGetUserIdentity = vi.fn(() =>
+        Promise.resolve({
+          providerAccountId: "strava-new-user-1",
+          email: "new-runner@test.com",
+          name: "New Runner",
+        }),
+      );
+      vi.mocked(resolveOrCreateUser).mockResolvedValueOnce({
+        userId: "new-runner-user-1",
+        isNewUser: true,
+      });
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://www.strava.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["read"],
+            },
+            exchangeCode: mockExchangeCode,
+            getUserIdentity: mockGetUserIdentity,
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+
+      const startRes = await request(app, "get", "/auth/login/data/strava");
+      expect(startRes.status).toBe(302);
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const state = new URL(location).searchParams.get("state");
+      expect(state).toBeTruthy();
+
+      const callbackRes = await request(
+        app,
+        "get",
+        `/callback?code=strava-new-code&state=${state}`,
+      );
+
+      expect(callbackRes.status).toBe(302);
+      expect(callbackRes.headers.location).toBe("/?newUser=true");
+    });
+
     it("handles login intent with mobile scheme: redirects to deep link", async () => {
       const mockExchangeCode = vi.fn(() =>
         Promise.resolve({
@@ -2287,7 +2377,7 @@ describe("createAuthRouter", () => {
 
       expect(failedCompleteRes.status).toBe(500);
       expect(successfulRetryRes.status).toBe(302);
-      expect(successfulRetryRes.headers.location).toBe("/");
+      expect(successfulRetryRes.headers.location).toBe("/?newUser=true");
       expect(ensureProvider).toHaveBeenCalledTimes(1);
       expect(ensureProvider).toHaveBeenCalledWith(
         expect.anything(),

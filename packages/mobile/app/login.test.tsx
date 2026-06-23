@@ -7,7 +7,10 @@ const mockFetchConfiguredProviders = vi.fn();
 const mockStartOAuthLogin = vi.fn();
 const mockStartNativeAppleSignIn = vi.fn();
 const mockIsNativeAppleSignInAvailable = vi.fn(async () => false);
+const mockLoginWithPassword = vi.fn();
+const mockRegisterWithPassword = vi.fn();
 const mockRequestPasswordReset = vi.fn();
+const mockRouterReplace = vi.fn();
 
 vi.mock("../lib/auth-context", () => ({
   useAuth: () => ({
@@ -21,9 +24,13 @@ vi.mock("../lib/auth", () => ({
   startOAuthLogin: (...args: unknown[]) => mockStartOAuthLogin(...args),
   startNativeAppleSignIn: (...args: unknown[]) => mockStartNativeAppleSignIn(...args),
   isNativeAppleSignInAvailable: () => mockIsNativeAppleSignInAvailable(),
-  loginWithPassword: vi.fn(),
-  registerWithPassword: vi.fn(),
+  loginWithPassword: (...args: unknown[]) => mockLoginWithPassword(...args),
+  registerWithPassword: (...args: unknown[]) => mockRegisterWithPassword(...args),
   requestPasswordReset: (...args: unknown[]) => mockRequestPasswordReset(...args),
+}));
+
+vi.mock("expo-router", () => ({
+  useRouter: () => ({ replace: mockRouterReplace }),
 }));
 
 vi.mock("expo-apple-authentication", () => ({
@@ -138,7 +145,7 @@ describe("LoginScreen", () => {
       identity: ["google"],
       data: [],
     });
-    mockStartOAuthLogin.mockResolvedValue("test-token-123");
+    mockStartOAuthLogin.mockResolvedValue({ session: "test-token-123", isNewUser: false });
 
     render(<LoginScreen />);
 
@@ -152,6 +159,28 @@ describe("LoginScreen", () => {
       expect(mockStartOAuthLogin).toHaveBeenCalledWith("https://test.example.com", "google", false);
     });
     expect(mockOnLoginSuccess).toHaveBeenCalledWith("test-token-123");
+    expect(mockRouterReplace).not.toHaveBeenCalled();
+  });
+
+  it("routes new OAuth users to onboarding after login", async () => {
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: ["google"],
+      data: [],
+    });
+    mockStartOAuthLogin.mockResolvedValue({ session: "new-token-123", isNewUser: true });
+
+    render(<LoginScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Sign in with Google")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText("Sign in with Google"));
+
+    await waitFor(() => {
+      expect(mockOnLoginSuccess).toHaveBeenCalledWith("new-token-123");
+    });
+    expect(mockRouterReplace).toHaveBeenCalledWith("/onboarding");
   });
 
   it("does not call onLoginSuccess when OAuth returns no token", async () => {
@@ -173,6 +202,40 @@ describe("LoginScreen", () => {
       expect(mockStartOAuthLogin).toHaveBeenCalled();
     });
     expect(mockOnLoginSuccess).not.toHaveBeenCalled();
+  });
+
+  it("routes new password registrations to onboarding after login", async () => {
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+    mockRegisterWithPassword.mockResolvedValue({ session: "new-password-token", isNewUser: true });
+
+    render(<LoginScreen />);
+
+    fireEvent.click(await screen.findByText("Create account"));
+    fireEvent.change(screen.getByPlaceholderText("Name"), {
+      target: { value: "New User" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Email"), {
+      target: { value: "new@example.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password"), {
+      target: { value: "password123" },
+    });
+    fireEvent.click(screen.getAllByText("Create account")[1]);
+
+    await waitFor(() => {
+      expect(mockRegisterWithPassword).toHaveBeenCalledWith(
+        "https://test.example.com",
+        "new@example.com",
+        "password123",
+        "New User",
+      );
+    });
+    expect(mockOnLoginSuccess).toHaveBeenCalledWith("new-password-token");
+    expect(mockRouterReplace).toHaveBeenCalledWith("/onboarding");
   });
 
   it("shows error when login fails", async () => {
@@ -246,7 +309,7 @@ describe("LoginScreen", () => {
       nativeApple: true,
     });
     mockStartNativeAppleSignIn.mockRejectedValue(new Error("native apple failed"));
-    mockStartOAuthLogin.mockResolvedValue("fallback-token");
+    mockStartOAuthLogin.mockResolvedValue({ session: "fallback-token", isNewUser: false });
 
     render(<LoginScreen />);
 

@@ -6,6 +6,7 @@ export type { AuthUser, ConfiguredProviders, IdentityProviderName } from "@dofek
 const passwordAuthResponseSchema = z.object({
   session: z.string().optional(),
   redirect: z.string(),
+  isNewUser: z.boolean().default(false),
   error: z.string().optional(),
 });
 
@@ -19,7 +20,7 @@ export interface PasswordAuthInput {
 async function submitPasswordAuth(
   path: "/auth/login/password" | "/auth/register",
   body: Record<string, string | undefined>,
-): Promise<{ redirect: string }> {
+): Promise<{ redirect: string; isNewUser: boolean }> {
   const res = await fetch(path, {
     method: "POST",
     headers: {
@@ -40,7 +41,7 @@ async function submitPasswordAuth(
   if (!parsed.success) {
     throw new Error("Authentication failed");
   }
-  return { redirect: parsed.data.redirect };
+  return { redirect: parsed.data.redirect, isNewUser: parsed.data.isNewUser };
 }
 
 /** Fetch the currently authenticated user, or null if not logged in. */
@@ -59,7 +60,9 @@ export async function fetchConfiguredProviders(): Promise<ConfiguredProviders> {
   return res.json();
 }
 
-export async function loginWithPassword(input: PasswordAuthInput): Promise<{ redirect: string }> {
+export async function loginWithPassword(
+  input: PasswordAuthInput,
+): Promise<{ redirect: string; isNewUser: boolean }> {
   return submitPasswordAuth("/auth/login/password", {
     email: input.email,
     password: input.password,
@@ -69,7 +72,7 @@ export async function loginWithPassword(input: PasswordAuthInput): Promise<{ red
 
 export async function registerWithPassword(
   input: PasswordAuthInput,
-): Promise<{ redirect: string }> {
+): Promise<{ redirect: string; isNewUser: boolean }> {
   return submitPasswordAuth("/auth/register", {
     email: input.email,
     password: input.password,

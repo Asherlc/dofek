@@ -18,6 +18,7 @@ import { logger } from "../../logger.ts";
 import {
   getDb,
   getIdentityFlowStoreRef,
+  getPostLoginRedirect,
   isIdentityProviderName,
   sanitizeReturnTo,
 } from "./shared.ts";
@@ -133,7 +134,7 @@ export async function handleIdentityCallback(
     const db = getDb();
 
     // Resolve or create user (with email-based auto-linking and optional logged-in linking)
-    const { userId } = await resolveOrCreateUser(
+    const { userId, isNewUser } = await resolveOrCreateUser(
       db,
       providerName,
       {
@@ -163,7 +164,10 @@ export async function handleIdentityCallback(
       // Mobile: redirect to app via deep link with session token
       if (mobileScheme && isValidMobileScheme(mobileScheme)) {
         logger.info(`[auth] User ${userId} logged in via ${providerName} (mobile)`);
-        res.redirect(`${mobileScheme}://auth/callback?session=${sessionInfo.sessionId}`);
+        const newUserParam = isNewUser ? "&new_user=true" : "";
+        res.redirect(
+          `${mobileScheme}://auth/callback?session=${sessionInfo.sessionId}${newUserParam}`,
+        );
         return;
       }
 
@@ -171,7 +175,7 @@ export async function handleIdentityCallback(
     }
 
     logger.info(`[auth] User ${userId} ${linkUserId ? "linked" : "logged in via"} ${providerName}`);
-    res.redirect(linkUserId ? "/settings" : (sanitizeReturnTo(returnTo) ?? "/"));
+    res.redirect(linkUserId ? "/settings" : getPostLoginRedirect(returnTo, isNewUser));
   } catch (err: unknown) {
     Sentry.captureException(err);
     const message = err instanceof Error ? err.message : String(err);

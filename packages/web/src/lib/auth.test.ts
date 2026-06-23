@@ -147,7 +147,7 @@ describe("loginWithPassword", () => {
       returnTo: "/dashboard",
     });
 
-    expect(result).toEqual({ redirect: "/dashboard" });
+    expect(result).toEqual({ redirect: "/dashboard", isNewUser: false });
     expect(fetch).toHaveBeenCalledWith("/auth/login/password", {
       method: "POST",
       headers: {
@@ -218,7 +218,8 @@ describe("registerWithPassword", () => {
     vi.mocked(fetch).mockResolvedValue(
       mockResponse({
         ok: true,
-        json: () => Promise.resolve({ session: "sess-1", redirect: "/onboarding" }),
+        json: () =>
+          Promise.resolve({ session: "sess-1", redirect: "/?newUser=true", isNewUser: true }),
       }),
     );
 
@@ -229,7 +230,7 @@ describe("registerWithPassword", () => {
       returnTo: "/onboarding",
     });
 
-    expect(result).toEqual({ redirect: "/onboarding" });
+    expect(result).toEqual({ redirect: "/?newUser=true", isNewUser: true });
     expect(fetch).toHaveBeenCalledWith("/auth/register", {
       method: "POST",
       headers: {

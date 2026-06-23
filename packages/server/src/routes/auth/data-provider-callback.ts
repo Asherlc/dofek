@@ -15,9 +15,9 @@ import {
   getDb,
   getOAuth1SecretStoreRef,
   getOAuthStateStoreRef,
+  getPostLoginRedirect,
   oauthSuccessHtml,
   persistProviderConnection,
-  sanitizeReturnTo,
   storePendingEmailSignup,
 } from "./shared.ts";
 import { handleSlackCallback } from "./slack-oauth.ts";
@@ -245,9 +245,15 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
 
       if (intent === "login") {
         try {
-          const { userId } = await resolveOrCreateUser(db, providerId, identity, undefined, {
-            requireEmailForNewUser: setup.identityCapabilities?.providesEmail === false,
-          });
+          const { userId, isNewUser } = await resolveOrCreateUser(
+            db,
+            providerId,
+            identity,
+            undefined,
+            {
+              requireEmailForNewUser: setup.identityCapabilities?.providesEmail === false,
+            },
+          );
           await persistProviderConnection({
             db,
             provider,
@@ -261,15 +267,16 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
           // Mobile: redirect to app via deep link with session token
           if (stateEntry.mobileScheme && isValidMobileScheme(stateEntry.mobileScheme)) {
             logger.info(`[auth] User ${userId} logged in via data provider ${providerId} (mobile)`);
+            const newUserParam = isNewUser ? "&new_user=true" : "";
             res.redirect(
-              `${stateEntry.mobileScheme}://auth/callback?session=${sessionInfo.sessionId}`,
+              `${stateEntry.mobileScheme}://auth/callback?session=${sessionInfo.sessionId}${newUserParam}`,
             );
             return;
           }
 
           setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
           logger.info(`[auth] User ${userId} logged in via data provider ${providerId}`);
-          res.redirect(sanitizeReturnTo(returnTo) ?? "/");
+          res.redirect(getPostLoginRedirect(returnTo, isNewUser));
           return;
         } catch (loginErr: unknown) {
           if (loginErr instanceof MissingEmailForSignupError) {

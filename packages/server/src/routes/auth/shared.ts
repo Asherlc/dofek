@@ -129,6 +129,10 @@ export function sanitizeReturnTo(returnTo: string | undefined): string | undefin
   return returnTo;
 }
 
+export function getPostLoginRedirect(returnTo: string | undefined, isNewUser: boolean): string {
+  return sanitizeReturnTo(returnTo) ?? (isNewUser ? "/?newUser=true" : "/");
+}
+
 export function completeSignupHtml(
   providerName: string,
   token: string,

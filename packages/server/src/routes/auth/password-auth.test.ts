@@ -73,6 +73,8 @@ vi.mock("../../auth/cookies.ts", () => ({
 
 vi.mock("./shared.ts", () => ({
   getDb: () => ({}),
+  getPostLoginRedirect: (value: string | undefined, isNewUser: boolean) =>
+    mockSanitizeReturnTo(value) ?? (isNewUser ? "/?newUser=true" : "/"),
   sanitizeReturnTo: (value: string | undefined) => mockSanitizeReturnTo(value),
 }));
 
@@ -165,18 +167,34 @@ describe("handlePasswordRegister", () => {
     expect(mockSetSessionCookie).toHaveBeenCalledWith(res, "sess-register", new Date("2027-01-01"));
     expect(res.json).toHaveBeenCalledWith({
       session: "sess-register",
-      redirect: "/",
+      redirect: "/?newUser=true",
+      isNewUser: true,
     });
   });
 
-  it("redirects to home after registration when json is not requested", async () => {
+  it("marks new registrations in the default redirect", async () => {
+    const { req, res } = createMockReqRes({
+      body: { email: "user@example.com", password: "password123", name: "User" },
+      headers: { accept: "application/json" },
+    });
+
+    await handlePasswordRegister(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({
+      session: "sess-register",
+      redirect: "/?newUser=true",
+      isNewUser: true,
+    });
+  });
+
+  it("redirects to the explicit return path after registration when json is not requested", async () => {
     const { req, res } = createMockReqRes({
       body: { email: "user@example.com", password: "password123", return_to: "/onboarding" },
     });
 
     await handlePasswordRegister(req, res);
 
-    expect(res.redirect).toHaveBeenCalledWith("/");
+    expect(res.redirect).toHaveBeenCalledWith("/onboarding");
   });
 
   it("uses content-type json to detect json responses", async () => {
@@ -285,10 +303,11 @@ describe("handlePasswordLogin", () => {
     expect(res.json).toHaveBeenCalledWith({
       session: "sess-login",
       redirect: "/",
+      isNewUser: false,
     });
   });
 
-  it("redirects to home after login when json is not requested", async () => {
+  it("redirects to the explicit return path after login when json is not requested", async () => {
     const { req, res } = createMockReqRes({
       body: { email: "user@example.com", password: "password123" },
       query: { return_to: "/dashboard" },
@@ -296,7 +315,7 @@ describe("handlePasswordLogin", () => {
 
     await handlePasswordLogin(req, res);
 
-    expect(res.redirect).toHaveBeenCalledWith("/");
+    expect(res.redirect).toHaveBeenCalledWith("/dashboard");
   });
 
   it("returns 401 for invalid credentials", async () => {

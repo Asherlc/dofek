@@ -1,5 +1,6 @@
 import { providerLabel } from "@dofek/providers/providers";
 import * as AppleAuthentication from "expo-apple-authentication";
+import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -37,6 +38,7 @@ function hasCancelCode(
 
 export default function LoginScreen() {
   const { serverUrl, onLoginSuccess } = useAuth();
+  const router = useRouter();
   const [providers, setProviders] = useState<ConfiguredProviders | null>(null);
   const [nativeAppleSignInAvailable, setNativeAppleSignInAvailable] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -76,16 +78,19 @@ export default function LoginScreen() {
     setError(null);
 
     try {
-      let token: string | null;
+      let result: { session: string; isNewUser: boolean } | null;
 
       if (providerId === "apple" && !isDataProvider && nativeAppleSignInAvailable) {
-        token = await startNativeAppleSignIn(serverUrl);
+        result = await startNativeAppleSignIn(serverUrl);
       } else {
-        token = await startOAuthLogin(serverUrl, providerId, isDataProvider);
+        result = await startOAuthLogin(serverUrl, providerId, isDataProvider);
       }
 
-      if (token) {
-        await onLoginSuccess(token);
+      if (result) {
+        await onLoginSuccess(result.session);
+        if (result.isNewUser) {
+          router.replace("/onboarding");
+        }
       }
     } catch (err: unknown) {
       const isCancel =
@@ -110,11 +115,14 @@ export default function LoginScreen() {
     setError(null);
 
     try {
-      const token =
+      const result =
         authMode === "register"
           ? await registerWithPassword(serverUrl, email.trim(), password, name.trim() || undefined)
           : await loginWithPassword(serverUrl, email.trim(), password);
-      await onLoginSuccess(token);
+      await onLoginSuccess(result.session);
+      if (result.isNewUser) {
+        router.replace("/onboarding");
+      }
     } catch (err: unknown) {
       captureException(err, { source: "login-screen-password-auth" });
       setError(err instanceof Error ? err.message : "Authentication failed");

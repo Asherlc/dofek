@@ -10,6 +10,7 @@ import {
   registerWithPassword,
   requestPasswordReset,
   startNativeAppleSignIn,
+  startOAuthLogin,
 } from "./auth";
 
 // Mock expo-secure-store, expo-web-browser, and expo-apple-authentication so the module loads in Node
@@ -35,6 +36,8 @@ vi.mock("expo-apple-authentication", () => ({
 vi.mock("react-native", () => ({
   Platform: { OS: "ios" },
 }));
+
+import * as WebBrowser from "expo-web-browser";
 
 describe("AuthUserSchema", () => {
   it("parses a valid user", () => {
@@ -214,7 +217,7 @@ describe("startNativeAppleSignIn", () => {
     vi.restoreAllMocks();
   });
 
-  it("returns session token on successful native sign-in", async () => {
+  it("returns auth result on successful native sign-in", async () => {
     mockSignInAsync.mockResolvedValueOnce({
       user: "apple-user-123",
       authorizationCode: "native-auth-code",
@@ -227,14 +230,14 @@ describe("startNativeAppleSignIn", () => {
     });
 
     vi.mocked(fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify({ session: "sess-native-123" }), {
+      new Response(JSON.stringify({ session: "sess-native-123", isNewUser: true }), {
         status: 200,
         headers: { "content-type": "application/json" },
       }),
     );
 
-    const token = await startNativeAppleSignIn("https://srv");
-    expect(token).toBe("sess-native-123");
+    const result = await startNativeAppleSignIn("https://srv");
+    expect(result).toEqual({ session: "sess-native-123", isNewUser: true });
 
     expect(fetch).toHaveBeenCalledWith("https://srv/auth/apple/native", {
       method: "POST",
@@ -283,6 +286,35 @@ describe("startNativeAppleSignIn", () => {
   });
 });
 
+describe("startOAuthLogin", () => {
+  beforeEach(() => {
+    vi.mocked(WebBrowser.openAuthSessionAsync).mockReset();
+  });
+
+  it("returns auth result from successful deep link", async () => {
+    vi.mocked(WebBrowser.openAuthSessionAsync).mockResolvedValueOnce({
+      type: "success",
+      url: "dofek://auth/callback?session=sess-oauth-1&new_user=true",
+    });
+
+    const result = await startOAuthLogin("https://srv", "google", false);
+
+    expect(result).toEqual({ session: "sess-oauth-1", isNewUser: true });
+    expect(WebBrowser.openAuthSessionAsync).toHaveBeenCalledWith(
+      "https://srv/auth/login/google?redirect_scheme=dofek",
+      "dofek://auth/callback",
+    );
+  });
+
+  it("returns null when OAuth is cancelled", async () => {
+    vi.mocked(WebBrowser.openAuthSessionAsync).mockResolvedValueOnce({
+      type: "cancel",
+    });
+
+    await expect(startOAuthLogin("https://srv", "google", false)).resolves.toBeNull();
+  });
+});
+
 describe("loginWithPassword", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
@@ -292,7 +324,7 @@ describe("loginWithPassword", () => {
     vi.restoreAllMocks();
   });
 
-  it("returns session token on success", async () => {
+  it("returns auth result on success", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       new Response(JSON.stringify({ session: "sess-password-1", redirect: "/" }), {
         status: 200,
@@ -300,8 +332,8 @@ describe("loginWithPassword", () => {
       }),
     );
 
-    const token = await loginWithPassword("https://srv", "user@example.com", "password123");
-    expect(token).toBe("sess-password-1");
+    const result = await loginWithPassword("https://srv", "user@example.com", "password123");
+    expect(result).toEqual({ session: "sess-password-1", isNewUser: false });
   });
 
   it("throws server error message when login fails", async () => {
@@ -340,21 +372,24 @@ describe("registerWithPassword", () => {
     vi.restoreAllMocks();
   });
 
-  it("returns session token on success", async () => {
+  it("returns auth result on success", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify({ session: "sess-register-1", redirect: "/" }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      }),
+      new Response(
+        JSON.stringify({ session: "sess-register-1", redirect: "/?newUser=true", isNewUser: true }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
     );
 
-    const token = await registerWithPassword(
+    const result = await registerWithPassword(
       "https://srv",
       "user@example.com",
       "password123",
       "User",
     );
-    expect(token).toBe("sess-register-1");
+    expect(result).toEqual({ session: "sess-register-1", isNewUser: true });
   });
 
   it("throws server error message when registration fails", async () => {

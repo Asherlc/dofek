@@ -75,7 +75,8 @@ export const Route = createRootRoute({
   },
   validateSearch: (
     search: Record<string, unknown>,
-  ): { providerGuide?: boolean; returnTo?: string } => ({
+  ): { newUser?: boolean; providerGuide?: boolean; returnTo?: string } => ({
+    newUser: search.newUser === true || search.newUser === "true" || undefined,
     providerGuide: search.providerGuide === true || search.providerGuide === "true" || undefined,
     returnTo: parseReturnTo(search.returnTo),
   }),

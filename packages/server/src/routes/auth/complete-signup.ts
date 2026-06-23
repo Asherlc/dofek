@@ -10,8 +10,8 @@ import {
   deletePendingEmailSignup,
   getDb,
   getPendingEmailSignup,
+  getPostLoginRedirect,
   persistProviderConnection,
-  sanitizeReturnTo,
 } from "./shared.ts";
 
 export async function handleCompleteSignup(req: Request, res: Response): Promise<void> {
@@ -40,7 +40,7 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
     }
 
     const db = getDb();
-    const { userId } = await resolveOrCreateUser(db, pending.providerId, {
+    const { userId, isNewUser } = await resolveOrCreateUser(db, pending.providerId, {
       providerAccountId: pending.identity.providerAccountId,
       email: parsedEmail.data,
       name: pending.identity.name,
@@ -65,13 +65,16 @@ export async function handleCompleteSignup(req: Request, res: Response): Promise
 
     if (pending.mobileScheme && isValidMobileScheme(pending.mobileScheme)) {
       logger.info(`[auth] User ${userId} completed signup via ${pending.providerId} (mobile)`);
-      res.redirect(`${pending.mobileScheme}://auth/callback?session=${sessionInfo.sessionId}`);
+      const newUserParam = isNewUser ? "&new_user=true" : "";
+      res.redirect(
+        `${pending.mobileScheme}://auth/callback?session=${sessionInfo.sessionId}${newUserParam}`,
+      );
       return;
     }
 
     setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
     logger.info(`[auth] User ${userId} completed signup via ${pending.providerId}`);
-    res.redirect(sanitizeReturnTo(pending.returnTo) ?? "/");
+    res.redirect(getPostLoginRedirect(pending.returnTo, isNewUser));
   } catch (err: unknown) {
     Sentry.captureException(err);
     logger.error(`[auth] Completing signup failed: ${err}`);
