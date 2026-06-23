@@ -1,12 +1,7 @@
 import { WhoopClient } from "whoop-whoop/client";
 import { withSyncLog } from "../../db/sync-log.ts";
-import { deleteTokens, loadTokens, saveTokens } from "../../db/tokens.ts";
 import { runWithSyncStepAdmission } from "../../lib/sync-step-admission-context.ts";
 import { logger } from "../../logger.ts";
-import {
-  ProviderStoredIdentityMissingError,
-  RefreshTokenRevokedError,
-} from "../auth-errors.ts";
 import type { SyncRun } from "../sync-run.ts";
 import { SyncWindow } from "../sync-window.ts";
 import type { SyncError, SyncResult } from "../types.ts";
@@ -26,6 +21,7 @@ import { syncWhoopSleepSessions, syncWhoopSleepStagesForId } from "./sync-sleep.
 import { planWhoopApiSteps } from "./sync-step-plan.ts";
 import { syncWhoopHeartRateForWindow } from "./sync-streams.ts";
 import type { WhoopPersistenceContext, WhoopSyncContext } from "./sync-types.ts";
+import { resolveWhoopTokens } from "./resolve-tokens.ts";
 import {
   fetchWhoopDeveloperWorkoutsPage,
   persistWhoopWorkoutsFromCycles,
@@ -41,77 +37,13 @@ type WhoopOrchestratorResult = {
   complete: boolean;
 };
 
-function isWhoopRefreshTokenRevoked(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.includes("NotAuthorizedException");
-}
-
 async function createWhoopClient(
   db: SyncRun["db"],
-  providerId: string,
   fetchFn: typeof globalThis.fetch,
   runUserId?: string,
 ): Promise<WhoopClient> {
-  const stored = await loadTokens(db, providerId, runUserId);
-  if (!stored?.refreshToken) {
-    throw new Error("WHOOP not connected — authenticate via the web UI");
-  }
-
-  const storedUserIdMatch = stored.scopes?.match(/userId:(\d+)/);
-  const storedUserId = storedUserIdMatch ? Number(storedUserIdMatch[1]) : null;
-  const accessTokenStillValid = stored.expiresAt > new Date();
-
-  if (accessTokenStillValid && storedUserId != null) {
-    return new WhoopClient(
-      {
-        accessToken: stored.accessToken,
-        refreshToken: stored.refreshToken,
-        userId: storedUserId,
-      },
-      fetchFn,
-      createWhoopRequestLogger(),
-    );
-  }
-
-  let accessToken = stored.accessToken;
-  let refreshToken = stored.refreshToken;
-  let userId = storedUserId;
-
-  try {
-    const refreshed = await WhoopClient.refreshAccessToken(stored.refreshToken, fetchFn);
-    accessToken = refreshed.accessToken;
-    refreshToken = refreshed.refreshToken;
-    userId = storedUserId ?? refreshed.userId;
-  } catch (error: unknown) {
-    if (isWhoopRefreshTokenRevoked(error)) {
-      logger.warn(
-        "[whoop] Cognito refresh token rejected — deleting stored tokens. User must reconnect WHOOP.",
-      );
-      await deleteTokens(db, providerId, runUserId);
-      throw new RefreshTokenRevokedError("WHOOP", {
-        cause: error instanceof Error ? error : undefined,
-      });
-    }
-    throw error;
-  }
-
-  if (!userId) {
-    throw new ProviderStoredIdentityMissingError("WHOOP", "user ID");
-  }
-
-  await saveTokens(
-    db,
-    providerId,
-    {
-      accessToken,
-      refreshToken,
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-      scopes: `userId:${userId}`,
-    },
-    runUserId,
-  );
-
-  return new WhoopClient({ accessToken, refreshToken, userId }, fetchFn, createWhoopRequestLogger());
+  const token = await resolveWhoopTokens({ db, fetchFn, userId: runUserId });
+  return new WhoopClient(token, fetchFn, createWhoopRequestLogger());
 }
 
 function createWhoopRequestLogger(): (event: {
@@ -441,13 +373,13 @@ async function runWhoopSyncStep(
     const needsFetch =
       checkpoint.cycleFetchCursorMs != null && checkpoint.cycleFetchCursorMs < windowEndMs;
     if (needsFetch) {
-      const client = await createWhoopClient(run.db, "whoop", fetchFn, run.options.userId);
+      const client = await createWhoopClient(run.db, fetchFn, run.options.userId);
       return runBootstrapStep(run, checkpoint, client, errors);
     }
     return runBootstrapPersist(run, checkpoint, errors);
   }
 
-  const client = await createWhoopClient(run.db, "whoop", fetchFn, run.options.userId);
+  const client = await createWhoopClient(run.db, fetchFn, run.options.userId);
   if (checkpoint.phase === "api") {
     return runApiStep(run, checkpoint, client, errors);
   }

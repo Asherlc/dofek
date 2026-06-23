@@ -1,4 +1,5 @@
 import type { Provider, ProviderAuthSetup, ProviderAuthType } from "./types.ts";
+import { CUSTOM_AUTH_SYNC_PROVIDER_IDS } from "./custom-auth-providers.ts";
 
 /**
  * Sync providers that predated the per-user auth requirement and still use
@@ -44,6 +45,10 @@ export function checkPerUserAuthCompliance(provider: Provider): PerUserAuthCompl
   }
 
   if (!requiresPerUserConnect(provider.id)) {
+    return { ok: true };
+  }
+
+  if (CUSTOM_AUTH_SYNC_PROVIDER_IDS.has(provider.id)) {
     return { ok: true };
   }
 

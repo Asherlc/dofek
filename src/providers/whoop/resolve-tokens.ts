@@ -1,0 +1,97 @@
+import { WhoopClient } from "whoop-whoop/client";
+import type { WhoopAuthToken } from "whoop-whoop/types";
+import type { TokenSet } from "../../auth/oauth.ts";
+import type { SyncDatabase } from "../../db/index.ts";
+import { deleteTokens, loadTokens, saveTokens } from "../../db/tokens.ts";
+import { logger } from "../../logger.ts";
+import {
+  ProviderStoredIdentityMissingError,
+  RefreshTokenRevokedError,
+} from "../auth-errors.ts";
+
+export const WHOOP_PROVIDER_ID = "whoop";
+export const WHOOP_ACCESS_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
+
+type FetchFn = typeof globalThis.fetch;
+
+export function parseWhoopUserIdFromScopes(scopes: string | null | undefined): number | null {
+  const match = scopes?.match(/userId:(\d+)/);
+  return match ? Number(match[1]) : null;
+}
+
+export function buildWhoopTokenSet(token: WhoopAuthToken): TokenSet {
+  return {
+    accessToken: token.accessToken,
+    refreshToken: token.refreshToken,
+    expiresAt: new Date(Date.now() + WHOOP_ACCESS_TOKEN_TTL_MS),
+    scopes: `userId:${token.userId}`,
+  };
+}
+
+export async function saveWhoopAuthTokens(
+  db: SyncDatabase,
+  token: WhoopAuthToken,
+  userId?: string,
+): Promise<void> {
+  await saveTokens(db, WHOOP_PROVIDER_ID, buildWhoopTokenSet(token), userId);
+}
+
+function isWhoopRefreshTokenRevoked(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("NotAuthorizedException");
+}
+
+/**
+ * Shared WHOOP Cognito token resolution: load stored tokens, reuse a valid
+ * access token when possible, otherwise refresh via Cognito and persist.
+ */
+export async function resolveWhoopTokens(options: {
+  db: SyncDatabase;
+  fetchFn?: FetchFn;
+  userId?: string;
+}): Promise<WhoopAuthToken> {
+  const { db, fetchFn = globalThis.fetch, userId } = options;
+
+  const stored = await loadTokens(db, WHOOP_PROVIDER_ID, userId);
+  if (!stored?.refreshToken) {
+    throw new Error("WHOOP not connected — authenticate via the web UI");
+  }
+
+  const storedUserId = parseWhoopUserIdFromScopes(stored.scopes);
+  const accessTokenStillValid = stored.expiresAt > new Date();
+
+  if (accessTokenStillValid && storedUserId != null) {
+    return {
+      accessToken: stored.accessToken,
+      refreshToken: stored.refreshToken,
+      userId: storedUserId,
+    };
+  }
+
+  try {
+    const refreshed = await WhoopClient.refreshAccessToken(stored.refreshToken, fetchFn);
+    const resolvedUserId = storedUserId ?? refreshed.userId;
+    if (!resolvedUserId) {
+      throw new ProviderStoredIdentityMissingError("WHOOP", "user ID");
+    }
+
+    const token: WhoopAuthToken = {
+      accessToken: refreshed.accessToken,
+      refreshToken: refreshed.refreshToken,
+      userId: resolvedUserId,
+    };
+    await saveWhoopAuthTokens(db, token, userId);
+    return token;
+  } catch (error: unknown) {
+    if (isWhoopRefreshTokenRevoked(error)) {
+      logger.warn(
+        "[whoop] Cognito refresh token rejected — deleting stored tokens. User must reconnect WHOOP.",
+      );
+      await deleteTokens(db, WHOOP_PROVIDER_ID, userId);
+      throw new RefreshTokenRevokedError("WHOOP", {
+        cause: error instanceof Error ? error : undefined,
+      });
+    }
+    throw error;
+  }
+}

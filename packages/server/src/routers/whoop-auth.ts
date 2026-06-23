@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/node";
 import { TRPCError } from "@trpc/server";
-import { ensureProvider, saveTokens } from "dofek/db/tokens";
+import { ensureProvider } from "dofek/db/tokens";
+import { saveWhoopAuthTokens } from "dofek/providers/whoop/resolve-tokens";
 import { queryCache } from "dofek/lib/cache";
 import { WhoopClient } from "whoop-whoop/client";
 import { z } from "zod";
@@ -139,14 +140,12 @@ export const whoopAuthRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       await ensureProvider(ctx.db, "whoop", "WHOOP", undefined, ctx.userId);
-      await saveTokens(
+      await saveWhoopAuthTokens(
         ctx.db,
-        "whoop",
         {
           accessToken: input.accessToken,
           refreshToken: input.refreshToken,
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-          scopes: `userId:${input.userId}`,
+          userId: input.userId,
         },
         ctx.userId,
       );

@@ -10,6 +10,7 @@ import {
   authFailureReasonFromError,
   type ProviderAuthFailureReason,
 } from "../providers/auth-errors.ts";
+import { providerRequiresStoredTokens } from "../providers/custom-auth-providers.ts";
 import { SyncRun } from "../providers/sync-run.ts";
 import type { SyncCheckpointStore, SyncError } from "../providers/types.ts";
 import {
@@ -149,7 +150,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
 
     await ensureProvider(db, provider.id, provider.name, undefined, job.data.userId);
 
-    const requiresTokens = provider.authSetup !== undefined;
+    const requiresTokens = providerRequiresStoredTokens(provider);
     if (requiresTokens) {
       const tokens = await loadTokens(db, provider.id, job.data.userId);
       if (!tokens) {

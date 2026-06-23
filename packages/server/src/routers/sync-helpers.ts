@@ -1,10 +1,8 @@
 import { getConfiguredProviderIds } from "dofek/jobs/provider-queue-config";
+import { CUSTOM_AUTH_PROVIDERS } from "dofek/providers/custom-auth-providers";
 import { registerProvider } from "dofek/providers/registry";
 
-export const CUSTOM_AUTH_PROVIDERS: Record<string, string> = {
-  whoop: "custom:whoop",
-  garmin: "custom:garmin",
-};
+export { CUSTOM_AUTH_PROVIDERS };
 
 export const UPLOAD_IMPORT_PROVIDERS = [
   {

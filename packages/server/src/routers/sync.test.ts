@@ -544,10 +544,6 @@ describe("syncRouter", () => {
           id: "whoop",
           name: "WHOOP",
           validate: () => null,
-          authSetup: () => ({
-            oauthConfig: { clientId: "whoop", authorizeUrl: "", tokenUrl: "", redirectUri: "" },
-            automatedLogin: async () => ({}),
-          }),
         },
         {
           id: "intervals",
@@ -573,7 +569,7 @@ describe("syncRouter", () => {
 
       const result = await caller.triggerSync({});
       // wahoo has authSetup but no token — excluded
-      // whoop has authSetup but no token — excluded
+      // whoop has no token — excluded when custom auth overrides mark it as needing auth
       // strava has authSetup and has token — included
       // intervals has no authSetup — included (no auth needed)
       expect(result.providerJobs).toEqual([

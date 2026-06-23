@@ -2152,99 +2152,6 @@ describe("parseJournalResponse — answer text extraction", () => {
 });
 
 // ============================================================
-// Provider authSetup / getUserIdentity tests
-// ============================================================
-
-describe("WhoopProvider.authSetup()", () => {
-  const originalEnv = { ...process.env };
-
-  afterEach(() => {
-    process.env = { ...originalEnv };
-  });
-
-  it("returns auth setup with OAuth config when env vars are set", () => {
-    process.env.WHOOP_CLIENT_ID = "test-id";
-    process.env.WHOOP_CLIENT_SECRET = "test-secret";
-    const provider = new WhoopProvider();
-    const setup = provider.authSetup();
-    expect(setup).toBeDefined();
-    expect(setup?.oauthConfig?.clientId).toBe("test-id");
-    expect(setup?.oauthConfig?.scopes).toContain("read:profile");
-    expect(setup?.exchangeCode).toBeTypeOf("function");
-  });
-
-  it("returns undefined when env vars are missing", () => {
-    delete process.env.WHOOP_CLIENT_ID;
-    delete process.env.WHOOP_CLIENT_SECRET;
-    const provider = new WhoopProvider();
-    expect(provider.authSetup()).toBeUndefined();
-  });
-});
-
-describe("WhoopProvider.getUserIdentity()", () => {
-  const originalEnv = { ...process.env };
-
-  afterEach(() => {
-    process.env = { ...originalEnv };
-  });
-
-  it("returns identity from profile API", async () => {
-    process.env.WHOOP_CLIENT_ID = "test-id";
-    process.env.WHOOP_CLIENT_SECRET = "test-secret";
-
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return Response.json({
-        user_id: 12345,
-        email: "whoop@test.com",
-        first_name: "John",
-        last_name: "Doe",
-      });
-    };
-
-    const provider = new WhoopProvider(mockFetch);
-    const setup = provider.authSetup();
-    if (!setup?.getUserIdentity) throw new Error("getUserIdentity not defined");
-    const identity = await setup.getUserIdentity("test-token");
-    expect(identity.providerAccountId).toBe("12345");
-    expect(identity.email).toBe("whoop@test.com");
-    expect(identity.name).toBe("John Doe");
-  });
-
-  it("handles missing name fields", async () => {
-    process.env.WHOOP_CLIENT_ID = "test-id";
-    process.env.WHOOP_CLIENT_SECRET = "test-secret";
-
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return Response.json({ user_id: 99 });
-    };
-
-    const provider = new WhoopProvider(mockFetch);
-    const setup = provider.authSetup();
-    if (!setup?.getUserIdentity) throw new Error("getUserIdentity not defined");
-    const identity = await setup.getUserIdentity("test-token");
-    expect(identity.providerAccountId).toBe("99");
-    expect(identity.email).toBeNull();
-    expect(identity.name).toBeNull();
-  });
-
-  it("throws on API error", async () => {
-    process.env.WHOOP_CLIENT_ID = "test-id";
-    process.env.WHOOP_CLIENT_SECRET = "test-secret";
-
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return new Response("Forbidden", { status: 403 });
-    };
-
-    const provider = new WhoopProvider(mockFetch);
-    const setup = provider.authSetup();
-    if (!setup?.getUserIdentity) throw new Error("getUserIdentity not defined");
-    await expect(setup.getUserIdentity("bad-token")).rejects.toThrow(
-      "Whoop profile API error (403)",
-    );
-  });
-});
-
-// ============================================================
 // Sync flow tests — sleep, HR stream, journal
 // ============================================================
 
@@ -3621,29 +3528,31 @@ describe("WhoopProvider.sync() — strength sync", () => {
 // ============================================================
 
 describe("WhoopProvider — rate-limit aware fetch wiring", () => {
-  const originalEnv = { ...process.env };
+  it("surfaces ProviderRateLimitError tagged with providerId 'whoop' on a 429", async () => {
+    await mockStoredWhoopTokens();
 
-  afterEach(() => {
-    process.env = { ...originalEnv };
-  });
-
-  it("throws ProviderRateLimitError tagged with providerId 'whoop' on a 429", async () => {
-    process.env.WHOOP_CLIENT_ID = "test-id";
-    process.env.WHOOP_CLIENT_SECRET = "test-secret";
-
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> =>
-      new Response("slow down", { status: 429 });
-
+    const mockFetch = makeSyncMockFetch({ cyclesRateLimit: true });
     const provider = new WhoopProvider(mockFetch);
-    const setup = provider.authSetup();
-    if (!setup?.getUserIdentity) throw new Error("getUserIdentity not defined");
+    const db = makeChainableMock();
 
-    // The constructor wraps fetchFn with createRateLimitAwareFetch({ providerId: "whoop" }).
-    // A 429 must surface as a ProviderRateLimitError carrying that providerId.
-    await expect(setup.getUserIdentity("tok")).rejects.toBeInstanceOf(ProviderRateLimitError);
+    await expect(
+      provider.sync(
+        new SyncRun({
+          db,
+          window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+          userId: "00000000-0000-0000-0000-000000000001",
+        }),
+      ),
+    ).rejects.toBeInstanceOf(ProviderRateLimitError);
+
     try {
-      await setup.getUserIdentity("tok");
-      throw new Error("expected throw");
+      await provider.sync(
+        new SyncRun({
+          db,
+          window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+          userId: "00000000-0000-0000-0000-000000000001",
+        }),
+      );
     } catch (err) {
       expect(err).toBeInstanceOf(ProviderRateLimitError);
       if (err instanceof ProviderRateLimitError) {
