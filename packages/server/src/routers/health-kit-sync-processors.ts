@@ -13,6 +13,10 @@ import {
   type MetricStreamEventPublisher,
 } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
+import {
+  buildAppleHealthWorkoutIdentity,
+  collectAppleHealthWorkoutIdentities,
+} from "../../../../src/providers/apple-health/workout-identity.ts";
 import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
 import { computeBoundsFromIsoTimestamps } from "../lib/health-kit-sync-helpers.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
@@ -422,7 +426,18 @@ export async function processWorkouts(
     }
   }
 
-  await activitySync.reconcile();
+  await activitySync.reconcile(undefined, {
+    presentAppleHealthIdentities: collectAppleHealthWorkoutIdentities(
+      workouts.map((workout) =>
+        buildAppleHealthWorkoutIdentity({
+          syncIdentifier: workout.metadata?.HKMetadataKeySyncIdentifier,
+          startedAt: new Date(workout.startDate),
+          endedAt: new Date(workout.endDate),
+          sourceName: workout.sourceName,
+        }),
+      ),
+    ),
+  });
 
   return inserted;
 }

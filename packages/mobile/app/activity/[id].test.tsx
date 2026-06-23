@@ -146,6 +146,13 @@ vi.mock("@dofek/providers/providers", () => ({
       : id === "strava"
         ? "Strava"
         : id,
+  providerAbsentExplanation: (id: string, subsource?: string | null) => {
+    if (id === "apple_health" && subsource) {
+      return `The Apple Health copy of this workout (originally from ${subsource}) was removed from sync. This does not mean ${subsource} deleted the activity.`;
+    }
+    const label = id === "apple_health" ? "Apple Health" : id === "strava" ? "Strava" : id;
+    return `This activity was hidden because ${label} reported it as deleted or missing.`;
+  },
 }));
 
 vi.mock("@dofek/scoring/colors", () => ({

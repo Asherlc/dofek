@@ -39,6 +39,85 @@ tombstoned AS (
     AND a.external_id IS NOT NULL
     AND a.external_id <> ''
 ),
+effective_tombstoned AS (
+  SELECT
+    t.id,
+    t.user_id,
+    t.provider_id,
+    t.external_id,
+    t.started_at,
+    t.ended_at,
+    t.provider_absent_at
+  FROM tombstoned t
+  WHERE t.provider_id <> 'apple_health'
+  UNION ALL
+  SELECT
+    t.id,
+    t.user_id,
+    t.provider_id,
+    t.external_id,
+    t.started_at,
+    t.ended_at,
+    t.provider_absent_at
+  FROM tombstoned t
+  INNER JOIN fitness.activity a ON a.id = t.id
+  WHERE t.provider_id = 'apple_health'
+    AND NOT EXISTS (
+      SELECT 1
+      FROM fitness.activity sib
+      WHERE sib.user_id = a.user_id
+        AND sib.provider_id = 'apple_health'
+        AND sib.deleted_at IS NULL
+        AND sib.id <> a.id
+        AND COALESCE(
+          NULLIF(trim(sib.raw->'metadata'->>'HKMetadataKeySyncIdentifier'), ''),
+          'time:' || sib.started_at::text || ':' || COALESCE(sib.ended_at::text, '') || ':' || COALESCE(
+            NULLIF(trim(sib.raw->>'sourceName'), ''),
+            NULLIF(trim(sib.source_name), ''),
+            ''
+          )
+        ) = COALESCE(
+          NULLIF(trim(a.raw->'metadata'->>'HKMetadataKeySyncIdentifier'), ''),
+          'time:' || a.started_at::text || ':' || COALESCE(a.ended_at::text, '') || ':' || COALESCE(
+            NULLIF(trim(a.raw->>'sourceName'), ''),
+            NULLIF(trim(a.source_name), ''),
+            ''
+          )
+        )
+        AND (
+          sib.provider_absent_at IS NULL AND sib.deleted_at IS NULL
+          OR COALESCE(
+            CASE
+              WHEN (sib.raw->'metadata'->>'HKMetadataKeySyncVersion') ~ '^[0-9]+$'
+                THEN (sib.raw->'metadata'->>'HKMetadataKeySyncVersion')::bigint
+            END,
+            0
+          ) > COALESCE(
+            CASE
+              WHEN (a.raw->'metadata'->>'HKMetadataKeySyncVersion') ~ '^[0-9]+$'
+                THEN (a.raw->'metadata'->>'HKMetadataKeySyncVersion')::bigint
+            END,
+            0
+          )
+          OR (
+            COALESCE(
+              CASE
+                WHEN (sib.raw->'metadata'->>'HKMetadataKeySyncVersion') ~ '^[0-9]+$'
+                  THEN (sib.raw->'metadata'->>'HKMetadataKeySyncVersion')::bigint
+              END,
+              0
+            ) = COALESCE(
+              CASE
+                WHEN (a.raw->'metadata'->>'HKMetadataKeySyncVersion') ~ '^[0-9]+$'
+                  THEN (a.raw->'metadata'->>'HKMetadataKeySyncVersion')::bigint
+              END,
+              0
+            )
+            AND sib.created_at > a.created_at
+          )
+        )
+    )
+),
 clusterable AS (
   SELECT
     r.id,
@@ -112,13 +191,13 @@ absent_source_links AS (
       ORDER BY t.provider_id
     ) AS absent_source_external_ids
   FROM final_groups fg
-  JOIN tombstoned t ON t.id = fg.activity_id
+  JOIN effective_tombstoned t ON t.id = fg.activity_id
   GROUP BY fg.group_id
 ),
 tombstoned_groups AS (
   SELECT DISTINCT fg.group_id
   FROM final_groups fg
-  JOIN tombstoned t ON t.id = fg.activity_id
+  JOIN effective_tombstoned t ON t.id = fg.activity_id
 ),
 merged AS (
   SELECT

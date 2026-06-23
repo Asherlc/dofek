@@ -144,6 +144,11 @@ export const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.text,
   },
+  providerAbsentExplanation: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    lineHeight: 16,
+  },
   deleteButton: {
     backgroundColor: colors.surface,
     borderRadius: 12,

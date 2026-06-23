@@ -1010,7 +1010,13 @@ describe("WhoopProvider.sync() (integration)", () => {
         },
       ),
       ...whoopHandlers(cycles, {
-        developerWorkouts: [],
+        developerWorkouts: [
+          {
+            id: "whoop-present-strength-window-uuid",
+            start: "2026-03-10T08:00:00Z",
+            end: "2026-03-10T09:00:00Z",
+          },
+        ],
       }),
     );
     const provider = new WhoopProvider();

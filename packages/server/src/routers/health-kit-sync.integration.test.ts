@@ -475,7 +475,7 @@ describe("HealthKit sync router", () => {
       expect(rows[0]?.activity_type).toBe("other");
     });
 
-    it("tombstones apple_health workouts missing from a later HealthKit sync window", async () => {
+    it("does not tombstone apple_health workouts when HealthKit returns an empty workout list", async () => {
       await mutate("healthKitSync.pushWorkouts", {
         ...WORKOUT_SYNC_WINDOW,
         workouts: [
@@ -504,7 +504,7 @@ describe("HealthKit sync router", () => {
             WHERE provider_id = 'apple_health'
               AND external_id = 'hk:workout:removed-workout-uuid'`,
       );
-      expect(rows[0]?.provider_absent_at).not.toBeNull();
+      expect(rows[0]?.provider_absent_at).toBeNull();
 
       const visibleRows = await testCtx.db.execute(
         sql`SELECT v.id
@@ -513,7 +513,112 @@ describe("HealthKit sync router", () => {
               ON a.id = ANY(v.member_activity_ids)
             WHERE a.external_id = 'hk:workout:removed-workout-uuid'`,
       );
-      expect(visibleRows).toHaveLength(0);
+      expect(visibleRows).toHaveLength(1);
+    });
+
+    it("tombstones apple_health workouts missing from a later non-empty HealthKit sync window", async () => {
+      await mutate("healthKitSync.pushWorkouts", {
+        ...WORKOUT_SYNC_WINDOW,
+        workouts: [
+          {
+            uuid: "removed-workout-uuid",
+            workoutType: "31",
+            startDate: "2025-06-20T21:49:00Z",
+            endDate: "2025-06-20T22:17:59Z",
+            duration: 1738,
+            totalEnergyBurned: 130,
+            totalDistance: null,
+            sourceName: "WHOOP",
+            sourceBundle: "com.whoop.app",
+          },
+          {
+            uuid: "still-present-workout-uuid",
+            workoutType: "31",
+            startDate: "2025-06-21T21:49:00Z",
+            endDate: "2025-06-21T22:17:59Z",
+            duration: 1738,
+            totalEnergyBurned: 130,
+            totalDistance: null,
+            sourceName: "WHOOP",
+            sourceBundle: "com.whoop.app",
+          },
+        ],
+      });
+
+      await mutate("healthKitSync.pushWorkouts", {
+        ...WORKOUT_SYNC_WINDOW,
+        workouts: [
+          {
+            uuid: "still-present-workout-uuid",
+            workoutType: "31",
+            startDate: "2025-06-21T21:49:00Z",
+            endDate: "2025-06-21T22:17:59Z",
+            duration: 1738,
+            totalEnergyBurned: 130,
+            totalDistance: null,
+            sourceName: "WHOOP",
+            sourceBundle: "com.whoop.app",
+          },
+        ],
+      });
+
+      const rows = await testCtx.db.execute(
+        sql`SELECT provider_absent_at
+            FROM fitness.activity
+            WHERE provider_id = 'apple_health'
+              AND external_id = 'hk:workout:removed-workout-uuid'`,
+      );
+      expect(rows[0]?.provider_absent_at).not.toBeNull();
+    });
+
+    it("does not tombstone an older apple_health workout when a duplicate sync identifier is present", async () => {
+      const workout = {
+        workoutType: "13",
+        startDate: "2025-06-20T21:49:00Z",
+        endDate: "2025-06-20T22:17:59Z",
+        duration: 1738,
+        totalEnergyBurned: 130,
+        totalDistance: 19642.3,
+        sourceName: "Strava",
+        sourceBundle: "com.strava.strava",
+        metadata: {
+          HKMetadataKeySyncIdentifier: "19016909441",
+          HKMetadataKeySyncVersion: 1782091828,
+        },
+      };
+
+      await mutate("healthKitSync.pushWorkouts", {
+        ...WORKOUT_SYNC_WINDOW,
+        workouts: [{ ...workout, uuid: "old-strava-workout-uuid" }],
+      });
+
+      await mutate("healthKitSync.pushWorkouts", {
+        ...WORKOUT_SYNC_WINDOW,
+        workouts: [
+          {
+            ...workout,
+            uuid: "new-strava-workout-uuid",
+            metadata: {
+              HKMetadataKeySyncIdentifier: "19016909441",
+              HKMetadataKeySyncVersion: 1782092778,
+            },
+          },
+        ],
+      });
+
+      const rows = await testCtx.db.execute(
+        sql`SELECT external_id, provider_absent_at
+            FROM fitness.activity
+            WHERE provider_id = 'apple_health'
+              AND external_id IN (
+                'hk:workout:old-strava-workout-uuid',
+                'hk:workout:new-strava-workout-uuid'
+              )
+            ORDER BY external_id`,
+      );
+      expect(rows).toHaveLength(2);
+      expect(rows[0]?.provider_absent_at).toBeNull();
+      expect(rows[1]?.provider_absent_at).toBeNull();
     });
   });
 

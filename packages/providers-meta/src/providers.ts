@@ -54,6 +54,14 @@ export function providerSourceLabel(id: string, subsource?: string | null): stri
   return providerLabel(id);
 }
 
+/** Explain why a provider-absent activity was hidden on detail pages. */
+export function providerAbsentExplanation(id: string, subsource?: string | null): string {
+  if (id === "apple_health" && subsource) {
+    return `The Apple Health copy of this workout (originally from ${subsource}) was removed from sync. This does not mean ${subsource} deleted the activity.`;
+  }
+  return `This activity was hidden because ${providerSourceLabel(id, subsource)} reported it as deleted or missing.`;
+}
+
 /**
  * Providers that have an SVG logo file (Simple Icons).
  * Files live in public/logos/{id}.svg on web.
