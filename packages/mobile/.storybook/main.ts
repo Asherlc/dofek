@@ -25,10 +25,7 @@ const config: StorybookConfig = {
       "react-native-maps": resolve(currentDir, "./mocks/react-native-maps.tsx"),
       "react-native-reanimated": resolve(currentDir, "./mocks/react-native-reanimated.tsx"),
       [resolve(currentDir, "../lib/auth-context")]: resolve(currentDir, "./mocks/auth-context"),
-      [resolve(currentDir, "../lib/auth-context.tsx")]: resolve(
-        currentDir,
-        "./mocks/auth-context",
-      ),
+      [resolve(currentDir, "../lib/auth-context.tsx")]: resolve(currentDir, "./mocks/auth-context"),
     };
     viteConfig.plugins.push({
       name: "storybook-health-kit-module-mock",

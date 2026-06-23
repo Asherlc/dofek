@@ -1,3 +1,4 @@
+import { statusColors } from "@dofek/scoring/colors";
 import type { ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
@@ -32,7 +33,7 @@ export default function MapView({ children, style }: MapViewProps) {
   );
 }
 
-export function Polyline({ coordinates = [], strokeColor = "#22c55e" }: PolylineProps) {
+export function Polyline({ coordinates = [], strokeColor = statusColors.positive }: PolylineProps) {
   if (coordinates.length === 0) return null;
 
   return (
@@ -42,7 +43,7 @@ export function Polyline({ coordinates = [], strokeColor = "#22c55e" }: Polyline
   );
 }
 
-export function Marker({ children, pinColor = "#22c55e", title }: MarkerProps) {
+export function Marker({ children, pinColor = statusColors.positive, title }: MarkerProps) {
   return (
     <View style={styles.markerWrap}>
       <View style={[styles.marker, { backgroundColor: pinColor }]} />
