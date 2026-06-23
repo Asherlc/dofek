@@ -37,3 +37,23 @@ export const PasswordLoginRequestSchema = z.object({
 });
 
 export type PasswordLoginRequest = z.infer<typeof PasswordLoginRequestSchema>;
+
+export const PasswordResetRequestSchema = z.object({
+  email: z.string().trim().email(),
+});
+
+export type PasswordResetRequest = z.infer<typeof PasswordResetRequestSchema>;
+
+export const PasswordResetConfirmSchema = z.object({
+  password: z.string(),
+  token: z.string().min(1),
+});
+
+export type PasswordResetConfirmRequest = z.infer<typeof PasswordResetConfirmSchema>;
+
+export const SetPasswordRequestSchema = z.object({
+  currentPassword: z.string().optional(),
+  newPassword: z.string(),
+});
+
+export type SetPasswordRequest = z.infer<typeof SetPasswordRequestSchema>;
