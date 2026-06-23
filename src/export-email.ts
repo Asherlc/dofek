@@ -1,5 +1,5 @@
 import { formatDateMedium } from "@dofek/format/format";
-import nodemailer from "nodemailer";
+import { sendPlainTextEmail } from "./email.ts";
 
 interface ExportReadyEmailInput {
   downloadUrl: string;
@@ -7,40 +7,10 @@ interface ExportReadyEmailInput {
   toEmail: string;
 }
 
-interface BrevoSmtpConfig {
-  fromEmail: string;
-  smtpKey: string;
-  smtpUser: string;
-}
-
-function requiredEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`${name} environment variable is required`);
-  }
-  return value;
-}
-
-function readBrevoConfig(): BrevoSmtpConfig {
-  return {
-    fromEmail: requiredEnv("EXPORT_EMAIL_FROM"),
-    smtpKey: requiredEnv("BREVO_SMTP_KEY"),
-    smtpUser: requiredEnv("BREVO_SMTP_USER"),
-  };
-}
-
 export async function sendExportReadyEmail(input: ExportReadyEmailInput): Promise<void> {
-  const config = readBrevoConfig();
-  const transporter = nodemailer.createTransport({
-    auth: { pass: config.smtpKey, user: config.smtpUser },
-    host: "smtp-relay.brevo.com",
-    port: 587,
-    secure: false,
-  });
   const expiresAt = formatDateMedium(input.expiresAt);
 
-  await transporter.sendMail({
-    from: config.fromEmail,
+  await sendPlainTextEmail({
     subject: "Your Dofek export is ready",
     text: [
       "Your Dofek data export is ready.",
@@ -49,6 +19,6 @@ export async function sendExportReadyEmail(input: ExportReadyEmailInput): Promis
       "",
       `This link and file expire on ${expiresAt}.`,
     ].join("\n"),
-    to: input.toEmail,
+    toEmail: input.toEmail,
   });
 }
