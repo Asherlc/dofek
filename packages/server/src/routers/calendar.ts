@@ -1,5 +1,4 @@
 import { TRPCError } from "@trpc/server";
-import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";
 import { endDateSchema } from "../lib/date-window.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
@@ -62,8 +61,15 @@ const calendarActivityEntrySchema = z.object({
   isProviderAbsent: z.boolean().optional(),
   providerId: z.string().optional(),
   providerAbsentAt: timestampStringSchema.nullable().optional(),
-  partialAbsenceSummary: z.string().nullable().optional(),
-  tombstoneSummary: z.string().nullable().optional(),
+  partialAbsentSources: z
+    .array(
+      z.object({
+        providerId: z.string(),
+        providerAbsentAt: timestampStringSchema.nullable(),
+        subsource: z.string().nullable().optional(),
+      }),
+    )
+    .optional(),
 });
 
 const calendarDayActivitiesSchema = z.object({
@@ -113,7 +119,6 @@ export const calendarRouter = router({
         ctx.timezone,
         ctx.sensorStore,
         ctx.accessWindow,
-        getProvider,
       );
       return repo.getWeekList(input);
     }),

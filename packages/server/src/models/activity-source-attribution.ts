@@ -1,5 +1,5 @@
 import { formatDateTime } from "@dofek/format/format";
-import { providerSourceLabel } from "@dofek/providers/providers";
+import { type ProviderAbsentSource, providerSourceLabel } from "@dofek/providers/providers";
 
 export interface SourceExternalIdEntry {
   providerId: string;
@@ -118,6 +118,13 @@ export class ActivitySourceAttribution {
     return [...linksByProvider.values()].sort((left, right) =>
       left.providerId.localeCompare(right.providerId),
     );
+  }
+
+  partialAbsentSources(): ProviderAbsentSource[] {
+    return this.#absentEntries.map((entry) => ({
+      providerId: entry.providerId,
+      providerAbsentAt: entry.providerAbsentAt ?? null,
+    }));
   }
 
   partialAbsenceSummary(lookup: ProviderLookup): string | null {

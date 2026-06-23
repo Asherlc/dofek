@@ -1,6 +1,9 @@
+import { formatDateTime } from "@dofek/format/format";
 import { describe, expect, it } from "vitest";
 import {
   BRAND_COLORS,
+  formatProviderAbsentTombstoneSummary,
+  formatProviderPartialAbsenceSummary,
   PNG_LOGOS,
   PROVIDER_LABELS,
   providerAbsentExplanation,
@@ -49,6 +52,26 @@ describe("providerSourceLabel", () => {
   it("falls back to the provider label in other cases", () => {
     expect(providerSourceLabel("apple_health", null)).toBe("Apple Health");
     expect(providerSourceLabel("whoop", "Strong")).toBe("WHOOP");
+  });
+});
+
+describe("providerAbsent summaries", () => {
+  it("formats tombstone summaries in the viewer's local timezone", () => {
+    const removedAt = "2026-06-22T21:30:00.000Z";
+    expect(formatProviderAbsentTombstoneSummary("apple_health", removedAt)).toBe(
+      `Removed from Apple Health · ${formatDateTime(removedAt)}`,
+    );
+  });
+
+  it("formats partial absence summaries with provider labels", () => {
+    const removedAt = "2026-03-05T14:30:00.000Z";
+    expect(
+      formatProviderPartialAbsenceSummary([{ providerId: "strava", providerAbsentAt: removedAt }]),
+    ).toBe(`Strava removed · ${formatDateTime(removedAt)}`);
+  });
+
+  it("returns null for empty partial absence summaries", () => {
+    expect(formatProviderPartialAbsenceSummary([])).toBeNull();
   });
 });
 

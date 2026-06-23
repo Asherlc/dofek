@@ -508,7 +508,11 @@ importers:
 
   packages/provider-http: {}
 
-  packages/providers-meta: {}
+  packages/providers-meta:
+    dependencies:
+      '@dofek/format':
+        specifier: workspace:*
+        version: link:../format
 
   packages/recovery: {}
 
@@ -16902,9 +16906,7 @@ snapshots:
       metro-runtime: 0.83.7
     transitivePeerDependencies:
       - '@babel/core'
-      - bufferutil
       - supports-color
-      - utf-8-validate
 
   '@react-native/normalize-colors@0.74.89': {}
 

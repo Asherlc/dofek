@@ -1,3 +1,4 @@
+import type { ProviderAbsentSource } from "@dofek/providers/providers";
 import { TrainingStressCalculator } from "@dofek/training/training-load";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
@@ -6,10 +7,7 @@ import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { type OsmTilePreview, osmTilePreview } from "../lib/osm-tile.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
-import {
-  ActivitySourceAttribution,
-  type ProviderLookup,
-} from "../models/activity-source-attribution.ts";
+import { ActivitySourceAttribution } from "../models/activity-source-attribution.ts";
 import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 import { getActivityRoutePreviews } from "./activity-route-preview.ts";
 
@@ -44,8 +42,7 @@ export interface CalendarActivityEntry {
   isProviderAbsent?: boolean;
   providerId?: string;
   providerAbsentAt?: string | null;
-  partialAbsenceSummary?: string | null;
-  tombstoneSummary?: string | null;
+  partialAbsentSources?: ProviderAbsentSource[];
 }
 
 export interface CalendarDayActivities {
@@ -140,7 +137,6 @@ export interface WeekListInput {
 /** Per-activity calendar data (location for outdoor, calories + TSS otherwise). */
 export class ActivitiesCalendarRepository extends BaseRepository {
   readonly #sensorStore: ActivitySensorStore;
-  readonly #providerLookup: ProviderLookup;
 
   constructor(
     db: Pick<Database, "execute">,
@@ -148,11 +144,9 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     timezone: string,
     sensorStore: ActivitySensorStore,
     accessWindow?: ConstructorParameters<typeof BaseRepository>[3],
-    providerLookup: ProviderLookup = (providerId) => ({ name: providerId }),
   ) {
     super(db, userId, timezone, accessWindow);
     this.#sensorStore = sensorStore;
-    this.#providerLookup = providerLookup;
   }
 
   async getWeekList(input: WeekListInput): Promise<CalendarDayActivities[]> {
@@ -261,7 +255,9 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         startedAt: row.started_at,
         endedAt: row.ended_at,
         durationMin: Math.round(row.duration_min * 10) / 10,
-        partialAbsenceSummary: sourceAttribution.partialAbsenceSummary(this.#providerLookup),
+        partialAbsentSources: sourceAttribution.hasPartialAbsence
+          ? sourceAttribution.partialAbsentSources()
+          : undefined,
         location:
           row.centroid_lat != null && row.centroid_lng != null
             ? {
@@ -410,10 +406,6 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         isProviderAbsent: true,
         providerId: row.provider_id,
         providerAbsentAt: row.provider_absent_at,
-        tombstoneSummary: ActivitySourceAttribution.hiddenActivityTombstoneSummary(
-          row.provider_id,
-          row.provider_absent_at,
-        ),
       };
 
       const bucket = dayMap.get(row.local_date) ?? [];

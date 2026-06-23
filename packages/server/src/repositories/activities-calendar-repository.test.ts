@@ -2,7 +2,6 @@ import type { Database } from "dofek/db";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import { osmTilePreview } from "../lib/osm-tile.ts";
-import { ActivitySourceAttribution } from "../models/activity-source-attribution.ts";
 import type { CalendarActivityEntry } from "./activities-calendar-repository.ts";
 import { ActivitiesCalendarRepository, mergeDayGroups } from "./activities-calendar-repository.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
@@ -844,16 +843,7 @@ describe("ActivitiesCalendarRepository", () => {
       [{ max_hr: null, resting_hr: null, ftp: null }],
       [],
     ]);
-    const providerLookup = (providerId: string) =>
-      providerId === "strava" ? { name: "Strava" } : { name: providerId };
-    const repository = new ActivitiesCalendarRepository(
-      database,
-      "user-1",
-      "UTC",
-      sensorStore,
-      undefined,
-      providerLookup,
-    );
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
     const result = await repository.getWeekList({
       weeks: 1,
@@ -872,7 +862,6 @@ describe("ActivitiesCalendarRepository", () => {
             providerId: "strava",
             providerAbsentAt: "2026-03-05T14:30:00.000Z",
             calories: 300,
-            tombstoneSummary: expect.stringMatching(/Removed from Strava · Mar 5,/),
           }),
         ],
       },
@@ -1093,8 +1082,6 @@ describe("ActivitiesCalendarRepository", () => {
 
   it("includes partial absence summaries for canonical activities with absent source links", async () => {
     const database = makeDatabase([]);
-    const providerLookup = (providerId: string) =>
-      providerId === "strava" ? { name: "Strava" } : { name: providerId };
     const sensorStore = makeSensorStore([
       [
         makeActivityRow({
@@ -1118,18 +1105,16 @@ describe("ActivitiesCalendarRepository", () => {
       [{ max_hr: null, resting_hr: null, ftp: 250 }],
       [],
     ]);
-    const repository = new ActivitiesCalendarRepository(
-      database,
-      "user-1",
-      "UTC",
-      sensorStore,
-      undefined,
-      providerLookup,
-    );
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
 
     const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
 
-    expect(result[0]?.activities[0]?.partialAbsenceSummary).toMatch(/Strava removed · Mar 5,/);
+    expect(result[0]?.activities[0]?.partialAbsentSources).toEqual([
+      {
+        providerId: "strava",
+        providerAbsentAt: "2026-03-05T14:30:00.000Z",
+      },
+    ]);
   });
 
   it("builds complete hidden activity entries with stress, stats, and tombstone metadata", async () => {
@@ -1198,10 +1183,6 @@ describe("ActivitiesCalendarRepository", () => {
       isProviderAbsent: true,
       providerId: "strava",
       providerAbsentAt: "2026-03-05T14:30:00.000Z",
-      tombstoneSummary: ActivitySourceAttribution.hiddenActivityTombstoneSummary(
-        "strava",
-        "2026-03-05T14:30:00.000Z",
-      ),
     });
   });
 

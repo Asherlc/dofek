@@ -71,6 +71,26 @@ describe("ActivitySourceAttribution", () => {
     ]);
   });
 
+  it("exposes partial absent sources for client-side formatting", () => {
+    const partial = ActivitySourceAttribution.fromEntries(
+      [{ providerId: "garmin", externalId: "123" }],
+      [
+        {
+          providerId: "strava",
+          externalId: "99999",
+          providerAbsentAt: "2026-03-05T14:30:00.000Z",
+        },
+      ],
+    );
+
+    expect(partial.partialAbsentSources()).toEqual([
+      {
+        providerId: "strava",
+        providerAbsentAt: "2026-03-05T14:30:00.000Z",
+      },
+    ]);
+  });
+
   it("builds a partial absence summary only when active and absent sources coexist", () => {
     const partial = ActivitySourceAttribution.fromEntries(
       [{ providerId: "garmin", externalId: "123" }],
