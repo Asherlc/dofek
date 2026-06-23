@@ -151,8 +151,8 @@ vi.mock("@dofek/providers/providers", () => ({
       return `The Apple Health copy of this workout (originally from ${subsource}) was removed from sync. This does not mean ${subsource} deleted the activity.`;
     }
     const label =
-      id === "apple_health" && subsource
-        ? `${subsource} (via Apple Health)`
+      id === "apple_health"
+        ? "Apple Health"
         : id === "strava"
           ? "Strava"
           : id;

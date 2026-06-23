@@ -142,6 +142,17 @@ describe("reconcileProviderActivityAbsence", () => {
           metadata: { HKMetadataKeySyncIdentifier: "19016909441", HKMetadataKeySyncVersion: 2 },
         },
       },
+      {
+        providerId: "apple_health",
+        externalId: "hk:workout:missing-garmin-uuid",
+        activityType: "running",
+        startedAt: new Date("2026-03-06T12:00:00Z"),
+        endedAt: new Date("2026-03-06T13:00:00Z"),
+        raw: {
+          sourceName: "Garmin",
+          metadata: { HKMetadataKeySyncIdentifier: "unrelated-sync-id", HKMetadataKeySyncVersion: 1 },
+        },
+      },
     ]);
 
     await reconcileProviderActivityAbsence(ctx.db, {
@@ -164,6 +175,13 @@ describe("reconcileProviderActivityAbsence", () => {
       .from(activity)
       .where(eq(activity.providerId, "apple_health"));
 
-    expect(rows.every((row) => row.providerAbsentAt == null)).toBe(true);
+    expect(
+      rows
+        .filter((row) => row.externalId !== "hk:workout:missing-garmin-uuid")
+        .every((row) => row.providerAbsentAt == null),
+    ).toBe(true);
+    expect(
+      rows.find((row) => row.externalId === "hk:workout:missing-garmin-uuid")?.providerAbsentAt,
+    ).toBeInstanceOf(Date);
   });
 });

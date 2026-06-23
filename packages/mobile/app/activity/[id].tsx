@@ -6,8 +6,7 @@ import {
   formatTimeOnly,
 } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
-import { providerAbsentExplanation, providerSourceLabel } from "@dofek/providers/providers";
-import { activityMetricColors } from "@dofek/scoring/colors";
+import { providerSourceLabel } from "@dofek/providers/providers";
 import { getActivityIconInfo } from "@dofek/training/activity-icons";
 import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
 import { cadenceUnit, formatActivityTypeLabel, isCyclingActivity } from "@dofek/training/training";
@@ -24,16 +23,6 @@ import {
   Text,
   View,
 } from "react-native";
-import Svg, {
-  Circle,
-  Defs,
-  Line,
-  LinearGradient,
-  Path,
-  Polyline,
-  Stop,
-  Text as SvgText,
-} from "react-native-svg";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { MuscleGroupBodyDiagram } from "../../components/MuscleGroupBodyDiagram";
 import { RouteMap } from "../../components/RouteMap";
@@ -43,20 +32,10 @@ import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { colors } from "../../theme";
-import { ACTIVITY_CHART_WIDTH } from "./chartDimensions";
+import { AreaChart, CHART_COLORS, chartStyles, LineChart } from "./ActivityDetailCharts";
+import { ProviderAbsentBanner } from "./ProviderAbsentBanner";
 import { styles } from "./styles";
-import { useChartScrub } from "./useChartScrub";
 import { HrZonesChart, PowerZonesChart } from "./ZoneDistributionCharts";
-
-const CHART_WIDTH = ACTIVITY_CHART_WIDTH;
-const CHART_HEIGHT = 180;
-const CHART_PADDING = { top: 20, right: 16, bottom: 28, left: 44 };
-
-const CHART_COLORS = {
-  heartRate: activityMetricColors.heartRate,
-  power: activityMetricColors.power,
-  altitude: "#6b7280",
-};
 
 const STRENGTH_ACTIVITY_TYPES = new Set(["strength", "strength_training", "functional_strength"]);
 
@@ -67,324 +46,6 @@ function isStrengthActivityType(activityType: string): boolean {
 function activityIcon(type: string): string {
   return getActivityIconInfo(type).emoji;
 }
-
-// ── Inline Chart Components ──
-
-interface LineChartProps {
-  data: Array<{ value: number | null }>;
-  color: string;
-  label: string;
-  unit: string;
-  onHoverIndex?: (index: number | null) => void;
-  onScrubStart?: () => void;
-  onScrubEnd?: () => void;
-}
-
-function LineChart({
-  data,
-  color,
-  label,
-  unit,
-  onHoverIndex,
-  onScrubStart,
-  onScrubEnd,
-}: LineChartProps) {
-  const plotWidth = CHART_WIDTH - CHART_PADDING.left - CHART_PADDING.right;
-  const { touchIndex, panResponder } = useChartScrub({
-    plotWidth,
-    totalPoints: data.length,
-    onHoverIndex,
-    onScrubStart,
-    onScrubEnd,
-  });
-
-  const values = data
-    .map((d, i) => (d.value != null ? { index: i, value: d.value } : null))
-    .filter((d): d is { index: number; value: number } => d !== null);
-
-  if (values.length < 2) return null;
-
-  const plotHeight = CHART_HEIGHT - CHART_PADDING.top - CHART_PADDING.bottom;
-  const minVal = Math.min(...values.map((v) => v.value));
-  const maxVal = Math.max(...values.map((v) => v.value));
-  const range = maxVal - minVal || 1;
-  const totalPoints = data.length;
-
-  const toX = (index: number) =>
-    CHART_PADDING.left + (index / Math.max(totalPoints - 1, 1)) * plotWidth;
-  const toY = (value: number) =>
-    CHART_PADDING.top + plotHeight - ((value - minVal) / range) * plotHeight;
-
-  const chartPoints = values
-    .map((v) => `${toX(v.index).toFixed(1)},${toY(v.value).toFixed(1)}`)
-    .join(" ");
-
-  // Y-axis tick labels (5 ticks)
-  const yTicks = Array.from({ length: 5 }, (_, i) => {
-    const value = minVal + (range * i) / 4;
-    return { value, y: toY(value) };
-  });
-
-  // Find value at the touched index for the crosshair dot
-  const touchedValue = touchIndex != null ? values.find((v) => v.index === touchIndex) : null;
-
-  return (
-    <View style={chartStyles.container}>
-      <ChartTitleWithTooltip
-        title={label}
-        description={`This chart shows how your ${label.toLowerCase()} changed over the activity timeline.`}
-        textStyle={chartStyles.title}
-      />
-      <View {...panResponder.panHandlers}>
-        <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
-          {/* Grid lines */}
-          {yTicks.map((tick) => (
-            <Line
-              key={tick.value}
-              x1={CHART_PADDING.left}
-              y1={tick.y}
-              x2={CHART_WIDTH - CHART_PADDING.right}
-              y2={tick.y}
-              stroke={colors.surfaceSecondary}
-              strokeWidth={0.5}
-            />
-          ))}
-          {/* Y-axis labels */}
-          {yTicks.map((tick) => (
-            <SvgText
-              key={`label-${tick.value}`}
-              x={CHART_PADDING.left - 6}
-              y={tick.y + 4}
-              fill={colors.textTertiary}
-              fontSize={10}
-              textAnchor="end"
-            >
-              {Math.round(tick.value)}
-            </SvgText>
-          ))}
-          {/* Unit label */}
-          <SvgText
-            x={CHART_PADDING.left - 6}
-            y={CHART_PADDING.top - 8}
-            fill={colors.textTertiary}
-            fontSize={9}
-            textAnchor="end"
-          >
-            {unit}
-          </SvgText>
-          {/* Data line */}
-          <Polyline
-            points={chartPoints}
-            fill="none"
-            stroke={color}
-            strokeWidth={1.5}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          {/* Touch crosshair */}
-          {touchIndex != null && (
-            <Line
-              x1={toX(touchIndex)}
-              y1={CHART_PADDING.top}
-              x2={toX(touchIndex)}
-              y2={CHART_PADDING.top + plotHeight}
-              stroke={colors.textTertiary}
-              strokeWidth={1}
-              strokeDasharray="4,4"
-            />
-          )}
-          {touchedValue != null && (
-            <Circle
-              cx={toX(touchedValue.index)}
-              cy={toY(touchedValue.value)}
-              r={4}
-              fill={color}
-              stroke="#ffffff"
-              strokeWidth={2}
-            />
-          )}
-        </Svg>
-      </View>
-    </View>
-  );
-}
-
-interface AreaChartProps {
-  data: Array<{ value: number | null }>;
-  color: string;
-  label: string;
-  unit: string;
-  onHoverIndex?: (index: number | null) => void;
-  onScrubStart?: () => void;
-  onScrubEnd?: () => void;
-}
-
-function AreaChart({
-  data,
-  color,
-  label,
-  unit,
-  onHoverIndex,
-  onScrubStart,
-  onScrubEnd,
-}: AreaChartProps) {
-  const plotWidth = CHART_WIDTH - CHART_PADDING.left - CHART_PADDING.right;
-  const { touchIndex, panResponder } = useChartScrub({
-    plotWidth,
-    totalPoints: data.length,
-    onHoverIndex,
-    onScrubStart,
-    onScrubEnd,
-  });
-
-  const values = data
-    .map((d, i) => (d.value != null ? { index: i, value: d.value } : null))
-    .filter((d): d is { index: number; value: number } => d !== null);
-
-  if (values.length < 2) return null;
-
-  const plotHeight = CHART_HEIGHT - CHART_PADDING.top - CHART_PADDING.bottom;
-  const minVal = Math.min(...values.map((v) => v.value));
-  const maxVal = Math.max(...values.map((v) => v.value));
-  const range = maxVal - minVal || 1;
-  const totalPoints = data.length;
-
-  const toX = (index: number) =>
-    CHART_PADDING.left + (index / Math.max(totalPoints - 1, 1)) * plotWidth;
-  const toY = (value: number) =>
-    CHART_PADDING.top + plotHeight - ((value - minVal) / range) * plotHeight;
-
-  const baselineY = CHART_PADDING.top + plotHeight;
-
-  // Build path for the area fill
-  const linePoints = values.map((v) => ({
-    x: toX(v.index),
-    y: toY(v.value),
-  }));
-  const firstPoint = linePoints[0];
-  const lastPoint = linePoints[linePoints.length - 1];
-
-  if (!firstPoint || !lastPoint) return null;
-
-  const linePath = linePoints
-    .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
-    .join(" ");
-
-  const areaPath = `${linePath} L${lastPoint.x.toFixed(1)},${baselineY} L${firstPoint.x.toFixed(1)},${baselineY} Z`;
-
-  // Y-axis ticks
-  const yTicks = Array.from({ length: 5 }, (_, i) => {
-    const value = minVal + (range * i) / 4;
-    return { value, y: toY(value) };
-  });
-
-  // Find value at the touched index for the crosshair dot
-  const touchedValue = touchIndex != null ? values.find((v) => v.index === touchIndex) : null;
-
-  return (
-    <View style={chartStyles.container}>
-      <ChartTitleWithTooltip
-        title={label}
-        description={`This chart shows how your ${label.toLowerCase()} changed over the activity timeline.`}
-        textStyle={chartStyles.title}
-      />
-      <View {...panResponder.panHandlers}>
-        <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
-          <Defs>
-            <LinearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor={color} stopOpacity={0.3} />
-              <Stop offset="1" stopColor={color} stopOpacity={0.05} />
-            </LinearGradient>
-          </Defs>
-          {/* Grid lines */}
-          {yTicks.map((tick) => (
-            <Line
-              key={tick.value}
-              x1={CHART_PADDING.left}
-              y1={tick.y}
-              x2={CHART_WIDTH - CHART_PADDING.right}
-              y2={tick.y}
-              stroke={colors.surfaceSecondary}
-              strokeWidth={0.5}
-            />
-          ))}
-          {/* Y-axis labels */}
-          {yTicks.map((tick) => (
-            <SvgText
-              key={`label-${tick.value}`}
-              x={CHART_PADDING.left - 6}
-              y={tick.y + 4}
-              fill={colors.textTertiary}
-              fontSize={10}
-              textAnchor="end"
-            >
-              {Math.round(tick.value)}
-            </SvgText>
-          ))}
-          {/* Unit label */}
-          <SvgText
-            x={CHART_PADDING.left - 6}
-            y={CHART_PADDING.top - 8}
-            fill={colors.textTertiary}
-            fontSize={9}
-            textAnchor="end"
-          >
-            {unit}
-          </SvgText>
-          {/* Area fill */}
-          <Path d={areaPath} fill="url(#areaGrad)" />
-          {/* Data line */}
-          <Path
-            d={linePath}
-            fill="none"
-            stroke={color}
-            strokeWidth={1.5}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          {/* Touch crosshair */}
-          {touchIndex != null && (
-            <Line
-              x1={toX(touchIndex)}
-              y1={CHART_PADDING.top}
-              x2={toX(touchIndex)}
-              y2={CHART_PADDING.top + plotHeight}
-              stroke={colors.textTertiary}
-              strokeWidth={1}
-              strokeDasharray="4,4"
-            />
-          )}
-          {touchedValue != null && (
-            <Circle
-              cx={toX(touchedValue.index)}
-              cy={toY(touchedValue.value)}
-              r={4}
-              fill={color}
-              stroke="#ffffff"
-              strokeWidth={2}
-            />
-          )}
-        </Svg>
-      </View>
-    </View>
-  );
-}
-
-const chartStyles = StyleSheet.create({
-  container: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
-  },
-  title: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.textSecondary,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-});
 
 // ── Stats Grid ──
 
@@ -863,32 +524,7 @@ export default function ActivityDetailScreen() {
             })}
           </View>
         )}
-        {activity.providerAbsentAt && (
-          <View style={styles.providerAbsentBanner}>
-            <Text style={styles.providerAbsentTitle}>Removed from provider sync</Text>
-            <View style={styles.providerAbsentDetails}>
-              <View style={styles.providerAbsentDetail}>
-                <Text style={styles.providerAbsentLabel}>Status</Text>
-                <Text style={styles.providerAbsentValue}>Removed</Text>
-              </View>
-              <View style={styles.providerAbsentDetail}>
-                <Text style={styles.providerAbsentLabel}>Provider</Text>
-                <Text style={styles.providerAbsentValue}>
-                  {providerSourceLabel(activity.providerId, activity.subsource)}
-                </Text>
-              </View>
-              <View style={styles.providerAbsentDetail}>
-                <Text style={styles.providerAbsentLabel}>Removed at</Text>
-                <Text style={styles.providerAbsentValue}>
-                  {formatDateLong(activity.providerAbsentAt)}
-                </Text>
-              </View>
-            </View>
-            <Text style={styles.providerAbsentExplanation}>
-              {providerAbsentExplanation(activity.providerId, activity.subsource)}
-            </Text>
-          </View>
-        )}
+        {activity.providerAbsentAt && <ProviderAbsentBanner activity={activity} />}
       </View>
 
       {/* Stats Grid */}

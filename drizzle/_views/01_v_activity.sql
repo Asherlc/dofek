@@ -71,18 +71,48 @@ effective_tombstoned AS (
         AND sib.id <> a.id
         AND COALESCE(
           NULLIF(trim(sib.raw->'metadata'->>'HKMetadataKeySyncIdentifier'), ''),
-          'time:' || sib.started_at::text || ':' || COALESCE(sib.ended_at::text, '') || ':' || COALESCE(sib.raw->>'sourceName', sib.source_name, '')
+          'time:' || sib.started_at::text || ':' || COALESCE(sib.ended_at::text, '') || ':' || COALESCE(
+            NULLIF(trim(sib.raw->>'sourceName'), ''),
+            NULLIF(trim(sib.source_name), ''),
+            ''
+          )
         ) = COALESCE(
           NULLIF(trim(a.raw->'metadata'->>'HKMetadataKeySyncIdentifier'), ''),
-          'time:' || a.started_at::text || ':' || COALESCE(a.ended_at::text, '') || ':' || COALESCE(a.raw->>'sourceName', a.source_name, '')
+          'time:' || a.started_at::text || ':' || COALESCE(a.ended_at::text, '') || ':' || COALESCE(
+            NULLIF(trim(a.raw->>'sourceName'), ''),
+            NULLIF(trim(a.source_name), ''),
+            ''
+          )
         )
         AND (
           sib.provider_absent_at IS NULL AND sib.deleted_at IS NULL
-          OR COALESCE((sib.raw->'metadata'->>'HKMetadataKeySyncVersion')::bigint, 0)
-             > COALESCE((a.raw->'metadata'->>'HKMetadataKeySyncVersion')::bigint, 0)
+          OR COALESCE(
+            CASE
+              WHEN (sib.raw->'metadata'->>'HKMetadataKeySyncVersion') ~ '^[0-9]+$'
+                THEN (sib.raw->'metadata'->>'HKMetadataKeySyncVersion')::bigint
+            END,
+            0
+          ) > COALESCE(
+            CASE
+              WHEN (a.raw->'metadata'->>'HKMetadataKeySyncVersion') ~ '^[0-9]+$'
+                THEN (a.raw->'metadata'->>'HKMetadataKeySyncVersion')::bigint
+            END,
+            0
+          )
           OR (
-            COALESCE((sib.raw->'metadata'->>'HKMetadataKeySyncVersion')::bigint, 0)
-              = COALESCE((a.raw->'metadata'->>'HKMetadataKeySyncVersion')::bigint, 0)
+            COALESCE(
+              CASE
+                WHEN (sib.raw->'metadata'->>'HKMetadataKeySyncVersion') ~ '^[0-9]+$'
+                  THEN (sib.raw->'metadata'->>'HKMetadataKeySyncVersion')::bigint
+              END,
+              0
+            ) = COALESCE(
+              CASE
+                WHEN (a.raw->'metadata'->>'HKMetadataKeySyncVersion') ~ '^[0-9]+$'
+                  THEN (a.raw->'metadata'->>'HKMetadataKeySyncVersion')::bigint
+              END,
+              0
+            )
             AND sib.created_at > a.created_at
           )
         )
