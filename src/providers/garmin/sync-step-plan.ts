@@ -1,7 +1,8 @@
 import { and, eq, gte, isNotNull, lt, lte, or } from "drizzle-orm";
+import { z } from "zod";
 import type { SyncDatabase } from "../../db/index.ts";
-import { HEART_RATE, STRESS } from "../../db/sensor-channels.ts";
 import { dailyMetrics, sleepSession } from "../../db/schema.ts";
+import { HEART_RATE, STRESS } from "../../db/sensor-channels.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import type { GarminSyncStep } from "./sync-checkpoint.ts";
 
@@ -13,6 +14,8 @@ export interface GarminSyncPlanContext {
   untilDate: string;
   dates: string[];
 }
+
+const metricStreamDateRowSchema = z.object({ date: z.string() });
 
 function resolveUserId(context: Pick<GarminSyncPlanContext, "userId">): string | undefined {
   return context.userId ?? getTokenUserId();
@@ -157,7 +160,7 @@ async function listGarminDatesWithMetricStreamChannel(
         rangeEnd: dayAfterUtc(context.untilDate).toISOString(),
       },
     });
-    const rows = (await result.json()) as Array<{ date: string }>;
+    const rows = z.array(metricStreamDateRowSchema).parse(await result.json());
     await client.close?.();
     return new Set(rows.map((row) => row.date));
   } catch {
@@ -165,7 +168,9 @@ async function listGarminDatesWithMetricStreamChannel(
   }
 }
 
-export async function planGarminSyncSteps(context: GarminSyncPlanContext): Promise<GarminSyncStep[]> {
+export async function planGarminSyncSteps(
+  context: GarminSyncPlanContext,
+): Promise<GarminSyncStep[]> {
   const steps: GarminSyncStep[] = [{ type: "activities_list" }];
 
   const [sleepDates, dailySummaryDates, hrvDates, stressSyncedDates, heartRateSyncedDates] =

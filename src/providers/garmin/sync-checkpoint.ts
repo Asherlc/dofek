@@ -74,8 +74,7 @@ export function applyRateLimitToCheckpoint(checkpoint: GarminSyncCheckpoint): Ga
   const tail = checkpoint.steps
     .slice(checkpoint.stepIndex + 1)
     .filter(
-      (step) =>
-        step.type !== "stress" && step.type !== "heart_rate" && step.type !== "hrv_summary",
+      (step) => step.type !== "stress" && step.type !== "heart_rate" && step.type !== "hrv_summary",
     );
   return {
     ...checkpoint,

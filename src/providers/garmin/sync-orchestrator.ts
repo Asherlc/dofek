@@ -22,9 +22,9 @@ import {
 import { activity, dailyMetrics, sleepSession, sleepStage } from "../../db/schema.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
-import { loadTokens, saveTokens } from "../../db/tokens.ts";
-import { runWithSyncStepAdmission } from "../../lib/sync-step-admission-context.ts";
+import { saveTokens } from "../../db/tokens.ts";
 import { isRetryableInfraError } from "../../lib/retryable-infra-error.ts";
+import { runWithSyncStepAdmission } from "../../lib/sync-step-admission-context.ts";
 import { logger } from "../../logger.ts";
 import { ProviderAuthenticationFailedError } from "../auth-errors.ts";
 import type { SyncRun } from "../sync-run.ts";
@@ -34,10 +34,10 @@ import { serializeInternalTokens } from "./internal-tokens.ts";
 import {
   applyRateLimitToCheckpoint,
   createGarminSyncCheckpoint,
-  insertStepsAfterCurrent,
-  parseGarminSyncCheckpoint,
   type GarminSyncCheckpoint,
   type GarminSyncStep,
+  insertStepsAfterCurrent,
+  parseGarminSyncCheckpoint,
 } from "./sync-checkpoint.ts";
 import { planGarminSyncSteps } from "./sync-step-plan.ts";
 
@@ -456,7 +456,20 @@ async function runHrvSummaryStep(
     const parsedHrv = parseHrvSummary(hrvData);
     const hrv = parsedHrv.lastNightAvg ?? parsedHrv.lastNight;
 
-    const upserted = await db
+    const existing = await db
+      .select({ id: dailyMetrics.id })
+      .from(dailyMetrics)
+      .where(
+        and(
+          eq(dailyMetrics.userId, userId),
+          eq(dailyMetrics.date, date),
+          eq(dailyMetrics.providerId, providerId),
+        ),
+      )
+      .limit(1);
+    if (existing.length === 0) return 0;
+
+    await db
       .insert(dailyMetrics)
       .values({
         date,
@@ -471,10 +484,9 @@ async function runHrvSummaryStep(
           dailyMetrics.sourceName,
         ],
         set: { hrv },
-      })
-      .returning({ date: dailyMetrics.date });
+      });
 
-    return upserted.length > 0 ? 1 : 0;
+    return 1;
   } catch (error) {
     if (isNoDataError(error)) return 0;
     throw error;
@@ -501,13 +513,7 @@ async function runStressStep(
     providerId,
     stress: sample.stressLevel,
   }));
-  await writeMetricStreamBatch(
-    db,
-    stressRows,
-    SOURCE_TYPE_API,
-    undefined,
-    metricStreamPublisher,
-  );
+  await writeMetricStreamBatch(db, stressRows, SOURCE_TYPE_API, undefined, metricStreamPublisher);
   return stressRows.length;
 }
 
@@ -612,14 +618,7 @@ async function runGarminSyncStep(
         break;
       }
       case "activity_reconcile":
-        await runActivityReconcileStep(
-          run.db,
-          "garmin",
-          userId,
-          effectiveSince,
-          until,
-          checkpoint,
-        );
+        await runActivityReconcileStep(run.db, "garmin", userId, effectiveSince, until, checkpoint);
         break;
       case "sleep":
         recordsSynced += await withSyncLog(

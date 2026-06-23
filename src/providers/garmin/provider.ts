@@ -1,6 +1,6 @@
+import { and, eq } from "drizzle-orm";
 import { GarminConnectClient, GarminRateLimitError } from "garmin-connect/client";
 import type { GarminTokens } from "garmin-connect/types";
-import { and, eq } from "drizzle-orm";
 import type { TokenSet } from "../../auth/oauth.ts";
 import type { SyncDatabase } from "../../db/index.ts";
 import { userSettings } from "../../db/schema.ts";
@@ -11,19 +11,8 @@ import { isRetryableInfraError } from "../../lib/retryable-infra-error.ts";
 import { logger } from "../../logger.ts";
 import type { SyncRun } from "../sync-run.ts";
 import type { ProviderAuthSetup, SyncProvider, SyncResult } from "../types.ts";
-import {
-  deserializeInternalTokens,
-  INTERNAL_SCOPE_MARKER,
-  serializeInternalTokens,
-} from "./internal-tokens.ts";
+import { deserializeInternalTokens, serializeInternalTokens } from "./internal-tokens.ts";
 import { runGarminOrchestratedSync } from "./sync-orchestrator.ts";
-
-export { eachDay, formatDate } from "./date-utils.ts";
-export {
-  deserializeInternalTokens,
-  INTERNAL_SCOPE_MARKER,
-  serializeInternalTokens,
-} from "./internal-tokens.ts";
 
 const SYNC_CURSOR_KEY = "garmin_sync_cursor";
 

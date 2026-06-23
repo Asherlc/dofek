@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../../db/index.ts";
 import { dailyMetrics, sleepSession } from "../../db/schema.ts";
 import {
+  type GarminSyncPlanContext,
   listGarminDatesNeedingDailySummarySteps,
   listGarminDatesNeedingHrvSteps,
   listGarminDatesNeedingSleepSteps,
   planGarminSyncSteps,
-  type GarminSyncPlanContext,
 } from "./sync-step-plan.ts";
 
 const tokenUserContextMocks = vi.hoisted(() => ({
@@ -108,9 +108,7 @@ describe("Garmin sync step planning", () => {
     const db = makeDb([{ date: "2026-03-02" }]);
     const context = makeContext({ db: db.db, userId: undefined });
 
-    await expect(listGarminDatesNeedingDailySummarySteps(context)).resolves.toEqual([
-      "2026-03-01",
-    ]);
+    await expect(listGarminDatesNeedingDailySummarySteps(context)).resolves.toEqual(["2026-03-01"]);
     expect(tokenUserContextMocks.getTokenUserId).toHaveBeenCalled();
   });
 

@@ -2,17 +2,16 @@ import { GarminApiError, GarminRateLimitError } from "garmin-connect/client";
 import type { GarminTokens } from "garmin-connect/types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TokenSet } from "../auth/oauth.ts";
+import { eachDay, formatDate } from "./garmin/date-utils.ts";
 import {
   deserializeInternalTokens,
-  eachDay,
-  formatDate,
-  GarminProvider,
   INTERNAL_SCOPE_MARKER,
   serializeInternalTokens,
-} from "./garmin/provider.ts";
+} from "./garmin/internal-tokens.ts";
+import { GarminProvider } from "./garmin/provider.ts";
+import type { GarminSyncStep } from "./garmin/sync-checkpoint.ts";
 import { createGarminSyncCheckpoint } from "./garmin/sync-checkpoint.ts";
 import { planGarminSyncSteps } from "./garmin/sync-step-plan.ts";
-import type { GarminSyncStep } from "./garmin/sync-checkpoint.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 import type { SyncOptions } from "./types.ts";
@@ -1087,6 +1086,17 @@ describe("GarminProvider.sync()", () => {
 
     mocks.client.getHrvSummary.mockResolvedValue({});
     mocks.parseHrvSummary.mockReturnValue({ lastNightAvg: 45, lastNight: 42 });
+    db.where.mockImplementation(() =>
+      Object.assign(Promise.resolve([]), {
+        limit: vi.fn().mockImplementation(() => {
+          const projection = db.select.mock.calls.at(-1)?.[0];
+          if (projection && typeof projection === "object" && "id" in projection) {
+            return Promise.resolve([{ id: "daily-metrics-id" }]);
+          }
+          return Promise.resolve([]);
+        }),
+      }),
+    );
 
     const result = await syncProvider(provider, db, new Date());
 
@@ -1362,7 +1372,9 @@ describe("GarminProvider.sync()", () => {
     const since = new Date("2026-04-25T00:00:00.000Z");
     const until = new Date("2026-04-27T00:00:00.000Z");
     const steps = await planAllGarminSteps(db, since, until);
-    const stepIndex = steps.findIndex((step) => step.type === "sleep" && step.date === "2026-04-27");
+    const stepIndex = steps.findIndex(
+      (step) => step.type === "sleep" && step.date === "2026-04-27",
+    );
     if (stepIndex === -1) throw new Error("expected sleep step");
     const checkpointStore = {
       load: vi.fn().mockResolvedValue({
