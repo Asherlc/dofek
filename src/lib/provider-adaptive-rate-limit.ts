@@ -5,13 +5,16 @@ import {
   admissionDelayMs,
   applyStravaQuota,
   createInitialAdaptiveState,
+  isStepChainSyncProvider,
   type ProviderAdaptiveRateState,
   parseAdaptiveRateState,
   parseStravaRateLimitHeaders,
   recordAdaptiveRateLimit,
   recordAdaptiveRequest,
+  recordAdaptiveThrottleTouch,
   serializeAdaptiveRateState,
   slideAdaptiveWindow,
+  throttleDelayMs,
 } from "@dofek/provider-http/adaptive-rate-limit";
 import type {
   ProviderRateLimitError,
@@ -19,6 +22,11 @@ import type {
 } from "@dofek/provider-http/rate-limit";
 import { RedisConnection } from "bullmq";
 import { getRedisConnection } from "../jobs/queues.ts";
+import {
+  hasSyncStepAdmissionClaimed,
+  isInsideSyncStepAdmission,
+  markSyncStepAdmissionClaimed,
+} from "./sync-step-admission-context.ts";
 
 interface RedisMulti {
   set: (key: string, value: string, mode: "PX", millisecondsToExpire: number) => RedisMulti;
@@ -50,7 +58,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function awaitAdmissionWithStore(
+async function awaitThrottleWithStore(
   loadOrCreate: LoadOrCreate,
   save: SaveState,
   providerId: string,
@@ -59,10 +67,45 @@ async function awaitAdmissionWithStore(
 ): Promise<void> {
   const nowMs = Date.now();
   const state = slideAdaptiveWindow(await loadOrCreate(providerId, scope, userId), nowMs);
+  await sleep(throttleDelayMs(state, nowMs));
+  const touchedAtMs = Date.now();
+  const touchedState = slideAdaptiveWindow(state, touchedAtMs);
+  await save(recordAdaptiveThrottleTouch(touchedState, touchedAtMs));
+}
+
+function shouldUseSyncStepThrottleOnly(providerId: string): boolean {
+  return (
+    isStepChainSyncProvider(providerId) &&
+    isInsideSyncStepAdmission() &&
+    hasSyncStepAdmissionClaimed()
+  );
+}
+
+function noteSyncStepAdmission(providerId: string): void {
+  if (isStepChainSyncProvider(providerId) && isInsideSyncStepAdmission()) {
+    markSyncStepAdmissionClaimed();
+  }
+}
+
+async function awaitAdmissionWithStore(
+  loadOrCreate: LoadOrCreate,
+  save: SaveState,
+  providerId: string,
+  scope: ProviderRateLimitScope,
+  userId: string | null,
+): Promise<void> {
+  if (shouldUseSyncStepThrottleOnly(providerId)) {
+    await awaitThrottleWithStore(loadOrCreate, save, providerId, scope, userId);
+    return;
+  }
+
+  const nowMs = Date.now();
+  const state = slideAdaptiveWindow(await loadOrCreate(providerId, scope, userId), nowMs);
   await sleep(admissionDelayMs(state, nowMs));
   const admittedAtMs = Date.now();
   const admittedState = slideAdaptiveWindow(state, admittedAtMs);
   await save(recordAdaptiveRequest(admittedState, admittedAtMs));
+  noteSyncStepAdmission(providerId);
 }
 
 function loadAdaptiveStateFromRedis(
@@ -84,6 +127,10 @@ async function awaitAdmissionAtomically(
   scope: ProviderRateLimitScope,
   userId: string | null,
 ): Promise<void> {
+  if (shouldUseSyncStepThrottleOnly(providerId)) {
+    throw new Error("Atomic admission does not support sync-step throttle-only requests");
+  }
+
   const key = adaptiveRateLimitStorageKey(providerId, scope, userId);
   const watch = redisClient.watch;
   const multi = redisClient.multi;
@@ -123,7 +170,10 @@ async function awaitAdmissionAtomically(
       const execResult = await multi()
         .set(key, serializeAdaptiveRateState(nextState), "PX", ADAPTIVE_RATE_WINDOW_MS * 4)
         .exec();
-      if (execResult) return;
+      if (execResult) {
+        noteSyncStepAdmission(providerId);
+        return;
+      }
     }
   }
 }
@@ -192,6 +242,17 @@ export class InMemoryAdaptiveRateLimitStore implements AdaptiveRateLimitStore {
     scope: ProviderRateLimitScope,
     userId: string | null,
   ): Promise<void> {
+    if (shouldUseSyncStepThrottleOnly(providerId)) {
+      await awaitThrottleWithStore(
+        this.#loadOrCreate.bind(this),
+        this.#save.bind(this),
+        providerId,
+        scope,
+        userId,
+      );
+      return;
+    }
+
     await awaitAdmissionWithStore(
       this.#loadOrCreate.bind(this),
       this.#save.bind(this),
@@ -294,6 +355,17 @@ export class RedisAdaptiveRateLimitStore implements AdaptiveRateLimitStore {
     scope: ProviderRateLimitScope,
     userId: string | null,
   ): Promise<void> {
+    if (shouldUseSyncStepThrottleOnly(providerId)) {
+      await awaitThrottleWithStore(
+        this.#loadOrCreate.bind(this),
+        this.#save.bind(this),
+        providerId,
+        scope,
+        userId,
+      );
+      return;
+    }
+
     const redisClient = await this.#getRedisClient();
     if (redisClient.watch && redisClient.multi) {
       await awaitAdmissionAtomically(redisClient, providerId, scope, userId);

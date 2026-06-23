@@ -4,6 +4,7 @@ import {
 } from "@dofek/provider-http/adaptive-rate-limit";
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { runWithSyncStepAdmission } from "./sync-step-admission-context.ts";
 
 const sharedRedisMocks = vi.hoisted(() => ({
   set: vi.fn().mockResolvedValue("OK"),
@@ -263,6 +264,26 @@ describe("RedisAdaptiveRateLimitStore", () => {
     await store.awaitAdmission("whoop", "provider", null);
 
     const saved = JSON.parse(setCalls.at(-1)?.value ?? "{}");
+    expect(saved.requestCount).toBe(2);
+  });
+
+  it("counts only the first HTTP admission in a sync step for step-chain providers", async () => {
+    const { store, setCalls } = createMockRedisAdaptiveStore();
+
+    await runWithSyncStepAdmission(async () => {
+      await store.awaitAdmission("garmin", "provider", null);
+      await store.awaitAdmission("garmin", "provider", null);
+      await store.awaitAdmission("garmin", "provider", null);
+    });
+
+    let saved = JSON.parse(setCalls.at(-1)?.value ?? "{}");
+    expect(saved.requestCount).toBe(1);
+
+    await runWithSyncStepAdmission(async () => {
+      await store.awaitAdmission("garmin", "provider", null);
+    });
+
+    saved = JSON.parse(setCalls.at(-1)?.value ?? "{}");
     expect(saved.requestCount).toBe(2);
   });
 

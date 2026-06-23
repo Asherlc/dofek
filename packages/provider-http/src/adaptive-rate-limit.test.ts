@@ -16,8 +16,10 @@ import {
   parseStravaRateLimitHeaders,
   recordAdaptiveRateLimit,
   recordAdaptiveRequest,
+  recordAdaptiveThrottleTouch,
   serializeAdaptiveRateState,
   slideAdaptiveWindow,
+  throttleDelayMs,
 } from "./adaptive-rate-limit.ts";
 
 describe("defaultThrottleMs", () => {
@@ -159,6 +161,18 @@ describe("admissionDelayMs", () => {
     expect(admissionDelayMs(throttled, 0)).toBe(1000);
   });
 
+  it("derives throttle delay independently from budget pacing", () => {
+    const state = {
+      ...createInitialAdaptiveState("garmin", "provider", null, 0),
+      throttleMs: 2_000,
+      lastRequestMs: 500,
+      inferredBudget: 40,
+      requestCount: 1,
+    };
+    expect(throttleDelayMs(state, 1_000)).toBe(1_500);
+    expect(admissionDelayMs(state, 1_000)).toBe(1_500);
+  });
+
   it("paces Strava requests when short quota is nearly exhausted", () => {
     const state = applyStravaQuota(createInitialAdaptiveState("strava", "provider", null), {
       shortLimit: 100,
@@ -241,6 +255,16 @@ describe("recordAdaptiveRequest", () => {
     const state = createInitialAdaptiveState("garmin", "provider", null, 1000);
     const next = recordAdaptiveRequest(state, 1500);
     expect(next.requestCount).toBe(1);
+    expect(next.lastRequestMs).toBe(1500);
+    expect(next.throttleMs).toBeLessThan(state.throttleMs);
+  });
+});
+
+describe("recordAdaptiveThrottleTouch", () => {
+  it("updates throttle timing without consuming a sync-step budget slot", () => {
+    const state = createInitialAdaptiveState("garmin", "provider", null, 1000);
+    const next = recordAdaptiveThrottleTouch(state, 1500);
+    expect(next.requestCount).toBe(0);
     expect(next.lastRequestMs).toBe(1500);
     expect(next.throttleMs).toBeLessThan(state.throttleMs);
   });
