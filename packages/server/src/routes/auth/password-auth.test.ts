@@ -86,6 +86,7 @@ vi.mock("../../logger.ts", () => ({
 
 import { InvalidPasswordError } from "../../auth/password.ts";
 import { DuplicateEmailError, InvalidCredentialsError } from "../../auth/password-credential.ts";
+import { InvalidPasswordResetTokenError } from "../../auth/password-reset.ts";
 import {
   handlePasswordLogin,
   handlePasswordRegister,
@@ -348,6 +349,46 @@ describe("handlePasswordResetRequest", () => {
       message: "If that email has a password login, we'll send a reset link.",
     });
   });
+
+  it("returns 404 when password auth is disabled", async () => {
+    mockIsPasswordAuthEnabled.mockReturnValue(false);
+    const { req, res } = createMockReqRes();
+
+    await handlePasswordResetRequest(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: "Password authentication is not enabled" });
+  });
+
+  it("returns 400 for invalid reset request body", async () => {
+    const { req, res } = createMockReqRes({
+      body: { email: "not-an-email" },
+      headers: { accept: "application/json" },
+    });
+
+    await handlePasswordResetRequest(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: "Invalid password reset request" });
+  });
+
+  it("returns 500 and reports unexpected reset request errors", async () => {
+    const error = new Error("database unavailable");
+    mockCreatePasswordResetToken.mockRejectedValue(error);
+    const { req, res } = createMockReqRes({
+      body: { email: "user@example.com" },
+      headers: { accept: "application/json" },
+    });
+
+    await handlePasswordResetRequest(req, res);
+
+    expect(mockCaptureException).toHaveBeenCalledWith(error);
+    expect(mockLogger.error).toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({
+      error: "Password reset request failed — please try again",
+    });
+  });
 });
 
 describe("handlePasswordResetConfirm", () => {
@@ -367,5 +408,71 @@ describe("handlePasswordResetConfirm", () => {
 
     expect(mockResetPasswordWithToken).toHaveBeenCalledWith({}, "reset-token", "new-password123");
     expect(res.json).toHaveBeenCalledWith({ ok: true });
+  });
+
+  it("returns 404 when password auth is disabled", async () => {
+    mockIsPasswordAuthEnabled.mockReturnValue(false);
+    const { req, res } = createMockReqRes();
+
+    await handlePasswordResetConfirm(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: "Password authentication is not enabled" });
+  });
+
+  it("returns 400 for invalid reset confirmation body", async () => {
+    const { req, res } = createMockReqRes({
+      body: { token: "", password: "short" },
+      headers: { accept: "application/json" },
+    });
+
+    await handlePasswordResetConfirm(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: "Invalid password reset details" });
+  });
+
+  it("returns 400 for invalid reset tokens", async () => {
+    mockResetPasswordWithToken.mockRejectedValue(new InvalidPasswordResetTokenError());
+    const { req, res } = createMockReqRes({
+      body: { token: "reset-token", password: "new-password123" },
+      headers: { accept: "application/json" },
+    });
+
+    await handlePasswordResetConfirm(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: "Reset link is invalid or has expired" });
+  });
+
+  it("returns 400 for weak passwords", async () => {
+    mockResetPasswordWithToken.mockRejectedValue(
+      new InvalidPasswordError("Password must be at least 8 characters"),
+    );
+    const { req, res } = createMockReqRes({
+      body: { token: "reset-token", password: "short" },
+      headers: { accept: "application/json" },
+    });
+
+    await handlePasswordResetConfirm(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: "Password must be at least 8 characters" });
+  });
+
+  it("returns 500 and reports unexpected reset confirmation errors", async () => {
+    const error = new Error("database unavailable");
+    mockResetPasswordWithToken.mockRejectedValue(error);
+    const { req, res } = createMockReqRes({
+      body: { token: "reset-token", password: "new-password123" },
+      headers: { accept: "application/json" },
+    });
+
+    await handlePasswordResetConfirm(req, res);
+
+    expect(mockCaptureException).toHaveBeenCalledWith(error);
+    expect(mockLogger.error).toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ error: "Password reset failed — please try again" });
   });
 });
