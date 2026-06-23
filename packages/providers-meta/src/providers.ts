@@ -1,3 +1,5 @@
+import { formatDateTime } from "@dofek/format/format";
+
 /** Display labels for provider IDs, shared across web and iOS */
 export const PROVIDER_LABELS: Record<string, string> = {
   google: "Google",
@@ -52,6 +54,38 @@ export function providerSourceLabel(id: string, subsource?: string | null): stri
     return `${subsource} (via Apple Health)`;
   }
   return providerLabel(id);
+}
+
+export interface ProviderAbsentSource {
+  providerId: string;
+  providerAbsentAt: string | null;
+  subsource?: string | null;
+}
+
+/** Format a fully hidden activity tombstone line for activity lists. */
+export function formatProviderAbsentTombstoneSummary(
+  providerId: string,
+  providerAbsentAt: string,
+  subsource?: string | null,
+): string {
+  const providerLabel = providerSourceLabel(providerId, subsource);
+  return `Removed from ${providerLabel} · ${formatDateTime(providerAbsentAt)}`;
+}
+
+/** Format removed provider sources for canonical activities with partial absence. */
+export function formatProviderPartialAbsenceSummary(
+  sources: ProviderAbsentSource[],
+): string | null {
+  if (sources.length === 0) return null;
+  return sources
+    .map((source) => {
+      const providerLabel = providerSourceLabel(source.providerId, source.subsource);
+      const removedAt = source.providerAbsentAt
+        ? ` · ${formatDateTime(source.providerAbsentAt)}`
+        : "";
+      return `${providerLabel} removed${removedAt}`;
+    })
+    .join(", ");
 }
 
 /** Explain why a provider-absent activity was hidden on detail pages. */

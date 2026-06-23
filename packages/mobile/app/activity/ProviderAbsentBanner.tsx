@@ -1,4 +1,4 @@
-import { formatDateLong } from "@dofek/format/format";
+import { formatDateTime } from "@dofek/format/format";
 import { providerAbsentExplanation, providerSourceLabel } from "@dofek/providers/providers";
 import { Text, View } from "react-native";
 import { styles } from "./styles";
@@ -27,7 +27,7 @@ export function ProviderAbsentBanner({ activity }: { activity: ProviderAbsentBan
         <View style={styles.providerAbsentDetail}>
           <Text style={styles.providerAbsentLabel}>Removed at</Text>
           <Text style={styles.providerAbsentValue}>
-            {activity.providerAbsentAt ? formatDateLong(activity.providerAbsentAt) : "—"}
+            {activity.providerAbsentAt ? formatDateTime(activity.providerAbsentAt) : "—"}
           </Text>
         </View>
       </View>

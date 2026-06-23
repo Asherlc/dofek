@@ -1,3 +1,4 @@
+import { type ProviderAbsentSource } from "@dofek/providers/providers";
 import { TrainingStressCalculator } from "@dofek/training/training-load";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
@@ -44,8 +45,7 @@ export interface CalendarActivityEntry {
   isProviderAbsent?: boolean;
   providerId?: string;
   providerAbsentAt?: string | null;
-  partialAbsenceSummary?: string | null;
-  tombstoneSummary?: string | null;
+  partialAbsentSources?: ProviderAbsentSource[];
 }
 
 export interface CalendarDayActivities {
@@ -261,7 +261,9 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         startedAt: row.started_at,
         endedAt: row.ended_at,
         durationMin: Math.round(row.duration_min * 10) / 10,
-        partialAbsenceSummary: sourceAttribution.partialAbsenceSummary(this.#providerLookup),
+        partialAbsentSources: sourceAttribution.hasPartialAbsence
+          ? sourceAttribution.partialAbsentSources()
+          : undefined,
         location:
           row.centroid_lat != null && row.centroid_lng != null
             ? {
@@ -410,10 +412,6 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         isProviderAbsent: true,
         providerId: row.provider_id,
         providerAbsentAt: row.provider_absent_at,
-        tombstoneSummary: ActivitySourceAttribution.hiddenActivityTombstoneSummary(
-          row.provider_id,
-          row.provider_absent_at,
-        ),
       };
 
       const bucket = dayMap.get(row.local_date) ?? [];

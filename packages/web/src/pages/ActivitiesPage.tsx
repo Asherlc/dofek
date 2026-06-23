@@ -8,6 +8,11 @@ import {
   parseValidDate,
 } from "@dofek/format/format";
 import { formatMeasurementText } from "@dofek/format/units";
+import {
+  formatProviderAbsentTombstoneSummary,
+  formatProviderPartialAbsenceSummary,
+  type ProviderAbsentSource,
+} from "@dofek/providers/providers";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
@@ -420,8 +425,9 @@ interface ActivityCardProps {
     startedAt: string;
     durationMin: number;
     isProviderAbsent?: boolean;
-    partialAbsenceSummary?: string | null;
-    tombstoneSummary?: string | null;
+    providerId?: string;
+    providerAbsentAt?: string | null;
+    partialAbsentSources?: ProviderAbsentSource[];
     location: ActivityMapLocation | null;
     stats: { label: string; value: string }[];
   };
@@ -439,6 +445,16 @@ function ActivityCard({
   onToggleSelected,
 }: ActivityCardProps) {
   const isHidden = activity.isProviderAbsent === true;
+  const tombstoneSummary =
+    isHidden && activity.providerId && activity.providerAbsentAt
+      ? formatProviderAbsentTombstoneSummary(
+          activity.providerId,
+          activity.providerAbsentAt,
+        )
+      : null;
+  const partialAbsenceSummary = formatProviderPartialAbsenceSummary(
+    activity.partialAbsentSources ?? [],
+  );
   const cardClassName = [
     "card block h-full overflow-hidden transition-colors",
     selectMode ? "cursor-pointer hover:bg-surface-elevated" : "hover:bg-surface-elevated",
@@ -482,14 +498,14 @@ function ActivityCard({
           <p className="mt-1 text-xs text-muted">
             {formatTime(activity.startedAt)} · {formatDurationMinutes(activity.durationMin)}
           </p>
-          {activity.tombstoneSummary ? (
+          {tombstoneSummary ? (
             <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
-              {activity.tombstoneSummary}
+              {tombstoneSummary}
             </p>
           ) : null}
-          {activity.partialAbsenceSummary ? (
+          {partialAbsenceSummary ? (
             <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
-              {activity.partialAbsenceSummary}
+              {partialAbsenceSummary}
             </p>
           ) : null}
         </div>
