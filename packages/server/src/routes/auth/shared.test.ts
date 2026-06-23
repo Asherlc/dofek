@@ -54,6 +54,7 @@ import {
   deletePendingEmailSignup,
   getPendingEmailSignup,
   initAuthStores,
+  isSafeRelativeRedirect,
   type PendingEmailSignupEntry,
   sanitizeReturnTo,
   storeIdentityFlow,
@@ -68,6 +69,7 @@ describe("shared auth helpers", () => {
     });
 
     it("rejects paths that don't start with /", () => {
+      expect(sanitizeReturnTo("dashboard")).toBeUndefined();
       expect(sanitizeReturnTo("https://evil.com")).toBeUndefined();
       expect(sanitizeReturnTo("javascript:alert(1)")).toBeUndefined();
     });
@@ -79,6 +81,21 @@ describe("shared auth helpers", () => {
     it("accepts valid relative paths", () => {
       expect(sanitizeReturnTo("/dashboard")).toBe("/dashboard");
       expect(sanitizeReturnTo("/settings/profile")).toBe("/settings/profile");
+      expect(sanitizeReturnTo("/?newUser=true")).toBe("/?newUser=true");
+    });
+  });
+
+  describe("isSafeRelativeRedirect", () => {
+    it("accepts same-origin relative paths", () => {
+      expect(isSafeRelativeRedirect("/dashboard")).toBe(true);
+      expect(isSafeRelativeRedirect("/?newUser=true")).toBe(true);
+    });
+
+    it("rejects external and protocol-relative URLs", () => {
+      expect(isSafeRelativeRedirect("dashboard")).toBe(false);
+      expect(isSafeRelativeRedirect("https://evil.com")).toBe(false);
+      expect(isSafeRelativeRedirect("//evil.com")).toBe(false);
+      expect(isSafeRelativeRedirect("javascript:alert(1)")).toBe(false);
     });
   });
 

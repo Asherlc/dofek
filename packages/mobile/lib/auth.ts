@@ -17,6 +17,11 @@ export type { AuthUser, ConfiguredProviders };
 const SESSION_TOKEN_KEY = "dofek_session_token";
 const APP_SCHEME = "dofek";
 
+export interface AuthResult {
+  session: string;
+  isNewUser: boolean;
+}
+
 /** Save the session token to secure storage. */
 export async function saveSessionToken(token: string): Promise<void> {
   await SecureStore.setItemAsync(SESSION_TOKEN_KEY, token);
@@ -60,7 +65,7 @@ async function submitPasswordAuth(
   serverUrl: string,
   path: "/auth/login/password" | "/auth/register",
   body: Record<string, string | undefined>,
-): Promise<string> {
+): Promise<AuthResult> {
   const response = await fetch(`${serverUrl}${path}`, {
     method: "POST",
     headers: {
@@ -74,6 +79,7 @@ async function submitPasswordAuth(
   const parsed = z
     .object({
       session: z.string(),
+      isNewUser: z.boolean(),
       error: z.string().optional(),
     })
     .safeParse(data);
@@ -89,14 +95,14 @@ async function submitPasswordAuth(
   if (!parsed.success || !parsed.data.session) {
     throw new Error("Authentication failed");
   }
-  return parsed.data.session;
+  return { session: parsed.data.session, isNewUser: parsed.data.isNewUser };
 }
 
 export async function loginWithPassword(
   serverUrl: string,
   email: string,
   password: string,
-): Promise<string> {
+): Promise<AuthResult> {
   return submitPasswordAuth(serverUrl, "/auth/login/password", { email, password });
 }
 
@@ -105,7 +111,7 @@ export async function registerWithPassword(
   email: string,
   password: string,
   name?: string,
-): Promise<string> {
+): Promise<AuthResult> {
   return submitPasswordAuth(serverUrl, "/auth/register", {
     email,
     password,
@@ -140,12 +146,12 @@ export async function requestPasswordReset(
   return { message: parsed.data.message };
 }
 
-/** Start OAuth login via system browser. Returns the session token on success, null if cancelled. */
+/** Start OAuth login via system browser. Returns the auth result on success, null if cancelled. */
 export async function startOAuthLogin(
   serverUrl: string,
   providerId: string,
   isDataProvider: boolean,
-): Promise<string | null> {
+): Promise<AuthResult | null> {
   const loginPath = isDataProvider ? `/auth/login/data/${providerId}` : `/auth/login/${providerId}`;
   const loginUrl = `${serverUrl}${loginPath}?redirect_scheme=${APP_SCHEME}`;
   const redirectUrl = `${APP_SCHEME}://auth/callback`;
@@ -159,7 +165,15 @@ export async function startOAuthLogin(
   // Extract session token from the redirect URL
   const url = new URL(result.url);
   const session = url.searchParams.get("session");
-  return session;
+  const newUserParam = url.searchParams.get("new_user");
+  if (!session) return null;
+  if (newUserParam !== "true" && newUserParam !== "false") {
+    throw new Error("Authentication failed");
+  }
+  return {
+    session,
+    isNewUser: newUserParam === "true",
+  };
 }
 
 /** Whether native Apple Sign In is available (iOS 13+). */
@@ -176,8 +190,8 @@ export async function isNativeAppleSignInAvailable(): Promise<boolean> {
   }
 }
 
-/** Sign in using the native iOS Apple Sign In sheet. Returns session token or null if cancelled. */
-export async function startNativeAppleSignIn(serverUrl: string): Promise<string | null> {
+/** Sign in using the native iOS Apple Sign In sheet. Returns auth result or null if cancelled. */
+export async function startNativeAppleSignIn(serverUrl: string): Promise<AuthResult | null> {
   const credential = await AppleAuthentication.signInAsync({
     requestedScopes: [
       AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
@@ -214,8 +228,11 @@ export async function startNativeAppleSignIn(serverUrl: string): Promise<string 
   }
 
   const data: unknown = await response.json();
-  const parsed = z.object({ session: z.string() }).safeParse(data);
-  return parsed.success ? parsed.data.session : null;
+  const parsed = z.object({ session: z.string(), isNewUser: z.boolean() }).safeParse(data);
+  if (!parsed.success) {
+    throw new Error("Apple Sign In failed: invalid response");
+  }
+  return { session: parsed.data.session, isNewUser: parsed.data.isNewUser };
 }
 
 /** Log out: delete session on server and clear local token. */

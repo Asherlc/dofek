@@ -66,7 +66,7 @@ vi.mock("../auth/account-linking.ts", () => ({
       this.name = "MissingEmailForSignupError";
     }
   },
-  resolveOrCreateUser: vi.fn(() => Promise.resolve({ userId: "user-1" })),
+  resolveOrCreateUser: vi.fn(() => Promise.resolve({ userId: "user-1", isNewUser: false })),
 }));
 
 vi.mock("dofek/lib/cache", () => ({
@@ -255,7 +255,8 @@ describe("createAuthRouter", () => {
       expect(res.status).toBe(200);
       const data = JSON.parse(res.body);
       expect(data.session).toBe("sess-1");
-      expect(data.redirect).toBe("/");
+      expect(data.redirect).toBe("/?newUser=true");
+      expect(data.isNewUser).toBe(true);
       expect(setSessionCookie).toHaveBeenCalled();
     });
   });
@@ -274,6 +275,7 @@ describe("createAuthRouter", () => {
       expect(res.status).toBe(200);
       const data = JSON.parse(res.body);
       expect(data.session).toBe("sess-1");
+      expect(data.isNewUser).toBe(false);
       expect(setSessionCookie).toHaveBeenCalled();
     });
   });
@@ -529,6 +531,38 @@ describe("createAuthRouter", () => {
       );
       expect(res.status).toBe(302);
       expect(res.headers.location).toBe("/dashboard?providerGuide=true");
+    });
+
+    it("marks new identity users in the default redirect when no return_to is stored", async () => {
+      const mockValidate = vi.fn(() =>
+        Promise.resolve({
+          tokens: {},
+          user: { sub: "goog-new", email: "new@test.com", name: "New User" },
+        }),
+      );
+      vi.mocked(getIdentityProvider).mockReturnValue({
+        createAuthorizationUrl: vi.fn(() => new URL("https://accounts.google.com/authorize")),
+        validateCallback: mockValidate,
+      });
+      vi.mocked(getOAuthFlowCookies).mockReturnValue({
+        state: "google:state123",
+        codeVerifier: "verifier123",
+      });
+      vi.mocked(getPostLoginRedirectCookie).mockReturnValue(undefined);
+      vi.mocked(resolveOrCreateUser).mockResolvedValueOnce({
+        userId: "new-user-1",
+        isNewUser: true,
+      });
+
+      const { app } = createTestApp();
+      const res = await request(
+        app,
+        "get",
+        "/auth/callback/google?code=authcode&state=google:state123",
+      );
+
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe("/?newUser=true");
     });
 
     it("invalidates linked accounts cache after successful identity linking", async () => {
@@ -1852,6 +1886,7 @@ describe("createAuthRouter", () => {
             },
             exchangeCode: mockExchangeCode,
             getUserIdentity: mockGetUserIdentity,
+            identityCapabilities: { providesEmail: true },
           }),
         },
       ]);
@@ -1873,7 +1908,16 @@ describe("createAuthRouter", () => {
       expect(callbackRes.status).toBe(302);
       expect(callbackRes.headers.location).toBe("/");
       expect(mockGetUserIdentity).toHaveBeenCalledWith("login-access-token");
-      expect(resolveOrCreateUser).toHaveBeenCalled();
+      expect(resolveOrCreateUser).toHaveBeenCalledWith(
+        expect.anything(),
+        "strava",
+        expect.objectContaining({
+          providerAccountId: "strava-user-1",
+          email: "runner@test.com",
+        }),
+        undefined,
+        { requireEmailForNewUser: false },
+      );
       expect(ensureProvider).toHaveBeenCalledWith(
         expect.anything(),
         "strava",
@@ -1894,6 +1938,72 @@ describe("createAuthRouter", () => {
       );
       expect(createSession).toHaveBeenCalled();
       expect(setSessionCookie).toHaveBeenCalled();
+    });
+
+    it("marks new data-provider login users in the default redirect", async () => {
+      const mockExchangeCode = vi.fn(() =>
+        Promise.resolve({
+          accessToken: "new-login-access-token",
+          refreshToken: "new-login-refresh-token",
+          expiresAt: new Date("2027-06-01"),
+          scopes: "read",
+        }),
+      );
+      const mockGetUserIdentity = vi.fn(() =>
+        Promise.resolve({
+          providerAccountId: "strava-new-user-1",
+          email: "new-runner@test.com",
+          name: "New Runner",
+        }),
+      );
+      vi.mocked(resolveOrCreateUser).mockResolvedValueOnce({
+        userId: "new-runner-user-1",
+        isNewUser: true,
+      });
+      vi.mocked(getAllProviders).mockReturnValue([
+        {
+          id: "strava",
+          name: "Strava",
+          authSetup: () => ({
+            oauthConfig: {
+              authorizationEndpoint: "https://www.strava.com/oauth/authorize",
+              clientId: "test",
+              redirectUri: "https://dofek.asherlc.com/callback",
+              scopes: ["read"],
+            },
+            exchangeCode: mockExchangeCode,
+            getUserIdentity: mockGetUserIdentity,
+          }),
+        },
+      ]);
+
+      const { app } = createTestApp();
+
+      const startRes = await request(app, "get", "/auth/login/data/strava");
+      expect(startRes.status).toBe(302);
+      const location = startRes.headers.location;
+      if (typeof location !== "string") throw new Error("Expected location header");
+      const state = new URL(location).searchParams.get("state");
+      expect(state).toBeTruthy();
+
+      const callbackRes = await request(
+        app,
+        "get",
+        `/callback?code=strava-new-code&state=${state}`,
+      );
+
+      expect(callbackRes.status).toBe(302);
+      expect(callbackRes.headers.location).toBe("/?newUser=true");
+      expect(resolveOrCreateUser).toHaveBeenCalledWith(
+        expect.anything(),
+        "strava",
+        expect.objectContaining({
+          providerAccountId: "strava-new-user-1",
+          email: "new-runner@test.com",
+        }),
+        undefined,
+        { requireEmailForNewUser: false },
+      );
     });
 
     it("handles login intent with mobile scheme: redirects to deep link", async () => {
@@ -1948,7 +2058,18 @@ describe("createAuthRouter", () => {
       );
       expect(callbackRes.status).toBe(302);
       expect(callbackRes.headers.location).toContain("dofek://auth/callback?session=");
+      expect(callbackRes.headers.location).toContain("new_user=false");
       expect(setSessionCookie).not.toHaveBeenCalled();
+      expect(resolveOrCreateUser).toHaveBeenCalledWith(
+        expect.anything(),
+        "strava",
+        expect.objectContaining({
+          providerAccountId: "strava-mobile-1",
+          email: "mobile@test.com",
+        }),
+        undefined,
+        { requireEmailForNewUser: false },
+      );
     });
 
     it("renders a manual email form when provider signup needs an email", async () => {
@@ -1967,8 +2088,13 @@ describe("createAuthRouter", () => {
           name: "Runner",
         }),
       );
-      vi.mocked(resolveOrCreateUser).mockRejectedValueOnce(
-        new MissingEmailForSignupError("Strava"),
+      vi.mocked(resolveOrCreateUser).mockImplementationOnce(
+        (_db, _providerId, identity, _linkUserId, options) => {
+          if (!identity.email && options?.requireEmailForNewUser) {
+            return Promise.reject(new MissingEmailForSignupError("Strava"));
+          }
+          return Promise.resolve({ userId: "user-1", isNewUser: false });
+        },
       );
       vi.mocked(getAllProviders).mockReturnValue([
         {
@@ -2006,6 +2132,16 @@ describe("createAuthRouter", () => {
       expect(callbackRes.status).toBe(200);
       expect(callbackRes.body).toContain("Enter your email to finish signing in");
       expect(callbackRes.body).toContain('action="/auth/complete-signup"');
+      expect(resolveOrCreateUser).toHaveBeenCalledWith(
+        expect.anything(),
+        "strava",
+        expect.objectContaining({
+          providerAccountId: "strava-missing-email-1",
+          email: null,
+        }),
+        undefined,
+        { requireEmailForNewUser: true },
+      );
       expect(ensureProvider).not.toHaveBeenCalled();
       expect(createSession).not.toHaveBeenCalled();
       expect(setSessionCookie).not.toHaveBeenCalled();
@@ -2214,6 +2350,7 @@ describe("createAuthRouter", () => {
 
       expect(completeRes.status).toBe(302);
       expect(completeRes.headers.location).toContain("dofek://auth/callback?session=");
+      expect(completeRes.headers.location).toContain("new_user=true");
       expect(ensureProvider).toHaveBeenCalledWith(
         expect.anything(),
         "strava",
@@ -2287,7 +2424,7 @@ describe("createAuthRouter", () => {
 
       expect(failedCompleteRes.status).toBe(500);
       expect(successfulRetryRes.status).toBe(302);
-      expect(successfulRetryRes.headers.location).toBe("/");
+      expect(successfulRetryRes.headers.location).toBe("/?newUser=true");
       expect(ensureProvider).toHaveBeenCalledTimes(1);
       expect(ensureProvider).toHaveBeenCalledWith(
         expect.anything(),

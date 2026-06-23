@@ -12,7 +12,11 @@ const captured = vi.hoisted(() => {
   const ref: {
     component: (() => React.ReactElement) | null;
     validateSearch:
-      | ((search: Record<string, unknown>) => { providerGuide?: boolean; returnTo?: string })
+      | ((search: Record<string, unknown>) => {
+          newUser?: boolean;
+          providerGuide?: boolean;
+          returnTo?: string;
+        })
       | null;
   } = { component: null, validateSearch: null };
   return ref;
@@ -22,6 +26,7 @@ vi.mock("@tanstack/react-router", () => ({
   createRootRoute: (options: {
     component: () => React.ReactElement;
     validateSearch?: (search: Record<string, unknown>) => {
+      newUser?: boolean;
       providerGuide?: boolean;
       returnTo?: string;
     };
@@ -64,19 +69,40 @@ describe("validateSearch", () => {
   }
 
   it("parses boolean true (TanStack Router default JSON parser)", () => {
-    expect(validate({ providerGuide: true })).toEqual({ providerGuide: true });
+    expect(validate({ providerGuide: true })).toEqual({
+      newUser: undefined,
+      providerGuide: true,
+      returnTo: undefined,
+    });
   });
 
   it("parses string 'true' (plain query string fallback)", () => {
-    expect(validate({ providerGuide: "true" })).toEqual({ providerGuide: true });
+    expect(validate({ providerGuide: "true" })).toEqual({
+      newUser: undefined,
+      providerGuide: true,
+      returnTo: undefined,
+    });
+  });
+
+  it("parses new user marker", () => {
+    expect(validate({ newUser: "true" })).toEqual({
+      newUser: true,
+      providerGuide: undefined,
+      returnTo: undefined,
+    });
   });
 
   it("returns undefined for missing param", () => {
-    expect(validate({})).toEqual({ providerGuide: undefined, returnTo: undefined });
+    expect(validate({})).toEqual({
+      newUser: undefined,
+      providerGuide: undefined,
+      returnTo: undefined,
+    });
   });
 
   it("returns undefined for false", () => {
     expect(validate({ providerGuide: false })).toEqual({
+      newUser: undefined,
       providerGuide: undefined,
       returnTo: undefined,
     });
@@ -84,6 +110,7 @@ describe("validateSearch", () => {
 
   it("returns undefined for string 'false'", () => {
     expect(validate({ providerGuide: "false" })).toEqual({
+      newUser: undefined,
       providerGuide: undefined,
       returnTo: undefined,
     });
@@ -91,6 +118,7 @@ describe("validateSearch", () => {
 
   it("keeps safe returnTo paths", () => {
     expect(validate({ returnTo: "/onboarding" })).toEqual({
+      newUser: undefined,
       providerGuide: undefined,
       returnTo: "/onboarding",
     });
@@ -98,6 +126,7 @@ describe("validateSearch", () => {
 
   it("drops external returnTo URLs", () => {
     expect(validate({ returnTo: "https://evil.test/path" })).toEqual({
+      newUser: undefined,
       providerGuide: undefined,
       returnTo: undefined,
     });

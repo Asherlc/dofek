@@ -22,7 +22,7 @@ import {
 } from "../../auth/password-reset.ts";
 import { createSession } from "../../auth/session.ts";
 import { logger } from "../../logger.ts";
-import { getDb, sanitizeReturnTo } from "./shared.ts";
+import { getDb, getPostLoginRedirect, sanitizeReturnTo } from "./shared.ts";
 
 function wantsJsonResponse(req: Request): boolean {
   const accept = req.headers.accept;
@@ -57,9 +57,10 @@ export async function handlePasswordRegister(req: Request, res: Response): Promi
     }
 
     const db = getDb();
-    const { userId } = await registerPasswordUser(db, parsed.data);
+    const { userId, isNewUser } = await registerPasswordUser(db, parsed.data);
     const sessionInfo = await createSession(db, userId);
     const returnTo = getReturnTo(req);
+    const redirectTo = getPostLoginRedirect(returnTo, isNewUser);
 
     logger.info(`[auth] User ${userId} registered with email/password`);
 
@@ -67,13 +68,14 @@ export async function handlePasswordRegister(req: Request, res: Response): Promi
       setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
       res.json({
         session: sessionInfo.sessionId,
-        redirect: returnTo ?? "/",
+        redirect: redirectTo,
+        isNewUser,
       });
       return;
     }
 
     setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
-    res.redirect("/");
+    res.redirect(isNewUser ? "/?newUser=true" : "/");
   } catch (error: unknown) {
     if (error instanceof DuplicateEmailError) {
       sendAuthError(res, 409, error.message);
@@ -106,6 +108,7 @@ export async function handlePasswordLogin(req: Request, res: Response): Promise<
     const { userId } = await authenticatePasswordUser(db, parsed.data.email, parsed.data.password);
     const sessionInfo = await createSession(db, userId);
     const returnTo = getReturnTo(req);
+    const redirectTo = getPostLoginRedirect(returnTo, false);
 
     logger.info(`[auth] User ${userId} logged in with email/password`);
 
@@ -113,7 +116,8 @@ export async function handlePasswordLogin(req: Request, res: Response): Promise<
       setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
       res.json({
         session: sessionInfo.sessionId,
-        redirect: returnTo ?? "/",
+        redirect: redirectTo,
+        isNewUser: false,
       });
       return;
     }

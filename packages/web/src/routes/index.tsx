@@ -1,9 +1,10 @@
-import { createFileRoute, Navigate } from "@tanstack/react-router";
+import { createFileRoute, Navigate, useSearch } from "@tanstack/react-router";
 import { useAuth } from "../lib/auth-context.tsx";
 import { LandingPage } from "../pages/LandingPage.tsx";
 
 function IndexPage() {
   const { user, isLoading } = useAuth();
+  const { newUser } = useSearch({ from: "__root__" });
 
   if (isLoading) {
     return (
@@ -14,6 +15,9 @@ function IndexPage() {
   }
 
   if (user) {
+    if (newUser) {
+      return <Navigate to="/onboarding" />;
+    }
     return <Navigate to="/dashboard" search={(previous) => previous} />;
   }
 

@@ -36,7 +36,7 @@ export async function handleAppleNativeSignIn(req: Request, res: Response): Prom
     const userName = identityUser.name ?? fullName;
 
     const db = getDb();
-    const { userId } = await resolveOrCreateUser(db, "apple", {
+    const { userId, isNewUser } = await resolveOrCreateUser(db, "apple", {
       providerAccountId: identityUser.sub,
       email: identityUser.email,
       name: userName,
@@ -45,7 +45,7 @@ export async function handleAppleNativeSignIn(req: Request, res: Response): Prom
 
     const sessionInfo = await createSession(db, userId);
     logger.info(`[auth] User ${userId} logged in via native Apple Sign In`);
-    res.json({ session: sessionInfo.sessionId });
+    res.json({ session: sessionInfo.sessionId, isNewUser });
   } catch (err: unknown) {
     Sentry.captureException(err);
     const message = err instanceof Error ? err.message : String(err);
