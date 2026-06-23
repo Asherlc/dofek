@@ -125,8 +125,19 @@ export function deletePendingEmailSignup(token: string): void {
 
 export function sanitizeReturnTo(returnTo: string | undefined): string | undefined {
   if (!returnTo) return undefined;
-  if (!returnTo.startsWith("/") || returnTo.startsWith("//")) return undefined;
+  if (!isSafeRelativeRedirect(returnTo)) return undefined;
   return returnTo;
+}
+
+const REDIRECT_BASE_ORIGIN = "https://dofek.local";
+
+/** Validate that a redirect target stays on the app origin (CodeQL-safe open redirect guard). */
+export function isSafeRelativeRedirect(path: string): boolean {
+  try {
+    return new URL(path, REDIRECT_BASE_ORIGIN).origin === REDIRECT_BASE_ORIGIN;
+  } catch {
+    return false;
+  }
 }
 
 export function getPostLoginRedirect(returnTo: string | undefined, isNewUser: boolean): string {

@@ -22,7 +22,7 @@ import {
 } from "../../auth/password-reset.ts";
 import { createSession } from "../../auth/session.ts";
 import { logger } from "../../logger.ts";
-import { getDb, getPostLoginRedirect, sanitizeReturnTo } from "./shared.ts";
+import { getDb, getPostLoginRedirect, isSafeRelativeRedirect, sanitizeReturnTo } from "./shared.ts";
 
 function wantsJsonResponse(req: Request): boolean {
   const accept = req.headers.accept;
@@ -32,11 +32,24 @@ function wantsJsonResponse(req: Request): boolean {
   return req.headers["content-type"]?.includes("application/json") ?? false;
 }
 
-function getReturnTo(req: Request): string | undefined {
+function getRawReturnTo(req: Request): string | undefined {
   const queryReturnTo = typeof req.query.return_to === "string" ? req.query.return_to : undefined;
   const bodyReturnTo =
     req.body && typeof req.body.return_to === "string" ? req.body.return_to : undefined;
-  return sanitizeReturnTo(queryReturnTo ?? bodyReturnTo);
+  return queryReturnTo ?? bodyReturnTo;
+}
+
+function getReturnTo(req: Request): string | undefined {
+  return sanitizeReturnTo(getRawReturnTo(req));
+}
+
+function redirectAfterPasswordAuth(res: Response, req: Request, isNewUser: boolean): void {
+  const candidate = getRawReturnTo(req);
+  if (candidate && isSafeRelativeRedirect(candidate)) {
+    res.redirect(candidate);
+    return;
+  }
+  res.redirect(isNewUser ? "/?newUser=true" : "/");
 }
 
 function sendAuthError(res: Response, status: number, message: string): void {
@@ -75,7 +88,7 @@ export async function handlePasswordRegister(req: Request, res: Response): Promi
     }
 
     setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
-    res.redirect(redirectTo);
+    redirectAfterPasswordAuth(res, req, isNewUser);
   } catch (error: unknown) {
     if (error instanceof DuplicateEmailError) {
       sendAuthError(res, 409, error.message);
@@ -123,7 +136,7 @@ export async function handlePasswordLogin(req: Request, res: Response): Promise<
     }
 
     setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
-    res.redirect(redirectTo);
+    redirectAfterPasswordAuth(res, req, false);
   } catch (error: unknown) {
     if (error instanceof InvalidCredentialsError) {
       sendAuthError(res, 401, error.message);
