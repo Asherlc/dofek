@@ -52,7 +52,7 @@ Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle C
 - Redpanda stores hot `metric_stream` ingest data under `/mnt/dofek-data/redpanda` (a bind mount on the large data disk — a default named volume lands on the small root disk and fills during a metric-stream backfill). Redpanda local retention is not the long-term source of truth; Redpanda Connect writes the `metric-stream-v1` topic to the `dofek-metric-stream-archive` R2 bucket for canonical replay. The ClickHouse sink and R2 archive services must be healthy before any metric-stream writer change is considered deployed safely.
 - The historical Postgres `fitness.metric_stream` hypertable has been retired; metric-stream durability is Redpanda plus the R2 archive, and ClickHouse is the serving copy. The `cdc-health` service alerts on remaining PeerDB slot lag at 16 GiB and fails the check at 32 GiB so operators have headroom before Postgres reaches the 64 GiB per-slot WAL cap.
 - Slack is forced to HTTP mode in production via `SLACK_MODE=http` on the `web` service. This avoids Socket Mode multi-consumer overlap during rolling deploys when `web` has multiple replicas.
-- Management UIs use a local Authentik proxy outpost service (`authentik-proxy`) and shared Traefik middleware (`management-auth`). See [docs/management-ui-auth.md](../docs/management-ui-auth.md).
+- Management UIs (Portainer, Databasus, CloudBeaver, pgAdmin, PeerDB UI, Netdata) are exposed on dedicated subdomains with TLS termination through Traefik. Protect them at the network layer or with each tool's built-in auth.
 
 ### Monitoring (`otel-collector-config.yaml`)
 - Uses `filelog` receiver to tail Docker logs from `/var/lib/docker/containers/*/*.log`.
@@ -110,7 +110,7 @@ If direct SSH fails with `Permission denied`, verify you are using the matching 
 
 Production secrets are stored in Infisical and rendered by CI into a temporary
 `.env.<env>` file for `docker stack deploy`; the file is not stored on the
-server. Required app, database, ClickHouse, PeerDB, export, Authentik, and
+server. Required app, database, ClickHouse, PeerDB, export, and
 mobile pipeline keys are listed in the deploy steps and mobile CI sections
 below. Missing required keys must fail the workflow before rollout.
 
@@ -137,7 +137,6 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
       - Must include `CLICKHOUSE_PASSWORD` for the ClickHouse service. The deploy workflow URL-encodes it into `CLICKHOUSE_PASSWORD_ENCODED` for app `CLICKHOUSE_URL` interpolation.
       - Must include `POSTGRES_PASSWORD`; PeerDB's catalog database and internal MinIO stage use this existing secret.
       - Must include `PEERDB_UI_NEXTAUTH_SECRET` as a dedicated high-entropy PeerDB UI session-signing secret.
-      - Must include `AUTHENTIK_OUTPOST_TOKEN` for the local management UI proxy outpost.
       - Must include `REDPANDA_BROKERS` and `METRIC_STREAM_TOPIC` for metric-stream producer and sink services.
       - Must include `METRIC_STREAM_R2_BUCKET`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` for the Redpanda Connect R2 archive.
       - Optional: `CREDENTIAL_ENCRYPTION_KEY_NAMESPACE` (default `dofek`) and `CREDENTIAL_ENCRYPTION_KEY_NAME` (default `provider-credentials`).
@@ -296,8 +295,8 @@ ClickHouse-backed body measurement reads, use:
 - `docs/clickhouse-body-measurement-staleness-runbook.md`
 
 ## Management UIs
-- **Portainer**: `https://portainer.dofek.asherlc.com` (Protected by Authentik)
-- **Netdata**: `https://netdata.dofek.asherlc.com` (Protected by Authentik)
+- **Portainer**: `https://portainer.dofek.asherlc.com`
+- **Netdata**: `https://netdata.dofek.asherlc.com`
 - **Databasus**: `https://databasus.dofek.asherlc.com` (DB management + backups)
 - **CloudBeaver**: `https://cloudbeaver.dofek.asherlc.com` (Postgres + ClickHouse UI)
 - **pgAdmin**: `https://pgadmin.dofek.asherlc.com` (Postgres UI)

@@ -72,6 +72,11 @@ vi.mock("../lib/auth-context", () => ({
 }));
 
 const mockLinkedAccountsRefetch = vi.fn();
+const mockPasswordCredentialStatusQuery = vi.fn(() => ({
+  data: { hasPassword: false },
+  isLoading: false,
+  error: null,
+}));
 
 const mockProvidersData = [
   { id: "wahoo", name: "Wahoo", authorized: true, importOnly: false },
@@ -81,7 +86,12 @@ const mockProvidersData = [
 
 vi.mock("../lib/trpc", () => ({
   trpc: {
-    useUtils: () => ({ invalidate: vi.fn() }),
+    useUtils: () => ({
+      invalidate: vi.fn(),
+      auth: { passwordCredentialStatus: { invalidate: vi.fn() } },
+      bodyAnalytics: { weightPrediction: { invalidate: vi.fn() } },
+      settings: { get: { setData: vi.fn() } },
+    }),
     sync: {
       providers: {
         useQuery: () => ({ data: mockProvidersData, isLoading: false }),
@@ -102,6 +112,15 @@ vi.mock("../lib/trpc", () => ({
         }),
       },
       unlinkAccount: {
+        useMutation: () => ({
+          mutate: vi.fn(),
+          isPending: false,
+        }),
+      },
+      passwordCredentialStatus: {
+        useQuery: () => mockPasswordCredentialStatusQuery(),
+      },
+      setPassword: {
         useMutation: () => ({
           mutate: vi.fn(),
           isPending: false,
@@ -184,6 +203,38 @@ describe("SettingsScreen data sources", () => {
     fireEvent.click(screen.getByText("2 connected"));
 
     expect(mockRouterPush).toHaveBeenCalledWith("/providers");
+  });
+});
+
+describe("SettingsScreen password", () => {
+  it("renders set password controls when no password credential exists", async () => {
+    mockPasswordCredentialStatusQuery.mockReturnValue({
+      data: { hasPassword: false },
+      isLoading: false,
+      error: null,
+    });
+
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    expect(await screen.findByText("Password")).toBeTruthy();
+    expect(await screen.findByText("Set Password")).toBeTruthy();
+  });
+
+  it("renders change password controls when a password credential exists", async () => {
+    mockPasswordCredentialStatusQuery.mockReturnValue({
+      data: { hasPassword: true },
+      isLoading: false,
+      error: null,
+    });
+
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    expect(await screen.findByPlaceholderText("Current password")).toBeTruthy();
+    expect(await screen.findByText("Change Password")).toBeTruthy();
   });
 });
 

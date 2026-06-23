@@ -115,3 +115,87 @@ export async function authenticatePasswordUser(
 export function isPasswordAuthEnabled(): boolean {
   return process.env.ENABLE_PASSWORD_AUTH !== "false";
 }
+
+export class MissingCurrentPasswordError extends Error {
+  constructor() {
+    super("Current password is required");
+    this.name = "MissingCurrentPasswordError";
+  }
+}
+
+export class MissingProfileEmailError extends Error {
+  constructor() {
+    super("Your account needs an email address before you can set a password");
+    this.name = "MissingProfileEmailError";
+  }
+}
+
+export interface PasswordCredentialStatus {
+  hasPassword: boolean;
+}
+
+export interface SetPasswordForUserInput {
+  currentPassword?: string | undefined;
+  newPassword: string;
+}
+
+export async function getPasswordCredentialStatus(
+  db: Database,
+  userId: string,
+): Promise<PasswordCredentialStatus> {
+  const rows = await executeWithSchema(
+    db,
+    z.object({ user_id: z.string() }),
+    sql`SELECT user_id FROM fitness.user_password_credential
+        WHERE user_id = ${userId}
+        LIMIT 1`,
+  );
+  return { hasPassword: rows.length > 0 };
+}
+
+export async function setPasswordForUser(
+  db: Database,
+  userId: string,
+  input: SetPasswordForUserInput,
+): Promise<PasswordCredentialStatus> {
+  validatePassword(input.newPassword);
+  const credentialRows = await executeWithSchema(
+    db,
+    z.object({ email: z.string(), password_hash: z.string() }),
+    sql`SELECT email, password_hash FROM fitness.user_password_credential
+        WHERE user_id = ${userId}
+        LIMIT 1`,
+  );
+  const credential = credentialRows[0];
+
+  if (credential) {
+    if (!input.currentPassword) {
+      throw new MissingCurrentPasswordError();
+    }
+    if (!verifyPassword(input.currentPassword, credential.password_hash)) {
+      throw new InvalidCredentialsError();
+    }
+    await db.execute(
+      sql`UPDATE fitness.user_password_credential
+          SET password_hash = ${hashPassword(input.newPassword)}, updated_at = NOW()
+          WHERE user_id = ${userId}`,
+    );
+    return { hasPassword: true };
+  }
+
+  const profileRows = await executeWithSchema(
+    db,
+    z.object({ email: z.string().nullable() }),
+    sql`SELECT email FROM fitness.user_profile WHERE id = ${userId} LIMIT 1`,
+  );
+  const email = profileRows[0]?.email ? normalizeEmail(profileRows[0].email) : null;
+  if (!email) {
+    throw new MissingProfileEmailError();
+  }
+
+  await db.execute(
+    sql`INSERT INTO fitness.user_password_credential (user_id, email, password_hash)
+        VALUES (${userId}, ${email}, ${hashPassword(input.newPassword)})`,
+  );
+  return { hasPassword: true };
+}

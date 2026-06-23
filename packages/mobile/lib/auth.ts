@@ -113,6 +113,33 @@ export async function registerWithPassword(
   });
 }
 
+const PasswordResetResponseSchema = z.object({
+  error: z.string().optional(),
+  message: z.string(),
+});
+
+export async function requestPasswordReset(
+  serverUrl: string,
+  email: string,
+): Promise<{ message: string }> {
+  const response = await fetch(`${serverUrl}/auth/password-reset/request`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  const data: unknown = await response.json().catch(() => null);
+  const parsed = PasswordResetResponseSchema.safeParse(data);
+  if (!response.ok) {
+    throw new Error(
+      parsed.success && parsed.data.error ? parsed.data.error : "Password reset failed",
+    );
+  }
+  if (!parsed.success) {
+    throw new Error("Password reset failed");
+  }
+  return { message: parsed.data.message };
+}
+
 /** Start OAuth login via system browser. Returns the session token on success, null if cancelled. */
 export async function startOAuthLogin(
   serverUrl: string,

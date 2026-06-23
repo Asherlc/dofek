@@ -1,4 +1,9 @@
-import { PasswordLoginRequestSchema, PasswordRegisterRequestSchema } from "@dofek/auth/auth";
+import {
+  PasswordLoginRequestSchema,
+  PasswordRegisterRequestSchema,
+  PasswordResetConfirmSchema,
+  PasswordResetRequestSchema,
+} from "@dofek/auth/auth";
 import * as Sentry from "@sentry/node";
 import type { Request, Response } from "express";
 import { setSessionCookie } from "../../auth/cookies.ts";
@@ -10,6 +15,11 @@ import {
   isPasswordAuthEnabled,
   registerPasswordUser,
 } from "../../auth/password-credential.ts";
+import {
+  createPasswordResetToken,
+  InvalidPasswordResetTokenError,
+  resetPasswordWithToken,
+} from "../../auth/password-reset.ts";
 import { createSession } from "../../auth/session.ts";
 import { logger } from "../../logger.ts";
 import { getDb, sanitizeReturnTo } from "./shared.ts";
@@ -118,5 +128,54 @@ export async function handlePasswordLogin(req: Request, res: Response): Promise<
     Sentry.captureException(error);
     logger.error(`[auth] Password login failed: ${error}`);
     sendAuthError(res, 500, "Login failed — please try again");
+  }
+}
+
+const PASSWORD_RESET_REQUEST_MESSAGE =
+  "If that email has a password login, we'll send a reset link.";
+
+export async function handlePasswordResetRequest(req: Request, res: Response): Promise<void> {
+  if (!isPasswordAuthEnabled()) {
+    res.status(404).json({ error: "Password authentication is not enabled" });
+    return;
+  }
+
+  try {
+    const parsed = PasswordResetRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      sendAuthError(res, 400, "Invalid password reset request");
+      return;
+    }
+    await createPasswordResetToken(getDb(), parsed.data.email);
+    res.json({ message: PASSWORD_RESET_REQUEST_MESSAGE });
+  } catch (error: unknown) {
+    Sentry.captureException(error);
+    logger.error(`[auth] Password reset request failed: ${error}`);
+    sendAuthError(res, 500, "Password reset request failed — please try again");
+  }
+}
+
+export async function handlePasswordResetConfirm(req: Request, res: Response): Promise<void> {
+  if (!isPasswordAuthEnabled()) {
+    res.status(404).json({ error: "Password authentication is not enabled" });
+    return;
+  }
+
+  try {
+    const parsed = PasswordResetConfirmSchema.safeParse(req.body);
+    if (!parsed.success) {
+      sendAuthError(res, 400, "Invalid password reset details");
+      return;
+    }
+    await resetPasswordWithToken(getDb(), parsed.data.token, parsed.data.password);
+    res.json({ ok: true });
+  } catch (error: unknown) {
+    if (error instanceof InvalidPasswordResetTokenError || error instanceof InvalidPasswordError) {
+      sendAuthError(res, 400, error.message);
+      return;
+    }
+    Sentry.captureException(error);
+    logger.error(`[auth] Password reset confirmation failed: ${error}`);
+    sendAuthError(res, 500, "Password reset failed — please try again");
   }
 }

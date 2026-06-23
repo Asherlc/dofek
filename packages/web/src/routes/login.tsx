@@ -2,9 +2,14 @@ import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { ProviderLogo, providerLabel } from "../components/ProviderLogo.tsx";
 import type { ConfiguredProviders } from "../lib/auth.ts";
-import { fetchConfiguredProviders, loginWithPassword, registerWithPassword } from "../lib/auth.ts";
+import {
+  fetchConfiguredProviders,
+  loginWithPassword,
+  registerWithPassword,
+  requestPasswordReset,
+} from "../lib/auth.ts";
 
-type AuthMode = "login" | "register";
+type AuthMode = "login" | "register" | "reset";
 
 function LoginPage() {
   const { providerGuide, returnTo: requestedReturnTo } = useSearch({ from: "__root__" });
@@ -62,6 +67,20 @@ function LoginPage() {
     }
   }
 
+  async function handlePasswordResetSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    setFormError(null);
+    try {
+      const result = await requestPasswordReset(email);
+      setFormError(result.message);
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : "Password reset failed");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-page flex items-center justify-center">
       <div className="w-full max-w-sm p-8 rounded-2xl bg-surface-solid border border-border shadow-xl">
@@ -83,104 +102,164 @@ function LoginPage() {
           <div className="space-y-6">
             {showPasswordAuth ? (
               <div>
-                <div className="flex rounded-lg border border-border overflow-hidden mb-4">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAuthMode("login");
-                      setFormError(null);
-                    }}
-                    className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
-                      authMode === "login"
-                        ? "bg-accent/15 text-foreground"
-                        : "bg-transparent text-muted hover:text-foreground"
-                    }`}
-                  >
-                    Sign in
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAuthMode("register");
-                      setFormError(null);
-                    }}
-                    className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
-                      authMode === "register"
-                        ? "bg-accent/15 text-foreground"
-                        : "bg-transparent text-muted hover:text-foreground"
-                    }`}
-                  >
-                    Create account
-                  </button>
-                </div>
-
-                {formError ? (
-                  <div className="mb-3 text-xs text-red-400 bg-red-400/10 rounded px-3 py-2">
-                    {formError}
-                  </div>
-                ) : null}
-
-                <form onSubmit={handlePasswordSubmit} className="space-y-3">
-                  {authMode === "register" ? (
-                    <div>
-                      <label htmlFor="register-name" className="block text-xs text-muted mb-1">
-                        Name
-                      </label>
-                      <input
-                        id="register-name"
-                        type="text"
-                        value={name}
-                        onChange={(event) => setName(event.target.value)}
-                        autoComplete="name"
-                        className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
-                        placeholder="Your name"
-                      />
+                {authMode === "reset" ? (
+                  <>
+                    {formError ? (
+                      <div className="mb-3 text-xs text-accent bg-accent/10 rounded px-3 py-2">
+                        {formError}
+                      </div>
+                    ) : null}
+                    <form onSubmit={handlePasswordResetSubmit} className="space-y-3">
+                      <div>
+                        <label htmlFor="reset-email" className="block text-xs text-muted mb-1">
+                          Email
+                        </label>
+                        <input
+                          id="reset-email"
+                          type="email"
+                          value={email}
+                          onChange={(event) => setEmail(event.target.value)}
+                          required
+                          autoComplete="email"
+                          className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
+                          placeholder="you@example.com"
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={submitting}
+                        className="w-full py-2 text-sm font-medium rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+                      >
+                        {submitting ? "Sending..." : "Send reset link"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAuthMode("login");
+                          setFormError(null);
+                        }}
+                        className="w-full text-xs text-muted hover:text-foreground transition-colors"
+                      >
+                        Back to sign in
+                      </button>
+                    </form>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex rounded-lg border border-border overflow-hidden mb-4">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAuthMode("login");
+                          setFormError(null);
+                        }}
+                        className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+                          authMode === "login"
+                            ? "bg-accent/15 text-foreground"
+                            : "bg-transparent text-muted hover:text-foreground"
+                        }`}
+                      >
+                        Sign in
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAuthMode("register");
+                          setFormError(null);
+                        }}
+                        className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+                          authMode === "register"
+                            ? "bg-accent/15 text-foreground"
+                            : "bg-transparent text-muted hover:text-foreground"
+                        }`}
+                      >
+                        Create account
+                      </button>
                     </div>
-                  ) : null}
-                  <div>
-                    <label htmlFor="auth-email" className="block text-xs text-muted mb-1">
-                      Email
-                    </label>
-                    <input
-                      id="auth-email"
-                      type="email"
-                      value={email}
-                      onChange={(event) => setEmail(event.target.value)}
-                      required
-                      autoComplete="email"
-                      className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
-                      placeholder="you@example.com"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="auth-password" className="block text-xs text-muted mb-1">
-                      Password
-                    </label>
-                    <input
-                      id="auth-password"
-                      type="password"
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                      required
-                      minLength={8}
-                      autoComplete={authMode === "register" ? "new-password" : "current-password"}
-                      className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className="w-full py-2 text-sm font-medium rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
-                  >
-                    {submitting
-                      ? authMode === "register"
-                        ? "Creating account..."
-                        : "Signing in..."
-                      : authMode === "register"
-                        ? "Create account"
-                        : "Sign in with email"}
-                  </button>
-                </form>
+
+                    {formError ? (
+                      <div className="mb-3 text-xs text-red-400 bg-red-400/10 rounded px-3 py-2">
+                        {formError}
+                      </div>
+                    ) : null}
+
+                    <form onSubmit={handlePasswordSubmit} className="space-y-3">
+                      {authMode === "register" ? (
+                        <div>
+                          <label htmlFor="register-name" className="block text-xs text-muted mb-1">
+                            Name
+                          </label>
+                          <input
+                            id="register-name"
+                            type="text"
+                            value={name}
+                            onChange={(event) => setName(event.target.value)}
+                            autoComplete="name"
+                            className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
+                            placeholder="Your name"
+                          />
+                        </div>
+                      ) : null}
+                      <div>
+                        <label htmlFor="auth-email" className="block text-xs text-muted mb-1">
+                          Email
+                        </label>
+                        <input
+                          id="auth-email"
+                          type="email"
+                          value={email}
+                          onChange={(event) => setEmail(event.target.value)}
+                          required
+                          autoComplete="email"
+                          className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
+                          placeholder="you@example.com"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="auth-password" className="block text-xs text-muted mb-1">
+                          Password
+                        </label>
+                        <input
+                          id="auth-password"
+                          type="password"
+                          value={password}
+                          onChange={(event) => setPassword(event.target.value)}
+                          required
+                          minLength={8}
+                          autoComplete={
+                            authMode === "register" ? "new-password" : "current-password"
+                          }
+                          className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
+                        />
+                      </div>
+                      {authMode === "login" ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAuthMode("reset");
+                            setFormError(null);
+                          }}
+                          className="text-xs text-muted hover:text-accent transition-colors"
+                        >
+                          Forgot password?
+                        </button>
+                      ) : null}
+                      <button
+                        type="submit"
+                        disabled={submitting}
+                        className="w-full py-2 text-sm font-medium rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+                      >
+                        {submitting
+                          ? authMode === "register"
+                            ? "Creating account..."
+                            : "Signing in..."
+                          : authMode === "register"
+                            ? "Create account"
+                            : "Sign in with email"}
+                      </button>
+                    </form>
+                  </>
+                )}
               </div>
             ) : null}
 

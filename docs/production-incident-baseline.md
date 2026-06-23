@@ -3911,26 +3911,26 @@ connection attempts.
 Directly inside the Netdata container, `http://127.0.0.1:19999/` returned the
 Netdata HTML with HTTP 200 and `/api/v3/info` reported the agent as available.
 Unauthenticated requests to the public hostname returned HTTP 302 redirects to
-Authentik. The agent's ACLK state showed `Claimed: No` and `Online: No`.
+forward auth. The agent's ACLK state showed `Claimed: No` and `Online: No`.
  
 ### Root Cause
  
-The Netdata agent process is running, but the public UI is Authentik-protected
+The Netdata agent process is running, but the public UI is forward-auth-protected
 and the agent is not claimed to Netdata Cloud. Browser-side fetches that cross
-the Authentik or Netdata Cloud boundary can surface as a generic network error.
+the forward auth or Netdata Cloud boundary can surface as a generic network error.
  
 ### Fix or Mitigation
  
 Configured the Netdata Swarm service with `NETDATA_DISABLE_CLOUD=1` so the
 deployment is local-only and does not try to use the browser claim flow through
-Authentik. For future Netdata Cloud monitoring, remove that local-only setting
+forward auth. For future Netdata Cloud monitoring, remove that local-only setting
 and configure the Swarm service with Netdata claim environment variables from
 Infisical instead.
  
 ### Remaining Risk
  
 The exact failing browser request after an authenticated login was not captured
-because the agent session did not have the user's Authentik browser cookies.
+because the agent session did not have the user's forward-auth browser cookies.
 Further debugging needs either the browser network entry from the logged-in
 session or a deliberate local-only Netdata configuration change.
  
@@ -3947,26 +3947,26 @@ connection attempts.
 Directly inside the Netdata container, `http://127.0.0.1:19999/` returned the
 Netdata HTML with HTTP 200 and `/api/v3/info` reported the agent as available.
 Unauthenticated requests to the public hostname returned HTTP 302 redirects to
-Authentik. The agent's ACLK state showed `Claimed: No` and `Online: No`.
+forward auth. The agent's ACLK state showed `Claimed: No` and `Online: No`.
 
 ### Root Cause
 
-The Netdata agent process is running, but the public UI is Authentik-protected
+The Netdata agent process is running, but the public UI is forward-auth-protected
 and the agent is not claimed to Netdata Cloud. Browser-side fetches that cross
-the Authentik or Netdata Cloud boundary can surface as a generic network error.
+the forward auth or Netdata Cloud boundary can surface as a generic network error.
 
 ### Fix or Mitigation
 
 Configured the Netdata Swarm service with `NETDATA_DISABLE_CLOUD=1` so the
 deployment is local-only and does not try to use the browser claim flow through
-Authentik. For future Netdata Cloud monitoring, remove that local-only setting
+forward auth. For future Netdata Cloud monitoring, remove that local-only setting
 and configure the Swarm service with Netdata claim environment variables from
 Infisical instead.
 
 ### Remaining Risk
 
 The exact failing browser request after an authenticated login was not captured
-because the agent session did not have the user's Authentik browser cookies.
+because the agent session did not have the user's forward-auth browser cookies.
 Further debugging needs either the browser network entry from the logged-in
 session or a deliberate local-only Netdata configuration change.
 
@@ -4958,74 +4958,12 @@ documented late-data refresh strategy.
   latency rises under dashboard load.
 - Assign an analytics owner and review the mitigation by 2026-05-21.
 
-## 2026-05-08: Netdata Authentik Redirects To Authentik Dashboard
+## 2026-05-08: Netdata Forward Auth Redirect Loop (Obsolete)
 
-### Symptoms
-
-Opening `https://netdata.dofek.asherlc.com/` redirects through Authentik, but
-after authentication the browser lands on the Authentik dashboard instead of
-returning to Netdata. Follow-up checks showed the same outpost ping failure on
-Portainer, Databasus, CloudBeaver, pgAdmin, and staging Portainer.
-
-### User Impact
-
-The Netdata UI is not usable for routine production host health checks. Raw
-capacity checks are still available over SSH.
-
-### Evidence
-
-Unauthenticated requests to Netdata return HTTP 302 to Authentik, but the
-OAuth state payload records the post-login redirect as
-`http://authentik.asherlc.com`, not `https://netdata.dofek.asherlc.com/`.
-Requests to `https://netdata.dofek.asherlc.com/outpost.goauthentik.io/ping`
-also return HTTP 302 instead of the Authentik outpost health check's expected
-HTTP 204. The live Dofek Swarm labels point Traefik `forwardAuth.address` at
-the public Authentik hostname:
-`https://authentik.asherlc.com/outpost.goauthentik.io/auth/traefik`.
-
-The Authentik host uses a single embedded `forward_domain` proxy provider with
-external host `https://authentik.asherlc.com`. Homelab apps that work with the
-same Authentik install use Traefik on the Authentik host with the internal
-outpost address `http://authentik-server:9000/outpost.goauthentik.io/auth/traefik`,
-so the original protected host is preserved.
-
-### Root Cause
-
-Dofek's Traefik forwards auth checks through the public Authentik hostname,
-which crosses Cloudflare and the homelab Traefik instance. By the time the
-embedded Authentik outpost handles the request, the protected host has been
-lost and Authentik only sees `authentik.asherlc.com`, so it builds a login
-state that returns to the Authentik dashboard.
-
-### Fix or Mitigation
-
-Added a Dofek-local Authentik proxy outpost service to `deploy/stack.yml`.
-All Dofek management routers now use a shared `management-auth` middleware that
-calls the internal outpost endpoint instead of the public Authentik hostname.
-The outpost path is routed publicly with high priority so
-`/outpost.goauthentik.io/` can complete Authentik's callback and health-check
-flow without first passing through forward auth.
-
-Immediate capacity checks can still use:
-
-```bash
-ssh dofek-server 'df -h / /mnt/dofek-data && docker system df'
-```
-
-### Remaining Risk
-
-The stack change requires `AUTHENTIK_OUTPOST_TOKEN` in each Infisical
-environment before deployment. The local outpost image is pinned to the
-currently deployed Authentik core version, `2025.2.4`; upgrade Authentik core
-and the outpost image together.
-
-### Follow-Up Work
-
-- Add `AUTHENTIK_OUTPOST_TOKEN` to prod and staging Infisical environments.
-- Deploy the stack and validate that each protected management host's
-  `/outpost.goauthentik.io/ping` endpoint returns HTTP 204.
-- Investigate the separate staging Netdata 404 if it persists after the shared
-  outpost fix is deployed.
+Historical incident from when management UIs used Traefik forward auth with a
+local proxy outpost (PR #1106). That forward-auth stack has since been removed
+from `deploy/stack.yml`; management UIs are now exposed without the shared
+outpost middleware described in the original investigation.
 
 ## 2026-05-08: Production Migration Log Blind Spot
 
@@ -5137,43 +5075,11 @@ backfill completes.
 - Add a ClickHouse/PeerDB runbook section for checking `_peerdb_raw_*`,
   normalized tables, and refreshable materialized-view freshness.
 
-## 2026-05-08: GitGuardian False Positive On Authentik Outpost URL
+## 2026-05-08: GitGuardian False Positive On Forward Auth Outpost URL (Obsolete)
 
-### Symptoms
-
-PR #1106 was blocked by GitGuardian Security Checks.
-
-### User Impact
-
-The Authentik proxy outpost fix could not merge until the security check was
-cleared.
-
-### Evidence
-
-The GitGuardian PR comment identified a `Generic High Entropy Secret` in
-`deploy/stack.yml` at the Traefik forward-auth URL for the internal
-`authentik-proxy` service. The flagged value was an internal service URL, not a
-credential or token.
-
-### Root Cause
-
-GitGuardian treated the deterministic internal outpost URL as a high-entropy
-secret.
-
-### Fix or Mitigation
-
-Split the source YAML string for the exact false-positive line while preserving
-the rendered stack label. Squashed the PR branch onto current `main` so the
-original false-positive commit is no longer in the PR history.
-
-### Remaining Risk
-
-None known for the false positive. The real Authentik token still comes from
-Infisical through `AUTHENTIK_OUTPOST_TOKEN`.
-
-### Follow-Up Work
-
-- Recheck PR #1106 after push and confirm GitGuardian passes.
+Historical incident from PR #1106. GitGuardian flagged the internal Traefik
+forward-auth URL in `deploy/stack.yml` as a high-entropy secret. The forward-auth
+stack described in that PR has since been removed.
 
 ## 2026-05-08: Review App Database Restart Loop After PostGIS Image Change
 
@@ -5346,60 +5252,11 @@ apps must be destroyed.
 - Document the disk cleanup threshold in the review app runbook and revisit the
   `cax11` server size if review app image growth keeps hitting the threshold.
 
-## 2026-05-09: Netdata Redirects To Authentik Library
+## 2026-05-09: Netdata Forward Auth Redirect Loop (Obsolete)
 
-### Symptoms
-
-Opening `https://netdata.dofek.asherlc.com/` redirects through Authentik and
-lands at `https://authentik.asherlc.com/if/user/#/library` instead of returning
-to Netdata.
-
-### User Impact
-
-The production Netdata management UI is not reachable through the expected
-protected URL.
-
-### Evidence
-
-`curl -D - https://netdata.dofek.asherlc.com/` returned HTTP 302 with an
-Authenik authorize URL whose `redirect_uri` was
-`https://authentik.asherlc.com/outpost.goauthentik.io/callback...`.
-`https://netdata.dofek.asherlc.com/outpost.goauthentik.io/ping` also returned
-HTTP 302 instead of the expected outpost ping HTTP 204.
-
-Live Docker service inspection showed there is no `dofek_authentik-proxy`
-service, and `dofek_netdata` still has
-`traefik.http.middlewares.netdata-auth.forwardAuth.address=https://authentik.asherlc.com/outpost.goauthentik.io/auth/traefik`.
-
-### Root Cause
-
-Production has not deployed the stack that added the local Authentik proxy
-outpost and shared `management-auth` middleware. The live Netdata route still
-forwards auth checks to the public Authentik hostname, so Authentik loses the
-original protected host and builds the callback for `authentik.asherlc.com`.
-
-### Fix or Mitigation
-
-Unresolved in production during this investigation. The code/config fix already
-exists on `main` from PR #1106, but production deploys have not reached
-`docker stack deploy`. The current unblock attempt is PR #1112, which fixes
-dotenv-linter key ordering so main CI can pass and trigger the normal deploy
-pipeline.
-
-### Remaining Risk
-
-Even after CI is unblocked, the next production deploy may still fail before
-stack deployment if ClickHouse migration `0012_repair_metric_stream_backfill`
-again exceeds the live ClickHouse memory limit.
-
-### Follow-Up Work
-
-- Merge PR #1112 after checks pass.
-- Confirm the subsequent main Deploy Web run reaches `docker stack deploy`.
-- Verify `dofek_authentik-proxy` exists and the Netdata outpost ping endpoint
-  returns HTTP 204.
-- If deployment fails in ClickHouse migrations again, investigate and fix the
-  migration memory usage root cause before adding resilience knobs.
+Historical follow-up to the 2026-05-08 forward-auth incident. Production had not
+yet deployed PR #1106 when this was investigated. The forward-auth stack has
+since been removed from `deploy/stack.yml`.
 
 ## 2026-05-11: Strava Activity Missing From Recent Activities
 
@@ -5448,57 +5305,11 @@ expanding the same approach to larger activity read paths or to `fitness.v_sleep
 - Benchmark `fitness.v_sleep` separately before deciding whether to convert it
   from a materialized view.
 
-## 2026-05-11: Deploy Web Blocked By Missing Authentik Outpost Token
+## 2026-05-11: Deploy Web Blocked By Missing Forward Auth Outpost Token (Obsolete)
 
-### Symptoms
-
-The Deploy Web workflow failed for both staging and production during the
-`Validate rendered stack files` step.
-
-### User Impact
-
-The web stack did not deploy commit `c1c47fa44d44b1ca1c8ee82ad39c22aa78fbbfba`.
-The live production stack still has not received the local Authentik proxy
-outpost configuration.
-
-### Evidence
-
-The failing command was:
-
-```bash
-node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack config $STACK_FILE_FLAGS >/dev/null
-```
-
-Both staging job `75414642621` and production job `75414716269` failed with:
-
-```text
-invalid interpolation format for services.authentik-proxy.environment.AUTHENTIK_TOKEN: "required variable AUTHENTIK_OUTPOST_TOKEN is missing a value: AUTHENTIK_OUTPOST_TOKEN is required"
-```
-
-### Root Cause
-
-`deploy/stack.yml` requires `AUTHENTIK_OUTPOST_TOKEN` for the
-`authentik-proxy` service, but the Infisical dotenv exported in CI did not
-contain that key for the deploy environments.
-
-### Fix or Mitigation
-
-Set `AUTHENTIK_OUTPOST_TOKEN` in both the `prod` and `staging` Infisical
-environments using the generated Authentik embedded outpost service-account API
-token from the homelab Authentik database.
-
-### Remaining Risk
-
-Fresh staging run `25690902218` passed stack-file rendering after the secret was
-set, proving the Infisical/Authentik prerequisite was fixed. The remaining risk
-moved to later deploy steps, starting with migrations.
-
-### Follow-Up Work
-
-- Rerun Deploy Web for commit `c1c47fa44d44b1ca1c8ee82ad39c22aa78fbbfba`.
-- Verify the deploy reaches `docker stack deploy`, creates
-  `dofek_authentik-proxy`, and protected management hosts return HTTP 204 from
-  `/outpost.goauthentik.io/ping`.
+Historical incident from when `deploy/stack.yml` required a forward-auth outpost
+token for management UI protection. That requirement and the proxy service have
+since been removed from the stack.
 
 ## 2026-05-11: Staging Deploy Blocked By Resting Heart Rate Migration Type Mismatch
 
@@ -5525,7 +5336,7 @@ error: [migrate] error: "derived_resting_heart_rate" is not a view
 ```
 
 The workflow had already passed `Validate rendered stack files`, so this was a
-new failure after the missing `AUTHENTIK_OUTPOST_TOKEN` issue was fixed.
+new failure after the missing forward-auth outpost token issue was fixed.
 
 ### Root Cause
 

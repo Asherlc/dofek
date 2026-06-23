@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  confirmPasswordReset,
   fetchConfiguredProviders,
   fetchCurrentUser,
   loginWithPassword,
   logout,
   registerWithPassword,
+  requestPasswordReset,
 } from "./auth.ts";
 
 function mockResponse(props: Partial<Response>): Response {
@@ -242,6 +244,149 @@ describe("registerWithPassword", () => {
         return_to: "/onboarding",
       }),
     });
+  });
+});
+
+describe("requestPasswordReset", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("requests a password reset", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      mockResponse({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            message: "If that email has a password login, we'll send a reset link.",
+          }),
+      }),
+    );
+
+    await expect(requestPasswordReset("user@example.com")).resolves.toEqual({
+      message: "If that email has a password login, we'll send a reset link.",
+    });
+
+    expect(fetch).toHaveBeenCalledWith("/auth/password-reset/request", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ email: "user@example.com" }),
+    });
+  });
+
+  it("throws server error message when reset request fails", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      mockResponse({
+        ok: false,
+        status: 400,
+        json: () => Promise.resolve({ error: "Invalid password reset request", message: "" }),
+      }),
+    );
+
+    await expect(requestPasswordReset("user@example.com")).rejects.toThrow(
+      "Invalid password reset request",
+    );
+  });
+
+  it("throws generic message when reset request fails without error body", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      mockResponse({
+        ok: false,
+        status: 500,
+        json: () => Promise.reject(new Error("invalid json")),
+      }),
+    );
+
+    await expect(requestPasswordReset("user@example.com")).rejects.toThrow("Password reset failed");
+  });
+
+  it("throws when reset request response has invalid shape", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      mockResponse({
+        ok: true,
+        json: () => Promise.resolve({ message: 123 }),
+      }),
+    );
+
+    await expect(requestPasswordReset("user@example.com")).rejects.toThrow("Password reset failed");
+  });
+});
+
+describe("confirmPasswordReset", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("confirms a password reset", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      mockResponse({
+        ok: true,
+        json: () => Promise.resolve({ ok: true }),
+      }),
+    );
+
+    await expect(confirmPasswordReset("token", "new-password123")).resolves.toEqual({ ok: true });
+
+    expect(fetch).toHaveBeenCalledWith("/auth/password-reset/confirm", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ token: "token", password: "new-password123" }),
+    });
+  });
+
+  it("throws server error message when reset confirmation fails", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      mockResponse({
+        ok: false,
+        status: 400,
+        json: () => Promise.resolve({ error: "Reset link is invalid or has expired", ok: false }),
+      }),
+    );
+
+    await expect(confirmPasswordReset("token", "new-password123")).rejects.toThrow(
+      "Reset link is invalid or has expired",
+    );
+  });
+
+  it("throws generic message when reset confirmation fails without error body", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      mockResponse({
+        ok: false,
+        status: 500,
+        json: () => Promise.reject(new Error("invalid json")),
+      }),
+    );
+
+    await expect(confirmPasswordReset("token", "new-password123")).rejects.toThrow(
+      "Password reset failed",
+    );
+  });
+
+  it("throws when reset confirmation response has invalid shape", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      mockResponse({
+        ok: true,
+        json: () => Promise.resolve({ ok: false }),
+      }),
+    );
+
+    await expect(confirmPasswordReset("token", "new-password123")).rejects.toThrow(
+      "Password reset failed",
+    );
   });
 });
 

@@ -92,6 +92,19 @@ export default function SettingsScreen() {
   // ── Data Sources ──
   const providers = trpc.sync.providers.useQuery();
 
+  // ── Password ──
+  const passwordStatus = trpc.auth.passwordCredentialStatus.useQuery();
+  const setPasswordMutation = trpc.auth.setPassword.useMutation({
+    onSuccess: async () => {
+      await trpcUtils.auth.passwordCredentialStatus.invalidate();
+      Alert.alert("Password Updated", "Your password has been saved.");
+    },
+    onError: (error) => Alert.alert("Error", error.message),
+  });
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
   // ── Data Export ──
   const [exportState, setExportState] = useState<ExportState>("idle");
   const [exportMessage, setExportMessage] = useState("");
@@ -149,6 +162,17 @@ export default function SettingsScreen() {
         onError: () => unitSetting.refetch(),
       },
     );
+  }
+
+  function handleSetPassword() {
+    if (newPassword !== confirmPassword) {
+      Alert.alert("Error", "Passwords do not match");
+      return;
+    }
+    setPasswordMutation.mutate({
+      currentPassword: passwordStatus.data?.hasPassword ? currentPassword : undefined,
+      newPassword,
+    });
   }
 
   function handleLogout() {
@@ -313,6 +337,61 @@ export default function SettingsScreen() {
             <Text style={styles.devToolChevron}>›</Text>
           </View>
         </TouchableOpacity>
+      </View>
+
+      {/* ── Password ── */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Password</Text>
+        <Text style={styles.sectionDescription}>Set or change your email login password</Text>
+        {passwordStatus.isLoading ? (
+          <ActivityIndicator color={colors.accent} size="small" />
+        ) : passwordStatus.error ? (
+          <Text style={styles.passwordErrorText}>{passwordStatus.error.message}</Text>
+        ) : (
+          <View style={styles.card}>
+            {passwordStatus.data?.hasPassword ? (
+              <TextInput
+                style={styles.passwordInput}
+                value={currentPassword}
+                onChangeText={setCurrentPassword}
+                placeholder="Current password"
+                placeholderTextColor={colors.textSecondary}
+                secureTextEntry
+                autoComplete="password"
+              />
+            ) : null}
+            <TextInput
+              style={styles.passwordInput}
+              value={newPassword}
+              onChangeText={setNewPassword}
+              placeholder="New password"
+              placeholderTextColor={colors.textSecondary}
+              secureTextEntry
+              autoComplete="new-password"
+            />
+            <TextInput
+              style={styles.passwordInput}
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              placeholder="Confirm password"
+              placeholderTextColor={colors.textSecondary}
+              secureTextEntry
+              autoComplete="new-password"
+            />
+            <TouchableOpacity
+              style={[
+                styles.passwordButton,
+                setPasswordMutation.isPending && styles.buttonDisabled,
+              ]}
+              onPress={handleSetPassword}
+              disabled={setPasswordMutation.isPending}
+            >
+              <Text style={styles.passwordButtonText}>
+                {passwordStatus.data?.hasPassword ? "Change Password" : "Set Password"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       {/* ── Units ── */}
@@ -993,6 +1072,33 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: colors.danger,
+  },
+
+  // ── Password ──
+  passwordInput: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 12,
+    color: colors.text,
+    fontSize: 15,
+    marginBottom: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  passwordErrorText: {
+    color: colors.danger,
+    fontSize: 12,
+    marginBottom: 8,
+  },
+  passwordButton: {
+    alignItems: "center",
+    backgroundColor: colors.accent,
+    borderRadius: 12,
+    paddingVertical: 12,
+  },
+  passwordButtonText: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
   },
 
   // ── Logout ──

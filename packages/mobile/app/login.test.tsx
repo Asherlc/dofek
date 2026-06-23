@@ -7,6 +7,7 @@ const mockFetchConfiguredProviders = vi.fn();
 const mockStartOAuthLogin = vi.fn();
 const mockStartNativeAppleSignIn = vi.fn();
 const mockIsNativeAppleSignInAvailable = vi.fn(async () => false);
+const mockRequestPasswordReset = vi.fn();
 
 vi.mock("../lib/auth-context", () => ({
   useAuth: () => ({
@@ -20,6 +21,9 @@ vi.mock("../lib/auth", () => ({
   startOAuthLogin: (...args: unknown[]) => mockStartOAuthLogin(...args),
   startNativeAppleSignIn: (...args: unknown[]) => mockStartNativeAppleSignIn(...args),
   isNativeAppleSignInAvailable: () => mockIsNativeAppleSignInAvailable(),
+  loginWithPassword: vi.fn(),
+  registerWithPassword: vi.fn(),
+  requestPasswordReset: (...args: unknown[]) => mockRequestPasswordReset(...args),
 }));
 
 vi.mock("expo-apple-authentication", () => ({
@@ -277,5 +281,27 @@ describe("LoginScreen", () => {
     });
     expect(mockStartOAuthLogin).not.toHaveBeenCalled();
     expect(screen.queryByText("User canceled")).toBeNull();
+  });
+
+  it("requests a password reset from sign-in mode", async () => {
+    mockFetchConfiguredProviders.mockResolvedValue({ identity: [], data: [], password: true });
+    mockRequestPasswordReset.mockResolvedValue({
+      message: "If that email has a password login, we'll send a reset link.",
+    });
+
+    render(<LoginScreen />);
+
+    fireEvent.click(await screen.findByText("Forgot password?"));
+    fireEvent.change(screen.getByPlaceholderText("Email"), {
+      target: { value: "user@example.com" },
+    });
+    fireEvent.click(screen.getByText("Send reset link"));
+
+    await waitFor(() =>
+      expect(mockRequestPasswordReset).toHaveBeenCalledWith(
+        "https://test.example.com",
+        "user@example.com",
+      ),
+    );
   });
 });
