@@ -130,6 +130,8 @@ vi.mock("../../theme", () => ({
 
 vi.mock("@dofek/format/format", () => ({
   formatDateLong: (value: string) => (value.startsWith("2026-03-05") ? "March 5, 2026" : value),
+  formatDateTime: (value: string) =>
+    value.startsWith("2026-03-05") ? "March 5, 2026, 2:30 PM" : value,
   formatDurationRange: () => "1:00:00",
   formatDurationSeconds: (value: number) => `${value}s`,
   formatNumber: (value: number) => String(value),
