@@ -1886,6 +1886,7 @@ describe("createAuthRouter", () => {
             },
             exchangeCode: mockExchangeCode,
             getUserIdentity: mockGetUserIdentity,
+            identityCapabilities: { providesEmail: true },
           }),
         },
       ]);
@@ -1907,7 +1908,16 @@ describe("createAuthRouter", () => {
       expect(callbackRes.status).toBe(302);
       expect(callbackRes.headers.location).toBe("/");
       expect(mockGetUserIdentity).toHaveBeenCalledWith("login-access-token");
-      expect(resolveOrCreateUser).toHaveBeenCalled();
+      expect(resolveOrCreateUser).toHaveBeenCalledWith(
+        expect.anything(),
+        "strava",
+        expect.objectContaining({
+          providerAccountId: "strava-user-1",
+          email: "runner@test.com",
+        }),
+        undefined,
+        { requireEmailForNewUser: false },
+      );
       expect(ensureProvider).toHaveBeenCalledWith(
         expect.anything(),
         "strava",
@@ -1984,6 +1994,16 @@ describe("createAuthRouter", () => {
 
       expect(callbackRes.status).toBe(302);
       expect(callbackRes.headers.location).toBe("/?newUser=true");
+      expect(resolveOrCreateUser).toHaveBeenCalledWith(
+        expect.anything(),
+        "strava",
+        expect.objectContaining({
+          providerAccountId: "strava-new-user-1",
+          email: "new-runner@test.com",
+        }),
+        undefined,
+        { requireEmailForNewUser: false },
+      );
     });
 
     it("handles login intent with mobile scheme: redirects to deep link", async () => {
@@ -2039,6 +2059,16 @@ describe("createAuthRouter", () => {
       expect(callbackRes.status).toBe(302);
       expect(callbackRes.headers.location).toContain("dofek://auth/callback?session=");
       expect(setSessionCookie).not.toHaveBeenCalled();
+      expect(resolveOrCreateUser).toHaveBeenCalledWith(
+        expect.anything(),
+        "strava",
+        expect.objectContaining({
+          providerAccountId: "strava-mobile-1",
+          email: "mobile@test.com",
+        }),
+        undefined,
+        { requireEmailForNewUser: false },
+      );
     });
 
     it("renders a manual email form when provider signup needs an email", async () => {
@@ -2057,9 +2087,12 @@ describe("createAuthRouter", () => {
           name: "Runner",
         }),
       );
-      vi.mocked(resolveOrCreateUser).mockRejectedValueOnce(
-        new MissingEmailForSignupError("Strava"),
-      );
+      vi.mocked(resolveOrCreateUser).mockImplementationOnce((_db, _providerId, identity, _linkUserId, options) => {
+        if (!identity.email && options?.requireEmailForNewUser) {
+          return Promise.reject(new MissingEmailForSignupError("Strava"));
+        }
+        return Promise.resolve({ userId: "user-1", isNewUser: false });
+      });
       vi.mocked(getAllProviders).mockReturnValue([
         {
           id: "strava",
@@ -2096,6 +2129,16 @@ describe("createAuthRouter", () => {
       expect(callbackRes.status).toBe(200);
       expect(callbackRes.body).toContain("Enter your email to finish signing in");
       expect(callbackRes.body).toContain('action="/auth/complete-signup"');
+      expect(resolveOrCreateUser).toHaveBeenCalledWith(
+        expect.anything(),
+        "strava",
+        expect.objectContaining({
+          providerAccountId: "strava-missing-email-1",
+          email: null,
+        }),
+        undefined,
+        { requireEmailForNewUser: true },
+      );
       expect(ensureProvider).not.toHaveBeenCalled();
       expect(createSession).not.toHaveBeenCalled();
       expect(setSessionCookie).not.toHaveBeenCalled();
