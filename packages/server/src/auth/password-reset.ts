@@ -14,8 +14,7 @@ const credentialRowSchema = z.object({
   user_id: z.string(),
 });
 
-const resetTokenRowSchema = z.object({
-  id: z.string(),
+const consumedTokenRowSchema = z.object({
   user_id: z.string(),
 });
 
@@ -68,8 +67,12 @@ function generateResetToken(): string {
   return randomBytes(RESET_TOKEN_BYTES).toString("base64url");
 }
 
-function buildResetUrl(token: string): string {
+function readPublicAppBaseUrl(): string {
   const baseUrl = requiredEnv("PUBLIC_APP_URL").replace(/\/+$/, "");
+  return baseUrl;
+}
+
+function buildResetUrl(baseUrl: string, token: string): string {
   return `${baseUrl}/reset-password?token=${encodeURIComponent(token)}`;
 }
 
@@ -78,6 +81,7 @@ export async function createPasswordResetToken(
   emailInput: string,
 ): Promise<CreatePasswordResetTokenResult> {
   const email = normalizeEmail(emailInput);
+  const baseUrl = readPublicAppBaseUrl();
   const credentials = await executeWithSchema(
     db,
     credentialRowSchema,
@@ -92,7 +96,7 @@ export async function createPasswordResetToken(
 
   const token = generateResetToken();
   const tokenHash = hashResetToken(token);
-  const resetUrl = buildResetUrl(token);
+  const resetUrl = buildResetUrl(baseUrl, token);
   await db.execute(
     sql`INSERT INTO fitness.password_reset_token (user_id, token_hash, expires_at)
         VALUES (${credential.user_id}, ${tokenHash}, NOW() + INTERVAL '60 minutes')`,
@@ -125,13 +129,14 @@ export async function resetPasswordWithToken(
 
   await db.transaction(async (tx) => {
     const rows = parseRows(
-      resetTokenRowSchema,
+      consumedTokenRowSchema,
       await tx.execute(
-        sql`SELECT id, user_id FROM fitness.password_reset_token
+        sql`UPDATE fitness.password_reset_token
+            SET consumed_at = NOW()
             WHERE token_hash = ${tokenHash}
               AND consumed_at IS NULL
               AND expires_at > NOW()
-            LIMIT 1`,
+            RETURNING user_id`,
       ),
     );
     const row = rows[0];
@@ -143,11 +148,6 @@ export async function resetPasswordWithToken(
       sql`UPDATE fitness.user_password_credential
           SET password_hash = ${hashPassword(newPassword)}, updated_at = NOW()
           WHERE user_id = ${row.user_id}`,
-    );
-    await tx.execute(
-      sql`UPDATE fitness.password_reset_token
-          SET consumed_at = NOW()
-          WHERE id = ${row.id}`,
     );
   });
 }

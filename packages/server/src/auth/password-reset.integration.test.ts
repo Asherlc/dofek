@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { authenticatePasswordUser, registerPasswordUser } from "./password-credential.ts";
 import {
   createPasswordResetToken,
@@ -10,6 +12,15 @@ import {
 
 const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
 const mockSendPlainTextEmail = vi.fn().mockResolvedValue(undefined);
+
+const tokenDurationRowSchema = z.object({
+  expires_after_minutes: z.union([z.number(), z.string()]),
+  token_hash: z.string(),
+});
+
+const tokenCountRowSchema = z.object({
+  token_count: z.union([z.number(), z.string()]),
+});
 
 vi.mock("../../../../src/email.ts", () => ({
   sendPlainTextEmail: (input: unknown) => mockSendPlainTextEmail(input),
@@ -58,7 +69,9 @@ describe("password reset service", () => {
       toEmail: "reset@example.com",
     });
 
-    const rows = await ctx.db.execute<{ token_hash: string; expires_after_minutes: number }>(
+    const rows = await executeWithSchema(
+      ctx.db,
+      tokenDurationRowSchema,
       sql`SELECT token_hash, EXTRACT(EPOCH FROM (expires_at - created_at)) / 60 AS expires_after_minutes
           FROM fitness.password_reset_token`,
     );
@@ -72,6 +85,22 @@ describe("password reset service", () => {
 
     expect(result.sent).toBe(false);
     expect(result.token).toBeNull();
+    expect(mockSendPlainTextEmail).not.toHaveBeenCalled();
+  });
+
+  it("fails loudly for missing app URL before checking whether the email exists", async () => {
+    delete process.env.PUBLIC_APP_URL;
+
+    await expect(createPasswordResetToken(ctx.db, "missing@example.com")).rejects.toThrow(
+      "PUBLIC_APP_URL",
+    );
+
+    const rows = await executeWithSchema(
+      ctx.db,
+      tokenCountRowSchema,
+      sql`SELECT COUNT(*) AS token_count FROM fitness.password_reset_token`,
+    );
+    expect(Number(rows[0]?.token_count)).toBe(0);
     expect(mockSendPlainTextEmail).not.toHaveBeenCalled();
   });
 
@@ -91,6 +120,47 @@ describe("password reset service", () => {
     await expect(
       resetPasswordWithToken(ctx.db, result.token ?? "", "another-password123"),
     ).rejects.toThrow(InvalidPasswordResetTokenError);
+  });
+
+  it("allows only one concurrent reset with the same token", async () => {
+    await registerPasswordUser(ctx.db, {
+      email: "reset@example.com",
+      password: "password123",
+      name: "Reset User",
+    });
+    const result = await createPasswordResetToken(ctx.db, "reset@example.com");
+
+    await ctx.db.execute(sql`DROP TRIGGER IF EXISTS delay_password_reset_consume_trigger
+        ON fitness.password_reset_token`);
+    await ctx.db.execute(sql`CREATE OR REPLACE FUNCTION fitness.delay_password_reset_consume()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+          PERFORM pg_sleep(0.2);
+          RETURN NEW;
+        END
+        $$`);
+    await ctx.db.execute(sql`CREATE TRIGGER delay_password_reset_consume_trigger
+        BEFORE UPDATE OF consumed_at ON fitness.password_reset_token
+        FOR EACH ROW
+        WHEN (OLD.consumed_at IS NULL AND NEW.consumed_at IS NOT NULL)
+        EXECUTE FUNCTION fitness.delay_password_reset_consume()`);
+
+    const resetResults = await Promise.allSettled([
+      resetPasswordWithToken(ctx.db, result.token ?? "", "new-password123"),
+      resetPasswordWithToken(ctx.db, result.token ?? "", "another-password123"),
+    ]);
+    await ctx.db.execute(sql`DROP TRIGGER IF EXISTS delay_password_reset_consume_trigger
+        ON fitness.password_reset_token`);
+
+    const fulfilledResults = resetResults.filter(
+      (resetResult) => resetResult.status === "fulfilled",
+    );
+    const rejectedResults = resetResults.filter((resetResult) => resetResult.status === "rejected");
+    expect(fulfilledResults).toHaveLength(1);
+    expect(rejectedResults).toHaveLength(1);
+    expect(rejectedResults[0]?.reason).toBeInstanceOf(InvalidPasswordResetTokenError);
   });
 
   it("rejects expired reset tokens", async () => {
