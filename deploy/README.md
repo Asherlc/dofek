@@ -137,6 +137,7 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
       - Must include `CLICKHOUSE_PASSWORD` for the ClickHouse service. The deploy workflow URL-encodes it into `CLICKHOUSE_PASSWORD_ENCODED` for app `CLICKHOUSE_URL` interpolation.
       - Must include `POSTGRES_PASSWORD`; PeerDB's catalog database and internal MinIO stage use this existing secret.
       - Must include `PEERDB_UI_NEXTAUTH_SECRET` as a dedicated high-entropy PeerDB UI session-signing secret.
+      - Must include `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`, and `APP_BASE_URL` for Stripe billing checkout, portal, and webhook verification.
       - Must include `REDPANDA_BROKERS` and `METRIC_STREAM_TOPIC` for metric-stream producer and sink services.
       - Must include `METRIC_STREAM_R2_BUCKET`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` for the Redpanda Connect R2 archive.
       - Optional: `CREDENTIAL_ENCRYPTION_KEY_NAMESPACE` (default `dofek`) and `CREDENTIAL_ENCRYPTION_KEY_NAME` (default `provider-credentials`).

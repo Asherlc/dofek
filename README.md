@@ -564,6 +564,19 @@ Required production config:
 - `BREVO_SMTP_KEY`
 - `EXPORT_EMAIL_FROM`
 
+### Stripe billing
+
+Stripe Checkout, Customer Portal sessions, and webhook verification require
+Stripe config before the billing path can run. Store these values in Infisical:
+
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_PRICE_ID`
+- `APP_BASE_URL`
+
+Set `STRIPE_WEBHOOK_SECRET` to the webhook endpoint secret from Stripe for
+`/api/webhooks/stripe`; it is the `whsec_...` value, not the API secret key.
+
 ### Credential encryption at rest (provider credentials)
 
 Provider credentials stored in the database are encrypted in the application layer before insert/update using the AWS Encryption SDK with a raw AES keyring.
