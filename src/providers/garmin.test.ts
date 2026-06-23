@@ -595,6 +595,7 @@ describe("GarminProvider.sync()", () => {
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("No OAuth tokens");
     expect(result.recordsSynced).toBe(0);
+    expect(result.duration).toBeGreaterThanOrEqual(0);
   });
 
   it("returns error when tokens have invalid format", async () => {
@@ -637,6 +638,49 @@ describe("GarminProvider.sync()", () => {
 
     expect(mocks.saveTokens).toHaveBeenCalled();
     expect(result.provider).toBe("garmin");
+  });
+
+  it("returns error when token refresh yields no tokens", async () => {
+    mocks.loadTokens.mockResolvedValue(fakeStoredTokens({ expiresAt: new Date("2020-01-01") }));
+    mocks.fromTokens.mockResolvedValueOnce({
+      getTokens: vi.fn().mockReturnValue(null),
+    });
+
+    const result = await syncProvider(provider, db, new Date());
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("Failed to refresh Garmin Connect tokens");
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+  });
+
+  it("skips token refresh when stored tokens are still valid", async () => {
+    const { logger } = await import("../logger.ts");
+
+    await syncProvider(provider, db, new Date());
+
+    expect(logger.info).not.toHaveBeenCalledWith(
+      "[garmin] Internal API token expired, refreshing via OAuth1 exchange...",
+    );
+  });
+
+  it("rethrows Garmin rate limit errors during token resolution", async () => {
+    const rateLimitError = new GarminRateLimitError("Rate limit exceeded (429): limited");
+    mocks.loadTokens.mockRejectedValue(rateLimitError);
+
+    await expect(syncProvider(provider, db, new Date())).rejects.toBe(rateLimitError);
+  });
+
+  it("rethrows retryable infrastructure errors during token resolution", async () => {
+    const infraError = Object.assign(new Error("connection refused"), { code: "ECONNREFUSED" });
+    mocks.loadTokens.mockRejectedValue(infraError);
+
+    await expect(syncProvider(provider, db, new Date())).rejects.toBe(infraError);
+  });
+
+  it("throws when sync is invoked without a scoped user id", async () => {
+    await expect(syncProvider(provider, db, new Date(), { userId: "" })).rejects.toThrow(
+      "garmin sync requires a userId",
+    );
   });
 
   it("syncs activities with detail streams", async () => {
@@ -1338,6 +1382,49 @@ describe("GarminProvider.sync()", () => {
     expect(mocks.withSyncLog).toHaveBeenCalledTimes(4);
   });
 
+  it("ignores sync cursors stored as non-string values", async () => {
+    db.limit.mockResolvedValueOnce([{ value: { cursor: 12345 } }]);
+
+    await syncProvider(provider, db, new Date());
+
+    expect(mocks.withSyncLog).toHaveBeenCalledTimes(4);
+  });
+
+  it("ignores sync cursor settings with null or non-object values", async () => {
+    db.limit.mockResolvedValueOnce([{ value: null }]);
+
+    await syncProvider(provider, db, new Date());
+
+    expect(mocks.withSyncLog).toHaveBeenCalledTimes(4);
+  });
+
+  it("persists the sync cursor after a completed sync", async () => {
+    const until = new Date("2026-03-01T00:00:00.000Z");
+
+    await syncProvider(provider, db, new Date("2026-02-01T00:00:00.000Z"), {
+      until,
+      checkpoint: {
+        load: vi.fn().mockResolvedValue(null),
+        save: vi.fn().mockResolvedValue(undefined),
+        clear: vi.fn().mockResolvedValue(undefined),
+      },
+    });
+
+    expect(db.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: "garmin_sync_cursor",
+        value: { cursor: until.toISOString() },
+      }),
+    );
+    expect(db.onConflictDoUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        set: expect.objectContaining({
+          value: { cursor: until.toISOString() },
+        }),
+      }),
+    );
+  });
+
   it("resumes from a saved checkpoint instead of restarting completed steps", async () => {
     const since = new Date("2026-04-26T00:00:00.000Z");
     const until = new Date("2026-04-27T00:00:00.000Z");
@@ -1470,6 +1557,11 @@ describe("GarminProvider.sync()", () => {
     expect(mocks.client.getActivities).toHaveBeenCalledOnce();
     expect(mocks.client.getSleepData).not.toHaveBeenCalled();
     expect(checkpointStore.clear).not.toHaveBeenCalled();
+    expect(db.values).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: "garmin_sync_cursor",
+      }),
+    );
     expect(enqueueSyncContinuation).toHaveBeenCalledWith(
       expect.objectContaining({
         phase: "api",

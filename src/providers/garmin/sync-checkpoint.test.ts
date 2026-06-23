@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../../db/index.ts";
 import {
+  applyRateLimitToCheckpoint,
   createGarminSyncCheckpoint,
+  type GarminSyncCheckpoint,
   insertStepsAfterCurrent,
   parseGarminSyncCheckpoint,
 } from "./sync-checkpoint.ts";
@@ -49,7 +51,41 @@ describe("planGarminSyncSteps", () => {
   });
 });
 
+const sampleCheckpoint: GarminSyncCheckpoint = {
+  runId: "run-1",
+  recordsSynced: 3,
+  phase: "api",
+  steps: [
+    { type: "activities_list" },
+    { type: "sleep", date: "2026-03-01" },
+    { type: "daily_summary", date: "2026-03-01" },
+    { type: "hrv_summary", date: "2026-03-01" },
+    { type: "stress", date: "2026-03-01" },
+    { type: "heart_rate", date: "2026-03-01" },
+  ],
+  stepIndex: 0,
+  presentActivityExternalIds: [],
+};
+
+describe("createGarminSyncCheckpoint", () => {
+  it("bootstraps an empty checkpoint with the planned steps", () => {
+    const checkpoint = createGarminSyncCheckpoint([{ type: "activities_list" }]);
+
+    expect(checkpoint.phase).toBe("api");
+    expect(checkpoint.stepIndex).toBe(0);
+    expect(checkpoint.recordsSynced).toBe(0);
+    expect(checkpoint.presentActivityExternalIds).toEqual([]);
+    expect(checkpoint.steps).toEqual([{ type: "activities_list" }]);
+    expect(checkpoint.runId.length).toBeGreaterThan(0);
+  });
+});
+
 describe("insertStepsAfterCurrent", () => {
+  it("returns the same checkpoint when no follow-up steps are provided", () => {
+    const checkpoint = createGarminSyncCheckpoint([{ type: "activities_list" }]);
+    expect(insertStepsAfterCurrent(checkpoint, [])).toBe(checkpoint);
+  });
+
   it("splices follow-up activity steps after the activities list step", async () => {
     const checkpoint = createGarminSyncCheckpoint(
       await planGarminSyncSteps({
@@ -79,7 +115,60 @@ describe("insertStepsAfterCurrent", () => {
 });
 
 describe("parseGarminSyncCheckpoint", () => {
+  it("parses a valid checkpoint payload", () => {
+    expect(parseGarminSyncCheckpoint(sampleCheckpoint)).toEqual(sampleCheckpoint);
+  });
+
   it("rejects legacy phase checkpoints", () => {
     expect(parseGarminSyncCheckpoint({ phase: "sleep", nextDate: "2026-03-01" })).toBeNull();
+  });
+});
+
+describe("applyRateLimitToCheckpoint", () => {
+  it("drops remaining stress, heart rate, and HRV steps after a rate limit", () => {
+    const checkpoint = applyRateLimitToCheckpoint({
+      ...sampleCheckpoint,
+      stepIndex: 0,
+    });
+
+    expect(checkpoint.steps).toEqual([
+      { type: "activities_list" },
+      { type: "sleep", date: "2026-03-01" },
+      { type: "daily_summary", date: "2026-03-01" },
+    ]);
+  });
+
+  it("does not keep stress, heart rate, or HRV as the current step after a rate limit", () => {
+    const checkpoint = applyRateLimitToCheckpoint({
+      ...sampleCheckpoint,
+      stepIndex: 4,
+    });
+
+    expect(checkpoint.steps).toEqual([
+      { type: "activities_list" },
+      { type: "sleep", date: "2026-03-01" },
+      { type: "daily_summary", date: "2026-03-01" },
+      { type: "hrv_summary", date: "2026-03-01" },
+    ]);
+  });
+
+  it("keeps non-low-priority tail steps after the current API step index", () => {
+    const checkpoint = applyRateLimitToCheckpoint({
+      ...sampleCheckpoint,
+      steps: [
+        { type: "activities_list" },
+        { type: "activity_reconcile" },
+        { type: "sleep", date: "2026-03-01" },
+        { type: "stress", date: "2026-03-01" },
+        { type: "heart_rate", date: "2026-03-01" },
+      ],
+      stepIndex: 1,
+    });
+
+    expect(checkpoint.steps).toEqual([
+      { type: "activities_list" },
+      { type: "activity_reconcile" },
+      { type: "sleep", date: "2026-03-01" },
+    ]);
   });
 });
