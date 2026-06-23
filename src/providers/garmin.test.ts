@@ -1259,13 +1259,18 @@ describe("GarminProvider.sync()", () => {
   });
 
   it("syncs all data types together and sums record counts", async () => {
+    const syncSince = new Date("2026-03-01T00:00:00Z");
+    const syncUntil = new Date("2026-03-01T23:59:59Z");
+    const activityStartedAt = new Date("2026-03-01T12:00:00Z");
+    const activityEndedAt = new Date("2026-03-01T13:00:00Z");
+
     mocks.client.getActivities.mockResolvedValue([{ activityId: 1 }]);
     mocks.parseConnectActivity.mockReturnValue({
       externalId: "1",
       activityType: "running",
       name: "Run",
-      startedAt: new Date(),
-      endedAt: new Date(),
+      startedAt: activityStartedAt,
+      endedAt: activityEndedAt,
       raw: {},
     });
     mocks.client.getActivityDetail.mockRejectedValue(
@@ -1275,8 +1280,8 @@ describe("GarminProvider.sync()", () => {
     mocks.client.getSleepData.mockResolvedValue({});
     mocks.parseConnectSleep.mockReturnValue({
       externalId: "today",
-      startedAt: new Date(),
-      endedAt: new Date(),
+      startedAt: activityStartedAt,
+      endedAt: activityEndedAt,
       durationMinutes: 480,
       deepMinutes: 90,
       lightMinutes: 210,
@@ -1301,15 +1306,15 @@ describe("GarminProvider.sync()", () => {
 
     mocks.client.getDailyStress.mockResolvedValue({});
     mocks.parseStressTimeSeries.mockReturnValue({
-      samples: [{ timestamp: new Date(), stressLevel: 30 }],
+      samples: [{ timestamp: new Date("2026-03-01T14:00:00Z"), stressLevel: 30 }],
     });
 
     mocks.client.getDailyHeartRate.mockResolvedValue({});
     mocks.parseHeartRateTimeSeries.mockReturnValue({
-      samples: [{ timestamp: new Date(), heartRate: 65 }],
+      samples: [{ timestamp: new Date("2026-03-01T14:05:00Z"), heartRate: 65 }],
     });
 
-    const result = await syncProvider(provider, db, new Date());
+    const result = await syncProvider(provider, db, syncSince, { until: syncUntil });
 
     // 1 sleep + 1 daily + 1 stress + 1 heart rate = 4
     expect(result.recordsSynced).toBe(4);

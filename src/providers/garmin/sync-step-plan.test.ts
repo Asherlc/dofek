@@ -13,8 +13,22 @@ const tokenUserContextMocks = vi.hoisted(() => ({
   getTokenUserId: vi.fn((): string | undefined => "00000000-0000-0000-0000-000000000001"),
 }));
 
+const clickHouseMocks = vi.hoisted(() => {
+  const query = vi.fn();
+  const close = vi.fn();
+  return {
+    query,
+    close,
+    createClickHouseClientFromEnv: vi.fn(() => ({ query, close })),
+  };
+});
+
 vi.mock("../../db/token-user-context.ts", () => ({
   getTokenUserId: tokenUserContextMocks.getTokenUserId,
+}));
+
+vi.mock("../../db/clickhouse.ts", () => ({
+  createClickHouseClientFromEnv: clickHouseMocks.createClickHouseClientFromEnv,
 }));
 
 function makeDb(selectedRows: unknown[] = []) {
@@ -64,6 +78,10 @@ function makeContext(overrides: Partial<GarminSyncPlanContext> = {}): GarminSync
 beforeEach(() => {
   tokenUserContextMocks.getTokenUserId.mockClear();
   tokenUserContextMocks.getTokenUserId.mockReturnValue("00000000-0000-0000-0000-000000000001");
+  clickHouseMocks.createClickHouseClientFromEnv.mockClear();
+  clickHouseMocks.query.mockReset();
+  clickHouseMocks.query.mockResolvedValue({ json: async () => [] });
+  clickHouseMocks.close.mockClear();
   delete process.env.CLICKHOUSE_URL;
 });
 
@@ -123,6 +141,28 @@ describe("Garmin sync step planning", () => {
     ]);
   });
 
+  it("does not skip sleep or HRV dates when no user id can be resolved", async () => {
+    tokenUserContextMocks.getTokenUserId.mockReturnValue(undefined);
+    const db = makeDb([
+      {
+        date: "2026-03-01",
+        startedAt: new Date("2026-03-01T23:00:00.000Z"),
+        endedAt: new Date("2026-03-02T07:00:00.000Z"),
+      },
+    ]);
+    const context = makeContext({ db: db.db, userId: undefined });
+
+    await expect(listGarminDatesNeedingSleepSteps(context)).resolves.toEqual([
+      "2026-03-01",
+      "2026-03-02",
+    ]);
+    await expect(listGarminDatesNeedingHrvSteps(context)).resolves.toEqual([
+      "2026-03-01",
+      "2026-03-02",
+    ]);
+    expect(db.select).not.toHaveBeenCalled();
+  });
+
   it("lists only sleep dates that do not already have a session on that UTC day", async () => {
     const db = makeDb([
       {
@@ -137,5 +177,98 @@ describe("Garmin sync step planning", () => {
       startedAt: sleepSession.startedAt,
       endedAt: sleepSession.endedAt,
     });
+  });
+
+  it("ignores sleep session endpoints outside the sync date range", async () => {
+    const db = makeDb([
+      {
+        startedAt: new Date("2026-02-28T23:00:00.000Z"),
+        endedAt: new Date("2026-03-03T07:00:00.000Z"),
+      },
+    ]);
+    const context = makeContext({
+      db: db.db,
+      dates: ["2026-02-28", "2026-03-01", "2026-03-02", "2026-03-03"],
+      userId: "options-user",
+    });
+
+    await expect(listGarminDatesNeedingSleepSteps(context)).resolves.toEqual([
+      "2026-02-28",
+      "2026-03-01",
+      "2026-03-02",
+      "2026-03-03",
+    ]);
+  });
+
+  it("does not use ClickHouse metric-stream skips when CLICKHOUSE_URL is absent", async () => {
+    clickHouseMocks.query.mockImplementation(async () => ({
+      json: async () => [{ date: "2026-03-01" }, { date: "2026-03-02" }],
+    }));
+    const context = makeContext();
+
+    await expect(planGarminSyncSteps(context)).resolves.toEqual(
+      expect.arrayContaining([
+        { type: "stress", date: "2026-03-01" },
+        { type: "heart_rate", date: "2026-03-01" },
+        { type: "stress", date: "2026-03-02" },
+        { type: "heart_rate", date: "2026-03-02" },
+      ]),
+    );
+    expect(clickHouseMocks.createClickHouseClientFromEnv).not.toHaveBeenCalled();
+  });
+
+  it("does not use ClickHouse metric-stream skips when no user id can be resolved", async () => {
+    process.env.CLICKHOUSE_URL = "http://default:health@127.0.0.1:8123";
+    tokenUserContextMocks.getTokenUserId.mockReturnValue(undefined);
+    clickHouseMocks.query.mockResolvedValue({
+      json: async () => [{ date: "2026-03-01" }, { date: "2026-03-02" }],
+    });
+    const context = makeContext({ userId: undefined });
+
+    await expect(planGarminSyncSteps(context)).resolves.toEqual(
+      expect.arrayContaining([
+        { type: "stress", date: "2026-03-01" },
+        { type: "heart_rate", date: "2026-03-01" },
+        { type: "stress", date: "2026-03-02" },
+        { type: "heart_rate", date: "2026-03-02" },
+      ]),
+    );
+    expect(clickHouseMocks.createClickHouseClientFromEnv).not.toHaveBeenCalled();
+  });
+
+  it("skips stress steps already present in ClickHouse", async () => {
+    process.env.CLICKHOUSE_URL = "http://default:health@127.0.0.1:8123";
+    const db = makeDb([
+      {
+        date: "2026-03-01",
+        startedAt: new Date("2026-03-01T23:00:00.000Z"),
+        endedAt: new Date("2026-03-02T07:00:00.000Z"),
+      },
+    ]);
+    clickHouseMocks.query.mockResolvedValue({
+      json: async () => [{ date: "2026-03-01" }, { date: "2026-03-02" }],
+    });
+    const context = makeContext({ db: db.db, userId: "options-user" });
+
+    await expect(planGarminSyncSteps(context)).resolves.toEqual([
+      { type: "activities_list" },
+      { type: "heart_rate", date: "2026-03-01" },
+      { type: "daily_summary", date: "2026-03-02" },
+      { type: "hrv_summary", date: "2026-03-02" },
+      { type: "heart_rate", date: "2026-03-02" },
+    ]);
+    expect(clickHouseMocks.query).toHaveBeenCalledWith(
+      expect.objectContaining({
+        format: "JSONEachRow",
+        query_params: {
+          userId: "options-user",
+          providerId: "garmin",
+          channel: "stress",
+          rangeStart: "2026-03-01T00:00:00.000Z",
+          rangeEnd: "2026-03-03T00:00:00.000Z",
+        },
+      }),
+    );
+    expect(clickHouseMocks.close).toHaveBeenCalledTimes(1);
   });
 });
