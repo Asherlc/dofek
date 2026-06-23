@@ -483,6 +483,19 @@ describe("registerWithPassword", () => {
       registerWithPassword("https://srv", "user@example.com", "password123", "User"),
     ).rejects.toThrow("Authentication failed");
   });
+
+  it("throws when registration response omits isNewUser", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ session: "sess-register-1", redirect: "/?newUser=true" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    await expect(
+      registerWithPassword("https://srv", "user@example.com", "password123", "User"),
+    ).rejects.toThrow("Authentication failed");
+  });
 });
 
 describe("requestPasswordReset", () => {

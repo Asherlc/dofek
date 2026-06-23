@@ -2058,6 +2058,7 @@ describe("createAuthRouter", () => {
       );
       expect(callbackRes.status).toBe(302);
       expect(callbackRes.headers.location).toContain("dofek://auth/callback?session=");
+      expect(callbackRes.headers.location).toContain("new_user=false");
       expect(setSessionCookie).not.toHaveBeenCalled();
       expect(resolveOrCreateUser).toHaveBeenCalledWith(
         expect.anything(),
@@ -2349,6 +2350,7 @@ describe("createAuthRouter", () => {
 
       expect(completeRes.status).toBe(302);
       expect(completeRes.headers.location).toContain("dofek://auth/callback?session=");
+      expect(completeRes.headers.location).toContain("new_user=true");
       expect(ensureProvider).toHaveBeenCalledWith(
         expect.anything(),
         "strava",

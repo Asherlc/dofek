@@ -133,6 +133,9 @@ const REDIRECT_BASE_ORIGIN = "https://dofek.local";
 
 /** Validate that a redirect target stays on the app origin (CodeQL-safe open redirect guard). */
 export function isSafeRelativeRedirect(path: string): boolean {
+  if (!path.startsWith("/") || path.startsWith("//")) {
+    return false;
+  }
   try {
     return new URL(path, REDIRECT_BASE_ORIGIN).origin === REDIRECT_BASE_ORIGIN;
   } catch {

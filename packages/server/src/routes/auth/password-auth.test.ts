@@ -250,6 +250,22 @@ describe("handlePasswordRegister", () => {
     });
   });
 
+  it("prefers query return_to over body return_to in registration json response", async () => {
+    const { req, res } = createMockReqRes({
+      body: { email: "user@example.com", password: "password123", return_to: "/from-body" },
+      query: { return_to: "/from-query" },
+      headers: { accept: "application/json" },
+    });
+
+    await handlePasswordRegister(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({
+      session: "sess-register",
+      redirect: "/from-query",
+      isNewUser: true,
+    });
+  });
+
   it("uses content-type json to detect json responses", async () => {
     const { req, res } = createMockReqRes({
       body: { email: "user@example.com", password: "password123" },
@@ -417,6 +433,22 @@ describe("handlePasswordLogin", () => {
     expect(res.json).toHaveBeenCalledWith({
       session: "sess-login",
       redirect: "/",
+      isNewUser: false,
+    });
+  });
+
+  it("prefers query return_to over body return_to in login json response", async () => {
+    const { req, res } = createMockReqRes({
+      body: { email: "user@example.com", password: "password123", return_to: "/from-body" },
+      query: { return_to: "/from-query" },
+      headers: { accept: "application/json" },
+    });
+
+    await handlePasswordLogin(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({
+      session: "sess-login",
+      redirect: "/from-query",
       isNewUser: false,
     });
   });

@@ -69,6 +69,7 @@ describe("shared auth helpers", () => {
     });
 
     it("rejects paths that don't start with /", () => {
+      expect(sanitizeReturnTo("dashboard")).toBeUndefined();
       expect(sanitizeReturnTo("https://evil.com")).toBeUndefined();
       expect(sanitizeReturnTo("javascript:alert(1)")).toBeUndefined();
     });
@@ -91,6 +92,7 @@ describe("shared auth helpers", () => {
     });
 
     it("rejects external and protocol-relative URLs", () => {
+      expect(isSafeRelativeRedirect("dashboard")).toBe(false);
       expect(isSafeRelativeRedirect("https://evil.com")).toBe(false);
       expect(isSafeRelativeRedirect("//evil.com")).toBe(false);
       expect(isSafeRelativeRedirect("javascript:alert(1)")).toBe(false);
