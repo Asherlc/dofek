@@ -2,7 +2,7 @@
 
 An assessment of every provider we considered reverse engineering, documenting what the official API provides, what gaps exist, and whether reverse engineering is feasible or worthwhile.
 
-Last updated: 2026-03-14
+Last updated: 2026-06-23
 
 ---
 
@@ -119,11 +119,11 @@ Last updated: 2026-03-14
 
 ### Zepp (Amazfit/Huami)
 - **Official API:** Exists ([zepp-health/rest-api](https://github.com/zepp-health/rest-api/wiki)) with OAuth 2.0, but registration at dev.huami.com is effectively closed (months of silence, partner prioritization).
-- **Internal API:** Well-documented by community ([hacking-mifit-api](https://github.com/micw/hacking-mifit-api)). Email+password login to `account.huami.com/v2/client/login` → app_token. Data via `api-mifit.huami.com/v1/data/band_data.json`.
-- **Data:** Steps, HR (continuous), sleep (stages), SpO2, stress, workouts (GPS), PAI.
+- **Internal API:** Implemented through `packages/zepp-client` and `src/providers/amazfit-zepp.ts`. The current credential flow uses Zepp US2 encrypted registration (`api-user-us2.zepp.com/v2/registrations/tokens`) followed by token exchange at `api-mifit-us2.zepp.com/v2/client/login`; older `account.huami.com` / `account.zepp.com` token exchange hosts are stale.
+- **Data:** First sync slice stores daily steps, distance, active calories, sleep sessions, and minute-level heart rate samples from `band_data.json`.
 - **Auth limitation:** Must use direct Zepp email+password account (not Xiaomi/Google SSO).
 - **Community projects:** [Mi-Fit-and-Zepp-workout-exporter](https://github.com/rolandsz/Mi-Fit-and-Zepp-workout-exporter), [huami-token](https://github.com/argrento/huami-token), [amazfit_pyclient](https://github.com/MyrikLD/amazfit_pyclient).
-- **Verdict:** FEASIBLE RE TARGET — good community docs, straightforward auth, rich data. Best candidate for a future `zepp-client` package.
+- **Verdict:** IMPLEMENTED RE PROVIDER — keep monitoring because the auth and data APIs are private and have changed before.
 
 ---
 
@@ -144,6 +144,6 @@ Last updated: 2026-03-14
 | Samsung Health | None (on-device only) | Very hard (no web surface) | N/A | Skip |
 | Rouvy | Partner-only | Hard (Firebase + GraphQL) | Low | Skip — use Strava/Garmin |
 | Hammerhead | None (on-device SDK only) | Fragile (SRAM migration) | Low | Skip — use Strava/Intervals |
-| Zepp (Amazfit) | Closed registration | Easy (email+password) | Medium | Future candidate |
+| Zepp (Amazfit) | Closed registration | Easy (email+password) | Medium | Done |
 | Peloton | Decent | Unknown | Medium | Not investigated |
 | Withings | Decent | Unknown | Medium | Not investigated |

@@ -2311,8 +2311,10 @@ Prioritized next work:
   DB diagnostics, and rollback boundaries.
 - [metric-stream-timescaledb-runbook.md](metric-stream-timescaledb-runbook.md):
   Timescale conversion, compression, and chunk backfill maintenance.
-- [materialized-view-maintenance-runbook.md](materialized-view-maintenance-runbook.md):
-  blocking materialized-view maintenance, preflight, and refresh inventory.
+- [clickhouse-read-model-deploy-runbook.md](clickhouse-read-model-deploy-runbook.md):
+  current read-model deploy troubleshooting. The older materialized-view
+  maintenance runbook was retired after hot analytics reads moved to ClickHouse
+  and dbt-owned read models.
 - [schema.md](schema.md): materialized-view and continuous-aggregate modeling
   rules.
 - [ci-debugging.md](ci-debugging.md): CI/deploy log inspection patterns.
@@ -4465,8 +4467,10 @@ Global post-sync maintenance no longer runs `refreshDedupViews()` or
 `updateUserMaxHr()`. While rolling out the fix, active old-worker refreshes were
 cancelled with `pg_cancel_backend()` after they restarted the same high-risk
 refresh path. Heavy Postgres materialized-view refreshes remain explicit
-maintenance-window work through the Materialized View Maintenance workflow and
-`docs/materialized-view-maintenance-runbook.md`.
+maintenance-window work. Current deploy troubleshooting lives in
+`docs/clickhouse-read-model-deploy-runbook.md`; the older materialized-view
+maintenance runbook was retired after hot analytics reads moved to ClickHouse
+and dbt-owned read models.
 
 ### Remaining Risk
 

@@ -42,8 +42,9 @@ If you are starting cold and do not want to hunt through agent notes, begin here
 ├─────────────┤  │                                ▼
 │  Polar      │──┤                         ┌───────────┐
 ├─────────────┤  │                         │ Web UI    │
-│  Garmin     │──┘                         │ (tRPC)    │
-└─────────────┘                            └───────────┘
+│  Garmin     │──┤                         │ (tRPC)    │
+│ Amazfit/Zepp│──┘                         └───────────┘
+└─────────────┘
 ```
 
 Each data source is a **provider plugin** that implements a simple interface. The sync runner orchestrates all enabled providers. Raw app data lands in a `fitness` Postgres schema, except high-volume `metric_stream` samples: those publish to Redpanda, sink into ClickHouse, and are archived by Redpanda Connect to Cloudflare R2 for long-term replay. Other raw fitness tables still use PeerDB as the internal Postgres-to-ClickHouse CDC path into `postgres_fitness.*`. ClickHouse maintains stored analytics read models for heavy activity stream reads. Incremental dbt models under `analytics/models/` define derived ClickHouse analytics tables such as `analytics.deduped_sensor` and `analytics.resting_heart_rate_sleep_window` outside the web/API request path. Derived rows are not written back to Postgres. The web dashboard provides sync controls, provider health monitoring, insights, and data exploration. A companion iOS app (Expo + React Native) provides native HealthKit integration and on-the-go access. Nutrition logging on web and iOS supports natural-language AI meal input that can split one message into multiple food items. Long-running sync jobs are processed by BullMQ workers backed by Redis. In production, the `worker` container registers repeatable scheduled sync jobs in BullMQ, and the `analytics-worker` container runs the production-safe subset of dbt analytics builds every 15 minutes with a bounded retry delay; the `sync` mode remains available for manual one-shot runs. `analytics.sensor_scalar_sample`, `analytics.deduped_sensor`, `analytics.sleep_heart_rate_sample`, `analytics.activity_sensor_sample`, and `analytics.activity_location_sample` run as bounded `recorded_at` microbatch models; `analytics.resting_heart_rate_sleep_window`, the activity aggregate intermediates, and `analytics.activity_summary_rows` use dirty-key incremental models over those bounded inputs.
@@ -108,10 +109,12 @@ dofek/
 │   ├── stats/                     # @dofek/stats — correlation, regression analysis
 │   ├── recovery/                  # @dofek/recovery — recovery metrics and scoring
 │   ├── onboarding/                # @dofek/onboarding — onboarding flow logic
+│   ├── provider-http/             # @dofek/provider-http — shared provider HTTP errors/rate limiting
 │   ├── providers-meta/            # @dofek/providers — provider display labels
 │   ├── zones/                     # @dofek/zones — HR/power zone calculations
 │   ├── auth/                      # @dofek/auth — shared authentication logic
 │   ├── heart-rate-variability/    # @dofek/heart-rate-variability — HRV analysis
+│   ├── ml/                        # Local ML/export tooling and Docker image
 │   ├── ble-probe/                 # macOS BLE reverse-engineering tool
 │   ├── whoop-whoop/               # RE'd WHOOP internal API client
 │   ├── eight-sleep/               # RE'd Eight Sleep internal API client
@@ -194,7 +197,7 @@ curl -fsSL https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/
 
 Keep `src/free-exercise-db.json` minified so upstream catalog refreshes do not blow past PR size limits. Add Dofek-specific name aliases or corrections to `src/exercise-metadata-overrides.json`, not the upstream copy. See [docs/exercise-metadata.md](docs/exercise-metadata.md) for the full workflow.
 
-Pull requests can publish a web Storybook preview automatically on every PR event. The preview is uploaded to R2 and served from `https://storybook.dofek.fit/pr-<PR number>/index.html`. Closed PR previews are deleted by workflow, with R2 lifecycle rules as a fallback safety net. Configure `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_BUCKET` in GitHub Actions secrets, then apply `deploy/cloudflare` Terraform to provision the public R2 custom domain.
+Pull requests can publish web and mobile Storybook previews automatically on every PR event. The preview is uploaded to the `dofek-storybook` R2 bucket and served from `https://storybook.dofek.fit/pr-<PR number>/index.html` and `https://storybook.dofek.fit/pr-<PR number>/mobile/index.html`. Closed PR previews are deleted by workflow, with R2 lifecycle rules as a fallback safety net. Configure `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` in GitHub Actions secrets. The workflow sets `R2_BUCKET=dofek-storybook`; Terraform in `deploy/storage.tf` manages the bucket and lifecycle policy, while the `storybook.dofek.fit` custom domain is configured in the Cloudflare dashboard.
 
 Dedicated PR review apps have been retired. Pull requests still publish Storybook previews to R2 for web and mobile UI review.
 
@@ -426,7 +429,9 @@ All credentials are stored in Infisical. The login page auto-discovers which pro
 
 Each provider is enabled by adding its credentials to Infisical. OAuth providers also require a one-time browser authorization via the Data Sources page.
 
-### Implemented Providers (30)
+### Implemented Data Sources (31)
+
+The server registry currently has 30 providers in `packages/server/src/routers/sync-helpers.ts`. Apple Health is an additional upload/import data source exposed through the web and iOS clients rather than a registered scheduled provider.
 
 | Provider | Auth Type | Data Types | Required `.env` Variables |
 |----------|-----------|------------|--------------------------|
@@ -452,6 +457,7 @@ Each provider is enabled by adding its credentials to Infisical. OAuth providers
 | Komoot | OAuth 2.0 | Tours | `KOMOOT_CLIENT_ID`, `KOMOOT_CLIENT_SECRET` |
 | MapMyFitness | OAuth 2.0 | Workouts | `MAPMYFITNESS_CLIENT_ID`, `MAPMYFITNESS_CLIENT_SECRET` |
 | Ultrahuman | RE'd | Sleep, activity, daily metrics | `ULTRAHUMAN_EMAIL`, `ULTRAHUMAN_PASSWORD` |
+| Amazfit/Zepp | RE'd | Steps, distance, active calories, sleep, minute-level heart rate | None (credentials entered in UI modal; optional `ZEPP_API_BASE_URL`) |
 | VeloHero | RE'd (SSO) | Workouts with HR/power/cadence | `VELOHERO_SSO_KEY` |
 | Xert | OAuth 2.0 | Activities | `XERT_CLIENT_ID`, `XERT_CLIENT_SECRET` |
 | Cycling Analytics | OAuth 2.0 | Rides | `CYCLING_ANALYTICS_CLIENT_ID`, `CYCLING_ANALYTICS_CLIENT_SECRET` |

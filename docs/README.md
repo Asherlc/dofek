@@ -35,6 +35,7 @@ Human-facing architecture notes, provider research, and operational runbooks for
 
 | Provider | Doc | Focus |
 |----------|-----|-------|
+| Amazfit/Zepp | [src/providers/README.md](../src/providers/README.md#amazfitzepp) | Current US2 credential flow, API hosts, and account limitations. |
 | WHOOP | [whoop.md](whoop.md) | Internal auth, strength data, and raw IMU capture. |
 | WHOOP BLE | [whoop-ble-protocol.md](whoop-ble-protocol.md) | BLE protocol, frames, CRCs, and packet formats. |
 | Apple Health | [apple-health.md](apple-health.md) | Quantity/category/workout mappings. |
