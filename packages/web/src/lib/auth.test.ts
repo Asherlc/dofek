@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchConfiguredProviders, fetchCurrentUser, logout } from "./auth.ts";
+import {
+  fetchConfiguredProviders,
+  fetchCurrentUser,
+  loginWithPassword,
+  logout,
+  registerWithPassword,
+} from "./auth.ts";
 
 function mockResponse(props: Partial<Response>): Response {
   return {
@@ -112,6 +118,130 @@ describe("fetchConfiguredProviders", () => {
       }),
     );
     await expect(fetchConfiguredProviders()).rejects.toThrow("404");
+  });
+});
+
+describe("loginWithPassword", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+    vi.stubGlobal("window", { location: { href: "" } });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("posts credentials and returns redirect path", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse({
+        ok: true,
+        json: () => Promise.resolve({ session: "sess-1", redirect: "/dashboard" }),
+      }),
+    );
+
+    const result = await loginWithPassword({
+      email: "user@example.com",
+      password: "password123",
+      returnTo: "/dashboard",
+    });
+
+    expect(result).toEqual({ redirect: "/dashboard" });
+    expect(fetch).toHaveBeenCalledWith("/auth/login/password", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({
+        email: "user@example.com",
+        password: "password123",
+        return_to: "/dashboard",
+      }),
+    });
+  });
+
+  it("throws server error message when login fails", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse({
+        ok: false,
+        status: 401,
+        json: () => Promise.resolve({ error: "Invalid email or password", redirect: "/" }),
+      }),
+    );
+
+    await expect(
+      loginWithPassword({ email: "user@example.com", password: "wrong-password" }),
+    ).rejects.toThrow("Invalid email or password");
+  });
+
+  it("throws generic message when login fails without error body", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse({
+        ok: false,
+        status: 500,
+        json: () => Promise.reject(new Error("invalid json")),
+      }),
+    );
+
+    await expect(
+      loginWithPassword({ email: "user@example.com", password: "password123" }),
+    ).rejects.toThrow("Authentication failed");
+  });
+
+  it("throws when login response has invalid shape", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse({
+        ok: true,
+        json: () => Promise.resolve({ redirect: 123 }),
+      }),
+    );
+
+    await expect(
+      loginWithPassword({ email: "user@example.com", password: "password123" }),
+    ).rejects.toThrow("Authentication failed");
+  });
+});
+
+describe("registerWithPassword", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("posts registration details and returns redirect path", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse({
+        ok: true,
+        json: () => Promise.resolve({ session: "sess-1", redirect: "/onboarding" }),
+      }),
+    );
+
+    const result = await registerWithPassword({
+      email: "user@example.com",
+      password: "password123",
+      name: "User",
+      returnTo: "/onboarding",
+    });
+
+    expect(result).toEqual({ redirect: "/onboarding" });
+    expect(fetch).toHaveBeenCalledWith("/auth/register", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({
+        email: "user@example.com",
+        password: "password123",
+        name: "User",
+        return_to: "/onboarding",
+      }),
+    });
   });
 });
 

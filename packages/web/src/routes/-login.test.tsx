@@ -25,6 +25,8 @@ vi.mock("../components/ProviderLogo.tsx", () => ({
 
 vi.mock("../lib/auth.ts", () => ({
   fetchConfiguredProviders: () => mockFetchConfiguredProviders(),
+  loginWithPassword: vi.fn(),
+  registerWithPassword: vi.fn(),
 }));
 
 import "./login.tsx";
@@ -64,5 +66,20 @@ describe("Login route", () => {
     expect(href).not.toBeNull();
     const returnTo = new URLSearchParams(href?.split("?")[1]).get("return_to");
     expect(returnTo).toBe("/dashboard?providerGuide=true");
+  });
+
+  it("renders email/password form when password auth is enabled", async () => {
+    mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: ["google"],
+      data: [],
+      password: true,
+    });
+
+    renderLoginPage();
+
+    await waitFor(() => expect(screen.getByLabelText("Email")).toBeTruthy());
+    expect(screen.getByLabelText("Password")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Sign in with email" })).toBeTruthy();
   });
 });

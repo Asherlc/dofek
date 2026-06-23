@@ -193,6 +193,8 @@ table fitness.activity {
   timezone text
   strava_id text
   raw jsonb
+  provider_absent_at "timestamp with time zone"
+  deleted_at "timestamp with time zone"
   created_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
@@ -986,6 +988,14 @@ table fitness.user_billing {
   }
 }
 
+table fitness.user_password_credential {
+  user_id uuid [pk, not null]
+  email text [not null, unique]
+  password_hash text [not null]
+  created_at "timestamp with time zone" [not null, default: `now()`]
+  updated_at "timestamp with time zone" [not null, default: `now()`]
+}
+
 table fitness.user_profile {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   name text [not null]
@@ -1142,6 +1152,8 @@ ref sync_log_provider_id_provider_id_fk: fitness.sync_log.provider_id > fitness.
 ref sync_log_user_id_user_profile_id_fk: fitness.sync_log.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
 ref user_billing_user_id_user_profile_id_fk: fitness.user_billing.user_id > fitness.user_profile.id [delete: cascade, update: no action]
+
+ref user_password_credential_user_id_user_profile_id_fk: fitness.user_password_credential.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 
 ref user_settings_user_id_user_profile_id_fk: fitness.user_settings.user_id > fitness.user_profile.id [delete: no action, update: no action]
 

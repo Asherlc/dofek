@@ -89,4 +89,13 @@ describe("ConfiguredProvidersSchema", () => {
     });
     expect(result.nativeApple).toBeUndefined();
   });
+
+  it("accepts password flag", () => {
+    const result = ConfiguredProvidersSchema.parse({
+      identity: [],
+      data: [],
+      password: true,
+    });
+    expect(result.password).toBe(true);
+  });
 });

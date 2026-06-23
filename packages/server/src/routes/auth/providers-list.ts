@@ -1,6 +1,7 @@
 import { IDENTITY_PROVIDER_NAMES } from "@dofek/auth/auth";
 import { captureException } from "@sentry/node";
 import type { Request, Response } from "express";
+import { isPasswordAuthEnabled } from "../../auth/password-credential.ts";
 import {
   getConfiguredProviders,
   isNativeAppleConfigured,
@@ -76,6 +77,7 @@ export async function handleGetAuthProviders(req: Request, res: Response): Promi
       identity: identityProviders,
       data: dataLoginProviders,
       nativeApple: isNativeAppleConfigured(),
+      password: isPasswordAuthEnabled(),
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
