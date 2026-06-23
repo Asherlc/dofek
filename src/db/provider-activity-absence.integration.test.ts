@@ -150,7 +150,10 @@ describe("reconcileProviderActivityAbsence", () => {
         endedAt: new Date("2026-03-06T13:00:00Z"),
         raw: {
           sourceName: "Garmin",
-          metadata: { HKMetadataKeySyncIdentifier: "unrelated-sync-id", HKMetadataKeySyncVersion: 1 },
+          metadata: {
+            HKMetadataKeySyncIdentifier: "unrelated-sync-id",
+            HKMetadataKeySyncVersion: 1,
+          },
         },
       },
     ]);

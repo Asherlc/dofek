@@ -7,7 +7,6 @@ import {
 } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { providerSourceLabel } from "@dofek/providers/providers";
-import { ProviderAbsentBanner } from "./ProviderAbsentBanner.tsx";
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
 import {
   computeIntensities,
@@ -42,6 +41,7 @@ import {
 } from "../lib/chartTheme.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
+import { ProviderAbsentBanner } from "./ProviderAbsentBanner.tsx";
 
 const CHART_COLORS = {
   heartRate: activityMetricColors.heartRate,
