@@ -9,7 +9,7 @@ import {
   GarminProvider,
   INTERNAL_SCOPE_MARKER,
   serializeInternalTokens,
-} from "./garmin.ts";
+} from "./garmin/provider.ts";
 import { createGarminSyncCheckpoint } from "./garmin/sync-checkpoint.ts";
 import { planGarminSyncSteps } from "./garmin/sync-step-plan.ts";
 import type { GarminSyncStep } from "./garmin/sync-checkpoint.ts";

@@ -1,30 +1,29 @@
 import { GarminConnectClient, GarminRateLimitError } from "garmin-connect/client";
 import type { GarminTokens } from "garmin-connect/types";
 import { and, eq } from "drizzle-orm";
-import type { TokenSet } from "../auth/oauth.ts";
-import type { SyncDatabase } from "../db/index.ts";
-import { userSettings } from "../db/schema.ts";
-import { getTokenUserId } from "../db/token-user-context.ts";
-import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
-import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
-import { isRetryableInfraError } from "../lib/retryable-infra-error.ts";
-import { logger } from "../logger.ts";
-import type { SyncRun } from "./sync-run.ts";
-import type { ProviderAuthSetup, SyncProvider, SyncResult } from "./types.ts";
-import { eachDay, formatDate } from "./garmin/date-utils.ts";
+import type { TokenSet } from "../../auth/oauth.ts";
+import type { SyncDatabase } from "../../db/index.ts";
+import { userSettings } from "../../db/schema.ts";
+import { getTokenUserId } from "../../db/token-user-context.ts";
+import { ensureProvider, loadTokens, saveTokens } from "../../db/tokens.ts";
+import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
+import { isRetryableInfraError } from "../../lib/retryable-infra-error.ts";
+import { logger } from "../../logger.ts";
+import type { SyncRun } from "../sync-run.ts";
+import type { ProviderAuthSetup, SyncProvider, SyncResult } from "../types.ts";
 import {
   deserializeInternalTokens,
   INTERNAL_SCOPE_MARKER,
   serializeInternalTokens,
-} from "./garmin/internal-tokens.ts";
-import { runGarminOrchestratedSync } from "./garmin/sync-orchestrator.ts";
+} from "./internal-tokens.ts";
+import { runGarminOrchestratedSync } from "./sync-orchestrator.ts";
 
-export { eachDay, formatDate } from "./garmin/date-utils.ts";
+export { eachDay, formatDate } from "./date-utils.ts";
 export {
   deserializeInternalTokens,
   INTERNAL_SCOPE_MARKER,
   serializeInternalTokens,
-} from "./garmin/internal-tokens.ts";
+} from "./internal-tokens.ts";
 
 const SYNC_CURSOR_KEY = "garmin_sync_cursor";
 

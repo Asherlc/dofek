@@ -29,7 +29,7 @@ async function doRegisterProviders() {
     ],
     ["polar", () => import("../providers/polar/provider.ts").then((m) => new m.PolarProvider())],
     ["fitbit", () => import("../providers/fitbit/provider.ts").then((m) => new m.FitbitProvider())],
-    ["garmin", () => import("../providers/garmin.ts").then((m) => new m.GarminProvider())],
+    ["garmin", () => import("../providers/garmin/provider.ts").then((m) => new m.GarminProvider())],
     ["strava", () => import("../providers/strava.ts").then((m) => new m.StravaProvider())],
     [
       "cronometer-csv",
