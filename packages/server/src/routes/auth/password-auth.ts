@@ -22,7 +22,7 @@ import {
 } from "../../auth/password-reset.ts";
 import { createSession } from "../../auth/session.ts";
 import { logger } from "../../logger.ts";
-import { getDb, getPostLoginRedirect, isSafeRelativeRedirect, sanitizeReturnTo } from "./shared.ts";
+import { getDb, getPostLoginRedirect, sanitizeReturnTo } from "./shared.ts";
 
 function wantsJsonResponse(req: Request): boolean {
   const accept = req.headers.accept;
@@ -41,15 +41,6 @@ function getRawReturnTo(req: Request): string | undefined {
 
 function getReturnTo(req: Request): string | undefined {
   return sanitizeReturnTo(getRawReturnTo(req));
-}
-
-function redirectAfterPasswordAuth(res: Response, req: Request, isNewUser: boolean): void {
-  const candidate = getRawReturnTo(req);
-  if (candidate && isSafeRelativeRedirect(candidate)) {
-    res.redirect(candidate);
-    return;
-  }
-  res.redirect(isNewUser ? "/?newUser=true" : "/");
 }
 
 function sendAuthError(res: Response, status: number, message: string): void {
@@ -88,7 +79,7 @@ export async function handlePasswordRegister(req: Request, res: Response): Promi
     }
 
     setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
-    redirectAfterPasswordAuth(res, req, isNewUser);
+    res.redirect(redirectTo);
   } catch (error: unknown) {
     if (error instanceof DuplicateEmailError) {
       sendAuthError(res, 409, error.message);
@@ -136,7 +127,7 @@ export async function handlePasswordLogin(req: Request, res: Response): Promise<
     }
 
     setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
-    redirectAfterPasswordAuth(res, req, false);
+    res.redirect(redirectTo);
   } catch (error: unknown) {
     if (error instanceof InvalidCredentialsError) {
       sendAuthError(res, 401, error.message);

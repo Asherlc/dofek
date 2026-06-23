@@ -79,7 +79,6 @@ vi.mock("./shared.ts", () => ({
   getPostLoginRedirect: (value: string | undefined, isNewUser: boolean) =>
     mockSanitizeReturnTo(value) ?? (isNewUser ? "/?newUser=true" : "/"),
   sanitizeReturnTo: (value: string | undefined) => mockSanitizeReturnTo(value),
-  isSafeRelativeRedirect: (value: string) => value.startsWith("/") && !value.startsWith("//"),
 }));
 
 vi.mock("@sentry/node", () => ({
