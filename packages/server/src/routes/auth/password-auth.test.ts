@@ -190,14 +190,14 @@ describe("handlePasswordRegister", () => {
     });
   });
 
-  it("redirects to the explicit return path after registration when json is not requested", async () => {
+  it("redirects new users to onboarding marker when json is not requested", async () => {
     const { req, res } = createMockReqRes({
       body: { email: "user@example.com", password: "password123", return_to: "/onboarding" },
     });
 
     await handlePasswordRegister(req, res);
 
-    expect(res.redirect).toHaveBeenCalledWith("/onboarding");
+    expect(res.redirect).toHaveBeenCalledWith("/?newUser=true");
   });
 
   it("redirects new users to onboarding when no return path is set", async () => {
@@ -210,7 +210,7 @@ describe("handlePasswordRegister", () => {
     expect(res.redirect).toHaveBeenCalledWith("/?newUser=true");
   });
 
-  it("rejects unsafe return paths for html registration redirects", async () => {
+  it("ignores return paths for html registration redirects", async () => {
     const { req, res } = createMockReqRes({
       body: { email: "user@example.com", password: "password123", return_to: "https://evil.com" },
     });
@@ -360,7 +360,7 @@ describe("handlePasswordLogin", () => {
     });
   });
 
-  it("redirects to the explicit return path after login when json is not requested", async () => {
+  it("redirects to home after login when json is not requested", async () => {
     const { req, res } = createMockReqRes({
       body: { email: "user@example.com", password: "password123" },
       query: { return_to: "/dashboard" },
@@ -368,7 +368,7 @@ describe("handlePasswordLogin", () => {
 
     await handlePasswordLogin(req, res);
 
-    expect(res.redirect).toHaveBeenCalledWith("/dashboard");
+    expect(res.redirect).toHaveBeenCalledWith("/");
   });
 
   it("redirects returning users to home when no return path is set", async () => {
@@ -381,7 +381,7 @@ describe("handlePasswordLogin", () => {
     expect(res.redirect).toHaveBeenCalledWith("/");
   });
 
-  it("rejects unsafe return paths for html login redirects", async () => {
+  it("ignores return paths for html login redirects", async () => {
     const { req, res } = createMockReqRes({
       body: { email: "user@example.com", password: "password123", return_to: "https://evil.com" },
     });

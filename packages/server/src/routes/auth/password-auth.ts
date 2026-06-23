@@ -32,15 +32,11 @@ function wantsJsonResponse(req: Request): boolean {
   return req.headers["content-type"]?.includes("application/json") ?? false;
 }
 
-function getRawReturnTo(req: Request): string | undefined {
+function getReturnTo(req: Request): string | undefined {
   const queryReturnTo = typeof req.query.return_to === "string" ? req.query.return_to : undefined;
   const bodyReturnTo =
     req.body && typeof req.body.return_to === "string" ? req.body.return_to : undefined;
-  return queryReturnTo ?? bodyReturnTo;
-}
-
-function getReturnTo(req: Request): string | undefined {
-  return sanitizeReturnTo(getRawReturnTo(req));
+  return sanitizeReturnTo(queryReturnTo ?? bodyReturnTo);
 }
 
 function sendAuthError(res: Response, status: number, message: string): void {
@@ -79,7 +75,7 @@ export async function handlePasswordRegister(req: Request, res: Response): Promi
     }
 
     setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
-    res.redirect(redirectTo);
+    res.redirect(isNewUser ? "/?newUser=true" : "/");
   } catch (error: unknown) {
     if (error instanceof DuplicateEmailError) {
       sendAuthError(res, 409, error.message);
@@ -127,7 +123,7 @@ export async function handlePasswordLogin(req: Request, res: Response): Promise<
     }
 
     setSessionCookie(res, sessionInfo.sessionId, sessionInfo.expiresAt);
-    res.redirect(redirectTo);
+    res.redirect("/");
   } catch (error: unknown) {
     if (error instanceof InvalidCredentialsError) {
       sendAuthError(res, 401, error.message);
