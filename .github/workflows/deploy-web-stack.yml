@@ -178,6 +178,33 @@ jobs:
           template: .github/templates/infisical-dotenv.tmpl
           output_path: ${{ github.workspace }}/.env.${{ inputs.infisical_environment || 'prod' }}
 
+      - name: Validate required deploy secrets in rendered dotenv
+        env:
+          INFISICAL_ENV_FILE_PATH: ${{ github.workspace }}/.env.${{ inputs.infisical_environment || 'prod' }}
+        run: |
+          set -euo pipefail
+          required_keys=(
+            STRIPE_SECRET_KEY
+            STRIPE_WEBHOOK_SECRET
+            STRIPE_PRICE_ID
+            APP_BASE_URL
+          )
+          missing=()
+          for key in "${required_keys[@]}"; do
+            if ! grep -q "^${key}=" "$INFISICAL_ENV_FILE_PATH"; then
+              missing+=("$key")
+              continue
+            fi
+            value="$(grep "^${key}=" "$INFISICAL_ENV_FILE_PATH" | head -n 1 | cut -d= -f2-)"
+            if [ -z "$value" ]; then
+              missing+=("$key (empty)")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Rendered Infisical dotenv is missing required keys: ${missing[*]}. Ensure they exist as shared secrets at path / in Infisical ${DEPLOY_ENVIRONMENT}, not personal overrides invisible to the deploy machine identity."
+            exit 1
+          fi
+
       - name: Export deploy env for stack interpolation
         env:
           INFISICAL_ENV_FILE_PATH: ${{ github.workspace }}/.env.${{ inputs.infisical_environment || 'prod' }}
