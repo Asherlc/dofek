@@ -18,7 +18,10 @@ const {
   mockIsPasswordAuthEnabled: vi.fn(() => true),
   mockCreateSession: vi.fn(),
   mockSetSessionCookie: vi.fn(),
-  mockSanitizeReturnTo: vi.fn((value: string | undefined) => value),
+  mockSanitizeReturnTo: vi.fn((value: string | undefined) => {
+    if (!value || !value.startsWith("/") || value.startsWith("//")) return undefined;
+    return value;
+  }),
   mockCaptureException: vi.fn(),
   mockLogger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
   mockCreatePasswordResetToken: vi.fn(),
@@ -198,6 +201,56 @@ describe("handlePasswordRegister", () => {
     expect(res.redirect).toHaveBeenCalledWith("/onboarding");
   });
 
+  it("redirects new users to onboarding when no return path is set", async () => {
+    const { req, res } = createMockReqRes({
+      body: { email: "user@example.com", password: "password123" },
+    });
+
+    await handlePasswordRegister(req, res);
+
+    expect(res.redirect).toHaveBeenCalledWith("/?newUser=true");
+  });
+
+  it("rejects unsafe return paths for html registration redirects", async () => {
+    const { req, res } = createMockReqRes({
+      body: { email: "user@example.com", password: "password123", return_to: "https://evil.com" },
+    });
+
+    await handlePasswordRegister(req, res);
+
+    expect(res.redirect).toHaveBeenCalledWith("/?newUser=true");
+  });
+
+  it("includes sanitized return path in registration json response", async () => {
+    const { req, res } = createMockReqRes({
+      body: { email: "user@example.com", password: "password123", return_to: "/onboarding" },
+      headers: { accept: "application/json" },
+    });
+
+    await handlePasswordRegister(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({
+      session: "sess-register",
+      redirect: "/onboarding",
+      isNewUser: true,
+    });
+  });
+
+  it("drops unsafe return paths from registration json response", async () => {
+    const { req, res } = createMockReqRes({
+      body: { email: "user@example.com", password: "password123", return_to: "//evil.com" },
+      headers: { accept: "application/json" },
+    });
+
+    await handlePasswordRegister(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({
+      session: "sess-register",
+      redirect: "/?newUser=true",
+      isNewUser: true,
+    });
+  });
+
   it("uses content-type json to detect json responses", async () => {
     const { req, res } = createMockReqRes({
       body: { email: "user@example.com", password: "password123" },
@@ -317,6 +370,56 @@ describe("handlePasswordLogin", () => {
     await handlePasswordLogin(req, res);
 
     expect(res.redirect).toHaveBeenCalledWith("/dashboard");
+  });
+
+  it("redirects returning users to home when no return path is set", async () => {
+    const { req, res } = createMockReqRes({
+      body: { email: "user@example.com", password: "password123" },
+    });
+
+    await handlePasswordLogin(req, res);
+
+    expect(res.redirect).toHaveBeenCalledWith("/");
+  });
+
+  it("rejects unsafe return paths for html login redirects", async () => {
+    const { req, res } = createMockReqRes({
+      body: { email: "user@example.com", password: "password123", return_to: "https://evil.com" },
+    });
+
+    await handlePasswordLogin(req, res);
+
+    expect(res.redirect).toHaveBeenCalledWith("/");
+  });
+
+  it("includes sanitized return path in login json response", async () => {
+    const { req, res } = createMockReqRes({
+      body: { email: "user@example.com", password: "password123", return_to: "/dashboard" },
+      headers: { accept: "application/json" },
+    });
+
+    await handlePasswordLogin(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({
+      session: "sess-login",
+      redirect: "/dashboard",
+      isNewUser: false,
+    });
+  });
+
+  it("drops unsafe return paths from login json response", async () => {
+    const { req, res } = createMockReqRes({
+      body: { email: "user@example.com", password: "password123", return_to: "//evil.com" },
+      headers: { accept: "application/json" },
+    });
+
+    await handlePasswordLogin(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({
+      session: "sess-login",
+      redirect: "/",
+      isNewUser: false,
+    });
   });
 
   it("returns 401 for invalid credentials", async () => {
