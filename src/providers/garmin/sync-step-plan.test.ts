@@ -271,4 +271,18 @@ describe("Garmin sync step planning", () => {
     );
     expect(clickHouseMocks.close).toHaveBeenCalledTimes(1);
   });
+
+  it("closes ClickHouse clients when metric-stream queries fail", async () => {
+    process.env.CLICKHOUSE_URL = "http://default:health@127.0.0.1:8123";
+    clickHouseMocks.query.mockRejectedValue(new Error("connection refused"));
+    const context = makeContext();
+
+    await expect(planGarminSyncSteps(context)).resolves.toEqual(
+      expect.arrayContaining([
+        { type: "stress", date: "2026-03-01" },
+        { type: "heart_rate", date: "2026-03-01" },
+      ]),
+    );
+    expect(clickHouseMocks.close).toHaveBeenCalled();
+  });
 });

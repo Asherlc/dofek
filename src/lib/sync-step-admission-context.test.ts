@@ -4,6 +4,7 @@ import {
   isInsideSyncStepAdmission,
   markSyncStepAdmissionClaimed,
   runWithSyncStepAdmission,
+  tryClaimSyncStepAdmission,
 } from "./sync-step-admission-context.ts";
 
 describe("sync-step-admission-context", () => {
@@ -30,6 +31,14 @@ describe("sync-step-admission-context", () => {
 
     runWithSyncStepAdmission(() => {
       expect(hasSyncStepAdmissionClaimed()).toBe(false);
+    });
+  });
+
+  it("allows only the first caller to claim sync-step admission", () => {
+    runWithSyncStepAdmission(() => {
+      expect(tryClaimSyncStepAdmission()).toBe(true);
+      expect(tryClaimSyncStepAdmission()).toBe(false);
+      expect(hasSyncStepAdmissionClaimed()).toBe(true);
     });
   });
 });

@@ -1,5 +1,5 @@
-export function formatDate(d: Date): string {
-  return d.toISOString().split("T")[0] ?? "";
+export function formatDate(date: Date): string {
+  return date.toISOString().split("T")[0];
 }
 
 export function eachDay(since: Date, until: Date): string[] {

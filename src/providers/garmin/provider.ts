@@ -36,7 +36,9 @@ async function loadSyncCursor(db: SyncDatabase, userId?: string): Promise<string
   const value = rows[0].value;
   if (typeof value !== "object" || value === null) return null;
   const cursor = Reflect.get(value, "cursor");
-  return typeof cursor === "string" ? cursor : null;
+  if (typeof cursor !== "string") return null;
+  if (Number.isNaN(new Date(cursor).getTime())) return null;
+  return cursor;
 }
 
 async function saveSyncCursor(db: SyncDatabase, cursor: string, userId?: string): Promise<void> {

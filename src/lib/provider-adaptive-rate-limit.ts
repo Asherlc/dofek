@@ -25,7 +25,7 @@ import { getRedisConnection } from "../jobs/queues.ts";
 import {
   hasSyncStepAdmissionClaimed,
   isInsideSyncStepAdmission,
-  markSyncStepAdmissionClaimed,
+  tryClaimSyncStepAdmission,
 } from "./sync-step-admission-context.ts";
 
 interface RedisMulti {
@@ -68,6 +68,9 @@ async function awaitThrottleWithStore(
   const nowMs = Date.now();
   const state = slideAdaptiveWindow(await loadOrCreate(providerId, scope, userId), nowMs);
   await sleep(throttleDelayMs(state, nowMs));
+  if (isStepChainSyncProvider(providerId) && isInsideSyncStepAdmission()) {
+    return;
+  }
   const touchedAtMs = Date.now();
   const touchedState = slideAdaptiveWindow(state, touchedAtMs);
   await save(recordAdaptiveThrottleTouch(touchedState, touchedAtMs));
@@ -81,10 +84,8 @@ function shouldUseSyncStepThrottleOnly(providerId: string): boolean {
   );
 }
 
-function noteSyncStepAdmission(providerId: string): void {
-  if (isStepChainSyncProvider(providerId) && isInsideSyncStepAdmission()) {
-    markSyncStepAdmissionClaimed();
-  }
+function shouldClaimSyncStepBudget(providerId: string): boolean {
+  return isStepChainSyncProvider(providerId) && isInsideSyncStepAdmission();
 }
 
 async function awaitAdmissionWithStore(
@@ -94,18 +95,12 @@ async function awaitAdmissionWithStore(
   scope: ProviderRateLimitScope,
   userId: string | null,
 ): Promise<void> {
-  if (shouldUseSyncStepThrottleOnly(providerId)) {
-    await awaitThrottleWithStore(loadOrCreate, save, providerId, scope, userId);
-    return;
-  }
-
   const nowMs = Date.now();
   const state = slideAdaptiveWindow(await loadOrCreate(providerId, scope, userId), nowMs);
   await sleep(admissionDelayMs(state, nowMs));
   const admittedAtMs = Date.now();
   const admittedState = slideAdaptiveWindow(state, admittedAtMs);
   await save(recordAdaptiveRequest(admittedState, admittedAtMs));
-  noteSyncStepAdmission(providerId);
 }
 
 function loadAdaptiveStateFromRedis(
@@ -171,7 +166,6 @@ async function awaitAdmissionAtomically(
         .set(key, serializeAdaptiveRateState(nextState), "PX", ADAPTIVE_RATE_WINDOW_MS * 4)
         .exec();
       if (execResult) {
-        noteSyncStepAdmission(providerId);
         return;
       }
     }
@@ -243,6 +237,17 @@ export class InMemoryAdaptiveRateLimitStore implements AdaptiveRateLimitStore {
     userId: string | null,
   ): Promise<void> {
     if (shouldUseSyncStepThrottleOnly(providerId)) {
+      await awaitThrottleWithStore(
+        this.#loadOrCreate.bind(this),
+        this.#save.bind(this),
+        providerId,
+        scope,
+        userId,
+      );
+      return;
+    }
+
+    if (shouldClaimSyncStepBudget(providerId) && !tryClaimSyncStepAdmission()) {
       await awaitThrottleWithStore(
         this.#loadOrCreate.bind(this),
         this.#save.bind(this),
@@ -356,6 +361,17 @@ export class RedisAdaptiveRateLimitStore implements AdaptiveRateLimitStore {
     userId: string | null,
   ): Promise<void> {
     if (shouldUseSyncStepThrottleOnly(providerId)) {
+      await awaitThrottleWithStore(
+        this.#loadOrCreate.bind(this),
+        this.#save.bind(this),
+        providerId,
+        scope,
+        userId,
+      );
+      return;
+    }
+
+    if (shouldClaimSyncStepBudget(providerId) && !tryClaimSyncStepAdmission()) {
       await awaitThrottleWithStore(
         this.#loadOrCreate.bind(this),
         this.#save.bind(this),

@@ -161,7 +161,15 @@ async function runActivitiesListStep(
   until: Date,
   checkpoint: GarminSyncCheckpoint,
 ): Promise<{ checkpoint: GarminSyncCheckpoint; recordsSynced: number }> {
-  const activities = await client.getActivities(0, GARMIN_ACTIVITY_PAGE_SIZE);
+  const activities = [];
+  let offset = 0;
+  let page: Awaited<ReturnType<GarminConnectClient["getActivities"]>>;
+  do {
+    page = await client.getActivities(offset, GARMIN_ACTIVITY_PAGE_SIZE);
+    activities.push(...page);
+    offset += page.length;
+  } while (page.length === GARMIN_ACTIVITY_PAGE_SIZE);
+
   let recordsSynced = 0;
   const presentActivityExternalIds = new Set(checkpoint.presentActivityExternalIds);
 
@@ -228,10 +236,7 @@ async function runActivitiesListStep(
     }
   }
 
-  const followUpSteps: GarminSyncStep[] = [...detailSteps];
-  if (activities.length < GARMIN_ACTIVITY_PAGE_SIZE) {
-    followUpSteps.push({ type: "activity_reconcile" });
-  }
+  const followUpSteps: GarminSyncStep[] = [...detailSteps, { type: "activity_reconcile" }];
 
   return {
     recordsSynced,
@@ -651,6 +656,7 @@ async function runGarminSyncStep(
         } catch (error) {
           tracker.record(step.date, error);
         }
+        tracker.throwIfErrors();
         break;
       }
       case "stress":

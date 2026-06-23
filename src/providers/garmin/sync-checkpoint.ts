@@ -43,6 +43,8 @@ export function createGarminSyncCheckpoint(steps: GarminSyncStep[]): GarminSyncC
 export function parseGarminSyncCheckpoint(raw: unknown): GarminSyncCheckpoint | null {
   const parsed = garminSyncCheckpointSchema.safeParse(raw);
   if (!parsed.success) return null;
+  const { stepIndex, recordsSynced, steps } = parsed.data;
+  if (stepIndex < 0 || stepIndex > steps.length || recordsSynced < 0) return null;
   return parsed.data;
 }
 

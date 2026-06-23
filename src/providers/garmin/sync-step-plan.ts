@@ -4,6 +4,7 @@ import type { SyncDatabase } from "../../db/index.ts";
 import { dailyMetrics, sleepSession } from "../../db/schema.ts";
 import { HEART_RATE, STRESS } from "../../db/sensor-channels.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
+import { logger } from "../../logger.ts";
 import type { GarminSyncStep } from "./sync-checkpoint.ts";
 
 export interface GarminSyncPlanContext {
@@ -137,9 +138,9 @@ async function listGarminDatesWithMetricStreamChannel(
     return new Set();
   }
 
+  const { createClickHouseClientFromEnv } = await import("../../db/clickhouse.ts");
+  const client = createClickHouseClientFromEnv();
   try {
-    const { createClickHouseClientFromEnv } = await import("../../db/clickhouse.ts");
-    const client = createClickHouseClientFromEnv();
     const result = await client.query({
       query: `
         SELECT DISTINCT toString(toDate(recorded_at)) AS date
@@ -161,10 +162,14 @@ async function listGarminDatesWithMetricStreamChannel(
       },
     });
     const rows = z.array(metricStreamDateRowSchema).parse(await result.json());
-    await client.close?.();
     return new Set(rows.map((row) => row.date));
-  } catch {
+  } catch (error) {
+    logger.warn(
+      `[garmin] ClickHouse metric-stream query failed for ${channel}: ${error instanceof Error ? error.message : String(error)}`,
+    );
     return new Set();
+  } finally {
+    await client.close?.();
   }
 }
 

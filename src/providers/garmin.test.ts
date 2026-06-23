@@ -184,10 +184,6 @@ interface MockDb {
 }
 
 function createMockDb(): MockDb {
-  const whereResult = Object.assign(Promise.resolve([]), {
-    limit: vi.fn().mockResolvedValue([]),
-    returning: vi.fn().mockResolvedValue([{ date: "2026-03-01" }]),
-  });
   const db: MockDb = {
     select: vi.fn(),
     from: vi.fn(),
@@ -203,6 +199,10 @@ function createMockDb(): MockDb {
     delete: vi.fn(),
     execute: vi.fn().mockResolvedValue(undefined),
   };
+  const whereResult = Object.assign(Promise.resolve([]), {
+    limit: (...args: unknown[]) => db.limit(...args),
+    returning: vi.fn().mockResolvedValue([{ date: "2026-03-01" }]),
+  });
   db.select.mockReturnValue(db);
   db.from.mockReturnValue(db);
   db.where.mockReturnValue(whereResult);
@@ -967,11 +967,12 @@ describe("GarminProvider.sync()", () => {
     );
   });
 
-  it("skips provider absence reconciliation when the activity page is full", async () => {
+  it("paginates activity fetches until a partial page and then reconciles", async () => {
     const since = new Date("2026-01-01T00:00:00Z");
-    const rawActivities = Array.from({ length: 50 }, (_, index) => ({ activityId: index + 1 }));
+    const fullPage = Array.from({ length: 50 }, (_, index) => ({ activityId: index + 1 }));
+    const partialPage = [{ activityId: 51 }];
 
-    mocks.client.getActivities.mockResolvedValue(rawActivities);
+    mocks.client.getActivities.mockResolvedValueOnce(fullPage).mockResolvedValueOnce(partialPage);
     mocks.parseConnectActivity.mockImplementation((raw: { activityId: number }) => ({
       externalId: String(raw.activityId),
       activityType: "running",
@@ -985,7 +986,21 @@ describe("GarminProvider.sync()", () => {
 
     await syncProvider(provider, db, since);
 
-    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
+    expect(mocks.client.getActivities).toHaveBeenCalledTimes(2);
+    expect(mocks.client.getActivities).toHaveBeenNthCalledWith(1, 0, 50);
+    expect(mocks.client.getActivities).toHaveBeenNthCalledWith(2, 50, 50);
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        providerId: "garmin",
+        userId: "00000000-0000-0000-0000-000000000001",
+        windowStart: since,
+        presentExternalIds: new Set([
+          ...fullPage.map((activity) => String(activity.activityId)),
+          "51",
+        ]),
+      }),
+    );
   });
 
   it("syncs sleep data", async () => {
@@ -1380,25 +1395,37 @@ describe("GarminProvider.sync()", () => {
   });
 
   it("uses sync cursor when available", async () => {
-    db.limit.mockResolvedValueOnce([{ value: { cursor: "2026-02-15T00:00:00Z" } }]);
+    db.limit.mockResolvedValueOnce([{ value: { cursor: "2026-02-15T00:00:00.000Z" } }]);
+    const until = new Date("2026-02-15T00:00:00.000Z");
 
-    await syncProvider(provider, db, new Date());
+    await syncProvider(provider, db, new Date("2026-01-01T00:00:00.000Z"), { until });
 
     expect(mocks.withSyncLog).toHaveBeenCalledTimes(4);
   });
 
   it("ignores sync cursors stored as non-string values", async () => {
     db.limit.mockResolvedValueOnce([{ value: { cursor: 12345 } }]);
+    const until = new Date("2026-02-15T00:00:00.000Z");
 
-    await syncProvider(provider, db, new Date());
+    await syncProvider(provider, db, new Date("2026-02-15T00:00:00.000Z"), { until });
 
     expect(mocks.withSyncLog).toHaveBeenCalledTimes(4);
   });
 
   it("ignores sync cursor settings with null or non-object values", async () => {
     db.limit.mockResolvedValueOnce([{ value: null }]);
+    const until = new Date("2026-02-15T00:00:00.000Z");
 
-    await syncProvider(provider, db, new Date());
+    await syncProvider(provider, db, new Date("2026-02-15T00:00:00.000Z"), { until });
+
+    expect(mocks.withSyncLog).toHaveBeenCalledTimes(4);
+  });
+
+  it("ignores sync cursors with invalid date strings", async () => {
+    db.limit.mockResolvedValueOnce([{ value: { cursor: "not-a-date" } }]);
+    const until = new Date("2026-02-15T00:00:00.000Z");
+
+    await syncProvider(provider, db, new Date("2026-02-15T00:00:00.000Z"), { until });
 
     expect(mocks.withSyncLog).toHaveBeenCalledTimes(4);
   });

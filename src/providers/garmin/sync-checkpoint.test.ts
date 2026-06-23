@@ -122,6 +122,27 @@ describe("parseGarminSyncCheckpoint", () => {
   it("rejects legacy phase checkpoints", () => {
     expect(parseGarminSyncCheckpoint({ phase: "sleep", nextDate: "2026-03-01" })).toBeNull();
   });
+
+  it("rejects checkpoints with out-of-range stepIndex or negative recordsSynced", () => {
+    expect(
+      parseGarminSyncCheckpoint({
+        ...sampleCheckpoint,
+        stepIndex: -1,
+      }),
+    ).toBeNull();
+    expect(
+      parseGarminSyncCheckpoint({
+        ...sampleCheckpoint,
+        stepIndex: sampleCheckpoint.steps.length + 1,
+      }),
+    ).toBeNull();
+    expect(
+      parseGarminSyncCheckpoint({
+        ...sampleCheckpoint,
+        recordsSynced: -1,
+      }),
+    ).toBeNull();
+  });
 });
 
 describe("applyRateLimitToCheckpoint", () => {

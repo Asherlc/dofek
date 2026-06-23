@@ -287,6 +287,21 @@ describe("RedisAdaptiveRateLimitStore", () => {
     expect(saved.requestCount).toBe(2);
   });
 
+  it("counts only one HTTP admission when concurrent requests race in a sync step", async () => {
+    const { store, setCalls } = createMockRedisAdaptiveStore();
+
+    await runWithSyncStepAdmission(async () => {
+      await Promise.all([
+        store.awaitAdmission("garmin", "provider", null),
+        store.awaitAdmission("garmin", "provider", null),
+        store.awaitAdmission("garmin", "provider", null),
+      ]);
+    });
+
+    const saved = JSON.parse(setCalls.at(-1)?.value ?? "{}");
+    expect(saved.requestCount).toBe(1);
+  });
+
   it("stores Strava quota fields after recordSuccess", async () => {
     const { store, setCalls } = createMockRedisAdaptiveStore();
     const headers = new Headers({
