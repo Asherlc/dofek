@@ -157,7 +157,7 @@ async function listGarminDatesWithMetricStreamChannel(
         rangeEnd: dayAfterUtc(context.untilDate).toISOString(),
       },
     });
-    const rows = await result.json<{ date: string }>();
+    const rows = (await result.json()) as Array<{ date: string }>;
     await client.close?.();
     return new Set(rows.map((row) => row.date));
   } catch {

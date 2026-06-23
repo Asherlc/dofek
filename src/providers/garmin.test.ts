@@ -1108,7 +1108,10 @@ describe("GarminProvider.sync()", () => {
     expect(Object.hasOwn(dailyCall[0], "hrv")).toBe(false);
     expect(Object.hasOwn(dailyCall[0], "vo2max")).toBe(false);
     expect(mocks.client.getTrainingStatus).not.toHaveBeenCalled();
-    expect(db.set).toHaveBeenCalledWith({ hrv: 45 });
+    const hrvConflictCall = db.onConflictDoUpdate.mock.calls.find(
+      (call) => call[0]?.set?.hrv === 45,
+    );
+    expect(hrvConflictCall).toBeDefined();
 
     // Verify the onConflictDoUpdate set clause has the same values
     const conflictCall = db.onConflictDoUpdate.mock.calls.find(

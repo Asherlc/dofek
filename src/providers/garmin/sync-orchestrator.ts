@@ -456,19 +456,25 @@ async function runHrvSummaryStep(
     const parsedHrv = parseHrvSummary(hrvData);
     const hrv = parsedHrv.lastNightAvg ?? parsedHrv.lastNight;
 
-    const updated = await db
-      .update(dailyMetrics)
-      .set({ hrv })
-      .where(
-        and(
-          eq(dailyMetrics.userId, userId),
-          eq(dailyMetrics.date, date),
-          eq(dailyMetrics.providerId, providerId),
-        ),
-      )
+    const upserted = await db
+      .insert(dailyMetrics)
+      .values({
+        date,
+        providerId,
+        hrv,
+      })
+      .onConflictDoUpdate({
+        target: [
+          dailyMetrics.userId,
+          dailyMetrics.date,
+          dailyMetrics.providerId,
+          dailyMetrics.sourceName,
+        ],
+        set: { hrv },
+      })
       .returning({ date: dailyMetrics.date });
 
-    return updated.length > 0 ? 1 : 0;
+    return upserted.length > 0 ? 1 : 0;
   } catch (error) {
     if (isNoDataError(error)) return 0;
     throw error;
