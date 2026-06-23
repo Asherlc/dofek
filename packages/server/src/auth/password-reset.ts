@@ -48,7 +48,6 @@ export class InvalidPasswordResetTokenError extends Error {
 
 export interface CreatePasswordResetTokenResult {
   sent: boolean;
-  token: string | null;
 }
 
 function requiredEnv(name: string): string {
@@ -68,7 +67,15 @@ function generateResetToken(): string {
 }
 
 function readPublicAppBaseUrl(): string {
-  const baseUrl = requiredEnv("PUBLIC_APP_URL").replace(/\/+$/, "");
+  const baseUrl = requiredEnv("PUBLIC_APP_URL").trim().replace(/\/+$/, "");
+  if (!baseUrl) {
+    throw new Error("PUBLIC_APP_URL environment variable is required");
+  }
+  try {
+    new URL(baseUrl);
+  } catch {
+    throw new Error("PUBLIC_APP_URL environment variable must be a valid URL");
+  }
   return baseUrl;
 }
 
@@ -91,7 +98,7 @@ export async function createPasswordResetToken(
   );
   const credential = credentials[0];
   if (!credential) {
-    return { sent: false, token: null };
+    return { sent: false };
   }
 
   const token = generateResetToken();
@@ -116,7 +123,7 @@ export async function createPasswordResetToken(
     toEmail: credential.email,
   });
 
-  return { sent: true, token };
+  return { sent: true };
 }
 
 export async function resetPasswordWithToken(
@@ -144,10 +151,17 @@ export async function resetPasswordWithToken(
       throw new InvalidPasswordResetTokenError();
     }
 
-    await tx.execute(
-      sql`UPDATE fitness.user_password_credential
-          SET password_hash = ${hashPassword(newPassword)}, updated_at = NOW()
-          WHERE user_id = ${row.user_id}`,
+    const updatedCredentials = parseRows(
+      consumedTokenRowSchema,
+      await tx.execute(
+        sql`UPDATE fitness.user_password_credential
+            SET password_hash = ${hashPassword(newPassword)}, updated_at = NOW()
+            WHERE user_id = ${row.user_id}
+            RETURNING user_id`,
+      ),
     );
+    if (!updatedCredentials[0]) {
+      throw new InvalidPasswordResetTokenError();
+    }
   });
 }

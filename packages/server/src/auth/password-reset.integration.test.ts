@@ -22,9 +22,26 @@ const tokenCountRowSchema = z.object({
   token_count: z.union([z.number(), z.string()]),
 });
 
+const tokenConsumedRowSchema = z.object({
+  is_unconsumed: z.boolean(),
+});
+
+const plainTextEmailInputSchema = z.object({
+  text: z.string(),
+});
+
 vi.mock("../../../../src/email.ts", () => ({
   sendPlainTextEmail: (input: unknown) => mockSendPlainTextEmail(input),
 }));
+
+function extractResetTokenFromLastEmail(): string {
+  const input = plainTextEmailInputSchema.parse(mockSendPlainTextEmail.mock.calls.at(-1)?.[0]);
+  const match = /\/reset-password\?token=([^\s]+)/.exec(input.text);
+  if (!match?.[1]) {
+    throw new Error("Reset token missing from email");
+  }
+  return decodeURIComponent(match[1]);
+}
 
 describe("password reset service", () => {
   let ctx: TestContext;
@@ -58,14 +75,13 @@ describe("password reset service", () => {
     });
 
     const result = await createPasswordResetToken(ctx.db, "reset@example.com");
+    const token = extractResetTokenFromLastEmail();
 
-    expect(result.sent).toBe(true);
-    expect(result.token).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(result).toEqual({ sent: true });
+    expect(token).toMatch(/^[A-Za-z0-9_-]+$/);
     expect(mockSendPlainTextEmail).toHaveBeenCalledWith({
       subject: "Reset your Dofek password",
-      text: expect.stringContaining(
-        `https://app.example.test/reset-password?token=${result.token}`,
-      ),
+      text: expect.stringContaining(`https://app.example.test/reset-password?token=${token}`),
       toEmail: "reset@example.com",
     });
 
@@ -76,15 +92,14 @@ describe("password reset service", () => {
           FROM fitness.password_reset_token`,
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.token_hash).not.toBe(result.token);
+    expect(rows[0]?.token_hash).not.toBe(token);
     expect(Math.round(Number(rows[0]?.expires_after_minutes))).toBe(60);
   });
 
   it("does not send email or reveal existence for an unknown email", async () => {
     const result = await createPasswordResetToken(ctx.db, "missing@example.com");
 
-    expect(result.sent).toBe(false);
-    expect(result.token).toBeNull();
+    expect(result).toEqual({ sent: false });
     expect(mockSendPlainTextEmail).not.toHaveBeenCalled();
   });
 
@@ -110,16 +125,41 @@ describe("password reset service", () => {
       password: "password123",
       name: "Reset User",
     });
-    const result = await createPasswordResetToken(ctx.db, "reset@example.com");
+    await createPasswordResetToken(ctx.db, "reset@example.com");
+    const token = extractResetTokenFromLastEmail();
 
-    await resetPasswordWithToken(ctx.db, result.token ?? "", "new-password123");
+    await resetPasswordWithToken(ctx.db, token, "new-password123");
 
     await expect(
       authenticatePasswordUser(ctx.db, "reset@example.com", "new-password123"),
     ).resolves.toEqual(expect.objectContaining({ userId: expect.any(String) }));
-    await expect(
-      resetPasswordWithToken(ctx.db, result.token ?? "", "another-password123"),
-    ).rejects.toThrow(InvalidPasswordResetTokenError);
+    await expect(resetPasswordWithToken(ctx.db, token, "another-password123")).rejects.toThrow(
+      InvalidPasswordResetTokenError,
+    );
+  });
+
+  it("rolls back token consumption when the credential row is missing", async () => {
+    await registerPasswordUser(ctx.db, {
+      email: "reset@example.com",
+      password: "password123",
+      name: "Reset User",
+    });
+    await createPasswordResetToken(ctx.db, "reset@example.com");
+    const token = extractResetTokenFromLastEmail();
+    await ctx.db.execute(
+      sql`DELETE FROM fitness.user_password_credential WHERE email = ${"reset@example.com"}`,
+    );
+
+    await expect(resetPasswordWithToken(ctx.db, token, "new-password123")).rejects.toThrow(
+      InvalidPasswordResetTokenError,
+    );
+
+    const rows = await executeWithSchema(
+      ctx.db,
+      tokenConsumedRowSchema,
+      sql`SELECT consumed_at IS NULL AS is_unconsumed FROM fitness.password_reset_token`,
+    );
+    expect(rows).toEqual([{ is_unconsumed: true }]);
   });
 
   it("allows only one concurrent reset with the same token", async () => {
@@ -128,10 +168,12 @@ describe("password reset service", () => {
       password: "password123",
       name: "Reset User",
     });
-    const result = await createPasswordResetToken(ctx.db, "reset@example.com");
+    await createPasswordResetToken(ctx.db, "reset@example.com");
+    const token = extractResetTokenFromLastEmail();
 
     await ctx.db.execute(sql`DROP TRIGGER IF EXISTS delay_password_reset_consume_trigger
         ON fitness.password_reset_token`);
+    await ctx.db.execute(sql`DROP FUNCTION IF EXISTS fitness.delay_password_reset_consume()`);
     await ctx.db.execute(sql`CREATE OR REPLACE FUNCTION fitness.delay_password_reset_consume()
         RETURNS trigger
         LANGUAGE plpgsql
@@ -147,20 +189,26 @@ describe("password reset service", () => {
         WHEN (OLD.consumed_at IS NULL AND NEW.consumed_at IS NOT NULL)
         EXECUTE FUNCTION fitness.delay_password_reset_consume()`);
 
-    const resetResults = await Promise.allSettled([
-      resetPasswordWithToken(ctx.db, result.token ?? "", "new-password123"),
-      resetPasswordWithToken(ctx.db, result.token ?? "", "another-password123"),
-    ]);
-    await ctx.db.execute(sql`DROP TRIGGER IF EXISTS delay_password_reset_consume_trigger
-        ON fitness.password_reset_token`);
+    try {
+      const resetResults = await Promise.allSettled([
+        resetPasswordWithToken(ctx.db, token, "new-password123"),
+        resetPasswordWithToken(ctx.db, token, "another-password123"),
+      ]);
 
-    const fulfilledResults = resetResults.filter(
-      (resetResult) => resetResult.status === "fulfilled",
-    );
-    const rejectedResults = resetResults.filter((resetResult) => resetResult.status === "rejected");
-    expect(fulfilledResults).toHaveLength(1);
-    expect(rejectedResults).toHaveLength(1);
-    expect(rejectedResults[0]?.reason).toBeInstanceOf(InvalidPasswordResetTokenError);
+      const fulfilledResults = resetResults.filter(
+        (resetResult) => resetResult.status === "fulfilled",
+      );
+      const rejectedResults = resetResults.filter(
+        (resetResult) => resetResult.status === "rejected",
+      );
+      expect(fulfilledResults).toHaveLength(1);
+      expect(rejectedResults).toHaveLength(1);
+      expect(rejectedResults[0]?.reason).toBeInstanceOf(InvalidPasswordResetTokenError);
+    } finally {
+      await ctx.db.execute(sql`DROP TRIGGER IF EXISTS delay_password_reset_consume_trigger
+          ON fitness.password_reset_token`);
+      await ctx.db.execute(sql`DROP FUNCTION IF EXISTS fitness.delay_password_reset_consume()`);
+    }
   });
 
   it("rejects expired reset tokens", async () => {
@@ -169,13 +217,14 @@ describe("password reset service", () => {
       password: "password123",
       name: "Reset User",
     });
-    const result = await createPasswordResetToken(ctx.db, "reset@example.com");
+    await createPasswordResetToken(ctx.db, "reset@example.com");
+    const token = extractResetTokenFromLastEmail();
     await ctx.db.execute(
       sql`UPDATE fitness.password_reset_token SET expires_at = NOW() - INTERVAL '1 minute'`,
     );
 
-    await expect(
-      resetPasswordWithToken(ctx.db, result.token ?? "", "new-password123"),
-    ).rejects.toThrow(InvalidPasswordResetTokenError);
+    await expect(resetPasswordWithToken(ctx.db, token, "new-password123")).rejects.toThrow(
+      InvalidPasswordResetTokenError,
+    );
   });
 });
