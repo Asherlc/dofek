@@ -1,9 +1,14 @@
+import * as adaptiveRateLimit from "@dofek/provider-http/adaptive-rate-limit";
 import {
   ADAPTIVE_RATE_WINDOW_MS,
   createInitialAdaptiveState,
 } from "@dofek/provider-http/adaptive-rate-limit";
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  markSyncStepAdmissionClaimed,
+  runWithSyncStepAdmission,
+} from "./sync-step-admission-context.ts";
 
 const sharedRedisMocks = vi.hoisted(() => ({
   set: vi.fn().mockResolvedValue("OK"),
@@ -235,6 +240,54 @@ describe("InMemoryAdaptiveRateLimitStore", () => {
     await store.recordSuccess("whoop", "provider", null);
     await store.awaitAdmission("whoop", "provider", null);
   });
+
+  it("records only one budget admission per garmin sync step in memory", async () => {
+    const requestSpy = vi.spyOn(adaptiveRateLimit, "recordAdaptiveRequest");
+    const touchSpy = vi.spyOn(adaptiveRateLimit, "recordAdaptiveThrottleTouch");
+    const store = new InMemoryAdaptiveRateLimitStore();
+
+    await runWithSyncStepAdmission(async () => {
+      await store.awaitAdmission("garmin", "provider", null);
+      await store.awaitAdmission("garmin", "provider", null);
+    });
+
+    expect(requestSpy).toHaveBeenCalledTimes(1);
+    expect(touchSpy).not.toHaveBeenCalled();
+    requestSpy.mockRestore();
+    touchSpy.mockRestore();
+  });
+
+  it("throttles in-memory callers that lose the sync-step budget race", async () => {
+    const requestSpy = vi.spyOn(adaptiveRateLimit, "recordAdaptiveRequest");
+    const touchSpy = vi.spyOn(adaptiveRateLimit, "recordAdaptiveThrottleTouch");
+    const store = new InMemoryAdaptiveRateLimitStore();
+
+    await runWithSyncStepAdmission(async () => {
+      markSyncStepAdmissionClaimed();
+      await store.awaitAdmission("garmin", "provider", null);
+    });
+
+    expect(requestSpy).not.toHaveBeenCalled();
+    expect(touchSpy).not.toHaveBeenCalled();
+    requestSpy.mockRestore();
+    touchSpy.mockRestore();
+  });
+
+  it("counts concurrent in-memory sync-step admissions once", async () => {
+    const requestSpy = vi.spyOn(adaptiveRateLimit, "recordAdaptiveRequest");
+    const store = new InMemoryAdaptiveRateLimitStore();
+
+    await runWithSyncStepAdmission(async () => {
+      await Promise.all([
+        store.awaitAdmission("garmin", "provider", null),
+        store.awaitAdmission("garmin", "provider", null),
+        store.awaitAdmission("garmin", "provider", null),
+      ]);
+    });
+
+    expect(requestSpy).toHaveBeenCalledTimes(1);
+    requestSpy.mockRestore();
+  });
 });
 
 describe("RedisAdaptiveRateLimitStore", () => {
@@ -264,6 +317,63 @@ describe("RedisAdaptiveRateLimitStore", () => {
 
     const saved = JSON.parse(setCalls.at(-1)?.value ?? "{}");
     expect(saved.requestCount).toBe(2);
+  });
+
+  it("counts only the first HTTP admission in a sync step for step-chain providers", async () => {
+    const { store, setCalls } = createMockRedisAdaptiveStore();
+
+    await runWithSyncStepAdmission(async () => {
+      await store.awaitAdmission("garmin", "provider", null);
+      await store.awaitAdmission("garmin", "provider", null);
+      await store.awaitAdmission("garmin", "provider", null);
+    });
+
+    let saved = JSON.parse(setCalls.at(-1)?.value ?? "{}");
+    expect(saved.requestCount).toBe(1);
+
+    await runWithSyncStepAdmission(async () => {
+      await store.awaitAdmission("garmin", "provider", null);
+    });
+
+    saved = JSON.parse(setCalls.at(-1)?.value ?? "{}");
+    expect(saved.requestCount).toBe(2);
+  });
+
+  it("counts only one HTTP admission when concurrent requests race in a sync step", async () => {
+    const { store, setCalls } = createMockRedisAdaptiveStore();
+
+    await runWithSyncStepAdmission(async () => {
+      await Promise.all([
+        store.awaitAdmission("garmin", "provider", null),
+        store.awaitAdmission("garmin", "provider", null),
+        store.awaitAdmission("garmin", "provider", null),
+      ]);
+    });
+
+    const saved = JSON.parse(setCalls.at(-1)?.value ?? "{}");
+    expect(saved.requestCount).toBe(1);
+  });
+
+  it("does not persist Redis writes for sync-step throttle-only admissions", async () => {
+    const mock = createMockRedisAdaptiveStore({ atomic: true });
+
+    await runWithSyncStepAdmission(async () => {
+      await mock.store.awaitAdmission("garmin", "provider", null);
+      const savesAfterFirst = mock.setCalls.length;
+      await mock.store.awaitAdmission("garmin", "provider", null);
+      expect(mock.setCalls.length).toBe(savesAfterFirst);
+    });
+  });
+
+  it("routes claimed sync-step admissions through the throttle-only Redis path", async () => {
+    const mock = createMockRedisAdaptiveStore();
+
+    await runWithSyncStepAdmission(async () => {
+      await mock.store.awaitAdmission("garmin", "provider", null);
+      const savesAfterFirst = mock.setCalls.length;
+      await mock.store.awaitAdmission("garmin", "provider", null);
+      expect(mock.setCalls.length).toBe(savesAfterFirst);
+    });
   });
 
   it("stores Strava quota fields after recordSuccess", async () => {

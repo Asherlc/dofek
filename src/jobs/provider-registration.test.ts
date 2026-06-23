@@ -67,7 +67,7 @@ vi.mock("../providers/polar/provider.ts", () => ({
 vi.mock("../providers/fitbit/provider.ts", () => ({
   FitbitProvider: vi.fn(() => mockProviders.fitbit),
 }));
-vi.mock("../providers/garmin.ts", () => ({
+vi.mock("../providers/garmin/provider.ts", () => ({
   GarminProvider: vi.fn(() => mockProviders.garmin),
 }));
 vi.mock("../providers/strava.ts", () => ({

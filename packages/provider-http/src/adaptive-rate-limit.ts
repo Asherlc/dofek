@@ -24,18 +24,20 @@ export const DEFAULT_PROVIDER_THROTTLE_MS: Readonly<Record<string, number>> = {
 };
 
 /** Providers that run one BullMQ job per sync step (not one job per full sync). */
-export const STEP_CHAIN_SYNC_PROVIDERS: ReadonlySet<string> = new Set(["whoop"]);
+export const STEP_CHAIN_SYNC_PROVIDERS: ReadonlySet<string> = new Set(["garmin", "whoop"]);
 
 /**
  * Typical HTTP calls per step-chain sync job (auth refresh, bootstrap, one data call).
  * Used to align BullMQ job pacing with HTTP-level adaptive budgets.
  */
 export const DEFAULT_HTTP_REQUESTS_PER_SYNC_JOB: Readonly<Record<string, number>> = {
+  garmin: 1,
   whoop: 3,
 };
 
 /** Seed inferred budgets for step-chain providers before the first 429 observation. */
 export const DEFAULT_PROVIDER_INFERRED_BUDGET: Readonly<Record<string, number>> = {
+  garmin: ADAPTIVE_DEFAULT_INFERRED_BUDGET,
   whoop: ADAPTIVE_DEFAULT_INFERRED_BUDGET,
 };
 
@@ -143,27 +145,7 @@ export function learnInferredBudget(
 }
 
 export function admissionDelayMs(state: ProviderAdaptiveRateState, nowMs: number): number {
-  let delayMs = 0;
-
-  if (state.lastRequestMs != null) {
-    const elapsed = nowMs - state.lastRequestMs;
-    if (elapsed < state.throttleMs) {
-      delayMs = state.throttleMs - elapsed;
-    }
-  }
-
-  if (state.inferredBudget != null) {
-    const softCap = Math.floor(state.inferredBudget * ADAPTIVE_BUDGET_SAFETY_RATIO);
-    const effectiveRequestCount = isStepChainSyncProvider(state.providerId)
-      ? Math.ceil(state.requestCount / httpRequestsPerSyncJob(state.providerId))
-      : state.requestCount;
-    const effectiveSoftCap = isStepChainSyncProvider(state.providerId)
-      ? Math.max(1, Math.floor(softCap / httpRequestsPerSyncJob(state.providerId)))
-      : softCap;
-    if (effectiveRequestCount >= effectiveSoftCap) {
-      delayMs = Math.max(delayMs, state.throttleMs);
-    }
-  }
+  let delayMs = Math.max(throttleDelayMs(state, nowMs), budgetAdmissionDelayMs(state));
 
   if (
     state.providerId === "strava" &&
@@ -183,6 +165,29 @@ export function admissionDelayMs(state: ProviderAdaptiveRateState, nowMs: number
   }
 
   return delayMs;
+}
+
+export function throttleDelayMs(state: ProviderAdaptiveRateState, nowMs: number): number {
+  if (state.lastRequestMs == null) return 0;
+  const elapsed = nowMs - state.lastRequestMs;
+  return elapsed < state.throttleMs ? state.throttleMs - elapsed : 0;
+}
+
+function budgetAdmissionDelayMs(state: ProviderAdaptiveRateState): number {
+  if (state.inferredBudget == null) return 0;
+
+  const softCap = Math.floor(state.inferredBudget * ADAPTIVE_BUDGET_SAFETY_RATIO);
+  const effectiveRequestCount = isStepChainSyncProvider(state.providerId)
+    ? Math.ceil(state.requestCount / httpRequestsPerSyncJob(state.providerId))
+    : state.requestCount;
+  const effectiveSoftCap = isStepChainSyncProvider(state.providerId)
+    ? Math.max(1, Math.floor(softCap / httpRequestsPerSyncJob(state.providerId)))
+    : softCap;
+  if (effectiveRequestCount >= effectiveSoftCap) {
+    return state.throttleMs;
+  }
+
+  return 0;
 }
 
 export function createInitialAdaptiveState(
@@ -229,6 +234,19 @@ export function recordAdaptiveRequest(
   return {
     ...slid,
     requestCount: slid.requestCount + 1,
+    lastRequestMs: nowMs,
+    throttleMs: decreaseThrottleMs(slid.throttleMs),
+  };
+}
+
+/** Updates throttle timing without consuming a step-chain sync job budget slot. */
+export function recordAdaptiveThrottleTouch(
+  state: ProviderAdaptiveRateState,
+  nowMs: number,
+): ProviderAdaptiveRateState {
+  const slid = slideAdaptiveWindow(state, nowMs);
+  return {
+    ...slid,
     lastRequestMs: nowMs,
     throttleMs: decreaseThrottleMs(slid.throttleMs),
   };

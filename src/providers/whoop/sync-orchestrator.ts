@@ -1,6 +1,7 @@
 import { WhoopClient } from "whoop-whoop/client";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { loadTokens, saveTokens } from "../../db/tokens.ts";
+import { runWithSyncStepAdmission } from "../../lib/sync-step-admission-context.ts";
 import { logger } from "../../logger.ts";
 import { ProviderStoredIdentityMissingError } from "../auth-errors.ts";
 import type { SyncRun } from "../sync-run.ts";
@@ -437,7 +438,9 @@ export async function runWhoopOrchestratedSync(
         describeStep(stepDescription),
       );
 
-      const outcome = await runWhoopSyncStep(run, checkpoint, fetchFn);
+      const outcome = await runWithSyncStepAdmission(() =>
+        runWhoopSyncStep(run, checkpoint, fetchFn),
+      );
       checkpoint = outcome.checkpoint;
       recordsSynced = checkpoint.recordsSynced;
       errors.push(...outcome.errors);
