@@ -9,6 +9,8 @@
     "storybook:ios": "EXPO_PUBLIC_STORYBOOK_ENABLED=true expo run:ios",
     "storybook:web": "storybook dev -p 6007 --config-dir .storybook",
     "build-storybook": "storybook build --config-dir .storybook",
+    "app-store:screenshots": "node ./scripts/capture-app-store-screenshots.mjs",
+    "app-store:assets": "pnpm build-storybook && pnpm app-store:screenshots",
     "ios": "expo run:ios",
     "ios:device": "expo run:ios --device",
     "prebuild": "expo prebuild --platform ios --clean",
@@ -77,6 +79,7 @@
     "react-dom": "19.2.4",
     "react-native-web": "0.21.2",
     "storybook": "10.4.0",
+    "playwright": "1.55.0",
     "typescript": "5.9.3",
     "vite": "8.0.13"
   }

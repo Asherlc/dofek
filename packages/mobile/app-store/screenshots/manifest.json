@@ -1,0 +1,59 @@
+{
+  "device": {
+    "width": 428,
+    "height": 926,
+    "scale": 3,
+    "label": "6.5-inch"
+  },
+  "screenshots": [
+    {
+      "id": "pages-home--default",
+      "filename": "01-today-readiness.png",
+      "caption": "See your daily readiness at a glance",
+      "outputPath": "app-store/screenshots/01-today-readiness.png",
+      "pixelSize": "1284x2778"
+    },
+    {
+      "id": "pages-recovery--default",
+      "filename": "02-recovery-trends.png",
+      "caption": "Track HRV, resting heart rate, and recovery trends",
+      "outputPath": "app-store/screenshots/02-recovery-trends.png",
+      "pixelSize": "1284x2778"
+    },
+    {
+      "id": "pages-strain--with-activities",
+      "filename": "03-training-load.png",
+      "caption": "Balance training load with recovery",
+      "outputPath": "app-store/screenshots/03-training-load.png",
+      "pixelSize": "1284x2778"
+    },
+    {
+      "id": "pages-activities--default",
+      "filename": "04-activities-map.png",
+      "caption": "Review every workout with route previews",
+      "outputPath": "app-store/screenshots/04-activities-map.png",
+      "pixelSize": "1284x2778"
+    },
+    {
+      "id": "pages-nutrition--default",
+      "filename": "05-nutrition-logging.png",
+      "caption": "Log meals and track macros in one place",
+      "outputPath": "app-store/screenshots/05-nutrition-logging.png",
+      "pixelSize": "1284x2778"
+    },
+    {
+      "id": "pages-settings--default",
+      "filename": "06-connected-providers.png",
+      "caption": "Connect Strava, WHOOP, Apple Health, and more",
+      "outputPath": "app-store/screenshots/06-connected-providers.png",
+      "pixelSize": "1284x2778"
+    },
+    {
+      "id": "pages-activitydetail-zonecharts--heart-rate-zones",
+      "filename": "07-heart-rate-zones.png",
+      "caption": "Inspect heart rate zone distribution",
+      "outputPath": "app-store/screenshots/07-heart-rate-zones.png",
+      "pixelSize": "1284x2778"
+    }
+  ]
+}

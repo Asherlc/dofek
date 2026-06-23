@@ -23,6 +23,60 @@ function createSeededProviders() {
   const todayDate = localDateString();
 
   queryClient.setQueryData(
+    [["mobileDashboard", "dashboard"], { input: { endDate: todayDate }, type: "query" }],
+    {
+      readiness: {
+        score: 82,
+        date: todayDate,
+        components: {
+          hrvScore: 84,
+          restingHrScore: 78,
+          sleepScore: 88,
+          respiratoryRateScore: 74,
+        },
+        weights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
+      },
+      sleep: {
+        lastNight: {
+          date: localDateString(-1),
+          durationMinutes: 456,
+          deepPct: 21,
+          remPct: 24,
+          lightPct: 47,
+          awakePct: 8,
+        },
+        sleepDebt: 18,
+      },
+      strain: {
+        dailyStrain: 11.8,
+        acuteLoad: 360,
+        chronicLoad: 395,
+        workloadRatio: 0.91,
+        date: todayDate,
+      },
+      sleepNeed: {
+        baselineMinutes: 480,
+        strainDebtMinutes: 16,
+        accumulatedDebtMinutes: 28,
+        totalNeedMinutes: 503,
+        recentNights: [],
+        canRecommend: true,
+      },
+      anomalies: { anomalies: [], checkedMetrics: [] },
+      latestDate: todayDate,
+    },
+  );
+
+  queryClient.setQueryData([["providerGuide", "status"], { type: "query" }], {
+    dismissed: true,
+  });
+
+  queryClient.setQueryData(
+    [["anomalyDetection", "check"], { input: { endDate: todayDate }, type: "query" }],
+    { anomalies: [], checkedMetrics: [] },
+  );
+
+  queryClient.setQueryData(
     [["recovery", "readinessScore"], { input: { days: 30, endDate: todayDate }, type: "query" }],
     [
       {

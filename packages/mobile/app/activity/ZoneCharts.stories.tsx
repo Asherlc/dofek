@@ -52,9 +52,12 @@ function ZoneChartsStory({
 const meta = {
   title: "Pages/ActivityDetail/ZoneCharts",
   component: ZoneChartsStory,
+  parameters: {
+    layout: "fullscreen",
+  },
   decorators: [
     (Story) => (
-      <View style={{ padding: 16, backgroundColor: "#000", width: 380 }}>
+      <View style={{ flex: 1, minHeight: 932, padding: 16, backgroundColor: "#000" }}>
         <Story />
       </View>
     ),

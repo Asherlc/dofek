@@ -1,6 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { httpBatchLink } from "@trpc/client";
 import { View } from "react-native";
+import { trpc } from "../../lib/trpc";
 import StrainScreen from "./strain";
 
 const mockWorkloadData = {
@@ -55,6 +57,34 @@ function createSeededProviders(activities: unknown[] = []) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
   });
+  const endDate = new Date().toISOString().slice(0, 10);
+
+  queryClient.setQueryData(
+    [["mobileDashboard", "training"], { input: { days: 30, endDate }, type: "query" }],
+    {
+      workloadRatio: mockWorkloadData,
+      strainTarget: {
+        targetStrain: 13.5,
+        currentStrain: 12.5,
+        currentStrainSource: "daily_strain",
+        currentPhysiologyLoad: 450,
+        progressPercent: 93,
+        zone: "Push",
+        explanation: "Your recovery and training load support a productive training day.",
+        dailyLoad: 450,
+        acuteLoad: 380,
+        chronicLoad: 400,
+        workloadRatio: 0.95,
+        readinessScore: 78,
+      },
+      activities,
+      weeklyVolume: [
+        { week: endDate, activity_type: "cycling", count: 3, hours: 5.2 },
+        { week: endDate, activity_type: "running", count: 2, hours: 1.7 },
+      ],
+      verticalAscent: [],
+    },
+  );
 
   queryClient.setQueryData(
     [["recovery", "workloadRatio"], { input: { days: 30 }, type: "query" }],
@@ -82,12 +112,23 @@ function MockProviders({
   activities?: unknown[];
 }) {
   const { queryClient } = createSeededProviders(activities);
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  const trpcClient = trpc.createClient({
+    links: [httpBatchLink({ url: "http://127.0.0.1/storybook-trpc" })],
+  });
+
+  return (
+    <trpc.Provider client={trpcClient} queryClient={queryClient}>
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    </trpc.Provider>
+  );
 }
 
 const meta = {
   title: "Pages/Strain",
   component: StrainScreen,
+  parameters: {
+    layout: "fullscreen",
+  },
   decorators: [
     (Story) => (
       <MockProviders>

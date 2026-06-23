@@ -19,8 +19,16 @@ const config: StorybookConfig = {
         : {};
     viteConfig.resolve.alias = {
       ...existingAliases,
+      "expo-modules-core": resolve(currentDir, "./mocks/expo-modules-core.ts"),
       "expo-router": resolve(currentDir, "./mocks/expo-router.ts"),
+      "expo-updates": resolve(currentDir, "./mocks/expo-updates.ts"),
+      "react-native-maps": resolve(currentDir, "./mocks/react-native-maps.tsx"),
+      "react-native-reanimated": resolve(currentDir, "./mocks/react-native-reanimated.tsx"),
       [resolve(currentDir, "../lib/auth-context")]: resolve(currentDir, "./mocks/auth-context"),
+      [resolve(currentDir, "../lib/auth-context.tsx")]: resolve(
+        currentDir,
+        "./mocks/auth-context",
+      ),
     };
     viteConfig.plugins.push({
       name: "storybook-health-kit-module-mock",
