@@ -5,7 +5,10 @@ import {
 } from "@dofek/provider-http/adaptive-rate-limit";
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { markSyncStepAdmissionClaimed, runWithSyncStepAdmission } from "./sync-step-admission-context.ts";
+import {
+  markSyncStepAdmissionClaimed,
+  runWithSyncStepAdmission,
+} from "./sync-step-admission-context.ts";
 
 const sharedRedisMocks = vi.hoisted(() => ({
   set: vi.fn().mockResolvedValue("OK"),
