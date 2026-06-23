@@ -7,8 +7,8 @@ CREATE TABLE fitness.password_reset_token (
   created_at timestamp with time zone DEFAULT now() NOT NULL,
   CONSTRAINT password_reset_token_pkey PRIMARY KEY (id),
   CONSTRAINT password_reset_token_token_hash_key UNIQUE (token_hash),
-  CONSTRAINT password_reset_token_user_id_fkey FOREIGN KEY (user_id) REFERENCES fitness.user_profile(id) ON DELETE CASCADE
+  CONSTRAINT password_reset_token_user_id_fkey FOREIGN KEY (user_id) REFERENCES fitness.user_profile (id) ON DELETE CASCADE
 );
 
-CREATE INDEX password_reset_token_user_idx ON fitness.password_reset_token USING btree (user_id);
-CREATE INDEX password_reset_token_active_idx ON fitness.password_reset_token USING btree (token_hash, expires_at) WHERE consumed_at IS NULL;
+CREATE INDEX password_reset_token_user_idx ON fitness.password_reset_token USING btree (user_id); -- noqa: PG01
+CREATE INDEX password_reset_token_active_idx ON fitness.password_reset_token USING btree (token_hash, expires_at) WHERE consumed_at IS NULL; -- noqa: PG01
