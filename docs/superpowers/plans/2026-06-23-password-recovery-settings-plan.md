@@ -1939,7 +1939,7 @@ Expected: PASS.
 
 - [ ] **Step 4: Update documentation**
 
-Add a short note to `docs/management-ui-auth.md`:
+Add a short note to `docs/app-password-auth.md`:
 
 ```markdown
 ## Password Recovery
@@ -1952,7 +1952,7 @@ Authenticated users can set or change their password from Settings. OAuth-only u
 - [ ] **Step 5: Commit docs if changed**
 
 ```bash
-rtk git add docs/management-ui-auth.md
+rtk git add docs/app-password-auth.md
 rtk git commit -m "docs: document password recovery"
 ```
 

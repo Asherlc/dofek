@@ -78,6 +78,54 @@ export async function registerWithPassword(
   });
 }
 
+const resetRequestResponseSchema = z.object({
+  error: z.string().optional(),
+  message: z.string(),
+});
+
+const resetConfirmResponseSchema = z.object({
+  error: z.string().optional(),
+  ok: z.boolean(),
+});
+
+export async function requestPasswordReset(email: string): Promise<{ message: string }> {
+  const response = await fetch("/auth/password-reset/request", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  const data: unknown = await response.json().catch(() => null);
+  const parsed = resetRequestResponseSchema.safeParse(data);
+  if (!response.ok) {
+    throw new Error(
+      parsed.success && parsed.data.error ? parsed.data.error : "Password reset failed",
+    );
+  }
+  if (!parsed.success) {
+    throw new Error("Password reset failed");
+  }
+  return { message: parsed.data.message };
+}
+
+export async function confirmPasswordReset(token: string, password: string): Promise<{ ok: true }> {
+  const response = await fetch("/auth/password-reset/confirm", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ token, password }),
+  });
+  const data: unknown = await response.json().catch(() => null);
+  const parsed = resetConfirmResponseSchema.safeParse(data);
+  if (!response.ok) {
+    throw new Error(
+      parsed.success && parsed.data.error ? parsed.data.error : "Password reset failed",
+    );
+  }
+  if (!parsed.success || !parsed.data.ok) {
+    throw new Error("Password reset failed");
+  }
+  return { ok: true };
+}
+
 /** Log the user out. */
 export async function logout(): Promise<void> {
   await fetch("/auth/logout", { method: "POST", credentials: "include" });

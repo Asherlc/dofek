@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  confirmPasswordReset,
   fetchConfiguredProviders,
   fetchCurrentUser,
   loginWithPassword,
   logout,
   registerWithPassword,
+  requestPasswordReset,
 } from "./auth.ts";
 
 function mockResponse(props: Partial<Response>): Response {
@@ -242,6 +244,53 @@ describe("registerWithPassword", () => {
         return_to: "/onboarding",
       }),
     });
+  });
+});
+
+describe("requestPasswordReset", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("requests a password reset", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      mockResponse({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            message: "If that email has a password login, we'll send a reset link.",
+          }),
+      }),
+    );
+
+    await expect(requestPasswordReset("user@example.com")).resolves.toEqual({
+      message: "If that email has a password login, we'll send a reset link.",
+    });
+  });
+});
+
+describe("confirmPasswordReset", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("confirms a password reset", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      mockResponse({
+        ok: true,
+        json: () => Promise.resolve({ ok: true }),
+      }),
+    );
+
+    await expect(confirmPasswordReset("token", "new-password123")).resolves.toEqual({ ok: true });
   });
 });
 

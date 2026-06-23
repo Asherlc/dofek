@@ -9,7 +9,7 @@ import { useEffect } from "react";
 import { QueryErrorBoundary } from "../components/QueryErrorBoundary.tsx";
 import { AuthProvider, useAuth } from "../lib/auth-context.tsx";
 
-const PUBLIC_PATHS = new Set(["/", "/login", "/privacy"]);
+const PUBLIC_PATHS = new Set(["/", "/login", "/privacy", "/reset-password"]);
 
 const LEGACY_REDIRECTS: Record<string, string> = {
   "/nutrition-analytics": "/nutrition/analytics",

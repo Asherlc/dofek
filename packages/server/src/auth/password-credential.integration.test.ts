@@ -4,8 +4,10 @@ import { setupTestDatabase, type TestContext } from "../../../../src/db/test-hel
 import {
   authenticatePasswordUser,
   DuplicateEmailError,
+  getPasswordCredentialStatus,
   InvalidCredentialsError,
   registerPasswordUser,
+  setPasswordForUser,
 } from "./password-credential.ts";
 
 const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
@@ -97,5 +99,59 @@ describe("password credential auth (integration)", () => {
     await expect(
       authenticatePasswordUser(ctx.db, "missing@example.com", "password123"),
     ).rejects.toThrow(InvalidCredentialsError);
+  });
+
+  describe("authenticated password management", () => {
+    it("creates a password credential for an OAuth-only user with a profile email", async () => {
+      await ctx.db.execute(
+        sql`UPDATE fitness.user_profile SET email = 'oauth@example.com', name = 'OAuth User' WHERE id = ${TEST_USER_ID}`,
+      );
+
+      await expect(getPasswordCredentialStatus(ctx.db, TEST_USER_ID)).resolves.toEqual({
+        hasPassword: false,
+      });
+
+      await setPasswordForUser(ctx.db, TEST_USER_ID, { newPassword: "new-password123" });
+
+      await expect(
+        authenticatePasswordUser(ctx.db, "oauth@example.com", "new-password123"),
+      ).resolves.toEqual({ userId: TEST_USER_ID });
+      await expect(getPasswordCredentialStatus(ctx.db, TEST_USER_ID)).resolves.toEqual({
+        hasPassword: true,
+      });
+    });
+
+    it("requires the current password when changing an existing password", async () => {
+      const registered = await registerPasswordUser(ctx.db, {
+        email: "change@example.com",
+        password: "password123",
+      });
+
+      await expect(
+        setPasswordForUser(ctx.db, registered.userId, { newPassword: "new-password123" }),
+      ).rejects.toThrow("Current password is required");
+    });
+
+    it("changes an existing password when the current password is correct", async () => {
+      const registered = await registerPasswordUser(ctx.db, {
+        email: "change@example.com",
+        password: "password123",
+      });
+
+      await setPasswordForUser(ctx.db, registered.userId, {
+        currentPassword: "password123",
+        newPassword: "new-password123",
+      });
+
+      await expect(
+        authenticatePasswordUser(ctx.db, "change@example.com", "new-password123"),
+      ).resolves.toEqual({ userId: registered.userId });
+    });
+
+    it("fails when an OAuth-only user has no profile email", async () => {
+      await expect(
+        setPasswordForUser(ctx.db, TEST_USER_ID, { newPassword: "new-password123" }),
+      ).rejects.toThrow("Your account needs an email address before you can set a password");
+    });
   });
 });

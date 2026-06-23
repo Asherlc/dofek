@@ -27,6 +27,7 @@ vi.mock("../lib/auth.ts", () => ({
   fetchConfiguredProviders: () => mockFetchConfiguredProviders(),
   loginWithPassword: vi.fn(),
   registerWithPassword: vi.fn(),
+  requestPasswordReset: vi.fn(),
 }));
 
 import "./login.tsx";
@@ -81,5 +82,20 @@ describe("Login route", () => {
     await waitFor(() => expect(screen.getByLabelText("Email")).toBeTruthy());
     expect(screen.getByLabelText("Password")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Sign in with email" })).toBeTruthy();
+  });
+
+  it("shows forgot password in email sign-in mode", async () => {
+    mockUseSearch.mockReturnValue({ providerGuide: undefined, returnTo: undefined });
+    mockFetchConfiguredProviders.mockResolvedValue({
+      identity: [],
+      data: [],
+      password: true,
+    });
+
+    renderLoginPage();
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Forgot password?" })).toBeTruthy(),
+    );
   });
 });

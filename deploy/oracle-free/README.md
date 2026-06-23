@@ -72,7 +72,7 @@ pass it as `server_host` with `ssh_user: ubuntu` and
 `stack_override: deploy/stack.oracle.yml`.
 
 `deploy/stack.oracle.yml` disables the operator/admin UIs (pgAdmin,
-CloudBeaver, Databasus, Portainer, Netdata, PeerDB UI, Authentik proxy) that a
+CloudBeaver, Databasus, Portainer, Netdata, PeerDB UI) that a
 single-user free-tier deployment does not need. The 24 GB node has ample room
 for the core app + PeerDB CDC + ClickHouse + Postgres.
 

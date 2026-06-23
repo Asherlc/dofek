@@ -12,7 +12,6 @@ const navItems = [
   { to: "/body", label: "Body" },
   { to: "/correlation", label: "Correlation" },
   { to: "/tracking", label: "Tracking" },
-  { to: "/settings", label: "Settings" },
 ] as const;
 
 const adminNavItems = [...navItems, { to: "/admin", label: "Admin" }] as const;
@@ -129,9 +128,26 @@ export function AppHeader({ children }: { children?: ReactNode }) {
           {children}
           {user && (
             <div className="rounded-md border border-border bg-surface-solid/70 p-3">
-              <span className="block truncate text-xs font-semibold text-foreground">
-                {user.name}
-              </span>
+              <Link
+                to="/settings"
+                aria-label="Open settings"
+                className="flex items-center justify-between gap-2 text-foreground hover:text-accent transition-colors"
+              >
+                <span className="block truncate text-xs font-semibold">{user.name}</span>
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M11.49 2.17a1.5 1.5 0 00-2.98 0l-.1.77a7.8 7.8 0 00-1.34.55l-.62-.47a1.5 1.5 0 00-2.1 2.1l.47.62a7.8 7.8 0 00-.55 1.34l-.77.1a1.5 1.5 0 000 2.98l.77.1c.13.47.31.92.55 1.34l-.47.62a1.5 1.5 0 002.1 2.1l.62-.47c.42.24.87.42 1.34.55l.1.77a1.5 1.5 0 002.98 0l.1-.77c.47-.13.92-.31 1.34-.55l.62.47a1.5 1.5 0 002.1-2.1l-.47-.62c.24-.42.42-.87.55-1.34l.77-.1a1.5 1.5 0 000-2.98l-.77-.1a7.8 7.8 0 00-.55-1.34l.47-.62a1.5 1.5 0 00-2.1-2.1l-.62.47a7.8 7.8 0 00-1.34-.55l-.1-.77zM10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </Link>
               <button
                 type="button"
                 onClick={logout}

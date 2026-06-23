@@ -8,6 +8,7 @@ import {
   loginWithPassword,
   logout,
   registerWithPassword,
+  requestPasswordReset,
   startNativeAppleSignIn,
 } from "./auth";
 
@@ -380,6 +381,34 @@ describe("registerWithPassword", () => {
     await expect(
       registerWithPassword("https://srv", "user@example.com", "password123", "User"),
     ).rejects.toThrow("Authentication failed");
+  });
+});
+
+describe("requestPasswordReset", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("requests a password reset", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          message: "If that email has a password login, we'll send a reset link.",
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+
+    await expect(requestPasswordReset("https://server.test", "user@example.com")).resolves.toEqual({
+      message: "If that email has a password login, we'll send a reset link.",
+    });
   });
 });
 

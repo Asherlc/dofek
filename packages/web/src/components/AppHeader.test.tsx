@@ -13,8 +13,18 @@ vi.mock("../lib/auth-context.tsx", () => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, className, to }: { children: ReactNode; className?: string; to: string }) => (
-    <a href={to} className={className}>
+  Link: ({
+    children,
+    className,
+    to,
+    "aria-label": ariaLabel,
+  }: {
+    children: ReactNode;
+    className?: string;
+    to: string;
+    "aria-label"?: string;
+  }) => (
+    <a href={to} className={className} aria-label={ariaLabel}>
       {children}
     </a>
   ),
@@ -62,5 +72,16 @@ describe("AppHeader", () => {
     expect(screen.getAllByText("Overview").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Nutrition").length).toBeGreaterThan(0);
     expect(screen.getByText("Ada Lovelace")).toBeTruthy();
+  });
+
+  it("does not include Settings in the main sidebar nav and links the user card to settings", () => {
+    render(<AppHeader />);
+
+    const sections = screen.getByRole("navigation", { name: "Sections" });
+    expect(sections.textContent).not.toContain("Settings");
+
+    const settingsLink = screen.getByLabelText("Open settings");
+    expect(settingsLink.getAttribute("href")).toBe("/settings");
+    expect(settingsLink.textContent).toContain("Ada Lovelace");
   });
 });

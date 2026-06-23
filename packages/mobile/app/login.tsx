@@ -16,6 +16,7 @@ import {
   isNativeAppleSignInAvailable,
   loginWithPassword,
   registerWithPassword,
+  requestPasswordReset,
   startNativeAppleSignIn,
   startOAuthLogin,
 } from "../lib/auth";
@@ -23,7 +24,7 @@ import { useAuth } from "../lib/auth-context";
 import { captureException } from "../lib/telemetry";
 import { colors } from "../theme";
 
-type AuthMode = "login" | "register";
+type AuthMode = "login" | "register" | "reset";
 
 function hasCancelCode(
   err: unknown,
@@ -122,6 +123,22 @@ export default function LoginScreen() {
     }
   }
 
+  async function handlePasswordReset() {
+    if (!serverUrl || loggingIn) return;
+
+    setLoggingIn(true);
+    setError(null);
+    try {
+      const result = await requestPasswordReset(serverUrl, email.trim());
+      setError(result.message);
+    } catch (err: unknown) {
+      captureException(err, { source: "login-screen-password-reset" });
+      setError(err instanceof Error ? err.message : "Password reset failed");
+    } finally {
+      setLoggingIn(false);
+    }
+  }
+
   const useNativeApple =
     nativeAppleSignInAvailable &&
     (providers?.identity.includes("apple") ?? false) &&
@@ -157,85 +174,135 @@ export default function LoginScreen() {
           <View style={styles.providerList}>
             {showPasswordAuth ? (
               <View style={styles.passwordSection}>
-                <View style={styles.modeToggle}>
-                  <TouchableOpacity
-                    style={[styles.modeButton, authMode === "login" && styles.modeButtonActive]}
-                    onPress={() => setAuthMode("login")}
-                    disabled={loggingIn}
-                  >
-                    <Text
-                      style={[
-                        styles.modeButtonText,
-                        authMode === "login" && styles.modeButtonTextActive,
-                      ]}
+                {authMode === "reset" ? (
+                  <>
+                    <TextInput
+                      style={styles.input}
+                      value={email}
+                      onChangeText={setEmail}
+                      placeholder="Email"
+                      placeholderTextColor={colors.textSecondary}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      autoComplete="email"
+                      editable={!loggingIn}
+                    />
+                    <TouchableOpacity
+                      style={styles.passwordButton}
+                      onPress={handlePasswordReset}
+                      disabled={loggingIn || !email.trim()}
                     >
-                      Sign in
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.modeButton, authMode === "register" && styles.modeButtonActive]}
-                    onPress={() => setAuthMode("register")}
-                    disabled={loggingIn}
-                  >
-                    <Text
-                      style={[
-                        styles.modeButtonText,
-                        authMode === "register" && styles.modeButtonTextActive,
-                      ]}
+                      <Text style={styles.passwordButtonText}>
+                        {loggingIn ? "Sending..." : "Send reset link"}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setAuthMode("login");
+                        setError(null);
+                      }}
+                      disabled={loggingIn}
                     >
-                      Create account
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+                      <Text style={styles.backToSignInText}>Back to sign in</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <>
+                    <View style={styles.modeToggle}>
+                      <TouchableOpacity
+                        style={[styles.modeButton, authMode === "login" && styles.modeButtonActive]}
+                        onPress={() => setAuthMode("login")}
+                        disabled={loggingIn}
+                      >
+                        <Text
+                          style={[
+                            styles.modeButtonText,
+                            authMode === "login" && styles.modeButtonTextActive,
+                          ]}
+                        >
+                          Sign in
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.modeButton,
+                          authMode === "register" && styles.modeButtonActive,
+                        ]}
+                        onPress={() => setAuthMode("register")}
+                        disabled={loggingIn}
+                      >
+                        <Text
+                          style={[
+                            styles.modeButtonText,
+                            authMode === "register" && styles.modeButtonTextActive,
+                          ]}
+                        >
+                          Create account
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
 
-                {authMode === "register" ? (
-                  <TextInput
-                    style={styles.input}
-                    value={name}
-                    onChangeText={setName}
-                    placeholder="Name"
-                    placeholderTextColor={colors.textSecondary}
-                    autoCapitalize="words"
-                    autoComplete="name"
-                    editable={!loggingIn}
-                  />
-                ) : null}
-                <TextInput
-                  style={styles.input}
-                  value={email}
-                  onChangeText={setEmail}
-                  placeholder="Email"
-                  placeholderTextColor={colors.textSecondary}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoComplete="email"
-                  editable={!loggingIn}
-                />
-                <TextInput
-                  style={styles.input}
-                  value={password}
-                  onChangeText={setPassword}
-                  placeholder="Password"
-                  placeholderTextColor={colors.textSecondary}
-                  secureTextEntry
-                  autoComplete={authMode === "register" ? "new-password" : "password"}
-                  editable={!loggingIn}
-                />
-                <TouchableOpacity
-                  style={styles.passwordButton}
-                  onPress={handlePasswordAuth}
-                  disabled={loggingIn || !email.trim() || !password}
-                >
-                  <Text style={styles.passwordButtonText}>
-                    {loggingIn
-                      ? authMode === "register"
-                        ? "Creating account..."
-                        : "Signing in..."
-                      : authMode === "register"
-                        ? "Create account"
-                        : "Sign in with email"}
-                  </Text>
-                </TouchableOpacity>
+                    {authMode === "register" ? (
+                      <TextInput
+                        style={styles.input}
+                        value={name}
+                        onChangeText={setName}
+                        placeholder="Name"
+                        placeholderTextColor={colors.textSecondary}
+                        autoCapitalize="words"
+                        autoComplete="name"
+                        editable={!loggingIn}
+                      />
+                    ) : null}
+                    <TextInput
+                      style={styles.input}
+                      value={email}
+                      onChangeText={setEmail}
+                      placeholder="Email"
+                      placeholderTextColor={colors.textSecondary}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      autoComplete="email"
+                      editable={!loggingIn}
+                    />
+                    <TextInput
+                      style={styles.input}
+                      value={password}
+                      onChangeText={setPassword}
+                      placeholder="Password"
+                      placeholderTextColor={colors.textSecondary}
+                      secureTextEntry
+                      autoComplete={authMode === "register" ? "new-password" : "password"}
+                      editable={!loggingIn}
+                    />
+                    {authMode === "login" ? (
+                      <TouchableOpacity
+                        onPress={() => {
+                          setAuthMode("reset");
+                          setError(null);
+                        }}
+                        disabled={loggingIn}
+                      >
+                        <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                    <TouchableOpacity
+                      style={styles.passwordButton}
+                      onPress={handlePasswordAuth}
+                      disabled={loggingIn || !email.trim() || !password}
+                    >
+                      <Text style={styles.passwordButtonText}>
+                        {loggingIn
+                          ? authMode === "register"
+                            ? "Creating account..."
+                            : "Signing in..."
+                          : authMode === "register"
+                            ? "Create account"
+                            : "Sign in with email"}
+                      </Text>
+                    </TouchableOpacity>
+                  </>
+                )}
               </View>
             ) : null}
 
@@ -364,6 +431,16 @@ const styles = StyleSheet.create({
     color: colors.background,
     fontSize: 15,
     fontWeight: "600",
+    textAlign: "center",
+  },
+  forgotPasswordText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    textAlign: "center",
+  },
+  backToSignInText: {
+    color: colors.textSecondary,
+    fontSize: 13,
     textAlign: "center",
   },
   dividerText: {

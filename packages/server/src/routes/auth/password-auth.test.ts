@@ -10,6 +10,8 @@ const {
   mockSanitizeReturnTo,
   mockCaptureException,
   mockLogger,
+  mockCreatePasswordResetToken,
+  mockResetPasswordWithToken,
 } = vi.hoisted(() => ({
   mockRegisterPasswordUser: vi.fn(),
   mockAuthenticatePasswordUser: vi.fn(),
@@ -19,6 +21,8 @@ const {
   mockSanitizeReturnTo: vi.fn((value: string | undefined) => value),
   mockCaptureException: vi.fn(),
   mockLogger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
+  mockCreatePasswordResetToken: vi.fn(),
+  mockResetPasswordWithToken: vi.fn(),
 }));
 
 vi.mock("../../auth/password-credential.ts", () => ({
@@ -48,6 +52,17 @@ vi.mock("../../auth/password.ts", () => ({
   },
 }));
 
+vi.mock("../../auth/password-reset.ts", () => ({
+  createPasswordResetToken: (...args: unknown[]) => mockCreatePasswordResetToken(...args),
+  resetPasswordWithToken: (...args: unknown[]) => mockResetPasswordWithToken(...args),
+  InvalidPasswordResetTokenError: class InvalidPasswordResetTokenError extends Error {
+    constructor() {
+      super("Reset link is invalid or has expired");
+      this.name = "InvalidPasswordResetTokenError";
+    }
+  },
+}));
+
 vi.mock("../../auth/session.ts", () => ({
   createSession: (...args: unknown[]) => mockCreateSession(...args),
 }));
@@ -71,7 +86,12 @@ vi.mock("../../logger.ts", () => ({
 
 import { InvalidPasswordError } from "../../auth/password.ts";
 import { DuplicateEmailError, InvalidCredentialsError } from "../../auth/password-credential.ts";
-import { handlePasswordLogin, handlePasswordRegister } from "./password-auth.ts";
+import {
+  handlePasswordLogin,
+  handlePasswordRegister,
+  handlePasswordResetConfirm,
+  handlePasswordResetRequest,
+} from "./password-auth.ts";
 
 function mockOf<T extends object>(partial: Partial<T>): T {
   return partial;
@@ -305,5 +325,47 @@ describe("handlePasswordLogin", () => {
     expect(mockLogger.error).toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ error: "Login failed — please try again" });
+  });
+});
+
+describe("handlePasswordResetRequest", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockIsPasswordAuthEnabled.mockReturnValue(true);
+    mockCreatePasswordResetToken.mockResolvedValue({ sent: true, token: "reset-token" });
+  });
+
+  it("returns generic success for password reset requests", async () => {
+    const { req, res } = createMockReqRes({
+      body: { email: "user@example.com" },
+      headers: { accept: "application/json" },
+    });
+
+    await handlePasswordResetRequest(req, res);
+
+    expect(mockCreatePasswordResetToken).toHaveBeenCalledWith({}, "user@example.com");
+    expect(res.json).toHaveBeenCalledWith({
+      message: "If that email has a password login, we'll send a reset link.",
+    });
+  });
+});
+
+describe("handlePasswordResetConfirm", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockIsPasswordAuthEnabled.mockReturnValue(true);
+    mockResetPasswordWithToken.mockResolvedValue(undefined);
+  });
+
+  it("confirms a password reset token", async () => {
+    const { req, res } = createMockReqRes({
+      body: { token: "reset-token", password: "new-password123" },
+      headers: { accept: "application/json" },
+    });
+
+    await handlePasswordResetConfirm(req, res);
+
+    expect(mockResetPasswordWithToken).toHaveBeenCalledWith({}, "reset-token", "new-password123");
+    expect(res.json).toHaveBeenCalledWith({ ok: true });
   });
 });

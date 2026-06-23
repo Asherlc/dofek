@@ -5,6 +5,7 @@ import { ExportPanel } from "../components/ExportPanel.tsx";
 import { LinkedAccountsPanel } from "../components/LinkedAccountsPanel.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { PageSection } from "../components/PageSection.tsx";
+import { PasswordSettingsPanel } from "../components/PasswordSettingsPanel.tsx";
 import { PersonalizationPanel } from "../components/PersonalizationPanel.tsx";
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel.tsx";
 import { UnitSystemToggle } from "../components/UnitSystemToggle.tsx";
@@ -116,6 +117,10 @@ export function SettingsPage() {
 
       <PageSection title="Linked Accounts" subtitle="Manage login methods linked to your account">
         <LinkedAccountsPanel />
+      </PageSection>
+
+      <PageSection title="Password" subtitle="Set or change your email login password">
+        <PasswordSettingsPanel />
       </PageSection>
 
       <PageSection title="MCP Tokens" subtitle="Create and revoke remote MCP access tokens">

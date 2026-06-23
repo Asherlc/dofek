@@ -72,7 +72,7 @@ Cross-provider reverse-engineering references:
 | [oracle-cutover.md](oracle-cutover.md) | Current Oracle production cutover status and deploy targeting notes. |
 | [sync-checkpoint-retries.md](sync-checkpoint-retries.md) | Durable provider sync retry checkpoints and retryable infrastructure failure scope. |
 | [metric-stream-timescaledb-runbook.md](metric-stream-timescaledb-runbook.md) | Historical runbook for the retired Postgres metric stream hypertable. |
-| [management-ui-auth.md](management-ui-auth.md) | Authentik outpost routing for Portainer, Databasus, CloudBeaver, pgAdmin, and Netdata. |
+| [app-password-auth.md](app-password-auth.md) | Email/password login, password reset, and Settings password management. |
 | [sentry.md](sentry.md) | Investigating Sentry issues and stack traces from terminal. |
 | [traefik-subdomain-404-runbook.md](traefik-subdomain-404-runbook.md) | Fixing management subdomains that return Traefik 404s. |
 

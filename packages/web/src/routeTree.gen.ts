@@ -14,6 +14,7 @@ import { Route as TrackingRouteImport } from './routes/tracking'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SleepRouteImport } from './routes/sleep'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as ProvidersRouteImport } from './routes/providers'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as PredictionsRouteImport } from './routes/predictions'
@@ -73,6 +74,11 @@ const SleepRoute = SleepRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProvidersRoute = ProvidersRouteImport.update({
@@ -272,6 +278,7 @@ export interface FileRoutesByFullPath {
   '/predictions': typeof PredictionsRoute
   '/privacy': typeof PrivacyRoute
   '/providers': typeof ProvidersRouteWithChildren
+  '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/sleep': typeof SleepRoute
   '/terms': typeof TermsRoute
@@ -310,6 +317,7 @@ export interface FileRoutesByTo {
   '/onboarding': typeof OnboardingRoute
   '/predictions': typeof PredictionsRoute
   '/privacy': typeof PrivacyRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/sleep': typeof SleepRoute
   '/terms': typeof TermsRoute
@@ -352,6 +360,7 @@ export interface FileRoutesById {
   '/predictions': typeof PredictionsRoute
   '/privacy': typeof PrivacyRoute
   '/providers': typeof ProvidersRouteWithChildren
+  '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/sleep': typeof SleepRoute
   '/terms': typeof TermsRoute
@@ -396,6 +405,7 @@ export interface FileRouteTypes {
     | '/predictions'
     | '/privacy'
     | '/providers'
+    | '/reset-password'
     | '/settings'
     | '/sleep'
     | '/terms'
@@ -434,6 +444,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/predictions'
     | '/privacy'
+    | '/reset-password'
     | '/settings'
     | '/sleep'
     | '/terms'
@@ -475,6 +486,7 @@ export interface FileRouteTypes {
     | '/predictions'
     | '/privacy'
     | '/providers'
+    | '/reset-password'
     | '/settings'
     | '/sleep'
     | '/terms'
@@ -518,6 +530,7 @@ export interface RootRouteChildren {
   PredictionsRoute: typeof PredictionsRoute
   PrivacyRoute: typeof PrivacyRoute
   ProvidersRoute: typeof ProvidersRouteWithChildren
+  ResetPasswordRoute: typeof ResetPasswordRoute
   SettingsRoute: typeof SettingsRoute
   SleepRoute: typeof SleepRoute
   TermsRoute: typeof TermsRoute
@@ -561,6 +574,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/providers': {
@@ -908,6 +928,7 @@ const rootRouteChildren: RootRouteChildren = {
   PredictionsRoute: PredictionsRoute,
   PrivacyRoute: PrivacyRoute,
   ProvidersRoute: ProvidersRouteWithChildren,
+  ResetPasswordRoute: ResetPasswordRoute,
   SettingsRoute: SettingsRoute,
   SleepRoute: SleepRoute,
   TermsRoute: TermsRoute,
