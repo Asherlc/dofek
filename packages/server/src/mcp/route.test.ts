@@ -254,7 +254,10 @@ describe("createMcpRouter", () => {
     toolTestMocks.getConnectedProviderIds.mockResolvedValue([]);
     toolTestMocks.getLastSyncTimes.mockResolvedValue([]);
     toolTestMocks.getLatestErrors.mockResolvedValue([]);
-    toolTestMocks.getProviderSyncQueue.mockReturnValue({ add: toolTestMocks.queueAdd });
+    toolTestMocks.getProviderSyncQueue.mockReturnValue({
+      add: toolTestMocks.queueAdd,
+      getJob: vi.fn(),
+    });
     toolTestMocks.queueAdd.mockResolvedValue({ id: "job-123" });
   });
 
