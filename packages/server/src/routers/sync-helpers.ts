@@ -1,4 +1,5 @@
 import { getConfiguredProviderIds } from "dofek/jobs/provider-queue-config";
+import { registerProviderSyncRequestResolver } from "dofek/jobs/sync-request-query-registration";
 import { CUSTOM_AUTH_PROVIDERS } from "dofek/lib/custom-auth-providers";
 import { registerProvider } from "dofek/providers/registry";
 
@@ -110,7 +111,9 @@ async function doRegisterProviders() {
 
   for (const [name, loadProvider] of providers) {
     try {
-      registerProvider(await loadProvider());
+      const provider = await loadProvider();
+      registerProvider(provider);
+      await registerProviderSyncRequestResolver(provider);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`Failed to register ${name} provider: ${message}`);

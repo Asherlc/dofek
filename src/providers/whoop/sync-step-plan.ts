@@ -2,7 +2,10 @@ import { and, eq, gte, inArray, isNotNull, lte } from "drizzle-orm";
 import type { WhoopCycle, WhoopWorkoutRecord } from "whoop-whoop/types";
 import { dailyMetrics, sleepSession, sleepStage } from "../../db/schema.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
+import { planSyncStepIfRequestNotPending } from "../../lib/sync-request-query.ts";
+import { listPendingSyncRequestQueryKeys } from "../../lib/sync-request-queue.ts";
 import { extractSleepIdsFromCycle, resolveWhoopWorkoutExternalId } from "./parsing.ts";
+import { whoopSyncStepToApiQuery } from "./sync-api-query.ts";
 import type { WhoopSyncStep } from "./sync-checkpoint.ts";
 import type { WhoopPersistenceContext, WhoopSyncContext } from "./sync-types.ts";
 
@@ -121,36 +124,56 @@ export function listWhoopHeartRateWindows(
   return windows;
 }
 
+function planWhoopStepIfNotQueued(
+  steps: WhoopSyncStep[],
+  step: WhoopSyncStep,
+  context: WhoopPersistenceContext,
+  pendingKeys: ReadonlySet<string>,
+): void {
+  planSyncStepIfRequestNotPending(
+    steps,
+    step,
+    (candidate) => whoopSyncStepToApiQuery(candidate, context),
+    pendingKeys,
+  );
+}
+
 export async function planWhoopApiSteps(
   context: WhoopPersistenceContext,
-  skipRemainingAfterRateLimit: boolean,
 ): Promise<WhoopSyncStep[]> {
+  const userId = context.options?.userId ?? getTokenUserId();
+  const pendingKeys =
+    userId == null ? new Set<string>() : await listPendingSyncRequestQueryKeys("whoop", userId);
+
   const steps: WhoopSyncStep[] = [];
 
   for (const date of await listWhoopStepDatesNeedingSteps(context)) {
-    steps.push({ type: "strain_deep_dive", date });
+    planWhoopStepIfNotQueued(steps, { type: "strain_deep_dive", date }, context, pendingKeys);
   }
 
   for (const sleepId of await listWhoopSleepIdsNeedingStages(context)) {
-    steps.push({ type: "sleep_stages", sleepId });
+    planWhoopStepIfNotQueued(steps, { type: "sleep_stages", sleepId }, context, pendingKeys);
   }
 
-  steps.push({ type: "developer_workouts" });
-  steps.push({ type: "persist_workouts" });
+  planWhoopStepIfNotQueued(steps, { type: "developer_workouts" }, context, pendingKeys);
+  planWhoopStepIfNotQueued(steps, { type: "persist_workouts" }, context, pendingKeys);
 
   for (const workout of collectWhoopWorkouts(context.cycles)) {
     const activityId = resolveWhoopWorkoutExternalId(workout);
     if (activityId) {
-      steps.push({ type: "weightlifting", activityId });
+      planWhoopStepIfNotQueued(steps, { type: "weightlifting", activityId }, context, pendingKeys);
     }
   }
 
-  if (!skipRemainingAfterRateLimit) {
-    for (const window of listWhoopHeartRateWindows(context.since, context.windowEnd.getTime())) {
-      steps.push({ type: "heart_rate", start: window.start, end: window.end });
-    }
-    steps.push({ type: "journal" });
+  for (const window of listWhoopHeartRateWindows(context.since, context.windowEnd.getTime())) {
+    planWhoopStepIfNotQueued(
+      steps,
+      { type: "heart_rate", start: window.start, end: window.end },
+      context,
+      pendingKeys,
+    );
   }
+  planWhoopStepIfNotQueued(steps, { type: "journal" }, context, pendingKeys);
 
   return steps;
 }

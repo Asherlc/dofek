@@ -15,6 +15,18 @@ vi.mock("../../db/clickhouse.ts", () => ({
   createClickHouseClientFromEnv: clickHouseMocks.createClickHouseClientFromEnv,
 }));
 
+const pendingQueryMocks = vi.hoisted(() => ({
+  listPendingSyncRequestQueryKeys: vi.fn(async () => new Set<string>()),
+}));
+
+vi.mock("../../lib/sync-request-queue.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/sync-request-queue.ts")>();
+  return {
+    ...actual,
+    listPendingSyncRequestQueryKeys: pendingQueryMocks.listPendingSyncRequestQueryKeys,
+  };
+});
+
 import {
   applyRateLimitToCheckpoint,
   createGarminSyncCheckpoint,

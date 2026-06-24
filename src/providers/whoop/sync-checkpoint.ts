@@ -32,7 +32,6 @@ export const whoopSyncCheckpointSchema = z.object({
   apiSteps: z.array(whoopSyncStepSchema).default([]),
   apiStepIndex: z.number().default(0),
   presentExternalIds: z.array(z.string()).default([]),
-  skipRemainingAfterRateLimit: z.boolean().default(false),
 });
 
 export type WhoopSyncCheckpoint = z.infer<typeof whoopSyncCheckpointSchema>;
@@ -47,7 +46,6 @@ export function createWhoopSyncCheckpoint(windowStartMs: number): WhoopSyncCheck
     apiSteps: [],
     apiStepIndex: 0,
     presentExternalIds: [],
-    skipRemainingAfterRateLimit: false,
   };
 }
 
@@ -55,23 +53,4 @@ export function parseWhoopSyncCheckpoint(raw: unknown): WhoopSyncCheckpoint | nu
   const parsed = whoopSyncCheckpointSchema.safeParse(raw);
   if (!parsed.success) return null;
   return parsed.data;
-}
-
-/** Drop low-priority tail steps after a 429 so retries focus on core data. */
-export function applyRateLimitToCheckpoint(checkpoint: WhoopSyncCheckpoint): WhoopSyncCheckpoint {
-  const currentStep = checkpoint.apiSteps[checkpoint.apiStepIndex];
-  const keepCurrentStep =
-    currentStep != null && currentStep.type !== "heart_rate" && currentStep.type !== "journal";
-  const head = checkpoint.apiSteps.slice(
-    0,
-    keepCurrentStep ? checkpoint.apiStepIndex + 1 : checkpoint.apiStepIndex,
-  );
-  const tail = checkpoint.apiSteps
-    .slice(checkpoint.apiStepIndex + 1)
-    .filter((step) => step.type !== "heart_rate" && step.type !== "journal");
-  return {
-    ...checkpoint,
-    skipRemainingAfterRateLimit: true,
-    apiSteps: [...head, ...tail],
-  };
 }

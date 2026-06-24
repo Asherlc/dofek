@@ -162,6 +162,26 @@ vi.mock("../logger.ts", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
+const pendingQueryMocks = vi.hoisted(() => ({
+  listPendingSyncRequestQueryKeys: vi.fn(async () => new Set<string>()),
+}));
+
+vi.mock("../lib/sync-request-queue.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/sync-request-queue.ts")>();
+  return {
+    ...actual,
+    listPendingSyncRequestQueryKeys: pendingQueryMocks.listPendingSyncRequestQueryKeys,
+  };
+});
+
+vi.mock("../lib/provider-rate-limit-fetch.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/provider-rate-limit-fetch.ts")>();
+  return {
+    ...actual,
+    createProviderRateLimitFetch: vi.fn(actual.createProviderRateLimitFetch),
+  };
+});
+
 // ============================================================
 // Test helpers
 // ============================================================
@@ -625,6 +645,30 @@ describe("GarminProvider.sync()", () => {
     );
   });
 
+  it("passes user-scoped rate-limit options to createProviderRateLimitFetch", async () => {
+    const { createProviderRateLimitFetch } = await import("../lib/provider-rate-limit-fetch.ts");
+
+    await syncProvider(provider, db, new Date());
+
+    const mock = vi.mocked(createProviderRateLimitFetch);
+    expect(mock).toHaveBeenCalledWith(
+      "garmin",
+      expect.any(Function),
+      expect.objectContaining({ scope: "user" }),
+    );
+
+    const options = mock.mock.calls.find(([id]) => id === "garmin")?.[2];
+    expect(options?.userId).toBe("00000000-0000-0000-0000-000000000001");
+
+    const createRateLimitError = options?.createRateLimitError;
+    const error = createRateLimitError?.(new Response("too fast", { status: 429 }), "too fast");
+    expect(error).toBeInstanceOf(GarminRateLimitError);
+    if (error instanceof GarminRateLimitError) {
+      expect(error.message).toBe("Rate limit exceeded (429): too fast");
+      expect(error.retryAfterSeconds).toBeNull();
+    }
+  });
+
   it("returns error when no tokens exist", async () => {
     mocks.loadTokens.mockResolvedValue(null);
     const result = await syncProvider(provider, db, new Date());
@@ -716,7 +760,7 @@ describe("GarminProvider.sync()", () => {
 
   it("throws when sync is invoked without a scoped user id", async () => {
     await expect(syncProvider(provider, db, new Date(), { userId: "" })).rejects.toThrow(
-      "garmin sync requires a userId",
+      "A user ID is required for this operation",
     );
   });
 

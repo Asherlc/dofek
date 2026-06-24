@@ -76,6 +76,7 @@
     "./jobs/sync-window": "./src/jobs/sync-job-window.ts",
     "./jobs/provider-queue-config": "./src/jobs/provider-queue-config.ts",
     "./jobs/process-export-job": "./src/jobs/process-export-job.ts",
+    "./jobs/sync-request-query-registration": "./src/jobs/sync-request-query-registration.ts",
     "./export-email": "./src/export-email.ts",
     "./export-storage": "./src/export-storage.ts",
     "./personalization/params": "./src/personalization/params.ts",

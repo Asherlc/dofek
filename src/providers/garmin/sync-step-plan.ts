@@ -6,6 +6,9 @@ import type { SyncDatabase } from "../../db/index.ts";
 import { dailyMetrics, sleepSession } from "../../db/schema.ts";
 import { HEART_RATE, STRESS } from "../../db/sensor-channels.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
+import { planSyncStepIfRequestNotPending } from "../../lib/sync-request-query.ts";
+import { listPendingSyncRequestQueryKeys } from "../../lib/sync-request-queue.ts";
+import { garminSyncStepToApiQuery } from "./sync-api-query.ts";
 import type { GarminSyncStep } from "./sync-checkpoint.ts";
 
 export interface GarminSyncPlanContext {
@@ -177,7 +180,17 @@ async function listGarminDatesWithMetricStreamChannel(
 export async function planGarminSyncSteps(
   context: GarminSyncPlanContext,
 ): Promise<GarminSyncStep[]> {
-  const steps: GarminSyncStep[] = [{ type: "activities_list", offset: 0 }];
+  const userId = resolveUserId(context);
+  const pendingKeys =
+    userId == null ? new Set<string>() : await listPendingSyncRequestQueryKeys("garmin", userId);
+
+  const steps: GarminSyncStep[] = [];
+  planSyncStepIfRequestNotPending(
+    steps,
+    { type: "activities_list", offset: 0 },
+    garminSyncStepToApiQuery,
+    pendingKeys,
+  );
 
   const [sleepDates, dailySummaryDates, hrvDates, stressSyncedDates, heartRateSyncedDates] =
     await Promise.all([
@@ -194,19 +207,44 @@ export async function planGarminSyncSteps(
 
   for (const date of context.dates) {
     if (sleepDateSet.has(date)) {
-      steps.push({ type: "sleep", date });
+      planSyncStepIfRequestNotPending(
+        steps,
+        { type: "sleep", date },
+        garminSyncStepToApiQuery,
+        pendingKeys,
+      );
     }
     if (dailySummaryDateSet.has(date)) {
-      steps.push({ type: "daily_summary", date });
+      planSyncStepIfRequestNotPending(
+        steps,
+        { type: "daily_summary", date },
+        garminSyncStepToApiQuery,
+        pendingKeys,
+      );
     }
     if (hrvDateSet.has(date)) {
-      steps.push({ type: "hrv_summary", date });
+      planSyncStepIfRequestNotPending(
+        steps,
+        { type: "hrv_summary", date },
+        garminSyncStepToApiQuery,
+        pendingKeys,
+      );
     }
     if (!stressSyncedDates.has(date)) {
-      steps.push({ type: "stress", date });
+      planSyncStepIfRequestNotPending(
+        steps,
+        { type: "stress", date },
+        garminSyncStepToApiQuery,
+        pendingKeys,
+      );
     }
     if (!heartRateSyncedDates.has(date)) {
-      steps.push({ type: "heart_rate", date });
+      planSyncStepIfRequestNotPending(
+        steps,
+        { type: "heart_rate", date },
+        garminSyncStepToApiQuery,
+        pendingKeys,
+      );
     }
   }
 

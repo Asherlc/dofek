@@ -31,13 +31,20 @@ const WHOOP_AUTH_AMZ_USER_AGENT =
   "aws-sdk-js/3.848.0 ua/2.1 os/macOS#10.15 lang/js md/browser#Firefox_150.0 api/cognito-identity-provider#3.848.0 m/N,E";
 
 export class WhoopRateLimitError extends ProviderRateLimitError {
-  constructor(message: string, responseBody = "", retryAfterSeconds?: number | null) {
+  constructor(
+    message: string,
+    responseBody = "",
+    retryAfterSeconds?: number | null,
+    userId?: string | null,
+  ) {
     super({
       message,
       providerId: "whoop",
       statusCode: 429,
       responseBody,
       retryAfterSeconds,
+      scope: userId != null ? "user" : "provider",
+      userId: userId ?? null,
     });
     this.name = "WhoopRateLimitError";
   }

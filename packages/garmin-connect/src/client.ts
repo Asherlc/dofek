@@ -619,13 +619,20 @@ export class GarminApiError extends Error {
 }
 
 export class GarminRateLimitError extends ProviderRateLimitError {
-  constructor(message: string, responseBody = "", retryAfterHeader?: string | null) {
+  constructor(
+    message: string,
+    responseBody = "",
+    retryAfterHeader?: string | null,
+    userId?: string | null,
+  ) {
     super({
       message,
       providerId: "garmin",
       statusCode: 429,
       responseBody,
       retryAfterSeconds: parseRetryAfterHeader(retryAfterHeader),
+      scope: userId != null ? "user" : "provider",
+      userId: userId ?? null,
     });
     this.name = "GarminRateLimitError";
   }

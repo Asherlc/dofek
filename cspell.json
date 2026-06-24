@@ -511,6 +511,7 @@
     "Streamable",
     "streamable",
     "fitsdk",
+    "connectapi",
     "gpxtpx",
     "trkpt",
     "trkseg",

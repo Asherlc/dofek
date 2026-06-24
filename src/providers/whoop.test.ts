@@ -1,6 +1,6 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { WhoopClient } from "whoop-whoop/client";
+import { WhoopClient, WhoopRateLimitError } from "whoop-whoop/client";
 import type {
   WhoopHrValue,
   WhoopRecoveryRecord,
@@ -81,6 +81,26 @@ vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
+
+const pendingQueryMocks = vi.hoisted(() => ({
+  listPendingSyncRequestQueryKeys: vi.fn(async () => new Set<string>()),
+}));
+
+vi.mock("../lib/sync-request-queue.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/sync-request-queue.ts")>();
+  return {
+    ...actual,
+    listPendingSyncRequestQueryKeys: pendingQueryMocks.listPendingSyncRequestQueryKeys,
+  };
+});
+
+vi.mock("../lib/provider-rate-limit-fetch.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/provider-rate-limit-fetch.ts")>();
+  return {
+    ...actual,
+    createProviderRateLimitFetch: vi.fn(actual.createProviderRateLimitFetch),
+  };
+});
 
 beforeEach(() => {
   publishedMetricStreamBatches.length = 0;
@@ -826,6 +846,45 @@ function requireArray(value: unknown, message: string): unknown[] {
 }
 
 describe("WhoopProvider.sync() — token resolution", () => {
+  it("passes user-scoped rate-limit options to createProviderRateLimitFetch", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValueOnce({
+      accessToken: "tok",
+      refreshToken: "ref",
+      expiresAt: futureExpiry,
+      scopes: "userId:00000000-0000-0000-0000-000000000001",
+    });
+
+    const { createProviderRateLimitFetch } = await import("../lib/provider-rate-limit-fetch.ts");
+
+    const provider = new WhoopProvider();
+    const db = makeChainableMock();
+    await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
+
+    expect(vi.mocked(createProviderRateLimitFetch)).toHaveBeenCalledWith(
+      "whoop",
+      expect.any(Function),
+      expect.objectContaining({
+        scope: "user",
+        userId: expect.any(String),
+        createRateLimitError: expect.any(Function),
+      }),
+    );
+
+    const options = vi
+      .mocked(createProviderRateLimitFetch)
+      .mock.calls.find(([id]) => id === "whoop")?.[2];
+    const createRateLimitError = options?.createRateLimitError;
+    const error = createRateLimitError?.(new Response(null, { status: 429 }), "Too Many Requests");
+    expect(error).toBeInstanceOf(WhoopRateLimitError);
+  });
+
   it("returns error when no tokens are stored", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
     vi.mocked(loadTokens).mockResolvedValueOnce(null);
@@ -1232,7 +1291,6 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
       apiSteps: [],
       apiStepIndex: 0,
       presentExternalIds: [],
-      skipRemainingAfterRateLimit: false,
     };
     const { store, saved } = makeCheckpointStore(initialCheckpoint);
     const enqueueSyncContinuation = vi.fn(async () => undefined);
@@ -1287,7 +1345,6 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
       apiSteps: [{ type: "strain_deep_dive", date: "2026-03-01" }],
       apiStepIndex: 0,
       presentExternalIds: [],
-      skipRemainingAfterRateLimit: false,
     };
     const { store, saved } = makeCheckpointStore(initialCheckpoint);
     const enqueueSyncContinuation = vi.fn(async () => undefined);
@@ -1339,7 +1396,6 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
       apiSteps: [{ type: "journal" }],
       apiStepIndex: 1,
       presentExternalIds: [],
-      skipRemainingAfterRateLimit: false,
     };
     const { store } = makeCheckpointStore(initialCheckpoint);
     const onProgress = vi.fn();
@@ -1383,7 +1439,6 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
       ],
       apiStepIndex: 0,
       presentExternalIds: [],
-      skipRemainingAfterRateLimit: false,
     };
     const { store, saved } = makeCheckpointStore(initialCheckpoint);
     const provider = new WhoopProvider(makeSyncMockFetch({ sleepRateLimit: true }));
@@ -1405,9 +1460,8 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
     });
 
     const savedCheckpoint = requireRecord(saved[0], "expected rate-limited checkpoint");
-    expect(savedCheckpoint.skipRemainingAfterRateLimit).toBe(true);
     expect(savedCheckpoint.apiStepIndex).toBe(0);
-    expect(requireArray(savedCheckpoint.apiSteps, "expected retained API steps")).toHaveLength(1);
+    expect(requireArray(savedCheckpoint.apiSteps, "expected retained API steps")).toHaveLength(3);
     expect(store.clear).not.toHaveBeenCalled();
   });
 
@@ -1425,7 +1479,6 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
       apiSteps: [{ type: "developer_workouts" }],
       apiStepIndex: 0,
       presentExternalIds: [],
-      skipRemainingAfterRateLimit: false,
     };
     const { store } = makeCheckpointStore(initialCheckpoint);
     const provider = new WhoopProvider(makeSyncMockFetch({ developerWorkoutsError: true }));

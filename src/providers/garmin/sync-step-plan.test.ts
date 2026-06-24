@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../../db/index.ts";
 import { dailyMetrics, sleepSession } from "../../db/schema.ts";
+import { syncApiQueryKey } from "../../lib/sync-api-query.ts";
 import {
   type GarminSyncPlanContext,
   listGarminDatesNeedingDailySummarySteps,
@@ -38,6 +39,18 @@ vi.mock("../../db/clickhouse.ts", () => ({
 vi.mock("@sentry/node", () => ({
   captureException: sentryMocks.captureException,
 }));
+
+const pendingQueryMocks = vi.hoisted(() => ({
+  listPendingSyncRequestQueryKeys: vi.fn(async () => new Set<string>()),
+}));
+
+vi.mock("../../lib/sync-request-queue.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/sync-request-queue.ts")>();
+  return {
+    ...actual,
+    listPendingSyncRequestQueryKeys: pendingQueryMocks.listPendingSyncRequestQueryKeys,
+  };
+});
 
 function makeDb(selectedRows: unknown[] = []) {
   const chain = {
@@ -91,6 +104,8 @@ beforeEach(() => {
   clickHouseMocks.query.mockResolvedValue({ json: async () => [] });
   clickHouseMocks.close.mockClear();
   sentryMocks.captureException.mockClear();
+  pendingQueryMocks.listPendingSyncRequestQueryKeys.mockReset();
+  pendingQueryMocks.listPendingSyncRequestQueryKeys.mockResolvedValue(new Set());
   delete process.env.CLICKHOUSE_URL;
 });
 
@@ -298,5 +313,25 @@ describe("Garmin sync step planning", () => {
       tags: { provider: "garmin", operation: "metric_stream_date_query" },
       extra: { channel: "stress", providerId: "garmin" },
     });
+  });
+
+  it("omits API steps already represented on queued request jobs", async () => {
+    pendingQueryMocks.listPendingSyncRequestQueryKeys.mockResolvedValue(
+      new Set([
+        syncApiQueryKey({
+          path: "connectapi/heart-rate",
+          filters: { date: "2026-03-01" },
+        }),
+      ]),
+    );
+
+    const steps = await planGarminSyncSteps(makeContext());
+
+    expect(steps.some((step) => step.type === "heart_rate" && step.date === "2026-03-01")).toBe(
+      false,
+    );
+    expect(steps.some((step) => step.type === "heart_rate" && step.date === "2026-03-02")).toBe(
+      true,
+    );
   });
 });
