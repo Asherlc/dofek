@@ -202,6 +202,7 @@ export const syncRouter = router({
         return {
           id: model.id,
           name: model.name,
+          description: null,
           authType: model.authType,
           authorized: model.isConnected,
           lastSyncedAt: model.lastSyncedAt,
