@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockGetActive = vi.fn();
 const mockProviderQueueAdd = vi.fn().mockResolvedValue({ id: "job-1" });
+const mockGetJob = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("./provider-rate-limit-cooldown.ts", () => ({
   providerRateLimitCooldownStore: {
@@ -12,7 +13,7 @@ vi.mock("./provider-rate-limit-cooldown.ts", () => ({
 }));
 
 vi.mock("./queues.ts", () => ({
-  getProviderSyncQueue: vi.fn(() => ({ add: mockProviderQueueAdd })),
+  getProviderSyncQueue: vi.fn(() => ({ add: mockProviderQueueAdd, getJob: mockGetJob })),
   SYNC_JOB_RETRY_OPTIONS: {
     attempts: 288,
     backoff: { type: "fixed", delay: 300_000 },
@@ -28,6 +29,8 @@ describe("enqueueSyncJob", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetActive.mockResolvedValue(null);
+    mockGetJob.mockResolvedValue(undefined);
+    mockProviderQueueAdd.mockResolvedValue({ id: "job-1" });
   });
 
   it("enqueues immediately when no cooldown is active", async () => {
@@ -122,5 +125,59 @@ describe("enqueueSyncJob", () => {
 
     expect(result).toBeNull();
     expect(mockProviderQueueAdd).not.toHaveBeenCalled();
+  });
+
+  it("deduplicates step-chain jobs by provider request path and filters", async () => {
+    const existingJob = {
+      id: "existing-hr",
+      getState: vi.fn().mockResolvedValue("waiting"),
+    };
+    mockGetJob.mockResolvedValue(existingJob);
+
+    const result = await enqueueSyncJob("whoop", {
+      userId: "user-1",
+      providerId: "whoop",
+      sinceIso: "2026-05-01T00:00:00.000Z",
+      untilIso: "2026-05-03T00:00:00.000Z",
+      checkpoint: {
+        runId: "run-1",
+        recordsSynced: 0,
+        phase: "api",
+        cycleFetchCursorMs: null,
+        cycles: [],
+        apiSteps: [
+          {
+            type: "heart_rate",
+            start: "2026-05-01T00:00:00.000Z",
+            end: "2026-05-08T00:00:00.000Z",
+          },
+        ],
+        apiStepIndex: 0,
+        presentExternalIds: [],
+      },
+    });
+
+    expect(result).toBe(existingJob);
+    expect(mockProviderQueueAdd).not.toHaveBeenCalled();
+    expect(mockGetJob).toHaveBeenCalledWith(expect.stringMatching(/^sync-req:whoop:user-1:/));
+  });
+
+  it("deduplicates standard provider jobs by sync window", async () => {
+    const existingJob = {
+      id: "existing-strava",
+      getState: vi.fn().mockResolvedValue("waiting"),
+    };
+    mockGetJob.mockResolvedValue(existingJob);
+
+    const result = await enqueueSyncJob("strava", {
+      userId: "user-1",
+      providerId: "strava",
+      sinceIso: "2026-05-01T00:00:00.000Z",
+      untilIso: "2026-05-03T00:00:00.000Z",
+    });
+
+    expect(result).toBe(existingJob);
+    expect(mockProviderQueueAdd).not.toHaveBeenCalled();
+    expect(mockGetJob).toHaveBeenCalledWith(expect.stringMatching(/^sync-req:strava:user-1:/));
   });
 });

@@ -85,11 +85,15 @@ vi.mock("../db/tokens.ts", () => ({
 const mockEnqueueDebouncedPostSyncMaintenance = vi.fn().mockResolvedValue(undefined);
 const mockEnqueueDebouncedUserRefit = vi.fn().mockResolvedValue(undefined);
 const mockProviderQueueAdd = vi.fn().mockResolvedValue(undefined);
+const mockProviderQueueGetJob = vi.fn().mockResolvedValue(undefined);
 vi.mock("./queues.ts", () => ({
   enqueueDebouncedPostSyncMaintenance: (...args: unknown[]) =>
     mockEnqueueDebouncedPostSyncMaintenance(...args),
   enqueueDebouncedUserRefit: (...args: unknown[]) => mockEnqueueDebouncedUserRefit(...args),
-  getProviderSyncQueue: vi.fn(() => ({ add: mockProviderQueueAdd })),
+  getProviderSyncQueue: vi.fn(() => ({
+    add: mockProviderQueueAdd,
+    getJob: mockProviderQueueGetJob,
+  })),
   SYNC_JOB_RETRY_OPTIONS: {
     attempts: 288,
     backoff: { type: "fixed", delay: 300_000 },
@@ -246,6 +250,7 @@ describe("processSyncJob", () => {
     mockEnqueueDebouncedPostSyncMaintenance.mockResolvedValue(undefined);
     mockEnqueueDebouncedUserRefit.mockResolvedValue(undefined);
     mockProviderQueueAdd.mockResolvedValue(undefined);
+    mockProviderQueueGetJob.mockResolvedValue(undefined);
   });
 
   afterEach(() => {

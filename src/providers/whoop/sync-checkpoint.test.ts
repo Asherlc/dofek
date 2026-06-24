@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyRateLimitToCheckpoint,
   createWhoopSyncCheckpoint,
   parseWhoopSyncCheckpoint,
   WHOOP_CYCLE_WINDOW_MS,
@@ -19,7 +18,6 @@ const validCheckpoint: WhoopSyncCheckpoint = {
   ],
   apiStepIndex: 0,
   presentExternalIds: ["workout-1"],
-  skipRemainingAfterRateLimit: false,
 };
 
 describe("WHOOP sync checkpoint", () => {
@@ -36,7 +34,6 @@ describe("WHOOP sync checkpoint", () => {
     expect(checkpoint.cycles).toEqual([]);
     expect(checkpoint.apiSteps).toEqual([]);
     expect(checkpoint.presentExternalIds).toEqual([]);
-    expect(checkpoint.skipRemainingAfterRateLimit).toBe(false);
     expect(checkpoint.apiStepIndex).toBe(0);
     expect(checkpoint.recordsSynced).toBe(0);
     expect(checkpoint.runId.length).toBeGreaterThan(0);
@@ -62,7 +59,6 @@ describe("WHOOP sync checkpoint", () => {
       apiSteps: [],
       apiStepIndex: 0,
       presentExternalIds: [],
-      skipRemainingAfterRateLimit: false,
     });
   });
 
@@ -88,77 +84,5 @@ describe("WHOOP sync checkpoint", () => {
         cycles: [null],
       }),
     ).toBeNull();
-  });
-
-  it("drops remaining HR and journal steps after a rate limit", () => {
-    const checkpoint = applyRateLimitToCheckpoint({
-      runId: "run-1",
-      recordsSynced: 5,
-      phase: "api",
-      cycleFetchCursorMs: null,
-      cycles: [],
-      apiSteps: [
-        { type: "strain_deep_dive", date: "2026-03-01" },
-        { type: "heart_rate", start: "2026-03-01T00:00:00.000Z", end: "2026-03-08T00:00:00.000Z" },
-        { type: "journal" },
-      ],
-      apiStepIndex: 0,
-      presentExternalIds: [],
-      skipRemainingAfterRateLimit: false,
-    });
-
-    expect(checkpoint.skipRemainingAfterRateLimit).toBe(true);
-    expect(checkpoint.apiSteps).toEqual([{ type: "strain_deep_dive", date: "2026-03-01" }]);
-  });
-
-  it("does not keep heart_rate or journal as the current step after a rate limit", () => {
-    const checkpoint = applyRateLimitToCheckpoint({
-      runId: "run-1",
-      recordsSynced: 5,
-      phase: "api",
-      cycleFetchCursorMs: null,
-      cycles: [],
-      apiSteps: [
-        { type: "strain_deep_dive", date: "2026-03-01" },
-        { type: "sleep_stages", sleepId: "sleep-1" },
-        { type: "heart_rate", start: "2026-03-01T00:00:00.000Z", end: "2026-03-08T00:00:00.000Z" },
-        { type: "journal" },
-      ],
-      apiStepIndex: 2,
-      presentExternalIds: [],
-      skipRemainingAfterRateLimit: false,
-    });
-
-    expect(checkpoint.skipRemainingAfterRateLimit).toBe(true);
-    expect(checkpoint.apiSteps).toEqual([
-      { type: "strain_deep_dive", date: "2026-03-01" },
-      { type: "sleep_stages", sleepId: "sleep-1" },
-    ]);
-  });
-
-  it("keeps non-HR tail steps after the current API step index", () => {
-    const checkpoint = applyRateLimitToCheckpoint({
-      runId: "run-1",
-      recordsSynced: 5,
-      phase: "api",
-      cycleFetchCursorMs: null,
-      cycles: [],
-      apiSteps: [
-        { type: "strain_deep_dive", date: "2026-03-01" },
-        { type: "sleep_stages", sleepId: "sleep-1" },
-        { type: "persist_workouts" },
-        { type: "heart_rate", start: "2026-03-01T00:00:00.000Z", end: "2026-03-08T00:00:00.000Z" },
-        { type: "journal" },
-      ],
-      apiStepIndex: 1,
-      presentExternalIds: [],
-      skipRemainingAfterRateLimit: false,
-    });
-
-    expect(checkpoint.apiSteps).toEqual([
-      { type: "strain_deep_dive", date: "2026-03-01" },
-      { type: "sleep_stages", sleepId: "sleep-1" },
-      { type: "persist_workouts" },
-    ]);
   });
 });

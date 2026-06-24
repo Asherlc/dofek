@@ -1,4 +1,5 @@
 import { registerProvider } from "../providers/index.ts";
+import { registerProviderSyncRequestResolver } from "./sync-request-query-registration.ts";
 
 let registrationPromise: Promise<void> | null = null;
 
@@ -79,7 +80,9 @@ async function doRegisterProviders() {
 
   for (const [name, loadProvider] of providers) {
     try {
-      registerProvider(await loadProvider());
+      const provider = await loadProvider();
+      registerProvider(provider);
+      await registerProviderSyncRequestResolver(provider);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`Failed to register ${name} provider: ${message}`);

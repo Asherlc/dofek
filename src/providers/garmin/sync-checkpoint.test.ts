@@ -169,50 +169,15 @@ describe("parseGarminSyncCheckpoint", () => {
 });
 
 describe("applyRateLimitToCheckpoint", () => {
-  it("drops remaining stress, heart rate, and HRV steps after a rate limit", () => {
-    const checkpoint = applyRateLimitToCheckpoint({
+  it("preserves the full step plan because Garmin rate limits are per account", () => {
+    expect(
+      applyRateLimitToCheckpoint({
+        ...sampleCheckpoint,
+        stepIndex: 0,
+      }),
+    ).toEqual({
       ...sampleCheckpoint,
       stepIndex: 0,
     });
-
-    expect(checkpoint.steps).toEqual([
-      { type: "activities_list" },
-      { type: "sleep", date: "2026-03-01" },
-      { type: "daily_summary", date: "2026-03-01" },
-    ]);
-  });
-
-  it("does not keep stress, heart rate, or HRV as the current step after a rate limit", () => {
-    const checkpoint = applyRateLimitToCheckpoint({
-      ...sampleCheckpoint,
-      stepIndex: 4,
-    });
-
-    expect(checkpoint.steps).toEqual([
-      { type: "activities_list" },
-      { type: "sleep", date: "2026-03-01" },
-      { type: "daily_summary", date: "2026-03-01" },
-      { type: "hrv_summary", date: "2026-03-01" },
-    ]);
-  });
-
-  it("keeps non-low-priority tail steps after the current API step index", () => {
-    const checkpoint = applyRateLimitToCheckpoint({
-      ...sampleCheckpoint,
-      steps: [
-        { type: "activities_list" },
-        { type: "activity_reconcile" },
-        { type: "sleep", date: "2026-03-01" },
-        { type: "stress", date: "2026-03-01" },
-        { type: "heart_rate", date: "2026-03-01" },
-      ],
-      stepIndex: 1,
-    });
-
-    expect(checkpoint.steps).toEqual([
-      { type: "activities_list" },
-      { type: "activity_reconcile" },
-      { type: "sleep", date: "2026-03-01" },
-    ]);
   });
 });

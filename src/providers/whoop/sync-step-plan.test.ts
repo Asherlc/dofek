@@ -16,9 +16,21 @@ const tokenUserContextMocks = vi.hoisted(() => ({
   getTokenUserId: vi.fn((): string | undefined => "00000000-0000-0000-0000-000000000001"),
 }));
 
+const pendingQueryMocks = vi.hoisted(() => ({
+  listPendingSyncRequestQueryKeys: vi.fn(async () => new Set<string>()),
+}));
+
 vi.mock("../../db/token-user-context.ts", () => ({
   getTokenUserId: tokenUserContextMocks.getTokenUserId,
 }));
+
+vi.mock("../../lib/sync-request-queue.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/sync-request-queue.ts")>();
+  return {
+    ...actual,
+    listPendingSyncRequestQueryKeys: pendingQueryMocks.listPendingSyncRequestQueryKeys,
+  };
+});
 
 function makeDb(selectedRows: unknown[] = []) {
   const chain = {
@@ -93,6 +105,8 @@ function makeContext(overrides: Partial<WhoopSyncContext> = {}): WhoopSyncContex
 beforeEach(() => {
   tokenUserContextMocks.getTokenUserId.mockClear();
   tokenUserContextMocks.getTokenUserId.mockReturnValue("00000000-0000-0000-0000-000000000001");
+  pendingQueryMocks.listPendingSyncRequestQueryKeys.mockReset();
+  pendingQueryMocks.listPendingSyncRequestQueryKeys.mockResolvedValue(new Set());
 });
 
 describe("WHOOP sync step planning", () => {
@@ -195,7 +209,7 @@ describe("WHOOP sync step planning", () => {
       cycles: [{ strain: { workouts: [makeWorkoutRecord({ activity_id: "strain-only" })] } }],
     });
 
-    const steps = await planWhoopApiSteps(context, true);
+    const steps = await planWhoopApiSteps(context);
 
     expect(steps).toContainEqual({ type: "weightlifting", activityId: "strain-only" });
   });
@@ -212,7 +226,7 @@ describe("WHOOP sync step planning", () => {
       ],
     });
 
-    const steps = await planWhoopApiSteps(context, false);
+    const steps = await planWhoopApiSteps(context);
 
     expect(steps).toEqual([
       { type: "strain_deep_dive", date: "2026-05-01" },
@@ -232,19 +246,21 @@ describe("WHOOP sync step planning", () => {
       cycles: [{ workouts: [makeWorkoutRecord({ activity_id: undefined })] }],
     });
 
-    const steps = await planWhoopApiSteps(context, false);
+    const steps = await planWhoopApiSteps(context);
 
     expect(steps.filter((step) => step.type === "weightlifting")).toEqual([]);
   });
 
-  it("skips heart rate and journal steps after a rate limit checkpoint", async () => {
-    const context = makeContext();
+  it("omits API steps already represented on queued request jobs", async () => {
+    pendingQueryMocks.listPendingSyncRequestQueryKeys.mockResolvedValue(
+      new Set([
+        'metrics-service/v1/metrics?{"end":"2026-05-03T00:00:00.000Z","name":"heart_rate","start":"2026-05-01T00:00:00.000Z","step":6}',
+      ]),
+    );
 
-    const steps = await planWhoopApiSteps(context, true);
+    const steps = await planWhoopApiSteps(makeContext());
 
     expect(steps.some((step) => step.type === "heart_rate")).toBe(false);
-    expect(steps.some((step) => step.type === "journal")).toBe(false);
-    expect(steps.some((step) => step.type === "strain_deep_dive")).toBe(true);
-    expect(steps.some((step) => step.type === "developer_workouts")).toBe(true);
+    expect(steps.some((step) => step.type === "journal")).toBe(true);
   });
 });

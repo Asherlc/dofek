@@ -9,7 +9,11 @@ function getMockQueue(providerId: string) {
   const existing = providerQueues.get(providerId);
   if (existing) return existing;
 
-  const queue = { add: vi.fn((..._args: unknown[]) => Promise.resolve({ id: "job-1" })) };
+  const queue = {
+    add: vi.fn((..._args: unknown[]) => Promise.resolve({ id: "job-1" })),
+    getJobs: vi.fn(async () => []),
+    getJob: vi.fn(async () => undefined),
+  };
   providerQueues.set(providerId, queue);
   return queue;
 }

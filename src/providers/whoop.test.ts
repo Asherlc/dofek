@@ -1232,7 +1232,6 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
       apiSteps: [],
       apiStepIndex: 0,
       presentExternalIds: [],
-      skipRemainingAfterRateLimit: false,
     };
     const { store, saved } = makeCheckpointStore(initialCheckpoint);
     const enqueueSyncContinuation = vi.fn(async () => undefined);
@@ -1287,7 +1286,6 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
       apiSteps: [{ type: "strain_deep_dive", date: "2026-03-01" }],
       apiStepIndex: 0,
       presentExternalIds: [],
-      skipRemainingAfterRateLimit: false,
     };
     const { store, saved } = makeCheckpointStore(initialCheckpoint);
     const enqueueSyncContinuation = vi.fn(async () => undefined);
@@ -1339,7 +1337,6 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
       apiSteps: [{ type: "journal" }],
       apiStepIndex: 1,
       presentExternalIds: [],
-      skipRemainingAfterRateLimit: false,
     };
     const { store } = makeCheckpointStore(initialCheckpoint);
     const onProgress = vi.fn();
@@ -1383,7 +1380,6 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
       ],
       apiStepIndex: 0,
       presentExternalIds: [],
-      skipRemainingAfterRateLimit: false,
     };
     const { store, saved } = makeCheckpointStore(initialCheckpoint);
     const provider = new WhoopProvider(makeSyncMockFetch({ sleepRateLimit: true }));
@@ -1405,9 +1401,8 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
     });
 
     const savedCheckpoint = requireRecord(saved[0], "expected rate-limited checkpoint");
-    expect(savedCheckpoint.skipRemainingAfterRateLimit).toBe(true);
     expect(savedCheckpoint.apiStepIndex).toBe(0);
-    expect(requireArray(savedCheckpoint.apiSteps, "expected retained API steps")).toHaveLength(1);
+    expect(requireArray(savedCheckpoint.apiSteps, "expected retained API steps")).toHaveLength(3);
     expect(store.clear).not.toHaveBeenCalled();
   });
 
@@ -1425,7 +1420,6 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
       apiSteps: [{ type: "developer_workouts" }],
       apiStepIndex: 0,
       presentExternalIds: [],
-      skipRemainingAfterRateLimit: false,
     };
     const { store } = makeCheckpointStore(initialCheckpoint);
     const provider = new WhoopProvider(makeSyncMockFetch({ developerWorkoutsError: true }));

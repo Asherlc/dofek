@@ -8,7 +8,6 @@ import type { SyncError, SyncResult } from "../types.ts";
 import { findWhoopRateLimitError, isWhoopRateLimitError } from "./rate-limit.ts";
 import { resolveWhoopTokens } from "./resolve-tokens.ts";
 import {
-  applyRateLimitToCheckpoint,
   createWhoopSyncCheckpoint,
   parseWhoopSyncCheckpoint,
   WHOOP_CYCLE_WINDOW_MS,
@@ -158,7 +157,7 @@ async function runBootstrapPersist(
   checkpoint.recordsSynced += await syncWhoopRecovery(context);
   checkpoint.recordsSynced += await syncWhoopSleepSessions(context);
 
-  checkpoint.apiSteps = await planWhoopApiSteps(context, checkpoint.skipRemainingAfterRateLimit);
+  checkpoint.apiSteps = await planWhoopApiSteps(context);
   checkpoint.apiStepIndex = 0;
   checkpoint.phase = "api";
   checkpoint.cycleFetchCursorMs = null;
@@ -457,7 +456,6 @@ export async function runWhoopOrchestratedSync(
     }
   } catch (err) {
     if (isWhoopRateLimitError(err)) {
-      checkpoint = applyRateLimitToCheckpoint(checkpoint);
       await checkpointStore?.save(checkpoint);
       throw err;
     }
