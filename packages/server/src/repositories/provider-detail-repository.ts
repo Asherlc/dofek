@@ -235,6 +235,7 @@ const RECORD_DISPLAY_PRIORITY = [
   "activity_type",
   "type",
 ] as const;
+const RECORD_DISPLAY_PRIORITY_SET = new Set<string>(RECORD_DISPLAY_PRIORITY);
 const MAX_RECORD_DISPLAY_COLUMNS = 6;
 
 /** Columns available for server-side filtering on provider detail records. */
@@ -256,7 +257,7 @@ export function getRecordDisplayColumns(dataType: DataType): readonly string[] {
   );
   const prioritized = [
     ...RECORD_DISPLAY_PRIORITY.filter((column) => candidates.includes(column)),
-    ...candidates.filter((column) => !RECORD_DISPLAY_PRIORITY.includes(column)),
+    ...candidates.filter((column) => !RECORD_DISPLAY_PRIORITY_SET.has(column)),
   ];
   return prioritized.slice(0, MAX_RECORD_DISPLAY_COLUMNS);
 }

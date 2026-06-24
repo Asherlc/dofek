@@ -13,12 +13,8 @@ export const fieldFiltersSchema = z
   .superRefine((filters, ctx) => {
     if (Object.keys(filters).length > MAX_FIELD_FILTERS) {
       ctx.addIssue({
-        code: z.ZodIssueCode.too_big,
-        maximum: MAX_FIELD_FILTERS,
-        type: "object",
-        inclusive: true,
+        code: z.ZodIssueCode.custom,
         message: `At most ${MAX_FIELD_FILTERS} filters are allowed`,
-        origin: "array",
       });
     }
 
