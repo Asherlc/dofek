@@ -81,7 +81,9 @@ export function DataSourcesPanel() {
   const handleSyncAll = useCallback(
     async (fullSync = false) => {
       setSyncAllMode(fullSync ? "full" : "sync");
-      const enabled = (providers.data ?? []).filter((p) => p.authorized && !p.importOnly && !p.pushOnly);
+      const enabled = (providers.data ?? []).filter(
+        (p) => p.authorized && !p.importOnly && !p.pushOnly,
+      );
       const ids = enabled.map((p) => p.id);
       if (ids.length === 0) {
         setSyncAllMode(null);
@@ -230,7 +232,15 @@ export function DataSourcesPanel() {
 
   const handleProviderClick = useCallback(
     (
-      p: { id: string; name: string; authType: string; authorized: boolean; needsReauth?: boolean },
+      p: {
+        id: string;
+        name: string;
+        authType: string;
+        authorized: boolean;
+        needsReauth?: boolean;
+        importOnly?: boolean;
+        pushOnly?: boolean;
+      },
       fullSync = false,
     ) => {
       if (p.authorized && !p.needsReauth && !p.pushOnly) {

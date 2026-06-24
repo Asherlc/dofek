@@ -1,3 +1,4 @@
+import { PUSH_PROVIDERS } from "@dofek/providers/push-providers";
 import type { Database } from "dofek/db";
 import {
   type ProviderAuthFailureReason,
@@ -5,7 +6,6 @@ import {
 } from "dofek/providers/auth-errors";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { PUSH_PROVIDERS } from "@dofek/providers/push-providers";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------

@@ -135,7 +135,7 @@ describe("WhoopProvider basic properties", () => {
     const { WhoopProvider } = await import("./whoop/provider.ts");
     const provider = new WhoopProvider();
     expect(provider.id).toBe("whoop");
-    expect(provider.name).toBe("WHOOP");
+    expect(provider.name).toBe("WHOOP (Cloud)");
   });
 
   it("validate returns null (always enabled)", async () => {

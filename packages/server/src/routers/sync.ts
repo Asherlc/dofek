@@ -1,3 +1,4 @@
+import { PUSH_PROVIDERS } from "@dofek/providers/push-providers";
 import { TRPCError } from "@trpc/server";
 import type { Job, Queue } from "bullmq";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
@@ -11,13 +12,12 @@ import { syncWindowFromTriggerInput, syncWindowToJobData } from "dofek/jobs/sync
 import { queryCache } from "dofek/lib/cache";
 import { ProviderModel } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";
-import { PUSH_PROVIDERS } from "@dofek/providers/push-providers";
 import { sql as sqlTag } from "drizzle-orm";
 import { z } from "zod";
 import { hasCurrentProviderAuthFailure } from "../lib/provider-auth-state.ts";
 import { startWorker } from "../lib/start-worker.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
-import { SyncRepository } from "../repositories/sync-repository.ts";
+import { type ProviderStatRow, SyncRepository } from "../repositories/sync-repository.ts";
 import {
   CacheTTL,
   cachedProtectedQuery,
@@ -147,16 +147,17 @@ export const syncRouter = router({
     const repo = new SyncRepository(ctx.db, ctx.userId, ctx.sensorStore);
 
     // Batch: load all tokens, last sync times, and recent auth errors in 3 queries instead of 3N
-    const [allTokens, lastSyncs, latestErrors, providerStats, pushLastReceived] =
-      await Promise.all([
+    const [allTokens, lastSyncs, latestErrors, providerStats, pushLastReceived] = await Promise.all(
+      [
         repo.getConnectedProviderIds(),
         repo.getLastSyncTimes(),
         repo.getLatestErrors(),
         ctx.sensorStore
-          ? repo.getProviderStats().catch(() => [])
-          : Promise.resolve([] as Awaited<ReturnType<SyncRepository["getProviderStats"]>>),
+          ? repo.getProviderStats().catch((): ProviderStatRow[] => [])
+          : Promise.resolve([] satisfies ProviderStatRow[]),
         repo.getPushProviderLastReceived(),
-      ]);
+      ],
+    );
 
     const tokenSet = new Set(allTokens.map((r) => r.providerId));
     const tokenUpdatedAtMap = new Map(allTokens.map((r) => [r.providerId, r.updatedAt]));

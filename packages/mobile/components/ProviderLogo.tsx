@@ -1,4 +1,9 @@
-import { BRAND_COLORS, PROVIDER_LABELS, providerLogoId, providerLogoType } from "@dofek/providers/providers";
+import {
+  BRAND_COLORS,
+  PROVIDER_LABELS,
+  providerLogoId,
+  providerLogoType,
+} from "@dofek/providers/providers";
 import { Image, StyleSheet, Text, View } from "react-native";
 
 interface ProviderLogoProps {

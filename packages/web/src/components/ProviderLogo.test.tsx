@@ -21,7 +21,7 @@ describe("providerLabel", () => {
   it("returns the display name for a known provider", () => {
     expect(providerLabel("strava")).toBe("Strava");
     expect(providerLabel("ride-with-gps")).toBe("Ride with GPS");
-    expect(providerLabel("whoop")).toBe("WHOOP");
+    expect(providerLabel("whoop")).toBe("WHOOP (Cloud)");
   });
 
   it("returns the raw id for an unknown provider", () => {

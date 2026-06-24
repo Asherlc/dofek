@@ -1,6 +1,6 @@
-import type { Database } from "dofek/db";
 import { providerLabel } from "@dofek/providers/providers";
 import { WHOOP_BLE_PROVIDER_ID } from "@dofek/providers/push-providers";
+import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { RR_INTERVAL_MS } from "../../../../src/db/sensor-channels.ts";
 import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
@@ -10,6 +10,7 @@ import {
 } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
 import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
+
 const INSERT_BATCH_SIZE = 2000;
 
 export interface WhoopBleRealtimeDataSample {

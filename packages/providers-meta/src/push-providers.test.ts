@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  isPushProvider,
-  PUSH_PROVIDERS,
-  WHOOP_BLE_PROVIDER_ID,
-} from "./push-providers.ts";
+import { isPushProvider, PUSH_PROVIDERS, WHOOP_BLE_PROVIDER_ID } from "./push-providers.ts";
 
 describe("push-providers", () => {
   it("defines WHOOP BLE as a mobile push provider", () => {

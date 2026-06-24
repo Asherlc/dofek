@@ -6,8 +6,7 @@ import { ProviderLogo } from "./ProviderLogo.tsx";
 import { ProviderStatsBreakdown } from "./ProviderStatsBreakdown.tsx";
 import { StatusDot } from "./StatusDot.tsx";
 
-const PUSH_MOBILE_DESCRIPTION =
-  "Synced from the iOS app when your WHOOP strap is nearby.";
+const PUSH_MOBILE_DESCRIPTION = "Synced from the iOS app when your WHOOP strap is nearby.";
 
 export function SyncProviderCard({
   provider,
@@ -73,9 +72,7 @@ export function SyncProviderCard({
         )}
       </div>
 
-      {pushOnly && (
-        <span className="text-xs text-subtle mt-1">{PUSH_MOBILE_DESCRIPTION}</span>
-      )}
+      {pushOnly && <span className="text-xs text-subtle mt-1">{PUSH_MOBILE_DESCRIPTION}</span>}
 
       {/* Progress bar during sync */}
       {!pushOnly && state.status === "syncing" && (
@@ -123,9 +120,7 @@ export function SyncProviderCard({
                   title={`${l.status} — ${formatTime(l.syncedAt)}`}
                 />
               ))}
-              {recentLogs.length === 0 && (
-                <span className="text-xs text-dim">No sync history</span>
-              )}
+              {recentLogs.length === 0 && <span className="text-xs text-dim">No sync history</span>}
             </>
           )}
         </div>
