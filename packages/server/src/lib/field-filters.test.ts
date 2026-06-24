@@ -37,10 +37,7 @@ describe("buildPostgresFilterConditions", () => {
 
   it("normalizes datetime-local range values before building comparisons", () => {
     const input = "2024-06-01T08:30";
-    const conditions = buildPostgresFilterConditions(
-      { started_at_from: input },
-      ["started_at"],
-    );
+    const conditions = buildPostgresFilterConditions({ started_at_from: input }, ["started_at"]);
     expect(conditions).toHaveLength(1);
     expect(conditions[0]?.queryChunks).toContain(new Date(input).toISOString());
   });
