@@ -225,7 +225,11 @@ describe("ProviderDetailRepository", () => {
 
       expect(query).toHaveBeenCalledTimes(1);
       // Reads the deduped Redpanda-fed mirror, not Postgres.
-      expect(query.mock.calls[0]?.[1]).toContain("ingest.metric_stream FINAL");
+      expect(query.mock.calls[0]?.[1]).toContain("FROM ingest.metric_stream");
+      expect(query.mock.calls[0]?.[1]).toContain(
+        "row_number() OVER (PARTITION BY id ORDER BY version DESC)",
+      );
+      expect(query.mock.calls[0]?.[1]).toContain("version_rank = 1");
       expect(query.mock.calls[0]?.[1]).toContain("is_deleted = 0");
       // recorded_at is rendered in UTC so the literal 'Z' suffix is accurate.
       expect(query.mock.calls[0]?.[1]).toContain("'%Y-%m-%dT%H:%i:%S.%fZ', 'UTC'");

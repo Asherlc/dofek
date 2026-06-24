@@ -272,10 +272,27 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
     setSelectedRecord(null);
   }
 
+  const [lastProviderId, setLastProviderId] = useState(providerId);
+  if (providerId !== lastProviderId) {
+    setPage(0);
+    setLastProviderId(providerId);
+    setSelectedRecord(null);
+  }
+
   if (records.isLoading) {
     return (
       <View style={recordStyles.emptyContainer}>
         <ActivityIndicator color={colors.accent} size="small" />
+      </View>
+    );
+  }
+
+  if (records.isError) {
+    return (
+      <View style={recordStyles.emptyContainer}>
+        <Text style={recordStyles.errorText}>
+          {records.error?.message ?? "Failed to load records."}
+        </Text>
       </View>
     );
   }
@@ -362,6 +379,11 @@ const recordStyles = StyleSheet.create({
   emptyText: {
     fontSize: 13,
     color: colors.textTertiary,
+  },
+  errorText: {
+    fontSize: 13,
+    color: colors.danger,
+    textAlign: "center",
   },
   table: {
     backgroundColor: colors.surface,
@@ -583,16 +605,40 @@ const syncStyles = StyleSheet.create({
 function RecordsBrowser({
   providerId,
   stats,
+  statsLoading,
 }: {
   providerId: string;
   stats: ProviderStats | undefined;
+  statsLoading: boolean;
 }) {
   const availableTypes = DATA_TYPE_LABELS.filter((dt) => {
-    if (!stats) return true;
+    if (!stats) return false;
     return stats[dt.key] > 0;
   });
 
-  const [activeTab, setActiveTab] = useState<DataType>(availableTypes[0]?.key ?? "activities");
+  const [activeTab, setActiveTab] = useState<DataType>("activities");
+  const [lastProviderId, setLastProviderId] = useState(providerId);
+
+  if (providerId !== lastProviderId) {
+    setLastProviderId(providerId);
+    setActiveTab(availableTypes[0]?.key ?? "activities");
+  }
+
+  const activeTabAvailable = availableTypes.some((dt) => dt.key === activeTab);
+  if (stats && availableTypes.length > 0 && !activeTabAvailable) {
+    setActiveTab(availableTypes[0]?.key ?? "activities");
+  }
+
+  if (statsLoading) {
+    return (
+      <View>
+        <Text style={styles.sectionTitle}>Records</Text>
+        <View style={recordStyles.emptyContainer}>
+          <ActivityIndicator color={colors.accent} size="small" />
+        </View>
+      </View>
+    );
+  }
 
   if (availableTypes.length === 0) {
     return (
@@ -805,7 +851,11 @@ export default function ProviderDetailScreen() {
       <SyncHistory providerId={providerId} />
 
       {/* Records browser */}
-      <RecordsBrowser providerId={providerId} stats={providerStats} />
+      <RecordsBrowser
+        providerId={providerId}
+        stats={providerStats}
+        statsLoading={stats.isLoading}
+      />
 
       {/* Disconnect */}
       {provider?.authorized && (

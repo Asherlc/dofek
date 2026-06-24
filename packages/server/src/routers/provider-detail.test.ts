@@ -578,6 +578,43 @@ describe("providerDetailRouter", () => {
       expect(sensorQuery.mock.calls[0]?.[1]).toContain("analytics.v_body_measurement");
     });
 
+    it("queries metric stream records through ClickHouse", async () => {
+      const mockExecute = vi.fn().mockResolvedValue([]);
+      const sensorQuery = vi.fn().mockResolvedValue([
+        {
+          id: "stream-1",
+          recorded_at: "2026-04-12T10:00:00.000000Z",
+          provider_id: "whoop",
+          channel: "heart_rate",
+          scalar: 72,
+        },
+      ]);
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        sensorStore: { query: sensorQuery },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.records({
+        providerId: "whoop",
+        dataType: "metricStream",
+        limit: 25,
+        offset: 0,
+      });
+
+      expect(mockExecute).not.toHaveBeenCalled();
+      expect(sensorQuery).toHaveBeenCalledTimes(1);
+      expect(sensorQuery.mock.calls[0]?.[1]).toContain("FROM ingest.metric_stream");
+      expect(sensorQuery.mock.calls[0]?.[1]).toContain(
+        "row_number() OVER (PARTITION BY id ORDER BY version DESC)",
+      );
+      expect(sensorQuery.mock.calls[0]?.[1]).toContain("version_rank = 1");
+      expect(sensorQuery.mock.calls[0]?.[1]).toContain("is_deleted = 0");
+      expect(result.rows).toHaveLength(1);
+      expect(result.rows[0]?.channel).toBe("heart_rate");
+    });
+
     it("passes user ID and provider ID as parameters", async () => {
       const mockExecute = vi.fn().mockResolvedValue([]);
       const caller = createCaller({
