@@ -10,7 +10,7 @@ import {
   authFailureReasonFromError,
   type ProviderAuthFailureReason,
 } from "../providers/auth-errors.ts";
-import { providerRequiresStoredTokens } from "../providers/custom-auth-providers.ts";
+import { providerRequiresStoredTokens } from "../lib/custom-auth-providers.ts";
 import { SyncRun } from "../providers/sync-run.ts";
 import type { SyncCheckpointStore, SyncError } from "../providers/types.ts";
 import {

@@ -1,5 +1,5 @@
 import { getConfiguredProviderIds } from "dofek/jobs/provider-queue-config";
-import { CUSTOM_AUTH_PROVIDERS } from "dofek/providers/custom-auth-providers";
+import { CUSTOM_AUTH_PROVIDERS } from "dofek/lib/custom-auth-providers";
 import { registerProvider } from "dofek/providers/registry";
 
 export { CUSTOM_AUTH_PROVIDERS };

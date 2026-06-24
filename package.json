@@ -20,7 +20,7 @@
     "./providers/sync-window": "./src/providers/sync-window.ts",
     "./providers/sync-run": "./src/providers/sync-run.ts",
     "./providers/auth-errors": "./src/providers/auth-errors.ts",
-    "./providers/custom-auth-providers": "./src/providers/custom-auth-providers.ts",
+    "./lib/custom-auth-providers": "./src/lib/custom-auth-providers.ts",
     "./providers/provider-model": "./src/providers/provider-model.ts",
     "./providers/registry": "./src/providers/index.ts",
     "./providers/wahoo/client": "./src/providers/wahoo/client.ts",
