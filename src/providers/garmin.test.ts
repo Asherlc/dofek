@@ -698,7 +698,7 @@ describe("GarminProvider.sync()", () => {
 
   it("throws when sync is invoked without a scoped user id", async () => {
     await expect(syncProvider(provider, db, new Date(), { userId: "" })).rejects.toThrow(
-      "garmin sync requires a userId",
+      "A user ID is required for this operation",
     );
   });
 

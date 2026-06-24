@@ -159,7 +159,7 @@ describe("enqueueSyncJob", () => {
 
     expect(result).toBe(existingJob);
     expect(mockProviderQueueAdd).not.toHaveBeenCalled();
-    expect(mockGetJob).toHaveBeenCalledWith(expect.stringMatching(/^sync-req:whoop:user-1:/));
+    expect(mockGetJob).toHaveBeenCalledWith(expect.stringMatching(/^sync-req-whoop-user-1-/));
   });
 
   it("deduplicates standard provider jobs by sync window", async () => {
@@ -178,6 +178,6 @@ describe("enqueueSyncJob", () => {
 
     expect(result).toBe(existingJob);
     expect(mockProviderQueueAdd).not.toHaveBeenCalled();
-    expect(mockGetJob).toHaveBeenCalledWith(expect.stringMatching(/^sync-req:strava:user-1:/));
+    expect(mockGetJob).toHaveBeenCalledWith(expect.stringMatching(/^sync-req-strava-user-1-/));
   });
 });

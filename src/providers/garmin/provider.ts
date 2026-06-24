@@ -72,11 +72,19 @@ export class GarminProvider implements SyncProvider {
   authSetup(_options?: { host?: string }): ProviderAuthSetup {
     return {
       automatedLogin: async (email: string, password: string): Promise<TokenSet> => {
+        const authFetch = createProviderRateLimitFetch("garmin", this.#baseFetchFn, {
+          createRateLimitError: (response, responseBody) =>
+            new GarminRateLimitError(
+              `Rate limit exceeded (${response.status}): ${responseBody}`,
+              responseBody,
+              response.headers?.get?.("Retry-After"),
+            ),
+        });
         const { tokens } = await GarminConnectClient.signIn(
           email,
           password,
           "garmin.com",
-          this.#baseFetchFn,
+          authFetch,
         );
         return serializeInternalTokens(tokens);
       },

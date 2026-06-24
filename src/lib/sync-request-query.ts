@@ -47,7 +47,7 @@ export function buildSyncRequestJobId(
   // SHA-256 truncated to 24 hex chars (96 bits) — collision risk is negligible
   // for job IDs scoped to a single provider+user.
   const digest = createHash("sha256").update(syncApiQueryKey(query)).digest("hex").slice(0, 24);
-  return `sync-req:${providerId}:${userId}:${digest}`;
+  return `sync-req-${providerId}-${userId}-${digest}`;
 }
 
 export function isSyncRequestQueryPending(
