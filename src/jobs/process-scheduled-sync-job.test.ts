@@ -1,7 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /** Per-provider mock queues keyed by provider ID */
-const providerQueues = new Map<string, { add: ReturnType<typeof vi.fn> }>();
+const providerQueues = new Map<
+  string,
+  {
+    add: ReturnType<typeof vi.fn>;
+    getJobs: ReturnType<typeof vi.fn>;
+    getJob: ReturnType<typeof vi.fn>;
+  }
+>();
 const mockLoggerInfo = vi.fn();
 const mockGetActiveCooldown = vi.fn();
 
