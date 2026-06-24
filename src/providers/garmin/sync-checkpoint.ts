@@ -2,7 +2,10 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 const garminSyncStepSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("activities_list"), offset: z.number().int().nonnegative().default(0) }),
+  z.object({
+    type: z.literal("activities_list"),
+    offset: z.number().int().nonnegative().default(0),
+  }),
   z.object({
     type: z.literal("activity_detail"),
     activityId: z.number(),
