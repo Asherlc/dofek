@@ -6,6 +6,16 @@ sources:
     tables:
       - name: v_activity
       - name: v_activity_members
+  - name: ingest
+    schema: ingest
+    tables:
+      - name: metric_stream
+        config:
+          event_time: recorded_at
+      - name: metric_stream_freshness
+        identifier: metric_stream
+        config:
+          event_time: ingested_at
   - name: postgres_fitness
     schema: postgres_fitness
     tables:
@@ -17,13 +27,6 @@ sources:
       - name: journal_entry
       - name: lab_panel
       - name: lab_result
-      - name: metric_stream
-        config:
-          event_time: recorded_at
-      - name: metric_stream_freshness
-        identifier: metric_stream
-        config:
-          event_time: _peerdb_synced_at
       - name: provider
       - name: provider_priority
       - name: sensor_device_priority

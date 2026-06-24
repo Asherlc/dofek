@@ -1,3 +1,4 @@
+import { METRIC_STREAM_TABLE } from "../metric-stream/clickhouse-table.ts";
 import { buildProviderStatsTableSql } from "./clickhouse-provider-stats.ts";
 import {
   peerDbMetadataColumnDefinitions,
@@ -53,10 +54,10 @@ SELECT
   device_id,
   source_type,
   scalar,
-  _peerdb_synced_at,
-  _peerdb_is_deleted,
-  _peerdb_version
-FROM postgres_fitness.metric_stream
+  ingested_at AS _peerdb_synced_at,
+  is_deleted AS _peerdb_is_deleted,
+  version AS _peerdb_version
+FROM ${METRIC_STREAM_TABLE}
 WHERE channel IN (
       ${bodyMeasurementChannelListSql()}
     )`;
@@ -87,10 +88,10 @@ SELECT
   device_id,
   source_type,
   scalar,
-  _peerdb_synced_at,
-  _peerdb_is_deleted,
-  _peerdb_version
-FROM postgres_fitness.metric_stream
+  ingested_at AS _peerdb_synced_at,
+  is_deleted AS _peerdb_is_deleted,
+  version AS _peerdb_version
+FROM ${METRIC_STREAM_TABLE}
 WHERE channel IN (
       ${bodyMeasurementChannelListSql()}
     )`;
@@ -873,8 +874,8 @@ providers AS (
   WHERE _peerdb_is_deleted = 0
   UNION DISTINCT
   SELECT DISTINCT user_id, provider_id
-  FROM postgres_fitness.metric_stream FINAL
-  WHERE _peerdb_is_deleted = 0
+  FROM ${METRIC_STREAM_TABLE} FINAL
+  WHERE is_deleted = 0
   UNION DISTINCT
   SELECT DISTINCT user_id, provider_id
   FROM postgres_fitness.food_entry FINAL
@@ -933,8 +934,8 @@ body_measurement_counts AS (
 ),
 metric_stream_counts AS (
   SELECT user_id, provider_id, count() AS count
-  FROM postgres_fitness.metric_stream FINAL
-  WHERE _peerdb_is_deleted = 0
+  FROM ${METRIC_STREAM_TABLE} FINAL
+  WHERE is_deleted = 0
   GROUP BY user_id, provider_id
 ),
 food_entry_counts AS (

@@ -259,20 +259,15 @@ describe("production analytics read-model build", () => {
 
     expect(sourcesYaml).toContain("name: metric_stream_freshness");
     expect(sourcesYaml).toContain("identifier: metric_stream");
-    expect(sourcesYaml).toContain("event_time: _peerdb_synced_at");
+    expect(sourcesYaml).toContain("name: ingest");
+    expect(sourcesYaml).toContain("event_time: ingested_at");
     expect(sensorScalarSampleSql).toContain("event_time='_peerdb_synced_at'");
-    expect(sensorScalarSampleSql).toContain(
-      "source('postgres_fitness', 'metric_stream_freshness')",
-    );
+    expect(sensorScalarSampleSql).toContain("source('ingest', 'metric_stream_freshness')");
     expect(dedupedSensorSql).toContain("event_time='refreshed_at'");
     expect(dedupedSensorSql).toContain("max(samples._peerdb_synced_at) AS source_refreshed_at");
     expect(dedupedSensorSql).toContain("source_refreshed_at AS refreshed_at");
-    expect(activityLocationSampleSql).toContain(
-      "source('postgres_fitness', 'metric_stream_freshness')",
-    );
-    expect(activityLocationSampleSql).not.toContain(
-      "source('postgres_fitness', 'metric_stream')",
-    );
+    expect(activityLocationSampleSql).toContain("source('ingest', 'metric_stream_freshness')");
+    expect(activityLocationSampleSql).not.toContain("source('postgres_fitness', 'metric_stream')");
   });
 
   it("materializes activity location membership as a microbatch intermediary", () => {
@@ -282,11 +277,11 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("incremental_strategy='microbatch'");
     expect(sql).toContain("event_time='refreshed_at'");
     expect(sql).toContain("lookback=3");
-    expect(sql).toContain("source('postgres_fitness', 'metric_stream_freshness')");
+    expect(sql).toContain("source('ingest', 'metric_stream_freshness')");
     expect(sql).toContain("ref('deduped_activity_members')");
     expect(sql).not.toContain("source('analytics', 'v_activity_members')");
     expect(sql).toContain("channel = 'location'");
-    expect(sql).toContain("argMax(point, _peerdb_version) AS point");
+    expect(sql).toContain("argMax(point, version) AS point");
     expect(sql).toContain("toString(point) AS point_text");
     expect(sql).toContain("startsWith(location_rows.point_text, '{')");
     expect(sql).toContain("JSONExtract(location_rows.point_text, 'coordinates', 'Array(Float64)')[2]");
@@ -319,7 +314,7 @@ describe("production analytics read-model build", () => {
     );
     expect(activitySensorSampleSql).toContain("source_refreshed_at AS refreshed_at");
     expect(activityLocationSampleSql).toContain(
-      "greatest(location_rows._peerdb_synced_at, activity_members.source_synced_at) AS source_refreshed_at",
+      "greatest(location_rows.ingested_at, activity_members.source_synced_at) AS source_refreshed_at",
     );
     expect(activityLocationSampleSql).toContain("source_refreshed_at AS refreshed_at");
     expect(activityLocationSampleSql).not.toContain("now64(9) AS refreshed_at");

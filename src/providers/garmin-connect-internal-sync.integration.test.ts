@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
+import { buildClickHouseBootstrapStatementsForNativeMetricStream } from "../db/clickhouse-metric-stream-bootstrap.ts";
 import { activity, dailyMetrics, oauthToken, sleepSession, userSettings } from "../db/schema.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
@@ -377,6 +379,16 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
   beforeAll(async () => {
     ctx = await setupTestDatabase();
     await ensureProvider(ctx.db, "garmin", "Garmin Connect");
+    if (process.env.CLICKHOUSE_URL) {
+      const client = createClickHouseClientFromEnv();
+      try {
+        for (const statement of buildClickHouseBootstrapStatementsForNativeMetricStream("")) {
+          await client.command({ query: statement });
+        }
+      } finally {
+        await client.close?.();
+      }
+    }
   }, 60_000);
 
   beforeEach(() => {

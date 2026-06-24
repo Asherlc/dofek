@@ -36,6 +36,15 @@ import {
 } from "./clickhouse-migrations.ts";
 import { replacingMergeTreeTable } from "./clickhouse-sql-helpers.ts";
 
+function systemTablesQueryRows(
+  queryText: string,
+): Array<{ count: string } | { table_count: number }> {
+  if (queryText.includes("AS count")) {
+    return [{ count: "1" }];
+  }
+  return [{ table_count: 1 }];
+}
+
 describe("buildClickHouseMigrationStatements", () => {
   it("loads ClickHouse migrations from ordered per-file modules", () => {
     expect(clickHouseMigrationFileNames).toEqual([
@@ -72,6 +81,7 @@ describe("buildClickHouseMigrationStatements", () => {
       "0031_activity_user_soft_delete.ts",
       "0032_deduped_activities_absent_source_links.ts",
       "0033_recreate_deduped_activities_column_order.ts",
+      "0034_move_metric_stream_to_ingest.ts",
     ]);
   });
 
@@ -262,24 +272,19 @@ SETTINGS allow_nullable_key = 1`);
     expect(sql).toContain("DROP TABLE IF EXISTS analytics.deduped_sensor");
     expect(sql).toContain("DROP DATABASE IF EXISTS postgres_fitness SYNC");
     expect(sql.match(/DROP DATABASE IF EXISTS postgres_fitness SYNC/g)).toHaveLength(1);
-    expect(sql).toContain("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream");
-    expect(sql.match(/CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream/g)).toHaveLength(4);
-    expect(sql).toContain(
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS ingest.metric_stream");
+    expect(sql.match(/CREATE TABLE IF NOT EXISTS ingest\.metric_stream/g)).toHaveLength(5);
+    expect(sql).toContain("CREATE DATABASE IF NOT EXISTS ingest");
+    expect(sql).not.toContain(
       "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_synced_at DateTime64(9) DEFAULT now()",
     );
-    expect(sql).toContain(
-      "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_is_deleted Int8 DEFAULT 0",
-    );
-    expect(sql).toContain(
-      "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_version Int64 DEFAULT 0",
-    );
-    expect(sql.indexOf("ADD COLUMN IF NOT EXISTS _peerdb_synced_at")).toBeLessThan(
-      sql.indexOf("FROM postgres_fitness.metric_stream"),
+    expect(sql.indexOf("CREATE TABLE IF NOT EXISTS ingest.metric_stream")).toBeLessThan(
+      sql.indexOf("FROM ingest.metric_stream"),
     );
     expect(sql).toContain("point String");
-    expect(sql).toContain("ENGINE = ReplacingMergeTree(_peerdb_version)");
-    expect(sql).toContain("FROM postgres_fitness.metric_stream FINAL");
-    expect(sql).toContain("WHERE _peerdb_is_deleted = 0");
+    expect(sql).toContain("ENGINE = ReplacingMergeTree(version)");
+    expect(sql).toContain("FROM ingest.metric_stream FINAL");
+    expect(sql).toContain("WHERE is_deleted = 0");
     expect(sql).toContain("ENGINE = ReplacingMergeTree");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.sensor_scalar_sample");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.deduped_sensor");
@@ -402,7 +407,7 @@ SETTINGS allow_nullable_key = 1`);
         };
       }
       if (queryText.includes("system.tables")) {
-        return { json: vi.fn().mockResolvedValue([{ table_count: 1 }]) };
+        return { json: vi.fn().mockResolvedValue(systemTablesQueryRows(queryText)) };
       }
       if (queryText.includes("min_recorded_at_ms")) {
         return {
@@ -455,7 +460,7 @@ describe("runClickHouseMigrations", () => {
         return { json: vi.fn().mockResolvedValue([{ engine: "ReplacingMergeTree" }]) };
       }
       if (queryText.includes("system.tables")) {
-        return { json: vi.fn().mockResolvedValue([{ table_count: 1 }]) };
+        return { json: vi.fn().mockResolvedValue(systemTablesQueryRows(queryText)) };
       }
       if (queryText.includes("system.databases")) {
         return { json: vi.fn().mockResolvedValue([{ engine: "Atomic" }]) };
@@ -471,7 +476,7 @@ describe("runClickHouseMigrations", () => {
 
     const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
-    expect(count).toBe(33);
+    expect(count).toBe(34);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(
@@ -491,7 +496,7 @@ describe("runClickHouseMigrations", () => {
     );
     expect(command).toHaveBeenCalledWith(
       expect.objectContaining({
-        query: expect.stringContaining("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream"),
+        query: expect.stringContaining("CREATE TABLE IF NOT EXISTS ingest.metric_stream"),
       }),
     );
     expect(command).not.toHaveBeenCalledWith(
@@ -543,7 +548,7 @@ describe("runClickHouseMigrations", () => {
     const command = vi.fn().mockResolvedValue(undefined);
     const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => {
       if (queryText.includes("system.tables")) {
-        return { json: vi.fn().mockResolvedValue([{ table_count: 1 }]) };
+        return { json: vi.fn().mockResolvedValue(systemTablesQueryRows(queryText)) };
       }
       if (queryText.includes("0020_incremental_deduped_sensor")) {
         return { json: vi.fn().mockResolvedValue([{ migration_count: 0 }]) };
@@ -617,7 +622,7 @@ describe("runClickHouseMigrations", () => {
           queryText.includes("system.columns")
             ? [{ migration_count: 5 }]
             : queryText.includes("system.tables")
-              ? [{ table_count: 1 }]
+              ? systemTablesQueryRows(queryText)
               : queryText.includes("system.databases")
                 ? [{ engine: "Atomic" }]
                 : queryText.includes("0006_backfill_native_metric_stream")
@@ -642,7 +647,7 @@ describe("runClickHouseMigrations", () => {
     );
     expect(command).toHaveBeenCalledWith(
       expect.objectContaining({
-        query: expect.stringContaining("INSERT INTO postgres_fitness.metric_stream"),
+        query: expect.stringContaining("INSERT INTO ingest.metric_stream"),
       }),
     );
     expect(command).toHaveBeenCalledWith(
@@ -654,7 +659,7 @@ describe("runClickHouseMigrations", () => {
     );
     const backfillStatements = command.mock.calls
       .map(([options]) => String(options.query))
-      .filter((queryText) => queryText.includes("INSERT INTO postgres_fitness.metric_stream"));
+      .filter((queryText) => queryText.includes("INSERT INTO ingest.metric_stream"));
     expect(backfillStatements).toHaveLength(24);
     expect(backfillStatements[0]).toContain(
       "metric_stream.recorded_at >= toDateTime64('2026-04-22 00:00:00.000', 6, 'UTC')",
@@ -727,7 +732,7 @@ describe("runClickHouseMigrations", () => {
           queryText.includes("system.tables") && queryText.includes("engine")
             ? [{ engine: "ReplacingMergeTree" }]
             : queryText.includes("system.tables")
-              ? [{ table_count: 1 }]
+              ? systemTablesQueryRows(queryText)
               : queryText.includes("system.databases")
                 ? [{ engine: "Atomic" }]
                 : queryText.includes("0006_backfill_native_metric_stream") ||
@@ -747,7 +752,7 @@ describe("runClickHouseMigrations", () => {
     expect(count).toBe(2);
     const backfillStatements = command.mock.calls
       .map(([options]) => String(options.query))
-      .filter((queryText) => queryText.includes("INSERT INTO postgres_fitness.metric_stream"));
+      .filter((queryText) => queryText.includes("INSERT INTO ingest.metric_stream"));
     expect(backfillStatements).toHaveLength(12);
     expect(command).toHaveBeenCalledWith({
       query:
@@ -784,7 +789,7 @@ describe("runClickHouseMigrations", () => {
           queryText.includes("system.columns")
             ? [{ migration_count: 5 }]
             : queryText.includes("system.tables")
-              ? [{ table_count: 1 }]
+              ? systemTablesQueryRows(queryText)
               : queryText.includes("system.databases")
                 ? [{ engine: "Atomic" }]
                 : queryText.includes("0012_repair_metric_stream_backfill")
@@ -808,7 +813,7 @@ describe("runClickHouseMigrations", () => {
     );
     expect(command).toHaveBeenCalledWith(
       expect.objectContaining({
-        query: expect.stringContaining("INSERT INTO postgres_fitness.metric_stream"),
+        query: expect.stringContaining("INSERT INTO ingest.metric_stream"),
       }),
     );
   });
@@ -822,7 +827,7 @@ describe("runClickHouseMigrations", () => {
           queryText.includes("system.columns")
             ? [{ migration_count: 0 }]
             : queryText.includes("system.tables")
-              ? [{ table_count: 1 }]
+              ? systemTablesQueryRows(queryText)
               : queryText.includes("system.databases")
                 ? [{ engine: "Atomic" }]
                 : queryText.includes("0012_repair_metric_stream_backfill")
@@ -844,7 +849,7 @@ describe("runClickHouseMigrations", () => {
     );
     expect(command).not.toHaveBeenCalledWith(
       expect.objectContaining({
-        query: expect.stringContaining("INSERT INTO postgres_fitness.metric_stream"),
+        query: expect.stringContaining("INSERT INTO ingest.metric_stream"),
       }),
     );
     expect(command).toHaveBeenCalledWith({
@@ -880,7 +885,7 @@ describe("runClickHouseMigrations", () => {
         .fn()
         .mockResolvedValue(
           queryText.includes("system.tables")
-            ? [{ table_count: 1 }]
+            ? systemTablesQueryRows(queryText)
             : queryText.includes("system.databases")
               ? [{ engine: "Atomic" }]
               : queryText.includes("0013_metric_stream_location_point")
@@ -904,17 +909,17 @@ describe("runClickHouseMigrations", () => {
     );
     expect(command).toHaveBeenCalledWith(
       expect.objectContaining({
-        query: "DROP TABLE IF EXISTS postgres_fitness.metric_stream",
+        query: "DROP TABLE IF EXISTS ingest.metric_stream",
       }),
     );
     expect(command).toHaveBeenCalledWith(
       expect.objectContaining({
-        query: expect.stringContaining("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream"),
+        query: expect.stringContaining("CREATE TABLE IF NOT EXISTS ingest.metric_stream"),
       }),
     );
     expect(command).toHaveBeenCalledWith(
       expect.objectContaining({
-        query: expect.stringContaining("INSERT INTO postgres_fitness.metric_stream"),
+        query: expect.stringContaining("INSERT INTO ingest.metric_stream"),
       }),
     );
   });
@@ -946,7 +951,7 @@ describe("runClickHouseMigrations", () => {
         .fn()
         .mockResolvedValue(
           queryText.includes("system.tables")
-            ? [{ table_count: 1 }]
+            ? systemTablesQueryRows(queryText)
             : queryText.includes("system.columns")
               ? [{ migration_count: 5 }]
               : queryText.includes("system.databases")
@@ -972,12 +977,12 @@ describe("runClickHouseMigrations", () => {
     );
     expect(command).not.toHaveBeenCalledWith(
       expect.objectContaining({
-        query: "DROP TABLE IF EXISTS postgres_fitness.metric_stream",
+        query: "DROP TABLE IF EXISTS ingest.metric_stream",
       }),
     );
     expect(command).toHaveBeenCalledWith(
       expect.objectContaining({
-        query: expect.stringContaining("INSERT INTO postgres_fitness.metric_stream"),
+        query: expect.stringContaining("INSERT INTO ingest.metric_stream"),
       }),
     );
   });
@@ -1018,7 +1023,7 @@ describe("runClickHouseMigrations", () => {
         .fn()
         .mockResolvedValue(
           queryText.includes("system.tables")
-            ? [{ table_count: 1 }]
+            ? systemTablesQueryRows(queryText)
             : queryText.includes("system.databases")
               ? [{ engine: "Atomic" }]
               : queryText.includes("0006_backfill_native_metric_stream")
@@ -1033,7 +1038,7 @@ describe("runClickHouseMigrations", () => {
 
     const backfillStatements = command.mock.calls
       .map(([options]) => String(options.query))
-      .filter((queryText) => queryText.includes("INSERT INTO postgres_fitness.metric_stream"));
+      .filter((queryText) => queryText.includes("INSERT INTO ingest.metric_stream"));
     expect(backfillStatements).toHaveLength(6);
     expect(backfillStatements[0]).toContain(
       "metric_stream.recorded_at >= toDateTime64('2026-04-22 03:15:00.000', 6, 'UTC')",
@@ -1070,7 +1075,7 @@ describe("runClickHouseMigrations", () => {
         .fn()
         .mockResolvedValue(
           queryText.includes("system.tables")
-            ? [{ table_count: 1 }]
+            ? systemTablesQueryRows(queryText)
             : queryText.includes("system.databases")
               ? [{ engine: "Atomic" }]
               : queryText.includes("0006_backfill_native_metric_stream")
@@ -1085,7 +1090,7 @@ describe("runClickHouseMigrations", () => {
 
     const backfillStatements = command.mock.calls
       .map(([options]) => String(options.query))
-      .filter((queryText) => queryText.includes("INSERT INTO postgres_fitness.metric_stream"));
+      .filter((queryText) => queryText.includes("INSERT INTO ingest.metric_stream"));
     expect(backfillStatements).toHaveLength(30);
     expect(backfillStatements[0]).toContain(
       "metric_stream.recorded_at >= toDateTime64('2026-04-22 00:00:00.000', 6, 'UTC')",
@@ -1108,7 +1113,7 @@ describe("runClickHouseMigrations", () => {
         .fn()
         .mockResolvedValue(
           queryText.includes("system.tables")
-            ? [{ table_count: 1 }]
+            ? systemTablesQueryRows(queryText)
             : queryText.includes("system.databases")
               ? [{ engine: "Atomic" }]
               : queryText.includes("0006_backfill_native_metric_stream")
@@ -1158,7 +1163,7 @@ describe("runClickHouseMigrations", () => {
         return { json: vi.fn().mockResolvedValue([{ engine: "MergeTree" }]) };
       }
       if (queryText.includes("system.tables")) {
-        return { json: vi.fn().mockResolvedValue([{ table_count: 1 }]) };
+        return { json: vi.fn().mockResolvedValue(systemTablesQueryRows(queryText)) };
       }
       if (queryText.includes("system.databases")) {
         return { json: vi.fn().mockResolvedValue([{ engine: "Atomic" }]) };
@@ -1185,12 +1190,12 @@ describe("runClickHouseMigrations", () => {
     );
     expect(command).toHaveBeenCalledWith(
       expect.objectContaining({
-        query: "DROP TABLE IF EXISTS postgres_fitness.metric_stream",
+        query: "DROP TABLE IF EXISTS ingest.metric_stream",
       }),
     );
     expect(command).toHaveBeenCalledWith(
       expect.objectContaining({
-        query: expect.stringContaining("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream"),
+        query: expect.stringContaining("CREATE TABLE IF NOT EXISTS ingest.metric_stream"),
       }),
     );
     expect(command).toHaveBeenCalledWith(
@@ -1200,7 +1205,7 @@ describe("runClickHouseMigrations", () => {
     );
     expect(command).toHaveBeenCalledWith(
       expect.objectContaining({
-        query: expect.stringContaining("INSERT INTO postgres_fitness.metric_stream"),
+        query: expect.stringContaining("INSERT INTO ingest.metric_stream"),
       }),
     );
   });
@@ -1212,7 +1217,7 @@ describe("runClickHouseMigrations", () => {
         .fn()
         .mockResolvedValue(
           queryText.includes("system.tables")
-            ? [{ table_count: 1 }]
+            ? systemTablesQueryRows(queryText)
             : queryText.includes("system.databases")
               ? [{ engine: "PostgreSQL" }]
               : queryText.includes("0006_backfill_native_metric_stream")
@@ -1262,7 +1267,7 @@ describe("runClickHouseMigrations", () => {
         .fn()
         .mockResolvedValue(
           queryText.includes("system.tables")
-            ? [{ table_count: 1 }]
+            ? systemTablesQueryRows(queryText)
             : queryText.includes("system.databases")
               ? [{ engine: "Atomic" }]
               : queryText.includes("0006_backfill_native_metric_stream")
@@ -1277,7 +1282,7 @@ describe("runClickHouseMigrations", () => {
 
     const backfillStatements = command.mock.calls
       .map(([options]) => String(options.query))
-      .filter((queryText) => queryText.includes("INSERT INTO postgres_fitness.metric_stream"));
+      .filter((queryText) => queryText.includes("INSERT INTO ingest.metric_stream"));
     expect(backfillStatements).toHaveLength(288);
     expect(backfillStatements[0]).toContain(
       "metric_stream.recorded_at >= toDateTime64('2021-04-29 00:00:00.000', 6, 'UTC')",
@@ -1329,7 +1334,7 @@ describe("runClickHouseMigrations", () => {
     const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => ({
       json: vi.fn().mockResolvedValue(
         queryText.includes("system.tables")
-          ? [{ table_count: 1 }]
+          ? systemTablesQueryRows(queryText)
           : queryText.includes("system.databases")
             ? [{ engine: "Atomic" }]
             : queryText.includes("0006_backfill_native_metric_stream")
@@ -1353,7 +1358,7 @@ describe("runClickHouseMigrations", () => {
     expect(count).toBe(1);
     const backfillStatements = command.mock.calls
       .map(([options]) => String(options.query))
-      .filter((queryText) => queryText.includes("INSERT INTO postgres_fitness.metric_stream"));
+      .filter((queryText) => queryText.includes("INSERT INTO ingest.metric_stream"));
     expect(backfillStatements).toHaveLength(12);
     expect(backfillStatements[0]).toContain(
       "metric_stream.recorded_at >= toDateTime64('2026-04-22 01:00:00.000', 6, 'UTC')",
@@ -1372,7 +1377,7 @@ describe("runClickHouseMigrations", () => {
         .fn()
         .mockResolvedValue(
           queryText.includes("system.tables")
-            ? [{ table_count: 1 }]
+            ? systemTablesQueryRows(queryText)
             : queryText.includes("system.databases")
               ? [{ engine: "Atomic" }]
               : queryText.includes("0006_backfill_native_metric_stream")
@@ -1396,7 +1401,7 @@ describe("runClickHouseMigrations", () => {
     );
     expect(command).not.toHaveBeenCalledWith(
       expect.objectContaining({
-        query: expect.stringContaining("INSERT INTO postgres_fitness.metric_stream"),
+        query: expect.stringContaining("INSERT INTO ingest.metric_stream"),
       }),
     );
   });
@@ -1427,7 +1432,7 @@ describe("runClickHouseMigrations", () => {
         .fn()
         .mockResolvedValue(
           queryText.includes("system.tables")
-            ? [{ table_count: 1 }]
+            ? systemTablesQueryRows(queryText)
             : queryText.includes("system.databases")
               ? [{ engine: "Atomic" }]
               : queryText.includes("0006_backfill_native_metric_stream")
@@ -1477,11 +1482,11 @@ describe("runClickHouseMigrationStatement", () => {
     {
       statement:
         "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.deduped_sensor TO analytics.deduped_sensor AS SELECT 1",
-      waitedTables: ["postgres_fitness.metric_stream", "analytics.v_activity_members"],
+      waitedTables: ["ingest.metric_stream", "analytics.v_activity_members"],
     },
     {
       statement: "CREATE VIEW IF NOT EXISTS analytics.deduped_location AS SELECT 1",
-      waitedTables: ["postgres_fitness.metric_stream", "analytics.v_activity_members"],
+      waitedTables: ["ingest.metric_stream", "analytics.v_activity_members"],
     },
     {
       statement: "CREATE VIEW IF NOT EXISTS analytics.activity_summary AS SELECT 1",

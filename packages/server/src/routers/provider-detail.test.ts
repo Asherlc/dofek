@@ -269,7 +269,7 @@ describe("providerDetailRouter", () => {
       ["bodyMeasurements", "analytics.v_body_measurement", "recorded_at", "id"],
       ["foodEntries", "fitness.food_entry", "date", "id"],
       ["healthEvents", "fitness.health_event", "start_date", "id"],
-      ["metricStream", "postgres_fitness.metric_stream", "recorded_at", "id"],
+      ["metricStream", "ingest.metric_stream", "recorded_at", "id"],
       ["nutritionDaily", "fitness.v_nutrition_daily", "date", "date"],
       ["labPanels", "fitness.lab_panel", "recorded_at", "id"],
       ["labResults", "fitness.lab_result", "recorded_at", "id"],
@@ -605,8 +605,12 @@ describe("providerDetailRouter", () => {
 
       expect(mockExecute).not.toHaveBeenCalled();
       expect(sensorQuery).toHaveBeenCalledTimes(1);
-      expect(sensorQuery.mock.calls[0]?.[1]).toContain("postgres_fitness.metric_stream");
+      expect(sensorQuery.mock.calls[0]?.[1]).toContain("FROM ingest.metric_stream");
+      expect(sensorQuery.mock.calls[0]?.[1]).toContain(
+        "row_number() OVER (PARTITION BY id ORDER BY version DESC)",
+      );
       expect(sensorQuery.mock.calls[0]?.[1]).toContain("version_rank = 1");
+      expect(sensorQuery.mock.calls[0]?.[1]).toContain("is_deleted = 0");
       expect(result.rows).toHaveLength(1);
       expect(result.rows[0]?.channel).toBe("heart_rate");
     });

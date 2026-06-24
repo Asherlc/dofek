@@ -1,3 +1,5 @@
+import { METRIC_STREAM_TABLE } from "../metric-stream/clickhouse-table.ts";
+
 const sensorScalarChannels = [
   "heart_rate",
   "power",
@@ -82,9 +84,9 @@ SELECT
   metric_stream_rows.device_id AS device_id,
   assumeNotNull(metric_stream_rows.scalar) AS scalar,
   coalesce(device_priority_match.priority, active_sensor_provider_priority.priority, 1000) AS provider_priority,
-  metric_stream_rows._peerdb_synced_at AS _peerdb_synced_at,
-  metric_stream_rows._peerdb_is_deleted AS _peerdb_is_deleted,
-  metric_stream_rows._peerdb_version AS _peerdb_version
+  metric_stream_rows.ingested_at AS _peerdb_synced_at,
+  metric_stream_rows.is_deleted AS _peerdb_is_deleted,
+  metric_stream_rows.version AS _peerdb_version
 FROM metric_stream_rows
 LEFT JOIN active_sensor_provider_priority
   ON active_sensor_provider_priority.provider_id = metric_stream_rows.provider_id
@@ -127,7 +129,7 @@ export function buildSensorScalarSampleBackfillSql(recordedAtRange?: RecordedAtR
   _peerdb_is_deleted,
   _peerdb_version
 )
-${sensorScalarSampleSelectSql("postgres_fitness.metric_stream", " FINAL", recordedAtRange)}`;
+${sensorScalarSampleSelectSql(METRIC_STREAM_TABLE, " FINAL", recordedAtRange)}`;
 }
 
 function buildDedupedSensorTableSql(): string {

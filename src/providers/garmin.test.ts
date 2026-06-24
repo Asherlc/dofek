@@ -83,6 +83,20 @@ const providerActivityAbsenceMocks = vi.hoisted(() => ({
   upsertProviderActivity: vi.fn().mockResolvedValue({ id: "activity-id" }),
 }));
 
+const clickHouseMocks = vi.hoisted(() => {
+  const query = vi.fn();
+  const close = vi.fn();
+  return {
+    query,
+    close,
+    createClickHouseClientFromEnv: vi.fn(() => ({ query, close })),
+  };
+});
+
+vi.mock("../db/clickhouse.ts", () => ({
+  createClickHouseClientFromEnv: clickHouseMocks.createClickHouseClientFromEnv,
+}));
+
 vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
 }));
@@ -554,6 +568,11 @@ describe("GarminProvider.sync()", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     publishedMetricStreamBatches.length = 0;
+    delete process.env.CLICKHOUSE_URL;
+    clickHouseMocks.createClickHouseClientFromEnv.mockClear();
+    clickHouseMocks.query.mockReset();
+    clickHouseMocks.query.mockResolvedValue({ json: async () => [] });
+    clickHouseMocks.close.mockClear();
     providerActivityAbsenceMocks.markProviderActivityAbsent.mockClear();
     providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
     providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue({

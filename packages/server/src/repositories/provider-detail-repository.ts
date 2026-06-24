@@ -45,7 +45,7 @@ export function tableInfo(dataType: DataType): {
       return { table: "fitness.health_event", orderColumn: "start_date", idColumn: "id" };
     case "metricStream":
       return {
-        table: "postgres_fitness.metric_stream",
+        table: "ingest.metric_stream",
         orderColumn: "recorded_at",
         idColumn: "id",
       };
@@ -231,7 +231,7 @@ export class ProviderDetailRepository {
   readonly #userId: string;
   // ClickHouse query runner. Serves the read-models that have moved off
   // Postgres: body measurements (analytics.v_body_measurement) and the
-  // Redpanda-fed metric stream (postgres_fitness.metric_stream).
+  // Redpanda-fed metric stream (ingest.metric_stream).
   readonly #clickHouse: BodyClickHouseStore | undefined;
 
   constructor(
@@ -325,7 +325,7 @@ export class ProviderDetailRepository {
       {
         userId: this.#userId,
         providerId,
-        recordId: recordId ?? "",
+        ...(recordId ? { recordId } : {}),
         limit,
         offset,
       },
@@ -335,7 +335,7 @@ export class ProviderDetailRepository {
   /**
    * Raw metric-stream rows for a provider, read from the Redpanda-fed ClickHouse
    * mirror (Postgres `fitness.metric_stream` is retired). Version-deduplicated
-   * via `row_number()` over `_peerdb_version` (avoids a full-table `FINAL` merge
+   * via `row_number()` over `version` (avoids a full-table `FINAL` merge
    * on large continuous streams such as WHOOP heart rate); recorded_at formatted
    * to ISO-8601 Z.
    */
@@ -376,15 +376,15 @@ export class ProviderDetailRepository {
             channel,
             activity_id,
             scalar,
-            _peerdb_is_deleted,
-            row_number() OVER (PARTITION BY id ORDER BY _peerdb_version DESC) AS version_rank
-          FROM postgres_fitness.metric_stream
+            is_deleted,
+            row_number() OVER (PARTITION BY id ORDER BY version DESC) AS version_rank
+          FROM ingest.metric_stream
           WHERE user_id = {userId:UUID}
             AND provider_id = {providerId:String}
             ${recordFilter}
         ) AS ranked_versions
         WHERE version_rank = 1
-          AND _peerdb_is_deleted = 0
+          AND is_deleted = 0
         ORDER BY recorded_at DESC
         LIMIT {limit:UInt32}
         OFFSET {offset:UInt32}
@@ -392,7 +392,7 @@ export class ProviderDetailRepository {
       {
         userId: this.#userId,
         providerId,
-        recordId: recordId ?? "",
+        ...(recordId ? { recordId } : {}),
         limit,
         offset,
       },

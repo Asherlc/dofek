@@ -5,6 +5,10 @@ import { z } from "zod";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
 import { buildClickHouseBootstrapStatementsForNativeMetricStream } from "../../../../src/db/clickhouse-metric-stream-bootstrap.ts";
 import type { BodyClickHouseStore } from "./body-clickhouse.ts";
+import {
+  type MetricStreamSeedRow,
+  seedMetricStreamRows,
+} from "./metric-stream-integration-test-helpers.ts";
 import { ProviderDetailRepository } from "./provider-detail-repository.ts";
 
 // metricStream reads only touch ClickHouse; the repository still requires a
@@ -15,16 +19,6 @@ const noopDb: Pick<Database, "execute" | "transaction"> = {
 };
 
 const testUserId = "00000000-0000-0000-0000-0000000000b2";
-
-interface SeedRow {
-  id: string;
-  recorded_at: string;
-  provider_id: string;
-  channel: string;
-  scalar: number;
-  _peerdb_is_deleted: 0 | 1;
-  _peerdb_version: number;
-}
 
 const client = createClickHouseClientFromEnv();
 
@@ -38,22 +32,8 @@ const clickHouse: BodyClickHouseStore = {
   },
 };
 
-async function seed(rows: SeedRow[]): Promise<void> {
-  await client.insert?.({
-    table: "postgres_fitness.metric_stream",
-    format: "JSONEachRow",
-    values: rows.map((row) => ({
-      id: row.id,
-      user_id: testUserId,
-      recorded_at: row.recorded_at,
-      provider_id: row.provider_id,
-      channel: row.channel,
-      scalar: row.scalar,
-      _peerdb_is_deleted: row._peerdb_is_deleted,
-      _peerdb_synced_at: "2026-04-12 00:00:00.000",
-      _peerdb_version: row._peerdb_version,
-    })),
-  });
+async function seed(rows: MetricStreamSeedRow[]): Promise<void> {
+  await seedMetricStreamRows(client, testUserId, rows);
 }
 
 const rowSchema = z.object({
@@ -72,7 +52,7 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
       await client.command({ query: statement });
     }
     await client.command({
-      query: "DELETE FROM postgres_fitness.metric_stream WHERE user_id = {userId:UUID}",
+      query: "DELETE FROM ingest.metric_stream WHERE user_id = {userId:UUID}",
       query_params: { userId: testUserId },
     });
     await seed([
@@ -82,8 +62,8 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
         provider_id: "withings",
         channel: "heart_rate",
         scalar: 60,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 0,
+        is_deleted: 0,
+        version: 0,
       },
       {
         id: randomUUID(),
@@ -91,8 +71,8 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
         provider_id: "withings",
         channel: "body_weight",
         scalar: 80,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 0,
+        is_deleted: 0,
+        version: 0,
       },
       // version dedup: v1 (90) supersedes v0 (50)
       {
@@ -101,8 +81,8 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
         provider_id: "withings",
         channel: "body_weight",
         scalar: 50,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 0,
+        is_deleted: 0,
+        version: 0,
       },
       {
         id: supersededId,
@@ -110,8 +90,8 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
         provider_id: "withings",
         channel: "body_weight",
         scalar: 90,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 1,
+        is_deleted: 0,
+        version: 1,
       },
       // excluded: deleted + other provider
       {
@@ -120,8 +100,8 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
         provider_id: "withings",
         channel: "heart_rate",
         scalar: 70,
-        _peerdb_is_deleted: 1,
-        _peerdb_version: 1,
+        is_deleted: 1,
+        version: 1,
       },
       {
         id: randomUUID(),
@@ -129,15 +109,15 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
         provider_id: "fitbit",
         channel: "heart_rate",
         scalar: 65,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 0,
+        is_deleted: 0,
+        version: 0,
       },
     ]);
   }, 120_000);
 
   afterAll(async () => {
     await client.command({
-      query: "DELETE FROM postgres_fitness.metric_stream WHERE user_id = {userId:UUID}",
+      query: "DELETE FROM ingest.metric_stream WHERE user_id = {userId:UUID}",
       query_params: { userId: testUserId },
     });
     await client.close?.();

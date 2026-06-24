@@ -19,7 +19,7 @@ describe("tableInfo", () => {
     ["bodyMeasurements", "analytics.v_body_measurement", "recorded_at", "id"],
     ["foodEntries", "fitness.food_entry", "date", "id"],
     ["healthEvents", "fitness.health_event", "start_date", "id"],
-    ["metricStream", "postgres_fitness.metric_stream", "recorded_at", "id"],
+    ["metricStream", "ingest.metric_stream", "recorded_at", "id"],
     ["nutritionDaily", "fitness.v_nutrition_daily", "date", "date"],
     ["labPanels", "fitness.lab_panel", "recorded_at", "id"],
     ["labResults", "fitness.lab_result", "recorded_at", "id"],
@@ -203,7 +203,6 @@ describe("ProviderDetailRepository", () => {
       expect(query.mock.calls[0]?.[2]).toStrictEqual({
         userId: "user-1",
         providerId: "withings",
-        recordId: "",
         limit: 10,
         offset: 5,
       });
@@ -226,18 +225,17 @@ describe("ProviderDetailRepository", () => {
 
       expect(query).toHaveBeenCalledTimes(1);
       // Reads the deduped Redpanda-fed mirror, not Postgres.
-      expect(query.mock.calls[0]?.[1]).toContain("FROM postgres_fitness.metric_stream");
+      expect(query.mock.calls[0]?.[1]).toContain("FROM ingest.metric_stream");
       expect(query.mock.calls[0]?.[1]).toContain(
-        "row_number() OVER (PARTITION BY id ORDER BY _peerdb_version DESC)",
+        "row_number() OVER (PARTITION BY id ORDER BY version DESC)",
       );
       expect(query.mock.calls[0]?.[1]).toContain("version_rank = 1");
-      expect(query.mock.calls[0]?.[1]).toContain("_peerdb_is_deleted = 0");
+      expect(query.mock.calls[0]?.[1]).toContain("is_deleted = 0");
       // recorded_at is rendered in UTC so the literal 'Z' suffix is accurate.
       expect(query.mock.calls[0]?.[1]).toContain("'%Y-%m-%dT%H:%i:%S.%fZ', 'UTC'");
       expect(query.mock.calls[0]?.[2]).toStrictEqual({
         userId: "user-1",
         providerId: "whoop",
-        recordId: "",
         limit: 10,
         offset: 5,
       });
@@ -484,7 +482,7 @@ describe("ProviderDetailRepository", () => {
         idColumn: "id",
       });
       expect(tableInfo("metricStream")).toStrictEqual({
-        table: "postgres_fitness.metric_stream",
+        table: "ingest.metric_stream",
         orderColumn: "recorded_at",
         idColumn: "id",
       });

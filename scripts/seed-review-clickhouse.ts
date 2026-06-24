@@ -10,8 +10,28 @@ interface ReviewRawTableCopy {
   sourceTable: string;
   columns: readonly string[];
   selectExpressions: readonly string[];
+  metadataColumns?: readonly string[];
+  metadataExpressions?: readonly string[];
   whereClause?: string;
 }
+
+const peerDbMetadataColumns = [
+  "_peerdb_synced_at",
+  "_peerdb_is_deleted",
+  "_peerdb_version",
+] as const;
+const peerDbMetadataExpressions = [
+  "now64(9)",
+  "0",
+  "toInt64(toUnixTimestamp64Micro(now64(6)))",
+] as const;
+
+const ingestMetricStreamMetadataColumns = ["ingested_at", "is_deleted", "version"] as const;
+const ingestMetricStreamMetadataExpressions = [
+  "now64(9)",
+  "0",
+  "toInt64(toUnixTimestamp64Micro(now64(6)))",
+] as const;
 
 const seedProviderIds = ["whoop", "apple_health", "strava", "bodyspec", "manual_review"];
 const seedProviderList = seedProviderIds.map(clickHouseStringLiteral).join(", ");
@@ -151,7 +171,7 @@ const reviewRawTableCopies: readonly ReviewRawTableCopy[] = [
     whereClause: `user_id = ${clickHouseStringLiteral(USER_ID)}`,
   },
   {
-    targetTable: "postgres_fitness.metric_stream",
+    targetTable: "ingest.metric_stream",
     sourceTable: "metric_stream",
     columns: [
       "recorded_at",
@@ -180,6 +200,8 @@ const reviewRawTableCopies: readonly ReviewRawTableCopy[] = [
       "id",
     ],
     whereClause: `user_id = ${clickHouseStringLiteral(USER_ID)}`,
+    metadataColumns: ingestMetricStreamMetadataColumns,
+    metadataExpressions: ingestMetricStreamMetadataExpressions,
   },
 ];
 
@@ -229,10 +251,10 @@ function buildCopyStatement(
   tableCopy: ReviewRawTableCopy,
 ): string {
   const source = buildReviewPostgresTableFunction(postgresConnectionString, tableCopy.sourceTable);
-  const peerDbColumns = ["_peerdb_synced_at", "_peerdb_is_deleted", "_peerdb_version"];
-  const peerDbExpressions = ["now64(9)", "0", "toInt64(toUnixTimestamp64Micro(now64(6)))"];
-  const allColumns = [...tableCopy.columns, ...peerDbColumns];
-  const allExpressions = [...tableCopy.selectExpressions, ...peerDbExpressions];
+  const metadataColumns = tableCopy.metadataColumns ?? peerDbMetadataColumns;
+  const metadataExpressions = tableCopy.metadataExpressions ?? peerDbMetadataExpressions;
+  const allColumns = [...tableCopy.columns, ...metadataColumns];
+  const allExpressions = [...tableCopy.selectExpressions, ...metadataExpressions];
   const whereClause = tableCopy.whereClause ? `\nWHERE ${tableCopy.whereClause}` : "";
 
   return `INSERT INTO ${tableCopy.targetTable} (${allColumns.join(", ")})

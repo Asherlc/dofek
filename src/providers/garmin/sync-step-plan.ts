@@ -1,10 +1,11 @@
+import { captureException } from "@sentry/node";
 import { and, eq, gte, isNotNull, lt, lte, or } from "drizzle-orm";
 import { z } from "zod";
+import { createClickHouseClientFromEnv } from "../../db/clickhouse.ts";
 import type { SyncDatabase } from "../../db/index.ts";
 import { dailyMetrics, sleepSession } from "../../db/schema.ts";
 import { HEART_RATE, STRESS } from "../../db/sensor-channels.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
-import { logger } from "../../logger.ts";
 import type { GarminSyncStep } from "./sync-checkpoint.ts";
 
 export interface GarminSyncPlanContext {
@@ -138,19 +139,18 @@ async function listGarminDatesWithMetricStreamChannel(
     return new Set();
   }
 
-  const { createClickHouseClientFromEnv } = await import("../../db/clickhouse.ts");
   const client = createClickHouseClientFromEnv();
   try {
     const result = await client.query({
       query: `
         SELECT DISTINCT toString(toDate(recorded_at)) AS date
-        FROM postgres_fitness.metric_stream FINAL
+        FROM ingest.metric_stream FINAL
         WHERE user_id = {userId:UUID}
           AND provider_id = {providerId:String}
           AND channel = {channel:String}
           AND recorded_at >= parseDateTime64BestEffort({rangeStart:String})
           AND recorded_at < parseDateTime64BestEffort({rangeEnd:String})
-          AND _peerdb_is_deleted = 0
+          AND is_deleted = 0
       `,
       format: "JSONEachRow",
       query_params: {
@@ -164,10 +164,11 @@ async function listGarminDatesWithMetricStreamChannel(
     const rows = z.array(metricStreamDateRowSchema).parse(await result.json());
     return new Set(rows.map((row) => row.date));
   } catch (error) {
-    logger.warn(
-      `[garmin] ClickHouse metric-stream query failed for ${channel}: ${error instanceof Error ? error.message : String(error)}`,
-    );
-    return new Set();
+    captureException(error, {
+      tags: { provider: "garmin", operation: "metric_stream_date_query" },
+      extra: { channel, providerId: context.providerId },
+    });
+    throw error;
   } finally {
     await client.close?.();
   }

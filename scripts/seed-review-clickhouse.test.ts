@@ -20,9 +20,13 @@ describe("seed-review-clickhouse", () => {
     );
 
     expect(statements).toContain("TRUNCATE TABLE IF EXISTS postgres_fitness.activity");
-    expect(statements).toContain("TRUNCATE TABLE IF EXISTS postgres_fitness.metric_stream");
+    expect(statements).toContain("TRUNCATE TABLE IF EXISTS ingest.metric_stream");
     expect(statements.join("\n")).toContain("INSERT INTO postgres_fitness.activity");
-    expect(statements.join("\n")).toContain("INSERT INTO postgres_fitness.metric_stream");
+    expect(statements.join("\n")).toContain("INSERT INTO ingest.metric_stream");
+    expect(statements.join("\n")).toContain("ingested_at, is_deleted, version");
+    expect(statements.join("\n")).not.toContain(
+      "INSERT INTO ingest.metric_stream (recorded_at, user_id, provider_id, external_id, device_id, source_type, channel, activity_id, scalar, point, id, _peerdb_synced_at",
+    );
     expect(statements.join("\n")).toContain(
       "WHERE user_id = '00000000-0000-0000-0000-000000000001'",
     );

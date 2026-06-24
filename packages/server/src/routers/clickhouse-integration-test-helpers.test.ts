@@ -104,7 +104,7 @@ describe("clickhouse integration test helpers", () => {
     expect(
       setupCommands.some(
         (command) =>
-          command.includes("CREATE TABLE IF NOT EXISTS postgres_fitness_test_") &&
+          command.includes("CREATE TABLE IF NOT EXISTS ingest_test_") &&
           command.includes(".metric_stream"),
       ),
     ).toBe(true);
@@ -300,7 +300,7 @@ describe("clickhouse integration test helpers", () => {
         (command) =>
           command.includes("INSERT INTO analytics_test_") &&
           command.includes(".sensor_scalar_sample") &&
-          command.includes("FROM postgres_fitness_test_"),
+          command.includes("FROM ingest_test_"),
       ),
     ).toBe(true);
     expect(
