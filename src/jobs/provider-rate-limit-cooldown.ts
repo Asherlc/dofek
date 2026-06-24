@@ -337,5 +337,6 @@ export function providerRateLimitCooldownJobId(
   cooldown: ProviderRateLimitCooldown,
   jobUserId: string,
 ): string {
-  return `${KEY_PREFIX}-${cooldown.providerId}-${cooldown.scope}-${cooldown.userId ?? jobUserId}-${cooldown.expiresAt.getTime()}`;
+  const suffix = cooldown.scope === "provider" ? "" : `-${cooldown.userId ?? jobUserId}`;
+  return `${KEY_PREFIX}-${cooldown.providerId}-${cooldown.scope}${suffix}-${cooldown.expiresAt.getTime()}`;
 }

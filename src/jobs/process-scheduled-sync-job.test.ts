@@ -7,6 +7,9 @@ const providerQueues = new Map<
     add: ReturnType<typeof vi.fn>;
     getJobs: ReturnType<typeof vi.fn>;
     getJob: ReturnType<typeof vi.fn>;
+    getActive: ReturnType<typeof vi.fn>;
+    getWaiting: ReturnType<typeof vi.fn>;
+    getDelayed: ReturnType<typeof vi.fn>;
   }
 >();
 const mockLoggerInfo = vi.fn();
@@ -20,6 +23,9 @@ function getMockQueue(providerId: string) {
     add: vi.fn((..._args: unknown[]) => Promise.resolve({ id: "job-1" })),
     getJobs: vi.fn(async () => []),
     getJob: vi.fn(async () => undefined),
+    getActive: vi.fn(async () => []),
+    getWaiting: vi.fn(async () => []),
+    getDelayed: vi.fn(async () => []),
   };
   providerQueues.set(providerId, queue);
   return queue;
@@ -195,7 +201,7 @@ describe("processScheduledSyncJob", () => {
 
   it("skips enqueue when a step-chain provider already has pending sync jobs", async () => {
     const garminQueue = getMockQueue("garmin");
-    garminQueue.getJobs = vi.fn().mockResolvedValue([
+    garminQueue.getActive = vi.fn().mockResolvedValue([
       {
         data: {
           userId: "user-1",

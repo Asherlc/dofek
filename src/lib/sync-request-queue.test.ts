@@ -1,9 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncJobData } from "../jobs/queues.ts";
 
-const mockGetJobs = vi.fn();
+const mockGetActive = vi.fn();
+const mockGetWaiting = vi.fn();
+const mockGetDelayed = vi.fn();
 vi.mock("../jobs/queues.ts", () => ({
-  getProviderSyncQueue: vi.fn(() => ({ getJobs: mockGetJobs })),
+  getProviderSyncQueue: vi.fn(() => ({
+    getActive: mockGetActive,
+    getWaiting: mockGetWaiting,
+    getDelayed: mockGetDelayed,
+  })),
 }));
 
 const mockSyncApiQueryKey = vi.fn();
@@ -21,27 +27,29 @@ const { listProviderSyncJobsForUser, listPendingSyncRequestQueryKeys } = await i
   "./sync-request-queue.ts"
 );
 
-const PENDING_SYNC_JOB_STATES = ["active", "waiting", "delayed"];
-
 function job(data: Partial<SyncJobData>) {
   return { data: { userId: "user-1", ...data } };
 }
 
 describe("listProviderSyncJobsForUser", () => {
-  it("calls getJobs with pending states", async () => {
-    mockGetJobs.mockResolvedValue([]);
-
-    await listProviderSyncJobsForUser("garmin", "user-1");
-
-    expect(mockGetJobs).toHaveBeenCalledWith([...PENDING_SYNC_JOB_STATES]);
+  beforeEach(() => {
+    mockGetActive.mockResolvedValue([]);
+    mockGetWaiting.mockResolvedValue([]);
+    mockGetDelayed.mockResolvedValue([]);
   });
 
-  it("filters jobs by userId", async () => {
-    mockGetJobs.mockResolvedValue([
-      job({ userId: "user-1" }),
-      job({ userId: "user-2" }),
-      job({ userId: "user-1" }),
-    ]);
+  it("fetches from active, waiting, and delayed queues", async () => {
+    await listProviderSyncJobsForUser("garmin", "user-1");
+
+    expect(mockGetActive).toHaveBeenCalledOnce();
+    expect(mockGetWaiting).toHaveBeenCalledOnce();
+    expect(mockGetDelayed).toHaveBeenCalledWith(0, 49);
+  });
+
+  it("filters jobs by userId across all job states", async () => {
+    mockGetActive.mockResolvedValue([job({ userId: "user-1" })]);
+    mockGetWaiting.mockResolvedValue([job({ userId: "user-2" })]);
+    mockGetDelayed.mockResolvedValue([job({ userId: "user-1" })]);
 
     const result = await listProviderSyncJobsForUser("garmin", "user-1");
 
@@ -50,16 +58,12 @@ describe("listProviderSyncJobsForUser", () => {
   });
 
   it("returns empty array when no jobs match userId", async () => {
-    mockGetJobs.mockResolvedValue([job({ userId: "user-2" }), job({ userId: "user-3" })]);
-
     const result = await listProviderSyncJobsForUser("garmin", "user-1");
 
     expect(result).toHaveLength(0);
   });
 
   it("returns empty array when queue has no jobs", async () => {
-    mockGetJobs.mockResolvedValue([]);
-
     const result = await listProviderSyncJobsForUser("garmin", "user-1");
 
     expect(result).toHaveLength(0);
@@ -67,8 +71,14 @@ describe("listProviderSyncJobsForUser", () => {
 });
 
 describe("listPendingSyncRequestQueryKeys", () => {
+  beforeEach(() => {
+    mockGetActive.mockResolvedValue([]);
+    mockGetWaiting.mockResolvedValue([]);
+    mockGetDelayed.mockResolvedValue([]);
+  });
+
   it("collects query keys for jobs with queries", async () => {
-    mockGetJobs.mockResolvedValue([
+    mockGetActive.mockResolvedValue([
       job({ userId: "user-1", sinceIso: "2026-01-01T00:00:00Z" }),
       job({ userId: "user-1", sinceIso: "2026-02-01T00:00:00Z" }),
     ]);
@@ -89,7 +99,7 @@ describe("listPendingSyncRequestQueryKeys", () => {
   });
 
   it("deduplicates identical query keys", async () => {
-    mockGetJobs.mockResolvedValue([
+    mockGetActive.mockResolvedValue([
       job({ userId: "user-1", sinceIso: "2026-01-01T00:00:00Z" }),
       job({ userId: "user-1", sinceIso: "2026-01-01T00:00:00Z" }),
     ]);
@@ -108,7 +118,7 @@ describe("listPendingSyncRequestQueryKeys", () => {
   });
 
   it("skips jobs where resolveSyncRequestQuery returns null", async () => {
-    mockGetJobs.mockResolvedValue([job({ userId: "user-1", sinceIso: "2026-01-01T00:00:00Z" })]);
+    mockGetActive.mockResolvedValue([job({ userId: "user-1", sinceIso: "2026-01-01T00:00:00Z" })]);
 
     mockResolveSyncRequestQuery.mockReturnValue(null);
 
@@ -118,7 +128,9 @@ describe("listPendingSyncRequestQueryKeys", () => {
   });
 
   it("returns empty set when queue has no jobs", async () => {
-    mockGetJobs.mockResolvedValue([]);
+    mockGetActive.mockResolvedValue([]);
+    mockGetWaiting.mockResolvedValue([]);
+    mockGetDelayed.mockResolvedValue([]);
 
     const result = await listPendingSyncRequestQueryKeys("garmin", "user-1");
 

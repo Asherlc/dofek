@@ -84,7 +84,6 @@ describe("enqueueSyncJob", () => {
     );
 
     expect(retryAt).toBe("2026-06-02T12:10:00.000Z");
-    expect(mockGetActive).toHaveBeenCalledWith("garmin", "user-1");
     expect(mockProviderQueueAdd).toHaveBeenCalledWith(
       "sync",
       {
