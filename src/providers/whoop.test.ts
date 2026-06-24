@@ -981,11 +981,7 @@ describe("WhoopProvider.sync() — token resolution", () => {
       }),
     );
 
-    expect(deleteTokens).toHaveBeenCalledWith(
-      db,
-      "whoop",
-      "00000000-0000-0000-0000-000000000001",
-    );
+    expect(deleteTokens).toHaveBeenCalledWith(db, "whoop", "00000000-0000-0000-0000-000000000001");
     expect(result.errors[0]?.message).toContain("refresh token was revoked or expired");
     expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "refresh_token_revoked" });
   });

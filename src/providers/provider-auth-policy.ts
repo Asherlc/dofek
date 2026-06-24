@@ -1,5 +1,5 @@
-import type { Provider, ProviderAuthSetup, ProviderAuthType } from "./types.ts";
 import { CUSTOM_AUTH_SYNC_PROVIDER_IDS } from "../lib/custom-auth-providers.ts";
+import type { Provider, ProviderAuthSetup, ProviderAuthType } from "./types.ts";
 
 /**
  * Sync providers that predated the per-user auth requirement and still use

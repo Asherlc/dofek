@@ -4,10 +4,7 @@ import type { TokenSet } from "../../auth/oauth.ts";
 import type { SyncDatabase } from "../../db/index.ts";
 import { deleteTokens, loadTokens, saveTokens } from "../../db/tokens.ts";
 import { logger } from "../../logger.ts";
-import {
-  ProviderStoredIdentityMissingError,
-  RefreshTokenRevokedError,
-} from "../auth-errors.ts";
+import { ProviderStoredIdentityMissingError, RefreshTokenRevokedError } from "../auth-errors.ts";
 
 export const WHOOP_PROVIDER_ID = "whoop";
 export const WHOOP_ACCESS_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;

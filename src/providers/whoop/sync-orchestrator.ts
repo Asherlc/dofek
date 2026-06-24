@@ -6,6 +6,7 @@ import type { SyncRun } from "../sync-run.ts";
 import { SyncWindow } from "../sync-window.ts";
 import type { SyncError, SyncResult } from "../types.ts";
 import { findWhoopRateLimitError, isWhoopRateLimitError } from "./rate-limit.ts";
+import { resolveWhoopTokens } from "./resolve-tokens.ts";
 import {
   applyRateLimitToCheckpoint,
   createWhoopSyncCheckpoint,
@@ -21,7 +22,6 @@ import { syncWhoopSleepSessions, syncWhoopSleepStagesForId } from "./sync-sleep.
 import { planWhoopApiSteps } from "./sync-step-plan.ts";
 import { syncWhoopHeartRateForWindow } from "./sync-streams.ts";
 import type { WhoopPersistenceContext, WhoopSyncContext } from "./sync-types.ts";
-import { resolveWhoopTokens } from "./resolve-tokens.ts";
 import {
   fetchWhoopDeveloperWorkoutsPage,
   persistWhoopWorkoutsFromCycles,

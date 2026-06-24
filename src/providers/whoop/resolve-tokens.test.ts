@@ -17,6 +17,15 @@ vi.mock("../../db/tokens.ts", () => ({
 
 const { deleteTokens, loadTokens, saveTokens } = await import("../../db/tokens.ts");
 
+function makeDb(): SyncDatabase {
+  return {
+    select: vi.fn(),
+    insert: vi.fn(),
+    delete: vi.fn(),
+    execute: vi.fn(),
+  };
+}
+
 describe("parseWhoopUserIdFromScopes", () => {
   it("extracts userId from scopes", () => {
     expect(parseWhoopUserIdFromScopes("userId:10129")).toBe(10129);
@@ -55,7 +64,7 @@ describe("buildWhoopTokenSet", () => {
 
 describe("saveWhoopAuthTokens", () => {
   it("persists tokens for the whoop provider", async () => {
-    const db = {} as SyncDatabase;
+    const db = makeDb();
     await saveWhoopAuthTokens(
       db,
       { accessToken: "access", refreshToken: "refresh", userId: 7 },
@@ -98,9 +107,7 @@ describe("resolveWhoopTokens", () => {
       return Promise.resolve(new Response("Not found", { status: 404 }));
     };
 
-    await expect(
-      resolveWhoopTokens({ db: {} as SyncDatabase, fetchFn, userId: "user-1" }),
-    ).resolves.toEqual({
+    await expect(resolveWhoopTokens({ db: makeDb(), fetchFn, userId: "user-1" })).resolves.toEqual({
       accessToken: "stored-access",
       refreshToken: "stored-refresh",
       userId: 12345,
@@ -124,9 +131,7 @@ describe("resolveWhoopTokens", () => {
       userId: null,
     });
 
-    await expect(
-      resolveWhoopTokens({ db: {} as SyncDatabase, userId: "user-1" }),
-    ).resolves.toEqual({
+    await expect(resolveWhoopTokens({ db: makeDb(), userId: "user-1" })).resolves.toEqual({
       accessToken: "new-access",
       refreshToken: "new-refresh",
       userId: 12345,
@@ -147,9 +152,11 @@ describe("resolveWhoopTokens", () => {
 
     const refreshSpy = vi
       .spyOn(WhoopClient, "refreshAccessToken")
-      .mockRejectedValue(new Error("WHOOP Cognito NotAuthorizedException: Incorrect username or password."));
+      .mockRejectedValue(
+        new Error("WHOOP Cognito NotAuthorizedException: Incorrect username or password."),
+      );
 
-    const db = {} as SyncDatabase;
+    const db = makeDb();
     await expect(resolveWhoopTokens({ db, userId: "user-1" })).rejects.toMatchObject({
       authFailureReason: "refresh_token_revoked",
     });

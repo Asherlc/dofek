@@ -4,13 +4,13 @@ import type { SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
 import { runWithTokenUser } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
+import { providerRequiresStoredTokens } from "../lib/custom-auth-providers.ts";
 import { isRetryableInfraError } from "../lib/retryable-infra-error.ts";
 import { logger } from "../logger.ts";
 import {
   authFailureReasonFromError,
   type ProviderAuthFailureReason,
 } from "../providers/auth-errors.ts";
-import { providerRequiresStoredTokens } from "../lib/custom-auth-providers.ts";
 import { SyncRun } from "../providers/sync-run.ts";
 import type { SyncCheckpointStore, SyncError } from "../providers/types.ts";
 import {
