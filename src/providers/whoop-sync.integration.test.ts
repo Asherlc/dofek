@@ -314,7 +314,7 @@ describe("WhoopProvider.sync() (integration)", () => {
       accessToken: "fake-access",
       refreshToken: "fake-refresh",
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-      scopes: "",
+      scopes: "userId:10129",
     });
   }, 60_000);
 

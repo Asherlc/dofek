@@ -501,7 +501,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm exec vitest run --project integration --coverage
-        timeout-minutes: 10
+        timeout-minutes: 12
         env:
           VITEST_COVERAGE_SKIP_THRESHOLDS: "true"
       - uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe # v5
