@@ -16,6 +16,23 @@ import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 import type { SyncOptions } from "./types.ts";
 
+const drizzleMocks = vi.hoisted<{
+  inArrayValues: unknown[];
+}>(() => ({
+  inArrayValues: [],
+}));
+
+vi.mock("drizzle-orm", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("drizzle-orm")>();
+  return {
+    ...actual,
+    inArray: (...args: Parameters<typeof actual.inArray>) => {
+      drizzleMocks.inArrayValues.push(args[1]);
+      return actual.inArray(...args);
+    },
+  };
+});
+
 vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
@@ -567,6 +584,7 @@ describe("GarminProvider.sync()", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    drizzleMocks.inArrayValues.length = 0;
     publishedMetricStreamBatches.length = 0;
     delete process.env.CLICKHOUSE_URL;
     clickHouseMocks.createClickHouseClientFromEnv.mockClear();
@@ -818,6 +836,23 @@ describe("GarminProvider.sync()", () => {
 
     expect(mocks.client.getActivityDetail).not.toHaveBeenCalled();
     expect(result.recordsSynced).toBe(1);
+  });
+
+  it("looks up existing activities using external ids from the activity page", async () => {
+    const rawActivity = { activityId: 123, deviceName: "Forerunner 955" };
+    mocks.client.getActivities.mockResolvedValue([rawActivity]);
+    mocks.parseConnectActivity.mockReturnValue({
+      externalId: "123",
+      activityType: "running",
+      name: "Morning Run",
+      startedAt: new Date("2026-03-01T10:00:00Z"),
+      endedAt: new Date("2026-03-01T11:00:00Z"),
+      raw: rawActivity,
+    });
+
+    await syncProvider(provider, db, new Date("2026-02-01T00:00:00Z"));
+
+    expect(drizzleMocks.inArrayValues).toContainEqual(["123"]);
   });
 
   it("syncs detail streams without activity id when upsert returns no row", async () => {
@@ -1618,11 +1653,37 @@ describe("GarminProvider.sync()", () => {
         phase: "api",
         stepIndex: 1,
         steps: expect.arrayContaining([
-          { type: "activities_list" },
+          { type: "activities_list", offset: 0 },
           { type: "activity_reconcile" },
         ]),
       }),
     );
+  });
+
+  it("reports paginated activity list progress with offset", async () => {
+    const progressMessages: string[] = [];
+    const checkpointStore = {
+      load: vi.fn().mockResolvedValue({
+        ...createGarminSyncCheckpoint([
+          { type: "activities_list", offset: 50 },
+          { type: "activity_reconcile" },
+        ]),
+        stepIndex: 0,
+      }),
+      save: vi.fn().mockResolvedValue(undefined),
+      clear: vi.fn().mockResolvedValue(undefined),
+    };
+    mocks.client.getActivities.mockResolvedValue([]);
+
+    await syncProvider(provider, db, new Date(), {
+      checkpoint: checkpointStore,
+      enqueueSyncContinuation: vi.fn(async () => undefined),
+      onProgress: (_percentage, message) => {
+        progressMessages.push(message);
+      },
+    });
+
+    expect(progressMessages).toContain("Activity list (offset 50)");
   });
 
   it("runs all steps in one job when no continuation hook is provided", async () => {

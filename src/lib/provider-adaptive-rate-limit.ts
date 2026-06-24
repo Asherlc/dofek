@@ -68,9 +68,6 @@ async function awaitThrottleWithStore(
   const nowMs = Date.now();
   const state = slideAdaptiveWindow(await loadOrCreate(providerId, scope, userId), nowMs);
   await sleep(throttleDelayMs(state, nowMs));
-  if (isStepChainSyncProvider(providerId) && isInsideSyncStepAdmission()) {
-    return;
-  }
   const touchedAtMs = Date.now();
   const touchedState = slideAdaptiveWindow(state, touchedAtMs);
   await save(recordAdaptiveThrottleTouch(touchedState, touchedAtMs));

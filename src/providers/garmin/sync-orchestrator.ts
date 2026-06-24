@@ -119,7 +119,7 @@ function syncErrorLabelForStep(step: GarminSyncStep): string {
 function describeStep(step: GarminSyncStep): string {
   switch (step.type) {
     case "activities_list":
-      return "Activity list";
+      return step.offset > 0 ? `Activity list (offset ${step.offset})` : "Activity list";
     case "activity_detail":
       return `Activity detail ${step.activityId}`;
     case "activity_reconcile":
@@ -160,20 +160,14 @@ async function runActivitiesListStep(
   since: Date,
   until: Date,
   checkpoint: GarminSyncCheckpoint,
+  step: Extract<GarminSyncStep, { type: "activities_list" }>,
 ): Promise<{ checkpoint: GarminSyncCheckpoint; recordsSynced: number }> {
-  const activities = [];
-  let offset = 0;
-  let page: Awaited<ReturnType<GarminConnectClient["getActivities"]>>;
-  do {
-    page = await client.getActivities(offset, GARMIN_ACTIVITY_PAGE_SIZE);
-    activities.push(...page);
-    offset += page.length;
-  } while (page.length === GARMIN_ACTIVITY_PAGE_SIZE);
+  const page = await client.getActivities(step.offset, GARMIN_ACTIVITY_PAGE_SIZE);
 
   let recordsSynced = 0;
   const presentActivityExternalIds = new Set(checkpoint.presentActivityExternalIds);
 
-  const pageExternalIds = activities.map((raw) => String(raw.activityId));
+  const pageExternalIds = page.map((raw) => String(raw.activityId));
   const existingActivityIds =
     pageExternalIds.length === 0
       ? new Set<string>()
@@ -193,7 +187,7 @@ async function runActivitiesListStep(
         );
 
   const detailSteps: GarminSyncStep[] = [];
-  for (const raw of activities) {
+  for (const raw of page) {
     const parsed = parseConnectActivity(raw);
     presentActivityExternalIds.add(parsed.externalId);
 
@@ -236,7 +230,10 @@ async function runActivitiesListStep(
     }
   }
 
-  const followUpSteps: GarminSyncStep[] = [...detailSteps, { type: "activity_reconcile" }];
+  const followUpSteps: GarminSyncStep[] =
+    page.length === GARMIN_ACTIVITY_PAGE_SIZE
+      ? [{ type: "activities_list", offset: step.offset + page.length }]
+      : [...detailSteps, { type: "activity_reconcile" }];
 
   return {
     recordsSynced,
@@ -600,6 +597,7 @@ async function runGarminSyncStep(
           effectiveSince,
           until,
           checkpoint,
+          step,
         );
         recordsSynced += outcome.recordsSynced;
         nextCheckpoint = outcome.checkpoint;

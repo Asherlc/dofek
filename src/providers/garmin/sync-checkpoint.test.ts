@@ -59,7 +59,7 @@ describe("planGarminSyncSteps", () => {
       dates: ["2026-03-01", "2026-03-02"],
     });
     expect(steps).toEqual([
-      { type: "activities_list" },
+      { type: "activities_list", offset: 0 },
       { type: "sleep", date: "2026-03-01" },
       { type: "daily_summary", date: "2026-03-01" },
       { type: "hrv_summary", date: "2026-03-01" },
@@ -79,7 +79,7 @@ const sampleCheckpoint: GarminSyncCheckpoint = {
   recordsSynced: 3,
   phase: "api",
   steps: [
-    { type: "activities_list" },
+    { type: "activities_list", offset: 0 },
     { type: "sleep", date: "2026-03-01" },
     { type: "daily_summary", date: "2026-03-01" },
     { type: "hrv_summary", date: "2026-03-01" },
@@ -92,20 +92,20 @@ const sampleCheckpoint: GarminSyncCheckpoint = {
 
 describe("createGarminSyncCheckpoint", () => {
   it("bootstraps an empty checkpoint with the planned steps", () => {
-    const checkpoint = createGarminSyncCheckpoint([{ type: "activities_list" }]);
+    const checkpoint = createGarminSyncCheckpoint([{ type: "activities_list", offset: 0 }]);
 
     expect(checkpoint.phase).toBe("api");
     expect(checkpoint.stepIndex).toBe(0);
     expect(checkpoint.recordsSynced).toBe(0);
     expect(checkpoint.presentActivityExternalIds).toEqual([]);
-    expect(checkpoint.steps).toEqual([{ type: "activities_list" }]);
+    expect(checkpoint.steps).toEqual([{ type: "activities_list", offset: 0 }]);
     expect(checkpoint.runId.length).toBeGreaterThan(0);
   });
 });
 
 describe("insertStepsAfterCurrent", () => {
   it("returns the same checkpoint when no follow-up steps are provided", () => {
-    const checkpoint = createGarminSyncCheckpoint([{ type: "activities_list" }]);
+    const checkpoint = createGarminSyncCheckpoint([{ type: "activities_list", offset: 0 }]);
     expect(insertStepsAfterCurrent(checkpoint, [])).toBe(checkpoint);
   });
 
@@ -176,7 +176,7 @@ describe("applyRateLimitToCheckpoint", () => {
     });
 
     expect(checkpoint.steps).toEqual([
-      { type: "activities_list" },
+      { type: "activities_list", offset: 0 },
       { type: "sleep", date: "2026-03-01" },
       { type: "daily_summary", date: "2026-03-01" },
     ]);
@@ -189,7 +189,7 @@ describe("applyRateLimitToCheckpoint", () => {
     });
 
     expect(checkpoint.steps).toEqual([
-      { type: "activities_list" },
+      { type: "activities_list", offset: 0 },
       { type: "sleep", date: "2026-03-01" },
       { type: "daily_summary", date: "2026-03-01" },
       { type: "hrv_summary", date: "2026-03-01" },
@@ -200,7 +200,7 @@ describe("applyRateLimitToCheckpoint", () => {
     const checkpoint = applyRateLimitToCheckpoint({
       ...sampleCheckpoint,
       steps: [
-        { type: "activities_list" },
+        { type: "activities_list", offset: 0 },
         { type: "activity_reconcile" },
         { type: "sleep", date: "2026-03-01" },
         { type: "stress", date: "2026-03-01" },
@@ -210,7 +210,7 @@ describe("applyRateLimitToCheckpoint", () => {
     });
 
     expect(checkpoint.steps).toEqual([
-      { type: "activities_list" },
+      { type: "activities_list", offset: 0 },
       { type: "activity_reconcile" },
       { type: "sleep", date: "2026-03-01" },
     ]);

@@ -252,7 +252,7 @@ describe("InMemoryAdaptiveRateLimitStore", () => {
     });
 
     expect(requestSpy).toHaveBeenCalledTimes(1);
-    expect(touchSpy).not.toHaveBeenCalled();
+    expect(touchSpy).toHaveBeenCalledTimes(1);
     requestSpy.mockRestore();
     touchSpy.mockRestore();
   });
@@ -268,7 +268,7 @@ describe("InMemoryAdaptiveRateLimitStore", () => {
     });
 
     expect(requestSpy).not.toHaveBeenCalled();
-    expect(touchSpy).not.toHaveBeenCalled();
+    expect(touchSpy).toHaveBeenCalledTimes(1);
     requestSpy.mockRestore();
     touchSpy.mockRestore();
   });
@@ -354,14 +354,14 @@ describe("RedisAdaptiveRateLimitStore", () => {
     expect(saved.requestCount).toBe(1);
   });
 
-  it("does not persist Redis writes for sync-step throttle-only admissions", async () => {
+  it("persists throttle touches for additional sync-step HTTP calls", async () => {
     const mock = createMockRedisAdaptiveStore({ atomic: true });
 
     await runWithSyncStepAdmission(async () => {
       await mock.store.awaitAdmission("garmin", "provider", null);
       const savesAfterFirst = mock.setCalls.length;
       await mock.store.awaitAdmission("garmin", "provider", null);
-      expect(mock.setCalls.length).toBe(savesAfterFirst);
+      expect(mock.setCalls.length).toBeGreaterThan(savesAfterFirst);
     });
   });
 
@@ -372,7 +372,7 @@ describe("RedisAdaptiveRateLimitStore", () => {
       await mock.store.awaitAdmission("garmin", "provider", null);
       const savesAfterFirst = mock.setCalls.length;
       await mock.store.awaitAdmission("garmin", "provider", null);
-      expect(mock.setCalls.length).toBe(savesAfterFirst);
+      expect(mock.setCalls.length).toBeGreaterThan(savesAfterFirst);
     });
   });
 
