@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatCellValue, formatColumnName, RecordDetailModal } from "./ProviderDetailPage";
@@ -84,8 +84,17 @@ vi.mock("../lib/poll-sync-job.ts", () => ({
   pollSyncJob: vi.fn(),
 }));
 
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
 afterEach(() => {
   cleanup();
+  act(() => {
+    vi.runOnlyPendingTimers();
+  });
+  vi.clearAllTimers();
+  vi.useRealTimers();
   vi.clearAllMocks();
 });
 
