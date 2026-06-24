@@ -336,6 +336,7 @@ export function ProviderDetailPage() {
 
       {/* Records browser */}
       <RecordsBrowser
+        key={providerId}
         providerId={providerId}
         stats={providerStats}
         statsLoading={stats.isLoading}
@@ -616,18 +617,13 @@ function RecordsBrowser({
     return getStatCount(stats, dt.key) > 0;
   });
 
-  const [activeTab, setActiveTab] = useState<DataType>("activities");
-  const [lastProviderId, setLastProviderId] = useState(providerId);
-
-  if (providerId !== lastProviderId) {
-    setLastProviderId(providerId);
-    setActiveTab(availableTypes[0]?.key ?? "activities");
-  }
-
-  const activeTabAvailable = availableTypes.some((dt) => dt.key === activeTab);
-  if (stats && availableTypes.length > 0 && !activeTabAvailable) {
-    setActiveTab(availableTypes[0]?.key ?? "activities");
-  }
+  const [selectedTab, setSelectedTab] = useState<DataType>("activities");
+  const activeTab = useMemo(() => {
+    if (availableTypes.some((dt) => dt.key === selectedTab)) {
+      return selectedTab;
+    }
+    return availableTypes[0]?.key ?? "activities";
+  }, [availableTypes, selectedTab]);
 
   if (statsLoading) {
     return (
@@ -657,7 +653,7 @@ function RecordsBrowser({
           <button
             key={dt.key}
             type="button"
-            onClick={() => setActiveTab(dt.key)}
+            onClick={() => setSelectedTab(dt.key)}
             className={`px-3 py-1.5 text-xs rounded transition-colors ${
               activeTab === dt.key
                 ? "bg-accent/15 text-foreground"
