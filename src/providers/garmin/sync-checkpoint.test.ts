@@ -169,16 +169,17 @@ describe("parseGarminSyncCheckpoint", () => {
 });
 
 describe("applyRateLimitToCheckpoint", () => {
-  it("preserves the full step plan because Garmin rate limits are per account", () => {
-    expect(
-      applyRateLimitToCheckpoint({
-        ...sampleCheckpoint,
-        stepIndex: 0,
-      }),
-    ).toEqual({
+  it("drops remaining stress, heart rate, and HRV steps after a rate limit", () => {
+    const checkpoint = applyRateLimitToCheckpoint({
       ...sampleCheckpoint,
       stepIndex: 0,
     });
+
+    expect(checkpoint.steps).toEqual([
+      { type: "activities_list", offset: 0 },
+      { type: "sleep", date: "2026-03-01" },
+      { type: "daily_summary", date: "2026-03-01" },
+    ]);
   });
 
   it("does not keep stress, heart rate, or HRV as the current step after a rate limit", () => {

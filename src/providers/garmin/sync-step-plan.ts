@@ -187,7 +187,7 @@ export async function planGarminSyncSteps(
   const steps: GarminSyncStep[] = [];
   planSyncStepIfRequestNotPending(
     steps,
-    { type: "activities_list" },
+    { type: "activities_list", offset: 0 },
     garminSyncStepToApiQuery,
     pendingKeys,
   );
