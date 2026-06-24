@@ -123,9 +123,15 @@ function extractSqlText(sqlObj: unknown): string {
 function extractSqlParams(sqlObj: unknown): Array<string | number> {
   const parsed = sqlObjectSchema.safeParse(sqlObj);
   if (!parsed.success) return [];
-  return parsed.data.queryChunks.filter(
-    (c): c is string | number => typeof c === "string" || typeof c === "number",
-  );
+  const params: Array<string | number> = [];
+  for (const chunk of parsed.data.queryChunks) {
+    if (typeof chunk === "string" || typeof chunk === "number") {
+      params.push(chunk);
+      continue;
+    }
+    params.push(...extractSqlParams(chunk));
+  }
+  return params;
 }
 
 const expectedListColumns = {
@@ -483,6 +489,34 @@ describe("providerDetailRouter", () => {
       expect(mockLimit).toHaveBeenCalledWith(50);
       expect(mockOffset).toHaveBeenCalledWith(0);
     });
+
+    it("applies server-side filters to sync logs", async () => {
+      const mockWhere = vi.fn().mockReturnValue({
+        orderBy: vi.fn().mockReturnValue({
+          limit: vi.fn().mockReturnValue({
+            offset: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      });
+      const mockSelect = vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: mockWhere,
+        }),
+      });
+
+      const caller = createCaller({
+        db: { select: mockSelect, execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.logs({
+        providerId: "strava",
+        filters: { status: "error", dataType: "activities" },
+      });
+
+      expect(mockWhere).toHaveBeenCalledTimes(1);
+    });
   });
 
   // ── records ──
@@ -693,6 +727,45 @@ describe("providerDetailRouter", () => {
       const params = extractSqlParams(sqlObj).filter((p) => typeof p === "number");
       expect(params).toContain(50);
       expect(params).toContain(0);
+    });
+
+    it("applies server-side filters to activity records", async () => {
+      const mockExecute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.records({
+        providerId: "strava",
+        dataType: "activities",
+        filters: { activity_type: "run", name: "Morning" },
+      });
+
+      const sqlText = extractSqlText(mockExecute.mock.calls[0][0]);
+      expect(sqlText).toContain("ILIKE");
+      expect(sqlText).toContain("activity_type");
+      expect(sqlText).toContain("name");
+    });
+
+    it("returns filterable columns with record rows", async () => {
+      const caller = createCaller({
+        db: {
+          execute: vi.fn().mockResolvedValue([{ id: "act-1", name: "Morning Run" }]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.records({
+        providerId: "strava",
+        dataType: "activities",
+      });
+
+      expect(result.columns).toContain("activity_type");
+      expect(result.columns).toContain("name");
+      expect(result.rows).toHaveLength(1);
     });
   });
 

@@ -13,7 +13,7 @@ import {
   type WhoopWearLocation,
 } from "@dofek/providers/whoop";
 import { Link, useParams } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { ProviderDisconnectControl } from "../components/ProviderDisconnectControl.tsx";
@@ -345,17 +345,103 @@ export function ProviderDetailPage() {
 
 // ── Sync History ──
 
+const SYNC_HISTORY_FILTER_COLUMNS = [
+  { key: "syncedAt", label: "Time" },
+  { key: "dataType", label: "Type" },
+  { key: "status", label: "Status" },
+  { key: "recordCount", label: "Records" },
+  { key: "durationMs", label: "Duration" },
+  { key: "errorMessage", label: "Error" },
+  { key: "authFailureReason", label: "Auth Failure" },
+  { key: "id", label: "Id" },
+] as const;
+
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedValue(value), delayMs);
+    return () => window.clearTimeout(timer);
+  }, [value, delayMs]);
+
+  return debouncedValue;
+}
+
+function useDebouncedFilters(filters: Record<string, string>, delayMs = 300) {
+  return useDebouncedValue(filters, delayMs);
+}
+
+function pruneEmptyFilters(filters: Record<string, string>): Record<string, string> {
+  const pruned: Record<string, string> = {};
+  for (const [key, value] of Object.entries(filters)) {
+    if (value.trim()) pruned[key] = value.trim();
+  }
+  return pruned;
+}
+
+function TableFilterRow({
+  columns,
+  filters,
+  onFilterChange,
+  align = "left",
+  trailingCells = 0,
+}: {
+  columns: ReadonlyArray<{ key: string; label: string }>;
+  filters: Record<string, string>;
+  onFilterChange: (key: string, value: string) => void;
+  align?: "left" | "right";
+  trailingCells?: number;
+}) {
+  return (
+    <tr className="border-b border-border/50 bg-page/40">
+      {columns.map((column) => (
+        <th key={column.key} scope="col" className="px-2 py-1.5 font-normal">
+          <input
+            type="text"
+            value={filters[column.key] ?? ""}
+            onChange={(event) => onFilterChange(column.key, event.target.value)}
+            placeholder={`Filter ${column.label}`}
+            aria-label={`Filter ${column.label}`}
+            className={`w-full min-w-[5rem] px-2 py-1 text-xs bg-accent/10 border border-border rounded text-foreground placeholder:text-dim focus:outline-none focus:border-border-strong ${
+              align === "right" ? "text-right" : "text-left"
+            }`}
+          />
+        </th>
+      ))}
+      {Array.from({ length: trailingCells }, (_, index) => (
+        <th key={`trailing-${index}`} scope="col" className="px-2 py-1.5" />
+      ))}
+    </tr>
+  );
+}
+
 function SyncHistory({ providerId }: { providerId: string }) {
   const [page, setPage] = useState(0);
+  const [filters, setFilters] = useState<Record<string, string>>({});
+  const debouncedFilters = useDebouncedFilters(filters);
+  const activeFilters = useMemo(() => pruneEmptyFilters(debouncedFilters), [debouncedFilters]);
   const pageSize = 20;
 
   const logs = trpc.providerDetail.logs.useQuery({
     providerId,
     limit: pageSize,
     offset: page * pageSize,
+    filters: activeFilters,
   });
 
   const rows = logs.data ?? [];
+
+  const handleFilterChange = useCallback((key: string, value: string) => {
+    setFilters((current) => ({ ...current, [key]: value }));
+    setPage(0);
+  }, []);
+
+  const [lastProviderId, setLastProviderId] = useState(providerId);
+  if (providerId !== lastProviderId) {
+    setLastProviderId(providerId);
+    setPage(0);
+    setFilters({});
+  }
 
   return (
     <section>
@@ -363,7 +449,7 @@ function SyncHistory({ providerId }: { providerId: string }) {
 
       {logs.isLoading ? (
         <div className="text-xs text-subtle">Loading logs...</div>
-      ) : rows.length === 0 ? (
+      ) : rows.length === 0 && Object.keys(activeFilters).length === 0 ? (
         <div className="text-xs text-subtle">No sync history yet.</div>
       ) : (
         <>
@@ -389,43 +475,66 @@ function SyncHistory({ providerId }: { providerId: string }) {
                   <th scope="col" className="text-left px-4 py-2 font-medium">
                     Error
                   </th>
+                  <th scope="col" className="text-left px-4 py-2 font-medium">
+                    Auth Failure
+                  </th>
+                  <th scope="col" className="text-left px-4 py-2 font-medium">
+                    Id
+                  </th>
                 </tr>
+                <TableFilterRow
+                  columns={SYNC_HISTORY_FILTER_COLUMNS}
+                  filters={filters}
+                  onFilterChange={handleFilterChange}
+                />
               </thead>
               <tbody>
-                {rows.map((row) => (
-                  <tr
-                    key={row.id}
-                    className="border-b border-border/50 hover:bg-surface-hover transition-colors"
-                  >
-                    <td className="px-4 py-2 text-muted whitespace-nowrap">
-                      {formatTime(row.syncedAt)}
-                    </td>
-                    <td className="px-4 py-2 text-muted">{row.dataType}</td>
-                    <td className="px-4 py-2">
-                      <span
-                        className={`inline-flex items-center gap-1.5 ${
-                          row.status === "success" ? "text-emerald-400" : "text-red-400"
-                        }`}
-                      >
-                        <span
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            row.status === "success" ? "bg-emerald-400" : "bg-red-400"
-                          }`}
-                        />
-                        {row.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2 text-right text-foreground tabular-nums">
-                      {row.recordCount ?? "—"}
-                    </td>
-                    <td className="px-4 py-2 text-right text-muted tabular-nums">
-                      {row.durationMs != null ? formatDurationSeconds(row.durationMs / 1000) : "—"}
-                    </td>
-                    <td className="px-4 py-2 text-red-400/80 max-w-xs truncate">
-                      {row.errorMessage ?? ""}
+                {rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={SYNC_HISTORY_FILTER_COLUMNS.length} className="px-4 py-6 text-subtle">
+                      No sync history matches the current filters.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  rows.map((row) => (
+                    <tr
+                      key={row.id}
+                      className="border-b border-border/50 hover:bg-surface-hover transition-colors"
+                    >
+                      <td className="px-4 py-2 text-muted whitespace-nowrap">
+                        {formatTime(row.syncedAt)}
+                      </td>
+                      <td className="px-4 py-2 text-muted">{row.dataType}</td>
+                      <td className="px-4 py-2">
+                        <span
+                          className={`inline-flex items-center gap-1.5 ${
+                            row.status === "success" ? "text-emerald-400" : "text-red-400"
+                          }`}
+                        >
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              row.status === "success" ? "bg-emerald-400" : "bg-red-400"
+                            }`}
+                          />
+                          {row.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 text-right text-foreground tabular-nums">
+                        {row.recordCount ?? "—"}
+                      </td>
+                      <td className="px-4 py-2 text-right text-muted tabular-nums">
+                        {row.durationMs != null ? formatDurationSeconds(row.durationMs / 1000) : "—"}
+                      </td>
+                      <td className="px-4 py-2 text-red-400/80 max-w-xs truncate">
+                        {row.errorMessage ?? ""}
+                      </td>
+                      <td className="px-4 py-2 text-red-400/80 max-w-xs truncate">
+                        {row.authFailureReason ?? ""}
+                      </td>
+                      <td className="px-4 py-2 text-muted max-w-xs truncate">{row.id}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -544,6 +653,9 @@ function RecordsBrowser({
 function RecordsTable({ providerId, dataType }: { providerId: string; dataType: DataType }) {
   const [page, setPage] = useState(0);
   const [selectedRecord, setSelectedRecord] = useState<Record<string, unknown> | null>(null);
+  const [filters, setFilters] = useState<Record<string, string>>({});
+  const debouncedFilters = useDebouncedFilters(filters);
+  const activeFilters = useMemo(() => pruneEmptyFilters(debouncedFilters), [debouncedFilters]);
   const pageSize = 25;
 
   const records = trpc.providerDetail.records.useQuery({
@@ -551,9 +663,16 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
     dataType,
     limit: pageSize,
     offset: page * pageSize,
+    filters: activeFilters,
   });
 
   const rows = records.data?.rows ?? [];
+  const columns = records.data?.columns ?? [];
+
+  const handleFilterChange = useCallback((key: string, value: string) => {
+    setFilters((current) => ({ ...current, [key]: value }));
+    setPage(0);
+  }, []);
 
   // Reset page when data type changes
   const [lastDataType, setLastDataType] = useState(dataType);
@@ -561,6 +680,7 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
     setPage(0);
     setLastDataType(dataType);
     setSelectedRecord(null);
+    setFilters({});
   }
 
   const [lastProviderId, setLastProviderId] = useState(providerId);
@@ -568,7 +688,16 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
     setPage(0);
     setLastProviderId(providerId);
     setSelectedRecord(null);
+    setFilters({});
   }
+
+  const filterColumns = useMemo(
+    () => columns.map((column) => ({ key: column, label: formatColumnName(column) })),
+    [columns],
+  );
+
+  const visibleColumns = columns;
+  const hasRaw = rows.some((row) => Object.prototype.hasOwnProperty.call(row, "raw"));
 
   if (records.isLoading) {
     return <div className="text-xs text-subtle">Loading records...</div>;
@@ -582,24 +711,10 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
     );
   }
 
-  if (rows.length === 0) {
-    return <div className="text-xs text-subtle">No records found.</div>;
-  }
-
-  // Get column names from the first row, excluding raw data and internal fields
-  const excludedColumns = new Set(["raw", "user_id"]);
-  const columns = Object.keys(rows[0] ?? {}).filter((col) => !excludedColumns.has(col));
-
-  // Prioritize certain columns
-  const priorityCols = ["id", "name", "date", "started_at", "recorded_at", "activity_type", "type"];
-  const sortedColumns = [
-    ...priorityCols.filter((c) => columns.includes(c)),
-    ...columns.filter((c) => !priorityCols.includes(c)),
-  ];
-
-  // Show only first few columns in the table
-  const visibleColumns = sortedColumns.slice(0, 6);
-  const hasRaw = Object.keys(rows[0] ?? {}).includes("raw");
+  const emptyMessage =
+    Object.keys(activeFilters).length === 0
+      ? "No records found."
+      : "No records match the current filters.";
 
   return (
     <>
@@ -622,38 +737,57 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
                 </th>
               )}
             </tr>
+            {filterColumns.length > 0 && (
+              <TableFilterRow
+                columns={filterColumns}
+                filters={filters}
+                onFilterChange={handleFilterChange}
+                trailingCells={hasRaw ? 1 : 0}
+              />
+            )}
           </thead>
           <tbody>
-            {rows.map((row, idx) => (
-              <tr
-                key={String(row.id ?? row.date ?? idx)}
-                className="border-b border-border/50 hover:bg-surface-hover transition-colors cursor-pointer"
-                onClick={() => setSelectedRecord(row)}
-              >
-                {visibleColumns.map((col) => (
-                  <td
-                    key={col}
-                    className="px-3 py-2 text-foreground whitespace-nowrap max-w-xs truncate"
-                  >
-                    {formatCellValue(row[col])}
-                  </td>
-                ))}
-                {hasRaw && (
-                  <td className="px-3 py-2">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedRecord(row);
-                      }}
-                      className="text-xs text-dim hover:text-muted transition-colors"
-                    >
-                      View
-                    </button>
-                  </td>
-                )}
+            {rows.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={Math.max(visibleColumns.length + (hasRaw ? 1 : 0), 1)}
+                  className="px-3 py-6 text-subtle"
+                >
+                  {records.isLoading ? "Loading records..." : emptyMessage}
+                </td>
               </tr>
-            ))}
+            ) : (
+              rows.map((row, idx) => (
+                <tr
+                  key={String(row.id ?? row.date ?? idx)}
+                  className="border-b border-border/50 hover:bg-surface-hover transition-colors cursor-pointer"
+                  onClick={() => setSelectedRecord(row)}
+                >
+                  {visibleColumns.map((col) => (
+                    <td
+                      key={col}
+                      className="px-3 py-2 text-foreground whitespace-nowrap max-w-xs truncate"
+                    >
+                      {formatCellValue(row[col])}
+                    </td>
+                  ))}
+                  {hasRaw && (
+                    <td className="px-3 py-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedRecord(row);
+                        }}
+                        className="text-xs text-dim hover:text-muted transition-colors"
+                      >
+                        View
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>

@@ -5,15 +5,28 @@ import { logger } from "../logger.ts";
 import {
   DISCONNECT_CHILD_TABLES,
   dataTypeEnum,
+  getRecordFilterColumns,
   ProviderDetailRepository,
   tableInfo,
 } from "../repositories/provider-detail-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 // Re-export for backward compatibility (used by settings router and tests)
-export { DISCONNECT_CHILD_TABLES, dataTypeEnum, tableInfo };
+export { DISCONNECT_CHILD_TABLES, dataTypeEnum, getRecordFilterColumns, tableInfo };
 
 import { sanitizeErrorMessage } from "../lib/sanitize-error.ts";
+import { fieldFiltersSchema } from "../lib/field-filters.ts";
+
+const SYNC_LOG_FILTER_FIELDS = {
+  id: "id",
+  syncedAt: "synced_at",
+  dataType: "data_type",
+  status: "status",
+  recordCount: "record_count",
+  errorMessage: "error_message",
+  authFailureReason: "auth_failure_reason",
+  durationMs: "duration_ms",
+} as const;
 
 /**
  * Attempt to revoke tokens remotely before disconnecting a provider.
@@ -97,16 +110,29 @@ export const providerDetailRouter = router({
         providerId: z.string(),
         limit: z.number().min(1).max(100).default(50),
         offset: z.number().min(0).default(0),
+        filters: fieldFiltersSchema,
       }),
     )
     .query(async ({ ctx, input }) => {
       const { syncLog } = await import("dofek/db/schema");
       const { and, desc, eq } = await import("drizzle-orm");
+      const { buildPostgresTextFilterConditionsMapped } = await import("../lib/field-filters.ts");
+
+      const filterConditions = buildPostgresTextFilterConditionsMapped(
+        input.filters,
+        SYNC_LOG_FILTER_FIELDS,
+      );
 
       const rows = await ctx.db
         .select()
         .from(syncLog)
-        .where(and(eq(syncLog.userId, ctx.userId), eq(syncLog.providerId, input.providerId)))
+        .where(
+          and(
+            eq(syncLog.userId, ctx.userId),
+            eq(syncLog.providerId, input.providerId),
+            ...filterConditions,
+          ),
+        )
         .orderBy(desc(syncLog.syncedAt))
         .limit(input.limit)
         .offset(input.offset);
@@ -125,6 +151,7 @@ export const providerDetailRouter = router({
         dataType: dataTypeEnum,
         limit: z.number().min(1).max(100).default(50),
         offset: z.number().min(0).default(0),
+        filters: fieldFiltersSchema,
       }),
     )
     .query(async ({ ctx, input }) => {
@@ -134,8 +161,9 @@ export const providerDetailRouter = router({
         input.dataType,
         input.limit,
         input.offset,
+        input.filters,
       );
-      return { rows };
+      return { rows, columns: [...getRecordFilterColumns(input.dataType)] };
     }),
 
   /** Single record detail with raw data */

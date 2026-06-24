@@ -173,6 +173,15 @@ describe("ProviderDetailRepository", () => {
       expect(execute).toHaveBeenCalledTimes(1);
     });
 
+    it("adds ILIKE filters to postgres record queries", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.getRecords("strava", "activities", 50, 0, { name: "Morning" });
+
+      const sqlText = stringifyQuery(execute.mock.calls[0]?.[0]);
+      expect(sqlText).toContain("ILIKE");
+      expect(sqlText).toContain("name");
+    });
+
     it("includes provider-absent activities in activity record lists", async () => {
       const { repo, execute } = makeRepository([]);
       await repo.getRecords("strava", "activities", 50, 0);

@@ -1,6 +1,10 @@
 import type { Database } from "dofek/db";
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
+import {
+  buildClickHouseTextFilterClauses,
+  buildPostgresTextFilterConditions,
+} from "../lib/field-filters.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { BodyClickHouseStore } from "./body-clickhouse.ts";
 
@@ -60,7 +64,42 @@ export function tableInfo(dataType: DataType): {
   }
 }
 
-function listColumns(dataType: Exclude<DataType, "bodyMeasurements" | "metricStream">): string {
+const BODY_MEASUREMENT_COLUMNS = [
+  "id",
+  "provider_id",
+  "user_id",
+  "external_id",
+  "recorded_at",
+  "created_at",
+  "weight_kg",
+  "body_fat_pct",
+  "muscle_mass_kg",
+  "bone_mass_kg",
+  "water_pct",
+  "bmi",
+  "height_cm",
+  "waist_circumference_cm",
+  "systolic_bp",
+  "diastolic_bp",
+  "heart_pulse",
+  "temperature_c",
+  "source_name",
+  "source_providers",
+] as const;
+
+const METRIC_STREAM_COLUMNS = [
+  "id",
+  "recorded_at",
+  "provider_id",
+  "external_id",
+  "device_id",
+  "source_type",
+  "channel",
+  "activity_id",
+  "scalar",
+] as const;
+
+function listColumnNames(dataType: Exclude<DataType, "bodyMeasurements" | "metricStream">): string[] {
   switch (dataType) {
     case "activities":
       return [
@@ -75,7 +114,7 @@ function listColumns(dataType: Exclude<DataType, "bodyMeasurements" | "metricStr
         "provider_absent_at",
         "deleted_at",
         "created_at",
-      ].join(", ");
+      ];
     case "dailyMetrics":
       return [
         "id",
@@ -88,7 +127,7 @@ function listColumns(dataType: Exclude<DataType, "bodyMeasurements" | "metricStr
         "distance_km",
         "source_name",
         "created_at",
-      ].join(", ");
+      ];
     case "sleepSessions":
       return [
         "id",
@@ -100,7 +139,7 @@ function listColumns(dataType: Exclude<DataType, "bodyMeasurements" | "metricStr
         "sleep_type",
         "source_name",
         "created_at",
-      ].join(", ");
+      ];
     case "foodEntries":
       return [
         "id",
@@ -112,7 +151,7 @@ function listColumns(dataType: Exclude<DataType, "bodyMeasurements" | "metricStr
         "logged_at",
         "source_name",
         "created_at",
-      ].join(", ");
+      ];
     case "healthEvents":
       return [
         "id",
@@ -126,7 +165,7 @@ function listColumns(dataType: Exclude<DataType, "bodyMeasurements" | "metricStr
         "start_date",
         "end_date",
         "created_at",
-      ].join(", ");
+      ];
     case "nutritionDaily":
       return [
         "date",
@@ -137,7 +176,7 @@ function listColumns(dataType: Exclude<DataType, "bodyMeasurements" | "metricStr
         "fat_g",
         "fiber_g",
         "sugar_g",
-      ].join(", ");
+      ];
     case "labPanels":
       return [
         "id",
@@ -150,7 +189,7 @@ function listColumns(dataType: Exclude<DataType, "bodyMeasurements" | "metricStr
         "recorded_at",
         "issued_at",
         "created_at",
-      ].join(", ");
+      ];
     case "labResults":
       return [
         "id",
@@ -165,7 +204,7 @@ function listColumns(dataType: Exclude<DataType, "bodyMeasurements" | "metricStr
         "status",
         "recorded_at",
         "created_at",
-      ].join(", ");
+      ];
     case "journalEntries":
       return [
         "id",
@@ -176,7 +215,23 @@ function listColumns(dataType: Exclude<DataType, "bodyMeasurements" | "metricStr
         "answer_numeric",
         "impact_score",
         "created_at",
-      ].join(", ");
+      ];
+  }
+}
+
+function listColumns(dataType: Exclude<DataType, "bodyMeasurements" | "metricStream">): string {
+  return listColumnNames(dataType).join(", ");
+}
+
+/** Columns exposed in provider detail record tables and available for server-side filtering. */
+export function getRecordFilterColumns(dataType: DataType): readonly string[] {
+  switch (dataType) {
+    case "bodyMeasurements":
+      return BODY_MEASUREMENT_COLUMNS;
+    case "metricStream":
+      return METRIC_STREAM_COLUMNS;
+    default:
+      return listColumnNames(dataType);
   }
 }
 
@@ -250,20 +305,30 @@ export class ProviderDetailRepository {
     dataType: DataType,
     limit: number,
     offset: number,
+    filters: Record<string, string> = {},
   ): Promise<Record<string, unknown>[]> {
     const info = tableInfo(dataType);
 
     if (dataType === "bodyMeasurements") {
-      return this.#queryBodyRecords(providerId, info, limit, offset);
+      return this.#queryBodyRecords(providerId, info, limit, offset, undefined, filters);
     }
 
     if (dataType === "metricStream") {
-      return this.#queryMetricStreamRecords(providerId, limit, offset);
+      return this.#queryMetricStreamRecords(providerId, limit, offset, undefined, filters);
     }
 
+    const filterConditions = buildPostgresTextFilterConditions(
+      filters,
+      getRecordFilterColumns(dataType),
+    );
+    const whereConditions: SQL[] = [
+      sql`user_id = ${this.#userId}`,
+      sql`provider_id = ${providerId}`,
+      ...filterConditions,
+    ];
+
     const query = sql`SELECT ${sql.raw(listColumns(dataType))} FROM ${sql.raw(info.table)}
-              WHERE user_id = ${this.#userId}
-                AND provider_id = ${providerId}
+              WHERE ${sql.join(whereConditions, sql` AND `)}
               ORDER BY ${sql.raw(info.orderColumn)} DESC
               LIMIT ${limit}
               OFFSET ${offset}`;
@@ -305,11 +370,16 @@ export class ProviderDetailRepository {
     limit: number,
     offset: number,
     recordId?: string,
+    filters: Record<string, string> = {},
   ): Promise<Record<string, unknown>[]> {
     if (!this.#clickHouse) {
       throw new Error("providerDetail body measurements require the ClickHouse store");
     }
     const recordFilter = recordId ? "AND toString(id) = {recordId:String}" : "";
+    const { clause: filterClause, params: filterParams } = buildClickHouseTextFilterClauses(
+      filters,
+      BODY_MEASUREMENT_COLUMNS,
+    );
     return this.#clickHouse.query(
       genericRowSchema,
       `
@@ -318,6 +388,7 @@ export class ProviderDetailRepository {
         WHERE user_id = {userId:UUID}
           AND provider_id = {providerId:String}
           ${recordFilter}
+          ${filterClause}
         ORDER BY ${info.orderColumn} DESC
         LIMIT {limit:UInt32}
         OFFSET {offset:UInt32}
@@ -328,6 +399,7 @@ export class ProviderDetailRepository {
         ...(recordId ? { recordId } : {}),
         limit,
         offset,
+        ...filterParams,
       },
     );
   }
@@ -344,11 +416,16 @@ export class ProviderDetailRepository {
     limit: number,
     offset: number,
     recordId?: string,
+    filters: Record<string, string> = {},
   ): Promise<Record<string, unknown>[]> {
     if (!this.#clickHouse) {
       throw new Error("providerDetail metric stream requires the ClickHouse store");
     }
     const recordFilter = recordId ? "AND toString(id) = {recordId:String}" : "";
+    const { clause: filterClause, params: filterParams } = buildClickHouseTextFilterClauses(
+      filters,
+      METRIC_STREAM_COLUMNS,
+    );
     return this.#clickHouse.query(
       genericRowSchema,
       `
@@ -385,6 +462,7 @@ export class ProviderDetailRepository {
         ) AS ranked_versions
         WHERE version_rank = 1
           AND is_deleted = 0
+          ${filterClause}
         ORDER BY recorded_at DESC
         LIMIT {limit:UInt32}
         OFFSET {offset:UInt32}
@@ -395,6 +473,7 @@ export class ProviderDetailRepository {
         ...(recordId ? { recordId } : {}),
         limit,
         offset,
+        ...filterParams,
       },
     );
   }
