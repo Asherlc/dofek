@@ -16,17 +16,19 @@ import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 import type { SyncOptions } from "./types.ts";
 
-const drizzleMocks = vi.hoisted(() => ({
-  inArrayValues: [] as unknown[],
+const drizzleMocks = vi.hoisted<{
+  inArrayValues: unknown[];
+}>(() => ({
+  inArrayValues: [],
 }));
 
 vi.mock("drizzle-orm", async (importOriginal) => {
   const actual = await importOriginal<typeof import("drizzle-orm")>();
   return {
     ...actual,
-    inArray: (column: Parameters<typeof actual.inArray>[0], values: unknown) => {
-      drizzleMocks.inArrayValues.push(values);
-      return actual.inArray(column, values as never);
+    inArray: (...args: Parameters<typeof actual.inArray>) => {
+      drizzleMocks.inArrayValues.push(args[1]);
+      return actual.inArray(...args);
     },
   };
 });
