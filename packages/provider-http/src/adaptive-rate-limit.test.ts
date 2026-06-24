@@ -25,7 +25,7 @@ import {
 describe("defaultThrottleMs", () => {
   it("returns provider-specific defaults", () => {
     expect(defaultThrottleMs("strava")).toBe(10_000);
-    expect(defaultThrottleMs("garmin")).toBe(2_000);
+    expect(defaultThrottleMs("garmin")).toBe(3_000);
     expect(defaultThrottleMs("whoop")).toBe(1_000);
     expect(defaultThrottleMs("unknown")).toBe(1_000);
   });

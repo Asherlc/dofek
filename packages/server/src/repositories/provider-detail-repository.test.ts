@@ -3,6 +3,8 @@ import type { BodyClickHouseStore } from "./body-clickhouse.ts";
 import {
   DISCONNECT_CHILD_TABLES,
   dataTypeEnum,
+  getRecordDisplayColumns,
+  getRecordFilterColumns,
   ProviderDetailRepository,
   tableInfo,
 } from "./provider-detail-repository.ts";
@@ -171,6 +173,15 @@ describe("ProviderDetailRepository", () => {
       const { repo, execute } = makeRepository([]);
       await repo.getRecords("strava", "activities", 50, 0);
       expect(execute).toHaveBeenCalledTimes(1);
+    });
+
+    it("adds ILIKE filters to postgres record queries", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.getRecords("strava", "activities", 50, 0, { name: "Morning" });
+
+      const sqlText = stringifyQuery(execute.mock.calls[0]?.[0]);
+      expect(sqlText).toContain("ILIKE");
+      expect(sqlText).toContain("name");
     });
 
     it("includes provider-absent activities in activity record lists", async () => {
@@ -506,6 +517,44 @@ describe("ProviderDetailRepository", () => {
         orderColumn: "date",
         idColumn: "id",
       });
+    });
+  });
+
+  describe("getRecordDisplayColumns (mutation-killing)", () => {
+    it("uses body measurement columns (not metric stream columns)", () => {
+      const columns = getRecordDisplayColumns("bodyMeasurements");
+      expect(columns).toContain("weight_kg");
+      expect(columns).not.toContain("channel");
+      expect(columns).not.toContain("scalar");
+    });
+
+    it("excludes user_id and provider_id from display columns", () => {
+      for (const dataType of ["bodyMeasurements", "metricStream", "activities"] as const) {
+        const columns = getRecordDisplayColumns(dataType);
+        expect(columns).not.toContain("user_id");
+        expect(columns).not.toContain("provider_id");
+        expect(getRecordFilterColumns(dataType)).toContain("provider_id");
+      }
+    });
+
+    it("prioritizes known columns and caps display columns at six", () => {
+      expect(getRecordDisplayColumns("activities")).toStrictEqual([
+        "id",
+        "name",
+        "started_at",
+        "activity_type",
+        "external_id",
+        "ended_at",
+      ]);
+      expect(getRecordDisplayColumns("metricStream")).toHaveLength(6);
+      expect(getRecordDisplayColumns("metricStream")).not.toContain("scalar");
+    });
+
+    it("does not duplicate columns in the display list", () => {
+      for (const dataType of dataTypeEnum.options) {
+        const columns = getRecordDisplayColumns(dataType);
+        expect(new Set(columns).size).toBe(columns.length);
+      }
     });
   });
 

@@ -201,7 +201,29 @@ describe("GarminConnectClient.fromTokens", () => {
 
     expect(client).toBeInstanceOf(GarminConnectClient);
     expect(client.getDisplayName()).toBe("testuser");
-    expect(client.getTokens()).not.toBeNull();
+    expect(client.getTokens()).toMatchObject({ displayName: "testuser" });
+  });
+
+  it("uses cached displayName from tokens without calling loadProfile", async () => {
+    const tokens = {
+      ...makeGarminTokens(),
+      displayName: "cached-user",
+    };
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          consumer_key: "test-consumer-key",
+          consumer_secret: "test-consumer-secret",
+        }),
+    });
+
+    const client = await GarminConnectClient.fromTokens(tokens, "garmin.com", fetchFn);
+
+    expect(fetchFn).toHaveBeenCalledOnce();
+    expect(client.getDisplayName()).toBe("cached-user");
+    expect(client.getTokens()).toMatchObject({ displayName: "cached-user" });
   });
 
   it("refreshes expired OAuth2 tokens", async () => {

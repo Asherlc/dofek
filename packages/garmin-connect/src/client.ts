@@ -42,8 +42,8 @@ const USER_AGENT = "com.garmin.android.apps.connectmobile";
 const API_USER_AGENT = "GCM-iOS-5.19.1.2";
 
 /** Minimum delay between consecutive Connect API requests (ms).
- *  Garmin's unofficial API rate limits aggressively; 2s keeps bursts under control. */
-export const GARMIN_CONNECT_THROTTLE_MS = 2_000;
+ *  Garmin's unofficial API rate limits aggressively; 3s keeps bursts under control. */
+export const GARMIN_CONNECT_THROTTLE_MS = 3_000;
 
 const CSRF_RE = /name="_csrf"\s+value="(.+?)"/;
 const TITLE_RE = /<title>(.+?)<\/title>/;
@@ -192,7 +192,11 @@ export class GarminConnectClient {
       client.#oauth2Token = refreshed;
     }
 
-    await client.#loadProfile();
+    if (tokens.displayName) {
+      client.#displayName = tokens.displayName;
+    } else {
+      await client.#loadProfile();
+    }
     return client;
   }
 
@@ -201,7 +205,11 @@ export class GarminConnectClient {
    */
   getTokens(): GarminTokens | null {
     if (!this.#oauth1Token || !this.#oauth2Token) return null;
-    return { oauth1: this.#oauth1Token, oauth2: this.#oauth2Token };
+    return {
+      oauth1: this.#oauth1Token,
+      oauth2: this.#oauth2Token,
+      ...(this.#displayName ? { displayName: this.#displayName } : {}),
+    };
   }
 
   async #loadConsumer(): Promise<void> {

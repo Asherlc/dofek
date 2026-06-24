@@ -21,7 +21,8 @@ describe("providerLabel", () => {
   it("returns the display name for a known provider", () => {
     expect(providerLabel("strava")).toBe("Strava");
     expect(providerLabel("ride-with-gps")).toBe("Ride with GPS");
-    expect(providerLabel("whoop")).toBe("WHOOP");
+    expect(providerLabel("whoop")).toBe("WHOOP (Cloud)");
+    expect(providerLabel("whoop_ble")).toBe("WHOOP (Bluetooth)");
   });
 
   it("returns the raw id for an unknown provider", () => {
@@ -43,6 +44,12 @@ describe("ProviderLogo", () => {
       const { container } = render(<ProviderLogo provider="wahoo" />);
       const img = queryImg(container);
       expect(img.getAttribute("src")).toBe("/logos/wahoo.png");
+    });
+
+    it("renders WHOOP Bluetooth with the shared WHOOP logo asset", () => {
+      const { container } = render(<ProviderLogo provider="whoop_ble" />);
+      const img = queryImg(container);
+      expect(img.getAttribute("src")).toBe("/logos/whoop.png");
     });
 
     it("respects the size prop", () => {

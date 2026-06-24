@@ -22,6 +22,7 @@ const garminTokensSchema = z.object({
     refresh_token_expires_in: z.number(),
     refresh_token_expires_at: z.number(),
   }),
+  displayName: z.string().optional(),
 });
 
 export function serializeInternalTokens(tokens: GarminTokens): TokenSet {

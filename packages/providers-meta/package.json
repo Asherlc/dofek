@@ -6,7 +6,8 @@
   "exports": {
     "./providers": "./src/providers.ts",
     "./provider-stats": "./src/provider-stats.ts",
-    "./whoop": "./src/whoop.ts"
+    "./whoop": "./src/whoop.ts",
+    "./push-providers": "./src/push-providers.ts"
   },
   "dependencies": {
     "@dofek/format": "workspace:*"

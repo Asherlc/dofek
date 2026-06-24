@@ -2,6 +2,21 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../src/db/test-helpers.ts";
 import { createSession } from "./auth/session.ts";
 import { createApp } from "./index.ts";
+import type { ActivitySensorStore } from "./repositories/activity-repository.ts";
+
+const noopSensorStore = {
+  query: async () => [],
+  getActivitySummaries: async () => [],
+  getPowerCurveSamples: async () => [],
+  getNormalizedPowerSamples: async () => [],
+  getVo2MaxEstimates: async () => [],
+  getHeartRateCurveRows: async () => [],
+  getPaceCurveRows: async () => [],
+  getStream: async () => [],
+  getHeartRateZoneSeconds: async () => [],
+  getPowerZoneSeconds: async () => [],
+  refreshBodyMeasurements: async () => {},
+} satisfies ActivitySensorStore;
 
 /**
  * Integration tests for the tRPC API layer.
@@ -21,7 +36,7 @@ describe("tRPC API", () => {
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
 
-    const app = createApp(testCtx.db);
+    const app = createApp(testCtx.db, noopSensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         const addr = server.address();

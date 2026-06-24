@@ -9,7 +9,7 @@ import { runWhoopOrchestratedSync } from "./sync-orchestrator.ts";
 
 export class WhoopProvider implements SyncProvider {
   readonly id = "whoop";
-  readonly name = "WHOOP";
+  readonly name = "WHOOP (Cloud)";
   readonly scheduledSyncLookbackDays = 30;
   #baseFetchFn: typeof globalThis.fetch;
 

@@ -114,7 +114,7 @@ describe("Garmin sync step planning", () => {
     const context = makeContext();
 
     await expect(planGarminSyncSteps(context)).resolves.toEqual([
-      { type: "activities_list" },
+      { type: "activities_list", offset: 0 },
       { type: "sleep", date: "2026-03-01" },
       { type: "daily_summary", date: "2026-03-01" },
       { type: "hrv_summary", date: "2026-03-01" },
@@ -280,7 +280,7 @@ describe("Garmin sync step planning", () => {
     const context = makeContext({ db: db.db, userId: "options-user" });
 
     await expect(planGarminSyncSteps(context)).resolves.toEqual([
-      { type: "activities_list" },
+      { type: "activities_list", offset: 0 },
       { type: "heart_rate", date: "2026-03-01" },
       { type: "daily_summary", date: "2026-03-02" },
       { type: "hrv_summary", date: "2026-03-02" },
