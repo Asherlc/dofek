@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   buildIngestMetricStreamCreateTableSql,
   INGEST_DATABASE,
@@ -7,24 +8,17 @@ import {
 import type { ClickHouseCommandClient } from "../clickhouse.ts";
 import type { ClickHouseMigration } from "./types.ts";
 
-function isLegacyTableCountRow(value: unknown): value is { count: string } {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "count" in value &&
-    typeof value.count === "string"
-  );
-}
+const legacyTableCountRowsSchema = z
+  .array(
+    z.object({
+      count: z.string().regex(/^\d+$/),
+    }),
+  )
+  .min(1, "Expected at least one row from system.tables count query");
 
 function parseLegacyTableCount(rows: unknown): number {
-  if (!Array.isArray(rows) || rows.length === 0) {
-    return 0;
-  }
-  const first = rows[0];
-  if (!isLegacyTableCountRow(first)) {
-    return 0;
-  }
-  return Number(first.count);
+  const parsedRows = legacyTableCountRowsSchema.parse(rows);
+  return Number(parsedRows[0].count);
 }
 
 async function legacyMetricStreamTableExists(client: ClickHouseCommandClient): Promise<boolean> {

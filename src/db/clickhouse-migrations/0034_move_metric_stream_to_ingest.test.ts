@@ -58,48 +58,19 @@ describe("0034_move_metric_stream_to_ingest", () => {
     expect(client.command).not.toHaveBeenCalled();
   });
 
-  it("skips copy and drop when the legacy table count query returns no rows", async () => {
+  it.each([
+    { label: "no rows", countRows: [] },
+    { label: "a non-array response", countRows: { 0: { count: "1" } } },
+    { label: "a non-string count", countRows: [{ count: 1 }] },
+    { label: "a missing count field", countRows: [{ table_count: "1" }] },
+    { label: "a null row", countRows: [null] },
+  ])("rejects malformed legacy table count payloads ($label)", async ({ countRows }) => {
     const migration = moveMetricStreamToIngestMigration.createMigration();
-    const client = mockLegacyTableCountClient([]);
+    const client = mockLegacyTableCountClient(countRows);
 
-    await migration.run?.(client, "postgres://health:fixture@db:5432/health");
-
-    expect(client.command).not.toHaveBeenCalled();
-  });
-
-  it("skips copy and drop when the legacy table count response is not an array", async () => {
-    const migration = moveMetricStreamToIngestMigration.createMigration();
-    const client = mockLegacyTableCountClient({ 0: { count: "1" } });
-
-    await migration.run?.(client, "postgres://health:fixture@db:5432/health");
-
-    expect(client.command).not.toHaveBeenCalled();
-  });
-
-  it("skips copy and drop when the legacy table count row is not a string count", async () => {
-    const migration = moveMetricStreamToIngestMigration.createMigration();
-    const client = mockLegacyTableCountClient([{ count: 1 }]);
-
-    await migration.run?.(client, "postgres://health:fixture@db:5432/health");
-
-    expect(client.command).not.toHaveBeenCalled();
-  });
-
-  it("skips copy and drop when the legacy table count row is missing the count field", async () => {
-    const migration = moveMetricStreamToIngestMigration.createMigration();
-    const client = mockLegacyTableCountClient([{ table_count: "1" }]);
-
-    await migration.run?.(client, "postgres://health:fixture@db:5432/health");
-
-    expect(client.command).not.toHaveBeenCalled();
-  });
-
-  it("skips copy and drop when the legacy table count row is null", async () => {
-    const migration = moveMetricStreamToIngestMigration.createMigration();
-    const client = mockLegacyTableCountClient([null]);
-
-    await migration.run?.(client, "postgres://health:fixture@db:5432/health");
-
+    await expect(
+      migration.run?.(client, "postgres://health:fixture@db:5432/health"),
+    ).rejects.toThrow();
     expect(client.command).not.toHaveBeenCalled();
   });
 

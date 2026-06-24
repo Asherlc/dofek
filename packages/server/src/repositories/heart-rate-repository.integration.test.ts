@@ -3,18 +3,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
 import { buildClickHouseBootstrapStatementsForNativeMetricStream } from "../../../../src/db/clickhouse-metric-stream-bootstrap.ts";
 import { HeartRateRepository, type MetricStreamClickHouseReader } from "./heart-rate-repository.ts";
+import {
+  type MetricStreamSeedRow,
+  seedMetricStreamRows,
+} from "./metric-stream-integration-test-helpers.ts";
 
 const testUserId = "00000000-0000-0000-0000-0000000000a1";
-
-interface SeedRow {
-  id: string;
-  recorded_at: string;
-  provider_id: string;
-  channel: string;
-  scalar: number;
-  is_deleted: 0 | 1;
-  version: number;
-}
 
 const client = createClickHouseClientFromEnv();
 
@@ -27,22 +21,8 @@ const reader: MetricStreamClickHouseReader = {
   },
 };
 
-async function seed(rows: SeedRow[]): Promise<void> {
-  await client.insert?.({
-    table: "ingest.metric_stream",
-    format: "JSONEachRow",
-    values: rows.map((row) => ({
-      id: row.id,
-      user_id: testUserId,
-      recorded_at: row.recorded_at,
-      provider_id: row.provider_id,
-      channel: row.channel,
-      scalar: row.scalar,
-      is_deleted: row.is_deleted,
-      ingested_at: "2026-04-12 00:00:00.000",
-      version: row.version,
-    })),
-  });
+async function seed(rows: MetricStreamSeedRow[]): Promise<void> {
+  await seedMetricStreamRows(client, testUserId, rows);
 }
 
 describe("HeartRateRepository (integration)", () => {

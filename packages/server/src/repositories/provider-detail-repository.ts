@@ -325,7 +325,7 @@ export class ProviderDetailRepository {
       {
         userId: this.#userId,
         providerId,
-        recordId: recordId ?? "",
+        ...(recordId ? { recordId } : {}),
         limit,
         offset,
       },
@@ -375,7 +375,7 @@ export class ProviderDetailRepository {
       {
         userId: this.#userId,
         providerId,
-        recordId: recordId ?? "",
+        ...(recordId ? { recordId } : {}),
         limit,
         offset,
       },

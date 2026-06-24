@@ -203,7 +203,6 @@ describe("ProviderDetailRepository", () => {
       expect(query.mock.calls[0]?.[2]).toStrictEqual({
         userId: "user-1",
         providerId: "withings",
-        recordId: "",
         limit: 10,
         offset: 5,
       });
@@ -233,7 +232,6 @@ describe("ProviderDetailRepository", () => {
       expect(query.mock.calls[0]?.[2]).toStrictEqual({
         userId: "user-1",
         providerId: "whoop",
-        recordId: "",
         limit: 10,
         offset: 5,
       });

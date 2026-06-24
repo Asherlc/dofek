@@ -43,7 +43,7 @@ export class HeartRateRepository {
    *
    * Reads the Redpanda-fed ClickHouse metric-stream mirror for
    * channel='heart_rate', downsampled to 1-minute bins (avg per bin). Rows are
-   * version-deduplicated (`FINAL` + `_peerdb_is_deleted = 0`) but NOT collapsed
+   * version-deduplicated (`FINAL` + `is_deleted = 0`) but NOT collapsed
    * by provider priority, so every source is returned for overlay/comparison.
    */
   async dailyBySource(date: string): Promise<HeartRateSourceSeries[]> {
@@ -62,7 +62,7 @@ export class HeartRateRepository {
             toStartOfMinute(toDateTime(recorded_at)) AS minute_bucket,
             scalar
           FROM ingest.metric_stream FINAL
-          WHERE user_id = {userId:String}
+          WHERE user_id = {userId:UUID}
             AND channel = 'heart_rate'
             AND is_deleted = 0
             AND scalar > 0

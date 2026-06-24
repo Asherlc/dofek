@@ -5,6 +5,10 @@ import { z } from "zod";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
 import { buildClickHouseBootstrapStatementsForNativeMetricStream } from "../../../../src/db/clickhouse-metric-stream-bootstrap.ts";
 import type { BodyClickHouseStore } from "./body-clickhouse.ts";
+import {
+  type MetricStreamSeedRow,
+  seedMetricStreamRows,
+} from "./metric-stream-integration-test-helpers.ts";
 import { ProviderDetailRepository } from "./provider-detail-repository.ts";
 
 // metricStream reads only touch ClickHouse; the repository still requires a
@@ -15,16 +19,6 @@ const noopDb: Pick<Database, "execute" | "transaction"> = {
 };
 
 const testUserId = "00000000-0000-0000-0000-0000000000b2";
-
-interface SeedRow {
-  id: string;
-  recorded_at: string;
-  provider_id: string;
-  channel: string;
-  scalar: number;
-  is_deleted: 0 | 1;
-  version: number;
-}
 
 const client = createClickHouseClientFromEnv();
 
@@ -38,22 +32,8 @@ const clickHouse: BodyClickHouseStore = {
   },
 };
 
-async function seed(rows: SeedRow[]): Promise<void> {
-  await client.insert?.({
-    table: "ingest.metric_stream",
-    format: "JSONEachRow",
-    values: rows.map((row) => ({
-      id: row.id,
-      user_id: testUserId,
-      recorded_at: row.recorded_at,
-      provider_id: row.provider_id,
-      channel: row.channel,
-      scalar: row.scalar,
-      is_deleted: row.is_deleted,
-      ingested_at: "2026-04-12 00:00:00.000",
-      version: row.version,
-    })),
-  });
+async function seed(rows: MetricStreamSeedRow[]): Promise<void> {
+  await seedMetricStreamRows(client, testUserId, rows);
 }
 
 const rowSchema = z.object({

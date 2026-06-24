@@ -23,12 +23,20 @@ const clickHouseMocks = vi.hoisted(() => {
   };
 });
 
+const sentryMocks = vi.hoisted(() => ({
+  captureException: vi.fn(),
+}));
+
 vi.mock("../../db/token-user-context.ts", () => ({
   getTokenUserId: tokenUserContextMocks.getTokenUserId,
 }));
 
 vi.mock("../../db/clickhouse.ts", () => ({
   createClickHouseClientFromEnv: clickHouseMocks.createClickHouseClientFromEnv,
+}));
+
+vi.mock("@sentry/node", () => ({
+  captureException: sentryMocks.captureException,
 }));
 
 function makeDb(selectedRows: unknown[] = []) {
@@ -82,6 +90,7 @@ beforeEach(() => {
   clickHouseMocks.query.mockReset();
   clickHouseMocks.query.mockResolvedValue({ json: async () => [] });
   clickHouseMocks.close.mockClear();
+  sentryMocks.captureException.mockClear();
   delete process.env.CLICKHOUSE_URL;
 });
 
@@ -245,9 +254,14 @@ describe("Garmin sync step planning", () => {
         endedAt: new Date("2026-03-02T07:00:00.000Z"),
       },
     ]);
-    clickHouseMocks.query.mockResolvedValue({
-      json: async () => [{ date: "2026-03-01" }, { date: "2026-03-02" }],
-    });
+    clickHouseMocks.query.mockImplementation(
+      async (args: { query_params?: { channel?: string } }) => ({
+        json: async () =>
+          args.query_params?.channel === "stress"
+            ? [{ date: "2026-03-01" }, { date: "2026-03-02" }]
+            : [],
+      }),
+    );
     const context = makeContext({ db: db.db, userId: "options-user" });
 
     await expect(planGarminSyncSteps(context)).resolves.toEqual([
@@ -269,20 +283,20 @@ describe("Garmin sync step planning", () => {
         },
       }),
     );
-    expect(clickHouseMocks.close).toHaveBeenCalledTimes(1);
+    expect(clickHouseMocks.close).toHaveBeenCalledTimes(2);
   });
 
-  it("closes ClickHouse clients when metric-stream queries fail", async () => {
+  it("closes ClickHouse clients and surfaces metric-stream query failures", async () => {
     process.env.CLICKHOUSE_URL = "http://default:health@127.0.0.1:8123";
-    clickHouseMocks.query.mockRejectedValue(new Error("connection refused"));
+    const queryError = new Error("connection refused");
+    clickHouseMocks.query.mockRejectedValue(queryError);
     const context = makeContext();
 
-    await expect(planGarminSyncSteps(context)).resolves.toEqual(
-      expect.arrayContaining([
-        { type: "stress", date: "2026-03-01" },
-        { type: "heart_rate", date: "2026-03-01" },
-      ]),
-    );
+    await expect(planGarminSyncSteps(context)).rejects.toThrow("connection refused");
     expect(clickHouseMocks.close).toHaveBeenCalled();
+    expect(sentryMocks.captureException).toHaveBeenCalledWith(queryError, {
+      tags: { provider: "garmin", operation: "metric_stream_date_query" },
+      extra: { channel: "stress", providerId: "garmin" },
+    });
   });
 });
