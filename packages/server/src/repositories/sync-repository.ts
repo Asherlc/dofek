@@ -195,22 +195,20 @@ export class SyncRepository {
       last_received: z.string(),
     });
 
-    const rows = await this.#providerStatsStore
-      .query(
-        lastReceivedRowSchema,
-        `
+    const rows = await this.#providerStatsStore.query(
+      lastReceivedRowSchema,
+      `
         SELECT
           provider_id,
           max(recorded_at) AS last_received
-        FROM ingest.metric_stream FINAL
+        FROM ingest.metric_stream
         WHERE user_id = {userId:UUID}
           AND provider_id IN {providerIds:Array(String)}
           AND is_deleted = 0
         GROUP BY provider_id
       `,
-        { userId: this.#userId, providerIds },
-      )
-      .catch(() => []);
+      { userId: this.#userId, providerIds },
+    );
 
     return rows.map((row) => ({
       providerId: row.provider_id,

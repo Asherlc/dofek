@@ -304,9 +304,10 @@ describe("SyncRepository", () => {
       ]);
       expect(query).toHaveBeenCalledWith(
         expect.anything(),
-        expect.stringContaining("FROM ingest.metric_stream FINAL"),
+        expect.stringContaining("FROM ingest.metric_stream"),
         { userId: "user-1", providerIds: ["whoop_ble"] },
       );
+      expect(query.mock.calls[0]?.[1]).not.toContain("FINAL");
     });
 
     it("returns empty array when ClickHouse query fails", async () => {
@@ -317,7 +318,7 @@ describe("SyncRepository", () => {
       };
       const repo = new SyncRepository(db, "user-1", { query });
 
-      await expect(repo.getPushProviderLastReceived()).resolves.toEqual([]);
+      await expect(repo.getPushProviderLastReceived()).rejects.toThrow("ClickHouse unavailable");
     });
   });
 });

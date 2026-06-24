@@ -51,6 +51,9 @@ export function ProviderDetailPage() {
   const provider = (providers.data ?? []).find((p) => p.id === providerId);
   const providerStats = (stats.data ?? []).find((s) => s.providerId === providerId);
   const pushOnly = provider?.pushOnly === true;
+  const lastSyncedRelative = provider?.lastSyncedAt
+    ? formatRelativeTime(provider.lastSyncedAt)
+    : null;
 
   // Sync state
   const syncMutation = trpc.sync.triggerSync.useMutation();
@@ -207,10 +210,8 @@ export function ProviderDetailPage() {
                     >
                       {provider.authorized ? "Receiving data" : "Waiting for mobile sync"}
                     </span>
-                    {provider.lastSyncedAt && formatRelativeTime(provider.lastSyncedAt) && (
-                      <span className="text-xs text-dim">
-                        Last received: {formatRelativeTime(provider.lastSyncedAt)}
-                      </span>
+                    {lastSyncedRelative && (
+                      <span className="text-xs text-dim">Last received: {lastSyncedRelative}</span>
                     )}
                   </>
                 ) : provider.importOnly ? (
@@ -220,14 +221,9 @@ export function ProviderDetailPage() {
                 ) : (
                   <span className="text-xs text-subtle">Not connected</span>
                 )}
-                {!provider.pushOnly &&
-                  !provider.importOnly &&
-                  provider.lastSyncedAt &&
-                  formatRelativeTime(provider.lastSyncedAt) && (
-                    <span className="text-xs text-dim">
-                      Last sync: {formatRelativeTime(provider.lastSyncedAt)}
-                    </span>
-                  )}
+                {!provider.pushOnly && !provider.importOnly && lastSyncedRelative && (
+                  <span className="text-xs text-dim">Last sync: {lastSyncedRelative}</span>
+                )}
               </div>
             )}
           </div>
@@ -239,8 +235,8 @@ export function ProviderDetailPage() {
           <div>
             <h2 className="text-sm font-medium text-foreground">Mobile sync</h2>
             <p className="text-xs text-subtle mt-1">
-              WHOOP (Bluetooth) receives live strap data from the iOS app over Bluetooth. Open the
-              Dofek app on your phone with your WHOOP nearby to start streaming RR intervals and
+              {provider?.description ?? "Synced from the iOS app when your WHOOP strap is nearby."}{" "}
+              Open the Dofek app on your phone with your WHOOP nearby to stream RR intervals and
               orientation data.
             </p>
           </div>

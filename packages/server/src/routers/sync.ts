@@ -17,6 +17,7 @@ import { z } from "zod";
 import { hasCurrentProviderAuthFailure } from "../lib/provider-auth-state.ts";
 import { startWorker } from "../lib/start-worker.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
+import { logger } from "../logger.ts";
 import {
   type ProviderStatRow,
   type PushProviderLastReceived,
@@ -38,6 +39,12 @@ import {
   toJobId,
   UPLOAD_IMPORT_PROVIDERS,
 } from "./sync-helpers.ts";
+
+function logProvidersQueryFailure(operation: string, error: unknown): void {
+  logger.warn(
+    `[sync.providers] ${operation} failed: ${error instanceof Error ? error.message : String(error)}`,
+  );
+}
 
 const syncDateSchema = z
   .string()
@@ -157,9 +164,15 @@ export const syncRouter = router({
         repo.getLastSyncTimes(),
         repo.getLatestErrors(),
         ctx.sensorStore
-          ? repo.getProviderStats().catch((): ProviderStatRow[] => [])
+          ? repo.getProviderStats().catch((error): ProviderStatRow[] => {
+              logProvidersQueryFailure("provider stats lookup", error);
+              return [];
+            })
           : Promise.resolve([] satisfies ProviderStatRow[]),
-        repo.getPushProviderLastReceived().catch((): PushProviderLastReceived[] => []),
+        repo.getPushProviderLastReceived().catch((error): PushProviderLastReceived[] => {
+          logProvidersQueryFailure("push provider last-received lookup", error);
+          return [];
+        }),
       ],
     );
 
@@ -206,6 +219,7 @@ export const syncRouter = router({
       return {
         id: provider.id,
         name: provider.name,
+        description: provider.description,
         authType: provider.authType,
         authorized: hasData,
         lastSyncedAt: lastReceived,

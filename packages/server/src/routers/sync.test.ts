@@ -284,6 +284,9 @@ describe("syncRouter", () => {
       expect(whoopBle?.pushOnly).toBe(true);
       expect(whoopBle?.authorized).toBe(false);
       expect(whoopBle?.name).toBe("WHOOP (Bluetooth)");
+      expect(whoopBle?.description).toBe(
+        "Synced from the iOS app when your WHOOP strap is nearby.",
+      );
 
       // Wahoo: OAuth provider, authorized (has token)
       const wahoo = result.find((p: { id: string }) => p.id === "wahoo");
