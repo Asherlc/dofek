@@ -1,6 +1,6 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { WhoopClient } from "whoop-whoop/client";
+import { WhoopClient, WhoopRateLimitError } from "whoop-whoop/client";
 import type {
   WhoopHrValue,
   WhoopRecoveryRecord,
@@ -876,6 +876,13 @@ describe("WhoopProvider.sync() — token resolution", () => {
         createRateLimitError: expect.any(Function),
       }),
     );
+
+    const options = vi
+      .mocked(createProviderRateLimitFetch)
+      .mock.calls.find(([id]) => id === "whoop")?.[2];
+    const createRateLimitError = options?.createRateLimitError;
+    const error = createRateLimitError?.(new Response(null, { status: 429 }), "Too Many Requests");
+    expect(error).toBeInstanceOf(WhoopRateLimitError);
   });
 
   it("returns error when no tokens are stored", async () => {
