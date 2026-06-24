@@ -94,6 +94,14 @@ vi.mock("../lib/sync-request-queue.ts", async (importOriginal) => {
   };
 });
 
+vi.mock("../lib/provider-rate-limit-fetch.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/provider-rate-limit-fetch.ts")>();
+  return {
+    ...actual,
+    createProviderRateLimitFetch: vi.fn(actual.createProviderRateLimitFetch),
+  };
+});
+
 beforeEach(() => {
   publishedMetricStreamBatches.length = 0;
   providerActivityAbsenceMocks.finishProviderActivityListSync.mockReset();
@@ -838,6 +846,34 @@ function requireArray(value: unknown, message: string): unknown[] {
 }
 
 describe("WhoopProvider.sync() — token resolution", () => {
+  it("passes user-scoped rate-limit options to createProviderRateLimitFetch", async () => {
+    const { loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValueOnce({
+      accessToken: "tok",
+      refreshToken: "ref",
+      expiresAt: futureExpiry,
+      scopes: "userId:00000000-0000-0000-0000-000000000001",
+    });
+
+    const { createProviderRateLimitFetch } = await import("../lib/provider-rate-limit-fetch.ts");
+
+    const provider = new WhoopProvider();
+    const db = makeChainableMock();
+    await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
+
+    const whoopCalls = createProviderRateLimitFetch.mock.calls.filter(
+      ([providerId, , options]) => providerId === "whoop" && options?.scope === "user",
+    );
+    expect(whoopCalls).toHaveLength(1);
+    expect(typeof whoopCalls[0]?.[2]?.createRateLimitError).toBe("function");
+  });
+
   it("returns error when no tokens are stored", async () => {
     const { loadTokens } = await import("../db/tokens.ts");
     vi.mocked(loadTokens).mockResolvedValueOnce(null);

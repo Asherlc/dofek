@@ -174,6 +174,14 @@ vi.mock("../lib/sync-request-queue.ts", async (importOriginal) => {
   };
 });
 
+vi.mock("../lib/provider-rate-limit-fetch.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/provider-rate-limit-fetch.ts")>();
+  return {
+    ...actual,
+    createProviderRateLimitFetch: vi.fn(actual.createProviderRateLimitFetch),
+  };
+});
+
 // ============================================================
 // Test helpers
 // ============================================================
@@ -635,6 +643,19 @@ describe("GarminProvider.sync()", () => {
         return res.result;
       },
     );
+  });
+
+  it("passes user-scoped rate-limit options to createProviderRateLimitFetch", async () => {
+    const { createProviderRateLimitFetch } = await import("../lib/provider-rate-limit-fetch.ts");
+
+    await syncProvider(provider, db, new Date());
+
+    const garminSyncCalls = createProviderRateLimitFetch.mock.calls.filter(
+      ([providerId, , options]) => providerId === "garmin" && options?.scope === "user",
+    );
+    expect(garminSyncCalls).toHaveLength(1);
+    expect(garminSyncCalls[0]?.[2]?.userId).toBe("00000000-0000-0000-0000-000000000001");
+    expect(typeof garminSyncCalls[0]?.[2]?.createRateLimitError).toBe("function");
   });
 
   it("returns error when no tokens exist", async () => {
