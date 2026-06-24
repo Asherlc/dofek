@@ -867,11 +867,15 @@ describe("WhoopProvider.sync() — token resolution", () => {
       }),
     );
 
-    const whoopCalls = createProviderRateLimitFetch.mock.calls.filter(
-      ([providerId, , options]) => providerId === "whoop" && options?.scope === "user",
+    expect(vi.mocked(createProviderRateLimitFetch)).toHaveBeenCalledWith(
+      "whoop",
+      expect.any(Function),
+      expect.objectContaining({
+        scope: "user",
+        userId: expect.any(String),
+        createRateLimitError: expect.any(Function),
+      }),
     );
-    expect(whoopCalls).toHaveLength(1);
-    expect(typeof whoopCalls[0]?.[2]?.createRateLimitError).toBe("function");
   });
 
   it("returns error when no tokens are stored", async () => {

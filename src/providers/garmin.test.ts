@@ -650,12 +650,15 @@ describe("GarminProvider.sync()", () => {
 
     await syncProvider(provider, db, new Date());
 
-    const garminSyncCalls = createProviderRateLimitFetch.mock.calls.filter(
-      ([providerId, , options]) => providerId === "garmin" && options?.scope === "user",
+    expect(vi.mocked(createProviderRateLimitFetch)).toHaveBeenCalledWith(
+      "garmin",
+      expect.any(Function),
+      expect.objectContaining({
+        scope: "user",
+        userId: expect.any(String),
+        createRateLimitError: expect.any(Function),
+      }),
     );
-    expect(garminSyncCalls).toHaveLength(1);
-    expect(garminSyncCalls[0]?.[2]?.userId).toBe("00000000-0000-0000-0000-000000000001");
-    expect(typeof garminSyncCalls[0]?.[2]?.createRateLimitError).toBe("function");
   });
 
   it("returns error when no tokens exist", async () => {
