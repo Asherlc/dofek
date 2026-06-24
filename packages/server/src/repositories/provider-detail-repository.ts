@@ -290,6 +290,16 @@ export function getRecordSelectFilterColumns(dataType: DataType): readonly strin
   }
 }
 
+/** Whether record filter options for a column come from the journal question join. */
+export function isJournalQuestionSlugFilterColumn(dataType: DataType, column: string): boolean {
+  return dataType === "journalEntries" && column === "question_slug";
+}
+
+/** Whether record filter options are loaded from ClickHouse instead of Postgres. */
+export function usesClickHouseRecordFilterOptions(dataType: DataType): boolean {
+  return dataType === "bodyMeasurements" || dataType === "metricStream";
+}
+
 /** Curated columns shown in the provider detail records table. */
 export function getRecordDisplayColumns(dataType: DataType): readonly string[] {
   const candidates = getRecordFilterColumns(dataType).filter(
@@ -403,7 +413,7 @@ export class ProviderDetailRepository {
   ): Promise<Record<string, ProviderDetailFilterOption[]>> {
     const columns = getRecordSelectFilterColumns(dataType);
     if (columns.length === 0) {
-      return {};
+      return Object.freeze({});
     }
 
     if (dataType === "bodyMeasurements") {
@@ -421,7 +431,7 @@ export class ProviderDetailRepository {
 
     const entries = await Promise.all(
       columns.map(async (column) => {
-        if (dataType === "journalEntries" && column === "question_slug") {
+        if (isJournalQuestionSlugFilterColumn(dataType, column)) {
           const options = await this.#queryJournalQuestionSlugOptions(providerId);
           return [column, options] as const;
         }
