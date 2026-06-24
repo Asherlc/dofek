@@ -50,16 +50,26 @@ async function saveSyncCursor(db: SyncDatabase, cursor: string, userId?: string)
 
 const OAUTH_CONSUMER_HOST = "thegarth.s3.amazonaws.com";
 
+function resolveRequestUrl(input: RequestInfo | URL): URL | null {
+  try {
+    if (input instanceof URL) {
+      return input;
+    }
+    if (typeof input === "string") {
+      return new URL(input);
+    }
+    if (input instanceof Request) {
+      return new URL(input.url);
+    }
+    return new URL(String(input));
+  } catch {
+    return null;
+  }
+}
+
 function isGarminOAuthConsumerRequest(input: RequestInfo | URL): boolean {
-  const url =
-    typeof input === "string"
-      ? input
-      : input instanceof URL
-        ? input.href
-        : input instanceof Request
-          ? input.url
-          : String(input);
-  return url.includes(OAUTH_CONSUMER_HOST);
+  const url = resolveRequestUrl(input);
+  return url?.hostname === OAUTH_CONSUMER_HOST;
 }
 
 /** Routes static OAuth consumer fetches around adaptive rate limiting. */
