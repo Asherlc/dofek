@@ -387,10 +387,19 @@ const SYNC_HISTORY_FILTER_COLUMNS = [
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debouncedValue, setDebouncedValue] = useState(value);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedValue(value), delayMs);
-    return () => window.clearTimeout(timer);
+    mountedRef.current = true;
+    const timer = setTimeout(() => {
+      if (mountedRef.current) {
+        setDebouncedValue(value);
+      }
+    }, delayMs);
+    return () => {
+      mountedRef.current = false;
+      clearTimeout(timer);
+    };
   }, [value, delayMs]);
 
   return debouncedValue;
