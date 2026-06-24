@@ -1,0 +1,18 @@
+{
+  "name": "imu-logger",
+  "version": "1.0.0",
+  "description": "Raw IMU logger for Amazfit T-Rex 3 (Zepp OS)",
+  "main": "app.js",
+  "scripts": {
+    "dev": "zeus dev",
+    "build": "zeus build",
+    "preview": "zeus preview"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@zeppos/device-types": "^3.0.0"
+  },
+  "dependencies": {
+    "@zeppos/zml": "^0.0.43"
+  }
+}

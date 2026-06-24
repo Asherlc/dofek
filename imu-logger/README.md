@@ -1,0 +1,145 @@
+# IMU Logger (Amazfit T-Rex 3)
+
+Zepp OS mini program that captures raw accelerometer (and optional gyroscope) samples on the watch, buffers them to a watch-side binary file, and exports the file to the phone over BLE. No vendor cloud — data path is **watch → phone Zepp app → local file**.
+
+## Target device
+
+| Field | Value | Source |
+|---|---|---|
+| Device | Amazfit T-Rex 3 | [Zepp OS device list](https://docs.zepp.com/docs/reference/related-resources/device-list/) |
+| Latest API_LEVEL | **4.0** (≥ 3.0 required for `@zos/sensor` Accelerometer/Gyroscope) | device list |
+| `deviceSource` | `8716544`, `8716545`, `8716547` | device list |
+| Screen | 480 × 480 round | device list |
+| `designWidth` | **480** | device list + [screen adaptation guide](https://docs.zepp.com/docs/guides/best-practice/multi-screen-adaption/) |
+
+Configured in `app.json` under target `480x480-amazfit-t-rex-3`.
+
+## Architecture
+
+```
+┌──────────────────── Watch ────────────────────┐
+│ Device App page (page/index.js)               │
+│  • checkSensor() + Accelerometer/Gyroscope    │
+│  • onChange → memory buffer → flush chunks      │
+│  • writes data://imu/session.bin              │
+├───────────────────────────────────────────────┤
+│ App Service (app-service/imu_service.js)      │
+│  • started with logging for persistence hook  │
+│  • CANNOT access IMU sensors (platform limit) │
+└───────────────────────┬───────────────────────┘
+                        │ TransferFile (BLE)
+                        ▼
+┌──────────────────── Phone ────────────────────┐
+│ Side Service (app-side/index.js)              │
+│  • onReceivedFile → saves export path         │
+│ Settings App (setting/index.js)               │
+│  • start/stop, freq mode, gyro flag, export   │
+└───────────────────────────────────────────────┘
+```
+
+### Why TransferFile instead of BLE messaging?
+
+Bulk IMU logs are megabytes, while BLE messaging is oriented toward small binary payloads and manual framing. **TransferFile** (API 3.0+) provides queued file transfer, progress events, and completion/error states — better backpressure handling for large exports. Control commands (start/stop/export) still use lightweight Side Service ↔ Device App messages via `@zeppos/zml`.
+
+### Documented platform limits (called out in code)
+
+1. **App Service cannot use Accelerometer/Gyroscope** — high-power sensors are blocked in background service ([App Service guide](https://docs.zepp.com/docs/guides/framework/device/app-service/)). IMU sampling runs in the Device App page; App Service is used for lifecycle/transfer hooks only.
+2. **App Service has no timers** — `setTimeout` / `setInterval` are unavailable; polling loops cannot run there.
+3. **App Service `@zos/fs` writes** are only guaranteed when the screen is off or in AOD; the page performs normal chunked flushes while logging.
+4. **Sample rate is not specified in Hz by Zepp docs** — only `FREQ_MODE_LOW | NORMAL | HIGH`. The app selects the highest mode ≤ user preference and records the **measured delivered rate** from `onChange` callbacks.
+5. **`onChange` delivery** — treated as one sample per callback (per API examples). The header stores measured Hz; verify on hardware.
+6. **Background IMU** — when the mini program UI is destroyed, sensor access stops. `setWakeUpRelaunch(true)` reopens the app after wake, but continuous off-body/screen-off high-rate IMU is not supported by the platform.
+
+`configVersion` is **v3** because `app-service` module registration requires v3 schema, while APIs used are Zepp OS 2.0+ `@zos/*` modules.
+
+## Build & install
+
+Requires Node ≥ 14 and the Zeus CLI:
+
+```bash
+npm i -g @zeppos/zeus-cli
+cd imu-logger
+npm install
+```
+
+### Simulator
+
+```bash
+zeus dev
+```
+
+Choose a round 480 px simulator profile. Simulator sensor values are synthetic; delivered Hz will not match hardware.
+
+### On-device (Developer / Bridge mode)
+
+1. Enable Developer Mode in the Zepp mobile app.
+2. Connect the T-Rex 3 via Bridge.
+3. Build and install:
+
+```bash
+zeus preview
+# or
+zeus build
+```
+
+4. Open **IMU Logger** on the watch, grant accelerometer + background service permissions when prompted.
+5. Open the mini program **Settings** page in the Zepp phone app for remote start/stop/export.
+
+## Output file location
+
+After export, the Side Service stores the received file path in Settings Storage key `last_export_path`. On the phone this is under the mini program's Side Service data sandbox, typically:
+
+```text
+data://export/imu_<ISO-timestamp>.bin
+```
+
+The Settings UI shows the resolved path once transfer completes. Exact host filesystem mapping depends on Zepp App version/OS; use the displayed path from Settings or pull via Zepp developer tooling.
+
+Watch-side source file before export:
+
+```text
+data://imu/session.bin
+```
+
+## Binary format
+
+| Section | Size | Contents |
+|---|---|---|
+| Header | 32 bytes | magic `IMU1`, version, flags, session start (unix ms), sample count, freq modes, measured Hz×100 |
+| Chunk | 4 + N×record | `uint16 count`, reserved `uint16`, records |
+| Record (accel) | 16 bytes | `uint32 t_ms`, `float32 ax`, `float32 ay`, `float32 az` |
+| Record (+gyro) | 28 bytes | above + `float32 gx`, `float32 gy`, `float32 gz` |
+
+Units: accelerometer cm/s², gyroscope deg/s (per `@zos/sensor` docs).
+
+`t_ms` is milliseconds since logging start (monotonic session clock based on `Date.now()` delta).
+
+## Decode with Python
+
+```bash
+pip install pandas
+python tools/decode_imu.py /path/to/imu_2025-06-24T12-00-00.bin -o imu.csv
+```
+
+The script prints header metadata, row count, and a timestamp-derived Hz estimate.
+
+## Project layout
+
+```text
+imu-logger/
+  app.json              # T-Rex 3 target + modules
+  app.js
+  page/index.js         # watch UI + sensor collector
+  app-service/imu_service.js
+  app-side/index.js     # phone BLE receiver
+  setting/index.js      # phone controls
+  utils/                # binary codec, collector, file flush
+  tools/decode_imu.py
+```
+
+## Operational notes
+
+- Start logging from the watch **or** phone Settings (phone sends a Side Service command to the watch page).
+- Stop logging before export so the header sample count is finalized.
+- BLE throughput varies with connection quality; large sessions may take minutes to transfer.
+- If gyro is disabled or absent (`checkSensor(Gyroscope) === false`), records omit gyro fields.
