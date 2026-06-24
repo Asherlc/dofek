@@ -8,6 +8,9 @@ import {
 import type { ClickHouseMigration } from "./types.ts";
 
 async function legacyMetricStreamTableExists(client: ClickHouseCommandClient): Promise<boolean> {
+  if (!client.query) {
+    throw new Error("ClickHouse migrations require a query-capable client");
+  }
   const result = await client.query({
     query: `SELECT count() AS count
       FROM system.tables

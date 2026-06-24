@@ -1584,88 +1584,64 @@ async function bootstrapClickHouseTestSchema(
   client: ClickHouseClient,
   connectionString: string,
 ): Promise<void> {
+  const defaultTestDatabases: IsolatedClickHouseDatabases = {
+    analytics: "analytics",
+    ingest: "ingest",
+    postgresFitness: "postgres_fitness",
+  };
+
   for (const statement of buildClickHouseBootstrapStatements(connectionString)) {
     await client.command({ query: statement });
   }
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.deduped_activities
 AS
-${buildTestDedupedActivitiesSelectSql({
-  analytics: "analytics",
-  postgresFitness: "postgres_fitness",
-})}`,
+${buildTestDedupedActivitiesSelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.activity_sensor_sample
 AS
-${buildTestActivitySensorSampleSelectSql({
-  analytics: "analytics",
-  postgresFitness: "postgres_fitness",
-})}`,
+${buildTestActivitySensorSampleSelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.activity_location_sample
 AS
-${buildTestActivityLocationSampleSelectSql({
-  analytics: "analytics",
-  postgresFitness: "postgres_fitness",
-})}`,
+${buildTestActivityLocationSampleSelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.daily_recovery_inputs
 AS
-${buildTestDailyRecoveryInputsSelectSql({
-  analytics: "analytics",
-  postgresFitness: "postgres_fitness",
-})}`,
+${buildTestDailyRecoveryInputsSelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.daily_sleep
 AS
-${buildTestDailySleepSelectSql({
-  analytics: "analytics",
-  postgresFitness: "postgres_fitness",
-})}`,
+${buildTestDailySleepSelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.daily_recovery
 AS
-${buildTestRecoveryReadModelSelectSql({
-  analytics: "analytics",
-  postgresFitness: "postgres_fitness",
-})}`,
+${buildTestRecoveryReadModelSelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.daily_activity_load
 AS
-${buildTestDailyActivityLoadSelectSql({
-  analytics: "analytics",
-  postgresFitness: "postgres_fitness",
-})}`,
+${buildTestDailyActivityLoadSelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.daily_strain
 AS
-${buildTestStrainReadModelSelectSql({
-  analytics: "analytics",
-  postgresFitness: "postgres_fitness",
-})}`,
+${buildTestStrainReadModelSelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.healthspan_activity_zone_minutes
 AS
-${buildTestHealthspanActivityZoneMinutesSelectSql({
-  analytics: "analytics",
-  postgresFitness: "postgres_fitness",
-})}`,
+${buildTestHealthspanActivityZoneMinutesSelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.weekly_healthspan
 AS
-${buildTestHealthspanReadModelSelectSql({
-  analytics: "analytics",
-  postgresFitness: "postgres_fitness",
-})}`,
+${buildTestHealthspanReadModelSelectSql(defaultTestDatabases)}`,
   });
   await client.command({ query: buildActivityVo2MaxEstimateTableSql() });
 }

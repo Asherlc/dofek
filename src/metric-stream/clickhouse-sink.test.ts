@@ -32,6 +32,16 @@ const imuEvent = {
   channel: "imu",
 } satisfies MetricStreamEventV1;
 
+function firstCommandQuery(
+  command: ReturnType<typeof vi.fn>,
+): string {
+  const call = command.mock.calls[0]?.[0] as { query: string } | undefined;
+  if (!call) {
+    throw new Error("expected command call");
+  }
+  return String(call.query);
+}
+
 afterEach(() => {
   vi.doUnmock("../db/clickhouse.ts");
   vi.doUnmock("./redpanda-consumer.ts");
@@ -146,8 +156,8 @@ describe("applyMetricStreamEventsToClickHouse", () => {
         activity_id: "20000000-0000-4000-8000-000000000001",
       },
     });
-    expect(String(command.mock.calls[0]?.[0].query)).toContain("1 AS is_deleted");
-    expect(String(command.mock.calls[0]?.[0].query)).toContain(
+    expect(String(firstCommandQuery(command))).toContain("1 AS is_deleted");
+    expect(String(firstCommandQuery(command))).toContain(
       "toString(activity_id) = {activity_id:String}",
     );
     expect(insert).toHaveBeenCalledWith({
@@ -222,7 +232,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
         recorded_at_end: "2026-03-02T00:00:00.000Z",
       },
     });
-    const query = String(command.mock.calls[0]?.[0].query);
+    const query = firstCommandQuery(command);
     expect(query).toContain("toString(user_id) = {user_id:String}");
     expect(query).toContain("provider_id = {provider_id:String}");
     expect(query).toContain("external_id = {external_id:String}");
