@@ -335,7 +335,9 @@ export class ProviderDetailRepository {
   /**
    * Raw metric-stream rows for a provider, read from the Redpanda-fed ClickHouse
    * mirror (Postgres `fitness.metric_stream` is retired). Version-deduplicated
-   * (`FINAL` + `_peerdb_is_deleted = 0`); recorded_at formatted to ISO-8601 Z.
+   * via `row_number()` over `_peerdb_version` (avoids a full-table `FINAL` merge
+   * on large continuous streams such as WHOOP heart rate); recorded_at formatted
+   * to ISO-8601 Z.
    */
   async #queryMetricStreamRecords(
     providerId: string,
@@ -351,7 +353,7 @@ export class ProviderDetailRepository {
       genericRowSchema,
       `
         SELECT
-          id,
+          toString(id) AS id,
           -- Raw record view: preserve sub-second precision (%f = microseconds).
           -- Force UTC so the literal 'Z' suffix is accurate regardless of the
           -- column's or server's timezone.
@@ -361,13 +363,28 @@ export class ProviderDetailRepository {
           device_id,
           source_type,
           channel,
-          activity_id,
+          toString(activity_id) AS activity_id,
           scalar
-        FROM postgres_fitness.metric_stream FINAL
-        WHERE user_id = {userId:UUID}
-          AND provider_id = {providerId:String}
+        FROM (
+          SELECT
+            id,
+            recorded_at,
+            provider_id,
+            external_id,
+            device_id,
+            source_type,
+            channel,
+            activity_id,
+            scalar,
+            _peerdb_is_deleted,
+            row_number() OVER (PARTITION BY id ORDER BY _peerdb_version DESC) AS version_rank
+          FROM postgres_fitness.metric_stream
+          WHERE user_id = {userId:UUID}
+            AND provider_id = {providerId:String}
+            ${recordFilter}
+        ) AS ranked_versions
+        WHERE version_rank = 1
           AND _peerdb_is_deleted = 0
-          ${recordFilter}
         ORDER BY recorded_at DESC
         LIMIT {limit:UInt32}
         OFFSET {offset:UInt32}
