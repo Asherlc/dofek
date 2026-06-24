@@ -30,6 +30,15 @@ import * as activityUserSoftDeleteMigration from "./clickhouse-migrations/0031_a
 import * as dedupedActivitiesAbsentSourceLinksMigration from "./clickhouse-migrations/0032_deduped_activities_absent_source_links.ts";
 import { clickHouseMigrationFileNames } from "./clickhouse-migrations/registry.ts";
 import { runClickHouseMigrationStatement } from "./clickhouse-migrations/statement-runner.ts";
+
+function systemTablesQueryRows(
+  queryText: string,
+): Array<{ count: string } | { table_count: number }> {
+  if (queryText.includes("AS count")) {
+    return [{ count: "1" }];
+  }
+  return [{ table_count: 1 }];
+}
 import {
   buildClickHouseMigrationStatements,
   runClickHouseMigrations,
@@ -398,7 +407,7 @@ SETTINGS allow_nullable_key = 1`);
         };
       }
       if (queryText.includes("system.tables")) {
-        return { json: vi.fn().mockResolvedValue([{ table_count: 1 }]) };
+        return { json: vi.fn().mockResolvedValue(systemTablesQueryRows(queryText)) };
       }
       if (queryText.includes("min_recorded_at_ms")) {
         return {
@@ -451,7 +460,7 @@ describe("runClickHouseMigrations", () => {
         return { json: vi.fn().mockResolvedValue([{ engine: "ReplacingMergeTree" }]) };
       }
       if (queryText.includes("system.tables")) {
-        return { json: vi.fn().mockResolvedValue([{ table_count: 1 }]) };
+        return { json: vi.fn().mockResolvedValue(systemTablesQueryRows(queryText)) };
       }
       if (queryText.includes("system.databases")) {
         return { json: vi.fn().mockResolvedValue([{ engine: "Atomic" }]) };
@@ -539,7 +548,7 @@ describe("runClickHouseMigrations", () => {
     const command = vi.fn().mockResolvedValue(undefined);
     const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => {
       if (queryText.includes("system.tables")) {
-        return { json: vi.fn().mockResolvedValue([{ table_count: 1 }]) };
+        return { json: vi.fn().mockResolvedValue(systemTablesQueryRows(queryText)) };
       }
       if (queryText.includes("0020_incremental_deduped_sensor")) {
         return { json: vi.fn().mockResolvedValue([{ migration_count: 0 }]) };
@@ -613,7 +622,7 @@ describe("runClickHouseMigrations", () => {
           queryText.includes("system.columns")
             ? [{ migration_count: 5 }]
             : queryText.includes("system.tables")
-              ? [{ table_count: 1 }]
+              ? systemTablesQueryRows(queryText)
               : queryText.includes("system.databases")
                 ? [{ engine: "Atomic" }]
                 : queryText.includes("0006_backfill_native_metric_stream")
@@ -723,7 +732,7 @@ describe("runClickHouseMigrations", () => {
           queryText.includes("system.tables") && queryText.includes("engine")
             ? [{ engine: "ReplacingMergeTree" }]
             : queryText.includes("system.tables")
-              ? [{ table_count: 1 }]
+              ? systemTablesQueryRows(queryText)
               : queryText.includes("system.databases")
                 ? [{ engine: "Atomic" }]
                 : queryText.includes("0006_backfill_native_metric_stream") ||
@@ -780,7 +789,7 @@ describe("runClickHouseMigrations", () => {
           queryText.includes("system.columns")
             ? [{ migration_count: 5 }]
             : queryText.includes("system.tables")
-              ? [{ table_count: 1 }]
+              ? systemTablesQueryRows(queryText)
               : queryText.includes("system.databases")
                 ? [{ engine: "Atomic" }]
                 : queryText.includes("0012_repair_metric_stream_backfill")
@@ -818,7 +827,7 @@ describe("runClickHouseMigrations", () => {
           queryText.includes("system.columns")
             ? [{ migration_count: 0 }]
             : queryText.includes("system.tables")
-              ? [{ table_count: 1 }]
+              ? systemTablesQueryRows(queryText)
               : queryText.includes("system.databases")
                 ? [{ engine: "Atomic" }]
                 : queryText.includes("0012_repair_metric_stream_backfill")
@@ -876,7 +885,7 @@ describe("runClickHouseMigrations", () => {
         .fn()
         .mockResolvedValue(
           queryText.includes("system.tables")
-            ? [{ table_count: 1 }]
+            ? systemTablesQueryRows(queryText)
             : queryText.includes("system.databases")
               ? [{ engine: "Atomic" }]
               : queryText.includes("0013_metric_stream_location_point")
@@ -942,7 +951,7 @@ describe("runClickHouseMigrations", () => {
         .fn()
         .mockResolvedValue(
           queryText.includes("system.tables")
-            ? [{ table_count: 1 }]
+            ? systemTablesQueryRows(queryText)
             : queryText.includes("system.columns")
               ? [{ migration_count: 5 }]
               : queryText.includes("system.databases")
@@ -1014,7 +1023,7 @@ describe("runClickHouseMigrations", () => {
         .fn()
         .mockResolvedValue(
           queryText.includes("system.tables")
-            ? [{ table_count: 1 }]
+            ? systemTablesQueryRows(queryText)
             : queryText.includes("system.databases")
               ? [{ engine: "Atomic" }]
               : queryText.includes("0006_backfill_native_metric_stream")
@@ -1066,7 +1075,7 @@ describe("runClickHouseMigrations", () => {
         .fn()
         .mockResolvedValue(
           queryText.includes("system.tables")
-            ? [{ table_count: 1 }]
+            ? systemTablesQueryRows(queryText)
             : queryText.includes("system.databases")
               ? [{ engine: "Atomic" }]
               : queryText.includes("0006_backfill_native_metric_stream")
@@ -1104,7 +1113,7 @@ describe("runClickHouseMigrations", () => {
         .fn()
         .mockResolvedValue(
           queryText.includes("system.tables")
-            ? [{ table_count: 1 }]
+            ? systemTablesQueryRows(queryText)
             : queryText.includes("system.databases")
               ? [{ engine: "Atomic" }]
               : queryText.includes("0006_backfill_native_metric_stream")
@@ -1154,7 +1163,7 @@ describe("runClickHouseMigrations", () => {
         return { json: vi.fn().mockResolvedValue([{ engine: "MergeTree" }]) };
       }
       if (queryText.includes("system.tables")) {
-        return { json: vi.fn().mockResolvedValue([{ table_count: 1 }]) };
+        return { json: vi.fn().mockResolvedValue(systemTablesQueryRows(queryText)) };
       }
       if (queryText.includes("system.databases")) {
         return { json: vi.fn().mockResolvedValue([{ engine: "Atomic" }]) };
@@ -1208,7 +1217,7 @@ describe("runClickHouseMigrations", () => {
         .fn()
         .mockResolvedValue(
           queryText.includes("system.tables")
-            ? [{ table_count: 1 }]
+            ? systemTablesQueryRows(queryText)
             : queryText.includes("system.databases")
               ? [{ engine: "PostgreSQL" }]
               : queryText.includes("0006_backfill_native_metric_stream")
@@ -1258,7 +1267,7 @@ describe("runClickHouseMigrations", () => {
         .fn()
         .mockResolvedValue(
           queryText.includes("system.tables")
-            ? [{ table_count: 1 }]
+            ? systemTablesQueryRows(queryText)
             : queryText.includes("system.databases")
               ? [{ engine: "Atomic" }]
               : queryText.includes("0006_backfill_native_metric_stream")
@@ -1325,7 +1334,7 @@ describe("runClickHouseMigrations", () => {
     const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => ({
       json: vi.fn().mockResolvedValue(
         queryText.includes("system.tables")
-          ? [{ table_count: 1 }]
+          ? systemTablesQueryRows(queryText)
           : queryText.includes("system.databases")
             ? [{ engine: "Atomic" }]
             : queryText.includes("0006_backfill_native_metric_stream")
@@ -1368,7 +1377,7 @@ describe("runClickHouseMigrations", () => {
         .fn()
         .mockResolvedValue(
           queryText.includes("system.tables")
-            ? [{ table_count: 1 }]
+            ? systemTablesQueryRows(queryText)
             : queryText.includes("system.databases")
               ? [{ engine: "Atomic" }]
               : queryText.includes("0006_backfill_native_metric_stream")
@@ -1423,7 +1432,7 @@ describe("runClickHouseMigrations", () => {
         .fn()
         .mockResolvedValue(
           queryText.includes("system.tables")
-            ? [{ table_count: 1 }]
+            ? systemTablesQueryRows(queryText)
             : queryText.includes("system.databases")
               ? [{ engine: "Atomic" }]
               : queryText.includes("0006_backfill_native_metric_stream")

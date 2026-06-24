@@ -1,5 +1,19 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../../db/index.ts";
+
+const clickHouseMocks = vi.hoisted(() => {
+  const query = vi.fn();
+  const close = vi.fn();
+  return {
+    query,
+    close,
+    createClickHouseClientFromEnv: vi.fn(() => ({ query, close })),
+  };
+});
+
+vi.mock("../../db/clickhouse.ts", () => ({
+  createClickHouseClientFromEnv: clickHouseMocks.createClickHouseClientFromEnv,
+}));
 import {
   applyRateLimitToCheckpoint,
   createGarminSyncCheckpoint,
@@ -8,6 +22,14 @@ import {
   parseGarminSyncCheckpoint,
 } from "./sync-checkpoint.ts";
 import { planGarminSyncSteps } from "./sync-step-plan.ts";
+
+beforeEach(() => {
+  clickHouseMocks.createClickHouseClientFromEnv.mockClear();
+  clickHouseMocks.query.mockReset();
+  clickHouseMocks.query.mockResolvedValue({ json: async () => [] });
+  clickHouseMocks.close.mockClear();
+  delete process.env.CLICKHOUSE_URL;
+});
 
 function makeDb(): SyncDatabase {
   const chain = {
