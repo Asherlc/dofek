@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatCellValue, formatColumnName, RecordDetailModal } from "./ProviderDetailPage";
@@ -452,5 +452,54 @@ describe("WhoopWearLocationPicker", () => {
       { key: "whoop.wearLocation" },
       { key: "whoop.wearLocation", value: "chest" },
     );
+  });
+});
+
+describe("useDebouncedValue", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("returns the initial value immediately", async () => {
+    const { useDebouncedValue } = await import("./ProviderDetailPage");
+    const { result } = renderHook(() => useDebouncedValue("hello", 500));
+    expect(result.current).toBe("hello");
+  });
+
+  it("updates after the delay", async () => {
+    const { useDebouncedValue } = await import("./ProviderDetailPage");
+    const { result, rerender } = renderHook(
+      ({ value, delay }: { value: string; delay: number }) => useDebouncedValue(value, delay),
+      { initialProps: { value: "hello", delay: 500 } },
+    );
+
+    rerender({ value: "world", delay: 500 });
+    expect(result.current).toBe("hello");
+
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(result.current).toBe("world");
+  });
+
+  it("clears the timeout on unmount and does not update", async () => {
+    const { useDebouncedValue } = await import("./ProviderDetailPage");
+    const { result, rerender, unmount } = renderHook(
+      ({ value, delay }: { value: string; delay: number }) => useDebouncedValue(value, delay),
+      { initialProps: { value: "hello", delay: 500 } },
+    );
+
+    rerender({ value: "world", delay: 500 });
+    expect(result.current).toBe("hello");
+
+    unmount();
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(result.current).toBe("hello");
   });
 });

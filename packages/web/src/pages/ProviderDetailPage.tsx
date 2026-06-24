@@ -385,7 +385,7 @@ const SYNC_HISTORY_FILTER_COLUMNS = [
   { key: "id", label: "Id" },
 ] as const;
 
-function useDebouncedValue<T>(value: T, delayMs: number): T {
+export function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debouncedValue, setDebouncedValue] = useState(value);
   const mountedRef = useRef(true);
 
