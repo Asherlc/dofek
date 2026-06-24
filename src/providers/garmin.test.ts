@@ -661,10 +661,7 @@ describe("GarminProvider.sync()", () => {
     expect(options?.userId).toBe("00000000-0000-0000-0000-000000000001");
 
     const createRateLimitError = options?.createRateLimitError;
-    const error = createRateLimitError?.(
-      new Response("too fast", { status: 429 }),
-      "too fast",
-    );
+    const error = createRateLimitError?.(new Response("too fast", { status: 429 }), "too fast");
     expect(error).toBeInstanceOf(GarminRateLimitError);
     if (error instanceof GarminRateLimitError) {
       expect(error.message).toBe("Rate limit exceeded (429): too fast");
