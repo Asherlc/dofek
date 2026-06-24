@@ -117,4 +117,34 @@ describe("SyncProviderCard", () => {
 
     expect(screen.getByText("No sync history")).not.toBeNull();
   });
+
+  it("uses neutral push-only copy and server-provided description", () => {
+    render(
+      <SyncProviderCard
+        provider={{
+          id: "whoop_ble",
+          name: "WHOOP (Bluetooth)",
+          lastSyncedAt: "2026-06-20T12:00:00.000Z",
+          authorized: true,
+          description: "Synced from the iOS app when your WHOOP strap is nearby.",
+        }}
+        state={{ status: "idle" }}
+        needsAuth={false}
+        needsReauth={false}
+        pushOnly
+        stats={undefined}
+        recentLogs={[]}
+        onSync={vi.fn()}
+        onFullSync={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Mobile sync")).not.toBeNull();
+    expect(screen.getByText("Synced via iOS app")).not.toBeNull();
+    expect(
+      screen.getByText("Synced from the iOS app when your WHOOP strap is nearby."),
+    ).not.toBeNull();
+    expect(screen.queryByText("Receiving data")).toBeNull();
+    expect(screen.queryByText("Live BLE push")).toBeNull();
+  });
 });

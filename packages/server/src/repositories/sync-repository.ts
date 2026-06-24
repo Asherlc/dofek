@@ -197,6 +197,7 @@ export class SyncRepository {
 
     const rows = await this.#providerStatsStore.query(
       lastReceivedRowSchema,
+      // FINAL keeps is_deleted/recorded_at aligned with the latest ReplacingMergeTree row.
       `
         SELECT
           provider_id,

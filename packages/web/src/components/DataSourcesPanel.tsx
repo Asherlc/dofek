@@ -3,7 +3,7 @@ import { z } from "zod";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import { trpc } from "../lib/trpc.ts";
 import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./DataSourcesAuthModals.tsx";
-import type { ProviderState } from "./DataSourcesSyncTypes.ts";
+import type { ProviderState, SyncProviderSummary } from "./DataSourcesSyncTypes.ts";
 import type { FileImportZoneProps } from "./FileImportZone.tsx";
 import { FileImportZone } from "./FileImportZone.tsx";
 import { SyncProviderCard } from "./SyncProviderCard.tsx";
@@ -231,18 +231,7 @@ export function DataSourcesPanel() {
   }, [trpcUtils, handleSync]);
 
   const handleProviderClick = useCallback(
-    (
-      p: {
-        id: string;
-        name: string;
-        authType: string;
-        authorized: boolean;
-        needsReauth?: boolean;
-        importOnly?: boolean;
-        pushOnly?: boolean;
-      },
-      fullSync = false,
-    ) => {
+    (p: SyncProviderSummary, fullSync = false) => {
       if (p.authorized && !p.needsReauth && !p.pushOnly) {
         handleSync(p.id, fullSync);
         return;

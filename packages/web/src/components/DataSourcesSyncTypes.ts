@@ -14,3 +14,16 @@ export interface SyncLogEntry {
   errorMessage: string | null;
   authFailureReason: string | null;
 }
+
+/** Row returned by sync.providers — registered OAuth/import and push-only providers. */
+export interface SyncProviderSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  authType: string;
+  authorized: boolean;
+  lastSyncedAt: string | null;
+  importOnly: boolean;
+  pushOnly: boolean;
+  needsReauth: boolean;
+}

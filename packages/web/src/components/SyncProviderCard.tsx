@@ -1,7 +1,7 @@
 import { formatRelativeTime, formatTime } from "@dofek/format/format";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { Link } from "@tanstack/react-router";
-import type { ProviderState, SyncLogEntry } from "./DataSourcesSyncTypes.ts";
+import type { ProviderState, SyncLogEntry, SyncProviderSummary } from "./DataSourcesSyncTypes.ts";
 import { ProviderLogo } from "./ProviderLogo.tsx";
 import { ProviderStatsBreakdown } from "./ProviderStatsBreakdown.tsx";
 import { StatusDot } from "./StatusDot.tsx";
@@ -17,13 +17,10 @@ export function SyncProviderCard({
   onSync,
   onFullSync,
 }: {
-  provider: {
-    id: string;
-    name: string;
-    lastSyncedAt: string | null;
-    authorized: boolean;
-    description?: string | null;
-  };
+  provider: Pick<
+    SyncProviderSummary,
+    "id" | "name" | "lastSyncedAt" | "authorized" | "description"
+  >;
   state: ProviderState;
   needsAuth: boolean;
   needsReauth: boolean;

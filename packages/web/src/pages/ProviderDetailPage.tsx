@@ -230,9 +230,8 @@ export function ProviderDetailPage() {
           <div>
             <h2 className="text-sm font-medium text-foreground">Mobile sync</h2>
             <p className="text-xs text-subtle mt-1">
-              {provider?.description ?? "Synced from the iOS app when your WHOOP strap is nearby."}{" "}
-              Open the Dofek app on your phone with your WHOOP nearby to stream RR intervals and
-              orientation data.
+              {provider.description} Open the Dofek app on your phone with your WHOOP nearby to
+              stream RR intervals and orientation data.
             </p>
           </div>
           <ProviderDisconnectControl

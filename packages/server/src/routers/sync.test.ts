@@ -626,10 +626,9 @@ describe("syncRouter", () => {
       expect(mockCaptureException).toHaveBeenCalledWith("string stats failure");
     });
 
-    it("does not query ClickHouse when sensor store is not configured", async () => {
+    it("skips ClickHouse provider stats when sensor store is not configured", async () => {
       mockGetAllProviders.mockReturnValue([]);
       const getProviderStats = vi.spyOn(SyncRepository.prototype, "getProviderStats");
-      const query = vi.fn();
 
       const caller = createCaller({
         db: createProvidersDbMock(),
@@ -639,7 +638,6 @@ describe("syncRouter", () => {
 
       await caller.providers();
       expect(getProviderStats).not.toHaveBeenCalled();
-      expect(query).not.toHaveBeenCalled();
       getProviderStats.mockRestore();
     });
 
