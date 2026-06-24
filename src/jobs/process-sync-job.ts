@@ -4,6 +4,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
 import { runWithTokenUser } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
+import { providerRequiresStoredTokens } from "../lib/custom-auth-providers.ts";
 import { isRetryableInfraError } from "../lib/retryable-infra-error.ts";
 import { logger } from "../logger.ts";
 import {
@@ -149,7 +150,7 @@ export async function processSyncJob(job: SyncJob, db: SyncDatabase): Promise<vo
 
     await ensureProvider(db, provider.id, provider.name, undefined, job.data.userId);
 
-    const requiresTokens = provider.authSetup !== undefined;
+    const requiresTokens = providerRequiresStoredTokens(provider);
     if (requiresTokens) {
       const tokens = await loadTokens(db, provider.id, job.data.userId);
       if (!tokens) {

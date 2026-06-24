@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { Linking } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockRouterPush = vi.fn();
@@ -10,6 +9,11 @@ const analyzeItemsMutateAsyncMock = vi.fn();
 const createAiEntryMutateAsyncMock = vi.fn();
 const deleteMutateMock = vi.fn();
 const loggerInfoMock = vi.fn();
+const openExternalUrlMock = vi.fn(() => Promise.resolve(true));
+
+vi.mock("../../lib/open-external-url", () => ({
+  openExternalUrl: (...args: unknown[]) => openExternalUrlMock(...args),
+}));
 
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: mockRouterPush }),
@@ -59,7 +63,7 @@ describe("FoodScreen AI meal confirmation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRouterPush.mockClear();
-    vi.mocked(Linking.openURL).mockClear();
+    openExternalUrlMock.mockClear();
     analyzeItemsMutateAsyncMock.mockResolvedValue({
       items: [
         {
@@ -164,6 +168,6 @@ describe("FoodScreen AI meal confirmation", () => {
       }),
     );
 
-    expect(Linking.openURL).toHaveBeenCalledWith("https://www.fatsecret.com/");
+    expect(openExternalUrlMock).toHaveBeenCalledWith("https://www.fatsecret.com/", "food");
   });
 });

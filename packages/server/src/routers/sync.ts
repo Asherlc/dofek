@@ -205,7 +205,7 @@ export const syncRouter = router({
 
       for (const provider of getAllProviders()) {
         if (provider.validate() !== null) continue;
-        const model = new ProviderModel(provider, tokenSet);
+        const model = new ProviderModel(provider, tokenSet, undefined, CUSTOM_AUTH_PROVIDERS);
         if (model.importOnly || !model.isConnected) continue;
         providerIds.push(model.id);
       }
