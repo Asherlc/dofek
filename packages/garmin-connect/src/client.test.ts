@@ -138,6 +138,18 @@ describe("GarminConnectClient error classes", () => {
     expect(error.retryAfterSeconds).toBe(45);
     vi.useRealTimers();
   });
+
+  it("GarminRateLimitError defaults to provider scope when userId is not provided", () => {
+    const error = new GarminRateLimitError("too many requests");
+    expect(error.scope).toBe("provider");
+    expect(error.userId).toBeNull();
+  });
+
+  it("GarminRateLimitError uses user scope when userId is provided", () => {
+    const error = new GarminRateLimitError("too many requests", "", null, "user-abc");
+    expect(error.scope).toBe("user");
+    expect(error.userId).toBe("user-abc");
+  });
 });
 
 describe("GarminConnectClient constructor", () => {

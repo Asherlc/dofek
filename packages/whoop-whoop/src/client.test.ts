@@ -1346,6 +1346,18 @@ describe("WhoopClient rate limit detection", () => {
     expect(error).toBeInstanceOf(Error);
   });
 
+  it("WhoopRateLimitError defaults to provider scope when userId is not provided", () => {
+    const error = new WhoopRateLimitError("rate limited");
+    expect(error.scope).toBe("provider");
+    expect(error.userId).toBeNull();
+  });
+
+  it("WhoopRateLimitError uses user scope when userId is provided", () => {
+    const error = new WhoopRateLimitError("rate limited", "", null, "user-abc");
+    expect(error.scope).toBe("user");
+    expect(error.userId).toBe("user-abc");
+  });
+
   it("calls onRequest for every API response including successes", async () => {
     const events: Array<{ status: number; endpoint: string; attempt: number }> = [];
     const fetchFn = createMockFetch({ status: 200, ok: true, body: { values: [] } });
