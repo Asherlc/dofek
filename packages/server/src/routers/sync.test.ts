@@ -276,8 +276,14 @@ describe("syncRouter", () => {
       const result = await caller.providers();
 
       // Peloton is filtered out because its validate() fails
-      expect(result).toHaveLength(4);
+      expect(result).toHaveLength(5);
       expect(result.find((p: { id: string }) => p.id === "peloton")).toBeUndefined();
+
+      const whoopBle = result.find((p: { id: string }) => p.id === "whoop_ble");
+      expect(whoopBle?.authType).toBe("push:mobile");
+      expect(whoopBle?.pushOnly).toBe(true);
+      expect(whoopBle?.authorized).toBe(false);
+      expect(whoopBle?.name).toBe("WHOOP (Bluetooth)");
 
       // Wahoo: OAuth provider, authorized (has token)
       const wahoo = result.find((p: { id: string }) => p.id === "wahoo");
@@ -466,8 +472,9 @@ describe("syncRouter", () => {
       });
 
       const result = await caller.providers();
-      expect(result).toHaveLength(1);
+      expect(result).toHaveLength(2);
       expect(result[0]?.authType).toBe("none");
+      expect(result[1]?.id).toBe("whoop_ble");
     });
   });
 

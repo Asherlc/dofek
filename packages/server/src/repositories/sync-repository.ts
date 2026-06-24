@@ -5,6 +5,7 @@ import {
 } from "dofek/providers/auth-errors";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { PUSH_PROVIDERS } from "@dofek/providers/push-providers";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
@@ -55,6 +56,11 @@ export interface ProviderToken {
 export interface LastSync {
   providerId: string;
   lastSynced: string;
+}
+
+export interface PushProviderLastReceived {
+  providerId: string;
+  lastReceived: string;
 }
 
 export interface LatestError {
@@ -174,6 +180,39 @@ export class SyncRepository {
       errorMessage: row.error_message,
       authFailureReason: row.auth_failure_reason,
       syncedAt: row.synced_at,
+    }));
+  }
+
+  /** Get the most recent metric stream sample timestamp for push-only providers. */
+  async getPushProviderLastReceived(): Promise<PushProviderLastReceived[]> {
+    if (!this.#providerStatsStore || PUSH_PROVIDERS.length === 0) {
+      return [];
+    }
+
+    const providerIds = PUSH_PROVIDERS.map((provider) => provider.id);
+    const lastReceivedRowSchema = z.object({
+      provider_id: z.string(),
+      last_received: z.string(),
+    });
+
+    const rows = await this.#providerStatsStore.query(
+      lastReceivedRowSchema,
+      `
+        SELECT
+          provider_id,
+          max(recorded_at) AS last_received
+        FROM ingest.metric_stream FINAL
+        WHERE user_id = {userId:UUID}
+          AND provider_id IN {providerIds:Array(String)}
+          AND is_deleted = 0
+        GROUP BY provider_id
+      `,
+      { userId: this.#userId, providerIds },
+    );
+
+    return rows.map((row) => ({
+      providerId: row.provider_id,
+      lastReceived: row.last_received,
     }));
   }
 

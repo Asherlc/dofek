@@ -11,6 +11,7 @@ import { syncWindowFromTriggerInput, syncWindowToJobData } from "dofek/jobs/sync
 import { queryCache } from "dofek/lib/cache";
 import { ProviderModel } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";
+import { PUSH_PROVIDERS } from "@dofek/providers/push-providers";
 import { sql as sqlTag } from "drizzle-orm";
 import { z } from "zod";
 import { hasCurrentProviderAuthFailure } from "../lib/provider-auth-state.ts";
@@ -143,14 +144,19 @@ export const syncRouter = router({
   providers: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
     await ensureProvidersRegistered();
     const all = getAllProviders();
-    const repo = new SyncRepository(ctx.db, ctx.userId);
+    const repo = new SyncRepository(ctx.db, ctx.userId, ctx.sensorStore);
 
     // Batch: load all tokens, last sync times, and recent auth errors in 3 queries instead of 3N
-    const [allTokens, lastSyncs, latestErrors] = await Promise.all([
-      repo.getConnectedProviderIds(),
-      repo.getLastSyncTimes(),
-      repo.getLatestErrors(),
-    ]);
+    const [allTokens, lastSyncs, latestErrors, providerStats, pushLastReceived] =
+      await Promise.all([
+        repo.getConnectedProviderIds(),
+        repo.getLastSyncTimes(),
+        repo.getLatestErrors(),
+        ctx.sensorStore
+          ? repo.getProviderStats().catch(() => [])
+          : Promise.resolve([] as Awaited<ReturnType<SyncRepository["getProviderStats"]>>),
+        repo.getPushProviderLastReceived(),
+      ]);
 
     const tokenSet = new Set(allTokens.map((r) => r.providerId));
     const tokenUpdatedAtMap = new Map(allTokens.map((r) => [r.providerId, r.updatedAt]));
@@ -166,8 +172,12 @@ export const syncRouter = router({
         )
         .map((r) => r.providerId),
     );
+    const statsByProvider = new Map(providerStats.map((row) => [row.providerId, row]));
+    const lastReceivedByProvider = new Map(
+      pushLastReceived.map((row) => [row.providerId, row.lastReceived]),
+    );
 
-    return all
+    const registeredProviders = all
       .filter((p) => p.validate() === null)
       .map((p) => {
         const model = new ProviderModel(p, tokenSet, lastSyncMap, CUSTOM_AUTH_PROVIDERS);
@@ -178,9 +188,29 @@ export const syncRouter = router({
           authorized: model.isConnected,
           lastSyncedAt: model.lastSyncedAt,
           importOnly: model.importOnly,
+          pushOnly: false,
           needsReauth: authErrorProviders.has(model.id),
         };
       });
+
+    const pushProviders = PUSH_PROVIDERS.map((provider) => {
+      const stats = statsByProvider.get(provider.id);
+      const lastReceived = lastReceivedByProvider.get(provider.id) ?? null;
+      const hasData = (stats?.metricStream ?? 0) > 0 || lastReceived != null;
+
+      return {
+        id: provider.id,
+        name: provider.name,
+        authType: provider.authType,
+        authorized: hasData,
+        lastSyncedAt: lastReceived,
+        importOnly: false,
+        pushOnly: true,
+        needsReauth: false,
+      };
+    });
+
+    return [...registeredProviders, ...pushProviders];
   }),
 
   /** Trigger sync — enqueues a BullMQ job, returns immediately with jobId */

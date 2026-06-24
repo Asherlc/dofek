@@ -279,4 +279,34 @@ describe("SyncRepository", () => {
       expect(execute).not.toHaveBeenCalled();
     });
   });
+
+  describe("getPushProviderLastReceived", () => {
+    it("returns empty array when ClickHouse is unavailable", async () => {
+      const { repo } = makeRepository([]);
+      await expect(repo.getPushProviderLastReceived()).resolves.toEqual([]);
+    });
+
+    it("maps last received timestamps for push providers", async () => {
+      const { repo, query } = makeRepository(
+        [],
+        [
+          {
+            provider_id: "whoop_ble",
+            last_received: "2026-06-20T12:00:00.000Z",
+          },
+        ],
+      );
+
+      const result = await repo.getPushProviderLastReceived();
+
+      expect(result).toEqual([
+        { providerId: "whoop_ble", lastReceived: "2026-06-20T12:00:00.000Z" },
+      ]);
+      expect(query).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining("FROM ingest.metric_stream FINAL"),
+        { userId: "user-1", providerIds: ["whoop_ble"] },
+      );
+    });
+  });
 });

@@ -50,6 +50,7 @@ export function ProviderDetailPage() {
 
   const provider = (providers.data ?? []).find((p) => p.id === providerId);
   const providerStats = (stats.data ?? []).find((s) => s.providerId === providerId);
+  const pushOnly = provider?.pushOnly === true;
 
   // Sync state
   const syncMutation = trpc.sync.triggerSync.useMutation();
@@ -197,14 +198,30 @@ export function ProviderDetailPage() {
             </h1>
             {provider && (
               <div className="flex items-center gap-2 mt-0.5">
-                {provider.importOnly ? (
+                {provider.pushOnly ? (
+                  <>
+                    <span
+                      className={`text-xs ${
+                        provider.authorized ? "text-emerald-400" : "text-subtle"
+                      }`}
+                    >
+                      {provider.authorized ? "Receiving data" : "Waiting for mobile sync"}
+                    </span>
+                    {provider.lastSyncedAt && formatRelativeTime(provider.lastSyncedAt) && (
+                      <span className="text-xs text-dim">
+                        Last received: {formatRelativeTime(provider.lastSyncedAt)}
+                      </span>
+                    )}
+                  </>
+                ) : provider.importOnly ? (
                   <span className="text-xs text-subtle">Import only</span>
                 ) : provider.authorized ? (
                   <span className="text-xs text-emerald-400">Connected</span>
                 ) : (
                   <span className="text-xs text-subtle">Not connected</span>
                 )}
-                {!provider.importOnly &&
+                {!provider.pushOnly &&
+                  !provider.importOnly &&
                   provider.lastSyncedAt &&
                   formatRelativeTime(provider.lastSyncedAt) && (
                     <span className="text-xs text-dim">
@@ -217,8 +234,29 @@ export function ProviderDetailPage() {
         </div>
       </div>
 
+      {pushOnly && (
+        <section className="card p-4 space-y-3">
+          <div>
+            <h2 className="text-sm font-medium text-foreground">Mobile sync</h2>
+            <p className="text-xs text-subtle mt-1">
+              WHOOP (Bluetooth) receives live strap data from the iOS app over Bluetooth. Open the
+              Dofek app on your phone with your WHOOP nearby to start streaming RR intervals and
+              orientation data.
+            </p>
+          </div>
+          <ProviderDisconnectControl
+            canDisconnect={Boolean(provider?.authorized)}
+            showConfirm={showDisconnectConfirm}
+            isPending={disconnectMutation.isPending}
+            onOpenConfirm={() => setShowDisconnectConfirm(true)}
+            onConfirm={handleDisconnect}
+            onCancel={() => setShowDisconnectConfirm(false)}
+          />
+        </section>
+      )}
+
       {/* Sync controls */}
-      {!provider?.importOnly && (
+      {!provider?.importOnly && !pushOnly && (
         <section className="card p-4 space-y-3">
           <h2 className="text-sm font-medium text-foreground">Sync Controls</h2>
           <div className="flex flex-wrap items-end gap-3">
@@ -331,7 +369,7 @@ export function ProviderDetailPage() {
       {providerStats && <ProviderStatsBreakdown stats={providerStats} variant="full" />}
 
       {/* Sync history */}
-      <SyncHistory providerId={providerId} />
+      {!pushOnly && <SyncHistory providerId={providerId} />}
 
       {/* Records browser */}
       <RecordsBrowser

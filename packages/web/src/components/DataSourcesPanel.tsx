@@ -81,7 +81,7 @@ export function DataSourcesPanel() {
   const handleSyncAll = useCallback(
     async (fullSync = false) => {
       setSyncAllMode(fullSync ? "full" : "sync");
-      const enabled = (providers.data ?? []).filter((p) => p.authorized && !p.importOnly);
+      const enabled = (providers.data ?? []).filter((p) => p.authorized && !p.importOnly && !p.pushOnly);
       const ids = enabled.map((p) => p.id);
       if (ids.length === 0) {
         setSyncAllMode(null);
@@ -157,7 +157,7 @@ export function DataSourcesPanel() {
   }, [syncRows]);
 
   const allProviders = providers.data ?? [];
-  const enabledSyncable = allProviders.filter((p) => !p.importOnly);
+  const enabledSyncable = allProviders.filter((p) => !p.importOnly && !p.pushOnly);
 
   // Resume polling for sync jobs that were already running when the page loaded
   useEffect(() => {
@@ -233,8 +233,11 @@ export function DataSourcesPanel() {
       p: { id: string; name: string; authType: string; authorized: boolean; needsReauth?: boolean },
       fullSync = false,
     ) => {
-      if (p.authorized && !p.needsReauth) {
+      if (p.authorized && !p.needsReauth && !p.pushOnly) {
         handleSync(p.id, fullSync);
+        return;
+      }
+      if (p.pushOnly) {
         return;
       }
       switch (p.authType) {
@@ -368,6 +371,7 @@ export function DataSourcesPanel() {
             const provider = entry.provider;
             const state = providerStates[provider.id] ?? { status: "idle" };
             const needsAuth =
+              !provider.pushOnly &&
               provider.authType !== "none" &&
               provider.authType !== "file-import" &&
               !provider.authorized;
@@ -382,6 +386,7 @@ export function DataSourcesPanel() {
                 state={state}
                 needsAuth={needsAuth}
                 needsReauth={needsReauth}
+                pushOnly={provider.pushOnly === true}
                 stats={providerStats}
                 recentLogs={recentLogs}
                 onSync={() => handleProviderClick(provider)}
