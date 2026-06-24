@@ -30,6 +30,11 @@ import * as activityUserSoftDeleteMigration from "./clickhouse-migrations/0031_a
 import * as dedupedActivitiesAbsentSourceLinksMigration from "./clickhouse-migrations/0032_deduped_activities_absent_source_links.ts";
 import { clickHouseMigrationFileNames } from "./clickhouse-migrations/registry.ts";
 import { runClickHouseMigrationStatement } from "./clickhouse-migrations/statement-runner.ts";
+import {
+  buildClickHouseMigrationStatements,
+  runClickHouseMigrations,
+} from "./clickhouse-migrations.ts";
+import { replacingMergeTreeTable } from "./clickhouse-sql-helpers.ts";
 
 function systemTablesQueryRows(
   queryText: string,
@@ -39,11 +44,6 @@ function systemTablesQueryRows(
   }
   return [{ table_count: 1 }];
 }
-import {
-  buildClickHouseMigrationStatements,
-  runClickHouseMigrations,
-} from "./clickhouse-migrations.ts";
-import { replacingMergeTreeTable } from "./clickhouse-sql-helpers.ts";
 
 describe("buildClickHouseMigrationStatements", () => {
   it("loads ClickHouse migrations from ordered per-file modules", () => {

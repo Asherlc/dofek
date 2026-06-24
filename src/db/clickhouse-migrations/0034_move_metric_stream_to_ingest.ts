@@ -11,7 +11,7 @@ import type { ClickHouseMigration } from "./types.ts";
 const legacyTableCountRowsSchema = z
   .array(
     z.object({
-      count: z.string().regex(/^\d+$/),
+      count: z.union([z.string().regex(/^\d+$/), z.number().int().nonnegative()]),
     }),
   )
   .nonempty("Expected at least one row from system.tables count query");

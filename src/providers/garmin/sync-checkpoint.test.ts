@@ -14,6 +14,7 @@ const clickHouseMocks = vi.hoisted(() => {
 vi.mock("../../db/clickhouse.ts", () => ({
   createClickHouseClientFromEnv: clickHouseMocks.createClickHouseClientFromEnv,
 }));
+
 import {
   applyRateLimitToCheckpoint,
   createGarminSyncCheckpoint,

@@ -61,7 +61,7 @@ describe("0034_move_metric_stream_to_ingest", () => {
   it.each([
     { label: "no rows", countRows: [] },
     { label: "a non-array response", countRows: { 0: { count: "1" } } },
-    { label: "a non-string count", countRows: [{ count: 1 }] },
+    { label: "a negative count", countRows: [{ count: -1 }] },
     { label: "a missing count field", countRows: [{ table_count: "1" }] },
     { label: "a null row", countRows: [null] },
   ])("rejects malformed legacy table count payloads ($label)", async ({ countRows }) => {
@@ -91,6 +91,20 @@ describe("0034_move_metric_stream_to_ingest", () => {
       query: expect.stringContaining("_peerdb_synced_at AS ingested_at"),
     });
     expect(client.command).toHaveBeenNthCalledWith(2, {
+      query: `DROP TABLE IF EXISTS ${LEGACY_METRIC_STREAM_TABLE}`,
+    });
+  });
+
+  it("copies legacy metric stream rows when ClickHouse returns a numeric count", async () => {
+    const migration = moveMetricStreamToIngestMigration.createMigration();
+    const client = mockLegacyTableCountClient([{ count: 1 }]);
+
+    await migration.run?.(client, "postgres://health:fixture@db:5432/health");
+
+    expect(client.command).toHaveBeenCalledWith({
+      query: expect.stringContaining(`INSERT INTO ${METRIC_STREAM_TABLE}`),
+    });
+    expect(client.command).toHaveBeenCalledWith({
       query: `DROP TABLE IF EXISTS ${LEGACY_METRIC_STREAM_TABLE}`,
     });
   });
