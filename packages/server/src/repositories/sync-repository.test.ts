@@ -308,5 +308,16 @@ describe("SyncRepository", () => {
         { userId: "user-1", providerIds: ["whoop_ble"] },
       );
     });
+
+    it("returns empty array when ClickHouse query fails", async () => {
+      const query = vi.fn().mockRejectedValue(new Error("ClickHouse unavailable"));
+      const db: Pick<import("dofek/db").Database, "execute" | "select"> = {
+        execute: vi.fn(),
+        select: vi.fn(),
+      };
+      const repo = new SyncRepository(db, "user-1", { query });
+
+      await expect(repo.getPushProviderLastReceived()).resolves.toEqual([]);
+    });
   });
 });

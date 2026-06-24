@@ -17,7 +17,11 @@ import { z } from "zod";
 import { hasCurrentProviderAuthFailure } from "../lib/provider-auth-state.ts";
 import { startWorker } from "../lib/start-worker.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
-import { type ProviderStatRow, SyncRepository } from "../repositories/sync-repository.ts";
+import {
+  type ProviderStatRow,
+  type PushProviderLastReceived,
+  SyncRepository,
+} from "../repositories/sync-repository.ts";
 import {
   CacheTTL,
   cachedProtectedQuery,
@@ -155,7 +159,7 @@ export const syncRouter = router({
         ctx.sensorStore
           ? repo.getProviderStats().catch((): ProviderStatRow[] => [])
           : Promise.resolve([] satisfies ProviderStatRow[]),
-        repo.getPushProviderLastReceived(),
+        repo.getPushProviderLastReceived().catch((): PushProviderLastReceived[] => []),
       ],
     );
 
