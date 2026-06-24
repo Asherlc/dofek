@@ -698,10 +698,7 @@ describe("ProviderDetailRepository", () => {
 
   describe("getSyncLogFilterOptions", () => {
     it("queries distinct values for each sync log dropdown column", async () => {
-      const { repo, execute } = makeRepository([
-        { value: "success" },
-        { value: "error" },
-      ]);
+      const { repo, execute } = makeRepository([{ value: "success" }, { value: "error" }]);
 
       const result = await repo.getSyncLogFilterOptions("strava");
 
@@ -735,26 +732,25 @@ describe("ProviderDetailRepository", () => {
       const sqlText = stringifyQuery(execute.mock.calls[0]?.[0]);
       expect(sqlText).toContain("fitness.journal_entry je");
       expect(sqlText).toContain("fitness.journal_question jq");
-      expect(result.question_slug).toEqual([
-        { value: "mood", label: "Mood" },
-        { value: "energy" },
-      ]);
+      expect(result.question_slug).toEqual([{ value: "mood", label: "Mood" }, { value: "energy" }]);
     });
 
     it("queries ClickHouse for metric stream dropdown values", async () => {
-      const { bodyStore, query } = makeBodyStore([{ value: "heart_rate" }, { value: "rr_interval_ms" }]);
+      const { bodyStore, query } = makeBodyStore([
+        { value: "heart_rate" },
+        { value: "rr_interval_ms" },
+      ]);
       const { db } = makeRepository([]);
       const repo = new ProviderDetailRepository(db, "user-1", bodyStore);
 
       const result = await repo.getRecordFilterOptions("whoop", "metricStream");
 
       expect(query).toHaveBeenCalledTimes(getRecordSelectFilterColumns("metricStream").length);
-      const channelQuery = query.mock.calls.find((call) => String(call[1]).includes("DISTINCT channel"));
+      const channelQuery = query.mock.calls.find((call) =>
+        String(call[1]).includes("DISTINCT channel"),
+      );
       expect(channelQuery?.[1]).toContain("AND is_deleted = 0");
-      expect(result.channel).toEqual([
-        { value: "heart_rate" },
-        { value: "rr_interval_ms" },
-      ]);
+      expect(result.channel).toEqual([{ value: "heart_rate" }, { value: "rr_interval_ms" }]);
     });
 
     it("returns an empty object for data types without dropdown filters", async () => {

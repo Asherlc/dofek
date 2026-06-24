@@ -55,7 +55,9 @@ vi.mock("../lib/trpc.ts", () => ({
     providerDetail: {
       disconnect: { useMutation: () => mockDisconnectMutation },
       logs: { useQuery: () => ({ data: [], isLoading: false }) },
+      logFilterOptions: { useQuery: () => ({ data: {}, isLoading: false }) },
       records: { useQuery: () => ({ data: { rows: [] }, isLoading: false }) },
+      recordFilterOptions: { useQuery: () => ({ data: {}, isLoading: false }) },
     },
     settings: {
       get: { useQuery: (...args: unknown[]) => mockSettingsGetQuery(...args) },

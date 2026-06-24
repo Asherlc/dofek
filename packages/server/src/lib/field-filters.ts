@@ -23,9 +23,7 @@ export function isRangeFilterColumn(column: string): boolean {
   return isDateFilterColumn(column) || isDateTimeFilterColumn(column);
 }
 
-export function parseRangeFilterKey(
-  key: string,
-): { column: string; bound: "from" | "to" } | null {
+export function parseRangeFilterKey(key: string): { column: string; bound: "from" | "to" } | null {
   if (key.endsWith("_from")) {
     return { column: key.slice(0, -"_from".length), bound: "from" };
   }
@@ -169,7 +167,11 @@ export function buildPostgresFilterConditionsMapped(
   filters: Record<string, string>,
   fieldToColumn: Record<string, string>,
 ): SQL[] {
-  return buildPostgresFilterConditions(filters, new Set(Object.values(fieldToColumn)), fieldToColumn);
+  return buildPostgresFilterConditions(
+    filters,
+    new Set(Object.values(fieldToColumn)),
+    fieldToColumn,
+  );
 }
 
 /** Build Postgres ILIKE conditions for allowlisted snake_case columns. */
@@ -236,4 +238,3 @@ export function buildClickHouseFilterClauses(
     params,
   };
 }
-

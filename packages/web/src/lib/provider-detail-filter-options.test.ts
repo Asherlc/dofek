@@ -3,16 +3,19 @@ import {
   filterRangeBoundKey,
   formatFilterOptionLabel,
   getFilterInputType,
+  isRangeFilterInputType,
   toFilterOptions,
 } from "./provider-detail-filter-options.ts";
 
 describe("formatFilterOptionLabel", () => {
   it("formats activity types with training labels", () => {
     expect(formatFilterOptionLabel("activity_type", "road_cycling")).toBe("Road Cycling");
+    expect(formatFilterOptionLabel("activity_type", "bmx")).toBe("BMX");
   });
 
   it("formats snake_case values for other columns", () => {
     expect(formatFilterOptionLabel("status", "access_token_expired")).toBe("Access Token Expired");
+    expect(formatFilterOptionLabel("meal", "bmx")).toBe("Bmx");
   });
 });
 
@@ -36,6 +39,17 @@ describe("getFilterInputType", () => {
   });
 });
 
+describe("isRangeFilterInputType", () => {
+  it("returns true for date and datetime-local inputs", () => {
+    expect(isRangeFilterInputType("date")).toBe(true);
+    expect(isRangeFilterInputType("datetime-local")).toBe(true);
+  });
+
+  it("returns false for text inputs", () => {
+    expect(isRangeFilterInputType("text")).toBe(false);
+  });
+});
+
 describe("filterRangeBoundKey", () => {
   it("builds from/to filter keys", () => {
     expect(filterRangeBoundKey("started_at", "from")).toBe("started_at_from");
@@ -50,6 +64,9 @@ describe("toFilterOptions", () => {
     ).toEqual([
       { value: "breakfast", label: "Breakfast" },
       { value: "dinner", label: "Dinner" },
+    ]);
+    expect(toFilterOptions("activity_type", [{ value: "bmx" }])).toEqual([
+      { value: "bmx", label: "BMX" },
     ]);
   });
 

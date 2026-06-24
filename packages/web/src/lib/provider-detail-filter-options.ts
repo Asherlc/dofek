@@ -19,7 +19,9 @@ export function getFilterInputType(columnKey: string): FilterInputType {
   return "text";
 }
 
-export function isRangeFilterInputType(inputType: FilterInputType): boolean {
+export function isRangeFilterInputType(
+  inputType: FilterInputType,
+): inputType is "date" | "datetime-local" {
   return inputType === "date" || inputType === "datetime-local";
 }
 

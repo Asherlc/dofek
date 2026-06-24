@@ -21,15 +21,15 @@ import { ProviderLogo } from "../components/ProviderLogo.tsx";
 import { ProviderStatsBreakdown } from "../components/ProviderStatsBreakdown.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
+import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import {
+  type FilterInputType,
+  type FilterOption,
   filterRangeBoundKey,
   getFilterInputType,
   isRangeFilterInputType,
   toFilterOptions,
-  type FilterInputType,
-  type FilterOption,
 } from "../lib/provider-detail-filter-options.ts";
-import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import { trpc } from "../lib/trpc.ts";
 
 const oauthBroadcastMessage = z.object({
@@ -560,7 +560,7 @@ function RecordFiltersGrid({
   return (
     <div className="mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       {columns.map((column) => (
-        <label key={column.key} className="block">
+        <div key={column.key} className="block">
           <span className="mb-1 block text-[10px] uppercase tracking-wider text-subtle">
             {column.label}
           </span>
@@ -571,7 +571,7 @@ function RecordFiltersGrid({
             inputType={getFilterInputType(column.key)}
             onFilterChange={onFilterChange}
           />
-        </label>
+        </div>
       ))}
     </div>
   );

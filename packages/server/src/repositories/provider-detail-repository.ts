@@ -372,7 +372,9 @@ export class ProviderDetailRepository {
   }
 
   /** Distinct dropdown values for sync history filters scoped to a provider. */
-  async getSyncLogFilterOptions(providerId: string): Promise<Record<string, ProviderDetailFilterOption[]>> {
+  async getSyncLogFilterOptions(
+    providerId: string,
+  ): Promise<Record<string, ProviderDetailFilterOption[]>> {
     const entries = await Promise.all(
       Object.entries(SYNC_LOG_FILTER_OPTION_FIELDS).map(async ([apiKey, column]) => {
         assertSqlColumnName(column);
@@ -405,11 +407,7 @@ export class ProviderDetailRepository {
     }
 
     if (dataType === "bodyMeasurements") {
-      return this.#getClickHouseRecordFilterOptions(
-        providerId,
-        tableInfo(dataType).table,
-        columns,
-      );
+      return this.#getClickHouseRecordFilterOptions(providerId, tableInfo(dataType).table, columns);
     }
 
     if (dataType === "metricStream") {
