@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ClickHouseCommandClient } from "../clickhouse.ts";
 import {
   INGEST_DATABASE,
   LEGACY_METRIC_STREAM_TABLE,
   METRIC_STREAM_TABLE,
 } from "../../metric-stream/clickhouse-table.ts";
+import type { ClickHouseCommandClient } from "../clickhouse.ts";
 import * as moveMetricStreamToIngestMigration from "./0034_move_metric_stream_to_ingest.ts";
 
 function isLegacyMetricStreamTableCountQuery(queryText: string): boolean {
@@ -44,9 +44,9 @@ describe("0034_move_metric_stream_to_ingest", () => {
     const migration = moveMetricStreamToIngestMigration.createMigration();
     const client: ClickHouseCommandClient = { command: vi.fn() };
 
-    await expect(migration.run?.(client, "postgres://health:fixture@db:5432/health")).rejects.toThrow(
-      "ClickHouse migrations require a query-capable client",
-    );
+    await expect(
+      migration.run?.(client, "postgres://health:fixture@db:5432/health"),
+    ).rejects.toThrow("ClickHouse migrations require a query-capable client");
   });
 
   it("skips copy and drop when the legacy mirror table is absent", async () => {
