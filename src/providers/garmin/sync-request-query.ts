@@ -5,7 +5,10 @@ import { parseGarminSyncCheckpoint } from "./sync-checkpoint.ts";
 
 export function resolveGarminSyncRequestQuery(jobData: SyncJobData): SyncApiQuery | null {
   const checkpoint = parseGarminSyncCheckpoint(jobData.checkpoint);
-  if (!checkpoint || checkpoint.phase === "done") {
+  if (checkpoint?.phase === "done") {
+    return null;
+  }
+  if (!checkpoint) {
     return {
       path: "connectapi/activities",
       filters: { start: 0 },

@@ -22,6 +22,7 @@ export async function enqueueSyncJobWithRequestDedup(
       if (DUPLICATE_REQUEST_JOB_STATES.has(state)) {
         return existing;
       }
+      await existing.remove();
     }
   }
 

@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
+import type { JobsOptions } from "bullmq";
+import { describe, expect, it, vi } from "vitest";
 import { buildSyncRequestJobId } from "../lib/sync-request-query.ts";
 import { resolveWhoopSyncRequestQuery } from "../providers/whoop/sync-request-query.ts";
+import type { SyncJobData } from "./queues.ts";
+import { enqueueSyncJobWithRequestDedup } from "./sync-request-job.ts";
 
 describe("resolveWhoopSyncRequestQuery", () => {
   it("maps a fresh sync job to the first bootstrap cycles request", () => {
@@ -68,5 +71,132 @@ describe("buildSyncRequestJobId", () => {
     expect(buildSyncRequestJobId("whoop", "user-1", query)).toBe(
       buildSyncRequestJobId("whoop", "user-1", query),
     );
+  });
+});
+
+describe("enqueueSyncJobWithRequestDedup", () => {
+  const jobData: SyncJobData = {
+    userId: "user-1",
+    providerId: "whoop",
+    sinceDays: 7,
+  };
+  const jobOptions: JobsOptions = {};
+
+  it("adds a new job when no existing job matches the dedup key", async () => {
+    const newJob = {};
+    const addJob = vi.fn();
+    addJob.mockResolvedValue(newJob);
+    const getJob = vi.fn();
+    getJob.mockResolvedValue(undefined);
+
+    const result = await enqueueSyncJobWithRequestDedup(
+      "whoop",
+      jobData,
+      jobOptions,
+      addJob,
+      getJob,
+    );
+
+    expect(getJob).toHaveBeenCalledOnce();
+    expect(addJob).toHaveBeenCalledOnce();
+    expect(addJob).toHaveBeenCalledWith(
+      "sync",
+      jobData,
+      expect.objectContaining({ jobId: expect.any(String) }),
+    );
+    expect(result).toBe(newJob);
+  });
+
+  it("returns the existing job when it is in a pending state", async () => {
+    const remove = vi.fn();
+    const existing = { getState: vi.fn(), remove };
+    existing.getState.mockResolvedValue("active");
+    const addJob = vi.fn();
+    const getJob = vi.fn();
+    getJob.mockResolvedValue(existing);
+
+    const result = await enqueueSyncJobWithRequestDedup(
+      "whoop",
+      jobData,
+      jobOptions,
+      addJob,
+      getJob,
+    );
+
+    expect(getJob).toHaveBeenCalledOnce();
+    expect(addJob).not.toHaveBeenCalled();
+    expect(result).toBe(existing);
+  });
+
+  it("removes completed jobs and re-adds with the same jobId", async () => {
+    const remove = vi.fn();
+    remove.mockResolvedValue(undefined);
+    const existing = { getState: vi.fn(), remove };
+    existing.getState.mockResolvedValue("completed");
+    const replacement = {};
+    const addJob = vi.fn();
+    addJob.mockResolvedValue(replacement);
+    const getJob = vi.fn();
+    getJob.mockResolvedValue(existing);
+
+    const result = await enqueueSyncJobWithRequestDedup(
+      "whoop",
+      jobData,
+      jobOptions,
+      addJob,
+      getJob,
+    );
+
+    expect(remove).toHaveBeenCalledOnce();
+    expect(addJob).toHaveBeenCalledOnce();
+    expect(result).toBe(replacement);
+  });
+
+  it("removes failed jobs and re-adds with the same jobId", async () => {
+    const remove = vi.fn();
+    remove.mockResolvedValue(undefined);
+    const existing = { getState: vi.fn(), remove };
+    existing.getState.mockResolvedValue("failed");
+    const replacement = {};
+    const addJob = vi.fn();
+    addJob.mockResolvedValue(replacement);
+    const getJob = vi.fn();
+    getJob.mockResolvedValue(existing);
+
+    const result = await enqueueSyncJobWithRequestDedup(
+      "whoop",
+      jobData,
+      jobOptions,
+      addJob,
+      getJob,
+    );
+
+    expect(remove).toHaveBeenCalledOnce();
+    expect(addJob).toHaveBeenCalledOnce();
+    expect(result).toBe(replacement);
+  });
+
+  it("still sets a jobId for providers without a custom resolver (uses default)", async () => {
+    const newJob = {};
+    const addJob = vi.fn();
+    addJob.mockResolvedValue(newJob);
+    const getJob = vi.fn();
+    getJob.mockResolvedValue(undefined);
+
+    const result = await enqueueSyncJobWithRequestDedup(
+      "strava",
+      jobData,
+      jobOptions,
+      addJob,
+      getJob,
+    );
+
+    expect(getJob).toHaveBeenCalledOnce();
+    expect(addJob).toHaveBeenCalledWith(
+      "sync",
+      jobData,
+      expect.objectContaining({ jobId: expect.any(String) }),
+    );
+    expect(result).toBe(newJob);
   });
 });

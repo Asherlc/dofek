@@ -91,7 +91,11 @@ export class GarminProvider implements SyncProvider {
     };
   }
 
-  async #resolveTokens(db: SyncDatabase, userId?: string): Promise<GarminTokens> {
+  async #resolveTokens(
+    db: SyncDatabase,
+    fetchFn: typeof globalThis.fetch,
+    userId?: string,
+  ): Promise<GarminTokens> {
     const scopedUserId = resolveScopedUserId(userId);
     const tokens = await loadTokens(db, this.id, scopedUserId);
     if (!tokens) {
@@ -110,11 +114,7 @@ export class GarminProvider implements SyncProvider {
     }
 
     logger.info("[garmin] Internal API token expired, refreshing via OAuth1 exchange...");
-    const client = await GarminConnectClient.fromTokens(
-      internalTokens,
-      "garmin.com",
-      this.#baseFetchFn,
-    );
+    const client = await GarminConnectClient.fromTokens(internalTokens, "garmin.com", fetchFn);
     const refreshed = client.getTokens();
     if (!refreshed) throw new Error("Failed to refresh Garmin Connect tokens");
     await saveTokens(db, this.id, serializeInternalTokens(refreshed), scopedUserId);
@@ -125,22 +125,6 @@ export class GarminProvider implements SyncProvider {
     const { db, window, options } = run;
     const start = Date.now();
     const scopedUserId = resolveScopedUserId(options.userId);
-
-    let internalTokens: GarminTokens;
-    try {
-      internalTokens = await this.#resolveTokens(db, scopedUserId);
-    } catch (err) {
-      throwIfProviderSyncAbortError(err);
-      return {
-        provider: this.id,
-        recordsSynced: 0,
-        errors: [{ message: err instanceof Error ? err.message : String(err), cause: err }],
-        duration: Date.now() - start,
-        continued: false,
-      };
-    }
-
-    await ensureProvider(db, this.id, this.name);
 
     const fetchFn = createProviderRateLimitFetch("garmin", this.#baseFetchFn, {
       scope: "user",
@@ -153,6 +137,22 @@ export class GarminProvider implements SyncProvider {
           scopedUserId,
         ),
     });
+
+    let internalTokens: GarminTokens;
+    try {
+      internalTokens = await this.#resolveTokens(db, fetchFn, scopedUserId);
+    } catch (err) {
+      throwIfProviderSyncAbortError(err);
+      return {
+        provider: this.id,
+        recordsSynced: 0,
+        errors: [{ message: err instanceof Error ? err.message : String(err), cause: err }],
+        duration: Date.now() - start,
+        continued: false,
+      };
+    }
+
+    await ensureProvider(db, this.id, this.name);
 
     const cursor = await loadSyncCursor(db, scopedUserId);
     const effectiveSince = cursor ? new Date(cursor) : window.since;

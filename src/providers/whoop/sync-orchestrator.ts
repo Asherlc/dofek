@@ -1,3 +1,4 @@
+import { captureException } from "@sentry/node";
 import { WhoopClient } from "whoop-whoop/client";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { runWithSyncStepAdmission } from "../../lib/sync-step-admission-context.ts";
@@ -459,6 +460,7 @@ export async function runWhoopOrchestratedSync(
       await checkpointStore?.save(checkpoint);
       throw err;
     }
+    captureException(err);
     errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
     return {
       provider: "whoop",

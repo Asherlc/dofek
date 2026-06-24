@@ -3,6 +3,7 @@ import { WhoopClient } from "whoop-whoop/client";
 import type { WhoopCycle, WhoopWorkoutRecord } from "whoop-whoop/types";
 import type { SyncDatabase } from "../../db/index.ts";
 import { dailyMetrics, sleepSession } from "../../db/schema.ts";
+import { syncApiQueryKey } from "../../lib/sync-api-query.ts";
 import {
   iterateUtcDates,
   listWhoopHeartRateWindows,
@@ -254,7 +255,15 @@ describe("WHOOP sync step planning", () => {
   it("omits API steps already represented on queued request jobs", async () => {
     pendingQueryMocks.listPendingSyncRequestQueryKeys.mockResolvedValue(
       new Set([
-        'metrics-service/v1/metrics?{"end":"2026-05-03T00:00:00.000Z","name":"heart_rate","start":"2026-05-01T00:00:00.000Z","step":6}',
+        syncApiQueryKey({
+          path: "metrics-service/v1/metrics",
+          filters: {
+            end: "2026-05-03T00:00:00.000Z",
+            name: "heart_rate",
+            start: "2026-05-01T00:00:00.000Z",
+            step: 6,
+          },
+        }),
       ]),
     );
 

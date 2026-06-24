@@ -1,8 +1,7 @@
 import type { SyncRequestQueryResolver } from "../lib/sync-request-query.ts";
 import { registerSyncRequestQueryResolver } from "../lib/sync-request-query.ts";
-import type { Provider } from "../providers/types.ts";
 
-export async function registerProviderSyncRequestResolver(provider: Provider): Promise<void> {
+export async function registerProviderSyncRequestResolver(provider: { id: string }): Promise<void> {
   let resolver: SyncRequestQueryResolver | null = null;
   switch (provider.id) {
     case "garmin":

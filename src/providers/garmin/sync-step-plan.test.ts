@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../../db/index.ts";
 import { dailyMetrics, sleepSession } from "../../db/schema.ts";
+import { syncApiQueryKey } from "../../lib/sync-api-query.ts";
 import {
   type GarminSyncPlanContext,
   listGarminDatesNeedingDailySummarySteps,
@@ -316,7 +317,12 @@ describe("Garmin sync step planning", () => {
 
   it("omits API steps already represented on queued request jobs", async () => {
     pendingQueryMocks.listPendingSyncRequestQueryKeys.mockResolvedValue(
-      new Set(['connectapi/heart-rate?{"date":"2026-03-01"}']),
+      new Set([
+        syncApiQueryKey({
+          path: "connectapi/heart-rate",
+          filters: { date: "2026-03-01" },
+        }),
+      ]),
     );
 
     const steps = await planGarminSyncSteps(makeContext());
