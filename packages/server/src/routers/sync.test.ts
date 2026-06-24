@@ -158,11 +158,7 @@ import {
 
 function createProvidersDbMock() {
   return {
-    execute: vi
-      .fn()
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([]),
+    execute: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([]),
   };
 }
 
@@ -563,9 +559,9 @@ describe("syncRouter", () => {
       expect(mockLoggerWarn).toHaveBeenCalledWith(
         "[sync.providers] provider stats lookup failed: ClickHouse provider stats unavailable",
       );
-      expect(result.find((provider: { id: string }) => provider.id === "whoop_ble")?.authorized).toBe(
-        false,
-      );
+      expect(
+        result.find((provider: { id: string }) => provider.id === "whoop_ble")?.authorized,
+      ).toBe(false);
     });
 
     it("logs and continues when push provider last-received lookup fails", async () => {
@@ -587,9 +583,9 @@ describe("syncRouter", () => {
       expect(mockLoggerWarn).toHaveBeenCalledWith(
         "[sync.providers] push provider last-received lookup failed: ClickHouse metric stream unavailable",
       );
-      expect(result.find((provider: { id: string }) => provider.id === "whoop_ble")?.authorized).toBe(
-        false,
-      );
+      expect(
+        result.find((provider: { id: string }) => provider.id === "whoop_ble")?.authorized,
+      ).toBe(false);
     });
 
     it("logs non-Error provider stats failures with String(error)", async () => {
