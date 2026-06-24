@@ -177,7 +177,7 @@ async function listGarminDatesWithMetricStreamChannel(
 export async function planGarminSyncSteps(
   context: GarminSyncPlanContext,
 ): Promise<GarminSyncStep[]> {
-  const steps: GarminSyncStep[] = [{ type: "activities_list" }];
+  const steps: GarminSyncStep[] = [{ type: "activities_list", offset: 0 }];
 
   const [sleepDates, dailySummaryDates, hrvDates, stressSyncedDates, heartRateSyncedDates] =
     await Promise.all([

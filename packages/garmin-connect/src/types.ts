@@ -29,6 +29,7 @@ export interface OAuth2Token {
 export interface GarminTokens {
   oauth1: OAuth1Token;
   oauth2: OAuth2Token;
+  displayName?: string;
 }
 
 // ============================================================

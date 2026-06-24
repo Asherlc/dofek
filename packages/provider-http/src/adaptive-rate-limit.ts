@@ -19,7 +19,7 @@ export const ADAPTIVE_MIN_REQUESTS_FOR_BUDGET_LEARNING = 8;
 
 export const DEFAULT_PROVIDER_THROTTLE_MS: Readonly<Record<string, number>> = {
   strava: 10_000,
-  garmin: 2_000,
+  garmin: 3_000,
   whoop: 1_000,
 };
 
@@ -31,7 +31,7 @@ export const STEP_CHAIN_SYNC_PROVIDERS: ReadonlySet<string> = new Set(["garmin",
  * Used to align BullMQ job pacing with HTTP-level adaptive budgets.
  */
 export const DEFAULT_HTTP_REQUESTS_PER_SYNC_JOB: Readonly<Record<string, number>> = {
-  garmin: 1,
+  garmin: 2,
   whoop: 3,
 };
 

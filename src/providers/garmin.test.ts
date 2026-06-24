@@ -1618,7 +1618,7 @@ describe("GarminProvider.sync()", () => {
         phase: "api",
         stepIndex: 1,
         steps: expect.arrayContaining([
-          { type: "activities_list" },
+          { type: "activities_list", offset: 0 },
           { type: "activity_reconcile" },
         ]),
       }),
