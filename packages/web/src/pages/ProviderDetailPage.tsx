@@ -334,7 +334,11 @@ export function ProviderDetailPage() {
       <SyncHistory providerId={providerId} />
 
       {/* Records browser */}
-      <RecordsBrowser providerId={providerId} stats={providerStats} />
+      <RecordsBrowser
+        providerId={providerId}
+        stats={providerStats}
+        statsLoading={stats.isLoading}
+      />
     </PageLayout>
   );
 }
@@ -461,16 +465,38 @@ function getStatCount(stats: ProviderStats, key: DataType): number {
 function RecordsBrowser({
   providerId,
   stats,
+  statsLoading,
 }: {
   providerId: string;
   stats: ProviderStats | undefined;
+  statsLoading: boolean;
 }) {
   const availableTypes = DATA_TYPE_LABELS.filter((dt) => {
-    if (!stats) return true;
+    if (!stats) return false;
     return getStatCount(stats, dt.key) > 0;
   });
 
-  const [activeTab, setActiveTab] = useState<DataType>(availableTypes[0]?.key ?? "activities");
+  const [activeTab, setActiveTab] = useState<DataType>("activities");
+  const [lastProviderId, setLastProviderId] = useState(providerId);
+
+  if (providerId !== lastProviderId) {
+    setLastProviderId(providerId);
+    setActiveTab(availableTypes[0]?.key ?? "activities");
+  }
+
+  const activeTabAvailable = availableTypes.some((dt) => dt.key === activeTab);
+  if (stats && availableTypes.length > 0 && !activeTabAvailable) {
+    setActiveTab(availableTypes[0]?.key ?? "activities");
+  }
+
+  if (statsLoading) {
+    return (
+      <section>
+        <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Records</h2>
+        <div className="text-xs text-subtle">Loading records...</div>
+      </section>
+    );
+  }
 
   if (availableTypes.length === 0) {
     return (
@@ -537,8 +563,23 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
     setSelectedRecord(null);
   }
 
+  const [lastProviderId, setLastProviderId] = useState(providerId);
+  if (providerId !== lastProviderId) {
+    setPage(0);
+    setLastProviderId(providerId);
+    setSelectedRecord(null);
+  }
+
   if (records.isLoading) {
     return <div className="text-xs text-subtle">Loading records...</div>;
+  }
+
+  if (records.isError) {
+    return (
+      <div className="text-xs text-red-400">
+        {records.error?.message ?? "Failed to load records."}
+      </div>
+    );
   }
 
   if (rows.length === 0) {
