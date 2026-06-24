@@ -45,6 +45,7 @@
   ],
   "ignorePatterns": [
     "dist/**",
+    "**/skills/stripe-projects",
     ".antigravitycli/**",
     ".codegraph/**",
     ".codex/**",
