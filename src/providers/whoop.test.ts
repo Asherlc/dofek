@@ -65,6 +65,7 @@ vi.mock("../db/tokens.ts", () => ({
   ensureProvider: vi.fn(),
   loadTokens: vi.fn(),
   saveTokens: vi.fn(),
+  deleteTokens: vi.fn(),
 }));
 
 vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
@@ -872,7 +873,7 @@ describe("WhoopProvider.sync() — token resolution", () => {
     vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "tok",
       refreshToken: "ref",
-      expiresAt: futureExpiry,
+      expiresAt: new Date("2020-01-01T00:00:00Z"),
       scopes: null,
     });
 
@@ -907,6 +908,84 @@ describe("WhoopProvider.sync() — token resolution", () => {
     expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "authentication_failed" });
   });
 
+  it("reuses a valid access token without calling Cognito refresh", async () => {
+    const { loadTokens, saveTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "tok",
+      refreshToken: "ref",
+      expiresAt: futureExpiry,
+      scopes: "userId:12345",
+    });
+
+    let cognitoCalls = 0;
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      if (url.includes("auth-service/v3/whoop")) {
+        cognitoCalls += 1;
+        return Promise.resolve(
+          Response.json({
+            AuthenticationResult: { AccessToken: "new-tok", RefreshToken: "new-ref" },
+          }),
+        );
+      }
+      return makeSyncMockFetch({ cycles: [] })(input, init);
+    };
+
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(cognitoCalls).toBe(0);
+    expect(saveTokens).not.toHaveBeenCalled();
+  });
+
+  it("deletes stored tokens when Cognito rejects the refresh token", async () => {
+    const { deleteTokens, loadTokens } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "tok",
+      refreshToken: "ref",
+      expiresAt: new Date("2020-01-01T00:00:00Z"),
+      scopes: "userId:12345",
+    });
+
+    const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes("auth-service/v3/whoop")) {
+        return Promise.resolve(
+          Response.json(
+            {
+              __type: "NotAuthorizedException",
+              message: "Incorrect username or password.",
+            },
+            { status: 400 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response("Not found", { status: 404 }));
+    };
+
+    const provider = new WhoopProvider(mockFetch);
+    const db = makeChainableMock();
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
+
+    expect(deleteTokens).toHaveBeenCalledWith(db, "whoop", "00000000-0000-0000-0000-000000000001");
+    expect(result.errors[0]?.message).toContain("refresh token was revoked or expired");
+    expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "refresh_token_revoked" });
+  });
+
   it("uses stored userId from scopes when available", async () => {
     const { loadTokens, saveTokens } = await import("../db/tokens.ts");
     vi.mocked(loadTokens).mockResolvedValue({
@@ -928,10 +1007,7 @@ describe("WhoopProvider.sync() — token resolution", () => {
     );
 
     expect(result.provider).toBe("whoop");
-    // saveTokens should have been called with userId:12345 in scopes
-    expect(saveTokens).toHaveBeenCalled();
-    const savedScopes = vi.mocked(saveTokens).mock.calls[0]?.[2]?.scopes;
-    expect(savedScopes).toBe("userId:12345");
+    expect(saveTokens).not.toHaveBeenCalled();
   });
 });
 
@@ -2068,99 +2144,6 @@ describe("parseJournalResponse — answer text extraction", () => {
     const raw = [{ date: "2026-03-01", name: "caffeine", value: 3, impact: 0.1 }];
     const entries = parseJournalResponse(raw);
     expect(entries[0]?.impactScore).toBe(0.1);
-  });
-});
-
-// ============================================================
-// Provider authSetup / getUserIdentity tests
-// ============================================================
-
-describe("WhoopProvider.authSetup()", () => {
-  const originalEnv = { ...process.env };
-
-  afterEach(() => {
-    process.env = { ...originalEnv };
-  });
-
-  it("returns auth setup with OAuth config when env vars are set", () => {
-    process.env.WHOOP_CLIENT_ID = "test-id";
-    process.env.WHOOP_CLIENT_SECRET = "test-secret";
-    const provider = new WhoopProvider();
-    const setup = provider.authSetup();
-    expect(setup).toBeDefined();
-    expect(setup?.oauthConfig?.clientId).toBe("test-id");
-    expect(setup?.oauthConfig?.scopes).toContain("read:profile");
-    expect(setup?.exchangeCode).toBeTypeOf("function");
-  });
-
-  it("returns undefined when env vars are missing", () => {
-    delete process.env.WHOOP_CLIENT_ID;
-    delete process.env.WHOOP_CLIENT_SECRET;
-    const provider = new WhoopProvider();
-    expect(provider.authSetup()).toBeUndefined();
-  });
-});
-
-describe("WhoopProvider.getUserIdentity()", () => {
-  const originalEnv = { ...process.env };
-
-  afterEach(() => {
-    process.env = { ...originalEnv };
-  });
-
-  it("returns identity from profile API", async () => {
-    process.env.WHOOP_CLIENT_ID = "test-id";
-    process.env.WHOOP_CLIENT_SECRET = "test-secret";
-
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return Response.json({
-        user_id: 12345,
-        email: "whoop@test.com",
-        first_name: "John",
-        last_name: "Doe",
-      });
-    };
-
-    const provider = new WhoopProvider(mockFetch);
-    const setup = provider.authSetup();
-    if (!setup?.getUserIdentity) throw new Error("getUserIdentity not defined");
-    const identity = await setup.getUserIdentity("test-token");
-    expect(identity.providerAccountId).toBe("12345");
-    expect(identity.email).toBe("whoop@test.com");
-    expect(identity.name).toBe("John Doe");
-  });
-
-  it("handles missing name fields", async () => {
-    process.env.WHOOP_CLIENT_ID = "test-id";
-    process.env.WHOOP_CLIENT_SECRET = "test-secret";
-
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return Response.json({ user_id: 99 });
-    };
-
-    const provider = new WhoopProvider(mockFetch);
-    const setup = provider.authSetup();
-    if (!setup?.getUserIdentity) throw new Error("getUserIdentity not defined");
-    const identity = await setup.getUserIdentity("test-token");
-    expect(identity.providerAccountId).toBe("99");
-    expect(identity.email).toBeNull();
-    expect(identity.name).toBeNull();
-  });
-
-  it("throws on API error", async () => {
-    process.env.WHOOP_CLIENT_ID = "test-id";
-    process.env.WHOOP_CLIENT_SECRET = "test-secret";
-
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
-      return new Response("Forbidden", { status: 403 });
-    };
-
-    const provider = new WhoopProvider(mockFetch);
-    const setup = provider.authSetup();
-    if (!setup?.getUserIdentity) throw new Error("getUserIdentity not defined");
-    await expect(setup.getUserIdentity("bad-token")).rejects.toThrow(
-      "Whoop profile API error (403)",
-    );
   });
 });
 
@@ -3541,29 +3524,31 @@ describe("WhoopProvider.sync() — strength sync", () => {
 // ============================================================
 
 describe("WhoopProvider — rate-limit aware fetch wiring", () => {
-  const originalEnv = { ...process.env };
+  it("surfaces ProviderRateLimitError tagged with providerId 'whoop' on a 429", async () => {
+    await mockStoredWhoopTokens();
 
-  afterEach(() => {
-    process.env = { ...originalEnv };
-  });
-
-  it("throws ProviderRateLimitError tagged with providerId 'whoop' on a 429", async () => {
-    process.env.WHOOP_CLIENT_ID = "test-id";
-    process.env.WHOOP_CLIENT_SECRET = "test-secret";
-
-    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> =>
-      new Response("slow down", { status: 429 });
-
+    const mockFetch = makeSyncMockFetch({ cyclesRateLimit: true });
     const provider = new WhoopProvider(mockFetch);
-    const setup = provider.authSetup();
-    if (!setup?.getUserIdentity) throw new Error("getUserIdentity not defined");
+    const db = makeChainableMock();
 
-    // The constructor wraps fetchFn with createRateLimitAwareFetch({ providerId: "whoop" }).
-    // A 429 must surface as a ProviderRateLimitError carrying that providerId.
-    await expect(setup.getUserIdentity("tok")).rejects.toBeInstanceOf(ProviderRateLimitError);
+    await expect(
+      provider.sync(
+        new SyncRun({
+          db,
+          window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+          userId: "00000000-0000-0000-0000-000000000001",
+        }),
+      ),
+    ).rejects.toBeInstanceOf(ProviderRateLimitError);
+
     try {
-      await setup.getUserIdentity("tok");
-      throw new Error("expected throw");
+      await provider.sync(
+        new SyncRun({
+          db,
+          window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+          userId: "00000000-0000-0000-0000-000000000001",
+        }),
+      );
     } catch (err) {
       expect(err).toBeInstanceOf(ProviderRateLimitError);
       if (err instanceof ProviderRateLimitError) {

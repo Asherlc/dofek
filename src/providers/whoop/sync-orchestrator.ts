@@ -1,13 +1,12 @@
 import { WhoopClient } from "whoop-whoop/client";
 import { withSyncLog } from "../../db/sync-log.ts";
-import { loadTokens, saveTokens } from "../../db/tokens.ts";
 import { runWithSyncStepAdmission } from "../../lib/sync-step-admission-context.ts";
 import { logger } from "../../logger.ts";
-import { ProviderStoredIdentityMissingError } from "../auth-errors.ts";
 import type { SyncRun } from "../sync-run.ts";
 import { SyncWindow } from "../sync-window.ts";
 import type { SyncError, SyncResult } from "../types.ts";
 import { findWhoopRateLimitError, isWhoopRateLimitError } from "./rate-limit.ts";
+import { resolveWhoopTokens } from "./resolve-tokens.ts";
 import {
   applyRateLimitToCheckpoint,
   createWhoopSyncCheckpoint,
@@ -40,50 +39,32 @@ type WhoopOrchestratorResult = {
 
 async function createWhoopClient(
   db: SyncRun["db"],
-  providerId: string,
   fetchFn: typeof globalThis.fetch,
   runUserId?: string,
 ): Promise<WhoopClient> {
-  const stored = await loadTokens(db, providerId, runUserId);
-  if (!stored?.refreshToken) {
-    throw new Error("WHOOP not connected — authenticate via the web UI");
-  }
+  const token = await resolveWhoopTokens({ db, fetchFn, userId: runUserId });
+  return new WhoopClient(token, fetchFn, createWhoopRequestLogger());
+}
 
-  const storedUserIdMatch = stored.scopes?.match(/userId:(\d+)/);
-  const storedUserId = storedUserIdMatch ? Number(storedUserIdMatch[1]) : null;
-  const token = await WhoopClient.refreshAccessToken(stored.refreshToken, fetchFn);
-  const userId = storedUserId ?? token.userId;
-  if (!userId) {
-    throw new ProviderStoredIdentityMissingError("WHOOP", "user ID");
-  }
-
-  await saveTokens(
-    db,
-    providerId,
-    {
-      accessToken: token.accessToken,
-      refreshToken: token.refreshToken,
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-      scopes: `userId:${userId}`,
-    },
-    runUserId,
-  );
-
-  return new WhoopClient(
-    { accessToken: token.accessToken, refreshToken: token.refreshToken, userId },
-    fetchFn,
-    (event) => {
-      const logMethod = event.status === 429 ? "warn" : "info";
-      logger[logMethod]("[whoop] API request", {
-        whoopUserId: event.userId,
-        endpoint: event.endpoint,
-        status: event.status,
-        attempt: event.attempt,
-        retryAfterSeconds: event.retryAfterSeconds,
-        timestamp: event.timestamp.toISOString(),
-      });
-    },
-  );
+function createWhoopRequestLogger(): (event: {
+  userId: number;
+  endpoint: string;
+  status: number;
+  attempt: number;
+  retryAfterSeconds: number | null;
+  timestamp: Date;
+}) => void {
+  return (event) => {
+    const logMethod = event.status === 429 ? "warn" : "info";
+    logger[logMethod]("[whoop] API request", {
+      whoopUserId: event.userId,
+      endpoint: event.endpoint,
+      status: event.status,
+      attempt: event.attempt,
+      retryAfterSeconds: event.retryAfterSeconds,
+      timestamp: event.timestamp.toISOString(),
+    });
+  };
 }
 
 function makeBootstrapContext(
@@ -392,13 +373,13 @@ async function runWhoopSyncStep(
     const needsFetch =
       checkpoint.cycleFetchCursorMs != null && checkpoint.cycleFetchCursorMs < windowEndMs;
     if (needsFetch) {
-      const client = await createWhoopClient(run.db, "whoop", fetchFn, run.options.userId);
+      const client = await createWhoopClient(run.db, fetchFn, run.options.userId);
       return runBootstrapStep(run, checkpoint, client, errors);
     }
     return runBootstrapPersist(run, checkpoint, errors);
   }
 
-  const client = await createWhoopClient(run.db, "whoop", fetchFn, run.options.userId);
+  const client = await createWhoopClient(run.db, fetchFn, run.options.userId);
   if (checkpoint.phase === "api") {
     return runApiStep(run, checkpoint, client, errors);
   }

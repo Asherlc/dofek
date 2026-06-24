@@ -15,7 +15,8 @@ type FetchFn = typeof globalThis.fetch;
  * had near-identical `resolveTokens()` methods.
  *
  * Providers with custom token logic (Garmin internal tokens, Zwift athleteId,
- * Whoop userId, etc.) should NOT use this — keep their own implementation.
+ * etc.) should NOT use this — keep their own implementation. WHOOP uses
+ * `resolveWhoopTokens()` in `src/providers/whoop/resolve-tokens.ts`.
  */
 export async function resolveOAuthTokens(options: {
   db: SyncDatabase;
