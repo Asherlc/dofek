@@ -19,6 +19,7 @@ import { PageLayout } from "../components/PageLayout.tsx";
 import { ProviderDisconnectControl } from "../components/ProviderDisconnectControl.tsx";
 import { ProviderLogo } from "../components/ProviderLogo.tsx";
 import { ProviderStatsBreakdown } from "../components/ProviderStatsBreakdown.tsx";
+import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import { trpc } from "../lib/trpc.ts";
 
@@ -331,7 +332,7 @@ export function ProviderDetailPage() {
       {providerStats && <ProviderStatsBreakdown stats={providerStats} variant="full" />}
 
       {/* Sync history */}
-      <SyncHistory providerId={providerId} />
+      <SyncHistory key={providerId} providerId={providerId} />
 
       {/* Records browser */}
       <RecordsBrowser
@@ -413,6 +414,38 @@ function TableFilterRow({
   );
 }
 
+function RecordFiltersGrid({
+  columns,
+  filters,
+  onFilterChange,
+}: {
+  columns: ReadonlyArray<{ key: string; label: string }>;
+  filters: Record<string, string>;
+  onFilterChange: (key: string, value: string) => void;
+}) {
+  if (columns.length === 0) return null;
+
+  return (
+    <div className="mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {columns.map((column) => (
+        <label key={column.key} className="block">
+          <span className="mb-1 block text-[10px] uppercase tracking-wider text-subtle">
+            {column.label}
+          </span>
+          <input
+            type="text"
+            value={filters[column.key] ?? ""}
+            onChange={(event) => onFilterChange(column.key, event.target.value)}
+            placeholder={`Filter ${column.label}`}
+            aria-label={`Filter ${column.label}`}
+            className="w-full px-2 py-1.5 text-xs bg-accent/10 border border-border rounded text-foreground placeholder:text-dim focus:outline-none focus:border-border-strong"
+          />
+        </label>
+      ))}
+    </div>
+  );
+}
+
 function SyncHistory({ providerId }: { providerId: string }) {
   const [page, setPage] = useState(0);
   const [filters, setFilters] = useState<Record<string, string>>({});
@@ -427,26 +460,21 @@ function SyncHistory({ providerId }: { providerId: string }) {
     filters: activeFilters,
   });
 
-  const rows = logs.data ?? [];
+  const rows = logs.isError ? [] : (logs.data ?? []);
 
   const handleFilterChange = useCallback((key: string, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));
     setPage(0);
   }, []);
 
-  const [lastProviderId, setLastProviderId] = useState(providerId);
-  if (providerId !== lastProviderId) {
-    setLastProviderId(providerId);
-    setPage(0);
-    setFilters({});
-  }
-
   return (
     <section>
       <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Sync History</h2>
 
       {logs.isLoading ? (
-        <div className="text-xs text-subtle">Loading logs...</div>
+        <QueryStatePanel variant="loading" height={80} />
+      ) : logs.isError ? (
+        <QueryStatePanel error={logs.error} height={80} />
       ) : rows.length === 0 && Object.keys(activeFilters).length === 0 ? (
         <div className="text-xs text-subtle">No sync history yet.</div>
       ) : (
@@ -646,7 +674,11 @@ function RecordsBrowser({
         ))}
       </div>
 
-      <RecordsTable providerId={providerId} dataType={activeTab} />
+      <RecordsTable
+        key={`${providerId}:${activeTab}`}
+        providerId={providerId}
+        dataType={activeTab}
+      />
     </section>
   );
 }
@@ -669,49 +701,28 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
     filters: activeFilters,
   });
 
-  const rows = records.data?.rows ?? [];
-  const columns = records.data?.columns ?? [];
+  const rows = records.isError ? [] : (records.data?.rows ?? []);
+  const visibleColumns = records.data?.columns ?? [];
+  const filterColumnNames = records.data?.filterColumns ?? visibleColumns;
 
   const handleFilterChange = useCallback((key: string, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));
     setPage(0);
   }, []);
 
-  // Reset page when data type changes
-  const [lastDataType, setLastDataType] = useState(dataType);
-  if (dataType !== lastDataType) {
-    setPage(0);
-    setLastDataType(dataType);
-    setSelectedRecord(null);
-    setFilters({});
-  }
-
-  const [lastProviderId, setLastProviderId] = useState(providerId);
-  if (providerId !== lastProviderId) {
-    setPage(0);
-    setLastProviderId(providerId);
-    setSelectedRecord(null);
-    setFilters({});
-  }
-
   const filterColumns = useMemo(
-    () => columns.map((column) => ({ key: column, label: formatColumnName(column) })),
-    [columns],
+    () => filterColumnNames.map((column) => ({ key: column, label: formatColumnName(column) })),
+    [filterColumnNames],
   );
 
-  const visibleColumns = columns;
   const hasRaw = rows.some((row) => Object.hasOwn(row, "raw"));
 
   if (records.isLoading) {
-    return <div className="text-xs text-subtle">Loading records...</div>;
+    return <QueryStatePanel variant="loading" height={80} />;
   }
 
   if (records.isError) {
-    return (
-      <div className="text-xs text-red-400">
-        {records.error?.message ?? "Failed to load records."}
-      </div>
-    );
+    return <QueryStatePanel error={records.error} height={80} />;
   }
 
   const emptyMessage =
@@ -721,6 +732,12 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
 
   return (
     <>
+      <RecordFiltersGrid
+        columns={filterColumns}
+        filters={filters}
+        onFilterChange={handleFilterChange}
+      />
+
       <div className="card overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
@@ -740,14 +757,6 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
                 </th>
               )}
             </tr>
-            {filterColumns.length > 0 && (
-              <TableFilterRow
-                columns={filterColumns}
-                filters={filters}
-                onFilterChange={handleFilterChange}
-                trailingCells={hasRaw ? 1 : 0}
-              />
-            )}
           </thead>
           <tbody>
             {rows.length === 0 ? (

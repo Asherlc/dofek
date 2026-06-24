@@ -1,10 +1,36 @@
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 
-const COLUMN_NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
+const SQL_COLUMN_NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
+const FILTER_KEY_PATTERN = /^[a-z][a-zA-Z0-9_]*$/;
+const MAX_FIELD_FILTERS = 20;
 
 /** Optional per-column substring filters sent from table UIs. */
-export const fieldFiltersSchema = z.record(z.string(), z.string().max(500)).optional().default({});
+export const fieldFiltersSchema = z
+  .record(z.string().max(64), z.string().max(500))
+  .optional()
+  .default({})
+  .superRefine((filters, ctx) => {
+    if (Object.keys(filters).length > MAX_FIELD_FILTERS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.too_big,
+        maximum: MAX_FIELD_FILTERS,
+        type: "object",
+        inclusive: true,
+        message: `At most ${MAX_FIELD_FILTERS} filters are allowed`,
+        origin: "array",
+      });
+    }
+
+    for (const key of Object.keys(filters)) {
+      if (!FILTER_KEY_PATTERN.test(key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Invalid filter field name: ${key}`,
+        });
+      }
+    }
+  });
 
 export function escapeLikePattern(value: string): string {
   return value.replace(/[%_\\]/g, (char) => `\\${char}`);
@@ -29,7 +55,7 @@ export function buildPostgresTextFilterConditions(
   const conditions: SQL[] = [];
 
   for (const [field, value] of normalizeFilters(filters)) {
-    if (!allowed.has(field) || !COLUMN_NAME_PATTERN.test(field)) continue;
+    if (!allowed.has(field) || !SQL_COLUMN_NAME_PATTERN.test(field)) continue;
     const pattern = `%${escapeLikePattern(value)}%`;
     conditions.push(sql`CAST(${sql.raw(field)} AS TEXT) ILIKE ${pattern}`);
   }
@@ -61,7 +87,7 @@ export function buildClickHouseTextFilterClauses(
   let index = 0;
 
   for (const [field, value] of normalizeFilters(filters)) {
-    if (!allowed.has(field) || !COLUMN_NAME_PATTERN.test(field)) continue;
+    if (!allowed.has(field) || !SQL_COLUMN_NAME_PATTERN.test(field)) continue;
     const paramName = `filter_${index}`;
     clauses.push(`positionCaseInsensitive(toString(${field}), {${paramName}:String}) > 0`);
     params[paramName] = value;

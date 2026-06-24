@@ -5,6 +5,7 @@ import { logger } from "../logger.ts";
 import {
   DISCONNECT_CHILD_TABLES,
   dataTypeEnum,
+  getRecordDisplayColumns,
   getRecordFilterColumns,
   ProviderDetailRepository,
   tableInfo,
@@ -12,7 +13,13 @@ import {
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 // Re-export for backward compatibility (used by settings router and tests)
-export { DISCONNECT_CHILD_TABLES, dataTypeEnum, getRecordFilterColumns, tableInfo };
+export {
+  DISCONNECT_CHILD_TABLES,
+  dataTypeEnum,
+  getRecordDisplayColumns,
+  getRecordFilterColumns,
+  tableInfo,
+};
 
 import { fieldFiltersSchema } from "../lib/field-filters.ts";
 import { sanitizeErrorMessage } from "../lib/sanitize-error.ts";
@@ -163,7 +170,11 @@ export const providerDetailRouter = router({
         input.offset,
         input.filters,
       );
-      return { rows, columns: [...getRecordFilterColumns(input.dataType)] };
+      return {
+        rows,
+        columns: [...getRecordDisplayColumns(input.dataType)],
+        filterColumns: [...getRecordFilterColumns(input.dataType)],
+      };
     }),
 
   /** Single record detail with raw data */

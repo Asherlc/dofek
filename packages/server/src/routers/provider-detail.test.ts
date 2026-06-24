@@ -516,6 +516,10 @@ describe("providerDetailRouter", () => {
       });
 
       expect(mockWhere).toHaveBeenCalledTimes(1);
+      const whereSql = extractSqlText(mockWhere.mock.calls[0]?.[0]);
+      expect(whereSql).toContain("ILIKE");
+      expect(whereSql).toContain("status");
+      expect(whereSql).toContain("data_type");
     });
   });
 
@@ -765,6 +769,9 @@ describe("providerDetailRouter", () => {
 
       expect(result.columns).toContain("activity_type");
       expect(result.columns).toContain("name");
+      expect(result.columns).not.toContain("provider_id");
+      expect(result.filterColumns).toContain("provider_id");
+      expect(result.filterColumns).toContain("activity_type");
       expect(result.rows).toHaveLength(1);
     });
   });

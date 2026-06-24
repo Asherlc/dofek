@@ -4,6 +4,7 @@ import {
   buildPostgresTextFilterConditions,
   buildPostgresTextFilterConditionsMapped,
   escapeLikePattern,
+  fieldFiltersSchema,
 } from "./field-filters.ts";
 
 describe("escapeLikePattern", () => {
@@ -46,5 +47,18 @@ describe("buildClickHouseTextFilterClauses", () => {
 
   it("returns empty clause when no valid filters", () => {
     expect(buildClickHouseTextFilterClauses({}, ["channel"])).toEqual({ clause: "", params: {} });
+  });
+});
+
+describe("fieldFiltersSchema", () => {
+  it("rejects too many filters", () => {
+    const filters = Object.fromEntries(
+      Array.from({ length: 21 }, (_, index) => [`field_${index}`, "value"]),
+    );
+    expect(fieldFiltersSchema.safeParse(filters).success).toBe(false);
+  });
+
+  it("rejects invalid filter field names", () => {
+    expect(fieldFiltersSchema.safeParse({ "bad-name": "x" }).success).toBe(false);
   });
 });

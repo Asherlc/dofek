@@ -225,7 +225,19 @@ function listColumns(dataType: Exclude<DataType, "bodyMeasurements" | "metricStr
   return listColumnNames(dataType).join(", ");
 }
 
-/** Columns exposed in provider detail record tables and available for server-side filtering. */
+const RECORD_DISPLAY_EXCLUDED = new Set(["user_id", "provider_id"]);
+const RECORD_DISPLAY_PRIORITY = [
+  "id",
+  "name",
+  "date",
+  "started_at",
+  "recorded_at",
+  "activity_type",
+  "type",
+] as const;
+const MAX_RECORD_DISPLAY_COLUMNS = 6;
+
+/** Columns available for server-side filtering on provider detail records. */
 export function getRecordFilterColumns(dataType: DataType): readonly string[] {
   switch (dataType) {
     case "bodyMeasurements":
@@ -235,6 +247,18 @@ export function getRecordFilterColumns(dataType: DataType): readonly string[] {
     default:
       return listColumnNames(dataType);
   }
+}
+
+/** Curated columns shown in the provider detail records table. */
+export function getRecordDisplayColumns(dataType: DataType): readonly string[] {
+  const candidates = getRecordFilterColumns(dataType).filter(
+    (column) => !RECORD_DISPLAY_EXCLUDED.has(column),
+  );
+  const prioritized = [
+    ...RECORD_DISPLAY_PRIORITY.filter((column) => candidates.includes(column)),
+    ...candidates.filter((column) => !RECORD_DISPLAY_PRIORITY.includes(column)),
+  ];
+  return prioritized.slice(0, MAX_RECORD_DISPLAY_COLUMNS);
 }
 
 // ---------------------------------------------------------------------------
