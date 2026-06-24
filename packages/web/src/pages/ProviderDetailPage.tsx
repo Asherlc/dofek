@@ -21,6 +21,13 @@ import { ProviderLogo } from "../components/ProviderLogo.tsx";
 import { ProviderStatsBreakdown } from "../components/ProviderStatsBreakdown.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
+import {
+  filterRangeBoundKey,
+  getFilterInputType,
+  toFilterOptions,
+  type FilterInputType,
+  type FilterOption,
+} from "../lib/provider-detail-filter-options.ts";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import { trpc } from "../lib/trpc.ts";
 
@@ -398,16 +405,121 @@ function pruneEmptyFilters(filters: Record<string, string>): Record<string, stri
   return pruned;
 }
 
+const FILTER_CONTROL_CLASS =
+  "w-full px-2 py-1.5 text-xs bg-accent/10 border border-border rounded text-foreground placeholder:text-dim focus:outline-none focus:border-border-strong";
+
+function DateRangeFilterField({
+  column,
+  inputType,
+  fromValue,
+  toValue,
+  onFromChange,
+  onToChange,
+  className = FILTER_CONTROL_CLASS,
+}: {
+  column: { key: string; label: string };
+  inputType: "date" | "datetime-local";
+  fromValue: string;
+  toValue: string;
+  onFromChange: (value: string) => void;
+  onToChange: (value: string) => void;
+  className?: string;
+}) {
+  return (
+    <div className="flex min-w-[8rem] flex-col gap-1">
+      <input
+        type={inputType}
+        value={fromValue}
+        onChange={(event) => onFromChange(event.target.value)}
+        aria-label={`Filter ${column.label} from`}
+        placeholder="From"
+        className={className}
+      />
+      <input
+        type={inputType}
+        value={toValue}
+        onChange={(event) => onToChange(event.target.value)}
+        aria-label={`Filter ${column.label} to`}
+        placeholder="To"
+        className={className}
+      />
+    </div>
+  );
+}
+
+function FilterField({
+  column,
+  filters,
+  options,
+  inputType = "text",
+  onFilterChange,
+  align = "left",
+  className = FILTER_CONTROL_CLASS,
+}: {
+  column: { key: string; label: string };
+  filters: Record<string, string>;
+  options?: readonly FilterOption[];
+  inputType?: FilterInputType;
+  onFilterChange: (key: string, value: string) => void;
+  align?: "left" | "right";
+  className?: string;
+}) {
+  if (options && options.length > 0) {
+    return (
+      <select
+        value={filters[column.key] ?? ""}
+        onChange={(event) => onFilterChange(column.key, event.target.value)}
+        aria-label={`Filter ${column.label}`}
+        className={`${className} ${align === "right" ? "text-right" : "text-left"}`}
+      >
+        <option value="">All</option>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  if (inputType === "date" || inputType === "datetime-local") {
+    return (
+      <DateRangeFilterField
+        column={column}
+        inputType={inputType}
+        fromValue={filters[filterRangeBoundKey(column.key, "from")] ?? ""}
+        toValue={filters[filterRangeBoundKey(column.key, "to")] ?? ""}
+        onFromChange={(value) => onFilterChange(filterRangeBoundKey(column.key, "from"), value)}
+        onToChange={(value) => onFilterChange(filterRangeBoundKey(column.key, "to"), value)}
+        className={className}
+      />
+    );
+  }
+
+  return (
+    <input
+      type="text"
+      value={filters[column.key] ?? ""}
+      onChange={(event) => onFilterChange(column.key, event.target.value)}
+      placeholder={`Filter ${column.label}`}
+      aria-label={`Filter ${column.label}`}
+      className={`${className} ${align === "right" ? "text-right" : "text-left"}`}
+    />
+  );
+}
+
 function TableFilterRow({
   columns,
   filters,
   onFilterChange,
+  getOptions,
   align = "left",
   trailingCells = 0,
 }: {
   columns: ReadonlyArray<{ key: string; label: string }>;
   filters: Record<string, string>;
   onFilterChange: (key: string, value: string) => void;
+  getOptions?: (columnKey: string) => readonly FilterOption[] | undefined;
   align?: "left" | "right";
   trailingCells?: number;
 }) {
@@ -415,15 +527,14 @@ function TableFilterRow({
     <tr className="border-b border-border/50 bg-page/40">
       {columns.map((column) => (
         <th key={column.key} scope="col" className="px-2 py-1.5 font-normal">
-          <input
-            type="text"
-            value={filters[column.key] ?? ""}
-            onChange={(event) => onFilterChange(column.key, event.target.value)}
-            placeholder={`Filter ${column.label}`}
-            aria-label={`Filter ${column.label}`}
-            className={`w-full min-w-[5rem] px-2 py-1 text-xs bg-accent/10 border border-border rounded text-foreground placeholder:text-dim focus:outline-none focus:border-border-strong ${
-              align === "right" ? "text-right" : "text-left"
-            }`}
+          <FilterField
+            column={column}
+            filters={filters}
+            options={getOptions?.(column.key)}
+            inputType={getFilterInputType(column.key)}
+            onFilterChange={onFilterChange}
+            align={align}
+            className={`${FILTER_CONTROL_CLASS} min-w-[5rem] py-1`}
           />
         </th>
       ))}
@@ -436,10 +547,12 @@ function RecordFiltersGrid({
   columns,
   filters,
   onFilterChange,
+  getOptions,
 }: {
   columns: ReadonlyArray<{ key: string; label: string }>;
   filters: Record<string, string>;
   onFilterChange: (key: string, value: string) => void;
+  getOptions?: (columnKey: string) => readonly FilterOption[] | undefined;
 }) {
   if (columns.length === 0) return null;
 
@@ -450,13 +563,12 @@ function RecordFiltersGrid({
           <span className="mb-1 block text-[10px] uppercase tracking-wider text-subtle">
             {column.label}
           </span>
-          <input
-            type="text"
-            value={filters[column.key] ?? ""}
-            onChange={(event) => onFilterChange(column.key, event.target.value)}
-            placeholder={`Filter ${column.label}`}
-            aria-label={`Filter ${column.label}`}
-            className="w-full px-2 py-1.5 text-xs bg-accent/10 border border-border rounded text-foreground placeholder:text-dim focus:outline-none focus:border-border-strong"
+          <FilterField
+            column={column}
+            filters={filters}
+            options={getOptions?.(column.key)}
+            inputType={getFilterInputType(column.key)}
+            onFilterChange={onFilterChange}
           />
         </label>
       ))}
@@ -470,6 +582,7 @@ function SyncHistory({ providerId }: { providerId: string }) {
   const debouncedFilters = useDebouncedFilters(filters);
   const activeFilters = useMemo(() => pruneEmptyFilters(debouncedFilters), [debouncedFilters]);
   const pageSize = 20;
+  const filterOptionsQuery = trpc.providerDetail.logFilterOptions.useQuery({ providerId });
 
   const logs = trpc.providerDetail.logs.useQuery({
     providerId,
@@ -484,6 +597,11 @@ function SyncHistory({ providerId }: { providerId: string }) {
     setFilters((current) => ({ ...current, [key]: value }));
     setPage(0);
   }, []);
+
+  const getFilterOptions = useCallback(
+    (columnKey: string) => toFilterOptions(columnKey, filterOptionsQuery.data?.[columnKey]),
+    [filterOptionsQuery.data],
+  );
 
   return (
     <section>
@@ -530,6 +648,7 @@ function SyncHistory({ providerId }: { providerId: string }) {
                   columns={SYNC_HISTORY_FILTER_COLUMNS}
                   filters={filters}
                   onFilterChange={handleFilterChange}
+                  getOptions={getFilterOptions}
                 />
               </thead>
               <tbody>
@@ -705,6 +824,10 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
   const debouncedFilters = useDebouncedFilters(filters);
   const activeFilters = useMemo(() => pruneEmptyFilters(debouncedFilters), [debouncedFilters]);
   const pageSize = 25;
+  const filterOptionsQuery = trpc.providerDetail.recordFilterOptions.useQuery({
+    providerId,
+    dataType,
+  });
 
   const records = trpc.providerDetail.records.useQuery({
     providerId,
@@ -728,6 +851,11 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
     [filterColumnNames],
   );
 
+  const getFilterOptions = useCallback(
+    (columnKey: string) => toFilterOptions(columnKey, filterOptionsQuery.data?.[columnKey]),
+    [filterOptionsQuery.data],
+  );
+
   const hasRaw = rows.some((row) => Object.hasOwn(row, "raw"));
 
   if (records.isLoading) {
@@ -749,6 +877,7 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
         columns={filterColumns}
         filters={filters}
         onFilterChange={handleFilterChange}
+        getOptions={getFilterOptions}
       />
 
       <div className="card overflow-x-auto">
