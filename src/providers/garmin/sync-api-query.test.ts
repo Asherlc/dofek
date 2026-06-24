@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { garminSyncStepToApiQuery } from "./sync-api-query.ts";
 
 describe("garminSyncStepToApiQuery", () => {
-  it("returns activities_list query given an activities_list step", () => {
+  it("returns activities_list query given an activities_list step with default offset", () => {
     expect(
       garminSyncStepToApiQuery({
         type: "activities_list",
@@ -11,6 +11,18 @@ describe("garminSyncStepToApiQuery", () => {
     ).toEqual({
       path: "connectapi/activities",
       filters: { start: 0 },
+    });
+  });
+
+  it("propagates offset for paginated activities_list steps", () => {
+    expect(
+      garminSyncStepToApiQuery({
+        type: "activities_list",
+        offset: 50,
+      }),
+    ).toEqual({
+      path: "connectapi/activities",
+      filters: { start: 50 },
     });
   });
 

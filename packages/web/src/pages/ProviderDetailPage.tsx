@@ -20,6 +20,7 @@ import { ProviderDisconnectControl } from "../components/ProviderDisconnectContr
 import { ProviderLogo } from "../components/ProviderLogo.tsx";
 import { ProviderStatsBreakdown } from "../components/ProviderStatsBreakdown.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import { trpc } from "../lib/trpc.ts";
 
@@ -384,26 +385,6 @@ const SYNC_HISTORY_FILTER_COLUMNS = [
   { key: "authFailureReason", label: "Auth Failure" },
   { key: "id", label: "Id" },
 ] as const;
-
-export function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [debouncedValue, setDebouncedValue] = useState(value);
-  const mountedRef = useRef(true);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    const timer = setTimeout(() => {
-      if (mountedRef.current) {
-        setDebouncedValue(value);
-      }
-    }, delayMs);
-    return () => {
-      mountedRef.current = false;
-      clearTimeout(timer);
-    };
-  }, [value, delayMs]);
-
-  return debouncedValue;
-}
 
 function useDebouncedFilters(filters: Record<string, string>, delayMs = 300) {
   return useDebouncedValue(filters, delayMs);

@@ -4,7 +4,7 @@ import type { GarminSyncStep } from "./sync-checkpoint.ts";
 export function garminSyncStepToApiQuery(step: GarminSyncStep): SyncApiQuery | null {
   switch (step.type) {
     case "activities_list":
-      return { path: "connectapi/activities", filters: { start: 0 } };
+      return { path: "connectapi/activities", filters: { start: step.offset } };
     case "activity_detail":
       return {
         path: "connectapi/activity",

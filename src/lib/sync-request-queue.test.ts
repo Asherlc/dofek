@@ -75,7 +75,7 @@ describe("listPendingSyncRequestQueryKeys", () => {
 
     mockResolveSyncRequestQuery.mockImplementation((_providerId, jobData) => ({
       path: "sync",
-      filters: { sinceIso: jobData.sinceIso ?? "" },
+      filters: { sinceIso: jobData.sinceIso },
     }));
     mockSyncApiQueryKey.mockImplementation(
       (query) => `${query.path}?since=${query.filters.sinceIso}`,
@@ -86,6 +86,25 @@ describe("listPendingSyncRequestQueryKeys", () => {
     expect(result).toEqual(
       new Set(["sync?since=2026-01-01T00:00:00Z", "sync?since=2026-02-01T00:00:00Z"]),
     );
+  });
+
+  it("deduplicates identical query keys", async () => {
+    mockGetJobs.mockResolvedValue([
+      job({ userId: "user-1", sinceIso: "2026-01-01T00:00:00Z" }),
+      job({ userId: "user-1", sinceIso: "2026-01-01T00:00:00Z" }),
+    ]);
+
+    mockResolveSyncRequestQuery.mockImplementation((_providerId, jobData) => ({
+      path: "sync",
+      filters: { sinceIso: jobData.sinceIso },
+    }));
+    mockSyncApiQueryKey.mockImplementation(
+      (query) => `${query.path}?since=${query.filters.sinceIso}`,
+    );
+
+    const result = await listPendingSyncRequestQueryKeys("garmin", "user-1");
+
+    expect(result).toEqual(new Set(["sync?since=2026-01-01T00:00:00Z"]));
   });
 
   it("skips jobs where resolveSyncRequestQuery returns null", async () => {
