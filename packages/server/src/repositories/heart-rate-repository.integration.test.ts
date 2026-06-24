@@ -12,8 +12,8 @@ interface SeedRow {
   provider_id: string;
   channel: string;
   scalar: number;
-  _peerdb_is_deleted: 0 | 1;
-  _peerdb_version: number;
+  is_deleted: 0 | 1;
+  version: number;
 }
 
 const client = createClickHouseClientFromEnv();
@@ -38,9 +38,9 @@ async function seed(rows: SeedRow[]): Promise<void> {
       provider_id: row.provider_id,
       channel: row.channel,
       scalar: row.scalar,
-      _peerdb_is_deleted: row._peerdb_is_deleted,
-      _peerdb_synced_at: "2026-04-12 00:00:00.000",
-      _peerdb_version: row._peerdb_version,
+      is_deleted: row.is_deleted,
+      ingested_at: "2026-04-12 00:00:00.000",
+      version: row.version,
     })),
   });
 }
@@ -64,8 +64,8 @@ describe("HeartRateRepository (integration)", () => {
         provider_id: "whoop_ble",
         channel: "heart_rate",
         scalar: 72,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 0,
+        is_deleted: 0,
+        version: 0,
       },
       {
         id: randomUUID(),
@@ -73,8 +73,8 @@ describe("HeartRateRepository (integration)", () => {
         provider_id: "whoop_ble",
         channel: "heart_rate",
         scalar: 74,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 0,
+        is_deleted: 0,
+        version: 0,
       },
       // apple_health: same minute as whoop — must stay a separate source (no priority collapse)
       {
@@ -83,8 +83,8 @@ describe("HeartRateRepository (integration)", () => {
         provider_id: "apple_health",
         channel: "heart_rate",
         scalar: 70,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 0,
+        is_deleted: 0,
+        version: 0,
       },
       // version dedup: same id/time, v1 supersedes v0 — FINAL must keep 99, not 50
       {
@@ -93,8 +93,8 @@ describe("HeartRateRepository (integration)", () => {
         provider_id: "whoop_ble",
         channel: "heart_rate",
         scalar: 50,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 0,
+        is_deleted: 0,
+        version: 0,
       },
       {
         id: supersededId,
@@ -102,8 +102,8 @@ describe("HeartRateRepository (integration)", () => {
         provider_id: "whoop_ble",
         channel: "heart_rate",
         scalar: 99,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 1,
+        is_deleted: 0,
+        version: 1,
       },
       // excluded rows
       {
@@ -112,8 +112,8 @@ describe("HeartRateRepository (integration)", () => {
         provider_id: "whoop_ble",
         channel: "heart_rate",
         scalar: 88,
-        _peerdb_is_deleted: 1,
-        _peerdb_version: 1,
+        is_deleted: 1,
+        version: 1,
       }, // deleted
       {
         id: randomUUID(),
@@ -121,8 +121,8 @@ describe("HeartRateRepository (integration)", () => {
         provider_id: "whoop_ble",
         channel: "heart_rate",
         scalar: 60,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 0,
+        is_deleted: 0,
+        version: 0,
       }, // other day
       {
         id: randomUUID(),
@@ -130,8 +130,8 @@ describe("HeartRateRepository (integration)", () => {
         provider_id: "whoop_ble",
         channel: "heart_rate",
         scalar: 0,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 0,
+        is_deleted: 0,
+        version: 0,
       }, // zero
       {
         id: randomUUID(),
@@ -139,8 +139,8 @@ describe("HeartRateRepository (integration)", () => {
         provider_id: "whoop_ble",
         channel: "power",
         scalar: 200,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 0,
+        is_deleted: 0,
+        version: 0,
       }, // other channel
     ]);
   }, 120_000);

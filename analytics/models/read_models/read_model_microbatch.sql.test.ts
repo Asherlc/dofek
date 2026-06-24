@@ -261,7 +261,7 @@ describe("production analytics read-model build", () => {
     expect(sourcesYaml).toContain("identifier: metric_stream");
     expect(sourcesYaml).toContain("name: ingest");
     expect(sourcesYaml).toContain("event_time: ingested_at");
-    expect(sensorScalarSampleSql).toContain("event_time='ingested_at'");
+    expect(sensorScalarSampleSql).toContain("event_time='_peerdb_synced_at'");
     expect(sensorScalarSampleSql).toContain("source('ingest', 'metric_stream_freshness')");
     expect(dedupedSensorSql).toContain("event_time='refreshed_at'");
     expect(dedupedSensorSql).toContain("max(samples._peerdb_synced_at) AS source_refreshed_at");

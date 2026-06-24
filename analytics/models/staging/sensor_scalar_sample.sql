@@ -2,7 +2,7 @@
     materialized='incremental',
     incremental_strategy='microbatch',
     unique_key='id',
-    event_time='ingested_at',
+    event_time='_peerdb_synced_at',
     begin='2026-01-01',
     batch_size='day',
     lookback=3,

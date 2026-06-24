@@ -46,14 +46,18 @@
   ],
   "ignorePatterns": [
     "dist/**",
+    ".adal/**",
+    ".aider-desk/**",
     ".antigravitycli/**",
+    ".augment/**",
     ".codegraph/**",
     ".codex/**",
     ".claude/**",
     ".context/**",
     ".gemini/**",
     ".kilocode/**",
-    ".agents/**"
+    ".agents/**",
+    "**/skills/stripe-projects"
   ],
   "mutator": {
     "excludedMutations": ["StringLiteral"]

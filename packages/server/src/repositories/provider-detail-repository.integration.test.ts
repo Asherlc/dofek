@@ -22,8 +22,8 @@ interface SeedRow {
   provider_id: string;
   channel: string;
   scalar: number;
-  _peerdb_is_deleted: 0 | 1;
-  _peerdb_version: number;
+  is_deleted: 0 | 1;
+  version: number;
 }
 
 const client = createClickHouseClientFromEnv();
@@ -49,9 +49,9 @@ async function seed(rows: SeedRow[]): Promise<void> {
       provider_id: row.provider_id,
       channel: row.channel,
       scalar: row.scalar,
-      _peerdb_is_deleted: row._peerdb_is_deleted,
-      _peerdb_synced_at: "2026-04-12 00:00:00.000",
-      _peerdb_version: row._peerdb_version,
+      is_deleted: row.is_deleted,
+      ingested_at: "2026-04-12 00:00:00.000",
+      version: row.version,
     })),
   });
 }
@@ -82,8 +82,8 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
         provider_id: "withings",
         channel: "heart_rate",
         scalar: 60,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 0,
+        is_deleted: 0,
+        version: 0,
       },
       {
         id: randomUUID(),
@@ -91,8 +91,8 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
         provider_id: "withings",
         channel: "body_weight",
         scalar: 80,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 0,
+        is_deleted: 0,
+        version: 0,
       },
       // version dedup: v1 (90) supersedes v0 (50)
       {
@@ -101,8 +101,8 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
         provider_id: "withings",
         channel: "body_weight",
         scalar: 50,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 0,
+        is_deleted: 0,
+        version: 0,
       },
       {
         id: supersededId,
@@ -110,8 +110,8 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
         provider_id: "withings",
         channel: "body_weight",
         scalar: 90,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 1,
+        is_deleted: 0,
+        version: 1,
       },
       // excluded: deleted + other provider
       {
@@ -120,8 +120,8 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
         provider_id: "withings",
         channel: "heart_rate",
         scalar: 70,
-        _peerdb_is_deleted: 1,
-        _peerdb_version: 1,
+        is_deleted: 1,
+        version: 1,
       },
       {
         id: randomUUID(),
@@ -129,8 +129,8 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
         provider_id: "fitbit",
         channel: "heart_rate",
         scalar: 65,
-        _peerdb_is_deleted: 0,
-        _peerdb_version: 0,
+        is_deleted: 0,
+        version: 0,
       },
     ]);
   }, 120_000);
