@@ -14,7 +14,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   withings: "Withings",
   garmin: "Garmin",
   polar: "Polar",
-  whoop: "WHOOP",
+  whoop: "WHOOP (Cloud)",
   peloton: "Peloton",
   oura: "Oura",
   zwift: "Zwift",
@@ -40,7 +40,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   "cronometer-csv": "Cronometer",
   bodyspec: "BodySpec",
   dofek: "Dofek",
-  whoop_ble: "WHOOP BLE",
+  whoop_ble: "WHOOP (Bluetooth)",
 };
 
 /** Human-readable label for a provider ID, falls back to the raw ID */
@@ -147,9 +147,24 @@ export const BRAND_COLORS: Readonly<Record<string, string>> = {
   "amazfit-zepp": "#00B588",
 };
 
+/** Providers that reuse another provider's logo asset. */
+const LOGO_ALIASES: Readonly<Record<string, string>> = {
+  whoop_ble: "whoop",
+};
+
+function resolveLogoId(id: string): string {
+  return LOGO_ALIASES[id] ?? id;
+}
+
 /** Returns "svg", "png", or null depending on what logo file a provider has. */
 export function providerLogoType(id: string): "svg" | "png" | null {
-  if (SVG_LOGOS.has(id)) return "svg";
-  if (PNG_LOGOS.has(id)) return "png";
+  const resolved = resolveLogoId(id);
+  if (SVG_LOGOS.has(resolved)) return "svg";
+  if (PNG_LOGOS.has(resolved)) return "png";
   return null;
+}
+
+/** Logo asset filename stem for a provider ID. */
+export function providerLogoId(id: string): string {
+  return resolveLogoId(id);
 }

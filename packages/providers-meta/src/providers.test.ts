@@ -8,6 +8,7 @@ import {
   PROVIDER_LABELS,
   providerAbsentExplanation,
   providerLabel,
+  providerLogoId,
   providerLogoType,
   providerSourceLabel,
   SVG_LOGOS,
@@ -16,7 +17,8 @@ import {
 describe("PROVIDER_LABELS", () => {
   it("maps known provider IDs to readable labels", () => {
     expect(PROVIDER_LABELS.strava).toBe("Strava");
-    expect(PROVIDER_LABELS.whoop).toBe("WHOOP");
+    expect(PROVIDER_LABELS.whoop).toBe("WHOOP (Cloud)");
+    expect(PROVIDER_LABELS.whoop_ble).toBe("WHOOP (Bluetooth)");
     expect(PROVIDER_LABELS["ride-with-gps"]).toBe("Ride with GPS");
     expect(PROVIDER_LABELS["cronometer-csv"]).toBe("Cronometer");
     expect(PROVIDER_LABELS.fatsecret).toBe("fatsecret");
@@ -51,7 +53,7 @@ describe("providerSourceLabel", () => {
 
   it("falls back to the provider label in other cases", () => {
     expect(providerSourceLabel("apple_health", null)).toBe("Apple Health");
-    expect(providerSourceLabel("whoop", "Strong")).toBe("WHOOP");
+    expect(providerSourceLabel("whoop", "Strong")).toBe("WHOOP (Cloud)");
   });
 });
 
@@ -139,10 +141,18 @@ describe("providerLogoType", () => {
   it("returns 'png' for PNG logo providers", () => {
     expect(providerLogoType("wahoo")).toBe("png");
     expect(providerLogoType("whoop")).toBe("png");
+    expect(providerLogoType("whoop_ble")).toBe("png");
   });
 
   it("returns null for providers without logos", () => {
     expect(providerLogoType("velohero")).toBeNull();
     expect(providerLogoType("unknown")).toBeNull();
+  });
+});
+
+describe("providerLogoId", () => {
+  it("resolves WHOOP Bluetooth to the shared WHOOP logo asset stem", () => {
+    expect(providerLogoId("whoop_ble")).toBe("whoop");
+    expect(providerLogoId("whoop")).toBe("whoop");
   });
 });

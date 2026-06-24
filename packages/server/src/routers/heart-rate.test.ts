@@ -23,7 +23,7 @@ vi.mock("../trpc.ts", async () => {
 vi.mock("@dofek/providers/providers", () => ({
   providerLabel: (id: string) => {
     const labels: Record<string, string> = {
-      whoop_ble: "WHOOP BLE",
+      whoop_ble: "WHOOP (Bluetooth)",
       apple_health: "Apple Health",
     };
     return labels[id] ?? id;
