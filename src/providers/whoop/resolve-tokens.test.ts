@@ -164,4 +164,23 @@ describe("resolveWhoopTokens", () => {
     expect(deleteTokens).toHaveBeenCalledWith(db, "whoop", "user-1");
     refreshSpy.mockRestore();
   });
+
+  it("rejects malformed refresh payloads before persisting tokens", async () => {
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "stored-access",
+      refreshToken: "stored-refresh",
+      expiresAt: new Date("2020-01-01T00:00:00Z"),
+      scopes: "userId:12345",
+    });
+
+    const refreshSpy = vi.spyOn(WhoopClient, "refreshAccessToken").mockResolvedValue({
+      accessToken: "",
+      refreshToken: "new-refresh",
+      userId: 12345,
+    });
+
+    await expect(resolveWhoopTokens({ db: makeDb(), userId: "user-1" })).rejects.toThrow();
+    expect(saveTokens).not.toHaveBeenCalled();
+    refreshSpy.mockRestore();
+  });
 });

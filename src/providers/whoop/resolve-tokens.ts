@@ -1,5 +1,6 @@
 import { WhoopClient } from "whoop-whoop/client";
 import type { WhoopAuthToken } from "whoop-whoop/types";
+import { z } from "zod";
 import type { TokenSet } from "../../auth/oauth.ts";
 import type { SyncDatabase } from "../../db/index.ts";
 import { deleteTokens, loadTokens, saveTokens } from "../../db/tokens.ts";
@@ -10,6 +11,12 @@ export const WHOOP_PROVIDER_ID = "whoop";
 export const WHOOP_ACCESS_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 
 type FetchFn = typeof globalThis.fetch;
+
+const whoopRefreshTokenSchema = z.object({
+  accessToken: z.string().min(1),
+  refreshToken: z.string().min(1),
+  userId: z.number().int().nullable(),
+});
 
 export function parseWhoopUserIdFromScopes(scopes: string | null | undefined): number | null {
   const match = scopes?.match(/userId:(\d+)/);
@@ -66,7 +73,9 @@ export async function resolveWhoopTokens(options: {
   }
 
   try {
-    const refreshed = await WhoopClient.refreshAccessToken(stored.refreshToken, fetchFn);
+    const refreshed = whoopRefreshTokenSchema.parse(
+      await WhoopClient.refreshAccessToken(stored.refreshToken, fetchFn),
+    );
     const resolvedUserId = storedUserId ?? refreshed.userId;
     if (!resolvedUserId) {
       throw new ProviderStoredIdentityMissingError("WHOOP", "user ID");

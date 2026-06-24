@@ -427,5 +427,30 @@ describe("whoopAuthRouter", () => {
       expect(saveTokens).toHaveBeenCalled();
       expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:sync.providers");
     });
+
+    it("rejects empty access or refresh tokens", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: makeMockSensorStore([]),
+      });
+
+      await expect(
+        caller.saveTokens({
+          accessToken: "",
+          refreshToken: "rt-456",
+          userId: 789,
+        }),
+      ).rejects.toThrow(/WHOOP access token is required/);
+
+      await expect(
+        caller.saveTokens({
+          accessToken: "at-123",
+          refreshToken: "",
+          userId: 789,
+        }),
+      ).rejects.toThrow(/WHOOP refresh token is required/);
+    });
   });
 });

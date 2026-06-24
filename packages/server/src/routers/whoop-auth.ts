@@ -133,8 +133,8 @@ export const whoopAuthRouter = router({
   saveTokens: protectedProcedure
     .input(
       z.object({
-        accessToken: z.string(),
-        refreshToken: z.string(),
+        accessToken: z.string().min(1, "WHOOP access token is required"),
+        refreshToken: z.string().min(1, "WHOOP refresh token is required"),
         userId: z.number(),
       }),
     )
