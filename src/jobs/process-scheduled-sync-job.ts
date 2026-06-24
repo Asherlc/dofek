@@ -1,5 +1,5 @@
-import type { Job } from "bullmq";
 import { isStepChainSyncProvider } from "@dofek/provider-http/adaptive-rate-limit";
+import type { Job } from "bullmq";
 import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
 import { listProviderSyncJobsForUser } from "../lib/sync-request-queue.ts";
