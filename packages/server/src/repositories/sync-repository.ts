@@ -201,7 +201,7 @@ export class SyncRepository {
         SELECT
           provider_id,
           max(recorded_at) AS last_received
-        FROM ingest.metric_stream
+        FROM ingest.metric_stream FINAL
         WHERE user_id = {userId:UUID}
           AND provider_id IN {providerIds:Array(String)}
           AND is_deleted = 0

@@ -204,13 +204,7 @@ export function ProviderDetailPage() {
               <div className="flex items-center gap-2 mt-0.5">
                 {provider.pushOnly ? (
                   <>
-                    <span
-                      className={`text-xs ${
-                        provider.authorized ? "text-emerald-400" : "text-subtle"
-                      }`}
-                    >
-                      {provider.authorized ? "Receiving data" : "Waiting for mobile sync"}
-                    </span>
+                    <span className="text-xs text-subtle">Mobile sync</span>
                     {lastSyncedRelative && (
                       <span className="text-xs text-dim">Last received: {lastSyncedRelative}</span>
                     )}

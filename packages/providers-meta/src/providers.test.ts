@@ -8,6 +8,7 @@ import {
   PROVIDER_LABELS,
   providerAbsentExplanation,
   providerLabel,
+  providerLogoId,
   providerLogoType,
   providerSourceLabel,
   SVG_LOGOS,
@@ -146,5 +147,12 @@ describe("providerLogoType", () => {
   it("returns null for providers without logos", () => {
     expect(providerLogoType("velohero")).toBeNull();
     expect(providerLogoType("unknown")).toBeNull();
+  });
+});
+
+describe("providerLogoId", () => {
+  it("resolves WHOOP Bluetooth to the shared WHOOP logo asset stem", () => {
+    expect(providerLogoId("whoop_ble")).toBe("whoop");
+    expect(providerLogoId("whoop")).toBe("whoop");
   });
 });

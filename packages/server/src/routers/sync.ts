@@ -1,4 +1,5 @@
 import { PUSH_PROVIDERS } from "@dofek/providers/push-providers";
+import { captureException } from "@sentry/node";
 import { TRPCError } from "@trpc/server";
 import type { Job, Queue } from "bullmq";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
@@ -44,7 +45,20 @@ function logProvidersQueryFailure(operation: string, error: unknown): void {
   logger.warn(
     `[sync.providers] ${operation} failed: ${error instanceof Error ? error.message : String(error)}`,
   );
+  captureException(error);
 }
+
+const syncProviderRowOutputSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  authType: z.string(),
+  authorized: z.boolean(),
+  lastSyncedAt: z.string().nullable(),
+  importOnly: z.boolean(),
+  pushOnly: z.boolean(),
+  needsReauth: z.boolean(),
+});
 
 const syncDateSchema = z
   .string()
@@ -152,86 +166,87 @@ export const syncRouter = router({
   }),
 
   /** List all providers and whether they're enabled (have valid config) */
-  providers: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
-    await ensureProvidersRegistered();
-    const all = getAllProviders();
-    const repo = new SyncRepository(ctx.db, ctx.userId, ctx.sensorStore);
+  providers: cachedProtectedQuery(CacheTTL.SHORT)
+    .output(z.array(syncProviderRowOutputSchema))
+    .query(async ({ ctx }) => {
+      await ensureProvidersRegistered();
+      const all = getAllProviders();
+      const repo = new SyncRepository(ctx.db, ctx.userId, ctx.sensorStore);
 
-    // Batch: load all tokens, last sync times, and recent auth errors in 3 queries instead of 3N
-    const [allTokens, lastSyncs, latestErrors, providerStats, pushLastReceived] = await Promise.all(
-      [
-        repo.getConnectedProviderIds(),
-        repo.getLastSyncTimes(),
-        repo.getLatestErrors(),
-        ctx.sensorStore
-          ? repo.getProviderStats().catch((error): ProviderStatRow[] => {
-              logProvidersQueryFailure("provider stats lookup", error);
-              return [];
-            })
-          : Promise.resolve([] satisfies ProviderStatRow[]),
-        repo.getPushProviderLastReceived().catch((error): PushProviderLastReceived[] => {
-          logProvidersQueryFailure("push provider last-received lookup", error);
-          return [];
-        }),
-      ],
-    );
+      // Batch: load all tokens, last sync times, and recent auth errors in 3 queries instead of 3N
+      const [allTokens, lastSyncs, latestErrors, providerStats, pushLastReceived] =
+        await Promise.all([
+          repo.getConnectedProviderIds(),
+          repo.getLastSyncTimes(),
+          repo.getLatestErrors(),
+          ctx.sensorStore
+            ? repo.getProviderStats().catch((error): ProviderStatRow[] => {
+                logProvidersQueryFailure("provider stats lookup", error);
+                return [];
+              })
+            : Promise.resolve([] satisfies ProviderStatRow[]),
+          repo.getPushProviderLastReceived().catch((error): PushProviderLastReceived[] => {
+            logProvidersQueryFailure("push provider last-received lookup", error);
+            return [];
+          }),
+        ]);
 
-    const tokenSet = new Set(allTokens.map((r) => r.providerId));
-    const tokenUpdatedAtMap = new Map(allTokens.map((r) => [r.providerId, r.updatedAt]));
-    const lastSyncMap = new Map(lastSyncs.map((r) => [r.providerId, r.lastSynced]));
-    const authErrorProviders = new Set(
-      latestErrors
-        .filter((r) =>
-          hasCurrentProviderAuthFailure(
-            r.authFailureReason,
-            r.syncedAt,
-            tokenUpdatedAtMap.get(r.providerId),
-          ),
-        )
-        .map((r) => r.providerId),
-    );
-    const statsByProvider = new Map(providerStats.map((row) => [row.providerId, row]));
-    const lastReceivedByProvider = new Map(
-      pushLastReceived.map((row) => [row.providerId, row.lastReceived]),
-    );
+      const tokenSet = new Set(allTokens.map((r) => r.providerId));
+      const tokenUpdatedAtMap = new Map(allTokens.map((r) => [r.providerId, r.updatedAt]));
+      const lastSyncMap = new Map(lastSyncs.map((r) => [r.providerId, r.lastSynced]));
+      const authErrorProviders = new Set(
+        latestErrors
+          .filter((r) =>
+            hasCurrentProviderAuthFailure(
+              r.authFailureReason,
+              r.syncedAt,
+              tokenUpdatedAtMap.get(r.providerId),
+            ),
+          )
+          .map((r) => r.providerId),
+      );
+      const statsByProvider = new Map(providerStats.map((row) => [row.providerId, row]));
+      const lastReceivedByProvider = new Map(
+        pushLastReceived.map((row) => [row.providerId, row.lastReceived]),
+      );
 
-    const registeredProviders = all
-      .filter((p) => p.validate() === null)
-      .map((p) => {
-        const model = new ProviderModel(p, tokenSet, lastSyncMap, CUSTOM_AUTH_PROVIDERS);
+      const registeredProviders = all
+        .filter((p) => p.validate() === null)
+        .map((p) => {
+          const model = new ProviderModel(p, tokenSet, lastSyncMap, CUSTOM_AUTH_PROVIDERS);
+          return {
+            id: model.id,
+            name: model.name,
+            description: null,
+            authType: model.authType,
+            authorized: model.isConnected,
+            lastSyncedAt: model.lastSyncedAt,
+            importOnly: model.importOnly,
+            pushOnly: false,
+            needsReauth: authErrorProviders.has(model.id),
+          };
+        });
+
+      const pushProviders = PUSH_PROVIDERS.map((provider) => {
+        const stats = statsByProvider.get(provider.id);
+        const lastReceived = lastReceivedByProvider.get(provider.id) ?? null;
+        const hasData = (stats?.metricStream ?? 0) > 0 || lastReceived != null;
+
         return {
-          id: model.id,
-          name: model.name,
-          description: null,
-          authType: model.authType,
-          authorized: model.isConnected,
-          lastSyncedAt: model.lastSyncedAt,
-          importOnly: model.importOnly,
-          pushOnly: false,
-          needsReauth: authErrorProviders.has(model.id),
+          id: provider.id,
+          name: provider.name,
+          description: provider.description,
+          authType: provider.authType,
+          authorized: hasData,
+          lastSyncedAt: lastReceived,
+          importOnly: false,
+          pushOnly: true,
+          needsReauth: false,
         };
       });
 
-    const pushProviders = PUSH_PROVIDERS.map((provider) => {
-      const stats = statsByProvider.get(provider.id);
-      const lastReceived = lastReceivedByProvider.get(provider.id) ?? null;
-      const hasData = (stats?.metricStream ?? 0) > 0 || lastReceived != null;
-
-      return {
-        id: provider.id,
-        name: provider.name,
-        description: provider.description,
-        authType: provider.authType,
-        authorized: hasData,
-        lastSyncedAt: lastReceived,
-        importOnly: false,
-        pushOnly: true,
-        needsReauth: false,
-      };
-    });
-
-    return [...registeredProviders, ...pushProviders];
-  }),
+      return [...registeredProviders, ...pushProviders];
+    }),
 
   /** Trigger sync — enqueues a BullMQ job, returns immediately with jobId */
   triggerSync: protectedProcedure.input(triggerSyncInput).mutation(async ({ ctx, input }) => {

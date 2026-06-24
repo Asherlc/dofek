@@ -31,7 +31,7 @@ runs:
           exit 0
         fi
 
-        version="0.43.76"
+        version="0.43.96"
         tmpdir="$(mktemp -d)"
         curl -sSfL "https://github.com/Infisical/cli/releases/download/v${version}/cli_${version}_linux_amd64.tar.gz" \
           -o "${tmpdir}/infisical.tar.gz"

@@ -321,7 +321,7 @@ describe("SyncRepository", () => {
         expect.stringContaining("FROM ingest.metric_stream"),
         { userId: "user-1", providerIds: ["whoop_ble"] },
       );
-      expect(query.mock.calls[0]?.[1]).not.toContain("FINAL");
+      expect(query.mock.calls[0]?.[1]).toContain("FINAL");
     });
 
     it("returns empty array when ClickHouse query fails", async () => {

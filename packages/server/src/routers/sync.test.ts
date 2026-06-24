@@ -9,6 +9,7 @@ const {
   mockGetSyncProviders,
   mockRegisterProvider,
   mockLoggerWarn,
+  mockCaptureException,
   mockInvalidateByPrefix,
   mockVeloHeroProvider,
 } = vi.hoisted(() => ({
@@ -19,6 +20,7 @@ const {
   mockGetSyncProviders: vi.fn(() => []),
   mockRegisterProvider: vi.fn(),
   mockLoggerWarn: vi.fn(),
+  mockCaptureException: vi.fn(),
   mockInvalidateByPrefix: vi.fn().mockResolvedValue(undefined),
   mockVeloHeroProvider: vi.fn(() => ({ id: "velohero" })),
 }));
@@ -102,6 +104,10 @@ vi.mock("../logger.ts", () => ({
   logger: { warn: mockLoggerWarn, info: vi.fn() },
 }));
 
+vi.mock("@sentry/node", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
+
 // Mock the dynamic provider imports used in doRegisterProviders
 vi.mock("dofek/providers/wahoo/provider", () => ({ WahooProvider: vi.fn() }));
 vi.mock("dofek/providers/withings", () => ({ WithingsProvider: vi.fn() }));
@@ -142,6 +148,7 @@ vi.mock("dofek/db/schema", () => ({
 }));
 
 import * as enqueueSyncJobModule from "dofek/jobs/enqueue-sync-job";
+import { SyncRepository } from "../repositories/sync-repository.ts";
 import {
   logsInput,
   sanitizeErrorMessage,
@@ -559,6 +566,9 @@ describe("syncRouter", () => {
       expect(mockLoggerWarn).toHaveBeenCalledWith(
         "[sync.providers] provider stats lookup failed: ClickHouse provider stats unavailable",
       );
+      expect(mockCaptureException).toHaveBeenCalledWith(
+        expect.objectContaining({ message: "ClickHouse provider stats unavailable" }),
+      );
       expect(
         result.find((provider: { id: string }) => provider.id === "whoop_ble")?.authorized,
       ).toBe(false);
@@ -582,6 +592,9 @@ describe("syncRouter", () => {
 
       expect(mockLoggerWarn).toHaveBeenCalledWith(
         "[sync.providers] push provider last-received lookup failed: ClickHouse metric stream unavailable",
+      );
+      expect(mockCaptureException).toHaveBeenCalledWith(
+        expect.objectContaining({ message: "ClickHouse metric stream unavailable" }),
       );
       expect(
         result.find((provider: { id: string }) => provider.id === "whoop_ble")?.authorized,
@@ -610,10 +623,12 @@ describe("syncRouter", () => {
       expect(mockLoggerWarn).toHaveBeenCalledWith(
         "[sync.providers] provider stats lookup failed: string stats failure",
       );
+      expect(mockCaptureException).toHaveBeenCalledWith("string stats failure");
     });
 
     it("does not query ClickHouse when sensor store is not configured", async () => {
       mockGetAllProviders.mockReturnValue([]);
+      const getProviderStats = vi.spyOn(SyncRepository.prototype, "getProviderStats");
       const query = vi.fn();
 
       const caller = createCaller({
@@ -623,7 +638,9 @@ describe("syncRouter", () => {
       });
 
       await caller.providers();
+      expect(getProviderStats).not.toHaveBeenCalled();
       expect(query).not.toHaveBeenCalled();
+      getProviderStats.mockRestore();
     });
 
     it("handles authSetup throwing", async () => {

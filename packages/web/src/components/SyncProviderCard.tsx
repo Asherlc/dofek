@@ -62,11 +62,7 @@ export function SyncProviderCard({
           <StatusDot status={state.status} />
         )}
         <span className="text-sm font-medium text-foreground">{provider.name}</span>
-        {pushOnly && (
-          <span className="text-xs text-subtle">
-            {provider.authorized ? "Receiving data" : "iOS app"}
-          </span>
-        )}
+        {pushOnly && <span className="text-xs text-subtle">Mobile sync</span>}
         {!pushOnly && needsReauth && <span className="text-xs text-amber-400">Reconnect</span>}
         {!pushOnly && needsAuth && !needsReauth && (
           <span className="text-xs text-blue-400">Connect</span>
@@ -113,7 +109,7 @@ export function SyncProviderCard({
         <div className="flex items-center gap-1">
           {pushOnly ? (
             <span className="text-xs text-dim">
-              {provider.authorized ? "Live BLE push" : "Waiting for mobile sync"}
+              {provider.authorized ? "Synced via iOS app" : "Waiting for mobile sync"}
             </span>
           ) : (
             <>

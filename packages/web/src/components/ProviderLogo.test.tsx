@@ -45,6 +45,12 @@ describe("ProviderLogo", () => {
       expect(img.getAttribute("src")).toBe("/logos/wahoo.png");
     });
 
+    it("renders WHOOP Bluetooth with the shared WHOOP logo asset", () => {
+      const { container } = render(<ProviderLogo provider="whoop_ble" />);
+      const img = queryImg(container);
+      expect(img.getAttribute("src")).toBe("/logos/whoop.png");
+    });
+
     it("respects the size prop", () => {
       const { container } = render(<ProviderLogo provider="garmin" size={32} />);
       const img = queryImg(container);
