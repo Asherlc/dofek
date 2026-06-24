@@ -281,7 +281,21 @@ describe("SyncRepository", () => {
   });
 
   describe("getPushProviderLastReceived", () => {
-    it("returns empty array when ClickHouse is unavailable", async () => {
+    it("returns empty array when provider stats store is not configured", async () => {
+      const query = vi.fn();
+      const execute = vi.fn();
+      const db: Pick<import("dofek/db").Database, "execute" | "select"> = {
+        execute,
+        select: vi.fn(),
+      };
+      const repo = new SyncRepository(db, "user-1");
+
+      await expect(repo.getPushProviderLastReceived()).resolves.toEqual([]);
+      expect(execute).not.toHaveBeenCalled();
+      expect(query).not.toHaveBeenCalled();
+    });
+
+    it("returns empty array when ClickHouse returns no rows", async () => {
       const { repo } = makeRepository([]);
       await expect(repo.getPushProviderLastReceived()).resolves.toEqual([]);
     });

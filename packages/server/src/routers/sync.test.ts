@@ -156,6 +156,33 @@ import {
   toJobId,
 } from "./sync-helpers.ts";
 
+function createProvidersDbMock() {
+  return {
+    execute: vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]),
+  };
+}
+
+function createSensorStoreQuery(responses: {
+  providerStats?: Record<string, unknown>[] | Error;
+  pushLastReceived?: Record<string, unknown>[] | Error;
+}) {
+  return vi.fn(async (_schema: unknown, sql: string) => {
+    if (sql.includes("provider_stats")) {
+      if (responses.providerStats instanceof Error) throw responses.providerStats;
+      return responses.providerStats ?? [];
+    }
+    if (sql.includes("ingest.metric_stream")) {
+      if (responses.pushLastReceived instanceof Error) throw responses.pushLastReceived;
+      return responses.pushLastReceived ?? [];
+    }
+    return [];
+  });
+}
+
 describe("syncRouter", () => {
   const createCaller = createTestCallerFactory(syncRouter);
 
@@ -282,6 +309,8 @@ describe("syncRouter", () => {
       const whoopBle = result.find((p: { id: string }) => p.id === "whoop_ble");
       expect(whoopBle?.authType).toBe("push:mobile");
       expect(whoopBle?.pushOnly).toBe(true);
+      expect(whoopBle?.importOnly).toBe(false);
+      expect(whoopBle?.needsReauth).toBe(false);
       expect(whoopBle?.authorized).toBe(false);
       expect(whoopBle?.name).toBe("WHOOP (Bluetooth)");
       expect(whoopBle?.description).toBe(
@@ -294,6 +323,7 @@ describe("syncRouter", () => {
       expect(wahoo?.authorized).toBe(true);
       expect(wahoo?.lastSyncedAt).toBe("2024-01-01");
       expect(wahoo?.importOnly).toBe(false);
+      expect(wahoo?.pushOnly).toBe(false);
       expect(wahoo?.needsReauth).toBe(false);
 
       // WHOOP: custom auth, not authorized (no token)
@@ -452,6 +482,152 @@ describe("syncRouter", () => {
       const peloton = result.find((provider: { id: string }) => provider.id === "peloton");
       expect(peloton?.authorized).toBe(true);
       expect(peloton?.needsReauth).toBe(false);
+    });
+
+    it("marks push provider authorized when metric stream data exists", async () => {
+      mockGetAllProviders.mockReturnValue([]);
+
+      const caller = createCaller({
+        db: createProvidersDbMock(),
+        sensorStore: {
+          query: createSensorStoreQuery({
+            providerStats: [
+              {
+                provider_id: "whoop_ble",
+                activities: 0,
+                daily_metrics: 0,
+                sleep_sessions: 0,
+                body_measurements: 0,
+                food_entries: 0,
+                health_events: 0,
+                metric_stream: 4,
+                nutrition_daily: 0,
+                lab_panels: 0,
+                lab_results: 0,
+                journal_entries: 0,
+              },
+            ],
+          }),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.providers();
+      const whoopBle = result.find((provider: { id: string }) => provider.id === "whoop_ble");
+      expect(whoopBle?.authorized).toBe(true);
+      expect(whoopBle?.lastSyncedAt).toBeNull();
+    });
+
+    it("marks push provider authorized when last received timestamp exists", async () => {
+      mockGetAllProviders.mockReturnValue([]);
+
+      const caller = createCaller({
+        db: createProvidersDbMock(),
+        sensorStore: {
+          query: createSensorStoreQuery({
+            pushLastReceived: [
+              {
+                provider_id: "whoop_ble",
+                last_received: "2026-06-20T12:00:00.000Z",
+              },
+            ],
+          }),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.providers();
+      const whoopBle = result.find((provider: { id: string }) => provider.id === "whoop_ble");
+      expect(whoopBle?.authorized).toBe(true);
+      expect(whoopBle?.lastSyncedAt).toBe("2026-06-20T12:00:00.000Z");
+    });
+
+    it("logs and continues when provider stats lookup fails", async () => {
+      mockGetAllProviders.mockReturnValue([]);
+
+      const caller = createCaller({
+        db: createProvidersDbMock(),
+        sensorStore: {
+          query: createSensorStoreQuery({
+            providerStats: new Error("ClickHouse provider stats unavailable"),
+          }),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.providers();
+
+      expect(mockLoggerWarn).toHaveBeenCalledWith(
+        "[sync.providers] provider stats lookup failed: ClickHouse provider stats unavailable",
+      );
+      expect(result.find((provider: { id: string }) => provider.id === "whoop_ble")?.authorized).toBe(
+        false,
+      );
+    });
+
+    it("logs and continues when push provider last-received lookup fails", async () => {
+      mockGetAllProviders.mockReturnValue([]);
+
+      const caller = createCaller({
+        db: createProvidersDbMock(),
+        sensorStore: {
+          query: createSensorStoreQuery({
+            pushLastReceived: new Error("ClickHouse metric stream unavailable"),
+          }),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.providers();
+
+      expect(mockLoggerWarn).toHaveBeenCalledWith(
+        "[sync.providers] push provider last-received lookup failed: ClickHouse metric stream unavailable",
+      );
+      expect(result.find((provider: { id: string }) => provider.id === "whoop_ble")?.authorized).toBe(
+        false,
+      );
+    });
+
+    it("logs non-Error provider stats failures with String(error)", async () => {
+      mockGetAllProviders.mockReturnValue([]);
+
+      const caller = createCaller({
+        db: createProvidersDbMock(),
+        sensorStore: {
+          query: vi.fn(async (_schema, sql: string) => {
+            if (sql.includes("provider_stats")) {
+              throw "string stats failure";
+            }
+            return [];
+          }),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.providers();
+
+      expect(mockLoggerWarn).toHaveBeenCalledWith(
+        "[sync.providers] provider stats lookup failed: string stats failure",
+      );
+    });
+
+    it("does not query ClickHouse when sensor store is not configured", async () => {
+      mockGetAllProviders.mockReturnValue([]);
+      const query = vi.fn();
+
+      const caller = createCaller({
+        db: createProvidersDbMock(),
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.providers();
+      expect(query).not.toHaveBeenCalled();
     });
 
     it("handles authSetup throwing", async () => {
