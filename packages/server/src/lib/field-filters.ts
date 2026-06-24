@@ -59,7 +59,7 @@ const DATETIME_LOCAL_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6
 
 /**
  * Normalize HTML `datetime-local` values (local time without offset) to ISO 8601
- * UTC so Postgres and ClickHouse parse datetimes consistently across environments.
+ * UTC so Postgres and ClickHouse parse datetime values consistently across environments.
  */
 function normalizeDateTimeRangeFilterValues(
   filters: Record<string, string>,
