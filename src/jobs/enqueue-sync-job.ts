@@ -51,14 +51,9 @@ export async function scheduleDelayedSyncJob(
   cooldown: ProviderRateLimitCooldown,
 ): Promise<string> {
   const providerId = jobData.providerId ?? cooldown.providerId;
-  const nextData: SyncJobData = {
+  await enqueueSyncJob(providerId, {
     ...jobData,
     providerId,
-  };
-  await getProviderSyncQueue(providerId).add("sync", nextData, {
-    ...SYNC_JOB_RETRY_OPTIONS,
-    delay: providerRateLimitDelayMs(cooldown),
-    jobId: providerRateLimitCooldownJobId(cooldown, jobData.userId),
   });
   return cooldown.expiresAt.toISOString();
 }

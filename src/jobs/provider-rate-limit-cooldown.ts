@@ -43,7 +43,9 @@ function fallbackCooldownSeconds(providerId: string): number {
     ["strava", 15 * 60],
     ["withings", 60],
     ["fitbit", 60 * 60],
-    ["garmin", 60 * 60],
+    // Garmin omits Retry-After; use a cooldown longer than the 30-minute scheduled sync
+    // interval so delayed retries are not immediately followed by a fresh scheduled fan-out.
+    ["garmin", 2 * 60 * 60],
     ["whoop", 60 * 60],
   ]);
   return providerFallbackCooldownSeconds.get(providerId) ?? DEFAULT_FALLBACK_COOLDOWN_SECONDS;

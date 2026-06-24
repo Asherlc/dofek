@@ -48,6 +48,33 @@ async function saveSyncCursor(db: SyncDatabase, cursor: string, userId?: string)
     });
 }
 
+const OAUTH_CONSUMER_HOST = "thegarth.s3.amazonaws.com";
+
+function isGarminOAuthConsumerRequest(input: RequestInfo | URL): boolean {
+  const url =
+    typeof input === "string"
+      ? input
+      : input instanceof URL
+        ? input.href
+        : input instanceof Request
+          ? input.url
+          : String(input);
+  return url.includes(OAUTH_CONSUMER_HOST);
+}
+
+/** Routes static OAuth consumer fetches around adaptive rate limiting. */
+function createGarminConnectFetch(
+  baseFetchFn: typeof globalThis.fetch,
+  rateLimitedFetchFn: typeof globalThis.fetch,
+): typeof globalThis.fetch {
+  return async (input, init) => {
+    if (isGarminOAuthConsumerRequest(input)) {
+      return init === undefined ? baseFetchFn(input) : baseFetchFn(input, init);
+    }
+    return init === undefined ? rateLimitedFetchFn(input) : rateLimitedFetchFn(input, init);
+  };
+}
+
 function throwIfProviderSyncAbortError(error: unknown): void {
   if (isRetryableInfraError(error) || error instanceof GarminRateLimitError) throw error;
 }
@@ -72,14 +99,17 @@ export class GarminProvider implements SyncProvider {
   authSetup(_options?: { host?: string }): ProviderAuthSetup {
     return {
       automatedLogin: async (email: string, password: string): Promise<TokenSet> => {
-        const authFetch = createProviderRateLimitFetch("garmin", this.#baseFetchFn, {
-          createRateLimitError: (response, responseBody) =>
-            new GarminRateLimitError(
-              `Rate limit exceeded (${response.status}): ${responseBody}`,
-              responseBody,
-              response.headers?.get?.("Retry-After"),
-            ),
-        });
+        const authFetch = createGarminConnectFetch(
+          this.#baseFetchFn,
+          createProviderRateLimitFetch("garmin", this.#baseFetchFn, {
+            createRateLimitError: (response, responseBody) =>
+              new GarminRateLimitError(
+                `Rate limit exceeded (${response.status}): ${responseBody}`,
+                responseBody,
+                response.headers?.get?.("Retry-After"),
+              ),
+          }),
+        );
         const { tokens } = await GarminConnectClient.signIn(
           email,
           password,
@@ -126,17 +156,19 @@ export class GarminProvider implements SyncProvider {
     const start = Date.now();
     const scopedUserId = resolveScopedUserId(options.userId);
 
-    const fetchFn = createProviderRateLimitFetch("garmin", this.#baseFetchFn, {
-      scope: "user",
-      userId: scopedUserId,
-      createRateLimitError: (response, responseBody) =>
-        new GarminRateLimitError(
-          `Rate limit exceeded (${response.status}): ${responseBody}`,
-          responseBody,
-          response.headers?.get?.("Retry-After"),
-          scopedUserId,
-        ),
-    });
+    // Garmin's unofficial Connect API rate-limits by egress IP, not per account.
+    // Use provider-scoped admission so concurrent users share one throttle budget.
+    const fetchFn = createGarminConnectFetch(
+      this.#baseFetchFn,
+      createProviderRateLimitFetch("garmin", this.#baseFetchFn, {
+        createRateLimitError: (response, responseBody) =>
+          new GarminRateLimitError(
+            `Rate limit exceeded (${response.status}): ${responseBody}`,
+            responseBody,
+            response.headers?.get?.("Retry-After"),
+          ),
+      }),
+    );
 
     let internalTokens: GarminTokens;
     try {

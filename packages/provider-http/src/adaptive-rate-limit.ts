@@ -19,7 +19,7 @@ export const ADAPTIVE_MIN_REQUESTS_FOR_BUDGET_LEARNING = 8;
 
 export const DEFAULT_PROVIDER_THROTTLE_MS: Readonly<Record<string, number>> = {
   strava: 10_000,
-  garmin: 3_000,
+  garmin: 5_000,
   whoop: 1_000,
 };
 
@@ -37,7 +37,8 @@ export const DEFAULT_HTTP_REQUESTS_PER_SYNC_JOB: Readonly<Record<string, number>
 
 /** Seed inferred budgets for step-chain providers before the first 429 observation. */
 export const DEFAULT_PROVIDER_INFERRED_BUDGET: Readonly<Record<string, number>> = {
-  garmin: ADAPTIVE_DEFAULT_INFERRED_BUDGET,
+  // Garmin's unofficial API is IP-based; keep the default budget conservative.
+  garmin: 20,
   whoop: ADAPTIVE_DEFAULT_INFERRED_BUDGET,
 };
 

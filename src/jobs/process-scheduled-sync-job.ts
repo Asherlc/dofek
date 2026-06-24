@@ -1,6 +1,8 @@
 import type { Job } from "bullmq";
+import { isStepChainSyncProvider } from "@dofek/provider-http/adaptive-rate-limit";
 import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
+import { listProviderSyncJobsForUser } from "../lib/sync-request-queue.ts";
 import { logger } from "../logger.ts";
 import { getProvider, isSyncEligibleProvider } from "../providers/index.ts";
 import { enqueueSyncJob } from "./enqueue-sync-job.ts";
@@ -36,6 +38,7 @@ export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, d
 
   let jobCount = 0;
   let skippedDueToCooldown = 0;
+  let skippedDueToInFlight = 0;
 
   for (const [userId, providerIds] of userProviders) {
     for (const providerId of providerIds) {
@@ -43,6 +46,17 @@ export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, d
       if (provider && !isSyncEligibleProvider(provider)) {
         logger.info(`[scheduled-sync] Skipping CSV provider ${providerId}`);
         continue;
+      }
+
+      if (isStepChainSyncProvider(providerId)) {
+        const pendingJobs = await listProviderSyncJobsForUser(providerId, userId);
+        if (pendingJobs.length > 0) {
+          skippedDueToInFlight++;
+          logger.info(
+            `[scheduled-sync] Skipping ${providerId} for ${userId}: ${pendingJobs.length} sync job(s) already queued`,
+          );
+          continue;
+        }
       }
 
       const jobData = {
@@ -67,6 +81,7 @@ export async function processScheduledSyncJob(_job: Job<ScheduledSyncJobData>, d
     `[scheduled-sync] Enqueued ${jobCount} sync jobs for ${userProviders.size} users` +
       (skippedDueToCooldown > 0
         ? ` (${skippedDueToCooldown} skipped due to rate-limit cooldown)`
-        : ""),
+        : "") +
+      (skippedDueToInFlight > 0 ? ` (${skippedDueToInFlight} skipped due to in-flight sync)` : ""),
   );
 }

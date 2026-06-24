@@ -71,6 +71,7 @@ describe("enqueueSyncJob", () => {
       userId: null,
       expiresAt: new Date("2026-06-02T12:10:00Z"),
     };
+    mockGetActive.mockResolvedValue(cooldown);
 
     const retryAt = await scheduleDelayedSyncJob(
       {
@@ -83,6 +84,7 @@ describe("enqueueSyncJob", () => {
     );
 
     expect(retryAt).toBe("2026-06-02T12:10:00.000Z");
+    expect(mockGetActive).toHaveBeenCalledWith("garmin", "user-1");
     expect(mockProviderQueueAdd).toHaveBeenCalledWith(
       "sync",
       {
@@ -96,6 +98,35 @@ describe("enqueueSyncJob", () => {
         jobId: "rate-limit-delayed-job",
       }),
     );
+  });
+
+  it("returns the existing delayed cooldown job instead of enqueueing a duplicate", async () => {
+    const cooldown = {
+      providerId: "garmin",
+      scope: "provider" as const,
+      userId: null,
+      expiresAt: new Date("2026-06-02T12:10:00Z"),
+    };
+    mockGetActive.mockResolvedValue(cooldown);
+    const existingJob = {
+      id: "rate-limit-delayed-job",
+      getState: vi.fn().mockResolvedValue("delayed"),
+    };
+    mockGetJob.mockResolvedValue(existingJob);
+
+    await scheduleDelayedSyncJob(
+      {
+        userId: "user-1",
+        providerId: "garmin",
+        sinceIso: "2026-06-01T00:00:00.000Z",
+        untilIso: "2026-06-02T23:59:59.999Z",
+        checkpoint: { phase: "api", stepIndex: 2 },
+      },
+      cooldown,
+    );
+
+    expect(mockProviderQueueAdd).not.toHaveBeenCalled();
+    expect(mockGetJob).toHaveBeenCalledWith("rate-limit-delayed-job");
   });
 
   it("returns default retry options when no cooldown is active", async () => {

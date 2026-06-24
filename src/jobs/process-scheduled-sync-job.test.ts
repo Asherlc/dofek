@@ -185,4 +185,31 @@ describe("processScheduledSyncJob", () => {
       "[scheduled-sync] Enqueued 0 sync jobs for 1 users (1 skipped due to rate-limit cooldown)",
     );
   });
+
+  it("skips enqueue when a step-chain provider already has pending sync jobs", async () => {
+    const garminQueue = getMockQueue("garmin");
+    garminQueue.getJobs = vi.fn().mockResolvedValue([
+      {
+        data: {
+          userId: "user-1",
+          providerId: "garmin",
+          checkpoint: { phase: "api", stepIndex: 2 },
+        },
+      },
+    ]);
+
+    const db = {
+      execute: vi.fn().mockResolvedValue([{ user_id: "user-1", provider_id: "garmin" }]),
+    };
+
+    await Reflect.apply(processScheduledSyncJob, undefined, [{}, db]);
+
+    expect(garminQueue.add).not.toHaveBeenCalled();
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "[scheduled-sync] Skipping garmin for user-1: 1 sync job(s) already queued",
+    );
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "[scheduled-sync] Enqueued 0 sync jobs for 1 users (1 skipped due to in-flight sync)",
+    );
+  });
 });

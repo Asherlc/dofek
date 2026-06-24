@@ -6,6 +6,7 @@ import {
   GarminConnectClient,
   GarminMfaRequiredError,
   GarminRateLimitError,
+  resetGarminConnectTestCaches,
 } from "./client.ts";
 import type { GarminTokens, OAuth2Token } from "./types.ts";
 
@@ -36,6 +37,7 @@ function makeGarminTokens(overrides: Partial<OAuth2Token> = {}): GarminTokens {
 
 afterEach(() => {
   vi.useRealTimers();
+  resetGarminConnectTestCaches();
 });
 
 /**
@@ -364,6 +366,40 @@ describe("GarminConnectClient.fromTokens", () => {
     await expect(GarminConnectClient.fromTokens(tokens, "garmin.com", fetchFn)).rejects.toThrow(
       "Failed to fetch OAuth consumer credentials",
     );
+  });
+
+  it("reuses the cached OAuth consumer across fromTokens calls", async () => {
+    const tokens = makeGarminTokens({ expires_at: Math.floor(Date.now() / 1000) + 3600 });
+    const fetchFn = vi.fn().mockImplementation((url: string | URL) => {
+      if (String(url).includes("oauth_consumer.json")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve({
+              consumer_key: "test-consumer-key",
+              consumer_secret: "test-consumer-secret",
+            }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            displayName: "testuser",
+            userName: "testuser",
+          }),
+      });
+    });
+
+    await GarminConnectClient.fromTokens(tokens, "garmin.com", fetchFn);
+    await GarminConnectClient.fromTokens(tokens, "garmin.com", fetchFn);
+
+    const consumerFetches = fetchFn.mock.calls.filter(([url]) =>
+      String(url).includes("oauth_consumer.json"),
+    );
+    expect(consumerFetches).toHaveLength(1);
   });
 });
 

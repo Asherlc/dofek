@@ -645,20 +645,17 @@ describe("GarminProvider.sync()", () => {
     );
   });
 
-  it("passes user-scoped rate-limit options to createProviderRateLimitFetch", async () => {
+  it("passes provider-scoped rate-limit options to createProviderRateLimitFetch", async () => {
     const { createProviderRateLimitFetch } = await import("../lib/provider-rate-limit-fetch.ts");
 
     await syncProvider(provider, db, new Date());
 
     const mock = vi.mocked(createProviderRateLimitFetch);
-    expect(mock).toHaveBeenCalledWith(
-      "garmin",
-      expect.any(Function),
-      expect.objectContaining({ scope: "user" }),
-    );
+    expect(mock).toHaveBeenCalledWith("garmin", expect.any(Function), expect.any(Object));
 
     const options = mock.mock.calls.find(([id]) => id === "garmin")?.[2];
-    expect(options?.userId).toBe("00000000-0000-0000-0000-000000000001");
+    expect(options?.scope).toBeUndefined();
+    expect(options?.userId).toBeUndefined();
 
     const createRateLimitError = options?.createRateLimitError;
     const error = createRateLimitError?.(new Response("too fast", { status: 429 }), "too fast");
@@ -666,6 +663,7 @@ describe("GarminProvider.sync()", () => {
     if (error instanceof GarminRateLimitError) {
       expect(error.message).toBe("Rate limit exceeded (429): too fast");
       expect(error.retryAfterSeconds).toBeNull();
+      expect(error.scope).toBe("provider");
     }
   });
 

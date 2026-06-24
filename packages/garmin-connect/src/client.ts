@@ -42,8 +42,17 @@ const USER_AGENT = "com.garmin.android.apps.connectmobile";
 const API_USER_AGENT = "GCM-iOS-5.19.1.2";
 
 /** Minimum delay between consecutive Connect API requests (ms).
- *  Garmin's unofficial API rate limits aggressively; 3s keeps bursts under control. */
-export const GARMIN_CONNECT_THROTTLE_MS = 3_000;
+ *  Garmin's unofficial API rate limits aggressively; 5s keeps bursts under control. */
+export const GARMIN_CONNECT_THROTTLE_MS = 5_000;
+
+let cachedOAuthConsumer: OAuthConsumer | null = null;
+let oauthConsumerLoadPromise: Promise<OAuthConsumer> | null = null;
+
+/** Clears the module-level OAuth consumer cache (test helper). */
+export function resetGarminConnectTestCaches(): void {
+  cachedOAuthConsumer = null;
+  oauthConsumerLoadPromise = null;
+}
 
 const CSRF_RE = /name="_csrf"\s+value="(.+?)"/;
 const TITLE_RE = /<title>(.+?)<\/title>/;
@@ -213,12 +222,26 @@ export class GarminConnectClient {
   }
 
   async #loadConsumer(): Promise<void> {
-    const response = await this.#fetchFn(OAUTH_CONSUMER_URL);
-    if (!response.ok) {
-      throw new GarminAuthError("Failed to fetch OAuth consumer credentials");
+    if (this.#consumer) return;
+
+    if (!cachedOAuthConsumer) {
+      if (!oauthConsumerLoadPromise) {
+        oauthConsumerLoadPromise = (async () => {
+          const response = await this.#fetchFn(OAUTH_CONSUMER_URL);
+          if (!response.ok) {
+            throw new GarminAuthError("Failed to fetch OAuth consumer credentials");
+          }
+          const consumer: OAuthConsumer = await response.json();
+          cachedOAuthConsumer = consumer;
+          return consumer;
+        })().finally(() => {
+          oauthConsumerLoadPromise = null;
+        });
+      }
+      cachedOAuthConsumer = await oauthConsumerLoadPromise;
     }
-    const consumer: OAuthConsumer = await response.json();
-    this.#consumer = consumer;
+
+    this.#consumer = cachedOAuthConsumer;
   }
 
   async #getOAuth1Token(ticket: string): Promise<OAuth1Token> {
