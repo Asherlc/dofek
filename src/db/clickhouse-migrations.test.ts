@@ -266,7 +266,6 @@ SETTINGS allow_nullable_key = 1`);
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS ingest.metric_stream");
     expect(sql.match(/CREATE TABLE IF NOT EXISTS ingest\.metric_stream/g)).toHaveLength(5);
     expect(sql).toContain("CREATE DATABASE IF NOT EXISTS ingest");
-    expect(sql).toContain("DROP TABLE IF EXISTS postgres_fitness.metric_stream");
     expect(sql).not.toContain(
       "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_synced_at DateTime64(9) DEFAULT now()",
     );

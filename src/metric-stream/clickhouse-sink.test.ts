@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { METRIC_STREAM_TABLE } from "./clickhouse-table.ts";
 import {
   applyMetricStreamEventsToClickHouse,
   insertMetricStreamEventsIntoClickHouse,
   mapMetricStreamEventToClickHouseRow,
   markMetricStreamScopeDeletedInClickHouse,
 } from "./clickhouse-sink.ts";
+import { METRIC_STREAM_TABLE } from "./clickhouse-table.ts";
 import { createMetricStreamDeletedEvent, type MetricStreamEventV1 } from "./events.ts";
 import type { RunMetricStreamEventConsumerOptions } from "./redpanda-consumer.ts";
 
@@ -32,14 +32,12 @@ const imuEvent = {
   channel: "imu",
 } satisfies MetricStreamEventV1;
 
-function firstCommandQuery(
-  command: ReturnType<typeof vi.fn>,
-): string {
-  const call = command.mock.calls[0]?.[0] as { query: string } | undefined;
-  if (!call) {
+function firstCommandQuery(command: ReturnType<typeof vi.fn>): string {
+  const call = command.mock.calls[0]?.[0];
+  if (!call || typeof call !== "object" || !("query" in call) || typeof call.query !== "string") {
     throw new Error("expected command call");
   }
-  return String(call.query);
+  return call.query;
 }
 
 afterEach(() => {
@@ -238,9 +236,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     expect(query).toContain("external_id = {external_id:String}");
     expect(query).toContain("channel = {channel:String}");
     expect(query).toContain("toString(activity_id) = {activity_id:String}");
-    expect(query).toContain(
-      "recorded_at >= parseDateTime64BestEffort({recorded_at_start:String})",
-    );
+    expect(query).toContain("recorded_at >= parseDateTime64BestEffort({recorded_at_start:String})");
     expect(query).toContain("recorded_at < parseDateTime64BestEffort({recorded_at_end:String})");
   });
 

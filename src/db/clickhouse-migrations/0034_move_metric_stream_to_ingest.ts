@@ -1,11 +1,31 @@
-import type { ClickHouseCommandClient } from "../clickhouse.ts";
 import {
   buildIngestMetricStreamCreateTableSql,
   INGEST_DATABASE,
   LEGACY_METRIC_STREAM_TABLE,
   METRIC_STREAM_TABLE,
 } from "../../metric-stream/clickhouse-table.ts";
+import type { ClickHouseCommandClient } from "../clickhouse.ts";
 import type { ClickHouseMigration } from "./types.ts";
+
+function isLegacyTableCountRow(value: unknown): value is { count: string } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "count" in value &&
+    typeof value.count === "string"
+  );
+}
+
+function parseLegacyTableCount(rows: unknown): number {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return 0;
+  }
+  const first = rows[0];
+  if (!isLegacyTableCountRow(first)) {
+    return 0;
+  }
+  return Number(first.count);
+}
 
 async function legacyMetricStreamTableExists(client: ClickHouseCommandClient): Promise<boolean> {
   if (!client.query) {
@@ -18,8 +38,7 @@ async function legacyMetricStreamTableExists(client: ClickHouseCommandClient): P
         AND name = 'metric_stream'`,
     format: "JSONEachRow",
   });
-  const rows = (await result.json()) as Array<{ count: string }>;
-  return Number(rows[0]?.count ?? 0) > 0;
+  return parseLegacyTableCount(await result.json()) > 0;
 }
 
 async function copyLegacyMetricStreamToIngest(client: ClickHouseCommandClient): Promise<void> {
@@ -49,7 +68,10 @@ async function copyLegacyMetricStreamToIngest(client: ClickHouseCommandClient): 
 export function createMigration(): ClickHouseMigration {
   return {
     id: "0034_move_metric_stream_to_ingest",
-    statements: [`CREATE DATABASE IF NOT EXISTS ${INGEST_DATABASE}`, buildIngestMetricStreamCreateTableSql()],
+    statements: [
+      `CREATE DATABASE IF NOT EXISTS ${INGEST_DATABASE}`,
+      buildIngestMetricStreamCreateTableSql(),
+    ],
     run: async (client) => {
       if (!(await legacyMetricStreamTableExists(client))) {
         return;

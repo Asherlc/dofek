@@ -1,6 +1,7 @@
 import { Client, escapeIdentifier } from "pg";
 import { z } from "zod";
 import { logger } from "../../logger.ts";
+import { INGEST_DATABASE, METRIC_STREAM_TABLE } from "../../metric-stream/clickhouse-table.ts";
 import {
   buildClickHouseBootstrapStatements,
   type ClickHouseCommandClient,
@@ -13,10 +14,6 @@ import {
   buildIncrementalDedupedSensorResetStatements,
 } from "../clickhouse-deduped-sensor.ts";
 import { buildActivitySummaryReadModelStatements } from "../clickhouse-metric-stream-bootstrap.ts";
-import {
-  INGEST_DATABASE,
-  METRIC_STREAM_TABLE,
-} from "../../metric-stream/clickhouse-table.ts";
 import { buildPostgresFitnessActivityRawTableStatement } from "../clickhouse-raw-tables.ts";
 import { buildActivityReadModelRefreshStatements } from "../clickhouse-read-models.ts";
 import {
@@ -194,10 +191,7 @@ export async function rebuildMetricStreamLocationPoint(
       client,
       "DROP TABLE IF EXISTS analytics.metric_stream_backfill_chunks",
     );
-    await runClickHouseMigrationStatement(
-      client,
-      `DROP TABLE IF EXISTS ${METRIC_STREAM_TABLE}`,
-    );
+    await runClickHouseMigrationStatement(client, `DROP TABLE IF EXISTS ${METRIC_STREAM_TABLE}`);
   }
 
   for (const statement of buildClickHouseBootstrapStatements(postgresConnectionString)) {
@@ -315,8 +309,7 @@ async function shouldReplaceMetricStreamTable(client: ClickHouseCommandClient): 
     throw new Error("ClickHouse migrations require a query-capable client");
   }
   const result = await client.query<ClickHouseDatabaseEngineRow>({
-    query:
-      `SELECT engine FROM system.tables WHERE database = '${INGEST_DATABASE}' AND name = 'metric_stream'`,
+    query: `SELECT engine FROM system.tables WHERE database = '${INGEST_DATABASE}' AND name = 'metric_stream'`,
     format: "JSONEachRow",
   });
   const rows = await result.json();

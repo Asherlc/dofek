@@ -1,6 +1,6 @@
 import { createClient } from "@clickhouse/client";
-import { buildClickHouseBootstrapStatementsForNativeMetricStream } from "./clickhouse-metric-stream-bootstrap.ts";
 import { METRIC_STREAM_TABLE } from "../metric-stream/clickhouse-table.ts";
+import { buildClickHouseBootstrapStatementsForNativeMetricStream } from "./clickhouse-metric-stream-bootstrap.ts";
 
 export interface ClickHouseCommandClient {
   command(options: {

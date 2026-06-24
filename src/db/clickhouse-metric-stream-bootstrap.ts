@@ -1,3 +1,8 @@
+import {
+  buildIngestMetricStreamCreateTableSql,
+  INGEST_DATABASE,
+  METRIC_STREAM_TABLE,
+} from "../metric-stream/clickhouse-table.ts";
 import { buildIncrementalActivitySummaryStatements } from "./clickhouse-activity-summary.ts";
 import { buildActivityTrendDailyCreateReadModelStatements } from "./clickhouse-activity-trend-read-model.ts";
 import { buildIncrementalDedupedSensorStatements } from "./clickhouse-deduped-sensor.ts";
@@ -7,11 +12,6 @@ import {
   buildBodyMeasurementSampleProjectionStatements,
 } from "./clickhouse-read-models.ts";
 import { buildRestingHeartRateSleepWindowTableSql } from "./clickhouse-resting-heart-rate.ts";
-import {
-  buildIngestMetricStreamCreateTableSql,
-  INGEST_DATABASE,
-  METRIC_STREAM_TABLE,
-} from "../metric-stream/clickhouse-table.ts";
 import { standardViewHeader } from "./clickhouse-sql-helpers.ts";
 
 export function buildClickHouseBootstrapStatementsForNativeMetricStream(
