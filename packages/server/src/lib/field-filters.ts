@@ -237,10 +237,3 @@ export function buildClickHouseFilterClauses(
   };
 }
 
-/** Build ClickHouse substring filter clauses for allowlisted columns. */
-export function buildClickHouseTextFilterClauses(
-  filters: Record<string, string>,
-  allowedColumns: readonly string[],
-): { clause: string; params: Record<string, string> } {
-  return buildClickHouseFilterClauses(filters, allowedColumns);
-}

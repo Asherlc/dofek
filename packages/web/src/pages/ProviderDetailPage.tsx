@@ -24,6 +24,7 @@ import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import {
   filterRangeBoundKey,
   getFilterInputType,
+  isRangeFilterInputType,
   toFilterOptions,
   type FilterInputType,
   type FilterOption,
@@ -482,7 +483,7 @@ function FilterField({
     );
   }
 
-  if (inputType === "date" || inputType === "datetime-local") {
+  if (isRangeFilterInputType(inputType)) {
     return (
       <DateRangeFilterField
         column={column}
