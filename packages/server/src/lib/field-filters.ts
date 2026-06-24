@@ -1,4 +1,4 @@
-import { sql, type SQL } from "drizzle-orm";
+import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 
 const COLUMN_NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
@@ -25,8 +25,7 @@ export function buildPostgresTextFilterConditions(
   filters: Record<string, string>,
   allowedColumns: ReadonlySet<string> | readonly string[],
 ): SQL[] {
-  const allowed =
-    allowedColumns instanceof Set ? allowedColumns : new Set<string>(allowedColumns);
+  const allowed = allowedColumns instanceof Set ? allowedColumns : new Set<string>(allowedColumns);
   const conditions: SQL[] = [];
 
   for (const [field, value] of normalizeFilters(filters)) {

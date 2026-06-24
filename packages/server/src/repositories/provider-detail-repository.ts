@@ -1,5 +1,5 @@
 import type { Database } from "dofek/db";
-import { sql, type SQL } from "drizzle-orm";
+import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   buildClickHouseTextFilterClauses,
@@ -99,7 +99,9 @@ const METRIC_STREAM_COLUMNS = [
   "scalar",
 ] as const;
 
-function listColumnNames(dataType: Exclude<DataType, "bodyMeasurements" | "metricStream">): string[] {
+function listColumnNames(
+  dataType: Exclude<DataType, "bodyMeasurements" | "metricStream">,
+): string[] {
   switch (dataType) {
     case "activities":
       return [

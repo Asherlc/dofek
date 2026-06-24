@@ -14,8 +14,8 @@ import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../t
 // Re-export for backward compatibility (used by settings router and tests)
 export { DISCONNECT_CHILD_TABLES, dataTypeEnum, getRecordFilterColumns, tableInfo };
 
-import { sanitizeErrorMessage } from "../lib/sanitize-error.ts";
 import { fieldFiltersSchema } from "../lib/field-filters.ts";
+import { sanitizeErrorMessage } from "../lib/sanitize-error.ts";
 
 const SYNC_LOG_FILTER_FIELDS = {
   id: "id",

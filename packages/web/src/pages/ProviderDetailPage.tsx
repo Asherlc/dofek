@@ -408,9 +408,7 @@ function TableFilterRow({
           />
         </th>
       ))}
-      {Array.from({ length: trailingCells }, (_, index) => (
-        <th key={`trailing-${index}`} scope="col" className="px-2 py-1.5" />
-      ))}
+      {trailingCells > 0 && <th key="raw-data-column" scope="col" className="px-2 py-1.5" />}
     </tr>
   );
 }
@@ -491,7 +489,10 @@ function SyncHistory({ providerId }: { providerId: string }) {
               <tbody>
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={SYNC_HISTORY_FILTER_COLUMNS.length} className="px-4 py-6 text-subtle">
+                    <td
+                      colSpan={SYNC_HISTORY_FILTER_COLUMNS.length}
+                      className="px-4 py-6 text-subtle"
+                    >
                       No sync history matches the current filters.
                     </td>
                   </tr>
@@ -523,7 +524,9 @@ function SyncHistory({ providerId }: { providerId: string }) {
                         {row.recordCount ?? "—"}
                       </td>
                       <td className="px-4 py-2 text-right text-muted tabular-nums">
-                        {row.durationMs != null ? formatDurationSeconds(row.durationMs / 1000) : "—"}
+                        {row.durationMs != null
+                          ? formatDurationSeconds(row.durationMs / 1000)
+                          : "—"}
                       </td>
                       <td className="px-4 py-2 text-red-400/80 max-w-xs truncate">
                         {row.errorMessage ?? ""}
@@ -697,7 +700,7 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
   );
 
   const visibleColumns = columns;
-  const hasRaw = rows.some((row) => Object.prototype.hasOwnProperty.call(row, "raw"));
+  const hasRaw = rows.some((row) => Object.hasOwn(row, "raw"));
 
   if (records.isLoading) {
     return <div className="text-xs text-subtle">Loading records...</div>;
