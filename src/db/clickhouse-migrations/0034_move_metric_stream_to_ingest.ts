@@ -14,11 +14,11 @@ const legacyTableCountRowsSchema = z
       count: z.string().regex(/^\d+$/),
     }),
   )
-  .min(1, "Expected at least one row from system.tables count query");
+  .nonempty("Expected at least one row from system.tables count query");
 
 function parseLegacyTableCount(rows: unknown): number {
-  const parsedRows = legacyTableCountRowsSchema.parse(rows);
-  return Number(parsedRows[0].count);
+  const [firstRow] = legacyTableCountRowsSchema.parse(rows);
+  return Number(firstRow.count);
 }
 
 async function legacyMetricStreamTableExists(client: ClickHouseCommandClient): Promise<boolean> {
