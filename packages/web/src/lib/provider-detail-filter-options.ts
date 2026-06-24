@@ -1,23 +1,10 @@
 import { formatActivityTypeLabel } from "@dofek/training/training";
+import { type FilterInputType, getFilterInputType } from "dofek-server/field-filter-columns";
+
+export type { FilterInputType };
+export { getFilterInputType };
 
 export type FilterOption = { value: string; label: string };
-
-export type FilterInputType = "text" | "date" | "datetime-local";
-
-const DATE_FILTER_COLUMNS = new Set(["date", "start_date", "end_date"]);
-
-/** Resolve the HTML input type for a provider detail filter column. */
-export function getFilterInputType(columnKey: string): FilterInputType {
-  if (DATE_FILTER_COLUMNS.has(columnKey)) {
-    return "date";
-  }
-
-  if (columnKey === "syncedAt" || columnKey.endsWith("_at")) {
-    return "datetime-local";
-  }
-
-  return "text";
-}
 
 export function isRangeFilterInputType(
   inputType: FilterInputType,

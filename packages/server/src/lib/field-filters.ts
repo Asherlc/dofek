@@ -1,5 +1,11 @@
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
+import {
+  isDateFilterColumn,
+  isDateTimeFilterColumn,
+  isRangeFilterColumn,
+  parseRangeFilterKey,
+} from "./field-filter-columns.ts";
 
 export const SQL_COLUMN_NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
 
@@ -7,30 +13,6 @@ export function assertSqlColumnName(column: string): void {
   if (!SQL_COLUMN_NAME_PATTERN.test(column)) {
     throw new Error(`Invalid SQL column name: ${column}`);
   }
-}
-
-const DATE_FILTER_COLUMNS = new Set(["date", "start_date", "end_date"]);
-
-export function isDateFilterColumn(column: string): boolean {
-  return DATE_FILTER_COLUMNS.has(column);
-}
-
-export function isDateTimeFilterColumn(column: string): boolean {
-  return column === "synced_at" || column === "syncedAt" || column.endsWith("_at");
-}
-
-export function isRangeFilterColumn(column: string): boolean {
-  return isDateFilterColumn(column) || isDateTimeFilterColumn(column);
-}
-
-export function parseRangeFilterKey(key: string): { column: string; bound: "from" | "to" } | null {
-  if (key.endsWith("_from")) {
-    return { column: key.slice(0, -"_from".length), bound: "from" };
-  }
-  if (key.endsWith("_to")) {
-    return { column: key.slice(0, -"_to".length), bound: "to" };
-  }
-  return null;
 }
 
 const FILTER_KEY_PATTERN = /^[a-z][a-zA-Z0-9_]*$/;
@@ -70,6 +52,31 @@ function normalizeFilters(filters: Record<string, string>): Array<[string, strin
     if (!value) continue;
     normalized.push([field, value]);
   }
+  return normalized;
+}
+
+const DATETIME_LOCAL_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?$/;
+
+/**
+ * Normalize HTML `datetime-local` values (local time without offset) to ISO 8601
+ * UTC so Postgres and ClickHouse parse datetimes consistently across environments.
+ */
+function normalizeDateTimeRangeFilterValues(
+  filters: Record<string, string>,
+): Record<string, string> {
+  const normalized: Record<string, string> = { ...filters };
+
+  for (const [key, value] of Object.entries(filters)) {
+    const range = parseRangeFilterKey(key);
+    if (!range || !isDateTimeFilterColumn(range.column)) continue;
+    if (!DATETIME_LOCAL_REGEX.test(value)) continue;
+
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) {
+      normalized[key] = date.toISOString();
+    }
+  }
+
   return normalized;
 }
 
@@ -143,11 +150,12 @@ export function buildPostgresFilterConditions(
   fieldToColumn?: Record<string, string>,
 ): SQL[] {
   const allowed = allowedColumns instanceof Set ? allowedColumns : new Set<string>(allowedColumns);
-  const rangeBounds = groupRangeFilters(filters, allowed, fieldToColumn);
+  const normalizedFilters = normalizeDateTimeRangeFilterValues(filters);
+  const rangeBounds = groupRangeFilters(normalizedFilters, allowed, fieldToColumn);
   const rangeColumns = new Set(rangeBounds.keys());
   const conditions = buildPostgresRangeFilterConditions(rangeBounds);
 
-  for (const [key, value] of normalizeFilters(filters)) {
+  for (const [key, value] of normalizeFilters(normalizedFilters)) {
     if (parseRangeFilterKey(key)) continue;
 
     const apiColumn = resolveApiColumn(key, fieldToColumn);
@@ -174,34 +182,19 @@ export function buildPostgresFilterConditionsMapped(
   );
 }
 
-/** Build Postgres ILIKE conditions for allowlisted snake_case columns. */
-export function buildPostgresTextFilterConditions(
-  filters: Record<string, string>,
-  allowedColumns: ReadonlySet<string> | readonly string[],
-): SQL[] {
-  return buildPostgresFilterConditions(filters, allowedColumns);
-}
-
-/** Map API field names to DB columns before building Postgres filter conditions. */
-export function buildPostgresTextFilterConditionsMapped(
-  filters: Record<string, string>,
-  fieldToColumn: Record<string, string>,
-): SQL[] {
-  return buildPostgresFilterConditionsMapped(filters, fieldToColumn);
-}
-
 /** Build ClickHouse substring and range filter clauses for allowlisted columns. */
 export function buildClickHouseFilterClauses(
   filters: Record<string, string>,
   allowedColumns: readonly string[],
 ): { clause: string; params: Record<string, string> } {
   const allowed = new Set(allowedColumns);
-  const rangeBounds = groupRangeFilters(filters, allowed);
+  const normalizedFilters = normalizeDateTimeRangeFilterValues(filters);
+  const rangeBounds = groupRangeFilters(normalizedFilters, allowed);
   const clauses: string[] = [];
   const params: Record<string, string> = {};
   let textIndex = 0;
 
-  for (const [field, value] of normalizeFilters(filters)) {
+  for (const [field, value] of normalizeFilters(normalizedFilters)) {
     if (parseRangeFilterKey(field)) continue;
     if (!allowed.has(field) || !SQL_COLUMN_NAME_PATTERN.test(field)) continue;
     if (rangeBounds.has(field)) continue;
