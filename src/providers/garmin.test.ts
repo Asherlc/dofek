@@ -650,15 +650,26 @@ describe("GarminProvider.sync()", () => {
 
     await syncProvider(provider, db, new Date());
 
-    expect(vi.mocked(createProviderRateLimitFetch)).toHaveBeenCalledWith(
+    const mock = vi.mocked(createProviderRateLimitFetch);
+    expect(mock).toHaveBeenCalledWith(
       "garmin",
       expect.any(Function),
-      expect.objectContaining({
-        scope: "user",
-        userId: expect.any(String),
-        createRateLimitError: expect.any(Function),
-      }),
+      expect.objectContaining({ scope: "user" }),
     );
+
+    const options = mock.mock.calls.find(([id]) => id === "garmin")?.[2];
+    expect(options?.userId).toBe("00000000-0000-0000-0000-000000000001");
+
+    const createRateLimitError = options?.createRateLimitError;
+    const error = createRateLimitError?.(
+      new Response("too fast", { status: 429 }),
+      "too fast",
+    );
+    expect(error).toBeInstanceOf(GarminRateLimitError);
+    if (error instanceof GarminRateLimitError) {
+      expect(error.message).toBe("Rate limit exceeded (429): too fast");
+      expect(error.retryAfterSeconds).toBeNull();
+    }
   });
 
   it("returns error when no tokens exist", async () => {
