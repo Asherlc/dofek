@@ -5,6 +5,7 @@ import {
   type ClickHouseMetricStreamInsertClient,
   insertMetricStreamEventsIntoClickHouse,
 } from "./clickhouse-sink.ts";
+import { METRIC_STREAM_TABLE } from "./clickhouse-table.ts";
 import { createMetricStreamEvent } from "./events.ts";
 
 const testUserId = "00000000-0000-0000-0000-000000000001";
@@ -20,7 +21,7 @@ function assertInsertCapable(
 
 async function removeTestEvent(client: ClickHouseClient): Promise<void> {
   await client.command({
-    query: "DELETE FROM postgres_fitness.metric_stream WHERE id = {id:UUID}",
+    query: `DELETE FROM ${METRIC_STREAM_TABLE} WHERE id = {id:UUID}`,
     query_params: { id: testEventId },
   });
 }
@@ -58,7 +59,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
     await insertMetricStreamEventsIntoClickHouse(client, [event]);
 
     const result = await client.query<{ count: string }>({
-      query: "SELECT count() AS count FROM postgres_fitness.metric_stream WHERE id = {id:UUID}",
+      query: `SELECT count() AS count FROM ${METRIC_STREAM_TABLE} WHERE id = {id:UUID}`,
       query_params: { id: testEventId },
       format: "JSONEachRow",
     });

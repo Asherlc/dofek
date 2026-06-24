@@ -41,6 +41,7 @@ export interface ClickHouseMetricStreamSeedRow {
 
 interface IsolatedClickHouseDatabases {
   analytics: string;
+  ingest: string;
   postgresFitness: string;
 }
 
@@ -63,21 +64,6 @@ const clickHouseTestSetupSlotCount = 2;
 const clickHouseTestSetupSlotTimeoutMilliseconds = 55_000;
 const clickHouseTestSetupStaleSlotMilliseconds = 300_000;
 const rawTableSyncs: RawTableSync[] = [
-  {
-    tableName: "metric_stream",
-    columns: [
-      "id",
-      "activity_id",
-      "user_id",
-      "recorded_at",
-      "channel",
-      "provider_id",
-      "external_id",
-      "device_id",
-      "source_type",
-      "scalar",
-    ],
-  },
   {
     tableName: "activity",
     columns: [
@@ -355,6 +341,7 @@ function rewriteClickHouseDatabaseNames(
 ): string {
   return query
     .replace(/\bpostgres_fitness\b/g, databases.postgresFitness)
+    .replace(/\bingest\b/g, databases.ingest)
     .replace(/\banalytics\b/g, databases.analytics);
 }
 
@@ -1563,6 +1550,7 @@ export async function createClickHouseTestActivitySensorStore(
   const suffix = randomBytes(6).toString("hex");
   const databases = {
     analytics: `analytics_test_${suffix}`,
+    ingest: `ingest_test_${suffix}`,
     postgresFitness: `postgres_fitness_test_${suffix}`,
   };
   const rawClient = createClickHouseClientFromEnv();
@@ -1573,6 +1561,7 @@ export async function createClickHouseTestActivitySensorStore(
   testContext.addCleanup(async () => {
     handlesByContext.delete(testContext);
     await rawClient.command({ query: `DROP DATABASE IF EXISTS ${databases.analytics} SYNC` });
+    await rawClient.command({ query: `DROP DATABASE IF EXISTS ${databases.ingest} SYNC` });
     await rawClient.command({ query: `DROP DATABASE IF EXISTS ${databases.postgresFitness} SYNC` });
     await rawClient.close?.();
   });
@@ -1711,9 +1700,6 @@ async function syncClickHouseTestActivitySensorStoreWithClient(
   connectionString: string,
 ): Promise<void> {
   for (const rawTableSync of rawTableSyncs) {
-    if (rawTableSync.tableName === "metric_stream") {
-      continue;
-    }
     await client.command({
       query: `TRUNCATE TABLE postgres_fitness.${rawTableSync.tableName}`,
     });
@@ -1789,7 +1775,7 @@ export async function insertClickHouseMetricStreamRows(
   }
 
   await handle.setupClient.command({
-    query: `INSERT INTO postgres_fitness.metric_stream (
+    query: `INSERT INTO ingest.metric_stream (
       id,
       activity_id,
       user_id,
@@ -1803,9 +1789,9 @@ export async function insertClickHouseMetricStreamRows(
       vector,
       point,
       metadata,
-      _peerdb_synced_at,
-      _peerdb_is_deleted,
-      _peerdb_version
+      ingested_at,
+      is_deleted,
+      version
     ) VALUES ${rows.map(formatClickHouseMetricStreamSeedValue).join(",\n")}`,
   });
 }

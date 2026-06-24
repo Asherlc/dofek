@@ -1,4 +1,5 @@
 import { type ClickHouseClient, createClickHouseClientFromEnv } from "../db/clickhouse.ts";
+import { METRIC_STREAM_TABLE } from "./clickhouse-table.ts";
 import {
   isMetricStreamDeletedEvent,
   type MetricStreamDeleteScope,
@@ -13,7 +14,7 @@ import {
 export interface ClickHouseMetricStreamInsertClient {
   command?(options: { query: string; query_params?: Record<string, unknown> }): Promise<unknown>;
   insert(options: {
-    table: "postgres_fitness.metric_stream";
+    table: typeof METRIC_STREAM_TABLE;
     values: readonly ClickHouseMetricStreamRow[];
     format: "JSONEachRow";
     clickhouse_settings?: Record<string, string | number | boolean>;
@@ -32,9 +33,9 @@ export interface ClickHouseMetricStreamRow {
   scalar: number | null;
   point: string | null;
   id: string;
-  _peerdb_synced_at: string;
-  _peerdb_is_deleted: 0;
-  _peerdb_version: number;
+  ingested_at: string;
+  is_deleted: 0 | 1;
+  version: number;
 }
 
 function isClickHouseReplicatedEvent(event: MetricStreamEventV1): boolean {
@@ -70,9 +71,9 @@ export function mapMetricStreamEventToClickHouseRow(
     scalar: event.scalar ?? null,
     point: normalizePointForClickHouse(event.point),
     id: event.id,
-    _peerdb_synced_at: new Date().toISOString(),
-    _peerdb_is_deleted: 0,
-    _peerdb_version: 0,
+    ingested_at: new Date().toISOString(),
+    is_deleted: 0,
+    version: 0,
   };
 }
 
@@ -87,10 +88,10 @@ export async function insertMetricStreamEventsIntoClickHouse(
   }
 
   await client.insert({
-    table: "postgres_fitness.metric_stream",
+    table: METRIC_STREAM_TABLE,
     values: rows,
     format: "JSONEachRow",
-    // recorded_at / _peerdb_synced_at are ISO-8601 strings with a trailing Z;
+    // recorded_at / ingested_at are ISO-8601 strings with a trailing Z;
     // ClickHouse only accepts that offset format with best_effort datetime parsing.
     clickhouse_settings: { date_time_input_format: "best_effort" },
   });
@@ -145,11 +146,31 @@ export async function markMetricStreamScopeDeletedInClickHouse(
     throw new Error("ClickHouse metric-stream replacement requires a command-capable client");
   }
   const queryParams: Record<string, unknown> = {
-    peerdb_version: Date.now(),
+    delete_version: Date.now(),
   };
   const conditions = clickHouseDeleteScopeConditions(scope, queryParams);
   await client.command({
-    query: `ALTER TABLE postgres_fitness.metric_stream UPDATE _peerdb_is_deleted = 1, _peerdb_version = {peerdb_version:Int64} WHERE ${conditions.join(" AND ")}`,
+    query: `INSERT INTO ${METRIC_STREAM_TABLE}
+      SELECT
+        id,
+        activity_id,
+        user_id,
+        recorded_at,
+        channel,
+        provider_id,
+        external_id,
+        device_id,
+        source_type,
+        scalar,
+        vector,
+        point,
+        metadata,
+        now64(9) AS ingested_at,
+        1 AS is_deleted,
+        greatest(version + 1, {delete_version:Int64}) AS version
+      FROM ${METRIC_STREAM_TABLE} FINAL
+      WHERE is_deleted = 0
+        AND ${conditions.join(" AND ")}`,
     query_params: queryParams,
   });
 }

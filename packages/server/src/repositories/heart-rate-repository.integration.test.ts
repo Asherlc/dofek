@@ -29,7 +29,7 @@ const reader: MetricStreamClickHouseReader = {
 
 async function seed(rows: SeedRow[]): Promise<void> {
   await client.insert?.({
-    table: "postgres_fitness.metric_stream",
+    table: "ingest.metric_stream",
     format: "JSONEachRow",
     values: rows.map((row) => ({
       id: row.id,
@@ -51,7 +51,7 @@ describe("HeartRateRepository (integration)", () => {
       await client.command({ query: statement });
     }
     await client.command({
-      query: "DELETE FROM postgres_fitness.metric_stream WHERE user_id = {userId:UUID}",
+      query: "DELETE FROM ingest.metric_stream WHERE user_id = {userId:UUID}",
       query_params: { userId: testUserId },
     });
 
@@ -147,7 +147,7 @@ describe("HeartRateRepository (integration)", () => {
 
   afterAll(async () => {
     await client.command({
-      query: "DELETE FROM postgres_fitness.metric_stream WHERE user_id = {userId:UUID}",
+      query: "DELETE FROM ingest.metric_stream WHERE user_id = {userId:UUID}",
       query_params: { userId: testUserId },
     });
     await client.close?.();

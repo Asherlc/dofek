@@ -19,7 +19,7 @@ describe("tableInfo", () => {
     ["bodyMeasurements", "analytics.v_body_measurement", "recorded_at", "id"],
     ["foodEntries", "fitness.food_entry", "date", "id"],
     ["healthEvents", "fitness.health_event", "start_date", "id"],
-    ["metricStream", "postgres_fitness.metric_stream", "recorded_at", "id"],
+    ["metricStream", "ingest.metric_stream", "recorded_at", "id"],
     ["nutritionDaily", "fitness.v_nutrition_daily", "date", "date"],
     ["labPanels", "fitness.lab_panel", "recorded_at", "id"],
     ["labResults", "fitness.lab_result", "recorded_at", "id"],
@@ -226,8 +226,8 @@ describe("ProviderDetailRepository", () => {
 
       expect(query).toHaveBeenCalledTimes(1);
       // Reads the deduped Redpanda-fed mirror, not Postgres.
-      expect(query.mock.calls[0]?.[1]).toContain("postgres_fitness.metric_stream FINAL");
-      expect(query.mock.calls[0]?.[1]).toContain("_peerdb_is_deleted = 0");
+      expect(query.mock.calls[0]?.[1]).toContain("ingest.metric_stream FINAL");
+      expect(query.mock.calls[0]?.[1]).toContain("is_deleted = 0");
       // recorded_at is rendered in UTC so the literal 'Z' suffix is accurate.
       expect(query.mock.calls[0]?.[1]).toContain("'%Y-%m-%dT%H:%i:%S.%fZ', 'UTC'");
       expect(query.mock.calls[0]?.[2]).toStrictEqual({
@@ -480,7 +480,7 @@ describe("ProviderDetailRepository", () => {
         idColumn: "id",
       });
       expect(tableInfo("metricStream")).toStrictEqual({
-        table: "postgres_fitness.metric_stream",
+        table: "ingest.metric_stream",
         orderColumn: "recorded_at",
         idColumn: "id",
       });

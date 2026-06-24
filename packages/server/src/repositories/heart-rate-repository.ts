@@ -61,10 +61,10 @@ export class HeartRateRepository {
             provider_id,
             toStartOfMinute(toDateTime(recorded_at)) AS minute_bucket,
             scalar
-          FROM postgres_fitness.metric_stream FINAL
+          FROM ingest.metric_stream FINAL
           WHERE user_id = {userId:String}
             AND channel = 'heart_rate'
-            AND _peerdb_is_deleted = 0
+            AND is_deleted = 0
             AND scalar > 0
             -- Range over the raw recorded_at so the ORDER BY key can prune,
             -- instead of wrapping it in toDate(). Bounds are the user's local

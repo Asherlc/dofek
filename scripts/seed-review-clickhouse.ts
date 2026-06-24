@@ -151,7 +151,7 @@ const reviewRawTableCopies: readonly ReviewRawTableCopy[] = [
     whereClause: `user_id = ${clickHouseStringLiteral(USER_ID)}`,
   },
   {
-    targetTable: "postgres_fitness.metric_stream",
+    targetTable: "ingest.metric_stream",
     sourceTable: "metric_stream",
     columns: [
       "recorded_at",

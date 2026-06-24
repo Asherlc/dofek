@@ -8,36 +8,20 @@ import {
 } from "./clickhouse-read-models.ts";
 import { buildRestingHeartRateSleepWindowTableSql } from "./clickhouse-resting-heart-rate.ts";
 import {
-  peerDbMetadataColumnAlterStatements,
-  peerDbMetadataColumnDefinitions,
-  replacingMergeTreeTable,
-  standardViewHeader,
-} from "./clickhouse-sql-helpers.ts";
+  buildIngestMetricStreamCreateTableSql,
+  INGEST_DATABASE,
+  METRIC_STREAM_TABLE,
+} from "../metric-stream/clickhouse-table.ts";
+import { standardViewHeader } from "./clickhouse-sql-helpers.ts";
 
 export function buildClickHouseBootstrapStatementsForNativeMetricStream(
   postgresConnectionString: string,
 ): string[] {
   void postgresConnectionString;
   const metricStreamStatements = [
+    `CREATE DATABASE IF NOT EXISTS ${INGEST_DATABASE}`,
+    buildIngestMetricStreamCreateTableSql(),
     "CREATE DATABASE IF NOT EXISTS postgres_fitness",
-    `CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream (
-  id UUID,
-  activity_id Nullable(UUID),
-  user_id UUID,
-  recorded_at DateTime64(6, 'UTC'),
-  channel String,
-  provider_id String,
-  external_id Nullable(String),
-  device_id Nullable(String),
-  source_type Nullable(String),
-  scalar Nullable(Float32),
-  vector Array(Float32),
-  point String,
-  metadata String,
-${peerDbMetadataColumnDefinitions}
-)
-${replacingMergeTreeTable("(user_id, activity_id, channel, recorded_at, id)")}`,
-    ...peerDbMetadataColumnAlterStatements("postgres_fitness.metric_stream"),
     ...buildPostgresFitnessRawTableStatements(),
     ...buildBodyMeasurementSampleProjectionStatements(),
   ];
@@ -83,11 +67,11 @@ linked_best_source AS (
       ) AS row_number
     FROM (
       SELECT *
-      FROM postgres_fitness.metric_stream FINAL
+      FROM ${METRIC_STREAM_TABLE} FINAL
     ) AS metric_stream
     INNER JOIN activity_members
       ON metric_stream.activity_id = activity_members.member_activity_id
-    WHERE metric_stream._peerdb_is_deleted = 0
+    WHERE metric_stream.is_deleted = 0
       AND metric_stream.channel = 'location'
       AND metric_stream.point != ''
     GROUP BY activity_members.activity_id, metric_stream.provider_id
@@ -102,13 +86,13 @@ parsed_points AS (
     metric_stream.recorded_at,
     metric_stream.provider_id,
     metric_stream.channel,
-    metric_stream._peerdb_is_deleted,
+    metric_stream.is_deleted,
     (
       JSONExtract(metric_stream.point, 'coordinates', 'Array(Float64)')[1],
       JSONExtract(metric_stream.point, 'coordinates', 'Array(Float64)')[2]
     )::Point AS point
-  FROM (SELECT * FROM postgres_fitness.metric_stream FINAL) AS metric_stream
-  WHERE metric_stream._peerdb_is_deleted = 0
+  FROM (SELECT * FROM ${METRIC_STREAM_TABLE} FINAL) AS metric_stream
+  WHERE metric_stream.is_deleted = 0
     AND metric_stream.channel = 'location'
     AND metric_stream.point != ''
 )

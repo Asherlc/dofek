@@ -40,7 +40,7 @@ const clickHouse: BodyClickHouseStore = {
 
 async function seed(rows: SeedRow[]): Promise<void> {
   await client.insert?.({
-    table: "postgres_fitness.metric_stream",
+    table: "ingest.metric_stream",
     format: "JSONEachRow",
     values: rows.map((row) => ({
       id: row.id,
@@ -72,7 +72,7 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
       await client.command({ query: statement });
     }
     await client.command({
-      query: "DELETE FROM postgres_fitness.metric_stream WHERE user_id = {userId:UUID}",
+      query: "DELETE FROM ingest.metric_stream WHERE user_id = {userId:UUID}",
       query_params: { userId: testUserId },
     });
     await seed([
@@ -137,7 +137,7 @@ describe("ProviderDetailRepository metric stream (integration)", () => {
 
   afterAll(async () => {
     await client.command({
-      query: "DELETE FROM postgres_fitness.metric_stream WHERE user_id = {userId:UUID}",
+      query: "DELETE FROM ingest.metric_stream WHERE user_id = {userId:UUID}",
       query_params: { userId: testUserId },
     });
     await client.close?.();

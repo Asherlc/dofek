@@ -118,19 +118,14 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("CREATE DATABASE IF NOT EXISTS analytics");
     expect(sql).not.toContain("CREATE DATABASE IF NOT EXISTS fitness");
     expect(sql).toContain("CREATE DATABASE IF NOT EXISTS postgres_fitness");
-    expect(sql).toContain("CREATE TABLE IF NOT EXISTS postgres_fitness.metric_stream");
+    expect(sql).toContain("CREATE DATABASE IF NOT EXISTS ingest");
+    expect(sql).toContain("CREATE TABLE IF NOT EXISTS ingest.metric_stream");
     expect(sql).toContain("vector Array(Float32)");
-    expect(sql).toContain(
-      "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_synced_at DateTime64(9) DEFAULT now()",
-    );
-    expect(sql).toContain(
-      "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_is_deleted Int8 DEFAULT 0",
-    );
-    expect(sql).toContain(
-      "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_version Int64 DEFAULT 0",
-    );
-    expect(sql.indexOf("ADD COLUMN IF NOT EXISTS _peerdb_synced_at")).toBeLessThan(
-      sql.indexOf("FROM postgres_fitness.metric_stream"),
+    expect(sql).toContain("ingested_at DateTime64(9) DEFAULT now()");
+    expect(sql).toContain("is_deleted Int8 DEFAULT 0");
+    expect(sql).toContain("version Int64 DEFAULT 0");
+    expect(sql).not.toContain(
+      "ALTER TABLE postgres_fitness.metric_stream ADD COLUMN IF NOT EXISTS _peerdb_synced_at",
     );
     expect(sql).toContain("point String");
     expect(sql).toContain("metadata String");
@@ -155,7 +150,7 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS postgres_fitness.user_profile_current");
     expect(sql).toContain("FROM postgres_fitness.user_profile FINAL");
     expect(sql).toContain("WHERE _peerdb_is_deleted = 0");
-    expect(sql).toContain("FROM postgres_fitness.metric_stream FINAL");
+    expect(sql).toContain("FROM ingest.metric_stream FINAL");
     expect(sql).toContain("ENGINE = ReplacingMergeTree");
     expect(sql).not.toContain("ENGINE = MaterializedPostgreSQL");
     expect(sql).not.toContain("materialized_postgresql_tables_list = 'metric_stream'");
@@ -184,7 +179,7 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.activity_summary");
     expect(sql).not.toContain("DROP TABLE IF EXISTS");
     expect(sql).not.toContain("DROP VIEW IF EXISTS");
-    expect(sql).toContain("FROM postgres_fitness.metric_stream");
+    expect(sql).toContain("FROM ingest.metric_stream");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_activity");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_activity_members");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_sleep");
@@ -235,7 +230,7 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).not.toContain(
       "CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.derived_resting_heart_rate",
     );
-    expect(sql).toContain("FROM postgres_fitness.metric_stream FINAL");
+    expect(sql).toContain("FROM ingest.metric_stream FINAL");
     expect(sql).toContain("WHERE _peerdb_is_deleted = 0");
     expect(sql).toContain("FROM analytics.v_activity");
     expect(sql).toContain("FROM analytics.v_activity_members");
@@ -277,7 +272,7 @@ describe("bootstrapClickHouseFromEnv", () => {
     expect(command).not.toHaveBeenCalled();
     expect(query).toHaveBeenCalledWith({
       query:
-        "SELECT count() AS table_count FROM system.tables WHERE database = 'postgres_fitness' AND name = 'metric_stream'",
+        "SELECT count() AS table_count FROM system.tables WHERE database = 'ingest' AND name = 'metric_stream'",
       format: "JSONEachRow",
     });
     expect(query).toHaveBeenCalledWith({
@@ -302,7 +297,7 @@ describe("bootstrapClickHouseFromEnv", () => {
     });
     expect(query).toHaveBeenCalledWith({
       query:
-        "SELECT count() AS column_count FROM system.columns WHERE database = 'postgres_fitness' AND table = 'metric_stream'",
+        "SELECT count() AS column_count FROM system.columns WHERE database = 'ingest' AND table = 'metric_stream'",
       format: "JSONEachRow",
     });
     expect(query).toHaveBeenCalledWith({

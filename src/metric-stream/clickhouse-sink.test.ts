@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { METRIC_STREAM_TABLE } from "./clickhouse-table.ts";
 import {
   applyMetricStreamEventsToClickHouse,
   insertMetricStreamEventsIntoClickHouse,
@@ -38,14 +39,14 @@ afterEach(() => {
 });
 
 describe("insertMetricStreamEventsIntoClickHouse", () => {
-  it("inserts non-IMU events into the existing analytics source table", async () => {
+  it("inserts non-IMU events into the ingest metric stream table", async () => {
     const insert = vi.fn(async () => undefined);
 
     const inserted = await insertMetricStreamEventsIntoClickHouse({ insert }, [heartRateEvent]);
 
     expect(inserted).toBe(1);
     expect(insert).toHaveBeenCalledWith({
-      table: "postgres_fitness.metric_stream",
+      table: METRIC_STREAM_TABLE,
       format: "JSONEachRow",
       clickhouse_settings: { date_time_input_format: "best_effort" },
       values: [
@@ -56,7 +57,7 @@ describe("insertMetricStreamEventsIntoClickHouse", () => {
           external_id: "hk:heart-rate-1",
           device_id: "Apple Watch",
           scalar: 72,
-          _peerdb_is_deleted: 0,
+          is_deleted: 0,
         }),
       ],
     });
@@ -94,7 +95,7 @@ describe("insertMetricStreamEventsIntoClickHouse", () => {
     expect(row.activity_id).toBe("20000000-0000-4000-8000-000000000001");
     expect(row.scalar).toBe(72);
     expect(row.point).toBe('{"type":"Point","coordinates":[-122.4,37.8]}');
-    expect(row._peerdb_version).toBe(0);
+    expect(row.version).toBe(0);
   });
 
   it("normalizes EWKT point events into the GeoJSON string ClickHouse read models expect", () => {
@@ -139,15 +140,18 @@ describe("applyMetricStreamEventsToClickHouse", () => {
 
     expect(applied).toBe(1);
     expect(command).toHaveBeenCalledWith({
-      query:
-        "ALTER TABLE postgres_fitness.metric_stream UPDATE _peerdb_is_deleted = 1, _peerdb_version = {peerdb_version:Int64} WHERE toString(activity_id) = {activity_id:String}",
+      query: expect.stringContaining(`INSERT INTO ${METRIC_STREAM_TABLE}`),
       query_params: {
-        peerdb_version: expect.any(Number),
+        delete_version: expect.any(Number),
         activity_id: "20000000-0000-4000-8000-000000000001",
       },
     });
+    expect(String(command.mock.calls[0]?.[0].query)).toContain("1 AS is_deleted");
+    expect(String(command.mock.calls[0]?.[0].query)).toContain(
+      "toString(activity_id) = {activity_id:String}",
+    );
     expect(insert).toHaveBeenCalledWith({
-      table: "postgres_fitness.metric_stream",
+      table: METRIC_STREAM_TABLE,
       values: [expect.objectContaining({ id: heartRateEvent.id })],
       format: "JSONEachRow",
       clickhouse_settings: { date_time_input_format: "best_effort" },
@@ -174,13 +178,13 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     expect(applied).toBe(2);
     expect(insert).toHaveBeenCalledTimes(2);
     expect(insert).toHaveBeenNthCalledWith(1, {
-      table: "postgres_fitness.metric_stream",
+      table: METRIC_STREAM_TABLE,
       values: [expect.objectContaining({ id: heartRateEvent.id })],
       format: "JSONEachRow",
       clickhouse_settings: { date_time_input_format: "best_effort" },
     });
     expect(insert).toHaveBeenNthCalledWith(2, {
-      table: "postgres_fitness.metric_stream",
+      table: METRIC_STREAM_TABLE,
       values: [expect.objectContaining({ id: secondHeartRateEvent.id })],
       format: "JSONEachRow",
       clickhouse_settings: { date_time_input_format: "best_effort" },
@@ -188,7 +192,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     expect(command).toHaveBeenCalledOnce();
   });
 
-  it("renders every supported replacement scope predicate into the ClickHouse mutation", async () => {
+  it("renders every supported replacement scope predicate into the tombstone insert", async () => {
     const command = vi.fn(async () => undefined);
     const insert = vi.fn(async () => undefined);
 
@@ -206,10 +210,9 @@ describe("applyMetricStreamEventsToClickHouse", () => {
 
     expect(insert).not.toHaveBeenCalled();
     expect(command).toHaveBeenCalledWith({
-      query:
-        "ALTER TABLE postgres_fitness.metric_stream UPDATE _peerdb_is_deleted = 1, _peerdb_version = {peerdb_version:Int64} WHERE toString(user_id) = {user_id:String} AND provider_id = {provider_id:String} AND external_id = {external_id:String} AND channel = {channel:String} AND toString(activity_id) = {activity_id:String} AND recorded_at >= parseDateTime64BestEffort({recorded_at_start:String}) AND recorded_at < parseDateTime64BestEffort({recorded_at_end:String})",
+      query: expect.stringContaining(`INSERT INTO ${METRIC_STREAM_TABLE}`),
       query_params: {
-        peerdb_version: expect.any(Number),
+        delete_version: expect.any(Number),
         user_id: "10000000-0000-4000-8000-000000000001",
         provider_id: "fitbit",
         external_id: null,
@@ -219,6 +222,16 @@ describe("applyMetricStreamEventsToClickHouse", () => {
         recorded_at_end: "2026-03-02T00:00:00.000Z",
       },
     });
+    const query = String(command.mock.calls[0]?.[0].query);
+    expect(query).toContain("toString(user_id) = {user_id:String}");
+    expect(query).toContain("provider_id = {provider_id:String}");
+    expect(query).toContain("external_id = {external_id:String}");
+    expect(query).toContain("channel = {channel:String}");
+    expect(query).toContain("toString(activity_id) = {activity_id:String}");
+    expect(query).toContain(
+      "recorded_at >= parseDateTime64BestEffort({recorded_at_start:String})",
+    );
+    expect(query).toContain("recorded_at < parseDateTime64BestEffort({recorded_at_end:String})");
   });
 
   it("rejects replacement delete scopes that produce no ClickHouse conditions", async () => {

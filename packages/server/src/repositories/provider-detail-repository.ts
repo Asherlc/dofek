@@ -45,7 +45,7 @@ export function tableInfo(dataType: DataType): {
       return { table: "fitness.health_event", orderColumn: "start_date", idColumn: "id" };
     case "metricStream":
       return {
-        table: "postgres_fitness.metric_stream",
+        table: "ingest.metric_stream",
         orderColumn: "recorded_at",
         idColumn: "id",
       };
@@ -231,7 +231,7 @@ export class ProviderDetailRepository {
   readonly #userId: string;
   // ClickHouse query runner. Serves the read-models that have moved off
   // Postgres: body measurements (analytics.v_body_measurement) and the
-  // Redpanda-fed metric stream (postgres_fitness.metric_stream).
+  // Redpanda-fed metric stream (ingest.metric_stream).
   readonly #clickHouse: BodyClickHouseStore | undefined;
 
   constructor(
@@ -335,7 +335,7 @@ export class ProviderDetailRepository {
   /**
    * Raw metric-stream rows for a provider, read from the Redpanda-fed ClickHouse
    * mirror (Postgres `fitness.metric_stream` is retired). Version-deduplicated
-   * (`FINAL` + `_peerdb_is_deleted = 0`); recorded_at formatted to ISO-8601 Z.
+   * (`FINAL` + `is_deleted = 0`); recorded_at formatted to ISO-8601 Z.
    */
   async #queryMetricStreamRecords(
     providerId: string,
@@ -363,10 +363,10 @@ export class ProviderDetailRepository {
           channel,
           activity_id,
           scalar
-        FROM postgres_fitness.metric_stream FINAL
+        FROM ingest.metric_stream FINAL
         WHERE user_id = {userId:UUID}
           AND provider_id = {providerId:String}
-          AND _peerdb_is_deleted = 0
+          AND is_deleted = 0
           ${recordFilter}
         ORDER BY recorded_at DESC
         LIMIT {limit:UInt32}

@@ -144,13 +144,13 @@ async function listGarminDatesWithMetricStreamChannel(
     const result = await client.query({
       query: `
         SELECT DISTINCT toString(toDate(recorded_at)) AS date
-        FROM postgres_fitness.metric_stream FINAL
+        FROM ingest.metric_stream FINAL
         WHERE user_id = {userId:UUID}
           AND provider_id = {providerId:String}
           AND channel = {channel:String}
           AND recorded_at >= parseDateTime64BestEffort({rangeStart:String})
           AND recorded_at < parseDateTime64BestEffort({rangeEnd:String})
-          AND _peerdb_is_deleted = 0
+          AND is_deleted = 0
       `,
       format: "JSONEachRow",
       query_params: {
