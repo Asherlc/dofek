@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     "./router": "./src/router.ts",
-    "./types": "./src/types.ts"
+    "./types": "./src/types.ts",
+    "./field-filter-columns": "./src/lib/field-filter-columns.ts"
   },
   "scripts": {
     "dev": "../../scripts/with-env.sh tsx src/index.ts"

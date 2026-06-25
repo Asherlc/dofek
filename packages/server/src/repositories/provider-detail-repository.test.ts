@@ -5,8 +5,12 @@ import {
   dataTypeEnum,
   getRecordDisplayColumns,
   getRecordFilterColumns,
+  getRecordSelectFilterColumns,
+  isJournalQuestionSlugFilterColumn,
   ProviderDetailRepository,
+  SYNC_LOG_FILTER_OPTION_FIELDS,
   tableInfo,
+  usesClickHouseRecordFilterOptions,
 } from "./provider-detail-repository.ts";
 
 // ---------------------------------------------------------------------------
@@ -182,6 +186,19 @@ describe("ProviderDetailRepository", () => {
       const sqlText = stringifyQuery(execute.mock.calls[0]?.[0]);
       expect(sqlText).toContain("ILIKE");
       expect(sqlText).toContain("name");
+    });
+
+    it("adds datetime range filters to postgres record queries", async () => {
+      const { repo, execute } = makeRepository([]);
+      await repo.getRecords("strava", "activities", 50, 0, {
+        started_at_from: "2024-06-01T08:00",
+        started_at_to: "2024-06-30T18:00",
+      });
+
+      expect(execute).toHaveBeenCalledTimes(1);
+      const sqlText = stringifyQuery(execute.mock.calls[0]?.[0]);
+      expect(sqlText).toContain("started_at");
+      expect(sqlText).toContain("::timestamptz");
     });
 
     it("includes provider-absent activities in activity record lists", async () => {
@@ -678,6 +695,128 @@ describe("ProviderDetailRepository", () => {
       expect(activityIndex).toBeGreaterThanOrEqual(0);
       expect(oauthIndex).toBeGreaterThanOrEqual(0);
       expect(activityIndex).toBeLessThan(oauthIndex);
+    });
+  });
+
+  describe("getSyncLogFilterOptions", () => {
+    it("queries distinct values for each sync log dropdown column", async () => {
+      const { repo, execute } = makeRepository([{ value: "success" }, { value: "error" }]);
+
+      const result = await repo.getSyncLogFilterOptions("strava");
+
+      expect(Object.keys(result)).toEqual(Object.keys(SYNC_LOG_FILTER_OPTION_FIELDS));
+      expect(execute).toHaveBeenCalledTimes(Object.keys(SYNC_LOG_FILTER_OPTION_FIELDS).length);
+      expect(result.status).toEqual([{ value: "success" }, { value: "error" }]);
+      expect(result.dataType).toEqual([{ value: "success" }, { value: "error" }]);
+    });
+  });
+
+  describe("getRecordFilterOptions", () => {
+    it("identifies journal question_slug columns for joined filter options", () => {
+      expect(isJournalQuestionSlugFilterColumn("journalEntries", "question_slug")).toBe(true);
+      expect(isJournalQuestionSlugFilterColumn("journalEntries", "date")).toBe(false);
+      expect(isJournalQuestionSlugFilterColumn("activities", "question_slug")).toBe(false);
+    });
+
+    it("identifies ClickHouse-backed record filter option data types", () => {
+      expect(usesClickHouseRecordFilterOptions("bodyMeasurements")).toBe(true);
+      expect(usesClickHouseRecordFilterOptions("metricStream")).toBe(true);
+      expect(usesClickHouseRecordFilterOptions("activities")).toBe(false);
+    });
+
+    it("queries distinct postgres values for categorical record columns", async () => {
+      const { repo, execute } = makeRepository([{ value: "running" }, { value: "cycling" }]);
+
+      const result = await repo.getRecordFilterOptions("strava", "activities");
+
+      expect(getRecordSelectFilterColumns("activities")).toContain("activity_type");
+      expect(result.activity_type).toEqual([{ value: "running" }, { value: "cycling" }]);
+      expect(result.source_name).toEqual([{ value: "running" }, { value: "cycling" }]);
+      expect(execute).toHaveBeenCalledTimes(getRecordSelectFilterColumns("activities").length);
+    });
+
+    it("joins journal questions for question_slug labels", async () => {
+      const { repo, execute } = makeRepository([
+        { value: "mood", label: "Mood" },
+        { value: "energy", label: null },
+      ]);
+
+      const result = await repo.getRecordFilterOptions("whoop", "journalEntries");
+
+      const sqlText = stringifyQuery(execute.mock.calls[0]?.[0]);
+      expect(sqlText).toContain("fitness.journal_entry je");
+      expect(sqlText).toContain("fitness.journal_question jq");
+      expect(sqlText).not.toContain("SELECT DISTINCT question_slug AS value");
+      expect(result.question_slug).toEqual([{ value: "mood", label: "Mood" }, { value: "energy" }]);
+    });
+
+    it("queries ClickHouse for body measurement dropdown values", async () => {
+      const { bodyStore, query } = makeBodyStore([{ value: "withings" }, { value: "garmin" }]);
+      const { db, execute } = makeRepository([]);
+      const repo = new ProviderDetailRepository(db, "user-1", bodyStore);
+
+      const result = await repo.getRecordFilterOptions("withings", "bodyMeasurements");
+
+      expect(execute).not.toHaveBeenCalled();
+      expect(query).toHaveBeenCalledTimes(getRecordSelectFilterColumns("bodyMeasurements").length);
+      const sourceQuery = query.mock.calls[0];
+      expect(String(sourceQuery?.[1])).toContain("analytics.v_body_measurement");
+      expect(String(sourceQuery?.[1])).not.toContain("is_deleted = 0");
+      expect(sourceQuery?.[2]).toStrictEqual({
+        userId: "user-1",
+        providerId: "withings",
+        limit: 500,
+      });
+      expect(result.source_name).toEqual([{ value: "withings" }, { value: "garmin" }]);
+    });
+
+    it("queries ClickHouse for metric stream dropdown values", async () => {
+      const { bodyStore, query } = makeBodyStore([
+        { value: "heart_rate" },
+        { value: "rr_interval_ms" },
+      ]);
+      const { db } = makeRepository([]);
+      const repo = new ProviderDetailRepository(db, "user-1", bodyStore);
+
+      const result = await repo.getRecordFilterOptions("whoop", "metricStream");
+
+      expect(query).toHaveBeenCalledTimes(getRecordSelectFilterColumns("metricStream").length);
+      const channelQuery = query.mock.calls.find((call) =>
+        String(call[1]).includes("DISTINCT channel"),
+      );
+      expect(channelQuery?.[1]).toContain("AND is_deleted = 0");
+      expect(channelQuery?.[2]).toStrictEqual({
+        userId: "user-1",
+        providerId: "whoop",
+        limit: 500,
+      });
+      expect(result.channel).toEqual([{ value: "heart_rate" }, { value: "rr_interval_ms" }]);
+    });
+
+    it("requires ClickHouse for body measurement filter options", async () => {
+      const { repo } = makeRepository([]);
+
+      await expect(repo.getRecordFilterOptions("withings", "bodyMeasurements")).rejects.toThrow(
+        "providerDetail analytics.v_body_measurement filter options require the ClickHouse store",
+      );
+    });
+
+    it("requires ClickHouse for metric stream filter options", async () => {
+      const { repo } = makeRepository([]);
+
+      await expect(repo.getRecordFilterOptions("whoop", "metricStream")).rejects.toThrow(
+        "providerDetail ingest.metric_stream filter options require the ClickHouse store",
+      );
+    });
+
+    it("returns a frozen empty object for data types without dropdown filters", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      const result = await repo.getRecordFilterOptions("cronometer", "nutritionDaily");
+
+      expect(result).toEqual({});
+      expect(Object.isFrozen(result)).toBe(true);
+      expect(execute).not.toHaveBeenCalled();
     });
   });
 });
