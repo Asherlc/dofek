@@ -14,8 +14,11 @@ export async function enqueueSyncJobWithRequestDedup(
   const requestQuery = resolveSyncRequestQuery(providerId, jobData);
   const nextOptions: JobsOptions = { ...jobOptions };
 
-  if (requestQuery && nextOptions.jobId == null) {
+  if (nextOptions.jobId == null && requestQuery) {
     nextOptions.jobId = buildSyncRequestJobId(providerId, jobData.userId, requestQuery);
+  }
+
+  if (nextOptions.jobId != null) {
     const existing = await getJob(nextOptions.jobId);
     if (existing) {
       const state = await existing.getState();

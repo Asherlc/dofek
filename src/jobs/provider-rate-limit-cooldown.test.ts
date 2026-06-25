@@ -199,7 +199,7 @@ describe("ProviderRateLimitCooldownStore", () => {
     }
 
     expect(cooldown.consecutiveHits).toBe(3);
-    expect(cooldown.expiresAt).toEqual(new Date("2026-06-02T19:00:00Z"));
+    expect(cooldown.expiresAt).toEqual(new Date("2026-06-02T22:00:00Z"));
     vi.useRealTimers();
   });
 
@@ -227,7 +227,7 @@ describe("ProviderRateLimitCooldownStore", () => {
       "user-1",
     );
 
-    expect(cooldown.expiresAt).toEqual(new Date("2026-06-02T13:00:00Z"));
+    expect(cooldown.expiresAt).toEqual(new Date("2026-06-02T14:00:00Z"));
     vi.useRealTimers();
   });
 
@@ -237,12 +237,12 @@ describe("ProviderRateLimitCooldownStore", () => {
 
     const first = await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
     expect(first.consecutiveHits).toBe(1);
-    expect(first.expiresAt).toEqual(new Date("2026-06-02T13:00:00Z"));
+    expect(first.expiresAt).toEqual(new Date("2026-06-02T14:00:00Z"));
 
-    vi.setSystemTime(new Date("2026-06-02T13:00:00Z"));
+    vi.setSystemTime(new Date("2026-06-02T14:00:00Z"));
     const second = await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
     expect(second.consecutiveHits).toBe(2);
-    expect(second.expiresAt).toEqual(new Date("2026-06-02T15:00:00Z"));
+    expect(second.expiresAt).toEqual(new Date("2026-06-02T18:00:00Z"));
     vi.useRealTimers();
   });
 
@@ -251,7 +251,7 @@ describe("ProviderRateLimitCooldownStore", () => {
     const store = new InMemoryProviderRateLimitCooldownStore();
 
     await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
-    vi.setSystemTime(new Date("2026-06-02T15:00:01Z"));
+    vi.setSystemTime(new Date("2026-06-02T16:00:01Z"));
 
     const second = await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
     expect(second.consecutiveHits).toBe(1);
@@ -263,7 +263,7 @@ describe("ProviderRateLimitCooldownStore", () => {
     const store = new InMemoryProviderRateLimitCooldownStore();
 
     await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
-    vi.setSystemTime(new Date("2026-06-02T15:00:00Z"));
+    vi.setSystemTime(new Date("2026-06-02T16:00:00Z"));
 
     const second = await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
     expect(second.consecutiveHits).toBe(2);
@@ -305,7 +305,7 @@ describe("ProviderRateLimitCooldownStore", () => {
       "user-1",
     );
 
-    expect(cooldown.expiresAt).toEqual(new Date("2026-06-02T13:00:00Z"));
+    expect(cooldown.expiresAt).toEqual(new Date("2026-06-02T14:00:00Z"));
     vi.useRealTimers();
   });
 
@@ -705,6 +705,6 @@ describe("provider rate-limit scheduling helpers", () => {
 
     const jobId = providerRateLimitCooldownJobId(cooldown, "user-1");
 
-    expect(jobId).toBe("provider-rate-limit-garmin-provider-user-1-1780402200000");
+    expect(jobId).toBe("provider-rate-limit-garmin-provider-1780402200000");
   });
 });

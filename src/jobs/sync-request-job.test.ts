@@ -296,4 +296,24 @@ describe("enqueueSyncJobWithRequestDedup", () => {
     );
     expect(result).toBe(newJob);
   });
+
+  it("returns an existing cooldown-delayed job without enqueueing a duplicate", async () => {
+    const existing = { getState: vi.fn(), remove: vi.fn() };
+    existing.getState.mockResolvedValue("delayed");
+    const addJob = vi.fn();
+    const getJob = vi.fn();
+    getJob.mockResolvedValue(existing);
+
+    const result = await enqueueSyncJobWithRequestDedup(
+      "garmin",
+      jobData,
+      { jobId: "rate-limit-delayed-job", delay: 600_000 },
+      addJob,
+      getJob,
+    );
+
+    expect(getJob).toHaveBeenCalledWith("rate-limit-delayed-job");
+    expect(addJob).not.toHaveBeenCalled();
+    expect(result).toBe(existing);
+  });
 });
