@@ -336,7 +336,7 @@ describe("createImuCollector", () => {
 
     collector.start();
     const gyroCb = gyro.onChange.mock.calls[0][0];
-    gyroCb({} as { x: number; y: number; z: number });
+    gyroCb({ x: 0, y: 0, z: 0 });
 
     const accelCb = accel.onChange.mock.calls[0][0];
     accelCb({ x: 1, y: 2, z: 3 });
@@ -506,7 +506,7 @@ describe("createImuCollector", () => {
     collector.start();
     const accelCb = accel.onChange.mock.calls[0][0];
 
-    accelCb({} as { x: number; y: number; z: number });
+    accelCb({ x: 0, y: 0, z: 0 });
 
     const sample = onSample.mock.calls[0][0];
     expect(sample).toMatchObject({ ax: 7, ay: 8, az: 9 });
@@ -552,7 +552,7 @@ describe("createImuCollector", () => {
   it("falls back to zero-object when gyro getCurrent returns null", () => {
     const accel = makeMockSensor();
     const gyro = makeMockSensor();
-    gyro.getCurrent = vi.fn(() => null) as unknown as typeof gyro.getCurrent;
+    gyro.getCurrent.mockImplementation(() => null);
     const onSample = vi.fn();
     const collector = createImuCollector(
       { enableGyro: true, onSample },
@@ -567,7 +567,7 @@ describe("createImuCollector", () => {
 
     collector.start();
     const gyroCb = gyro.onChange.mock.calls[0][0];
-    gyroCb({} as { x: number; y: number; z: number });
+    gyroCb({ x: 0, y: 0, z: 0 });
 
     const accelCb = accel.onChange.mock.calls[0][0];
     accelCb({ x: 1, y: 2, z: 3 });
