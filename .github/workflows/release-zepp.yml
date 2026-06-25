@@ -134,6 +134,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CI_RUN_ID: ${{ needs.build.outputs.ci_run_id }}
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
           ZAB_FILE=$(ls dist/*.zab 2>/dev/null | head -1)
           if [ -z "$ZAB_FILE" ]; then
@@ -149,6 +150,6 @@ jobs:
             echo "Triggered by [CI run #${CI_RUN_ID}](${REPO_URL}/actions/runs/${CI_RUN_ID})" >> "$NOTES_FILE"
           fi
           gh release create "$GITHUB_REF_NAME" \
-            --title "Dofek Zepp v${{ needs.build.outputs.version }}" \
+            --title "Dofek Zepp v$VERSION" \
             --notes-file "$NOTES_FILE" \
             "$ZAB_FILE"
