@@ -1,11 +1,25 @@
 import { describe, expect, it } from "vitest";
 import {
+  assertSqlColumnName,
   buildClickHouseFilterClauses,
   buildPostgresFilterConditions,
   buildPostgresFilterConditionsMapped,
   escapeLikePattern,
   fieldFiltersSchema,
 } from "./field-filters.ts";
+
+describe("assertSqlColumnName", () => {
+  it("throws for invalid column names", () => {
+    expect(() => assertSqlColumnName("bad-name")).toThrow("Invalid SQL column name");
+    expect(() => assertSqlColumnName("1abc")).toThrow("Invalid SQL column name");
+    expect(() => assertSqlColumnName("")).toThrow("Invalid SQL column name");
+  });
+
+  it("accepts valid column names", () => {
+    expect(() => assertSqlColumnName("valid_column")).not.toThrow();
+    expect(() => assertSqlColumnName("a")).not.toThrow();
+  });
+});
 
 describe("escapeLikePattern", () => {
   it("escapes LIKE wildcards", () => {
@@ -92,6 +106,23 @@ describe("buildClickHouseFilterClauses", () => {
     );
     expect(result.params.date_from).toBe("2024-06-01");
     expect(result.params.date_to).toBe("2024-06-30");
+  });
+
+  it("does not normalize datetime-local values for date-only columns", () => {
+    const result = buildClickHouseFilterClauses(
+      { date_from: "2024-06-01T00:00", date_to: "2024-06-30T23:59" },
+      ["date"],
+    );
+    expect(result.params.date_from).toBe("2024-06-01T00:00");
+    expect(result.params.date_to).toBe("2024-06-30T23:59");
+  });
+
+  it("only normalizes values matching datetime-local format", () => {
+    const result = buildClickHouseFilterClauses(
+      { started_at_from: "2024-06-01" },
+      ["started_at"],
+    );
+    expect(result.params.started_at_from).toBe("2024-06-01");
   });
 
   it("returns empty clause when no valid filters", () => {
