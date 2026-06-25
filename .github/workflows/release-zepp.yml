@@ -1,8 +1,12 @@
 name: Release Dofek Zepp (Zepp Store)
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
     branches: [main]
+    types:
+      - completed
+  push:
     tags:
       - "zepp-v*"
   workflow_dispatch:
@@ -13,14 +17,20 @@ permissions:
 jobs:
   build:
     name: Build ZAB Package
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/zepp-v'))
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
       is_tag: ${{ steps.version.outputs.is_tag }}
+      ci_run_id: ${{ steps.resolve-ci-run.outputs.run_id }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           persist-credentials: false
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -45,6 +55,31 @@ jobs:
           PATCH="${PARTS[2]:-0}"
           CODE=$(( MAJOR * 10000 + MINOR * 100 + PATCH ))
           echo "code=$CODE" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve triggering CI run
+        id: resolve-ci-run
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "run_id=${{ github.event.workflow_run.id }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_id=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Write job summary
+        env:
+          CI_RUN_ID: ${{ steps.resolve-ci-run.outputs.run_id }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          {
+            echo "## Zepp ZAB Build v$VERSION"
+            echo ""
+            if [ -n "$CI_RUN_ID" ]; then
+              echo "| | |"
+              echo "|---|---|"
+              echo "| **Triggered by** | [CI run #${CI_RUN_ID}](${REPO_URL}/actions/runs/${CI_RUN_ID}) |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Patch version files
         run: |
@@ -98,6 +133,8 @@ jobs:
       - name: Create Release
         env:
           GH_TOKEN: ${{ github.token }}
+          CI_RUN_ID: ${{ needs.build.outputs.ci_run_id }}
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
           ZAB_FILE=$(ls dist/*.zab 2>/dev/null | head -1)
           if [ -z "$ZAB_FILE" ]; then
@@ -105,7 +142,14 @@ jobs:
             ls -la dist/
             exit 1
           fi
+          NOTES_FILE=$(mktemp)
+          echo "Zepp OS mini-program build for Amazfit T-Rex 3." > "$NOTES_FILE"
+          if [ -n "$CI_RUN_ID" ]; then
+            REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+            echo "" >> "$NOTES_FILE"
+            echo "Triggered by [CI run #${CI_RUN_ID}](${REPO_URL}/actions/runs/${CI_RUN_ID})" >> "$NOTES_FILE"
+          fi
           gh release create "$GITHUB_REF_NAME" \
-            --title "Dofek Zepp v${{ needs.build.outputs.version }}" \
-            --notes "Zepp OS mini-program build for Amazfit T-Rex 3." \
+            --title "Dofek Zepp v$VERSION" \
+            --notes-file "$NOTES_FILE" \
             "$ZAB_FILE"
