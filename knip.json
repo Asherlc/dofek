@@ -96,7 +96,7 @@
         "entry": ["src/**/*.test.ts"]
       }
     },
-    "zepp": {
+    "packages/zepp": {
       "entry": [
         "app.ts",
         "page/index.ts",
@@ -104,7 +104,7 @@
         "setting/index.ts",
         "app-service/imu_service.ts"
       ],
-      "ignoreDependencies": ["@zeppos/zml", "@zeppos/device-types", "@zos/ui"],
+      "ignoreDependencies": ["@zeppos/device-types", "@zos/ui"],
       "ignoreBinaries": ["zeus"],
       "vitest": {
         "config": ["vitest.config.ts"],
