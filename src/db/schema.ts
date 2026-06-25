@@ -1518,7 +1518,11 @@ export const imuSession = fitness.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("imu_session_user_external_idx").on(table.userId, table.providerId, table.externalId),
+    uniqueIndex("imu_session_user_external_idx").on(
+      table.userId,
+      table.providerId,
+      table.externalId,
+    ),
     index("imu_session_user_provider_idx").on(table.userId, table.providerId),
     index("imu_session_start_at_idx").on(table.sessionStartAt.desc()),
   ],

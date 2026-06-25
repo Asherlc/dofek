@@ -520,7 +520,9 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
     } catch (err: unknown) {
       logger.error(`[zos-app] Upload failed: ${err}`);
       const { unlink } = await import("node:fs/promises");
-      await unlink(tmpFile).catch(() => {});
+      await unlink(tmpFile).catch((unlinkError: unknown) => {
+        logger.warn("Failed to clean up tmp file %s: %s", tmpFile, unlinkError);
+      });
       res.status(500).json({ error: "Upload failed" });
     }
   });
