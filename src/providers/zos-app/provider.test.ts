@@ -88,7 +88,7 @@ describe("importZosAppBin", () => {
 
     await importZosAppBin(mockDb as never, Buffer.from([0x00]), "user-1");
 
-    const insertedValues = mockInsertValues.mock.calls[0][0] as { externalId: string };
+    const insertedValues = mockInsertValues.mock.calls[0]![0] as { externalId: string };
     expect(insertedValues.externalId).toMatch(/^zos-app:[a-f0-9]{16}$/);
   });
 
@@ -98,7 +98,7 @@ describe("importZosAppBin", () => {
 
     await importZosAppBin(mockDb as never, binData, "user-1");
 
-    const insertedValues = mockInsertValues.mock.calls[0][0] as { rawData: string };
+    const insertedValues = mockInsertValues.mock.calls[0]![0] as { rawData: string };
     expect(insertedValues.rawData).toBe(binData.toString("base64"));
   });
 
@@ -107,7 +107,7 @@ describe("importZosAppBin", () => {
 
     await importZosAppBin(mockDb as never, Buffer.from([0x00]), "user-1");
 
-    const insertedValues = mockInsertValues.mock.calls[0][0] as { sessionStartAt: Date };
+    const insertedValues = mockInsertValues.mock.calls[0]![0] as { sessionStartAt: Date };
     expect(insertedValues.sessionStartAt).toEqual(new Date(1_719_300_000_000));
   });
 
