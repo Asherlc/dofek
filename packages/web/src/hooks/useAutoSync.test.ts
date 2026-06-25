@@ -186,24 +186,41 @@ describe("useAutoSync", () => {
   });
 
   it("uses an in-memory fallback when sessionStorage writes fail", async () => {
-    const getItem = vi.spyOn(Storage.prototype, "getItem");
-    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    const getItem = vi.fn<(key: string) => string | null>().mockReturnValue(null);
+    const setItem = vi.fn<(key: string, value: string) => void>().mockImplementation(() => {
       throw new Error("storage disabled");
     });
-    const { useAutoSync } = await import("./useAutoSync");
-
-    const firstRender = renderHook(() => useAutoSync("2026-03-21"));
-    firstRender.unmount();
-    getItem.mockImplementation(() => {
-      throw new Error("storage disabled");
+    const origDesc = Object.getOwnPropertyDescriptor(window, "sessionStorage");
+    Object.defineProperty(window, "sessionStorage", {
+      value: {
+        getItem,
+        setItem,
+        removeItem: vi.fn(),
+        clear: vi.fn(),
+        key: vi.fn(),
+        length: 0,
+      },
+      configurable: true,
+      writable: true,
     });
-    renderHook(() => useAutoSync("2026-03-21"));
 
-    expect(mockMutate).toHaveBeenCalledTimes(1);
-    expect(mockCaptureException).toHaveBeenCalledTimes(1);
+    try {
+      const { useAutoSync } = await import("./useAutoSync");
 
-    getItem.mockRestore();
-    setItem.mockRestore();
+      const firstRender = renderHook(() => useAutoSync("2026-03-21"));
+      firstRender.unmount();
+      getItem.mockImplementation(() => {
+        throw new Error("storage disabled");
+      });
+      renderHook(() => useAutoSync("2026-03-21"));
+
+      expect(mockMutate).toHaveBeenCalledTimes(1);
+      expect(mockCaptureException).toHaveBeenCalledTimes(1);
+    } finally {
+      if (origDesc) {
+        Object.defineProperty(window, "sessionStorage", origDesc);
+      }
+    }
   });
 
   it("triggers after rerendering from current data to stale data", async () => {
