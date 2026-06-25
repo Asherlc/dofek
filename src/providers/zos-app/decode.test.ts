@@ -149,7 +149,7 @@ describe("decodeBin", () => {
     const header = createHeader({
       hasGyro: false,
       sessionStartMs: 1_700_000_000_000,
-      sampleCount: 4,
+      sampleCount: 3,
     });
     const chunk1 = encodeChunk(
       [

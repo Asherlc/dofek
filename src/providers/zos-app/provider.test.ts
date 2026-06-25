@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../../db/index.ts";
 
 const mockEnsureProvider = vi.fn().mockResolvedValue(undefined);
@@ -46,6 +46,11 @@ function makeDecodedSession(overrides: Record<string, unknown> = {}) {
 }
 
 describe("importZosAppBin", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockInsertValues.mockReturnValue({ onConflictDoNothing: vi.fn() });
+  });
+
   it("decodes binary and inserts session into database", async () => {
     const decoded = makeDecodedSession();
     mockDecodeBin.mockReturnValue(decoded);

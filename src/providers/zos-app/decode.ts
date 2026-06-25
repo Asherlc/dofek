@@ -90,6 +90,12 @@ export function decodeBin(buffer: ArrayBufferLike): DecodedSession {
     }
   }
 
+  if (samples.length !== sampleCount) {
+    throw new Error(
+      `Sample count mismatch: header declared ${sampleCount} but decoded ${samples.length}`,
+    );
+  }
+
   return {
     version,
     hasGyro,

@@ -1,6 +1,6 @@
 packages:
   - .
-  - dofek-zepp
+  - zepp
   - packages/format
   - packages/scoring
   - packages/nutrition

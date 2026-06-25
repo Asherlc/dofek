@@ -272,22 +272,6 @@ importers:
         specifier: 3.2.4
         version: 3.2.4(@types/node@22.19.15)(jiti@2.7.0)(jsdom@29.0.0)(lightningcss@1.32.0)(msw@2.12.11(@types/node@22.19.15)(typescript@5.9.3))(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0)
 
-  dofek-zepp:
-    dependencies:
-      '@zeppos/zml':
-        specifier: ^0.0.43
-        version: 0.0.43
-    devDependencies:
-      '@zeppos/device-types':
-        specifier: ^3.0.0
-        version: 3.0.1
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: 3.2.4
-        version: 3.2.4(@types/node@25.9.1)(jiti@2.7.0)(jsdom@29.0.0)(lightningcss@1.32.0)(msw@2.12.11(@types/node@25.9.1)(typescript@5.9.3))(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0)
-
   packages/auth:
     dependencies:
       zod:
@@ -869,6 +853,22 @@ importers:
         specifier: workspace:*
         version: link:../provider-http
     devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 3.2.4
+        version: 3.2.4(@types/node@25.9.1)(jiti@2.7.0)(jsdom@29.0.0)(lightningcss@1.32.0)(msw@2.12.11(@types/node@25.9.1)(typescript@5.9.3))(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0)
+
+  zepp:
+    dependencies:
+      '@zeppos/zml':
+        specifier: ^0.0.43
+        version: 0.0.43
+    devDependencies:
+      '@zeppos/device-types':
+        specifier: ^3.0.0
+        version: 3.0.1
       typescript:
         specifier: 5.9.3
         version: 5.9.3

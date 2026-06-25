@@ -58,7 +58,7 @@ Requires Node ≥ 14 and the Zeus CLI:
 
 ```bash
 npm i -g @zeppos/zeus-cli
-cd dofek-zepp
+cd zepp
 pnpm install
 ```
 
@@ -92,12 +92,12 @@ There's no Zepp Store submission API — the final upload is manual.
 
 ### Automatic builds (every main push)
 
-Every push to `main` triggers `release-dofek-zepp.yml`: patches an auto-generated version into `app.json` and `package.json`, runs `zeus build`, and uploads the `.zab` artifact (retained 90 days). The built artifact is always available at:
+Every push to `main` triggers `release-zepp.yml`: patches an auto-generated version into `app.json` and `package.json`, runs `zeus build`, and uploads the `.zab` artifact (retained 90 days). The built artifact is always available at:
 
-> GitHub → Actions → Release Dofek Zepp (Zepp Store) → latest run → Artifacts → `dofek-zepp-zab`
+> GitHub → Actions → Release Dofek Zepp (Zepp Store) → latest run → Artifacts → `zepp-zab`
 
 **Version scheme:**
-- Tagged push (`dofek-zepp-v1.2.3`) → version `1.2.3`, code `10203`
+- Tagged push (`zepp-v1.2.3`) → version `1.2.3`, code `10203`
 - Main push (no tag) → version `0.0.<unix-timestamp>`, code `<timestamp>`
 
 You never need to manually bump version files — CI derives the version from the tag or generates one.
@@ -107,8 +107,8 @@ You never need to manually bump version files — CI derives the version from th
 Tagged pushes additionally create a GitHub Release with the `.zab` attached.
 
 ```bash
-git tag dofek-zepp-v1.0.1
-git push origin dofek-zepp-v1.0.1
+git tag zepp-v1.0.1
+git push origin zepp-v1.0.1
 ```
 
 1. CI builds the `.zab` with version `1.0.1` and creates a GitHub Release.
@@ -116,7 +116,7 @@ git push origin dofek-zepp-v1.0.1
 3. Go to [console.zepp.com](https://console.zepp.com/) → your app → **Version Upgrade**.
 4. Upload the `.zab`, fill in screenshots/description if needed, submit for review (1-5 business days).
 
-Tag pattern: `dofek-zepp-v<semver>`.
+Tag pattern: `zepp-v<semver>`.
 
 ## Output file location
 
@@ -159,7 +159,7 @@ The script prints header metadata, row count, and a timestamp-derived Hz estimat
 ## Project layout
 
 ```text
-dofek-zepp/
+zepp/
   app.json              # T-Rex 3 target + modules
   app.ts                # app entry
   page/index.ts         # watch UI + sensor collector

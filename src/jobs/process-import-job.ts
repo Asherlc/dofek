@@ -124,7 +124,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
 
         if (result.recordsSynced === 0 && result.errors.length > 0) {
           throw new Error(
-            `ZOS App import failed: ${result.errors.map((e: { message: string }) => e.message).join("; ")}`,
+            `ZOS App import failed: ${result.errors.map((error: { message: string }) => error.message).join("; ")}`,
           );
         }
       }
