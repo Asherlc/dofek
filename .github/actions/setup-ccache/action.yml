@@ -32,7 +32,7 @@ runs:
         WRAPPER
         chmod +x "$WRAPPER_DIR/ccache-clang" "$WRAPPER_DIR/ccache-clang++"
     - name: Cache ccache
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      uses: actions/cache@a7833574556fa59680c1b7cb190c1735db73ebf0 # v5.0.0
       with:
         path: ~/Library/Caches/ccache
         key: ${{ inputs.cache-key-prefix }}-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**') }}

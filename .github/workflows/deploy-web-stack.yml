@@ -148,7 +148,7 @@ jobs:
       DEPLOY_ENVIRONMENT: ${{ inputs.infisical_environment || 'prod' }}
       STACK_NAME: ${{ inputs.stack_name || 'dofek' }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
       - name: Resolve image tag
         id: resolve
@@ -319,7 +319,7 @@ jobs:
             docker stack config $STACK_FILE_FLAGS -c deploy/stack.cdc-quiesce.yml >/dev/null
 
       - name: Login to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
