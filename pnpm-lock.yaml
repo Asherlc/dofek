@@ -324,6 +324,8 @@ importers:
 
   packages/heart-rate-variability: {}
 
+  packages/imu: {}
+
   packages/mobile:
     dependencies:
       '@bacons/apple-targets':
@@ -335,6 +337,9 @@ importers:
       '@dofek/format':
         specifier: workspace:*
         version: link:../format
+      '@dofek/imu':
+        specifier: workspace:*
+        version: link:../imu
       '@dofek/nutrition':
         specifier: workspace:*
         version: link:../nutrition
@@ -554,6 +559,9 @@ importers:
       '@dofek/heart-rate-variability':
         specifier: workspace:*
         version: link:../heart-rate-variability
+      '@dofek/imu':
+        specifier: workspace:*
+        version: link:../imu
       '@dofek/onboarding':
         specifier: workspace:*
         version: link:../onboarding
@@ -16946,7 +16954,9 @@ snapshots:
       metro-runtime: 0.83.7
     transitivePeerDependencies:
       - '@babel/core'
+      - bufferutil
       - supports-color
+      - utf-8-validate
 
   '@react-native/normalize-colors@0.74.89': {}
 

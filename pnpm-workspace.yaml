@@ -13,6 +13,7 @@ packages:
   - packages/zones
   - packages/auth
   - packages/heart-rate-variability
+  - packages/imu
   - packages/server
   - packages/web
   - packages/mobile

@@ -1,4 +1,4 @@
-export interface ImuSample {
+export interface BinarySample {
   tMs: number;
   ax: number;
   ay: number;
@@ -16,7 +16,7 @@ export interface DecodedSession {
   accelFreqMode: number;
   gyroFreqMode: number;
   observedHz: number;
-  samples: ImuSample[];
+  samples: BinarySample[];
 }
 
 const MAGIC = 0x314d5549;
@@ -46,7 +46,7 @@ export function decodeBin(buffer: ArrayBufferLike): DecodedSession {
   const gyroFreqMode = hasGyro ? view.getUint8(17) : 0;
   const observedHzX100 = view.getUint16(18, true);
 
-  const samples: ImuSample[] = [];
+  const samples: BinarySample[] = [];
   let offset = HEADER_SIZE;
   const recordSize = hasGyro ? GYRO_RECORD_SIZE : ACCEL_RECORD_SIZE;
 
@@ -67,7 +67,7 @@ export function decodeBin(buffer: ArrayBufferLike): DecodedSession {
       const az = view.getFloat32(offset, true);
       offset += 4;
 
-      const sample: ImuSample = { tMs, ax, ay, az };
+      const sample: BinarySample = { tMs, ax, ay, az };
 
       if (hasGyro) {
         sample.gx = view.getFloat32(offset, true);

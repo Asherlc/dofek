@@ -21,6 +21,7 @@
     "@bacons/apple-targets": "4.0.7",
     "@dofek/auth": "workspace:*",
     "@dofek/format": "workspace:*",
+    "@dofek/imu": "workspace:*",
     "@dofek/nutrition": "workspace:*",
     "@dofek/onboarding": "workspace:*",
     "@dofek/providers": "workspace:*",

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { InertialMeasurementUnitSample } from "../modules/core-motion";
+import type { InertialMeasurementUnitSample } from "@dofek/imu";
 import {
   type InertialMeasurementUnitAdapter,
   type InertialMeasurementUnitSyncTrpcClient,

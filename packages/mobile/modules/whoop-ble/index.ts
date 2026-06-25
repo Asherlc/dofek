@@ -1,3 +1,4 @@
+import type { InertialMeasurementUnitSample } from "@dofek/imu";
 import type { EventSubscription } from "expo-modules-core";
 import WhoopBleModule from "./src/WhoopBleModule";
 
@@ -20,15 +21,26 @@ export interface WhoopRealtimeDataSample {
   opticalRawHex: string;
 }
 
-/** A single IMU sample from the WHOOP strap's accelerometer + gyroscope */
-export interface WhoopImuSample {
-  timestamp: string; // ISO 8601
-  accelerometerX: number; // raw i16
+interface NativeWhoopSample {
+  timestamp: string;
+  accelerometerX: number;
   accelerometerY: number;
   accelerometerZ: number;
-  gyroscopeX: number; // raw i16
+  gyroscopeX: number;
   gyroscopeY: number;
   gyroscopeZ: number;
+}
+
+function mapNativeSample(native: NativeWhoopSample): InertialMeasurementUnitSample {
+  return {
+    timestamp: native.timestamp,
+    x: native.accelerometerX,
+    y: native.accelerometerY,
+    z: native.accelerometerZ,
+    gyroscopeX: native.gyroscopeX,
+    gyroscopeY: native.gyroscopeY,
+    gyroscopeZ: native.gyroscopeZ,
+  };
 }
 
 /** Check whether Bluetooth is powered on and available. */
@@ -111,8 +123,11 @@ export async function startOpticalMode(): Promise<boolean> {
  * actually remove them. If the upload fails, the samples remain
  * buffered for retry — no data loss.
  */
-export async function peekBufferedSamples(maxCount?: number): Promise<WhoopImuSample[]> {
-  return WhoopBleModule.peekBufferedSamples(maxCount);
+export async function peekBufferedSamples(
+  maxCount?: number,
+): Promise<InertialMeasurementUnitSample[]> {
+  const natives: NativeWhoopSample[] = await WhoopBleModule.peekBufferedSamples(maxCount);
+  return natives.map(mapNativeSample);
 }
 
 /**
@@ -154,8 +169,9 @@ export async function getBufferedRealtimeData(): Promise<WhoopRealtimeDataSample
  * Retrieve and clear the internal IMU sample buffer.
  * @deprecated Use peekBufferedSamples + confirmSamplesDrain instead.
  */
-export async function getBufferedSamples(): Promise<WhoopImuSample[]> {
-  return WhoopBleModule.getBufferedSamples();
+export async function getBufferedSamples(): Promise<InertialMeasurementUnitSample[]> {
+  const natives: NativeWhoopSample[] = await WhoopBleModule.getBufferedSamples();
+  return natives.map(mapNativeSample);
 }
 
 /** Get the current BLE connection state (idle, scanning, connecting, ready, streaming). */

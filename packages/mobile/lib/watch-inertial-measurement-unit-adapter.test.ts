@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { InertialMeasurementUnitSample } from "../modules/core-motion";
+import type { InertialMeasurementUnitSample } from "@dofek/imu";
 
 const mockIsWatchPaired = vi.fn(() => true);
 const mockIsWatchAppInstalled = vi.fn(() => true);

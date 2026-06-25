@@ -1,3 +1,4 @@
+import type { InertialMeasurementUnitSample } from "@dofek/imu";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { SOURCE_TYPE_API } from "../../../../src/db/sensor-channels.ts";
@@ -11,16 +12,6 @@ import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.t
 
 const PROVIDER_ID = "apple_motion";
 const INSERT_BATCH_SIZE = 5000;
-
-export interface InertialMeasurementUnitSample {
-  timestamp: string;
-  x: number;
-  y: number;
-  z: number;
-  gyroscopeX?: number;
-  gyroscopeY?: number;
-  gyroscopeZ?: number;
-}
 
 export class InertialMeasurementUnitSyncRepository {
   readonly #database: Pick<Database, "execute">;
