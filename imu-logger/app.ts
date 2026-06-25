@@ -1,6 +1,6 @@
-import { log as Logger } from "@zos/utils";
-import { BaseApp } from "@zeppos/zml/base-app";
 import { appPlugin } from "@zeppos/zml/3.0/module/messaging/plugin/app";
+import { BaseApp } from "@zeppos/zml/base-app";
+import { log as Logger } from "@zos/utils";
 
 BaseApp.use(appPlugin);
 
@@ -15,5 +15,5 @@ App(
     onDestroy() {
       logger.log("app onDestroy");
     },
-  })
+  }),
 );

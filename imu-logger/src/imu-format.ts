@@ -1,9 +1,11 @@
+import type { HeaderMeta, ImuSample } from "./types.ts";
+
 export const MAGIC = 0x314d5549;
 export const FORMAT_VERSION = 1;
 export const HEADER_SIZE = 32;
 export const FLAG_HAS_GYRO = 1;
 
-export function createHeader(options) {
+export function createHeader(options: HeaderMeta): ArrayBuffer {
   const {
     hasGyro = false,
     sessionStartMs = 0,
@@ -29,7 +31,11 @@ export function createHeader(options) {
   return buffer;
 }
 
-export function patchHeaderSampleCount(headerBuffer, sampleCount, observedHzX100) {
+export function patchHeaderSampleCount(
+  headerBuffer: ArrayBuffer,
+  sampleCount: number,
+  observedHzX100?: number,
+): ArrayBuffer {
   const view = new DataView(headerBuffer);
   view.setUint32(12, sampleCount >>> 0, true);
   if (typeof observedHzX100 === "number") {
@@ -38,7 +44,7 @@ export function patchHeaderSampleCount(headerBuffer, sampleCount, observedHzX100
   return headerBuffer;
 }
 
-export function encodeChunk(samples, hasGyro) {
+export function encodeChunk(samples: ImuSample[], hasGyro: boolean): ArrayBuffer {
   const recordSize = hasGyro ? 28 : 16;
   const buffer = new ArrayBuffer(4 + samples.length * recordSize);
   const view = new DataView(buffer);
@@ -49,6 +55,7 @@ export function encodeChunk(samples, hasGyro) {
   let offset = 4;
   for (let i = 0; i < samples.length; i += 1) {
     const sample = samples[i];
+    if (!sample) continue;
     view.setUint32(offset, sample.tMs >>> 0, true);
     offset += 4;
     view.setFloat32(offset, sample.ax, true);
@@ -71,14 +78,16 @@ export function encodeChunk(samples, hasGyro) {
   return buffer;
 }
 
-export function concatArrayBuffers(buffers) {
+export function concatArrayBuffers(buffers: ArrayBuffer[]): ArrayBuffer {
   const total = buffers.reduce((sum, buf) => sum + buf.byteLength, 0);
   const merged = new Uint8Array(total);
   let offset = 0;
 
   for (let i = 0; i < buffers.length; i += 1) {
-    merged.set(new Uint8Array(buffers[i]), offset);
-    offset += buffers[i].byteLength;
+    const buf = buffers[i];
+    if (!buf) continue;
+    merged.set(new Uint8Array(buf), offset);
+    offset += buf.byteLength;
   }
 
   return merged.buffer;

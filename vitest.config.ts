@@ -1,4 +1,8 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
+
+const dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const sharedTestConfig = {
   globals: true,
@@ -40,6 +44,7 @@ export default defineConfig({
             "analytics/models/**/*.test.ts",
             "src/**/*.test.ts",
             "packages/*/src/**/*.test.{ts,tsx}",
+            "imu-logger/src/**/*.test.ts",
             "scripts/**/*.test.ts",
           ],
           exclude: ["**/*.integration.test.ts", "packages/mobile/**"],
@@ -91,6 +96,22 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": "./src",
+      "@zos/sensor": path.resolve(dirname, "imu-logger/src/__mocks__/zos-stub.js"),
+      "@zos/fs": path.resolve(dirname, "imu-logger/src/__mocks__/zos-stub.js"),
+      "@zos/utils": path.resolve(dirname, "imu-logger/src/__mocks__/zos-stub.js"),
+      "@zos/device": path.resolve(dirname, "imu-logger/src/__mocks__/zos-stub.js"),
+      "@zos/display": path.resolve(dirname, "imu-logger/src/__mocks__/zos-stub.js"),
+      "@zos/interaction": path.resolve(dirname, "imu-logger/src/__mocks__/zos-stub.js"),
+      "@zos/app": path.resolve(dirname, "imu-logger/src/__mocks__/zos-stub.js"),
+      "@zos/ble": path.resolve(dirname, "imu-logger/src/__mocks__/zos-stub.js"),
+      "@zos/app-service": path.resolve(dirname, "imu-logger/src/__mocks__/zos-stub.js"),
+      "@zeppos/zml": path.resolve(dirname, "imu-logger/src/__mocks__/zos-stub.js"),
+      "@zeppos/zml/base-page": path.resolve(dirname, "imu-logger/src/__mocks__/zos-stub.js"),
+      "@zeppos/zml/base-side": path.resolve(dirname, "imu-logger/src/__mocks__/zos-stub.js"),
+      "@zeppos/zml/base-app": path.resolve(dirname, "imu-logger/src/__mocks__/zos-stub.js"),
+      "@zeppos/zml/3.0/module/messaging/plugin/page": path.resolve(dirname, "imu-logger/src/__mocks__/zos-stub.js"),
+      "@zeppos/zml/3.0/module/messaging/plugin/side": path.resolve(dirname, "imu-logger/src/__mocks__/zos-stub.js"),
+      "@zeppos/zml/3.0/module/messaging/plugin/app": path.resolve(dirname, "imu-logger/src/__mocks__/zos-stub.js"),
     },
   },
 });

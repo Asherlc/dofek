@@ -18,21 +18,21 @@ Configured in `app.json` under target `480x480-amazfit-t-rex-3`.
 
 ```
 ┌──────────────────── Watch ────────────────────┐
-│ Device App page (page/index.js)               │
+│ Device App page (page/index.ts)               │
 │  • checkSensor() + Accelerometer/Gyroscope    │
 │  • onChange → memory buffer → flush chunks      │
 │  • writes data://imu/session.bin              │
 ├───────────────────────────────────────────────┤
-│ App Service (app-service/imu_service.js)      │
+│ App Service (app-service/imu_service.ts)      │
 │  • started with logging for persistence hook  │
 │  • CANNOT access IMU sensors (platform limit) │
 └───────────────────────┬───────────────────────┘
                         │ TransferFile (BLE)
                         ▼
 ┌──────────────────── Phone ────────────────────┐
-│ Side Service (app-side/index.js)              │
+│ Side Service (app-side/index.ts)              │
 │  • onReceivedFile → saves export path         │
-│ Settings App (setting/index.js)               │
+│ Settings App (setting/index.ts)               │
 │  • start/stop, freq mode, gyro flag, export   │
 └───────────────────────────────────────────────┘
 ```
@@ -128,12 +128,12 @@ The script prints header metadata, row count, and a timestamp-derived Hz estimat
 ```text
 imu-logger/
   app.json              # T-Rex 3 target + modules
-  app.js
-  page/index.js         # watch UI + sensor collector
-  app-service/imu_service.js
-  app-side/index.js     # phone BLE receiver
-  setting/index.js      # phone controls
-  utils/                # binary codec, collector, file flush
+  app.ts                # app entry
+  page/index.ts         # watch UI + sensor collector
+  app-service/imu_service.ts
+  app-side/index.ts     # phone BLE receiver
+  setting/index.ts      # phone controls
+  src/                  # library modules (codec, collector, file flush, tests)
   tools/decode_imu.py
 ```
 

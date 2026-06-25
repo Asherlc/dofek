@@ -1,5 +1,6 @@
 packages:
   - .
+  - imu-logger
   - packages/format
   - packages/scoring
   - packages/nutrition

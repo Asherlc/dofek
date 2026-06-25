@@ -6,15 +6,15 @@ export const STORAGE_KEYS = {
   SESSION_STATUS: "session_status",
   LAST_EXPORT_PATH: "last_export_path",
   TRANSFER_PROGRESS: "transfer_progress",
-};
+} as const;
 
 export const LOGGING_CMD = {
   IDLE: "idle",
   START: "start",
   STOP: "stop",
-};
+} as const;
 
-export const FREQ_MODE_LABELS = {
+export const FREQ_MODE_LABELS: Record<number, string> = {
   0: "LOW",
   1: "NORMAL",
   2: "HIGH",

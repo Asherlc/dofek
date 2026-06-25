@@ -28,6 +28,7 @@
     "packages/velohero-client/src/**/*.ts",
     "packages/zwift-client/src/**/*.ts",
     "packages/zepp-client/src/**/*.ts",
+    "imu-logger/src/**/*.ts",
     "packages/trainingpeaks-connect/src/**/*.ts",
     "packages/provider-http/src/**/*.ts",
     "packages/mobile/app/**/*.{ts,tsx}",

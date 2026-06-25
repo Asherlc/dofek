@@ -1,0 +1,202 @@
+declare module "@zos/fs" {
+  export function writeFileSync(options: { path: string; data: ArrayBuffer | string }): void;
+  export function readFileSync(options: {
+    path: string;
+    options?: { encoding?: string };
+  }): ArrayBuffer | string;
+  export function openSync(options: { path: string; flag: number }): number;
+  export function writeSync(options: { fd: number; data: ArrayBuffer }): void;
+  export function closeSync(options: { fd: number }): void;
+  export const O_WRONLY: number;
+  export const O_RDWR: number;
+  export const O_APPEND: number;
+  export const O_CREAT: number;
+}
+
+declare module "@zos/sensor" {
+  export const FREQ_MODE_LOW: 0;
+  export const FREQ_MODE_NORMAL: 1;
+  export const FREQ_MODE_HIGH: 2;
+
+  export class Accelerometer {
+    setFreqMode(mode: number): void;
+    getFreqMode(): number;
+    onChange(callback: (value: { x: number; y: number; z: number }) => void): void;
+    offChange(callback: (value: { x: number; y: number; z: number }) => void): void;
+    start(): void;
+    stop(): void;
+    getCurrent(): { x: number; y: number; z: number };
+  }
+
+  export class Gyroscope {
+    setFreqMode(mode: number): void;
+    getFreqMode(): number;
+    onChange(callback: (value: { x: number; y: number; z: number }) => void): void;
+    offChange(callback: (value: { x: number; y: number; z: number }) => void): void;
+    start(): void;
+    stop(): void;
+    getCurrent(): { x: number; y: number; z: number };
+  }
+
+  export function checkSensor(sensor: new () => Accelerometer | Gyroscope): boolean;
+}
+
+declare module "@zos/utils" {
+  export const log: {
+    getLogger(tag: string): { log(...args: unknown[]): void; error(...args: unknown[]): void };
+  };
+  export function px(value: number): number;
+}
+
+declare module "@zos/device" {
+  export function getDeviceInfo(): { width: number; height: number };
+}
+
+declare module "@zos/display" {
+  export function setWakeUpRelaunch(enabled: boolean): void;
+}
+
+declare module "@zos/interaction" {
+  export function showToast(options: { content: string }): void;
+}
+
+declare module "@zos/app" {
+  export function queryPermission(options: { permissions: string[] }): [number];
+  export function requestPermission(options: {
+    permissions: string[];
+    callback: (result: [number]) => void;
+  }): void;
+}
+
+declare module "@zos/app-service" {
+  export function start(options: {
+    url: string;
+    param?: string;
+    reload?: boolean;
+    complete_func?: (info: unknown) => void;
+  }): void;
+}
+
+declare module "@zos/ble/TransferFile" {
+  class Outbox {
+    enqueueFile(path: string, params: Record<string, string>): Task;
+  }
+
+  class Task {
+    on(event: string, callback: (event: { data: Record<string, unknown> }) => void): void;
+  }
+
+  class TransferFile {
+    getOutbox(): Outbox;
+  }
+
+  export default TransferFile;
+}
+
+declare module "@zos/ui" {
+  export type WidgetType = number;
+  export interface WidgetInstance {
+    setProperty(prop: number, value: string | number): void;
+  }
+
+  export const widget: { TEXT: number; BUTTON: number; IMAGE: number; [key: string]: number };
+  export const prop: { TEXT: number; [key: string]: number };
+  export const align: { CENTER_H: number; LEFT: number; [key: string]: number };
+  export const text_style: { NONE: number; WRAP: number; [key: string]: number };
+
+  export function createWidget(type: WidgetType, options: Record<string, unknown>): WidgetInstance;
+}
+
+type PageHelpers = {
+  request(options: {
+    method: string;
+    params: Record<string, unknown>;
+  }): Promise<Record<string, unknown>>;
+  sendFile(
+    path: string,
+    params: Record<string, string>,
+  ): { on(event: string, callback: (event: { data: Record<string, unknown> }) => void): void };
+};
+
+type SideServiceHelpers = {
+  call(options: { method: string; params: Record<string, unknown> }): void;
+};
+
+declare module "@zeppos/zml/base-app" {
+  export const BaseApp: {
+    use(plugin: unknown): void;
+    <T>(config: T): T;
+  };
+}
+
+declare module "@zeppos/zml/base-page" {
+  export const BasePage: {
+    use(plugin: unknown): void;
+    <T>(config: T & ThisType<T & PageHelpers>): T;
+  };
+}
+
+declare module "@zeppos/zml/base-side" {
+  export const BaseSideService: {
+    use(plugin: unknown): void;
+    <T>(config: T & ThisType<T & SideServiceHelpers>): T;
+  };
+}
+
+declare module "@zeppos/zml/3.0/module/messaging/plugin/app" {
+  export const appPlugin: unknown;
+}
+
+declare module "@zeppos/zml/3.0/module/messaging/plugin/page" {
+  export const pagePlugin: unknown;
+}
+
+declare module "@zeppos/zml/3.0/module/messaging/plugin/side" {
+  export const messagingPlugin: unknown;
+}
+
+declare function App<T>(config: T): void;
+declare function Page<T>(config: T): void;
+declare function AppService<T>(config: T): void;
+declare function AppSideService<T>(config: T): void;
+declare function AppSettingsPage<T>(config: T): void;
+
+interface PageContext {
+  state: Record<string, unknown>;
+  request(options: { method: string; params: Record<string, unknown> }): Promise<unknown>;
+  sendFile(
+    path: string,
+    params: Record<string, string>,
+  ): { on(event: string, callback: (event: { data: Record<string, unknown> }) => void): void };
+  [key: string]: unknown;
+}
+
+interface SideServiceContext {
+  call(options: { method: string; params: Record<string, unknown> }): void;
+  getPreferences(): { enableGyro: boolean; freqModeIndex: number };
+  setSessionStatus(payload: Record<string, unknown>): void;
+  [key: string]: unknown;
+}
+
+interface AppServiceContext {
+  scheduleTransferPoll(): void;
+  transferPendingFile(): boolean;
+  [key: string]: unknown;
+}
+
+declare const Logger: {
+  getLogger(tag: string): { log(...args: unknown[]): void; error(...args: unknown[]): void };
+};
+
+declare const settings: {
+  settingsStorage: {
+    getItem(key: string): string | null;
+    setItem(key: string, value: string): void;
+    addListener(event: string, callback: (event: { key: string; newValue: string }) => void): void;
+  };
+};
+
+declare function View(style: Record<string, unknown>, children: unknown[]): unknown;
+declare function Button(options: Record<string, unknown>): unknown;
+declare function TextInput(options: Record<string, unknown>): unknown;
+declare function ToggleSwitch(options: Record<string, unknown>): unknown;
