@@ -12,7 +12,10 @@ export class StrainScore {
   static readonly #MAX = 21;
   static readonly #ACUTE_LOAD_DAYS = 7;
 
-  constructor(readonly value: number) {}
+  readonly value: number;
+  constructor(value: number) {
+    this.value = value;
+  }
 
   get color(): string {
     if (this.value > 17) return statusColors.danger;
@@ -94,7 +97,10 @@ export function scoreDescription(score: number): string {
 
 /** Strain zone classification with display properties. */
 export class StrainZone {
-  constructor(readonly zone: string) {}
+  readonly zone: string;
+  constructor(zone: string) {
+    this.zone = zone;
+  }
 
   get color(): string {
     if (this.zone === "optimal") return statusColors.positive;
@@ -113,7 +119,10 @@ export class StrainZone {
 
 /** Workload ratio (ACWR) with display classification. */
 export class WorkloadRatio {
-  constructor(readonly value: number | null) {}
+  readonly value: number | null;
+  constructor(value: number | null) {
+    this.value = value;
+  }
 
   get color(): string {
     if (this.value == null) return textColors.secondary;
@@ -163,7 +172,10 @@ export function trendDirection(current: number, previous: number): "up" | "down"
 
 /** Stress score (0-3 Whoop-like scale) with display classification. */
 export class StressScore {
-  constructor(readonly value: number) {}
+  readonly value: number;
+  constructor(value: number) {
+    this.value = value;
+  }
 
   get color(): string {
     if (this.value <= 0.5) return statusColors.positive;
@@ -279,7 +291,10 @@ export const FORM_ZONE_COLORS = {
 
 /** Form zone (training stress balance) classification with display properties. */
 export class FormZone {
-  constructor(readonly value: number) {}
+  readonly value: number;
+  constructor(value: number) {
+    this.value = value;
+  }
 
   get color(): string {
     if (this.value > FORM_ZONE_TRANSITION) return FORM_ZONE_COLORS.transition;

@@ -204,11 +204,15 @@ const ROSE = "#f43f5e";
 const NEUTRAL = textColors.neutral;
 
 export class CorrelationResult {
-  constructor(
-    readonly rho: number,
-    readonly pValue: number,
-    readonly n: number,
-  ) {}
+  readonly rho: number;
+  readonly pValue: number;
+  readonly n: number;
+
+  constructor(rho: number, pValue: number, n: number) {
+    this.rho = rho;
+    this.pValue = pValue;
+    this.n = n;
+  }
 
   get description(): string {
     const abs = Math.abs(this.rho);
