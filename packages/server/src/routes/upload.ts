@@ -167,21 +167,20 @@ async function authenticate(req: Request, res: Response, db: Database): Promise<
   return session.userId;
 }
 
-const uploadPostLimiter = rateLimit({
-  windowMs: 60_000,
-  max: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "Too many upload requests, please try again later" },
-  keyGenerator: (req) => {
-    const sessionId = getSessionIdFromRequest(req);
-    return sessionId ?? req.ip ?? "unknown";
-  },
-});
-
 export function createUploadRouter(deps: UploadRouteDeps): Router {
   const router = Router();
   const { importQueue, db } = deps;
+  const uploadPostLimiter = rateLimit({
+    windowMs: 60_000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many upload requests, please try again later" },
+    keyGenerator: (req) => {
+      const sessionId = getSessionIdFromRequest(req);
+      return sessionId ?? req.ip ?? "unknown";
+    },
+  });
 
   // Poll job status — checks BullMQ first, falls back to upload-phase status
   router.get("/apple-health/status/:jobId", async (req, res) => {
