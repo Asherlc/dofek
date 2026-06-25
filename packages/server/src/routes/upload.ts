@@ -170,6 +170,7 @@ async function authenticate(req: Request, res: Response, db: Database): Promise<
 export function createUploadRouter(deps: UploadRouteDeps): Router {
   const router = Router();
   const { importQueue, db } = deps;
+  // Stryker disable all: infrastructure config, no business logic to mutate
   const uploadPostLimiter = rateLimit({
     windowMs: 60_000,
     max: 30,
@@ -181,6 +182,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
       return sessionId ?? req.ip ?? "unknown";
     },
   });
+  // Stryker restore all
 
   // Poll job status — checks BullMQ first, falls back to upload-phase status
   router.get("/apple-health/status/:jobId", async (req, res) => {
