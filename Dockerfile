@@ -1,6 +1,4 @@
-# dbt 1.10 currently imports through mashumaro<3.15, which fails on Python 3.14
-# from Alpine 3.24. Keep the runtime on Alpine 3.23 until dbt supports it.
-FROM node:22-alpine3.23 AS base
+FROM node:26-alpine AS base
 RUN apk upgrade --no-cache
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
@@ -166,7 +164,7 @@ RUN mkdir -p /app/job-files && chown node:node /app/job-files
 # Create updates directory for OTA bundles (bind mount point)
 RUN mkdir -p /app/updates && chown node:node /app/updates
 
-# Run as non-root user (node user is built into node:22-alpine, uid 1000)
+# Run as non-root user (node user is built into node:26-alpine, uid 1000)
 USER node
 
 ENTRYPOINT ["./entrypoint.sh"]

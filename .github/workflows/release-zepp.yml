@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
-      is_tag: ${{ steps.version.outputs.is_tag }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
       ci_run_id: ${{ steps.resolve-ci-run.outputs.run_id }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -34,7 +34,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
+          node-version: 26
           cache: npm
           cache-dependency-path: zepp/package-lock.json
 
@@ -43,12 +43,13 @@ jobs:
         run: |
           if [[ "$GITHUB_REF" == refs/tags/zepp-v* ]]; then
             VERSION="${GITHUB_REF_NAME#zepp-v}"
-            echo "is_tag=true" >> "$GITHUB_OUTPUT"
+            RELEASE_TAG="$GITHUB_REF_NAME"
           else
             VERSION="0.0.$(date +%s)"
-            echo "is_tag=false" >> "$GITHUB_OUTPUT"
+            RELEASE_TAG="zepp-v${VERSION}"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           IFS='.' read -ra PARTS <<< "$VERSION"
           MAJOR="${PARTS[0]:-0}"
           MINOR="${PARTS[1]:-0}"
@@ -106,6 +107,12 @@ jobs:
       - name: Install Zeus CLI
         run: npm i -g @zeppos/zeus-cli
 
+      - name: Compile TypeScript entry point
+        working-directory: zepp
+        run: |
+          npx tsc
+          cp dist/app.js app.js
+
       - name: Build ZAB package
         working-directory: zepp
         run: zeus build
@@ -120,7 +127,6 @@ jobs:
   release:
     name: Create GitHub Release
     needs: build
-    if: needs.build.outputs.is_tag == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -135,6 +141,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CI_RUN_ID: ${{ needs.build.outputs.ci_run_id }}
           VERSION: ${{ needs.build.outputs.version }}
+          RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
         run: |
           ZAB_FILE=$(ls dist/*.zab 2>/dev/null | head -1)
           if [ -z "$ZAB_FILE" ]; then
@@ -149,7 +156,7 @@ jobs:
             echo "" >> "$NOTES_FILE"
             echo "Triggered by [CI run #${CI_RUN_ID}](${REPO_URL}/actions/runs/${CI_RUN_ID})" >> "$NOTES_FILE"
           fi
-          gh release create "$GITHUB_REF_NAME" \
+          gh release create "$RELEASE_TAG" \
             --title "Dofek Zepp v$VERSION" \
             --notes-file "$NOTES_FILE" \
             "$ZAB_FILE"
