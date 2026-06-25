@@ -28,7 +28,7 @@
     "packages/velohero-client/src/**/*.ts",
     "packages/zwift-client/src/**/*.ts",
     "packages/zepp-client/src/**/*.ts",
-    "zepp/src/**/*.ts",
+    "packages/zepp/src/**/*.ts",
     "packages/trainingpeaks-connect/src/**/*.ts",
     "packages/provider-http/src/**/*.ts",
     "packages/mobile/app/**/*.{ts,tsx}",
@@ -43,11 +43,11 @@
     "!src/db/clickhouse-migrations.ts",
     "!src/db/schema.ts",
     "!packages/server/src/types.ts",
-    "!zepp/app.ts",
-    "!zepp/app-side/**",
-    "!zepp/app-service/**",
-    "!zepp/page/**",
-    "!zepp/setting/**"
+    "!packages/zepp/app.ts",
+    "!packages/zepp/app-side/**",
+    "!packages/zepp/app-service/**",
+    "!packages/zepp/page/**",
+    "!packages/zepp/setting/**"
   ],
   "ignorePatterns": [
     "dist/**",

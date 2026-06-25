@@ -35,8 +35,8 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: zepp/package-lock.json
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Determine version
         id: version
@@ -87,34 +87,34 @@ jobs:
           CODE=${{ steps.version.outputs.code }}
           node -e "
             const fs = require('fs');
-            const app = JSON.parse(fs.readFileSync('zepp/app.json', 'utf8'));
+            const app = JSON.parse(fs.readFileSync('packages/zepp/app.json', 'utf8'));
             app.app.version.name = '$VERSION';
             app.app.version.code = $CODE;
-            fs.writeFileSync('zepp/app.json', JSON.stringify(app, null, 2) + '\n');
-            const pkg = JSON.parse(fs.readFileSync('zepp/package.json', 'utf8'));
+            fs.writeFileSync('packages/zepp/app.json', JSON.stringify(app, null, 2) + '\n');
+            const pkg = JSON.parse(fs.readFileSync('packages/zepp/package.json', 'utf8'));
             pkg.version = '$VERSION';
-            fs.writeFileSync('zepp/package.json', JSON.stringify(pkg, null, 2) + '\n');
+            fs.writeFileSync('packages/zepp/package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
 
       - name: Print resolved version
         run: echo "Building Dofek Zepp v${{ steps.version.outputs.version }} (code ${{ steps.version.outputs.code }})"
 
       - name: Install dependencies
-        working-directory: zepp
-        run: npm ci
+        working-directory: packages/zepp
+        run: pnpm install
 
       - name: Install Zeus CLI
         run: npm i -g @zeppos/zeus-cli
 
       - name: Build ZAB package
-        working-directory: zepp
+        working-directory: packages/zepp
         run: zeus build
 
       - name: Upload ZAB artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: zepp-zab
-          path: zepp/dist/
+          path: packages/zepp/dist/
           retention-days: 90
 
   release:
