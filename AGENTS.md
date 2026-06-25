@@ -186,6 +186,7 @@ packages/
   zones/src/                 — @dofek/zones: HR/power zone calculations
   auth/src/                  — @dofek/auth: shared authentication logic
   heart-rate-variability/src/ — @dofek/heart-rate-variability: HRV analysis
+  imu/src/                   — @dofek/imu: shared InertialMeasurementUnitSample type
   server/src/                — dofek-server: Express + tRPC API + BullMQ jobs (Node)
     routers/                 — tRPC route handlers
     index.ts                 — Express server entry point
@@ -205,6 +206,10 @@ packages/
   velohero-client/           — RE'd VeloHero API client
   garmin-connect/            — RE'd Garmin Connect SSO + API client
   trainingpeaks-connect/     — RE'd TrainingPeaks internal API client
+zepp/                        — @dofek/zepp: Zepp OS companion app (Amazfit T-Rex 3)
+  page/                      — Watch UI (sensor recording, status display)
+  app-side/                  — Phone-side companion service (file receive, settings)
+  src/                       — Shared logic (IMU collector, binary format, types)
 cypress/                     — E2E tests (Cypress)
 drizzle/                     — SQL migrations
 deploy/                      — Terraform (Hetzner + Cloudflare) + Docker Compose deploy
