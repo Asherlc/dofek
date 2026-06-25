@@ -14,7 +14,7 @@ jobs:
     outputs:
       changed: ${{ steps.check.outputs.changed }}
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
       - id: check
@@ -53,7 +53,7 @@ jobs:
     if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup-node-pnpm
       - uses: ./.github/actions/load-infisical-secrets
         with:
@@ -63,7 +63,7 @@ jobs:
             EXPO_PUBLIC_OTEL_HEADERS
       - name: Export iOS bundle
         run: cd packages/mobile && pnpm expo export --platform ios --clear
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mobile-metro-bundle
           path: packages/mobile/dist/
@@ -77,7 +77,7 @@ jobs:
     env:
       DERIVED_DATA_PATH: ${{ github.workspace }}/DerivedData
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
@@ -94,13 +94,13 @@ jobs:
         working-directory: packages/mobile
         run: npx expo prebuild --clean --platform ios
       - name: Cache CocoaPods
-        uses: actions/cache@a7833574556fa59680c1b7cb190c1735db73ebf0 # v5.0.0
+        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
         with:
           path: packages/mobile/ios/Pods
           key: pods-v8-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts') }}
           restore-keys: pods-v8-
       - name: Cache DerivedData
-        uses: actions/cache@a7833574556fa59680c1b7cb190c1735db73ebf0 # v5.0.0
+        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
         with:
           path: ${{ env.DERIVED_DATA_PATH }}
           key: deriveddata-v1-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}
@@ -138,7 +138,7 @@ jobs:
         timeout-minutes: 25
       - name: Upload archive
         if: github.event_name != 'pull_request'
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ios-xcarchive
           path: ${{ runner.temp }}/Dofek.xcarchive
@@ -153,13 +153,13 @@ jobs:
     if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup-node-pnpm
       - name: Generate native project
         working-directory: packages/mobile
         run: npx expo prebuild --clean --platform ios
       - name: Cache CocoaPods
-        uses: actions/cache@a7833574556fa59680c1b7cb190c1735db73ebf0 # v5.0.0
+        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
         with:
           path: packages/mobile/ios/Pods
           key: pods-watchos-v8-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts') }}
@@ -201,7 +201,7 @@ jobs:
           done
       - name: Upload watchOS build log
         if: failure()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: watchos-build-log
           path: /tmp/watchos-build.log
@@ -213,7 +213,7 @@ jobs:
     if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Validate podspec deployment targets
         run: |
           APP_TARGET=$(python3 -c "import json; print(json.load(open('packages/mobile/app.json'))['expo']['ios']['deploymentTarget'])")

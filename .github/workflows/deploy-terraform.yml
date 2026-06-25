@@ -35,13 +35,13 @@ jobs:
     outputs:
       server_host: ${{ steps.tf_outputs.outputs.server_host }}
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
         with:
           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
-      - uses: actions/cache@a7833574556fa59680c1b7cb190c1735db73ebf0 # v5.0.0
+      - uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
         with:
           path: ${{ env.TF_PLUGIN_CACHE_DIR }}
           key: terraform-provider-v1-${{ runner.os }}-${{ hashFiles('deploy/.terraform.lock.hcl') }}
