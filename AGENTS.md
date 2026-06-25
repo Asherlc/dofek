@@ -206,10 +206,10 @@ packages/
   velohero-client/           — RE'd VeloHero API client
   garmin-connect/            — RE'd Garmin Connect SSO + API client
   trainingpeaks-connect/     — RE'd TrainingPeaks internal API client
-zepp/                        — @dofek/zepp: Zepp OS companion app (Amazfit T-Rex 3)
-  page/                      — Watch UI (sensor recording, status display)
-  app-side/                  — Phone-side companion service (file receive, settings)
-  src/                       — Shared logic (IMU collector, binary format, types)
+  zepp/                      — @dofek/zepp: Zepp OS companion app (Amazfit T-Rex 3)
+    page/                    — Watch UI (sensor recording, status display)
+    app-side/                — Phone-side companion service (file receive, settings)
+    src/                     — Shared logic (IMU collector, binary format, types)
 cypress/                     — E2E tests (Cypress)
 drizzle/                     — SQL migrations
 deploy/                      — Terraform (Hetzner + Cloudflare) + Docker Compose deploy
