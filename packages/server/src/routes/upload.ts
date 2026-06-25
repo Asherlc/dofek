@@ -19,7 +19,6 @@ import {
 } from "../lib/upload-state-store.ts";
 import { logger } from "../logger.ts";
 
-
 /**
  * Shared directory for uploaded files that the worker container can access.
  * In production, both web and worker containers mount the `job_files` volume
