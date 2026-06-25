@@ -69,9 +69,18 @@ export default defineConfig({
       "@zeppos/zml/base-page": path.resolve(dirname, "imu-logger/src/__mocks__/zos-stub.js"),
       "@zeppos/zml/base-side": path.resolve(dirname, "imu-logger/src/__mocks__/zos-stub.js"),
       "@zeppos/zml/base-app": path.resolve(dirname, "imu-logger/src/__mocks__/zos-stub.js"),
-      "@zeppos/zml/3.0/module/messaging/plugin/page": path.resolve(dirname, "imu-logger/src/__mocks__/zos-stub.js"),
-      "@zeppos/zml/3.0/module/messaging/plugin/side": path.resolve(dirname, "imu-logger/src/__mocks__/zos-stub.js"),
-      "@zeppos/zml/3.0/module/messaging/plugin/app": path.resolve(dirname, "imu-logger/src/__mocks__/zos-stub.js"),
+      "@zeppos/zml/3.0/module/messaging/plugin/page": path.resolve(
+        dirname,
+        "imu-logger/src/__mocks__/zos-stub.js",
+      ),
+      "@zeppos/zml/3.0/module/messaging/plugin/side": path.resolve(
+        dirname,
+        "imu-logger/src/__mocks__/zos-stub.js",
+      ),
+      "@zeppos/zml/3.0/module/messaging/plugin/app": path.resolve(
+        dirname,
+        "imu-logger/src/__mocks__/zos-stub.js",
+      ),
     },
   },
 });
