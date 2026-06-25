@@ -1,9 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("express-rate-limit", () => ({
-  default: () => (_req: unknown, _res: unknown, next: () => void) => next(),
-}));
-
 vi.mock("../lib/server-utils.ts", () => ({
   streamToFile: vi.fn(() => Promise.resolve()),
   assembleChunks: vi.fn(() => Promise.resolve()),

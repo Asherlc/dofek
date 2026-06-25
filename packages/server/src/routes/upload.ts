@@ -6,7 +6,6 @@ import type { Queue } from "bullmq";
 import type { Database } from "dofek/db";
 import type { ImportJobData } from "dofek/jobs/queues";
 import { type Request, type Response, Router } from "express";
-import rateLimit from "express-rate-limit";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
 import { assembleChunks, streamToFile } from "../lib/server-utils.ts";
@@ -170,20 +169,6 @@ async function authenticate(req: Request, res: Response, db: Database): Promise<
 export function createUploadRouter(deps: UploadRouteDeps): Router {
   const router = Router();
   const { importQueue, db } = deps;
-  // Stryker disable all: infrastructure config, no business logic to mutate
-  const uploadPostLimiter = rateLimit({
-    windowMs: 60_000,
-    max: 30,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: "Too many upload requests, please try again later" },
-    keyGenerator: (req) => {
-      const sessionId = getSessionIdFromRequest(req);
-      return sessionId ?? req.ip ?? "unknown";
-    },
-  });
-  // Stryker restore all
-
   // Poll job status — checks BullMQ first, falls back to upload-phase status
   router.get("/apple-health/status/:jobId", async (req, res) => {
     const userId = await authenticate(req, res, db);
@@ -216,7 +201,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
   });
 
   // Chunked upload endpoint
-  router.post("/apple-health", uploadPostLimiter, async (req, res) => {
+  router.post("/apple-health", async (req, res) => {
     const userId = await authenticate(req, res, db);
     if (!userId) return;
 
@@ -401,7 +386,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
     res.json(status);
   });
 
-  router.post("/strong-csv", uploadPostLimiter, async (req, res) => {
+  router.post("/strong-csv", async (req, res) => {
     const userId = await authenticate(req, res, db);
     if (!userId) return;
 
@@ -450,7 +435,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
     res.json(status);
   });
 
-  router.post("/cronometer-csv", uploadPostLimiter, async (req, res) => {
+  router.post("/cronometer-csv", async (req, res) => {
     const userId = await authenticate(req, res, db);
     if (!userId) return;
 
@@ -502,7 +487,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
     res.json(status);
   });
 
-  router.post("/zos-app", uploadPostLimiter, async (req, res) => {
+  router.post("/zos-app", async (req, res) => {
     const userId = await authenticate(req, res, db);
     if (!userId) return;
 
