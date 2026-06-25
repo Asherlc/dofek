@@ -27,6 +27,11 @@ export function resolveFreqMode(modeIndex: number): number {
   return 1;
 }
 
+export function rankOfMode(modeValue: number, fallback = 0): number {
+  const entry = FREQ_MODES.find((item) => item.value === modeValue);
+  return entry ? entry.rank : fallback;
+}
+
 export function highestAvailableFreqMode(
   sensorCtor: SensorCtor,
   checkSensor: (ctor: SensorCtor) => boolean,
@@ -44,8 +49,8 @@ export function highestAvailableFreqMode(
     try {
       sensor.setFreqMode(entry.value);
       const applied = sensor.getFreqMode();
-      const appliedRank = FREQ_MODES.find((item) => item.value === applied)?.rank ?? entry.rank;
-      const selectedRank = FREQ_MODES.find((item) => item.value === selected)?.rank ?? 0;
+      const appliedRank = rankOfMode(applied, entry.rank);
+      const selectedRank = rankOfMode(selected);
 
       if (appliedRank >= selectedRank) {
         selected = applied;
@@ -59,7 +64,7 @@ export function highestAvailableFreqMode(
 }
 
 function pickBestMode(sensor: ZosSensor, desiredMode: number): number {
-  const desiredRank = FREQ_MODES.find((item) => item.value === desiredMode)?.rank ?? 1;
+  const desiredRank = rankOfMode(desiredMode, 1);
   let selected = 0;
 
   for (let i = 0; i < FREQ_MODES.length; i += 1) {
@@ -72,8 +77,8 @@ function pickBestMode(sensor: ZosSensor, desiredMode: number): number {
     try {
       sensor.setFreqMode(mode.value);
       const applied = sensor.getFreqMode();
-      const appliedRank = FREQ_MODES.find((item) => item.value === applied)?.rank ?? mode.rank;
-      const selectedRank = FREQ_MODES.find((item) => item.value === selected)?.rank ?? 0;
+      const appliedRank = rankOfMode(applied, mode.rank);
+      const selectedRank = rankOfMode(selected);
 
       if (appliedRank >= selectedRank && appliedRank <= desiredRank) {
         selected = applied;

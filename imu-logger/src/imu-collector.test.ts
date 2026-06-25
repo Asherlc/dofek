@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SensorCtor } from "./imu-collector.ts";
-import { createImuCollector, highestAvailableFreqMode, resolveFreqMode } from "./imu-collector.ts";
+import {
+  createImuCollector,
+  highestAvailableFreqMode,
+  rankOfMode,
+  resolveFreqMode,
+} from "./imu-collector.ts";
 
 function makeMockSensor(
   overrides?: Partial<{
@@ -54,6 +59,23 @@ describe("resolveFreqMode", () => {
   });
 });
 
+describe("rankOfMode", () => {
+  it("returns rank for known mode values", () => {
+    expect(rankOfMode(0)).toBe(0);
+    expect(rankOfMode(1)).toBe(1);
+    expect(rankOfMode(2)).toBe(2);
+  });
+
+  it("returns fallback for unknown mode value", () => {
+    expect(rankOfMode(99)).toBe(0);
+    expect(rankOfMode(99, 5)).toBe(5);
+  });
+
+  it("returns 0 as default fallback", () => {
+    expect(rankOfMode(-1)).toBe(0);
+  });
+});
+
 describe("highestAvailableFreqMode", () => {
   it("returns null when sensor is unavailable", () => {
     const result = highestAvailableFreqMode(ctorFor(makeMockSensor()), () => false);
@@ -77,6 +99,22 @@ describe("highestAvailableFreqMode", () => {
     const sen = makeMockSensor({ supported: [0, 1] });
     const result = highestAvailableFreqMode(ctorFor(sen), () => true);
     expect(result).toBe(1);
+  });
+
+  it("survives setFreqMode throwing for all modes", () => {
+    const sen = makeMockSensor();
+    sen.setFreqMode.mockImplementation(() => {
+      throw new Error("not supported");
+    });
+    const result = highestAvailableFreqMode(ctorFor(sen), () => true);
+    expect(result).toBe(0);
+  });
+
+  it("returns LOW (0) when only LOW is supported", () => {
+    const sen = makeMockSensor({ supported: [0] });
+    const result = highestAvailableFreqMode(ctorFor(sen), () => true);
+    expect(result).toBe(0);
+    expect(sen.getFreqMode).toHaveBeenCalled();
   });
 });
 
@@ -547,6 +585,82 @@ describe("createImuCollector", () => {
     collector.start();
     expect(gyro.onChange).not.toHaveBeenCalled();
     expect(gyro.start).not.toHaveBeenCalled();
+  });
+
+  it("does not emit samples before start() is called", () => {
+    const accel = makeMockSensor();
+    const onSample = vi.fn();
+    createImuCollector(
+      { onSample },
+      {
+        Accelerometer: ctorFor(accel),
+        Gyroscope: ctorFor(makeMockSensor()),
+        checkSensor: () => true,
+      },
+    );
+
+    const accelCb = accel.onChange.mock.calls[0]?.[0];
+    expect(accelCb).toBeUndefined();
+    expect(onSample).not.toHaveBeenCalled();
+  });
+
+  it("uses gyro getCurrent values in fallback (not zero literal)", () => {
+    const accel = makeMockSensor();
+    const gyro = makeMockSensor({ currentValue: { x: 11, y: 22, z: 33 } });
+    const onSample = vi.fn();
+    const collector = createImuCollector(
+      { enableGyro: true, onSample },
+      {
+        Accelerometer: ctorFor(accel),
+        Gyroscope: ctorFor(gyro),
+        checkSensor: () => true,
+      },
+    );
+
+    if (!collector.available) return;
+
+    collector.start();
+    const gyroCb = gyro.onChange.mock.calls[0][0];
+    gyroCb(null);
+
+    const accelCb = accel.onChange.mock.calls[0][0];
+    accelCb({ x: 1, y: 2, z: 3 });
+
+    const sample = onSample.mock.calls[0][0];
+    expect(sample.gx).toBe(11);
+    expect(sample.gy).toBe(22);
+    expect(sample.gz).toBe(33);
+  });
+
+  it("start/stop/start resets gyro to zero between sessions", () => {
+    const accel = makeMockSensor();
+    const gyro = makeMockSensor();
+    const onSample = vi.fn();
+    const collector = createImuCollector(
+      { enableGyro: true, onSample },
+      {
+        Accelerometer: ctorFor(accel),
+        Gyroscope: ctorFor(gyro),
+        checkSensor: () => true,
+      },
+    );
+
+    if (!collector.available) return;
+
+    collector.start();
+    const gyroCb = gyro.onChange.mock.calls[0][0];
+    gyroCb({ x: 50, y: 60, z: 70 });
+
+    collector.stop();
+    collector.start();
+
+    const accelCb = accel.onChange.mock.calls[0][0];
+    accelCb({ x: 1, y: 2, z: 3 });
+
+    const sample = onSample.mock.calls[0][0];
+    expect(sample.gx).toBe(0);
+    expect(sample.gy).toBe(0);
+    expect(sample.gz).toBe(0);
   });
 
   it("falls back to zero-object when gyro getCurrent returns null", () => {
