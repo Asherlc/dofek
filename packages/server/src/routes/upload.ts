@@ -19,13 +19,6 @@ import {
 } from "../lib/upload-state-store.ts";
 import { logger } from "../logger.ts";
 
-const uploadRateLimiter = rateLimit({
-  windowMs: 60_000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "Too many upload requests, please try again later" },
-});
 
 /**
  * Shared directory for uploaded files that the worker container can access.
@@ -177,7 +170,15 @@ async function authenticate(req: Request, res: Response, db: Database): Promise<
 
 export function createUploadRouter(deps: UploadRouteDeps): Router {
   const router = Router();
-  router.use(uploadRateLimiter);
+  router.use(
+    rateLimit({
+      windowMs: 60_000,
+      max: 10,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { error: "Too many upload requests, please try again later" },
+    }),
+  );
   const { importQueue, db } = deps;
 
   // Poll job status — checks BullMQ first, falls back to upload-phase status

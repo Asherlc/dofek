@@ -1,5 +1,5 @@
-import type { SyncDatabase } from "../../db/index.ts";
 import { describe, expect, it, vi } from "vitest";
+import type { SyncDatabase } from "../../db/index.ts";
 
 const mockEnsureProvider = vi.fn().mockResolvedValue(undefined);
 vi.mock("../../db/tokens.ts", () => ({
@@ -152,9 +152,7 @@ describe("importZosAppBin", () => {
 
     await importZosAppBin(mockDb, Buffer.from([0x00]), "user-1");
 
-    expect(mockInsertValues).toHaveBeenCalledWith(
-      expect.objectContaining({ sampleCount: 50 }),
-    );
+    expect(mockInsertValues).toHaveBeenCalledWith(expect.objectContaining({ sampleCount: 50 }));
   });
 });
 

@@ -445,7 +445,9 @@ describe("processImportJob", () => {
 
       const job = createMockJob({ filePath: tempFilePath, importType: "zos-app" });
 
-      await expect(runImportJob(job, mockDb)).rejects.toThrow("ZOS App import failed: invalid magic");
+      await expect(runImportJob(job, mockDb)).rejects.toThrow(
+        "ZOS App import failed: invalid magic",
+      );
     });
 
     it("does not throw when zero records but no errors", async () => {
