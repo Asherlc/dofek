@@ -4,7 +4,7 @@ ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 WORKDIR /app
 COPY package.json ./
-RUN corepack enable && corepack prepare --activate
+RUN npm install -g corepack && corepack enable && corepack prepare --activate
 
 # dbt 1.10.x is incompatible with Alpine's Python 3.14; install tools on 3.12 instead.
 FROM python:3.12-alpine AS dbt-tools
