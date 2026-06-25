@@ -147,6 +147,8 @@ jobs:
           echo "Deploying ${ENVIRONMENT_NAME} web stack image tag: $TAG"
 
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - uses: ./.github/actions/append-dispatcher-run-summary
         if: inputs.ci_run_id != ''

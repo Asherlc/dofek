@@ -223,7 +223,7 @@ A single image is built from a multi-stage Dockerfile:
 
 ### How it works
 
-```
+```text
 Dockerfile (multi-stage)
 ├── client-build   — full install + Vite build
 └── server target  — Node 26 runtime with TypeScript sources + built web assets + entrypoint
