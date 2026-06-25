@@ -16,5 +16,5 @@ CREATE TABLE IF NOT EXISTS fitness.imu_session (
 ALTER TABLE fitness.imu_session ENABLE ROW LEVEL SECURITY;
 
 CREATE UNIQUE INDEX IF NOT EXISTS imu_session_user_external_idx ON fitness.imu_session (user_id, provider_id, external_id);
-CREATE INDEX IF NOT EXISTS imu_session_user_provider_idx ON fitness.imu_session (user_id, provider_id);
-CREATE INDEX IF NOT EXISTS imu_session_start_at_idx ON fitness.imu_session (session_start_at DESC);
+CREATE INDEX IF NOT EXISTS imu_session_user_provider_idx ON fitness.imu_session (user_id, provider_id); -- noqa: PG01
+CREATE INDEX IF NOT EXISTS imu_session_start_at_idx ON fitness.imu_session (session_start_at DESC); -- noqa: PG01
