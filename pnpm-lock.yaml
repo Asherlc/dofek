@@ -272,7 +272,7 @@ importers:
         specifier: 3.2.4
         version: 3.2.4(@types/node@22.19.15)(jiti@2.7.0)(jsdom@29.0.0)(lightningcss@1.32.0)(msw@2.12.11(@types/node@22.19.15)(typescript@5.9.3))(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0)
 
-  imu-logger:
+  dofek-zepp:
     dependencies:
       '@zeppos/zml':
         specifier: ^0.0.43
@@ -16954,9 +16954,7 @@ snapshots:
       metro-runtime: 0.83.7
     transitivePeerDependencies:
       - '@babel/core'
-      - bufferutil
       - supports-color
-      - utf-8-validate
 
   '@react-native/normalize-colors@0.74.89': {}
 

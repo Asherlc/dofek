@@ -79,7 +79,7 @@ Page(
         text_size: px(34),
         align_h: align.CENTER_H,
         text_style: text_style.NONE,
-        text: "IMU Logger",
+        text: "Dofek",
       });
 
       statusText = createWidget(widget.TEXT, {

@@ -1,4 +1,4 @@
-# IMU Logger (Amazfit T-Rex 3)
+# Dofek Zepp (Amazfit T-Rex 3)
 
 Zepp OS mini program that captures raw accelerometer (and optional gyroscope) samples on the watch, buffers them to a watch-side binary file, and exports the file to the phone over BLE. No vendor cloud — data path is **watch → phone Zepp app → local file**.
 
@@ -58,7 +58,7 @@ Requires Node ≥ 14 and the Zeus CLI:
 
 ```bash
 npm i -g @zeppos/zeus-cli
-cd imu-logger
+cd dofek-zepp
 pnpm install
 ```
 
@@ -82,7 +82,7 @@ zeus preview
 zeus build
 ```
 
-4. Open **IMU Logger** on the watch, grant accelerometer + background service permissions when prompted.
+4. Open **Dofek Zepp** on the watch, grant accelerometer + background service permissions when prompted.
 5. Open the mini program **Settings** page in the Zepp phone app for remote start/stop/export.
 
 ## Release (Zepp Store)
@@ -92,12 +92,12 @@ There's no Zepp Store submission API — the final upload is manual.
 
 ### Automatic builds (every main push)
 
-Every push to `main` triggers `release-imu-logger.yml`: patches an auto-generated version into `app.json` and `package.json`, runs `zeus build`, and uploads the `.zab` artifact (retained 90 days). The built artifact is always available at:
+Every push to `main` triggers `release-dofek-zepp.yml`: patches an auto-generated version into `app.json` and `package.json`, runs `zeus build`, and uploads the `.zab` artifact (retained 90 days). The built artifact is always available at:
 
-> GitHub → Actions → Release IMU Logger (Zepp Store) → latest run → Artifacts → `imu-logger-zab`
+> GitHub → Actions → Release Dofek Zepp (Zepp Store) → latest run → Artifacts → `dofek-zepp-zab`
 
 **Version scheme:**
-- Tagged push (`imu-logger-v1.2.3`) → version `1.2.3`, code `10203`
+- Tagged push (`dofek-zepp-v1.2.3`) → version `1.2.3`, code `10203`
 - Main push (no tag) → version `0.0.<unix-timestamp>`, code `<timestamp>`
 
 You never need to manually bump version files — CI derives the version from the tag or generates one.
@@ -107,8 +107,8 @@ You never need to manually bump version files — CI derives the version from th
 Tagged pushes additionally create a GitHub Release with the `.zab` attached.
 
 ```bash
-git tag imu-logger-v1.0.1
-git push origin imu-logger-v1.0.1
+git tag dofek-zepp-v1.0.1
+git push origin dofek-zepp-v1.0.1
 ```
 
 1. CI builds the `.zab` with version `1.0.1` and creates a GitHub Release.
@@ -116,7 +116,7 @@ git push origin imu-logger-v1.0.1
 3. Go to [console.zepp.com](https://console.zepp.com/) → your app → **Version Upgrade**.
 4. Upload the `.zab`, fill in screenshots/description if needed, submit for review (1-5 business days).
 
-Tag pattern: `imu-logger-v<semver>`.
+Tag pattern: `dofek-zepp-v<semver>`.
 
 ## Output file location
 
@@ -159,7 +159,7 @@ The script prints header metadata, row count, and a timestamp-derived Hz estimat
 ## Project layout
 
 ```text
-imu-logger/
+dofek-zepp/
   app.json              # T-Rex 3 target + modules
   app.ts                # app entry
   page/index.ts         # watch UI + sensor collector

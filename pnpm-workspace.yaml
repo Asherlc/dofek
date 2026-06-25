@@ -1,6 +1,6 @@
 packages:
   - .
-  - imu-logger
+  - dofek-zepp
   - packages/format
   - packages/scoring
   - packages/nutrition

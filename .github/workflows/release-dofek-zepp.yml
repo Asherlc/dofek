@@ -1,10 +1,10 @@
-name: Release IMU Logger (Zepp Store)
+name: Release Dofek Zepp (Zepp Store)
 
 on:
   push:
     branches: [main]
     tags:
-      - "imu-logger-v*"
+      - "dofek-zepp-v*"
   workflow_dispatch:
 
 permissions:
@@ -26,13 +26,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: imu-logger/package-lock.json
+          cache-dependency-path: dofek-zepp/package-lock.json
 
       - name: Determine version
         id: version
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/imu-logger-v* ]]; then
-            VERSION="${GITHUB_REF_NAME#imu-logger-v}"
+          if [[ "$GITHUB_REF" == refs/tags/dofek-zepp-v* ]]; then
+            VERSION="${GITHUB_REF_NAME#dofek-zepp-v}"
             echo "is_tag=true" >> "$GITHUB_OUTPUT"
           else
             VERSION="0.0.$(date +%s)"
@@ -52,34 +52,34 @@ jobs:
           CODE=${{ steps.version.outputs.code }}
           node -e "
             const fs = require('fs');
-            const app = JSON.parse(fs.readFileSync('imu-logger/app.json', 'utf8'));
+            const app = JSON.parse(fs.readFileSync('dofek-zepp/app.json', 'utf8'));
             app.app.version.name = '$VERSION';
             app.app.version.code = $CODE;
-            fs.writeFileSync('imu-logger/app.json', JSON.stringify(app, null, 2) + '\n');
-            const pkg = JSON.parse(fs.readFileSync('imu-logger/package.json', 'utf8'));
+            fs.writeFileSync('dofek-zepp/app.json', JSON.stringify(app, null, 2) + '\n');
+            const pkg = JSON.parse(fs.readFileSync('dofek-zepp/package.json', 'utf8'));
             pkg.version = '$VERSION';
-            fs.writeFileSync('imu-logger/package.json', JSON.stringify(pkg, null, 2) + '\n');
+            fs.writeFileSync('dofek-zepp/package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
 
       - name: Print resolved version
-        run: echo "Building IMU Logger v${{ steps.version.outputs.version }} (code ${{ steps.version.outputs.code }})"
+        run: echo "Building Dofek Zepp v${{ steps.version.outputs.version }} (code ${{ steps.version.outputs.code }})"
 
       - name: Install dependencies
-        working-directory: imu-logger
+        working-directory: dofek-zepp
         run: npm ci
 
       - name: Install Zeus CLI
         run: npm i -g @zeppos/zeus-cli
 
       - name: Build ZAB package
-        working-directory: imu-logger
+        working-directory: dofek-zepp
         run: zeus build
 
       - name: Upload ZAB artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: imu-logger-zab
-          path: imu-logger/dist/
+          name: dofek-zepp-zab
+          path: dofek-zepp/dist/
           retention-days: 90
 
   release:
@@ -92,7 +92,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: imu-logger-zab
+          name: dofek-zepp-zab
           path: dist
 
       - name: Create Release
@@ -106,6 +106,6 @@ jobs:
             exit 1
           fi
           gh release create "$GITHUB_REF_NAME" \
-            --title "IMU Logger v${{ needs.build.outputs.version }}" \
+            --title "Dofek Zepp v${{ needs.build.outputs.version }}" \
             --notes "Zepp OS mini-program build for Amazfit T-Rex 3." \
             "$ZAB_FILE"

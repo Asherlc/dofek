@@ -29,5 +29,5 @@ interface InertialMeasurementUnitSample {
 | iPhone CoreMotion | `packages/mobile/modules/core-motion` | CMSensorRecorder, 50 Hz |
 | Apple Watch | `packages/mobile/modules/watch-motion` | WCSession file transfer |
 | WHOOP BLE | `packages/mobile/modules/whoop-ble` | Native bridge maps `accelerometerX/Y/Z` to `x/y/z` |
-| ZeppOS imu-logger | `imu-logger/` | Binary format decoded by `src/providers/zos-app/decode.ts` |
+| ZeppOS dofek-zepp | `dofek-zepp/` | Binary format decoded by `src/providers/zos-app/decode.ts` |
 | Server | `packages/server/src/repositories/` | tRPC upload endpoint |

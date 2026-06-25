@@ -751,11 +751,11 @@ jobs:
             | { grep -v 'packages/mobile/' || true; } \
             | { grep -v '\.storybook/' || true; } \
             | { grep -v '\.stories\.ts$' || true; } \
-            | { grep -v '^imu-logger/app\.ts$' || true; } \
-            | { grep -v '^imu-logger/app-side/' || true; } \
-            | { grep -v '^imu-logger/app-service/' || true; } \
-            | { grep -v '^imu-logger/page/' || true; } \
-            | { grep -v '^imu-logger/setting/' || true; })
+            | { grep -v '^dofek-zepp/app\.ts$' || true; } \
+            | { grep -v '^dofek-zepp/app-side/' || true; } \
+            | { grep -v '^dofek-zepp/app-service/' || true; } \
+            | { grep -v '^dofek-zepp/page/' || true; } \
+            | { grep -v '^dofek-zepp/setting/' || true; })
 
           FILE_WEIGHTS=()
           for f in $CANDIDATES; do

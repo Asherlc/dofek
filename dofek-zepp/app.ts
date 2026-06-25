@@ -4,7 +4,7 @@ import { log as Logger } from "@zos/utils";
 
 BaseApp.use(appPlugin);
 
-const logger = Logger.getLogger("imu-logger-app");
+const logger = Logger.getLogger("dofek-zepp-app");
 
 App(
   BaseApp({

@@ -96,7 +96,7 @@
         "entry": ["src/**/*.test.ts"]
       }
     },
-    "imu-logger": {
+    "dofek-zepp": {
       "entry": [
         "app.ts",
         "page/index.ts",
