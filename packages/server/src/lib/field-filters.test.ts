@@ -118,10 +118,7 @@ describe("buildClickHouseFilterClauses", () => {
   });
 
   it("only normalizes values matching datetime-local format", () => {
-    const result = buildClickHouseFilterClauses(
-      { started_at_from: "2024-06-01" },
-      ["started_at"],
-    );
+    const result = buildClickHouseFilterClauses({ started_at_from: "2024-06-01" }, ["started_at"]);
     expect(result.params.started_at_from).toBe("2024-06-01");
   });
 
