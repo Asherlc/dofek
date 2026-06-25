@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS fitness.imu_session (
-  id uuid DEFAULT gen_random_uuid() NOT NULL,
+  id uuid DEFAULT gen_random_uuid() NOT NULL PRIMARY KEY,
   user_id uuid NOT NULL REFERENCES fitness.user_profile (id),
   provider_id text NOT NULL,
   external_id text NOT NULL,
@@ -15,6 +15,6 @@ CREATE TABLE IF NOT EXISTS fitness.imu_session (
 
 ALTER TABLE fitness.imu_session ENABLE ROW LEVEL SECURITY;
 
-CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS imu_session_user_external_idx ON fitness.imu_session (user_id, external_id);
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS imu_session_user_external_idx ON fitness.imu_session (user_id, provider_id, external_id);
 CREATE INDEX CONCURRENTLY IF NOT EXISTS imu_session_user_provider_idx ON fitness.imu_session (user_id, provider_id);
 CREATE INDEX CONCURRENTLY IF NOT EXISTS imu_session_start_at_idx ON fitness.imu_session (session_start_at DESC);

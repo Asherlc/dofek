@@ -40,11 +40,13 @@ export function decodeBin(buffer: ArrayBufferLike): DecodedSession {
   const version = view.getUint8(4);
   const flags = view.getUint8(5);
   const hasGyro = (flags & FLAG_HAS_GYRO) !== 0;
-  const sessionStartMs = view.getUint32(8, true);
-  const sampleCount = view.getUint32(12, true);
-  const accelFreqMode = view.getUint8(16);
-  const gyroFreqMode = hasGyro ? view.getUint8(17) : 0;
-  const observedHzX100 = view.getUint16(18, true);
+  const sessionStartMsLow = view.getUint32(8, true);
+  const sessionStartMsHigh = view.getUint32(12, true);
+  const sessionStartMs = sessionStartMsLow + sessionStartMsHigh * 0x100000000;
+  const sampleCount = view.getUint32(16, true);
+  const accelFreqMode = view.getUint8(20);
+  const gyroFreqMode = hasGyro ? view.getUint8(21) : 0;
+  const observedHzX100 = view.getUint16(22, true);
 
   const samples: BinarySample[] = [];
   let offset = HEADER_SIZE;
@@ -82,7 +84,9 @@ export function decodeBin(buffer: ArrayBufferLike): DecodedSession {
     }
 
     if (actualCount < chunkCount) {
-      offset += (chunkCount - actualCount) * recordSize;
+      throw new Error(
+        `Truncated chunk: declared ${chunkCount} samples but only ${actualCount} fit in remaining ${view.byteLength - offset + actualCount * recordSize} bytes`,
+      );
     }
   }
 

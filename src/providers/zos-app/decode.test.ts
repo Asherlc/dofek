@@ -15,11 +15,13 @@ function createHeader(options: {
   view.setUint8(4, 1);
   view.setUint8(5, options.hasGyro ? 1 : 0);
   view.setUint16(6, 0, true);
-  view.setUint32(8, options.sessionStartMs ?? 0, true);
-  view.setUint32(12, options.sampleCount ?? 0, true);
-  view.setUint8(16, options.accelFreqMode ?? 1);
-  view.setUint8(17, options.hasGyro ? (options.gyroFreqMode ?? 1) : 0);
-  view.setUint16(18, options.observedHzX100 ?? 0, true);
+  const startMs = options.sessionStartMs ?? 0;
+  view.setUint32(8, startMs >>> 0, true);
+  view.setUint32(12, Math.floor(startMs / 0x100000000) >>> 0, true);
+  view.setUint32(16, options.sampleCount ?? 0, true);
+  view.setUint8(20, options.accelFreqMode ?? 1);
+  view.setUint8(21, options.hasGyro ? (options.gyroFreqMode ?? 1) : 0);
+  view.setUint16(22, options.observedHzX100 ?? 0, true);
   return buf;
 }
 
@@ -163,6 +165,32 @@ describe("decodeBin", () => {
 
     expect(result.samples).toHaveLength(3);
     expect(result.samples[2]).toEqual({ tMs: 200, ax: 7, ay: 8, az: 9 });
+  });
+
+  it("round-trips a 64-bit epoch-ms session timestamp", () => {
+    const timestamp = 1_719_300_000_000;
+    const header = createHeader({
+      hasGyro: false,
+      sessionStartMs: timestamp,
+      sampleCount: 0,
+    });
+
+    const result = decodeBin(header);
+
+    expect(result.sessionStartMs).toBe(timestamp);
+  });
+
+  it("throws on truncated chunk", () => {
+    const header = createHeader({
+      hasGyro: false,
+      sampleCount: 5,
+    });
+    const chunk = encodeChunk([{ tMs: 0, ax: 1, ay: 2, az: 3 }], false);
+    const chunkView = new DataView(chunk);
+    chunkView.setUint16(0, 10, true);
+    const buffer = concat(header, chunk);
+
+    expect(() => decodeBin(buffer)).toThrow("declared 10 samples but only 1");
   });
 
   it("handles empty session (header only)", () => {

@@ -6,6 +6,7 @@ import type { Queue } from "bullmq";
 import type { Database } from "dofek/db";
 import type { ImportJobData } from "dofek/jobs/queues";
 import { type Request, type Response, Router } from "express";
+import rateLimit from "express-rate-limit";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
 import { assembleChunks, streamToFile } from "../lib/server-utils.ts";
@@ -17,6 +18,14 @@ import {
   type UploadStatus,
 } from "../lib/upload-state-store.ts";
 import { logger } from "../logger.ts";
+
+const uploadRateLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many upload requests, please try again later" },
+});
 
 /**
  * Shared directory for uploaded files that the worker container can access.
@@ -168,6 +177,7 @@ async function authenticate(req: Request, res: Response, db: Database): Promise<
 
 export function createUploadRouter(deps: UploadRouteDeps): Router {
   const router = Router();
+  router.use(uploadRateLimiter);
   const { importQueue, db } = deps;
 
   // Poll job status — checks BullMQ first, falls back to upload-phase status
@@ -509,6 +519,8 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
       res.json({ status: "processing", jobId });
     } catch (err: unknown) {
       logger.error(`[zos-app] Upload failed: ${err}`);
+      const { unlink } = await import("node:fs/promises");
+      await unlink(tmpFile).catch(() => {});
       res.status(500).json({ error: "Upload failed" });
     }
   });
