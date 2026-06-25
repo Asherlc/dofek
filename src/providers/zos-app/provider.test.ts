@@ -1,3 +1,4 @@
+import type { SyncDatabase } from "../../db/index.ts";
 import { describe, expect, it, vi } from "vitest";
 
 const mockEnsureProvider = vi.fn().mockResolvedValue(undefined);
@@ -6,8 +7,11 @@ vi.mock("../../db/tokens.ts", () => ({
 }));
 
 const mockInsertValues = vi.fn().mockReturnValue({ onConflictDoNothing: vi.fn() });
-const mockDb = {
+const mockDb: SyncDatabase = {
+  select: vi.fn(),
   insert: vi.fn().mockReturnValue({ values: mockInsertValues }),
+  delete: vi.fn(),
+  execute: vi.fn(),
 };
 
 vi.mock("../../db/schema.ts", () => ({
@@ -47,7 +51,7 @@ describe("importZosAppBin", () => {
     mockDecodeBin.mockReturnValue(decoded);
 
     const binData = Buffer.from([0x49, 0x55, 0x4d, 0x31]);
-    const result = await importZosAppBin(mockDb as never, binData, "user-1");
+    const result = await importZosAppBin(mockDb, binData, "user-1");
 
     expect(mockEnsureProvider).toHaveBeenCalledWith(
       mockDb,
@@ -75,7 +79,7 @@ describe("importZosAppBin", () => {
   it("stores gyroFreqMode when hasGyro is true", async () => {
     mockDecodeBin.mockReturnValue(makeDecodedSession({ hasGyro: true, gyroFreqMode: 1 }));
 
-    const result = await importZosAppBin(mockDb as never, Buffer.from([0x00]), "user-1");
+    const result = await importZosAppBin(mockDb, Buffer.from([0x00]), "user-1");
 
     expect(mockInsertValues).toHaveBeenCalledWith(
       expect.objectContaining({ hasGyro: true, gyroFreqMode: 1 }),
@@ -86,29 +90,32 @@ describe("importZosAppBin", () => {
   it("generates externalId from sessionStartMs hash", async () => {
     mockDecodeBin.mockReturnValue(makeDecodedSession({ sessionStartMs: 1_719_300_000_000 }));
 
-    await importZosAppBin(mockDb as never, Buffer.from([0x00]), "user-1");
+    await importZosAppBin(mockDb, Buffer.from([0x00]), "user-1");
 
-    const insertedValues = mockInsertValues.mock.calls[0]![0] as { externalId: string };
-    expect(insertedValues.externalId).toMatch(/^zos-app:[a-f0-9]{16}$/);
+    expect(mockInsertValues).toHaveBeenCalledWith(
+      expect.objectContaining({ externalId: expect.stringMatching(/^zos-app:[a-f0-9]{16}$/) }),
+    );
   });
 
   it("stores rawData as base64", async () => {
     mockDecodeBin.mockReturnValue(makeDecodedSession());
     const binData = Buffer.from([0x49, 0x55, 0x4d, 0x31]);
 
-    await importZosAppBin(mockDb as never, binData, "user-1");
+    await importZosAppBin(mockDb, binData, "user-1");
 
-    const insertedValues = mockInsertValues.mock.calls[0]![0] as { rawData: string };
-    expect(insertedValues.rawData).toBe(binData.toString("base64"));
+    expect(mockInsertValues).toHaveBeenCalledWith(
+      expect.objectContaining({ rawData: binData.toString("base64") }),
+    );
   });
 
   it("converts sessionStartMs to Date for sessionStartAt", async () => {
     mockDecodeBin.mockReturnValue(makeDecodedSession({ sessionStartMs: 1_719_300_000_000 }));
 
-    await importZosAppBin(mockDb as never, Buffer.from([0x00]), "user-1");
+    await importZosAppBin(mockDb, Buffer.from([0x00]), "user-1");
 
-    const insertedValues = mockInsertValues.mock.calls[0]![0] as { sessionStartAt: Date };
-    expect(insertedValues.sessionStartAt).toEqual(new Date(1_719_300_000_000));
+    expect(mockInsertValues).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionStartAt: new Date(1_719_300_000_000) }),
+    );
   });
 
   it("returns decode error without throwing", async () => {
@@ -116,7 +123,7 @@ describe("importZosAppBin", () => {
       throw new Error("Invalid magic: 0x0");
     });
 
-    const result = await importZosAppBin(mockDb as never, Buffer.from([0x00]), "user-1");
+    const result = await importZosAppBin(mockDb, Buffer.from([0x00]), "user-1");
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);
@@ -132,7 +139,7 @@ describe("importZosAppBin", () => {
       },
     });
 
-    const result = await importZosAppBin(mockDb as never, Buffer.from([0x00]), "user-1");
+    const result = await importZosAppBin(mockDb, Buffer.from([0x00]), "user-1");
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);
@@ -143,7 +150,7 @@ describe("importZosAppBin", () => {
     const samples = Array.from({ length: 50 }, () => ({ tMs: 0, ax: 0, ay: 0, az: 0 }));
     mockDecodeBin.mockReturnValue(makeDecodedSession({ samples }));
 
-    await importZosAppBin(mockDb as never, Buffer.from([0x00]), "user-1");
+    await importZosAppBin(mockDb, Buffer.from([0x00]), "user-1");
 
     expect(mockInsertValues).toHaveBeenCalledWith(
       expect.objectContaining({ sampleCount: 50 }),
