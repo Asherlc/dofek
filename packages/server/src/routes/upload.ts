@@ -167,17 +167,20 @@ async function authenticate(req: Request, res: Response, db: Database): Promise<
   return session.userId;
 }
 
+const uploadPostLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many upload requests, please try again later" },
+  keyGenerator: (req) => {
+    const sessionId = getSessionIdFromRequest(req);
+    return sessionId ?? req.ip ?? "unknown";
+  },
+});
+
 export function createUploadRouter(deps: UploadRouteDeps): Router {
   const router = Router();
-  router.use(
-    rateLimit({
-      windowMs: 60_000,
-      max: 10,
-      standardHeaders: true,
-      legacyHeaders: false,
-      message: { error: "Too many upload requests, please try again later" },
-    }),
-  );
   const { importQueue, db } = deps;
 
   // Poll job status — checks BullMQ first, falls back to upload-phase status
@@ -212,7 +215,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
   });
 
   // Chunked upload endpoint
-  router.post("/apple-health", async (req, res) => {
+  router.post("/apple-health", uploadPostLimiter, async (req, res) => {
     const userId = await authenticate(req, res, db);
     if (!userId) return;
 
@@ -397,7 +400,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
     res.json(status);
   });
 
-  router.post("/strong-csv", async (req, res) => {
+  router.post("/strong-csv", uploadPostLimiter, async (req, res) => {
     const userId = await authenticate(req, res, db);
     if (!userId) return;
 
@@ -446,7 +449,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
     res.json(status);
   });
 
-  router.post("/cronometer-csv", async (req, res) => {
+  router.post("/cronometer-csv", uploadPostLimiter, async (req, res) => {
     const userId = await authenticate(req, res, db);
     if (!userId) return;
 
@@ -498,7 +501,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
     res.json(status);
   });
 
-  router.post("/zos-app", async (req, res) => {
+  router.post("/zos-app", uploadPostLimiter, async (req, res) => {
     const userId = await authenticate(req, res, db);
     if (!userId) return;
 
