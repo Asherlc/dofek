@@ -1,9 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { InertialMeasurementUnitSample } from "@dofek/imu";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockIsWatchPaired = vi.fn(() => true);
 const mockIsWatchAppInstalled = vi.fn(() => true);
-const mockGetPendingWatchSamples = vi.fn(() => Promise.resolve([]));
+const mockGetPendingWatchSamples = vi.fn(
+  (): Promise<InertialMeasurementUnitSample[]> => Promise.resolve([]),
+);
 const mockAcknowledgeWatchSamples = vi.fn();
 const mockGetLastWatchSyncTimestamp = vi.fn((): string | null => null);
 const mockSetLastWatchSyncTimestamp = vi.fn();
