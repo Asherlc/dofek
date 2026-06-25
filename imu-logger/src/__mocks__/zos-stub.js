@@ -38,10 +38,6 @@ export const Gyroscope = class Gyroscope {
 
 export const checkSensor = () => true;
 
-export const FREQ_MODE_LOW = 0;
-export const FREQ_MODE_NORMAL = 1;
-export const FREQ_MODE_HIGH = 2;
-
 export const writeFileSync = () => {};
 export const readFileSync = () => new ArrayBuffer(32);
 export const openSync = () => 3;
