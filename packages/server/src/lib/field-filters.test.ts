@@ -55,6 +55,73 @@ describe("buildPostgresFilterConditions", () => {
     expect(conditions).toHaveLength(1);
     expect(conditions[0]?.queryChunks).toContain(new Date(input).toISOString());
   });
+
+  it("does not normalize invalid datetime-local values (NaN date)", () => {
+    expect(() =>
+      buildPostgresFilterConditions({ started_at_from: "2024-13-01T08:30" }, ["started_at"]),
+    ).not.toThrow();
+  });
+
+  it("skips range filters for non-range-filter columns", () => {
+    const conditions = buildPostgresFilterConditions({ name_from: "2024-01-01" }, ["name"]);
+    expect(conditions).toHaveLength(0);
+  });
+
+  it("rejects range filters when column is not in allowed set", () => {
+    const conditions = buildPostgresFilterConditions({ date_from: "2024-01-01" }, ["other_column"]);
+    expect(conditions).toHaveLength(0);
+  });
+
+  it("rejects range filters with invalid SQL column names", () => {
+    const conditions = buildPostgresFilterConditions({ BadName_at_from: "2024-01-01" }, [
+      "BadName_at",
+    ]);
+    expect(conditions).toHaveLength(0);
+  });
+
+  it("uses ::date cast for date column range conditions", () => {
+    const conditions = buildPostgresFilterConditions(
+      { date_from: "2024-06-01", date_to: "2024-06-30" },
+      ["date"],
+    );
+    expect(conditions).toHaveLength(2);
+    for (const condition of conditions) {
+      expect(JSON.stringify(condition)).toContain("::date");
+    }
+  });
+
+  it("builds date range condition for only-to bound", () => {
+    const conditions = buildPostgresFilterConditions({ date_to: "2024-06-30" }, ["date"]);
+    expect(conditions).toHaveLength(1);
+  });
+
+  it("builds date range condition for only-from bound", () => {
+    const conditions = buildPostgresFilterConditions({ date_from: "2024-06-01" }, ["date"]);
+    expect(conditions).toHaveLength(1);
+  });
+
+  it("builds datetime range condition for only-to bound", () => {
+    const conditions = buildPostgresFilterConditions({ started_at_to: "2024-06-30T18:00" }, [
+      "started_at",
+    ]);
+    expect(conditions).toHaveLength(1);
+  });
+
+  it("does not create ILIKE conditions for range filter keys in text loop", () => {
+    const conditions = buildPostgresFilterConditionsMapped(
+      { date_from: "2024-06-01" },
+      { date_from: "date_column" },
+    );
+    expect(conditions).toHaveLength(0);
+  });
+
+  it("does not create ILIKE for columns already used in range filters", () => {
+    const conditions = buildPostgresFilterConditionsMapped(
+      { syncedAt_from: "2024-06-01", syncedAt: "search_text" },
+      { syncedAt: "synced_at" },
+    );
+    expect(conditions).toHaveLength(1);
+  });
 });
 
 describe("buildPostgresFilterConditionsMapped", () => {
@@ -124,6 +191,57 @@ describe("buildClickHouseFilterClauses", () => {
 
   it("returns empty clause when no valid filters", () => {
     expect(buildClickHouseFilterClauses({}, ["channel"])).toEqual({ clause: "", params: {} });
+  });
+
+  it("does not create text clauses for range filter keys in ClickHouse", () => {
+    const result = buildClickHouseFilterClauses({ date_from: "2024-06-01" }, ["date_from"]);
+    expect(result.clause).toBe("");
+  });
+
+  it("does not create text clauses for fields already in range bounds", () => {
+    const result = buildClickHouseFilterClauses({ date_from: "2024-06-01", date: "search_value" }, [
+      "date",
+    ]);
+    expect(result.clause).not.toContain("positionCaseInsensitive");
+  });
+
+  it("uses unique parameter names for multiple ClickHouse text filters", () => {
+    const result = buildClickHouseFilterClauses({ channel: "heart_rate", source_name: "apple" }, [
+      "channel",
+      "source_name",
+    ]);
+    expect(result.params).toHaveProperty("filter_0");
+    expect(result.params).toHaveProperty("filter_1");
+  });
+
+  it("builds ClickHouse range clause with only-to bound", () => {
+    const result = buildClickHouseFilterClauses({ date_to: "2024-06-30" }, ["date"]);
+    expect(result.clause).toContain("date <=");
+    expect(result.clause).not.toContain("date >=");
+  });
+
+  it("builds ClickHouse range clause with only-from bound", () => {
+    const result = buildClickHouseFilterClauses({ date_from: "2024-06-01" }, ["date"]);
+    expect(result.clause).toContain("date >=");
+    expect(result.clause).not.toContain("date <=");
+  });
+
+  it("uses Date type for date column bounds in ClickHouse", () => {
+    const result = buildClickHouseFilterClauses(
+      { date_from: "2024-06-01", date_to: "2024-06-30" },
+      ["date"],
+    );
+    expect(result.clause).not.toContain("parseDateTimeBestEffort");
+    expect(result.clause).toContain(":Date}");
+  });
+
+  it("uses parseDateTimeBestEffort for datetime column bounds in ClickHouse", () => {
+    const result = buildClickHouseFilterClauses(
+      { recorded_at_from: "2024-06-01T00:00", recorded_at_to: "2024-06-30T23:59" },
+      ["recorded_at"],
+    );
+    expect(result.clause).toContain("parseDateTimeBestEffort");
+    expect(result.clause).not.toContain(":Date}");
   });
 });
 

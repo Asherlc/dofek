@@ -80,10 +80,7 @@ function normalizeDateTimeRangeFilterValues(
   return normalized;
 }
 
-function resolveApiColumn(key: string, fieldToColumn?: Record<string, string>): string {
-  if (!fieldToColumn) return key;
-  const range = parseRangeFilterKey(key);
-  if (range) return range.column;
+function resolveApiColumn(key: string, _fieldToColumn?: Record<string, string>): string {
   return key;
 }
 
