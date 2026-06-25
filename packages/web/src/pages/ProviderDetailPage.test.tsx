@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatCellValue, formatColumnName, RecordDetailModal } from "./ProviderDetailPage";
@@ -55,7 +55,9 @@ vi.mock("../lib/trpc.ts", () => ({
     providerDetail: {
       disconnect: { useMutation: () => mockDisconnectMutation },
       logs: { useQuery: () => ({ data: [], isLoading: false }) },
+      logFilterOptions: { useQuery: () => ({ data: {}, isLoading: false }) },
       records: { useQuery: () => ({ data: { rows: [] }, isLoading: false }) },
+      recordFilterOptions: { useQuery: () => ({ data: {}, isLoading: false }) },
     },
     settings: {
       get: { useQuery: (...args: unknown[]) => mockSettingsGetQuery(...args) },
@@ -82,8 +84,17 @@ vi.mock("../lib/poll-sync-job.ts", () => ({
   pollSyncJob: vi.fn(),
 }));
 
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
 afterEach(() => {
   cleanup();
+  act(() => {
+    vi.runOnlyPendingTimers();
+  });
+  vi.clearAllTimers();
+  vi.useRealTimers();
   vi.clearAllMocks();
 });
 

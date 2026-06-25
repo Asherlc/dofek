@@ -523,6 +523,23 @@ describe("providerDetailRouter", () => {
     });
   });
 
+  describe("logFilterOptions", () => {
+    it("returns distinct sync log dropdown values for a provider", async () => {
+      const caller = createCaller({
+        db: {
+          execute: vi.fn().mockResolvedValue([{ value: "success" }, { value: "error" }]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.logFilterOptions({ providerId: "strava" });
+
+      expect(result.status).toEqual([{ value: "success" }, { value: "error" }]);
+      expect(result.dataType).toEqual([{ value: "success" }, { value: "error" }]);
+    });
+  });
+
   // ── records ──
 
   describe("records", () => {
@@ -551,6 +568,23 @@ describe("providerDetailRouter", () => {
 
       expect(result.rows).toHaveLength(1);
       expect(result.rows[0]?.name).toBe("Morning Run");
+    });
+
+    it("returns distinct record dropdown values for a provider data type", async () => {
+      const caller = createCaller({
+        db: {
+          execute: vi.fn().mockResolvedValue([{ value: "running" }, { value: "cycling" }]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.recordFilterOptions({
+        providerId: "strava",
+        dataType: "activities",
+      });
+
+      expect(result.activity_type).toEqual([{ value: "running" }, { value: "cycling" }]);
     });
 
     it.each(

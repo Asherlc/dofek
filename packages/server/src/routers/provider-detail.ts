@@ -7,7 +7,9 @@ import {
   dataTypeEnum,
   getRecordDisplayColumns,
   getRecordFilterColumns,
+  getRecordSelectFilterColumns,
   ProviderDetailRepository,
+  SYNC_LOG_FILTER_OPTION_FIELDS,
   tableInfo,
 } from "../repositories/provider-detail-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
@@ -18,6 +20,8 @@ export {
   dataTypeEnum,
   getRecordDisplayColumns,
   getRecordFilterColumns,
+  getRecordSelectFilterColumns,
+  SYNC_LOG_FILTER_OPTION_FIELDS,
   tableInfo,
 };
 
@@ -123,9 +127,9 @@ export const providerDetailRouter = router({
     .query(async ({ ctx, input }) => {
       const { syncLog } = await import("dofek/db/schema");
       const { and, desc, eq } = await import("drizzle-orm");
-      const { buildPostgresTextFilterConditionsMapped } = await import("../lib/field-filters.ts");
+      const { buildPostgresFilterConditionsMapped } = await import("../lib/field-filters.ts");
 
-      const filterConditions = buildPostgresTextFilterConditionsMapped(
+      const filterConditions = buildPostgresFilterConditionsMapped(
         input.filters,
         SYNC_LOG_FILTER_FIELDS,
       );
@@ -148,6 +152,14 @@ export const providerDetailRouter = router({
         ...row,
         errorMessage: sanitizeErrorMessage(row.errorMessage),
       }));
+    }),
+
+  /** Distinct dropdown values for sync history filters */
+  logFilterOptions: cachedProtectedQuery(CacheTTL.SHORT)
+    .input(z.object({ providerId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const repo = new ProviderDetailRepository(ctx.db, ctx.userId);
+      return repo.getSyncLogFilterOptions(input.providerId);
     }),
 
   /** Paginated records for a provider by data type */
@@ -175,6 +187,19 @@ export const providerDetailRouter = router({
         columns: [...getRecordDisplayColumns(input.dataType)],
         filterColumns: [...getRecordFilterColumns(input.dataType)],
       };
+    }),
+
+  /** Distinct dropdown values for record filters */
+  recordFilterOptions: cachedProtectedQuery(CacheTTL.SHORT)
+    .input(
+      z.object({
+        providerId: z.string(),
+        dataType: dataTypeEnum,
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const repo = new ProviderDetailRepository(ctx.db, ctx.userId, ctx.sensorStore);
+      return repo.getRecordFilterOptions(input.providerId, input.dataType);
     }),
 
   /** Single record detail with raw data */

@@ -47,4 +47,25 @@ describe("useDebouncedValue", () => {
     });
     expect(result.current).toBe("hello");
   });
+
+  it("uses cancelled flag to prevent stale updates when clearTimeout is unavailable", () => {
+    vi.spyOn(globalThis, "clearTimeout").mockImplementation(() => {});
+
+    const { result, rerender } = renderHook(
+      ({ value, delay }: { value: string; delay: number }) => useDebouncedValue(value, delay),
+      { initialProps: { value: "a", delay: 500 } },
+    );
+
+    rerender({ value: "b", delay: 200 });
+
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(result.current).toBe("b");
+
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(result.current).toBe("b");
+  });
 });

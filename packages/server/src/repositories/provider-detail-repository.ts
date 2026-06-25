@@ -2,8 +2,9 @@ import type { Database } from "dofek/db";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
-  buildClickHouseTextFilterClauses,
-  buildPostgresTextFilterConditions,
+  assertSqlColumnName,
+  buildClickHouseFilterClauses,
+  buildPostgresFilterConditions,
 } from "../lib/field-filters.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { BodyClickHouseStore } from "./body-clickhouse.ts";
@@ -250,6 +251,55 @@ export function getRecordFilterColumns(dataType: DataType): readonly string[] {
   }
 }
 
+export type ProviderDetailFilterOption = { value: string; label?: string };
+
+const MAX_DISTINCT_FILTER_OPTIONS = 500;
+
+/** Sync history columns exposed as dropdown filters (API keys). */
+export const SYNC_LOG_FILTER_OPTION_FIELDS = {
+  status: "status",
+  dataType: "data_type",
+  authFailureReason: "auth_failure_reason",
+} as const;
+
+/** Record columns exposed as dropdown filters, keyed by data type. */
+export function getRecordSelectFilterColumns(dataType: DataType): readonly string[] {
+  switch (dataType) {
+    case "activities":
+      return ["activity_type", "source_name"];
+    case "dailyMetrics":
+      return ["source_name"];
+    case "sleepSessions":
+      return ["sleep_type", "source_name"];
+    case "foodEntries":
+      return ["meal", "source_name"];
+    case "healthEvents":
+      return ["type", "source_name"];
+    case "labPanels":
+      return ["status", "source_name"];
+    case "labResults":
+      return ["status"];
+    case "journalEntries":
+      return ["question_slug"];
+    case "bodyMeasurements":
+      return ["source_name"];
+    case "metricStream":
+      return ["source_type", "channel", "device_id"];
+    case "nutritionDaily":
+      return [];
+  }
+}
+
+/** Whether record filter options for a column come from the journal question join. */
+export function isJournalQuestionSlugFilterColumn(dataType: DataType, column: string): boolean {
+  return dataType === "journalEntries" && column === "question_slug";
+}
+
+/** Whether record filter options are loaded from ClickHouse instead of Postgres. */
+export function usesClickHouseRecordFilterOptions(dataType: DataType): boolean {
+  return dataType === "bodyMeasurements" || dataType === "metricStream";
+}
+
 /** Curated columns shown in the provider detail records table. */
 export function getRecordDisplayColumns(dataType: DataType): readonly string[] {
   const candidates = getRecordFilterColumns(dataType).filter(
@@ -287,6 +337,11 @@ export const DISCONNECT_CHILD_TABLES = [
 
 const ownerCheckSchema = z.object({ id: z.string() });
 const genericRowSchema = z.record(z.string(), z.unknown());
+const distinctValueSchema = z.object({ value: z.coerce.string() });
+const distinctLabeledValueSchema = z.object({
+  value: z.string(),
+  label: z.string().nullable(),
+});
 
 function isUndefinedTableError(error: unknown): boolean {
   if (error instanceof Error) {
@@ -326,6 +381,73 @@ export class ProviderDetailRepository {
     this.#clickHouse = clickHouse;
   }
 
+  /** Distinct dropdown values for sync history filters scoped to a provider. */
+  async getSyncLogFilterOptions(
+    providerId: string,
+  ): Promise<Record<string, ProviderDetailFilterOption[]>> {
+    const entries = await Promise.all(
+      Object.entries(SYNC_LOG_FILTER_OPTION_FIELDS).map(async ([apiKey, column]) => {
+        assertSqlColumnName(column);
+        const rows = await executeWithSchema(
+          this.#db,
+          distinctValueSchema,
+          sql`SELECT DISTINCT ${sql.raw(column)} AS value
+              FROM fitness.sync_log
+              WHERE user_id = ${this.#userId}
+                AND provider_id = ${providerId}
+                AND ${sql.raw(column)} IS NOT NULL
+              ORDER BY value
+              LIMIT ${MAX_DISTINCT_FILTER_OPTIONS}`,
+        );
+        return [apiKey, rows.map((row) => ({ value: row.value }))] as const;
+      }),
+    );
+
+    return Object.fromEntries(entries);
+  }
+
+  /** Distinct dropdown values for record filters scoped to a provider and data type. */
+  async getRecordFilterOptions(
+    providerId: string,
+    dataType: DataType,
+  ): Promise<Record<string, ProviderDetailFilterOption[]>> {
+    const columns = getRecordSelectFilterColumns(dataType);
+    if (columns.length === 0) {
+      return Object.freeze({});
+    }
+
+    if (dataType === "bodyMeasurements") {
+      return this.#getClickHouseRecordFilterOptions(providerId, tableInfo(dataType).table, columns);
+    }
+
+    if (dataType === "metricStream") {
+      return this.#getClickHouseRecordFilterOptions(
+        providerId,
+        tableInfo(dataType).table,
+        columns,
+        "AND is_deleted = 0",
+      );
+    }
+
+    const entries = await Promise.all(
+      columns.map(async (column) => {
+        if (isJournalQuestionSlugFilterColumn(dataType, column)) {
+          const options = await this.#queryJournalQuestionSlugOptions(providerId);
+          return [column, options] as const;
+        }
+
+        const values = await this.#queryDistinctPostgresValues(
+          tableInfo(dataType).table,
+          providerId,
+          column,
+        );
+        return [column, values.map((value) => ({ value }))] as const;
+      }),
+    );
+
+    return Object.fromEntries(entries);
+  }
+
   /** Paginated records for a provider by data type. */
   async getRecords(
     providerId: string,
@@ -344,7 +466,7 @@ export class ProviderDetailRepository {
       return this.#queryMetricStreamRecords(providerId, limit, offset, undefined, filters);
     }
 
-    const filterConditions = buildPostgresTextFilterConditions(
+    const filterConditions = buildPostgresFilterConditions(
       filters,
       getRecordFilterColumns(dataType),
     );
@@ -391,6 +513,88 @@ export class ProviderDetailRepository {
     return rows[0] ?? null;
   }
 
+  async #queryDistinctPostgresValues(
+    table: string,
+    providerId: string,
+    column: string,
+  ): Promise<string[]> {
+    assertSqlColumnName(column);
+    const rows = await executeWithSchema(
+      this.#db,
+      distinctValueSchema,
+      sql`SELECT DISTINCT ${sql.raw(column)} AS value
+          FROM ${sql.raw(table)}
+          WHERE user_id = ${this.#userId}
+            AND provider_id = ${providerId}
+            AND ${sql.raw(column)} IS NOT NULL
+          ORDER BY value
+          LIMIT ${MAX_DISTINCT_FILTER_OPTIONS}`,
+    );
+    return rows.map((row) => row.value);
+  }
+
+  async #queryJournalQuestionSlugOptions(
+    providerId: string,
+  ): Promise<ProviderDetailFilterOption[]> {
+    const rows = await executeWithSchema(
+      this.#db,
+      distinctLabeledValueSchema,
+      sql`SELECT DISTINCT je.question_slug AS value, jq.display_name AS label
+          FROM fitness.journal_entry je
+          LEFT JOIN fitness.journal_question jq ON jq.slug = je.question_slug
+          WHERE je.user_id = ${this.#userId}
+            AND je.provider_id = ${providerId}
+            AND je.question_slug IS NOT NULL
+          ORDER BY jq.display_name NULLS LAST, je.question_slug
+          LIMIT ${MAX_DISTINCT_FILTER_OPTIONS}`,
+    );
+
+    return rows.map((row) => ({
+      value: row.value,
+      ...(row.label ? { label: row.label } : {}),
+    }));
+  }
+
+  async #getClickHouseRecordFilterOptions(
+    providerId: string,
+    table: string,
+    columns: readonly string[],
+    extraWhere = "",
+  ): Promise<Record<string, ProviderDetailFilterOption[]>> {
+    if (!this.#clickHouse) {
+      throw new Error(`providerDetail ${table} filter options require the ClickHouse store`);
+    }
+    const clickHouse = this.#clickHouse;
+
+    const entries = await Promise.all(
+      columns.map(async (column) => {
+        assertSqlColumnName(column);
+        const rows = await clickHouse.query(
+          distinctValueSchema,
+          `
+            SELECT DISTINCT ${column} AS value
+            FROM ${table}
+            WHERE user_id = {userId:UUID}
+              AND provider_id = {providerId:String}
+              AND ${column} IS NOT NULL
+              AND toString(${column}) != ''
+              ${extraWhere}
+            ORDER BY value
+            LIMIT {limit:UInt32}
+          `,
+          {
+            userId: this.#userId,
+            providerId,
+            limit: MAX_DISTINCT_FILTER_OPTIONS,
+          },
+        );
+        return [column, rows.map((row) => ({ value: row.value }))] as const;
+      }),
+    );
+
+    return Object.fromEntries(entries);
+  }
+
   async #queryBodyRecords(
     providerId: string,
     info: ReturnType<typeof tableInfo>,
@@ -403,7 +607,7 @@ export class ProviderDetailRepository {
       throw new Error("providerDetail body measurements require the ClickHouse store");
     }
     const recordFilter = recordId ? "AND toString(id) = {recordId:String}" : "";
-    const { clause: filterClause, params: filterParams } = buildClickHouseTextFilterClauses(
+    const { clause: filterClause, params: filterParams } = buildClickHouseFilterClauses(
       filters,
       BODY_MEASUREMENT_COLUMNS,
     );
@@ -449,7 +653,7 @@ export class ProviderDetailRepository {
       throw new Error("providerDetail metric stream requires the ClickHouse store");
     }
     const recordFilter = recordId ? "AND toString(id) = {recordId:String}" : "";
-    const { clause: filterClause, params: filterParams } = buildClickHouseTextFilterClauses(
+    const { clause: filterClause, params: filterParams } = buildClickHouseFilterClauses(
       filters,
       METRIC_STREAM_COLUMNS,
     );
