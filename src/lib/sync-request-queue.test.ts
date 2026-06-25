@@ -33,6 +33,7 @@ function job(data: Partial<SyncJobData>) {
 
 describe("listProviderSyncJobsForUser", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     mockGetActive.mockResolvedValue([]);
     mockGetWaiting.mockResolvedValue([]);
     mockGetDelayed.mockResolvedValue([]);
@@ -43,7 +44,7 @@ describe("listProviderSyncJobsForUser", () => {
 
     expect(mockGetActive).toHaveBeenCalledOnce();
     expect(mockGetWaiting).toHaveBeenCalledOnce();
-    expect(mockGetDelayed).toHaveBeenCalledWith(0, 49);
+    expect(mockGetDelayed).toHaveBeenCalledWith();
   });
 
   it("filters jobs by userId across all job states", async () => {
