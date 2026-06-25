@@ -10,8 +10,8 @@ describe("UnitConverter", () => {
   const imperial = new UnitConverter("imperial");
 
   it("sets the unit system", () => {
-    expect(metric.system).toBe("metric");
-    expect(imperial.system).toBe("imperial");
+    expect(new UnitConverter("metric").system).toBe("metric");
+    expect(new UnitConverter("imperial").system).toBe("imperial");
   });
 
   describe("weight (kg input)", () => {
