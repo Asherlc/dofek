@@ -11,7 +11,7 @@ export async function listProviderSyncJobsForUser(
   const [active, waiting, delayed] = await Promise.all([
     queue.getActive(),
     queue.getWaiting(),
-    queue.getDelayed(0, 49),
+    queue.getDelayed(),
   ]);
   const jobs = [...active, ...waiting, ...delayed];
   return jobs.filter((job) => job.data.userId === userId);

@@ -1,5 +1,4 @@
 import { eq } from "drizzle-orm";
-import { resetGarminConnectTestCaches } from "garmin-connect/client";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import { buildClickHouseBootstrapStatementsForNativeMetricStream } from "../db/clickhouse-metric-stream-bootstrap.ts";
@@ -393,7 +392,6 @@ describe("GarminProvider.sync() internal Connect API (integration)", () => {
   }, 60_000);
 
   beforeEach(() => {
-    resetGarminConnectTestCaches();
     metricStreamCapture.publishedMetricStreamRows.length = 0;
   });
 

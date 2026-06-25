@@ -6,7 +6,6 @@ import {
   GarminConnectClient,
   GarminMfaRequiredError,
   GarminRateLimitError,
-  resetGarminConnectTestCaches,
 } from "./client.ts";
 import type { GarminTokens, OAuth2Token } from "./types.ts";
 
@@ -37,7 +36,6 @@ function makeGarminTokens(overrides: Partial<OAuth2Token> = {}): GarminTokens {
 
 afterEach(() => {
   vi.useRealTimers();
-  resetGarminConnectTestCaches();
 });
 
 /**

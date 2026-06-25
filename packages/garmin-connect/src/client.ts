@@ -45,13 +45,10 @@ const API_USER_AGENT = "GCM-iOS-5.19.1.2";
  *  Garmin's unofficial API rate limits aggressively; 5s keeps bursts under control. */
 export const GARMIN_CONNECT_THROTTLE_MS = 5_000;
 
-let cachedOAuthConsumer: OAuthConsumer | null = null;
-let oauthConsumerLoadPromise: Promise<OAuthConsumer> | null = null;
-
-/** Clears the module-level OAuth consumer cache (test helper). */
-export function resetGarminConnectTestCaches(): void {
-  cachedOAuthConsumer = null;
-  oauthConsumerLoadPromise = null;
+function isOAuthConsumer(data: unknown): data is OAuthConsumer {
+  if (typeof data !== "object" || data === null) return false;
+  if (!("consumer_key" in data) || !("consumer_secret" in data)) return false;
+  return typeof data.consumer_key === "string" && typeof data.consumer_secret === "string";
 }
 
 const CSRF_RE = /name="_csrf"\s+value="(.+?)"/;
@@ -224,24 +221,15 @@ export class GarminConnectClient {
   async #loadConsumer(): Promise<void> {
     if (this.#consumer) return;
 
-    if (!cachedOAuthConsumer) {
-      if (!oauthConsumerLoadPromise) {
-        oauthConsumerLoadPromise = (async () => {
-          const response = await this.#fetchFn(OAUTH_CONSUMER_URL);
-          if (!response.ok) {
-            throw new GarminAuthError("Failed to fetch OAuth consumer credentials");
-          }
-          const consumer: OAuthConsumer = await response.json();
-          cachedOAuthConsumer = consumer;
-          return consumer;
-        })().finally(() => {
-          oauthConsumerLoadPromise = null;
-        });
-      }
-      cachedOAuthConsumer = await oauthConsumerLoadPromise;
+    const response = await this.#fetchFn(OAUTH_CONSUMER_URL);
+    if (!response.ok) {
+      throw new GarminAuthError("Failed to fetch OAuth consumer credentials");
     }
-
-    this.#consumer = cachedOAuthConsumer;
+    const data = await response.json();
+    if (!isOAuthConsumer(data)) {
+      throw new GarminAuthError("Invalid OAuth consumer response from S3");
+    }
+    this.#consumer = data;
   }
 
   async #getOAuth1Token(ticket: string): Promise<OAuth1Token> {
