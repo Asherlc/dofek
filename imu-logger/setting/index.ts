@@ -10,6 +10,7 @@ function readJson(raw: string | null, fallback: Record<string, unknown>): Record
     }
     return fallback;
   } catch {
+    // biome-ignore lint/suspicious/noConsole: settings page runs in companion app WebView
     console.error("Failed to parse settings JSON:", raw);
     return fallback;
   }
@@ -23,14 +24,22 @@ function toggle(
   storage.setItem(key, current === "1" ? "0" : "1");
 }
 
+const PG_STATE: {
+  enableGyro: boolean;
+  freqModeIndex: number;
+  sessionStatus: Record<string, unknown>;
+  lastExportPath: string | null;
+  transferProgress: Record<string, unknown>;
+} = {
+  enableGyro: false,
+  freqModeIndex: 1,
+  sessionStatus: EMPTY_RECORD,
+  lastExportPath: null,
+  transferProgress: EMPTY_RECORD,
+};
+
 AppSettingsPage({
-  state: {
-    enableGyro: false,
-    freqModeIndex: 1,
-    sessionStatus: EMPTY_RECORD,
-    lastExportPath: null as string | null,
-    transferProgress: EMPTY_RECORD,
-  },
+  state: PG_STATE,
 
   build(props: {
     settingsStorage: {
@@ -131,7 +140,8 @@ AppSettingsPage({
       props.settingsStorage.getItem(STORAGE_KEYS.SESSION_STATUS),
       {},
     );
-    this.state.lastExportPath = props.settingsStorage.getItem(STORAGE_KEYS.LAST_EXPORT_PATH) ?? null;
+    this.state.lastExportPath =
+      props.settingsStorage.getItem(STORAGE_KEYS.LAST_EXPORT_PATH) ?? null;
     this.state.transferProgress = readJson(
       props.settingsStorage.getItem(STORAGE_KEYS.TRANSFER_PROGRESS),
       {},
