@@ -35,12 +35,14 @@ export function defaultReadinessWeights(): ReadinessWeights {
 // ── ReadinessScore ──────────────────────────────────────────────
 
 export class ReadinessScore {
+  readonly components: ReadinessComponents;
   readonly #weights: ReadinessWeights;
 
   constructor(
-    readonly components: ReadinessComponents,
+    components: ReadinessComponents,
     weights: ReadinessWeights,
   ) {
+    this.components = components;
     this.#weights = weights;
   }
 
