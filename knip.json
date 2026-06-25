@@ -107,7 +107,7 @@
       "ignoreDependencies": ["@zeppos/zml", "@zeppos/device-types", "@zos/ui"],
       "ignoreBinaries": ["zeus"],
       "vitest": {
-        "config": ["vitest.config.mjs"],
+        "config": ["vitest.config.ts"],
         "entry": ["src/**/*.test.ts"]
       }
     }

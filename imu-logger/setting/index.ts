@@ -10,6 +10,7 @@ function readJson(raw: string | null, fallback: Record<string, unknown>): Record
     }
     return fallback;
   } catch {
+    console.error("Failed to parse settings JSON:", raw);
     return fallback;
   }
 }
@@ -27,7 +28,7 @@ AppSettingsPage({
     enableGyro: false,
     freqModeIndex: 1,
     sessionStatus: EMPTY_RECORD,
-    lastExportPath: "",
+    lastExportPath: null as string | null,
     transferProgress: EMPTY_RECORD,
   },
 
@@ -51,7 +52,7 @@ AppSettingsPage({
         `Samples: ${status.sampleCount ?? 0}`,
         `Delivered rate: ${rate}`,
         `Gyro in session: ${status.hasGyro ? "yes" : "no"}`,
-        `Last export: ${this.state.lastExportPath || "none"}`,
+        `Last export: ${this.state.lastExportPath ?? "none"}`,
       ]),
       Button({
         label: "Start logging on watch",
@@ -130,7 +131,7 @@ AppSettingsPage({
       props.settingsStorage.getItem(STORAGE_KEYS.SESSION_STATUS),
       {},
     );
-    this.state.lastExportPath = props.settingsStorage.getItem(STORAGE_KEYS.LAST_EXPORT_PATH) ?? "";
+    this.state.lastExportPath = props.settingsStorage.getItem(STORAGE_KEYS.LAST_EXPORT_PATH) ?? null;
     this.state.transferProgress = readJson(
       props.settingsStorage.getItem(STORAGE_KEYS.TRANSFER_PROGRESS),
       {},

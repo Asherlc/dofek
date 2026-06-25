@@ -106,8 +106,8 @@ describe("finalizeSessionFile", () => {
     const writeFirstCall = writeCalls[0];
     if (!writeFirstCall) throw new Error("expected writeSync to be called");
     const patchedView = new DataView(writeFirstCall[0].data);
-    expect(patchedView.getUint32(12, true)).toBe(500);
-    expect(patchedView.getUint16(18, true)).toBe(2500);
+    expect(patchedView.getUint32(16, true)).toBe(500);
+    expect(patchedView.getUint16(22, true)).toBe(2500);
   });
 
   it("does nothing when session file is missing", () => {

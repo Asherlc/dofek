@@ -12,8 +12,8 @@ def _read_header(data: bytes):
     if len(data) < HEADER_SIZE:
         raise ValueError("file too small for header")
 
-    magic, version, flags, _, session_start_ms, sample_count, accel_mode, gyro_mode, observed_hz_x100 = struct.unpack_from(
-        "<IBBHIIBBH", data, 0
+    magic, version, flags, _, ss_low, ss_high, sample_count, accel_mode, gyro_mode, observed_hz_x100 = struct.unpack_from(
+        "<IBBHIIIBBH", data, 0
     )
 
     if magic != MAGIC:
@@ -22,7 +22,7 @@ def _read_header(data: bytes):
     return {
         "version": version,
         "has_gyro": bool(flags & FLAG_HAS_GYRO),
-        "session_start_ms": session_start_ms,
+        "session_start_ms": (ss_high << 32) | ss_low,
         "sample_count": sample_count,
         "accel_freq_mode": accel_mode,
         "gyro_freq_mode": gyro_mode,

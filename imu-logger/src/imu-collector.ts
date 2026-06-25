@@ -75,7 +75,7 @@ function pickBestMode(sensor: ZosSensor, desiredMode: number): number {
       const appliedRank = FREQ_MODES.find((item) => item.value === applied)?.rank ?? mode.rank;
       const selectedRank = FREQ_MODES.find((item) => item.value === selected)?.rank ?? 0;
 
-      if (appliedRank >= selectedRank) {
+      if (appliedRank >= selectedRank && appliedRank <= desiredRank) {
         selected = applied;
       }
     } catch {
@@ -188,6 +188,7 @@ export function createImuCollector(
       windowStartMs = 0;
       windowCount = 0;
       observedHzX100 = 0;
+      latestGyro = { x: 0, y: 0, z: 0 };
       running = true;
 
       accelerometer.setFreqMode(accelMode);

@@ -18,11 +18,11 @@ function parseHeader(buffer: ArrayBuffer) {
     version: view.getUint8(4),
     flags: view.getUint8(5),
     reserved: view.getUint16(6, true),
-    sessionStartMs: view.getUint32(8, true),
-    sampleCount: view.getUint32(12, true),
-    accelFreqMode: view.getUint8(16),
-    gyroFreqMode: view.getUint8(17),
-    observedHzX100: view.getUint16(18, true),
+    sessionStartMs: view.getUint32(8, true) + view.getUint32(12, true) * 0x100000000,
+    sampleCount: view.getUint32(16, true),
+    accelFreqMode: view.getUint8(20),
+    gyroFreqMode: view.getUint8(21),
+    observedHzX100: view.getUint16(22, true),
   };
 }
 
@@ -52,6 +52,13 @@ describe("createHeader", () => {
     const buf = createHeader({ sessionStartMs: 1234567890 });
     const parsed = parseHeader(buf);
     expect(parsed.sessionStartMs).toBe(1234567890);
+  });
+
+  it("stores large sessionStartMs (>uint32) without truncation", () => {
+    const large = Date.now();
+    const buf = createHeader({ sessionStartMs: large });
+    const parsed = parseHeader(buf);
+    expect(parsed.sessionStartMs).toBe(large);
   });
 
   it("stores sampleCount", () => {

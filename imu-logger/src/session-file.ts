@@ -27,8 +27,11 @@ export function appendSamples(samples: ImuSample[], hasGyro: boolean): void {
     flag: O_WRONLY | O_APPEND | O_CREAT,
   });
 
-  writeSync({ fd, data: chunk });
-  closeSync({ fd });
+  try {
+    writeSync({ fd, data: chunk });
+  } finally {
+    closeSync({ fd });
+  }
 }
 
 export function finalizeSessionFile(sampleCount: number, observedHzX100: number): void {
@@ -48,6 +51,9 @@ export function finalizeSessionFile(sampleCount: number, observedHzX100: number)
   const patched = patchHeaderSampleCount(raw.slice(0, HEADER_SIZE), sampleCount, observedHzX100);
 
   const fd = openSync({ path: SESSION_FILE, flag: O_RDWR });
-  writeSync({ fd, data: patched });
-  closeSync({ fd });
+  try {
+    writeSync({ fd, data: patched });
+  } finally {
+    closeSync({ fd });
+  }
 }

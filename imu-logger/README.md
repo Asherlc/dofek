@@ -59,7 +59,7 @@ Requires Node ≥ 14 and the Zeus CLI:
 ```bash
 npm i -g @zeppos/zeus-cli
 cd imu-logger
-npm install
+pnpm install
 ```
 
 ### Simulator
@@ -137,8 +137,8 @@ data://imu/session.bin
 ## Binary format
 
 | Section | Size | Contents |
-|---|---|---|
-| Header | 32 bytes | magic `IMU1`, version, flags, session start (unix ms), sample count, freq modes, measured Hz×100 |
+|---|---|---|---|
+| Header | 32 bytes | magic `IUM1` (LE bytes of `0x314D5549`), version (uint8), flags (uint8), reserved (uint16), session start unix ms (uint64), sample count (uint32), accel freq mode (uint8), gyro freq mode (uint8), measured Hz×100 (uint16), padding |
 | Chunk | 4 + N×record | `uint16 count`, reserved `uint16`, records |
 | Record (accel) | 16 bytes | `uint32 t_ms`, `float32 ax`, `float32 ay`, `float32 az` |
 | Record (+gyro) | 28 bytes | above + `float32 gx`, `float32 gy`, `float32 gz` |

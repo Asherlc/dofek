@@ -336,7 +336,7 @@ describe("createImuCollector", () => {
 
     collector.start();
     const gyroCb = gyro.onChange.mock.calls[0][0];
-    gyroCb({ x: 0, y: 0, z: 0 });
+    gyroCb({ y: 99, z: 88 });
 
     const accelCb = accel.onChange.mock.calls[0][0];
     accelCb({ x: 1, y: 2, z: 3 });
@@ -506,7 +506,7 @@ describe("createImuCollector", () => {
     collector.start();
     const accelCb = accel.onChange.mock.calls[0][0];
 
-    accelCb({ x: 0, y: 0, z: 0 });
+    accelCb({ y: 8, z: 9 });
 
     const sample = onSample.mock.calls[0][0];
     expect(sample).toMatchObject({ ax: 7, ay: 8, az: 9 });

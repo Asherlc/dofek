@@ -24,7 +24,7 @@ const zeppModules = [
   "@zeppos/zml/3.0/module/messaging/plugin/app",
 ];
 
-const alias = {};
+const alias: Record<string, string> = {};
 for (const mod of zeppModules) {
   alias[mod] = stubPath;
 }

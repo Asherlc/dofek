@@ -23,10 +23,11 @@ export function createHeader(options: HeaderMeta): ArrayBuffer {
   view.setUint8(5, hasGyro ? FLAG_HAS_GYRO : 0);
   view.setUint16(6, 0, true);
   view.setUint32(8, sessionStartMs >>> 0, true);
-  view.setUint32(12, sampleCount >>> 0, true);
-  view.setUint8(16, accelFreqMode);
-  view.setUint8(17, hasGyro ? gyroFreqMode : 0);
-  view.setUint16(18, observedHzX100, true);
+  view.setUint32(12, Math.floor(sessionStartMs / 0x100000000) >>> 0, true);
+  view.setUint32(16, sampleCount >>> 0, true);
+  view.setUint8(20, accelFreqMode);
+  view.setUint8(21, hasGyro ? gyroFreqMode : 0);
+  view.setUint16(22, observedHzX100, true);
 
   return buffer;
 }
@@ -37,9 +38,9 @@ export function patchHeaderSampleCount(
   observedHzX100?: number,
 ): ArrayBuffer {
   const view = new DataView(headerBuffer);
-  view.setUint32(12, sampleCount >>> 0, true);
+  view.setUint32(16, sampleCount >>> 0, true);
   if (typeof observedHzX100 === "number") {
-    view.setUint16(18, observedHzX100, true);
+    view.setUint16(22, observedHzX100, true);
   }
   return headerBuffer;
 }

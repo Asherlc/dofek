@@ -48,6 +48,6 @@ export const O_RDWR = 2;
 export const O_APPEND = 4;
 export const O_CREAT = 8;
 
-export const log = { Logger: { getLogger: () => ({ log: () => {}, error: () => {} }) } };
+export const log = { getLogger: () => ({ log: () => {}, error: () => {} }) };
 export const px = (v) => v;
-export const getDeviceInfo = () => ({ width: 480 });
+export const getDeviceInfo = () => ({ width: 480, height: 480 });

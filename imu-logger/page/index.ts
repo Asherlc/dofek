@@ -322,6 +322,10 @@ Page(
         return;
       }
 
+      if (this.state.logging) {
+        this.stopLogging();
+      }
+
       this.flushBuffer(true);
 
       const task = this.sendFile(SESSION_FILE, {
