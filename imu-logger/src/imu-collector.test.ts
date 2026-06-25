@@ -227,4 +227,352 @@ describe("createImuCollector", () => {
     expect(stats).toHaveProperty("observedHzX100", 0);
     expect(stats).toHaveProperty("sessionStartMs");
   });
+
+  it("calls onSample with expected data when accelerometer fires", () => {
+    const accel = makeMockSensor();
+    const onSample = vi.fn();
+    const collector = createImuCollector(
+      { onSample },
+      {
+        Accelerometer: ctorFor(accel),
+        Gyroscope: ctorFor(makeMockSensor()),
+        checkSensor: () => true,
+      },
+    );
+
+    if (!collector.available) return;
+
+    collector.start();
+    const accelCb = accel.onChange.mock.calls[0][0];
+
+    accelCb({ x: 1, y: 2, z: 3 });
+
+    expect(onSample).toHaveBeenCalledTimes(1);
+    const sample = onSample.mock.calls[0][0];
+    expect(sample).toMatchObject({ ax: 1, ay: 2, az: 3, gx: 0, gy: 0, gz: 0 });
+    expect(sample.tMs).toBeGreaterThanOrEqual(0);
+    expect(sample.tMs).toBeLessThan(100);
+
+    const stats = collector.getStats();
+    expect(stats.sampleCount).toBe(1);
+  });
+
+  it("limits accel mode to at most the requested freq mode rank", () => {
+    const accel = makeMockSensor({ supported: [0, 1, 2] });
+    const gyro = makeMockSensor({ supported: [0] });
+    const collector = createImuCollector(
+      { enableGyro: true, requestedFreqModeIndex: 1, onSample: vi.fn() },
+      {
+        Accelerometer: ctorFor(accel),
+        Gyroscope: ctorFor(gyro),
+        checkSensor: () => true,
+      },
+    );
+
+    if (!collector.available) return;
+
+    expect(collector.accelMode).toBe(1);
+    expect(collector.gyroMode).toBe(0);
+  });
+
+  it("selects highest supported mode when requested mode is available", () => {
+    const accel = makeMockSensor({ supported: [0, 1] });
+    const gyro = makeMockSensor({ supported: [0] });
+    const collector = createImuCollector(
+      { enableGyro: true, requestedFreqModeIndex: 2, onSample: vi.fn() },
+      {
+        Accelerometer: ctorFor(accel),
+        Gyroscope: ctorFor(gyro),
+        checkSensor: () => true,
+      },
+    );
+
+    if (!collector.available) return;
+
+    expect(collector.accelMode).toBe(1);
+    expect(collector.gyroMode).toBe(0);
+  });
+
+  it("includes gyroscope data in samples when gyro fires", () => {
+    const accel = makeMockSensor();
+    const gyro = makeMockSensor({ currentValue: { x: 10, y: 20, z: 30 } });
+    const onSample = vi.fn();
+    const collector = createImuCollector(
+      { enableGyro: true, onSample },
+      {
+        Accelerometer: ctorFor(accel),
+        Gyroscope: ctorFor(gyro),
+        checkSensor: () => true,
+      },
+    );
+
+    if (!collector.available) return;
+
+    collector.start();
+    const gyroCb = gyro.onChange.mock.calls[0][0];
+    gyroCb({ x: 4, y: 5, z: 6 });
+
+    const accelCb = accel.onChange.mock.calls[0][0];
+    accelCb({ x: 1, y: 2, z: 3 });
+
+    const sample = onSample.mock.calls[0][0];
+    expect(sample).toMatchObject({ gx: 4, gy: 5, gz: 6, ax: 1, ay: 2, az: 3 });
+  });
+
+  it("uses getCurrent fallback when gyro change value is missing x", () => {
+    const accel = makeMockSensor();
+    const gyro = makeMockSensor({ currentValue: { x: 99, y: 88, z: 77 } });
+    const onSample = vi.fn();
+    const collector = createImuCollector(
+      { enableGyro: true, onSample },
+      {
+        Accelerometer: ctorFor(accel),
+        Gyroscope: ctorFor(gyro),
+        checkSensor: () => true,
+      },
+    );
+
+    if (!collector.available) return;
+
+    collector.start();
+    const gyroCb = gyro.onChange.mock.calls[0][0];
+    gyroCb({} as { x: number; y: number; z: number });
+
+    const accelCb = accel.onChange.mock.calls[0][0];
+    accelCb({ x: 1, y: 2, z: 3 });
+
+    const sample = onSample.mock.calls[0][0];
+    expect(sample).toMatchObject({ gx: 99, gy: 88, gz: 77 });
+  });
+
+  it("calls onStatus after collecting samples for over a second", () => {
+    vi.useFakeTimers();
+    const accel = makeMockSensor();
+    const onStatus = vi.fn();
+    const collector = createImuCollector(
+      { onSample: vi.fn(), onStatus },
+      {
+        Accelerometer: ctorFor(accel),
+        Gyroscope: ctorFor(makeMockSensor()),
+        checkSensor: () => true,
+      },
+    );
+
+    if (!collector.available) return;
+
+    collector.start();
+    const accelCb = accel.onChange.mock.calls[0][0];
+
+    accelCb({ x: 0, y: 0, z: 0 });
+    expect(onStatus).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1000);
+    accelCb({ x: 0, y: 0, z: 0 });
+
+    expect(onStatus).toHaveBeenCalledTimes(1);
+    expect(onStatus.mock.calls[0][0]).toHaveProperty("sampleCount", 2);
+    expect(onStatus.mock.calls[0][0]).toHaveProperty("observedHzX100");
+
+    vi.useRealTimers();
+  });
+
+  it("reports observedHz in getStats after rate window elapses", () => {
+    vi.useFakeTimers();
+    const accel = makeMockSensor();
+    const collector = createImuCollector(
+      { onSample: vi.fn() },
+      {
+        Accelerometer: ctorFor(accel),
+        Gyroscope: ctorFor(makeMockSensor()),
+        checkSensor: () => true,
+      },
+    );
+
+    if (!collector.available) return;
+
+    collector.start();
+    const accelCb = accel.onChange.mock.calls[0][0];
+
+    accelCb({ x: 0, y: 0, z: 0 });
+    let stats = collector.getStats();
+    expect(stats.observedHzX100).toBe(0);
+
+    vi.advanceTimersByTime(1000);
+    accelCb({ x: 0, y: 0, z: 0 });
+
+    stats = collector.getStats();
+    expect(stats.observedHzX100).toBe(200);
+
+    vi.useRealTimers();
+  });
+
+  it("computes observed Hz correctly for non-1s windows", () => {
+    vi.useFakeTimers();
+    const accel = makeMockSensor();
+    const collector = createImuCollector(
+      { onSample: vi.fn() },
+      {
+        Accelerometer: ctorFor(accel),
+        Gyroscope: ctorFor(makeMockSensor()),
+        checkSensor: () => true,
+      },
+    );
+
+    if (!collector.available) return;
+
+    collector.start();
+    const accelCb = accel.onChange.mock.calls[0][0];
+
+    accelCb({ x: 0, y: 0, z: 0 });
+    vi.advanceTimersByTime(2000);
+    accelCb({ x: 0, y: 0, z: 0 });
+
+    const stats = collector.getStats();
+    expect(stats.observedHzX100).toBe(100);
+
+    vi.useRealTimers();
+  });
+
+  it("does not produce samples when stopped", () => {
+    const accel = makeMockSensor();
+    const onSample = vi.fn();
+    const collector = createImuCollector(
+      { onSample },
+      {
+        Accelerometer: ctorFor(accel),
+        Gyroscope: ctorFor(makeMockSensor()),
+        checkSensor: () => true,
+      },
+    );
+
+    if (!collector.available) return;
+
+    collector.start();
+    const accelCb = accel.onChange.mock.calls[0][0];
+
+    collector.stop();
+    accelCb({ x: 1, y: 2, z: 3 });
+
+    expect(onSample).not.toHaveBeenCalled();
+  });
+
+  it("start() resets state for a new session", () => {
+    vi.useFakeTimers();
+    const accel = makeMockSensor();
+    const onSample = vi.fn();
+    const collector = createImuCollector(
+      { onSample },
+      {
+        Accelerometer: ctorFor(accel),
+        Gyroscope: ctorFor(makeMockSensor()),
+        checkSensor: () => true,
+      },
+    );
+
+    if (!collector.available) return;
+
+    collector.start();
+    const accelCb = accel.onChange.mock.calls[0][0];
+
+    accelCb({ x: 1, y: 2, z: 3 });
+    let stats = collector.getStats();
+    expect(stats.sampleCount).toBe(1);
+
+    collector.stop();
+    vi.advanceTimersByTime(5000);
+    collector.start();
+
+    accelCb({ x: 4, y: 5, z: 6 });
+    stats = collector.getStats();
+    expect(stats.sampleCount).toBe(1);
+
+    vi.useRealTimers();
+  });
+
+  it("uses accelerometer.getCurrent when onChange value is invalid", () => {
+    const accel = makeMockSensor({ currentValue: { x: 7, y: 8, z: 9 } });
+    const onSample = vi.fn();
+    const collector = createImuCollector(
+      { onSample },
+      {
+        Accelerometer: ctorFor(accel),
+        Gyroscope: ctorFor(makeMockSensor()),
+        checkSensor: () => true,
+      },
+    );
+
+    if (!collector.available) return;
+
+    collector.start();
+    const accelCb = accel.onChange.mock.calls[0][0];
+
+    accelCb({} as { x: number; y: number; z: number });
+
+    const sample = onSample.mock.calls[0][0];
+    expect(sample).toMatchObject({ ax: 7, ay: 8, az: 9 });
+  });
+
+  it("defaults enableGyro to false when not specified", () => {
+    const accel = makeMockSensor();
+    const gyro = makeMockSensor();
+    const collector = createImuCollector(
+      { onSample: vi.fn() },
+      {
+        Accelerometer: ctorFor(accel),
+        Gyroscope: ctorFor(gyro),
+        checkSensor: () => true,
+      },
+    );
+
+    if (!collector.available) return;
+
+    expect(collector.hasGyroscope).toBe(false);
+    expect(collector.gyroMode).toBeNull();
+  });
+
+  it("does not configure gyroscope when enableGyro is false", () => {
+    const accel = makeMockSensor();
+    const gyro = makeMockSensor();
+    const collector = createImuCollector(
+      { enableGyro: false, onSample: vi.fn() },
+      {
+        Accelerometer: ctorFor(accel),
+        Gyroscope: ctorFor(gyro),
+        checkSensor: () => true,
+      },
+    );
+
+    if (!collector.available) return;
+
+    collector.start();
+    expect(gyro.onChange).not.toHaveBeenCalled();
+    expect(gyro.start).not.toHaveBeenCalled();
+  });
+
+  it("falls back to zero-object when gyro getCurrent returns null", () => {
+    const accel = makeMockSensor();
+    const gyro = makeMockSensor();
+    gyro.getCurrent = vi.fn(() => null) as unknown as typeof gyro.getCurrent;
+    const onSample = vi.fn();
+    const collector = createImuCollector(
+      { enableGyro: true, onSample },
+      {
+        Accelerometer: ctorFor(accel),
+        Gyroscope: ctorFor(gyro),
+        checkSensor: () => true,
+      },
+    );
+
+    if (!collector.available) return;
+
+    collector.start();
+    const gyroCb = gyro.onChange.mock.calls[0][0];
+    gyroCb({} as { x: number; y: number; z: number });
+
+    const accelCb = accel.onChange.mock.calls[0][0];
+    accelCb({ x: 1, y: 2, z: 3 });
+
+    const sample = onSample.mock.calls[0][0];
+    expect(sample).toMatchObject({ gx: 0, gy: 0, gz: 0 });
+  });
 });

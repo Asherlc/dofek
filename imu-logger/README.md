@@ -85,6 +85,39 @@ zeus build
 4. Open **IMU Logger** on the watch, grant accelerometer + background service permissions when prompted.
 5. Open the mini program **Settings** page in the Zepp phone app for remote start/stop/export.
 
+## Release (Zepp Store)
+
+CI builds and attaches the `.zab` package as a GitHub Release artifact.
+There's no Zepp Store submission API — the final upload is manual.
+
+### Automatic builds (every main push)
+
+Every push to `main` triggers `release-imu-logger.yml`: patches an auto-generated version into `app.json` and `package.json`, runs `zeus build`, and uploads the `.zab` artifact (retained 90 days). The built artifact is always available at:
+
+> GitHub → Actions → Release IMU Logger (Zepp Store) → latest run → Artifacts → `imu-logger-zab`
+
+**Version scheme:**
+- Tagged push (`imu-logger-v1.2.3`) → version `1.2.3`, code `10203`
+- Main push (no tag) → version `0.0.<unix-timestamp>`, code `<timestamp>`
+
+You never need to manually bump version files — CI derives the version from the tag or generates one.
+
+### Cutting a tagged release (GitHub Release)
+
+Tagged pushes additionally create a GitHub Release with the `.zab` attached.
+
+```bash
+git tag imu-logger-v1.0.1
+git push origin imu-logger-v1.0.1
+```
+
+1. CI builds the `.zab` with version `1.0.1` and creates a GitHub Release.
+2. Download the `.zab` from the Release page (or from workflow artifacts for untagged builds).
+3. Go to [console.zepp.com](https://console.zepp.com/) → your app → **Version Upgrade**.
+4. Upload the `.zab`, fill in screenshots/description if needed, submit for review (1-5 business days).
+
+Tag pattern: `imu-logger-v<semver>`.
+
 ## Output file location
 
 After export, the Side Service stores the received file path in Settings Storage key `last_export_path`. On the phone this is under the mini program's Side Service data sandbox, typically:

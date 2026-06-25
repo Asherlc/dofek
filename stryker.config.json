@@ -43,7 +43,12 @@
     "!**/fixtures/**",
     "!src/db/clickhouse-migrations.ts",
     "!src/db/schema.ts",
-    "!packages/server/src/types.ts"
+    "!packages/server/src/types.ts",
+    "!imu-logger/app.ts",
+    "!imu-logger/app-side/**",
+    "!imu-logger/app-service/**",
+    "!imu-logger/page/**",
+    "!imu-logger/setting/**"
   ],
   "ignorePatterns": [
     "dist/**",
