@@ -1,7 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /** Per-provider mock queues keyed by provider ID */
-const providerQueues = new Map<string, { add: ReturnType<typeof vi.fn> }>();
+const providerQueues = new Map<
+  string,
+  {
+    add: ReturnType<typeof vi.fn>;
+    getJobs: ReturnType<typeof vi.fn>;
+    getJob: ReturnType<typeof vi.fn>;
+    getActive: ReturnType<typeof vi.fn>;
+    getWaiting: ReturnType<typeof vi.fn>;
+    getDelayed: ReturnType<typeof vi.fn>;
+  }
+>();
 const mockLoggerInfo = vi.fn();
 const mockGetActiveCooldown = vi.fn();
 
@@ -13,6 +23,9 @@ function getMockQueue(providerId: string) {
     add: vi.fn((..._args: unknown[]) => Promise.resolve({ id: "job-1" })),
     getJobs: vi.fn(async () => []),
     getJob: vi.fn(async () => undefined),
+    getActive: vi.fn(async () => []),
+    getWaiting: vi.fn(async () => []),
+    getDelayed: vi.fn(async () => []),
   };
   providerQueues.set(providerId, queue);
   return queue;
@@ -183,6 +196,33 @@ describe("processScheduledSyncJob", () => {
     );
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       "[scheduled-sync] Enqueued 0 sync jobs for 1 users (1 skipped due to rate-limit cooldown)",
+    );
+  });
+
+  it("skips enqueue when a step-chain provider already has pending sync jobs", async () => {
+    const garminQueue = getMockQueue("garmin");
+    garminQueue.getActive = vi.fn().mockResolvedValue([
+      {
+        data: {
+          userId: "user-1",
+          providerId: "garmin",
+          checkpoint: { phase: "api", stepIndex: 2 },
+        },
+      },
+    ]);
+
+    const db = {
+      execute: vi.fn().mockResolvedValue([{ user_id: "user-1", provider_id: "garmin" }]),
+    };
+
+    await Reflect.apply(processScheduledSyncJob, undefined, [{}, db]);
+
+    expect(garminQueue.add).not.toHaveBeenCalled();
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "[scheduled-sync] Skipping garmin for user-1: 1 sync job(s) already queued",
+    );
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "[scheduled-sync] Enqueued 0 sync jobs for 1 users (1 skipped due to in-flight sync)",
     );
   });
 });

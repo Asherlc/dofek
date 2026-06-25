@@ -365,6 +365,92 @@ describe("GarminConnectClient.fromTokens", () => {
       "Failed to fetch OAuth consumer credentials",
     );
   });
+
+  it("reuses the cached OAuth consumer across fromTokens calls", async () => {
+    const tokens = makeGarminTokens({ expires_at: Math.floor(Date.now() / 1000) + 3600 });
+    const fetchFn = vi.fn().mockImplementation((url: string | URL) => {
+      if (String(url).includes("oauth_consumer.json")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve({
+              consumer_key: "test-consumer-key",
+              consumer_secret: "test-consumer-secret",
+            }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            displayName: "testuser",
+            userName: "testuser",
+          }),
+      });
+    });
+
+    await GarminConnectClient.fromTokens(tokens, "garmin.com", fetchFn);
+    await GarminConnectClient.fromTokens(tokens, "garmin.com", fetchFn);
+
+    const consumerFetches = fetchFn.mock.calls.filter(([url]) =>
+      String(url).includes("oauth_consumer.json"),
+    );
+    expect(consumerFetches).toHaveLength(1);
+  });
+
+  it("throws when OAuth consumer response is not a JSON object", async () => {
+    const tokens = makeGarminTokens();
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve("not-an-object"),
+    });
+
+    await expect(GarminConnectClient.fromTokens(tokens, "garmin.com", fetchFn)).rejects.toThrow(
+      GarminAuthError,
+    );
+  });
+
+  it("throws when OAuth consumer response is null", async () => {
+    const tokens = makeGarminTokens();
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(null),
+    });
+
+    await expect(GarminConnectClient.fromTokens(tokens, "garmin.com", fetchFn)).rejects.toThrow(
+      GarminAuthError,
+    );
+  });
+
+  it("throws when OAuth consumer response is missing keys", async () => {
+    const tokens = makeGarminTokens();
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ consumer_secret: "x" }),
+    });
+
+    await expect(GarminConnectClient.fromTokens(tokens, "garmin.com", fetchFn)).rejects.toThrow(
+      GarminAuthError,
+    );
+  });
+
+  it("throws when consumer_key is not a string", async () => {
+    const tokens = makeGarminTokens();
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ consumer_key: 123, consumer_secret: "x" }),
+    });
+
+    await expect(GarminConnectClient.fromTokens(tokens, "garmin.com", fetchFn)).rejects.toThrow(
+      GarminAuthError,
+    );
+  });
 });
 
 describe("GarminConnectClient API methods", () => {

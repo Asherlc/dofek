@@ -333,7 +333,7 @@ describe("processSyncJob", () => {
       expect.objectContaining({
         attempts: 288,
         delay: 600_000,
-        jobId: "provider-rate-limit-garmin-provider-user-1-1780402200000",
+        jobId: "provider-rate-limit-garmin-provider-1780402200000",
       }),
     );
     expect(mockCaptureException).not.toHaveBeenCalledWith(
@@ -461,7 +461,7 @@ describe("processSyncJob", () => {
       }),
       expect.objectContaining({
         delay: 600_000,
-        jobId: "provider-rate-limit-garmin-provider-user-1-1780402200000",
+        jobId: "provider-rate-limit-garmin-provider-1780402200000",
       }),
     );
     expect(mockCaptureException).not.toHaveBeenCalled();
@@ -504,7 +504,7 @@ describe("processSyncJob", () => {
       }),
       expect.objectContaining({
         delay: 600_000,
-        jobId: "provider-rate-limit-garmin-provider-user-1-1780402200000",
+        jobId: "provider-rate-limit-garmin-provider-1780402200000",
       }),
     );
     expect(mockLogSync).not.toHaveBeenCalled();

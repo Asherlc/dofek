@@ -592,6 +592,77 @@ describe("GarminProvider.authSetup()", () => {
       expect(err.retryAfterSeconds).toBeNull();
     }
   });
+
+  async function getAuthFetchSetup(response?: Response) {
+    const customFetch = vi.fn<typeof globalThis.fetch>();
+    customFetch.mockResolvedValue(response ?? new Response("ok"));
+    const provider = new GarminProvider(customFetch);
+    const setup = provider.authSetup();
+    mocks.signIn.mockResolvedValue({ tokens: fakeGarminTokens() });
+    if (!setup.automatedLogin) throw new Error("expected automatedLogin");
+    await setup.automatedLogin("user@test.com", "pass123");
+    const forwardedFetch = mocks.signIn.mock.calls[0]?.[3];
+    if (typeof forwardedFetch !== "function") throw new Error("expected forwarded fetch function");
+    return { customFetch, forwardedFetch };
+  }
+
+  it("bypasses rate limiting for OAuth consumer requests", async () => {
+    const { customFetch, forwardedFetch } = await getAuthFetchSetup(
+      new Response("rate limited", { status: 429 }),
+    );
+
+    const oauthUrl = "https://thegarth.s3.amazonaws.com/consumer-data";
+    const response = await forwardedFetch(oauthUrl);
+    expect(response.status).toBe(429);
+    expect(customFetch).toHaveBeenCalledWith(oauthUrl);
+  });
+
+  it("bypasses rate limiting for OAuth consumer URL objects", async () => {
+    const { customFetch, forwardedFetch } = await getAuthFetchSetup();
+
+    const oauthUrl = new URL("https://thegarth.s3.amazonaws.com/consumer-data");
+    await forwardedFetch(oauthUrl);
+    expect(customFetch).toHaveBeenCalledWith(oauthUrl);
+  });
+
+  it("bypasses rate limiting for OAuth consumer Request objects", async () => {
+    // When resolveRequestUrl returns null for a Request object (mutant),
+    // the Request goes through the rate-limited path which throws on 429.
+    // The original code correctly resolves the URL and bypasses.
+    const { customFetch, forwardedFetch } = await getAuthFetchSetup(
+      new Response("rate limited", { status: 429 }),
+    );
+
+    const oauthRequest = new Request("https://thegarth.s3.amazonaws.com/consumer-data");
+    const response = await forwardedFetch(oauthRequest);
+    expect(response.status).toBe(429);
+    expect(customFetch).toHaveBeenCalledWith(oauthRequest);
+  });
+
+  it("forwards init to baseFetchFn for OAuth consumer bypass", async () => {
+    const { customFetch, forwardedFetch } = await getAuthFetchSetup();
+
+    const oauthUrl = "https://thegarth.s3.amazonaws.com/consumer-data";
+    const init = { method: "POST" };
+    await forwardedFetch(oauthUrl, init);
+    expect(customFetch).toHaveBeenCalledWith(oauthUrl, init);
+  });
+
+  it("forwards init through rate-limited path for non-OAuth requests", async () => {
+    const { customFetch, forwardedFetch } = await getAuthFetchSetup();
+
+    const nonOauthUrl = "https://connect.garmin.com/api/data";
+    const init = { method: "POST" };
+    await forwardedFetch(nonOauthUrl, init);
+    expect(customFetch).toHaveBeenCalledWith(nonOauthUrl, init);
+  });
+
+  it("handles invalid URLs passed to the forwarded fetch", async () => {
+    const { forwardedFetch } = await getAuthFetchSetup();
+
+    const result = await forwardedFetch("not-a-valid-url");
+    expect(result).toBeInstanceOf(Response);
+  });
 });
 
 // ============================================================
@@ -645,20 +716,17 @@ describe("GarminProvider.sync()", () => {
     );
   });
 
-  it("passes user-scoped rate-limit options to createProviderRateLimitFetch", async () => {
+  it("passes provider-scoped rate-limit options to createProviderRateLimitFetch", async () => {
     const { createProviderRateLimitFetch } = await import("../lib/provider-rate-limit-fetch.ts");
 
     await syncProvider(provider, db, new Date());
 
     const mock = vi.mocked(createProviderRateLimitFetch);
-    expect(mock).toHaveBeenCalledWith(
-      "garmin",
-      expect.any(Function),
-      expect.objectContaining({ scope: "user" }),
-    );
+    expect(mock).toHaveBeenCalledWith("garmin", expect.any(Function), expect.any(Object));
 
     const options = mock.mock.calls.find(([id]) => id === "garmin")?.[2];
-    expect(options?.userId).toBe("00000000-0000-0000-0000-000000000001");
+    expect(options?.scope).toBeUndefined();
+    expect(options?.userId).toBeUndefined();
 
     const createRateLimitError = options?.createRateLimitError;
     const error = createRateLimitError?.(new Response("too fast", { status: 429 }), "too fast");
@@ -666,6 +734,40 @@ describe("GarminProvider.sync()", () => {
     if (error instanceof GarminRateLimitError) {
       expect(error.message).toBe("Rate limit exceeded (429): too fast");
       expect(error.retryAfterSeconds).toBeNull();
+      expect(error.scope).toBe("provider");
+    }
+  });
+
+  it("sync createRateLimitError handles null headers and missing get method", async () => {
+    const { createProviderRateLimitFetch } = await import("../lib/provider-rate-limit-fetch.ts");
+
+    await syncProvider(provider, db, new Date());
+
+    const mock = vi.mocked(createProviderRateLimitFetch);
+    const options = mock.mock.calls.find(([id]) => id === "garmin")?.[2];
+    const createRateLimitError = options?.createRateLimitError;
+    if (!createRateLimitError) throw new Error("expected createRateLimitError");
+
+    const nullHeadersResponse = new Response("", { status: 429 });
+    Object.defineProperty(nullHeadersResponse, "headers", {
+      value: null,
+      configurable: true,
+    });
+    const err1 = createRateLimitError(nullHeadersResponse, "body");
+    expect(err1).toBeInstanceOf(GarminRateLimitError);
+    if (err1 instanceof GarminRateLimitError) {
+      expect(err1.retryAfterSeconds).toBeNull();
+    }
+
+    const noGetResponse = new Response("", { status: 429 });
+    Object.defineProperty(noGetResponse, "headers", {
+      value: {},
+      configurable: true,
+    });
+    const err2 = createRateLimitError(noGetResponse, "");
+    expect(err2).toBeInstanceOf(GarminRateLimitError);
+    if (err2 instanceof GarminRateLimitError) {
+      expect(err2.retryAfterSeconds).toBeNull();
     }
   });
 
