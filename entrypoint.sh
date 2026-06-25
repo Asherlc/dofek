@@ -16,7 +16,7 @@ if [ -f .env ]; then
   done < .env
 fi
 
-# Node 22+ natively handles TypeScript
+# Node 22+ supports TypeScript with --experimental-strip-types
 NODE="node --experimental-strip-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation.ts"
 DBT_ACTIVITY_MODELS="sensor_scalar_sample deduped_sensor activity_source_records activity_duplicate_matches activity_duplicate_groups deduped_activities deduped_activity_members activity_sensor_sample activity_location_sample activity_sensor_summary_rows activity_location_summary_rows activity_summary_rows activity_vo2max_estimate provider_stats"
 DBT_SLEEP_DASHBOARD_MODELS="sleep_heart_rate_sample resting_heart_rate_sleep_window daily_sleep daily_recovery_inputs daily_recovery daily_activity_load daily_strain healthspan_activity_zone_minutes weekly_healthspan"

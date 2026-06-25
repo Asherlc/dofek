@@ -149,6 +149,8 @@ jobs:
       STACK_NAME: ${{ inputs.stack_name || 'dofek' }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
 
       - name: Resolve image tag
         id: resolve
@@ -447,10 +449,10 @@ jobs:
             --env "CLICKHOUSE_PASSWORD_ENCODED=$CLICKHOUSE_PASSWORD_ENCODED" \
             --entrypoint sh \
             "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
-             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --enable-source-maps --disable-warning=ExperimentalWarning src/db/run-migrate.ts'
+             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --experimental-strip-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation.ts src/db/run-migrate.ts'
 
-          inspect_failure_count=0
-          max_inspect_failures=10
+           inspect_failure_count=0
+           max_inspect_failures=10
           while true; do
             elapsed_seconds="$(($(date +%s) - migration_started_at))"
             if [ "$elapsed_seconds" -ge "$migration_timeout_seconds" ]; then
@@ -721,7 +723,7 @@ jobs:
             --env "CLICKHOUSE_PASSWORD_ENCODED=$CLICKHOUSE_PASSWORD_ENCODED" \
             --entrypoint sh \
             "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
-             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --enable-source-maps --disable-warning=ExperimentalWarning src/db/setup-clickhouse-cdc.ts'
+             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --experimental-strip-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation.ts src/db/setup-clickhouse-cdc.ts'
 
       - name: Deploy ClickHouse consumer services
         id: deploy_stack_full

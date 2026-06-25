@@ -913,7 +913,9 @@ jobs:
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
       - name: Run Stryker
-        run: pnpm exec stryker run stryker.ci.config.json --mutate "${{ matrix.files }}"
+        env:
+          MUTATE_FILES: ${{ matrix.files }}
+        run: pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: failure()
         with:
