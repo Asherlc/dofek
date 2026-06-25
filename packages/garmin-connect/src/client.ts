@@ -45,6 +45,11 @@ const API_USER_AGENT = "GCM-iOS-5.19.1.2";
  *  Garmin's unofficial API rate limits aggressively; 5s keeps bursts under control. */
 export const GARMIN_CONNECT_THROTTLE_MS = 5_000;
 
+/** Cache OAuth consumer by fetch function reference.
+ *  Production always uses globalThis.fetch (same ref → one fetch).
+ *  Tests use fresh vi.fn() per test → natural isolation. */
+const consumerCache = new WeakMap<typeof globalThis.fetch, OAuthConsumer>();
+
 function isOAuthConsumer(data: unknown): data is OAuthConsumer {
   if (typeof data !== "object" || data === null) return false;
   if (!("consumer_key" in data) || !("consumer_secret" in data)) return false;
@@ -221,6 +226,12 @@ export class GarminConnectClient {
   async #loadConsumer(): Promise<void> {
     if (this.#consumer) return;
 
+    const cached = consumerCache.get(this.#fetchFn);
+    if (cached) {
+      this.#consumer = cached;
+      return;
+    }
+
     const response = await this.#fetchFn(OAUTH_CONSUMER_URL);
     if (!response.ok) {
       throw new GarminAuthError("Failed to fetch OAuth consumer credentials");
@@ -230,6 +241,7 @@ export class GarminConnectClient {
       throw new GarminAuthError("Invalid OAuth consumer response from S3");
     }
     this.#consumer = data;
+    consumerCache.set(this.#fetchFn, data);
   }
 
   async #getOAuth1Token(ticket: string): Promise<OAuth1Token> {
