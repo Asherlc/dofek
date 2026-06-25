@@ -95,6 +95,21 @@
         "config": ["../../vitest.config.ts"],
         "entry": ["src/**/*.test.ts"]
       }
+    },
+    "zepp": {
+      "entry": [
+        "app.ts",
+        "page/index.ts",
+        "app-side/index.ts",
+        "setting/index.ts",
+        "app-service/imu_service.ts"
+      ],
+      "ignoreDependencies": ["@zeppos/zml", "@zeppos/device-types", "@zos/ui"],
+      "ignoreBinaries": ["zeus"],
+      "vitest": {
+        "config": ["vitest.config.ts"],
+        "entry": ["src/**/*.test.ts"]
+      }
     }
   },
   "ignoreExportsUsedInFile": true

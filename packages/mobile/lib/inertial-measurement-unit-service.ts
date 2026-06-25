@@ -1,4 +1,4 @@
-import type { InertialMeasurementUnitSample } from "../modules/core-motion";
+import type { InertialMeasurementUnitSample } from "@dofek/imu";
 
 const TWELVE_HOURS_SECONDS = 12 * 3600;
 const UPLOAD_BATCH_SIZE = 5000;

@@ -103,10 +103,17 @@ describe("createUploadRouter", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     const uploadStateStore = getUploadStateStore();
-    await uploadStateStore.deleteUploadSession("upload-abc");
-    await uploadStateStore.deleteUploadStatus("upload-abc");
-    await uploadStateStore.deleteUploadSession("status-job");
-    await uploadStateStore.deleteUploadStatus("status-job");
+    for (const uploadId of [
+      "upload-abc",
+      "status-job",
+      "upload-full",
+      "upload-assembly-err",
+      "upload-rm-assembly-err",
+      "upload-assemble-dir",
+    ]) {
+      await uploadStateStore.deleteUploadSession(uploadId);
+      await uploadStateStore.deleteUploadStatus(uploadId);
+    }
     vi.mocked(getSessionIdFromRequest).mockReturnValue("sess-1");
     vi.mocked(validateSession).mockResolvedValue({ userId: "user-1" });
   });

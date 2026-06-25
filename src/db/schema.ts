@@ -1498,3 +1498,32 @@ export const dexaScanRegion = fitness.table(
     index("dexa_scan_region_scan_idx").on(table.scanId),
   ],
 );
+
+export const imuSession = fitness.table(
+  "imu_session",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id),
+    providerId: text("provider_id").notNull(),
+    externalId: text("external_id").notNull(),
+    sessionStartAt: timestamp("session_start_at", { withTimezone: true }).notNull(),
+    sampleCount: bigint("sample_count", { mode: "number" }).notNull(),
+    observedHz: real("observed_hz"),
+    hasGyro: boolean("has_gyro").notNull().default(false),
+    accelFreqMode: bigint("accel_freq_mode", { mode: "number" }).notNull().default(1),
+    gyroFreqMode: bigint("gyro_freq_mode", { mode: "number" }),
+    rawData: text("raw_data"), // base64-encoded binary
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("imu_session_user_external_idx").on(
+      table.userId,
+      table.providerId,
+      table.externalId,
+    ),
+    index("imu_session_user_provider_idx").on(table.userId, table.providerId),
+    index("imu_session_start_at_idx").on(table.sessionStartAt.desc()),
+  ],
+);

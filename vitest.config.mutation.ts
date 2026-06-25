@@ -1,4 +1,8 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
+
+const dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const testCredentialEncryptionKey = Buffer.from("a".repeat(32), "utf8").toString("base64");
 
@@ -43,6 +47,7 @@ export default defineConfig({
       "packages/trainingpeaks-connect/src/**/*.test.ts",
       "packages/provider-http/src/**/*.test.ts",
       "packages/mobile/**/*.test.{ts,tsx}",
+      "zepp/src/**/*.test.ts",
     ],
     exclude: ["**/node_modules/**"],
     setupFiles: ["packages/mobile/test-setup.ts"],
@@ -51,6 +56,31 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": "./src",
+      "@zos/sensor": path.resolve(dirname, "zepp/src/__mocks__/zos-stub.js"),
+      "@zos/fs": path.resolve(dirname, "zepp/src/__mocks__/zos-stub.js"),
+      "@zos/utils": path.resolve(dirname, "zepp/src/__mocks__/zos-stub.js"),
+      "@zos/device": path.resolve(dirname, "zepp/src/__mocks__/zos-stub.js"),
+      "@zos/display": path.resolve(dirname, "zepp/src/__mocks__/zos-stub.js"),
+      "@zos/interaction": path.resolve(dirname, "zepp/src/__mocks__/zos-stub.js"),
+      "@zos/app": path.resolve(dirname, "zepp/src/__mocks__/zos-stub.js"),
+      "@zos/ble": path.resolve(dirname, "zepp/src/__mocks__/zos-stub.js"),
+      "@zos/app-service": path.resolve(dirname, "zepp/src/__mocks__/zos-stub.js"),
+      "@zeppos/zml": path.resolve(dirname, "zepp/src/__mocks__/zos-stub.js"),
+      "@zeppos/zml/base-page": path.resolve(dirname, "zepp/src/__mocks__/zos-stub.js"),
+      "@zeppos/zml/base-side": path.resolve(dirname, "zepp/src/__mocks__/zos-stub.js"),
+      "@zeppos/zml/base-app": path.resolve(dirname, "zepp/src/__mocks__/zos-stub.js"),
+      "@zeppos/zml/3.0/module/messaging/plugin/page": path.resolve(
+        dirname,
+        "zepp/src/__mocks__/zos-stub.js",
+      ),
+      "@zeppos/zml/3.0/module/messaging/plugin/side": path.resolve(
+        dirname,
+        "zepp/src/__mocks__/zos-stub.js",
+      ),
+      "@zeppos/zml/3.0/module/messaging/plugin/app": path.resolve(
+        dirname,
+        "zepp/src/__mocks__/zos-stub.js",
+      ),
     },
   },
 });

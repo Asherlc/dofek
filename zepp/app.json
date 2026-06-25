@@ -1,0 +1,70 @@
+{
+  "configVersion": "v3",
+  "app": {
+    "appId": 91001,
+    "appName": "Dofek",
+    "appType": "app",
+    "version": {
+      "code": 1,
+      "name": "1.0.0"
+    },
+    "icon": "icon.png",
+    "vender": "local",
+    "description": "Logs raw accelerometer/gyroscope data to a phone-side file via BLE file transfer."
+  },
+  "permissions": [
+    "data:os.device.info",
+    "device:os.local_storage",
+    "device:os.accelerometer",
+    "device:os.gyroscope",
+    "device:os.bg_service",
+    "device:os.ble"
+  ],
+  "runtime": {
+    "apiVersion": {
+      "compatible": "3.0",
+      "target": "4.0",
+      "minVersion": "3.0"
+    }
+  },
+  "targets": {
+    "480x480-amazfit-t-rex-3": {
+      "module": {
+        "page": {
+          "pages": ["page/index"]
+        },
+        "app-side": {
+          "path": "app-side/index"
+        },
+        "setting": {
+          "path": "setting/index"
+        },
+        "app-service": {
+          "services": ["app-service/imu_service"]
+        }
+      },
+      "platforms": [
+        {
+          "name": "Matterhorn",
+          "deviceSource": 8716544
+        },
+        {
+          "name": "MatterhornW",
+          "deviceSource": 8716545
+        },
+        {
+          "name": "MatterhornWN",
+          "deviceSource": 8716547
+        }
+      ],
+      "designWidth": 480
+    }
+  },
+  "i18n": {
+    "en-US": {
+      "appName": "Dofek"
+    }
+  },
+  "defaultLanguage": "en-US",
+  "debug": false
+}

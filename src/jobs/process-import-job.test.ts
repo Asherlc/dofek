@@ -70,6 +70,14 @@ vi.mock("../providers/cronometer-csv.ts", () => ({
   importCronometerCsv: (...args: unknown[]) => mockImportCronometerCsv(...args),
 }));
 
+const mockImportZosAppBin = vi.fn().mockResolvedValue({
+  recordsSynced: 3,
+  errors: [],
+});
+vi.mock("../providers/zos-app/provider.ts", () => ({
+  importZosAppBin: (...args: unknown[]) => mockImportZosAppBin(...args),
+}));
+
 // Import after mocks
 const { processImportJob } = await import("./process-import-job.ts");
 
@@ -124,6 +132,7 @@ describe("processImportJob", () => {
     mockImportAppleHealthFile.mockResolvedValue({ recordsSynced: 42, errors: [] });
     mockImportStrongCsv.mockResolvedValue({ recordsSynced: 10, errors: [] });
     mockImportCronometerCsv.mockResolvedValue({ recordsSynced: 7, errors: [] });
+    mockImportZosAppBin.mockResolvedValue({ recordsSynced: 3, errors: [] });
     mockEnqueueDebouncedPostSyncMaintenance.mockResolvedValue(undefined);
     mockEnqueueDebouncedUserRefit.mockResolvedValue(undefined);
   });
@@ -373,6 +382,84 @@ describe("processImportJob", () => {
       expect(mockLoggerInfo).toHaveBeenCalledWith(
         expect.stringContaining("7 food entries imported"),
       );
+    });
+  });
+
+  describe("zos-app import", () => {
+    it("reads binary file and calls importZosAppBin with correct args", async () => {
+      const binContent = Buffer.from([0x49, 0x55, 0x4d, 0x31]);
+      await writeFile(tempFilePath, binContent);
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "zos-app" });
+      await runImportJob(job, mockDb);
+
+      expect(mockImportZosAppBin).toHaveBeenCalledWith(mockDb, binContent, "user-1");
+    });
+
+    it("logs sync and completion message on success", async () => {
+      await writeFile(tempFilePath, Buffer.from([0x00]));
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "zos-app" });
+      await runImportJob(job, mockDb);
+
+      expect(mockLogSync).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({
+          providerId: "zos-app",
+          dataType: "import",
+          status: "success",
+          recordCount: 3,
+        }),
+      );
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        expect.stringContaining("ZOS App import complete"),
+      );
+    });
+
+    it("logs error status when import has errors but some records synced", async () => {
+      mockImportZosAppBin.mockResolvedValue({
+        recordsSynced: 2,
+        errors: [{ message: "corrupt session 3" }],
+      });
+      await writeFile(tempFilePath, Buffer.from([0x00]));
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "zos-app" });
+      await runImportJob(job, mockDb);
+
+      expect(mockLogSync).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({
+          status: "error",
+          recordCount: 2,
+          errorMessage: "corrupt session 3",
+        }),
+      );
+    });
+
+    it("throws when zero records synced and errors present", async () => {
+      mockImportZosAppBin.mockResolvedValue({
+        recordsSynced: 0,
+        errors: [{ message: "invalid magic" }],
+      });
+      await writeFile(tempFilePath, Buffer.from([0x00]));
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "zos-app" });
+
+      await expect(runImportJob(job, mockDb)).rejects.toThrow(
+        "ZOS App import failed: invalid magic",
+      );
+    });
+
+    it("does not throw when zero records but no errors", async () => {
+      mockImportZosAppBin.mockResolvedValue({
+        recordsSynced: 0,
+        errors: [],
+      });
+      await writeFile(tempFilePath, Buffer.from([0x00]));
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "zos-app" });
+
+      await expect(runImportJob(job, mockDb)).resolves.toBeUndefined();
     });
   });
 

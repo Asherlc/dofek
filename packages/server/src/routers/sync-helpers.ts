@@ -107,6 +107,10 @@ async function doRegisterProviders() {
       "auto-supplements",
       () => import("dofek/providers/auto-supplements").then((m) => new m.AutoSupplementsProvider()),
     ],
+    [
+      "zos-app",
+      () => import("dofek/providers/zos-app/provider").then((m) => new m.ZosAppProvider()),
+    ],
   ] as const;
 
   for (const [name, loadProvider] of providers) {

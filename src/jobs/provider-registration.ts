@@ -76,6 +76,10 @@ async function doRegisterProviders() {
       "amazfit-zepp",
       () => import("../providers/amazfit-zepp.ts").then((m) => new m.AmazfitZeppProvider()),
     ],
+    [
+      "zos-app",
+      () => import("../providers/zos-app/provider.ts").then((m) => new m.ZosAppProvider()),
+    ],
   ] as const;
 
   for (const [name, loadProvider] of providers) {

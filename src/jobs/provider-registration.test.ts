@@ -38,6 +38,7 @@ const mockProviders = {
   velohero: { id: "velohero" },
   "auto-supplements": { id: "auto-supplements" },
   "amazfit-zepp": { id: "amazfit-zepp" },
+  "zos-app": { id: "zos-app" },
 };
 
 vi.mock("../providers/wahoo/provider.ts", () => ({
@@ -129,6 +130,9 @@ vi.mock("../providers/auto-supplements.ts", () => ({
 }));
 vi.mock("../providers/amazfit-zepp.ts", () => ({
   AmazfitZeppProvider: vi.fn(() => mockProviders["amazfit-zepp"]),
+}));
+vi.mock("../providers/zos-app/provider.ts", () => ({
+  ZosAppProvider: vi.fn(() => mockProviders["zos-app"]),
 }));
 
 const PROVIDER_COUNT = Object.keys(mockProviders).length;

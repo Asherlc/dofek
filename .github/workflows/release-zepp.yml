@@ -1,0 +1,111 @@
+name: Release Dofek Zepp (Zepp Store)
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - "zepp-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ZAB Package
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_tag: ${{ steps.version.outputs.is_tag }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: zepp/package-lock.json
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/zepp-v* ]]; then
+            VERSION="${GITHUB_REF_NAME#zepp-v}"
+            echo "is_tag=true" >> "$GITHUB_OUTPUT"
+          else
+            VERSION="0.0.$(date +%s)"
+            echo "is_tag=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          IFS='.' read -ra PARTS <<< "$VERSION"
+          MAJOR="${PARTS[0]:-0}"
+          MINOR="${PARTS[1]:-0}"
+          PATCH="${PARTS[2]:-0}"
+          CODE=$(( MAJOR * 10000 + MINOR * 100 + PATCH ))
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+
+      - name: Patch version files
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          CODE=${{ steps.version.outputs.code }}
+          node -e "
+            const fs = require('fs');
+            const app = JSON.parse(fs.readFileSync('zepp/app.json', 'utf8'));
+            app.app.version.name = '$VERSION';
+            app.app.version.code = $CODE;
+            fs.writeFileSync('zepp/app.json', JSON.stringify(app, null, 2) + '\n');
+            const pkg = JSON.parse(fs.readFileSync('zepp/package.json', 'utf8'));
+            pkg.version = '$VERSION';
+            fs.writeFileSync('zepp/package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+      - name: Print resolved version
+        run: echo "Building Dofek Zepp v${{ steps.version.outputs.version }} (code ${{ steps.version.outputs.code }})"
+
+      - name: Install dependencies
+        working-directory: zepp
+        run: npm ci
+
+      - name: Install Zeus CLI
+        run: npm i -g @zeppos/zeus-cli
+
+      - name: Build ZAB package
+        working-directory: zepp
+        run: zeus build
+
+      - name: Upload ZAB artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: zepp-zab
+          path: zepp/dist/
+          retention-days: 90
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    if: needs.build.outputs.is_tag == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: zepp-zab
+          path: dist
+
+      - name: Create Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ZAB_FILE=$(ls dist/*.zab 2>/dev/null | head -1)
+          if [ -z "$ZAB_FILE" ]; then
+            echo "::error::No .zab file found in dist/"
+            ls -la dist/
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Dofek Zepp v${{ needs.build.outputs.version }}" \
+            --notes "Zepp OS mini-program build for Amazfit T-Rex 3." \
+            "$ZAB_FILE"

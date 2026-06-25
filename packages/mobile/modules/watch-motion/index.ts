@@ -1,4 +1,4 @@
-import type { InertialMeasurementUnitSample } from "../core-motion";
+import type { InertialMeasurementUnitSample } from "@dofek/imu";
 import WatchMotionModule from "./src/WatchMotionModule";
 
 export interface WatchSyncStatus {
