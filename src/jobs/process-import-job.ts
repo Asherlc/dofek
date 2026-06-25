@@ -100,6 +100,27 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
           durationMs: Date.now() - importStart,
           userId,
         });
+      } else if (importType === "zos-app") {
+        const { readFile } = await import("node:fs/promises");
+        const binData = await readFile(filePath);
+        const { importZosAppBin } = await import("../providers/zos-app/provider.ts");
+        const result = await importZosAppBin(db, binData, userId);
+
+        const durationSec = ((Date.now() - importStart) / 1000).toFixed(1);
+        const msg = `${result.recordsSynced} sessions imported, ${result.errors.length} errors in ${durationSec}s`;
+        logger.info(`[worker] ZOS App import complete: ${msg}`);
+
+        await logSync(db, {
+          providerId: "zos-app",
+          dataType: "import",
+          status: result.errors.length ? "error" : "success",
+          recordCount: result.recordsSynced,
+          errorMessage: result.errors.length
+            ? result.errors.map((e: { message: string }) => e.message).join("; ")
+            : undefined,
+          durationMs: Date.now() - importStart,
+          userId,
+        });
       }
     });
   } finally {

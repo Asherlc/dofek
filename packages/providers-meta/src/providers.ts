@@ -41,6 +41,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   bodyspec: "BodySpec",
   dofek: "Dofek",
   whoop_ble: "WHOOP (Bluetooth)",
+  "zos-app": "Zepp OS App",
 };
 
 /** Human-readable label for a provider ID, falls back to the raw ID */
