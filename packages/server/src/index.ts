@@ -42,16 +42,16 @@ import { createWebhookRouter } from "./routes/webhooks.ts";
 import { startSlackBot } from "./slack/bot.ts";
 import type { Context } from "./trpc.ts";
 
-// Handle unhandled promise rejections without crashing the process.
-// tRPC emits AbortError when a client disconnects mid-request (DOMException "AbortError").
-// This is a normal operational event — log and continue.
-// All other unhandled rejections indicate real bugs and should be fatal.
 export function onUnhandledRejection(reason: unknown): void {
   const error = reason instanceof Error ? reason : new Error(String(reason));
+
+  if (reason instanceof DOMException && reason.name === "AbortError") {
+    logger.error(`[web] Ignoring AbortError from client disconnect: ${error.message}`);
+    return;
+  }
+
   logger.error(`[web] Unhandled rejection: ${error.message}`);
   Sentry.captureException(error);
-
-  if (reason instanceof DOMException && reason.name === "AbortError") return;
 
   setImmediate(() => {
     process.exit(1);

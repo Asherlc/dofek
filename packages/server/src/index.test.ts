@@ -905,9 +905,13 @@ describe("unhandledRejection handler", () => {
     process.emit("unhandledRejection", abortError, null);
 
     // Wait at least 2 event-loop turns for any pending setImmediate
-    await new Promise((r) => setTimeout(r, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(process.exit).not.toHaveBeenCalled();
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("Ignoring AbortError"),
+    );
   });
 
   it("wraps non-Error reasons in an Error object", async () => {
