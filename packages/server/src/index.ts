@@ -46,7 +46,7 @@ import type { Context } from "./trpc.ts";
 // tRPC emits AbortError when a client disconnects mid-request (DOMException "AbortError").
 // This is a normal operational event — log and continue.
 // All other unhandled rejections indicate real bugs and should be fatal.
-process.on("unhandledRejection", (reason) => {
+export function onUnhandledRejection(reason: unknown): void {
   const error = reason instanceof Error ? reason : new Error(String(reason));
   logger.error(`[web] Unhandled rejection: ${error.message}`);
   Sentry.captureException(error);
@@ -56,7 +56,7 @@ process.on("unhandledRejection", (reason) => {
   setImmediate(() => {
     process.exit(1);
   });
-});
+}
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 const WEB_DIST_PATH = fileURLToPath(new URL("../../web/dist", import.meta.url));
@@ -316,6 +316,7 @@ const isDirectRun =
   typeof process.argv[1] === "string" &&
   import.meta.url.endsWith(process.argv[1].replace(/.*\//, ""));
 if (isDirectRun) {
+  process.on("unhandledRejection", onUnhandledRejection);
   main().catch((err: unknown) => {
     logger.error(`[web] Failed to start: ${err}`);
     process.exit(1);

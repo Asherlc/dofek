@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { onUnhandledRejection } from "./index.ts";
 
 vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
@@ -846,10 +847,12 @@ describe("unhandledRejection handler", () => {
   let exitSpy: ReturnType<typeof vi.spyOn>;
 
   beforeAll(() => {
+    process.on("unhandledRejection", onUnhandledRejection);
     exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined);
   });
 
   afterAll(() => {
+    process.off("unhandledRejection", onUnhandledRejection);
     exitSpy.mockRestore();
   });
 
