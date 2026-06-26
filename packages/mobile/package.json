@@ -7,8 +7,6 @@
     "install": {
       "exclude": [
         "@sentry/react-native",
-        "react-native-safe-area-context",
-        "react-native-svg",
         "typescript"
       ]
     }
@@ -50,7 +48,7 @@
     "@opentelemetry/sdk-logs": "0.218.0",
     "@opentelemetry/semantic-conventions": "1.41.1",
     "@sentry/cli": "3.4.2",
-    "@sentry/react-native": "8.11.1",
+      "@sentry/react-native": "8.11.1",
     "@tanstack/react-query": "5.90.21",
     "@trpc/client": "11.12.0",
     "@trpc/react-query": "11.12.0",
@@ -76,9 +74,9 @@
     "react-native-body-highlighter": "3.1.4",
     "react-native-maps": "1.27.2",
     "react-native-reanimated": "4.3.1",
-    "react-native-safe-area-context": "5.8.0",
+    "react-native-safe-area-context": "5.7.0",
     "react-native-screens": "4.25.2",
-    "react-native-svg": "15.15.5",
+    "react-native-svg": "15.15.4",
     "zod": "3.25.76"
   },
   "devDependencies": {
@@ -92,7 +90,7 @@
     "react-dom": "19.2.3",
     "react-native-web": "0.21.2",
     "storybook": "10.4.0",
-    "typescript": "5.9.3",
+    "typescript": "6.0.3",
     "vite": "8.0.13"
   }
 }
