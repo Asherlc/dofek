@@ -42,14 +42,20 @@ import { createWebhookRouter } from "./routes/webhooks.ts";
 import { startSlackBot } from "./slack/bot.ts";
 import type { Context } from "./trpc.ts";
 
-// Prevent Node 26 from crashing the process on unhandled promise rejections
-// (e.g. tRPC abort errors when a client disconnects mid-request).
-// Log and report to Sentry instead of exiting.
+// Handle unhandled promise rejections without crashing the process.
+// tRPC emits AbortError when a client disconnects mid-request (DOMException "AbortError").
+// This is a normal operational event — log and continue.
+// All other unhandled rejections indicate real bugs and should be fatal.
 process.on("unhandledRejection", (reason) => {
-  logger.error(
-    `[web] Unhandled rejection: ${reason instanceof Error ? reason.message : String(reason)}`,
-  );
-  Sentry.captureException(reason instanceof Error ? reason : new Error(String(reason)));
+  const error = reason instanceof Error ? reason : new Error(String(reason));
+  logger.error(`[web] Unhandled rejection: ${error.message}`);
+  Sentry.captureException(error);
+
+  if (reason instanceof DOMException && reason.name === "AbortError") return;
+
+  setImmediate(() => {
+    process.exit(1);
+  });
 });
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
