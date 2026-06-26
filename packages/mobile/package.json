@@ -58,6 +58,7 @@
     "expo-secure-store": "55.0.14",
     "expo-sharing": "55.0.19",
     "expo-splash-screen": "55.0.21",
+    "expo-task-manager": "55.0.17",
     "expo-updates": "55.0.23",
     "expo-web-browser": "55.0.16",
     "react": "19.2.4",

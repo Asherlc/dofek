@@ -81,7 +81,7 @@
         {
           "locationWhenInUsePermission": "Dofek records your GPS track during workouts to show your route and distance.",
           "locationAlwaysAndWhenInUsePermission": "Dofek records your GPS track during workouts to show your route and distance, even when the app is in the background.",
-          "isIosBackgroundLocationEnabled": false
+          "isIosBackgroundLocationEnabled": true
         }
       ],
       [
