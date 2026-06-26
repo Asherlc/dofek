@@ -38,10 +38,7 @@ export class ReadinessScore {
   readonly components: ReadinessComponents;
   readonly #weights: ReadinessWeights;
 
-  constructor(
-    components: ReadinessComponents,
-    weights: ReadinessWeights,
-  ) {
+  constructor(components: ReadinessComponents, weights: ReadinessWeights) {
     this.components = components;
     this.#weights = weights;
   }
