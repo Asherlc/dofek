@@ -32,6 +32,7 @@ import { createMigration as createMigration0031 } from "./0031_activity_user_sof
 import { createMigration as createMigration0032 } from "./0032_deduped_activities_absent_source_links.ts";
 import { createMigration as createMigration0033 } from "./0033_recreate_deduped_activities_column_order.ts";
 import { createMigration as createMigration0034 } from "./0034_move_metric_stream_to_ingest.ts";
+import { createMigration as createMigration0035 } from "./0035_activity_summary_power_climbing_columns.ts";
 import type { ClickHouseMigration, ClickHouseMigrationFactory } from "./types.ts";
 
 const migrationFactories: ClickHouseMigrationFactory[] = [
@@ -69,6 +70,7 @@ const migrationFactories: ClickHouseMigrationFactory[] = [
   createMigration0032,
   createMigration0033,
   createMigration0034,
+  createMigration0035,
 ];
 
 export const clickHouseMigrationFileNames = [
@@ -106,6 +108,7 @@ export const clickHouseMigrationFileNames = [
   "0032_deduped_activities_absent_source_links.ts",
   "0033_recreate_deduped_activities_column_order.ts",
   "0034_move_metric_stream_to_ingest.ts",
+  "0035_activity_summary_power_climbing_columns.ts",
 ] as const;
 
 export function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigration[] {

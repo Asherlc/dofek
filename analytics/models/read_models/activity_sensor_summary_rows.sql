@@ -3,6 +3,7 @@
     incremental_strategy='append',
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, activity_id)',
+    on_schema_change='append_new_columns',
     query_settings={
         'max_threads': 1
     }
@@ -248,6 +249,186 @@ channel_aggs AS (
         max(recorded_at) AS last_sample_at
     FROM deduped_samples
     GROUP BY activity_id, user_id
+),
+
+power_cumulative AS (
+    SELECT
+        activity_id,
+        recorded_at,
+        row_number() OVER (
+            PARTITION BY activity_id ORDER BY recorded_at
+        ) AS sample_index,
+        sum(coalesce(scalar, 0)) OVER (
+            PARTITION BY activity_id ORDER BY recorded_at
+            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ) AS cumulative_power
+    FROM {{ ref('activity_sensor_sample') }}
+    WHERE is_deleted = 0
+        AND channel = 'power'
+        AND (user_id, activity_id) IN (
+            SELECT
+                user_id,
+                activity_id
+            FROM active_dirty_keys
+        )
+),
+
+power_sample_rate AS (
+    SELECT
+        activity_id,
+        greatest(toInt32(round(
+            dateDiff('second', min(recorded_at), max(recorded_at))
+            / nullIf(count() - 1, 0)
+        )), 1) AS interval_seconds
+    FROM power_cumulative
+    GROUP BY activity_id
+    HAVING count() > 1
+),
+
+best_twenty_minute_power_per_activity AS (
+    SELECT
+        current_power.activity_id AS activity_id,
+        CAST(max(
+            toFloat64(current_power.cumulative_power - prior_power.cumulative_power)
+            / round(1200.0 / power_sample_rate.interval_seconds)
+        ), 'Nullable(Float64)') AS best_twenty_minute_power
+    FROM power_cumulative AS current_power
+    INNER JOIN power_sample_rate
+        ON power_sample_rate.activity_id = current_power.activity_id
+    INNER JOIN power_cumulative AS prior_power
+        ON prior_power.activity_id = current_power.activity_id
+        AND toInt64(prior_power.sample_index)
+            = toInt64(current_power.sample_index)
+            - toInt64(round(1200.0 / power_sample_rate.interval_seconds))
+    WHERE toInt64(current_power.sample_index)
+        >= toInt64(round(1200.0 / power_sample_rate.interval_seconds))
+    GROUP BY current_power.activity_id
+),
+
+rolling_power AS (
+    SELECT
+        activity_id,
+        avg(scalar) OVER (
+            PARTITION BY activity_id
+            ORDER BY toUnixTimestamp(recorded_at)
+            RANGE BETWEEN 29 PRECEDING AND CURRENT ROW
+        ) AS rolling_30s_power
+    FROM {{ ref('activity_sensor_sample') }}
+    WHERE is_deleted = 0
+        AND channel = 'power'
+        AND scalar > 0
+        AND (user_id, activity_id) IN (
+            SELECT
+                user_id,
+                activity_id
+            FROM active_dirty_keys
+        )
+),
+
+power_variability_per_activity AS (
+    SELECT
+        activity_id,
+        CAST(pow(avg(pow(rolling_30s_power, 4)), 0.25), 'Nullable(Float64)') AS normalized_power,
+        CAST(avg(rolling_30s_power), 'Nullable(Float64)') AS smoothed_avg_power
+    FROM rolling_power
+    GROUP BY activity_id
+    HAVING count() >= 60
+),
+
+altitude_points AS (
+    SELECT
+        activity_id,
+        scalar AS altitude,
+        recorded_at,
+        lagInFrame(scalar) OVER (
+            PARTITION BY activity_id ORDER BY recorded_at
+        ) AS prev_altitude,
+        lagInFrame(recorded_at) OVER (
+            PARTITION BY activity_id ORDER BY recorded_at
+        ) AS prev_recorded_at
+    FROM {{ ref('activity_sensor_sample') }}
+    WHERE is_deleted = 0
+        AND channel = 'altitude'
+        AND (user_id, activity_id) IN (
+            SELECT
+                user_id,
+                activity_id
+            FROM active_dirty_keys
+        )
+),
+
+grade_activities AS (
+    SELECT DISTINCT
+        activity_id,
+        1 AS has_grade_samples
+    FROM {{ ref('activity_sensor_sample') }}
+    WHERE is_deleted = 0
+        AND channel = 'grade'
+        AND (user_id, activity_id) IN (
+            SELECT
+                user_id,
+                activity_id
+            FROM active_dirty_keys
+        )
+),
+
+grade_points AS (
+    SELECT
+        activity_id,
+        recorded_at,
+        scalar AS grade
+    FROM {{ ref('activity_sensor_sample') }}
+    WHERE is_deleted = 0
+        AND channel = 'grade'
+        AND (user_id, activity_id) IN (
+            SELECT
+                user_id,
+                activity_id
+            FROM active_dirty_keys
+        )
+),
+
+climbing_segments AS (
+    SELECT
+        altitude_points.activity_id AS activity_id,
+        altitude_points.recorded_at AS recorded_at,
+        altitude_points.altitude AS altitude,
+        altitude_points.prev_altitude AS prev_altitude,
+        altitude_points.prev_recorded_at AS prev_recorded_at,
+        grade_points.grade AS grade,
+        coalesce(grade_activities.has_grade_samples, 0) = 1 AS has_grade_samples,
+        row_number() OVER (
+            PARTITION BY altitude_points.activity_id, altitude_points.recorded_at
+            ORDER BY
+                if(grade_points.recorded_at IS null, 1, 0) ASC,
+                abs(dateDiff('second', grade_points.recorded_at, altitude_points.recorded_at)) ASC,
+                grade_points.recorded_at ASC
+        ) AS grade_rank
+    FROM altitude_points
+    LEFT JOIN grade_activities
+        ON grade_activities.activity_id = altitude_points.activity_id
+    LEFT JOIN grade_points
+        ON grade_points.activity_id = altitude_points.activity_id
+        AND grade_points.recorded_at
+            BETWEEN altitude_points.recorded_at - INTERVAL 5 SECOND
+                AND altitude_points.recorded_at + INTERVAL 5 SECOND
+),
+
+climbing_per_activity AS (
+    SELECT
+        activity_id,
+        CAST(sum(altitude - prev_altitude), 'Nullable(Float64)') AS climbing_elevation_gain_m,
+        CAST(
+            sum(dateDiff('second', prev_recorded_at, recorded_at)),
+            'Nullable(Int32)'
+        ) AS climbing_seconds
+    FROM climbing_segments
+    WHERE prev_altitude IS NOT null
+        AND prev_recorded_at IS NOT null
+        AND altitude > prev_altitude
+        AND grade_rank = 1
+        AND (NOT coalesce(has_grade_samples, false) OR grade > 3)
+    GROUP BY activity_id
 )
 
 SELECT
@@ -282,6 +463,11 @@ SELECT
     channel_aggs.power_sample_count AS power_sample_count,
     channel_aggs.first_sample_at AS first_sample_at,
     channel_aggs.last_sample_at AS last_sample_at,
+    best_twenty_minute_power_per_activity.best_twenty_minute_power AS best_twenty_minute_power,
+    power_variability_per_activity.normalized_power AS normalized_power,
+    power_variability_per_activity.smoothed_avg_power AS smoothed_avg_power,
+    climbing_per_activity.climbing_elevation_gain_m AS climbing_elevation_gain_m,
+    climbing_per_activity.climbing_seconds AS climbing_seconds,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
     if(channel_aggs.activity_id IS null, 1, 0) AS is_deleted,
     now64(9) AS refreshed_at
@@ -291,3 +477,9 @@ LEFT JOIN channel_aggs
     AND channel_aggs.user_id = dirty_keys.user_id
 LEFT JOIN elevation_per_activity
     ON elevation_per_activity.activity_id = dirty_keys.activity_id
+LEFT JOIN best_twenty_minute_power_per_activity
+    ON best_twenty_minute_power_per_activity.activity_id = dirty_keys.activity_id
+LEFT JOIN power_variability_per_activity
+    ON power_variability_per_activity.activity_id = dirty_keys.activity_id
+LEFT JOIN climbing_per_activity
+    ON climbing_per_activity.activity_id = dirty_keys.activity_id

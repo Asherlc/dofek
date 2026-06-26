@@ -358,13 +358,13 @@ describe("CyclingAdvancedRepository", () => {
       expect(result).toBe(250);
     });
 
-    it("queries estimated FTP as ninety-five percent of best twenty-minute power", async () => {
+    it("queries estimated FTP as ninety-five percent of precomputed best twenty-minute power", async () => {
       const { repo, sensorStore } = makeRepository([]);
       await repo.getEstimatedFtp(60);
       const [, query, params] = sensorStore.query.mock.calls[0];
-      expect(query).toContain("round(1200.0 / sr.interval_s)");
-      expect(query).toContain("* 0.95");
-      expect(query).toContain("ds.channel = 'power'");
+      expect(query).toContain("analytics.activity_summary");
+      expect(query).toContain("max(asum.best_twenty_minute_power) * 0.95");
+      expect(query).toContain("asum.best_twenty_minute_power IS NOT NULL");
       expect(params).toMatchObject({
         userId: "user-1",
         days: 60,
@@ -427,8 +427,10 @@ describe("CyclingAdvancedRepository", () => {
       expect(result.totalCount).toBe(1);
       expect(sensorStore.query).toHaveBeenCalledTimes(2);
       const [, query, params] = sensorStore.query.mock.calls[1];
-      expect(query).toContain("RANGE BETWEEN 29 PRECEDING AND CURRENT ROW");
-      expect(query).toContain("pow(avg(pow(r.rolling_30s_power, 4)), 0.25)");
+      expect(query).toContain("analytics.activity_summary");
+      expect(query).toContain("round(asum.normalized_power, 1)");
+      expect(query).toContain("round(asum.smoothed_avg_power, 1)");
+      expect(query).toContain("asum.normalized_power IS NOT NULL");
       expect(query).toContain("LIMIT {limit:Int32}");
       expect(query).toContain("OFFSET {offset:Int32}");
       expect(params).toMatchObject({
@@ -471,9 +473,9 @@ describe("CyclingAdvancedRepository", () => {
     });
 
     it("does not require grade channel data — altitude-only providers return results", async () => {
-      // Regression test: the original query INNER-JOINed the grade channel,
-      // which returned empty for providers that don't emit grade (Garmin, Wahoo).
-      // The CH query LEFT-JOINs grade activities, so altitude-only providers still match.
+      // Regression test: providers that don't emit a grade channel (Garmin, Wahoo)
+      // must still surface climbing. The precomputed climbing columns are derived
+      // with a LEFT JOIN on grade, so altitude-only activities keep a climbing value.
       const { repo, sensorStore } = makeRepository(
         [
           {
@@ -491,16 +493,14 @@ describe("CyclingAdvancedRepository", () => {
       expect(sensorStore.query).toHaveBeenCalledTimes(1);
     });
 
-    it("queries vertical ascent with grade fallback and minimum climb duration", async () => {
+    it("queries vertical ascent from precomputed climbing columns with minimum climb duration", async () => {
       const { repo, sensorStore } = makeRepository([], 1);
       await repo.getVerticalAscentRates(90);
       const [, query, params] = sensorStore.query.mock.calls[0];
-      expect(query).toContain("LEFT JOIN grade_activities");
-      expect(query).toContain("LEFT JOIN grade_points");
-      expect(query).toContain("(NOT coalesce(cs.has_grade_samples, false) OR cs.grade > 3)");
-      expect(query).toContain(
-        "HAVING sum(dateDiff('second', cs.prev_recorded_at, cs.recorded_at)) > 60",
-      );
+      expect(query).toContain("analytics.activity_summary");
+      expect(query).toContain("round(asum.climbing_elevation_gain_m, 1)");
+      expect(query).toContain("toInt32(asum.climbing_seconds)");
+      expect(query).toContain("asum.climbing_seconds > 60");
       expect(params).toMatchObject({
         userId: "user-1",
         timezone: "UTC",
