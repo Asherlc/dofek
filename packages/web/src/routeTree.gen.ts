@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as TrainingRouteImport } from './routes/training'
 import { Route as TrackingRouteImport } from './routes/tracking'
 import { Route as TermsRouteImport } from './routes/terms'
+import { Route as SupportRouteImport } from './routes/support'
 import { Route as SleepRouteImport } from './routes/sleep'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
@@ -64,6 +65,11 @@ const TrackingRoute = TrackingRouteImport.update({
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
   path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SupportRoute = SupportRouteImport.update({
+  id: '/support',
+  path: '/support',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SleepRoute = SleepRouteImport.update({
@@ -281,6 +287,7 @@ export interface FileRoutesByFullPath {
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/sleep': typeof SleepRoute
+  '/support': typeof SupportRoute
   '/terms': typeof TermsRoute
   '/tracking': typeof TrackingRoute
   '/training': typeof TrainingRouteWithChildren
@@ -320,6 +327,7 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/sleep': typeof SleepRoute
+  '/support': typeof SupportRoute
   '/terms': typeof TermsRoute
   '/tracking': typeof TrackingRoute
   '/activity/$id': typeof ActivityIdRoute
@@ -363,6 +371,7 @@ export interface FileRoutesById {
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/sleep': typeof SleepRoute
+  '/support': typeof SupportRoute
   '/terms': typeof TermsRoute
   '/tracking': typeof TrackingRoute
   '/training': typeof TrainingRouteWithChildren
@@ -408,6 +417,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/settings'
     | '/sleep'
+    | '/support'
     | '/terms'
     | '/tracking'
     | '/training'
@@ -447,6 +457,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/settings'
     | '/sleep'
+    | '/support'
     | '/terms'
     | '/tracking'
     | '/activity/$id'
@@ -489,6 +500,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/settings'
     | '/sleep'
+    | '/support'
     | '/terms'
     | '/tracking'
     | '/training'
@@ -533,6 +545,7 @@ export interface RootRouteChildren {
   ResetPasswordRoute: typeof ResetPasswordRoute
   SettingsRoute: typeof SettingsRoute
   SleepRoute: typeof SleepRoute
+  SupportRoute: typeof SupportRoute
   TermsRoute: typeof TermsRoute
   TrackingRoute: typeof TrackingRoute
   TrainingRoute: typeof TrainingRouteWithChildren
@@ -560,6 +573,13 @@ declare module '@tanstack/react-router' {
       path: '/terms'
       fullPath: '/terms'
       preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/support': {
+      id: '/support'
+      path: '/support'
+      fullPath: '/support'
+      preLoaderRoute: typeof SupportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sleep': {
@@ -931,6 +951,7 @@ const rootRouteChildren: RootRouteChildren = {
   ResetPasswordRoute: ResetPasswordRoute,
   SettingsRoute: SettingsRoute,
   SleepRoute: SleepRoute,
+  SupportRoute: SupportRoute,
   TermsRoute: TermsRoute,
   TrackingRoute: TrackingRoute,
   TrainingRoute: TrainingRouteWithChildren,

@@ -348,6 +348,12 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
+            name="support"
+            options={{
+              title: "Help & Support",
+            }}
+          />
+          <Stack.Screen
             name="nutrition-analytics"
             options={{
               title: "Nutrition Analytics",
