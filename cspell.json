@@ -155,6 +155,7 @@
     "signin",
     "signup",
     "oauth",
+    "oauthtoken",
     "pnpm",
     "monorepo",
     "subdir",

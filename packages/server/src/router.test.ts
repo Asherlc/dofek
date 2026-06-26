@@ -65,6 +65,7 @@ vi.mock("./routers/weekly-report.ts", () => ({ weeklyReportRouter: mockRouter })
 vi.mock("./routers/whoop-auth.ts", () => ({ whoopAuthRouter: mockRouter }));
 vi.mock("./routers/whoop-ble-sync.ts", () => ({ whoopBleSyncRouter: mockRouter }));
 vi.mock("./routers/admin.ts", () => ({ adminRouter: mockRouter }));
+vi.mock("./routers/support.ts", () => ({ supportRouter: mockRouter }));
 
 // Mock trpc
 vi.mock("./trpc.ts", async () => {
@@ -160,6 +161,7 @@ describe("appRouter", () => {
       "sportSettings",
       "intervals",
       "journal",
+      "support",
     ];
 
     // The router definition record should have entries for each sub-router

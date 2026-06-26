@@ -654,6 +654,22 @@ export default function SettingsScreen() {
         </View>
       </View>
 
+      {/* ── Help & Support ── */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Help & Support</Text>
+        <Text style={styles.sectionDescription}>Get help from our team</Text>
+        <TouchableOpacity
+          style={styles.card}
+          onPress={() => router.push("/support")}
+          activeOpacity={0.7}
+        >
+          <View style={styles.dataSourcesRow}>
+            <Text style={styles.devToolLabel}>Contact Support</Text>
+            <Text style={styles.devToolChevron}>›</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+
       {/* ── Developer Tools ── */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Developer Tools</Text>

@@ -1,4 +1,5 @@
 import { formatDateMedium, parseValidDate } from "@dofek/format/format";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { DataSourcesPanel } from "../components/DataSourcesPanel.tsx";
 import { ExportPanel } from "../components/ExportPanel.tsx";
@@ -184,6 +185,15 @@ export function SettingsPage() {
 
       <PageSection title="Data Export" subtitle="Download all your data">
         <ExportPanel />
+      </PageSection>
+
+      <PageSection title="Help & Support" subtitle="Get help from our team">
+        <Link
+          to="/support"
+          className="inline-flex items-center gap-2 rounded border border-border-strong px-4 py-2 text-sm text-foreground transition-colors hover:bg-accent/10"
+        >
+          Contact Support
+        </Link>
       </PageSection>
 
       <PageSection
