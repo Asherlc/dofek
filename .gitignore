@@ -61,6 +61,9 @@ packages/ios/ios/Dofek.xcworkspace/
 packages/ios/ios/Pods
 packages/ios/ios/build
 
+# iOS xcarchive build artifacts
+ios-xcarchive/
+
 # Gemini CLI
 .gemini/
 .worktrees/
