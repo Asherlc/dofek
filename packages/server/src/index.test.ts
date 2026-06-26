@@ -909,9 +909,7 @@ describe("unhandledRejection handler", () => {
 
     expect(process.exit).not.toHaveBeenCalled();
     expect(Sentry.captureException).not.toHaveBeenCalled();
-    expect(logger.error).toHaveBeenCalledWith(
-      expect.stringContaining("Ignoring AbortError"),
-    );
+    expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("Ignoring AbortError"));
   });
 
   it("wraps non-Error reasons in an Error object", async () => {
