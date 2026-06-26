@@ -3,6 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "main": "index.js",
+  "expo": {
+    "install": {
+      "exclude": [
+        "@sentry/react-native",
+        "react-native-safe-area-context",
+        "react-native-svg",
+        "typescript"
+      ]
+    }
+  },
   "scripts": {
     "start": "expo start",
     "storybook": "EXPO_PUBLIC_STORYBOOK_ENABLED=true sb-rn-get-stories && EXPO_PUBLIC_STORYBOOK_ENABLED=true expo start --clear",
@@ -67,7 +77,7 @@
     "react-native-maps": "1.27.2",
     "react-native-reanimated": "4.3.1",
     "react-native-safe-area-context": "5.8.0",
-    "react-native-screens": "4.25.1",
+    "react-native-screens": "4.25.2",
     "react-native-svg": "15.15.5",
     "zod": "3.25.76"
   },
