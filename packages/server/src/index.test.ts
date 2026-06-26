@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { onUnhandledRejection } from "./index.ts";
 
 vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
@@ -839,6 +840,89 @@ describe("static file serving", () => {
       workingDirectorySpy.mockRestore();
       rmSync(temporaryWorkingDirectory, { recursive: true, force: true });
     }
+  });
+});
+
+describe("unhandledRejection handler", () => {
+  let exitSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeAll(() => {
+    process.on("unhandledRejection", onUnhandledRejection);
+    vi.stubGlobal("setImmediate", (cb: () => void) => cb());
+    exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined);
+  });
+
+  afterAll(() => {
+    process.off("unhandledRejection", onUnhandledRejection);
+    vi.unstubAllGlobals();
+    exitSpy.mockRestore();
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("logs and reports unhandled rejections to Sentry", async () => {
+    const error = new Error("db failure");
+    process.emit("unhandledRejection", error, null);
+
+    // Wait briefly for setImmediate to flush
+    await vi.waitFor(
+      () => {
+        expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("db failure"));
+        expect(Sentry.captureException).toHaveBeenCalledWith(error);
+      },
+      { interval: 1, timeout: 100 },
+    );
+  });
+
+  it("exits with code 1 for non-AbortError rejections", async () => {
+    const error = new Error("real bug");
+    process.emit("unhandledRejection", error, null);
+
+    await vi.waitFor(
+      () => {
+        expect(process.exit).toHaveBeenCalledWith(1);
+      },
+      { interval: 1, timeout: 100 },
+    );
+  });
+
+  it("exits for non-AbortError DOMException", async () => {
+    const domError = new DOMException("network failure", "NetworkError");
+    process.emit("unhandledRejection", domError, null);
+
+    await vi.waitFor(
+      () => {
+        expect(process.exit).toHaveBeenCalledWith(1);
+      },
+      { interval: 1, timeout: 100 },
+    );
+  });
+
+  it("does not exit for AbortError (client disconnect)", async () => {
+    const abortError = new DOMException("The operation was aborted", "AbortError");
+    process.emit("unhandledRejection", abortError, null);
+
+    // Wait at least 2 event-loop turns for any pending setImmediate
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(process.exit).not.toHaveBeenCalled();
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("Ignoring AbortError"));
+  });
+
+  it("wraps non-Error reasons in an Error object", async () => {
+    const reason = "string reason";
+    process.emit("unhandledRejection", reason, null);
+
+    await vi.waitFor(
+      () => {
+        expect(Sentry.captureException).toHaveBeenCalledWith(expect.any(Error));
+        expect(vi.mocked(Sentry.captureException).mock.calls[0][0].message).toBe("string reason");
+      },
+      { interval: 1, timeout: 100 },
+    );
   });
 });
 
