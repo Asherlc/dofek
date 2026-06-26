@@ -45,8 +45,9 @@ jobs:
       should_deploy: ${{ steps.detect.outputs.should_deploy }}
       ci_run_id: ${{ steps.find-run.outputs.run_id }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          persist-credentials: false
           fetch-depth: 0
       - name: Resolve commit SHA
         id: resolve
@@ -177,8 +178,9 @@ jobs:
           else
             echo "ref=main" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          persist-credentials: false
           ref: ${{ steps.sha.outputs.ref }}
       - uses: ./.github/actions/setup-node-pnpm
       - uses: ./.github/actions/load-infisical-secrets

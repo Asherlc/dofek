@@ -10,10 +10,11 @@ jobs:
     name: Secret Scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          persist-credentials: false
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -21,7 +22,9 @@ jobs:
     name: Dependency Audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       # GitHub's advisory currently marks every @tanstack/history version as
       # vulnerable, while the known compromised releases are specific versions.
@@ -32,7 +35,9 @@ jobs:
     name: License Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       - name: Check for forbidden licenses
         run: |
@@ -44,7 +49,9 @@ jobs:
     name: Action Pinning
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - name: Verify all actions are SHA-pinned
         run: |
           UNPINNED=$(awk '
@@ -68,8 +75,10 @@ jobs:
     name: Image Vulnerability Scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
         with:
           driver-opts: |
             image=mirror.gcr.io/moby/buildkit:buildx-stable-1
@@ -77,7 +86,7 @@ jobs:
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
       - name: Build server image with cache
-        uses: docker/bake-action@4a9a8d494466d37134e2bfca2d3a8de8fb2681ad # v5
+        uses: docker/bake-action@6614cfa25eff9a0b2b2697efb0b6159e7680d584 # v7.2.0
         with:
           files: docker-compose.e2e.yml
           targets: |
@@ -136,7 +145,9 @@ jobs:
     name: Actionlint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - name: Install actionlint
         run: bash <(curl -s https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
       - name: Run actionlint (without shellcheck)
@@ -163,13 +174,13 @@ jobs:
           --health-retries 30
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - name: Setup Node and pnpm
         uses: ./.github/actions/setup-node-pnpm
       - name: Setup uv
-        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8
       - name: Run lint
         run: pnpm lint
         env:
@@ -179,7 +190,9 @@ jobs:
     name: Stylelint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       - name: Run stylelint
         run: pnpm lint:css
@@ -188,8 +201,10 @@ jobs:
     name: YAMLLint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8
       - name: Run yamllint
         run: uv tool run yamllint -c .yamllint.yml --no-warnings .
 
@@ -197,7 +212,9 @@ jobs:
     name: Dotenv Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - uses: dotenv-linter/action-dotenv-linter@6c39ca3e4c1f440bf1911b4169c2056ec86c3f99 # v3.0.0
         with:
           reporter: github-check
@@ -210,7 +227,9 @@ jobs:
       run:
         working-directory: deploy
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - uses: terraform-linters/setup-tflint@b480b8fcdaa6f2c577f8e4fa799e89e756bb7c93 # v6.2.2
         with:
           tflint_version: v0.62.0
@@ -226,10 +245,11 @@ jobs:
     env:
       BASE_REF: ${{ github.base_ref }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          persist-credentials: false
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8
       - name: Lint new migration SQL
         run: |
           NEW_MIGRATIONS=$(git diff --diff-filter=A --name-only "origin/${BASE_REF}...HEAD" -- 'drizzle/*.sql' \
@@ -247,7 +267,9 @@ jobs:
     name: Typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       - name: Typecheck all packages
         run: |
@@ -267,7 +289,9 @@ jobs:
     name: Sherif
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm exec sherif
 
@@ -275,7 +299,9 @@ jobs:
     name: Knip
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm knip
         env:
@@ -285,7 +311,9 @@ jobs:
     name: Spell Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm exec cspell --no-progress
 
@@ -293,7 +321,9 @@ jobs:
     name: Import Boundaries
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm exec depcruise --config .dependency-cruiser.cjs src/ packages/
 
@@ -304,8 +334,10 @@ jobs:
       run:
         working-directory: packages/ml
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8
       - name: Install dependencies
         run: uv sync
       - name: Lint
@@ -321,8 +353,10 @@ jobs:
     name: Dockerfile Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5 # v3.3.0
         with:
           dockerfile: Dockerfile
 
@@ -332,9 +366,11 @@ jobs:
     env:
       TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform-plugin-cache
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
+      - uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
         with:
           path: ${{ env.TF_PLUGIN_CACHE_DIR }}
           key: terraform-provider-v1-${{ runner.os }}-${{ hashFiles('deploy/.terraform.lock.hcl') }}
@@ -349,7 +385,9 @@ jobs:
     name: DNS Record Coverage
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - run: bash scripts/check-dns-records.sh
 
   swiftlint:
@@ -358,7 +396,9 @@ jobs:
     if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - name: Install SwiftLint
         run: brew install swiftlint
       - name: Run SwiftLint
@@ -371,8 +411,10 @@ jobs:
     if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
         with:
           path: |
             packages/mobile/modules/health-kit/.build
@@ -433,19 +475,21 @@ jobs:
     name: Unit Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm exec vitest run --project unit --coverage
         env:
           CLICKHOUSE_URL: http://default:health@localhost:8123
           VITEST_COVERAGE_SKIP_THRESHOLDS: "true"
           NODE_OPTIONS: --max-old-space-size=8192
-      - uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe # v5
+      - uses: codecov/codecov-action@e53489f4d376d79066609109e7a95a29eb3740b1 # v7.0.0
         with:
           files: coverage/lcov.info
           flags: unit
           token: ${{ secrets.CODECOV_TOKEN }}
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-unit
           path: coverage/
@@ -498,18 +542,20 @@ jobs:
       CLICKHOUSE_URL: http://default:${{ github.run_id }}@localhost:8123
       REDIS_URL: redis://localhost:6379
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm exec vitest run --project integration --coverage
         timeout-minutes: 12
         env:
           VITEST_COVERAGE_SKIP_THRESHOLDS: "true"
-      - uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe # v5
+      - uses: codecov/codecov-action@e53489f4d376d79066609109e7a95a29eb3740b1 # v7.0.0
         with:
           files: coverage/lcov.info
           flags: integration
           token: ${{ secrets.CODECOV_TOKEN }}
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-integration
           path: coverage/
@@ -519,15 +565,16 @@ jobs:
     needs: [test-unit, test-integration]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          persist-credentials: false
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: coverage-unit
           path: coverage-unit
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: coverage-integration
           path: coverage-integration
@@ -580,7 +627,9 @@ jobs:
     name: E2E Tests (Web)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - name: Free up runner disk space
         # The e2e stack pulls/builds several GB of images (timescaledb-ha,
         # clickhouse, the server build). The default runner has too little free
@@ -592,7 +641,7 @@ jobs:
           df -h /
       - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm exec cypress install
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
         with:
           driver-opts: |
             image=mirror.gcr.io/moby/buildkit:buildx-stable-1
@@ -600,7 +649,7 @@ jobs:
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
       - name: Build E2E images with cache
-        uses: docker/bake-action@4a9a8d494466d37134e2bfca2d3a8de8fb2681ad # v5
+        uses: docker/bake-action@6614cfa25eff9a0b2b2697efb0b6159e7680d584 # v7.2.0
         with:
           files: docker-compose.e2e.yml
           targets: |
@@ -631,7 +680,7 @@ jobs:
       - name: Dump e2e service logs
         if: failure()
         run: docker compose -f docker-compose.e2e.yml logs --no-color db clickhouse redis migrate analytics server
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
           name: cypress-screenshots
@@ -649,8 +698,9 @@ jobs:
     outputs:
       changed: ${{ steps.check.outputs.changed }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          persist-credentials: false
           fetch-depth: 0
       - id: check
         run: |
@@ -685,7 +735,9 @@ jobs:
     if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm exec vitest run --project mobile
         env:
@@ -697,8 +749,10 @@ jobs:
     if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
         with:
           path: packages/mobile/modules/health-kit/.build
           key: swift-build-v1-${{ hashFiles('packages/mobile/modules/health-kit/Package.swift') }}
@@ -707,7 +761,7 @@ jobs:
         run: |
           cd packages/mobile/modules/health-kit
           bash scripts/check-coverage.sh
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: swift-coverage
@@ -723,8 +777,9 @@ jobs:
     outputs:
       shards: ${{ steps.shard.outputs.shards }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          persist-credentials: false
           fetch-depth: 0
       - name: Compute changed files and split into shards
         id: shard
@@ -908,13 +963,16 @@ jobs:
       matrix:
         files: ${{ fromJSON(needs.mutation-prep.outputs.shards) }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          persist-credentials: false
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
       - name: Run Stryker
-        run: pnpm exec stryker run stryker.ci.config.json --mutate "${{ matrix.files }}"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        env:
+          MUTATE_FILES: ${{ matrix.files }}
+        run: pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
           name: mutation-report-${{ strategy.job-index }}
@@ -927,15 +985,16 @@ jobs:
     runs-on: macos-14
     if: github.event_name == 'pull_request' && needs.check-mobile-changes.outputs.changed == 'true'
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          persist-credentials: false
           fetch-depth: 0
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      - uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
         with:
           path: packages/mobile/modules/health-kit/.build
           key: swift-build-v1-${{ hashFiles('packages/mobile/modules/health-kit/Package.swift') }}
           restore-keys: swift-build-v1-
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      - uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
         id: muter-cache
         with:
           path: /opt/homebrew/Cellar/muter
@@ -972,7 +1031,7 @@ jobs:
             fi
             exit $EXIT_CODE
           }
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
           name: muter-report
@@ -999,8 +1058,9 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          persist-credentials: false
           fetch-depth: 0
       - name: Check PR size
         run: |
@@ -1023,8 +1083,9 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          persist-credentials: false
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
       - name: Lint new migration SQL

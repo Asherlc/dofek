@@ -76,7 +76,10 @@ export function formatMeasurementText(measurement: FormattedMeasurement): string
 // --- UnitConverter class ---
 
 export class UnitConverter {
-  constructor(readonly system: UnitSystem) {}
+  readonly system: UnitSystem;
+  constructor(system: UnitSystem) {
+    this.system = system;
+  }
 
   // --- Conversions (metric input → selected system output) ---
 

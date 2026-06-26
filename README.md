@@ -219,17 +219,17 @@ A single image is built from a multi-stage Dockerfile:
 
 | Image | Base | Contents |
 |-------|------|----------|
-| `ghcr.io/asherlc/dofek:latest` | node:22-alpine3.23 | Express API + built web assets + migrations + sync/worker entrypoints |
+| `ghcr.io/asherlc/dofek:latest` | node:26-alpine3.23 | Express API + built web assets + migrations + sync/worker entrypoints |
 
 ### How it works
 
-```
+```text
 Dockerfile (multi-stage)
 ├── client-build   — full install + Vite build
-└── server target  — Node 22 runtime with TypeScript sources + built web assets + entrypoint
+└── server target  — Node 26 runtime with TypeScript sources + built web assets + entrypoint
 ```
 
-The server image copies the workspace source tree plus production dependencies from `pnpm --filter dofek-server deploy --legacy --prod`, then creates explicit symlinks for workspace packages so bare imports resolve at runtime. Built web assets from `packages/web/dist` are included in the server image — Express serves them directly with SPA fallback. BuildKit cache mounts keep the pnpm store warm across builds. Production runs TypeScript directly on Node 22 with `--experimental-transform-types`; there is no separate server transpile step inside the container.
+The server image copies the workspace source tree plus production dependencies from `pnpm --filter dofek-server deploy --legacy --prod`, then creates explicit symlinks for workspace packages so bare imports resolve at runtime. Built web assets from `packages/web/dist` are included in the server image — Express serves them directly with SPA fallback. BuildKit cache mounts keep the pnpm store warm across builds. Production runs TypeScript directly on Node 26; there is no separate server transpile step inside the container.
 
 ### Building locally
 
@@ -239,7 +239,7 @@ docker build --target server -t dofek-server:local .
 
 # Verify server can resolve its dependencies
 docker run --rm --entrypoint node dofek-server:local \
-  --experimental-transform-types -e "console.log('OK')"
+  -e "console.log('OK')"
 ```
 
 Always test Docker builds locally before deploying. The CI build runs on Linux and may behave differently than local dev.
@@ -262,7 +262,7 @@ docker run dofek:latest worker
 docker run dofek:latest sync
 ```
 
-All modes use Node 22 `--experimental-transform-types` to run TypeScript source directly — no build step. The `sync`, `worker`, and `migrate` modes run migrations themselves. In production, `web` does not run migrations on startup; CI runs migrations before `docker stack deploy`. This also means swarm rollback is image rollback only, not schema rollback.
+All modes use Node 26 to run TypeScript source directly — no build step. The `sync`, `worker`, and `migrate` modes run migrations themselves. In production, `web` does not run migrations on startup; CI runs migrations before `docker stack deploy`. This also means swarm rollback is image rollback only, not schema rollback.
 
 ## Deployment
 

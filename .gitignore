@@ -64,3 +64,4 @@ packages/ios/ios/build
 # Gemini CLI
 .gemini/
 .worktrees/
+coverage-integration/

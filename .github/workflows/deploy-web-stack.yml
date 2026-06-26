@@ -148,7 +148,9 @@ jobs:
       DEPLOY_ENVIRONMENT: ${{ inputs.infisical_environment || 'prod' }}
       STACK_NAME: ${{ inputs.stack_name || 'dofek' }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Resolve image tag
         id: resolve
@@ -319,7 +321,7 @@ jobs:
             docker stack config $STACK_FILE_FLAGS -c deploy/stack.cdc-quiesce.yml >/dev/null
 
       - name: Login to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -447,10 +449,10 @@ jobs:
             --env "CLICKHOUSE_PASSWORD_ENCODED=$CLICKHOUSE_PASSWORD_ENCODED" \
             --entrypoint sh \
             "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
-            -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --experimental-transform-types --enable-source-maps --disable-warning=ExperimentalWarning src/db/run-migrate.ts'
+             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --experimental-strip-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation.ts src/db/run-migrate.ts'
 
-          inspect_failure_count=0
-          max_inspect_failures=10
+           inspect_failure_count=0
+           max_inspect_failures=10
           while true; do
             elapsed_seconds="$(($(date +%s) - migration_started_at))"
             if [ "$elapsed_seconds" -ge "$migration_timeout_seconds" ]; then
@@ -721,7 +723,7 @@ jobs:
             --env "CLICKHOUSE_PASSWORD_ENCODED=$CLICKHOUSE_PASSWORD_ENCODED" \
             --entrypoint sh \
             "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
-            -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --experimental-transform-types --enable-source-maps --disable-warning=ExperimentalWarning src/db/setup-clickhouse-cdc.ts'
+             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --experimental-strip-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation.ts src/db/setup-clickhouse-cdc.ts'
 
       - name: Deploy ClickHouse consumer services
         id: deploy_stack_full
