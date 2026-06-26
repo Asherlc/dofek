@@ -842,6 +842,66 @@ describe("static file serving", () => {
   });
 });
 
+describe("unhandledRejection handler", () => {
+  let exitSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeAll(() => {
+    exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined);
+  });
+
+  afterAll(() => {
+    exitSpy.mockRestore();
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("logs and reports unhandled rejections to Sentry", async () => {
+    const error = new Error("db failure");
+    process.emit("unhandledRejection", error, Promise.reject(error).catch(() => {}));
+
+    // Wait briefly for setImmediate to flush
+    await vi.waitFor(() => {
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining("db failure"),
+      );
+      expect(Sentry.captureException).toHaveBeenCalledWith(error);
+    }, { interval: 1, timeout: 100 });
+  });
+
+  it("exits with code 1 for non-AbortError rejections", async () => {
+    const error = new Error("real bug");
+    process.emit("unhandledRejection", error, Promise.reject(error).catch(() => {}));
+
+    await vi.waitFor(() => {
+      expect(process.exit).toHaveBeenCalledWith(1);
+    }, { interval: 1, timeout: 100 });
+  });
+
+  it("does not exit for AbortError (client disconnect)", async () => {
+    const abortError = new DOMException("The operation was aborted", "AbortError");
+    process.emit("unhandledRejection", abortError, Promise.reject(abortError).catch(() => {}));
+
+    // Wait at least 2 event-loop turns for any pending setImmediate
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(process.exit).not.toHaveBeenCalled();
+  });
+
+  it("wraps non-Error reasons in an Error object", async () => {
+    const reason = "string reason";
+    process.emit("unhandledRejection", reason, Promise.reject(reason).catch(() => {}));
+
+    await vi.waitFor(() => {
+      expect(Sentry.captureException).toHaveBeenCalledWith(expect.any(Error));
+      expect((Sentry.captureException as ReturnType<typeof vi.fn>).mock.calls[0][0].message).toBe(
+        "string reason",
+      );
+    }, { interval: 1, timeout: 100 });
+  });
+});
+
 describe("main", () => {
   const originalDatabaseUrl = process.env.DATABASE_URL;
   const originalClickHouseUrl = process.env.CLICKHOUSE_URL;
