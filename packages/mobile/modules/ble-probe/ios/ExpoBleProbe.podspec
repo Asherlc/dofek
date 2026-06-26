@@ -7,7 +7,7 @@ Pod::Spec.new do |s|
   s.author         = 'Asher Cohen'
   s.source         = { git: '' }
 
-  s.platform       = :ios, '16.0'
+  s.platform       = :ios, '16.4'
   s.swift_version  = '5.9'
 
   s.source_files   = '**/*.swift'
