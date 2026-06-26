@@ -888,6 +888,18 @@ describe("unhandledRejection handler", () => {
     );
   });
 
+  it("exits for non-AbortError DOMException", async () => {
+    const domError = new DOMException("network failure", "NetworkError");
+    process.emit("unhandledRejection", domError, null);
+
+    await vi.waitFor(
+      () => {
+        expect(process.exit).toHaveBeenCalledWith(1);
+      },
+      { interval: 1, timeout: 100 },
+    );
+  });
+
   it("does not exit for AbortError (client disconnect)", async () => {
     const abortError = new DOMException("The operation was aborted", "AbortError");
     process.emit("unhandledRejection", abortError, null);
