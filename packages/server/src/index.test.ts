@@ -848,11 +848,13 @@ describe("unhandledRejection handler", () => {
 
   beforeAll(() => {
     process.on("unhandledRejection", onUnhandledRejection);
+    vi.stubGlobal("setImmediate", (cb: () => void) => cb());
     exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined);
   });
 
   afterAll(() => {
     process.off("unhandledRejection", onUnhandledRejection);
+    vi.unstubAllGlobals();
     exitSpy.mockRestore();
   });
 
