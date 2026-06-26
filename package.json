@@ -268,7 +268,8 @@
       "yaml": "2.9.0"
     },
     "patchedDependencies": {
-      "@expo/plist@0.0.18": "patches/@expo__plist@0.0.18.patch"
+      "@expo/plist@0.0.18": "patches/@expo__plist@0.0.18.patch",
+      "@expo/plist@0.7.0": "patches/@expo__plist@0.7.0.patch"
     }
   },
   "engines": {
