@@ -103,12 +103,12 @@ export interface CreatedTicket {
 const TOKEN_EXPIRY_SKEW_MS = 60_000;
 
 export class ZohoDeskError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-  ) {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
     super(message);
     this.name = "ZohoDeskError";
+    this.status = status;
   }
 }
 
