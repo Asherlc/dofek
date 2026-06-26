@@ -108,6 +108,12 @@ jobs:
           done
           echo "OTA server did not become healthy in time"
           exit 1
+      # eoas runs `pnpx expo export` internally and swallows its output, so a
+      # failing export only shows up as a generic "exited with non-zero code: 1".
+      # Run the same command up front so the real Metro/expo error is visible.
+      - name: Export iOS bundle (surfaces the error eoas hides)
+        working-directory: packages/mobile
+        run: pnpx expo export --output-dir dist --platform ios
       - name: Publish OTA update
         working-directory: packages/mobile
         env:
