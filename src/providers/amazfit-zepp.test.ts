@@ -1409,7 +1409,9 @@ describe("Amazfit/Zepp provider", () => {
     );
 
     expect(result.recordsSynced).toBe(0);
-    expect(result.errors).toMatchObject([{ message: "band_data: Amazfit/Zepp API error: server error" }]);
+    expect(result.errors).toMatchObject([
+      { message: "band_data: Amazfit/Zepp API error: server error" },
+    ]);
     expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
       tags: { provider: "amazfit-zepp", dataType: "band_data", phase: "sync" },
     });
@@ -1442,7 +1444,9 @@ describe("Amazfit/Zepp provider", () => {
       }),
     );
 
-    expect(result.errors).toMatchObject([{ message: "workouts: Amazfit/Zepp workout API error: workout error" }]);
+    expect(result.errors).toMatchObject([
+      { message: "workouts: Amazfit/Zepp workout API error: workout error" },
+    ]);
     expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
       tags: { provider: "amazfit-zepp", dataType: "workouts", phase: "sync" },
     });
