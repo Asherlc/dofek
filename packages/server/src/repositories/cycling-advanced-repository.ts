@@ -311,47 +311,13 @@ export class CyclingAdvancedRepository {
   async getEstimatedFtp(days: number): Promise<number | null> {
     const ftpResult = await this.#sensorStore.query(
       ftpSchema,
-      `WITH activity_power AS (
-        SELECT
-          a.id AS activity_id,
-          ds.recorded_at AS recorded_at,
-          row_number() OVER (
-            PARTITION BY a.id ORDER BY ds.recorded_at
-          ) AS rn,
-          sum(coalesce(ds.scalar, 0)) OVER (
-            PARTITION BY a.id ORDER BY ds.recorded_at
-            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-          ) AS cumsum
-        FROM analytics.deduped_sensor ds
-        INNER JOIN analytics.v_activity a
-          ON a.user_id = ds.user_id
-         AND ds.recorded_at >= a.started_at
-         AND ds.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
-        WHERE ds.user_id = {userId:UUID}
-          AND has({enduranceTypes:Array(String)}, a.activity_type)
-          AND a.started_at > now() - INTERVAL {days:Int32} DAY
-          AND ds.channel = 'power'
-          AND ds.is_deleted = 0
-      ),
-      sample_rate AS (
-        SELECT
-          activity_id,
-          greatest(toInt32(round(
-            dateDiff('second', min(recorded_at), max(recorded_at))
-            / nullIf(count() - 1, 0)
-          )), 1) AS interval_s
-        FROM activity_power
-        GROUP BY activity_id
-        HAVING count() > 1
-      )
-      SELECT
-        round(max(toFloat64(ap.cumsum - prev.cumsum) / round(1200.0 / sr.interval_s)) * 0.95, 1) AS ftp
-      FROM activity_power ap
-      INNER JOIN sample_rate sr ON sr.activity_id = ap.activity_id
-      INNER JOIN activity_power prev
-        ON prev.activity_id = ap.activity_id
-       AND toInt64(prev.rn) = toInt64(ap.rn) - toInt64(round(1200.0 / sr.interval_s))
-      WHERE toInt64(ap.rn) >= toInt64(round(1200.0 / sr.interval_s))`,
+      `SELECT
+        round(max(asum.best_twenty_minute_power) * 0.95, 1) AS ftp
+      FROM analytics.activity_summary asum
+      WHERE asum.user_id = {userId:UUID}
+        AND has({enduranceTypes:Array(String)}, asum.activity_type)
+        AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+        AND asum.best_twenty_minute_power IS NOT NULL`,
       {
         userId: this.#userId,
         days,
@@ -376,44 +342,19 @@ export class CyclingAdvancedRepository {
 
     const rows = await this.#sensorStore.query(
       variabilityRowSchema,
-      `WITH rolling AS (
-        SELECT
-          a.id AS activity_id,
-          avg(ds.scalar) OVER (
-            PARTITION BY a.id
-            ORDER BY toUnixTimestamp(ds.recorded_at)
-            RANGE BETWEEN 29 PRECEDING AND CURRENT ROW
-          ) AS rolling_30s_power
-        FROM analytics.deduped_sensor ds
-        INNER JOIN analytics.v_activity a
-          ON a.user_id = ds.user_id
-         AND ds.recorded_at >= a.started_at
-         AND ds.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
-        WHERE ds.user_id = {userId:UUID}
-          AND has({enduranceTypes:Array(String)}, a.activity_type)
-          AND a.started_at > now() - INTERVAL {days:Int32} DAY
-          AND ds.channel = 'power'
-          AND ds.scalar > 0
-          AND ds.is_deleted = 0
-      ),
-      grouped AS (
-        SELECT
-          toString(a.id) AS activity_id,
-          toString(toDate(toTimeZone(a.started_at, {timezone:String}))) AS date,
-          a.name AS name,
-          a.started_at AS started_at,
-          round(pow(avg(pow(r.rolling_30s_power, 4)), 0.25), 1) AS np,
-          round(avg(r.rolling_30s_power), 1) AS avg_power
-        FROM rolling r
-        INNER JOIN analytics.v_activity a ON a.id = r.activity_id
-        GROUP BY a.id, a.started_at, a.name
-        HAVING count() >= 60
-      )
-      SELECT
-        activity_id, date, name, np, avg_power,
+      `SELECT
+        toString(asum.activity_id) AS activity_id,
+        toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS date,
+        asum.name AS name,
+        round(asum.normalized_power, 1) AS np,
+        round(asum.smoothed_avg_power, 1) AS avg_power,
         toInt32(count() OVER ()) AS total_count
-      FROM grouped
-      ORDER BY started_at DESC
+      FROM analytics.activity_summary asum
+      WHERE asum.user_id = {userId:UUID}
+        AND has({enduranceTypes:Array(String)}, asum.activity_type)
+        AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+        AND asum.normalized_power IS NOT NULL
+      ORDER BY asum.started_at DESC
       LIMIT {limit:Int32}
       OFFSET {offset:Int32}`,
       {
@@ -455,97 +396,17 @@ export class CyclingAdvancedRepository {
 
     const rows = await this.#sensorStore.query(
       vamRowSchema,
-      `WITH altitude_points AS (
-        SELECT
-          a.id AS activity_id,
-          alt.scalar AS altitude,
-          alt.recorded_at AS recorded_at,
-          lagInFrame(alt.scalar) OVER (
-            PARTITION BY a.id ORDER BY alt.recorded_at
-          ) AS prev_altitude,
-          lagInFrame(alt.recorded_at) OVER (
-            PARTITION BY a.id ORDER BY alt.recorded_at
-          ) AS prev_recorded_at
-        FROM analytics.deduped_sensor alt
-        INNER JOIN analytics.v_activity a
-          ON a.user_id = alt.user_id
-         AND alt.recorded_at >= a.started_at
-         AND alt.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
-        WHERE a.user_id = {userId:UUID}
-          AND has({enduranceTypes:Array(String)}, a.activity_type)
-          AND a.started_at > now() - INTERVAL {days:Int32} DAY
-          AND alt.channel = 'altitude'
-          AND alt.is_deleted = 0
-      ),
-      grade_activities AS (
-        SELECT DISTINCT
-          a.id AS activity_id,
-          1 AS has_grade_samples
-        FROM analytics.deduped_sensor grd
-        INNER JOIN analytics.v_activity a
-          ON a.user_id = grd.user_id
-         AND grd.recorded_at >= a.started_at
-         AND grd.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
-        WHERE a.user_id = {userId:UUID}
-          AND has({enduranceTypes:Array(String)}, a.activity_type)
-          AND a.started_at > now() - INTERVAL {days:Int32} DAY
-          AND grd.channel = 'grade'
-          AND grd.is_deleted = 0
-      ),
-      grade_points AS (
-        SELECT
-          a.id AS activity_id,
-          grd.recorded_at AS recorded_at,
-          grd.scalar AS grade
-        FROM analytics.deduped_sensor grd
-        INNER JOIN analytics.v_activity a
-          ON a.user_id = grd.user_id
-         AND grd.recorded_at >= a.started_at
-         AND grd.recorded_at <= coalesce(a.ended_at, a.started_at + INTERVAL 12 HOUR)
-        WHERE a.user_id = {userId:UUID}
-          AND has({enduranceTypes:Array(String)}, a.activity_type)
-          AND a.started_at > now() - INTERVAL {days:Int32} DAY
-          AND grd.channel = 'grade'
-          AND grd.is_deleted = 0
-      ),
-      climbing_segments AS (
-        SELECT
-          ap.activity_id AS activity_id,
-          ap.recorded_at AS recorded_at,
-          ap.altitude AS altitude,
-          ap.prev_altitude AS prev_altitude,
-          ap.prev_recorded_at AS prev_recorded_at,
-          gp.grade AS grade,
-          coalesce(ga.has_grade_samples, 0) = 1 AS has_grade_samples,
-          row_number() OVER (
-            PARTITION BY ap.activity_id, ap.recorded_at
-            ORDER BY
-              if(gp.recorded_at IS NULL, 1, 0) ASC,
-              abs(dateDiff('second', gp.recorded_at, ap.recorded_at)) ASC,
-              gp.recorded_at ASC
-          ) AS grade_rank
-        FROM altitude_points ap
-        LEFT JOIN grade_activities ga ON ga.activity_id = ap.activity_id
-        LEFT JOIN grade_points gp
-          ON gp.activity_id = ap.activity_id
-         AND gp.recorded_at BETWEEN ap.recorded_at - INTERVAL 5 SECOND
-                                AND ap.recorded_at + INTERVAL 5 SECOND
-      )
-      SELECT
-        toString(toDate(toTimeZone(a.started_at, {timezone:String}))) AS date,
-        a.name AS name,
-        round(sum(cs.altitude - cs.prev_altitude), 1) AS elevation_gain,
-        toInt32(sum(dateDiff('second', cs.prev_recorded_at, cs.recorded_at))) AS climbing_seconds
-      FROM climbing_segments cs
-      INNER JOIN analytics.v_activity a ON a.id = cs.activity_id
-      WHERE cs.prev_altitude IS NOT NULL
-        AND cs.prev_recorded_at IS NOT NULL
-        AND cs.altitude > cs.prev_altitude
-        AND cs.grade_rank = 1
-        AND (NOT coalesce(cs.has_grade_samples, false) OR cs.grade > 3)
-      GROUP BY a.id, a.started_at, a.name
-      HAVING sum(dateDiff('second', cs.prev_recorded_at, cs.recorded_at)) > 60
-      ORDER BY a.started_at`,
+      `SELECT
+        toString(toDate(toTimeZone(asum.started_at, {timezone:String}))) AS date,
+        asum.name AS name,
+        round(asum.climbing_elevation_gain_m, 1) AS elevation_gain,
+        toInt32(asum.climbing_seconds) AS climbing_seconds
+      FROM analytics.activity_summary asum
+      WHERE asum.user_id = {userId:UUID}
+        AND has({enduranceTypes:Array(String)}, asum.activity_type)
+        AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+        AND asum.climbing_seconds > 60
+      ORDER BY asum.started_at`,
       {
         userId: this.#userId,
         timezone: this.#timezone,
