@@ -113,7 +113,7 @@ jobs:
         env:
           DEBUG: true
           RELEASE_CHANNEL: production
-        run: npx eoas@2.3.17 publish --branch main --platform ios --nonInteractive
+        run: npx eoas@2.3.17 publish --branch main --platform ios --nonInteractive --packageRunner npx
 
       - uses: ./.github/actions/append-dispatcher-run-summary
         if: always()

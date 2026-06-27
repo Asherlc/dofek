@@ -65,6 +65,8 @@ jobs:
             EXPO_PUBLIC_OTEL_HEADERS
       - name: Export iOS bundle
         run: cd packages/mobile && pnpm expo export --platform ios --clear
+      - name: Validate OTA export path
+        run: cd packages/mobile && npx expo export --output-dir /tmp/ota-export-validate --platform ios
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mobile-metro-bundle
