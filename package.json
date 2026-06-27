@@ -259,6 +259,8 @@
       "@slack/bolt>path-to-regexp": "8.4.2",
       "picomatch@>=4.0.0 <4.0.4": "4.0.4",
       "qs": "6.15.2",
+      "react": "19.2.3",
+      "react-dom": "19.2.3",
       "router>path-to-regexp": "8.4.2",
       "protobufjs": "8.6.4",
       "shell-quote": "1.8.4",
