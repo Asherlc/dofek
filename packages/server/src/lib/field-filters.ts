@@ -1,11 +1,11 @@
-import { type SQL, sql } from "drizzle-orm";
-import { z } from "zod";
 import {
   isDateFilterColumn,
   isDateTimeFilterColumn,
   isRangeFilterColumn,
   parseRangeFilterKey,
-} from "./field-filter-columns.ts";
+} from "@dofek/filter-columns";
+import { type SQL, sql } from "drizzle-orm";
+import { z } from "zod";
 
 export const SQL_COLUMN_NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
 

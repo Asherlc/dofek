@@ -38,6 +38,7 @@ COPY packages/garmin-connect/package.json ./packages/garmin-connect/
 COPY packages/trainingpeaks-connect/package.json ./packages/trainingpeaks-connect/
 COPY packages/provider-http/package.json ./packages/provider-http/
 COPY packages/format/package.json ./packages/format/
+COPY packages/filter-columns/package.json ./packages/filter-columns/
 COPY packages/scoring/package.json ./packages/scoring/
 COPY packages/nutrition/package.json ./packages/nutrition/
 COPY packages/training/package.json ./packages/training/
@@ -104,6 +105,8 @@ COPY --from=source --chown=node:node /app/packages/provider-http/src ./packages/
 COPY --from=source --chown=node:node /app/packages/provider-http/package.json ./packages/provider-http/
 COPY --from=source --chown=node:node /app/packages/format/src ./packages/format/src
 COPY --from=source --chown=node:node /app/packages/format/package.json ./packages/format/
+COPY --from=source --chown=node:node /app/packages/filter-columns/src ./packages/filter-columns/src
+COPY --from=source --chown=node:node /app/packages/filter-columns/package.json ./packages/filter-columns/
 COPY --from=source --chown=node:node /app/packages/stats/src ./packages/stats/src
 COPY --from=source --chown=node:node /app/packages/stats/package.json ./packages/stats/
 COPY --from=source --chown=node:node /app/packages/scoring/src ./packages/scoring/src
@@ -137,6 +140,7 @@ RUN ln -sfn /app node_modules/dofek && \
     ln -sfn /app/packages/whoop-whoop node_modules/whoop-whoop && \
     mkdir -p node_modules/@dofek && \
     ln -sfn /app/packages/format node_modules/@dofek/format && \
+    ln -sfn /app/packages/filter-columns node_modules/@dofek/filter-columns && \
     ln -sfn /app/packages/stats node_modules/@dofek/stats && \
     ln -sfn /app/packages/scoring node_modules/@dofek/scoring && \
     ln -sfn /app/packages/onboarding node_modules/@dofek/onboarding && \

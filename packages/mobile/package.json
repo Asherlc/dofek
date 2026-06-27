@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "main": "index.js",
+  "expo": {
+    "install": {
+      "exclude": [
+        "@sentry/react-native",
+        "typescript"
+      ]
+    }
+  },
   "scripts": {
     "start": "expo start",
     "storybook": "EXPO_PUBLIC_STORYBOOK_ENABLED=true sb-rn-get-stories && EXPO_PUBLIC_STORYBOOK_ENABLED=true expo start --clear",
@@ -61,14 +69,14 @@
     "expo-task-manager": "56.0.19",
     "expo-updates": "56.0.19",
     "expo-web-browser": "56.0.5",
-    "react": "19.2.4",
+    "react": "19.2.3",
     "react-native": "0.85.3",
     "react-native-body-highlighter": "3.1.4",
     "react-native-maps": "1.27.2",
     "react-native-reanimated": "4.3.1",
-    "react-native-safe-area-context": "5.8.0",
-    "react-native-screens": "4.25.1",
-    "react-native-svg": "15.15.5",
+    "react-native-safe-area-context": "5.7.0",
+    "react-native-screens": "4.25.2",
+    "react-native-svg": "15.15.4",
     "zod": "3.25.76"
   },
   "devDependencies": {
@@ -79,10 +87,10 @@
     "@testing-library/react": "16.3.2",
     "@types/react": "19.2.14",
     "playwright": "1.55.0",
-    "react-dom": "19.2.4",
+    "react-dom": "19.2.3",
     "react-native-web": "0.21.2",
     "storybook": "10.4.0",
-    "typescript": "5.9.3",
+    "typescript": "6.0.3",
     "vite": "8.0.13"
   }
 }

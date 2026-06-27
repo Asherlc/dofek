@@ -5,8 +5,7 @@
   "type": "module",
   "exports": {
     "./router": "./src/router.ts",
-    "./types": "./src/types.ts",
-    "./field-filter-columns": "./src/lib/field-filter-columns.ts"
+    "./types": "./src/types.ts"
   },
   "scripts": {
     "dev": "../../scripts/with-env.sh tsx src/index.ts"
@@ -15,6 +14,7 @@
     "@ai-sdk/google": "3.0.43",
     "@ai-sdk/mistral": "3.0.24",
     "@dofek/auth": "workspace:*",
+    "@dofek/filter-columns": "workspace:*",
     "@dofek/format": "workspace:*",
     "@dofek/heart-rate-variability": "workspace:*",
     "@dofek/imu": "workspace:*",
@@ -51,6 +51,6 @@
     "@types/cookie-parser": "1.4.10",
     "@types/express": "5.0.6",
     "tsx": "4.21.0",
-    "typescript": "5.9.3"
+    "typescript": "6.0.3"
   }
 }

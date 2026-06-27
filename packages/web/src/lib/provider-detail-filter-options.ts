@@ -1,5 +1,5 @@
+import { type FilterInputType, getFilterInputType } from "@dofek/filter-columns";
 import { formatActivityTypeLabel } from "@dofek/training/training";
-import { type FilterInputType, getFilterInputType } from "dofek-server/field-filter-columns";
 
 export type { FilterInputType };
 export { getFilterInputType };

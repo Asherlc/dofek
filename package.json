@@ -223,7 +223,7 @@
     "stylelint": "17.11.0",
     "testcontainers": "12.0.0",
     "tsx": "4.21.0",
-    "typescript": "5.9.3",
+    "typescript": "6.0.3",
     "vitest": "3.2.4"
   },
   "sherif": {
@@ -259,6 +259,8 @@
       "@slack/bolt>path-to-regexp": "8.4.2",
       "picomatch@>=4.0.0 <4.0.4": "4.0.4",
       "qs": "6.15.2",
+      "react": "19.2.3",
+      "react-dom": "19.2.3",
       "router>path-to-regexp": "8.4.2",
       "protobufjs": "8.6.4",
       "shell-quote": "1.8.4",
