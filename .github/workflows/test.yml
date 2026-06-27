@@ -279,10 +279,13 @@ jobs:
           pid2=$!
           (cd packages/web && pnpm exec tsr generate && pnpm tsc --noEmit) &
           pid3=$!
+          (cd packages/zepp && pnpm tsc --noEmit) &
+          pid4=$!
           fail=0
           wait $pid1 || fail=1
           wait $pid2 || fail=1
           wait $pid3 || fail=1
+          wait $pid4 || fail=1
           exit $fail
 
   sherif:
