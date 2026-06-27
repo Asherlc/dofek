@@ -66,7 +66,7 @@ jobs:
       - name: Export iOS bundle
         run: cd packages/mobile && pnpm expo export --platform ios --clear
       - name: Validate OTA export path
-        run: cd packages/mobile && npx expo export --output-dir /tmp/ota-export-validate --platform ios
+        run: cd packages/mobile && pnpm expo export --output-dir /tmp/ota-export-validate --platform ios
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mobile-metro-bundle
@@ -96,7 +96,7 @@ jobs:
           cache-key-prefix: ccache-ios
       - name: Generate native project
         working-directory: packages/mobile
-        run: npx expo prebuild --clean --platform ios
+        run: pnpm expo prebuild --clean --platform ios
       - name: Cache CocoaPods
         uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
         with:
@@ -161,7 +161,7 @@ jobs:
       - uses: ./.github/actions/setup-node-pnpm
       - name: Generate native project
         working-directory: packages/mobile
-        run: npx expo prebuild --clean --platform ios
+        run: pnpm expo prebuild --clean --platform ios
       - name: Cache CocoaPods
         uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
         with:
