@@ -1322,6 +1322,39 @@ describe("Amazfit/Zepp provider", () => {
     expect(deleteTokens).toHaveBeenCalledWith(db, "amazfit-zepp", TEST_USER_ID);
   });
 
+  it("reports deleteTokens errors but continues with sync result", async () => {
+    await mockStoredZeppCredentials();
+
+    const { db } = createMockDatabase();
+    const { deleteTokens } = await import("../db/tokens.ts");
+    vi.mocked(deleteTokens).mockRejectedValueOnce(new Error("token deletion failed"));
+
+    const fetchFn: typeof globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("/v1/sport/run/history.json")) return emptyZeppWorkoutHistoryResponse();
+      return new Response(JSON.stringify({ code: 1002, message: "invalid token", data: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    const provider = new AmazfitZeppProvider(fetchFn);
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00.000Z") }),
+        userId: TEST_USER_ID,
+      }),
+    );
+
+    expect(result.errors).toMatchObject([
+      { message: "band_data: Amazfit/Zepp access token expired." },
+    ]);
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { provider: "amazfit-zepp", phase: "token_deletion" },
+    });
+  });
+
   it("propagates rate limit errors from sync", async () => {
     await mockStoredZeppCredentials();
 
