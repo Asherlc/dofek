@@ -62,6 +62,9 @@ vi.mock("../routes/activity-export.ts", () => ({
 }));
 vi.mock("../routes/auth/index.ts", () => ({ createAuthRouter: vi.fn(() => express.Router()) }));
 vi.mock("../routes/export.ts", () => ({ createExportRouter: vi.fn(() => express.Router()) }));
+vi.mock("./routes/ingest-zos-health.ts", () => ({
+  createIngestZosHealthRouter: vi.fn(() => express.Router()),
+}));
 vi.mock("../routes/stripe-webhook.ts", () => ({
   createStripeWebhookRouter: vi.fn(() => express.Router()),
 }));
@@ -104,14 +107,6 @@ function request(
 }
 
 describe("createApp", () => {
-  it("registers the ingest route", async () => {
-    const { createDatabaseFromEnv } = await import("dofek/db");
-    const fakeDb = createDatabaseFromEnv();
-    const app = createApp(fakeDb, makeMockSensorStore());
-    const res = await request(app, "POST", "/api/ingest/zos-health");
-    expect(res.status).toBe(401);
-  });
-
   it("returns 404 for non-existent routes", async () => {
     const { createDatabaseFromEnv } = await import("dofek/db");
     const fakeDb = createDatabaseFromEnv();
@@ -120,12 +115,19 @@ describe("createApp", () => {
     expect(res.status).toBe(404);
   });
 
-  it("passes db to ingest router", async () => {
+  it("registers the ingest route using createIngestZosHealthRouter", async () => {
+    const { createIngestZosHealthRouter } = await import("./routes/ingest-zos-health.ts");
     const { createDatabaseFromEnv } = await import("dofek/db");
     const fakeDb = createDatabaseFromEnv();
-    const app = createApp(fakeDb, makeMockSensorStore());
-    const res = await request(app, "POST", "/api/ingest/zos-health");
-    expect(res.status).toBe(401);
-    expect(res.body).toContain("Companion token is required");
+    createApp(fakeDb, makeMockSensorStore());
+    expect(createIngestZosHealthRouter).toHaveBeenCalled();
+  });
+
+  it("passes db to createIngestZosHealthRouter", async () => {
+    const { createIngestZosHealthRouter } = await import("./routes/ingest-zos-health.ts");
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const fakeDb = createDatabaseFromEnv();
+    createApp(fakeDb, makeMockSensorStore());
+    expect(createIngestZosHealthRouter).toHaveBeenCalledWith({ db: fakeDb });
   });
 });

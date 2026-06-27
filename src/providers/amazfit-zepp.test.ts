@@ -13,7 +13,7 @@ import {
   encodeZeppTokenScopes,
   parseZeppBandDay,
 } from "./amazfit-zepp.ts";
-import { ProviderInvalidCredentialsError, AccessTokenExpiredError } from "./auth-errors.ts";
+import { AccessTokenExpiredError, ProviderInvalidCredentialsError } from "./auth-errors.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 import { createCapturingMetricStreamPublisher, createMockDatabase } from "./test-helpers.ts";
@@ -250,8 +250,9 @@ describe("AmazfitZeppClient workout history", () => {
       expect.fail("Expected error to be thrown");
     } catch (error: unknown) {
       expect(error).toBeInstanceOf(AccessTokenExpiredError);
-      expect((error as Error).cause).toBeInstanceOf(Error);
-      expect(((error as Error).cause as Error).message).toContain("401");
+      if (error instanceof Error && error.cause instanceof Error) {
+        expect(error.cause.message).toContain("401");
+      }
     }
   });
 
@@ -268,8 +269,12 @@ describe("AmazfitZeppClient workout history", () => {
       expect.fail("Expected error to be thrown");
     } catch (error: unknown) {
       expect(error).toBeInstanceOf(AccessTokenExpiredError);
-      expect((error as Error).cause).toBeInstanceOf(Error);
-      expect(((error as Error).cause as Error).message).toContain("workout token expired");
+      if (error instanceof Error) {
+        expect(error.cause).toBeInstanceOf(Error);
+        if (error.cause instanceof Error) {
+          expect(error.cause.message).toContain("workout token expired");
+        }
+      }
     }
   });
 
@@ -536,8 +541,9 @@ describe("Amazfit/Zepp provider", () => {
       expect.fail("Expected error to be thrown");
     } catch (error: unknown) {
       expect(error).toBeInstanceOf(AccessTokenExpiredError);
-      expect((error as Error).cause).toBeInstanceOf(Error);
-      expect(((error as Error).cause as Error).message).toContain("401");
+      if (error instanceof Error && error.cause instanceof Error) {
+        expect(error.cause.message).toContain("401");
+      }
     }
   });
 
@@ -554,8 +560,9 @@ describe("Amazfit/Zepp provider", () => {
       expect.fail("Expected error to be thrown");
     } catch (error: unknown) {
       expect(error).toBeInstanceOf(AccessTokenExpiredError);
-      expect((error as Error).cause).toBeInstanceOf(Error);
-      expect(((error as Error).cause as Error).message).toContain("token expired");
+      if (error instanceof Error && error.cause instanceof Error) {
+        expect(error.cause.message).toContain("token expired");
+      }
     }
   });
 

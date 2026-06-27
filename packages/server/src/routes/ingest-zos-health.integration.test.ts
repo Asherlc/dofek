@@ -28,24 +28,55 @@ function createFakeDb(): import("dofek/db").Database & { captured: CapturedSql[]
 
 function createFakeDbWithSleepConflict(): import("dofek/db").Database & {
   captured: CapturedSql[];
+  insertMock: ReturnType<typeof vi.fn>;
 } {
   const captured: CapturedSql[] = [];
   const returningMock = vi.fn(async () => []);
   const onConflictDoNothingMock = vi.fn(() => ({ returning: returningMock }));
   const valuesMock = vi.fn(() => ({ onConflictDoNothing: onConflictDoNothingMock }));
   const insertMock = vi.fn(() => ({ values: valuesMock }));
+  let executeCallCount = 0;
 
   return {
     captured,
+    insertMock,
     execute: vi.fn(async (sqlQuery: unknown) => {
       captured.push({ sql: String(sqlQuery) });
-      if (String(sqlQuery).includes("SELECT id FROM fitness.sleep_session")) {
-        return [{ id: 999 }];
+      executeCallCount++;
+      // The second execute call (0-indexed: index 1) is the sleep session SELECT.
+      // The first call is the provider INSERT whose result is unused.
+      if (executeCallCount === 2) {
+        return [{ id: "existing-session-id" }];
       }
       return [];
     }),
     insert: insertMock,
-  } satisfies import("dofek/db").Database & { captured: CapturedSql[] };
+  } satisfies import("dofek/db").Database & {
+    captured: CapturedSql[];
+    insertMock: ReturnType<typeof vi.fn>;
+  };
+}
+
+function createFakeDbCapturingSleepValues(): {
+  db: import("dofek/db").Database;
+  sleepInsertValues: unknown[];
+} {
+  const sleepInsertValues: unknown[] = [];
+  const returningMock = vi.fn(async () => [{ id: "captured-session-id" }]);
+  const onConflictDoNothingMock = vi.fn(() => ({ returning: returningMock }));
+  const valuesMock = vi.fn((vals: unknown) => {
+    sleepInsertValues.push(vals);
+    return { onConflictDoNothing: onConflictDoNothingMock };
+  });
+  const insertMock = vi.fn(() => ({ values: valuesMock }));
+
+  return {
+    sleepInsertValues,
+    db: {
+      execute: vi.fn(async () => []),
+      insert: insertMock,
+    } satisfies import("dofek/db").Database,
+  };
 }
 
 function createFakeDbThatThrows(): import("dofek/db").Database {
@@ -540,5 +571,256 @@ describe("POST /api/ingest/zos-health", () => {
     });
     expect(res.status).toBe(200);
     expect(JSON.parse(res.body)).toEqual({ status: "ok" });
+  });
+
+  // ── Mutation-killing: block entry guards ──
+
+  it("executes daily metrics SQL when dailyMetrics is provided", async () => {
+    const db = createFakeDb();
+    const { app } = createTestApp(db);
+    const res = await post(app, "/api/ingest/zos-health", {
+      headers: { Authorization: "Bearer valid-token" },
+      body: {
+        dailyMetrics: { "2026-06-26": { steps: 5000 } },
+      },
+    });
+    expect(res.status).toBe(200);
+    // Provider insert + daily_metrics insert = at least 2 execute calls
+    expect(vi.mocked(db.execute).mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("does not execute daily metrics SQL when only sleepSessions provided", async () => {
+    const db = createFakeDb();
+    const { app } = createTestApp(db);
+    const res = await post(app, "/api/ingest/zos-health", {
+      headers: { Authorization: "Bearer valid-token" },
+      body: {
+        sleepSessions: [
+          {
+            externalId: "sleep-no-metrics",
+            startedAt: "2026-06-26T22:00:00Z",
+            endedAt: "2026-06-27T06:00:00Z",
+          },
+        ],
+      },
+    });
+    expect(res.status).toBe(200);
+    // Provider insert + sleep SELECT = 2 calls, no daily_metrics insert
+    const executeCalls = vi.mocked(db.execute).mock.calls.length;
+    expect(executeCalls).toBeLessThan(3);
+  });
+
+  it("executes daily metrics only for valid date keys", async () => {
+    const db = createFakeDb();
+    const { app } = createTestApp(db);
+    const res = await post(app, "/api/ingest/zos-health", {
+      headers: { Authorization: "Bearer valid-token" },
+      body: {
+        dailyMetrics: {
+          "2026-06-26": { steps: 9000 },
+          "not-a-valid-date": { steps: 1000 },
+        },
+      },
+    });
+    expect(res.status).toBe(200);
+    // Provider insert + exactly 1 valid daily_metrics insert (invalid date skipped)
+    expect(vi.mocked(db.execute).mock.calls.length).toBe(2);
+  });
+
+  it("executes only provider insert when all daily metrics dates are invalid", async () => {
+    const db = createFakeDb();
+    const { app } = createTestApp(db);
+    const res = await post(app, "/api/ingest/zos-health", {
+      headers: { Authorization: "Bearer valid-token" },
+      body: {
+        dailyMetrics: {
+          "not-a-date": { steps: 1000 },
+          "also-not-a-date": { steps: 2000 },
+        },
+      },
+    });
+    expect(res.status).toBe(200);
+    // Only provider insert — invalid dates are all skipped
+    expect(vi.mocked(db.execute).mock.calls.length).toBe(1);
+  });
+
+  it("calls insert when sleep sessions are provided", async () => {
+    const db = createFakeDb();
+    const { app } = createTestApp(db);
+    const res = await post(app, "/api/ingest/zos-health", {
+      headers: { Authorization: "Bearer valid-token" },
+      body: {
+        sleepSessions: [
+          {
+            externalId: "sleep-insert-check",
+            startedAt: "2026-06-26T22:00:00Z",
+            endedAt: "2026-06-27T06:00:00Z",
+          },
+        ],
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(db.insert).toHaveBeenCalled();
+  });
+
+  it("does not call insert when no sleep sessions in payload", async () => {
+    const db = createFakeDb();
+    const { app } = createTestApp(db);
+    const res = await post(app, "/api/ingest/zos-health", {
+      headers: { Authorization: "Bearer valid-token" },
+      body: {
+        dailyMetrics: { "2026-06-26": { steps: 5000 } },
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("inserts sleep stages when stages and session id are available", async () => {
+    const db = createFakeDb();
+    const { app } = createTestApp(db);
+    const res = await post(app, "/api/ingest/zos-health", {
+      headers: { Authorization: "Bearer valid-token" },
+      body: {
+        sleepSessions: [
+          {
+            externalId: "sleep-with-stage",
+            startedAt: "2026-06-26T22:00:00Z",
+            endedAt: "2026-06-27T06:00:00Z",
+            stages: [
+              {
+                stage: "deep",
+                startedAt: "2026-06-26T23:00:00Z",
+                endedAt: "2026-06-27T00:00:00Z",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(res.status).toBe(200);
+    // insert called twice: once for sleepSession, once for sleepStage
+    expect(vi.mocked(db.insert).mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("does not insert stages when session has no stages", async () => {
+    const db = createFakeDb();
+    const { app } = createTestApp(db);
+    const res = await post(app, "/api/ingest/zos-health", {
+      headers: { Authorization: "Bearer valid-token" },
+      body: {
+        sleepSessions: [
+          {
+            externalId: "sleep-no-stages",
+            startedAt: "2026-06-26T22:00:00Z",
+            endedAt: "2026-06-27T06:00:00Z",
+          },
+        ],
+      },
+    });
+    expect(res.status).toBe(200);
+    // Only 1 insert: for sleepSession itself (no stage inserts)
+    expect(vi.mocked(db.insert).mock.calls.length).toBe(1);
+  });
+
+  it("inserts sleep session with correct optional field values", async () => {
+    const { db, sleepInsertValues } = createFakeDbCapturingSleepValues();
+    const { app } = createTestApp(db);
+    const res = await post(app, "/api/ingest/zos-health", {
+      headers: { Authorization: "Bearer valid-token" },
+      body: {
+        sleepSessions: [
+          {
+            externalId: "sleep-all-opts",
+            startedAt: "2026-06-26T22:00:00Z",
+            endedAt: "2026-06-27T06:00:00Z",
+            durationMinutes: 480,
+            deepMinutes: 90,
+            remMinutes: 120,
+            lightMinutes: 240,
+            awakeMinutes: 30,
+            efficiencyPct: 87.5,
+          },
+        ],
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(sleepInsertValues[0]).toMatchObject({
+      durationMinutes: 480,
+      deepMinutes: 90,
+      remMinutes: 120,
+      lightMinutes: 240,
+      awakeMinutes: 30,
+      efficiencyPct: 87.5,
+    });
+  });
+
+  it("uses existing session id from SELECT when insert conflicts and inserts stages", async () => {
+    const db = createFakeDbWithSleepConflict();
+    const { app } = createTestApp(db);
+    const res = await post(app, "/api/ingest/zos-health", {
+      headers: { Authorization: "Bearer valid-token" },
+      body: {
+        sleepSessions: [
+          {
+            externalId: "conflict-with-stages",
+            startedAt: "2026-06-26T22:00:00Z",
+            endedAt: "2026-06-27T06:00:00Z",
+            stages: [
+              {
+                stage: "rem",
+                startedAt: "2026-06-27T04:00:00Z",
+                endedAt: "2026-06-27T05:00:00Z",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(res.status).toBe(200);
+    // insert called twice: sleepSession (returns [] on conflict) + sleepStage (using existingId)
+    expect(db.insertMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("executes activity SQL when activities are provided", async () => {
+    const db = createFakeDb();
+    const { app } = createTestApp(db);
+    const res = await post(app, "/api/ingest/zos-health", {
+      headers: { Authorization: "Bearer valid-token" },
+      body: {
+        activities: [
+          {
+            externalId: "act-exec-check",
+            activityType: "running",
+            startedAt: "2026-06-26T10:00:00Z",
+            endedAt: "2026-06-26T11:00:00Z",
+          },
+        ],
+      },
+    });
+    expect(res.status).toBe(200);
+    // Provider insert + activity insert = at least 2 execute calls
+    expect(vi.mocked(db.execute).mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("does not execute activity SQL when no activities in payload", async () => {
+    const db = createFakeDb();
+    const { app } = createTestApp(db);
+    const res = await post(app, "/api/ingest/zos-health", {
+      headers: { Authorization: "Bearer valid-token" },
+      body: {
+        sleepSessions: [
+          {
+            externalId: "sleep-no-act",
+            startedAt: "2026-06-26T22:00:00Z",
+            endedAt: "2026-06-27T06:00:00Z",
+          },
+        ],
+      },
+    });
+    expect(res.status).toBe(200);
+    // No activity SQL: only provider insert + sleep SELECT
+    const callCount = vi.mocked(db.execute).mock.calls.length;
+    expect(callCount).toBeLessThanOrEqual(2);
   });
 });
