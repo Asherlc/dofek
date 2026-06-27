@@ -5,7 +5,6 @@ import { ZeppInvalidCredentialsError } from "zepp-client/client";
 import { runWithTokenUser } from "../db/token-user-context.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import {
-  AccessTokenExpiredError,
   AmazfitZeppClient,
   AmazfitZeppProvider,
   decodeZeppHeartRateSamples,
@@ -249,10 +248,10 @@ describe("AmazfitZeppClient workout history", () => {
     try {
       await client.getWorkoutHistory();
       expect.fail("Expected error to be thrown");
-    } catch (error) {
+    } catch (error: unknown) {
       expect(error).toBeInstanceOf(AccessTokenExpiredError);
-      expect(error.cause).toBeInstanceOf(Error);
-      expect(error.cause.message).toContain("401");
+      expect((error as Error).cause).toBeInstanceOf(Error);
+      expect(((error as Error).cause as Error).message).toContain("401");
     }
   });
 
@@ -267,10 +266,10 @@ describe("AmazfitZeppClient workout history", () => {
     try {
       await client.getWorkoutHistory();
       expect.fail("Expected error to be thrown");
-    } catch (error) {
+    } catch (error: unknown) {
       expect(error).toBeInstanceOf(AccessTokenExpiredError);
-      expect(error.cause).toBeInstanceOf(Error);
-      expect(error.cause.message).toContain("workout token expired");
+      expect((error as Error).cause).toBeInstanceOf(Error);
+      expect(((error as Error).cause as Error).message).toContain("workout token expired");
     }
   });
 
@@ -535,10 +534,10 @@ describe("Amazfit/Zepp provider", () => {
     try {
       await client.getBandData("2026-02-01", "2026-02-06");
       expect.fail("Expected error to be thrown");
-    } catch (error) {
+    } catch (error: unknown) {
       expect(error).toBeInstanceOf(AccessTokenExpiredError);
-      expect(error.cause).toBeInstanceOf(Error);
-      expect(error.cause.message).toContain("401");
+      expect((error as Error).cause).toBeInstanceOf(Error);
+      expect(((error as Error).cause as Error).message).toContain("401");
     }
   });
 
@@ -553,10 +552,10 @@ describe("Amazfit/Zepp provider", () => {
     try {
       await client.getBandData("2026-02-01", "2026-02-06");
       expect.fail("Expected error to be thrown");
-    } catch (error) {
+    } catch (error: unknown) {
       expect(error).toBeInstanceOf(AccessTokenExpiredError);
-      expect(error.cause).toBeInstanceOf(Error);
-      expect(error.cause.message).toContain("token expired");
+      expect((error as Error).cause).toBeInstanceOf(Error);
+      expect(((error as Error).cause as Error).message).toContain("token expired");
     }
   });
 
