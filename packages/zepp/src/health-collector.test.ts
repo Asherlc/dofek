@@ -150,6 +150,103 @@ describe("collectHealthData", () => {
     expect(result.sleep).toBeUndefined();
   });
 
+  it("handles heart rate without daily summary maximum", () => {
+    const sensors = makeSensors({
+      HeartRate: class {
+        getToday() {
+          return [];
+        }
+        getResting() {
+          return 0;
+        }
+        getDailySummary() {
+          return {};
+        }
+        getLast() {
+          return 0;
+        }
+      },
+    });
+    const result = collectHealthData(sensors);
+    expect(result.heartRate).toEqual([]);
+    expect(result.heartRateSummary).toBeUndefined();
+  });
+
+  it("handles blood oxygen with zero current value", () => {
+    const sensors = makeSensors({
+      BloodOxygen: class {
+        getCurrent() {
+          return { value: 0 };
+        }
+        getLastDay() {
+          return [];
+        }
+        getLastFewHour(_hours: number) {
+          return [];
+        }
+      },
+    });
+    const result = collectHealthData(sensors);
+    expect(result.bloodOxygenCurrent).toBeUndefined();
+    expect(result.bloodOxygenHourly).toEqual([]);
+    expect(result.spo2Recent).toBeUndefined();
+  });
+
+  it("handles empty spo2 recent readings", () => {
+    const sensors = makeSensors({
+      BloodOxygen: class {
+        getCurrent() {
+          return { value: 99 };
+        }
+        getLastDay() {
+          return [98, 97];
+        }
+        getLastFewHour(_hours: number) {
+          return [];
+        }
+      },
+    });
+    const result = collectHealthData(sensors);
+    expect(result.bloodOxygenCurrent).toBe(99);
+    expect(result.spo2Recent).toBeUndefined();
+  });
+
+  it("handles body temperature with zero current", () => {
+    const sensors = makeSensors({
+      BodyTemperature: class {
+        getCurrent() {
+          return { current: 0 };
+        }
+        getToday() {
+          return [];
+        }
+      },
+    });
+    const result = collectHealthData(sensors);
+    expect(result.bodyTemperatureCurrent).toBeUndefined();
+    expect(result.bodyTemperature).toEqual([]);
+  });
+
+  it("handles empty nap data", () => {
+    const sensors = makeSensors({
+      Sleep: class {
+        updateInfo() {}
+        getInfo() {
+          return { score: 75, deepTime: 60, startTime: 0, endTime: 360, totalTime: 360 };
+        }
+        getStage() {
+          return [];
+        }
+        getNap() {
+          return [];
+        }
+      },
+    });
+    const result = collectHealthData(sensors);
+    expect(result.sleep?.score).toBe(75);
+    expect(result.nap).toBeUndefined();
+  });
+
   it("handles unavailable sensors gracefully", () => {
     // A class that throws on construction but satisfies all sensor interfaces
     class ThrowingSensor {
