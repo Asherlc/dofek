@@ -202,7 +202,7 @@ jobs:
           fi
       - name: Generate native project
         working-directory: packages/mobile
-        run: npx expo prebuild --clean --platform ios
+        run: pnpm expo prebuild --clean --platform ios
       - name: Install CocoaPods dependencies
         run: cd packages/mobile/ios && pod install
       - name: Set build number

@@ -76,7 +76,7 @@ jobs:
               --branch "pr-${{ github.event.number }}" \
               --platform ios \
               --nonInteractive \
-              --packageRunner npx 2>&1)
+              --packageRunner pnpm 2>&1)
             publish_exit_code=$?
             set -e
             echo "$publish_output"
@@ -122,7 +122,7 @@ jobs:
           | **Commit** | $COMMIT_SHA |
 
           **To test on device:**
-          1. Build and install the preview client: \`PREVIEW_CHANNEL=pr-$PR_NUMBER npx expo prebuild --clean -p ios\`
+          1. Build and install the preview client: \`PREVIEW_CHANNEL=pr-$PR_NUMBER pnpm expo prebuild --clean -p ios\`
           2. Or tap deep link on an existing preview build: \`$DEEP_LINK\`
 
           > Each PR gets its own channel. Build a preview client with \`PREVIEW_CHANNEL=pr-{N}\` to test.
