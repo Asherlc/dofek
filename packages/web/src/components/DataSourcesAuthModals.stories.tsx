@@ -27,9 +27,3 @@ export const WithDescription: Story = {
       "This provider requires your device serial number. Find it on the back of your device or in the companion app settings.",
   },
 };
-
-export const WithError: Story = {
-  args: {
-    error: "Invalid email or password. Please try again.",
-  },
-};
