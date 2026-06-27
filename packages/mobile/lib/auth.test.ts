@@ -2,13 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AuthUserSchema,
   ConfiguredProvidersSchema,
+  clearSessionToken,
   fetchConfiguredProviders,
   fetchCurrentUser,
+  getSessionToken,
   isNativeAppleSignInAvailable,
   loginWithPassword,
   logout,
   registerWithPassword,
   requestPasswordReset,
+  saveSessionToken,
   startNativeAppleSignIn,
   startOAuthLogin,
 } from "./auth";
@@ -18,6 +21,7 @@ vi.mock("expo-secure-store", () => ({
   setItemAsync: vi.fn(),
   getItemAsync: vi.fn(),
   deleteItemAsync: vi.fn(),
+  AFTER_FIRST_UNLOCK: "kSecAttrAccessibleAfterFirstUnlock",
 }));
 vi.mock("expo-web-browser", () => ({
   openAuthSessionAsync: vi.fn(),
@@ -523,6 +527,34 @@ describe("requestPasswordReset", () => {
     await expect(requestPasswordReset("https://server.test", "user@example.com")).resolves.toEqual({
       message: "If that email has a password login, we'll send a reset link.",
     });
+  });
+});
+
+describe("session token storage", () => {
+  let SecureStore: typeof import("expo-secure-store");
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    SecureStore = await import("expo-secure-store");
+  });
+
+  it("saveSessionToken stores with AFTER_FIRST_UNLOCK accessibility", async () => {
+    await saveSessionToken("my-token");
+    expect(SecureStore.setItemAsync).toHaveBeenCalledWith("dofek_session_token", "my-token", {
+      keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK,
+    });
+  });
+
+  it("getSessionToken reads from the correct key", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValueOnce("stored-token");
+    const token = await getSessionToken();
+    expect(SecureStore.getItemAsync).toHaveBeenCalledWith("dofek_session_token");
+    expect(token).toBe("stored-token");
+  });
+
+  it("clearSessionToken deletes the correct key", async () => {
+    await clearSessionToken();
+    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("dofek_session_token");
   });
 });
 

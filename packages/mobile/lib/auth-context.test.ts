@@ -32,6 +32,45 @@ describe("auth-context", () => {
     expect(typeof mod.useAuth).toBe("function");
   });
 
+  describe("session token migration", () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+    });
+
+    it("re-saves the token on mount to migrate keychain accessibility", async () => {
+      const { getSessionToken, fetchCurrentUser, saveSessionToken } = await import("./auth");
+
+      vi.mocked(getSessionToken).mockResolvedValue("existing-token");
+      vi.mocked(fetchCurrentUser).mockResolvedValue({
+        id: "user-1",
+        name: "Test User",
+        email: "test@example.com",
+      });
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      await waitFor(() => {
+        expect(result.current.user).not.toBeNull();
+      });
+
+      expect(saveSessionToken).toHaveBeenCalledWith("existing-token");
+    });
+
+    it("does not re-save when no token exists", async () => {
+      const { getSessionToken, saveSessionToken } = await import("./auth");
+
+      vi.mocked(getSessionToken).mockResolvedValue(null);
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      await waitFor(() => {
+        expect(result.current.isLoading).toBe(false);
+      });
+
+      expect(saveSessionToken).not.toHaveBeenCalled();
+    });
+  });
+
   describe("logout", () => {
     beforeEach(() => {
       vi.clearAllMocks();
