@@ -48,7 +48,7 @@
     "@opentelemetry/sdk-logs": "0.218.0",
     "@opentelemetry/semantic-conventions": "1.41.1",
     "@sentry/cli": "3.4.2",
-      "@sentry/react-native": "8.11.1",
+    "@sentry/react-native": "8.11.1",
     "@tanstack/react-query": "5.90.21",
     "@trpc/client": "11.12.0",
     "@trpc/react-query": "11.12.0",
