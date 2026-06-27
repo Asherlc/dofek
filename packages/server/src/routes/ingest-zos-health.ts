@@ -149,7 +149,7 @@ export function createIngestZosHealthRouter(deps: { db: Database }): Router {
             continue;
           }
 
-          const [newSession] = await deps.db
+          const [insertedSession] = await deps.db
             .insert(sleepSession)
             .values({
               providerId: PROVIDER_ID,
@@ -170,7 +170,19 @@ export function createIngestZosHealthRouter(deps: { db: Database }): Router {
             })
             .returning({ id: sleepSession.id });
 
-          const sessionId = newSession?.id;
+          const existingSessionRows = await deps.db.execute(
+            sql`SELECT id FROM fitness.sleep_session
+                WHERE user_id = ${userId} AND provider_id = ${PROVIDER_ID} AND external_id = ${session.externalId}
+                LIMIT 1`,
+          );
+          const existingId =
+            existingSessionRows?.[0] != null &&
+            typeof existingSessionRows[0] === "object" &&
+            "id" in existingSessionRows[0] &&
+            typeof existingSessionRows[0].id === "string"
+              ? existingSessionRows[0].id
+              : undefined;
+          const sessionId = insertedSession?.id ?? existingId;
 
           if (session.stages && sessionId) {
             for (const stage of session.stages) {
@@ -179,13 +191,16 @@ export function createIngestZosHealthRouter(deps: { db: Database }): Router {
               if (Number.isNaN(stageStartedAt.getTime()) || Number.isNaN(stageEndedAt.getTime())) {
                 continue;
               }
-              await deps.db.insert(sleepStage).values({
-                sessionId,
-                stage: stage.stage,
-                startedAt: stageStartedAt,
-                endedAt: stageEndedAt,
-                sourceName: "zepp-companion",
-              });
+              await deps.db
+                .insert(sleepStage)
+                .values({
+                  sessionId,
+                  stage: stage.stage,
+                  startedAt: stageStartedAt,
+                  endedAt: stageEndedAt,
+                  sourceName: "zepp-companion",
+                })
+                .onConflictDoNothing();
             }
           }
         }

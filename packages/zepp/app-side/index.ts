@@ -8,7 +8,7 @@ BaseSideService.use(messagingPlugin);
 const logger = Logger.getLogger("imu-side");
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function readJson(raw: string | null, fallback: Record<string, unknown>): Record<string, unknown> {
@@ -79,12 +79,13 @@ AppSideService(
       const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN);
 
       if (!serverUrl || !apiToken) {
-        logger.error("Dofek server URL or API token not configured");
+        const message = "Configure the Dofek server URL and companion token first.";
+        logger.error(message);
         settings.settingsStorage.setItem(
           STORAGE_KEYS.HEALTH_SYNC_STATUS,
-          JSON.stringify({ state: "error", reason: "not configured" }),
+          JSON.stringify({ state: "error", reason: message }),
         );
-        return;
+        throw new Error(message);
       }
 
       const url = `${serverUrl.replace(/\/$/, "")}/api/ingest/zos-health`;
@@ -100,13 +101,13 @@ AppSideService(
         });
 
         if (!response.ok) {
-          const text = await response.text();
-          logger.error("health data upload failed: %s", text);
+          const message = (await response.text()) || `HTTP ${response.status}`;
+          logger.error("health data upload failed: %s", message);
           settings.settingsStorage.setItem(
             STORAGE_KEYS.HEALTH_SYNC_STATUS,
-            JSON.stringify({ state: "error", reason: `HTTP ${response.status}` }),
+            JSON.stringify({ state: "error", reason: message }),
           );
-          return;
+          throw new Error(message);
         }
 
         settings.settingsStorage.setItem(STORAGE_KEYS.LAST_HEALTH_SYNC, String(Date.now()));
@@ -115,12 +116,14 @@ AppSideService(
           JSON.stringify({ state: "done" }),
         );
         logger.log("health data uploaded successfully");
-      } catch (err) {
-        logger.error("health data upload fetch failed: %j", err);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "health data upload failed";
+        logger.error("health data upload fetch failed: %j", error);
         settings.settingsStorage.setItem(
           STORAGE_KEYS.HEALTH_SYNC_STATUS,
-          JSON.stringify({ state: "error", reason: "fetch failed" }),
+          JSON.stringify({ state: "error", reason: message }),
         );
+        throw error;
       }
     },
 

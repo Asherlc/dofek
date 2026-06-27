@@ -35,6 +35,7 @@ vi.mock("../db/tokens.ts", async (importOriginal) => {
   return {
     ...actual,
     loadTokens: vi.fn(actual.loadTokens),
+    deleteTokens: vi.fn(),
   };
 });
 
@@ -982,6 +983,8 @@ describe("Amazfit/Zepp provider", () => {
       { message: "workouts: Amazfit/Zepp access token expired." },
     ]);
     expect(captureException).not.toHaveBeenCalled();
+    const { deleteTokens } = await import("../db/tokens.ts");
+    expect(deleteTokens).toHaveBeenCalledWith(db, "amazfit-zepp", TEST_USER_ID);
   });
 
   it("records per-workout insert failures and continues", async () => {
@@ -1269,6 +1272,8 @@ describe("Amazfit/Zepp provider", () => {
       { message: "band_data: Amazfit/Zepp access token expired." },
     ]);
     expect(captureException).not.toHaveBeenCalled();
+    const { deleteTokens } = await import("../db/tokens.ts");
+    expect(deleteTokens).toHaveBeenCalledWith(db, "amazfit-zepp", TEST_USER_ID);
   });
 
   it("propagates rate limit errors from sync", async () => {

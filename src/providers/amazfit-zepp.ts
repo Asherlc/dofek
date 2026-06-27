@@ -744,7 +744,7 @@ export class AmazfitZeppProvider implements SyncProvider {
       });
     }
 
-    if (errors.some((e) => authFailureReasonFromError(e.cause))) {
+    if (errors.some((syncError) => authFailureReasonFromError(syncError.cause))) {
       try {
         await deleteTokens(db, this.id, scopedUserId);
       } catch (deleteError) {

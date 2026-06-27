@@ -154,7 +154,7 @@ AppSettingsPage({
       TextInput({
         title: "Dofek API Token",
         bold: false,
-        value: this.state.dofekApiToken,
+        placeholder: this.state.dofekApiToken ? "••••••••" : "Paste your companion token",
         onChange: (value: string) => {
           this.state.dofekApiToken = value;
           props.settingsStorage.setItem(STORAGE_KEYS.DOFEK_API_TOKEN, value);

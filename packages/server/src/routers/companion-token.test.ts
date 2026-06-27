@@ -21,7 +21,10 @@ vi.mock("../lib/typed-sql.ts", () => ({
   ): Promise<unknown[]> => {
     return db.execute(query);
   },
-  timestampStringSchema: Object.assign({ parse: (v: unknown) => v }, { nullable: () => ({ parse: (v: unknown) => v }) }),
+  timestampStringSchema: Object.assign(
+    { parse: (v: unknown) => v },
+    { nullable: () => ({ parse: (v: unknown) => v }) },
+  ),
 }));
 
 const { companionTokenRouter } = await import("./companion-token.ts");

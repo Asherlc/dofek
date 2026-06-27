@@ -32,7 +32,7 @@ function createFakeDbWithSleepConflict(): import("dofek/db").Database {
   const onConflictDoNothingMock = vi.fn(() => ({ returning: returningMock }));
   const valuesMock = vi.fn(() => ({ onConflictDoNothing: onConflictDoNothingMock }));
   const insertMock = vi.fn(() => ({ values: valuesMock }));
-  
+
   return {
     captured,
     execute: vi.fn(async (sql: unknown) => {
@@ -303,7 +303,9 @@ describe("POST /api/ingest/zos-health", () => {
             externalId: "existing-sleep",
             startedAt: "2026-06-26T22:00:00Z",
             endedAt: "2026-06-27T06:00:00Z",
-            stages: [{ stage: "deep", startedAt: "2026-06-26T23:00:00Z", endedAt: "2026-06-27T00:00:00Z" }],
+            stages: [
+              { stage: "deep", startedAt: "2026-06-26T23:00:00Z", endedAt: "2026-06-27T00:00:00Z" },
+            ],
           },
         ],
       },

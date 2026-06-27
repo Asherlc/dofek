@@ -18,7 +18,10 @@ vi.mock("@bull-board/api/bullMQAdapter", () => ({
 }));
 
 vi.mock("dofek/db", () => ({ createDatabaseFromEnv: vi.fn() }));
-vi.mock("dofek/db/clickhouse", () => ({ bootstrapClickHouseFromEnv: vi.fn(), createClickHouseClientFromEnv: vi.fn() }));
+vi.mock("dofek/db/clickhouse", () => ({
+  bootstrapClickHouseFromEnv: vi.fn(),
+  createClickHouseClientFromEnv: vi.fn(),
+}));
 vi.mock("dofek/jobs/queues", () => ({
   createActivityDeleteAnalyticsQueue: vi.fn(),
   createExportQueue: vi.fn(),
@@ -36,21 +39,31 @@ vi.mock("../repositories/limited-activity-sensor-store.ts", () => ({
 vi.mock("../lib/sentry.ts", () => ({ initSentry: vi.fn(), sentryErrorHandler: vi.fn() }));
 vi.mock("../mcp/route.ts", () => ({ createMcpRouter: vi.fn(() => express.Router()) }));
 vi.mock("../router.ts", () => ({ appRouter: {} }));
-vi.mock("../auth/admin.ts", () => ({ isAdmin: vi.fn(() => (req: any, res: any, next: any) => next()) }));
+vi.mock("../auth/admin.ts", () => ({
+  isAdmin: vi.fn(() => (_req: unknown, _res: unknown, next: () => void) => next()),
+}));
 vi.mock("../auth/cookies.ts", () => ({ getSessionIdFromRequest: vi.fn() }));
-vi.mock("../auth/session.ts", () => ({ validateSession: vi.fn(() => (req: any, res: any, next: any) => next()) }));
+vi.mock("../auth/session.ts", () => ({
+  validateSession: vi.fn(() => (_req: unknown, _res: unknown, next: () => void) => next()),
+}));
 vi.mock("../billing/access-window-repository.ts", () => ({ getAccessWindowForUser: vi.fn() }));
 vi.mock("../lib/metrics.ts", () => ({
   httpRequestDuration: { labels: vi.fn(() => ({ observe: vi.fn() })) },
   registry: { registerMetric: vi.fn(), contentType: "text/plain", metrics: vi.fn(async () => "") },
 }));
-vi.mock("../routes/activity-export.ts", () => ({ createActivityExportRouter: vi.fn(() => express.Router()) }));
+vi.mock("../routes/activity-export.ts", () => ({
+  createActivityExportRouter: vi.fn(() => express.Router()),
+}));
 vi.mock("../routes/auth/index.ts", () => ({ createAuthRouter: vi.fn(() => express.Router()) }));
 vi.mock("../routes/export.ts", () => ({ createExportRouter: vi.fn(() => express.Router()) }));
-vi.mock("../routes/stripe-webhook.ts", () => ({ createStripeWebhookRouter: vi.fn(() => express.Router()) }));
+vi.mock("../routes/stripe-webhook.ts", () => ({
+  createStripeWebhookRouter: vi.fn(() => express.Router()),
+}));
 vi.mock("../routes/upload.ts", () => ({ createUploadRouter: vi.fn(() => express.Router()) }));
 vi.mock("../routes/webhooks.ts", () => ({ createWebhookRouter: vi.fn(() => express.Router()) }));
 vi.mock("../slack/bot.ts", () => ({ startSlackBot: vi.fn() }));
+
+import { makeMockSensorStore } from "./routers/test-helpers.ts";
 
 const { createApp } = await import("./index.ts");
 
@@ -67,17 +80,14 @@ function request(
         reject(new Error("unexpected address"));
         return;
       }
-      const req = http.request(
-        { hostname: "127.0.0.1", port: addr.port, path, method },
-        (res) => {
-          let body = "";
-          res.on("data", (chunk) => (body += chunk));
-          res.on("end", () => {
-            server.close();
-            resolve({ status: res.statusCode ?? 0, body });
-          });
-        },
-      );
+      const req = http.request({ hostname: "127.0.0.1", port: addr.port, path, method }, (res) => {
+        let body = "";
+        res.on("data", (chunk) => (body += chunk));
+        res.on("end", () => {
+          server.close();
+          resolve({ status: res.statusCode ?? 0, body });
+        });
+      });
       req.on("error", (err) => {
         server.close();
         reject(err);
@@ -89,9 +99,9 @@ function request(
 
 describe("createApp", () => {
   it("registers the ingest route", async () => {
-    const db = { execute: vi.fn() } as unknown as import("dofek/db").Database;
-    const sensorStore = {} as import("./repositories/activity-repository.ts").ActivitySensorStore;
-    const app = createApp(db, sensorStore);
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const fakeDb = createDatabaseFromEnv();
+    const app = createApp(fakeDb, makeMockSensorStore());
     const res = await request(app, "POST", "/api/ingest/zos-health");
     expect(res.status).toBe(401);
   });
