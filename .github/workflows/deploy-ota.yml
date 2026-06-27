@@ -113,7 +113,7 @@ jobs:
       # Run the same command up front so the real Metro/expo error is visible.
       - name: Export iOS bundle (surfaces the error eoas hides)
         working-directory: packages/mobile
-        run: pnpx expo export --output-dir dist --platform ios
+        run: pnpm expo export --output-dir dist --platform ios
       - name: Publish OTA update
         working-directory: packages/mobile
         env:

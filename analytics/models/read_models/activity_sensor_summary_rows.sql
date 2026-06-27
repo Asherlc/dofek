@@ -290,7 +290,7 @@ best_twenty_minute_power_per_activity AS (
         current_power.activity_id AS activity_id,
         CAST(max(
             toFloat64(current_power.cumulative_power - prior_power.cumulative_power)
-            / round(1200.0 / power_sample_rate.interval_seconds)
+            / greatest(round(1200.0 / power_sample_rate.interval_seconds), 1)
         ), 'Nullable(Float64)') AS best_twenty_minute_power
     FROM power_cumulative AS current_power
     INNER JOIN power_sample_rate
@@ -299,9 +299,9 @@ best_twenty_minute_power_per_activity AS (
         ON prior_power.activity_id = current_power.activity_id
         AND toInt64(prior_power.sample_index)
             = toInt64(current_power.sample_index)
-            - toInt64(round(1200.0 / power_sample_rate.interval_seconds))
+            - toInt64(greatest(round(1200.0 / power_sample_rate.interval_seconds), 1))
     WHERE toInt64(current_power.sample_index)
-        >= toInt64(round(1200.0 / power_sample_rate.interval_seconds))
+        >= toInt64(greatest(round(1200.0 / power_sample_rate.interval_seconds), 1))
     GROUP BY current_power.activity_id
 ),
 
