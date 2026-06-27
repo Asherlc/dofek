@@ -36,7 +36,13 @@ vi.mock("../repositories/clickhouse-activity-sensor-store.ts", () => ({
 vi.mock("../repositories/limited-activity-sensor-store.ts", () => ({
   LimitedActivitySensorStore: vi.fn(),
 }));
-vi.mock("../lib/sentry.ts", () => ({ initSentry: vi.fn(), sentryErrorHandler: vi.fn() }));
+vi.mock("../lib/sentry.ts", () => ({
+  initSentry: vi.fn(),
+  sentryErrorHandler: vi.fn(
+    () => (_error: unknown, _req: unknown, _res: unknown, next: (error?: unknown) => void) =>
+      next(),
+  ),
+}));
 vi.mock("../mcp/route.ts", () => ({ createMcpRouter: vi.fn(() => express.Router()) }));
 vi.mock("../router.ts", () => ({ appRouter: {} }));
 vi.mock("../auth/admin.ts", () => ({

@@ -90,7 +90,7 @@ describe("token-repository", () => {
       ]);
       const result = await createOrGetCompanionToken(db, "user-123");
       expect(result.id).toBe("existing-id");
-      expect(result.token).toBe("");
+      expect(result.token).toBeNull();
       expect(result.createdAt).toBe("2026-01-01T00:00:00.000Z");
     });
 
@@ -115,8 +115,9 @@ describe("token-repository", () => {
     it("revokes existing token and creates a new one", async () => {
       const db = createMockDb();
       db.execute
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]) // BEGIN
+        .mockResolvedValueOnce([]) // UPDATE revoke
+        .mockResolvedValueOnce([]) // SELECT token_hash (no existing after revoke)
         .mockResolvedValueOnce([
           {
             id: "new-id",
@@ -124,10 +125,11 @@ describe("token-repository", () => {
             created_at: "2026-01-01T00:00:00.000Z",
             revoked_at: null,
           },
-        ]);
+        ]) // INSERT RETURNING
+        .mockResolvedValueOnce([]); // COMMIT
       const result = await regenerateCompanionToken(db, "user-123");
       expect(result.id).toBe("new-id");
-      expect(result.token).not.toBe("");
+      expect(result.token).not.toBeNull();
     });
   });
 });

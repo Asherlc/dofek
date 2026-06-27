@@ -21,16 +21,18 @@ const dailyMetricsDataSchema = z.object({
   exerciseMinutes: z.number().int().optional(),
 });
 
+const datetimeString = z.string().datetime({ offset: true });
+
 const sleepStageSchema = z.object({
   stage: z.enum(["deep", "light", "rem", "awake"]),
-  startedAt: z.string(),
-  endedAt: z.string(),
+  startedAt: datetimeString,
+  endedAt: datetimeString,
 });
 
 const sleepSessionSchema = z.object({
   externalId: z.string(),
-  startedAt: z.string(),
-  endedAt: z.string(),
+  startedAt: datetimeString,
+  endedAt: datetimeString,
   durationMinutes: z.number().int().optional(),
   deepMinutes: z.number().int().optional(),
   remMinutes: z.number().int().optional(),
@@ -43,8 +45,8 @@ const sleepSessionSchema = z.object({
 const activitySchema = z.object({
   externalId: z.string(),
   activityType: z.string(),
-  startedAt: z.string(),
-  endedAt: z.string(),
+  startedAt: datetimeString,
+  endedAt: datetimeString,
   name: z.string().optional(),
 });
 
@@ -76,9 +78,18 @@ export function createIngestZosHealthRouter(deps: { db: Database }): Router {
       return;
     }
 
-    const userId = await validateCompanionToken(deps.db, token);
-    if (!userId) {
-      sendJson(res, 401, { error: "Invalid or revoked companion token." });
+    let userId: string;
+    try {
+      const validatedUserId = await validateCompanionToken(deps.db, token);
+      if (!validatedUserId) {
+        sendJson(res, 401, { error: "Invalid or revoked companion token." });
+        return;
+      }
+      userId = validatedUserId;
+    } catch (error) {
+      Sentry.captureException(error);
+      logger.error(`[ingest-zos] Token validation failed: ${error}`);
+      sendJson(res, 500, { error: "Failed to validate companion token." });
       return;
     }
 

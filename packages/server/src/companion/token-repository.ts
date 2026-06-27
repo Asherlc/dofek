@@ -13,7 +13,7 @@ const companionTokenRowSchema = z.object({
 
 export interface CompanionTokenMetadata {
   id: string;
-  token: string;
+  token: string | null;
   createdAt: string;
   revokedAt: string | null;
 }
@@ -67,7 +67,7 @@ export async function createOrGetCompanionToken(
     }
     return {
       id: existingRow.id,
-      token: "",
+      token: null,
       createdAt: existingRow.created_at,
       revokedAt: existingRow.revoked_at,
     };
@@ -100,15 +100,20 @@ export async function regenerateCompanionToken(
   db: ExecutableDatabase,
   userId: string,
 ): Promise<CompanionTokenMetadata> {
-  // Revoke existing active token
-  await db.execute(
-    sql`UPDATE fitness.companion_token
-        SET revoked_at = COALESCE(revoked_at, NOW())
-        WHERE user_id = ${userId} AND revoked_at IS NULL`,
-  );
-
-  // Create new one
-  return createOrGetCompanionToken(db, userId);
+  await db.execute(sql`BEGIN`);
+  try {
+    await db.execute(
+      sql`UPDATE fitness.companion_token
+          SET revoked_at = COALESCE(revoked_at, NOW())
+          WHERE user_id = ${userId} AND revoked_at IS NULL`,
+    );
+    const result = await createOrGetCompanionToken(db, userId);
+    await db.execute(sql`COMMIT`);
+    return result;
+  } catch (error) {
+    await db.execute(sql`ROLLBACK`);
+    throw error;
+  }
 }
 
 export async function validateCompanionToken(

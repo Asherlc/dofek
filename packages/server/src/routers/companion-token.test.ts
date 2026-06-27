@@ -62,7 +62,7 @@ describe("companionTokenRouter", () => {
       const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.retrieve();
       expect(result.id).toBe("existing-id");
-      expect(result.token).toBe("");
+      expect(result.token).toBeNull();
     });
   });
 
@@ -70,8 +70,9 @@ describe("companionTokenRouter", () => {
     it("revokes existing token and creates a new one", async () => {
       const execute = vi.fn();
       execute
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]) // BEGIN
+        .mockResolvedValueOnce([]) // UPDATE revoke
+        .mockResolvedValueOnce([]) // SELECT token_hash (no existing after revoke)
         .mockResolvedValueOnce([
           {
             id: "new-id",
@@ -79,11 +80,12 @@ describe("companionTokenRouter", () => {
             created_at: "2026-01-01T00:00:00.000Z",
             revoked_at: null,
           },
-        ]);
+        ]) // INSERT RETURNING
+        .mockResolvedValueOnce([]); // COMMIT
       const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.regenerate();
       expect(result.id).toBe("new-id");
-      expect(result.token).not.toBe("");
+      expect(result.token).not.toBeNull();
     });
   });
 });

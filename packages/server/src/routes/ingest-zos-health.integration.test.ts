@@ -8,12 +8,12 @@ interface CapturedSql {
   sql: string;
 }
 
-function createFakeDb(): import("dofek/db").Database {
+function createFakeDb(): import("dofek/db").Database & { captured: CapturedSql[] } {
   const captured: CapturedSql[] = [];
   return {
     captured,
-    execute: vi.fn(async (sql: unknown) => {
-      captured.push({ sql: String(sql) });
+    execute: vi.fn(async (sqlQuery: unknown) => {
+      captured.push({ sql: String(sqlQuery) });
       return [];
     }),
     insert: vi.fn(() => ({
@@ -23,10 +23,12 @@ function createFakeDb(): import("dofek/db").Database {
         })),
       })),
     })),
-  } satisfies import("dofek/db").Database;
+  } satisfies import("dofek/db").Database & { captured: CapturedSql[] };
 }
 
-function createFakeDbWithSleepConflict(): import("dofek/db").Database {
+function createFakeDbWithSleepConflict(): import("dofek/db").Database & {
+  captured: CapturedSql[];
+} {
   const captured: CapturedSql[] = [];
   const returningMock = vi.fn(async () => []);
   const onConflictDoNothingMock = vi.fn(() => ({ returning: returningMock }));
@@ -35,15 +37,15 @@ function createFakeDbWithSleepConflict(): import("dofek/db").Database {
 
   return {
     captured,
-    execute: vi.fn(async (sql: unknown) => {
-      captured.push({ sql: String(sql) });
-      if (String(sql).includes("SELECT id FROM fitness.sleep_session")) {
+    execute: vi.fn(async (sqlQuery: unknown) => {
+      captured.push({ sql: String(sqlQuery) });
+      if (String(sqlQuery).includes("SELECT id FROM fitness.sleep_session")) {
         return [{ id: 999 }];
       }
       return [];
     }),
     insert: insertMock,
-  } satisfies import("dofek/db").Database;
+  } satisfies import("dofek/db").Database & { captured: CapturedSql[] };
 }
 
 function createFakeDbThatThrows(): import("dofek/db").Database {
@@ -273,7 +275,7 @@ describe("POST /api/ingest/zos-health", () => {
     expect(JSON.parse(res.body)).toEqual({ status: "ok" });
   });
 
-  it("skips sleep session with invalid dates", async () => {
+  it("rejects sleep session with invalid dates at schema validation", async () => {
     const db = createFakeDb();
     const { app } = createTestApp(db);
     const res = await post(app, "/api/ingest/zos-health", {
@@ -288,8 +290,7 @@ describe("POST /api/ingest/zos-health", () => {
         ],
       },
     });
-    expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toEqual({ status: "ok" });
+    expect(res.status).toBe(400);
   });
 
   it("fetches existing sleep session when insert conflicts", async () => {
@@ -314,7 +315,7 @@ describe("POST /api/ingest/zos-health", () => {
     expect(JSON.parse(res.body)).toEqual({ status: "ok" });
   });
 
-  it("skips sleep stage with invalid dates", async () => {
+  it("rejects sleep stage with invalid dates at schema validation", async () => {
     const { app } = createTestApp();
     const res = await post(app, "/api/ingest/zos-health", {
       headers: { Authorization: "Bearer valid-token" },
@@ -329,8 +330,7 @@ describe("POST /api/ingest/zos-health", () => {
         ],
       },
     });
-    expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toEqual({ status: "ok" });
+    expect(res.status).toBe(400);
   });
 
   // ── Activity tests ──
@@ -355,7 +355,7 @@ describe("POST /api/ingest/zos-health", () => {
     expect(JSON.parse(res.body)).toEqual({ status: "ok" });
   });
 
-  it("skips activity with invalid dates", async () => {
+  it("rejects activity with invalid dates at schema validation", async () => {
     const db = createFakeDb();
     const { app } = createTestApp(db);
     const res = await post(app, "/api/ingest/zos-health", {
@@ -371,8 +371,7 @@ describe("POST /api/ingest/zos-health", () => {
         ],
       },
     });
-    expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toEqual({ status: "ok" });
+    expect(res.status).toBe(400);
   });
 
   // ── Error handling ──
