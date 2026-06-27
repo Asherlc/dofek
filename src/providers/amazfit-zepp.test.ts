@@ -232,6 +232,16 @@ describe("AmazfitZeppClient workout history", () => {
     );
   });
 
+  it("throws AccessTokenExpiredError for HTTP 401 responses", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response("unauthorized", { status: 401 });
+    const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
+
+    await expect(client.getWorkoutHistory()).rejects.toThrow(
+      "Amazfit/Zepp access token expired.",
+    );
+  });
+
   it("throws a specific error for non-success API payloads", async () => {
     const fetchFn: typeof globalThis.fetch = async () =>
       new Response(JSON.stringify({ code: 1002, message: "invalid token", data: {} }), {
@@ -241,6 +251,19 @@ describe("AmazfitZeppClient workout history", () => {
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
     await expect(client.getWorkoutHistory()).rejects.toThrow("Amazfit/Zepp access token expired.");
+  });
+
+  it("throws generic error for non-1002 workout API error codes", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response(JSON.stringify({ code: 9999, message: "some other error", data: {} }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
+
+    await expect(client.getWorkoutHistory()).rejects.toThrow(
+      "Amazfit/Zepp workout API error: some other error",
+    );
   });
 
   it("rejects workout history payloads without a trackid", async () => {
@@ -462,6 +485,16 @@ describe("Amazfit/Zepp provider", () => {
     );
   });
 
+  it("throws AccessTokenExpiredError for HTTP 401 responses", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response("unauthorized", { status: 401 });
+    const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
+
+    await expect(client.getBandData("2026-02-01", "2026-02-06")).rejects.toThrow(
+      "Amazfit/Zepp access token expired.",
+    );
+  });
+
   it("throws a specific error for non-success API payloads", async () => {
     const fetchFn: typeof globalThis.fetch = async () =>
       new Response(JSON.stringify({ code: 1002, message: "invalid token", data: [] }), {
@@ -472,6 +505,19 @@ describe("Amazfit/Zepp provider", () => {
 
     await expect(client.getBandData("2026-02-01", "2026-02-06")).rejects.toThrow(
       "Amazfit/Zepp access token expired.",
+    );
+  });
+
+  it("throws generic error for non-1002 API error codes", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response(JSON.stringify({ code: 9999, message: "some other error", data: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
+
+    await expect(client.getBandData("2026-02-01", "2026-02-06")).rejects.toThrow(
+      "Amazfit/Zepp API error: some other error",
     );
   });
 
