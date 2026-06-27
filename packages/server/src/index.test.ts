@@ -823,6 +823,33 @@ describe("static file serving", () => {
     expect(await res.text()).toBe("icon");
   });
 
+  describe("invalid URL encoding", () => {
+    async function rawGet(port: number, path: string): Promise<number> {
+      const { request } = await import("node:http");
+      return new Promise<number>((resolve, reject) => {
+        const req = request({ hostname: "localhost", port, path, method: "GET" });
+        req.on("response", (res) => resolve(res.statusCode ?? 0));
+        req.on("error", reject);
+        req.end();
+      });
+    }
+
+    it("returns 400 for a path containing an invalid percent-encoded segment", async () => {
+      // %C0 is an invalid UTF-8 byte — the SPA wildcard /{*path} captures it and
+      // Express's decodeParam throws URIError. Use raw HTTP to bypass fetch URL normalization.
+      const port = parseInt(baseUrl.split(":")[2], 10);
+      const status = await rawGet(port, "/some/%C0/page");
+      expect(status).toBe(400);
+    });
+
+    it("does not report URIError to Sentry", async () => {
+      vi.mocked(Sentry.captureException).mockClear();
+      const port = parseInt(baseUrl.split(":")[2], 10);
+      await rawGet(port, "/some/%C0/page");
+      expect(vi.mocked(Sentry.captureException)).not.toHaveBeenCalled();
+    });
+  });
+
   it("serves index.html for SPA routes even when process.cwd() points elsewhere", async () => {
     await close();
     const temporaryWorkingDirectory = mkdtempSync(join(tmpdir(), "dofek-server-cwd-"));
