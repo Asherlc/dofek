@@ -32,9 +32,9 @@
     "echarts-for-react": "3.0.6",
     "leaflet": "1.9.4",
     "posthog-js": "1.374.2",
-    "react": "19.2.4",
+    "react": "19.2.3",
     "react-body-highlighter": "2.0.5",
-    "react-dom": "19.2.4",
+    "react-dom": "19.2.3",
     "zod": "3.25.76"
   },
   "devDependencies": {
