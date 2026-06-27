@@ -91,6 +91,17 @@ export function createApp(
   });
 
   setupRoutes(app, db, limitedSensorStore, options);
+  // Catch malformed percent-encoded URL params (e.g. %C0) before Sentry sees them.
+  // These come from scanners/bots and are not application errors.
+  app.use(
+    (err: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+      if (err instanceof URIError) {
+        res.status(400).send("Bad Request");
+        return;
+      }
+      next(err);
+    },
+  );
   // Sentry error handler must be after all routes
   app.use(sentryErrorHandler());
   return app;
