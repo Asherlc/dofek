@@ -82,6 +82,7 @@ describe("buildClickHouseMigrationStatements", () => {
       "0032_deduped_activities_absent_source_links.ts",
       "0033_recreate_deduped_activities_column_order.ts",
       "0034_move_metric_stream_to_ingest.ts",
+      "0035_activity_summary_power_climbing_columns.ts",
     ]);
   });
 
@@ -298,7 +299,7 @@ SETTINGS allow_nullable_key = 1`);
     expect(sql).toContain("location_centroids AS");
     expect(sql).toContain("location_centroids.centroid_lat AS centroid_lat");
     expect(sql).toContain("location_centroids.centroid_lng AS centroid_lng");
-    expect(sql.match(/CREATE VIEW IF NOT EXISTS analytics\.activity_summary\b/g)).toHaveLength(6);
+    expect(sql.match(/CREATE VIEW IF NOT EXISTS analytics\.activity_summary\b/g)).toHaveLength(7);
     expect(
       sql.match(/CREATE VIEW IF NOT EXISTS analytics.activity_summary_centroids_next/g),
     ).toHaveLength(1);
@@ -476,7 +477,7 @@ describe("runClickHouseMigrations", () => {
 
     const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
-    expect(count).toBe(34);
+    expect(count).toBe(35);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(

@@ -391,5 +391,5 @@ function insertCanonicalLocationSummarySql(targetSchema: string): string {
 
 function insertStaleRawActivitySummarySql(targetSchema: string): string {
   return `INSERT INTO ${targetSchema}.activity_summary_rows VALUES
-  ('${memberActivityId}', '${testUserId}', 'cycling', NULL, toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, NULL, 100, 0, toDateTime64('2026-06-01 00:00:00', 9, 'UTC'))`;
+  ('${memberActivityId}', '${testUserId}', 'cycling', NULL, toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 100, 0, toDateTime64('2026-06-01 00:00:00', 9, 'UTC'))`;
 }
