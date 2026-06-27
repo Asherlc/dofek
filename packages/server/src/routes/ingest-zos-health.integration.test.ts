@@ -70,6 +70,7 @@ vi.mock("../companion/token-repository.ts", () => ({
   validateCompanionToken: vi.fn(async (_db: unknown, token: string) => {
     if (token === "valid-token") return "test-user-id";
     if (token === "x") return "test-user-id";
+    if (token === "throws") throw new Error("Token validation DB error");
     return null;
   }),
 }));
@@ -167,6 +168,20 @@ describe("POST /api/ingest/zos-health", () => {
     });
     expect(res.status).toBe(401);
     expect(JSON.parse(res.body)).toEqual({ error: "Invalid or revoked companion token." });
+  });
+
+  it("returns 500 when token validation throws", async () => {
+    const { app } = createTestApp();
+    const res = await post(app, "/api/ingest/zos-health", {
+      headers: { Authorization: "Bearer throws" },
+      body: {
+        dailyMetrics: {
+          "2026-06-26": { steps: 10000 },
+        },
+      },
+    });
+    expect(res.status).toBe(500);
+    expect(JSON.parse(res.body)).toEqual({ error: "Failed to validate companion token." });
   });
 
   // ── Payload validation tests ──
@@ -454,6 +469,71 @@ describe("POST /api/ingest/zos-health", () => {
             externalId: "sleep-b",
             startedAt: "2026-06-26T22:00:00Z",
             endedAt: "2026-06-27T06:00:00Z",
+          },
+        ],
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({ status: "ok" });
+  });
+
+  it("returns 200 with multiple activities", async () => {
+    const { app } = createTestApp();
+    const res = await post(app, "/api/ingest/zos-health", {
+      headers: { Authorization: "Bearer valid-token" },
+      body: {
+        activities: [
+          {
+            externalId: "act-a",
+            activityType: "running",
+            startedAt: "2026-06-25T10:00:00Z",
+            endedAt: "2026-06-25T11:00:00Z",
+          },
+          {
+            externalId: "act-b",
+            activityType: "cycling",
+            startedAt: "2026-06-26T10:00:00Z",
+            endedAt: "2026-06-26T11:00:00Z",
+          },
+        ],
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({ status: "ok" });
+  });
+
+  it("processes sleep sessions without stages", async () => {
+    const db = createFakeDb();
+    const { app } = createTestApp(db);
+    const res = await post(app, "/api/ingest/zos-health", {
+      headers: { Authorization: "Bearer valid-token" },
+      body: {
+        sleepSessions: [
+          {
+            externalId: "sleep-no-stages",
+            startedAt: "2026-06-26T22:00:00Z",
+            endedAt: "2026-06-27T06:00:00Z",
+            durationMinutes: 480,
+          },
+        ],
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({ status: "ok" });
+  });
+
+  it("processes activities without name", async () => {
+    const db = createFakeDb();
+    const { app } = createTestApp(db);
+    const res = await post(app, "/api/ingest/zos-health", {
+      headers: { Authorization: "Bearer valid-token" },
+      body: {
+        activities: [
+          {
+            externalId: "act-no-name",
+            activityType: "running",
+            startedAt: "2026-06-26T10:00:00Z",
+            endedAt: "2026-06-26T11:00:00Z",
           },
         ],
       },
