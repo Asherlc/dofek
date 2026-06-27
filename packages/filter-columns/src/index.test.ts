@@ -5,7 +5,7 @@ import {
   isDateTimeFilterColumn,
   isRangeFilterColumn,
   parseRangeFilterKey,
-} from "./field-filter-columns.ts";
+} from "./index.ts";
 
 describe("isDateFilterColumn", () => {
   it("identifies date-only columns", () => {

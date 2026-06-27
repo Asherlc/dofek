@@ -1,6 +1,7 @@
 packages:
   - .
   - packages/zepp
+  - packages/filter-columns
   - packages/format
   - packages/scoring
   - packages/nutrition

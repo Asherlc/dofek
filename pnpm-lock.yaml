@@ -291,6 +291,8 @@ importers:
         specifier: 3.2.4
         version: 3.2.4(@types/node@25.9.1)(jiti@2.7.0)(jsdom@29.0.0)(lightningcss@1.32.0)(msw@2.12.11(@types/node@25.9.1)(typescript@6.0.3))(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0)
 
+  packages/filter-columns: {}
+
   packages/format: {}
 
   packages/garmin-connect:
@@ -540,6 +542,9 @@ importers:
       '@dofek/auth':
         specifier: workspace:*
         version: link:../auth
+      '@dofek/filter-columns':
+        specifier: workspace:*
+        version: link:../filter-columns
       '@dofek/format':
         specifier: workspace:*
         version: link:../format
@@ -706,6 +711,9 @@ importers:
       '@dofek/auth':
         specifier: workspace:*
         version: link:../auth
+      '@dofek/filter-columns':
+        specifier: workspace:*
+        version: link:../filter-columns
       '@dofek/format':
         specifier: workspace:*
         version: link:../format
