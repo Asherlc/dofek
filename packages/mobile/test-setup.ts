@@ -363,6 +363,7 @@ vi.mock("expo-secure-store", () => ({
   setItemAsync: vi.fn(),
   getItemAsync: vi.fn(() => Promise.resolve(null)),
   deleteItemAsync: vi.fn(),
+  AFTER_FIRST_UNLOCK: "kSecAttrAccessibleAfterFirstUnlock",
 }));
 
 vi.mock("expo-web-browser", () => ({

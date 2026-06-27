@@ -17,6 +17,13 @@ export type { AuthUser, ConfiguredProviders };
 const SESSION_TOKEN_KEY = "dofek_session_token";
 const APP_SCHEME = "dofek";
 
+// AFTER_FIRST_UNLOCK allows background access (e.g. during background GPS recording)
+// even when the device is locked, as long as it's been unlocked once since boot.
+// The default WHEN_UNLOCKED causes errSecInteractionNotAllowed when accessed in background.
+const SESSION_TOKEN_STORE_OPTIONS = {
+  keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK,
+};
+
 export interface AuthResult {
   session: string;
   isNewUser: boolean;
@@ -24,7 +31,7 @@ export interface AuthResult {
 
 /** Save the session token to secure storage. */
 export async function saveSessionToken(token: string): Promise<void> {
-  await SecureStore.setItemAsync(SESSION_TOKEN_KEY, token);
+  await SecureStore.setItemAsync(SESSION_TOKEN_KEY, token, SESSION_TOKEN_STORE_OPTIONS);
 }
 
 /** Get the saved session token, or null if not logged in. */

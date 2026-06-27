@@ -84,7 +84,10 @@ const ledgerSchema = z.record(z.string());
 
 export const secureStoreFoodWriteBackStorage: FoodWriteBackStorage = {
   getItem: (key) => SecureStore.getItemAsync(key),
-  setItem: (key, value) => SecureStore.setItemAsync(key, value),
+  setItem: (key, value) =>
+    SecureStore.setItemAsync(key, value, {
+      keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK,
+    }),
 };
 
 export function buildFoodWriteBackFingerprint(
