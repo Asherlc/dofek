@@ -111,4 +111,21 @@ describe("createApp", () => {
     const res = await request(app, "POST", "/api/ingest/zos-health");
     expect(res.status).toBe(401);
   });
+
+  it("returns 404 for non-existent routes", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const fakeDb = createDatabaseFromEnv();
+    const app = createApp(fakeDb, makeMockSensorStore());
+    const res = await request(app, "GET", "/api/nonexistent");
+    expect(res.status).toBe(404);
+  });
+
+  it("passes db to ingest router", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const fakeDb = createDatabaseFromEnv();
+    const app = createApp(fakeDb, makeMockSensorStore());
+    const res = await request(app, "POST", "/api/ingest/zos-health");
+    expect(res.status).toBe(401);
+    expect(res.body).toContain("Companion token is required");
+  });
 });
