@@ -36,6 +36,109 @@ export const Gyroscope = class Gyroscope {
   }
 };
 
+export const HeartRate = class HeartRate {
+  getToday() {
+    return [];
+  }
+  getResting() {
+    return 65;
+  }
+  getDailySummary() {
+    return {};
+  }
+  getLast() {
+    return 72;
+  }
+};
+
+export const Step = class Step {
+  getCurrent() {
+    return 0;
+  }
+  getTarget() {
+    return 10000;
+  }
+};
+
+export const Calorie = class Calorie {
+  getCurrent() {
+    return 0;
+  }
+  getTarget() {
+    return 2000;
+  }
+};
+
+export const Distance = class Distance {
+  getCurrent() {
+    return 0;
+  }
+};
+
+export const Sleep = class Sleep {
+  updateInfo() {}
+  getInfo() {
+    return { score: 0, deepTime: 0, startTime: 0, endTime: 0, totalTime: 0 };
+  }
+  getStage() {
+    return [];
+  }
+  getNap() {
+    return [];
+  }
+};
+
+export const BloodOxygen = class BloodOxygen {
+  getCurrent() {
+    return { value: 0 };
+  }
+  getLastDay() {
+    return [];
+  }
+  getLastFewHour() {
+    return [];
+  }
+};
+
+export const BodyTemperature = class BodyTemperature {
+  getCurrent() {
+    return { current: 0 };
+  }
+  getToday() {
+    return [];
+  }
+};
+
+export const Stress = class Stress {
+  getToday() {
+    return [];
+  }
+  getTodayByHour() {
+    return [];
+  }
+  getLastWeek() {
+    return [];
+  }
+};
+
+export const Stand = class Stand {
+  getCurrent() {
+    return 0;
+  }
+};
+
+export const Pai = class Pai {
+  getCurrent() {
+    return 0;
+  }
+};
+
+export const FatBurning = class FatBurning {
+  getCurrent() {
+    return 0;
+  }
+};
+
 export const checkSensor = () => true;
 
 export const writeFileSync = () => {};

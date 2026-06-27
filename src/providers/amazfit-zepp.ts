@@ -13,9 +13,11 @@ import { dailyMetrics, sleepSession } from "../db/schema.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
-import { ensureProvider, loadTokens } from "../db/tokens.ts";
+import { deleteTokens, ensureProvider, loadTokens } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import {
+  AccessTokenExpiredError,
+  authFailureReasonFromError,
   ProviderInvalidCredentialsError,
   ProviderStoredIdentityMissingError,
 } from "./auth-errors.ts";
@@ -381,12 +383,23 @@ export class AmazfitZeppClient {
 
     if (!response.ok) {
       const text = await response.text();
+      if (response.status === 401) {
+        throw new AccessTokenExpiredError("Amazfit/Zepp", {
+          cause: new Error(`Amazfit/Zepp API error (${response.status}): ${text}`),
+        });
+      }
       throw new Error(`Amazfit/Zepp API error (${response.status}): ${text}`);
     }
 
     const payload = zeppBandDataResponseSchema.parse(await response.json());
     if (payload.code !== 1) {
-      throw new Error(`Amazfit/Zepp API error: ${payload.message ?? `code ${payload.code}`}`);
+      const message = payload.message ?? `code ${payload.code}`;
+      if (payload.code === 1002) {
+        throw new AccessTokenExpiredError("Amazfit/Zepp", {
+          cause: new Error(`Amazfit/Zepp API error: ${message}`),
+        });
+      }
+      throw new Error(`Amazfit/Zepp API error: ${message}`);
     }
 
     return payload.data;
@@ -410,14 +423,23 @@ export class AmazfitZeppClient {
 
       if (!response.ok) {
         const text = await response.text();
+        if (response.status === 401) {
+          throw new AccessTokenExpiredError("Amazfit/Zepp", {
+            cause: new Error(`Amazfit/Zepp workout API error (${response.status}): ${text}`),
+          });
+        }
         throw new Error(`Amazfit/Zepp workout API error (${response.status}): ${text}`);
       }
 
       const payload = zeppWorkoutHistoryResponseSchema.parse(await response.json());
       if (payload.code !== 1) {
-        throw new Error(
-          `Amazfit/Zepp workout API error: ${payload.message ?? `code ${payload.code}`}`,
-        );
+        const message = payload.message ?? `code ${payload.code}`;
+        if (payload.code === 1002) {
+          throw new AccessTokenExpiredError("Amazfit/Zepp", {
+            cause: new Error(`Amazfit/Zepp workout API error: ${message}`),
+          });
+        }
+        throw new Error(`Amazfit/Zepp workout API error: ${message}`);
       }
 
       summaries.push(...payload.data.summary);
@@ -630,9 +652,11 @@ export class AmazfitZeppProvider implements SyncProvider {
       recordsSynced += count;
     } catch (error: unknown) {
       if (error instanceof ProviderRateLimitError) throw error;
-      captureException(error, {
-        tags: { provider: this.id, dataType: "band_data", phase: "sync" },
-      });
+      if (!authFailureReasonFromError(error)) {
+        captureException(error, {
+          tags: { provider: this.id, dataType: "band_data", phase: "sync" },
+        });
+      }
       errors.push({
         message: `band_data: ${error instanceof Error ? error.message : String(error)}`,
         cause: error,
@@ -709,13 +733,25 @@ export class AmazfitZeppProvider implements SyncProvider {
       recordsSynced += count;
     } catch (error: unknown) {
       if (error instanceof ProviderRateLimitError) throw error;
-      captureException(error, {
-        tags: { provider: this.id, dataType: "workouts", phase: "sync" },
-      });
+      if (!authFailureReasonFromError(error)) {
+        captureException(error, {
+          tags: { provider: this.id, dataType: "workouts", phase: "sync" },
+        });
+      }
       errors.push({
         message: `workouts: ${error instanceof Error ? error.message : String(error)}`,
         cause: error,
       });
+    }
+
+    if (errors.some((e) => authFailureReasonFromError(e.cause))) {
+      try {
+        await deleteTokens(db, this.id, scopedUserId);
+      } catch (deleteError) {
+        captureException(deleteError, {
+          tags: { provider: this.id, phase: "token_deletion" },
+        });
+      }
     }
 
     return {

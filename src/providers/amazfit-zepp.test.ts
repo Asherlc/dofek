@@ -239,9 +239,7 @@ describe("AmazfitZeppClient workout history", () => {
       });
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
-    await expect(client.getWorkoutHistory()).rejects.toThrow(
-      "Amazfit/Zepp workout API error: invalid token",
-    );
+    await expect(client.getWorkoutHistory()).rejects.toThrow("Amazfit/Zepp access token expired.");
   });
 
   it("rejects workout history payloads without a trackid", async () => {
@@ -472,7 +470,7 @@ describe("Amazfit/Zepp provider", () => {
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
     await expect(client.getBandData("2026-02-01", "2026-02-06")).rejects.toThrow(
-      "Amazfit/Zepp API error: invalid token",
+      "Amazfit/Zepp access token expired.",
     );
   });
 
@@ -981,11 +979,9 @@ describe("Amazfit/Zepp provider", () => {
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toMatchObject([
-      { message: "workouts: Amazfit/Zepp workout API error: invalid token" },
+      { message: "workouts: Amazfit/Zepp access token expired." },
     ]);
-    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
-      tags: { provider: "amazfit-zepp", dataType: "workouts", phase: "sync" },
-    });
+    expect(captureException).not.toHaveBeenCalled();
   });
 
   it("records per-workout insert failures and continues", async () => {
@@ -1270,11 +1266,9 @@ describe("Amazfit/Zepp provider", () => {
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toMatchObject([
-      { message: "band_data: Amazfit/Zepp API error: invalid token" },
+      { message: "band_data: Amazfit/Zepp access token expired." },
     ]);
-    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
-      tags: { provider: "amazfit-zepp", dataType: "band_data", phase: "sync" },
-    });
+    expect(captureException).not.toHaveBeenCalled();
   });
 
   it("propagates rate limit errors from sync", async () => {

@@ -7,11 +7,13 @@ import { trpc } from "../lib/trpc.ts";
 export function CredentialAuthModal({
   providerId,
   providerName,
+  description,
   onClose,
   onSuccess,
 }: {
   providerId: string;
   providerName: string;
+  description?: string;
   onClose: () => void;
   onSuccess: () => void;
 }) {
@@ -58,6 +60,12 @@ export function CredentialAuthModal({
             &times;
           </button>
         </div>
+
+        {description && (
+          <div className="mb-3 text-xs text-amber-400 bg-amber-400/10 rounded px-3 py-2 leading-relaxed">
+            {description}
+          </div>
+        )}
 
         {error && (
           <div className="mb-3 text-xs text-red-400 bg-red-400/10 rounded px-3 py-2">{error}</div>

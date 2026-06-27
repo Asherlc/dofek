@@ -6,10 +6,26 @@ import { getDeviceInfo } from "@zos/device";
 import { setWakeUpRelaunch } from "@zos/display";
 import { writeFileSync } from "@zos/fs";
 import { showToast } from "@zos/interaction";
-import { Accelerometer, checkSensor, Gyroscope } from "@zos/sensor";
+import {
+  Accelerometer,
+  BloodOxygen,
+  BodyTemperature,
+  Calorie,
+  checkSensor,
+  Distance,
+  FatBurning,
+  Gyroscope,
+  HeartRate,
+  Pai,
+  Sleep,
+  Stand,
+  Step,
+  Stress,
+} from "@zos/sensor";
 import { align, createWidget, prop, text_style, widget } from "@zos/ui";
 import { log as Logger, px } from "@zos/utils";
 
+import { collectHealthData } from "../src/health-collector.ts";
 import { createImuCollector, FREQ_MODES } from "../src/imu-collector.ts";
 import { appendSamples, finalizeSessionFile, resetSessionFile } from "../src/session-file.ts";
 import {
@@ -384,6 +400,28 @@ Page(
 
       if (method === "transfer.start") {
         this.transferSession();
+      }
+
+      if (method === "health.collect") {
+        const data = collectHealthData({
+          HeartRate,
+          Step,
+          Calorie,
+          Distance,
+          Sleep,
+          BloodOxygen,
+          BodyTemperature,
+          Stress,
+          Stand,
+          Pai,
+          FatBurning,
+        });
+        this.request({
+          method: "health.upload",
+          params: { data },
+        }).catch((err: unknown) => {
+          logger.error("health data upload request failed %j", err);
+        });
       }
     },
 
