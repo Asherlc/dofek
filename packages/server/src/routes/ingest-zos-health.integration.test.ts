@@ -26,6 +26,26 @@ function createFakeDb(): import("dofek/db").Database {
   } satisfies import("dofek/db").Database;
 }
 
+function createFakeDbWithSleepConflict(): import("dofek/db").Database {
+  const captured: CapturedSql[] = [];
+  const returningMock = vi.fn(async () => []);
+  const onConflictDoNothingMock = vi.fn(() => ({ returning: returningMock }));
+  const valuesMock = vi.fn(() => ({ onConflictDoNothing: onConflictDoNothingMock }));
+  const insertMock = vi.fn(() => ({ values: valuesMock }));
+  
+  return {
+    captured,
+    execute: vi.fn(async (sql: unknown) => {
+      captured.push({ sql: String(sql) });
+      if (String(sql).includes("SELECT id FROM fitness.sleep_session")) {
+        return [{ id: 999 }];
+      }
+      return [];
+    }),
+    insert: insertMock,
+  } satisfies import("dofek/db").Database;
+}
+
 function createFakeDbThatThrows(): import("dofek/db").Database {
   return {
     execute: vi.fn(async () => {
@@ -272,6 +292,26 @@ describe("POST /api/ingest/zos-health", () => {
     expect(JSON.parse(res.body)).toEqual({ status: "ok" });
   });
 
+  it("fetches existing sleep session when insert conflicts", async () => {
+    const db = createFakeDbWithSleepConflict();
+    const { app } = createTestApp(db);
+    const res = await post(app, "/api/ingest/zos-health", {
+      headers: { Authorization: "Bearer valid-token" },
+      body: {
+        sleepSessions: [
+          {
+            externalId: "existing-sleep",
+            startedAt: "2026-06-26T22:00:00Z",
+            endedAt: "2026-06-27T06:00:00Z",
+            stages: [{ stage: "deep", startedAt: "2026-06-26T23:00:00Z", endedAt: "2026-06-27T00:00:00Z" }],
+          },
+        ],
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({ status: "ok" });
+  });
+
   it("skips sleep stage with invalid dates", async () => {
     const { app } = createTestApp();
     const res = await post(app, "/api/ingest/zos-health", {
@@ -282,9 +322,7 @@ describe("POST /api/ingest/zos-health", () => {
             externalId: "sleep-stages",
             startedAt: "2026-06-26T22:00:00Z",
             endedAt: "2026-06-27T06:00:00Z",
-            stages: [
-              { stage: "deep", startedAt: "bad-date", endedAt: "2026-06-27T00:00:00Z" },
-            ],
+            stages: [{ stage: "deep", startedAt: "bad-date", endedAt: "2026-06-27T00:00:00Z" }],
           },
         ],
       },

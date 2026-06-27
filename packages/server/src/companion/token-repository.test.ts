@@ -63,9 +63,14 @@ describe("token-repository", () => {
   describe("createOrGetCompanionToken", () => {
     it("creates a new token when no existing token exists", async () => {
       const db = createMockDb();
-      db.execute
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([{ id: "token-id", user_id: "user-123", created_at: "2026-01-01T00:00:00.000Z", revoked_at: null }]);
+      db.execute.mockResolvedValueOnce([]).mockResolvedValueOnce([
+        {
+          id: "token-id",
+          user_id: "user-123",
+          created_at: "2026-01-01T00:00:00.000Z",
+          revoked_at: null,
+        },
+      ]);
       const result = await createOrGetCompanionToken(db, "user-123");
       expect(result.id).toBe("token-id");
       expect(result.token).not.toBe("");
@@ -75,13 +80,34 @@ describe("token-repository", () => {
 
     it("returns existing token metadata when token already exists", async () => {
       const db = createMockDb();
-      db.execute
-        .mockResolvedValueOnce([{ token_hash: "exists" }])
-        .mockResolvedValueOnce([{ id: "existing-id", user_id: "user-123", created_at: "2026-01-01T00:00:00.000Z", revoked_at: null }]);
+      db.execute.mockResolvedValueOnce([{ token_hash: "exists" }]).mockResolvedValueOnce([
+        {
+          id: "existing-id",
+          user_id: "user-123",
+          created_at: "2026-01-01T00:00:00.000Z",
+          revoked_at: null,
+        },
+      ]);
       const result = await createOrGetCompanionToken(db, "user-123");
       expect(result.id).toBe("existing-id");
       expect(result.token).toBe("");
       expect(result.createdAt).toBe("2026-01-01T00:00:00.000Z");
+    });
+
+    it("throws when existing token row is not found after initial check", async () => {
+      const db = createMockDb();
+      db.execute.mockResolvedValueOnce([{ token_hash: "exists" }]).mockResolvedValueOnce([]);
+      await expect(createOrGetCompanionToken(db, "user-123")).rejects.toThrow(
+        "Companion token not found after creation",
+      );
+    });
+
+    it("throws when insert returns no rows", async () => {
+      const db = createMockDb();
+      db.execute.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      await expect(createOrGetCompanionToken(db, "user-123")).rejects.toThrow(
+        "Failed to create companion token",
+      );
     });
   });
 
@@ -91,7 +117,14 @@ describe("token-repository", () => {
       db.execute
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([{ id: "new-id", user_id: "user-123", created_at: "2026-01-01T00:00:00.000Z", revoked_at: null }]);
+        .mockResolvedValueOnce([
+          {
+            id: "new-id",
+            user_id: "user-123",
+            created_at: "2026-01-01T00:00:00.000Z",
+            revoked_at: null,
+          },
+        ]);
       const result = await regenerateCompanionToken(db, "user-123");
       expect(result.id).toBe("new-id");
       expect(result.token).not.toBe("");
