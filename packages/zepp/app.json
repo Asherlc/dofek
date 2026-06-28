@@ -8,7 +8,7 @@
       "code": 1,
       "name": "1.0.0"
     },
-    "icon": "assets/icon.png",
+    "icon": "icon.png",
     "vender": "local",
     "description": "Logs raw accelerometer/gyroscope data to a phone-side file via BLE file transfer."
   },
