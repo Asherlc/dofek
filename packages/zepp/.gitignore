@@ -1,4 +1,8 @@
 node_modules/
 dist/
 app.js
+page/index.js
+app-side/index.js
+setting/index.js
+app-service/imu_service.js
 .DS_Store

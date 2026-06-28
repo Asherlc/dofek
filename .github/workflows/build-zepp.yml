@@ -1,0 +1,62 @@
+name: Build Zepp
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  check-zepp-changes:
+    name: Check Zepp Changes
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check for Zepp changes
+        id: check
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = "push" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            CHANGED=$(git diff --name-only "origin/$BASE_REF"...HEAD -- \
+              packages/zepp/ \
+              pnpm-lock.yaml \
+              pnpm-workspace.yaml \
+              tsconfig.json \
+              .github/actions/build-zepp/ \
+              .github/actions/setup-node-pnpm/ \
+              .github/workflows/build-zepp.yml)
+            if [ -n "$CHANGED" ]; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "Zepp files changed:"
+              echo "$CHANGED"
+            else
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              echo "No Zepp changes detected, skipping build"
+            fi
+          fi
+
+  build:
+    name: Build Zepp ZAB
+    needs: check-zepp-changes
+    if: needs.check-zepp-changes.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Set up Node.js and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Build Zepp ZAB
+        uses: ./.github/actions/build-zepp

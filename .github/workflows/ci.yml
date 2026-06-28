@@ -30,6 +30,10 @@ jobs:
     uses: ./.github/workflows/build-web.yml
     secrets: inherit
 
+  build-zepp:
+    name: Build Zepp
+    uses: ./.github/workflows/build-zepp.yml
+
   test:
     name: Test
     uses: ./.github/workflows/test.yml
@@ -37,7 +41,7 @@ jobs:
 
   ci-gate:
     name: CI Gate
-    needs: [build-mobile, build-web, test]
+    needs: [build-mobile, build-web, build-zepp, test]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -46,6 +50,7 @@ jobs:
           for result in \
             "${{ needs.build-mobile.result }}" \
             "${{ needs.build-web.result }}" \
+            "${{ needs.build-zepp.result }}" \
             "${{ needs.test.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
               echo "CI gate failed"

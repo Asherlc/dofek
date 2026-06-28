@@ -265,8 +265,8 @@ describe("collectHealthData", () => {
       getLast(): number {
         return 0;
       }
-      getCurrent(): number {
-        return 0;
+      getCurrent(): never {
+        throw new Error("sensor not available");
       }
       getTarget(): number {
         return 0;
