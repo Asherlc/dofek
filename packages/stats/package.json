@@ -8,5 +8,8 @@
   },
   "dependencies": {
     "@dofek/scoring": "workspace:*"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
   }
 }

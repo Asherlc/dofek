@@ -1,3 +1,4 @@
+import type { InertialMeasurementUnitSample } from "@dofek/imu";
 import * as Sentry from "@sentry/react-native";
 import { AppState, type AppStateStatus } from "react-native";
 import type { InertialMeasurementUnitUploadClient } from "./inertial-measurement-unit-service";
@@ -15,17 +16,7 @@ export interface WhoopBleSyncDeps {
   connect(peripheralId: string): Promise<boolean>;
   startImuStreaming(): Promise<boolean>;
   stopImuStreaming(): Promise<boolean>;
-  peekBufferedSamples(maxCount?: number): Promise<
-    Array<{
-      timestamp: string;
-      accelerometerX: number;
-      accelerometerY: number;
-      accelerometerZ: number;
-      gyroscopeX: number;
-      gyroscopeY: number;
-      gyroscopeZ: number;
-    }>
-  >;
+  peekBufferedSamples(maxCount?: number): Promise<InertialMeasurementUnitSample[]>;
   confirmSamplesDrain(count: number): void;
   peekBufferedRealtimeData(maxCount?: number): Promise<
     Array<{
@@ -291,27 +282,17 @@ async function drainBuffer(
     const samples = await whoopDeps.peekBufferedSamples(IMU_UPLOAD_BATCH_SIZE);
     if (samples.length === 0) break;
 
-    const uploadSamples = samples.map((sample) => ({
-      timestamp: sample.timestamp,
-      x: sample.accelerometerX,
-      y: sample.accelerometerY,
-      z: sample.accelerometerZ,
-      gyroscopeX: sample.gyroscopeX,
-      gyroscopeY: sample.gyroscopeY,
-      gyroscopeZ: sample.gyroscopeZ,
-    }));
-
     try {
       const result = await trpcClient.inertialMeasurementUnitSync.pushSamples.mutate({
         deviceId: "WHOOP Strap",
         deviceType: "whoop",
-        samples: uploadSamples,
+        samples,
       });
       whoopDeps.confirmSamplesDrain(samples.length);
-      totalImuUploaded += uploadSamples.length;
+      totalImuUploaded += samples.length;
       logger.info(
         LOG_CATEGORY,
-        `uploaded ${uploadSamples.length} IMU samples (server inserted: ${result.inserted})`,
+        `uploaded ${samples.length} IMU samples (server inserted: ${result.inserted})`,
       );
     } catch (error: unknown) {
       logger.error(LOG_CATEGORY, `IMU upload failed, ${samples.length} samples retained: ${error}`);

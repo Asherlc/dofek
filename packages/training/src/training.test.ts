@@ -156,12 +156,12 @@ describe("createActivityTypeMapper", () => {
   });
 
   it("returns 'other' for unknown types", () => {
-    const mapper = createActivityTypeMapper({ foo: "cycling" });
+    const mapper = createActivityTypeMapper<string>({ foo: "cycling" });
     expect(mapper("unknown_type")).toBe("other");
   });
 
   it("is case-sensitive (mapping keys are used as-is)", () => {
-    const mapper = createActivityTypeMapper({ Ride: "cycling" });
+    const mapper = createActivityTypeMapper<string>({ Ride: "cycling" });
     expect(mapper("Ride")).toBe("cycling");
     expect(mapper("ride")).toBe("other");
   });

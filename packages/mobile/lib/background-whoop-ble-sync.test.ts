@@ -108,9 +108,9 @@ describe("background-whoop-ble-sync", () => {
     const samples = [
       {
         timestamp: "2026-03-27T10:00:00.000Z",
-        accelerometerX: 1,
-        accelerometerY: 2,
-        accelerometerZ: 3,
+        x: 1,
+        y: 2,
+        z: 3,
         gyroscopeX: 10,
         gyroscopeY: -20,
         gyroscopeZ: 30,
@@ -158,9 +158,9 @@ describe("background-whoop-ble-sync", () => {
     const samples = [
       {
         timestamp: "2026-03-25T08:00:00.000Z",
-        accelerometerX: 100,
-        accelerometerY: -200,
-        accelerometerZ: 300,
+        x: 100,
+        y: -200,
+        z: 300,
         gyroscopeX: 10,
         gyroscopeY: -20,
         gyroscopeZ: 30,
@@ -289,9 +289,9 @@ describe("background-whoop-ble-sync", () => {
     const samples = [
       {
         timestamp: "2026-03-27T10:00:00.000Z",
-        accelerometerX: 1,
-        accelerometerY: 2,
-        accelerometerZ: 3,
+        x: 1,
+        y: 2,
+        z: 3,
         gyroscopeX: 10,
         gyroscopeY: -20,
         gyroscopeZ: 30,
@@ -326,9 +326,9 @@ describe("background-whoop-ble-sync", () => {
     const batch1 = [
       {
         timestamp: "2026-03-27T10:00:00.000Z",
-        accelerometerX: 1,
-        accelerometerY: 2,
-        accelerometerZ: 3,
+        x: 1,
+        y: 2,
+        z: 3,
         gyroscopeX: 10,
         gyroscopeY: -20,
         gyroscopeZ: 30,
@@ -337,9 +337,9 @@ describe("background-whoop-ble-sync", () => {
     const batch2 = [
       {
         timestamp: "2026-03-27T10:00:01.000Z",
-        accelerometerX: 4,
-        accelerometerY: 5,
-        accelerometerZ: 6,
+        x: 4,
+        y: 5,
+        z: 6,
         gyroscopeX: 40,
         gyroscopeY: -50,
         gyroscopeZ: 60,
@@ -376,9 +376,9 @@ describe("background-whoop-ble-sync", () => {
     const samples = [
       {
         timestamp: "2026-03-27T10:00:00.000Z",
-        accelerometerX: 1,
-        accelerometerY: 2,
-        accelerometerZ: 3,
+        x: 1,
+        y: 2,
+        z: 3,
         gyroscopeX: 10,
         gyroscopeY: -20,
         gyroscopeZ: 30,
@@ -395,9 +395,9 @@ describe("background-whoop-ble-sync", () => {
     const samples = [
       {
         timestamp: "2026-03-27T10:00:00.000Z",
-        accelerometerX: 1,
-        accelerometerY: 2,
-        accelerometerZ: 3,
+        x: 1,
+        y: 2,
+        z: 3,
         gyroscopeX: 10,
         gyroscopeY: -20,
         gyroscopeZ: 30,
@@ -496,9 +496,9 @@ describe("syncWhoopBle", () => {
     const samples = [
       {
         timestamp: "2026-03-25T08:00:00.000Z",
-        accelerometerX: 100,
-        accelerometerY: -200,
-        accelerometerZ: 300,
+        x: 100,
+        y: -200,
+        z: 300,
         gyroscopeX: 10,
         gyroscopeY: -20,
         gyroscopeZ: 30,
@@ -661,9 +661,9 @@ describe("realtime data (beat interval + quaternion) sync", () => {
     const imuSamples = [
       {
         timestamp: "2026-03-30T12:00:00.000Z",
-        accelerometerX: 100,
-        accelerometerY: -200,
-        accelerometerZ: 4096,
+        x: 100,
+        y: -200,
+        z: 4096,
         gyroscopeX: 10,
         gyroscopeY: -20,
         gyroscopeZ: 30,
@@ -709,9 +709,9 @@ describe("realtime data (beat interval + quaternion) sync", () => {
     const imuSamples = [
       {
         timestamp: "2026-03-30T12:00:00.000Z",
-        accelerometerX: 1,
-        accelerometerY: 2,
-        accelerometerZ: 3,
+        x: 1,
+        y: 2,
+        z: 3,
         gyroscopeX: 0,
         gyroscopeY: 0,
         gyroscopeZ: 0,

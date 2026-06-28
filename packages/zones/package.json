@@ -5,5 +5,8 @@
   "type": "module",
   "exports": {
     "./zones": "./src/zones.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
   }
 }
