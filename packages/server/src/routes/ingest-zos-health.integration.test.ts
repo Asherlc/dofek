@@ -122,10 +122,10 @@ function extractSqlParams(sqlStmt: unknown): unknown[] {
 }
 
 /** Zod schemas used to narrow mock call args captured via the chain helper. */
-const externalIdValuesSchema = z.object({ externalId: z.unknown() });
-const sessionIdValuesSchema = z.object({ sessionId: z.unknown() });
+const externalIdValuesSchema = z.object({ externalId: z.string() });
+const sessionIdValuesSchema = z.object({ sessionId: z.string() });
 const stageValuesSchema = z.object({
-  sessionId: z.unknown(),
+  sessionId: z.string(),
   stage: z.string(),
   sourceName: z.string(),
   startedAt: z.instanceof(Date),
