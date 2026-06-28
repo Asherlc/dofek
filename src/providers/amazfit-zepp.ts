@@ -652,7 +652,8 @@ export class AmazfitZeppProvider implements SyncProvider {
       recordsSynced += count;
     } catch (error: unknown) {
       if (error instanceof ProviderRateLimitError) throw error;
-      if (!authFailureReasonFromError(error)) {
+      const bandDataAuthFailure = authFailureReasonFromError(error);
+      if (!bandDataAuthFailure) {
         captureException(error, {
           tags: { provider: this.id, dataType: "band_data", phase: "sync" },
         });
@@ -661,6 +662,21 @@ export class AmazfitZeppProvider implements SyncProvider {
         message: `band_data: ${error instanceof Error ? error.message : String(error)}`,
         cause: error,
       });
+      if (bandDataAuthFailure) {
+        try {
+          await deleteTokens(db, this.id, scopedUserId);
+        } catch (deleteError) {
+          captureException(deleteError, {
+            tags: { provider: this.id, phase: "token_deletion" },
+          });
+        }
+        return {
+          provider: this.id,
+          recordsSynced,
+          errors,
+          duration: Date.now() - start,
+        };
+      }
     }
 
     try {

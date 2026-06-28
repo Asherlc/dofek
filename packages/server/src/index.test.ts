@@ -1,6 +1,6 @@
 import http from "node:http";
 import express from "express";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@bull-board/express", () => ({
   ExpressAdapter: vi.fn(() => ({
@@ -111,6 +111,10 @@ function request(
 }
 
 describe("createApp", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("returns 404 for non-existent routes", async () => {
     const { createDatabaseFromEnv } = await import("dofek/db");
     const fakeDb = createDatabaseFromEnv();

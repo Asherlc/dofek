@@ -250,9 +250,9 @@ describe("AmazfitZeppClient workout history", () => {
       expect.fail("Expected error to be thrown");
     } catch (error: unknown) {
       expect(error).toBeInstanceOf(AccessTokenExpiredError);
-      if (error instanceof Error && error.cause instanceof Error) {
-        expect(error.cause.message).toContain("401");
-      }
+      if (!(error instanceof Error)) throw new Error("Expected Error");
+      if (!(error.cause instanceof Error)) throw new Error("Expected Error cause");
+      expect(error.cause.message).toContain("401");
     }
   });
 
@@ -269,12 +269,9 @@ describe("AmazfitZeppClient workout history", () => {
       expect.fail("Expected error to be thrown");
     } catch (error: unknown) {
       expect(error).toBeInstanceOf(AccessTokenExpiredError);
-      if (error instanceof Error) {
-        expect(error.cause).toBeInstanceOf(Error);
-        if (error.cause instanceof Error) {
-          expect(error.cause.message).toContain("workout token expired");
-        }
-      }
+      if (!(error instanceof Error)) throw new Error("Expected Error");
+      if (!(error.cause instanceof Error)) throw new Error("Expected Error cause");
+      expect(error.cause.message).toContain("workout token expired");
     }
   });
 
@@ -541,9 +538,9 @@ describe("Amazfit/Zepp provider", () => {
       expect.fail("Expected error to be thrown");
     } catch (error: unknown) {
       expect(error).toBeInstanceOf(AccessTokenExpiredError);
-      if (error instanceof Error && error.cause instanceof Error) {
-        expect(error.cause.message).toContain("401");
-      }
+      if (!(error instanceof Error)) throw new Error("Expected Error");
+      if (!(error.cause instanceof Error)) throw new Error("Expected Error cause");
+      expect(error.cause.message).toContain("401");
     }
   });
 
@@ -560,9 +557,9 @@ describe("Amazfit/Zepp provider", () => {
       expect.fail("Expected error to be thrown");
     } catch (error: unknown) {
       expect(error).toBeInstanceOf(AccessTokenExpiredError);
-      if (error instanceof Error && error.cause instanceof Error) {
-        expect(error.cause.message).toContain("token expired");
-      }
+      if (!(error instanceof Error)) throw new Error("Expected Error");
+      if (!(error.cause instanceof Error)) throw new Error("Expected Error cause");
+      expect(error.cause.message).toContain("token expired");
     }
   });
 

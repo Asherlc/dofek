@@ -5,6 +5,7 @@ import { sql } from "drizzle-orm";
 import express, { Router } from "express";
 import { z } from "zod";
 import { validateCompanionToken } from "../companion/token-repository.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 
 const PROVIDER_ID = "amazfit-zepp";
@@ -30,7 +31,7 @@ const sleepStageSchema = z.object({
 });
 
 const sleepSessionSchema = z.object({
-  externalId: z.string(),
+  externalId: z.string().trim().min(1),
   startedAt: datetimeString,
   endedAt: datetimeString,
   durationMinutes: z.number().int().optional(),
@@ -43,11 +44,11 @@ const sleepSessionSchema = z.object({
 });
 
 const activitySchema = z.object({
-  externalId: z.string(),
+  externalId: z.string().trim().min(1),
   activityType: z.string(),
   startedAt: datetimeString,
   endedAt: datetimeString,
-  name: z.string().optional(),
+  name: z.string().trim().min(1).optional(),
 });
 
 const ingestPayloadSchema = z.object({
@@ -181,18 +182,14 @@ export function createIngestZosHealthRouter(deps: { db: Database }): Router {
             })
             .returning({ id: sleepSession.id });
 
-          const existingSessionRows = await deps.db.execute(
+          const existingSessionRows = await executeWithSchema(
+            deps.db,
+            z.object({ id: z.string() }),
             sql`SELECT id FROM fitness.sleep_session
                 WHERE user_id = ${userId} AND provider_id = ${PROVIDER_ID} AND external_id = ${session.externalId}
                 LIMIT 1`,
           );
-          const existingId =
-            existingSessionRows?.[0] != null &&
-            typeof existingSessionRows[0] === "object" &&
-            "id" in existingSessionRows[0] &&
-            typeof existingSessionRows[0].id === "string"
-              ? existingSessionRows[0].id
-              : undefined;
+          const existingId = existingSessionRows[0]?.id;
           const sessionId = insertedSession?.id ?? existingId;
 
           if (session.stages && sessionId) {

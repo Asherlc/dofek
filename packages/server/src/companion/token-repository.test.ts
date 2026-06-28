@@ -63,7 +63,7 @@ describe("token-repository", () => {
   describe("createOrGetCompanionToken", () => {
     it("creates a new token when no existing token exists", async () => {
       const db = createMockDb();
-      db.execute.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      db.execute.mockResolvedValueOnce([
         {
           id: "token-id",
           user_id: "user-123",
@@ -73,36 +73,30 @@ describe("token-repository", () => {
       ]);
       const result = await createOrGetCompanionToken(db, "user-123");
       expect(result.id).toBe("token-id");
-      expect(result.token).not.toBe("");
+      expect(result.token).not.toBeNull();
       expect(result.createdAt).toBe("2026-01-01T00:00:00.000Z");
       expect(result.revokedAt).toBeNull();
     });
 
     it("returns existing token metadata when token already exists", async () => {
       const db = createMockDb();
-      db.execute.mockResolvedValueOnce([{ token_hash: "exists" }]).mockResolvedValueOnce([
-        {
-          id: "existing-id",
-          user_id: "user-123",
-          created_at: "2026-01-01T00:00:00.000Z",
-          revoked_at: null,
-        },
-      ]);
+      db.execute
+        .mockResolvedValueOnce([]) // INSERT ON CONFLICT DO NOTHING returns nothing
+        .mockResolvedValueOnce([
+          {
+            id: "existing-id",
+            user_id: "user-123",
+            created_at: "2026-01-01T00:00:00.000Z",
+            revoked_at: null,
+          },
+        ]); // SELECT returns existing row
       const result = await createOrGetCompanionToken(db, "user-123");
       expect(result.id).toBe("existing-id");
       expect(result.token).toBeNull();
       expect(result.createdAt).toBe("2026-01-01T00:00:00.000Z");
     });
 
-    it("throws when existing token row is not found after initial check", async () => {
-      const db = createMockDb();
-      db.execute.mockResolvedValueOnce([{ token_hash: "exists" }]).mockResolvedValueOnce([]);
-      await expect(createOrGetCompanionToken(db, "user-123")).rejects.toThrow(
-        "Companion token not found after creation",
-      );
-    });
-
-    it("throws when insert returns no rows", async () => {
+    it("throws when no active row exists after conflict", async () => {
       const db = createMockDb();
       db.execute.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
       await expect(createOrGetCompanionToken(db, "user-123")).rejects.toThrow(
@@ -117,7 +111,6 @@ describe("token-repository", () => {
       db.execute
         .mockResolvedValueOnce([]) // BEGIN
         .mockResolvedValueOnce([]) // UPDATE revoke
-        .mockResolvedValueOnce([]) // SELECT token_hash (no existing after revoke)
         .mockResolvedValueOnce([
           {
             id: "new-id",
@@ -125,7 +118,7 @@ describe("token-repository", () => {
             created_at: "2026-01-01T00:00:00.000Z",
             revoked_at: null,
           },
-        ]) // INSERT RETURNING
+        ]) // INSERT ... ON CONFLICT ... RETURNING
         .mockResolvedValueOnce([]); // COMMIT
       const result = await regenerateCompanionToken(db, "user-123");
       expect(result.id).toBe("new-id");

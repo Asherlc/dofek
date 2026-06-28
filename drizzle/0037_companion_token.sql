@@ -9,4 +9,3 @@ CREATE TABLE IF NOT EXISTS fitness.companion_token (
 ALTER TABLE fitness.companion_token ENABLE ROW LEVEL SECURITY;
 
 CREATE UNIQUE INDEX IF NOT EXISTS companion_token_user_idx ON fitness.companion_token (user_id) WHERE revoked_at IS NULL;
-CREATE INDEX IF NOT EXISTS companion_token_hash_idx ON fitness.companion_token (token_hash); -- noqa: PG01

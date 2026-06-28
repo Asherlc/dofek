@@ -35,7 +35,7 @@ describe("companionTokenRouter", () => {
   describe("retrieve", () => {
     it("returns a token when none exists", async () => {
       const execute = vi.fn();
-      execute.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      execute.mockResolvedValueOnce([
         {
           id: "new-id",
           user_id: "user-1",
@@ -46,19 +46,21 @@ describe("companionTokenRouter", () => {
       const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.retrieve();
       expect(result.id).toBe("new-id");
-      expect(result.token).not.toBe("");
+      expect(result.token).not.toBeNull();
     });
 
     it("returns existing token metadata when token already exists", async () => {
       const execute = vi.fn();
-      execute.mockResolvedValueOnce([{ token_hash: "exists" }]).mockResolvedValueOnce([
-        {
-          id: "existing-id",
-          user_id: "user-1",
-          created_at: "2026-01-01T00:00:00.000Z",
-          revoked_at: null,
-        },
-      ]);
+      execute
+        .mockResolvedValueOnce([]) // INSERT ON CONFLICT DO NOTHING returns nothing
+        .mockResolvedValueOnce([
+          {
+            id: "existing-id",
+            user_id: "user-1",
+            created_at: "2026-01-01T00:00:00.000Z",
+            revoked_at: null,
+          },
+        ]); // SELECT returns existing row
       const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.retrieve();
       expect(result.id).toBe("existing-id");
@@ -72,7 +74,6 @@ describe("companionTokenRouter", () => {
       execute
         .mockResolvedValueOnce([]) // BEGIN
         .mockResolvedValueOnce([]) // UPDATE revoke
-        .mockResolvedValueOnce([]) // SELECT token_hash (no existing after revoke)
         .mockResolvedValueOnce([
           {
             id: "new-id",
@@ -80,7 +81,7 @@ describe("companionTokenRouter", () => {
             created_at: "2026-01-01T00:00:00.000Z",
             revoked_at: null,
           },
-        ]) // INSERT RETURNING
+        ]) // INSERT ... ON CONFLICT ... RETURNING
         .mockResolvedValueOnce([]); // COMMIT
       const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
       const result = await caller.regenerate();

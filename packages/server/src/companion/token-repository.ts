@@ -32,48 +32,6 @@ export async function createOrGetCompanionToken(
   db: ExecutableDatabase,
   userId: string,
 ): Promise<CompanionTokenMetadata> {
-  // Check for existing non-revoked token
-  const existing = await executeWithSchema(
-    db,
-    z.object({ token_hash: z.string() }),
-    sql`SELECT token_hash FROM fitness.companion_token
-        WHERE user_id = ${userId} AND revoked_at IS NULL
-        LIMIT 1`,
-  );
-
-  if (existing.length > 0) {
-    // Token already exists but we need the raw value to return it
-    // We can't recover the original token from the hash, so regenerate
-    // Actually, let's revoke the old one and create a new one
-    // No, that would invalidate the existing token. Instead, let's just
-    // return a "token exists" indicator and let the user regenerate if needed.
-    // For now, return the metadata without the token value
-    const existingRows = await executeWithSchema(
-      db,
-      z.object({
-        id: z.string(),
-        user_id: z.string(),
-        created_at: timestampStringSchema,
-        revoked_at: timestampStringSchema.nullable(),
-      }),
-      sql`SELECT id, user_id, created_at, revoked_at
-          FROM fitness.companion_token
-          WHERE user_id = ${userId} AND revoked_at IS NULL
-          LIMIT 1`,
-    );
-    const existingRow = existingRows[0];
-    if (!existingRow) {
-      throw new Error("Companion token not found after creation");
-    }
-    return {
-      id: existingRow.id,
-      token: null,
-      createdAt: existingRow.created_at,
-      revokedAt: existingRow.revoked_at,
-    };
-  }
-
-  // Create new token
   const token = generateCompanionToken();
   const tokenHash = hashCompanionToken(token);
 
@@ -82,17 +40,37 @@ export async function createOrGetCompanionToken(
     companionTokenRowSchema,
     sql`INSERT INTO fitness.companion_token (user_id, token_hash)
         VALUES (${userId}, ${tokenHash})
+        ON CONFLICT (user_id) WHERE revoked_at IS NULL
+        DO NOTHING
         RETURNING id, user_id, created_at, revoked_at`,
   );
   const insertedRow = insertRows[0];
-  if (!insertedRow) {
+  if (insertedRow) {
+    return {
+      id: insertedRow.id,
+      token,
+      createdAt: insertedRow.created_at,
+      revokedAt: insertedRow.revoked_at,
+    };
+  }
+
+  const existingRows = await executeWithSchema(
+    db,
+    companionTokenRowSchema,
+    sql`SELECT id, user_id, created_at, revoked_at
+        FROM fitness.companion_token
+        WHERE user_id = ${userId} AND revoked_at IS NULL
+        LIMIT 1`,
+  );
+  const existingRow = existingRows[0];
+  if (!existingRow) {
     throw new Error("Failed to create companion token");
   }
   return {
-    id: insertedRow.id,
-    token,
-    createdAt: insertedRow.created_at,
-    revokedAt: insertedRow.revoked_at,
+    id: existingRow.id,
+    token: null,
+    createdAt: existingRow.created_at,
+    revokedAt: existingRow.revoked_at,
   };
 }
 
