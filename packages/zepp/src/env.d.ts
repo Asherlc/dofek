@@ -38,6 +38,69 @@ declare module "@zos/sensor" {
     getCurrent(): { x: number; y: number; z: number };
   }
 
+  export class HeartRate {
+    getToday(): number[];
+    getResting(): number;
+    getDailySummary(): { maximum?: { hr_value: number; time: number } };
+    getLast(): number;
+  }
+
+  export class Step {
+    getCurrent(): number;
+    getTarget(): number;
+  }
+
+  export class Calorie {
+    getCurrent(): number;
+    getTarget(): number;
+  }
+
+  export class Distance {
+    getCurrent(): number;
+  }
+
+  export class Sleep {
+    updateInfo(): void;
+    getInfo(): {
+      score: number;
+      deepTime: number;
+      startTime: number;
+      endTime: number;
+      totalTime: number;
+    };
+    getStage(): Array<{ model: number; start: number; stop: number }>;
+    getNap(): Array<{ length: number; start: number; stop: number }>;
+  }
+
+  export class BloodOxygen {
+    getCurrent(): { value: number };
+    getLastDay(): number[];
+    getLastFewHour(hours: number): Array<{ spo2: number; time: number }>;
+  }
+
+  export class BodyTemperature {
+    getCurrent(): { current: number };
+    getToday(): number[];
+  }
+
+  export class Stress {
+    getToday(): number[];
+    getTodayByHour(): number[];
+    getLastWeek(): number[];
+  }
+
+  export class Stand {
+    getCurrent(): number;
+  }
+
+  export class Pai {
+    getCurrent(): number;
+  }
+
+  export class FatBurning {
+    getCurrent(): number;
+  }
+
   export function checkSensor(sensor: new () => Accelerometer | Gyroscope): boolean;
 }
 

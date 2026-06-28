@@ -12,7 +12,8 @@
     "preview": "zeus preview",
     "test": "vitest run",
     "test:watch": "vitest --watch",
-    "lint": "biome check ."
+    "lint": "biome check .",
+    "typecheck": "tsc --noEmit"
   },
   "engines": {
     "node": ">=26"
