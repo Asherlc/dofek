@@ -33,7 +33,6 @@ jobs:
   build-zepp:
     name: Build Zepp
     uses: ./.github/workflows/build-zepp.yml
-    secrets: inherit
 
   test:
     name: Test

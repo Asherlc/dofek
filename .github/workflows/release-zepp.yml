@@ -32,7 +32,8 @@ jobs:
           persist-credentials: false
           ref: ${{ github.event.workflow_run.head_sha || github.ref }}
 
-      - uses: ./.github/actions/setup-node-pnpm
+      - name: Set up Node.js and pnpm
+        uses: ./.github/actions/setup-node-pnpm
 
       - name: Determine version
         id: version
@@ -96,7 +97,8 @@ jobs:
       - name: Print resolved version
         run: echo "Building Dofek Zepp v${{ steps.version.outputs.version }} (code ${{ steps.version.outputs.code }})"
 
-      - uses: ./.github/actions/build-zepp
+      - name: Build Zepp ZAB
+        uses: ./.github/actions/build-zepp
 
       - name: Upload ZAB artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
