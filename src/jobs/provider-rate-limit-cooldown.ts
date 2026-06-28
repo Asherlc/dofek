@@ -337,6 +337,8 @@ export function providerRateLimitCooldownJobId(
   cooldown: ProviderRateLimitCooldown,
   jobUserId: string,
 ): string {
-  const suffix = cooldown.scope === "provider" ? "" : `-${cooldown.userId ?? jobUserId}`;
-  return `${KEY_PREFIX}-${cooldown.providerId}-${cooldown.scope}${suffix}-${cooldown.expiresAt.getTime()}`;
+  const safeProviderId = cooldown.providerId.replace(/:/g, "-");
+  const safeUserId = (cooldown.userId ?? jobUserId).replace(/:/g, "-");
+  const suffix = cooldown.scope === "provider" ? "" : `-${safeUserId}`;
+  return `${KEY_PREFIX}-${safeProviderId}-${cooldown.scope}${suffix}-${cooldown.expiresAt.getTime()}`;
 }
