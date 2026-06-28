@@ -141,6 +141,7 @@ jobs:
             echo "Triggered by [CI run #${CI_RUN_ID}](${REPO_URL}/actions/runs/${CI_RUN_ID})" >> "$NOTES_FILE"
           fi
           gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
             --target "$TARGET_SHA" \
             --title "Dofek Zepp v$VERSION" \
             --notes-file "$NOTES_FILE" \
