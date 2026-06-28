@@ -102,6 +102,7 @@
     "generate": "drizzle-kit generate && tsx scripts/generate-schema-diagram.ts",
     "schema:diagram": "tsx scripts/generate-schema-diagram.ts",
     "schema:view": "tsx scripts/generate-schema-diagram.ts --open",
+    "typecheck": "tsc --noEmit",
     "lint": "biome check . --max-diagnostics=500 && pnpm lint:analytics-sql && pnpm lint:analytics-policy",
     "lint:fix": "biome check --write .",
     "lint:css": "stylelint \"**/*.css\"",

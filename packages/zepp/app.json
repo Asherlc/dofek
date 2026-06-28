@@ -18,7 +18,18 @@
     "device:os.accelerometer",
     "device:os.gyroscope",
     "device:os.bg_service",
-    "device:os.ble"
+    "device:os.ble",
+    "data:user.hd.heart_rate",
+    "data:user.hd.step",
+    "data:user.hd.calorie",
+    "data:user.hd.sleep",
+    "data:user.hd.spo2",
+    "data:user.hd.body_temp",
+    "data:user.hd.stress",
+    "data:user.hd.stand",
+    "data:user.hd.pai",
+    "data:user.hd.fat_burning",
+    "device:os.alarm"
   ],
   "runtime": {
     "apiVersion": {

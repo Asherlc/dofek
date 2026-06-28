@@ -114,6 +114,7 @@ describe("appRouter", () => {
       "behaviorImpact",
       "billing",
       "breathwork",
+      "companionToken",
       "sleep",
       "sleepNeed",
       "dailyMetrics",

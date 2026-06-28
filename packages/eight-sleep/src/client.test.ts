@@ -43,7 +43,8 @@ describe("EightSleepClient.signIn", () => {
     });
 
     expect(fetchFn).toHaveBeenCalledOnce();
-    const [url, options] = fetchFn.mock.calls[0];
+    const url = fetchFn.mock.calls[0]?.[0];
+    const options = fetchFn.mock.calls[0]?.[1];
     expect(url).toBe("https://auth-api.8slp.net/v1/tokens");
     expect(options?.method).toBe("POST");
     const body: Record<string, string> = JSON.parse(String(options?.body));
@@ -105,7 +106,8 @@ describe("EightSleepClient.getTrends", () => {
     expect(result).toEqual(trendsResponse);
     expect(fetchFn).toHaveBeenCalledOnce();
 
-    const [url, options] = fetchFn.mock.calls[0];
+    const url = fetchFn.mock.calls[0]?.[0];
+    const options = fetchFn.mock.calls[0]?.[1];
     expect(url).toContain("https://client-api.8slp.net/v1/users/user-123/trends");
     expect(url).toContain("tz=America%2FNew_York");
     expect(url).toContain("from=2024-01-01");

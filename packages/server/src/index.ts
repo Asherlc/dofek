@@ -36,6 +36,7 @@ import { appRouter } from "./router.ts";
 import { createActivityExportRouter } from "./routes/activity-export.ts";
 import { createAuthRouter } from "./routes/auth/index.ts";
 import { createExportRouter } from "./routes/export.ts";
+import { createIngestZosHealthRouter } from "./routes/ingest-zos-health.ts";
 import { createStripeWebhookRouter } from "./routes/stripe-webhook.ts";
 import { createUploadRouter } from "./routes/upload.ts";
 import { createWebhookRouter } from "./routes/webhooks.ts";
@@ -196,6 +197,7 @@ function setupRoutes(
   app.use("/api/export", createExportRouter({ db, exportQueue }));
   app.use("/api/activity", createActivityExportRouter({ db, sensorStore }));
   app.use("/api/mcp", createMcpRouter({ db, sensorStore }));
+  app.use("/api/ingest", createIngestZosHealthRouter({ db }));
   // ── Seeded-login helper for local dev and preview environments ──
   if (process.env.NODE_ENV !== "production" || process.env.ENABLE_DEV_LOGIN === "true") {
     app.get("/auth/dev-login", async (_req, res) => {

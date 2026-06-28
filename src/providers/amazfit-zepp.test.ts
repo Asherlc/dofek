@@ -13,7 +13,7 @@ import {
   encodeZeppTokenScopes,
   parseZeppBandDay,
 } from "./amazfit-zepp.ts";
-import { ProviderInvalidCredentialsError } from "./auth-errors.ts";
+import { AccessTokenExpiredError, ProviderInvalidCredentialsError } from "./auth-errors.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 import { createCapturingMetricStreamPublisher, createMockDatabase } from "./test-helpers.ts";
@@ -35,6 +35,7 @@ vi.mock("../db/tokens.ts", async (importOriginal) => {
   return {
     ...actual,
     loadTokens: vi.fn(actual.loadTokens),
+    deleteTokens: vi.fn(),
   };
 });
 
@@ -231,6 +232,49 @@ describe("AmazfitZeppClient workout history", () => {
     );
   });
 
+  it("throws AccessTokenExpiredError for HTTP 401 responses", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response("unauthorized", { status: 401 });
+    const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
+
+    await expect(client.getWorkoutHistory()).rejects.toThrow("Amazfit/Zepp access token expired.");
+  });
+
+  it("includes status code in error cause for workout HTTP 401 responses", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response("unauthorized", { status: 401 });
+    const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
+
+    try {
+      await client.getWorkoutHistory();
+      expect.fail("Expected error to be thrown");
+    } catch (error: unknown) {
+      expect(error).toBeInstanceOf(AccessTokenExpiredError);
+      if (!(error instanceof Error)) throw new Error("Expected Error");
+      if (!(error.cause instanceof Error)) throw new Error("Expected Error cause");
+      expect(error.cause.message).toContain("401");
+    }
+  });
+
+  it("includes message in error cause for workout code 1002 responses", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response(JSON.stringify({ code: 1002, message: "workout token expired", data: {} }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
+
+    try {
+      await client.getWorkoutHistory();
+      expect.fail("Expected error to be thrown");
+    } catch (error: unknown) {
+      expect(error).toBeInstanceOf(AccessTokenExpiredError);
+      if (!(error instanceof Error)) throw new Error("Expected Error");
+      if (!(error.cause instanceof Error)) throw new Error("Expected Error cause");
+      expect(error.cause.message).toContain("workout token expired");
+    }
+  });
+
   it("throws a specific error for non-success API payloads", async () => {
     const fetchFn: typeof globalThis.fetch = async () =>
       new Response(JSON.stringify({ code: 1002, message: "invalid token", data: {} }), {
@@ -239,8 +283,19 @@ describe("AmazfitZeppClient workout history", () => {
       });
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
+    await expect(client.getWorkoutHistory()).rejects.toThrow("Amazfit/Zepp access token expired.");
+  });
+
+  it("throws generic error for non-1002 workout API error codes", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response(JSON.stringify({ code: 9999, message: "some other error", data: {} }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
+
     await expect(client.getWorkoutHistory()).rejects.toThrow(
-      "Amazfit/Zepp workout API error: invalid token",
+      "Amazfit/Zepp workout API error: some other error",
     );
   });
 
@@ -463,6 +518,51 @@ describe("Amazfit/Zepp provider", () => {
     );
   });
 
+  it("throws AccessTokenExpiredError for HTTP 401 responses", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response("unauthorized", { status: 401 });
+    const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
+
+    await expect(client.getBandData("2026-02-01", "2026-02-06")).rejects.toThrow(
+      "Amazfit/Zepp access token expired.",
+    );
+  });
+
+  it("includes status code in error cause for HTTP 401 responses", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response("unauthorized", { status: 401 });
+    const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
+
+    try {
+      await client.getBandData("2026-02-01", "2026-02-06");
+      expect.fail("Expected error to be thrown");
+    } catch (error: unknown) {
+      expect(error).toBeInstanceOf(AccessTokenExpiredError);
+      if (!(error instanceof Error)) throw new Error("Expected Error");
+      if (!(error.cause instanceof Error)) throw new Error("Expected Error cause");
+      expect(error.cause.message).toContain("401");
+    }
+  });
+
+  it("includes message in error cause for code 1002 responses", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response(JSON.stringify({ code: 1002, message: "token expired", data: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
+
+    try {
+      await client.getBandData("2026-02-01", "2026-02-06");
+      expect.fail("Expected error to be thrown");
+    } catch (error: unknown) {
+      expect(error).toBeInstanceOf(AccessTokenExpiredError);
+      if (!(error instanceof Error)) throw new Error("Expected Error");
+      if (!(error.cause instanceof Error)) throw new Error("Expected Error cause");
+      expect(error.cause.message).toContain("token expired");
+    }
+  });
+
   it("throws a specific error for non-success API payloads", async () => {
     const fetchFn: typeof globalThis.fetch = async () =>
       new Response(JSON.stringify({ code: 1002, message: "invalid token", data: [] }), {
@@ -472,7 +572,20 @@ describe("Amazfit/Zepp provider", () => {
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
     await expect(client.getBandData("2026-02-01", "2026-02-06")).rejects.toThrow(
-      "Amazfit/Zepp API error: invalid token",
+      "Amazfit/Zepp access token expired.",
+    );
+  });
+
+  it("throws generic error for non-1002 API error codes", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response(JSON.stringify({ code: 9999, message: "some other error", data: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
+
+    await expect(client.getBandData("2026-02-01", "2026-02-06")).rejects.toThrow(
+      "Amazfit/Zepp API error: some other error",
     );
   });
 
@@ -981,11 +1094,11 @@ describe("Amazfit/Zepp provider", () => {
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toMatchObject([
-      { message: "workouts: Amazfit/Zepp workout API error: invalid token" },
+      { message: "workouts: Amazfit/Zepp access token expired." },
     ]);
-    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
-      tags: { provider: "amazfit-zepp", dataType: "workouts", phase: "sync" },
-    });
+    expect(captureException).not.toHaveBeenCalled();
+    const { deleteTokens } = await import("../db/tokens.ts");
+    expect(deleteTokens).toHaveBeenCalledWith(db, "amazfit-zepp", TEST_USER_ID);
   });
 
   it("records per-workout insert failures and continues", async () => {
@@ -1270,10 +1383,109 @@ describe("Amazfit/Zepp provider", () => {
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toMatchObject([
-      { message: "band_data: Amazfit/Zepp API error: invalid token" },
+      { message: "band_data: Amazfit/Zepp access token expired." },
+    ]);
+    expect(captureException).not.toHaveBeenCalled();
+    const { deleteTokens } = await import("../db/tokens.ts");
+    expect(deleteTokens).toHaveBeenCalledWith(db, "amazfit-zepp", TEST_USER_ID);
+  });
+
+  it("reports non-auth errors to Sentry with correct tags", async () => {
+    await mockStoredZeppCredentials();
+
+    const { db } = createMockDatabase();
+    const fetchFn: typeof globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("/v1/sport/run/history.json")) return emptyZeppWorkoutHistoryResponse();
+      return new Response(JSON.stringify({ code: 9999, message: "server error", data: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    const provider = new AmazfitZeppProvider(fetchFn);
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00.000Z") }),
+        userId: TEST_USER_ID,
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toMatchObject([
+      { message: "band_data: Amazfit/Zepp API error: server error" },
     ]);
     expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
       tags: { provider: "amazfit-zepp", dataType: "band_data", phase: "sync" },
+    });
+  });
+
+  it("reports workout non-auth errors to Sentry with correct tags", async () => {
+    await mockStoredZeppCredentials();
+
+    const { db } = createMockDatabase();
+    const fetchFn: typeof globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("/v1/data/band_data.json")) {
+        return new Response(JSON.stringify({ code: 1, data: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ code: 9999, message: "workout error", data: {} }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    const provider = new AmazfitZeppProvider(fetchFn);
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00.000Z") }),
+        userId: TEST_USER_ID,
+      }),
+    );
+
+    expect(result.errors).toMatchObject([
+      { message: "workouts: Amazfit/Zepp workout API error: workout error" },
+    ]);
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { provider: "amazfit-zepp", dataType: "workouts", phase: "sync" },
+    });
+  });
+
+  it("reports deleteTokens errors but continues with sync result", async () => {
+    await mockStoredZeppCredentials();
+
+    const { db } = createMockDatabase();
+    const { deleteTokens } = await import("../db/tokens.ts");
+    vi.mocked(deleteTokens).mockRejectedValueOnce(new Error("token deletion failed"));
+
+    const fetchFn: typeof globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.includes("/v1/sport/run/history.json")) return emptyZeppWorkoutHistoryResponse();
+      return new Response(JSON.stringify({ code: 1002, message: "invalid token", data: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    const provider = new AmazfitZeppProvider(fetchFn);
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00.000Z") }),
+        userId: TEST_USER_ID,
+      }),
+    );
+
+    expect(result.errors).toMatchObject([
+      { message: "band_data: Amazfit/Zepp access token expired." },
+    ]);
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { provider: "amazfit-zepp", phase: "token_deletion" },
     });
   });
 

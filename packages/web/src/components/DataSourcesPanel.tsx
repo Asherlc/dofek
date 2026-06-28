@@ -423,6 +423,13 @@ export function DataSourcesPanel() {
         <CredentialAuthModal
           providerId={credentialAuthProvider.id}
           providerName={credentialAuthProvider.name}
+          description={
+            credentialAuthProvider.id === "amazfit-zepp"
+              ? "Signing in will sign you out of the Zepp app on your phone. " +
+                "Dofek can only pull historical data — new data won\u2019t sync until you sign back into the Zepp app, " +
+                "which will disconnect Dofek."
+              : undefined
+          }
           onClose={() => setCredentialAuthProvider(null)}
           onSuccess={() => {
             setCredentialAuthProvider(null);

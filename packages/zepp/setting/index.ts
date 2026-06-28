@@ -30,12 +30,20 @@ const PG_STATE: {
   sessionStatus: Record<string, unknown>;
   lastExportPath: string | null;
   transferProgress: Record<string, unknown>;
+  dofekServerUrl: string;
+  dofekApiToken: string;
+  healthSyncStatus: Record<string, unknown>;
+  lastHealthSync: string | null;
 } = {
   enableGyro: false,
   freqModeIndex: 1,
   sessionStatus: EMPTY_RECORD,
   lastExportPath: null,
   transferProgress: EMPTY_RECORD,
+  dofekServerUrl: "",
+  dofekApiToken: "",
+  healthSyncStatus: EMPTY_RECORD,
+  lastHealthSync: null,
 };
 
 AppSettingsPage({
@@ -55,7 +63,11 @@ AppSettingsPage({
         ? `${(Number(status.observedHzX100) / 100).toFixed(2)} Hz (measured)`
         : "n/a";
 
+    const healthStatus = this.state.healthSyncStatus;
+
     const blocks: Array<unknown> = [
+      View({ style: { margin: "1em", fontSize: "1.3rem", fontWeight: "bold" } }, ["IMU Logger"]),
+
       View({ style: { margin: "1em", fontSize: "1.2rem", lineHeight: "1.6rem" } }, [
         `State: ${status.state ?? "idle"}`,
         `Samples: ${status.sampleCount ?? 0}`,
@@ -123,6 +135,50 @@ AppSettingsPage({
       );
     }
 
+    // Dofek Health Sync Section
+    blocks.push(
+      View({ style: { margin: "1em", fontSize: "1.3rem", fontWeight: "bold" } }, [
+        "Dofek Health Sync",
+      ]),
+
+      TextInput({
+        title: "Dofek Server URL",
+        bold: false,
+        value: this.state.dofekServerUrl,
+        onChange: (value: string) => {
+          this.state.dofekServerUrl = value;
+          props.settingsStorage.setItem(STORAGE_KEYS.DOFEK_SERVER_URL, value);
+        },
+      }),
+
+      TextInput({
+        title: "Dofek API Token",
+        bold: false,
+        placeholder: this.state.dofekApiToken ? "••••••••" : "Paste your companion token",
+        onChange: (value: string) => {
+          this.state.dofekApiToken = value;
+          props.settingsStorage.setItem(STORAGE_KEYS.DOFEK_API_TOKEN, value);
+        },
+      }),
+
+      Button({
+        label: "Sync health data now",
+        color: "primary",
+        style: { margin: "1em", width: "auto", fontSize: "1.3rem" },
+        onClick: () => {
+          toggle(props.settingsStorage, STORAGE_KEYS.CMD_SYNC_HEALTH);
+        },
+      }),
+
+      View({ style: { margin: "1em", fontSize: "1.1rem", lineHeight: "1.5rem" } }, [
+        `Status: ${String(healthStatus.state ?? "idle")}`,
+        healthStatus.reason ? `Reason: ${String(healthStatus.reason)}` : "",
+        this.state.lastHealthSync
+          ? `Last sync: ${new Date(Number(this.state.lastHealthSync)).toLocaleString()}`
+          : "Not synced yet",
+      ]),
+    );
+
     return View({}, blocks);
   },
 
@@ -146,5 +202,13 @@ AppSettingsPage({
       props.settingsStorage.getItem(STORAGE_KEYS.TRANSFER_PROGRESS),
       {},
     );
+    this.state.dofekServerUrl = props.settingsStorage.getItem(STORAGE_KEYS.DOFEK_SERVER_URL) ?? "";
+    this.state.dofekApiToken = props.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN) ?? "";
+    this.state.healthSyncStatus = readJson(
+      props.settingsStorage.getItem(STORAGE_KEYS.HEALTH_SYNC_STATUS),
+      {},
+    );
+    this.state.lastHealthSync =
+      props.settingsStorage.getItem(STORAGE_KEYS.LAST_HEALTH_SYNC) ?? null;
   },
 });

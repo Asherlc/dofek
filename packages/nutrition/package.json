@@ -13,5 +13,8 @@
   "dependencies": {
     "@dofek/format": "workspace:*",
     "zod": "3.25.76"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
   }
 }

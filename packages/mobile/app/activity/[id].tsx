@@ -506,7 +506,9 @@ export default function ActivityDetailScreen() {
                   <View key={providerId} style={styles.sourceLinkRow}>
                     {index > 0 && <Text style={styles.source}>, </Text>}
                     <Pressable
-                      onPress={() => Linking.openURL(link.url)}
+                      onPress={() => {
+                        if (link.url) Linking.openURL(link.url);
+                      }}
                       hitSlop={4}
                       style={styles.sourceLinkPressable}
                     >

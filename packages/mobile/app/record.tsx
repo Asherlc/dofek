@@ -116,16 +116,7 @@ export default function RecordScreen() {
           startStreaming: startImuStreaming,
           stopStreaming: stopImuStreaming,
           getBufferedSamples: async () => {
-            const samples = await getWhoopSamples();
-            return samples.map((sample) => ({
-              timestamp: sample.timestamp,
-              x: sample.accelerometerX,
-              y: sample.accelerometerY,
-              z: sample.accelerometerZ,
-              gyroscopeX: sample.gyroscopeX,
-              gyroscopeY: sample.gyroscopeY,
-              gyroscopeZ: sample.gyroscopeZ,
-            }));
+            return getWhoopSamples();
           },
         },
         trpcClient,

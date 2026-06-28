@@ -11,5 +11,8 @@
   },
   "dependencies": {
     "@dofek/format": "workspace:*"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
   }
 }
