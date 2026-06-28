@@ -73,7 +73,7 @@ export function createIngestZosHealthRouter(deps: { db: Database }): Router {
 
   router.post("/zos-health", express.json(), async (req, res) => {
     const token = bearerTokenFromHeader(req.headers.authorization);
-    if (!token) {
+    if (token === null) {
       sendJson(res, 401, { error: "Companion token is required." });
       return;
     }

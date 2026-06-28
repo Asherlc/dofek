@@ -17,7 +17,11 @@ vi.mock("@bull-board/api/bullMQAdapter", () => ({
   BullMQAdapter: vi.fn(() => ({})),
 }));
 
-vi.mock("dofek/db", () => ({ createDatabaseFromEnv: vi.fn() }));
+// Return a defined sentinel object so wiring tests can distinguish `{}` (mutant)
+// from `{ db: fakeDb }` (real wiring). Without this, `toHaveBeenCalledWith({ db: fakeDb })`
+// passes even when `{ db }` is mutated to `{}` because `fakeDb` was `undefined` and
+// `{}` deep-equals `{ db: undefined }`.
+vi.mock("dofek/db", () => ({ createDatabaseFromEnv: vi.fn(() => ({})) }));
 vi.mock("dofek/db/clickhouse", () => ({
   bootstrapClickHouseFromEnv: vi.fn(),
   createClickHouseClientFromEnv: vi.fn(),
