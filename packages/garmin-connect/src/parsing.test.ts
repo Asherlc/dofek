@@ -457,9 +457,9 @@ describe("parseConnectSleepStages", () => {
     };
     const stages = parseConnectSleepStages(data);
     expect(stages).toHaveLength(3);
-    expect(stages[0].stage).toBe("deep");
-    expect(stages[1].stage).toBe("light");
-    expect(stages[2].stage).toBe("awake");
+    expect(stages[0]?.stage).toBe("deep");
+    expect(stages[1]?.stage).toBe("light");
+    expect(stages[2]?.stage).toBe("awake");
   });
 
   it("maps remSleepData entries to rem stages", () => {
@@ -472,8 +472,8 @@ describe("parseConnectSleepStages", () => {
     };
     const stages = parseConnectSleepStages(data);
     expect(stages).toHaveLength(2);
-    expect(stages[0].stage).toBe("rem");
-    expect(stages[1].stage).toBe("rem");
+    expect(stages[0]?.stage).toBe("rem");
+    expect(stages[1]?.stage).toBe("rem");
   });
 
   it("combines sleepLevels and remSleepData sorted by startedAt", () => {
@@ -487,9 +487,9 @@ describe("parseConnectSleepStages", () => {
     };
     const stages = parseConnectSleepStages(data);
     expect(stages).toHaveLength(3);
-    expect(stages[0].stage).toBe("deep");
-    expect(stages[1].stage).toBe("rem");
-    expect(stages[2].stage).toBe("light");
+    expect(stages[0]?.stage).toBe("deep");
+    expect(stages[1]?.stage).toBe("rem");
+    expect(stages[2]?.stage).toBe("light");
   });
 
   it("returns empty array when no sleep level data", () => {
@@ -536,7 +536,7 @@ describe("parseConnectSleepStages", () => {
       ],
     };
     const stages = parseConnectSleepStages(data);
-    expect(stages[0].startedAt).toEqual(new Date("2024-01-15T00:00:00Z"));
-    expect(stages[0].endedAt).toEqual(new Date("2024-01-15T00:30:00Z"));
+    expect(stages[0]?.startedAt).toEqual(new Date("2024-01-15T00:00:00Z"));
+    expect(stages[0]?.endedAt).toEqual(new Date("2024-01-15T00:30:00Z"));
   });
 });

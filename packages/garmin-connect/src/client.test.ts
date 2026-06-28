@@ -87,7 +87,7 @@ async function createAuthenticatedClient(
   // We return the client from setupFetchFn which will delegate to apiFetchFn for calls 3+
   // But the internal fetchFn is still setupFetchFn, so subsequent calls go through it.
   // Let's just update the setupFetchFn to always forward to apiFetchFn now.
-  setupFetchFn.mockImplementation((...args: unknown[]) => {
+  setupFetchFn.mockImplementation((...args: Parameters<typeof globalThis.fetch>) => {
     return apiFetchFn(...args);
   });
 
@@ -309,7 +309,8 @@ describe("GarminConnectClient.fromTokens", () => {
       refresh_token_expires_at: 1_780_444_800,
     });
 
-    const [exchangeUrl, exchangeOptions] = fetchFn.mock.calls[1];
+    const exchangeUrl = fetchFn.mock.calls[1]?.[0];
+    const exchangeOptions = fetchFn.mock.calls[1]?.[1];
     expect(String(exchangeUrl)).toContain("/oauth-service/oauth/exchange/user/2.0");
     expect(exchangeOptions).toMatchObject({
       method: "POST",
@@ -467,7 +468,8 @@ describe("GarminConnectClient API methods", () => {
     const result = await client.getActivities(0, 10);
 
     expect(result).toEqual(activities);
-    const [activitiesUrl, activitiesOptions] = apiFetchFn.mock.calls[0];
+    const activitiesUrl = apiFetchFn.mock.calls[0]?.[0];
+    const activitiesOptions = apiFetchFn.mock.calls[0]?.[1];
     expect(activitiesUrl).toContain("/activitylist-service/activities/search/activities");
     expect(activitiesUrl).toContain("start=0");
     expect(activitiesUrl).toContain("limit=10");
@@ -493,7 +495,7 @@ describe("GarminConnectClient API methods", () => {
     const result = await client.getActivityDetail(123);
 
     expect(result).toEqual(detail);
-    const [detailUrl]: [string] = apiFetchFn.mock.calls[0];
+    const detailUrl = apiFetchFn.mock.calls[0]?.[0];
     expect(detailUrl).toContain("/activity-service/activity/123/details");
   });
 
@@ -510,7 +512,7 @@ describe("GarminConnectClient API methods", () => {
     const result = await client.getSleepData("2024-01-15");
 
     expect(result).toEqual(sleepData);
-    const [sleepUrl]: [string] = apiFetchFn.mock.calls[0];
+    const sleepUrl = apiFetchFn.mock.calls[0]?.[0];
     expect(sleepUrl).toContain("/wellness-service/wellness/dailySleepData/testuser");
     expect(sleepUrl).toContain("date=2024-01-15");
   });
@@ -528,7 +530,7 @@ describe("GarminConnectClient API methods", () => {
     const result = await client.getDailyHeartRate("2024-01-15");
 
     expect(result).toEqual(hrData);
-    const [heartRateUrl]: [string] = apiFetchFn.mock.calls[0];
+    const heartRateUrl = apiFetchFn.mock.calls[0]?.[0];
     expect(heartRateUrl).toContain("date=2024-01-15");
   });
 
@@ -560,7 +562,7 @@ describe("GarminConnectClient API methods", () => {
     const result = await client.getHrvSummary("2024-01-15");
 
     expect(result).toEqual(hrvData);
-    const [hrvUrl]: [string] = apiFetchFn.mock.calls[0];
+    const hrvUrl = apiFetchFn.mock.calls[0]?.[0];
     expect(hrvUrl).toContain("/hrv-service/hrv/2024-01-15");
   });
 
@@ -629,7 +631,7 @@ describe("GarminConnectClient API methods", () => {
     const result = await client.getDailySummary("2024-01-15");
 
     expect(result).toEqual(summary);
-    const [summaryUrl]: [string] = apiFetchFn.mock.calls[0];
+    const summaryUrl = apiFetchFn.mock.calls[0]?.[0];
     expect(summaryUrl).toContain("/usersummary-service/usersummary/daily/testuser");
     expect(summaryUrl).toContain("calendarDate=2024-01-15");
   });
@@ -647,7 +649,7 @@ describe("GarminConnectClient API methods", () => {
     const result = await client.getTrainingStatus("2024-01-15");
 
     expect(result).toEqual(status);
-    const [statusUrl]: [string] = apiFetchFn.mock.calls[0];
+    const statusUrl = apiFetchFn.mock.calls[0]?.[0];
     expect(statusUrl).toContain("/metrics-service/metrics/trainingstatus/aggregated/2024-01-15");
   });
 
@@ -664,7 +666,7 @@ describe("GarminConnectClient API methods", () => {
     const result = await client.getVo2Max("2024-01-01", "2024-01-31");
 
     expect(result).toEqual(vo2Data);
-    const [vo2Url]: [string] = apiFetchFn.mock.calls[0];
+    const vo2Url = apiFetchFn.mock.calls[0]?.[0];
     expect(vo2Url).toContain("/metrics-service/metrics/maxmet/daily/2024-01-01/2024-01-31");
   });
 
@@ -681,7 +683,8 @@ describe("GarminConnectClient API methods", () => {
     const result = await client.downloadFitFile(12345);
 
     expect(result).toEqual(buffer);
-    const [downloadUrl, downloadOptions] = apiFetchFn.mock.calls[0];
+    const downloadUrl = apiFetchFn.mock.calls[0]?.[0];
+    const downloadOptions = apiFetchFn.mock.calls[0]?.[1];
     expect(downloadUrl).toContain("/download-service/files/activity/12345");
     expect(downloadOptions).toEqual({
       headers: {
@@ -1081,7 +1084,7 @@ describe("GarminConnectClient remaining API methods", () => {
     const result = await client.getUserSettings();
 
     expect(result).toEqual(settings);
-    const [url]: [string] = apiFetchFn.mock.calls[0];
+    const url = apiFetchFn.mock.calls[0]?.[0];
     expect(url).toContain("/userprofile-service/userprofile/user-settings");
   });
 
@@ -1098,7 +1101,7 @@ describe("GarminConnectClient remaining API methods", () => {
     const result = await client.getBodyBatteryDaily("2024-01-15");
 
     expect(result).toEqual(data);
-    const [url]: [string] = apiFetchFn.mock.calls[0];
+    const url = apiFetchFn.mock.calls[0]?.[0];
     expect(url).toContain("/wellness-service/wellness/bodyBattery/reports/daily/2024-01-15");
   });
 
@@ -1115,7 +1118,7 @@ describe("GarminConnectClient remaining API methods", () => {
     const result = await client.getBodyBatteryEvents("2024-01-15");
 
     expect(result).toEqual(data);
-    const [url]: [string] = apiFetchFn.mock.calls[0];
+    const url = apiFetchFn.mock.calls[0]?.[0];
     expect(url).toContain("/wellness-service/wellness/bodyBattery/events/2024-01-15");
   });
 
@@ -1132,7 +1135,7 @@ describe("GarminConnectClient remaining API methods", () => {
     const result = await client.getTrainingReadiness("2024-01-15");
 
     expect(result).toEqual(data);
-    const [url]: [string] = apiFetchFn.mock.calls[0];
+    const url = apiFetchFn.mock.calls[0]?.[0];
     expect(url).toContain("/metrics-service/metrics/trainingreadiness/2024-01-15");
   });
 
@@ -1149,7 +1152,7 @@ describe("GarminConnectClient remaining API methods", () => {
     const result = await client.getRacePredictions();
 
     expect(result).toEqual(data);
-    const [url]: [string] = apiFetchFn.mock.calls[0];
+    const url = apiFetchFn.mock.calls[0]?.[0];
     expect(url).toContain("/metrics-service/metrics/racepredictions");
   });
 
@@ -1166,7 +1169,7 @@ describe("GarminConnectClient remaining API methods", () => {
     const result = await client.getHillScore("2024-01-01", "2024-01-31");
 
     expect(result).toEqual(data);
-    const [url]: [string] = apiFetchFn.mock.calls[0];
+    const url = apiFetchFn.mock.calls[0]?.[0];
     expect(url).toContain("/metrics-service/metrics/hillscore/2024-01-01/2024-01-31");
   });
 
@@ -1183,7 +1186,7 @@ describe("GarminConnectClient remaining API methods", () => {
     const result = await client.getEnduranceScore("2024-01-01", "2024-01-31");
 
     expect(result).toEqual(data);
-    const [url]: [string] = apiFetchFn.mock.calls[0];
+    const url = apiFetchFn.mock.calls[0]?.[0];
     expect(url).toContain("/metrics-service/metrics/endurancescore/2024-01-01/2024-01-31");
   });
 
@@ -1204,7 +1207,7 @@ describe("GarminConnectClient remaining API methods", () => {
     const result = await client.getDailyRespiration("2024-01-15");
 
     expect(result).toEqual(data);
-    const [url]: [string] = apiFetchFn.mock.calls[0];
+    const url = apiFetchFn.mock.calls[0]?.[0];
     expect(url).toContain("/wellness-service/wellness/daily/respiration/2024-01-15");
   });
 
@@ -1221,7 +1224,7 @@ describe("GarminConnectClient remaining API methods", () => {
     const result = await client.getDailySpO2("2024-01-15");
 
     expect(result).toEqual(data);
-    const [url]: [string] = apiFetchFn.mock.calls[0];
+    const url = apiFetchFn.mock.calls[0]?.[0];
     expect(url).toContain("/wellness-service/wellness/daily/spo2/2024-01-15");
   });
 
@@ -1245,7 +1248,7 @@ describe("GarminConnectClient remaining API methods", () => {
     const result = await client.getDailyIntensityMinutes("2024-01-15");
 
     expect(result).toEqual(data);
-    const [url]: [string] = apiFetchFn.mock.calls[0];
+    const url = apiFetchFn.mock.calls[0]?.[0];
     expect(url).toContain("/wellness-service/wellness/daily/im/2024-01-15");
   });
 
@@ -1262,7 +1265,7 @@ describe("GarminConnectClient remaining API methods", () => {
     const result = await client.getDailySteps("2024-01-01", "2024-01-31");
 
     expect(result).toEqual(data);
-    const [url]: [string] = apiFetchFn.mock.calls[0];
+    const url = apiFetchFn.mock.calls[0]?.[0];
     expect(url).toContain("/usersummary-service/stats/steps/daily/2024-01-01/2024-01-31");
   });
 
@@ -1279,7 +1282,7 @@ describe("GarminConnectClient remaining API methods", () => {
     const result = await client.getFloors("2024-01-15");
 
     expect(result).toEqual(data);
-    const [url]: [string] = apiFetchFn.mock.calls[0];
+    const url = apiFetchFn.mock.calls[0]?.[0];
     expect(url).toContain("/wellness-service/wellness/floorsChartData/daily/2024-01-15");
   });
 
@@ -1293,7 +1296,7 @@ describe("GarminConnectClient remaining API methods", () => {
     const client = await createAuthenticatedClient(apiFetchFn);
     await client.getActivities();
 
-    const [url]: [string] = apiFetchFn.mock.calls[0];
+    const url = apiFetchFn.mock.calls[0]?.[0];
     expect(url).toContain("start=0");
     expect(url).toContain("limit=20");
   });
@@ -1308,7 +1311,7 @@ describe("GarminConnectClient remaining API methods", () => {
     const client = await createAuthenticatedClient(apiFetchFn);
     await client.getActivityDetail(123);
 
-    const [url]: [string] = apiFetchFn.mock.calls[0];
+    const url = apiFetchFn.mock.calls[0]?.[0];
     expect(url).toContain("maxChartSize=2000");
     expect(url).toContain("maxPolylineSize=4000");
   });
