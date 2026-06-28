@@ -48,15 +48,16 @@ function makeMockRealtimeClient(): WhoopBleRealtimeUploadClient {
 let appStateCallback: ((state: string) => void) | null = null;
 const mockRemove = vi.fn();
 
+const mockAppState = vi.hoisted(() => {
+  const state: { currentState: string; addEventListener: ReturnType<typeof vi.fn> } = {
+    currentState: "active",
+    addEventListener: vi.fn(),
+  };
+  return state;
+});
+
 vi.mock("react-native", () => ({
-  AppState: {
-    addEventListener: vi
-      .fn()
-      .mockImplementation((_event: string, callback: (state: string) => void) => {
-        appStateCallback = callback;
-        return { remove: mockRemove };
-      }),
-  },
+  AppState: mockAppState,
 }));
 
 vi.mock("@sentry/react-native", () => ({
@@ -82,7 +83,13 @@ describe("background-whoop-ble-sync", () => {
     trpcClient = makeMockTrpcClient();
     appStateCallback = null;
     mockRemove.mockClear();
-    vi.mocked(AppState.addEventListener).mockClear();
+    mockAppState.currentState = "active";
+    vi.mocked(AppState.addEventListener)
+      .mockClear()
+      .mockImplementation((_event: string, callback: (state: string) => void) => {
+        appStateCallback = callback;
+        return { remove: mockRemove };
+      });
     teardownBackgroundWhoopBleSync();
   });
 
@@ -279,6 +286,25 @@ describe("background-whoop-ble-sync", () => {
 
     // Advance past the drain interval — should NOT trigger a drain
     await vi.advanceTimersByTimeAsync(60_000);
+    expect(whoopDeps.peekBufferedSamples).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
+  });
+
+  it("periodic drain skips when app is in background", async () => {
+    vi.useFakeTimers();
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    // Clear counts from initial sync
+    vi.mocked(whoopDeps.peekBufferedSamples).mockClear();
+
+    // Simulate app going to background
+    mockAppState.currentState = "background";
+
+    // Advance past drain interval
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    // Should not attempt upload while backgrounded
     expect(whoopDeps.peekBufferedSamples).not.toHaveBeenCalled();
 
     vi.useRealTimers();
