@@ -263,30 +263,55 @@ jobs:
           echo "$NEW_MIGRATIONS"
           echo "$NEW_MIGRATIONS" | xargs uv tool run sqlfluff lint
 
-  typecheck:
-    name: Typecheck
+  typecheck-discover:
+    name: Discover packages to typecheck
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.json }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - id: matrix
+        run: |
+          node << 'EOF'
+          const fs = require('fs');
+          const packages = [];
+
+          const rootPkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          if (rootPkg.scripts && rootPkg.scripts.typecheck) {
+            packages.push({ name: 'root', dir: '.' });
+          }
+
+          for (const dir of fs.readdirSync('packages')) {
+            try {
+              if (!fs.statSync('packages/' + dir).isDirectory()) continue;
+              const pkg = JSON.parse(fs.readFileSync('packages/' + dir + '/package.json', 'utf8'));
+              if (pkg.scripts && pkg.scripts.typecheck) {
+                packages.push({ name: pkg.name || dir, dir: 'packages/' + dir });
+              }
+            } catch (_) {}
+          }
+
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, 'json=' + JSON.stringify(packages) + '\n');
+          EOF
+
+  typecheck:
+    name: Typecheck (${{ matrix.package.name }})
+    needs: typecheck-discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJson(needs.typecheck-discover.outputs.matrix) }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
-      - name: Typecheck all packages
-        run: |
-          pnpm tsc --noEmit &
-          pid1=$!
-          (cd packages/server && pnpm tsc --noEmit) &
-          pid2=$!
-          (cd packages/web && pnpm exec tsr generate && pnpm tsc --noEmit) &
-          pid3=$!
-          (cd packages/zepp && pnpm tsc --noEmit) &
-          pid4=$!
-          fail=0
-          wait $pid1 || fail=1
-          wait $pid2 || fail=1
-          wait $pid3 || fail=1
-          wait $pid4 || fail=1
-          exit $fail
+      - name: Typecheck
+        working-directory: ${{ matrix.package.dir }}
+        run: pnpm run typecheck
 
   sherif:
     name: Sherif
