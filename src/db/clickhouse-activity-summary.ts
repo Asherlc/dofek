@@ -36,6 +36,11 @@ export function buildActivitySummaryRowsTableSql(): string {
   power_sample_count Nullable(UInt64),
   first_sample_at Nullable(DateTime64(6, 'UTC')),
   last_sample_at Nullable(DateTime64(6, 'UTC')),
+  best_twenty_minute_power Nullable(Float64),
+  normalized_power Nullable(Float64),
+  smoothed_avg_power Nullable(Float64),
+  climbing_elevation_gain_m Nullable(Float64),
+  climbing_seconds Nullable(Int32),
   refresh_version UInt64,
   is_deleted UInt8,
   refreshed_at DateTime64(9, 'UTC')
@@ -80,7 +85,12 @@ SELECT
   hr_sample_count,
   power_sample_count,
   first_sample_at,
-  last_sample_at
+  last_sample_at,
+  best_twenty_minute_power,
+  normalized_power,
+  smoothed_avg_power,
+  climbing_elevation_gain_m,
+  climbing_seconds
 FROM analytics.activity_summary_rows FINAL
 WHERE is_deleted = 0`;
 }

@@ -346,6 +346,11 @@ SELECT
     sensor_summary.power_sample_count AS power_sample_count,
     sensor_summary.first_sample_at AS first_sample_at,
     sensor_summary.last_sample_at AS last_sample_at,
+    sensor_summary.best_twenty_minute_power AS best_twenty_minute_power,
+    sensor_summary.normalized_power AS normalized_power,
+    sensor_summary.smoothed_avg_power AS smoothed_avg_power,
+    sensor_summary.climbing_elevation_gain_m AS climbing_elevation_gain_m,
+    sensor_summary.climbing_seconds AS climbing_seconds,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
     if(activity_bounds.activity_id IS null, 1, 0) AS is_deleted,
     now64(9) AS refreshed_at
