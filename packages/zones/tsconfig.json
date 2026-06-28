@@ -8,7 +8,8 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
-    "declaration": true
+    "declaration": true,
+    "allowImportingTsExtensions": true
   },
   "include": ["src"],
   "exclude": ["node_modules"]
