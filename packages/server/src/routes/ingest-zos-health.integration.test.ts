@@ -994,7 +994,7 @@ describe("POST /api/ingest/zos-health", () => {
   // ── Mutation-killing: NaN-date defensive guards ──
   // The schema uses `z.string().datetime({ offset: true })` which accepts
   // pathological offsets (`+99:00`) that Zod passes but `new Date(...)` rejects
-  // with Invalid Date (NaNgetTime). The route warns and skips those records.
+  // with Invalid Date (NaN from .getTime()). The route warns and skips those records.
   // These tests assert the skip path — removing the guard or flipping `||`
   // to `&&` makes the mutant try to insert NaN dates and the request errors,
   // which the assertion catches.
@@ -1272,7 +1272,7 @@ describe("POST /api/ingest/zos-health", () => {
       body: {
         sleepSessions: [
           {
-            externalId: "sleep-nonstring-id",
+            externalId: "sleep-numeric-id",
             startedAt: "2026-06-26T22:00:00Z",
             endedAt: "2026-06-27T06:00:00Z",
             stages: [
