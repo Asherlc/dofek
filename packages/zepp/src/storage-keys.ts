@@ -6,6 +6,11 @@ export const STORAGE_KEYS = {
   SESSION_STATUS: "session_status",
   LAST_EXPORT_PATH: "last_export_path",
   TRANSFER_PROGRESS: "transfer_progress",
+  CMD_SYNC_HEALTH: "cmd_sync_health",
+  DOFEK_SERVER_URL: "dofek_server_url",
+  DOFEK_API_TOKEN: "dofek_api_token",
+  HEALTH_SYNC_STATUS: "health_sync_status",
+  LAST_HEALTH_SYNC: "last_health_sync",
 } as const;
 
 export const LOGGING_CMD = {

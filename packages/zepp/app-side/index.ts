@@ -7,6 +7,10 @@ BaseSideService.use(messagingPlugin);
 
 const logger = Logger.getLogger("imu-side");
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function readJson(raw: string | null, fallback: Record<string, unknown>): Record<string, unknown> {
   try {
     const parsed: unknown = raw ? JSON.parse(raw) : fallback;
@@ -63,6 +67,63 @@ AppSideService(
 
       if (key === STORAGE_KEYS.CMD_TRANSFER) {
         this.call({ method: "transfer.start", params: {} });
+      }
+
+      if (key === STORAGE_KEYS.CMD_SYNC_HEALTH) {
+        this.call({ method: "health.collect", params: {} });
+      }
+    },
+
+    async postHealthData(data: Record<string, unknown>) {
+      const serverUrl = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_SERVER_URL);
+      const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN);
+
+      if (!serverUrl || !apiToken) {
+        const message = "Configure the Dofek server URL and companion token first.";
+        logger.error(message);
+        settings.settingsStorage.setItem(
+          STORAGE_KEYS.HEALTH_SYNC_STATUS,
+          JSON.stringify({ state: "error", reason: message }),
+        );
+        throw new Error(message);
+      }
+
+      const url = `${serverUrl.replace(/\/$/, "")}/api/ingest/zos-health`;
+
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiToken}`,
+          },
+          body: JSON.stringify(data),
+        });
+
+        if (!response.ok) {
+          const message = (await response.text()) || `HTTP ${response.status}`;
+          logger.error("health data upload failed: %s", message);
+          settings.settingsStorage.setItem(
+            STORAGE_KEYS.HEALTH_SYNC_STATUS,
+            JSON.stringify({ state: "error", reason: message }),
+          );
+          throw new Error(message);
+        }
+
+        settings.settingsStorage.setItem(STORAGE_KEYS.LAST_HEALTH_SYNC, String(Date.now()));
+        settings.settingsStorage.setItem(
+          STORAGE_KEYS.HEALTH_SYNC_STATUS,
+          JSON.stringify({ state: "done" }),
+        );
+        logger.log("health data uploaded successfully");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "health data upload failed";
+        logger.error("health data upload fetch failed: %j", error);
+        settings.settingsStorage.setItem(
+          STORAGE_KEYS.HEALTH_SYNC_STATUS,
+          JSON.stringify({ state: "error", reason: message }),
+        );
+        throw error;
       }
     },
 
@@ -177,6 +238,18 @@ AppSideService(
           updatedAt: Date.now(),
         });
         res(null, { ok: true });
+        return;
+      }
+
+      if (method === "health.upload") {
+        const data = isRecord(params.data) ? params.data : undefined;
+        if (!data) {
+          res(new Error("no health data provided"), null);
+          return;
+        }
+        this.postHealthData(data)
+          .then(() => res(null, { ok: true }))
+          .catch((err) => res(err, null));
         return;
       }
 
