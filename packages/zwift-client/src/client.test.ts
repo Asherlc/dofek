@@ -10,20 +10,23 @@ import type {
   ZwiftTokenResponse,
 } from "./types.ts";
 
+type TypedMockFetch = ReturnType<typeof vi.fn<typeof globalThis.fetch>> & typeof globalThis.fetch;
+
 function mockFetch(response: {
   status: number;
   ok: boolean;
   body: unknown;
-}): typeof globalThis.fetch {
-  return vi.fn().mockResolvedValue({
-    ok: response.ok,
-    status: response.status,
-    json: () => Promise.resolve(response.body),
-    text: () =>
-      Promise.resolve(
-        typeof response.body === "string" ? response.body : JSON.stringify(response.body),
-      ),
+}): TypedMockFetch {
+  const text = typeof response.body === "string" ? response.body : JSON.stringify(response.body);
+  const mockResponse = new Response(text, { status: response.status });
+  Object.defineProperty(mockResponse, "json", {
+    value: () => Promise.resolve(response.body),
+    configurable: true,
   });
+  Object.defineProperty(mockResponse, "ok", { value: response.ok, configurable: true });
+  const fn = vi.fn<typeof globalThis.fetch>();
+  fn.mockResolvedValue(mockResponse);
+  return fn;
 }
 
 describe("Zwift constants", () => {
@@ -57,7 +60,7 @@ describe("ZwiftClient.signIn", () => {
       expiresIn: 3600,
     });
 
-    const [url, options]: [string, RequestInit] = fetchFn.mock.calls[0];
+    const [url, options] = fetchFn.mock.calls[0]! as [string, RequestInit];
     expect(url).toBe(ZWIFT_AUTH_URL);
     expect(options.method).toBe("POST");
     const body = new URLSearchParams(String(options.body));
@@ -108,7 +111,7 @@ describe("ZwiftClient.refreshToken", () => {
       expiresIn: 3600,
     });
 
-    const [url, options]: [string, RequestInit] = fetchFn.mock.calls[0];
+    const [url, options] = fetchFn.mock.calls[0]! as [string, RequestInit];
     expect(url).toBe(ZWIFT_AUTH_URL);
     const body = new URLSearchParams(String(options.body));
     expect(body.get("grant_type")).toBe("refresh_token");
@@ -144,7 +147,7 @@ describe("ZwiftClient required headers", () => {
 
     await client.getActivities();
 
-    const [, options]: [string, RequestInit] = fetchFn.mock.calls[0];
+    const [, options] = fetchFn.mock.calls[0]! as [string, RequestInit];
     const headers: Record<string, string> = Object.fromEntries(
       Object.entries(options.headers ?? {}),
     );
@@ -159,7 +162,7 @@ describe("ZwiftClient required headers", () => {
 
     await client.getFitnessData("https://cdn.zwift.com/fitness/123.json");
 
-    const [, options]: [string, RequestInit] = fetchFn.mock.calls[0];
+    const [, options] = fetchFn.mock.calls[0]! as [string, RequestInit];
     const headers: Record<string, string> = Object.fromEntries(
       Object.entries(options.headers ?? {}),
     );
@@ -201,7 +204,7 @@ describe("ZwiftClient.getActivities", () => {
     const result = await client.getActivities(0, 10);
 
     expect(result).toEqual(activities);
-    const [url]: [string] = fetchFn.mock.calls[0];
+    const [url] = fetchFn.mock.calls[0]!;
     expect(url).toContain("/api/profiles/100/activities");
     expect(url).toContain("start=0");
     expect(url).toContain("limit=10");
@@ -213,7 +216,7 @@ describe("ZwiftClient.getActivities", () => {
 
     await client.getActivities();
 
-    const [url]: [string] = fetchFn.mock.calls[0];
+    const [url] = fetchFn.mock.calls[0]!;
     expect(url).toContain("start=0");
     expect(url).toContain("limit=20");
   });
@@ -267,7 +270,7 @@ describe("ZwiftClient.getActivityDetail", () => {
     const result = await client.getActivityDetail(1);
 
     expect(result).toEqual(detail);
-    const [url]: [string] = fetchFn.mock.calls[0];
+    const [url] = fetchFn.mock.calls[0]!;
     expect(url).toContain("/api/activities/1");
     expect(url).toContain("fetchSnapshots=true");
   });
@@ -298,9 +301,9 @@ describe("ZwiftClient.getFitnessData", () => {
     const result = await client.getFitnessData("https://example.com/fitness-data");
 
     expect(result).toEqual(fitnessData);
-    const [url, options]: [string, RequestInit] = fetchFn.mock.calls[0];
+    const [url, options] = fetchFn.mock.calls[0]! as [string, RequestInit];
     expect(url).toBe("https://example.com/fitness-data");
-    const headers: Record<string, string> = options.headers;
+    const headers = options.headers as Record<string, string>;
     expect(headers.Authorization).toBe("Bearer test-token");
   });
 
@@ -333,7 +336,7 @@ describe("ZwiftClient.getPowerCurve", () => {
     const result = await client.getPowerCurve();
 
     expect(result).toEqual(powerCurve);
-    const [url]: [string] = fetchFn.mock.calls[0];
+    const [url] = fetchFn.mock.calls[0]!;
     expect(url).toContain("/api/power-curve/power-profile");
   });
 
@@ -362,7 +365,7 @@ describe("ZwiftClient.getProfile", () => {
     const result = await client.getProfile();
 
     expect(result).toEqual(profile);
-    const [url]: [string] = fetchFn.mock.calls[0];
+    const [url] = fetchFn.mock.calls[0]!;
     expect(url).toContain("/api/profiles/100");
   });
 });
@@ -384,7 +387,7 @@ describe("ZwiftClient.getAuthenticatedProfile", () => {
     const result = await client.getAuthenticatedProfile();
 
     expect(result).toEqual(profile);
-    const [url]: [string] = fetchFn.mock.calls[0];
+    const [url] = fetchFn.mock.calls[0]!;
     expect(url).toContain("/api/profiles/me");
   });
 });

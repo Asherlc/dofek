@@ -11,20 +11,23 @@ function rateLimitedFetch(retryAfterSeconds: string): typeof globalThis.fetch {
     });
 }
 
+type TypedMockFetch = ReturnType<typeof vi.fn<typeof globalThis.fetch>> & typeof globalThis.fetch;
+
 function mockFetch(response: {
   status: number;
   ok: boolean;
   body: unknown;
-}): typeof globalThis.fetch {
-  return vi.fn().mockResolvedValue({
-    ok: response.ok,
-    status: response.status,
-    json: () => Promise.resolve(response.body),
-    text: () =>
-      Promise.resolve(
-        typeof response.body === "string" ? response.body : JSON.stringify(response.body),
-      ),
+}): TypedMockFetch {
+  const text = typeof response.body === "string" ? response.body : JSON.stringify(response.body);
+  const mockResponse = new Response(text, { status: response.status });
+  Object.defineProperty(mockResponse, "json", {
+    value: () => Promise.resolve(response.body),
+    configurable: true,
   });
+  Object.defineProperty(mockResponse, "ok", { value: response.ok, configurable: true });
+  const fn = vi.fn<typeof globalThis.fetch>();
+  fn.mockResolvedValue(mockResponse);
+  return fn;
 }
 
 describe("VeloHeroClient.signIn", () => {
@@ -43,11 +46,11 @@ describe("VeloHeroClient.signIn", () => {
       userId: "user-42",
     });
 
-    const [url, options]: [string, RequestInit] = fetchFn.mock.calls[0];
+    const [url, options] = fetchFn.mock.calls[0]! as [string, RequestInit];
     expect(url).toBe("https://app.velohero.com/sso");
     expect(options.method).toBe("POST");
     expect(options.redirect).toBe("manual");
-    const headers: Record<string, string> = options.headers;
+    const headers = options.headers as Record<string, string>;
     expect(headers["Content-Type"]).toBe("application/x-www-form-urlencoded");
   });
 
@@ -120,11 +123,11 @@ describe("VeloHeroClient.getWorkouts", () => {
     const result = await client.getWorkouts("2024-01-01", "2024-01-31");
 
     expect(result).toEqual(workouts);
-    const [url, options]: [string, RequestInit] = fetchFn.mock.calls[0];
+    const [url, options] = fetchFn.mock.calls[0]! as [string, RequestInit];
     expect(url).toContain("https://app.velohero.com/export/workouts/json");
     expect(url).toContain("date_from=2024-01-01");
     expect(url).toContain("date_to=2024-01-31");
-    const headers: Record<string, string> = options.headers;
+    const headers = options.headers as Record<string, string>;
     expect(headers.Cookie).toBe("VeloHero_session=abc123");
   });
 
@@ -165,7 +168,7 @@ describe("VeloHeroClient.getWorkout", () => {
     const result = await client.getWorkout("1001");
 
     expect(result).toEqual(workout);
-    const [url]: [string] = fetchFn.mock.calls[0];
+    const [url] = fetchFn.mock.calls[0]!;
     expect(url).toBe("https://app.velohero.com/export/workouts/json/1001");
   });
 });
