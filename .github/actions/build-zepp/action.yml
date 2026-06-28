@@ -1,0 +1,21 @@
+name: Build Zepp ZAB
+description: Install Zeus CLI, compile TypeScript, and build the Zepp ZAB package
+
+runs:
+  using: composite
+  steps:
+    - name: Install Zeus CLI
+      shell: bash
+      run: npm i -g @zeppos/zeus-cli
+
+    - name: Compile TypeScript entry point
+      shell: bash
+      working-directory: packages/zepp
+      run: |
+        npx tsc
+        cp dist/app.js app.js
+
+    - name: Build ZAB package
+      shell: bash
+      working-directory: packages/zepp
+      run: zeus build
