@@ -13,19 +13,28 @@ jobs:
     outputs:
       changed: ${{ steps.check.outputs.changed }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
-      - id: check
+          persist-credentials: false
+      - name: Check for Zepp changes
+        id: check
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "$EVENT_NAME" = "push" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
-            CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- \
+            CHANGED=$(git diff --name-only "origin/$BASE_REF"...HEAD -- \
               packages/zepp/ \
               pnpm-lock.yaml \
               pnpm-workspace.yaml \
-              tsconfig.json || true)
+              tsconfig.json \
+              .github/actions/build-zepp/ \
+              .github/actions/setup-node-pnpm/ \
+              .github/workflows/build-zepp.yml)
             if [ -n "$CHANGED" ]; then
               echo "changed=true" >> "$GITHUB_OUTPUT"
               echo "Zepp files changed:"
@@ -42,9 +51,12 @@ jobs:
     if: needs.check-zepp-changes.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: ./.github/actions/setup-node-pnpm
+      - name: Set up Node.js and pnpm
+        uses: ./.github/actions/setup-node-pnpm
 
-      - uses: ./.github/actions/build-zepp
+      - name: Build Zepp ZAB
+        uses: ./.github/actions/build-zepp
