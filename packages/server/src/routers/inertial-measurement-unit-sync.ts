@@ -4,7 +4,7 @@ import { z } from "zod";
 import { logger } from "../logger.ts";
 import { InertialMeasurementUnitSyncRepository } from "../repositories/inertial-measurement-unit-sync-repository.ts";
 import { protectedProcedure, router } from "../trpc.ts";
-import { rejectFutureSamples } from "./sample-validation.ts";
+import { filterFutureSamples } from "./sample-validation.ts";
 
 const tracer = trace.getTracer("dofek-server");
 
@@ -52,10 +52,10 @@ export const inertialMeasurementUnitSyncRouter = router({
       },
       async (span) => {
         const now = new Date();
-        rejectFutureSamples(input.samples, now, "IMU");
+        const validSamples = filterFutureSamples(input.samples, now, "IMU");
 
-        const firstTimestamp = input.samples[0]?.timestamp;
-        const lastTimestamp = input.samples[input.samples.length - 1]?.timestamp;
+        const firstTimestamp = validSamples[0]?.timestamp;
+        const lastTimestamp = validSamples[validSamples.length - 1]?.timestamp;
         const nowIso = now.toISOString();
 
         try {
@@ -67,7 +67,7 @@ export const inertialMeasurementUnitSyncRouter = router({
           const inserted = await repository.insertBatch(
             input.deviceId,
             input.deviceType,
-            input.samples,
+            validSamples,
           );
           const insertBatchMs = performance.now() - t1;
 
@@ -75,6 +75,8 @@ export const inertialMeasurementUnitSyncRouter = router({
             "imu.ensureProviderMs": ensureProviderMs,
             "imu.insertBatchMs": insertBatchMs,
             "imu.totalMs": ensureProviderMs + insertBatchMs,
+            "imu.sampleCount": inserted,
+            "imu.filteredCount": input.samples.length - validSamples.length,
           });
 
           logger.info("IMU samples pushed", {
@@ -82,6 +84,7 @@ export const inertialMeasurementUnitSyncRouter = router({
             deviceId: input.deviceId,
             deviceType: input.deviceType,
             sampleCount: inserted,
+            filteredCount: input.samples.length - validSamples.length,
             firstTimestamp,
             lastTimestamp,
             serverTime: nowIso,
