@@ -6,13 +6,12 @@ Roadmap notes for planned Dofek improvements. Product-level outcomes live under 
 
 ### Getting Started Flow
 
-Create a polished first-run flow that helps a new user reach a useful dashboard quickly.
+Implemented first-run flow that helps a new user reach a useful dashboard quickly.
 
-- Explain what Dofek can help them see: correlations, trends, and comparisons across their health data.
-- Guide them through connecting supported sources without exposing implementation mechanics.
-- Include iOS app setup as a first-class path for Apple Health and mobile tracking.
-- Call out Slack food logging as an easy way to start capturing nutrition context.
-- Show a short progress path from "connect sources" to "first useful insight" so the app feels directed before enough data exists for deeper analysis.
+- Landing page Get started CTAs send users to login with `returnTo=/onboarding`.
+- Web and mobile render shared setup steps from `@dofek/onboarding`: connect data sources, then check the dashboard for the first useful insight.
+- Web onboarding includes the public iOS TestFlight invite so Apple Health and mobile setup are first-class.
+- Landing page copy already frames correlations, trends, comparisons, Slack food logging, and cross-device source setup before signup.
 
 ## Technical Backlog
 
