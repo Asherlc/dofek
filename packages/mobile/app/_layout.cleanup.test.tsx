@@ -13,6 +13,23 @@ const mockInitBackgroundWatchSync = vi.fn().mockResolvedValue(undefined);
 const mockTeardownBackgroundWhoopBleSync = vi.fn();
 const mockUseWhoopBleSync = vi.fn();
 const mockRefreshRemove = vi.fn();
+interface MockAuthStateValue {
+  user: { id: string } | null;
+  serverUrl: string;
+  isLoading: boolean;
+  sessionToken: string | null;
+  bootstrapError: string | null;
+}
+
+const mockAuthState = vi.hoisted((): { value: MockAuthStateValue } => ({
+  value: {
+    user: { id: "user-1" },
+    serverUrl: "https://dofek.test",
+    isLoading: false,
+    sessionToken: "session-token",
+    bootstrapError: null,
+  },
+}));
 const { mockPreventAutoHideAsync, mockHideAsync } = vi.hoisted(() => ({
   mockPreventAutoHideAsync: vi.fn(() => Promise.resolve()),
   mockHideAsync: vi.fn(() => Promise.resolve()),
@@ -53,12 +70,7 @@ vi.mock("expo-splash-screen", () => ({
 
 vi.mock("../lib/auth-context", () => ({
   AuthProvider: ({ children }: { children: ReactNode }) => children,
-  useAuth: () => ({
-    user: { id: "user-1" },
-    serverUrl: "https://dofek.test",
-    isLoading: false,
-    sessionToken: "session-token",
-  }),
+  useAuth: () => mockAuthState.value,
 }));
 
 vi.mock("../lib/background-health-kit-sync", () => ({
@@ -157,6 +169,13 @@ async function importRootLayout() {
 describe("RootLayout background cleanup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockAuthState.value = {
+      user: { id: "user-1" },
+      serverUrl: "https://dofek.test",
+      isLoading: false,
+      sessionToken: "session-token",
+      bootstrapError: null,
+    };
   });
 
   it("keeps the native splash screen visible until the root layout can render", async () => {
@@ -172,6 +191,23 @@ describe("RootLayout background cleanup", () => {
 
     await waitFor(() => {
       expect(mockHideAsync).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("shows bootstrap failure instead of login when auth restore fails", async () => {
+    mockAuthState.value = {
+      user: null,
+      serverUrl: "https://dofek.test",
+      isLoading: false,
+      sessionToken: null,
+      bootstrapError: "Database unavailable",
+    };
+    const RootLayout = await importRootLayout();
+
+    const rendered = render(<RootLayout />);
+
+    await waitFor(() => {
+      expect(rendered.getByText("Database unavailable")).toBeTruthy();
     });
   });
 

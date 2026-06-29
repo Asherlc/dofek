@@ -134,13 +134,24 @@ describe("fetchCurrentUser", () => {
     expect(await fetchCurrentUser("https://srv", "tok")).toBeNull();
   });
 
-  it("returns null on network error", async () => {
-    vi.mocked(fetch).mockRejectedValueOnce(new Error("network"));
+  it("throws server error details when session bootstrap fails", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "Database unavailable" }), {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      }),
+    );
 
-    expect(await fetchCurrentUser("https://srv", "tok")).toBeNull();
+    await expect(fetchCurrentUser("https://srv", "tok")).rejects.toThrow("Database unavailable");
   });
 
-  it("returns null when response has wrong shape", async () => {
+  it("throws network errors instead of treating them as logged out", async () => {
+    vi.mocked(fetch).mockRejectedValueOnce(new Error("network"));
+
+    await expect(fetchCurrentUser("https://srv", "tok")).rejects.toThrow("network");
+  });
+
+  it("throws when response has wrong shape", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       new Response(JSON.stringify({ wrong: "shape" }), {
         status: 200,
@@ -148,7 +159,7 @@ describe("fetchCurrentUser", () => {
       }),
     );
 
-    expect(await fetchCurrentUser("https://srv", "tok")).toBeNull();
+    await expect(fetchCurrentUser("https://srv", "tok")).rejects.toThrow();
   });
 });
 

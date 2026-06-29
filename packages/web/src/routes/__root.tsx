@@ -26,25 +26,38 @@ function PageTransition({ children }: { children: React.ReactNode }) {
 }
 
 function AuthGate() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, bootstrapError } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const isPublic = PUBLIC_PATHS.has(location.pathname);
 
   useEffect(() => {
-    if (!isLoading && !user && !isPublic) {
+    if (!isLoading && !bootstrapError && !user && !isPublic) {
       const returnTo = typeof location.href === "string" ? location.href : location.pathname;
       navigate({ to: "/login", search: { returnTo } });
     }
     if (!isLoading && user && location.pathname === "/login") {
       navigate({ to: "/dashboard" });
     }
-  }, [isLoading, user, isPublic, location.href, location.pathname, navigate]);
+  }, [isLoading, bootstrapError, user, isPublic, location.href, location.pathname, navigate]);
 
   if (isLoading) {
     return (
       <div className="min-h-screen bg-page flex items-center justify-center">
         <div className="w-6 h-6 border-2 border-border-strong border-t-accent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (bootstrapError && !isPublic) {
+    return (
+      <div className="min-h-screen bg-page flex items-center justify-center px-6">
+        <div className="max-w-md border border-red-500/40 bg-red-500/10 rounded-lg p-5">
+          <h1 className="text-base font-semibold text-foreground mb-2">
+            Could not verify your session
+          </h1>
+          <p className="text-sm text-red-200">{bootstrapError}</p>
+        </div>
       </div>
     );
   }

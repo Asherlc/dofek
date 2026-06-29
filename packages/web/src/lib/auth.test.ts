@@ -55,10 +55,29 @@ describe("fetchCurrentUser", () => {
   });
 
   it("returns null when response is not ok", async () => {
-    vi.mocked(fetch).mockResolvedValue(mockResponse({ ok: false }));
+    vi.mocked(fetch).mockResolvedValue(mockResponse({ ok: false, status: 401 }));
 
     const result = await fetchCurrentUser();
     expect(result).toBeNull();
+  });
+
+  it("throws server error details when session bootstrap fails", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse({
+        ok: false,
+        status: 500,
+        statusText: "Internal Server Error",
+        json: () => Promise.resolve({ error: "Database unavailable" }),
+      }),
+    );
+
+    await expect(fetchCurrentUser()).rejects.toThrow("Database unavailable");
+  });
+
+  it("throws network errors instead of treating them as logged out", async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error("Failed to fetch"));
+
+    await expect(fetchCurrentUser()).rejects.toThrow("Failed to fetch");
   });
 
   it("returns user with null email", async () => {

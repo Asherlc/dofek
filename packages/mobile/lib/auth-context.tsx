@@ -25,6 +25,8 @@ interface AuthState {
   serverUrl: string;
   /** True while loading auth state from secure storage. */
   isLoading: boolean;
+  /** Real auth bootstrap failure, distinct from no saved session. */
+  bootstrapError: string | null;
   /** The session token (for passing to tRPC). */
   sessionToken: string | null;
   /** Called after successful OAuth — stores the session token and fetches the user. */
@@ -39,6 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
 
   // On mount, restore auth state from secure storage
   useEffect(() => {
@@ -46,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const token = await getSessionToken();
         if (!token) {
+          setBootstrapError(null);
           setIsLoading(false);
           return;
         }
@@ -58,12 +62,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (currentUser) {
           setSessionToken(token);
           setUser(currentUser);
+          setBootstrapError(null);
         } else {
           // Token expired — clear it
           await clearSessionToken();
+          setBootstrapError(null);
         }
       } catch (error: unknown) {
         captureException(error, { source: "auth-state-restore" });
+        setBootstrapError(error instanceof Error ? error.message : String(error));
       } finally {
         setIsLoading(false);
       }
@@ -100,11 +107,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       serverUrl: SERVER_URL,
       isLoading,
+      bootstrapError,
       sessionToken,
       onLoginSuccess,
       logout,
     }),
-    [user, isLoading, sessionToken, onLoginSuccess, logout],
+    [user, isLoading, bootstrapError, sessionToken, onLoginSuccess, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

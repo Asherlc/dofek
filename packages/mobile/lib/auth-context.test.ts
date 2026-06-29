@@ -69,6 +69,23 @@ describe("auth-context", () => {
 
       expect(saveSessionToken).not.toHaveBeenCalled();
     });
+
+    it("keeps bootstrap failure separate from unauthenticated state", async () => {
+      const { getSessionToken, fetchCurrentUser, clearSessionToken } = await import("./auth");
+
+      vi.mocked(getSessionToken).mockResolvedValue("existing-token");
+      vi.mocked(fetchCurrentUser).mockRejectedValue(new Error("Database unavailable"));
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      await waitFor(() => {
+        expect(result.current.isLoading).toBe(false);
+      });
+
+      expect(result.current.bootstrapError).toBe("Database unavailable");
+      expect(result.current.user).toBeNull();
+      expect(clearSessionToken).not.toHaveBeenCalled();
+    });
   });
 
   describe("logout", () => {

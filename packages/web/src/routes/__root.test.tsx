@@ -144,7 +144,12 @@ describe("AuthGate", () => {
   });
 
   it("redirects unauthenticated user from protected route to /login", () => {
-    mockUseAuth.mockReturnValue({ user: null, isLoading: false, logout: vi.fn() });
+    mockUseAuth.mockReturnValue({
+      user: null,
+      isLoading: false,
+      bootstrapError: null,
+      logout: vi.fn(),
+    });
     mockUseLocation.mockReturnValue({ pathname: "/dashboard" });
 
     renderAuthGate();
@@ -153,7 +158,12 @@ describe("AuthGate", () => {
   });
 
   it("preserves protected route path as login returnTo", () => {
-    mockUseAuth.mockReturnValue({ user: null, isLoading: false, logout: vi.fn() });
+    mockUseAuth.mockReturnValue({
+      user: null,
+      isLoading: false,
+      bootstrapError: null,
+      logout: vi.fn(),
+    });
     mockUseLocation.mockReturnValue({ pathname: "/onboarding" });
 
     renderAuthGate();
@@ -174,7 +184,12 @@ describe("AuthGate", () => {
   });
 
   it("does not redirect while loading", () => {
-    mockUseAuth.mockReturnValue({ user: null, isLoading: true, logout: vi.fn() });
+    mockUseAuth.mockReturnValue({
+      user: null,
+      isLoading: true,
+      bootstrapError: null,
+      logout: vi.fn(),
+    });
     mockUseLocation.mockReturnValue({ pathname: "/login" });
 
     renderAuthGate();
@@ -183,12 +198,32 @@ describe("AuthGate", () => {
   });
 
   it("renders loading spinner while auth is loading", () => {
-    mockUseAuth.mockReturnValue({ user: null, isLoading: true, logout: vi.fn() });
+    mockUseAuth.mockReturnValue({
+      user: null,
+      isLoading: true,
+      bootstrapError: null,
+      logout: vi.fn(),
+    });
     mockUseLocation.mockReturnValue({ pathname: "/dashboard" });
 
     const { container } = renderAuthGate();
 
     expect(container.querySelector(".animate-spin")).toBeTruthy();
+  });
+
+  it("shows bootstrap failure instead of redirecting to login", () => {
+    mockUseAuth.mockReturnValue({
+      user: null,
+      isLoading: false,
+      bootstrapError: "Database unavailable",
+      logout: vi.fn(),
+    });
+    mockUseLocation.mockReturnValue({ pathname: "/dashboard" });
+
+    renderAuthGate();
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(screen.getByText("Database unavailable")).toBeTruthy();
   });
 
   it("renders outlet for authenticated user", () => {
