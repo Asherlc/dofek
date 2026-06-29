@@ -48,6 +48,7 @@
     "drizzle",
     "duckdb",
     "bullmq",
+    "autorun",
     "cloudflarestorage",
     "trpc",
     "tanstack",
