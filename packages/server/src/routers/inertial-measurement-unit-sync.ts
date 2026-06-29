@@ -44,14 +44,19 @@ export const inertialMeasurementUnitSyncRouter = router({
 
     const now = new Date();
     rejectFutureSamples(input.samples, now, "IMU");
+
+    const t0 = Date.now();
     await repository.ensureProvider();
+    const ensureProviderMs = Date.now() - t0;
 
     // Log timestamp range to detect stale/future data
     const firstTimestamp = input.samples[0]?.timestamp;
     const lastTimestamp = input.samples[input.samples.length - 1]?.timestamp;
     const nowIso = now.toISOString();
 
+    const t1 = Date.now();
     const inserted = await repository.insertBatch(input.deviceId, input.deviceType, input.samples);
+    const insertBatchMs = Date.now() - t1;
 
     logger.info("IMU samples pushed", {
       userId: ctx.userId,
@@ -61,6 +66,9 @@ export const inertialMeasurementUnitSyncRouter = router({
       firstTimestamp,
       lastTimestamp,
       serverTime: nowIso,
+      ensureProviderMs,
+      insertBatchMs,
+      totalMs: ensureProviderMs + insertBatchMs,
     });
 
     return { inserted };

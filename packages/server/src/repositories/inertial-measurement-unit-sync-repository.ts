@@ -9,6 +9,7 @@ import {
 } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
 import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
+import { logger } from "../logger.ts";
 
 const PROVIDER_ID = "apple_motion";
 const INSERT_BATCH_SIZE = 5000;
@@ -81,7 +82,14 @@ export class InertialMeasurementUnitSyncRepository {
       });
 
       const publisher = await this.#publisher();
+      const tPublish = Date.now();
       const result = await writeMetricStreamRows({ publisher, rows });
+      const publishMs = Date.now() - tPublish;
+      logger.info("IMU writeMetricStreamRows", {
+        offset,
+        rowCount: rows.length,
+        publishMs,
+      });
       totalInserted += result.published;
     }
 

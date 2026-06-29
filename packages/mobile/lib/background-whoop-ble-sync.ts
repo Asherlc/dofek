@@ -282,6 +282,7 @@ async function drainBuffer(
     const samples = await whoopDeps.peekBufferedSamples(IMU_UPLOAD_BATCH_SIZE);
     if (samples.length === 0) break;
 
+    const requestStart = Date.now();
     try {
       const result = await trpcClient.inertialMeasurementUnitSync.pushSamples.mutate({
         deviceId: "WHOOP Strap",
@@ -295,8 +296,13 @@ async function drainBuffer(
         `uploaded ${samples.length} IMU samples (server inserted: ${result.inserted})`,
       );
     } catch (error: unknown) {
+      const requestDurationMs = Date.now() - requestStart;
       logger.error(LOG_CATEGORY, `IMU upload failed, ${samples.length} samples retained: ${error}`);
-      captureException(error, { source: "whoop-ble-imu-upload" });
+      captureException(error, {
+        source: "whoop-ble-imu-upload",
+        sampleCount: samples.length,
+        requestDurationMs,
+      });
       break; // Stop draining — samples are still in the buffer for retry
     }
   }
