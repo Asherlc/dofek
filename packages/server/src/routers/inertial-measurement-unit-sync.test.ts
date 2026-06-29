@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(),
+}));
+
 vi.mock("../logger.ts", () => ({
   logger: { info: vi.fn() },
 }));

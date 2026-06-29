@@ -1,3 +1,4 @@
+import { SpanStatusCode, trace } from "@opentelemetry/api";
 import type { InertialMeasurementUnitSample } from "@dofek/imu";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
@@ -9,6 +10,8 @@ import {
 } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
 import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
+
+const tracer = trace.getTracer("dofek-server");
 
 const PROVIDER_ID = "apple_motion";
 const INSERT_BATCH_SIZE = 5000;
@@ -80,9 +83,31 @@ export class InertialMeasurementUnitSyncRepository {
         };
       });
 
-      const publisher = await this.#publisher();
-      const result = await writeMetricStreamRows({ publisher, rows });
-      totalInserted += result.published;
+      await tracer.startActiveSpan("imu.writeMetricStreamRows", async (span) => {
+        try {
+          span.setAttributes({
+            "imu.batchOffset": offset,
+            "imu.batchRowCount": rows.length,
+          });
+
+          const publisher = await this.#publisher();
+          const result = await writeMetricStreamRows({ publisher, rows });
+          totalInserted += result.published;
+
+          span.setStatus({ code: SpanStatusCode.OK });
+        } catch (error) {
+          span.setStatus({
+            code: SpanStatusCode.ERROR,
+            message: error instanceof Error ? error.message : String(error),
+          });
+          if (error instanceof Error) {
+            span.recordException(error);
+          }
+          throw error;
+        } finally {
+          span.end();
+        }
+      });
     }
 
     return totalInserted;
