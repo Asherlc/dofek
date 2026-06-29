@@ -209,7 +209,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       ).rejects.toThrow();
     });
 
-    it("rejects samples more than five minutes in the future", async () => {
+    it("filters out samples more than five minutes in the future", async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date("2026-03-25T10:00:00.000Z"));
 
@@ -217,32 +217,30 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       const caller = createCaller({ db: { execute }, userId: "user-1" });
 
       try {
-        await expect(
-          caller.pushSamples({
-            deviceId: "WHOOP Strap",
-            deviceType: "whoop",
-            samples: [makeSample({ timestamp: "2026-03-25T10:06:00.001Z" })],
-          }),
-        ).rejects.toThrow("IMU sample timestamp is too far in the future");
+        const result = await caller.pushSamples({
+          deviceId: "WHOOP Strap",
+          deviceType: "whoop",
+          samples: [makeSample({ timestamp: "2026-03-25T10:06:00.001Z" })],
+        });
 
+        expect(result.inserted).toBe(0);
         expect(execute).toHaveBeenCalledTimes(0);
       } finally {
         vi.useRealTimers();
       }
     });
 
-    it("rejects malformed sample timestamps", async () => {
+    it("filters out malformed sample timestamps", async () => {
       const execute = makeExecute();
       const caller = createCaller({ db: { execute }, userId: "user-1" });
 
-      await expect(
-        caller.pushSamples({
-          deviceId: "WHOOP Strap",
-          deviceType: "whoop",
-          samples: [makeSample({ timestamp: "not-a-timestamp" })],
-        }),
-      ).rejects.toThrow("IMU sample timestamp is invalid");
+      const result = await caller.pushSamples({
+        deviceId: "WHOOP Strap",
+        deviceType: "whoop",
+        samples: [makeSample({ timestamp: "not-a-timestamp" })],
+      });
 
+      expect(result.inserted).toBe(0);
       expect(execute).toHaveBeenCalledTimes(0);
     });
 

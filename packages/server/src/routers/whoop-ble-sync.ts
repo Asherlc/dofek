@@ -2,7 +2,7 @@ import { z } from "zod";
 import { logger } from "../logger.ts";
 import { WhoopBleSyncRepository } from "../repositories/whoop-ble-sync-repository.ts";
 import { protectedProcedure, router } from "../trpc.ts";
-import { rejectFutureSamples } from "./sample-validation.ts";
+import { filterFutureSamples } from "./sample-validation.ts";
 
 // ── Zod schemas ──
 
@@ -41,18 +41,19 @@ export const whoopBleSyncRouter = router({
       }
 
       const now = new Date();
-      rejectFutureSamples(input.samples, now, "WHOOP BLE");
+      const validSamples = filterFutureSamples(input.samples, now, "WHOOP BLE");
       await repository.ensureProvider();
 
-      const firstTimestamp = input.samples[0]?.timestamp;
-      const lastTimestamp = input.samples[input.samples.length - 1]?.timestamp;
+      const firstTimestamp = validSamples[0]?.timestamp;
+      const lastTimestamp = validSamples[validSamples.length - 1]?.timestamp;
 
-      const inserted = await repository.insertRealtimeDataBatch(input.deviceId, input.samples);
+      const inserted = await repository.insertRealtimeDataBatch(input.deviceId, validSamples);
 
       logger.info("WHOOP BLE realtime data pushed", {
         userId: ctx.userId,
         deviceId: input.deviceId,
         sampleCount: inserted,
+        filteredCount: input.samples.length - validSamples.length,
         firstTimestamp,
         lastTimestamp,
         serverTime: now.toISOString(),
