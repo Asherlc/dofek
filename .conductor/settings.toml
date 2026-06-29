@@ -1,9 +1,14 @@
 "$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
 
+file_include_globs = """
+.env*
+.codegraph/codegraph.db
+"""
+
 [scripts]
 archive = "pnpm tsx scripts/conductor-archive.ts"
 run_mode = "concurrent"
-setup = "corepack enable && pnpm install --frozen-lockfile && codegraph init -i"
+setup = "command -v pnpm >/dev/null || corepack enable; pnpm install --frozen-lockfile && (test -f .codegraph/codegraph.db || codegraph init -i)"
 
 [tasks.Run]
 available_in = "local"
