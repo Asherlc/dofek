@@ -107,11 +107,19 @@ describe("inertialMeasurementUnitSyncRouter", () => {
         userId: "user-1",
       });
 
+      const nowSpy = vi.spyOn(performance, "now");
+      nowSpy.mockReturnValueOnce(1000);
+      nowSpy.mockReturnValueOnce(1005);
+      nowSpy.mockReturnValueOnce(1005);
+      nowSpy.mockReturnValueOnce(1020);
+
       const result = await caller.pushSamples({
         deviceId: "iPhone 15 Pro",
         deviceType: "iphone",
         samples: [makeSample(), makeSample({ timestamp: "2026-03-25T10:00:00.040Z", x: 0.015 })],
       });
+
+      nowSpy.mockRestore();
 
       expect(result.inserted).toBe(2);
       expect(execute).toHaveBeenCalledTimes(1);
@@ -128,21 +136,24 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       );
       expect(mockSpan.setAttributes).toHaveBeenCalledWith(
         expect.objectContaining({
-          "imu.batchOffset": expect.any(Number),
-          "imu.batchRowCount": expect.any(Number),
+          "imu.ensureProviderMs": 5,
+          "imu.insertBatchMs": 15,
+          "imu.totalMs": 20,
+          "imu.sampleCount": 2,
+          "imu.filteredCount": 0,
         }),
       );
       expect(mockSpan.setAttributes).toHaveBeenCalledWith(
         expect.objectContaining({
-          "imu.ensureProviderMs": expect.any(Number),
-          "imu.insertBatchMs": expect.any(Number),
-          "imu.totalMs": expect.any(Number),
-          "imu.sampleCount": expect.any(Number),
-          "imu.filteredCount": expect.any(Number),
+          "imu.batchOffset": expect.any(Number),
+          "imu.batchRowCount": expect.any(Number),
         }),
       );
       expect(mockSpan.setStatus).toHaveBeenCalledWith({ code: 1 });
-      expect(mockSpan.setStatus).toHaveBeenCalledTimes(2);
+      expect(mockSpan.setStatus.mock.calls.map((c) => c[0])).toEqual([
+        { code: 1 },
+        { code: 1 },
+      ]);
       expect(mockSpan.end).toHaveBeenCalledTimes(2);
       expect(getPublishedRows(metricStreamPublisher)).toEqual(
         expect.arrayContaining([
@@ -293,6 +304,13 @@ describe("inertialMeasurementUnitSyncRouter", () => {
 
         expect(result.inserted).toBe(0);
         expect(execute).toHaveBeenCalledTimes(1);
+        expect(mockSpan.setAttributes).toHaveBeenCalledWith(
+          expect.objectContaining({ "imu.filteredCount": 1 }),
+        );
+        expect(logger.info).toHaveBeenCalledWith(
+          "IMU samples pushed",
+          expect.objectContaining({ filteredCount: 1 }),
+        );
       } finally {
         vi.useRealTimers();
       }
