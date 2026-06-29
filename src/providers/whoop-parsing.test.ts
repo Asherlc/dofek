@@ -907,7 +907,11 @@ describe("WhoopClient.authenticate — MFA required path", () => {
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
           Response.json({
-            AuthenticationResult: { AccessToken: "my-tok", RefreshToken: "my-ref" },
+            AuthenticationResult: {
+              AccessToken: "my-tok",
+              RefreshToken: "my-ref",
+              ExpiresIn: 3600,
+            },
           }),
         );
       }
@@ -929,7 +933,7 @@ describe("WhoopClient.authenticate — MFA required path", () => {
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
           Response.json({
-            AuthenticationResult: { AccessToken: "tok", RefreshToken: "ref" },
+            AuthenticationResult: { AccessToken: "tok", RefreshToken: "ref", ExpiresIn: 3600 },
           }),
         );
       }
@@ -1006,7 +1010,7 @@ describe("WhoopClient.refreshAccessToken — success path", () => {
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
           Response.json({
-            AuthenticationResult: { AccessToken: "new-access" },
+            AuthenticationResult: { AccessToken: "new-access", ExpiresIn: 3600 },
           }),
         );
       }
@@ -1029,7 +1033,11 @@ describe("WhoopClient.refreshAccessToken — success path", () => {
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
           Response.json({
-            AuthenticationResult: { AccessToken: "new-access", RefreshToken: "new-refresh" },
+            AuthenticationResult: {
+              AccessToken: "new-access",
+              RefreshToken: "new-refresh",
+              ExpiresIn: 3600,
+            },
           }),
         );
       }

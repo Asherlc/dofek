@@ -90,6 +90,7 @@ function makeClient() {
     accessToken: "access-token",
     refreshToken: "refresh-token",
     userId: 123,
+    expiresInSeconds: 3600,
   });
 }
 

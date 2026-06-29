@@ -1386,7 +1386,11 @@ describe("WhoopClient — verifyCode", () => {
           typeof raw === "object" && raw !== null ? (raw satisfies Record<string, unknown>) : {};
         if (body.ChallengeName === "SMS_MFA") {
           return HttpResponse.json({
-            AuthenticationResult: { AccessToken: "verified-tok", RefreshToken: "verified-ref" },
+            AuthenticationResult: {
+              AccessToken: "verified-tok",
+              RefreshToken: "verified-ref",
+              ExpiresIn: 3600,
+            },
           });
         }
         return HttpResponse.json(
@@ -1418,7 +1422,11 @@ describe("WhoopClient — verifyCode", () => {
           SOFTWARE_TOKEN_MFA_CODE: "654321",
         });
         return HttpResponse.json({
-          AuthenticationResult: { AccessToken: "totp-tok", RefreshToken: "totp-ref" },
+          AuthenticationResult: {
+            AccessToken: "totp-tok",
+            RefreshToken: "totp-ref",
+            ExpiresIn: 3600,
+          },
         });
       }),
       http.get("https://api.prod.whoop.com/users-service/v2/bootstrap/", () => {
@@ -1448,7 +1456,7 @@ describe("WhoopClient — verifyCode", () => {
     clientServer.use(
       http.post("https://api.prod.whoop.com/auth-service/v3/whoop/", () => {
         return HttpResponse.json({
-          AuthenticationResult: { AccessToken: "tok", RefreshToken: "ref" },
+          AuthenticationResult: { AccessToken: "tok", RefreshToken: "ref", ExpiresIn: 3600 },
         });
       }),
       http.get("https://api.prod.whoop.com/users-service/v2/bootstrap/", () => {
@@ -1609,7 +1617,12 @@ describe("WhoopClient — getCycles response shapes", () => {
       }),
     );
 
-    const client = new WhoopClient({ accessToken: "tok", refreshToken: "ref", userId: 10 });
+    const client = new WhoopClient({
+      accessToken: "tok",
+      refreshToken: "ref",
+      userId: 10,
+      expiresInSeconds: 3600,
+    });
     const cycles = await client.getCycles("2026-03-01T00:00:00Z", "2026-03-02T00:00:00Z");
     expect(cycles).toHaveLength(1);
   });
@@ -1621,7 +1634,12 @@ describe("WhoopClient — getCycles response shapes", () => {
       }),
     );
 
-    const client = new WhoopClient({ accessToken: "tok", refreshToken: "ref", userId: 10 });
+    const client = new WhoopClient({
+      accessToken: "tok",
+      refreshToken: "ref",
+      userId: 10,
+      expiresInSeconds: 3600,
+    });
     const cycles = await client.getCycles("2026-03-01T00:00:00Z", "2026-03-02T00:00:00Z");
     expect(cycles).toHaveLength(1);
   });
@@ -1633,7 +1651,12 @@ describe("WhoopClient — getCycles response shapes", () => {
       }),
     );
 
-    const client = new WhoopClient({ accessToken: "tok", refreshToken: "ref", userId: 10 });
+    const client = new WhoopClient({
+      accessToken: "tok",
+      refreshToken: "ref",
+      userId: 10,
+      expiresInSeconds: 3600,
+    });
     const cycles = await client.getCycles("2026-03-01T00:00:00Z", "2026-03-02T00:00:00Z");
     expect(cycles).toHaveLength(1);
   });
@@ -1645,7 +1668,12 @@ describe("WhoopClient — getCycles response shapes", () => {
       }),
     );
 
-    const client = new WhoopClient({ accessToken: "tok", refreshToken: "ref", userId: 10 });
+    const client = new WhoopClient({
+      accessToken: "tok",
+      refreshToken: "ref",
+      userId: 10,
+      expiresInSeconds: 3600,
+    });
     const cycles = await client.getCycles("2026-03-01T00:00:00Z", "2026-03-02T00:00:00Z");
     expect(cycles).toHaveLength(0);
   });
@@ -1657,7 +1685,12 @@ describe("WhoopClient — getCycles response shapes", () => {
       }),
     );
 
-    const client = new WhoopClient({ accessToken: "tok", refreshToken: "ref", userId: 10 });
+    const client = new WhoopClient({
+      accessToken: "tok",
+      refreshToken: "ref",
+      userId: 10,
+      expiresInSeconds: 3600,
+    });
     const cycles = await client.getCycles("2026-03-01T00:00:00Z", "2026-03-02T00:00:00Z");
     expect(cycles).toHaveLength(0);
   });
@@ -1685,7 +1718,12 @@ describe("WhoopClient — API error handling", () => {
       }),
     );
 
-    const client = new WhoopClient({ accessToken: "tok", refreshToken: "ref", userId: 10 });
+    const client = new WhoopClient({
+      accessToken: "tok",
+      refreshToken: "ref",
+      userId: 10,
+      expiresInSeconds: 3600,
+    });
     await expect(client.getCycles("2026-03-01T00:00:00Z", "2026-03-02T00:00:00Z")).rejects.toThrow(
       /WHOOP API error/,
     );

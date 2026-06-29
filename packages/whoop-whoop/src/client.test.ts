@@ -9,6 +9,7 @@ function makeToken(overrides: Partial<WhoopAuthToken> = {}): WhoopAuthToken {
     accessToken: "test-access-token",
     refreshToken: "test-refresh-token",
     userId: 12345,
+    expiresInSeconds: 3600,
     ...overrides,
   };
 }
@@ -99,6 +100,7 @@ describe("WhoopClient.signIn", () => {
                 AccessToken: "whoop-access-123",
                 RefreshToken: "whoop-refresh-456",
                 IdToken: "id-token",
+                ExpiresIn: 3600,
               },
             },
           }),
@@ -116,6 +118,7 @@ describe("WhoopClient.signIn", () => {
       expect(result.token.accessToken).toBe("whoop-access-123");
       expect(result.token.refreshToken).toBe("whoop-refresh-456");
       expect(result.token.userId).toBe(999);
+      expect(result.token.expiresInSeconds).toBe(3600);
     }
   });
 
@@ -171,6 +174,7 @@ describe("WhoopClient.signIn", () => {
               AuthenticationResult: {
                 AccessToken: "token",
                 RefreshToken: "refresh",
+                ExpiresIn: 3600,
               },
             },
           }),
@@ -212,6 +216,31 @@ describe("WhoopClient.signIn", () => {
       "WHOOP auth failed (500)",
     );
   });
+
+  it("throws when Cognito response is missing ExpiresIn", async () => {
+    const callCount = { value: 0 };
+    const fetchFn = createTypedMockFetch();
+    fetchFn.mockImplementation(() => {
+      callCount.value++;
+      if (callCount.value === 1) {
+        return Promise.resolve(
+          createMockResponse({
+            body: {
+              AuthenticationResult: {
+                AccessToken: "whoop-access-123",
+                RefreshToken: "whoop-refresh-456",
+              },
+            },
+          }),
+        );
+      }
+      return Promise.resolve(createMockResponse({ body: { user: { id: 999 } } }));
+    });
+
+    await expect(WhoopClient.signIn("user@example.com", "password123", fetchFn)).rejects.toThrow(
+      "missing valid ExpiresIn",
+    );
+  });
 });
 
 // ============================================================
@@ -233,6 +262,7 @@ describe("WhoopClient.verifyCode", () => {
               AuthenticationResult: {
                 AccessToken: "verified-token",
                 RefreshToken: "verified-refresh",
+                ExpiresIn: 3600,
               },
             },
           }),
@@ -253,6 +283,7 @@ describe("WhoopClient.verifyCode", () => {
     expect(result.accessToken).toBe("verified-token");
     expect(result.refreshToken).toBe("verified-refresh");
     expect(result.userId).toBe(42);
+    expect(result.expiresInSeconds).toBe(3600);
   });
 
   it("submits SOFTWARE_TOKEN_MFA when the challenge method is totp", async () => {
@@ -273,6 +304,7 @@ describe("WhoopClient.verifyCode", () => {
               AuthenticationResult: {
                 AccessToken: "totp-token",
                 RefreshToken: "totp-refresh",
+                ExpiresIn: 3600,
               },
             },
           }),
@@ -300,6 +332,7 @@ describe("WhoopClient.verifyCode", () => {
     });
     expect(result.accessToken).toBe("totp-token");
     expect(result.userId).toBe(55);
+    expect(result.expiresInSeconds).toBe(3600);
   });
 
   it("throws when no tokens in verification response", async () => {
@@ -323,6 +356,7 @@ describe("WhoopClient.verifyCode", () => {
               AuthenticationResult: {
                 AccessToken: "token",
                 RefreshToken: "refresh",
+                ExpiresIn: 3600,
               },
             },
           }),
@@ -335,6 +369,31 @@ describe("WhoopClient.verifyCode", () => {
     await expect(
       WhoopClient.verifyCode("session-123", "123456", "user@example.com", "sms", fetchFn),
     ).rejects.toThrow("could not determine user ID");
+  });
+
+  it("throws when Cognito response is missing ExpiresIn", async () => {
+    const callCount = { value: 0 };
+    const fetchFn = createTypedMockFetch();
+    fetchFn.mockImplementation(() => {
+      callCount.value++;
+      if (callCount.value === 1) {
+        return Promise.resolve(
+          createMockResponse({
+            body: {
+              AuthenticationResult: {
+                AccessToken: "verified-token",
+                RefreshToken: "verified-refresh",
+              },
+            },
+          }),
+        );
+      }
+      return Promise.resolve(createMockResponse({ body: { id: 42 } }));
+    });
+
+    await expect(
+      WhoopClient.verifyCode("session-123", "123456", "user@example.com", "sms", fetchFn),
+    ).rejects.toThrow("missing valid ExpiresIn");
   });
 });
 
@@ -356,6 +415,7 @@ describe("WhoopClient.refreshAccessToken", () => {
               AuthenticationResult: {
                 AccessToken: "new-access",
                 RefreshToken: "new-refresh",
+                ExpiresIn: 3600,
               },
             },
           }),
@@ -370,6 +430,7 @@ describe("WhoopClient.refreshAccessToken", () => {
     expect(result.accessToken).toBe("new-access");
     expect(result.refreshToken).toBe("new-refresh");
     expect(result.userId).toBe(77);
+    expect(result.expiresInSeconds).toBe(3600);
   });
 
   it("reuses old refresh token when Cognito does not return new one", async () => {
@@ -384,6 +445,7 @@ describe("WhoopClient.refreshAccessToken", () => {
             body: {
               AuthenticationResult: {
                 AccessToken: "new-access",
+                ExpiresIn: 3600,
                 // No RefreshToken
               },
             },
@@ -410,6 +472,7 @@ describe("WhoopClient.refreshAccessToken", () => {
             body: {
               AuthenticationResult: {
                 AccessToken: "new-access",
+                ExpiresIn: 3600,
               },
             },
           }),
@@ -429,6 +492,31 @@ describe("WhoopClient.refreshAccessToken", () => {
 
     await expect(WhoopClient.refreshAccessToken("refresh-token", fetchFn)).rejects.toThrow(
       "no tokens in response",
+    );
+  });
+
+  it("throws when Cognito response is missing ExpiresIn", async () => {
+    const callCount = { value: 0 };
+    const fetchFn = createTypedMockFetch();
+    fetchFn.mockImplementation(() => {
+      callCount.value++;
+      if (callCount.value === 1) {
+        return Promise.resolve(
+          createMockResponse({
+            body: {
+              AuthenticationResult: {
+                AccessToken: "new-access",
+                RefreshToken: "new-refresh",
+              },
+            },
+          }),
+        );
+      }
+      return Promise.resolve(createMockResponse({ body: { id: 77 } }));
+    });
+
+    await expect(WhoopClient.refreshAccessToken("refresh-token", fetchFn)).rejects.toThrow(
+      "missing valid ExpiresIn",
     );
   });
 });
@@ -451,6 +539,7 @@ describe("WhoopClient.authenticate", () => {
               AuthenticationResult: {
                 AccessToken: "access",
                 RefreshToken: "refresh",
+                ExpiresIn: 3600,
               },
             },
           }),
@@ -463,6 +552,7 @@ describe("WhoopClient.authenticate", () => {
 
     expect(token.accessToken).toBe("access");
     expect(token.userId).toBe(100);
+    expect(token.expiresInSeconds).toBe(3600);
   });
 
   it("throws when MFA is required", async () => {
