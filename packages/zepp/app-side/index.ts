@@ -40,12 +40,12 @@ AppSideService(
     },
 
     getPreferences() {
-      const serverUrl = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_SERVER_URL);
-      const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN);
+      const serverUrl = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_SERVER_URL)?.trim();
+      const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
       return {
         enableGyro: settings.settingsStorage.getItem(STORAGE_KEYS.PREF_ENABLE_GYRO) === "true",
         freqModeIndex: Number(settings.settingsStorage.getItem(STORAGE_KEYS.PREF_FREQ_MODE) ?? 1),
-        hasCredentials: !!(serverUrl && apiToken),
+        hasCredentials: Boolean(serverUrl && apiToken),
       };
     },
 
@@ -64,8 +64,8 @@ AppSideService(
     },
 
     async postHealthData(data: Record<string, unknown>) {
-      const serverUrl = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_SERVER_URL);
-      const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN);
+      const serverUrl = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_SERVER_URL)?.trim();
+      const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
 
       if (!serverUrl || !apiToken) {
         const message = "Configure the Dofek server URL and companion token first.";

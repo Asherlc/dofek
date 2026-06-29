@@ -120,7 +120,9 @@ AppSettingsPage({
     }
 
     // Dofek Health Sync Section
-    const isConnected = !!(this.state.dofekServerUrl && this.state.dofekApiToken);
+    const hasDofekCredentials = Boolean(
+      this.state.dofekServerUrl.trim() && this.state.dofekApiToken.trim(),
+    );
     blocks.push(
       View({ style: { margin: "1em", fontSize: "1.3rem", fontWeight: "bold" } }, [
         "Dofek Health Sync",
@@ -130,11 +132,15 @@ AppSettingsPage({
           style: {
             margin: "0 1em 1em",
             fontSize: "1rem",
-            color: isConnected ? "#2ecc71" : "#e67e22",
+            color: hasDofekCredentials ? "#2ecc71" : "#e67e22",
             fontWeight: "bold",
           },
         },
-        [isConnected ? "● Connected" : "○ Not connected — fill in the fields below"],
+        [
+          hasDofekCredentials
+            ? "● Credentials configured"
+            : "○ Not configured — fill in the fields below",
+        ],
       ),
 
       TextInput({

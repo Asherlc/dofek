@@ -39,6 +39,14 @@ import {
 import type { ImuSample } from "../src/types.ts";
 
 type ActiveFileSlot = "A" | "B";
+type TransferTask = {
+  on: (event: string, cb: (event: { data: Record<string, unknown> }) => void) => void;
+};
+type FailedTransfer = {
+  slot: ActiveFileSlot;
+  sampleCount: number;
+  observedHzX100: number;
+};
 
 function nullable<T>(): T | null {
   return null;
@@ -91,9 +99,8 @@ Page(
       pendingBuffer: emptyArray<ImuSample>(),
       collector: nullable<ReturnType<typeof createImuCollector>>(),
       hasGyro: false,
-      transferTask: nullable<{
-        on: (event: string, cb: (event: { data: Record<string, unknown> }) => void) => void;
-      }>(),
+      transferTask: nullable<TransferTask>(),
+      failedTransfer: nullable<FailedTransfer>(),
       sampleCount: 0,
       observedHzX100: 0,
       // biome-ignore lint/plugin/no-as-type-assertion: widens literal "A" to "A" | "B" for state field inference
@@ -212,8 +219,16 @@ Page(
       });
     },
 
+    filePathForSlot(slot: ActiveFileSlot) {
+      return slot === "A" ? SESSION_FILE_A : SESSION_FILE_B;
+    },
+
+    inactiveFileSlot() {
+      return this.state.activeFile === "A" ? "B" : "A";
+    },
+
     activeFilePath() {
-      return this.state.activeFile === "A" ? SESSION_FILE_A : SESSION_FILE_B;
+      return this.filePathForSlot(this.state.activeFile);
     },
 
     startLogging() {
@@ -334,17 +349,30 @@ Page(
         return;
       }
 
+      if (!this.state.logging) {
+        this.transferStoppedSession();
+        return;
+      }
+
+      const outgoingSlot = this.state.activeFile;
+      const outgoingPath = this.filePathForSlot(outgoingSlot);
+      const nextSlot = this.inactiveFileSlot();
+
+      if (this.state.failedTransfer?.slot === nextSlot) {
+        showToast({ content: "Send failed; recording stopped" });
+        this.stopLogging();
+        return;
+      }
+
       // Flush pending samples and finalize the current file before handing it off
       this.flushBuffer(false);
-      const outgoingPath = this.activeFilePath();
       finalizeSessionFile(this.state.sampleCount, this.state.observedHzX100, outgoingPath);
-      this.writeMetaFile();
 
       const sampleCountSnapshot = this.state.sampleCount;
       const observedHzX100Snapshot = this.state.observedHzX100;
 
       // Swap to the other file — sensor keeps running without a gap
-      this.state.activeFile = this.state.activeFile === "A" ? "B" : "A";
+      this.state.activeFile = nextSlot;
       this.state.sampleCount = 0;
       this.state.observedHzX100 = 0;
       this.state.pendingBuffer = [];
@@ -365,12 +393,59 @@ Page(
       }
 
       this.publishSessionStatus("logging");
+      this.writeMetaFile();
 
+      this.startTransfer({
+        path: outgoingPath,
+        sampleCount: sampleCountSnapshot,
+        observedHzX100: observedHzX100Snapshot,
+        failedSlot: outgoingSlot,
+      });
+    },
+
+    transferStoppedSession() {
+      if (this.state.transferTask) {
+        return;
+      }
+
+      const failedTransfer = this.state.failedTransfer;
+      if (failedTransfer) {
+        this.startTransfer({
+          path: this.filePathForSlot(failedTransfer.slot),
+          sampleCount: failedTransfer.sampleCount,
+          observedHzX100: failedTransfer.observedHzX100,
+          failedSlot: failedTransfer.slot,
+        });
+        return;
+      }
+
+      this.flushBuffer(true);
+      this.writeMetaFile();
+
+      this.startTransfer({
+        path: this.activeFilePath(),
+        sampleCount: this.state.sampleCount,
+        observedHzX100: this.state.observedHzX100,
+        failedSlot: null,
+      });
+    },
+
+    startTransfer({
+      path,
+      sampleCount,
+      observedHzX100,
+      failedSlot,
+    }: {
+      path: string;
+      sampleCount: number;
+      observedHzX100: number;
+      failedSlot: ActiveFileSlot | null;
+    }) {
       // Transfer the outgoing file in the background
-      const task = this.sendFile(outgoingPath, {
+      const task = this.sendFile(path, {
         type: "imu-session",
-        sampleCount: String(sampleCountSnapshot),
-        observedHzX100: String(observedHzX100Snapshot),
+        sampleCount: String(sampleCount),
+        observedHzX100: String(observedHzX100),
       });
 
       this.state.transferTask = task;
@@ -385,9 +460,12 @@ Page(
       task.on("change", (event: { data: Record<string, unknown> }) => {
         if (String(event.data.readyState) === "transferred") {
           this.state.transferTask = null;
+          if (failedSlot && this.state.failedTransfer?.slot === failedSlot) {
+            this.state.failedTransfer = null;
+          }
           this.request({
             method: "imu.transferComplete",
-            params: { sampleCount: sampleCountSnapshot },
+            params: { sampleCount },
           }).catch((error: unknown) => {
             logger.error("imu.transferComplete failed %j", error);
           });
@@ -396,6 +474,9 @@ Page(
 
         if (event.data.readyState === "error") {
           this.state.transferTask = null;
+          if (failedSlot) {
+            this.state.failedTransfer = { slot: failedSlot, sampleCount, observedHzX100 };
+          }
           showToast({ content: "Send failed" });
         }
       });
@@ -435,7 +516,11 @@ Page(
       const { method } = payload ?? { method: "" };
 
       if (method === "transfer.start") {
-        this.swapAndTransfer();
+        if (this.state.logging) {
+          this.swapAndTransfer();
+        } else {
+          this.transferStoppedSession();
+        }
       }
 
       if (method === "health.collect") {
