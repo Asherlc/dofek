@@ -521,6 +521,31 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       expect(mockSpan.setStatus).toHaveBeenCalledWith({ code: 2, message: "connection refused" });
     });
 
+    it("reports publish failures from the repository to Sentry", async () => {
+      const publishError = new Error("redpanda offline");
+      const metricStreamPublisher = {
+        publishRows: vi.fn().mockRejectedValue(publishError),
+      };
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        metricStreamPublisher,
+        userId: "user-1",
+      });
+
+      await expect(
+        caller.pushSamples({
+          deviceId: "WHOOP Strap",
+          deviceType: "whoop",
+          samples: [makeSample()],
+        }),
+      ).rejects.toThrow("redpanda offline");
+
+      expect(Sentry.captureException).toHaveBeenCalledWith(publishError, {
+        tags: { source: "imu-push-samples" },
+      });
+    });
+
     it("reports non-Error thrown values to Sentry and span", async () => {
       const stringError = "something went wrong";
       const execute = vi.fn().mockRejectedValue(stringError);
