@@ -8,7 +8,7 @@ import { logger } from "../../logger.ts";
 import { ProviderStoredIdentityMissingError, RefreshTokenRevokedError } from "../auth-errors.ts";
 
 export const WHOOP_PROVIDER_ID = "whoop";
-export const WHOOP_ACCESS_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
+export const WHOOP_ACCESS_TOKEN_TTL_MS = 55 * 60 * 1000;
 
 type FetchFn = typeof globalThis.fetch;
 
