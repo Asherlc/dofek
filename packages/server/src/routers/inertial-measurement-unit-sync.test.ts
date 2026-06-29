@@ -2,8 +2,33 @@ import * as Sentry from "@sentry/node";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
+const { mockSpan, mockStartActiveSpan } = vi.hoisted(() => {
+  const span = {
+    end: vi.fn(),
+    recordException: vi.fn(),
+    setAttributes: vi.fn(),
+    setStatus: vi.fn(),
+  };
+  return {
+    mockSpan: span,
+    mockStartActiveSpan: vi.fn((name, optionsOrCallback, maybeCallback) => {
+      const callback = maybeCallback ?? optionsOrCallback;
+      return callback(span);
+    }),
+  };
+});
+
 vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
+}));
+
+vi.mock("@opentelemetry/api", () => ({
+  SpanStatusCode: { OK: 1, ERROR: 2 },
+  trace: {
+    getTracer: vi.fn(() => ({
+      startActiveSpan: mockStartActiveSpan,
+    })),
+  },
 }));
 
 vi.mock("../logger.ts", () => ({
@@ -65,6 +90,11 @@ function makeSample(
 describe("inertialMeasurementUnitSyncRouter", () => {
   beforeEach(() => {
     vi.mocked(Sentry.captureException).mockReset();
+    mockSpan.end.mockReset();
+    mockSpan.recordException.mockReset();
+    mockSpan.setAttributes.mockReset();
+    mockSpan.setStatus.mockReset();
+    mockStartActiveSpan.mockReset();
   });
 
   describe("pushSamples", () => {
@@ -86,6 +116,34 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       expect(result.inserted).toBe(2);
       expect(execute).toHaveBeenCalledTimes(1);
       expect(metricStreamPublisher.publishRows).toHaveBeenCalledTimes(1);
+      expect(mockStartActiveSpan).toHaveBeenCalledWith(
+        "imu.pushSamples",
+        expect.objectContaining({
+          attributes: expect.objectContaining({
+            "imu.sampleCount": 2,
+            "imu.deviceId": "iPhone 15 Pro",
+          }),
+        }),
+        expect.any(Function),
+      );
+      expect(mockSpan.setAttributes).toHaveBeenCalledWith(
+        expect.objectContaining({
+          "imu.batchOffset": expect.any(Number),
+          "imu.batchRowCount": expect.any(Number),
+        }),
+      );
+      expect(mockSpan.setAttributes).toHaveBeenCalledWith(
+        expect.objectContaining({
+          "imu.ensureProviderMs": expect.any(Number),
+          "imu.insertBatchMs": expect.any(Number),
+          "imu.totalMs": expect.any(Number),
+          "imu.sampleCount": expect.any(Number),
+          "imu.filteredCount": expect.any(Number),
+        }),
+      );
+      expect(mockSpan.setStatus).toHaveBeenCalledWith({ code: 1 });
+      expect(mockSpan.setStatus).toHaveBeenCalledTimes(2);
+      expect(mockSpan.end).toHaveBeenCalledTimes(2);
       expect(getPublishedRows(metricStreamPublisher)).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -173,6 +231,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
         deviceId: "iPhone 15 Pro",
         deviceType: "iphone",
       });
+      expect(mockStartActiveSpan).not.toHaveBeenCalled();
     });
 
     it("returns zero inserted when duplicate IMU rows no-op", async () => {
@@ -440,6 +499,32 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       expect(Sentry.captureException).toHaveBeenCalledWith(dbError, {
         tags: { source: "imu-push-samples" },
       });
+      expect(mockSpan.recordException).toHaveBeenCalledWith(dbError);
+      expect(mockSpan.setStatus).toHaveBeenCalledWith({ code: 2, message: "connection refused" });
+    });
+
+    it("reports non-Error thrown values to Sentry and span", async () => {
+      const stringError = "something went wrong";
+      const execute = vi.fn().mockRejectedValue(stringError);
+      const metricStreamPublisher = makeMetricStreamPublisher();
+      const caller = createCaller({
+        db: { execute },
+        metricStreamPublisher,
+        userId: "user-1",
+      });
+
+      await expect(
+        caller.pushSamples({
+          deviceId: "iPhone 15 Pro",
+          deviceType: "iphone",
+          samples: [makeSample()],
+        }),
+      ).rejects.toThrow(stringError);
+
+      expect(Sentry.captureException).toHaveBeenCalledWith(stringError, {
+        tags: { source: "imu-push-samples" },
+      });
+      expect(mockSpan.recordException).not.toHaveBeenCalled();
     });
   });
 });
