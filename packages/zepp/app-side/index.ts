@@ -1,7 +1,7 @@
 import { messagingPlugin } from "@zeppos/zml/3.0/module/messaging/plugin/side";
 import { BaseSideService } from "@zeppos/zml/base-side";
 
-import { FREQ_MODE_LABELS, LOGGING_CMD, STORAGE_KEYS } from "../src/storage-keys.ts";
+import { FREQ_MODE_LABELS, STORAGE_KEYS } from "../src/storage-keys.ts";
 
 BaseSideService.use(messagingPlugin);
 
@@ -40,9 +40,12 @@ AppSideService(
     },
 
     getPreferences() {
+      const serverUrl = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_SERVER_URL)?.trim();
+      const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
       return {
         enableGyro: settings.settingsStorage.getItem(STORAGE_KEYS.PREF_ENABLE_GYRO) === "true",
         freqModeIndex: Number(settings.settingsStorage.getItem(STORAGE_KEYS.PREF_FREQ_MODE) ?? 1),
+        hasCredentials: Boolean(serverUrl && apiToken),
       };
     },
 
@@ -50,21 +53,7 @@ AppSideService(
       settings.settingsStorage.setItem(STORAGE_KEYS.SESSION_STATUS, JSON.stringify(payload));
     },
 
-    handleSettingsChange(key: string, newValue: string) {
-      if (key === STORAGE_KEYS.CMD_LOGGING) {
-        if (newValue === LOGGING_CMD.START) {
-          const prefs = this.getPreferences();
-          this.call({
-            method: "logging.start",
-            params: prefs,
-          });
-        } else if (newValue === LOGGING_CMD.STOP) {
-          this.call({ method: "logging.stop", params: {} });
-        }
-        settings.settingsStorage.setItem(STORAGE_KEYS.CMD_LOGGING, LOGGING_CMD.IDLE);
-        return;
-      }
-
+    handleSettingsChange(key: string, _newValue: string) {
       if (key === STORAGE_KEYS.CMD_TRANSFER) {
         this.call({ method: "transfer.start", params: {} });
       }
@@ -75,8 +64,8 @@ AppSideService(
     },
 
     async postHealthData(data: Record<string, unknown>) {
-      const serverUrl = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_SERVER_URL);
-      const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN);
+      const serverUrl = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_SERVER_URL)?.trim();
+      const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN)?.trim();
 
       if (!serverUrl || !apiToken) {
         const message = "Configure the Dofek server URL and companion token first.";

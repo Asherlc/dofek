@@ -1,4 +1,4 @@
-import { FREQ_MODE_LABELS, LOGGING_CMD, STORAGE_KEYS } from "../src/storage-keys.ts";
+import { FREQ_MODE_LABELS, STORAGE_KEYS } from "../src/storage-keys.ts";
 
 const EMPTY_RECORD: Record<string, unknown> = {};
 
@@ -75,22 +75,6 @@ AppSettingsPage({
         `Gyro in session: ${status.hasGyro ? "yes" : "no"}`,
         `Last export: ${this.state.lastExportPath ?? "none"}`,
       ]),
-      Button({
-        label: "Start logging on watch",
-        color: "primary",
-        style: { margin: "1em", width: "auto", fontSize: "1.3rem" },
-        onClick: () => {
-          props.settingsStorage.setItem(STORAGE_KEYS.CMD_LOGGING, LOGGING_CMD.START);
-        },
-      }),
-      Button({
-        label: "Stop logging on watch",
-        color: "secondary",
-        style: { margin: "1em", width: "auto", fontSize: "1.3rem" },
-        onClick: () => {
-          props.settingsStorage.setItem(STORAGE_KEYS.CMD_LOGGING, LOGGING_CMD.STOP);
-        },
-      }),
       TextInput({
         title: "Sample rate mode (0=LOW, 1=NORMAL, 2=HIGH)",
         bold: false,
@@ -136,10 +120,28 @@ AppSettingsPage({
     }
 
     // Dofek Health Sync Section
+    const hasDofekCredentials = Boolean(
+      this.state.dofekServerUrl.trim() && this.state.dofekApiToken.trim(),
+    );
     blocks.push(
       View({ style: { margin: "1em", fontSize: "1.3rem", fontWeight: "bold" } }, [
         "Dofek Health Sync",
       ]),
+      View(
+        {
+          style: {
+            margin: "0 1em 1em",
+            fontSize: "1rem",
+            color: hasDofekCredentials ? "#2ecc71" : "#e67e22",
+            fontWeight: "bold",
+          },
+        },
+        [
+          hasDofekCredentials
+            ? "● Credentials configured"
+            : "○ Not configured — fill in the fields below",
+        ],
+      ),
 
       TextInput({
         title: "Dofek Server URL",

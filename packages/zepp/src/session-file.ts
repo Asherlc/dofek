@@ -10,20 +10,19 @@ import {
   writeSync,
 } from "@zos/fs";
 import { createHeader, encodeChunk, HEADER_SIZE, patchHeaderSampleCount } from "./imu-format.ts";
-import { SESSION_FILE } from "./storage-keys.ts";
 import type { ImuSample, SessionFileMeta } from "./types.ts";
 
-export function resetSessionFile(meta: SessionFileMeta): void {
+export function resetSessionFile(meta: SessionFileMeta, path: string): void {
   const header = createHeader(meta);
-  writeFileSync({ path: SESSION_FILE, data: header });
+  writeFileSync({ path, data: header });
 }
 
-export function appendSamples(samples: ImuSample[], hasGyro: boolean): void {
+export function appendSamples(samples: ImuSample[], hasGyro: boolean, path: string): void {
   if (!samples.length) return;
 
   const chunk = encodeChunk(samples, hasGyro);
   const fd = openSync({
-    path: SESSION_FILE,
+    path,
     flag: O_WRONLY | O_APPEND | O_CREAT,
   });
 
@@ -34,12 +33,16 @@ export function appendSamples(samples: ImuSample[], hasGyro: boolean): void {
   }
 }
 
-export function finalizeSessionFile(sampleCount: number, observedHzX100: number): void {
+export function finalizeSessionFile(
+  sampleCount: number,
+  observedHzX100: number,
+  path: string,
+): void {
   let raw: ArrayBuffer | string | undefined;
 
   try {
     raw = readFileSync({
-      path: SESSION_FILE,
+      path,
       options: { encoding: "binary" },
     });
   } catch {
@@ -50,7 +53,7 @@ export function finalizeSessionFile(sampleCount: number, observedHzX100: number)
 
   const patched = patchHeaderSampleCount(raw.slice(0, HEADER_SIZE), sampleCount, observedHzX100);
 
-  const fd = openSync({ path: SESSION_FILE, flag: O_RDWR });
+  const fd = openSync({ path, flag: O_RDWR });
   try {
     writeSync({ fd, data: patched });
   } finally {
