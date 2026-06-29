@@ -70,6 +70,7 @@ for (const providerId of getConfiguredProviderIds()) {
     providerSyncQueueName(providerId),
     (job) => jobContext.run(job, () => processSyncJob(job, db)),
     {
+      autorun: false,
       connection,
       concurrency: config.concurrency,
       ...(config.limiter ? { limiter: config.limiter } : {}),
@@ -91,7 +92,7 @@ const legacySyncWorker = new Worker<SyncJobData>(
     );
     return jobContext.run(job, () => processSyncJob(job, db));
   },
-  { connection },
+  { autorun: false, connection },
 );
 
 // ── Other workers ──
@@ -99,17 +100,17 @@ const legacySyncWorker = new Worker<SyncJobData>(
 const importWorker = new Worker<ImportJobData>(
   IMPORT_QUEUE,
   (job) => jobContext.run(job, () => processImportJob(job, db)),
-  { connection },
+  { autorun: false, connection },
 );
 const exportWorker = new Worker<ExportJobData>(
   EXPORT_QUEUE,
   (job) => jobContext.run(job, () => processExportJob(job, db)),
-  { connection },
+  { autorun: false, connection },
 );
 const scheduledSyncWorker = new Worker<ScheduledSyncJobData>(
   SCHEDULED_SYNC_QUEUE,
   (job) => jobContext.run(job, () => processScheduledSyncJob(job, db)),
-  { connection },
+  { autorun: false, connection },
 );
 const postSyncWorker = new Worker<PostSyncJobData>(
   POST_SYNC_QUEUE,
@@ -117,12 +118,12 @@ const postSyncWorker = new Worker<PostSyncJobData>(
     jobContext.run(job, () =>
       processPostSyncJob(job, db, getRefitSensorStore, refreshPostSyncBodyMeasurements),
     ),
-  { connection, concurrency: 1 },
+  { autorun: false, connection, concurrency: 1 },
 );
 const activityDeleteAnalyticsWorker = new Worker<ActivityAnalyticsJobData>(
   ACTIVITY_DELETE_ANALYTICS_QUEUE,
   (job) => jobContext.run(job, () => processActivityDeleteAnalyticsJob(job)),
-  { connection, concurrency: 1 },
+  { autorun: false, connection, concurrency: 1 },
 );
 // Training export jobs are processed by the standalone Python BullMQ worker
 // (packages/ml) — not by this Node.js worker.
@@ -183,6 +184,10 @@ for (const worker of allWorkers) {
 
 // Start idle timer immediately (exit if no jobs arrive within timeout)
 startIdleTimer();
+
+for (const worker of allWorkers) {
+  void worker.run();
+}
 
 // Set up periodic sync for API providers
 const syncIntervalMinutes = process.env.SYNC_INTERVAL_MINUTES

@@ -3,11 +3,13 @@ import { beforeAll, describe, expect, it, type MockInstance, vi } from "vitest";
 // Mock dependencies before importing worker module
 const mockOn = vi.fn();
 const mockClose = vi.fn(() => Promise.resolve());
+const mockRun = vi.fn(() => Promise.resolve());
 
 vi.mock("bullmq", () => ({
   Worker: vi.fn(() => ({
     on: mockOn,
     close: mockClose,
+    run: mockRun,
   })),
 }));
 
@@ -147,6 +149,26 @@ describe("worker module", () => {
       expect.any(Function),
       expect.objectContaining({ limiter: { max: 10, duration: 1000 } }),
     );
+  });
+
+  it("attaches worker handlers before workers start processing jobs", async () => {
+    const { Worker } = await import("bullmq");
+    const workerOptions = vi.mocked(Worker).mock.calls.map((workerCall) => workerCall[2]);
+    expect(workerOptions).toHaveLength(EXPECTED_WORKER_COUNT);
+    for (const options of workerOptions) {
+      expect(options).toEqual(expect.objectContaining({ autorun: false }));
+    }
+
+    expect(mockRun).toHaveBeenCalledTimes(EXPECTED_WORKER_COUNT);
+    const lastHandlerRegistration =
+      mockOn.mock.invocationCallOrder[mockOn.mock.invocationCallOrder.length - 1];
+    const firstWorkerRun = mockRun.mock.invocationCallOrder[0];
+    expect(lastHandlerRegistration).toBeDefined();
+    expect(firstWorkerRun).toBeDefined();
+    if (lastHandlerRegistration === undefined || firstWorkerRun === undefined) {
+      throw new Error("Worker startup order was not recorded");
+    }
+    expect(lastHandlerRegistration).toBeLessThan(firstWorkerRun);
   });
 
   it("initializes Sentry when DSN is set", async () => {

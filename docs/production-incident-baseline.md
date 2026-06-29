@@ -11051,3 +11051,44 @@ new incremental tables are populated.
   are checked after rollout. Other analytics routes still reference
   `analytics.v_activity`; they should be audited separately, but they were not
   on the reported `/activities` and `/training` request paths.
+
+## 2026-06-29 — Strava sync job failed after BullMQ worker idle shutdown
+
+- **Symptoms:** Sentry issue
+  [`DOFEK-SERVER-2K`](https://east-bay-software.sentry.io/issues/7495560735/)
+  reported `UnrecoverableError: job stalled more than allowable limit` from
+  BullMQ worker internals at `2026-06-29T21:54:28Z`.
+- **User impact:** A Strava sync request for user
+  `f923fed7-d934-4cd9-8cb9-8e83020d0e69` did not complete. The issue had
+  29 total occurrences in Sentry.
+- **Evidence:** Sentry latest-event stack contained only BullMQ system frames.
+  Production Docker service logs showed the worker started at
+  `2026-06-29T21:38:24Z`, logged `Starting Strava...` and
+  `[strava] Access token expired, refreshing...` at `2026-06-29T21:39:54Z`,
+  then emitted `Job failed: job stalled more than allowable limit` at
+  `2026-06-29T21:54:28Z`. Redis BullMQ events for
+  `bull:sync-strava:events` showed job
+  `sync-req-strava-f923fed7-d934-4cd9-8cb9-8e83020d0e69-ebd9eb2276cdeae107d5e66e`
+  stalled at `2026-06-29T21:39:54.746Z`, was reactivated, then stalled again
+  and failed at `2026-06-29T21:54:28.073Z`.
+- **Root cause:** `src/jobs/worker.ts` created BullMQ workers with default
+  `autorun: true`, so a job could begin before the module attached its
+  `active`/`completed`/`failed` handlers. The Strava job started in that window,
+  so `activeJobs` stayed at zero. The custom idle timer then shut the worker
+  down while BullMQ still had the Strava job active, stopping lock renewal and
+  causing BullMQ to classify the job as stalled. BullMQ documents
+  `autorun: false` for delaying worker processing until `worker.run()` is
+  called: https://docs.bullmq.io/guide/workers.
+- **Fix / mitigation:** Construct all Node BullMQ workers with `autorun: false`,
+  attach the event handlers, arm the idle timer, then call `worker.run()` on
+  each worker. This keeps BullMQ's queue orchestration but removes the local
+  idle-shutdown race.
+- **Validation:** Added a regression test that failed before the fix because
+  worker options lacked `autorun: false` and no explicit `run()` calls occurred.
+  After the fix, `pnpm vitest run src/jobs/worker.test.ts`, `pnpm tsc --noEmit`,
+  `cd packages/server && pnpm tsc --noEmit`, `cd packages/web && pnpm tsc
+  --noEmit`, and `pnpm lint` passed locally.
+- **Remaining risk:** Medium-low until deployed and Sentry confirms the issue is
+  quiet. This fix prevents idle shutdown from creating BullMQ stalls, but a
+  separate provider HTTP timeout policy may still be needed if Strava token
+  refreshes can hang indefinitely.
