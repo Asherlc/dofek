@@ -7,7 +7,7 @@
     "./*": "./src/*.ts"
   },
   "scripts": {
-    "dev": "zeus dev",
+    "dev": "pnpm tsx build.ts && zeus dev",
     "build": "pnpm tsx build.ts && zeus build",
     "preview": "zeus preview",
     "test": "vitest run",
