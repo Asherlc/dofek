@@ -1,5 +1,5 @@
-import { SpanStatusCode, trace } from "@opentelemetry/api";
 import type { InertialMeasurementUnitSample } from "@dofek/imu";
+import { SpanStatusCode, trace } from "@opentelemetry/api";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { SOURCE_TYPE_API } from "../../../../src/db/sensor-channels.ts";
