@@ -32,7 +32,8 @@ import {
   AUTO_TRANSFER_SAMPLE_COUNT,
   FLUSH_SAMPLE_THRESHOLD,
   SERVICE_FILE,
-  SESSION_FILE,
+  SESSION_FILE_A,
+  SESSION_FILE_B,
   SESSION_META_FILE,
 } from "../src/storage-keys.ts";
 import type { ImuSample } from "../src/types.ts";
@@ -86,6 +87,7 @@ Page(
       }>(),
       sampleCount: 0,
       observedHzX100: 0,
+      activeFile: "A" as "A" | "B",
     },
 
     onInit() {
@@ -186,6 +188,10 @@ Page(
       });
     },
 
+    activeFilePath() {
+      return this.state.activeFile === "A" ? SESSION_FILE_A : SESSION_FILE_B;
+    },
+
     startLogging() {
       if (this.state.logging) {
         return;
@@ -220,6 +226,7 @@ Page(
         this.state.pendingBuffer = [];
         this.state.sampleCount = 0;
         this.state.observedHzX100 = 0;
+        this.state.activeFile = "A";
 
         resetSessionFile({
           hasGyro: collector.hasGyroscope,
@@ -228,7 +235,7 @@ Page(
           accelFreqMode: collector.accelMode,
           gyroFreqMode: collector.gyroMode ?? 0,
           observedHzX100: 0,
-        });
+        }, this.activeFilePath());
 
         collector.start();
         this.state.logging = true;
@@ -255,7 +262,7 @@ Page(
       }
 
       if (this.state.sampleCount >= AUTO_TRANSFER_SAMPLE_COUNT && !this.state.transferTask) {
-        this.transferSession();
+        this.swapAndTransfer();
       }
     },
 
@@ -269,18 +276,19 @@ Page(
     },
 
     flushBuffer(finalize: boolean) {
+      const path = this.activeFilePath();
       if (!this.state.pendingBuffer.length) {
         if (finalize) {
-          finalizeSessionFile(this.state.sampleCount, this.state.observedHzX100);
+          finalizeSessionFile(this.state.sampleCount, this.state.observedHzX100, path);
         }
         return;
       }
 
-      appendSamples(this.state.pendingBuffer, this.state.hasGyro);
+      appendSamples(this.state.pendingBuffer, this.state.hasGyro, path);
       this.state.pendingBuffer = [];
 
       if (finalize) {
-        finalizeSessionFile(this.state.sampleCount, this.state.observedHzX100);
+        finalizeSessionFile(this.state.sampleCount, this.state.observedHzX100, path);
       }
     },
 
@@ -294,6 +302,75 @@ Page(
       this.flushBuffer(true);
       this.writeMetaFile();
       this.publishSessionStatus("stopped");
+    },
+
+    swapAndTransfer() {
+      if (this.state.transferTask) {
+        return;
+      }
+
+      // Flush pending samples and finalize the current file before handing it off
+      this.flushBuffer(false);
+      const outgoingPath = this.activeFilePath();
+      finalizeSessionFile(this.state.sampleCount, this.state.observedHzX100, outgoingPath);
+      this.writeMetaFile();
+
+      const sampleCountSnapshot = this.state.sampleCount;
+      const observedHzX100Snapshot = this.state.observedHzX100;
+
+      // Swap to the other file — sensor keeps running without a gap
+      this.state.activeFile = this.state.activeFile === "A" ? "B" : "A";
+      this.state.sampleCount = 0;
+      this.state.observedHzX100 = 0;
+      this.state.pendingBuffer = [];
+
+      const collector = this.state.collector;
+      if (collector && collector.available) {
+        resetSessionFile({
+          hasGyro: this.state.hasGyro,
+          sessionStartMs: Date.now(),
+          sampleCount: 0,
+          accelFreqMode: collector.accelMode,
+          gyroFreqMode: collector.gyroMode ?? 0,
+          observedHzX100: 0,
+        }, this.activeFilePath());
+      }
+
+      this.publishSessionStatus("logging");
+
+      // Transfer the outgoing file in the background
+      const task = this.sendFile(outgoingPath, {
+        type: "imu-session",
+        sampleCount: String(sampleCountSnapshot),
+        observedHzX100: String(observedHzX100Snapshot),
+      });
+
+      this.state.transferTask = task;
+
+      task.on("progress", (event: { data: Record<string, unknown> }) => {
+        const loadedSize = Number(event.data.loadedSize);
+        const fileSize = Number(event.data.fileSize);
+        const pct = fileSize > 0 ? Math.floor((loadedSize * 100) / fileSize) : 0;
+        logger.log("transfer %d%%", pct);
+      });
+
+      task.on("change", (event: { data: Record<string, unknown> }) => {
+        if (String(event.data.readyState) === "transferred") {
+          this.state.transferTask = null;
+          this.request({
+            method: "imu.transferComplete",
+            params: { sampleCount: sampleCountSnapshot },
+          }).catch((error: unknown) => {
+            logger.error("imu.transferComplete failed %j", error);
+          });
+          return;
+        }
+
+        if (event.data.readyState === "error") {
+          this.state.transferTask = null;
+          showToast({ content: "Send failed" });
+        }
+      });
     },
 
     writeMetaFile() {
@@ -319,61 +396,10 @@ Page(
           sampleCount: this.state.sampleCount,
           observedHzX100: this.state.observedHzX100,
           hasGyro: this.state.hasGyro,
-          sessionFile: SESSION_FILE,
+          sessionFile: this.activeFilePath(),
         },
       }).catch((error) => {
         logger.error("status publish failed %j", error);
-      });
-    },
-
-    transferSession() {
-      if (this.state.transferTask) {
-        showToast({ content: "Transfer already running" });
-        return;
-      }
-
-      if (this.state.logging) {
-        this.stopLogging();
-      }
-
-      this.flushBuffer(true);
-
-      const task = this.sendFile(SESSION_FILE, {
-        type: "imu-session",
-        sampleCount: String(this.state.sampleCount),
-        observedHzX100: String(this.state.observedHzX100),
-      });
-
-      this.state.transferTask = task;
-
-      task.on("progress", (event: { data: Record<string, unknown> }) => {
-        const loadedSize = Number(event.data.loadedSize);
-        const fileSize = Number(event.data.fileSize);
-        const pct = fileSize > 0 ? Math.floor((loadedSize * 100) / fileSize) : 0;
-        renderStatus(`↑ Sending ${pct}%`);
-      });
-
-      task.on("change", (event: { data: Record<string, unknown> }) => {
-        if (String(event.data.readyState) === "transferred") {
-          this.state.transferTask = null;
-          this.request({
-            method: "imu.transferComplete",
-            params: {
-              sampleCount: this.state.sampleCount,
-            },
-          }).catch((error) => {
-            logger.error("imu.transferComplete failed %j", error);
-          });
-          this.startLogging();
-          return;
-        }
-
-        if (event.data.readyState === "error") {
-          this.state.transferTask = null;
-          renderStatus("Send failed");
-          showToast({ content: "Send failed" });
-          this.startLogging();
-        }
       });
     },
 
@@ -381,7 +407,7 @@ Page(
       const { method } = payload ?? { method: "" };
 
       if (method === "transfer.start") {
-        this.transferSession();
+        this.swapAndTransfer();
       }
 
       if (method === "health.collect") {

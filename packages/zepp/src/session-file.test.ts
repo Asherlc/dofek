@@ -41,7 +41,7 @@ describe("resetSessionFile", () => {
       accelFreqMode: 2,
       gyroFreqMode: 2,
       observedHzX100: 2600,
-    });
+    }, SESSION_FILE);
 
     expect(mockWriteFileSync).toHaveBeenCalledTimes(1);
     const writeCalls = mockWriteFileSync.mock.calls;
@@ -54,13 +54,13 @@ describe("resetSessionFile", () => {
 
 describe("appendSamples", () => {
   it("does not call openSync for empty samples", () => {
-    appendSamples([], false);
+    appendSamples([], false, SESSION_FILE);
     expect(mockOpenSync).not.toHaveBeenCalled();
   });
 
   it("writes chunk to session file", () => {
     const samples = [{ tMs: 0, ax: 1, ay: 2, az: 3 }];
-    appendSamples(samples, false);
+    appendSamples(samples, false, SESSION_FILE);
 
     expect(mockOpenSync).toHaveBeenCalledWith({
       path: SESSION_FILE,
@@ -72,7 +72,7 @@ describe("appendSamples", () => {
 
   it("encodes gyro records when hasGyro is true", () => {
     const samples = [{ tMs: 10, ax: 0, ay: 0, az: 9.8, gx: 0.1, gy: 0.2, gz: 0.3 }];
-    appendSamples(samples, true);
+    appendSamples(samples, true, SESSION_FILE);
 
     const writeCalls = mockWriteSync.mock.calls;
     const writeFirstCall = writeCalls[0];
@@ -89,7 +89,7 @@ describe("finalizeSessionFile", () => {
 
     mockReadFileSync.mockReturnValue(headerBuf);
 
-    finalizeSessionFile(500, 2500);
+    finalizeSessionFile(500, 2500, SESSION_FILE);
 
     expect(mockReadFileSync).toHaveBeenCalledWith({
       path: SESSION_FILE,
@@ -115,13 +115,13 @@ describe("finalizeSessionFile", () => {
       throw new Error("File not found");
     });
 
-    expect(() => finalizeSessionFile(100, 1000)).not.toThrow();
+    expect(() => finalizeSessionFile(100, 1000, SESSION_FILE)).not.toThrow();
   });
 
   it("does nothing when header buffer is too small", () => {
     mockReadFileSync.mockReturnValue(new ArrayBuffer(8));
 
-    finalizeSessionFile(100, 1000);
+    finalizeSessionFile(100, 1000, SESSION_FILE);
 
     expect(mockOpenSync).not.toHaveBeenCalled();
   });

@@ -18,7 +18,8 @@ export const FREQ_MODE_LABELS: Record<number, string> = {
   2: "HIGH",
 };
 
-export const SESSION_FILE = "data://imu/session.bin";
+export const SESSION_FILE_A = "data://imu/session_a.bin";
+export const SESSION_FILE_B = "data://imu/session_b.bin";
 export const SESSION_META_FILE = "data://imu/session_meta.json";
 export const SERVICE_FILE = "app-service/imu_service";
 
