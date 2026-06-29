@@ -11,7 +11,7 @@ const { mockSpan, mockStartActiveSpan } = vi.hoisted(() => {
   };
   return {
     mockSpan: span,
-    mockStartActiveSpan: vi.fn((name, optionsOrCallback, maybeCallback) => {
+    mockStartActiveSpan: vi.fn((_name, optionsOrCallback, maybeCallback) => {
       const callback = maybeCallback ?? optionsOrCallback;
       return callback(span);
     }),
@@ -150,10 +150,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
         }),
       );
       expect(mockSpan.setStatus).toHaveBeenCalledWith({ code: 1 });
-      expect(mockSpan.setStatus.mock.calls.map((c) => c[0])).toEqual([
-        { code: 1 },
-        { code: 1 },
-      ]);
+      expect(mockSpan.setStatus.mock.calls.map((c) => c[0])).toEqual([{ code: 1 }, { code: 1 }]);
       expect(mockSpan.end).toHaveBeenCalledTimes(2);
       expect(getPublishedRows(metricStreamPublisher)).toEqual(
         expect.arrayContaining([
