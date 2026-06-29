@@ -55,7 +55,7 @@ Implementation-level backlog. Checked items are complete; unchecked are open.
 - [x] Storybook previews per PR (R2-hosted web and mobile builds)
 
 ### Resilience
-- [ ] Health and readiness checks should prove services can do real work, not just that a process is alive. Update `web` and `worker` health semantics, and add missing health coverage where other services depend on it.
+- [x] Health and readiness checks should prove services can do real work, not just that a process is alive. `web` now exposes `/readyz` for Postgres, ClickHouse, and BullMQ queue readiness, and the production `worker` healthcheck now verifies BullMQ queue access instead of only checking for a process name.
 - [ ] Auth bootstrap should distinguish `unauthenticated` from `bootstrap failed` on both web and mobile, and surface the real bootstrap error instead of silently treating failures as logout.
 - [x] ~~Convert `fitness.v_sleep` from a materialized view to a plain view once we can prove the recursive-CTE dedup query is fast enough on production-scale data.~~ Resolved differently (and more thoroughly) by `drizzle/0025_drop_v_sleep.sql`: both `fitness.v_sleep` and `clickhouse.v_sleep` materialized views were dropped. Sleep reads now come from the `analytics.v_sleep` dbt read model, eliminating refresh maintenance entirely. `fitness.v_activity` remains a plain view, so activity reads are fresh without refresh maintenance.
 

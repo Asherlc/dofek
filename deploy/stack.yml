@@ -60,7 +60,7 @@ services:
     volumes:
       - job_files:/app/job-files
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/healthz | grep -q ok"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/readyz | grep -q ok"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -107,7 +107,11 @@ services:
     volumes:
       - job_files:/app/job-files
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f worker || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "node --experimental-strip-types --disable-warning=ExperimentalWarning src/jobs/worker-health.ts",
+        ]
       interval: 10s
       timeout: 5s
       retries: 3
