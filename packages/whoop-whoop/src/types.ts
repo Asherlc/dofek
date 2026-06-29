@@ -239,6 +239,7 @@ export interface WhoopAuthToken {
   accessToken: string;
   refreshToken: string;
   userId: number;
+  expiresInSeconds: number;
 }
 
 export type WhoopVerificationMethod = "sms" | "totp";

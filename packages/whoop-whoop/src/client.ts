@@ -96,6 +96,15 @@ function getNumber(obj: Record<string, unknown>, key: string): number | undefine
   return typeof val === "number" ? val : undefined;
 }
 
+/** Extract the Cognito AuthenticationResult.ExpiresIn (seconds) and validate it. */
+function getExpiresInSeconds(authResult: Record<string, unknown>): number {
+  const expiresInSeconds = getNumber(authResult, "ExpiresIn");
+  if (!expiresInSeconds || expiresInSeconds <= 0) {
+    throw new Error("WHOOP auth: Cognito response missing valid ExpiresIn");
+  }
+  return expiresInSeconds;
+}
+
 /** Type guard: checks if a value is a non-null, non-array object (Record-like) */
 function isRecord(val: unknown): val is Record<string, unknown> {
   return val !== null && typeof val === "object" && !Array.isArray(val);
@@ -247,6 +256,7 @@ export class WhoopClient {
     if (!authResult || !accessToken) {
       throw new Error("WHOOP sign-in: no tokens in response");
     }
+    const expiresInSeconds = getExpiresInSeconds(authResult);
 
     const userId = await WhoopClient._fetchUserId(accessToken, fetchFn);
     if (!userId) {
@@ -261,6 +271,7 @@ export class WhoopClient {
         accessToken,
         refreshToken,
         userId,
+        expiresInSeconds,
       },
     };
   }
@@ -296,6 +307,7 @@ export class WhoopClient {
     if (!authResult || !accessToken) {
       throw new Error("WHOOP verification: no tokens in response");
     }
+    const expiresInSeconds = getExpiresInSeconds(authResult);
 
     const userId = await WhoopClient._fetchUserId(accessToken, fetchFn);
     if (!userId) {
@@ -306,6 +318,7 @@ export class WhoopClient {
       accessToken,
       refreshToken: (authResult ? getString(authResult, "RefreshToken") : undefined) ?? "",
       userId,
+      expiresInSeconds,
     };
   }
 
@@ -315,7 +328,12 @@ export class WhoopClient {
   static async refreshAccessToken(
     refreshToken: string,
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
-  ): Promise<{ accessToken: string; refreshToken: string; userId: number | null }> {
+  ): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    userId: number | null;
+    expiresInSeconds: number;
+  }> {
     const data = await cognitoCall(
       "InitiateAuth",
       {
@@ -333,6 +351,7 @@ export class WhoopClient {
     if (!authResult || !accessToken) {
       throw new Error("WHOOP token refresh: no tokens in response");
     }
+    const expiresInSeconds = getExpiresInSeconds(authResult);
 
     // Best-effort: try to get userId from bootstrap. Returns null if it fails —
     // caller should fall back to the stored userId from the original auth.
@@ -344,6 +363,7 @@ export class WhoopClient {
       refreshToken:
         (authResult ? getString(authResult, "RefreshToken") : undefined) ?? refreshToken,
       userId,
+      expiresInSeconds,
     };
   }
 

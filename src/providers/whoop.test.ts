@@ -175,7 +175,11 @@ function makeSyncMockFetch(options: {
     if (url.includes("auth-service/v3/whoop")) {
       return Promise.resolve(
         Response.json({
-          AuthenticationResult: { AccessToken: "new-tok", RefreshToken: "new-ref" },
+          AuthenticationResult: {
+            AccessToken: "new-tok",
+            RefreshToken: "new-ref",
+            ExpiresIn: 3600,
+          },
         }),
       );
     }
@@ -498,6 +502,7 @@ describe("WhoopClient.signIn (Cognito v3)", () => {
         AuthenticationResult: {
           AccessToken: "tok",
           RefreshToken: "ref",
+          ExpiresIn: 3600,
         },
       };
     });
@@ -520,7 +525,7 @@ describe("WhoopClient.signIn (Cognito v3)", () => {
 
   it("fetches user ID from users-service bootstrap after sign-in", async () => {
     const mockFetch = makeCognitoMockFetch(() => ({
-      AuthenticationResult: { AccessToken: "tok", RefreshToken: "ref" },
+      AuthenticationResult: { AccessToken: "tok", RefreshToken: "ref", ExpiresIn: 3600 },
     }));
 
     const result = await WhoopClient.signIn("user@test.com", "pass", mockFetch);
@@ -562,7 +567,7 @@ describe("WhoopClient.refreshAccessToken (Cognito v3)", () => {
     const mockFetch = makeCognitoMockFetch((body) => {
       capturedBody = body;
       return {
-        AuthenticationResult: { AccessToken: "new-tok" },
+        AuthenticationResult: { AccessToken: "new-tok", ExpiresIn: 3600 },
       };
     });
 
@@ -586,7 +591,7 @@ describe("WhoopClient._fetchUserId edge cases", () => {
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
           Response.json({
-            AuthenticationResult: { AccessToken: "tok", RefreshToken: "ref" },
+            AuthenticationResult: { AccessToken: "tok", RefreshToken: "ref", ExpiresIn: 3600 },
           }),
         );
       }
@@ -608,7 +613,7 @@ describe("WhoopClient._fetchUserId edge cases", () => {
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
           Response.json({
-            AuthenticationResult: { AccessToken: "tok", RefreshToken: "ref" },
+            AuthenticationResult: { AccessToken: "tok", RefreshToken: "ref", ExpiresIn: 3600 },
           }),
         );
       }
@@ -634,7 +639,7 @@ describe("WhoopClient.refreshAccessToken — bootstrap failure", () => {
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
           Response.json({
-            AuthenticationResult: { AccessToken: "new-tok" },
+            AuthenticationResult: { AccessToken: "new-tok", ExpiresIn: 3600 },
           }),
         );
       }
@@ -942,7 +947,7 @@ describe("WhoopProvider.sync() — token resolution", () => {
       if (url.includes("auth-service/v3/whoop")) {
         return Promise.resolve(
           Response.json({
-            AuthenticationResult: { AccessToken: "new-tok" },
+            AuthenticationResult: { AccessToken: "new-tok", ExpiresIn: 3600 },
           }),
         );
       }
@@ -983,7 +988,11 @@ describe("WhoopProvider.sync() — token resolution", () => {
         cognitoCalls += 1;
         return Promise.resolve(
           Response.json({
-            AuthenticationResult: { AccessToken: "new-tok", RefreshToken: "new-ref" },
+            AuthenticationResult: {
+              AccessToken: "new-tok",
+              RefreshToken: "new-ref",
+              ExpiresIn: 3600,
+            },
           }),
         );
       }

@@ -18,6 +18,7 @@ function cognitoSuccessHandler(accessToken: string, refreshToken: string) {
       AuthenticationResult: {
         AccessToken: accessToken,
         RefreshToken: refreshToken,
+        ExpiresIn: 3600,
       },
     });
   });
@@ -112,6 +113,7 @@ describe("whoopAuth router", () => {
           accessToken: "whoop-access-token",
           refreshToken: "whoop-refresh-token",
           userId: 12345,
+          expiresInSeconds: 3600,
         },
       });
     });
@@ -162,11 +164,17 @@ describe("whoopAuth router", () => {
 
       const data: {
         status: string;
-        token: { accessToken: string; refreshToken: string; userId: number };
+        token: {
+          accessToken: string;
+          refreshToken: string;
+          userId: number;
+          expiresInSeconds: number;
+        };
       } = result?.result?.data;
       expect(data.status).toBe("success");
       expect(data.token.accessToken).toBe("verified-access-token");
       expect(data.token.userId).toBe(99999);
+      expect(data.token.expiresInSeconds).toBe(3600);
     });
 
     it("verifies a mobile-app code with the stored totp challenge method", async () => {
@@ -195,6 +203,7 @@ describe("whoopAuth router", () => {
             AuthenticationResult: {
               AccessToken: "totp-access-token",
               RefreshToken: "totp-refresh-token",
+              ExpiresIn: 3600,
             },
           });
         }),
@@ -219,10 +228,16 @@ describe("whoopAuth router", () => {
 
       const data: {
         status: string;
-        token: { accessToken: string; refreshToken: string; userId: number };
+        token: {
+          accessToken: string;
+          refreshToken: string;
+          userId: number;
+          expiresInSeconds: number;
+        };
       } = result?.result?.data;
       expect(data.status).toBe("success");
       expect(data.token.accessToken).toBe("totp-access-token");
+      expect(data.token.expiresInSeconds).toBe(3600);
       expect(challengeNames).toEqual(["SOFTWARE_TOKEN_MFA"]);
     });
 
@@ -291,6 +306,7 @@ describe("whoopAuth router", () => {
         accessToken: "saved-access-token",
         refreshToken: "saved-refresh-token",
         userId: 42,
+        expiresInSeconds: 3600,
       });
 
       expect(status).toBe(200);
@@ -340,6 +356,7 @@ describe("whoopAuth router", () => {
             accessToken: "test-access-token",
             refreshToken: "test-refresh-token",
             userId: 99,
+            expiresInSeconds: 3600,
           },
         }),
       });

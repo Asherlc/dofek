@@ -139,6 +139,7 @@ describe.skipIf(!hasCredentials)("WHOOP API contract", () => {
       accessToken: result.accessToken,
       refreshToken: result.refreshToken,
       userId: result.userId ?? USER_ID,
+      expiresInSeconds: result.expiresInSeconds,
     });
   });
 

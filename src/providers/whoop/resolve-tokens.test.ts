@@ -6,7 +6,6 @@ import {
   parseWhoopUserIdFromScopes,
   resolveWhoopTokens,
   saveWhoopAuthTokens,
-  WHOOP_ACCESS_TOKEN_TTL_MS,
 } from "./resolve-tokens.ts";
 
 vi.mock("../../db/tokens.ts", () => ({
@@ -46,17 +45,18 @@ describe("buildWhoopTokenSet", () => {
     vi.useRealTimers();
   });
 
-  it("stores userId in scopes with a 24h expiry", () => {
+  it("stores userId in scopes with the Cognito-provided expiry", () => {
     expect(
       buildWhoopTokenSet({
         accessToken: "access",
         refreshToken: "refresh",
         userId: 42,
+        expiresInSeconds: 3600,
       }),
     ).toEqual({
       accessToken: "access",
       refreshToken: "refresh",
-      expiresAt: new Date(Date.now() + WHOOP_ACCESS_TOKEN_TTL_MS),
+      expiresAt: new Date(Date.now() + 3600 * 1000),
       scopes: "userId:42",
     });
   });
@@ -67,7 +67,7 @@ describe("saveWhoopAuthTokens", () => {
     const db = makeDb();
     await saveWhoopAuthTokens(
       db,
-      { accessToken: "access", refreshToken: "refresh", userId: 7 },
+      { accessToken: "access", refreshToken: "refresh", userId: 7, expiresInSeconds: 3600 },
       "user-1",
     );
 
@@ -86,16 +86,23 @@ describe("saveWhoopAuthTokens", () => {
 
 describe("resolveWhoopTokens", () => {
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-23T12:00:00Z"));
     vi.mocked(loadTokens).mockReset();
     vi.mocked(saveTokens).mockReset();
     vi.mocked(deleteTokens).mockReset();
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("reuses a valid access token without calling Cognito refresh", async () => {
+    const expiresAt = new Date("2099-01-01T00:00:00Z");
     vi.mocked(loadTokens).mockResolvedValue({
       accessToken: "stored-access",
       refreshToken: "stored-refresh",
-      expiresAt: new Date("2099-01-01T00:00:00Z"),
+      expiresAt,
       scopes: "userId:12345",
     });
 
@@ -107,11 +114,14 @@ describe("resolveWhoopTokens", () => {
       return Promise.resolve(new Response("Not found", { status: 404 }));
     };
 
-    await expect(resolveWhoopTokens({ db: makeDb(), fetchFn, userId: "user-1" })).resolves.toEqual({
+    const result = await resolveWhoopTokens({ db: makeDb(), fetchFn, userId: "user-1" });
+
+    expect(result).toMatchObject({
       accessToken: "stored-access",
       refreshToken: "stored-refresh",
       userId: 12345,
     });
+    expect(result.expiresInSeconds).toBe(Math.floor((expiresAt.getTime() - Date.now()) / 1000));
 
     expect(cognitoCalls).toBe(0);
     expect(saveTokens).not.toHaveBeenCalled();
@@ -129,12 +139,14 @@ describe("resolveWhoopTokens", () => {
       accessToken: "new-access",
       refreshToken: "new-refresh",
       userId: null,
+      expiresInSeconds: 3600,
     });
 
     await expect(resolveWhoopTokens({ db: makeDb(), userId: "user-1" })).resolves.toEqual({
       accessToken: "new-access",
       refreshToken: "new-refresh",
       userId: 12345,
+      expiresInSeconds: 3600,
     });
 
     expect(refreshSpy).toHaveBeenCalledWith("stored-refresh", globalThis.fetch);
@@ -177,6 +189,7 @@ describe("resolveWhoopTokens", () => {
       accessToken: "",
       refreshToken: "new-refresh",
       userId: 12345,
+      expiresInSeconds: 3600,
     });
 
     await expect(resolveWhoopTokens({ db: makeDb(), userId: "user-1" })).rejects.toThrow();

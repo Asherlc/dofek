@@ -285,7 +285,7 @@ describe("whoopAuthRouter", () => {
       const { WhoopClient } = await import("whoop-whoop/client");
       vi.mocked(WhoopClient.signIn).mockResolvedValueOnce({
         type: "success",
-        token: { accessToken: "at", refreshToken: "rt", userId: 123 },
+        token: { accessToken: "at", refreshToken: "rt", userId: 123, expiresInSeconds: 3600 },
       });
 
       const caller = createCaller({
@@ -329,6 +329,7 @@ describe("whoopAuthRouter", () => {
         accessToken: "new-at",
         refreshToken: "new-rt",
         userId: 456,
+        expiresInSeconds: 3600,
       });
 
       const caller = createCaller({
@@ -414,6 +415,7 @@ describe("whoopAuthRouter", () => {
         accessToken: "at-123",
         refreshToken: "rt-456",
         userId: 789,
+        expiresInSeconds: 3600,
       });
 
       expect(result).toEqual({ success: true });
@@ -441,6 +443,7 @@ describe("whoopAuthRouter", () => {
           accessToken: "",
           refreshToken: "rt-456",
           userId: 789,
+          expiresInSeconds: 3600,
         }),
       ).rejects.toThrow(/WHOOP access token is required/);
 
@@ -449,6 +452,7 @@ describe("whoopAuthRouter", () => {
           accessToken: "at-123",
           refreshToken: "",
           userId: 789,
+          expiresInSeconds: 3600,
         }),
       ).rejects.toThrow(/WHOOP refresh token is required/);
     });

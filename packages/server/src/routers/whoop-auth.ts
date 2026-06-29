@@ -56,6 +56,7 @@ export const whoopAuthRouter = router({
             accessToken: token.accessToken,
             refreshToken: token.refreshToken,
             userId: token.userId,
+            expiresInSeconds: token.expiresInSeconds,
           },
         };
       } catch (error) {
@@ -118,6 +119,7 @@ export const whoopAuthRouter = router({
             accessToken: token.accessToken,
             refreshToken: token.refreshToken,
             userId: token.userId,
+            expiresInSeconds: token.expiresInSeconds,
           },
         };
       } catch (error) {
@@ -136,6 +138,7 @@ export const whoopAuthRouter = router({
         accessToken: z.string().min(1, "WHOOP access token is required"),
         refreshToken: z.string().min(1, "WHOOP refresh token is required"),
         userId: z.number(),
+        expiresInSeconds: z.number().positive("WHOOP token expiry is required"),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -146,6 +149,7 @@ export const whoopAuthRouter = router({
           accessToken: input.accessToken,
           refreshToken: input.refreshToken,
           userId: input.userId,
+          expiresInSeconds: input.expiresInSeconds,
         },
         ctx.userId,
       );

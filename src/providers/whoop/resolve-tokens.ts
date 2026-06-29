@@ -8,7 +8,6 @@ import { logger } from "../../logger.ts";
 import { ProviderStoredIdentityMissingError, RefreshTokenRevokedError } from "../auth-errors.ts";
 
 export const WHOOP_PROVIDER_ID = "whoop";
-export const WHOOP_ACCESS_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 
 type FetchFn = typeof globalThis.fetch;
 
@@ -16,6 +15,7 @@ const whoopRefreshTokenSchema = z.object({
   accessToken: z.string().min(1),
   refreshToken: z.string().min(1),
   userId: z.number().int().nullable(),
+  expiresInSeconds: z.number().positive(),
 });
 
 export function parseWhoopUserIdFromScopes(scopes: string | null | undefined): number | null {
@@ -27,7 +27,7 @@ export function buildWhoopTokenSet(token: WhoopAuthToken): TokenSet {
   return {
     accessToken: token.accessToken,
     refreshToken: token.refreshToken,
-    expiresAt: new Date(Date.now() + WHOOP_ACCESS_TOKEN_TTL_MS),
+    expiresAt: new Date(Date.now() + token.expiresInSeconds * 1000),
     scopes: `userId:${token.userId}`,
   };
 }
@@ -65,10 +65,15 @@ export async function resolveWhoopTokens(options: {
   const accessTokenStillValid = stored.expiresAt > new Date();
 
   if (accessTokenStillValid && storedUserId != null) {
+    const remainingSeconds = Math.max(
+      0,
+      Math.floor((stored.expiresAt.getTime() - Date.now()) / 1000),
+    );
     return {
       accessToken: stored.accessToken,
       refreshToken: stored.refreshToken,
       userId: storedUserId,
+      expiresInSeconds: remainingSeconds,
     };
   }
 
@@ -85,6 +90,7 @@ export async function resolveWhoopTokens(options: {
       accessToken: refreshed.accessToken,
       refreshToken: refreshed.refreshToken,
       userId: resolvedUserId,
+      expiresInSeconds: refreshed.expiresInSeconds,
     };
     await saveWhoopAuthTokens(db, token, userId);
     return token;
