@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import * as Sentry from "@sentry/node";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("@sentry/node", () => ({
@@ -62,6 +63,10 @@ function makeSample(
 }
 
 describe("inertialMeasurementUnitSyncRouter", () => {
+  beforeEach(() => {
+    vi.mocked(Sentry.captureException).mockReset();
+  });
+
   describe("pushSamples", () => {
     it("publishes accel samples", async () => {
       const execute = makeExecute();
@@ -412,6 +417,29 @@ describe("inertialMeasurementUnitSyncRouter", () => {
           serverTime: expect.any(String),
         }),
       );
+    });
+
+    it("reports failures to Sentry with the imu-push-samples source tag", async () => {
+      const dbError = new Error("connection refused");
+      const execute = vi.fn().mockRejectedValue(dbError);
+      const metricStreamPublisher = makeMetricStreamPublisher();
+      const caller = createCaller({
+        db: { execute },
+        metricStreamPublisher,
+        userId: "user-1",
+      });
+
+      await expect(
+        caller.pushSamples({
+          deviceId: "iPhone 15 Pro",
+          deviceType: "iphone",
+          samples: [makeSample()],
+        }),
+      ).rejects.toThrow("connection refused");
+
+      expect(Sentry.captureException).toHaveBeenCalledWith(dbError, {
+        tags: { source: "imu-push-samples" },
+      });
     });
   });
 });
