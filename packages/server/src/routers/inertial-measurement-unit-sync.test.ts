@@ -544,6 +544,36 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       expect(Sentry.captureException).toHaveBeenCalledWith(publishError, {
         tags: { source: "imu-push-samples" },
       });
+      expect(mockSpan.setStatus).toHaveBeenCalledWith({
+        code: 2,
+        message: "redpanda offline",
+      });
+      expect(mockSpan.recordException).toHaveBeenCalledTimes(2);
+    });
+
+    it("handles non-Error publish failures from the repository", async () => {
+      const metricStreamPublisher = {
+        publishRows: vi.fn().mockRejectedValue("string error"),
+      };
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        metricStreamPublisher,
+        userId: "user-1",
+      });
+
+      await expect(
+        caller.pushSamples({
+          deviceId: "WHOOP Strap",
+          deviceType: "whoop",
+          samples: [makeSample()],
+        }),
+      ).rejects.toThrow("string error");
+
+      expect(Sentry.captureException).toHaveBeenCalledWith("string error", {
+        tags: { source: "imu-push-samples" },
+      });
+      expect(mockSpan.recordException).not.toHaveBeenCalled();
     });
 
     it("reports non-Error thrown values to Sentry and span", async () => {
