@@ -145,6 +145,24 @@ final class WhoopBleSampleBuffer {
 
     // MARK: - Serialization
 
+    /// Clamp a timestamp to a sane range: no earlier than year 2000, no more than 5 min in the future.
+    private func clampTimestamp(_ timestampSeconds: UInt32, _ subSeconds: UInt16) -> TimeInterval {
+        let rawInterval = TimeInterval(timestampSeconds) + TimeInterval(subSeconds) / 1000.0
+        let now = Date()
+        let maxFuture = now.addingTimeInterval(300).timeIntervalSince1970
+        let minPast = Date(timeIntervalSince1970: 946684800).timeIntervalSince1970 // year 2000
+
+        if rawInterval > maxFuture {
+            NSLog("[WhoopBLE] sample timestamp %f clamped to max future", rawInterval)
+            return maxFuture
+        }
+        if rawInterval < minPast {
+            NSLog("[WhoopBLE] sample timestamp %f clamped to min past", rawInterval)
+            return minPast
+        }
+        return rawInterval
+    }
+
     private func serializeImuSamples(_ samples: [WhoopImuSample]) -> [[String: Any]] {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -156,8 +174,7 @@ final class WhoopBleSampleBuffer {
             let samplingInterval = sample.samplesInFrame > 0
                 ? 1.0 / Double(sample.samplesInFrame)
                 : 1.0 / 100.0 // fallback for legacy samples without frame count
-            let baseTime = TimeInterval(sample.timestampSeconds)
-                + TimeInterval(sample.subSeconds) / 1000.0
+            let baseTime = clampTimestamp(sample.timestampSeconds, sample.subSeconds)
             let sampleTime = baseTime + Double(sample.sampleIndex) * samplingInterval
             let date = Date(timeIntervalSince1970: sampleTime)
 
@@ -178,8 +195,7 @@ final class WhoopBleSampleBuffer {
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
         return samples.map { sample in
-            let baseTime = TimeInterval(sample.timestampSeconds)
-                + TimeInterval(sample.subSeconds) / 1000.0
+            let baseTime = clampTimestamp(sample.timestampSeconds, sample.subSeconds)
             let date = Date(timeIntervalSince1970: baseTime)
 
             return [

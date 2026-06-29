@@ -2,7 +2,7 @@ import { z } from "zod";
 import { logger } from "../logger.ts";
 import { InertialMeasurementUnitSyncRepository } from "../repositories/inertial-measurement-unit-sync-repository.ts";
 import { protectedProcedure, router } from "../trpc.ts";
-import { rejectFutureSamples } from "./sample-validation.ts";
+import { filterFutureSamples } from "./sample-validation.ts";
 
 // ── Zod schemas ──
 
@@ -43,21 +43,22 @@ export const inertialMeasurementUnitSyncRouter = router({
     }
 
     const now = new Date();
-    rejectFutureSamples(input.samples, now, "IMU");
+    const validSamples = filterFutureSamples(input.samples, now, "IMU");
     await repository.ensureProvider();
 
     // Log timestamp range to detect stale/future data
-    const firstTimestamp = input.samples[0]?.timestamp;
-    const lastTimestamp = input.samples[input.samples.length - 1]?.timestamp;
+    const firstTimestamp = validSamples[0]?.timestamp;
+    const lastTimestamp = validSamples[validSamples.length - 1]?.timestamp;
     const nowIso = now.toISOString();
 
-    const inserted = await repository.insertBatch(input.deviceId, input.deviceType, input.samples);
+    const inserted = await repository.insertBatch(input.deviceId, input.deviceType, validSamples);
 
     logger.info("IMU samples pushed", {
       userId: ctx.userId,
       deviceId: input.deviceId,
       deviceType: input.deviceType,
       sampleCount: inserted,
+      filteredCount: input.samples.length - validSamples.length,
       firstTimestamp,
       lastTimestamp,
       serverTime: nowIso,
