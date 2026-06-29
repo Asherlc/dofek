@@ -35,7 +35,7 @@ Implementation-level backlog. Checked items are complete; unchecked are open.
 - [x] RideWithGPS provider (trip sync with GPS track points, activity type mapping)
 - [x] WHOOP raw IMU/accelerometer data investigation — **not feasible**: data is in a private S3 bucket with no download API; app only uploads, never reads back. Load-velocity profiles (derived from accelerometer) may be accessible once enough training data is collected. See `docs/whoop.md`.
 - [ ] Revisit IMU/vector storage if motion analysis becomes product-critical; `metric_stream.vector` currently relies on channel-level conventions for axis order, coordinate frame, units, and calibration semantics.
-- [ ] Normalize hydration storage so water is represented through one canonical path instead of both `nutrition_daily.water_ml` and nutrient-style water rows.
+- [x] Normalize hydration storage so water is represented through one canonical path instead of both `nutrition_daily.water_ml` and nutrient-style water rows; water now lives in `food_entry_nutrient` as nutrient `water`, `v_nutrition_daily.water_ml` is a derived projection, and migration `0022_drop_dead_tables.sql` removes the old `nutrition_daily` storage table.
 
 ### Dashboard & Insights
 - [x] Web dashboard (Vite + React + tRPC + ECharts + shadcn/ui)
