@@ -491,44 +491,18 @@ describe("whoopBleSyncRouter", () => {
       ).rejects.toThrow();
     });
 
-    it("rejects samples more than five minutes in the future", async () => {
+    it("filters out samples more than five minutes in the future", async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date("2026-03-30T12:00:00.000Z"));
 
       const trpcCaller = caller(ctx);
 
       try {
-        await expect(
-          trpcCaller.pushRealtimeData({
-            deviceId: "WHOOP Strap",
-            samples: [
-              {
-                timestamp: "2026-03-30T12:06:00.001Z",
-                rrIntervalMs: 812,
-                quaternionW: 1.0,
-                quaternionX: 0.0,
-                quaternionY: 0.0,
-                quaternionZ: 0.0,
-              },
-            ],
-          }),
-        ).rejects.toThrow("WHOOP BLE sample timestamp is too far in the future");
-
-        expect(mockDb.execute).toHaveBeenCalledTimes(0);
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it("rejects malformed sample timestamps", async () => {
-      const trpcCaller = caller(ctx);
-
-      await expect(
-        trpcCaller.pushRealtimeData({
+        const result = await trpcCaller.pushRealtimeData({
           deviceId: "WHOOP Strap",
           samples: [
             {
-              timestamp: "not-a-timestamp",
+              timestamp: "2026-03-30T12:06:00.001Z",
               rrIntervalMs: 812,
               quaternionW: 1.0,
               quaternionX: 0.0,
@@ -536,10 +510,34 @@ describe("whoopBleSyncRouter", () => {
               quaternionZ: 0.0,
             },
           ],
-        }),
-      ).rejects.toThrow("WHOOP BLE sample timestamp is invalid");
+        });
 
-      expect(mockDb.execute).toHaveBeenCalledTimes(0);
+        expect(result.inserted).toBe(0);
+        expect(metricStreamPublisher.publishRows).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("filters out malformed sample timestamps", async () => {
+      const trpcCaller = caller(ctx);
+
+      const result = await trpcCaller.pushRealtimeData({
+        deviceId: "WHOOP Strap",
+        samples: [
+          {
+            timestamp: "not-a-timestamp",
+            rrIntervalMs: 812,
+            quaternionW: 1.0,
+            quaternionX: 0.0,
+            quaternionY: 0.0,
+            quaternionZ: 0.0,
+          },
+        ],
+      });
+
+      expect(result.inserted).toBe(0);
+      expect(metricStreamPublisher.publishRows).not.toHaveBeenCalled();
     });
 
     it("handles batch splitting for large sample arrays", async () => {

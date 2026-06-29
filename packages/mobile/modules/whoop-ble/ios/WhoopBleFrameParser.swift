@@ -116,6 +116,24 @@ final class WhoopBleFrameParser {
 
         guard !payload.isEmpty else { return nil }
 
+        // Validate header CRC16 (CRC16-MODBUS of bytes 0-5)
+        let headerPrefix = Data(data[0..<6])
+        let computedHeaderCrc = crc16modbus(headerPrefix)
+        let storedHeaderCrc = data.readUInt16LE(at: 6)
+        guard computedHeaderCrc == storedHeaderCrc else {
+            return nil
+        }
+
+        // Validate payload CRC32 (last 4 bytes of payload)
+        guard payloadLen >= 4 else { return nil }
+        let payloadData = Data(payload)
+        let storedPayloadCrc = payloadData.readUInt32LE(at: payloadLen - 4)
+        let payloadBody = Data(payloadData[0..<payloadLen - 4])
+        let computedPayloadCrc = crc32ieee(payloadBody)
+        guard computedPayloadCrc == storedPayloadCrc else {
+            return nil
+        }
+
         let packetType = payload[payload.startIndex]
 
         var recordType: UInt8 = 0
