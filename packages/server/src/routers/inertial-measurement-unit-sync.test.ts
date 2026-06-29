@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../logger.ts", () => ({
-  logger: { info: vi.fn() },
+  logger: { info: vi.fn(), warn: vi.fn() },
 }));
 
 vi.mock("../trpc.ts", async () => {
@@ -224,7 +224,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
         });
 
         expect(result.inserted).toBe(0);
-        expect(execute).toHaveBeenCalledTimes(0);
+        expect(execute).toHaveBeenCalledTimes(1);
       } finally {
         vi.useRealTimers();
       }
@@ -241,7 +241,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(0);
-      expect(execute).toHaveBeenCalledTimes(0);
+      expect(execute).toHaveBeenCalledTimes(1);
     });
 
     it("batches large sample arrays into multiple INSERT statements", async () => {

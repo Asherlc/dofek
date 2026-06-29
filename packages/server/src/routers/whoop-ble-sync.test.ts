@@ -513,7 +513,7 @@ describe("whoopBleSyncRouter", () => {
         });
 
         expect(result.inserted).toBe(0);
-        expect(mockDb.execute).toHaveBeenCalledTimes(0);
+        expect(metricStreamPublisher.publishRows).not.toHaveBeenCalled();
       } finally {
         vi.useRealTimers();
       }
@@ -537,7 +537,7 @@ describe("whoopBleSyncRouter", () => {
       });
 
       expect(result.inserted).toBe(0);
-      expect(mockDb.execute).toHaveBeenCalledTimes(0);
+      expect(metricStreamPublisher.publishRows).not.toHaveBeenCalled();
     });
 
     it("handles batch splitting for large sample arrays", async () => {

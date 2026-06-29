@@ -159,10 +159,10 @@ final class WhoopBleSampleBufferTests: XCTestCase {
     }
 
     func testValidTimestampPassesThroughUnchanged() {
-        let ts: UInt32 = 1711000000 // March 2024
+        let timestampSeconds: UInt32 = 1711000000 // March 2024
         let sub: UInt16 = 500
         let sample = WhoopRealtimeDataSample(
-            timestampSeconds: ts,
+            timestampSeconds: timestampSeconds,
             subSeconds: sub,
             heartRate: 72,
             rrIntervalMs: 800,
@@ -180,7 +180,7 @@ final class WhoopBleSampleBufferTests: XCTestCase {
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let date = formatter.date(from: timestamp!)
         XCTAssertNotNil(date)
-        let expected = Date(timeIntervalSince1970: TimeInterval(ts) + TimeInterval(sub) / 1000.0)
+        let expected = Date(timeIntervalSince1970: TimeInterval(timestampSeconds) + TimeInterval(sub) / 1000.0)
         XCTAssertEqual(date, expected)
     }
 
