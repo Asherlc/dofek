@@ -34,14 +34,17 @@ beforeEach(() => {
 
 describe("resetSessionFile", () => {
   it("writes a header to the session file", () => {
-    resetSessionFile({
-      hasGyro: true,
-      sessionStartMs: 1000,
-      sampleCount: 0,
-      accelFreqMode: 2,
-      gyroFreqMode: 2,
-      observedHzX100: 2600,
-    }, SESSION_FILE);
+    resetSessionFile(
+      {
+        hasGyro: true,
+        sessionStartMs: 1000,
+        sampleCount: 0,
+        accelFreqMode: 2,
+        gyroFreqMode: 2,
+        observedHzX100: 2600,
+      },
+      SESSION_FILE,
+    );
 
     expect(mockWriteFileSync).toHaveBeenCalledTimes(1);
     const writeCalls = mockWriteFileSync.mock.calls;

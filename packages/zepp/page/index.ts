@@ -38,6 +38,8 @@ import {
 } from "../src/storage-keys.ts";
 import type { ImuSample } from "../src/types.ts";
 
+type ActiveFileSlot = "A" | "B";
+
 function nullable<T>(): T | null {
   return null;
 }
@@ -54,6 +56,7 @@ const BG_PERMISSION = "device:os.bg_service";
 let statusText: ReturnType<typeof createWidget> | null = null;
 let sensorInfoText: ReturnType<typeof createWidget> | null = null;
 let sampleText: ReturnType<typeof createWidget> | null = null;
+let hintText: ReturnType<typeof createWidget> | null = null;
 
 function renderStatus(text: string) {
   if (statusText) {
@@ -73,6 +76,12 @@ function renderSamples(text: string) {
   }
 }
 
+function renderHint(text: string) {
+  if (hintText) {
+    hintText.setProperty(prop.TEXT, text);
+  }
+}
+
 Page(
   BasePage({
     state: {
@@ -87,7 +96,9 @@ Page(
       }>(),
       sampleCount: 0,
       observedHzX100: 0,
-      activeFile: "A" as "A" | "B",
+      // biome-ignore lint/plugin/no-as-type-assertion: widens literal "A" to "A" | "B" for state field inference
+      activeFile: "A" as ActiveFileSlot,
+      hasCredentials: false,
     },
 
     onInit() {
@@ -136,12 +147,24 @@ Page(
         x: px(40),
         y: px(214),
         w: DEVICE_WIDTH - px(80),
-        h: px(100),
+        h: px(80),
         color: 0x7fb3d3,
         text_size: px(24),
         align_h: align.CENTER_H,
         text_style: text_style.WRAP,
         text: "0 samples\n— Hz",
+      });
+
+      hintText = createWidget(widget.TEXT, {
+        x: px(40),
+        y: px(310),
+        w: DEVICE_WIDTH - px(80),
+        h: px(72),
+        color: 0xe67e22,
+        text_size: px(20),
+        align_h: align.CENTER_H,
+        text_style: text_style.WRAP,
+        text: "",
       });
     },
 
@@ -153,6 +176,7 @@ Page(
         .then((result) => {
           this.state.enableGyro = result?.enableGyro === true;
           this.state.freqModeIndex = Number(result?.freqModeIndex ?? 1);
+          this.state.hasCredentials = result?.hasCredentials === true;
           this.startLogging();
         })
         .catch((error) => {
@@ -228,14 +252,17 @@ Page(
         this.state.observedHzX100 = 0;
         this.state.activeFile = "A";
 
-        resetSessionFile({
-          hasGyro: collector.hasGyroscope,
-          sessionStartMs: Date.now(),
-          sampleCount: 0,
-          accelFreqMode: collector.accelMode,
-          gyroFreqMode: collector.gyroMode ?? 0,
-          observedHzX100: 0,
-        }, this.activeFilePath());
+        resetSessionFile(
+          {
+            hasGyro: collector.hasGyroscope,
+            sessionStartMs: Date.now(),
+            sampleCount: 0,
+            accelFreqMode: collector.accelMode,
+            gyroFreqMode: collector.gyroMode ?? 0,
+            observedHzX100: 0,
+          },
+          this.activeFilePath(),
+        );
 
         collector.start();
         this.state.logging = true;
@@ -243,10 +270,9 @@ Page(
         const modeLabel =
           FREQ_MODES.find((item) => item.value === collector.accelMode)?.label ?? "?";
         renderSensorInfo(
-          collector.hasGyroscope
-            ? `Accel · Gyro · ${modeLabel}`
-            : `Accel · ${modeLabel}`,
+          collector.hasGyroscope ? `Accel · Gyro · ${modeLabel}` : `Accel · ${modeLabel}`,
         );
+        renderHint(this.state.hasCredentials ? "" : "Not connected\nOpen Zepp app → Settings");
         renderStatus("● Recording");
 
         this.publishSessionStatus("logging");
@@ -269,8 +295,7 @@ Page(
     handleRate(stats: { sampleCount: number; observedHzX100: number }) {
       this.state.observedHzX100 = stats.observedHzX100;
       renderSamples(
-        `${stats.sampleCount} samples\n` +
-          `${(stats.observedHzX100 / 100).toFixed(2)} Hz`,
+        `${stats.sampleCount} samples\n` + `${(stats.observedHzX100 / 100).toFixed(2)} Hz`,
       );
       this.writeMetaFile();
     },
@@ -325,15 +350,18 @@ Page(
       this.state.pendingBuffer = [];
 
       const collector = this.state.collector;
-      if (collector && collector.available) {
-        resetSessionFile({
-          hasGyro: this.state.hasGyro,
-          sessionStartMs: Date.now(),
-          sampleCount: 0,
-          accelFreqMode: collector.accelMode,
-          gyroFreqMode: collector.gyroMode ?? 0,
-          observedHzX100: 0,
-        }, this.activeFilePath());
+      if (collector?.available) {
+        resetSessionFile(
+          {
+            hasGyro: this.state.hasGyro,
+            sessionStartMs: Date.now(),
+            sampleCount: 0,
+            accelFreqMode: collector.accelMode,
+            gyroFreqMode: collector.gyroMode ?? 0,
+            observedHzX100: 0,
+          },
+          this.activeFilePath(),
+        );
       }
 
       this.publishSessionStatus("logging");

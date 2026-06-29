@@ -40,9 +40,12 @@ AppSideService(
     },
 
     getPreferences() {
+      const serverUrl = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_SERVER_URL);
+      const apiToken = settings.settingsStorage.getItem(STORAGE_KEYS.DOFEK_API_TOKEN);
       return {
         enableGyro: settings.settingsStorage.getItem(STORAGE_KEYS.PREF_ENABLE_GYRO) === "true",
         freqModeIndex: Number(settings.settingsStorage.getItem(STORAGE_KEYS.PREF_FREQ_MODE) ?? 1),
+        hasCredentials: !!(serverUrl && apiToken),
       };
     },
 
@@ -50,7 +53,7 @@ AppSideService(
       settings.settingsStorage.setItem(STORAGE_KEYS.SESSION_STATUS, JSON.stringify(payload));
     },
 
-    handleSettingsChange(key: string, newValue: string) {
+    handleSettingsChange(key: string, _newValue: string) {
       if (key === STORAGE_KEYS.CMD_TRANSFER) {
         this.call({ method: "transfer.start", params: {} });
       }

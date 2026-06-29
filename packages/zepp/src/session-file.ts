@@ -33,7 +33,11 @@ export function appendSamples(samples: ImuSample[], hasGyro: boolean, path: stri
   }
 }
 
-export function finalizeSessionFile(sampleCount: number, observedHzX100: number, path: string): void {
+export function finalizeSessionFile(
+  sampleCount: number,
+  observedHzX100: number,
+  path: string,
+): void {
   let raw: ArrayBuffer | string | undefined;
 
   try {
