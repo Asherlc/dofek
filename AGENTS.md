@@ -216,3 +216,34 @@ drizzle/                     — SQL migrations
 deploy/                      — Terraform (Hetzner + Cloudflare) + Docker Compose deploy
 Dockerfile                   — Multi-stage: server target (includes built web assets)
 ```
+
+## Cursor Cloud specific instructions
+
+Durable, non-obvious notes for working in the Cursor Cloud VM. The startup update script only runs `pnpm install`; everything below (Node/pnpm/uv/Docker) is preinstalled in the VM snapshot, but services are NOT auto-started. Standard lint/test/dev commands live in the `## Commands` section above — don't duplicate them, just be aware of the caveats here.
+
+### Toolchain (preinstalled, persisted in snapshot)
+- **Node 26 is required** (`engines.node >=26`, `.nvmrc` = 26). The VM's default `/exec-daemon/node` is Node 22 and sits early in `PATH`. A one-time line appended to `~/.bashrc` prepends nvm's Node 26 bin, so **login shells** (and the update script runner) use Node 26. If a command unexpectedly runs Node 22, run it via `bash -lc '...'` or `nvm use 26`.
+- **pnpm 10.33.0** was installed globally via `npm i -g pnpm@10.33.0` under Node 26 (Node 26 no longer bundles `corepack`). Always use `pnpm` (never npm/yarn).
+- **uv** is preinstalled at `~/.local/bin/uv`; it backs `pnpm analytics:build` (dbt) and `pnpm lint:analytics-sql` (sqlfluff). First dbt/sqlfluff run downloads Python packages.
+
+### Docker (must be started manually each VM session)
+- There is no systemd; the Docker daemon does NOT auto-start. Start it once per session in the background, e.g. `sudo dockerd > /tmp/dockerd.log 2>&1 &` (a long-lived tmux session is convenient). Wait until `docker info` succeeds.
+- `ubuntu` is in the `docker` group, so `docker`/`docker compose` work without `sudo` once the daemon is up. On a brand-new session the socket may be `root:docker`; if you hit a permission error, `sudo chmod 666 /var/run/docker.sock`.
+
+### Secrets / Infisical
+- The Infisical CLI is NOT installed. `scripts/with-env.sh` calls `infisical export` and prints `infisical: command not found`, then continues (the script has no `set -e`) using `.env` + `.env.local`. This is expected in the VM — local dev only needs `DATABASE_URL`, `CLICKHOUSE_URL`, `REDIS_URL`, which `pnpm compose:up` writes into `.env.local`.
+- Provider OAuth/credentials and other secret-gated features are unavailable without Infisical. Use the dev-login bypass below instead of real auth.
+
+### Bring up the full local stack (web + API, no PeerDB needed)
+Run from the repo root, in order:
+1. `pnpm compose:up` — starts Postgres/TimescaleDB + ClickHouse + Redis on random host ports and writes `.env.local`.
+2. `pnpm setup-db` — applies Postgres + ClickHouse migrations. The ClickHouse migrations pre-create the `analytics.*` serving tables that the API boot waits for, so PeerDB/Temporal and the Redpanda metric-stream stack are NOT required for dev.
+3. `./scripts/with-env.sh pnpm seed` — seeds demo data and creates the `dev-session`. Note `pnpm seed` does not wrap `with-env.sh` itself, so it must be run through `with-env.sh` (or with `DATABASE_URL` exported) to pick up `.env.local`.
+4. `pnpm analytics:build` (optional) — dbt build via `uv`; populates ClickHouse activity/sleep read models from seeded Postgres data. The API boots without it (tables exist empty), but activity-stream analytics need it.
+5. API: `cd packages/server && pnpm dev` (Express + tRPC on `:3000`). Web: `cd packages/web && pnpm dev` (Vite on `:5173`, proxies `/api`, `/auth`, `/callback` to `:3000`).
+
+### Dev login (no OAuth)
+Visit `http://localhost:5173/auth/dev-login` (enabled when `NODE_ENV !== 'production'`). It sets the `session=dev-session` cookie and redirects to `/dashboard`. Requires step 3 (seed) to have created the dev-session first.
+
+### Out of scope on this Linux VM
+The mobile app (`packages/mobile`, Expo/iOS — needs macOS/Xcode) and the Zepp watch app (`packages/zepp*`) cannot run here. Web dashboard + API + sync runner + analytics are the supported dev surface.
