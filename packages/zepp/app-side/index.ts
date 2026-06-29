@@ -1,7 +1,7 @@
 import { messagingPlugin } from "@zeppos/zml/3.0/module/messaging/plugin/side";
 import { BaseSideService } from "@zeppos/zml/base-side";
 
-import { FREQ_MODE_LABELS, LOGGING_CMD, STORAGE_KEYS } from "../src/storage-keys.ts";
+import { FREQ_MODE_LABELS, STORAGE_KEYS } from "../src/storage-keys.ts";
 
 BaseSideService.use(messagingPlugin);
 
@@ -51,20 +51,6 @@ AppSideService(
     },
 
     handleSettingsChange(key: string, newValue: string) {
-      if (key === STORAGE_KEYS.CMD_LOGGING) {
-        if (newValue === LOGGING_CMD.START) {
-          const prefs = this.getPreferences();
-          this.call({
-            method: "logging.start",
-            params: prefs,
-          });
-        } else if (newValue === LOGGING_CMD.STOP) {
-          this.call({ method: "logging.stop", params: {} });
-        }
-        settings.settingsStorage.setItem(STORAGE_KEYS.CMD_LOGGING, LOGGING_CMD.IDLE);
-        return;
-      }
-
       if (key === STORAGE_KEYS.CMD_TRANSFER) {
         this.call({ method: "transfer.start", params: {} });
       }

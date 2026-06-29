@@ -87,65 +87,52 @@ Page(
 
     build() {
       createWidget(widget.TEXT, {
-        x: px(24),
-        y: px(30),
-        w: DEVICE_WIDTH - px(48),
-        h: px(48),
+        x: px(0),
+        y: px(38),
+        w: DEVICE_WIDTH,
+        h: px(52),
         color: 0xffffff,
-        text_size: px(34),
+        text_size: px(40),
         align_h: align.CENTER_H,
         text_style: text_style.NONE,
         text: "Dofek",
       });
 
       statusText = createWidget(widget.TEXT, {
-        x: px(24),
-        y: px(90),
-        w: DEVICE_WIDTH - px(48),
-        h: px(120),
-        color: 0xcccccc,
-        text_size: px(24),
-        align_h: align.LEFT,
+        x: px(40),
+        y: px(118),
+        w: DEVICE_WIDTH - px(80),
+        h: px(72),
+        color: 0x2ecc71,
+        text_size: px(30),
+        align_h: align.CENTER_H,
         text_style: text_style.WRAP,
-        text: "Idle",
+        text: "Starting...",
       });
 
       sampleText = createWidget(widget.TEXT, {
-        x: px(24),
-        y: px(220),
-        w: DEVICE_WIDTH - px(48),
-        h: px(120),
-        color: 0x9ad1ff,
+        x: px(40),
+        y: px(206),
+        w: DEVICE_WIDTH - px(80),
+        h: px(110),
+        color: 0x7fb3d3,
         text_size: px(22),
-        align_h: align.LEFT,
+        align_h: align.CENTER_H,
         text_style: text_style.WRAP,
-        text: "samples: 0\nrate: n/a",
+        text: "0 samples\nrate: —",
       });
 
       createWidget(widget.BUTTON, {
-        x: px(40),
-        y: px(360),
-        w: DEVICE_WIDTH - px(80),
-        h: px(72),
-        radius: px(16),
-        normal_color: 0x2ecc71,
-        press_color: 0x27ae60,
-        text_size: px(28),
-        text: "Start",
-        click_func: () => this.startLogging(),
-      });
-
-      createWidget(widget.BUTTON, {
-        x: px(40),
-        y: px(450),
-        w: DEVICE_WIDTH - px(80),
-        h: px(72),
-        radius: px(16),
-        normal_color: 0xe74c3c,
-        press_color: 0xc0392b,
-        text_size: px(28),
-        text: "Stop",
-        click_func: () => this.stopLogging(),
+        x: px(120),
+        y: px(340),
+        w: DEVICE_WIDTH - px(240),
+        h: px(68),
+        radius: px(34),
+        normal_color: 0x2980b9,
+        press_color: 0x1f618d,
+        text_size: px(26),
+        text: "Export",
+        click_func: () => this.transferSession(),
       });
     },
 
@@ -157,9 +144,11 @@ Page(
         .then((result) => {
           this.state.enableGyro = result?.enableGyro === true;
           this.state.freqModeIndex = Number(result?.freqModeIndex ?? 1);
+          this.startLogging();
         })
         .catch((error) => {
           logger.error("preference fetch failed %j", error);
+          this.startLogging();
         });
     },
 
@@ -237,13 +226,7 @@ Page(
         collector.start();
         this.state.logging = true;
 
-        const modeLabel =
-          FREQ_MODES.find((item) => item.value === collector.accelMode)?.label ?? "UNKNOWN";
-
-        renderStatus(
-          `Logging\naccel mode: ${modeLabel}\n` +
-            `${collector.hasGyroscope ? "gyro enabled" : "gyro off"}`,
-        );
+        renderStatus("● Recording");
 
         this.publishSessionStatus("logging");
       });
@@ -261,8 +244,8 @@ Page(
     handleRate(stats: { sampleCount: number; observedHzX100: number }) {
       this.state.observedHzX100 = stats.observedHzX100;
       renderSamples(
-        `samples: ${stats.sampleCount}\n` +
-          `delivered: ${(stats.observedHzX100 / 100).toFixed(2)} Hz`,
+        `${stats.sampleCount} samples\n` +
+          `${(stats.observedHzX100 / 100).toFixed(2)} Hz`,
       );
       this.writeMetaFile();
     },
@@ -292,13 +275,6 @@ Page(
       this.state.collector?.stop();
       this.flushBuffer(true);
       this.writeMetaFile();
-
-      renderStatus("Stopped\nready for transfer");
-      renderSamples(
-        `samples: ${this.state.sampleCount}\n` +
-          `delivered: ${(this.state.observedHzX100 / 100).toFixed(2)} Hz`,
-      );
-
       this.publishSessionStatus("stopped");
     },
 
@@ -356,14 +332,13 @@ Page(
         const loadedSize = Number(event.data.loadedSize);
         const fileSize = Number(event.data.fileSize);
         const pct = fileSize > 0 ? Math.floor((loadedSize * 100) / fileSize) : 0;
-        renderStatus(`Transferring ${pct}%`);
+        renderStatus(`Exporting ${pct}%`);
       });
 
       task.on("change", (event: { data: Record<string, unknown> }) => {
         if (String(event.data.readyState) === "transferred") {
           this.state.transferTask = null;
-          renderStatus("Transfer complete");
-          showToast({ content: "File sent to phone" });
+          showToast({ content: "Exported" });
           this.request({
             method: "imu.transferComplete",
             params: {
@@ -372,31 +347,21 @@ Page(
           }).catch((error) => {
             logger.error("imu.transferComplete failed %j", error);
           });
+          this.startLogging();
           return;
         }
 
         if (event.data.readyState === "error") {
           this.state.transferTask = null;
-          renderStatus("Transfer failed");
-          showToast({ content: "Transfer failed" });
+          renderStatus("Export failed");
+          showToast({ content: "Export failed" });
+          this.startLogging();
         }
       });
     },
 
     onCall(payload: { method: string; params?: Record<string, unknown> } | null) {
-      const { method, params = {} } = payload ?? { method: "", params: {} };
-
-      if (method === "logging.start") {
-        this.state.enableGyro = params.enableGyro === true;
-        this.state.freqModeIndex = Number(params.freqModeIndex ?? 1);
-        this.startLogging();
-        return;
-      }
-
-      if (method === "logging.stop") {
-        this.stopLogging();
-        return;
-      }
+      const { method } = payload ?? { method: "" };
 
       if (method === "transfer.start") {
         this.transferSession();

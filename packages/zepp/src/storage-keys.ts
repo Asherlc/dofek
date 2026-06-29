@@ -1,7 +1,6 @@
 export const STORAGE_KEYS = {
   PREF_ENABLE_GYRO: "pref_enable_gyro",
   PREF_FREQ_MODE: "pref_freq_mode",
-  CMD_LOGGING: "cmd_logging",
   CMD_TRANSFER: "cmd_transfer",
   SESSION_STATUS: "session_status",
   LAST_EXPORT_PATH: "last_export_path",
@@ -11,12 +10,6 @@ export const STORAGE_KEYS = {
   DOFEK_API_TOKEN: "dofek_api_token",
   HEALTH_SYNC_STATUS: "health_sync_status",
   LAST_HEALTH_SYNC: "last_health_sync",
-} as const;
-
-export const LOGGING_CMD = {
-  IDLE: "idle",
-  START: "start",
-  STOP: "stop",
 } as const;
 
 export const FREQ_MODE_LABELS: Record<number, string> = {
