@@ -23,3 +23,4 @@ export const SESSION_META_FILE = "data://imu/session_meta.json";
 export const SERVICE_FILE = "app-service/imu_service";
 
 export const FLUSH_SAMPLE_THRESHOLD = 64;
+export const AUTO_TRANSFER_SAMPLE_COUNT = 5000;

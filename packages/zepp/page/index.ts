@@ -29,6 +29,7 @@ import { collectHealthData } from "../src/health-collector.ts";
 import { createImuCollector, FREQ_MODES } from "../src/imu-collector.ts";
 import { appendSamples, finalizeSessionFile, resetSessionFile } from "../src/session-file.ts";
 import {
+  AUTO_TRANSFER_SAMPLE_COUNT,
   FLUSH_SAMPLE_THRESHOLD,
   SERVICE_FILE,
   SESSION_FILE,
@@ -50,11 +51,18 @@ const { width: DEVICE_WIDTH } = getDeviceInfo();
 const BG_PERMISSION = "device:os.bg_service";
 
 let statusText: ReturnType<typeof createWidget> | null = null;
+let sensorInfoText: ReturnType<typeof createWidget> | null = null;
 let sampleText: ReturnType<typeof createWidget> | null = null;
 
 function renderStatus(text: string) {
   if (statusText) {
     statusText.setProperty(prop.TEXT, text);
+  }
+}
+
+function renderSensorInfo(text: string) {
+  if (sensorInfoText) {
+    sensorInfoText.setProperty(prop.TEXT, text);
   }
 }
 
@@ -88,7 +96,7 @@ Page(
     build() {
       createWidget(widget.TEXT, {
         x: px(0),
-        y: px(38),
+        y: px(36),
         w: DEVICE_WIDTH,
         h: px(52),
         color: 0xffffff,
@@ -100,39 +108,38 @@ Page(
 
       statusText = createWidget(widget.TEXT, {
         x: px(40),
-        y: px(118),
+        y: px(106),
         w: DEVICE_WIDTH - px(80),
-        h: px(72),
+        h: px(48),
         color: 0x2ecc71,
-        text_size: px(30),
+        text_size: px(32),
         align_h: align.CENTER_H,
-        text_style: text_style.WRAP,
+        text_style: text_style.NONE,
         text: "Starting...",
+      });
+
+      sensorInfoText = createWidget(widget.TEXT, {
+        x: px(40),
+        y: px(162),
+        w: DEVICE_WIDTH - px(80),
+        h: px(36),
+        color: 0x888888,
+        text_size: px(20),
+        align_h: align.CENTER_H,
+        text_style: text_style.NONE,
+        text: "",
       });
 
       sampleText = createWidget(widget.TEXT, {
         x: px(40),
-        y: px(206),
+        y: px(214),
         w: DEVICE_WIDTH - px(80),
-        h: px(110),
+        h: px(100),
         color: 0x7fb3d3,
-        text_size: px(22),
+        text_size: px(24),
         align_h: align.CENTER_H,
         text_style: text_style.WRAP,
-        text: "0 samples\nrate: —",
-      });
-
-      createWidget(widget.BUTTON, {
-        x: px(120),
-        y: px(340),
-        w: DEVICE_WIDTH - px(240),
-        h: px(68),
-        radius: px(34),
-        normal_color: 0x2980b9,
-        press_color: 0x1f618d,
-        text_size: px(26),
-        text: "Export",
-        click_func: () => this.transferSession(),
+        text: "0 samples\n— Hz",
       });
     },
 
@@ -226,6 +233,13 @@ Page(
         collector.start();
         this.state.logging = true;
 
+        const modeLabel =
+          FREQ_MODES.find((item) => item.value === collector.accelMode)?.label ?? "?";
+        renderSensorInfo(
+          collector.hasGyroscope
+            ? `Accel · Gyro · ${modeLabel}`
+            : `Accel · ${modeLabel}`,
+        );
         renderStatus("● Recording");
 
         this.publishSessionStatus("logging");
@@ -238,6 +252,10 @@ Page(
 
       if (this.state.pendingBuffer.length >= FLUSH_SAMPLE_THRESHOLD) {
         this.flushBuffer(false);
+      }
+
+      if (this.state.sampleCount >= AUTO_TRANSFER_SAMPLE_COUNT && !this.state.transferTask) {
+        this.transferSession();
       }
     },
 
@@ -332,13 +350,12 @@ Page(
         const loadedSize = Number(event.data.loadedSize);
         const fileSize = Number(event.data.fileSize);
         const pct = fileSize > 0 ? Math.floor((loadedSize * 100) / fileSize) : 0;
-        renderStatus(`Exporting ${pct}%`);
+        renderStatus(`↑ Sending ${pct}%`);
       });
 
       task.on("change", (event: { data: Record<string, unknown> }) => {
         if (String(event.data.readyState) === "transferred") {
           this.state.transferTask = null;
-          showToast({ content: "Exported" });
           this.request({
             method: "imu.transferComplete",
             params: {
@@ -353,8 +370,8 @@ Page(
 
         if (event.data.readyState === "error") {
           this.state.transferTask = null;
-          renderStatus("Export failed");
-          showToast({ content: "Export failed" });
+          renderStatus("Send failed");
+          showToast({ content: "Send failed" });
           this.startLogging();
         }
       });
