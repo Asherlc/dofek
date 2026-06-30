@@ -1,7 +1,8 @@
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { dailyMetrics, TEST_USER_ID } from "../../../../src/db/schema.ts";
+import { dailyMetrics } from "../../../../src/db/schema/activity.ts";
+import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
 import { type AnomalyRow, checkAnomalies, sendAnomalyAlertToSlack } from "./anomaly-detection.ts";

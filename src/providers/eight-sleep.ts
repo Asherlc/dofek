@@ -6,7 +6,7 @@ import {
 } from "eight-sleep-client/parsing";
 import type { EightSleepTrendDay } from "eight-sleep-client/types";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
-import { dailyMetrics, sleepSession } from "../db/schema.ts";
+import { dailyMetrics, sleepSession } from "../db/schema/activity.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";

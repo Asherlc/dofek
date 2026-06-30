@@ -12,21 +12,21 @@
 ### Seeding the DB
 To get a fully functional dev environment with charts and data:
 ```bash
-./scripts/with-env.sh pnpm seed
+rtk ./scripts/with-env.sh pnpm seed
 ```
 The seed command applies migrations and verifies representative row counts before reporting success.
 
 ### Updating Schema Diagrams
-After modifying `src/db/schema.ts`, run:
+After modifying files under `src/db/schema/`, run:
 ```bash
-pnpm tsx scripts/generate-schema-diagram.ts
+rtk pnpm tsx scripts/generate-schema-diagram.ts
 ```
 Then commit the updated `docs/schema.dbml` and `docs/schema.puml`.
 
 ### Debugging WHOOP BLE
 If you have a PacketLogger capture from iOS:
 ```bash
-pnpm tsx scripts/parse-whoop-ble-capture.ts capture.pklg
+rtk pnpm tsx scripts/parse-whoop-ble-capture.ts capture.pklg
 ```
 This will output `whoop_imu_data.csv` with decoded sensor samples.
 

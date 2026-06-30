@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { activity } from "../../../../src/db/schema.ts";
+import type { activity } from "../../../../src/db/schema/activity.ts";
 import type { protectedProcedure } from "../trpc.ts";
 
 export const PROVIDER_ID = "apple_health";

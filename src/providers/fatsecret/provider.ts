@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { getOAuthRedirectUri } from "../../auth/oauth.ts";
 import { nutrientAmountEntriesFromLegacyFields } from "../../db/nutrient-columns.ts";
-import { foodEntry, foodEntryNutrient } from "../../db/schema.ts";
+import { foodEntry, foodEntryNutrient } from "../../db/schema/nutrition.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { ensureProvider } from "../../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";

@@ -6,7 +6,7 @@ import {
   activity as activityTable,
   dailyMetrics as dailyMetricsTable,
   sleepSession as sleepSessionTable,
-} from "../../db/schema.ts";
+} from "../../db/schema/activity.ts";
 import { SyncRun } from "../sync-run.ts";
 import { SyncWindow } from "../sync-window.ts";
 import type { WebhookEvent } from "../types.ts";

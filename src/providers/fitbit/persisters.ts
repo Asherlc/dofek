@@ -1,7 +1,7 @@
 import type { SyncDatabase } from "../../db/index.ts";
 import { replaceMetricStreamBatch } from "../../db/metric-stream-writer.ts";
 import { upsertProviderActivity } from "../../db/provider-activity-sync.ts";
-import { dailyMetrics, sleepSession } from "../../db/schema.ts";
+import { dailyMetrics, sleepSession } from "../../db/schema/activity.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { logger } from "../../logger.ts";
 import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";

@@ -2,7 +2,8 @@ import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { nutrientRowSchema } from "../db/nutrient-columns.ts";
-import { foodEntry, foodEntryNutrient, TEST_USER_ID } from "../db/schema.ts";
+import { TEST_USER_ID } from "../db/schema/core.ts";
+import { foodEntry, foodEntryNutrient } from "../db/schema/nutrition.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { CRONOMETER_PROVIDER_ID, importCronometerCsv } from "./cronometer-csv.ts";
 

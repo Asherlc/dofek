@@ -55,7 +55,7 @@ import {
   activity as activityTable,
   dailyMetrics as dailyMetricsTable,
   sleepSession as sleepSessionTable,
-} from "../db/schema.ts";
+} from "../db/schema/activity.ts";
 import {
   CorosClient,
   CorosProvider,

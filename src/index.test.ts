@@ -69,7 +69,7 @@ vi.mock("./db/index.ts", () => ({
   createDatabaseFromEnv: mockCreateDatabaseFromEnv,
 }));
 
-vi.mock("./db/schema.ts", () => ({
+vi.mock("./db/schema/core.ts", () => ({
   TEST_USER_ID: "test-user",
 }));
 

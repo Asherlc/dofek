@@ -9,15 +9,9 @@ import {
 } from "../../db/metric-stream-writer.ts";
 import { NUTRIENT_ID_MAP } from "../../db/nutrient-columns.ts";
 import { upsertProviderActivity } from "../../db/provider-activity-sync.ts";
-import {
-  dailyMetrics,
-  foodEntry,
-  foodEntryNutrient,
-  healthEvent,
-  labResult,
-  sleepSession,
-  sleepStage,
-} from "../../db/schema.ts";
+import { dailyMetrics, sleepSession, sleepStage } from "../../db/schema/activity.ts";
+import { healthEvent, labResult } from "../../db/schema/clinical.ts";
+import { foodEntry, foodEntryNutrient } from "../../db/schema/nutrition.ts";
 import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { logger } from "../../logger.ts";

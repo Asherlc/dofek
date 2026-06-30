@@ -14,7 +14,7 @@ import {
   ProviderActivityListSync,
   upsertProviderActivity,
 } from "./provider-activity-sync.ts";
-import { activity } from "./schema.ts";
+import { activity } from "./schema/activity.ts";
 
 function makeMockDb(onConflictDoUpdate = vi.fn()): SyncDatabase {
   const returning = vi.fn().mockResolvedValue([{ id: "activity-id" }]);

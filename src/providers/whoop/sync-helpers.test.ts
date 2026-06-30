@@ -4,7 +4,7 @@ import { WhoopClient } from "whoop-whoop/client";
 import type { WhoopCycle, WhoopWorkoutRecord } from "whoop-whoop/types";
 import type { SyncDatabase } from "../../db/index.ts";
 import { writeMetricStreamBatch } from "../../db/metric-stream-writer.ts";
-import { sleepSession } from "../../db/schema.ts";
+import { sleepSession } from "../../db/schema/activity.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { SyncWindow } from "../sync-window.ts";

@@ -8,7 +8,7 @@ import {
   type ProviderActivityAbsenceReconciliation,
   reconcileProviderActivityAbsence,
 } from "./provider-activity-absence.ts";
-import { activity } from "./schema.ts";
+import { activity } from "./schema/activity.ts";
 
 export type ProviderActivityInsert = typeof activity.$inferInsert;
 

@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { reconcileProviderActivityAbsence } from "./provider-activity-absence.ts";
-import { activity } from "./schema.ts";
+import { activity } from "./schema/activity.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 import { ensureProvider } from "./tokens.ts";
 

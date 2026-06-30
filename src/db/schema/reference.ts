@@ -1,0 +1,220 @@
+import {
+  bigint,
+  boolean,
+  date,
+  index,
+  integer,
+  jsonb,
+  primaryKey,
+  smallint,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
+import {
+  DEFAULT_PROVIDER_PRIORITY,
+  DEFAULT_SENSOR_PROVIDER_PRIORITY,
+} from "../provider-priority.ts";
+import { fitness, resolveImplicitUserId } from "./core.ts";
+
+// ============================================================
+// User profile — multi-user support
+// ============================================================
+
+export const userProfile = fitness.table("user_profile", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  email: text("email").unique(),
+  birthDate: date("birth_date"),
+  maxHr: smallint("max_hr"),
+  restingHr: smallint("resting_hr"),
+  ftp: smallint("ftp"),
+  isAdmin: boolean("is_admin").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ============================================================
+// Reference / lookup tables
+// ============================================================
+
+export const provider = fitness.table(
+  "provider",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    apiBaseUrl: text("api_base_url"),
+    userId: uuid("user_id")
+      .notNull()
+      .$defaultFn(resolveImplicitUserId)
+      .references(() => userProfile.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("provider_user_name_idx").on(table.userId, table.name)],
+);
+
+export const providerPriority = fitness.table("provider_priority", {
+  providerId: text("provider_id").primaryKey(),
+  priority: integer("priority").notNull().default(DEFAULT_PROVIDER_PRIORITY),
+  sleepPriority: integer("sleep_priority"),
+  bodyPriority: integer("body_priority"),
+  recoveryPriority: integer("recovery_priority"),
+  dailyActivityPriority: integer("daily_activity_priority"),
+});
+
+export const devicePriority = fitness.table(
+  "device_priority",
+  {
+    providerId: text("provider_id").notNull(),
+    sourceNamePattern: text("source_name_pattern").notNull(),
+    priority: integer("priority"),
+    sleepPriority: integer("sleep_priority"),
+    bodyPriority: integer("body_priority"),
+    recoveryPriority: integer("recovery_priority"),
+    dailyActivityPriority: integer("daily_activity_priority"),
+  },
+  (table) => [primaryKey({ columns: [table.providerId, table.sourceNamePattern] })],
+);
+
+export const sensorProviderPriority = fitness.table(
+  "sensor_provider_priority",
+  {
+    providerId: text("provider_id").notNull(),
+    channel: text("channel").notNull(),
+    priority: bigint("priority", { mode: "number" })
+      .notNull()
+      .default(DEFAULT_SENSOR_PROVIDER_PRIORITY),
+  },
+  (table) => [primaryKey({ columns: [table.providerId, table.channel] })],
+);
+
+export const sensorDevicePriority = fitness.table(
+  "sensor_device_priority",
+  {
+    providerId: text("provider_id").notNull(),
+    sourceNamePattern: text("source_name_pattern").notNull(),
+    channel: text("channel").notNull(),
+    priority: bigint("priority", { mode: "number" })
+      .notNull()
+      .default(DEFAULT_SENSOR_PROVIDER_PRIORITY),
+  },
+  (table) => [primaryKey({ columns: [table.providerId, table.sourceNamePattern, table.channel] })],
+);
+
+export const providerPriorityAudit = fitness.table(
+  "provider_priority_audit",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
+    changedBy: text("changed_by").notNull(),
+    priorityTable: text("priority_table").notNull(),
+    providerId: text("provider_id").notNull(),
+    sourceNamePattern: text("source_name_pattern"),
+    channel: text("channel"),
+    oldValue: jsonb("old_value"),
+    newValue: jsonb("new_value"),
+    reason: text("reason"),
+  },
+  (table) => [
+    index("provider_priority_audit_changed_at_idx").on(table.changedAt),
+    index("provider_priority_audit_provider_idx").on(table.providerId),
+  ],
+);
+
+export const exercise = fitness.table(
+  "exercise",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    muscleGroup: text("muscle_group"),
+    muscleGroups: text("muscle_groups").array(),
+    equipment: text("equipment"),
+    exerciseType: text("exercise_type"),
+    movement: text("movement"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("exercise_name_equipment_idx").on(table.name, table.equipment)],
+);
+
+export const exerciseAlias = fitness.table(
+  "exercise_alias",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    exerciseId: uuid("exercise_id")
+      .notNull()
+      .references(() => exercise.id),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    providerExerciseId: text("provider_exercise_id"),
+    providerExerciseName: text("provider_exercise_name").notNull(),
+  },
+  (table) => [
+    uniqueIndex("exercise_alias_provider_name_idx").on(
+      table.providerId,
+      table.providerExerciseName,
+    ),
+  ],
+);
+
+// ============================================================
+// OAuth tokens
+// ============================================================
+
+export const oauthToken = fitness.table(
+  "oauth_token",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .$defaultFn(resolveImplicitUserId)
+      .references(() => userProfile.id),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    accessToken: text("access_token").notNull(),
+    refreshToken: text("refresh_token"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    scopes: text("scopes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.providerId] }),
+    index("oauth_token_provider_idx").on(table.providerId),
+    index("oauth_token_user_idx").on(table.userId),
+  ],
+);
+
+// ============================================================
+// Webhook subscriptions
+// ============================================================
+
+export const webhookSubscription = fitness.table(
+  "webhook_subscription",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Provider ID (e.g., "strava", "fitbit"). For app-level webhooks, provider_id is NULL. */
+    providerId: text("provider_id").references(() => provider.id),
+    /** Provider name for app-level subscriptions where there's no per-user provider row */
+    providerName: text("provider_name").notNull(),
+    /** Subscription ID from the provider's API (for unsubscribe) */
+    subscriptionExternalId: text("subscription_external_id"),
+    /** Random token used for validation challenges */
+    verifyToken: text("verify_token").notNull(),
+    /** HMAC key or signing secret from the provider (for signature verification) */
+    signingSecret: text("signing_secret"),
+    /** Current subscription state */
+    status: text("status").notNull().default("active"),
+    /** When this subscription expires (Oura requires renewal) */
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    /** Provider-specific metadata (JSON) */
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("webhook_subscription_provider_id_idx").on(table.providerId),
+    index("webhook_subscription_provider_name_idx").on(table.providerName),
+  ],
+);

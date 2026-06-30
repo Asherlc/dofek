@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/node";
 import type { Database } from "dofek/db";
-import { sleepSession, sleepStage } from "dofek/db/schema";
+import { sleepSession, sleepStage } from "dofek/db/schema/activity";
 import { sql } from "drizzle-orm";
 import express, { Router } from "express";
 import { z } from "zod";
