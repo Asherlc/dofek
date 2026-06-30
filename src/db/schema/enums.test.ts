@@ -1,0 +1,60 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  activityTypeEnum,
+  foodCategoryEnum,
+  labResultStatusEnum,
+  mealEnum,
+  setTypeEnum,
+  sleepStageNameEnum,
+} from "./enums.ts";
+
+describe("schema enums", () => {
+  it("defines the meal enum values", () => {
+    expect(mealEnum.enumName).toBe("meal");
+    expect(mealEnum.enumValues).toEqual(["breakfast", "lunch", "dinner", "snack", "other"]);
+  });
+
+  it("defines food categories for standard foods, supplements, and uncategorized entries", () => {
+    expect(foodCategoryEnum.enumName).toBe("food_category");
+    expect(foodCategoryEnum.enumValues).toEqual(
+      expect.arrayContaining(["beans_and_legumes", "supplement", "other"]),
+    );
+    expect(foodCategoryEnum.enumValues).toHaveLength(19);
+  });
+
+  it("defines strength set type values", () => {
+    expect(setTypeEnum.enumName).toBe("set_type");
+    expect(setTypeEnum.enumValues).toEqual(["working", "warmup", "dropset", "failure"]);
+  });
+
+  it("defines lab result status values", () => {
+    expect(labResultStatusEnum.enumName).toBe("lab_result_status");
+    expect(labResultStatusEnum.enumValues).toEqual([
+      "final",
+      "preliminary",
+      "corrected",
+      "cancelled",
+    ]);
+  });
+
+  it("defines sleep stage name values", () => {
+    expect(sleepStageNameEnum.enumName).toBe("sleep_stage_name");
+    expect(sleepStageNameEnum.enumValues).toEqual(["deep", "light", "rem", "awake"]);
+  });
+
+  it("defines broad activity type values", () => {
+    expect(activityTypeEnum.enumName).toBe("activity_type");
+    expect(activityTypeEnum.enumValues).toEqual(
+      expect.arrayContaining([
+        "cycling",
+        "running",
+        "strength_training",
+        "yoga",
+        "swimming",
+        "other",
+      ]),
+    );
+    expect(activityTypeEnum.enumValues.length).toBeGreaterThan(100);
+  });
+});
