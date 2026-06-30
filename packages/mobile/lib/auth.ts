@@ -60,7 +60,10 @@ export async function fetchCurrentUser(serverUrl: string, token: string): Promis
       parsed.success ? parsed.data.error : `Auth bootstrap failed: ${res.status} ${res.statusText}`,
     );
   }
-  const data: unknown = await res.json();
+  const data: unknown = await res.json().catch((error: unknown) => {
+    captureException(error, { source: "auth-current-user-json" });
+    throw new Error(invalidSessionResponseMessage);
+  });
   const parsed = AuthUserSchema.safeParse(data);
   if (!parsed.success) {
     throw new Error(invalidSessionResponseMessage);

@@ -88,6 +88,37 @@ describe("auth-context", () => {
       expect(clearSessionToken).not.toHaveBeenCalled();
     });
 
+    it("retries bootstrap from the saved token after a transient failure", async () => {
+      const { getSessionToken, fetchCurrentUser } = await import("./auth");
+
+      vi.mocked(getSessionToken).mockResolvedValue("existing-token");
+      vi.mocked(fetchCurrentUser)
+        .mockRejectedValueOnce(new Error("Database unavailable"))
+        .mockResolvedValueOnce({
+          id: "user-1",
+          name: "Test User",
+          email: "test@example.com",
+        });
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      await waitFor(() => {
+        expect(result.current.bootstrapError).toBe("Database unavailable");
+      });
+
+      await act(async () => {
+        await result.current.retryBootstrap();
+      });
+
+      expect(result.current.bootstrapError).toBeNull();
+      expect(result.current.user).toEqual({
+        id: "user-1",
+        name: "Test User",
+        email: "test@example.com",
+      });
+      expect(fetchCurrentUser).toHaveBeenCalledTimes(2);
+    });
+
     it("revokes restored token when signing out after bootstrap failure", async () => {
       const { getSessionToken, fetchCurrentUser, logout: authLogout } = await import("./auth");
 

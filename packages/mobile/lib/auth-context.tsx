@@ -33,6 +33,8 @@ interface AuthState {
   onLoginSuccess: (token: string) => Promise<void>;
   /** Log out and clear session. */
   logout: () => Promise<void>;
+  /** Retry auth bootstrap after a transient restore failure. */
+  retryBootstrap: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -43,40 +45,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
 
-  // On mount, restore auth state from secure storage
-  useEffect(() => {
-    (async () => {
-      try {
-        const token = await getSessionToken();
-        if (!token) {
-          setBootstrapError(null);
-          setIsLoading(false);
-          return;
-        }
-
-        // Re-save to migrate existing tokens to AFTER_FIRST_UNLOCK accessibility
-        // so they remain readable when the app runs in the background while locked.
-        await saveSessionToken(token);
-        setSessionToken(token);
-
-        const currentUser = await fetchCurrentUser(SERVER_URL, token);
-        if (currentUser) {
-          setUser(currentUser);
-          setBootstrapError(null);
-        } else {
-          // Token expired — clear it
-          await clearSessionToken();
-          setSessionToken(null);
-          setBootstrapError(null);
-        }
-      } catch (error: unknown) {
-        captureException(error, { source: "auth-state-restore" });
-        setBootstrapError(error instanceof Error ? error.message : String(error));
-      } finally {
-        setIsLoading(false);
+  const retryBootstrap = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const token = await getSessionToken();
+      if (!token) {
+        setUser(null);
+        setSessionToken(null);
+        setBootstrapError(null);
+        return;
       }
-    })();
+
+      // Re-save to migrate existing tokens to AFTER_FIRST_UNLOCK accessibility
+      // so they remain readable when the app runs in the background while locked.
+      await saveSessionToken(token);
+      setSessionToken(token);
+
+      const currentUser = await fetchCurrentUser(SERVER_URL, token);
+      if (currentUser) {
+        setUser(currentUser);
+        setBootstrapError(null);
+      } else {
+        await clearSessionToken();
+        setUser(null);
+        setSessionToken(null);
+        setBootstrapError(null);
+      }
+    } catch (error: unknown) {
+      captureException(error, { source: "auth-state-restore" });
+      setUser(null);
+      setBootstrapError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
+
+  // On mount, restore auth state from secure storage.
+  useEffect(() => {
+    void retryBootstrap();
+  }, [retryBootstrap]);
 
   const onLoginSuccess = useCallback(async (token: string) => {
     await saveSessionToken(token);
@@ -114,8 +121,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       sessionToken,
       onLoginSuccess,
       logout,
+      retryBootstrap,
     }),
-    [user, isLoading, bootstrapError, sessionToken, onLoginSuccess, logout],
+    [user, isLoading, bootstrapError, sessionToken, onLoginSuccess, logout, retryBootstrap],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

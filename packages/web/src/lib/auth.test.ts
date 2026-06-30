@@ -93,6 +93,19 @@ describe("fetchCurrentUser", () => {
     );
   });
 
+  it("throws readable error when success response is not JSON", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse({
+        ok: true,
+        json: () => Promise.reject(new SyntaxError("Unexpected token <")),
+      }),
+    );
+
+    await expect(fetchCurrentUser()).rejects.toThrow(
+      "The server returned an invalid session response. Please try again.",
+    );
+  });
+
   it("returns user with null email", async () => {
     const user = { id: "u1", name: "Test", email: null };
     vi.mocked(fetch).mockResolvedValue(

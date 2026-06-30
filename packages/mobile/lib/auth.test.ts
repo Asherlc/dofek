@@ -163,6 +163,19 @@ describe("fetchCurrentUser", () => {
       "The server returned an invalid session response. Please try again.",
     );
   });
+
+  it("throws a readable error when success response is not JSON", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response("<html></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      }),
+    );
+
+    await expect(fetchCurrentUser("https://srv", "tok")).rejects.toThrow(
+      "The server returned an invalid session response. Please try again.",
+    );
+  });
 });
 
 describe("fetchConfiguredProviders", () => {

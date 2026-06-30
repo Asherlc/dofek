@@ -1,5 +1,6 @@
 import { type AuthUser, AuthUserSchema, type ConfiguredProviders } from "@dofek/auth/auth";
 import { z } from "zod";
+import { captureException } from "./telemetry.ts";
 
 export type { AuthUser, ConfiguredProviders, IdentityProviderName } from "@dofek/auth/auth";
 
@@ -63,7 +64,10 @@ export async function fetchCurrentUser(): Promise<AuthUser | null> {
       await getErrorMessage(res, `Auth bootstrap failed: ${res.status} ${res.statusText}`),
     );
   }
-  const data: unknown = await res.json();
+  const data: unknown = await res.json().catch((error: unknown) => {
+    captureException(error, { source: "auth-current-user-json" });
+    throw new Error(invalidSessionResponseMessage);
+  });
   const parsed = AuthUserSchema.safeParse(data);
   if (!parsed.success) {
     throw new Error(invalidSessionResponseMessage);

@@ -20,10 +20,12 @@ interface MockAuthStateValue {
   sessionToken: string | null;
   bootstrapError: string | null;
   logout: () => Promise<void>;
+  retryBootstrap: () => Promise<void>;
 }
 
-const { mockAuthState, mockLogout } = vi.hoisted(() => {
+const { mockAuthState, mockLogout, mockRetryBootstrap } = vi.hoisted(() => {
   const logout = vi.fn(async () => undefined);
+  const retryBootstrap = vi.fn(async () => undefined);
   const authState: { value: MockAuthStateValue } = {
     value: {
       user: { id: "user-1" },
@@ -32,9 +34,10 @@ const { mockAuthState, mockLogout } = vi.hoisted(() => {
       sessionToken: "session-token",
       bootstrapError: null,
       logout,
+      retryBootstrap,
     },
   };
-  return { mockAuthState: authState, mockLogout: logout };
+  return { mockAuthState: authState, mockLogout: logout, mockRetryBootstrap: retryBootstrap };
 });
 const { mockPreventAutoHideAsync, mockHideAsync } = vi.hoisted(() => ({
   mockPreventAutoHideAsync: vi.fn(() => Promise.resolve()),
@@ -182,6 +185,7 @@ describe("RootLayout background cleanup", () => {
       sessionToken: "session-token",
       bootstrapError: null,
       logout: mockLogout,
+      retryBootstrap: mockRetryBootstrap,
     };
   });
 
@@ -209,6 +213,7 @@ describe("RootLayout background cleanup", () => {
       sessionToken: null,
       bootstrapError: "Database unavailable",
       logout: mockLogout,
+      retryBootstrap: mockRetryBootstrap,
     };
     const RootLayout = await importRootLayout();
 
@@ -227,6 +232,7 @@ describe("RootLayout background cleanup", () => {
       sessionToken: null,
       bootstrapError: "Database unavailable",
       logout: mockLogout,
+      retryBootstrap: mockRetryBootstrap,
     };
     const RootLayout = await importRootLayout();
 
@@ -234,6 +240,24 @@ describe("RootLayout background cleanup", () => {
     fireEvent.click(rendered.getByText("Sign out"));
 
     expect(mockLogout).toHaveBeenCalledOnce();
+  });
+
+  it("lets users retry bootstrap failure", async () => {
+    mockAuthState.value = {
+      user: null,
+      serverUrl: "https://dofek.test",
+      isLoading: false,
+      sessionToken: null,
+      bootstrapError: "Database unavailable",
+      logout: mockLogout,
+      retryBootstrap: mockRetryBootstrap,
+    };
+    const RootLayout = await importRootLayout();
+
+    const rendered = render(<RootLayout />);
+    fireEvent.click(rendered.getByText("Try again"));
+
+    expect(mockRetryBootstrap).toHaveBeenCalledOnce();
   });
 
   it("tears down background HealthKit sync on unmount", async () => {
