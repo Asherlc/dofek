@@ -18,11 +18,14 @@ jobs:
         with:
           fetch-depth: 0
       - id: check
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "$EVENT_NAME" = "push" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
-            CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- \
+            CHANGED=$(git diff --name-only origin/$BASE_REF...HEAD -- \
               packages/mobile/ \
               packages/auth/ \
               packages/format/ \
