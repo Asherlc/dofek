@@ -174,7 +174,7 @@ const providerSyncResultSchema = z.discriminatedUnion("status", [
 ]);
 
 const triggerSyncOutputSchema = z.object({
-  jobId: z.string(),
+  jobId: z.string().optional(),
   jobIds: z.array(z.string()),
   providerJobs: z.array(providerJobOutputSchema),
   providerResults: z.array(providerSyncResultSchema),
@@ -524,7 +524,7 @@ export const syncRouter = router({
         startWorker();
       }
       return {
-        jobId: providerJobs[0]?.jobId ?? `job-${Date.now()}`,
+        jobId: providerJobs.length > 0 ? providerJobs[0].jobId : undefined,
         jobIds: providerJobs.map((job) => job.jobId),
         providerJobs,
         providerResults,
@@ -532,8 +532,12 @@ export const syncRouter = router({
     }),
 
   queueBackpressure: adminProcedure.output(queueBackpressureOutputSchema).query(async () => {
+    const providerIds = new Set([
+      ...getAllConfiguredProviderIds(),
+      ...getAllProviders().map((p) => p.id),
+    ]);
     const providerBackpressure = await Promise.all(
-      [...getAllConfiguredProviderIds()].map(async (providerId) => {
+      [...providerIds].map(async (providerId) => {
         const counts = await getProviderSyncQueue(providerId).getJobCounts(
           ...queueBackpressureStates,
         );
@@ -629,8 +633,12 @@ export const syncRouter = router({
     let jobs: Job<SyncJobData>[];
     try {
       const states: Array<"active" | "waiting" | "delayed"> = ["active", "waiting", "delayed"];
+      const providerIds = new Set([
+        ...getAllConfiguredProviderIds(),
+        ...getAllProviders().map((p) => p.id),
+      ]);
       const jobArrays: Job<SyncJobData>[][] = await Promise.all([
-        ...[...getAllConfiguredProviderIds()].map((id) => getProviderSyncQueue(id).getJobs(states)),
+        ...[...providerIds].map((id) => getProviderSyncQueue(id).getJobs(states)),
         legacySyncQueue.getJobs(states),
       ]);
       jobs = jobArrays.flat();

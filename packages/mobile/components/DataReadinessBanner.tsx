@@ -45,8 +45,8 @@ export function DataReadinessBanner({
   if (error) {
     return (
       <View style={[styles.banner, stylesByStatus.blocked]}>
-        <Text style={styles.heading}>Data readiness is unavailable</Text>
-        <Text style={styles.datasetMessage}>
+        <Text style={[styles.heading, styles.lightText]}>Data readiness is unavailable</Text>
+        <Text style={[styles.datasetMessage, styles.lightText]}>
           {error.message ?? "The data readiness check failed."}
         </Text>
       </View>
@@ -55,17 +55,33 @@ export function DataReadinessBanner({
 
   if (!data || data.overallStatus === "healthy") return null;
 
+  const isDarkBanner =
+    data.overallStatus === "syncing" ||
+    data.overallStatus === "stale" ||
+    data.overallStatus === "blocked";
   const relevantDatasets = data.datasets.filter((dataset) => dataset.status !== "healthy");
 
   return (
     <View style={[styles.banner, stylesByStatus[data.overallStatus]]}>
-      <Text style={styles.heading}>{headingByStatus[data.overallStatus]}</Text>
-      {relevantDatasets.map((dataset) => (
-        <View key={dataset.key} style={styles.dataset}>
-          <Text style={styles.datasetLabel}>{dataset.label}</Text>
-          <Text style={styles.datasetMessage}>{dataset.message}</Text>
-        </View>
-      ))}
+      <Text style={[styles.heading, isDarkBanner && styles.lightText]}>
+        {headingByStatus[data.overallStatus]}
+      </Text>
+      {relevantDatasets.map((dataset) => {
+        const isDatasetDark =
+          dataset.status === "syncing" ||
+          dataset.status === "stale" ||
+          dataset.status === "blocked";
+        return (
+          <View key={dataset.key} style={styles.dataset}>
+            <Text style={[styles.datasetLabel, isDatasetDark && styles.lightText]}>
+              {dataset.label}
+            </Text>
+            <Text style={[styles.datasetMessage, isDatasetDark && styles.lightText]}>
+              {dataset.message}
+            </Text>
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -98,6 +114,9 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 13,
     lineHeight: 18,
+  },
+  lightText: {
+    color: "#ffffff",
   },
 });
 

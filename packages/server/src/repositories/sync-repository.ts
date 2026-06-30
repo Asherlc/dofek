@@ -389,38 +389,40 @@ export class SyncRepository {
     accessWindow?: AccessWindow,
     timezone = "UTC",
   ): Promise<DataHealthFreshnessRow[]> {
-    const rawFreshnessRows = await Promise.all(
-      datasets.map((dataset) =>
-        executeWithSchema(
-          this.#db,
-          dataHealthRawFreshnessRowSchema,
-          sql`SELECT count(*)::int AS "rawRows",
-                     ${sql.raw(dataset.rawLatestExpression)} AS "latestRawAt"
-              FROM ${sql.raw(dataset.rawTable)}
-              WHERE user_id = ${this.#userId}
-              ${rawAccessWindowPredicate(dataset, accessWindow, timezone)}
-              ${dataset.predicate}`,
+    const [rawFreshnessRows, readModelFreshnessRows] = await Promise.all([
+      Promise.all(
+        datasets.map((dataset) =>
+          executeWithSchema(
+            this.#db,
+            dataHealthRawFreshnessRowSchema,
+            sql`SELECT count(*)::int AS "rawRows",
+                       ${sql.raw(dataset.rawLatestExpression)} AS "latestRawAt"
+                FROM ${sql.raw(dataset.rawTable)}
+                WHERE user_id = ${this.#userId}
+                ${rawAccessWindowPredicate(dataset, accessWindow, timezone)}
+                ${dataset.predicate}`,
+          ),
         ),
       ),
-    );
-    const readModelFreshnessRows = await Promise.all(
-      datasets.map((dataset) => {
-        if (!sensorStore) return Promise.resolve([]);
-        return sensorStore.query(
-          dataHealthReadModelFreshnessRowSchema,
-          `SELECT ${dataset.readModelLatestExpression} AS latestReadModelAt
-           FROM ${dataset.readModelTable} FINAL
-           WHERE user_id = {userId:UUID}
-           ${readModelAccessWindowClause(dataset, accessWindow)}
-           ${dataset.readModelPredicate}`,
-          {
-            userId: this.#userId,
-            ...readModelAccessWindowParams(dataset, accessWindow, timezone),
-          },
-          { priority: "dashboard" },
-        );
-      }),
-    );
+      Promise.all(
+        datasets.map((dataset) => {
+          if (!sensorStore) return Promise.resolve([]);
+          return sensorStore.query(
+            dataHealthReadModelFreshnessRowSchema,
+            `SELECT ${dataset.readModelLatestExpression} AS latestReadModelAt
+             FROM ${dataset.readModelTable} FINAL
+             WHERE user_id = {userId:UUID}
+             ${readModelAccessWindowClause(dataset, accessWindow)}
+             ${dataset.readModelPredicate}`,
+            {
+              userId: this.#userId,
+              ...readModelAccessWindowParams(dataset, accessWindow, timezone),
+            },
+            { priority: "dashboard" },
+          );
+        }),
+      ),
+    ]);
 
     return datasets.map((dataset, index) => {
       const rawRow = rawFreshnessRows[index]?.[0];
