@@ -58,6 +58,8 @@
     "tailwindcss",
     "biome",
     "healthz",
+    "readyz",
+    "healthcheck",
     "biomejs",
     "vitest",
     "stripe",

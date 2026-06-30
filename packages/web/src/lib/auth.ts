@@ -1,5 +1,6 @@
-import type { AuthUser, ConfiguredProviders } from "@dofek/auth/auth";
+import { type AuthUser, AuthUserSchema, type ConfiguredProviders } from "@dofek/auth/auth";
 import { z } from "zod";
+import { captureException } from "./telemetry.ts";
 
 export type { AuthUser, ConfiguredProviders, IdentityProviderName } from "@dofek/auth/auth";
 
@@ -9,6 +10,16 @@ const passwordAuthResponseSchema = z.object({
   isNewUser: z.boolean().default(false),
   error: z.string().optional(),
 });
+
+const errorResponseSchema = z.object({ error: z.string().min(1) });
+const invalidSessionResponseMessage =
+  "The server returned an invalid session response. Please try again.";
+
+async function getErrorMessage(response: Response, fallback: string): Promise<string> {
+  const data: unknown = await response.json().catch(() => null);
+  const parsed = errorResponseSchema.safeParse(data);
+  return parsed.success ? parsed.data.error : fallback;
+}
 
 export interface PasswordAuthInput {
   email: string;
@@ -47,8 +58,22 @@ async function submitPasswordAuth(
 /** Fetch the currently authenticated user, or null if not logged in. */
 export async function fetchCurrentUser(): Promise<AuthUser | null> {
   const res = await fetch("/api/auth/me", { credentials: "include" });
-  if (!res.ok) return null;
-  return res.json();
+  if (res.status === 401 || res.status === 403) return null;
+  if (!res.ok) {
+    throw new Error(
+      await getErrorMessage(res, `Auth bootstrap failed: ${res.status} ${res.statusText}`),
+    );
+  }
+  const data: unknown = await res.json().catch((error: unknown) => {
+    captureException(error, { source: "auth-current-user-json" });
+    throw new Error(invalidSessionResponseMessage);
+  });
+  const parsed = AuthUserSchema.safeParse(data);
+  if (!parsed.success) {
+    captureException(parsed.error, { source: "auth-current-user-schema" });
+    throw new Error(invalidSessionResponseMessage);
+  }
+  return parsed.data;
 }
 
 /** Fetch the list of configured login providers (identity + data). */

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { ClickHouseActivitySensorStore } from "./clickhouse-activity-sensor-store.ts";
 
 describe("ClickHouseActivitySensorStore", () => {
@@ -20,6 +21,22 @@ describe("ClickHouseActivitySensorStore", () => {
       "33333333-3333-3333-3333-333333333333",
     ],
   };
+
+  it("passes abort signals to raw ClickHouse queries", async () => {
+    const { store, query } = makeStore([{ ok: 1 }]);
+    const abortController = new AbortController();
+
+    await store.query(z.object({ ok: z.number() }), "SELECT 1 AS ok", undefined, {
+      abortSignal: abortController.signal,
+    });
+
+    expect(query).toHaveBeenCalledWith({
+      query: "SELECT 1 AS ok",
+      format: "JSONEachRow",
+      query_params: {},
+      abort_signal: abortController.signal,
+    });
+  });
 
   it("queries activity-keyed scalar samples and materialized location samples inside the activity window", async () => {
     const { store, query } = makeStore([

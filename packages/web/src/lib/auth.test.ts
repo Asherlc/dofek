@@ -1,4 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mockCaptureException = vi.hoisted(() => vi.fn());
+
+vi.mock("./telemetry.ts", () => ({
+  captureException: mockCaptureException,
+}));
+
 import {
   confirmPasswordReset,
   fetchConfiguredProviders,
@@ -38,6 +45,7 @@ describe("fetchCurrentUser", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    mockCaptureException.mockClear();
   });
 
   it("returns user when response is ok", async () => {
@@ -55,10 +63,59 @@ describe("fetchCurrentUser", () => {
   });
 
   it("returns null when response is not ok", async () => {
-    vi.mocked(fetch).mockResolvedValue(mockResponse({ ok: false }));
+    vi.mocked(fetch).mockResolvedValue(mockResponse({ ok: false, status: 401 }));
 
     const result = await fetchCurrentUser();
     expect(result).toBeNull();
+  });
+
+  it("throws server error details when session bootstrap fails", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse({
+        ok: false,
+        status: 500,
+        statusText: "Internal Server Error",
+        json: () => Promise.resolve({ error: "Database unavailable" }),
+      }),
+    );
+
+    await expect(fetchCurrentUser()).rejects.toThrow("Database unavailable");
+  });
+
+  it("throws network errors instead of treating them as logged out", async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error("Failed to fetch"));
+
+    await expect(fetchCurrentUser()).rejects.toThrow("Failed to fetch");
+  });
+
+  it("throws readable error when success response has wrong shape", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse({
+        ok: true,
+        json: () => Promise.resolve({ wrong: "shape" }),
+      }),
+    );
+
+    await expect(fetchCurrentUser()).rejects.toThrow(
+      "The server returned an invalid session response. Please try again.",
+    );
+    expect(mockCaptureException.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+    expect(mockCaptureException.mock.calls[0]?.[1]).toEqual({
+      source: "auth-current-user-schema",
+    });
+  });
+
+  it("throws readable error when success response is not JSON", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse({
+        ok: true,
+        json: () => Promise.reject(new SyntaxError("Unexpected token <")),
+      }),
+    );
+
+    await expect(fetchCurrentUser()).rejects.toThrow(
+      "The server returned an invalid session response. Please try again.",
+    );
   });
 
   it("returns user with null email", async () => {

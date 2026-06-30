@@ -11092,3 +11092,86 @@ new incremental tables are populated.
   quiet. This fix prevents idle shutdown from creating BullMQ stalls, but a
   separate provider HTTP timeout policy may still be needed if Strava token
   refreshes can hang indefinitely.
+
+## 2026-06-30 — PR mutation jobs failed on readiness healthcheck coverage
+
+- **Symptoms:** PR
+  [#1394](https://github.com/Asherlc/dofek/pull/1394) failed
+  [`Test / Stryker (0)`](https://github.com/Asherlc/dofek/actions/runs/28452025966/job/84316896483),
+  then the aggregate
+  [`Test / Mutation Testing`](https://github.com/Asherlc/dofek/actions/runs/28452025966/job/84319541988),
+  [`Test / Test Gate`](https://github.com/Asherlc/dofek/actions/runs/28452025966/job/84319874961),
+  and
+  [`CI Gate`](https://github.com/Asherlc/dofek/actions/runs/28452025966/job/84319945320)
+  jobs.
+- **User impact:** The PR could not merge while mutation testing failed.
+- **Evidence:** The first
+  [failing CI run](https://github.com/Asherlc/dofek/actions/runs/28421719590)
+  failed during the initial dry run with `createApp returns ready when Postgres,
+  ClickHouse, and queues are reachable` and `expected "spy" to be called at
+  least once`. After that was fixed, the
+  [attached failing run](https://github.com/Asherlc/dofek/actions/runs/28452025966)
+  exposed no-coverage mutation failures in the SPA fallback exclusions in
+  `packages/server/src/index.ts` and direct-run healthcheck logic in
+  `src/jobs/worker-health.ts`.
+- **Root cause:** The `/readyz` Express route test asserted internal queue
+  spies while readiness and worker-health tests also mocked the same underlying
+  health modules, making Stryker's all-test dry run sensitive to module mock
+  state. Separately, redundant SPA fallback exclusions and the direct-run
+  worker-health path were in the mutated line ranges without focused coverage.
+- **Fix / mitigation:** Moved readiness dependency assertions into a colocated
+  `packages/server/src/lib/readiness.test.ts`, kept `index.test.ts` at the
+  route boundary by mocking `checkReadiness()`, removed redundant static
+  fallback exclusions for routes registered earlier, and added worker-health
+  tests for later queue failures, cleanup failures, direct-run Sentry setup,
+  non-direct imports, and missing `argv[1]`; see commits
+  [`042040edc`](https://github.com/Asherlc/dofek/commit/042040edc),
+  [`7a3771ce2`](https://github.com/Asherlc/dofek/commit/7a3771ce2),
+  [`97f429827`](https://github.com/Asherlc/dofek/commit/97f429827), and
+  [`e12d50417`](https://github.com/Asherlc/dofek/commit/e12d50417).
+- **Validation:** Local focused tests passed:
+  `pnpm vitest run packages/server/src/index.test.ts
+  packages/server/src/lib/readiness.test.ts src/jobs/worker-health.test.ts`.
+  Focused Stryker runs passed for `packages/server/src/lib/readiness.ts`,
+  `packages/server/src/index.ts`, and `src/jobs/worker-health.ts`; the
+  worker-health focused run reached 100% mutation score. `pnpm lint`,
+  `pnpm tsc --noEmit`, and `cd packages/server && pnpm tsc --noEmit` passed.
+  After pushing, the
+  [follow-up CI run](https://github.com/Asherlc/dofek/actions/runs/28422856473)
+  passed with no failed jobs before the baseline-only documentation update.
+- **Remaining risk:** Low. The documentation commit retriggers CI, but it does
+  not change runtime or test behavior.
+
+## 2026-06-30 — PR watchOS build failed after stale Pods cache restore
+
+- **Symptoms:** PR
+  [#1394](https://github.com/Asherlc/dofek/pull/1394) failed
+  [`Build Mobile / watchOS Build`](https://github.com/Asherlc/dofek/actions/runs/28457051177/job/84334436158).
+- **User impact:** The PR could not merge while the mobile build gate was red.
+- **Evidence:** The failing step was `cd packages/mobile/ios && pod install`
+  immediately after a `pods-watchos-v9-*` cache hit restored
+  `packages/mobile/ios/Pods`. The first fatal line was
+  `xcodebuild: error: couldn't map cache file ... /T/xcrun_db ...`, followed
+  by CocoaPods repo metadata errors and
+  `Illegal byte sequence @ io_fread - .../packages/mobile/ios/Podfile`.
+  Earlier in the same job, `pnpm expo prebuild --clean --platform ios` had
+  already completed CocoaPods installation successfully with
+  `Pod installation complete!`.
+- **Root cause:** The watchOS workflow generated the native iOS project and
+  installed Pods through Expo prebuild, then restored a cached `Pods` directory
+  over that freshly generated state and ran CocoaPods a second time. The second
+  CocoaPods invocation failed before the watchOS build started.
+- **Fix / mitigation:** Removed the watchOS-only CocoaPods cache restore and
+  redundant second `pod install`, so the watchOS simulator build uses the Pods
+  state produced by the successful Expo prebuild step.
+- **Validation:** Local workflow checks passed with `yamllint`,
+  `actionlint -shellcheck= .github/workflows/build-mobile.yml`, `pnpm lint`,
+  `pnpm tsc --noEmit`, `cd packages/server && pnpm tsc --noEmit`, and
+  `cd packages/web && pnpm tsc --noEmit`. After pushing commit
+  [`a8258ab59`](https://github.com/Asherlc/dofek/commit/a8258ab594d7ae44f6663714f4056da29c041b15),
+  the follow-up
+  [`Build Mobile / watchOS Build`](https://github.com/Asherlc/dofek/actions/runs/28457564100/job/84336739173)
+  job completed successfully.
+- **Remaining risk:** Low. The iOS archive job still has its existing Pods cache
+  path because it was not the failing action in this incident; monitor it
+  separately before changing that broader build behavior.

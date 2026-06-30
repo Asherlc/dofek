@@ -27,6 +27,7 @@ import { getSessionIdFromRequest } from "./auth/cookies.ts";
 import { validateSession } from "./auth/session.ts";
 import { getAccessWindowForUser } from "./billing/access-window-repository.ts";
 import { httpRequestDuration, registry } from "./lib/metrics.ts";
+import { checkReadiness } from "./lib/readiness.ts";
 import { initSentry, sentryErrorHandler } from "./lib/sentry.ts";
 import { logger } from "./logger.ts";
 import { createMcpRouter } from "./mcp/route.ts";
@@ -89,6 +90,11 @@ export function createApp(
   // ── Health check (before ALL middleware and other routes) ──
   app.get("/healthz", (_req, res) => {
     res.json({ status: "ok" });
+  });
+
+  app.get("/readyz", async (_req, res) => {
+    const result = await checkReadiness({ db, sensorStore });
+    res.status(result.status === "ok" ? 200 : 503).json(result);
   });
 
   setupRoutes(app, db, limitedSensorStore, options);
@@ -272,10 +278,7 @@ function setupRoutes(
           req.path.startsWith("/api/") ||
           req.path.startsWith("/auth/") ||
           req.path.startsWith("/admin/queues") ||
-          req.path.startsWith("/slack/") ||
-          req.path === "/callback" ||
-          req.path === "/healthz" ||
-          req.path === "/metrics"
+          req.path.startsWith("/slack/")
         ) {
           next();
           return;
