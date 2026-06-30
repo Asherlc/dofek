@@ -139,43 +139,47 @@ export default function TodayScreen() {
 
       {/* Recovery + Strain rings — tappable for navigation */}
       <View style={styles.ringsRow}>
-        <TouchableOpacity
-          style={styles.ringSection}
-          onPress={() => router.navigate("/(tabs)/recovery")}
-          activeOpacity={0.7}
-        >
+        <View style={styles.ringSection}>
           <ChartTitleWithTooltip
             title="Recovery"
             description="This ring visualizes your readiness score based on recovery-related signals."
             textStyle={styles.sectionLabel}
           />
-          {isLoading ? (
-            <SkeletonCircle size={180} />
-          ) : recoveryScore != null ? (
-            <RecoveryRing score={recoveryScore} size={180} />
-          ) : (
-            <View style={[styles.emptyRing, { width: 180, height: 180 }]}>
-              <Text style={styles.emptyRingText}>--</Text>
-              <Text style={styles.emptyRingSubtext}>No data yet</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.ringSection}
-          onPress={() => router.navigate("/(tabs)/strain")}
-          activeOpacity={0.7}
-        >
+          <TouchableOpacity
+            style={styles.ringTouchTarget}
+            onPress={() => router.navigate("/(tabs)/recovery")}
+            activeOpacity={0.7}
+          >
+            {isLoading ? (
+              <SkeletonCircle size={180} />
+            ) : recoveryScore != null ? (
+              <RecoveryRing score={recoveryScore} size={180} />
+            ) : (
+              <View style={[styles.emptyRing, { width: 180, height: 180 }]}>
+                <Text style={styles.emptyRingText}>--</Text>
+                <Text style={styles.emptyRingSubtext}>No data yet</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+        <View style={styles.ringSection}>
           <ChartTitleWithTooltip
             title="Strain"
             description="This gauge shows your most recent daily training strain relative to your recent baseline."
             textStyle={styles.sectionLabel}
           />
-          {isLoading ? (
-            <SkeletonCircle size={120} />
-          ) : (
-            <StrainGauge strain={dailyStrain} size={120} />
-          )}
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.ringTouchTarget}
+            onPress={() => router.navigate("/(tabs)/strain")}
+            activeOpacity={0.7}
+          >
+            {isLoading ? (
+              <SkeletonCircle size={120} />
+            ) : (
+              <StrainGauge strain={dailyStrain} size={120} />
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Recovery components breakdown */}
@@ -424,6 +428,9 @@ const styles = StyleSheet.create({
   ringSection: {
     alignItems: "center",
     gap: 8,
+  },
+  ringTouchTarget: {
+    alignItems: "center",
   },
   ringState: {
     width: 180,

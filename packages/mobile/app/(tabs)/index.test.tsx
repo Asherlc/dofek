@@ -290,6 +290,13 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.queryByTestId("skeleton-circle")).toBeNull();
   });
 
+  it("keeps chart tooltip buttons outside dashboard ring navigation buttons", async () => {
+    const { default: TodayScreen } = await import("./index");
+    const { container } = render(<TodayScreen />);
+
+    expect(container.querySelector("button button")).toBeNull();
+  });
+
   it("does not enable anomaly detection during the initial dashboard load", async () => {
     mockDashboardLoading = true;
     mockDashboardData = undefined;
