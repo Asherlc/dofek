@@ -70,6 +70,7 @@ import {
   findLatestExport,
   importAppleHealthFile,
   importClinicalRecords,
+  importMedicationDoseEvents,
   readZipEntries,
   runImport,
 } from "./import.ts";
@@ -390,6 +391,7 @@ describe("importAppleHealthFile", () => {
     const result = await importAppleHealthFile(db, zipPath, new Date("2026-01-01"));
 
     expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(1);
     const allValuesCalls = spies.values.mock.calls.map(([values]) => values);
     const doseEventBatch = allValuesCalls.find((values) =>
       Array.isArray(values) ? values.some((value) => value.medicationName === "rxnorm-123") : false,
@@ -446,6 +448,244 @@ describe("importAppleHealthFile", () => {
       }),
     ]);
     expect(spies.onConflictDoNothing).toHaveBeenCalled();
+  });
+
+  it("uses display name and normalized fallback fields for medication dose events", async () => {
+    const zipPath = createClinicalZip(tmpDir, "dose-event-display-name", [
+      {
+        name: "MedicationDoseEvent-001.json",
+        content: JSON.stringify({
+          startDate: "2026-06-29T15:30:00.000Z",
+          scheduledDate: "   ",
+          logStatus: " paused ",
+          medicationConceptIdentifier: "   ",
+          medicationDisplayName: "  Vitamin D  ",
+          sourceName: "   ",
+        }),
+      },
+    ]);
+    const { db, spies } = createRunImportMockDb();
+
+    const result = await importAppleHealthFile(db, zipPath, new Date("2026-01-01"));
+
+    expect(result.errors).toHaveLength(0);
+    const allValuesCalls = spies.values.mock.calls.map(([values]) => values);
+    const doseEventBatch = allValuesCalls.find((values) =>
+      Array.isArray(values) ? values.some((value) => value.medicationName === "Vitamin D") : false,
+    );
+    expect(doseEventBatch).toEqual([
+      expect.objectContaining({
+        externalId:
+          "apple-health-medication-dose:2026-06-29T15:30:00.000Z:unscheduled:Vitamin D:paused",
+        medicationName: "Vitamin D",
+        medicationConceptId: null,
+        doseStatus: "paused",
+        sourceName: null,
+      }),
+    ]);
+  });
+
+  it("maps string, custom, and unknown medication dose statuses from Apple Health", async () => {
+    const zipPath = createClinicalZip(tmpDir, "dose-event-string-statuses", [
+      {
+        name: "MedicationDoseEvent-001.json",
+        content: JSON.stringify({
+          uuid: "dose-string-taken",
+          startDate: "2026-06-29T15:30:00.000Z",
+          logStatus: "1",
+          medicationConceptIdentifier: "rxnorm-taken",
+        }),
+      },
+      {
+        name: "MedicationDoseEvent-002.json",
+        content: JSON.stringify({
+          uuid: "dose-string-skipped",
+          startDate: "2026-06-29T16:30:00.000Z",
+          logStatus: "2",
+          medicationConceptIdentifier: "rxnorm-skipped",
+        }),
+      },
+      {
+        name: "MedicationDoseEvent-003.json",
+        content: JSON.stringify({
+          uuid: "dose-custom-status",
+          startDate: "2026-06-29T17:30:00.000Z",
+          logStatus: " deferred ",
+          medicationConceptIdentifier: "rxnorm-deferred",
+        }),
+      },
+      {
+        name: "MedicationDoseEvent-004.json",
+        content: JSON.stringify({
+          uuid: "dose-unknown-status",
+          startDate: "2026-06-29T18:30:00.000Z",
+          logStatus: 3,
+          medicationConceptIdentifier: "rxnorm-unknown",
+        }),
+      },
+    ]);
+    const { db, spies } = createRunImportMockDb();
+
+    const result = await importMedicationDoseEvents(db, "apple_health", zipPath);
+
+    expect(result).toEqual({ inserted: 4, skipped: 0, errors: [] });
+    const doseEventBatch = spies.values.mock.calls.find(([values]) =>
+      Array.isArray(values)
+        ? values.some((value) => value.externalId === "dose-string-taken")
+        : false,
+    )?.[0];
+    expect(doseEventBatch).toHaveLength(4);
+    expect(doseEventBatch).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ externalId: "dose-string-taken", doseStatus: "taken" }),
+        expect.objectContaining({ externalId: "dose-string-skipped", doseStatus: "skipped" }),
+        expect.objectContaining({ externalId: "dose-custom-status", doseStatus: "deferred" }),
+        expect.objectContaining({ externalId: "dose-unknown-status", doseStatus: "unknown" }),
+      ]),
+    );
+  });
+
+  it("ignores zip entries that are not medication dose JSON files", async () => {
+    const zipPath = createClinicalZip(tmpDir, "dose-event-entry-filter", [
+      {
+        name: "MedicationDoseEvent-001.json",
+        content: JSON.stringify({
+          uuid: "dose-valid-entry",
+          startDate: "2026-06-29T15:30:00.000Z",
+          medicationConceptIdentifier: "rxnorm-valid",
+        }),
+      },
+      {
+        name: "Observation-001.json",
+        content: "{not-json",
+      },
+      {
+        name: "MedicationDoseEvent-ignored.txt",
+        content: "{not-json",
+      },
+    ]);
+    const { db, spies } = createRunImportMockDb();
+
+    const result = await importMedicationDoseEvents(db, "apple_health", zipPath);
+
+    expect(result).toEqual({ inserted: 1, skipped: 0, errors: [] });
+    expect(spies.values).toHaveBeenCalledTimes(1);
+    expect(spies.values.mock.calls[0]?.[0]).toEqual([
+      expect.objectContaining({ externalId: "dose-valid-entry" }),
+    ]);
+  });
+
+  it("inserts medication dose events in 500-row batches", async () => {
+    const doseEventFiles = Array.from({ length: 501 }, (_, index) => ({
+      name: `MedicationDoseEvent-${String(index).padStart(3, "0")}.json`,
+      content: JSON.stringify({
+        uuid: `dose-batch-${index}`,
+        startDate: new Date(Date.UTC(2026, 5, 29, 15, index)).toISOString(),
+        medicationConceptIdentifier: "rxnorm-batch",
+      }),
+    }));
+    const zipPath = createClinicalZip(tmpDir, "dose-event-batches", doseEventFiles);
+    const { db, spies } = createRunImportMockDb();
+
+    const result = await importMedicationDoseEvents(db, "apple_health", zipPath);
+
+    expect(result).toEqual({ inserted: 501, skipped: 0, errors: [] });
+    expect(spies.values).toHaveBeenCalledTimes(2);
+    expect(spies.values.mock.calls[0]?.[0]).toHaveLength(500);
+    expect(spies.values.mock.calls[1]?.[0]).toHaveLength(1);
+  });
+
+  it("returns zero medication dose counts when the export contains no dose files", async () => {
+    const zipPath = createEmptyZip(tmpDir, "dose-events-empty");
+    const { db, spies } = createRunImportMockDb();
+
+    const result = await importMedicationDoseEvents(db, "apple_health", zipPath);
+
+    expect(result).toEqual({ inserted: 0, skipped: 0, errors: [] });
+    expect(spies.insertFn).not.toHaveBeenCalled();
+  });
+
+  it("reports medication dose parse errors without inserting invalid dose rows", async () => {
+    const zipPath = createClinicalZip(tmpDir, "dose-event-invalid-json", [
+      {
+        name: "MedicationDoseEvent-001.json",
+        content: "{not-json",
+      },
+    ]);
+    const { db, spies } = createRunImportMockDb();
+
+    const result = await importMedicationDoseEvents(db, "apple_health", zipPath);
+
+    expect(result.inserted).toBe(0);
+    expect(result.skipped).toBe(0);
+    expect(result.errors).toEqual([
+      expect.objectContaining({
+        message: expect.stringContaining("MedicationDoseEvent"),
+      }),
+    ]);
+    expect(result.errors[0]?.message).toContain("MedicationDoseEvent-001.json");
+    expect(spies.insertFn).not.toHaveBeenCalled();
+  });
+
+  it("propagates invalid medication dose dates into the import result", async () => {
+    const zipPath = createClinicalZip(tmpDir, "dose-event-invalid-date", [
+      {
+        name: "MedicationDoseEvent-001.json",
+        content: JSON.stringify({
+          uuid: "dose-invalid-date",
+          startDate: "not-a-date",
+          logStatus: 1,
+          medicationConceptIdentifier: "rxnorm-123",
+        }),
+      },
+      {
+        name: "MedicationDoseEvent-002.json",
+        content: JSON.stringify({
+          uuid: "dose-invalid-date-type",
+          startDate: 123,
+          logStatus: 1,
+          medicationConceptIdentifier: "rxnorm-456",
+        }),
+      },
+    ]);
+    const { db } = createRunImportMockDb();
+
+    const result = await importAppleHealthFile(db, zipPath, new Date("2026-01-01"));
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(2);
+    expect(result.errors.map((error) => error.message)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "MedicationDoseEvent apple_health_export/clinical-records/MedicationDoseEvent-001.json: Invalid medication dose event startDate: not-a-date",
+        ),
+        expect.stringContaining("MedicationDoseEvent-002.json"),
+      ]),
+    );
+    expect(result.errors[1]?.message).toContain("Expected string");
+  });
+
+  it("requires token user context for medication dose imports", async () => {
+    vi.resetModules();
+    vi.doMock("../../db/token-user-context.ts", () => ({
+      getTokenUserId: () => null,
+      runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
+    }));
+    const { importMedicationDoseEvents: importMedicationDoseEventsWithoutUser } = await import(
+      "./import.ts"
+    );
+    const zipPath = createEmptyZip(tmpDir, "dose-event-no-user");
+    const { db } = createRunImportMockDb();
+
+    await expect(
+      importMedicationDoseEventsWithoutUser(db, "apple_health", zipPath),
+    ).rejects.toThrow("apple-health medication dose import requires user context");
+
+    vi.doMock("../../db/token-user-context.ts", () => ({
+      getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
+      runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
+    }));
+    vi.resetModules();
   });
 });
 

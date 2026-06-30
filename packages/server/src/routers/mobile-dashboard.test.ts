@@ -580,6 +580,10 @@ describe("mobileDashboard.dashboard", () => {
 
   it("logs dashboard timing breakdowns for performance diagnosis", async () => {
     vi.mocked(logger.info).mockClear();
+    const performanceNow = vi
+      .spyOn(performance, "now")
+      .mockReturnValueOnce(1000)
+      .mockReturnValueOnce(1246);
     const execute = vi.fn();
     execute.mockResolvedValueOnce([metricRow({ date: "2026-03-28" })]);
     execute.mockResolvedValueOnce([]);
@@ -591,11 +595,15 @@ describe("mobileDashboard.dashboard", () => {
       sensorStore: makeSensorStore(),
     });
 
-    await caller.dashboard({ endDate: "2026-03-28" });
+    try {
+      await caller.dashboard({ endDate: "2026-03-28" });
 
-    expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
-      expect.stringContaining("[mobile-dashboard] dashboard timings"),
-    );
+      expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
+        "[mobile-dashboard] dashboard timings userId=user-1 endDate=2026-03-28 total=246ms",
+      );
+    } finally {
+      performanceNow.mockRestore();
+    }
   });
 
   it("builds sleep need from exactly seven high-HRV nights", async () => {
