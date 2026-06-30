@@ -5,6 +5,9 @@ const {
   mockAdd,
   mockGetJob,
   mockGetJobs,
+  mockGetJobCounts,
+  mockGetProviderSyncQueue,
+  mockImportQueueGetJobCounts,
   mockGetAllProviders,
   mockGetSyncProviders,
   mockRegisterProvider,
@@ -16,6 +19,14 @@ const {
   mockAdd: vi.fn().mockResolvedValue({ id: "job-123" }),
   mockGetJob: vi.fn(),
   mockGetJobs: vi.fn().mockResolvedValue([]),
+  mockGetJobCounts: vi.fn(),
+  mockGetProviderSyncQueue: vi.fn((id: string) => ({
+    add: mockAdd,
+    getJob: mockGetJob,
+    getJobs: mockGetJobs,
+    getJobCounts: (...states: string[]) => mockGetJobCounts(id, states),
+  })),
+  mockImportQueueGetJobCounts: vi.fn(),
   mockGetAllProviders: vi.fn(() => []),
   mockGetSyncProviders: vi.fn(() => []),
   mockRegisterProvider: vi.fn(),
@@ -51,21 +62,22 @@ vi.mock("dofek/jobs/queues", () => ({
     removeOnComplete: { age: 86_400, count: 1_000 },
     removeOnFail: { age: 604_800, count: 1_000 },
   },
+  IMPORT_QUEUE: "import",
   createSyncQueue: vi.fn(() => ({
     add: mockAdd,
     getJob: mockGetJob,
     getJobs: mockGetJobs,
   })),
+  createImportQueue: vi.fn(() => ({
+    getJobCounts: mockImportQueueGetJobCounts,
+  })),
   createProviderSyncQueue: vi.fn(() => ({
     add: mockAdd,
     getJob: mockGetJob,
     getJobs: mockGetJobs,
+    getJobCounts: (...states: string[]) => mockGetJobCounts("created-provider", states),
   })),
-  getProviderSyncQueue: vi.fn(() => ({
-    add: mockAdd,
-    getJob: mockGetJob,
-    getJobs: mockGetJobs,
-  })),
+  getProviderSyncQueue: mockGetProviderSyncQueue,
   providerSyncQueueName: vi.fn((id: string) => `sync-${id}`),
 }));
 
@@ -193,6 +205,18 @@ describe("syncRouter", () => {
     vi.clearAllMocks();
     mockRegisterProvider.mockImplementation(() => undefined);
     mockVeloHeroProvider.mockImplementation(() => ({ id: "velohero" }));
+    mockGetProviderSyncQueue.mockImplementation((id: string) => ({
+      add: mockAdd,
+      getJob: mockGetJob,
+      getJobs: mockGetJobs,
+      getJobCounts: (...states: string[]) => mockGetJobCounts(id, states),
+    }));
+    mockImportQueueGetJobCounts.mockResolvedValue({
+      waiting: 0,
+      active: 0,
+      delayed: 0,
+      failed: 0,
+    });
   });
 
   describe("ensureProvidersRegistered", () => {
@@ -723,6 +747,179 @@ describe("syncRouter", () => {
       );
     });
 
+    it("returns per-provider outcomes when one sync-all provider is rate limited", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "garmin",
+          name: "Garmin",
+          validate: () => null,
+          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+        },
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          validate: () => null,
+          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+        },
+      ]);
+      const enqueueSpy = vi
+        .spyOn(enqueueSyncJobModule, "enqueueSyncJob")
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(Object.assign({ id: "job-wahoo" }, { alreadyQueued: false }));
+
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            .mockResolvedValueOnce([{ provider_id: "garmin" }, { provider_id: "wahoo" }]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.triggerSync({ sinceDays: 1 });
+      enqueueSpy.mockRestore();
+
+      expect(result.providerResults).toEqual([
+        {
+          providerId: "garmin",
+          status: "skippedCooldown",
+          message: "Provider sync skipped: rate-limit cooldown active",
+        },
+        {
+          providerId: "wahoo",
+          status: "started",
+          jobId: "wahoo:job-wahoo",
+          queueName: "sync-wahoo",
+        },
+      ]);
+      expect(result.providerJobs).toEqual([
+        { providerId: "wahoo", jobId: "wahoo:job-wahoo", queueName: "sync-wahoo" },
+      ]);
+      expect(result.jobIds).toEqual(["wahoo:job-wahoo"]);
+    });
+
+    it("returns skippedCooldown for a single provider instead of throwing rate limit errors", async () => {
+      mockGetAllProviders.mockReturnValue([{ id: "garmin", name: "Garmin", validate: () => null }]);
+      const enqueueSpy = vi
+        .spyOn(enqueueSyncJobModule, "enqueueSyncJob")
+        .mockResolvedValueOnce(null);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.triggerSync({ providerId: "garmin" });
+      enqueueSpy.mockRestore();
+
+      expect(result.providerResults).toEqual([
+        {
+          providerId: "garmin",
+          status: "skippedCooldown",
+          message: "Provider sync skipped: rate-limit cooldown active",
+        },
+      ]);
+      expect(result.providerJobs).toEqual([]);
+      expect(result.jobIds).toEqual([]);
+    });
+
+    it("reports an already queued provider without failing sync all", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "whoop",
+          name: "WHOOP",
+          validate: () => null,
+          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+        },
+      ]);
+      mockGetJob.mockResolvedValueOnce({
+        id: "job-whoop",
+        getState: vi.fn().mockResolvedValue("waiting"),
+        remove: vi.fn(),
+      });
+
+      const caller = createCaller({
+        db: {
+          execute: vi.fn().mockResolvedValueOnce([{ provider_id: "whoop" }]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.triggerSync({ sinceDays: 1 });
+
+      expect(result.providerResults).toEqual([
+        {
+          providerId: "whoop",
+          status: "alreadyQueued",
+          jobId: "whoop:job-whoop",
+          queueName: "sync-whoop",
+        },
+      ]);
+      expect(result.providerJobs).toEqual([
+        { providerId: "whoop", jobId: "whoop:job-whoop", queueName: "sync-whoop" },
+      ]);
+      expect(result.jobIds).toEqual(["whoop:job-whoop"]);
+      expect(mockAdd).not.toHaveBeenCalled();
+    });
+
+    it("reports a failed provider without hiding successful providers", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "polar",
+          name: "Polar",
+          validate: () => null,
+          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+        },
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          validate: () => null,
+          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+        },
+      ]);
+      const enqueueSpy = vi
+        .spyOn(enqueueSyncJobModule, "enqueueSyncJob")
+        .mockRejectedValueOnce(new Error("provider queue unavailable"))
+        .mockResolvedValueOnce(Object.assign({ id: "job-wahoo" }, { alreadyQueued: false }));
+
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            .mockResolvedValueOnce([{ provider_id: "polar" }, { provider_id: "wahoo" }]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.triggerSync({ sinceDays: 1 });
+      enqueueSpy.mockRestore();
+
+      expect(result.providerResults).toEqual([
+        {
+          providerId: "polar",
+          status: "failed",
+          message: "provider queue unavailable",
+        },
+        {
+          providerId: "wahoo",
+          status: "started",
+          jobId: "wahoo:job-wahoo",
+          queueName: "sync-wahoo",
+        },
+      ]);
+      expect(result.providerJobs).toEqual([
+        { providerId: "wahoo", jobId: "wahoo:job-wahoo", queueName: "sync-wahoo" },
+      ]);
+      expect(result.jobIds).toEqual(["wahoo:job-wahoo"]);
+      expect(mockCaptureException).toHaveBeenCalledWith(
+        expect.objectContaining({ message: "provider queue unavailable" }),
+      );
+    });
+
     it("excludes unconnected providers from sync-all fan-out", async () => {
       mockGetAllProviders.mockReturnValue([
         {
@@ -993,9 +1190,11 @@ describe("syncRouter", () => {
       expect(result.providerJobs[0]?.providerId).toBe("wahoo");
     });
 
-    it("returns TOO_MANY_REQUESTS when sync enqueue is skipped for rate-limit cooldown", async () => {
+    it("returns skippedCooldown when sync enqueue is skipped for rate-limit cooldown", async () => {
       mockGetAllProviders.mockReturnValue([{ id: "wahoo", name: "Wahoo", validate: () => null }]);
-      vi.spyOn(enqueueSyncJobModule, "enqueueSyncJob").mockResolvedValueOnce(null);
+      const enqueueSpy = vi
+        .spyOn(enqueueSyncJobModule, "enqueueSyncJob")
+        .mockResolvedValueOnce(null);
 
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -1003,10 +1202,93 @@ describe("syncRouter", () => {
         timezone: "UTC",
       });
 
-      await expect(caller.triggerSync({ providerId: "wahoo" })).rejects.toMatchObject({
-        code: "TOO_MANY_REQUESTS",
-        message: "Provider wahoo sync skipped: rate-limit cooldown active",
+      const result = await caller.triggerSync({ providerId: "wahoo" });
+      enqueueSpy.mockRestore();
+
+      expect(result.providerResults).toEqual([
+        {
+          providerId: "wahoo",
+          status: "skippedCooldown",
+          message: "Provider sync skipped: rate-limit cooldown active",
+        },
+      ]);
+    });
+  });
+
+  describe("queueBackpressure", () => {
+    it("returns counts for provider sync queues and the import queue", async () => {
+      mockGetJobCounts.mockImplementation((providerId: string) => {
+        if (providerId === "garmin") {
+          return Promise.resolve({ waiting: 2, active: 1, delayed: 3, failed: 4 });
+        }
+        if (providerId === "strava") {
+          return Promise.resolve({ waiting: 5, active: 0, delayed: 1, failed: 0 });
+        }
+        return Promise.resolve({ waiting: 0, active: 0, delayed: 0, failed: 0 });
       });
+      mockImportQueueGetJobCounts.mockResolvedValueOnce({
+        waiting: 7,
+        active: 1,
+        delayed: 0,
+        failed: 2,
+      });
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.queueBackpressure();
+
+      expect(result).toEqual([
+        {
+          queueName: "sync-strava",
+          providerId: "strava",
+          waiting: 5,
+          active: 0,
+          delayed: 1,
+          failed: 0,
+        },
+        {
+          queueName: "sync-garmin",
+          providerId: "garmin",
+          waiting: 2,
+          active: 1,
+          delayed: 3,
+          failed: 4,
+        },
+        {
+          queueName: "sync-whoop",
+          providerId: "whoop",
+          waiting: 0,
+          active: 0,
+          delayed: 0,
+          failed: 0,
+        },
+        {
+          queueName: "import",
+          waiting: 7,
+          active: 1,
+          delayed: 0,
+          failed: 2,
+        },
+      ]);
+      expect(mockGetProviderSyncQueue).toHaveBeenCalledWith("strava");
+      expect(mockGetProviderSyncQueue).toHaveBeenCalledWith("garmin");
+      expect(mockGetProviderSyncQueue).toHaveBeenCalledWith("whoop");
+      expect(mockGetJobCounts).toHaveBeenCalledWith("strava", [
+        "waiting",
+        "active",
+        "delayed",
+        "failed",
+      ]);
+      expect(mockImportQueueGetJobCounts).toHaveBeenCalledWith(
+        "waiting",
+        "active",
+        "delayed",
+        "failed",
+      );
     });
   });
 

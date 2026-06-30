@@ -202,6 +202,7 @@ describe("enqueueSyncJobWithRequestDedup", () => {
       expect.objectContaining({ jobId: expect.any(String) }),
     );
     expect(result).toBe(newJob);
+    expect(result?.alreadyQueued).toBe(false);
   });
 
   it("returns the existing job when it is in a pending state", async () => {
@@ -223,6 +224,7 @@ describe("enqueueSyncJobWithRequestDedup", () => {
     expect(getJob).toHaveBeenCalledOnce();
     expect(addJob).not.toHaveBeenCalled();
     expect(result).toBe(existing);
+    expect(result?.alreadyQueued).toBe(true);
   });
 
   it("removes completed jobs and re-adds with the same jobId", async () => {
