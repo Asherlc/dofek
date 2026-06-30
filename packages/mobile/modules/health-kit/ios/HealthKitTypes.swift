@@ -110,6 +110,18 @@ let readTypes: Set<HKObjectType> = {
     return types
 }()
 
+/// HealthKit sample types that should wake the app for background sync.
+let backgroundDeliveryTypes: Set<HKSampleType> = {
+    var types = Set<HKSampleType>()
+
+    for type in readTypes {
+        guard let sampleType = type as? HKSampleType else { continue }
+        types.insert(sampleType)
+    }
+
+    return types
+}()
+
 /// Types we want to write (dietary data back to HealthKit)
 let writeTypes: Set<HKSampleType> = {
     var types = Set<HKSampleType>()

@@ -118,6 +118,34 @@ final class HealthKitTypesTests: XCTestCase {
         XCTAssertEqual(readTypes.count, expectedCount)
     }
 
+    // MARK: - backgroundDeliveryTypes
+
+    func testBackgroundDeliveryTypesContainsSyncedTypes() {
+        XCTAssertTrue(backgroundDeliveryTypes.contains(HKQuantityType.quantityType(forIdentifier: .stepCount)!))
+        XCTAssertTrue(backgroundDeliveryTypes.contains(HKQuantityType.quantityType(forIdentifier: .heartRate)!))
+        XCTAssertTrue(backgroundDeliveryTypes.contains(HKCategoryType.categoryType(forIdentifier: .sleepAnalysis)!))
+        XCTAssertTrue(backgroundDeliveryTypes.contains(HKWorkoutType.workoutType()))
+        XCTAssertTrue(backgroundDeliveryTypes.contains(HKSeriesType.workoutRoute()))
+    }
+
+    func testBackgroundDeliveryTypesContainsEveryReadableSampleType() {
+        let readableSampleTypes = Set(readTypes.compactMap { $0 as? HKSampleType })
+
+        XCTAssertEqual(backgroundDeliveryTypes, readableSampleTypes)
+        XCTAssertTrue(
+            backgroundDeliveryTypes.contains(HKCategoryType.categoryType(forIdentifier: .menstrualFlow)!)
+        )
+        #if os(iOS)
+        XCTAssertTrue(
+            backgroundDeliveryTypes.contains(HKClinicalType.clinicalType(forIdentifier: .labResultRecord)!)
+        )
+        #endif
+    }
+
+    func testBackgroundDeliveryTypesTotalCount() {
+        XCTAssertEqual(backgroundDeliveryTypes.count, readTypes.compactMap { $0 as? HKSampleType }.count)
+    }
+
     // MARK: - writeTypes
 
     func testWriteTypesContainsDietaryTypes() {
