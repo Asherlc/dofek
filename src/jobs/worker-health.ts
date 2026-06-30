@@ -55,16 +55,11 @@ function firstRejectedReason(results: PromiseSettledResult<unknown>[]): unknown 
 
 async function defaultProcessArgumentsProvider(): Promise<string[]> {
   if (process.env.WORKER_HEALTH_PROCESS_ARGS) {
-    return process.env.WORKER_HEALTH_PROCESS_ARGS.split("\n")
-      .map((processArguments) => processArguments.trim())
-      .filter((processArguments) => processArguments.length > 0);
+    return process.env.WORKER_HEALTH_PROCESS_ARGS.split("\n");
   }
 
-  const { stdout } = await execFileAsync("ps", ["-eo", "args="], { encoding: "utf8" });
-  return String(stdout)
-    .split("\n")
-    .map((processArguments) => processArguments.trim())
-    .filter((processArguments) => processArguments.length > 0);
+  const { stdout } = await execFileAsync("ps", ["-o", "args"], { encoding: "utf8" });
+  return String(stdout).split("\n");
 }
 
 async function checkWorkerProcessRunning(

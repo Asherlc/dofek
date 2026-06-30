@@ -11095,15 +11095,24 @@ new incremental tables are populated.
 
 ## 2026-06-30 — PR mutation jobs failed on readiness healthcheck coverage
 
-- **Symptoms:** PR #1394 failed `Test / Stryker (0)`, `Test / Stryker (1)`,
-  `Test / Stryker (3)`, then the aggregate `Test / Mutation Testing`,
-  `Test / Test Gate`, and `CI Gate` jobs.
+- **Symptoms:** PR
+  [#1394](https://github.com/Asherlc/dofek/pull/1394) failed
+  [`Test / Stryker (0)`](https://github.com/Asherlc/dofek/actions/runs/28452025966/job/84316896483),
+  then the aggregate
+  [`Test / Mutation Testing`](https://github.com/Asherlc/dofek/actions/runs/28452025966/job/84319541988),
+  [`Test / Test Gate`](https://github.com/Asherlc/dofek/actions/runs/28452025966/job/84319874961),
+  and
+  [`CI Gate`](https://github.com/Asherlc/dofek/actions/runs/28452025966/job/84319945320)
+  jobs.
 - **User impact:** The PR could not merge while mutation testing failed.
-- **Evidence:** The first attached Stryker logs failed during the initial dry
-  run with `createApp returns ready when Postgres, ClickHouse, and queues are
-  reachable` and `expected "spy" to be called at least once`. After that was
-  fixed, CI exposed no-coverage mutation failures in the SPA fallback exclusions
-  in `packages/server/src/index.ts` and direct-run healthcheck logic in
+- **Evidence:** The first
+  [failing CI run](https://github.com/Asherlc/dofek/actions/runs/28421719590)
+  failed during the initial dry run with `createApp returns ready when Postgres,
+  ClickHouse, and queues are reachable` and `expected "spy" to be called at
+  least once`. After that was fixed, the
+  [attached failing run](https://github.com/Asherlc/dofek/actions/runs/28452025966)
+  exposed no-coverage mutation failures in the SPA fallback exclusions in
+  `packages/server/src/index.ts` and direct-run healthcheck logic in
   `src/jobs/worker-health.ts`.
 - **Root cause:** The `/readyz` Express route test asserted internal queue
   spies while readiness and worker-health tests also mocked the same underlying
@@ -11115,7 +11124,11 @@ new incremental tables are populated.
   route boundary by mocking `checkReadiness()`, removed redundant static
   fallback exclusions for routes registered earlier, and added worker-health
   tests for later queue failures, cleanup failures, direct-run Sentry setup,
-  non-direct imports, and missing `argv[1]`.
+  non-direct imports, and missing `argv[1]`; see commits
+  [`042040edc`](https://github.com/Asherlc/dofek/commit/042040edc),
+  [`7a3771ce2`](https://github.com/Asherlc/dofek/commit/7a3771ce2),
+  [`97f429827`](https://github.com/Asherlc/dofek/commit/97f429827), and
+  [`e12d50417`](https://github.com/Asherlc/dofek/commit/e12d50417).
 - **Validation:** Local focused tests passed:
   `pnpm vitest run packages/server/src/index.test.ts
   packages/server/src/lib/readiness.test.ts src/jobs/worker-health.test.ts`.
@@ -11123,7 +11136,8 @@ new incremental tables are populated.
   `packages/server/src/index.ts`, and `src/jobs/worker-health.ts`; the
   worker-health focused run reached 100% mutation score. `pnpm lint`,
   `pnpm tsc --noEmit`, and `cd packages/server && pnpm tsc --noEmit` passed.
-  After pushing, GitHub reported 89 passed checks and 0 failed checks for the
-  PR before this baseline-only documentation update.
+  After pushing, the
+  [follow-up CI run](https://github.com/Asherlc/dofek/actions/runs/28422856473)
+  passed with no failed jobs before the baseline-only documentation update.
 - **Remaining risk:** Low. The documentation commit retriggers CI, but it does
   not change runtime or test behavior.

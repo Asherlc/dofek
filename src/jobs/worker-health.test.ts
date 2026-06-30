@@ -47,6 +47,7 @@ const { checkWorkerQueues } = await import("./worker-health.ts");
 describe("checkWorkerQueues", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
     mockQueueWaitUntilReady.mockResolvedValue(undefined);
     mockQueueGetJobCounts.mockResolvedValue({ waiting: 0 });
     mockQueueClose.mockResolvedValue(undefined);
@@ -90,6 +91,25 @@ describe("checkWorkerQueues", () => {
     expect(mockQueueClose).toHaveBeenCalledTimes(6);
   });
 
+  it("checks queues when the required worker process is running", async () => {
+    await expect(
+      checkWorkerQueues({
+        requireWorkerProcess: true,
+        processArgumentsProvider: async () => [
+          "node src/jobs/worker-health.ts",
+          "node --experimental-strip-types src/jobs/worker.ts",
+        ],
+      }),
+    ).resolves.toEqual({
+      status: "ok",
+      queues: "ok",
+    });
+
+    expect(mockQueueWaitUntilReady).toHaveBeenCalledTimes(6);
+    expect(mockQueueGetJobCounts).toHaveBeenCalledTimes(6);
+    expect(mockQueueClose).toHaveBeenCalledTimes(6);
+  });
+
   it("fails when queue cleanup fails", async () => {
     mockQueueClose.mockRejectedValueOnce(new Error("close failed"));
 
@@ -105,6 +125,21 @@ describe("checkWorkerQueues", () => {
     expect(mockQueueClose).toHaveBeenCalledTimes(6);
   });
 
+  it("clears the timeout after a successful queue check", async () => {
+    const clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout");
+
+    try {
+      await expect(checkWorkerQueues({ timeoutMs: 1_000 })).resolves.toEqual({
+        status: "ok",
+        queues: "ok",
+      });
+
+      expect(clearTimeoutSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      clearTimeoutSpy.mockRestore();
+    }
+  });
+
   it("fails when required worker process is not running", async () => {
     await expect(
       checkWorkerQueues({
@@ -113,6 +148,31 @@ describe("checkWorkerQueues", () => {
       }),
     ).rejects.toThrow("worker process is not running");
     expect(mockQueueWaitUntilReady).not.toHaveBeenCalled();
+  });
+
+  it("uses configured process arguments when the worker process is required", async () => {
+    const originalWorkerHealthProcessArgs = process.env.WORKER_HEALTH_PROCESS_ARGS;
+
+    try {
+      process.env.WORKER_HEALTH_PROCESS_ARGS = [
+        "node src/jobs/worker-health.ts",
+        "node --experimental-strip-types src/jobs/worker.ts",
+      ].join("\n");
+
+      await expect(checkWorkerQueues({ requireWorkerProcess: true })).resolves.toEqual({
+        status: "ok",
+        queues: "ok",
+      });
+
+      expect(mockExecFile).not.toHaveBeenCalled();
+      expect(mockQueueWaitUntilReady).toHaveBeenCalledTimes(6);
+    } finally {
+      if (originalWorkerHealthProcessArgs === undefined) {
+        delete process.env.WORKER_HEALTH_PROCESS_ARGS;
+      } else {
+        process.env.WORKER_HEALTH_PROCESS_ARGS = originalWorkerHealthProcessArgs;
+      }
+    }
   });
 
   it("initializes Sentry and prints queue health when run directly", async () => {

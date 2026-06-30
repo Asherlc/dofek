@@ -14,6 +14,7 @@ const { checkReadiness } = await import("./readiness.ts");
 describe("checkReadiness", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
     mockCheckWorkerQueues.mockResolvedValue({ status: "ok", queues: "ok" });
     mockDbExecute.mockResolvedValue([{ inRecovery: false }]);
   });
@@ -54,6 +55,28 @@ describe("checkReadiness", () => {
     });
     expect(sensorStore.query).toHaveBeenCalled();
     expect(mockCheckWorkerQueues).toHaveBeenCalled();
+  });
+
+  it("returns unavailable when dependencies stall past the readiness timeout", async () => {
+    vi.useFakeTimers();
+    mockDbExecute.mockImplementationOnce(() => new Promise<never>(() => undefined));
+    mockCheckWorkerQueues.mockImplementationOnce(() => new Promise<never>(() => undefined));
+    const sensorStore = makeMockSensorStore([{ ok: 1 }]);
+    vi.mocked(sensorStore.query).mockImplementationOnce(() => new Promise<never>(() => undefined));
+    const db = { execute: mockDbExecute } satisfies ReadinessDependencies["db"];
+
+    const resultPromise = checkReadiness({ db, sensorStore });
+    await vi.advanceTimersByTimeAsync(2_500);
+
+    await expect(resultPromise).resolves.toEqual({
+      status: "error",
+      checks: {
+        postgres: "error",
+        clickhouse: "error",
+        queues: "error",
+      },
+    });
+    expect(mockCheckWorkerQueues).toHaveBeenCalledWith({ timeoutMs: 2_500 });
   });
 
   it("returns unavailable when Postgres is in recovery", async () => {

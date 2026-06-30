@@ -25,6 +25,7 @@ export interface ReadinessResult {
 const postgresReadySchema = z.object({ inRecovery: z.boolean() });
 const clickHouseReadySchema = z.object({ ok: z.union([z.number(), z.string()]) });
 const QUEUE_READINESS_TIMEOUT_MS = 2_500;
+const DEPENDENCY_READINESS_TIMEOUT_MS = 2_500;
 
 async function checkPostgres(db: ExecutableDatabase): Promise<void> {
   const [row] = await executeWithSchema(
@@ -45,6 +46,23 @@ async function checkQueues(): Promise<void> {
   await checkWorkerQueues({ timeoutMs: QUEUE_READINESS_TIMEOUT_MS });
 }
 
+async function withReadinessTimeout(promise: Promise<void>, label: string): Promise<void> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timeoutId = setTimeout(
+      () => reject(new Error(`${label} readiness timed out`)),
+      DEPENDENCY_READINESS_TIMEOUT_MS,
+    );
+  });
+  try {
+    await Promise.race([promise, timeout]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
 function statusFromResult(result: PromiseSettledResult<unknown>): "ok" | "error" {
   return result.status === "fulfilled" ? "ok" : "error";
 }
@@ -53,9 +71,9 @@ export async function checkReadiness(
   dependencies: ReadinessDependencies,
 ): Promise<ReadinessResult> {
   const [postgresResult, clickHouseResult, queueResult] = await Promise.allSettled([
-    checkPostgres(dependencies.db),
-    checkClickHouse(dependencies.sensorStore),
-    checkQueues(),
+    withReadinessTimeout(checkPostgres(dependencies.db), "Postgres"),
+    withReadinessTimeout(checkClickHouse(dependencies.sensorStore), "ClickHouse"),
+    withReadinessTimeout(checkQueues(), "Worker queue"),
   ]);
   const checks: ReadinessChecks = {
     postgres: statusFromResult(postgresResult),
