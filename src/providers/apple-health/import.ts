@@ -848,6 +848,15 @@ export async function importMedicationDoseEvents(
     throw new Error("apple-health medication dose import requires user context");
   }
 
+  await db
+    .delete(medicationDoseEvent)
+    .where(
+      and(
+        eq(medicationDoseEvent.userId, scopedUserId),
+        eq(medicationDoseEvent.providerId, providerId),
+      ),
+    );
+
   const doseEventFiles = await readZipEntries(
     zipPath,
     (name) => name.endsWith(".json") && name.includes("MedicationDoseEvent"),

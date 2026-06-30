@@ -801,6 +801,8 @@ describe("importAppleHealthFile", () => {
     const result = await importMedicationDoseEvents(db, "apple_health", zipPath);
 
     expect(result).toEqual({ inserted: 0, skipped: 0, errors: [] });
+    expect(spies.deleteFn).toHaveBeenCalledTimes(1);
+    expect(spies.deleteWhere).toHaveBeenCalledTimes(1);
     expect(spies.insertFn).not.toHaveBeenCalled();
   });
 
