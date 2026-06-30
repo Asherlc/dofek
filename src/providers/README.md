@@ -15,7 +15,7 @@ This directory contains implementations for various data providers (fitness trac
 - **HTTP Client**: A shared `HttpClient` in `http-client.ts` handles rate limiting, retries, and logging.
 - **Validation**: `validate()` may gate app-level OAuth client config, but must not gate on per-user credentials. User auth is checked at sync time via `loadTokens()`.
 - **UI visibility**: Providers that fail `validate()` are hidden until required app config is present. Users connect individually via Connect buttons.
-- **Data Mapping**: Providers transform vendor-specific JSON into Dofek's internal schema (see `src/db/schema.ts`).
+- **Data Mapping**: Providers transform vendor-specific JSON into Dofek's internal schema modules (see `src/db/schema/`).
 - **Activity absence tombstones**: Use `src/db/provider-activity-sync.ts`. Upsert activities with `upsertProviderActivity()` or `ProviderActivityListSync.upsert()`. After a completed authoritative activity-list fetch for the sync window, call `finishProviderActivityListSync()` or `ProviderActivityListSync.reconcile()`. Explicit delete/removed webhook events should call `markProviderActivityAbsent()`. Shared upserts never set `providerAbsentAt: null`; reconciliation clears tombstones for activities still present in the provider list. Do not reconcile when a provider response is partial because of rate limits, auth failures, or other fetch errors.
 
 ## Supported Providers

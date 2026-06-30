@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { dailyMetrics, sleepSession } from "../db/schema.ts";
+import { dailyMetrics, sleepSession } from "../db/schema/activity.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -325,7 +325,7 @@ describe("UltrahumanProvider.sync() (integration)", () => {
 
     try {
       // Delete stored tokens
-      const { oauthToken } = await import("../db/schema.ts");
+      const { oauthToken } = await import("../db/schema/reference.ts");
       await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "ultrahuman"));
 
       const provider = new UltrahumanProvider();

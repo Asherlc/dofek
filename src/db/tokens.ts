@@ -5,7 +5,7 @@ import {
   encryptCredentialValue,
 } from "../security/credential-encryption.ts";
 import type { SyncDatabase } from "./index.ts";
-import { oauthToken, provider } from "./schema.ts";
+import { oauthToken, provider } from "./schema/reference.ts";
 import { getTokenUserId } from "./token-user-context.ts";
 
 function resolveUserId(userId?: string): string {

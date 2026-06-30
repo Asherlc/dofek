@@ -15,7 +15,7 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
-vi.mock("dofek/db/schema", () => ({
+vi.mock("dofek/db/schema/nutrition", () => ({
   supplement: {
     userId: "user_id",
     sortOrder: "sort_order",

@@ -1,5 +1,5 @@
 import type { Server } from "node:http";
-import { TEST_USER_ID } from "dofek/db/schema";
+import { TEST_USER_ID } from "dofek/db/schema/core";
 import type { ExportJobData } from "dofek/jobs/queues";
 import { sql } from "drizzle-orm";
 import express from "express";

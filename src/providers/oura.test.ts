@@ -4,9 +4,9 @@ import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import {
   dailyMetrics as dailyMetricsTable,
-  healthEvent as healthEventTable,
   sleepSession as sleepSessionTable,
-} from "../db/schema.ts";
+} from "../db/schema/activity.ts";
+import { healthEvent as healthEventTable } from "../db/schema/clinical.ts";
 import { logger } from "../logger.ts";
 import { OuraClient } from "./oura/client.ts";
 import { ouraOAuthConfig } from "./oura/oauth.ts";

@@ -57,10 +57,10 @@ describe("db/index", () => {
 
     it("creates a drizzle instance with the pool and schema", async () => {
       const { createDatabase } = await import("./index.ts");
-      const schema = await import("./schema.ts");
+      const { drizzleSchema } = await import("./drizzle-schema.ts");
       createDatabase("postgres://localhost:5432/test");
 
-      expect(mockDrizzle).toHaveBeenCalledWith(mockPoolInstance, { schema });
+      expect(mockDrizzle).toHaveBeenCalledWith(mockPoolInstance, { schema: drizzleSchema });
     });
 
     it("reports idle pool client errors", async () => {

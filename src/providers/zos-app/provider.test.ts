@@ -14,7 +14,7 @@ const mockDb: SyncDatabase = {
   execute: vi.fn(),
 };
 
-vi.mock("../../db/schema.ts", () => ({
+vi.mock("../../db/schema/events.ts", () => ({
   imuSession: Symbol("imuSession"),
 }));
 
@@ -24,7 +24,7 @@ vi.mock("./decode.ts", () => ({
 }));
 
 const { importZosAppBin, ZosAppProvider } = await import("./provider.ts");
-const { imuSession } = await import("../../db/schema.ts");
+const { imuSession } = await import("../../db/schema/events.ts");
 
 function makeDecodedSession(overrides: Record<string, unknown> = {}) {
   return {

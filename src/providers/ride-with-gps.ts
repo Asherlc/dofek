@@ -16,7 +16,7 @@ import {
   markProviderActivityPresent,
   upsertProviderActivity,
 } from "../db/provider-activity-sync.ts";
-import { userSettings } from "../db/schema.ts";
+import { userSettings } from "../db/schema/account.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";

@@ -3,7 +3,7 @@ import { GarminConnectClient, GarminRateLimitError } from "garmin-connect/client
 import type { GarminTokens } from "garmin-connect/types";
 import type { TokenSet } from "../../auth/oauth.ts";
 import type { SyncDatabase } from "../../db/index.ts";
-import { userSettings } from "../../db/schema.ts";
+import { userSettings } from "../../db/schema/account.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import { isRetryableInfraError } from "../../lib/retryable-infra-error.ts";

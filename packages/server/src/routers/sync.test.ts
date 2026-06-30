@@ -140,7 +140,7 @@ vi.mock("dofek/providers/velohero", () => ({
 }));
 
 // Mock schema and drizzle-orm for logs query
-vi.mock("dofek/db/schema", () => ({
+vi.mock("dofek/db/schema/events", () => ({
   syncLog: {
     userId: "userId",
     syncedAt: "syncedAt",

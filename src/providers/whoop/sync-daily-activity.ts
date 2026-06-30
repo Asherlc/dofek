@@ -1,5 +1,5 @@
 import { and, eq, isNotNull } from "drizzle-orm";
-import { dailyMetrics } from "../../db/schema.ts";
+import { dailyMetrics } from "../../db/schema/activity.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { parseStrainDeepDiveSteps } from "./parsing.ts";

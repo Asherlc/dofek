@@ -1,8 +1,9 @@
 # Database Schema
 
 Canonical source-of-truth tables live in the `fitness` Postgres schema. The source of
-truth is `src/db/schema.ts` (Drizzle generates migrations from it). Rebuildable read
-models live outside `fitness`, currently in the `analytics` schema.
+truth is the domain modules under `src/db/schema/` (Drizzle generates migrations from
+them through `src/db/drizzle-schema.ts`). Rebuildable read models live outside
+`fitness`, currently in the `analytics` schema.
 
 ## Data Model Philosophy: Raw Data Only
 

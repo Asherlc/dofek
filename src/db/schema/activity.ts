@@ -1,0 +1,280 @@
+import {
+  boolean,
+  date,
+  index,
+  integer,
+  jsonb,
+  primaryKey,
+  real,
+  smallint,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
+import { fitness, resolveImplicitUserId } from "./core.ts";
+import { activityTypeEnum, setTypeEnum, sleepStageNameEnum } from "./enums.ts";
+import { exercise, provider, userProfile } from "./reference.ts";
+
+// ============================================================
+// Strength training
+// ============================================================
+
+export const strengthSet = fitness.table(
+  "strength_set",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    activityId: uuid("activity_id")
+      .notNull()
+      .references(() => activity.id, { onDelete: "cascade" }),
+    exerciseId: uuid("exercise_id")
+      .notNull()
+      .references(() => exercise.id),
+    exerciseIndex: integer("exercise_index").notNull(),
+    setIndex: integer("set_index").notNull(),
+    setType: setTypeEnum("set_type").default("working"),
+    weightKg: real("weight_kg"),
+    reps: integer("reps"),
+    distanceMeters: real("distance_meters"),
+    durationSeconds: integer("duration_seconds"),
+    strapLocation: text("strap_location"),
+    strapLocationLaterality: text("strap_location_laterality"),
+    rpe: real("rpe"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("strength_set_activity_idx").on(table.activityId)],
+);
+
+// ============================================================
+// Cardio / endurance activities
+// ============================================================
+
+export const activity = fitness.table(
+  "activity",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    userId: uuid("user_id")
+      .notNull()
+      .$defaultFn(resolveImplicitUserId)
+      .references(() => userProfile.id),
+    externalId: text("external_id"),
+    activityType: activityTypeEnum("activity_type").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    name: text("name"),
+    notes: text("notes"),
+    perceivedExertion: real("perceived_exertion"),
+    sourceName: text("source_name"),
+    timezone: text("timezone"), // IANA timezone (e.g. "America/New_York")
+    stravaId: text("strava_id"), // Strava activity ID for cross-provider linking
+    raw: jsonb("raw"),
+    providerAbsentAt: timestamp("provider_absent_at", { withTimezone: true }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("activity_provider_external_idx").on(
+      table.userId,
+      table.providerId,
+      table.externalId,
+    ),
+    index("activity_user_provider_idx").on(table.userId, table.providerId),
+  ],
+);
+
+// ============================================================
+// Sport settings — per-sport zone configuration
+// ============================================================
+
+export const sportSettings = fitness.table(
+  "sport_settings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfile.id),
+    sport: text("sport").notNull(),
+    ftp: smallint("ftp"),
+    thresholdHr: smallint("threshold_hr"),
+    thresholdPacePerKm: real("threshold_pace_per_km"),
+    powerZonePcts: jsonb("power_zone_pcts"),
+    hrZonePcts: jsonb("hr_zone_pcts"),
+    paceZonePcts: jsonb("pace_zone_pcts"),
+    effectiveFrom: date("effective_from").notNull().defaultNow(),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("sport_settings_user_sport_date_idx").on(
+      table.userId,
+      table.sport,
+      table.effectiveFrom,
+    ),
+    index("sport_settings_user_idx").on(table.userId),
+  ],
+);
+
+// ============================================================
+// Activity intervals / laps
+// ============================================================
+
+export const activityInterval = fitness.table(
+  "activity_interval",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    activityId: uuid("activity_id")
+      .notNull()
+      .references(() => activity.id, { onDelete: "cascade" }),
+    intervalIndex: integer("interval_index").notNull(),
+    label: text("label"),
+    intervalType: text("interval_type"),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("activity_interval_activity_idx").on(table.activityId, table.intervalIndex)],
+);
+
+// ============================================================
+// Daily fitness metrics
+// ============================================================
+
+export const dailyMetrics = fitness.table(
+  "daily_metrics",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    date: date("date").notNull(),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    userId: uuid("user_id")
+      .notNull()
+      .$defaultFn(resolveImplicitUserId)
+      .references(() => userProfile.id),
+    hrv: real("hrv"),
+    spo2Avg: real("spo2_avg"),
+    respiratoryRateAvg: real("respiratory_rate_avg"),
+    steps: integer("steps"),
+    activeEnergyKcal: real("active_energy_kcal"),
+    basalEnergyKcal: real("basal_energy_kcal"),
+    distanceKm: real("distance_km"), // walking + running
+    cyclingDistanceKm: real("cycling_distance_km"),
+    flightsClimbed: integer("flights_climbed"),
+    exerciseMinutes: integer("exercise_minutes"),
+    walkingSpeed: real("walking_speed"), // m/s
+    walkingStepLength: real("walking_step_length"), // cm
+    walkingDoubleSupportPct: real("walking_double_support_pct"), // percent
+    walkingAsymmetryPct: real("walking_asymmetry_pct"), // percent
+    walkingSteadiness: real("walking_steadiness"), // 0-1
+    standHours: integer("stand_hours"),
+    skinTempC: real("skin_temp_c"), // celsius (WHOOP)
+    stressHighMinutes: integer("stress_high_minutes"), // minutes of high stress (Oura)
+    recoveryHighMinutes: integer("recovery_high_minutes"), // minutes of high recovery (Oura)
+    resilienceLevel: text("resilience_level"), // e.g. "limited", "adequate", "solid", "strong", "exceptional"
+    pushCount: integer("push_count"),
+    wheelchairDistanceKm: real("wheelchair_distance_km"),
+    uvExposure: real("uv_exposure"),
+    sourceName: text("source_name"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // Business uniqueness: NULLS NOT DISTINCT index created in migration 0058
+    // (Drizzle doesn't support NULLS NOT DISTINCT natively)
+    index("daily_metrics_user_provider_idx").on(table.userId, table.providerId),
+  ],
+);
+
+// ============================================================
+// Daily metric type catalog + junction table
+// ============================================================
+
+export const dailyMetricType = fitness.table("daily_metric_type", {
+  id: text("id").primaryKey(),
+  displayName: text("display_name").notNull(),
+  unit: text("unit"),
+  category: text("category").notNull(),
+  priorityCategory: text("priority_category").notNull().default("activity"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isInteger: boolean("is_integer").notNull().default(false),
+});
+
+export const dailyMetricValue = fitness.table(
+  "daily_metric_value",
+  {
+    dailyMetricsId: uuid("daily_metrics_id")
+      .notNull()
+      .references(() => dailyMetrics.id, { onDelete: "cascade" }),
+    metricTypeId: text("metric_type_id")
+      .notNull()
+      .references(() => dailyMetricType.id),
+    value: real("value").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.dailyMetricsId, table.metricTypeId] }),
+    index("daily_metric_value_entry_idx").on(table.dailyMetricsId),
+    index("daily_metric_value_type_idx").on(table.metricTypeId),
+  ],
+);
+
+// ============================================================
+// Sleep
+// ============================================================
+
+export const sleepSession = fitness.table(
+  "sleep_session",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    providerId: text("provider_id")
+      .notNull()
+      .references(() => provider.id),
+    userId: uuid("user_id")
+      .notNull()
+      .$defaultFn(resolveImplicitUserId)
+      .references(() => userProfile.id),
+    externalId: text("external_id"),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    durationMinutes: integer("duration_minutes"),
+    deepMinutes: integer("deep_minutes"),
+    remMinutes: integer("rem_minutes"),
+    lightMinutes: integer("light_minutes"),
+    awakeMinutes: integer("awake_minutes"),
+    efficiencyPct: real("efficiency_pct"),
+    sleepType: text("sleep_type"),
+    sleepNeedBaselineMinutes: integer("sleep_need_baseline_minutes"),
+    sleepNeedFromDebtMinutes: integer("sleep_need_from_debt_minutes"),
+    sleepNeedFromStrainMinutes: integer("sleep_need_from_strain_minutes"),
+    sleepNeedFromNapMinutes: integer("sleep_need_from_nap_minutes"),
+    sourceName: text("source_name"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("sleep_session_provider_external_idx").on(
+      table.userId,
+      table.providerId,
+      table.externalId,
+    ),
+    index("sleep_session_user_provider_idx").on(table.userId, table.providerId),
+  ],
+);
+
+export const sleepStage = fitness.table(
+  "sleep_stage",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => sleepSession.id, { onDelete: "cascade" }),
+    stage: sleepStageNameEnum("stage").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    endedAt: timestamp("ended_at", { withTimezone: true }).notNull(),
+    sourceName: text("source_name"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("sleep_stage_session_idx").on(table.sessionId, table.startedAt)],
+);

@@ -3,7 +3,7 @@ import type { SQLWrapper } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { logger } from "../logger.ts";
-import * as schema from "./schema.ts";
+import { drizzleSchema as schema } from "./drizzle-schema.ts";
 
 type DrizzleDatabase = ReturnType<typeof drizzle<typeof schema>>;
 type QueryRow = Record<string, unknown>;

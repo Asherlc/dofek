@@ -1,4 +1,4 @@
-import { journalEntry, journalQuestion } from "../../db/schema.ts";
+import { journalEntry, journalQuestion } from "../../db/schema/events.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { logger } from "../../logger.ts";

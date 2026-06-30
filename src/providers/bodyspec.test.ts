@@ -51,7 +51,7 @@ vi.mock("../auth/oauth.ts", () => ({
 }));
 
 // We need to mock the Drizzle schema imports so they don't pull in the real DB
-vi.mock("../db/schema.ts", () => ({
+vi.mock("../db/schema/events.ts", () => ({
   dexaScan: {
     providerId: "provider_id",
     externalId: "external_id",

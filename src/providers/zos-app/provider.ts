@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { SyncDatabase } from "../../db/index.ts";
-import { imuSession } from "../../db/schema.ts";
+import { imuSession } from "../../db/schema/events.ts";
 import { ensureProvider } from "../../db/tokens.ts";
 import type { ImportProvider, SyncError, SyncResult } from "../types.ts";
 import { decodeBin } from "./decode.ts";

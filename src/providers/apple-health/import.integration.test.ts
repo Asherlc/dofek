@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import * as schema from "../../db/schema.ts";
+import { drizzleSchema as schema } from "../../db/drizzle-schema.ts";
 import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
 import { runWithTokenUser } from "../../db/token-user-context.ts";
 import type { MetricStreamRowInput } from "../../metric-stream/events.ts";

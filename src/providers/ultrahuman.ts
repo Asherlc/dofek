@@ -1,5 +1,5 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
-import { dailyMetrics, sleepSession } from "../db/schema.ts";
+import { dailyMetrics, sleepSession } from "../db/schema/activity.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";

@@ -3,8 +3,8 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { Client, escapeIdentifier } from "pg";
 import { GenericContainer } from "testcontainers";
+import { drizzleSchema as schema } from "./drizzle-schema.ts";
 import { createDatabase } from "./index.ts";
-import * as schema from "./schema.ts";
 
 export type TestDatabase = ReturnType<typeof createDatabase>;
 

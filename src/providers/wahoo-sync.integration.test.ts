@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { activity } from "../db/schema.ts";
+import { activity } from "../db/schema/activity.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -302,7 +302,7 @@ describe("WahooProvider.sync() (integration)", () => {
     // Clear tokens by saving then deleting — or simpler, just test with
     // a provider that tries to sync without tokens.
     // Delete existing wahoo tokens first.
-    const { oauthToken } = await import("../db/schema.ts");
+    const { oauthToken } = await import("../db/schema/reference.ts");
     const { eq } = await import("drizzle-orm");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "wahoo"));
 

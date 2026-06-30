@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/node";
 import { TRPCError } from "@trpc/server";
-import { userProfile } from "dofek/db/schema";
+import { userProfile } from "dofek/db/schema/reference";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getZohoDeskClient } from "../lib/zoho-desk.ts";
