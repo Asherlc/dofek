@@ -102,7 +102,7 @@ function WhoopBleSyncManager({ trpcClient }: { trpcClient: ReturnType<typeof trp
 }
 
 function AuthGate() {
-  const { user, serverUrl, isLoading, sessionToken, bootstrapError } = useAuth();
+  const { user, serverUrl, isLoading, sessionToken, bootstrapError, logout } = useAuth();
   const [backgroundSyncReady, setBackgroundSyncReady] = useState(false);
 
   const [queryClient] = useState(
@@ -314,6 +314,9 @@ function AuthGate() {
       <View style={styles.authError}>
         <Text style={styles.authErrorTitle}>Could not verify your session</Text>
         <Text style={styles.authErrorMessage}>{bootstrapError}</Text>
+        <Pressable accessibilityRole="button" style={styles.authErrorButton} onPress={logout}>
+          <Text style={styles.authErrorButtonText}>Sign out</Text>
+        </Pressable>
       </View>
     );
   }
@@ -453,5 +456,18 @@ const styles = StyleSheet.create({
     color: colors.danger,
     fontSize: 15,
     lineHeight: 22,
+  },
+  authErrorButton: {
+    alignItems: "center",
+    backgroundColor: colors.accent,
+    borderRadius: 8,
+    marginTop: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  authErrorButtonText: {
+    color: colors.background,
+    fontSize: 16,
+    fontWeight: "700",
   },
 });

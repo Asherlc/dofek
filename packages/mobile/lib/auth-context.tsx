@@ -83,12 +83,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const currentUser = await fetchCurrentUser(SERVER_URL, token);
     setUser(currentUser);
+    setBootstrapError(null);
   }, []);
 
   const logout = useCallback(async () => {
     // Clear React state immediately so the UI shows the login screen
     setSessionToken(null);
     setUser(null);
+    setBootstrapError(null);
 
     // Async cleanup: notify server and clear secure storage
     try {

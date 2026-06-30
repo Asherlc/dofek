@@ -189,7 +189,7 @@ describe("createApp", () => {
     });
     expect(mockCheckReadiness).toHaveBeenCalledWith({
       db: fakeDb,
-      sensorStore: expect.anything(),
+      sensorStore,
     });
   });
 

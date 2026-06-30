@@ -93,7 +93,7 @@ export function createApp(
   });
 
   app.get("/readyz", async (_req, res) => {
-    const result = await checkReadiness({ db, sensorStore: limitedSensorStore });
+    const result = await checkReadiness({ db, sensorStore });
     res.status(result.status === "ok" ? 200 : 503).json(result);
   });
 

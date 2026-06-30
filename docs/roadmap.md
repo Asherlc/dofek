@@ -8,10 +8,10 @@ Roadmap notes for planned Dofek improvements. Product-level outcomes live under 
 
 Implemented first-run flow that helps a new user reach a useful dashboard quickly.
 
-- Landing page Get started CTAs send users to login with `returnTo=/onboarding`.
-- Web and mobile render shared setup steps from `@dofek/onboarding`: connect data sources, then check the dashboard for the first useful insight.
-- Web onboarding includes the public iOS TestFlight invite so Apple Health and mobile setup are first-class.
-- Landing page copy already frames correlations, trends, comparisons, Slack food logging, and cross-device source setup before signup.
+- Landing page Get started CTAs send users to login with `returnTo=/onboarding`; see [`IndexPage.tsx`](../packages/web/src/pages/IndexPage.tsx).
+- Web and mobile render shared setup steps from `@dofek/onboarding`; see [`packages/onboarding`](../packages/onboarding/src/index.ts), [`OnboardingPage.tsx`](../packages/web/src/pages/OnboardingPage.tsx), and [`onboarding.tsx`](../packages/mobile/app/onboarding.tsx).
+- Web onboarding includes the public iOS TestFlight invite so Apple Health and mobile setup are first-class; see [`OnboardingPage.tsx`](../packages/web/src/pages/OnboardingPage.tsx).
+- Landing page copy frames correlations, trends, comparisons, Slack food logging, and cross-device source setup before signup; see [`IndexPage.tsx`](../packages/web/src/pages/IndexPage.tsx).
 
 ## Technical Backlog
 
@@ -54,8 +54,8 @@ Implementation-level backlog. Checked items are complete; unchecked are open.
 - [x] Storybook previews per PR (R2-hosted web and mobile builds)
 
 ### Resilience
-- [x] Health and readiness checks should prove services can do real work, not just that a process is alive. `web` now exposes `/readyz` for Postgres, ClickHouse, and BullMQ queue readiness, and the production `worker` healthcheck now verifies BullMQ queue access instead of only checking for a process name.
-- [x] Auth bootstrap should distinguish `unauthenticated` from `bootstrap failed` on both web and mobile, and surface the real bootstrap error instead of silently treating failures as logout.
+- [x] Health and readiness checks should prove services can do real work, not just that a process is alive. `web` now exposes `/readyz` for Postgres, ClickHouse, and BullMQ queue readiness, and the production `worker` healthcheck now verifies BullMQ queue access instead of only checking for a process name; see [`readiness.ts`](../packages/server/src/lib/readiness.ts), [`worker-health.ts`](../src/jobs/worker-health.ts), and [`stack.yml`](../deploy/stack.yml).
+- [x] Auth bootstrap should distinguish `unauthenticated` from `bootstrap failed` on both web and mobile, and surface the real bootstrap error instead of silently treating failures as logout; see [`auth-context.tsx`](../packages/web/src/lib/auth-context.tsx), [`__root.tsx`](../packages/web/src/routes/__root.tsx), [`auth-context.tsx`](../packages/mobile/lib/auth-context.tsx), and [`_layout.tsx`](../packages/mobile/app/_layout.tsx).
 - [x] ~~Convert `fitness.v_sleep` from a materialized view to a plain view once we can prove the recursive-CTE dedup query is fast enough on production-scale data.~~ Resolved differently (and more thoroughly) by `drizzle/0025_drop_v_sleep.sql`: both `fitness.v_sleep` and `clickhouse.v_sleep` materialized views were dropped. Sleep reads now come from the `analytics.v_sleep` dbt read model, eliminating refresh maintenance entirely. `fitness.v_activity` remains a plain view, so activity reads are fresh without refresh maintenance.
 
 ### Authentication Follow-ups

@@ -80,6 +80,19 @@ describe("fetchCurrentUser", () => {
     await expect(fetchCurrentUser()).rejects.toThrow("Failed to fetch");
   });
 
+  it("throws readable error when success response has wrong shape", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      mockResponse({
+        ok: true,
+        json: () => Promise.resolve({ wrong: "shape" }),
+      }),
+    );
+
+    await expect(fetchCurrentUser()).rejects.toThrow(
+      "The server returned an invalid session response. Please try again.",
+    );
+  });
+
   it("returns user with null email", async () => {
     const user = { id: "u1", name: "Test", email: null };
     vi.mocked(fetch).mockResolvedValue(

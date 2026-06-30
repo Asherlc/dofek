@@ -1,4 +1,4 @@
-import { act, render, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -19,17 +19,23 @@ interface MockAuthStateValue {
   isLoading: boolean;
   sessionToken: string | null;
   bootstrapError: string | null;
+  logout: () => Promise<void>;
 }
 
-const mockAuthState = vi.hoisted((): { value: MockAuthStateValue } => ({
-  value: {
-    user: { id: "user-1" },
-    serverUrl: "https://dofek.test",
-    isLoading: false,
-    sessionToken: "session-token",
-    bootstrapError: null,
-  },
-}));
+const { mockAuthState, mockLogout } = vi.hoisted(() => {
+  const logout = vi.fn(async () => undefined);
+  const authState: { value: MockAuthStateValue } = {
+    value: {
+      user: { id: "user-1" },
+      serverUrl: "https://dofek.test",
+      isLoading: false,
+      sessionToken: "session-token",
+      bootstrapError: null,
+      logout,
+    },
+  };
+  return { mockAuthState: authState, mockLogout: logout };
+});
 const { mockPreventAutoHideAsync, mockHideAsync } = vi.hoisted(() => ({
   mockPreventAutoHideAsync: vi.fn(() => Promise.resolve()),
   mockHideAsync: vi.fn(() => Promise.resolve()),
@@ -175,6 +181,7 @@ describe("RootLayout background cleanup", () => {
       isLoading: false,
       sessionToken: "session-token",
       bootstrapError: null,
+      logout: mockLogout,
     };
   });
 
@@ -201,6 +208,7 @@ describe("RootLayout background cleanup", () => {
       isLoading: false,
       sessionToken: null,
       bootstrapError: "Database unavailable",
+      logout: mockLogout,
     };
     const RootLayout = await importRootLayout();
 
@@ -209,6 +217,23 @@ describe("RootLayout background cleanup", () => {
     await waitFor(() => {
       expect(rendered.getByText("Database unavailable")).toBeTruthy();
     });
+  });
+
+  it("lets users sign out from bootstrap failure", async () => {
+    mockAuthState.value = {
+      user: null,
+      serverUrl: "https://dofek.test",
+      isLoading: false,
+      sessionToken: null,
+      bootstrapError: "Database unavailable",
+      logout: mockLogout,
+    };
+    const RootLayout = await importRootLayout();
+
+    const rendered = render(<RootLayout />);
+    fireEvent.click(rendered.getByText("Sign out"));
+
+    expect(mockLogout).toHaveBeenCalledOnce();
   });
 
   it("tears down background HealthKit sync on unmount", async () => {

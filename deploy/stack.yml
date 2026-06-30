@@ -73,6 +73,7 @@ services:
       update_config:
         order: start-first
         failure_action: rollback
+        monitor: 90s
       labels:
         - traefik.enable=true
         - traefik.http.routers.web.rule=${WEB_HOST_RULE:-Host(`dofek.asherlc.com`) || Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`)}
@@ -123,6 +124,7 @@ services:
       update_config:
         order: start-first
         failure_action: rollback
+        monitor: 45s
 
   analytics-worker:
     image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}

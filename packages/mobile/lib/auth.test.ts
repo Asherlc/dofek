@@ -159,7 +159,9 @@ describe("fetchCurrentUser", () => {
       }),
     );
 
-    await expect(fetchCurrentUser("https://srv", "tok")).rejects.toThrow();
+    await expect(fetchCurrentUser("https://srv", "tok")).rejects.toThrow(
+      "The server returned an invalid session response. Please try again.",
+    );
   });
 });
 

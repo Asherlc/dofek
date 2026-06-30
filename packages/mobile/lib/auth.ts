@@ -17,6 +17,8 @@ export type { AuthUser, ConfiguredProviders };
 const SESSION_TOKEN_KEY = "dofek_session_token";
 const APP_SCHEME = "dofek";
 const ErrorResponseSchema = z.object({ error: z.string().min(1) });
+const invalidSessionResponseMessage =
+  "The server returned an invalid session response. Please try again.";
 
 // AFTER_FIRST_UNLOCK allows background access (e.g. during background GPS recording)
 // even when the device is locked, as long as it's been unlocked once since boot.
@@ -59,7 +61,11 @@ export async function fetchCurrentUser(serverUrl: string, token: string): Promis
     );
   }
   const data: unknown = await res.json();
-  return AuthUserSchema.parse(data);
+  const parsed = AuthUserSchema.safeParse(data);
+  if (!parsed.success) {
+    throw new Error(invalidSessionResponseMessage);
+  }
+  return parsed.data;
 }
 
 /** Fetch available login providers from the server. */

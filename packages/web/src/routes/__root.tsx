@@ -49,7 +49,7 @@ function AuthGate() {
     );
   }
 
-  if (bootstrapError && !isPublic) {
+  if (bootstrapError) {
     return (
       <div className="min-h-screen bg-page flex items-center justify-center px-6">
         <div className="max-w-md border border-red-500/40 bg-red-500/10 rounded-lg p-5">

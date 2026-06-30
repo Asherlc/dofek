@@ -226,6 +226,21 @@ describe("AuthGate", () => {
     expect(screen.getByText("Database unavailable")).toBeTruthy();
   });
 
+  it("shows bootstrap failure on public routes", () => {
+    mockUseAuth.mockReturnValue({
+      user: null,
+      isLoading: false,
+      bootstrapError: "Database unavailable",
+      logout: vi.fn(),
+    });
+    mockUseLocation.mockReturnValue({ pathname: "/login" });
+
+    renderAuthGate();
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(screen.getByText("Database unavailable")).toBeTruthy();
+  });
+
   it("renders outlet for authenticated user", () => {
     mockUseAuth.mockReturnValue({ user: authenticatedUser, isLoading: false, logout: vi.fn() });
     mockUseLocation.mockReturnValue({ pathname: "/dashboard" });

@@ -11,6 +11,8 @@ const passwordAuthResponseSchema = z.object({
 });
 
 const errorResponseSchema = z.object({ error: z.string().min(1) });
+const invalidSessionResponseMessage =
+  "The server returned an invalid session response. Please try again.";
 
 async function getErrorMessage(response: Response, fallback: string): Promise<string> {
   const data: unknown = await response.json().catch(() => null);
@@ -62,7 +64,11 @@ export async function fetchCurrentUser(): Promise<AuthUser | null> {
     );
   }
   const data: unknown = await res.json();
-  return AuthUserSchema.parse(data);
+  const parsed = AuthUserSchema.safeParse(data);
+  if (!parsed.success) {
+    throw new Error(invalidSessionResponseMessage);
+  }
+  return parsed.data;
 }
 
 /** Fetch the list of configured login providers (identity + data). */

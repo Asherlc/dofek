@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import {
   createActivityDeleteAnalyticsQueue,
   createExportQueue,
@@ -27,6 +28,13 @@ function createWorkerHealthQueues(): HealthQueue[] {
     createPostSyncQueue(),
     createActivityDeleteAnalyticsQueue(),
   ];
+}
+
+function initWorkerHealthSentry(): void {
+  const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
+  if (sentryDsn) {
+    Sentry.init({ dsn: sentryDsn, skipOpenTelemetrySetup: true });
+  }
 }
 
 function firstRejectedReason(results: PromiseSettledResult<unknown>[]): unknown {
@@ -60,11 +68,13 @@ const isDirectRun =
   import.meta.url.endsWith(process.argv[1].replace(/.*\//, ""));
 
 if (isDirectRun) {
+  initWorkerHealthSentry();
   checkWorkerQueues()
     .then((result) => {
       process.stdout.write(`${JSON.stringify(result)}\n`);
     })
     .catch((error: unknown) => {
+      Sentry.captureException(error);
       const message = error instanceof Error ? error.message : String(error);
       process.stderr.write(`worker healthcheck failed: ${message}\n`);
       process.exit(1);

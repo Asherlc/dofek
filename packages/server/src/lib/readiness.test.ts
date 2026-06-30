@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { makeMockSensorStore } from "../routers/test-helpers.ts";
 import type { ReadinessDependencies } from "./readiness.ts";
+import { makeMockSensorStore } from "./test-helpers.ts";
 
 const mockCheckWorkerQueues = vi.fn(async () => ({ status: "ok" as const, queues: "ok" as const }));
 const mockDbExecute = vi.fn(async () => [{ ok: 1 }]);
