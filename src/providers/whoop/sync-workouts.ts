@@ -5,7 +5,8 @@ import {
   finishProviderActivityListSync,
   upsertProviderActivity,
 } from "../../db/provider-activity-sync.ts";
-import { exercise, exerciseAlias, strengthSet } from "../../db/schema.ts";
+import { strengthSet } from "../../db/schema/activity.ts";
+import { exercise, exerciseAlias } from "../../db/schema/reference.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { SyncWindow } from "../sync-window.ts";
 import {

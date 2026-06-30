@@ -3,7 +3,7 @@ import {
   nutrientAmountEntriesFromLegacyFields,
   nutrientColumnsToValues,
 } from "../db/nutrient-columns.ts";
-import { foodEntry, foodEntryNutrient } from "../db/schema.ts";
+import { foodEntry, foodEntryNutrient } from "../db/schema/nutrition.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { SyncError, SyncProvider, SyncResult } from "./types.ts";

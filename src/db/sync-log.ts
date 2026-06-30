@@ -3,7 +3,7 @@ import {
   type ProviderAuthFailureReason,
 } from "../providers/auth-errors.ts";
 import type { SyncDatabase } from "./index.ts";
-import { syncLog } from "./schema.ts";
+import { syncLog } from "./schema/events.ts";
 import { getTokenUserId } from "./token-user-context.ts";
 
 export interface SyncLogEntry {

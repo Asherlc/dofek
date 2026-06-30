@@ -60,7 +60,7 @@ services:
     volumes:
       - job_files:/app/job-files
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/healthz | grep -q ok"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/readyz | grep -q ok"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -73,9 +73,10 @@ services:
       update_config:
         order: start-first
         failure_action: rollback
+        monitor: 90s
       labels:
         - traefik.enable=true
-        - traefik.http.routers.web.rule=${WEB_HOST_RULE:-Host(`dofek.asherlc.com`) || Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`)}
+        - traefik.http.routers.web.rule=(${WEB_HOST_RULE:-Host(`dofek.asherlc.com`) || Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`)}) && !PathPrefix(`/readyz`)
         - traefik.http.routers.web.entrypoints=websecure
         - traefik.http.routers.web.tls=true
         - traefik.http.routers.web.tls.certresolver=le
@@ -107,7 +108,11 @@ services:
     volumes:
       - job_files:/app/job-files
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f worker || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "node --experimental-strip-types --disable-warning=ExperimentalWarning src/jobs/worker-health.ts",
+        ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -119,6 +124,7 @@ services:
       update_config:
         order: start-first
         failure_action: rollback
+        monitor: 45s
 
   analytics-worker:
     image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}

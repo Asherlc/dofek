@@ -27,12 +27,15 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
-vi.mock("dofek/db/schema", () => ({
+vi.mock("dofek/db/schema/events", () => ({
   syncLog: {
     userId: "userId",
     providerId: "providerId",
     syncedAt: "syncedAt",
   },
+}));
+
+vi.mock("dofek/db/schema/reference", () => ({
   oauthToken: {
     providerId: "providerId",
   },

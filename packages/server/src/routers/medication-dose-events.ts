@@ -1,4 +1,4 @@
-import { medicationDoseEvent } from "dofek/db/schema";
+import { medicationDoseEvent } from "dofek/db/schema/clinical";
 import { and, desc, eq, gte, lt } from "drizzle-orm";
 import { z } from "zod";
 import { timestampStringSchema } from "../lib/typed-sql.ts";

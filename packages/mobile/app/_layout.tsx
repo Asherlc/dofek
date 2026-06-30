@@ -102,7 +102,8 @@ function WhoopBleSyncManager({ trpcClient }: { trpcClient: ReturnType<typeof trp
 }
 
 function AuthGate() {
-  const { user, serverUrl, isLoading, sessionToken } = useAuth();
+  const { user, serverUrl, isLoading, sessionToken, bootstrapError, logout, retryBootstrap } =
+    useAuth();
   const [backgroundSyncReady, setBackgroundSyncReady] = useState(false);
 
   const [queryClient] = useState(
@@ -310,6 +311,33 @@ function AuthGate() {
     );
   }
 
+  if (bootstrapError) {
+    return (
+      <View style={styles.authError}>
+        <Text style={styles.authErrorTitle}>Could not verify your session</Text>
+        <Text style={styles.authErrorMessage}>{bootstrapError}</Text>
+        <View style={styles.authErrorActions}>
+          <Pressable
+            accessibilityRole="button"
+            style={styles.authErrorButton}
+            onPress={retryBootstrap}
+          >
+            <Text style={styles.authErrorButtonText}>Try again</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            style={[styles.authErrorButton, styles.authErrorSecondaryButton]}
+            onPress={logout}
+          >
+            <Text style={[styles.authErrorButtonText, styles.authErrorSecondaryButtonText]}>
+              Sign out
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
   // No user — show login
   if (!user) {
     return <LoginScreen />;
@@ -428,5 +456,48 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     justifyContent: "center",
     alignItems: "center",
+  },
+  authError: {
+    flex: 1,
+    backgroundColor: colors.background,
+    justifyContent: "center",
+    padding: 24,
+  },
+  authErrorTitle: {
+    color: colors.text,
+    fontSize: 20,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+  authErrorMessage: {
+    color: colors.danger,
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  authErrorActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    marginTop: 20,
+  },
+  authErrorButton: {
+    alignItems: "center",
+    backgroundColor: colors.accent,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  authErrorSecondaryButton: {
+    backgroundColor: "transparent",
+    borderColor: colors.danger,
+    borderWidth: 1,
+  },
+  authErrorButtonText: {
+    color: colors.background,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  authErrorSecondaryButtonText: {
+    color: colors.danger,
   },
 });

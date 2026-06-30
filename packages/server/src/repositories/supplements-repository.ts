@@ -5,7 +5,7 @@ import {
   nutrientFieldsSchema,
   nutrientRowSchema,
 } from "dofek/db/nutrient-columns";
-import { supplement, supplementNutrient } from "dofek/db/schema";
+import { supplement, supplementNutrient } from "dofek/db/schema/nutrition";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";

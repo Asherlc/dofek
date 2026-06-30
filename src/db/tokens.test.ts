@@ -4,7 +4,7 @@ import {
   encryptCredentialValue,
   isEncryptedCredentialValue,
 } from "../security/credential-encryption.ts";
-import { TEST_USER_ID } from "./schema.ts";
+import { TEST_USER_ID } from "./schema/core.ts";
 import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "./tokens.ts";
 
 // Mock drizzle's query builder helpers

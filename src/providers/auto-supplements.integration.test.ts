@@ -1,13 +1,9 @@
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { nutrientAmountEntriesFromLegacyFields } from "../db/nutrient-columns.ts";
-import {
-  foodEntry,
-  supplement,
-  supplementNutrient,
-  TEST_USER_ID,
-  userProfile,
-} from "../db/schema.ts";
+import { TEST_USER_ID } from "../db/schema/core.ts";
+import { foodEntry, supplement, supplementNutrient } from "../db/schema/nutrition.ts";
+import { userProfile } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { AutoSupplementsProvider } from "./auto-supplements.ts";
 import { SyncRun } from "./sync-run.ts";

@@ -2,7 +2,7 @@ import { execSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { pgGenerate } from "drizzle-dbml-generator";
 import plantumlEncoder from "plantuml-encoder";
-import * as schema from "../src/db/schema.ts";
+import { drizzleSchema as schema } from "../src/db/drizzle-schema.ts";
 
 const dbmlPath = "docs/schema.dbml";
 const pumlPath = "docs/schema.puml";

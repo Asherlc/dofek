@@ -21,7 +21,7 @@ import {
   markProviderActivityAbsent,
   upsertProviderActivity,
 } from "../db/provider-activity-sync.ts";
-import { activity } from "../db/schema.ts";
+import { activity } from "../db/schema/activity.ts";
 import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";

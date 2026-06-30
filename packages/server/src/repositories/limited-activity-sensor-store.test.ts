@@ -162,4 +162,39 @@ describe("LimitedActivitySensorStore", () => {
     await expect(regularPromise).resolves.toEqual([{ value: 1 }]);
     await expect(dashboardPromise).resolves.toEqual([{ value: 1 }]);
   });
+
+  it("does not deduplicate abortable readiness queries with regular in-flight queries", async () => {
+    const sharedRows = deferred<Array<{ value: number }>>();
+    const abortableRows = deferred<Array<{ value: number }>>();
+    const delegate = makeDelegate({
+      query: vi.fn((_schema, _query, _params, options) =>
+        options?.abortSignal ? abortableRows.promise : sharedRows.promise,
+      ),
+    });
+    const store = new LimitedActivitySensorStore(delegate, 2);
+    const schema = z.object({ value: z.number() });
+    const abortController = new AbortController();
+
+    const regularPromise = store.query(schema, "SELECT value");
+    await Promise.resolve();
+    const abortablePromise = store.query(schema, "SELECT value", undefined, {
+      abortSignal: abortController.signal,
+    });
+    await Promise.resolve();
+    sharedRows.resolve([{ value: 1 }]);
+    abortableRows.resolve([{ value: 2 }]);
+
+    await expect(regularPromise).resolves.toEqual([{ value: 1 }]);
+    await expect(abortablePromise).resolves.toEqual([{ value: 2 }]);
+    expect(delegate.query).toHaveBeenCalledTimes(2);
+    expect(delegate.query).toHaveBeenNthCalledWith(
+      2,
+      schema,
+      "SELECT value",
+      {},
+      {
+        abortSignal: abortController.signal,
+      },
+    );
+  });
 });

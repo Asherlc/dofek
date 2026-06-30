@@ -168,6 +168,7 @@ export interface ActivitySensorWindow {
 
 export interface ActivitySensorQueryOptions {
   priority?: "dashboard";
+  abortSignal?: AbortSignal | undefined;
 }
 
 export interface ActivitySensorStore {

@@ -125,7 +125,7 @@ export const providerDetailRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const { syncLog } = await import("dofek/db/schema");
+      const { syncLog } = await import("dofek/db/schema/events");
       const { and, desc, eq } = await import("drizzle-orm");
       const { buildPostgresFilterConditionsMapped } = await import("../lib/field-filters.ts");
 

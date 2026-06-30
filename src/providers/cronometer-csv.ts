@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import type { SyncDatabase } from "../db/index.ts";
 import { nutrientAmountEntriesFromLegacyFields } from "../db/nutrient-columns.ts";
-import { foodEntry, foodEntryNutrient } from "../db/schema.ts";
+import { foodEntry, foodEntryNutrient } from "../db/schema/nutrition.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import type { ImportProvider, SyncError, SyncResult } from "./types.ts";

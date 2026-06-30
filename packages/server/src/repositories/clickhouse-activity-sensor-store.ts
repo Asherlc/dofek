@@ -124,12 +124,13 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
     schema: TSchema,
     query: string,
     params: Record<string, unknown> = {},
-    _options?: ActivitySensorQueryOptions,
+    options: ActivitySensorQueryOptions = {},
   ): Promise<z.infer<TSchema>[]> {
     const result = await this.#client.query<Record<string, unknown>>({
       query,
       format: "JSONEachRow",
       query_params: params,
+      ...(options.abortSignal ? { abort_signal: options.abortSignal } : {}),
     });
     const rows = await result.json();
     return rows.map((row) => schema.parse(row));

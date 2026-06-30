@@ -16,6 +16,9 @@ export type { AuthUser, ConfiguredProviders };
 
 const SESSION_TOKEN_KEY = "dofek_session_token";
 const APP_SCHEME = "dofek";
+const ErrorResponseSchema = z.object({ error: z.string().min(1) });
+const invalidSessionResponseMessage =
+  "The server returned an invalid session response. Please try again.";
 
 // AFTER_FIRST_UNLOCK allows background access (e.g. during background GPS recording)
 // even when the device is locked, as long as it's been unlocked once since boot.
@@ -46,16 +49,27 @@ export async function clearSessionToken(): Promise<void> {
 
 /** Validate the stored session token by calling /api/auth/me. Returns the user or null. */
 export async function fetchCurrentUser(serverUrl: string, token: string): Promise<AuthUser | null> {
-  try {
-    const res = await fetch(`${serverUrl}/api/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return null;
-    const data: unknown = await res.json();
-    return AuthUserSchema.parse(data);
-  } catch {
-    return null;
+  const res = await fetch(`${serverUrl}/api/auth/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 401 || res.status === 403) return null;
+  if (!res.ok) {
+    const data: unknown = await res.json().catch(() => null);
+    const parsed = ErrorResponseSchema.safeParse(data);
+    throw new Error(
+      parsed.success ? parsed.data.error : `Auth bootstrap failed: ${res.status} ${res.statusText}`,
+    );
   }
+  const data: unknown = await res.json().catch((error: unknown) => {
+    captureException(error, { source: "auth-current-user-json" });
+    throw new Error(invalidSessionResponseMessage);
+  });
+  const parsed = AuthUserSchema.safeParse(data);
+  if (!parsed.success) {
+    captureException(parsed.error, { source: "auth-current-user-schema" });
+    throw new Error(invalidSessionResponseMessage);
+  }
+  return parsed.data;
 }
 
 /** Fetch available login providers from the server. */

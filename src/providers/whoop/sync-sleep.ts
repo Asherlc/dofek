@@ -1,5 +1,5 @@
 import { and, eq, isNotNull } from "drizzle-orm";
-import { sleepSession, sleepStage } from "../../db/schema.ts";
+import { sleepSession, sleepStage } from "../../db/schema/activity.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { logger } from "../../logger.ts";

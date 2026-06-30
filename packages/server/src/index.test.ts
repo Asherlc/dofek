@@ -2,6 +2,24 @@ import http from "node:http";
 import express from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const mockDbExecute = vi.fn(async () => [{ ok: 1 }]);
+const mockQueueWaitUntilReady = vi.fn(async () => undefined);
+const mockQueueGetJobCounts = vi.fn(async () => ({ waiting: 0 }));
+const mockQueueClose = vi.fn(async () => undefined);
+const mockQueue = {
+  waitUntilReady: mockQueueWaitUntilReady,
+  getJobCounts: mockQueueGetJobCounts,
+  close: mockQueueClose,
+};
+const mockCheckReadiness = vi.fn(async () => ({
+  status: "ok" as const,
+  checks: {
+    postgres: "ok" as const,
+    clickhouse: "ok" as const,
+    queues: "ok" as const,
+  },
+}));
+
 vi.mock("@bull-board/express", () => ({
   ExpressAdapter: vi.fn(() => ({
     setBasePath: vi.fn(),
@@ -21,19 +39,19 @@ vi.mock("@bull-board/api/bullMQAdapter", () => ({
 // from `{ db: fakeDb }` (real wiring). Without this, `toHaveBeenCalledWith({ db: fakeDb })`
 // passes even when `{ db }` is mutated to `{}` because `fakeDb` was `undefined` and
 // `{}` deep-equals `{ db: undefined }`.
-vi.mock("dofek/db", () => ({ createDatabaseFromEnv: vi.fn(() => ({})) }));
+vi.mock("dofek/db", () => ({ createDatabaseFromEnv: vi.fn(() => ({ execute: mockDbExecute })) }));
 vi.mock("dofek/db/clickhouse", () => ({
   bootstrapClickHouseFromEnv: vi.fn(),
   createClickHouseClientFromEnv: vi.fn(),
 }));
 vi.mock("dofek/jobs/queues", () => ({
-  createActivityDeleteAnalyticsQueue: vi.fn(),
-  createExportQueue: vi.fn(),
-  createImportQueue: vi.fn(),
-  getImportQueue: vi.fn(),
-  createPostSyncQueue: vi.fn(),
-  createScheduledSyncQueue: vi.fn(),
-  createSyncQueue: vi.fn(),
+  createActivityDeleteAnalyticsQueue: vi.fn(() => mockQueue),
+  createExportQueue: vi.fn(() => mockQueue),
+  createImportQueue: vi.fn(() => mockQueue),
+  getImportQueue: vi.fn(() => mockQueue),
+  createPostSyncQueue: vi.fn(() => mockQueue),
+  createScheduledSyncQueue: vi.fn(() => mockQueue),
+  createSyncQueue: vi.fn(() => mockQueue),
 }));
 vi.mock("../repositories/clickhouse-activity-sensor-store.ts", () => ({
   ClickHouseActivitySensorStore: vi.fn(),
@@ -59,9 +77,10 @@ vi.mock("../auth/session.ts", () => ({
 }));
 vi.mock("../billing/access-window-repository.ts", () => ({ getAccessWindowForUser: vi.fn() }));
 vi.mock("../lib/metrics.ts", () => ({
-  httpRequestDuration: { labels: vi.fn(() => ({ observe: vi.fn() })) },
+  httpRequestDuration: { observe: vi.fn() },
   registry: { registerMetric: vi.fn(), contentType: "text/plain", metrics: vi.fn(async () => "") },
 }));
+vi.mock("./lib/readiness.ts", () => ({ checkReadiness: mockCheckReadiness }));
 vi.mock("../routes/activity-export.ts", () => ({
   createActivityExportRouter: vi.fn(() => express.Router()),
 }));
@@ -114,6 +133,18 @@ function request(
 describe("createApp", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockDbExecute.mockResolvedValue([{ ok: 1 }]);
+    mockQueueWaitUntilReady.mockResolvedValue(undefined);
+    mockQueueGetJobCounts.mockResolvedValue({ waiting: 0 });
+    mockQueueClose.mockResolvedValue(undefined);
+    mockCheckReadiness.mockResolvedValue({
+      status: "ok",
+      checks: {
+        postgres: "ok",
+        clickhouse: "ok",
+        queues: "ok",
+      },
+    });
   });
 
   it("returns 404 for non-existent routes", async () => {
@@ -138,5 +169,54 @@ describe("createApp", () => {
     const fakeDb = createDatabaseFromEnv();
     createApp(fakeDb, makeMockSensorStore());
     expect(createIngestZosHealthRouter).toHaveBeenCalledWith({ db: fakeDb });
+  });
+
+  it("returns ready when Postgres, ClickHouse, and queues are reachable", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const fakeDb = createDatabaseFromEnv();
+    const sensorStore = makeMockSensorStore([{ ok: 1 }]);
+    const app = createApp(fakeDb, sensorStore);
+
+    const res = await request(app, "GET", "/readyz");
+
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({
+      status: "ok",
+      checks: {
+        postgres: "ok",
+        clickhouse: "ok",
+        queues: "ok",
+      },
+    });
+    expect(mockCheckReadiness).toHaveBeenCalledWith({
+      db: fakeDb,
+      sensorStore,
+    });
+  });
+
+  it("returns unavailable when a readiness dependency fails", async () => {
+    mockCheckReadiness.mockResolvedValueOnce({
+      status: "error",
+      checks: {
+        postgres: "error",
+        clickhouse: "ok",
+        queues: "ok",
+      },
+    });
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const fakeDb = createDatabaseFromEnv();
+    const app = createApp(fakeDb, makeMockSensorStore([{ ok: 1 }]));
+
+    const res = await request(app, "GET", "/readyz");
+
+    expect(res.status).toBe(503);
+    expect(JSON.parse(res.body)).toEqual({
+      status: "error",
+      checks: {
+        postgres: "error",
+        clickhouse: "ok",
+        queues: "ok",
+      },
+    });
   });
 });

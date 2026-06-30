@@ -93,26 +93,32 @@ export class LimitedActivitySensorStore implements ActivitySensorStore {
     schema: TSchema,
     query: string,
     params: Record<string, unknown> = {},
-    options?: ActivitySensorQueryOptions,
+    options: ActivitySensorQueryOptions = {},
   ): Promise<z.infer<TSchema>[]> {
-    const key = JSON.stringify([query, params, options?.priority ?? null]);
-    const existing = this.#inFlightQueries.get(key);
-    if (existing) {
-      const rows = await existing;
-      return rows.map((row) => schema.parse(row));
+    const key = JSON.stringify([query, params, options.priority ?? null]);
+    if (!options.abortSignal) {
+      const existing = this.#inFlightQueries.get(key);
+      if (existing) {
+        const rows = await existing;
+        return rows.map((row) => schema.parse(row));
+      }
     }
 
     const limiter =
-      options?.priority === "dashboard" ? this.#dashboardLimiter : this.#regularLimiter;
+      options.priority === "dashboard" ? this.#dashboardLimiter : this.#regularLimiter;
     const promise = limiter.run(() => this.#delegate.query(schema, query, params, options));
-    this.#inFlightQueries.set(
-      key,
-      promise.then((rows): unknown[] => rows),
-    );
+    if (!options.abortSignal) {
+      this.#inFlightQueries.set(
+        key,
+        promise.then((rows): unknown[] => rows),
+      );
+    }
     try {
       return await promise;
     } finally {
-      this.#inFlightQueries.delete(key);
+      if (!options.abortSignal) {
+        this.#inFlightQueries.delete(key);
+      }
     }
   }
 

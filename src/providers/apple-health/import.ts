@@ -8,17 +8,17 @@ import { z } from "zod";
 import type { SyncDatabase } from "../../db/index.ts";
 import { replaceMetricStreamBatch } from "../../db/metric-stream-writer.ts";
 import { finishProviderActivityListSync } from "../../db/provider-activity-sync.ts";
+import { dailyMetrics } from "../../db/schema/activity.ts";
 import {
   allergyIntolerance,
   condition,
-  dailyMetrics,
-  foodEntry,
   healthEvent,
   labPanel,
   labResult,
   medication,
   medicationDoseEvent,
-} from "../../db/schema.ts";
+} from "../../db/schema/clinical.ts";
+import { foodEntry } from "../../db/schema/nutrition.ts";
 import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { ensureProvider } from "../../db/tokens.ts";

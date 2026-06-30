@@ -349,7 +349,7 @@ export class SyncRepository {
 
   /** Fetch sync logs ordered by most recent first. */
   async getLogs(limit: number): Promise<SyncLogRow[]> {
-    const { syncLog } = await import("dofek/db/schema");
+    const { syncLog } = await import("dofek/db/schema/events");
     const { desc, eq } = await import("drizzle-orm");
 
     const rows = await this.#db

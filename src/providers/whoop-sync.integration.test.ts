@@ -10,15 +10,9 @@ import type {
   WhoopWorkoutRecord,
 } from "whoop-whoop/types";
 import { parseDuringRange } from "whoop-whoop/utils";
-import {
-  activity,
-  dailyMetrics,
-  journalEntry,
-  sleepSession,
-  sleepStage,
-  syncLog,
-  TEST_USER_ID,
-} from "../db/schema.ts";
+import { activity, dailyMetrics, sleepSession, sleepStage } from "../db/schema/activity.ts";
+import { TEST_USER_ID } from "../db/schema/core.ts";
+import { journalEntry, syncLog } from "../db/schema/events.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -1099,7 +1093,7 @@ describe("WhoopProvider.sync() (integration)", () => {
 
   it("returns error when no tokens exist at all", async () => {
     // Remove all tokens for whoop
-    const { oauthToken } = await import("../db/schema.ts");
+    const { oauthToken } = await import("../db/schema/reference.ts");
     await ctx.db.delete(oauthToken).where(eq(oauthToken.providerId, "whoop"));
 
     const provider = new WhoopProvider();
@@ -1182,7 +1176,7 @@ describe("WhoopProvider.sync() (integration)", () => {
 
     expect(result.errors).toHaveLength(0);
 
-    const { journalEntry } = await import("../db/schema.ts");
+    const { journalEntry } = await import("../db/schema/events.ts");
     const rows = await ctx.db
       .select()
       .from(journalEntry)

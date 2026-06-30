@@ -1,4 +1,4 @@
-import { dailyMetrics } from "../../db/schema.ts";
+import { dailyMetrics } from "../../db/schema/activity.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { logger } from "../../logger.ts";
 import { parseRecovery, resolveRecoveryState } from "./parsing.ts";

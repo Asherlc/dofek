@@ -1,6 +1,6 @@
 import { and, eq, gte, inArray, isNotNull, lte } from "drizzle-orm";
 import type { WhoopCycle, WhoopWorkoutRecord } from "whoop-whoop/types";
-import { dailyMetrics, sleepSession, sleepStage } from "../../db/schema.ts";
+import { dailyMetrics, sleepSession, sleepStage } from "../../db/schema/activity.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { planSyncStepIfRequestNotPending } from "../../lib/sync-request-query.ts";
 import { listPendingSyncRequestQueryKeys } from "../../lib/sync-request-queue.ts";

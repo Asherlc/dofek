@@ -7,6 +7,7 @@ export interface ClickHouseQueryClient {
     query: string;
     format: "JSONEachRow";
     query_params: Record<string, unknown>;
+    abort_signal?: AbortSignal;
   }): Promise<ClickHouseJsonResult<TRow>>;
 }
 

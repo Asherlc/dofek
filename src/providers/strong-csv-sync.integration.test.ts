@@ -1,6 +1,8 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { activity, exercise, exerciseAlias, strengthSet, TEST_USER_ID } from "../db/schema.ts";
+import { activity, strengthSet } from "../db/schema/activity.ts";
+import { TEST_USER_ID } from "../db/schema/core.ts";
+import { exercise, exerciseAlias } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { importStrongCsv, STRONG_PROVIDER_ID } from "./strong-csv.ts";
 

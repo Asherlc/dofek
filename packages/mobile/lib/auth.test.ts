@@ -1,4 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mockCaptureException = vi.hoisted(() => vi.fn());
+
+vi.mock("./telemetry", () => ({
+  captureException: mockCaptureException,
+}));
+
 import {
   AuthUserSchema,
   ConfiguredProvidersSchema,
@@ -111,6 +118,7 @@ describe("fetchCurrentUser", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    mockCaptureException.mockClear();
   });
 
   it("returns parsed user on success", async () => {
@@ -134,13 +142,24 @@ describe("fetchCurrentUser", () => {
     expect(await fetchCurrentUser("https://srv", "tok")).toBeNull();
   });
 
-  it("returns null on network error", async () => {
-    vi.mocked(fetch).mockRejectedValueOnce(new Error("network"));
+  it("throws server error details when session bootstrap fails", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "Database unavailable" }), {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      }),
+    );
 
-    expect(await fetchCurrentUser("https://srv", "tok")).toBeNull();
+    await expect(fetchCurrentUser("https://srv", "tok")).rejects.toThrow("Database unavailable");
   });
 
-  it("returns null when response has wrong shape", async () => {
+  it("throws network errors instead of treating them as logged out", async () => {
+    vi.mocked(fetch).mockRejectedValueOnce(new Error("network"));
+
+    await expect(fetchCurrentUser("https://srv", "tok")).rejects.toThrow("network");
+  });
+
+  it("throws when response has wrong shape", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       new Response(JSON.stringify({ wrong: "shape" }), {
         status: 200,
@@ -148,7 +167,26 @@ describe("fetchCurrentUser", () => {
       }),
     );
 
-    expect(await fetchCurrentUser("https://srv", "tok")).toBeNull();
+    await expect(fetchCurrentUser("https://srv", "tok")).rejects.toThrow(
+      "The server returned an invalid session response. Please try again.",
+    );
+    expect(mockCaptureException.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+    expect(mockCaptureException.mock.calls[0]?.[1]).toEqual({
+      source: "auth-current-user-schema",
+    });
+  });
+
+  it("throws a readable error when success response is not JSON", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response("<html></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      }),
+    );
+
+    await expect(fetchCurrentUser("https://srv", "tok")).rejects.toThrow(
+      "The server returned an invalid session response. Please try again.",
+    );
   });
 });
 
@@ -599,11 +637,11 @@ describe("logout", () => {
   });
 
   it("reports fetch errors to Sentry", async () => {
-    const Sentry = await import("@sentry/react-native");
-    vi.mocked(fetch).mockRejectedValueOnce(new Error("network error"));
+    const logoutError = new Error("network error");
+    vi.mocked(fetch).mockRejectedValueOnce(logoutError);
 
     await logout("https://srv", "my-token");
 
-    expect(Sentry.captureException).toHaveBeenCalled();
+    expect(mockCaptureException).toHaveBeenCalledWith(logoutError, { source: "logout" });
   });
 });

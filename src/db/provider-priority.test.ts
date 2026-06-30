@@ -6,7 +6,7 @@ import {
   providerPriorityAudit,
   sensorDevicePriority,
   sensorProviderPriority,
-} from "./schema.ts";
+} from "./schema/reference.ts";
 
 describe("provider priority schema", () => {
   it("defines DB-owned priority tables", () => {

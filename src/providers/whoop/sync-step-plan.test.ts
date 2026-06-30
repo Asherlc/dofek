@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WhoopClient } from "whoop-whoop/client";
 import type { WhoopCycle, WhoopWorkoutRecord } from "whoop-whoop/types";
 import type { SyncDatabase } from "../../db/index.ts";
-import { dailyMetrics, sleepSession } from "../../db/schema.ts";
+import { dailyMetrics, sleepSession } from "../../db/schema/activity.ts";
 import { syncApiQueryKey } from "../../lib/sync-api-query.ts";
 import {
   iterateUtcDates,
