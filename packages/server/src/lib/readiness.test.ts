@@ -62,7 +62,16 @@ describe("checkReadiness", () => {
     mockDbExecute.mockImplementationOnce(() => new Promise<never>(() => undefined));
     mockCheckWorkerQueues.mockImplementationOnce(() => new Promise<never>(() => undefined));
     const sensorStore = makeMockSensorStore([{ ok: 1 }]);
-    vi.mocked(sensorStore.query).mockImplementationOnce(() => new Promise<never>(() => undefined));
+    let clickHouseAbortSignal: AbortSignal | undefined;
+    vi.mocked(sensorStore.query).mockImplementationOnce(
+      (_schema, _query, _params, options) =>
+        new Promise<never>((_resolve, reject) => {
+          clickHouseAbortSignal = options?.abortSignal;
+          clickHouseAbortSignal?.addEventListener("abort", () => {
+            reject(new Error("ClickHouse readiness query aborted"));
+          });
+        }),
+    );
     const db = { execute: mockDbExecute } satisfies ReadinessDependencies["db"];
 
     const resultPromise = checkReadiness({ db, sensorStore });
@@ -77,6 +86,7 @@ describe("checkReadiness", () => {
       },
     });
     expect(mockCheckWorkerQueues).toHaveBeenCalledWith({ timeoutMs: 2_500 });
+    expect(clickHouseAbortSignal?.aborted).toBe(true);
   });
 
   it("returns unavailable when Postgres is in recovery", async () => {

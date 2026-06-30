@@ -39,20 +39,33 @@ async function checkPostgres(db: ExecutableDatabase): Promise<void> {
 }
 
 async function checkClickHouse(sensorStore: ActivitySensorStore): Promise<void> {
-  await sensorStore.query(clickHouseReadySchema, "SELECT 1 AS ok");
+  const abortController = new AbortController();
+  await withReadinessTimeout(
+    sensorStore
+      .query(clickHouseReadySchema, "SELECT 1 AS ok", undefined, {
+        abortSignal: abortController.signal,
+      })
+      .then(() => undefined),
+    "ClickHouse",
+    () => abortController.abort(),
+  );
 }
 
 async function checkQueues(): Promise<void> {
   await checkWorkerQueues({ timeoutMs: QUEUE_READINESS_TIMEOUT_MS });
 }
 
-async function withReadinessTimeout(promise: Promise<void>, label: string): Promise<void> {
+async function withReadinessTimeout(
+  promise: Promise<void>,
+  label: string,
+  onTimeout?: () => void,
+): Promise<void> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
-    timeoutId = setTimeout(
-      () => reject(new Error(`${label} readiness timed out`)),
-      DEPENDENCY_READINESS_TIMEOUT_MS,
-    );
+    timeoutId = setTimeout(() => {
+      onTimeout?.();
+      reject(new Error(`${label} readiness timed out`));
+    }, DEPENDENCY_READINESS_TIMEOUT_MS);
   });
   try {
     await Promise.race([promise, timeout]);
@@ -72,7 +85,7 @@ export async function checkReadiness(
 ): Promise<ReadinessResult> {
   const [postgresResult, clickHouseResult, queueResult] = await Promise.allSettled([
     withReadinessTimeout(checkPostgres(dependencies.db), "Postgres"),
-    withReadinessTimeout(checkClickHouse(dependencies.sensorStore), "ClickHouse"),
+    checkClickHouse(dependencies.sensorStore),
     withReadinessTimeout(checkQueues(), "Worker queue"),
   ]);
   const checks: ReadinessChecks = {

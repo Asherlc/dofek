@@ -70,6 +70,7 @@ export async function fetchCurrentUser(): Promise<AuthUser | null> {
   });
   const parsed = AuthUserSchema.safeParse(data);
   if (!parsed.success) {
+    captureException(parsed.error, { source: "auth-current-user-schema" });
     throw new Error(invalidSessionResponseMessage);
   }
   return parsed.data;

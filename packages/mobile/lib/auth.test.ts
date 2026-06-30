@@ -1,4 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mockCaptureException = vi.hoisted(() => vi.fn());
+
+vi.mock("./telemetry", () => ({
+  captureException: mockCaptureException,
+}));
+
 import {
   AuthUserSchema,
   ConfiguredProvidersSchema,
@@ -111,6 +118,7 @@ describe("fetchCurrentUser", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    mockCaptureException.mockClear();
   });
 
   it("returns parsed user on success", async () => {
@@ -162,6 +170,10 @@ describe("fetchCurrentUser", () => {
     await expect(fetchCurrentUser("https://srv", "tok")).rejects.toThrow(
       "The server returned an invalid session response. Please try again.",
     );
+    expect(mockCaptureException.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+    expect(mockCaptureException.mock.calls[0]?.[1]).toEqual({
+      source: "auth-current-user-schema",
+    });
   });
 
   it("throws a readable error when success response is not JSON", async () => {
@@ -625,11 +637,11 @@ describe("logout", () => {
   });
 
   it("reports fetch errors to Sentry", async () => {
-    const Sentry = await import("@sentry/react-native");
-    vi.mocked(fetch).mockRejectedValueOnce(new Error("network error"));
+    const logoutError = new Error("network error");
+    vi.mocked(fetch).mockRejectedValueOnce(logoutError);
 
     await logout("https://srv", "my-token");
 
-    expect(Sentry.captureException).toHaveBeenCalled();
+    expect(mockCaptureException).toHaveBeenCalledWith(logoutError, { source: "logout" });
   });
 });

@@ -1,6 +1,7 @@
 import { trace } from "@opentelemetry/api";
 import type { z } from "zod";
 import type {
+  ActivitySensorQueryOptions,
   ActivitySensorStore,
   ActivitySensorWindow,
   StreamPointRow,
@@ -104,24 +105,31 @@ export class LimitedActivitySensorStore implements ActivitySensorStore {
     schema: TSchema,
     query: string,
     params: Record<string, unknown> = {},
+    options: ActivitySensorQueryOptions = {},
   ): Promise<z.infer<TSchema>[]> {
     const key = JSON.stringify([query, params]);
-    const existing = this.#inFlightQueries.get(key);
-    if (existing) {
-      const rows = await existing;
-      return rows.map((row) => schema.parse(row));
+    if (!options.abortSignal) {
+      const existing = this.#inFlightQueries.get(key);
+      if (existing) {
+        const rows = await existing;
+        return rows.map((row) => schema.parse(row));
+      }
     }
 
     const limiter = isDashboardQuery(query) ? this.#dashboardLimiter : this.#regularLimiter;
-    const promise = limiter.run(() => this.#delegate.query(schema, query, params));
-    this.#inFlightQueries.set(
-      key,
-      promise.then((rows): unknown[] => rows),
-    );
+    const promise = limiter.run(() => this.#delegate.query(schema, query, params, options));
+    if (!options.abortSignal) {
+      this.#inFlightQueries.set(
+        key,
+        promise.then((rows): unknown[] => rows),
+      );
+    }
     try {
       return await promise;
     } finally {
-      this.#inFlightQueries.delete(key);
+      if (!options.abortSignal) {
+        this.#inFlightQueries.delete(key);
+      }
     }
   }
 

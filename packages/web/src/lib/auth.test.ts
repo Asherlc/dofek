@@ -1,4 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mockCaptureException = vi.hoisted(() => vi.fn());
+
+vi.mock("./telemetry.ts", () => ({
+  captureException: mockCaptureException,
+}));
+
 import {
   confirmPasswordReset,
   fetchConfiguredProviders,
@@ -38,6 +45,7 @@ describe("fetchCurrentUser", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    mockCaptureException.mockClear();
   });
 
   it("returns user when response is ok", async () => {
@@ -91,6 +99,10 @@ describe("fetchCurrentUser", () => {
     await expect(fetchCurrentUser()).rejects.toThrow(
       "The server returned an invalid session response. Please try again.",
     );
+    expect(mockCaptureException.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+    expect(mockCaptureException.mock.calls[0]?.[1]).toEqual({
+      source: "auth-current-user-schema",
+    });
   });
 
   it("throws readable error when success response is not JSON", async () => {
