@@ -619,11 +619,13 @@ jobs:
             --lines 93.5 --branches 89 --functions 94.5 --statements 93.5
       - name: Diff coverage (changed lines only)
         if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
           pip install diff-cover
           pnpm exec nyc report --temp-dir final-coverage --reporter=lcov --report-dir diff-coverage-lcov
           diff-cover diff-coverage-lcov/lcov.info \
-            --compare-branch=origin/${{ github.base_ref }} \
+            --compare-branch=origin/$BASE_REF \
             --fail-under=80 \
             --markdown-report diff-coverage.md || DIFF_FAILED=1
           if [ -f diff-coverage.md ]; then
@@ -731,11 +733,14 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - id: check
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "$EVENT_NAME" = "push" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
-            CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- \
+            CHANGED=$(git diff --name-only origin/$BASE_REF...HEAD -- \
               packages/mobile/ \
               packages/auth/ \
               packages/format/ \

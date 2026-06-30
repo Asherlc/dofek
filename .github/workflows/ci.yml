@@ -23,12 +23,10 @@ jobs:
   build-mobile:
     name: Build Mobile
     uses: ./.github/workflows/build-mobile.yml
-    secrets: inherit
 
   build-web:
     name: Build Web
     uses: ./.github/workflows/build-web.yml
-    secrets: inherit
 
   build-zepp:
     name: Build Zepp
@@ -37,7 +35,8 @@ jobs:
   test:
     name: Test
     uses: ./.github/workflows/test.yml
-    secrets: inherit
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   ci-gate:
     name: CI Gate
@@ -76,13 +75,13 @@ jobs:
     name: Build Docker
     needs: [ci-gate]
     uses: ./.github/workflows/build-docker.yml
-    secrets: inherit
+    secrets:
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
   build-docker-ml:
     name: Build Docker ML
     needs: [ci-gate]
     uses: ./.github/workflows/build-docker-ml.yml
-    secrets: inherit
 
   # ── Storybook previews (PR only, depend on builds not tests) ────────────
 
@@ -90,13 +89,11 @@ jobs:
     name: Build Storybook
     if: github.event_name == 'pull_request'
     uses: ./.github/workflows/build-storybook.yml
-    secrets: inherit
 
   build-storybook-mobile:
     name: Build Mobile Storybook
     if: github.event_name == 'pull_request'
     uses: ./.github/workflows/build-storybook-mobile.yml
-    secrets: inherit
 
   storybook-preview:
     name: Storybook Preview
