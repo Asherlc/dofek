@@ -323,6 +323,7 @@ export const DISCONNECT_CHILD_TABLES = [
   "fitness.food_entry",
   "fitness.lab_result",
   "fitness.lab_panel",
+  "fitness.medication_dose_event",
   "fitness.health_event",
   "fitness.journal_entry",
   "fitness.dexa_scan",

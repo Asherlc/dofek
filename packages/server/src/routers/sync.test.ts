@@ -235,6 +235,7 @@ describe("syncRouter", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetAllProviders.mockReturnValue([]);
     mockRegisterProvider.mockImplementation(() => undefined);
     mockVeloHeroProvider.mockImplementation(() => ({ id: "velohero" }));
     mockGetProviderSyncQueue.mockImplementation((id: string) => ({
@@ -2436,6 +2437,49 @@ describe("syncRouter", () => {
 
       expect(result.overallStatus).toBe("syncing");
       expect(result.datasets[0]?.status).toBe("missing");
+    });
+
+    it("marks overall status syncing for active jobs in registered provider queues", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "cycling-analytics",
+          name: "Cycling Analytics",
+          validate: () => null,
+          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+        },
+      ]);
+      mockGetProviderSyncQueue.mockImplementation((id: string) => ({
+        add: mockAdd,
+        getJob: mockGetJob,
+        getJobs: vi.fn().mockResolvedValue(
+          id === "cycling-analytics"
+            ? [
+                {
+                  id: "job-1",
+                  data: { userId: "user-1", providerId: "cycling-analytics" },
+                  progress: {},
+                  getState: vi.fn().mockResolvedValue("waiting"),
+                },
+              ]
+            : [],
+        ),
+        getJobCounts: (...states: string[]) => mockGetJobCounts(id, states),
+      }));
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }]);
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("syncing");
+      expect(mockGetProviderSyncQueue).toHaveBeenCalledWith("cycling-analytics");
     });
 
     it("marks overall status syncing when an import job exists for the user", async () => {

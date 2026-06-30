@@ -79,8 +79,8 @@ describe("dataTypeEnum", () => {
 // ---------------------------------------------------------------------------
 
 describe("DISCONNECT_CHILD_TABLES", () => {
-  it("contains 11 child tables", () => {
-    expect(DISCONNECT_CHILD_TABLES).toHaveLength(11);
+  it("contains 12 child tables", () => {
+    expect(DISCONNECT_CHILD_TABLES).toHaveLength(12);
   });
 
   it("includes all required child tables", () => {
@@ -93,6 +93,7 @@ describe("DISCONNECT_CHILD_TABLES", () => {
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.food_entry");
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.lab_result");
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.lab_panel");
+    expect(DISCONNECT_CHILD_TABLES).toContain("fitness.medication_dose_event");
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.health_event");
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.journal_entry");
     expect(DISCONNECT_CHILD_TABLES).toContain("fitness.dexa_scan");
@@ -633,13 +634,13 @@ describe("ProviderDetailRepository", () => {
 
       await repo.deleteProviderData("test-provider");
       expect(txExecute).toHaveBeenCalledTimes(DISCONNECT_CHILD_TABLES.length);
-      expect(txExecute).toHaveBeenCalledTimes(11);
+      expect(txExecute).toHaveBeenCalledTimes(12);
     });
 
     it("DISCONNECT_CHILD_TABLES is an array (not empty array from ArrayDeclaration mutation)", () => {
-      expect(DISCONNECT_CHILD_TABLES.length).toBe(11);
+      expect(DISCONNECT_CHILD_TABLES.length).toBe(12);
       expect(DISCONNECT_CHILD_TABLES[0]).toBe("fitness.daily_metrics");
-      expect(DISCONNECT_CHILD_TABLES[10]).toBe("fitness.oauth_token");
+      expect(DISCONNECT_CHILD_TABLES[11]).toBe("fitness.oauth_token");
     });
 
     it("tableInfo returns three-key objects (not empty objects from ObjectLiteral mutation)", () => {

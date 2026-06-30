@@ -62,7 +62,7 @@ export const dataHealthDatasets = [
     rawLatestExpression: "max(date::timestamptz)",
     rawAccessColumn: "date",
     rawAccessKind: "date",
-    predicate: sql``,
+    predicate: sql`AND (hrv IS NOT NULL OR respiratory_rate_avg IS NOT NULL)`,
     readModelTable: "analytics.daily_recovery",
     readModelLatestExpression: "maxOrNull(date)",
     readModelAccessExpression: "date",
@@ -94,7 +94,7 @@ export const dataHealthDatasets = [
     readModelTable: "analytics.activity_summary_rows",
     readModelLatestExpression: "maxOrNull(started_at)",
     readModelAccessExpression: "toDate(toTimeZone(started_at, {timezone:String}))",
-    readModelPredicate: "",
+    readModelPredicate: "AND is_deleted = 0",
     freshnessComparisonGrain: "timestamp",
   },
 ] as const;

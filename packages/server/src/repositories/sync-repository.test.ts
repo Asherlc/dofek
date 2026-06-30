@@ -445,13 +445,16 @@ describe("SyncRepository", () => {
 
     it("checks daily metric read-model freshness against daily metric fields", async () => {
       const dailyMetricsDataset = getDataHealthDataset("dailyMetrics");
-      const { repo, query } = makeRepository([
+      const { repo, execute, query } = makeRepository([
         { rawRows: 1, latestRawAt: "2026-06-29T00:00:00.000Z" },
       ]);
       query.mockResolvedValueOnce([{ latestReadModelAt: "2026-06-29T00:00:00.000Z" }]);
 
       await repo.getDataHealthFreshness([dailyMetricsDataset], { query });
 
+      const rawSql = collectSqlText(execute.mock.calls[0]?.[0]);
+      expect(rawSql).toContain("hrv IS NOT NULL");
+      expect(rawSql).toContain("respiratory_rate_avg IS NOT NULL");
       expect(query.mock.calls[0]?.[1]).toContain("FROM analytics.daily_recovery FINAL");
       expect(query.mock.calls[0]?.[1]).toContain("hrv IS NOT NULL");
       expect(query.mock.calls[0]?.[1]).toContain("respiratory_rate IS NOT NULL");
@@ -482,6 +485,7 @@ describe("SyncRepository", () => {
       expect(rawSql).not.toContain("started_at >= ");
       expect(query.mock.calls[0]?.[1]).toContain("maxOrNull(started_at)");
       expect(query.mock.calls[0]?.[1]).toContain("FROM analytics.activity_summary_rows FINAL");
+      expect(query.mock.calls[0]?.[1]).toContain("is_deleted = 0");
       expect(query.mock.calls[0]?.[1]).toContain(
         "toDate(toTimeZone(started_at, {timezone:String})) >= toDate",
       );

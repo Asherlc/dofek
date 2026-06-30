@@ -289,9 +289,13 @@ function overallDataHealthStatus(
 async function hasActiveSyncForUser(userId: string): Promise<boolean> {
   try {
     const activeStates: Array<"waiting" | "active" | "delayed"> = ["waiting", "active", "delayed"];
+    const providerIds = new Set([
+      ...getAllConfiguredProviderIds(),
+      ...getAllProviders().map((provider) => provider.id),
+    ]);
     const [providerJobGroups, importJobs] = await Promise.all([
       Promise.all(
-        [...getAllConfiguredProviderIds()].map((providerId) =>
+        [...providerIds].map((providerId) =>
           getProviderSyncQueue(providerId).getJobs(activeStates),
         ),
       ),
