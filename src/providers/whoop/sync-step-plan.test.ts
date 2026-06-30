@@ -234,10 +234,10 @@ describe("WHOOP sync step planning", () => {
       { type: "strain_deep_dive", date: "2026-05-01" },
       { type: "strain_deep_dive", date: "2026-05-02" },
       { type: "strain_deep_dive", date: "2026-05-03" },
-      { type: "sleep_stages", sleepId: "123" },
       { type: "developer_workouts" },
       { type: "persist_workouts" },
       { type: "weightlifting", activityId: "strength-1" },
+      { type: "sleep_stages", sleepId: "123" },
       { type: "heart_rate", start: "2026-05-01T00:00:00.000Z", end: "2026-05-03T00:00:00.000Z" },
       { type: "journal" },
     ]);

@@ -151,10 +151,6 @@ export async function planWhoopApiSteps(
     planWhoopStepIfNotQueued(steps, { type: "strain_deep_dive", date }, context, pendingKeys);
   }
 
-  for (const sleepId of await listWhoopSleepIdsNeedingStages(context)) {
-    planWhoopStepIfNotQueued(steps, { type: "sleep_stages", sleepId }, context, pendingKeys);
-  }
-
   planWhoopStepIfNotQueued(steps, { type: "developer_workouts" }, context, pendingKeys);
   planWhoopStepIfNotQueued(steps, { type: "persist_workouts" }, context, pendingKeys);
 
@@ -163,6 +159,10 @@ export async function planWhoopApiSteps(
     if (activityId) {
       planWhoopStepIfNotQueued(steps, { type: "weightlifting", activityId }, context, pendingKeys);
     }
+  }
+
+  for (const sleepId of await listWhoopSleepIdsNeedingStages(context)) {
+    planWhoopStepIfNotQueued(steps, { type: "sleep_stages", sleepId }, context, pendingKeys);
   }
 
   for (const window of listWhoopHeartRateWindows(context.since, context.windowEnd.getTime())) {

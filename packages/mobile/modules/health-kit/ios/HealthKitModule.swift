@@ -565,7 +565,32 @@ public class HealthKitModule: Module {
                 self.healthStore.execute(query)
             }
 
-            promise.resolve(true)
+            let dispatchGroup = DispatchGroup()
+            let errorLock = NSLock()
+            var backgroundDeliveryErrors: [String] = []
+
+            for sampleType in backgroundDeliveryTypes {
+                dispatchGroup.enter()
+                self.healthStore.enableBackgroundDelivery(for: sampleType, frequency: .hourly) { _, error in
+                    if let error = error {
+                        errorLock.lock()
+                        backgroundDeliveryErrors.append("\(sampleType.identifier): \(error.localizedDescription)")
+                        errorLock.unlock()
+                    }
+                    dispatchGroup.leave()
+                }
+            }
+
+            dispatchGroup.notify(queue: .main) {
+                if backgroundDeliveryErrors.isEmpty {
+                    promise.resolve(true)
+                } else {
+                    promise.reject(
+                        "BG_DELIVERY_ERROR",
+                        backgroundDeliveryErrors.sorted().joined(separator: "; ")
+                    )
+                }
+            }
         }
 
         // ============================================================

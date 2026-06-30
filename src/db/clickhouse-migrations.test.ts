@@ -83,6 +83,7 @@ describe("buildClickHouseMigrationStatements", () => {
       "0033_recreate_deduped_activities_column_order.ts",
       "0034_move_metric_stream_to_ingest.ts",
       "0035_activity_summary_power_climbing_columns.ts",
+      "0036_activity_sensor_summary_power_climbing_columns.ts",
     ]);
   });
 
@@ -294,6 +295,21 @@ SETTINGS allow_nullable_key = 1`);
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.deduped_location");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.activity_summary_rows");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.activity_summary");
+    expect(sql).toContain(
+      "ALTER TABLE analytics.activity_sensor_summary_rows ADD COLUMN IF NOT EXISTS best_twenty_minute_power Nullable(Float64) AFTER last_sample_at",
+    );
+    expect(sql).toContain(
+      "ALTER TABLE analytics.activity_sensor_summary_rows ADD COLUMN IF NOT EXISTS normalized_power Nullable(Float64) AFTER best_twenty_minute_power",
+    );
+    expect(sql).toContain(
+      "ALTER TABLE analytics.activity_sensor_summary_rows ADD COLUMN IF NOT EXISTS smoothed_avg_power Nullable(Float64) AFTER normalized_power",
+    );
+    expect(sql).toContain(
+      "ALTER TABLE analytics.activity_sensor_summary_rows ADD COLUMN IF NOT EXISTS climbing_elevation_gain_m Nullable(Float64) AFTER smoothed_avg_power",
+    );
+    expect(sql).toContain(
+      "ALTER TABLE analytics.activity_sensor_summary_rows ADD COLUMN IF NOT EXISTS climbing_seconds Nullable(Int32) AFTER climbing_elevation_gain_m",
+    );
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.activity_vo2max_estimate");
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.activity_summary_centroids_next");
     expect(sql).toContain("location_centroids AS");
@@ -477,7 +493,7 @@ describe("runClickHouseMigrations", () => {
 
     const count = await runClickHouseMigrations(client, "postgres://health:fixture@db:5432/health");
 
-    expect(count).toBe(35);
+    expect(count).toBe(36);
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS fitness" });
     expect(command).toHaveBeenCalledWith({ query: "CREATE DATABASE IF NOT EXISTS analytics" });
     expect(command).toHaveBeenCalledWith(

@@ -80,6 +80,15 @@ describe("initBackgroundHealthKitSync", () => {
     expect(typeof mockAddSampleUpdateListener.mock.calls[0][0]).toBe("function");
   });
 
+  it("runs an immediate catch-up sync when initialized", async () => {
+    const client = createMockClient();
+    await initBackgroundHealthKitSync(client);
+
+    await vi.waitFor(() => {
+      expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("skips setup when HealthKit was never authorized", async () => {
     mockHasEverAuthorized.mockReturnValueOnce(false);
     const client = createMockClient();
@@ -115,7 +124,7 @@ describe("initBackgroundHealthKitSync", () => {
     // Let sync promises resolve
     await vi.runAllTimersAsync();
 
-    expect(onSyncComplete).toHaveBeenCalledTimes(1);
+    expect(onSyncComplete).toHaveBeenCalledTimes(2);
     vi.useRealTimers();
   });
 

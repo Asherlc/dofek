@@ -11175,3 +11175,76 @@ new incremental tables are populated.
 - **Remaining risk:** Low. The iOS archive job still has its existing Pods cache
   path because it was not the failing action in this incident; monitor it
   separately before changing that broader build behavior.
+
+## 2026-06-30 — Dashboard recovery, strain, and sleep read models stale after ClickHouse schema drift
+
+- **Symptoms:** The production dashboard showed no current recovery, strain, or
+  sleep data for `asherlc@asherlc.com` on 2026-06-30.
+- **User impact:** Current dashboard health cards were stale even though raw
+  provider data existed in Postgres.
+- **Evidence:** Production Postgres had raw rows for the user
+  (`fitness.daily_metrics`, `fitness.sleep_session`, `fitness.activity`) and
+  PeerDB had mirrored them into ClickHouse. The ClickHouse dashboard tables
+  existed but were stale: `analytics.daily_recovery` latest date was
+  2026-06-27, `analytics.daily_strain` latest date was 2026-06-27, and
+  `analytics.daily_sleep` latest date was 2026-06-26. `analytics-worker` dbt
+  builds failed on `analytics.activity_sensor_summary_rows` with
+  `DB::Exception: Number of columns doesn't match (source: 35 and result: 30)`.
+- **Root cause:** PR
+  [#1374](https://github.com/Asherlc/dofek/pull/1374) added five
+  power/climbing columns to the dbt `activity_sensor_summary_rows` model, but
+  the existing production
+  `analytics.activity_sensor_summary_rows` table was not altered to include
+  them. The downstream `activity_summary_rows` table had a ClickHouse migration;
+  the upstream dbt incremental table did not.
+- **Fix / mitigation:** Manually altered the production ClickHouse table to add
+  `best_twenty_minute_power`, `normalized_power`, `smoothed_avg_power`,
+  `climbing_elevation_gain_m`, and `climbing_seconds`, then added tracked
+  ClickHouse migration `0036_activity_sensor_summary_power_climbing_columns` so
+  existing deployments and new spin-ups converge through source-controlled
+  schema migration.
+- **Validation:** The new migration is covered by
+  `src/db/clickhouse-migrations.test.ts` and the registry ordering test. Local
+  focused tests passed:
+  `pnpm vitest run src/db/clickhouse-migrations.test.ts
+  src/db/clickhouse-migrations/registry.test.ts`.
+- **Remaining risk:** WHOOP and Apple Health activity freshness appears to be a
+  separate unresolved provider-ingestion issue. WHOOP recovery/sleep rows
+  reached 2026-06-30, but WHOOP cloud activity rows stopped at 2026-06-21 and
+  sync logs showed 401/NotAuthorized/rate-limit failures. Apple Health workout
+  rows stopped at 2026-06-27 while Apple Health daily/sleep rows reached
+  2026-06-28.
+
+## 2026-06-30 — Apple Health and WHOOP activity ingestion freshness degraded
+
+- **Symptoms:** Activity data from Apple Health and WHOOP appeared stale for
+  `asherlc@asherlc.com` after the dashboard read-model schema issue was fixed.
+- **User impact:** Recent workouts could be missing from activity surfaces even
+  while WHOOP recovery/sleep and older Apple Health samples existed.
+- **Evidence:** Production Postgres showed Apple Health activity latest
+  `started_at` at 2026-06-27 20:52:12 UTC and latest `created_at` at
+  2026-06-28 16:44:25 UTC. Apple Health activity, daily metrics, and sleep all
+  shared the same latest `created_at`, indicating local HealthKit sync stopped
+  after that moment. WHOOP activity latest `started_at` was 2026-06-21 while
+  WHOOP daily metrics and sleep reached 2026-06-30. WHOOP sync logs on
+  2026-06-30 showed repeated `sleep_stages` successes with `record_count = 0`
+  and no current `workouts` logs; 28 June 2026 WHOOP sleep sessions had zero
+  stage rows.
+- **Root cause:** Apple Health registered foreground observer queries but did
+  not run a HealthKit catch-up sync when background sync initialized, and it did
+  not enable HealthKit background delivery for sample types that should wake
+  background sync. WHOOP planned sleep-stage enrichment before workout
+  fetch/persist steps, so inline sleep IDs with no stage rows could consume
+  continuation runs and delay activity ingestion.
+- **Fix / mitigation:** HealthKit background sync now runs a bounded catch-up
+  sync at initialization, enables background delivery for every readable
+  HealthKit sample type, and fails init loudly if registration fails. WHOOP now
+  plans workout fetch, persistence, and strength steps before sleep-stage
+  enrichment.
+- **Validation:** Focused local validation passed:
+  `pnpm vitest run src/providers/whoop/sync-step-plan.test.ts`,
+  `pnpm test:mobile -- packages/mobile/lib/background-health-kit-sync.test.ts`,
+  and `swift test --package-path packages/mobile/modules/health-kit`.
+- **Remaining risk:** This does not backfill data by itself. Apple Health needs
+  the updated mobile app running with HealthKit authorization, and WHOOP needs a
+  new sync run to advance through the reordered activity steps.

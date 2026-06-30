@@ -23,14 +23,26 @@ export async function seedTraining(sql: Sql): Promise<void> {
     const startedAt = timestampAt(date, 6 + (daysAgo % 12), daysAgo % 4 === 0 ? 30 : 0);
     const endedAt = addMinutes(startedAt, durationMinutes);
     const providerId = activityType === "strength" ? "whoop" : "strava";
+    const avgHr =
+      activityType === "cycling"
+        ? 145 + (daysAgo % 10) - (daysAgo % 3)
+        : activityType === "running"
+          ? 155 + (daysAgo % 8)
+          : activityType === "hiking"
+            ? 125 + (daysAgo % 12)
+            : activityType === "walking"
+              ? 95 + (daysAgo % 8)
+              : 110 + (daysAgo % 5);
+    const maxHr = avgHr + 25 + (daysAgo % 10);
     const [{ id: activityId }] = await sql<ActivityRow[]>`
       INSERT INTO fitness.activity (
         provider_id, user_id, external_id, activity_type, started_at, ended_at,
-        name, notes, perceived_exertion, source_name, timezone
+        name, notes, perceived_exertion, avg_hr, max_hr, source_name, timezone
       ) VALUES (
         ${providerId}, ${USER_ID}, ${`seed-activity-${daysAgo}`}, ${activityType},
         ${startedAt}, ${endedAt}, ${activityName(activityType, daysAgo)},
         ${activityNotes(activityType, daysAgo)}, ${perceivedExertion(activityType, daysAgo)},
+        ${avgHr}, ${maxHr},
         ${providerId === "strava" ? "Strava Review Seed" : "WHOOP Strength Review Seed"},
         'America/Los_Angeles'
       ) RETURNING id
