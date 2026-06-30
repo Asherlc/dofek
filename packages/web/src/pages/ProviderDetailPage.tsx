@@ -107,6 +107,7 @@ export function ProviderDetailPage() {
           providerResult?.status === "started" || providerResult?.status === "alreadyQueued"
             ? providerResult.jobId
             : result.jobId;
+        if (!jobId) return;
         await pollSyncJob({
           jobId,
           providerIds: [providerId],

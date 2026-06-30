@@ -53,7 +53,8 @@ export function useAutoSync(latestDate: string | null | undefined) {
     // Trigger API provider sync and poll until complete
     triggerSync
       .mutateAsync({ sinceDays: 1 })
-      .then(async ({ jobId }) => {
+      .then(async ({ jobId }: { jobId?: string }) => {
+        if (!jobId) return;
         const pollUntilDone = async (): Promise<void> => {
           const status = await trpcUtils.sync.syncStatus.fetch({ jobId }, { staleTime: 0 });
           if (!status || status.status === "done" || status.status === "error") {

@@ -524,7 +524,7 @@ export const syncRouter = router({
         startWorker();
       }
       return {
-        jobId: providerJobs.length > 0 ? providerJobs[0].jobId : undefined,
+        jobId: providerJobs[0]?.jobId,
         jobIds: providerJobs.map((job) => job.jobId),
         providerJobs,
         providerResults,

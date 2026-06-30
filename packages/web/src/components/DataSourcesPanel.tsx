@@ -84,6 +84,7 @@ export function DataSourcesPanel() {
           providerResult?.status === "started" || providerResult?.status === "alreadyQueued"
             ? providerResult.jobId
             : result.jobId;
+        if (!jobId) return;
         await doPollSyncJob(jobId, [providerId]);
       } catch (err: unknown) {
         updateState(providerId, {

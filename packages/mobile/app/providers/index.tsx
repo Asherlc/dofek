@@ -388,6 +388,7 @@ export default function ProvidersScreen() {
           providerResult?.status === "started" || providerResult?.status === "alreadyQueued"
             ? providerResult.jobId
             : result.jobId;
+        if (!jobId) return;
         await pollJob(jobId, [providerId]);
       } catch (error: unknown) {
         captureException(error, { context: "sync-provider" });
@@ -476,7 +477,7 @@ export default function ProvidersScreen() {
               await pollJob(jobId, [providerId]);
             }),
           );
-        } else {
+        } else if (result.jobId) {
           await pollJob(result.jobId, ids);
         }
       } catch (error: unknown) {
