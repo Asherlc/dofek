@@ -15,14 +15,14 @@ import { syncWindowFromTriggerInput, syncWindowToJobData } from "dofek/jobs/sync
 import { queryCache } from "dofek/lib/cache";
 import { ProviderModel } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";
-import { sql as sqlTag } from "drizzle-orm";
 import { z } from "zod";
 import { hasCurrentProviderAuthFailure } from "../lib/provider-auth-state.ts";
 import { sanitizeErrorMessage } from "../lib/sanitize-error.ts";
 import { startWorker } from "../lib/start-worker.ts";
-import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import {
+  type DataHealthSensorStore,
+  dataHealthDatasets,
   type ProviderStatRow,
   type PushProviderLastReceived,
   SyncRepository,
@@ -215,51 +215,6 @@ const dataHealthOutputSchema = z.object({
   ),
 });
 
-const dataHealthDatasets = [
-  {
-    key: "dailyMetrics",
-    label: "Daily metrics",
-    rawTable: "fitness.daily_metrics",
-    rawLatestExpression: "max(date::timestamptz)",
-    predicate: sqlTag``,
-    readModelTable: "analytics.daily_recovery",
-  },
-  {
-    key: "sleep",
-    label: "Sleep",
-    rawTable: "fitness.sleep_session",
-    rawLatestExpression: "max(started_at)",
-    predicate: sqlTag``,
-    readModelTable: "analytics.daily_sleep",
-  },
-  {
-    key: "activity",
-    label: "Activities",
-    rawTable: "fitness.activity",
-    rawLatestExpression: "max(started_at)",
-    predicate: sqlTag`AND provider_absent_at IS NULL AND deleted_at IS NULL`,
-    readModelTable: "analytics.daily_strain",
-  },
-] as const;
-
-const rawFreshnessSchema = z.object({
-  rawRows: z.coerce.number(),
-  latestRawAt: z.union([z.string(), z.date()]).nullable(),
-});
-
-const readModelFreshnessSchema = z.object({
-  latestReadModelAt: z.union([z.string(), z.date()]).nullable(),
-});
-
-interface DataHealthSensorStore {
-  query<TSchema extends z.ZodType>(
-    schema: TSchema,
-    query: string,
-    params?: Record<string, unknown>,
-    options?: { priority?: "dashboard" },
-  ): Promise<z.infer<TSchema>[]>;
-}
-
 function hasDataHealthSensorStore(value: unknown): value is DataHealthSensorStore {
   if (typeof value !== "object" || value === null) return false;
   return "query" in value && typeof value.query === "function";
@@ -350,7 +305,10 @@ async function hasActiveSyncForUser(userId: string): Promise<boolean> {
     });
   } catch (error) {
     captureException(error);
-    throw error;
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Unable to check sync readiness because the queue service is unavailable.",
+    });
   }
 }
 
@@ -748,39 +706,17 @@ export const syncRouter = router({
     .output(dataHealthOutputSchema)
     .query(async ({ ctx }) => {
       const sensorStore = hasDataHealthSensorStore(ctx.sensorStore) ? ctx.sensorStore : null;
-      const rawFreshnessRows = await Promise.all(
-        dataHealthDatasets.map((dataset) =>
-          executeWithSchema(
-            ctx.db,
-            rawFreshnessSchema,
-            sqlTag`SELECT count(*)::int AS "rawRows",
-                        ${sqlTag.raw(dataset.rawLatestExpression)} AS "latestRawAt"
-                 FROM ${sqlTag.raw(dataset.rawTable)}
-                 WHERE user_id = ${ctx.userId}
-                 ${dataset.predicate}`,
-          ),
-        ),
-      );
-      const readModelFreshnessRows = await Promise.all(
-        dataHealthDatasets.map((dataset) => {
-          if (!sensorStore) return Promise.resolve([]);
-          return sensorStore.query(
-            readModelFreshnessSchema,
-            `SELECT maxOrNull(date) AS latestReadModelAt
-           FROM ${dataset.readModelTable} FINAL
-           WHERE user_id = {userId:UUID}`,
-            { userId: ctx.userId },
-            { priority: "dashboard" },
-          );
-        }),
+      const repo = new SyncRepository(ctx.db, ctx.userId);
+      const freshnessRows = await repo.getDataHealthFreshness(
+        dataHealthDatasets,
+        sensorStore ?? undefined,
       );
 
       const datasets = dataHealthDatasets.map((dataset, index) => {
-        const rawRow = rawFreshnessRows[index]?.[0];
-        const readModelRow = readModelFreshnessRows[index]?.[0];
-        const rawRows = rawRow?.rawRows ?? 0;
-        const latestRawAt = timestampToIsoString(rawRow?.latestRawAt ?? null);
-        const latestReadModelAt = timestampToIsoString(readModelRow?.latestReadModelAt ?? null);
+        const freshnessRow = freshnessRows[index];
+        const rawRows = freshnessRow?.rawRows ?? 0;
+        const latestRawAt = timestampToIsoString(freshnessRow?.latestRawAt ?? null);
+        const latestReadModelAt = timestampToIsoString(freshnessRow?.latestReadModelAt ?? null);
         const readModelLagSeconds = dateGrainSecondsBetween(latestRawAt, latestReadModelAt);
         const status = datasetStatus({ rawRows, latestReadModelAt, readModelLagSeconds });
         return {

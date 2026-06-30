@@ -2429,7 +2429,7 @@ describe("syncRouter", () => {
       expect(mockImportQueueGetJobs).toHaveBeenCalledWith(["waiting", "active", "delayed"]);
     });
 
-    it("surfaces queue failures instead of hiding readiness errors", async () => {
+    it("surfaces queue failures as stable readiness errors", async () => {
       mockGetJobs.mockRejectedValueOnce(new Error("Redis connection refused"));
       const mockExecute = vi
         .fn()
@@ -2442,7 +2442,10 @@ describe("syncRouter", () => {
         timezone: "UTC",
       });
 
-      await expect(caller.dataHealth()).rejects.toThrow("Redis connection refused");
+      await expect(caller.dataHealth()).rejects.toMatchObject({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Unable to check sync readiness because the queue service is unavailable.",
+      });
       expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error));
     });
   });

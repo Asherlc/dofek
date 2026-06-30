@@ -6,12 +6,14 @@
 
 **Tech Stack:** TypeScript, Knip, Vitest, Storybook, Drizzle schema modules, React, React Native/Expo.
 
+**Command Wrapper:** Commands intentionally start with `rtk`, this workspace's required local command wrapper. Run the command exactly as shown in this workspace.
+
 ---
 
 ## File Structure
 
 - Modify root package exports and `knip.json`: remove stale package export/config drift.
-- Split `src/db/schema.ts` into focused schema modules imported by the existing schema entrypoint.
+- Split `src/db/schema.ts` into focused schema modules, then update callers to import concrete modules directly without keeping a re-export shim.
 - Split `packages/mobile/app/settings.tsx` into focused Settings components.
 - Split `packages/web/src/pages/ProviderDetailPage.tsx` into provider detail components.
 - Add or update Storybook stories for every touched component under `packages/web/src/components/` and `packages/mobile/components/`.
@@ -88,7 +90,7 @@ Expected: FAIL because `src/db/schema/clinical.ts` does not exist.
 
 - [ ] **Step 3 (GREEN): Move the clinical schema group**
 
-Move the clinical tables first: `medication`, `medicationDoseEvent`, `condition`, and `allergyIntolerance` into `src/db/schema/clinical.ts`. Keep exported symbol names identical. Re-export those symbols from `src/db/schema.ts` so existing imports from `dofek/db/schema` keep working.
+Move the clinical tables first: `medication`, `medicationDoseEvent`, `condition`, and `allergyIntolerance` into `src/db/schema/clinical.ts`. Keep exported symbol names identical. Update existing imports to use `src/db/schema/clinical.ts` or the package-specific concrete module path directly; do not keep `src/db/schema.ts` as a re-export shim.
 
 - [ ] **Step 4 (GREEN): Verify clinical imports**
 
@@ -101,7 +103,7 @@ Expected: PASS.
 
 - [ ] **Step 5 (REFACTOR): Move remaining cohesive schema groups**
 
-Move provider/account tables into `providers.ts`, activity/sensor tables into `activity.ts`, and food/nutrition tables into `nutrition.ts`. Preserve all exported names and table definitions exactly.
+Move provider/account tables into `providers.ts`, activity/sensor tables into `activity.ts`, and food/nutrition tables into `nutrition.ts`. Preserve all exported names and table definitions exactly. Replace callers with imports from the concrete schema module that owns each table; do not add barrel files or compatibility re-export layers.
 
 - [ ] **Step 6 (GREEN): Verify schema size and tests**
 

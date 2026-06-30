@@ -6,6 +6,8 @@
 
 **Tech Stack:** TypeScript, tRPC, Zod, Vitest, ClickHouse, dbt-owned analytics read models, React, React Native/Expo.
 
+**Command Wrapper:** Commands intentionally start with `rtk`, this workspace's required local command wrapper. Run the command exactly as shown in this workspace.
+
 ---
 
 ## File Structure

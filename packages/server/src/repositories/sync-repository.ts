@@ -4,9 +4,9 @@ import {
   type ProviderAuthFailureReason,
   providerAuthFailureReasonSchema,
 } from "dofek/providers/auth-errors";
-import { sql } from "drizzle-orm";
+import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
 // Zod row schemas
@@ -43,6 +43,42 @@ const clickHouseProviderStatsRowSchema = z.object({
   lab_results: z.coerce.number(),
   journal_entries: z.coerce.number(),
 });
+
+const dataHealthRawFreshnessRowSchema = z.object({
+  rawRows: z.coerce.number(),
+  latestRawAt: timestampStringSchema.nullable(),
+});
+
+const dataHealthReadModelFreshnessRowSchema = z.object({
+  latestReadModelAt: timestampStringSchema.nullable(),
+});
+
+export const dataHealthDatasets = [
+  {
+    key: "dailyMetrics",
+    label: "Daily metrics",
+    rawTable: "fitness.daily_metrics",
+    rawLatestExpression: "max(date::timestamptz)",
+    predicate: sql``,
+    readModelTable: "analytics.daily_recovery",
+  },
+  {
+    key: "sleep",
+    label: "Sleep",
+    rawTable: "fitness.sleep_session",
+    rawLatestExpression: "max(started_at)",
+    predicate: sql``,
+    readModelTable: "analytics.daily_sleep",
+  },
+  {
+    key: "activity",
+    label: "Activities",
+    rawTable: "fitness.activity",
+    rawLatestExpression: "max(started_at)",
+    predicate: sql`AND provider_absent_at IS NULL AND deleted_at IS NULL`,
+    readModelTable: "analytics.daily_strain",
+  },
+] as const;
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -104,6 +140,31 @@ interface ProviderStatsClickHouseStore {
     query: string,
     params?: Record<string, unknown>,
   ): Promise<z.infer<TSchema>[]>;
+}
+
+export interface DataHealthSensorStore {
+  query<TSchema extends z.ZodType>(
+    schema: TSchema,
+    query: string,
+    params?: Record<string, unknown>,
+    options?: { priority?: "dashboard" },
+  ): Promise<z.infer<TSchema>[]>;
+}
+
+interface DataHealthDatasetQuery {
+  key: (typeof dataHealthDatasets)[number]["key"];
+  label: string;
+  rawTable: string;
+  rawLatestExpression: string;
+  predicate: SQL;
+  readModelTable: string;
+}
+
+export interface DataHealthFreshnessRow {
+  key: (typeof dataHealthDatasets)[number]["key"];
+  rawRows: number;
+  latestRawAt: string | null;
+  latestReadModelAt: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -250,6 +311,50 @@ export class SyncRepository {
       labResults: row.lab_results,
       journalEntries: row.journal_entries,
     }));
+  }
+
+  /** Freshness details for primary dashboard datasets. */
+  async getDataHealthFreshness(
+    datasets: readonly DataHealthDatasetQuery[] = dataHealthDatasets,
+    sensorStore?: DataHealthSensorStore,
+  ): Promise<DataHealthFreshnessRow[]> {
+    const rawFreshnessRows = await Promise.all(
+      datasets.map((dataset) =>
+        executeWithSchema(
+          this.#db,
+          dataHealthRawFreshnessRowSchema,
+          sql`SELECT count(*)::int AS "rawRows",
+                     ${sql.raw(dataset.rawLatestExpression)} AS "latestRawAt"
+              FROM ${sql.raw(dataset.rawTable)}
+              WHERE user_id = ${this.#userId}
+              ${dataset.predicate}`,
+        ),
+      ),
+    );
+    const readModelFreshnessRows = await Promise.all(
+      datasets.map((dataset) => {
+        if (!sensorStore) return Promise.resolve([]);
+        return sensorStore.query(
+          dataHealthReadModelFreshnessRowSchema,
+          `SELECT maxOrNull(date) AS latestReadModelAt
+           FROM ${dataset.readModelTable} FINAL
+           WHERE user_id = {userId:UUID}`,
+          { userId: this.#userId },
+          { priority: "dashboard" },
+        );
+      }),
+    );
+
+    return datasets.map((dataset, index) => {
+      const rawRow = rawFreshnessRows[index]?.[0];
+      const readModelRow = readModelFreshnessRows[index]?.[0];
+      return {
+        key: dataset.key,
+        rawRows: rawRow?.rawRows ?? 0,
+        latestRawAt: rawRow?.latestRawAt ?? null,
+        latestReadModelAt: readModelRow?.latestReadModelAt ?? null,
+      };
+    });
   }
 
   async #getClickHouseProviderStats(): Promise<z.infer<typeof clickHouseProviderStatsRowSchema>[]> {

@@ -1,6 +1,7 @@
 import { medicationDoseEvent } from "dofek/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
+import { timestampStringSchema } from "../lib/typed-sql.ts";
 import { protectedProcedure, router } from "../trpc.ts";
 
 const listInputSchema = z.object({
@@ -15,7 +16,7 @@ const listOutputSchema = z.object({
       medicationName: z.string(),
       medicationConceptId: z.string().nullable(),
       doseStatus: z.string(),
-      recordedAt: z.string(),
+      recordedAt: timestampStringSchema,
       sourceName: z.string().nullable(),
     }),
   ),
@@ -41,11 +42,6 @@ export const medicationDoseEventsRouter = router({
         .orderBy(desc(medicationDoseEvent.recordedAt))
         .limit(input.limit);
 
-      return {
-        events: rows.map((row) => ({
-          ...row,
-          recordedAt: row.recordedAt.toISOString(),
-        })),
-      };
+      return { events: rows };
     }),
 });

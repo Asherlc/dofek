@@ -6,6 +6,8 @@
 
 **Tech Stack:** TypeScript, tRPC, Zod, Drizzle, Vitest, React, React Native/Expo, Storybook.
 
+**Command Wrapper:** Commands intentionally start with `rtk`, this workspace's required local command wrapper. Run the command exactly as shown in this workspace.
+
 ---
 
 ## File Structure

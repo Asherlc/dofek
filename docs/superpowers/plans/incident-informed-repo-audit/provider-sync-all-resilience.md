@@ -6,6 +6,10 @@
 
 **Tech Stack:** TypeScript, tRPC, Zod, BullMQ, Vitest, React, React Native/Expo.
 
+**Command Wrapper:** Commands intentionally start with `rtk`, this workspace's required local command wrapper. Run the command exactly as shown in this workspace.
+
+**Primary Sources:** Existing `triggerSync`, `activeSyncs`, and queue backpressure behavior lives in [`packages/server/src/routers/sync.ts`](../../../../packages/server/src/routers/sync.ts) and is covered by [`packages/server/src/routers/sync.test.ts`](../../../../packages/server/src/routers/sync.test.ts). Web provider sync rendering is in [`packages/web/src/components/DataSourcesPanel.tsx`](../../../../packages/web/src/components/DataSourcesPanel.tsx), [`packages/web/src/components/SyncProviderCard.tsx`](../../../../packages/web/src/components/SyncProviderCard.tsx), and [`packages/web/src/components/SyncProviderCard.test.tsx`](../../../../packages/web/src/components/SyncProviderCard.test.tsx). Mobile provider rendering is in [`packages/mobile/app/providers/index.tsx`](../../../../packages/mobile/app/providers/index.tsx) and [`packages/mobile/app/providers/provider-card.tsx`](../../../../packages/mobile/app/providers/provider-card.tsx).
+
 ---
 
 ## File Structure
