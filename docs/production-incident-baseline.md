@@ -7,6 +7,54 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-06-30: CI failed on pre-dbt ClickHouse migration and stale seed columns
+
+### Symptoms
+
+The branch CI failed first in `Test / E2E Tests (Web)` during the `Run e2e
+migrations` step, then exposed a separate `Test / Integration Tests` failure
+after the migration issue was fixed.
+
+### User Impact
+
+No production users were impacted. The failures blocked CI for the branch and
+prevented safe merge validation.
+
+### Evidence
+
+The failing E2E command was the workflow migration step that runs ClickHouse
+migrations before dbt builds analytics models. The first fatal line was
+`[migrate] Error: Could not find table: activity_sensor_summary_rows`.
+
+After that was fixed, the failing integration command was
+`pnpm exec vitest run --project integration --coverage`. The first fatal line
+inside the seed subprocess was
+`error: column "avg_hr" of relation "activity" does not exist` from
+`pnpm exec tsx scripts/seed-dev-db.ts`.
+
+### Root Cause
+
+ClickHouse migration `0036_activity_sensor_summary_power_climbing_columns`
+altered the dbt-owned `analytics.activity_sensor_summary_rows` table before the
+E2E workflow built dbt models in a fresh ClickHouse database. Separately,
+`scripts/seed/training.ts` still inserted legacy `avg_hr` and `max_hr` columns
+into `fitness.activity`, but the canonical activity schema no longer contains
+those aggregate heart-rate columns.
+
+### Fix or Mitigation
+
+Changed migration `0036` to check `system.tables` before running its `ALTER
+TABLE` statements, while preserving the plain `ALTER TABLE` statements for
+normal migration SQL generation and existing databases. Added mutation-killing
+unit coverage for the table-existence guard. Removed the stale `avg_hr` and
+`max_hr` insert targets from the reviewer training seed.
+
+### Remaining Risk
+
+No remaining CI risk was observed after the fix. The final CI run for commit
+`173ab0a4100d5e7cf11cb777e531349464f393a2` completed successfully, including
+E2E, integration tests, all Stryker shards, and coverage aggregation.
+
 ## 2026-06-17: Raw PeerDB mirrors missing from production
 
 ### Symptoms
