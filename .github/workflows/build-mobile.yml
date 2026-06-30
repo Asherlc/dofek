@@ -162,14 +162,6 @@ jobs:
       - name: Generate native project
         working-directory: packages/mobile
         run: pnpm expo prebuild --clean --platform ios
-      - name: Cache CocoaPods
-        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
-        with:
-          path: packages/mobile/ios/Pods
-          key: pods-watchos-v9-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'pnpm-lock.yaml') }}
-          restore-keys: pods-watchos-v9-
-      - name: Install CocoaPods dependencies
-        run: cd packages/mobile/ios && pod install
       - name: Build Watch target for simulator
         run: |
           set -o pipefail
