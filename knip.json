@@ -9,10 +9,10 @@
         "src/opentelemetry-hook.mjs",
         "vitest.config.mutation.ts"
       ],
-      "project": ["src/**/*.ts", "src/**/*.mjs", "*.config.{ts,js,json}"],
+      "project": ["src/**/*.ts", "src/**/*.mjs", "*.config.{ts,js}"],
       "ignoreDependencies": ["sharp", "tsx"],
       "ignoreBinaries": [
-        "tsr", "expo", "license-checker",
+        "expo", "license-checker",
         "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later",
         "AGPL-1.0-only", "AGPL-3.0-only", "AGPL-3.0-or-later"
       ],
@@ -29,7 +29,6 @@
       }
     },
     "packages/web": {
-      "ignoreDependencies": ["@tanstack/router-cli"],
       "vitest": {
         "config": ["../../vitest.config.ts"],
         "entry": ["src/**/*.test.{ts,tsx}"]
@@ -39,7 +38,6 @@
       "entry": [
         "app/**/*.{ts,tsx}",
         "modules/*/index.ts",
-        "metro.config.js",
         "plugins/*.js",
         "types/api.ts",
         "theme.ts"
