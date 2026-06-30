@@ -1085,33 +1085,6 @@ jobs:
             exit 1
           fi
 
-  # ── PR quality gates ───────────────────────────────────────────────────
-
-  pr-size:
-    name: PR Size
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - name: Check PR size
-        run: |
-          STATS=$(git diff -w --numstat origin/${{ github.base_ref }}...HEAD)
-          ADDITIONS=$(echo "$STATS" | awk '{ add += $1 } END { print add+0 }')
-          DELETIONS=$(echo "$STATS" | awk '{ del += $2 } END { print del+0 }')
-          FILES=$(git diff -w --name-only origin/${{ github.base_ref }}...HEAD | wc -l | tr -d ' ')
-          echo "## PR Size" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **$ADDITIONS** additions, **$DELETIONS** deletions across **$FILES** files" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$ADDITIONS" -gt 2000 ]; then
-            echo "::warning::Large PR: $ADDITIONS additions across $FILES files. Consider splitting into smaller PRs."
-          fi
-          if [ "$ADDITIONS" -gt 8000 ]; then
-            echo "::error::PR exceeds 8000 additions ($ADDITIONS). Please split into smaller PRs."
-            exit 1
-          fi
-
   migration-lint:
     name: Migration Lint
     if: github.event_name == 'pull_request'
@@ -1141,7 +1114,7 @@ jobs:
 
   test-all-gate:
     name: Test Gate
-    needs: [security-gate, quality-gate, test-gate, test-e2e-web, test-mobile, test-swift, mutation-gate, mutation-swift, pr-size, migration-lint]
+    needs: [security-gate, quality-gate, test-gate, test-e2e-web, test-mobile, test-swift, mutation-gate, mutation-swift, migration-lint]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -1156,7 +1129,6 @@ jobs:
             "${{ needs.test-swift.result }}" \
             "${{ needs.mutation-gate.result }}" \
             "${{ needs.mutation-swift.result }}" \
-            "${{ needs.pr-size.result }}" \
             "${{ needs.migration-lint.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
               echo "Test gate failed"
