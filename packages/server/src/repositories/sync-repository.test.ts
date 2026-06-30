@@ -30,6 +30,21 @@ function makeRepository(
   return { repo, execute, query, select };
 }
 
+function collectSqlText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value !== "object" || value === null) return "";
+  const queryChunks = Reflect.get(value, "queryChunks");
+  if (Array.isArray(queryChunks)) {
+    return queryChunks.map((queryChunk) => collectSqlText(queryChunk)).join("");
+  }
+  const rawValue = Reflect.get(value, "value");
+  if (Array.isArray(rawValue)) {
+    return rawValue.map((rawChunk) => collectSqlText(rawChunk)).join("");
+  }
+  if (typeof rawValue === "string") return rawValue;
+  return "";
+}
+
 // ---------------------------------------------------------------------------
 // Repository tests
 // ---------------------------------------------------------------------------
@@ -287,6 +302,8 @@ describe("SyncRepository", () => {
       label: "Daily metrics",
       rawTable: "fitness.daily_metrics",
       rawLatestExpression: "max(date::timestamptz)",
+      rawAccessColumn: "date",
+      rawAccessKind: "date" as const,
       predicate: sql``,
       readModelTable: "analytics.daily_recovery",
     };
@@ -353,6 +370,42 @@ describe("SyncRepository", () => {
           latestReadModelAt: null,
         },
       ]);
+    });
+
+    it("scopes raw and read-model freshness to limited access windows", async () => {
+      const { repo, execute, query } = makeRepository([
+        { rawRows: 1, latestRawAt: "2026-06-03T00:00:00.000Z" },
+      ]);
+      query.mockImplementationOnce(<TSchema extends z.ZodType>(schema: TSchema) =>
+        Promise.resolve([{ latestReadModelAt: "2026-06-03" }].map((row) => schema.parse(row))),
+      );
+
+      await repo.getDataHealthFreshness(
+        [dataHealthDataset],
+        { query },
+        {
+          kind: "limited",
+          paid: false,
+          reason: "free_signup_week",
+          startDate: "2026-06-01",
+          endDateExclusive: "2026-06-08",
+        },
+      );
+
+      const rawSql = collectSqlText(execute.mock.calls[0]?.[0]);
+      expect(rawSql).toContain(">=");
+      expect(rawSql).toContain("<");
+      expect(rawSql).toContain("::date");
+      expect(query).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining("date >= toDate({accessStartDate:String})"),
+        {
+          userId: "user-1",
+          accessStartDate: "2026-06-01",
+          accessEndDateExclusive: "2026-06-08",
+        },
+        { priority: "dashboard" },
+      );
     });
   });
 

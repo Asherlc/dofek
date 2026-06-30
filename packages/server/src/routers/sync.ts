@@ -702,44 +702,43 @@ export const syncRouter = router({
     }),
 
   /** User-facing freshness/readiness state for primary dashboard datasets. */
-  dataHealth: cachedProtectedQuery(CacheTTL.SHORT)
-    .output(dataHealthOutputSchema)
-    .query(async ({ ctx }) => {
-      const sensorStore = hasDataHealthSensorStore(ctx.sensorStore) ? ctx.sensorStore : null;
-      const repo = new SyncRepository(ctx.db, ctx.userId);
-      const freshnessRows = await repo.getDataHealthFreshness(
-        dataHealthDatasets,
-        sensorStore ?? undefined,
-      );
+  dataHealth: protectedProcedure.output(dataHealthOutputSchema).query(async ({ ctx }) => {
+    const sensorStore = hasDataHealthSensorStore(ctx.sensorStore) ? ctx.sensorStore : null;
+    const repo = new SyncRepository(ctx.db, ctx.userId);
+    const freshnessRows = await repo.getDataHealthFreshness(
+      dataHealthDatasets,
+      sensorStore ?? undefined,
+      ctx.accessWindow,
+    );
 
-      const datasets = dataHealthDatasets.map((dataset, index) => {
-        const freshnessRow = freshnessRows[index];
-        const rawRows = freshnessRow?.rawRows ?? 0;
-        const latestRawAt = timestampToIsoString(freshnessRow?.latestRawAt ?? null);
-        const latestReadModelAt = timestampToIsoString(freshnessRow?.latestReadModelAt ?? null);
-        const readModelLagSeconds = dateGrainSecondsBetween(latestRawAt, latestReadModelAt);
-        const status = datasetStatus({ rawRows, latestReadModelAt, readModelLagSeconds });
-        return {
-          key: dataset.key,
-          label: dataset.label,
-          rawRows,
-          latestRawAt,
-          latestReadModelAt,
-          cdcLagSeconds: readModelLagSeconds,
-          readModelLagSeconds,
-          status,
-          message: datasetMessage({ label: dataset.label, status }),
-        };
-      });
-      const hasActiveSync = await hasActiveSyncForUser(ctx.userId);
-
+    const datasets = dataHealthDatasets.map((dataset, index) => {
+      const freshnessRow = freshnessRows[index];
+      const rawRows = freshnessRow?.rawRows ?? 0;
+      const latestRawAt = timestampToIsoString(freshnessRow?.latestRawAt ?? null);
+      const latestReadModelAt = timestampToIsoString(freshnessRow?.latestReadModelAt ?? null);
+      const readModelLagSeconds = dateGrainSecondsBetween(latestRawAt, latestReadModelAt);
+      const status = datasetStatus({ rawRows, latestReadModelAt, readModelLagSeconds });
       return {
-        overallStatus: overallDataHealthStatus(
-          datasets.map((dataset) => dataset.status),
-          hasActiveSync,
-        ),
-        generatedAt: new Date().toISOString(),
-        datasets,
+        key: dataset.key,
+        label: dataset.label,
+        rawRows,
+        latestRawAt,
+        latestReadModelAt,
+        cdcLagSeconds: readModelLagSeconds,
+        readModelLagSeconds,
+        status,
+        message: datasetMessage({ label: dataset.label, status }),
       };
-    }),
+    });
+    const hasActiveSync = await hasActiveSyncForUser(ctx.userId);
+
+    return {
+      overallStatus: overallDataHealthStatus(
+        datasets.map((dataset) => dataset.status),
+        hasActiveSync,
+      ),
+      generatedAt: new Date().toISOString(),
+      datasets,
+    };
+  }),
 });

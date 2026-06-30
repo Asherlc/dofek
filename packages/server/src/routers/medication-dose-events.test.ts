@@ -4,6 +4,21 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 const createCaller = createTestCallerFactory(medicationDoseEventsRouter);
 
+function collectSqlText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value !== "object" || value === null) return "";
+  const queryChunks = Reflect.get(value, "queryChunks");
+  if (Array.isArray(queryChunks)) {
+    return queryChunks.map((queryChunk) => collectSqlText(queryChunk)).join("");
+  }
+  const rawValue = Reflect.get(value, "value");
+  if (Array.isArray(rawValue)) {
+    return rawValue.map((rawChunk) => collectSqlText(rawChunk)).join("");
+  }
+  if (typeof rawValue === "string") return rawValue;
+  return "";
+}
+
 describe("medicationDoseEventsRouter", () => {
   it("lists dose events for the current user only", async () => {
     const db = {
@@ -98,5 +113,36 @@ describe("medicationDoseEventsRouter", () => {
     const result = await caller.list({ limit: 25 });
 
     expect(result.events[0]?.recordedAt).toBe("2026-06-29T15:30:00.000Z");
+  });
+
+  it("scopes dose events to limited access windows", async () => {
+    const where = vi.fn(() => ({
+      orderBy: vi.fn(() => ({
+        limit: vi.fn().mockResolvedValue([]),
+      })),
+    }));
+    const db = {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({ where })),
+      })),
+    };
+    const caller = createCaller({
+      db,
+      userId: "user-1",
+      timezone: "UTC",
+      accessWindow: {
+        kind: "limited",
+        paid: false,
+        reason: "free_signup_week",
+        startDate: "2026-06-01",
+        endDateExclusive: "2026-06-08",
+      },
+    });
+
+    await caller.list({ limit: 25 });
+
+    const whereSql = collectSqlText(where.mock.calls[0]?.[0]);
+    expect(whereSql).toContain(">=");
+    expect(whereSql).toContain("<");
   });
 });

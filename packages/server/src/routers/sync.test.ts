@@ -245,7 +245,7 @@ describe("syncRouter", () => {
   const createCaller = createTestCallerFactory(syncRouter);
 
   it("uses a short cache for read-heavy protected queries", () => {
-    expect(routerConstructionCachedTtlValues).toEqual([120_000, 120_000, 120_000, 120_000]);
+    expect(routerConstructionCachedTtlValues).toEqual([120_000, 120_000, 120_000]);
   });
 
   beforeEach(() => {

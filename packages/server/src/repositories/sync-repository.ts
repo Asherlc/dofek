@@ -6,6 +6,7 @@ import {
 } from "dofek/providers/auth-errors";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
+import type { AccessWindow } from "../billing/entitlement.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
@@ -59,6 +60,8 @@ export const dataHealthDatasets = [
     label: "Daily metrics",
     rawTable: "fitness.daily_metrics",
     rawLatestExpression: "max(date::timestamptz)",
+    rawAccessColumn: "date",
+    rawAccessKind: "date",
     predicate: sql``,
     readModelTable: "analytics.daily_recovery",
   },
@@ -67,6 +70,8 @@ export const dataHealthDatasets = [
     label: "Sleep",
     rawTable: "fitness.sleep_session",
     rawLatestExpression: "max(started_at)",
+    rawAccessColumn: "started_at",
+    rawAccessKind: "timestamp",
     predicate: sql``,
     readModelTable: "analytics.daily_sleep",
   },
@@ -75,6 +80,8 @@ export const dataHealthDatasets = [
     label: "Activities",
     rawTable: "fitness.activity",
     rawLatestExpression: "max(started_at)",
+    rawAccessColumn: "started_at",
+    rawAccessKind: "timestamp",
     predicate: sql`AND provider_absent_at IS NULL AND deleted_at IS NULL`,
     readModelTable: "analytics.daily_strain",
   },
@@ -156,6 +163,8 @@ interface DataHealthDatasetQuery {
   label: string;
   rawTable: string;
   rawLatestExpression: string;
+  rawAccessColumn: string;
+  rawAccessKind: "date" | "timestamp";
   predicate: SQL;
   readModelTable: string;
 }
@@ -165,6 +174,36 @@ export interface DataHealthFreshnessRow {
   rawRows: number;
   latestRawAt: string | null;
   latestReadModelAt: string | null;
+}
+
+function rawAccessWindowPredicate(
+  dataset: DataHealthDatasetQuery,
+  accessWindow: AccessWindow | undefined,
+): SQL {
+  if (!accessWindow || accessWindow.kind === "full") return sql``;
+  const accessColumn = sql.raw(dataset.rawAccessColumn);
+  if (dataset.rawAccessKind === "date") {
+    return sql`AND ${accessColumn} >= ${accessWindow.startDate}::date
+               AND ${accessColumn} < ${accessWindow.endDateExclusive}::date`;
+  }
+  return sql`AND ${accessColumn} >= ${accessWindow.startDate}::timestamptz
+             AND ${accessColumn} < ${accessWindow.endDateExclusive}::timestamptz`;
+}
+
+function readModelAccessWindowClause(accessWindow: AccessWindow | undefined): string {
+  if (!accessWindow || accessWindow.kind === "full") return "";
+  return `AND date >= toDate({accessStartDate:String})
+          AND date < toDate({accessEndDateExclusive:String})`;
+}
+
+function readModelAccessWindowParams(
+  accessWindow: AccessWindow | undefined,
+): Record<string, unknown> {
+  if (!accessWindow || accessWindow.kind === "full") return {};
+  return {
+    accessStartDate: accessWindow.startDate,
+    accessEndDateExclusive: accessWindow.endDateExclusive,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -317,6 +356,7 @@ export class SyncRepository {
   async getDataHealthFreshness(
     datasets: readonly DataHealthDatasetQuery[] = dataHealthDatasets,
     sensorStore?: DataHealthSensorStore,
+    accessWindow?: AccessWindow,
   ): Promise<DataHealthFreshnessRow[]> {
     const rawFreshnessRows = await Promise.all(
       datasets.map((dataset) =>
@@ -327,6 +367,7 @@ export class SyncRepository {
                      ${sql.raw(dataset.rawLatestExpression)} AS "latestRawAt"
               FROM ${sql.raw(dataset.rawTable)}
               WHERE user_id = ${this.#userId}
+              ${rawAccessWindowPredicate(dataset, accessWindow)}
               ${dataset.predicate}`,
         ),
       ),
@@ -338,8 +379,9 @@ export class SyncRepository {
           dataHealthReadModelFreshnessRowSchema,
           `SELECT maxOrNull(date) AS latestReadModelAt
            FROM ${dataset.readModelTable} FINAL
-           WHERE user_id = {userId:UUID}`,
-          { userId: this.#userId },
+           WHERE user_id = {userId:UUID}
+           ${readModelAccessWindowClause(accessWindow)}`,
+          { userId: this.#userId, ...readModelAccessWindowParams(accessWindow) },
           { priority: "dashboard" },
         );
       }),

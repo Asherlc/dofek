@@ -1,5 +1,5 @@
 import { medicationDoseEvent } from "dofek/db/schema";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte, lt } from "drizzle-orm";
 import { z } from "zod";
 import { timestampStringSchema } from "../lib/typed-sql.ts";
 import { protectedProcedure, router } from "../trpc.ts";
@@ -27,6 +27,19 @@ export const medicationDoseEventsRouter = router({
     .input(listInputSchema)
     .output(listOutputSchema)
     .query(async ({ ctx, input }) => {
+      const accessWindowPredicate =
+        ctx.accessWindow.kind === "limited"
+          ? and(
+              gte(
+                medicationDoseEvent.recordedAt,
+                new Date(`${ctx.accessWindow.startDate}T00:00:00.000Z`),
+              ),
+              lt(
+                medicationDoseEvent.recordedAt,
+                new Date(`${ctx.accessWindow.endDateExclusive}T00:00:00.000Z`),
+              ),
+            )
+          : undefined;
       const rows = await ctx.db
         .select({
           id: medicationDoseEvent.id,
@@ -38,7 +51,11 @@ export const medicationDoseEventsRouter = router({
           sourceName: medicationDoseEvent.sourceName,
         })
         .from(medicationDoseEvent)
-        .where(eq(medicationDoseEvent.userId, ctx.userId))
+        .where(
+          accessWindowPredicate
+            ? and(eq(medicationDoseEvent.userId, ctx.userId), accessWindowPredicate)
+            : eq(medicationDoseEvent.userId, ctx.userId),
+        )
         .orderBy(desc(medicationDoseEvent.recordedAt))
         .limit(input.limit);
 
