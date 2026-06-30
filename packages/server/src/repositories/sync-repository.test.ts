@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
 import { dataHealthDatasets, SyncRepository } from "./sync-repository.ts";
+import { collectSqlText } from "./test-helpers.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -28,21 +29,6 @@ function makeRepository(
   const sensorStore = { query };
   const repo = new SyncRepository(db, "user-1", sensorStore);
   return { repo, execute, query, select };
-}
-
-function collectSqlText(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (typeof value !== "object" || value === null) return "";
-  const queryChunks = Reflect.get(value, "queryChunks");
-  if (Array.isArray(queryChunks)) {
-    return queryChunks.map((queryChunk) => collectSqlText(queryChunk)).join("");
-  }
-  const rawValue = Reflect.get(value, "value");
-  if (Array.isArray(rawValue)) {
-    return rawValue.map((rawChunk) => collectSqlText(rawChunk)).join("");
-  }
-  if (typeof rawValue === "string") return rawValue;
-  return "";
 }
 
 // ---------------------------------------------------------------------------
