@@ -64,16 +64,22 @@ export const dataHealthDatasets = [
     rawAccessKind: "date",
     predicate: sql``,
     readModelTable: "analytics.daily_recovery",
+    readModelLatestExpression: "maxOrNull(date)",
+    readModelAccessExpression: "date",
+    readModelPredicate: "AND (hrv IS NOT NULL OR respiratory_rate IS NOT NULL)",
   },
   {
     key: "sleep",
     label: "Sleep",
     rawTable: "fitness.sleep_session",
     rawLatestExpression: "max((started_at - INTERVAL '6 hours')::date::timestamptz)",
-    rawAccessColumn: "started_at",
-    rawAccessKind: "timestamp",
-    predicate: sql``,
+    rawAccessColumn: "(started_at - INTERVAL '6 hours')::date",
+    rawAccessKind: "date",
+    predicate: sql`AND is_nap = false`,
     readModelTable: "analytics.daily_sleep",
+    readModelLatestExpression: "maxOrNull(date)",
+    readModelAccessExpression: "date",
+    readModelPredicate: "",
   },
   {
     key: "activity",
@@ -83,7 +89,10 @@ export const dataHealthDatasets = [
     rawAccessColumn: "started_at",
     rawAccessKind: "timestamp",
     predicate: sql`AND provider_absent_at IS NULL AND deleted_at IS NULL`,
-    readModelTable: "analytics.daily_strain",
+    readModelTable: "analytics.daily_activity_load",
+    readModelLatestExpression: "maxOrNull(started_at)",
+    readModelAccessExpression: "toDate(started_at)",
+    readModelPredicate: "",
   },
 ] as const;
 
@@ -167,6 +176,9 @@ interface DataHealthDatasetQuery {
   rawAccessKind: "date" | "timestamp";
   predicate: SQL;
   readModelTable: string;
+  readModelLatestExpression: string;
+  readModelAccessExpression: string;
+  readModelPredicate: string;
 }
 
 export interface DataHealthFreshnessRow {
@@ -190,10 +202,13 @@ function rawAccessWindowPredicate(
              AND ${accessColumn} < ${accessWindow.endDateExclusive}::timestamptz`;
 }
 
-function readModelAccessWindowClause(accessWindow: AccessWindow | undefined): string {
+function readModelAccessWindowClause(
+  dataset: DataHealthDatasetQuery,
+  accessWindow: AccessWindow | undefined,
+): string {
   if (!accessWindow || accessWindow.kind === "full") return "";
-  return `AND date >= toDate({accessStartDate:String})
-          AND date < toDate({accessEndDateExclusive:String})`;
+  return `AND ${dataset.readModelAccessExpression} >= toDate({accessStartDate:String})
+          AND ${dataset.readModelAccessExpression} < toDate({accessEndDateExclusive:String})`;
 }
 
 function readModelAccessWindowParams(
@@ -377,10 +392,11 @@ export class SyncRepository {
         if (!sensorStore) return Promise.resolve([]);
         return sensorStore.query(
           dataHealthReadModelFreshnessRowSchema,
-          `SELECT maxOrNull(date) AS latestReadModelAt
+          `SELECT ${dataset.readModelLatestExpression} AS latestReadModelAt
            FROM ${dataset.readModelTable} FINAL
            WHERE user_id = {userId:UUID}
-           ${readModelAccessWindowClause(accessWindow)}`,
+           ${readModelAccessWindowClause(dataset, accessWindow)}
+           ${dataset.readModelPredicate}`,
           { userId: this.#userId, ...readModelAccessWindowParams(accessWindow) },
           { priority: "dashboard" },
         );

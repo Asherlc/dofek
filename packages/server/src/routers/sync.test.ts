@@ -2051,7 +2051,7 @@ describe("syncRouter", () => {
           if (queryText.includes("analytics.daily_sleep")) {
             return [{ latestReadModelAt: "2026-06-29T08:00:00.000Z" }];
           }
-          if (queryText.includes("analytics.daily_strain")) {
+          if (queryText.includes("analytics.daily_activity_load")) {
             return [{ latestReadModelAt: "2026-06-29T10:00:00.000Z" }];
           }
           return [];
@@ -2106,14 +2106,18 @@ describe("syncRouter", () => {
       expect(readModelQueries.every((queryText) => !queryText.includes("{userId:String}"))).toBe(
         true,
       );
-      expect(readModelQueries.every((queryText) => queryText.includes("maxOrNull(date)"))).toBe(
-        true,
-      );
+      expect(
+        readModelQueries.filter((queryText) => queryText.includes("maxOrNull(date)")),
+      ).toHaveLength(2);
+      expect(
+        readModelQueries.some((queryText) => queryText.includes("maxOrNull(started_at)")),
+      ).toBe(true);
       expect(readModelQueries.every((queryText) => !queryText.includes("max(date)"))).toBe(true);
       const rawFreshnessSql = mockExecute.mock.calls
         .map((call) => collectSqlText(call[0]))
         .join("\n");
       expect(rawFreshnessSql).toContain("max(started_at)");
+      expect(rawFreshnessSql).toContain("started_at - INTERVAL '6 hours'");
       expect(rawFreshnessSql).not.toContain("max(start_time)");
       expect(mockLoggerWarn).not.toHaveBeenCalled();
     });
@@ -2178,7 +2182,7 @@ describe("syncRouter", () => {
           if (queryText.includes("analytics.daily_sleep")) {
             return [{ latestReadModelAt: "2026-06-29T08:00:00.000Z" }];
           }
-          if (queryText.includes("analytics.daily_strain")) {
+          if (queryText.includes("analytics.daily_activity_load")) {
             return [{ latestReadModelAt: "2026-06-29T10:00:00.000Z" }];
           }
           return [];
@@ -2223,7 +2227,7 @@ describe("syncRouter", () => {
           if (queryText.includes("analytics.daily_sleep")) {
             return [{ latestReadModelAt: "2026-06-29T08:00:00.000Z" }];
           }
-          if (queryText.includes("analytics.daily_strain")) {
+          if (queryText.includes("analytics.daily_activity_load")) {
             return [{ latestReadModelAt: "2026-06-29T10:00:00.000Z" }];
           }
           return [];

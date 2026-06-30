@@ -31,6 +31,12 @@ function makeRepository(
   return { repo, execute, query, select };
 }
 
+function getDataHealthDataset(key: (typeof dataHealthDatasets)[number]["key"]) {
+  const dataset = dataHealthDatasets.find((candidate) => candidate.key === key);
+  if (!dataset) throw new Error(`${key} data health dataset is missing`);
+  return dataset;
+}
+
 // ---------------------------------------------------------------------------
 // Repository tests
 // ---------------------------------------------------------------------------
@@ -292,6 +298,9 @@ describe("SyncRepository", () => {
       rawAccessKind: "date" as const,
       predicate: sql``,
       readModelTable: "analytics.daily_recovery",
+      readModelLatestExpression: "maxOrNull(date)",
+      readModelAccessExpression: "date",
+      readModelPredicate: "",
     };
 
     it("returns raw freshness without querying ClickHouse when no sensor store is configured", async () => {
@@ -395,8 +404,7 @@ describe("SyncRepository", () => {
     });
 
     it("aligns raw sleep freshness to the daily sleep read-model day grain", async () => {
-      const sleepDataset = dataHealthDatasets.find((dataset) => dataset.key === "sleep");
-      if (!sleepDataset) throw new Error("sleep data health dataset is missing");
+      const sleepDataset = getDataHealthDataset("sleep");
       const { repo, execute, query } = makeRepository([
         { rawRows: 1, latestRawAt: "2026-06-29T00:00:00.000Z" },
       ]);
@@ -407,6 +415,70 @@ describe("SyncRepository", () => {
       const rawSql = collectSqlText(execute.mock.calls[0]?.[0]);
       expect(rawSql).toContain("started_at - INTERVAL '6 hours'");
       expect(rawSql).not.toContain("max(started_at)");
+    });
+
+    it("filters raw sleep freshness by sleep-day access windows and excludes naps", async () => {
+      const sleepDataset = getDataHealthDataset("sleep");
+      const { repo, execute, query } = makeRepository([
+        { rawRows: 1, latestRawAt: "2026-06-29T00:00:00.000Z" },
+      ]);
+      query.mockResolvedValueOnce([{ latestReadModelAt: "2026-06-29T00:00:00.000Z" }]);
+
+      await repo.getDataHealthFreshness(
+        [sleepDataset],
+        { query },
+        {
+          kind: "limited",
+          paid: false,
+          reason: "free_signup_week",
+          startDate: "2026-06-29",
+          endDateExclusive: "2026-06-30",
+        },
+      );
+
+      const rawSql = collectSqlText(execute.mock.calls[0]?.[0]);
+      expect(rawSql).toContain("is_nap = false");
+      expect(rawSql).toContain("(started_at - INTERVAL '6 hours')::date");
+      expect(rawSql).not.toContain("started_at >= ");
+    });
+
+    it("checks daily metric read-model freshness against daily metric fields", async () => {
+      const dailyMetricsDataset = getDataHealthDataset("dailyMetrics");
+      const { repo, query } = makeRepository([
+        { rawRows: 1, latestRawAt: "2026-06-29T00:00:00.000Z" },
+      ]);
+      query.mockResolvedValueOnce([{ latestReadModelAt: "2026-06-29T00:00:00.000Z" }]);
+
+      await repo.getDataHealthFreshness([dailyMetricsDataset], { query });
+
+      expect(query.mock.calls[0]?.[1]).toContain("FROM analytics.daily_recovery FINAL");
+      expect(query.mock.calls[0]?.[1]).toContain("hrv IS NOT NULL");
+      expect(query.mock.calls[0]?.[1]).toContain("respiratory_rate IS NOT NULL");
+    });
+
+    it("checks activity read-model freshness from activity-derived rows", async () => {
+      const activityDataset = getDataHealthDataset("activity");
+      const { repo, query } = makeRepository([
+        { rawRows: 1, latestRawAt: "2026-06-29T10:00:00.000Z" },
+      ]);
+      query.mockResolvedValueOnce([{ latestReadModelAt: "2026-06-29T10:00:00.000Z" }]);
+
+      await repo.getDataHealthFreshness(
+        [activityDataset],
+        { query },
+        {
+          kind: "limited",
+          paid: false,
+          reason: "free_signup_week",
+          startDate: "2026-06-29",
+          endDateExclusive: "2026-06-30",
+        },
+      );
+
+      expect(query.mock.calls[0]?.[1]).toContain("maxOrNull(started_at)");
+      expect(query.mock.calls[0]?.[1]).toContain("FROM analytics.daily_activity_load FINAL");
+      expect(query.mock.calls[0]?.[1]).toContain("toDate(started_at) >= toDate");
+      expect(query.mock.calls[0]?.[1]).not.toContain("FROM analytics.daily_strain FINAL");
     });
   });
 
