@@ -11,6 +11,14 @@ const mockQueue = {
   getJobCounts: mockQueueGetJobCounts,
   close: mockQueueClose,
 };
+const mockCheckReadiness = vi.fn(async () => ({
+  status: "ok" as const,
+  checks: {
+    postgres: "ok" as const,
+    clickhouse: "ok" as const,
+    queues: "ok" as const,
+  },
+}));
 
 vi.mock("@bull-board/express", () => ({
   ExpressAdapter: vi.fn(() => ({
@@ -71,6 +79,7 @@ vi.mock("../lib/metrics.ts", () => ({
   httpRequestDuration: { observe: vi.fn() },
   registry: { registerMetric: vi.fn(), contentType: "text/plain", metrics: vi.fn(async () => "") },
 }));
+vi.mock("./lib/readiness.ts", () => ({ checkReadiness: mockCheckReadiness }));
 vi.mock("../routes/activity-export.ts", () => ({
   createActivityExportRouter: vi.fn(() => express.Router()),
 }));
@@ -127,6 +136,14 @@ describe("createApp", () => {
     mockQueueWaitUntilReady.mockResolvedValue(undefined);
     mockQueueGetJobCounts.mockResolvedValue({ waiting: 0 });
     mockQueueClose.mockResolvedValue(undefined);
+    mockCheckReadiness.mockResolvedValue({
+      status: "ok",
+      checks: {
+        postgres: "ok",
+        clickhouse: "ok",
+        queues: "ok",
+      },
+    });
   });
 
   it("returns 404 for non-existent routes", async () => {
@@ -170,14 +187,21 @@ describe("createApp", () => {
         queues: "ok",
       },
     });
-    expect(mockDbExecute).toHaveBeenCalled();
-    expect(sensorStore.query).toHaveBeenCalled();
-    expect(mockQueueWaitUntilReady).toHaveBeenCalled();
-    expect(mockQueueGetJobCounts).toHaveBeenCalled();
+    expect(mockCheckReadiness).toHaveBeenCalledWith({
+      db: fakeDb,
+      sensorStore: expect.anything(),
+    });
   });
 
   it("returns unavailable when a readiness dependency fails", async () => {
-    mockDbExecute.mockRejectedValueOnce(new Error("database offline"));
+    mockCheckReadiness.mockResolvedValueOnce({
+      status: "error",
+      checks: {
+        postgres: "error",
+        clickhouse: "ok",
+        queues: "ok",
+      },
+    });
     const { createDatabaseFromEnv } = await import("dofek/db");
     const fakeDb = createDatabaseFromEnv();
     const app = createApp(fakeDb, makeMockSensorStore([{ ok: 1 }]));

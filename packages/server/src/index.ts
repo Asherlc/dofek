@@ -279,10 +279,7 @@ function setupRoutes(
           req.path.startsWith("/auth/") ||
           req.path.startsWith("/admin/queues") ||
           req.path.startsWith("/slack/") ||
-          req.path === "/callback" ||
-          req.path === "/healthz" ||
-          req.path === "/readyz" ||
-          req.path === "/metrics"
+          req.path === "/callback"
         ) {
           next();
           return;

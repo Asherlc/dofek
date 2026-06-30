@@ -45,4 +45,19 @@ describe("checkWorkerQueues", () => {
     await expect(checkWorkerQueues()).rejects.toThrow("redis offline");
     expect(mockQueueClose).toHaveBeenCalledTimes(6);
   });
+
+  it("fails when a later worker queue cannot reach Redis", async () => {
+    mockQueueGetJobCounts
+      .mockResolvedValueOnce({ waiting: 0 })
+      .mockRejectedValueOnce(new Error("later redis offline"));
+
+    await expect(checkWorkerQueues()).rejects.toThrow("later redis offline");
+    expect(mockQueueClose).toHaveBeenCalledTimes(6);
+  });
+
+  it("fails when queue cleanup fails", async () => {
+    mockQueueClose.mockRejectedValueOnce(new Error("close failed"));
+
+    await expect(checkWorkerQueues()).rejects.toThrow("close failed");
+  });
 });
