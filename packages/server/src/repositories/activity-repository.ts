@@ -166,6 +166,10 @@ export interface ActivitySensorWindow {
   memberActivityIds: string[];
 }
 
+export interface ActivitySensorQueryOptions {
+  priority?: "dashboard";
+}
+
 export interface ActivitySensorStore {
   /**
    * Run a raw ClickHouse query against the analytics database and parse rows
@@ -177,6 +181,7 @@ export interface ActivitySensorStore {
     schema: TSchema,
     query: string,
     params?: Record<string, unknown>,
+    options?: ActivitySensorQueryOptions,
   ): Promise<z.infer<TSchema>[]>;
   getActivitySummaries(
     activityIds: string[],

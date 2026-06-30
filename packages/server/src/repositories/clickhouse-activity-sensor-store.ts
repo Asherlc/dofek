@@ -123,6 +123,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
     schema: TSchema,
     query: string,
     params: Record<string, unknown> = {},
+    _options?: { priority?: "dashboard" },
   ): Promise<z.infer<TSchema>[]> {
     const result = await this.#client.query<Record<string, unknown>>({
       query,
