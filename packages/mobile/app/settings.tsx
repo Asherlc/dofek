@@ -19,6 +19,7 @@ import {
   View,
 } from "react-native";
 import { z } from "zod";
+import { MedicationDoseEventsPanel } from "../components/MedicationDoseEventsPanel";
 import { PersonalizationPanel } from "../components/PersonalizationPanel";
 import { ProviderLogo } from "../components/ProviderLogo";
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel";
@@ -416,6 +417,15 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             );
           })}
+        </View>
+      </View>
+
+      {/* ── Medication Doses ── */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Medication Doses</Text>
+        <Text style={styles.sectionDescription}>Review imported medication dose events</Text>
+        <View style={styles.card}>
+          <MedicationDoseEventsPanel />
         </View>
       </View>
 

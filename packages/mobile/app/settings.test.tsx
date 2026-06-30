@@ -145,6 +145,11 @@ vi.mock("../lib/trpc", () => ({
         }),
       },
     },
+    medicationDoseEvents: {
+      list: {
+        useQuery: () => ({ data: { events: [] }, isLoading: false, error: null }),
+      },
+    },
     settings: {
       get: {
         useQuery: () => ({ data: { value: "metric" }, refetch: vi.fn() }),

@@ -370,6 +370,48 @@ describe("importAppleHealthFile", () => {
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(0);
   });
+
+  it("imports medication dose events as raw provider records", async () => {
+    const zipPath = createClinicalZip(tmpDir, "dose-events", [
+      {
+        name: "MedicationDoseEvent-001.json",
+        content: JSON.stringify({
+          uuid: "dose-1",
+          startDate: "2026-06-29T15:30:00.000Z",
+          endDate: "2026-06-29T15:30:00.000Z",
+          logStatus: 1,
+          medicationConceptIdentifier: "rxnorm-123",
+          medicationDisplayName: "Metformin 500 mg",
+          sourceName: "Apple Health",
+        }),
+      },
+    ]);
+    const { db, spies } = createRunImportMockDb();
+
+    const result = await importAppleHealthFile(db, zipPath, new Date("2026-01-01"));
+
+    expect(result.errors).toHaveLength(0);
+    const allValuesCalls = spies.values.mock.calls.map(([values]) => values);
+    const doseEventBatch = allValuesCalls.find((values) =>
+      Array.isArray(values)
+        ? values.some((value) => value.medicationName === "Metformin 500 mg")
+        : false,
+    );
+    expect(doseEventBatch).toEqual([
+      expect.objectContaining({
+        externalId: "dose-1",
+        medicationName: "Metformin 500 mg",
+        medicationConceptId: "rxnorm-123",
+        doseStatus: "taken",
+        recordedAt: new Date("2026-06-29T15:30:00.000Z"),
+        providerId: "apple_health",
+        userId: "00000000-0000-0000-0000-000000000001",
+        sourceName: "Apple Health",
+        raw: expect.objectContaining({ uuid: "dose-1", logStatus: 1 }),
+      }),
+    ]);
+    expect(spies.onConflictDoNothing).toHaveBeenCalled();
+  });
 });
 
 // ============================================================

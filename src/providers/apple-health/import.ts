@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { and, eq, gte, sql } from "drizzle-orm";
 import sax from "sax";
 import yauzl from "yauzl";
+import { z } from "zod";
 import type { SyncDatabase } from "../../db/index.ts";
 import { replaceMetricStreamBatch } from "../../db/metric-stream-writer.ts";
 import { finishProviderActivityListSync } from "../../db/provider-activity-sync.ts";
@@ -16,6 +17,7 @@ import {
   labPanel,
   labResult,
   medication,
+  medicationDoseEvent,
 } from "../../db/schema.ts";
 import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
@@ -56,6 +58,37 @@ import {
 import type { HealthRecord } from "./records.ts";
 import type { ProgressInfo } from "./streaming.ts";
 import { streamHealthExport } from "./streaming.ts";
+
+const appleMedicationDoseEventSchema = z
+  .object({
+    uuid: z.string().optional(),
+    startDate: z.string(),
+    logStatus: z.union([z.number(), z.string()]).optional(),
+    medicationConceptIdentifier: z.string().nullable().optional(),
+    medicationDisplayName: z.string(),
+    sourceName: z.string().nullable().optional(),
+  })
+  .passthrough();
+
+function normalizeOptionalString(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : null;
+}
+
+function parseMedicationDoseRecordedAt(value: string): Date {
+  const recordedAt = new Date(value);
+  if (Number.isNaN(recordedAt.getTime())) {
+    throw new Error(`Invalid medication dose event startDate: ${value}`);
+  }
+  return recordedAt;
+}
+
+function mapMedicationDoseStatus(logStatus: number | string | undefined): string {
+  if (logStatus === 1 || logStatus === "1") return "taken";
+  if (logStatus === 2 || logStatus === "2") return "skipped";
+  const statusText = typeof logStatus === "string" ? normalizeOptionalString(logStatus) : null;
+  return statusText ?? "unknown";
+}
 
 /**
  * Extract export.xml from an Apple Health export ZIP file.
@@ -340,6 +373,17 @@ export async function importAppleHealthFile(
     logger.info(
       `[apple_health] ${labCounts.inserted} clinical records imported, ` +
         `${labCounts.skipped} skipped, ${labCounts.errors.length} errors`,
+    );
+
+    logger.info("[apple_health] Importing medication dose events...");
+    const doseEventCounts = await importMedicationDoseEvents(db, "apple_health", filePath);
+    result.recordsSynced += doseEventCounts.inserted;
+    if (doseEventCounts.errors.length > 0) {
+      result.errors.push(...doseEventCounts.errors);
+    }
+    logger.info(
+      `[apple_health] ${doseEventCounts.inserted} medication dose events imported, ` +
+        `${doseEventCounts.skipped} skipped, ${doseEventCounts.errors.length} errors`,
     );
   }
 
@@ -743,6 +787,67 @@ export async function importClinicalRecords(
   inserted += allergyBatch.length;
 
   return { inserted, skipped, errors };
+}
+
+export async function importMedicationDoseEvents(
+  db: SyncDatabase,
+  providerId: string,
+  zipPath: string,
+): Promise<{ inserted: number; skipped: number; errors: SyncError[] }> {
+  const errors: SyncError[] = [];
+  const scopedUserId = getTokenUserId();
+  if (!scopedUserId) {
+    throw new Error("apple-health medication dose import requires user context");
+  }
+
+  const doseEventFiles = await readZipEntries(
+    zipPath,
+    (name) => name.endsWith(".json") && name.includes("MedicationDoseEvent"),
+  );
+
+  if (doseEventFiles.length === 0) {
+    return { inserted: 0, skipped: 0, errors };
+  }
+
+  let skipped = 0;
+  const batch: (typeof medicationDoseEvent.$inferInsert)[] = [];
+
+  for (const file of doseEventFiles) {
+    try {
+      const raw: unknown = JSON.parse(file.data.toString("utf-8"));
+      const parsed = appleMedicationDoseEventSchema.parse(raw);
+      const medicationName = normalizeOptionalString(parsed.medicationDisplayName);
+      if (!medicationName) {
+        skipped++;
+        continue;
+      }
+
+      batch.push({
+        providerId,
+        userId: scopedUserId,
+        externalId: normalizeOptionalString(parsed.uuid),
+        medicationName,
+        medicationConceptId: normalizeOptionalString(parsed.medicationConceptIdentifier),
+        doseStatus: mapMedicationDoseStatus(parsed.logStatus),
+        recordedAt: parseMedicationDoseRecordedAt(parsed.startDate),
+        sourceName: normalizeOptionalString(parsed.sourceName),
+        raw,
+      });
+    } catch (err) {
+      errors.push({
+        message: `MedicationDoseEvent ${file.name}: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  }
+
+  for (let batchStart = 0; batchStart < batch.length; batchStart += 500) {
+    await db
+      .insert(medicationDoseEvent)
+      .values(batch.slice(batchStart, batchStart + 500))
+      .onConflictDoNothing();
+  }
+
+  return { inserted: batch.length, skipped, errors };
 }
 
 /**
