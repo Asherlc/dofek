@@ -2426,6 +2426,23 @@ describe("syncRouter", () => {
       expect(result.overallStatus).toBe("syncing");
       expect(mockImportQueueGetJobs).toHaveBeenCalledWith(["waiting", "active", "delayed"]);
     });
+
+    it("surfaces queue failures instead of hiding readiness errors", async () => {
+      mockGetJobs.mockRejectedValueOnce(new Error("Redis connection refused"));
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }]);
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.dataHealth()).rejects.toThrow("Redis connection refused");
+      expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error));
+    });
   });
 
   describe("mapBullMqStateToSyncStatus", () => {

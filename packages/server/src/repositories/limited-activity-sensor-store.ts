@@ -95,7 +95,7 @@ export class LimitedActivitySensorStore implements ActivitySensorStore {
     params: Record<string, unknown> = {},
     options?: ActivitySensorQueryOptions,
   ): Promise<z.infer<TSchema>[]> {
-    const key = JSON.stringify([query, params]);
+    const key = JSON.stringify([query, params, options?.priority ?? null]);
     const existing = this.#inFlightQueries.get(key);
     if (existing) {
       const rows = await existing;

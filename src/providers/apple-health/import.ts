@@ -122,6 +122,22 @@ function medicationDoseEventExternalId(input: {
   ].join(":");
 }
 
+function medicationDoseEventConflictKey(row: typeof medicationDoseEvent.$inferInsert): string {
+  return `${row.userId}:${row.providerId}:${row.externalId}`;
+}
+
+function hasDuplicateMedicationDoseConflictKeys(
+  rows: Array<typeof medicationDoseEvent.$inferInsert>,
+): boolean {
+  const keys = new Set<string>();
+  for (const row of rows) {
+    const key = medicationDoseEventConflictKey(row);
+    if (keys.has(key)) return true;
+    keys.add(key);
+  }
+  return false;
+}
+
 /**
  * Extract export.xml from an Apple Health export ZIP file.
  * Returns the path to the extracted XML file in a temp directory.
@@ -872,10 +888,12 @@ export async function importMedicationDoseEvents(
     }
   }
 
-  for (let batchStart = 0; batchStart < batch.length; batchStart += 500) {
+  const upsertMedicationDoseEvents = async (
+    values: Array<typeof medicationDoseEvent.$inferInsert>,
+  ) => {
     await db
       .insert(medicationDoseEvent)
-      .values(batch.slice(batchStart, batchStart + 500))
+      .values(values)
       .onConflictDoUpdate({
         target: [
           medicationDoseEvent.userId,
@@ -891,6 +909,17 @@ export async function importMedicationDoseEvents(
           raw: sql`excluded.raw`,
         },
       });
+  };
+
+  for (let batchStart = 0; batchStart < batch.length; batchStart += 500) {
+    const batchSlice = batch.slice(batchStart, batchStart + 500);
+    if (hasDuplicateMedicationDoseConflictKeys(batchSlice)) {
+      for (const row of batchSlice) {
+        await upsertMedicationDoseEvents([row]);
+      }
+    } else {
+      await upsertMedicationDoseEvents(batchSlice);
+    }
   }
 
   return { inserted: batch.length, skipped, errors };

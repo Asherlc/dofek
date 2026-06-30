@@ -350,7 +350,7 @@ async function hasActiveSyncForUser(userId: string): Promise<boolean> {
     });
   } catch (error) {
     captureException(error);
-    return false;
+    throw error;
   }
 }
 

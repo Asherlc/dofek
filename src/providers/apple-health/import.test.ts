@@ -637,6 +637,53 @@ describe("importAppleHealthFile", () => {
     expect(externalIds[0]).not.toBe(externalIds[1]);
   });
 
+  it("does not batch duplicate medication dose conflict keys into one upsert", async () => {
+    const zipPath = createClinicalZip(tmpDir, "dose-event-duplicate-uuid", [
+      {
+        name: "MedicationDoseEvent-001.json",
+        content: JSON.stringify({
+          uuid: "duplicate-dose-id",
+          startDate: "2026-06-29T15:30:00.000Z",
+          logStatus: 1,
+          medicationConceptIdentifier: "rxnorm-123",
+        }),
+      },
+      {
+        name: "MedicationDoseEvent-002.json",
+        content: JSON.stringify({
+          uuid: "duplicate-dose-id",
+          startDate: "2026-06-29T15:30:00.000Z",
+          logStatus: 2,
+          medicationConceptIdentifier: "rxnorm-123",
+        }),
+      },
+    ]);
+    const { db, spies } = createImportMockDb();
+    spies.values.mockImplementation((values) => ({
+      onConflictDoNothing: spies.onConflictDoNothing,
+      onConflictDoUpdate: async (config: unknown) => {
+        if (Array.isArray(values)) {
+          const conflictKeys = values.map(
+            (value) => `${value.userId}:${value.providerId}:${value.externalId}`,
+          );
+          if (new Set(conflictKeys).size !== conflictKeys.length) {
+            throw new Error("ON CONFLICT DO UPDATE command cannot affect row a second time");
+          }
+        }
+
+        return spies.onConflictDoUpdate(config);
+      },
+    }));
+
+    const result = await importMedicationDoseEvents(db, "apple_health", zipPath);
+
+    expect(result).toEqual({ inserted: 2, skipped: 0, errors: [] });
+    expect(spies.values).toHaveBeenCalledWith([
+      expect.objectContaining({ externalId: "duplicate-dose-id" }),
+    ]);
+    expect(spies.values).toHaveBeenCalledTimes(2);
+  });
+
   it("maps string, custom, and unknown medication dose statuses from Apple Health", async () => {
     const zipPath = createClinicalZip(tmpDir, "dose-event-string-statuses", [
       {
@@ -812,9 +859,9 @@ describe("importAppleHealthFile", () => {
           "MedicationDoseEvent apple_health_export/clinical-records/MedicationDoseEvent-001.json: Invalid medication dose event startDate: not-a-date",
         ),
         expect.stringContaining("MedicationDoseEvent-002.json"),
+        expect.stringContaining("Expected string"),
       ]),
     );
-    expect(result.errors[1]?.message).toContain("Expected string");
   });
 
   it("requires token user context for medication dose imports", async () => {
