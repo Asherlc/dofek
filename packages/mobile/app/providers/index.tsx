@@ -404,7 +404,9 @@ export default function ProvidersScreen() {
 
   const handleSyncAll = useCallback(
     async (fullSync = false) => {
-      const enabled = (providers.data ?? []).filter((p) => p.authorized && !p.importOnly);
+      const enabled = (providers.data ?? []).filter(
+        (provider) => provider.authorized && !provider.importOnly && !provider.pushOnly,
+      );
       const ids = enabled.map((p) => p.id);
       if (ids.length === 0) return;
       setSyncingProviders(new Set(ids));
@@ -516,11 +518,12 @@ export default function ProvidersScreen() {
   const providerList: Provider[] = (providers.error ? [] : (providers.data ?? [])).map((p) => ({
     id: p.id,
     label: p.name,
-    enabled: p.authorized && !p.importOnly,
+    enabled: p.authorized && !p.importOnly && !p.pushOnly,
     authStatus: p.needsReauth ? "expired" : p.authorized ? "connected" : "not_connected",
     authType: p.authType,
     lastSyncAt: p.lastSyncedAt,
     importOnly: p.importOnly,
+    pushOnly: p.pushOnly,
   }));
   const statsMap: Record<string, ProviderStats> = {};
   for (const s of stats.error ? [] : (stats.data ?? [])) {
@@ -629,6 +632,7 @@ export default function ProvidersScreen() {
           authType: "none",
           lastSyncAt: null,
           importOnly: false,
+          pushOnly: false,
         }}
         stats={statsMap.apple_health}
         syncing={healthKitSyncing}

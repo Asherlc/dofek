@@ -17,6 +17,7 @@ export interface Provider {
   authType: string;
   lastSyncAt: string | null;
   importOnly: boolean;
+  pushOnly: boolean;
 }
 
 export interface SyncLog {
@@ -97,6 +98,7 @@ export function ProviderCard({
   const { serverUrl } = useAuth();
   const dotColor = statusDotColor(provider.authStatus);
   const lastSyncRelative = provider.lastSyncAt ? formatRelativeTime(provider.lastSyncAt) : null;
+  const canRunManualSync = !provider.importOnly && !provider.pushOnly;
 
   return (
     <TouchableOpacity
@@ -111,7 +113,7 @@ export function ProviderCard({
           <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
           <Text style={styles.cardTitle}>{provider.label}</Text>
         </View>
-        {!provider.importOnly && (
+        {canRunManualSync && (
           <TouchableOpacity
             style={[styles.syncButton, syncing && styles.syncButtonDisabled]}
             onPress={provider.authStatus === "connected" ? onSync : onConnect}
@@ -151,16 +153,20 @@ export function ProviderCard({
             <Text style={styles.cardMetaText}>{syncProgress.message}</Text>
           ) : (
             <Text style={styles.cardMetaText}>
-              {provider.importOnly ? "Import only" : statusLabel(provider.authStatus)}
+              {provider.importOnly
+                ? "Import only"
+                : provider.pushOnly
+                  ? "Push only"
+                  : statusLabel(provider.authStatus)}
             </Text>
           )}
-          {!provider.importOnly &&
+          {canRunManualSync &&
             (lastSyncRelative ? (
               <Text style={styles.cardMetaText}>Last sync: {lastSyncRelative}</Text>
             ) : (
               <Text style={styles.cardMetaText}>Never synced</Text>
             ))}
-          {provider.authStatus === "connected" && !syncing && !provider.importOnly && (
+          {provider.authStatus === "connected" && !syncing && canRunManualSync && (
             <TouchableOpacity onPress={onFullSync} activeOpacity={0.7}>
               <Text style={styles.fullSyncLink}>Full sync</Text>
             </TouchableOpacity>

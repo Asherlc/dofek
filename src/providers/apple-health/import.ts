@@ -872,7 +872,21 @@ export async function importMedicationDoseEvents(
     await db
       .insert(medicationDoseEvent)
       .values(batch.slice(batchStart, batchStart + 500))
-      .onConflictDoNothing();
+      .onConflictDoUpdate({
+        target: [
+          medicationDoseEvent.userId,
+          medicationDoseEvent.providerId,
+          medicationDoseEvent.externalId,
+        ],
+        set: {
+          medicationName: sql`excluded.medication_name`,
+          medicationConceptId: sql`excluded.medication_concept_id`,
+          doseStatus: sql`excluded.dose_status`,
+          recordedAt: sql`excluded.recorded_at`,
+          sourceName: sql`excluded.source_name`,
+          raw: sql`excluded.raw`,
+        },
+      });
   }
 
   return { inserted: batch.length, skipped, errors };

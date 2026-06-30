@@ -264,6 +264,17 @@ const importOnlyProvider = {
   needsReauth: false,
 };
 
+const pushOnlyProvider = {
+  id: "whoop-ble",
+  name: "WHOOP BLE",
+  authType: "none",
+  authorized: true,
+  importOnly: false,
+  pushOnly: true,
+  lastSyncedAt: null,
+  needsReauth: false,
+};
+
 const appleHealthStats = {
   providerId: "apple_health",
   activities: 0,
@@ -331,6 +342,19 @@ describe("ProviderDetailScreen", () => {
       const { default: ProviderDetailScreen } = await import("./[id]");
       render(<ProviderDetailScreen />);
 
+      expect(screen.queryByText("Connect")).toBeNull();
+      expect(screen.queryByText("Sync")).toBeNull();
+      expect(screen.queryByText("Full sync")).toBeNull();
+    });
+
+    it("does not render actions for push-only providers", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "whoop-ble" });
+      mockProvidersQuery.mockReturnValue({ data: [pushOnlyProvider], isLoading: false });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(screen.getByText("WHOOP BLE")).toBeTruthy();
       expect(screen.queryByText("Connect")).toBeNull();
       expect(screen.queryByText("Sync")).toBeNull();
       expect(screen.queryByText("Full sync")).toBeNull();

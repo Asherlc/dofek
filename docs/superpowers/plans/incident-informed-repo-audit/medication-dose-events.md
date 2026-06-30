@@ -225,9 +225,20 @@ rtk pnpm vitest run --project mobile packages/mobile/components/MedicationDoseEv
 
 Expected: FAIL because the components do not exist.
 
-- [ ] **Step 3: Implement panels and stories**
+- [ ] **Step 3: Implement panels and concrete stories**
 
 Render a plain chronological list from `medicationDoseEvents.list`. Include loading, empty, and error states. Display `error.message` when the query fails. Do not calculate adherence or daily medication summaries in the client.
+
+Create `MedicationDoseEventsPanel.stories.tsx` on both web and mobile with exact named exports:
+
+```typescript
+export const Default = makeStory([{ medicationName: "Metformin", doseDisplay: "500 mg", status: "taken", provider: "Apple Health" }]);
+export const Loading = makeLoadingStory();
+export const Empty = makeEmptyStory("No medication dose events synced yet.");
+export const Error = makeErrorStory("Medication dose events failed to load.");
+```
+
+The `Default` story must show `"Metformin 500 mg"`, `"Taken"`, and `"Apple Health"`. The `Error` story must render the provided server/client error message verbatim.
 
 - [ ] **Step 4: Add panels to settings surfaces**
 

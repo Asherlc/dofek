@@ -224,22 +224,40 @@ rtk git commit -m "perf: share dashboard overview read model loader"
 - Modify: `packages/mobile/app/_layout.cleanup.test.tsx`
 - Modify: `packages/mobile/app/_layout.tsx`
 
-- [ ] **Step 1: Add client regression tests**
+- [ ] **Step 1: Add failing client regression tests**
 
-In `packages/web/src/lib/trpc.test.ts`, add a test asserting `recovery.readinessScore`, `recovery.workloadRatio`, `recovery.strainTarget`, and `sleepNeed.performance` use the `httpLink`, while a non-dashboard query uses the stream batch link. In `packages/mobile/app/_layout.cleanup.test.tsx`, assert `mobileDashboard.dashboard`, `mobileDashboard.recovery`, and `mobileDashboard.training` use `httpLink`.
+In `packages/web/src/lib/trpc.test.ts`, add a test asserting `recovery.readinessScore`, `recovery.workloadRatio`, `recovery.strainTarget`, `sleepNeed.performance`, and the new dashboard-adjacent `sync.dataHealth` query use the `httpLink`, while a non-dashboard query uses the stream batch link:
 
-- [ ] **Step 2: Run client tests and verify RED if a path is missing**
+```typescript
+expect(routeLinkFor("recovery.readinessScore")).toBe("httpLink");
+expect(routeLinkFor("recovery.workloadRatio")).toBe("httpLink");
+expect(routeLinkFor("recovery.strainTarget")).toBe("httpLink");
+expect(routeLinkFor("sleepNeed.performance")).toBe("httpLink");
+expect(routeLinkFor("sync.dataHealth")).toBe("httpLink");
+expect(routeLinkFor("providers.list")).toBe("httpBatchStreamLink");
+```
+
+In `packages/mobile/app/_layout.cleanup.test.tsx`, assert `mobileDashboard.dashboard`, `mobileDashboard.recovery`, `mobileDashboard.training`, and `sync.dataHealth` use `httpLink`:
+
+```typescript
+expect(routeLinkFor("mobileDashboard.dashboard")).toBe("httpLink");
+expect(routeLinkFor("mobileDashboard.recovery")).toBe("httpLink");
+expect(routeLinkFor("mobileDashboard.training")).toBe("httpLink");
+expect(routeLinkFor("sync.dataHealth")).toBe("httpLink");
+```
+
+- [ ] **Step 2: Run client tests and verify RED**
 
 ```bash
 rtk pnpm vitest run --project unit packages/web/src/lib/trpc.test.ts
 rtk pnpm vitest run --project mobile packages/mobile/app/_layout.cleanup.test.tsx
 ```
 
-Expected: PASS if current paths are already covered; FAIL if the new assertions expose a missing dashboard-critical path.
+Expected: FAIL because the new `sync.dataHealth` dashboard-readiness route is not yet in the explicit unbatched routing set.
 
 - [ ] **Step 3: Keep only explicit unbatched paths**
 
-If a test fails, add only the missing named dashboard path to the existing explicit sets. Do not switch the whole dashboard to broad batching, and do not add concurrent client fan-out.
+Add only `sync.dataHealth` to the existing explicit unbatched route sets. Do not switch the whole dashboard to broad batching, and do not add concurrent client fan-out.
 
 - [ ] **Step 4: Run verification**
 

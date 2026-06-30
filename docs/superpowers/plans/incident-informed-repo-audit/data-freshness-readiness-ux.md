@@ -289,9 +289,21 @@ rtk pnpm vitest run --project unit packages/web/src/components/DataReadinessBann
 
 Expected: FAIL because the component does not exist.
 
-- [ ] **Step 3: Implement the banner and stories**
+- [ ] **Step 3: Implement the banner and concrete stories**
 
-Implement `DataReadinessBanner` as a compact unframed status band. It must render `health.datasets` messages from the server and must not recompute status from raw timestamps on the client. Add stories for healthy, syncing, stale, missing, and blocked states.
+Implement `DataReadinessBanner` as a compact unframed status band. It must render `health.datasets` messages from the server and must not recompute status from raw timestamps on the client.
+
+Create `DataReadinessBanner.stories.tsx` with these exact named exports and fixture assertions:
+
+```typescript
+export const Healthy = makeStory("healthy", "All dashboard summaries are current.");
+export const Syncing = makeStory("syncing", "Garmin sync is running now.");
+export const Stale = makeStory("stale", "Sleep data is synced, but dashboard summaries are still catching up.");
+export const Missing = makeStory("missing", "No activity data has been synced yet.");
+export const Blocked = makeStory("blocked", "Activity data is available, but ClickHouse mirrors are not current.");
+```
+
+Each story must pass a complete `health` prop with `overallStatus`, `generatedAt`, and one `datasets` entry containing `key`, `label`, `rawRows`, `latestRawAt`, `latestReadModelAt`, `cdcLagSeconds`, `readModelLagSeconds`, `status`, and `message`.
 
 - [ ] **Step 4: Wire web pages**
 
@@ -369,9 +381,17 @@ rtk pnpm vitest run --project mobile packages/mobile/components/DataReadinessBan
 
 Expected: FAIL because the component does not exist.
 
-- [ ] **Step 3: Implement the component, stories, and screens**
+- [ ] **Step 3: Implement the component, concrete stories, and screens**
 
-Implement the mobile banner with the same prop shape as web. Add stories for healthy, syncing, stale, missing, and blocked. Render the banner on the mobile dashboard, activities tab, and provider detail screen from `trpc.sync.dataHealth.useQuery()`.
+Implement the mobile banner with the same prop shape as web. Create `DataReadinessBanner.stories.tsx` with named exports `Healthy`, `Syncing`, `Stale`, `Missing`, and `Blocked` using the same messages as the web stories. Render the banner on the mobile dashboard, activities tab, and provider detail screen from `trpc.sync.dataHealth.useQuery()`.
+
+Add a mobile page test for each screen:
+
+```typescript
+expect(screen.getByText("Activity data is available, but ClickHouse mirrors are not current.")).toBeTruthy();
+```
+
+Expected screen fixtures must provide `overallStatus: "blocked"` and the blocked activity dataset from Step 1.
 
 - [ ] **Step 4: Run mobile verification**
 

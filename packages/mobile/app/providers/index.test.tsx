@@ -320,6 +320,16 @@ const importOnlyProvider = {
   lastSyncedAt: null,
 };
 
+const pushOnlyProvider = {
+  id: "apple-health",
+  name: "Apple Health",
+  authType: "none",
+  authorized: true,
+  importOnly: false,
+  pushOnly: true,
+  lastSyncedAt: null,
+};
+
 function setupDefaultMocks() {
   mockProvidersQuery.mockReturnValue({
     data: [connectedProvider, disconnectedProvider],
@@ -340,6 +350,7 @@ function makeProvider(
     authType: string;
     lastSyncAt: string | null;
     importOnly: boolean;
+    pushOnly: boolean;
   }> = {},
 ) {
   return {
@@ -350,6 +361,7 @@ function makeProvider(
     authType: overrides.authType ?? "oauth",
     lastSyncAt: overrides.lastSyncAt ?? null,
     importOnly: overrides.importOnly ?? false,
+    pushOnly: overrides.pushOnly ?? false,
     ...overrides,
   };
 }
@@ -1063,6 +1075,35 @@ describe("ProvidersScreen", () => {
 
     // Sync All button should not appear when only import-only providers exist
     expect(screen.queryByText("Sync All")).toBeNull();
+  });
+
+  it("does not render Sync or Full sync for push-only providers", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [pushOnlyProvider],
+      isLoading: false,
+    });
+
+    const { default: ProvidersScreen } = await import("./index");
+    render(<ProvidersScreen />);
+
+    const appleHealthCard = within(screen.getByTestId("provider-card-apple-health"));
+    expect(appleHealthCard.getByText("Apple Health")).toBeTruthy();
+    expect(appleHealthCard.getByText("Push only")).toBeTruthy();
+    expect(appleHealthCard.queryByText("Sync")).toBeNull();
+    expect(appleHealthCard.queryByText("Full sync")).toBeNull();
+  });
+
+  it("excludes push-only providers from Sync All", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [pushOnlyProvider],
+      isLoading: false,
+    });
+
+    const { default: ProvidersScreen } = await import("./index");
+    render(<ProvidersScreen />);
+
+    expect(screen.queryByText("Sync All")).toBeNull();
+    expect(screen.queryByText("Full Sync All")).toBeNull();
   });
 
   it("passes readBlob that uses Expo file blobs without wrapping bytes", async () => {

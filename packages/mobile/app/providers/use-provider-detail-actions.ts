@@ -23,6 +23,7 @@ interface ProviderRecord {
   authType: string;
   authorized: boolean;
   importOnly: boolean;
+  pushOnly: boolean;
   lastSyncedAt: string | null;
   needsReauth: boolean;
 }
@@ -33,6 +34,7 @@ export interface DisplayProvider {
   authType: string;
   authorized: boolean;
   importOnly: boolean;
+  pushOnly: boolean;
   lastSyncedAt: string | null;
 }
 
@@ -77,6 +79,7 @@ function createAppleHealthProvider(authorized: boolean): DisplayProvider {
     authType: "none",
     authorized,
     importOnly: false,
+    pushOnly: false,
     lastSyncedAt: null,
   };
 }
@@ -359,8 +362,10 @@ export function useProviderDetailActions(
     isSyncing,
     syncMessage,
     syncProgress,
-    shouldShowActions: Boolean(displayProvider && !displayProvider.importOnly),
-    shouldShowFullSync: isConnected && !needsReauth,
+    shouldShowActions: Boolean(
+      displayProvider && !displayProvider.importOnly && !displayProvider.pushOnly,
+    ),
+    shouldShowFullSync: isConnected && !needsReauth && displayProvider?.pushOnly !== true,
     shouldShowAppleHealthPermissionBanner:
       providerId === "apple_health" &&
       healthKitAvailable &&

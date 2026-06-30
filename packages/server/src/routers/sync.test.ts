@@ -213,6 +213,7 @@ describe("syncRouter", () => {
       getJobs: mockGetJobs,
       getJobCounts: (...states: string[]) => mockGetJobCounts(id, states),
     }));
+    mockGetJobs.mockResolvedValue([]);
     mockImportQueueGetJobCounts.mockResolvedValue({
       waiting: 0,
       active: 0,
@@ -1990,21 +1991,115 @@ describe("syncRouter", () => {
   });
 
   describe("dataHealth", () => {
-    it("returns row counts for primary user-owned raw tables", async () => {
-      const mockExecute = vi.fn().mockResolvedValue([{ count: 42 }]);
+    it("returns structured freshness state for primary datasets", async () => {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 42, latestRawAt: "2026-06-29T12:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 8, latestRawAt: "2026-06-29T08:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 3, latestRawAt: "2026-06-29T10:00:00.000Z" }]);
+      const sensorStore = {
+        query: vi.fn(async (_schema: unknown, queryText: string) => {
+          if (queryText.includes("analytics.daily_recovery")) {
+            return [{ latestReadModelAt: "2026-06-29T12:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.daily_sleep")) {
+            return [{ latestReadModelAt: "2026-06-29T08:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.daily_strain")) {
+            return [{ latestReadModelAt: "2026-06-29T10:00:00.000Z" }];
+          }
+          return [];
+        }),
+      };
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("healthy");
+      expect(result.generatedAt).toEqual(expect.any(String));
+      expect(result.datasets).toEqual([
+        expect.objectContaining({
+          key: "dailyMetrics",
+          label: "Daily metrics",
+          rawRows: 42,
+          latestRawAt: "2026-06-29T12:00:00.000Z",
+          latestReadModelAt: "2026-06-29T12:00:00.000Z",
+          cdcLagSeconds: 0,
+          readModelLagSeconds: 0,
+          status: "healthy",
+        }),
+        expect.objectContaining({
+          key: "sleep",
+          label: "Sleep",
+          rawRows: 8,
+          status: "healthy",
+        }),
+        expect.objectContaining({
+          key: "activity",
+          label: "Activities",
+          rawRows: 3,
+          status: "healthy",
+        }),
+      ]);
+      expect(mockExecute).toHaveBeenCalledTimes(3);
+      expect(sensorStore.query).toHaveBeenCalledTimes(3);
+      expect(mockLoggerWarn).not.toHaveBeenCalled();
+    });
+
+    it("marks data blocked when raw data exists but read models are unavailable", async () => {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 12, latestRawAt: "2026-06-29T12:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }]);
       const caller = createCaller({
         db: { execute: mockExecute },
         userId: "user-1",
         timezone: "UTC",
       });
+
       const result = await caller.dataHealth();
-      expect(result).toEqual({
-        dailyMetrics: 42,
-        sleep: 42,
-        activity: 42,
+
+      expect(result.overallStatus).toBe("blocked");
+      expect(result.datasets[0]).toEqual(
+        expect.objectContaining({
+          key: "dailyMetrics",
+          status: "blocked",
+          latestReadModelAt: null,
+          message: expect.stringContaining("ClickHouse mirrors are not current"),
+        }),
+      );
+    });
+
+    it("marks overall status syncing when an active provider sync exists", async () => {
+      mockGetJobs.mockResolvedValue([
+        {
+          id: "job-1",
+          data: { userId: "user-1", providerId: "garmin" },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+      ]);
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }]);
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        userId: "user-1",
+        timezone: "UTC",
       });
-      expect(mockExecute).toHaveBeenCalledTimes(3);
-      expect(mockLoggerWarn).not.toHaveBeenCalled();
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("syncing");
+      expect(result.datasets[0]?.status).toBe("missing");
     });
   });
 

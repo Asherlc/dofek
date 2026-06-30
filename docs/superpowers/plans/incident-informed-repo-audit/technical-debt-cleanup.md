@@ -62,45 +62,63 @@ rtk git commit -m "chore: clean stale package exports"
 - Create: `src/db/schema/nutrition.ts`
 - Test: existing schema/import users
 
-- [ ] **Step 1: Add a line-count guard command**
+- [ ] **Step 1: Add the failing clinical schema module contract test**
 
-```bash
-rtk wc -l src/db/schema.ts
+Create `src/db/schema/clinical.test.ts`:
+
+```typescript
+import { describe, expect, it } from "vitest";
+import { allergyIntolerance, condition, medication, medicationDoseEvent } from "./clinical.ts";
+
+describe("clinical schema module", () => {
+  it("exports clinical tables from the dedicated module", () => {
+    expect(medication).toBeDefined();
+    expect(medicationDoseEvent).toBeDefined();
+    expect(condition).toBeDefined();
+    expect(allergyIntolerance).toBeDefined();
+  });
+});
 ```
 
-Expected: reports more than 1000 lines before the split.
+- [ ] **Step 2: Run the schema module test and verify RED**
 
-- [ ] **Step 2: Move one cohesive group at a time**
+```bash
+rtk pnpm vitest run --project unit src/db/schema/clinical.test.ts
+```
+
+Expected: FAIL because `src/db/schema/clinical.ts` does not exist.
+
+- [ ] **Step 3: Move one cohesive group at a time**
 
 Move the clinical tables first: `medication`, `medicationDoseEvent`, `condition`, and `allergyIntolerance` into `src/db/schema/clinical.ts`. Keep exported symbol names identical. Re-export those symbols from `src/db/schema.ts` so existing imports from `dofek/db/schema` keep working.
 
-- [ ] **Step 3: Verify clinical imports**
+- [ ] **Step 4: Verify clinical imports**
 
 ```bash
-rtk pnpm vitest run --project unit src/providers/apple-health/import.test.ts
+rtk pnpm vitest run --project unit src/db/schema/clinical.test.ts src/providers/apple-health/import.test.ts
 rtk pnpm tsc --noEmit
 ```
 
 Expected: PASS.
 
-- [ ] **Step 4: Move remaining cohesive groups**
+- [ ] **Step 5: Move remaining cohesive groups**
 
 Move provider/account tables into `providers.ts`, activity/sensor tables into `activity.ts`, and food/nutrition tables into `nutrition.ts`. Preserve all exported names and table definitions exactly.
 
-- [ ] **Step 5: Verify schema size and tests**
+- [ ] **Step 6: Verify schema size and tests**
 
 ```bash
 rtk wc -l src/db/schema.ts src/db/schema/clinical.ts src/db/schema/providers.ts src/db/schema/activity.ts src/db/schema/nutrition.ts
-rtk pnpm vitest run --project unit src/providers/apple-health/import.test.ts packages/server/src/routers/provider-detail.test.ts
+rtk pnpm vitest run --project unit src/db/schema/clinical.test.ts src/providers/apple-health/import.test.ts packages/server/src/routers/provider-detail.test.ts
 rtk pnpm tsc --noEmit
 ```
 
 Expected: every TypeScript schema file is under 1000 lines and all checks pass.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-rtk git add src/db/schema.ts src/db/schema/clinical.ts src/db/schema/providers.ts src/db/schema/activity.ts src/db/schema/nutrition.ts
+rtk git add src/db/schema.ts src/db/schema/clinical.ts src/db/schema/clinical.test.ts src/db/schema/providers.ts src/db/schema/activity.ts src/db/schema/nutrition.ts
 rtk git commit -m "refactor: split database schema modules"
 ```
 
@@ -122,11 +140,51 @@ rtk pnpm vitest run --project mobile packages/mobile/app/settings.test.tsx
 
 Expected: line count is more than 1000 and tests pass before refactor.
 
-- [ ] **Step 2: Extract AccountSection with tests**
+- [ ] **Step 2: Add the failing AccountSection test**
 
-Create `AccountSection.tsx` for password/account controls currently embedded in settings. Add `AccountSection.test.tsx` proving it renders the current account labels and invokes the same callbacks as the original screen. Add `AccountSection.stories.tsx` with default, loading, and error states.
+Create `packages/mobile/components/settings/AccountSection.test.tsx`:
 
-- [ ] **Step 3: Verify AccountSection**
+```typescript
+import { fireEvent, render, screen } from "@testing-library/react-native";
+import { describe, expect, it, vi } from "vitest";
+import { AccountSection } from "./AccountSection.tsx";
+
+describe("AccountSection", () => {
+  it("renders account actions and calls the supplied callbacks", () => {
+    const onChangePassword = vi.fn();
+    const onSignOut = vi.fn();
+    render(
+      <AccountSection
+        email="athlete@example.com"
+        isSaving={false}
+        errorMessage={null}
+        onChangePassword={onChangePassword}
+        onSignOut={onSignOut}
+      />,
+    );
+
+    expect(screen.getByText("athlete@example.com")).toBeTruthy();
+    fireEvent.press(screen.getByText("Change password"));
+    fireEvent.press(screen.getByText("Sign out"));
+    expect(onChangePassword).toHaveBeenCalledOnce();
+    expect(onSignOut).toHaveBeenCalledOnce();
+  });
+});
+```
+
+- [ ] **Step 3: Run the AccountSection test and verify RED**
+
+```bash
+rtk pnpm vitest run --project mobile packages/mobile/components/settings/AccountSection.test.tsx
+```
+
+Expected: FAIL because `AccountSection.tsx` does not exist.
+
+- [ ] **Step 4: Extract AccountSection and stories**
+
+Create `AccountSection.tsx` for password/account controls currently embedded in settings. Add `AccountSection.stories.tsx` exports named `Default`, `Loading`, and `Error`, where `Error` passes `errorMessage="Unable to save account changes"`.
+
+- [ ] **Step 5: Verify AccountSection**
 
 ```bash
 rtk pnpm vitest run --project mobile packages/mobile/components/settings/AccountSection.test.tsx packages/mobile/app/settings.test.tsx
@@ -134,11 +192,21 @@ rtk pnpm vitest run --project mobile packages/mobile/components/settings/Account
 
 Expected: PASS.
 
-- [ ] **Step 4: Extract ProviderSection and PersonalizationSection**
+- [ ] **Step 6: Add failing ProviderSection and PersonalizationSection tests**
 
-Move provider connection controls into `ProviderSection.tsx` and personalization/unit controls into `PersonalizationSection.tsx`. Add colocated tests and stories for both. Keep navigation and tRPC hooks owned by the screen unless moving a hook reduces props without changing behavior.
+Create `ProviderSection.test.tsx` proving a seeded provider row renders `"Garmin"` and calls `onOpenProvider("garmin")` when pressed. Create `PersonalizationSection.test.tsx` proving the unit preference label renders `"Distance units"` and calls `onUnitsChange("metric")` when the metric option is pressed.
 
-- [ ] **Step 5: Verify mobile settings split**
+```bash
+rtk pnpm vitest run --project mobile packages/mobile/components/settings/ProviderSection.test.tsx packages/mobile/components/settings/PersonalizationSection.test.tsx
+```
+
+Expected: FAIL because the extracted components do not exist.
+
+- [ ] **Step 7: Extract ProviderSection and PersonalizationSection**
+
+Move provider connection controls into `ProviderSection.tsx` and personalization/unit controls into `PersonalizationSection.tsx`. Add `ProviderSection.stories.tsx` exports named `Default`, `Loading`, and `Empty`. Add `PersonalizationSection.stories.tsx` exports named `Default`, `Metric`, and `Imperial`. Keep navigation and tRPC hooks owned by the screen unless moving a hook reduces props without changing behavior.
+
+- [ ] **Step 8: Verify mobile settings split**
 
 ```bash
 rtk wc -l packages/mobile/app/settings.tsx packages/mobile/components/settings/AccountSection.tsx packages/mobile/components/settings/ProviderSection.tsx packages/mobile/components/settings/PersonalizationSection.tsx
@@ -148,7 +216,7 @@ rtk pnpm storybook:mobile:build
 
 Expected: every touched TypeScript component file is under 1000 lines and all checks pass.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 rtk git add packages/mobile/app/settings.tsx packages/mobile/components/settings/AccountSection.tsx packages/mobile/components/settings/AccountSection.test.tsx packages/mobile/components/settings/AccountSection.stories.tsx packages/mobile/components/settings/ProviderSection.tsx packages/mobile/components/settings/ProviderSection.test.tsx packages/mobile/components/settings/ProviderSection.stories.tsx packages/mobile/components/settings/PersonalizationSection.tsx packages/mobile/components/settings/PersonalizationSection.test.tsx packages/mobile/components/settings/PersonalizationSection.stories.tsx
@@ -185,11 +253,21 @@ rtk pnpm vitest run --project unit packages/web/src/components/provider-detail/P
 
 Expected: PASS.
 
-- [ ] **Step 4: Extract logs and actions panels**
+- [ ] **Step 4: Add failing logs and actions panel tests**
 
-Move sync history into `ProviderLogsPanel.tsx` and sync/disconnect controls into `ProviderActionsPanel.tsx`. Add colocated tests and stories for both. Keep route params and page-level data fetching in `ProviderDetailPage.tsx` unless an existing hook already owns them.
+Create `ProviderLogsPanel.test.tsx` proving a seeded sync log renders `"activities"`, `"done"`, and `"12 records"`. Create `ProviderActionsPanel.test.tsx` proving a connected provider renders `"Sync"` and `"Full sync"`, calls `onSync`, and calls `onFullSync`.
 
-- [ ] **Step 5: Verify web provider detail split**
+```bash
+rtk pnpm vitest run --project unit packages/web/src/components/provider-detail/ProviderLogsPanel.test.tsx packages/web/src/components/provider-detail/ProviderActionsPanel.test.tsx
+```
+
+Expected: FAIL because the extracted components do not exist.
+
+- [ ] **Step 5: Extract logs and actions panels**
+
+Move sync history into `ProviderLogsPanel.tsx` and sync/disconnect controls into `ProviderActionsPanel.tsx`. Add `ProviderLogsPanel.stories.tsx` exports named `Default`, `Loading`, and `Empty`. Add `ProviderActionsPanel.stories.tsx` exports named `Connected`, `Disconnected`, `Syncing`, and `Error`. Keep route params and page-level data fetching in `ProviderDetailPage.tsx` unless an existing hook already owns them.
+
+- [ ] **Step 6: Verify web provider detail split**
 
 ```bash
 rtk wc -l packages/web/src/pages/ProviderDetailPage.tsx packages/web/src/components/provider-detail/ProviderRecordsPanel.tsx packages/web/src/components/provider-detail/ProviderLogsPanel.tsx packages/web/src/components/provider-detail/ProviderActionsPanel.tsx
@@ -199,7 +277,7 @@ rtk pnpm storybook:web:build
 
 Expected: every touched TypeScript component file is under 1000 lines and all checks pass.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 rtk git add packages/web/src/pages/ProviderDetailPage.tsx packages/web/src/components/provider-detail/ProviderRecordsPanel.tsx packages/web/src/components/provider-detail/ProviderRecordsPanel.test.tsx packages/web/src/components/provider-detail/ProviderRecordsPanel.stories.tsx packages/web/src/components/provider-detail/ProviderLogsPanel.tsx packages/web/src/components/provider-detail/ProviderLogsPanel.test.tsx packages/web/src/components/provider-detail/ProviderLogsPanel.stories.tsx packages/web/src/components/provider-detail/ProviderActionsPanel.tsx packages/web/src/components/provider-detail/ProviderActionsPanel.test.tsx packages/web/src/components/provider-detail/ProviderActionsPanel.stories.tsx

@@ -216,8 +216,9 @@ function createImportMockDb(panelRows: { id: string; externalId: string | null }
   const deleteWhere = vi.fn().mockResolvedValue(undefined);
   const deleteFn = vi.fn().mockReturnValue({ where: deleteWhere });
 
+  const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
   const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
-  const values = vi.fn().mockReturnValue({ onConflictDoNothing });
+  const values = vi.fn().mockReturnValue({ onConflictDoUpdate, onConflictDoNothing });
   const insertFn = vi.fn().mockReturnValue({ values });
 
   // select().from().where() must be directly awaitable (returns Promise)
@@ -241,6 +242,7 @@ function createImportMockDb(panelRows: { id: string; externalId: string | null }
       deleteWhere,
       insertFn,
       values,
+      onConflictDoUpdate,
       onConflictDoNothing,
       selectFn,
       selectFrom,
@@ -409,7 +411,50 @@ describe("importAppleHealthFile", () => {
         raw: expect.objectContaining({ uuid: "dose-1", logStatus: 1 }),
       }),
     ]);
-    expect(spies.onConflictDoNothing).toHaveBeenCalled();
+    expect(spies.onConflictDoUpdate).toHaveBeenCalled();
+  });
+
+  it("updates mutable medication dose fields when a provider event is reimported", async () => {
+    const zipPath = createClinicalZip(tmpDir, "dose-event-update", [
+      {
+        name: "MedicationDoseEvent-001.json",
+        content: JSON.stringify({
+          uuid: "dose-1",
+          startDate: "2026-06-29T15:30:00.000Z",
+          endDate: "2026-06-29T15:30:00.000Z",
+          logStatus: "paused",
+          medicationDisplayName: "Metformin 500 mg",
+          medicationConceptIdentifier: "rxnorm-123",
+          sourceName: "Apple Health Watch",
+        }),
+      },
+    ]);
+    const { db, spies } = createImportMockDb();
+
+    const result = await importMedicationDoseEvents(db, "apple_health", zipPath);
+
+    expect(result.errors).toHaveLength(0);
+    expect(spies.values).toHaveBeenCalledWith([
+      expect.objectContaining({
+        medicationName: "Metformin 500 mg",
+        medicationConceptId: "rxnorm-123",
+        doseStatus: "paused",
+        recordedAt: new Date("2026-06-29T15:30:00.000Z"),
+        sourceName: "Apple Health Watch",
+        raw: expect.objectContaining({ uuid: "dose-1", logStatus: "paused" }),
+      }),
+    ]);
+    expect(spies.onConflictDoUpdate).toHaveBeenCalledWith({
+      target: expect.any(Array),
+      set: expect.objectContaining({
+        medicationName: expect.anything(),
+        medicationConceptId: expect.anything(),
+        doseStatus: expect.anything(),
+        recordedAt: expect.anything(),
+        sourceName: expect.anything(),
+        raw: expect.anything(),
+      }),
+    });
   });
 
   it("derives a stable external id for medication dose events without uuid", async () => {
@@ -447,7 +492,7 @@ describe("importAppleHealthFile", () => {
         doseStatus: "skipped",
       }),
     ]);
-    expect(spies.onConflictDoNothing).toHaveBeenCalled();
+    expect(spies.onConflictDoUpdate).toHaveBeenCalled();
   });
 
   it("uses display name and normalized fallback fields for medication dose events", async () => {
