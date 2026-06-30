@@ -28,6 +28,7 @@ import * as activityProviderAbsenceMigration from "./clickhouse-migrations/0029_
 import * as activityMirrorOrderKeyMigration from "./clickhouse-migrations/0030_activity_mirror_order_key.ts";
 import * as activityUserSoftDeleteMigration from "./clickhouse-migrations/0031_activity_user_soft_delete.ts";
 import * as dedupedActivitiesAbsentSourceLinksMigration from "./clickhouse-migrations/0032_deduped_activities_absent_source_links.ts";
+import * as activitySensorSummaryPowerClimbingMigration from "./clickhouse-migrations/0036_activity_sensor_summary_power_climbing_columns.ts";
 import { clickHouseMigrationFileNames } from "./clickhouse-migrations/registry.ts";
 import { runClickHouseMigrationStatement } from "./clickhouse-migrations/statement-runner.ts";
 import {
@@ -624,6 +625,64 @@ describe("runClickHouseMigrations", () => {
           "INSERT INTO analytics.schema_migrations (id) VALUES ('0036_activity_sensor_summary_power_climbing_columns')",
       }),
     );
+  });
+
+  it("runs activity sensor summary column alters when the dbt table already exists", async () => {
+    const migration = activitySensorSummaryPowerClimbingMigration.createMigration();
+    const run = migration.run;
+    if (!run) {
+      throw new Error("Expected migration 0036 to define a custom run hook");
+    }
+    const command = vi.fn().mockResolvedValue(undefined);
+    const query = vi.fn().mockResolvedValue({
+      json: vi.fn().mockResolvedValue([{ table_count: 1 }]),
+    });
+
+    await run({ command, query }, "postgres://health:fixture@db:5432/health");
+
+    expect(query).toHaveBeenCalledWith({
+      query:
+        "SELECT count() AS table_count FROM system.tables WHERE database = 'analytics' AND name = 'activity_sensor_summary_rows'",
+      format: "JSONEachRow",
+    });
+    expect(command).toHaveBeenCalledTimes(5);
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query:
+          "ALTER TABLE analytics.activity_sensor_summary_rows ADD COLUMN IF NOT EXISTS best_twenty_minute_power Nullable(Float64) AFTER last_sample_at",
+      }),
+    );
+  });
+
+  it("skips activity sensor summary column alters when the table lookup returns no rows", async () => {
+    const migration = activitySensorSummaryPowerClimbingMigration.createMigration();
+    const run = migration.run;
+    if (!run) {
+      throw new Error("Expected migration 0036 to define a custom run hook");
+    }
+    const command = vi.fn().mockResolvedValue(undefined);
+    const query = vi.fn().mockResolvedValue({
+      json: vi.fn().mockResolvedValue([]),
+    });
+
+    await run({ command, query }, "postgres://health:fixture@db:5432/health");
+
+    expect(command).not.toHaveBeenCalled();
+  });
+
+  it("requires query support for activity sensor summary column alters", async () => {
+    const migration = activitySensorSummaryPowerClimbingMigration.createMigration();
+    const run = migration.run;
+    if (!run) {
+      throw new Error("Expected migration 0036 to define a custom run hook");
+    }
+
+    await expect(
+      run(
+        { command: vi.fn().mockResolvedValue(undefined) },
+        "postgres://health:fixture@db:5432/health",
+      ),
+    ).rejects.toThrow("ClickHouse migrations require a query-capable client");
   });
 
   it("fails when the ClickHouse client cannot query migration state", async () => {
