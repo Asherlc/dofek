@@ -8,10 +8,10 @@ Roadmap notes for planned Dofek improvements. Product-level outcomes live under 
 
 Implemented first-run flow that helps a new user reach a useful dashboard quickly.
 
-- Landing page Get started CTAs send users to login with `returnTo=/onboarding`; see [`IndexPage.tsx`](../packages/web/src/pages/IndexPage.tsx).
-- Web and mobile render shared setup steps from `@dofek/onboarding`; see [`packages/onboarding`](../packages/onboarding/src/index.ts), [`OnboardingPage.tsx`](../packages/web/src/pages/OnboardingPage.tsx), and [`onboarding.tsx`](../packages/mobile/app/onboarding.tsx).
+- Landing page Get started CTAs send users to login with `returnTo=/onboarding`; see [`LandingPage.tsx`](../packages/web/src/pages/LandingPage.tsx) and [`index.tsx`](../packages/web/src/routes/index.tsx).
+- Web and mobile render shared setup steps from `@dofek/onboarding`; see [`get-started-flow.ts`](../packages/onboarding/src/get-started-flow.ts), [`OnboardingPage.tsx`](../packages/web/src/pages/OnboardingPage.tsx), and [`onboarding.tsx`](../packages/mobile/app/onboarding.tsx).
 - Web onboarding includes the public iOS TestFlight invite so Apple Health and mobile setup are first-class; see [`OnboardingPage.tsx`](../packages/web/src/pages/OnboardingPage.tsx).
-- Landing page copy frames correlations, trends, comparisons, Slack food logging, and cross-device source setup before signup; see [`IndexPage.tsx`](../packages/web/src/pages/IndexPage.tsx).
+- Landing page copy frames correlations, trends, comparisons, Slack food logging, and cross-device source setup before signup; see [`LandingPage.tsx`](../packages/web/src/pages/LandingPage.tsx).
 
 ## Technical Backlog
 
@@ -33,8 +33,8 @@ Implementation-level backlog. Checked items are complete; unchecked are open.
 - [x] Strong CSV import (strength training history — CSV upload with unit conversion)
 - [x] RideWithGPS provider (trip sync with GPS track points, activity type mapping)
 - [x] WHOOP raw IMU/accelerometer data investigation — **not feasible**: data is in a private S3 bucket with no download API; app only uploads, never reads back. Load-velocity profiles (derived from accelerometer) may be accessible once enough training data is collected. See `docs/whoop.md`.
-- [x] Revisit IMU/vector storage if motion analysis becomes product-critical; no product-critical motion-analysis reader exists today, the old IMU debug pages were removed, and raw IMU remains an ingest/archive path. If motion analysis becomes a product surface, design a dedicated serving model with explicit axis order, coordinate frame, units, and calibration metadata rather than reviving ad-hoc vector reads.
-- [x] Normalize hydration storage so water is represented through one canonical path instead of both `nutrition_daily.water_ml` and nutrient-style water rows; water now lives in `food_entry_nutrient` as nutrient `water`, `v_nutrition_daily.water_ml` is a derived projection, and migration `0022_drop_dead_tables.sql` removes the old `nutrition_daily` storage table.
+- [x] Revisit IMU/vector storage if motion analysis becomes product-critical; raw IMU remains an ingest/archive path and the old Postgres `metric_stream` training export is retired. If motion analysis becomes a product surface, design a dedicated serving model with explicit axis order, coordinate frame, units, and calibration metadata rather than reviving ad-hoc vector reads. See [`inertial-measurement-unit-sync-repository.ts`](../packages/server/src/repositories/inertial-measurement-unit-sync-repository.ts) and [`packages/ml/README.md`](../packages/ml/README.md).
+- [x] Normalize hydration storage so water is represented through one canonical path instead of both `nutrition_daily.water_ml` and nutrient-style water rows; water now lives in `food_entry_nutrient` as nutrient `water`, `v_nutrition_daily.water_ml` is a derived projection, and migration `0022_drop_dead_tables.sql` removes the old `nutrition_daily` storage table. See [`schema.dbml`](schema.dbml) and [`0022_drop_dead_tables.sql`](../drizzle/0022_drop_dead_tables.sql).
 
 ### Dashboard & Insights
 - [x] Web dashboard (Vite + React + tRPC + ECharts + shadcn/ui)

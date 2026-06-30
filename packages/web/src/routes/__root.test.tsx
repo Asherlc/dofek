@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mockNavigate = vi.hoisted(() => vi.fn());
@@ -239,6 +239,40 @@ describe("AuthGate", () => {
 
     expect(mockNavigate).not.toHaveBeenCalled();
     expect(screen.getByText("Database unavailable")).toBeTruthy();
+  });
+
+  it("lets users retry bootstrap failures", () => {
+    const retryBootstrap = vi.fn();
+    mockUseAuth.mockReturnValue({
+      user: null,
+      isLoading: false,
+      bootstrapError: "Database unavailable",
+      logout: vi.fn(),
+      retryBootstrap,
+    });
+    mockUseLocation.mockReturnValue({ pathname: "/login" });
+
+    renderAuthGate();
+    fireEvent.click(screen.getByText("Try again"));
+
+    expect(retryBootstrap).toHaveBeenCalledOnce();
+  });
+
+  it("lets users sign out from bootstrap failures", () => {
+    const logout = vi.fn();
+    mockUseAuth.mockReturnValue({
+      user: null,
+      isLoading: false,
+      bootstrapError: "Database unavailable",
+      logout,
+      retryBootstrap: vi.fn(),
+    });
+    mockUseLocation.mockReturnValue({ pathname: "/login" });
+
+    renderAuthGate();
+    fireEvent.click(screen.getByText("Sign out"));
+
+    expect(logout).toHaveBeenCalledOnce();
   });
 
   it("renders outlet for authenticated user", () => {

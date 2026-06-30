@@ -26,7 +26,7 @@ function PageTransition({ children }: { children: React.ReactNode }) {
 }
 
 function AuthGate() {
-  const { user, isLoading, bootstrapError } = useAuth();
+  const { user, isLoading, bootstrapError, logout, retryBootstrap } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const isPublic = PUBLIC_PATHS.has(location.pathname);
@@ -57,6 +57,22 @@ function AuthGate() {
             Could not verify your session
           </h1>
           <p className="text-sm text-red-200">{bootstrapError}</p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <button
+              type="button"
+              className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent/90"
+              onClick={() => void retryBootstrap()}
+            >
+              Try again
+            </button>
+            <button
+              type="button"
+              className="rounded-md border border-red-400/50 px-3 py-2 text-sm font-semibold text-red-100 transition-colors hover:bg-red-500/15"
+              onClick={() => void logout()}
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       </div>
     );

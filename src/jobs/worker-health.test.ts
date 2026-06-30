@@ -1,15 +1,32 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+type ExecFileCallback = (error: Error | null, stdout: string, stderr: string) => void;
+
 const mockQueueWaitUntilReady = vi.fn(async () => undefined);
 const mockQueueGetJobCounts = vi.fn(async () => ({ waiting: 0 }));
 const mockQueueClose = vi.fn(async () => undefined);
 const mockSentryInit = vi.fn();
 const mockSentryCaptureException = vi.fn();
+const mockExecFile = vi.fn(
+  (
+    _file: string,
+    _arguments: readonly string[],
+    _options: { encoding: string },
+    callback: ExecFileCallback,
+  ) => {
+    callback(null, "node --experimental-strip-types src/jobs/worker.ts\n", "");
+    return null;
+  },
+);
 const mockQueue = {
   waitUntilReady: mockQueueWaitUntilReady,
   getJobCounts: mockQueueGetJobCounts,
   close: mockQueueClose,
 };
+
+vi.mock("node:child_process", () => ({
+  execFile: mockExecFile,
+}));
 
 vi.mock("@sentry/node", () => ({
   captureException: mockSentryCaptureException,
@@ -33,6 +50,17 @@ describe("checkWorkerQueues", () => {
     mockQueueWaitUntilReady.mockResolvedValue(undefined);
     mockQueueGetJobCounts.mockResolvedValue({ waiting: 0 });
     mockQueueClose.mockResolvedValue(undefined);
+    mockExecFile.mockImplementation(
+      (
+        _file: string,
+        _arguments: readonly string[],
+        _options: { encoding: string },
+        callback: ExecFileCallback,
+      ) => {
+        callback(null, "node --experimental-strip-types src/jobs/worker.ts\n", "");
+        return null;
+      },
+    );
   });
 
   it("checks every worker queue and closes queue clients", async () => {
@@ -68,21 +96,43 @@ describe("checkWorkerQueues", () => {
     await expect(checkWorkerQueues()).rejects.toThrow("close failed");
   });
 
+  it("fails and closes queue clients when queue readiness times out", async () => {
+    mockQueueWaitUntilReady.mockImplementationOnce(() => new Promise(() => undefined));
+
+    await expect(checkWorkerQueues({ timeoutMs: 1 })).rejects.toThrow(
+      "worker queue readiness timed out",
+    );
+    expect(mockQueueClose).toHaveBeenCalledTimes(6);
+  });
+
+  it("fails when required worker process is not running", async () => {
+    await expect(
+      checkWorkerQueues({
+        requireWorkerProcess: true,
+        processArgumentsProvider: async () => ["node src/jobs/worker-health.ts"],
+      }),
+    ).rejects.toThrow("worker process is not running");
+    expect(mockQueueWaitUntilReady).not.toHaveBeenCalled();
+  });
+
   it("initializes Sentry and prints queue health when run directly", async () => {
     const originalArgv = [...process.argv];
     const originalSentryDsn = process.env.SENTRY_DSN;
     const originalSentryDsnUnencrypted = process.env.SENTRY_DSN_unencrypted;
+    const originalWorkerHealthProcessArgs = process.env.WORKER_HEALTH_PROCESS_ARGS;
     const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 
     try {
       vi.resetModules();
       process.argv[1] = "worker-health.ts";
       process.env.SENTRY_DSN = "https://example@sentry.test/1";
+      process.env.WORKER_HEALTH_PROCESS_ARGS = "node --experimental-strip-types src/jobs/worker.ts";
       delete process.env.SENTRY_DSN_unencrypted;
 
       await import("./worker-health.ts");
       await new Promise<void>((resolve) => setImmediate(resolve));
 
+      expect(mockExecFile).not.toHaveBeenCalled();
       expect(mockSentryInit).toHaveBeenCalledWith({
         dsn: "https://example@sentry.test/1",
         skipOpenTelemetrySetup: true,
@@ -101,6 +151,11 @@ describe("checkWorkerQueues", () => {
         delete process.env.SENTRY_DSN_unencrypted;
       } else {
         process.env.SENTRY_DSN_unencrypted = originalSentryDsnUnencrypted;
+      }
+      if (originalWorkerHealthProcessArgs === undefined) {
+        delete process.env.WORKER_HEALTH_PROCESS_ARGS;
+      } else {
+        process.env.WORKER_HEALTH_PROCESS_ARGS = originalWorkerHealthProcessArgs;
       }
       stdoutWrite.mockRestore();
     }
@@ -147,6 +202,7 @@ describe("checkWorkerQueues", () => {
     const originalArgv = [...process.argv];
     const originalSentryDsn = process.env.SENTRY_DSN;
     const originalSentryDsnUnencrypted = process.env.SENTRY_DSN_unencrypted;
+    const originalWorkerHealthProcessArgs = process.env.WORKER_HEALTH_PROCESS_ARGS;
     const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 
     try {
@@ -154,6 +210,7 @@ describe("checkWorkerQueues", () => {
       process.argv[1] = "/tmp/worker-health.ts";
       delete process.env.SENTRY_DSN;
       delete process.env.SENTRY_DSN_unencrypted;
+      process.env.WORKER_HEALTH_PROCESS_ARGS = "node --experimental-strip-types src/jobs/worker.ts";
 
       await import("./worker-health.ts");
       await new Promise<void>((resolve) => setImmediate(resolve));
@@ -173,6 +230,11 @@ describe("checkWorkerQueues", () => {
         delete process.env.SENTRY_DSN_unencrypted;
       } else {
         process.env.SENTRY_DSN_unencrypted = originalSentryDsnUnencrypted;
+      }
+      if (originalWorkerHealthProcessArgs === undefined) {
+        delete process.env.WORKER_HEALTH_PROCESS_ARGS;
+      } else {
+        process.env.WORKER_HEALTH_PROCESS_ARGS = originalWorkerHealthProcessArgs;
       }
       stdoutWrite.mockRestore();
     }

@@ -84,7 +84,27 @@ describe("auth-context", () => {
 
       expect(result.current.bootstrapError).toBe("Database unavailable");
       expect(result.current.user).toBeNull();
+      expect(result.current.sessionToken).toBe("existing-token");
       expect(clearSessionToken).not.toHaveBeenCalled();
+    });
+
+    it("revokes restored token when signing out after bootstrap failure", async () => {
+      const { getSessionToken, fetchCurrentUser, logout: authLogout } = await import("./auth");
+
+      vi.mocked(getSessionToken).mockResolvedValue("existing-token");
+      vi.mocked(fetchCurrentUser).mockRejectedValue(new Error("Database unavailable"));
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      await waitFor(() => {
+        expect(result.current.bootstrapError).toBe("Database unavailable");
+      });
+
+      await act(async () => {
+        await result.current.logout();
+      });
+
+      expect(authLogout).toHaveBeenCalledWith(expect.any(String), "existing-token");
     });
   });
 

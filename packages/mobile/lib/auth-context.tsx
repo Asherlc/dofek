@@ -57,15 +57,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Re-save to migrate existing tokens to AFTER_FIRST_UNLOCK accessibility
         // so they remain readable when the app runs in the background while locked.
         await saveSessionToken(token);
+        setSessionToken(token);
 
         const currentUser = await fetchCurrentUser(SERVER_URL, token);
         if (currentUser) {
-          setSessionToken(token);
           setUser(currentUser);
           setBootstrapError(null);
         } else {
           // Token expired — clear it
           await clearSessionToken();
+          setSessionToken(null);
           setBootstrapError(null);
         }
       } catch (error: unknown) {

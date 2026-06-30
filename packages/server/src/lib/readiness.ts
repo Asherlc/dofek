@@ -22,11 +22,19 @@ export interface ReadinessResult {
   checks: ReadinessChecks;
 }
 
-const postgresReadySchema = z.object({ ok: z.union([z.number(), z.string()]) });
+const postgresReadySchema = z.object({ inRecovery: z.boolean() });
 const clickHouseReadySchema = z.object({ ok: z.union([z.number(), z.string()]) });
+const QUEUE_READINESS_TIMEOUT_MS = 2_500;
 
 async function checkPostgres(db: ExecutableDatabase): Promise<void> {
-  await executeWithSchema(db, postgresReadySchema, sql`SELECT 1 AS ok`);
+  const [row] = await executeWithSchema(
+    db,
+    postgresReadySchema,
+    sql`SELECT pg_is_in_recovery() AS "inRecovery"`,
+  );
+  if (!row || row.inRecovery) {
+    throw new Error("Postgres is in recovery mode");
+  }
 }
 
 async function checkClickHouse(sensorStore: ActivitySensorStore): Promise<void> {
@@ -34,7 +42,7 @@ async function checkClickHouse(sensorStore: ActivitySensorStore): Promise<void> 
 }
 
 async function checkQueues(): Promise<void> {
-  await checkWorkerQueues();
+  await checkWorkerQueues({ timeoutMs: QUEUE_READINESS_TIMEOUT_MS });
 }
 
 function statusFromResult(result: PromiseSettledResult<unknown>): "ok" | "error" {

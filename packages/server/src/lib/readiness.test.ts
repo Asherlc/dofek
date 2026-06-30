@@ -3,7 +3,7 @@ import type { ReadinessDependencies } from "./readiness.ts";
 import { makeMockSensorStore } from "./test-helpers.ts";
 
 const mockCheckWorkerQueues = vi.fn(async () => ({ status: "ok" as const, queues: "ok" as const }));
-const mockDbExecute = vi.fn(async () => [{ ok: 1 }]);
+const mockDbExecute = vi.fn(async () => [{ inRecovery: false }]);
 
 vi.mock("../../../../src/jobs/worker-health.ts", () => ({
   checkWorkerQueues: mockCheckWorkerQueues,
@@ -15,7 +15,7 @@ describe("checkReadiness", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCheckWorkerQueues.mockResolvedValue({ status: "ok", queues: "ok" });
-    mockDbExecute.mockResolvedValue([{ ok: 1 }]);
+    mockDbExecute.mockResolvedValue([{ inRecovery: false }]);
   });
 
   it("returns ready when Postgres, ClickHouse, and queues are reachable", async () => {
@@ -54,6 +54,23 @@ describe("checkReadiness", () => {
     });
     expect(sensorStore.query).toHaveBeenCalled();
     expect(mockCheckWorkerQueues).toHaveBeenCalled();
+  });
+
+  it("returns unavailable when Postgres is in recovery", async () => {
+    mockDbExecute.mockResolvedValueOnce([{ inRecovery: true }]);
+    const sensorStore = makeMockSensorStore([{ ok: 1 }]);
+    const db = { execute: mockDbExecute } satisfies ReadinessDependencies["db"];
+
+    const result = await checkReadiness({ db, sensorStore });
+
+    expect(result).toEqual({
+      status: "error",
+      checks: {
+        postgres: "error",
+        clickhouse: "ok",
+        queues: "ok",
+      },
+    });
   });
 
   it("returns unavailable when ClickHouse fails", async () => {
