@@ -7,6 +7,7 @@ const {
   mockGetJobs,
   mockGetJobCounts,
   mockGetProviderSyncQueue,
+  mockImportQueueGetJobs,
   mockImportQueueGetJobCounts,
   mockGetAllProviders,
   mockGetSyncProviders,
@@ -27,6 +28,7 @@ const {
     getJobs: mockGetJobs,
     getJobCounts: (...states: string[]) => mockGetJobCounts(id, states),
   })),
+  mockImportQueueGetJobs: vi.fn().mockResolvedValue([]),
   mockImportQueueGetJobCounts: vi.fn(),
   mockGetAllProviders: vi.fn(() => []),
   mockGetSyncProviders: vi.fn(() => []),
@@ -41,13 +43,26 @@ const {
 // Mock trpc
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
+  const { TRPCError } = await import("@trpc/server");
   const trpc = initTRPC
     .context<{ db: unknown; sensorStore?: unknown; userId: string | null; timezone: string }>()
     .create();
+  const adminProcedure = trpc.procedure.use(async ({ ctx, next }) => {
+    if (!ctx.userId) {
+      throw new TRPCError({ code: "UNAUTHORIZED", message: "Not authenticated" });
+    }
+    const db = ctx.db as { execute: (query: unknown) => Promise<Array<{ is_admin: boolean }>> };
+    const rows = await db.execute({ type: "admin-check" });
+    if (rows[0]?.is_admin !== true) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
+    }
+    return next({ ctx });
+  });
   return {
     router: trpc.router,
     publicProcedure: trpc.procedure,
     protectedProcedure: trpc.procedure,
+    adminProcedure,
     cachedProtectedQuery: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
@@ -71,6 +86,7 @@ vi.mock("dofek/jobs/queues", () => ({
     getJobs: mockGetJobs,
   })),
   getImportQueue: vi.fn(() => ({
+    getJobs: mockImportQueueGetJobs,
     getJobCounts: mockImportQueueGetJobCounts,
   })),
   createProviderSyncQueue: vi.fn(() => ({
@@ -200,6 +216,21 @@ function createSensorStoreQuery(responses: {
   });
 }
 
+function collectSqlText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value !== "object" || value === null) return "";
+  const queryChunks = Reflect.get(value, "queryChunks");
+  if (Array.isArray(queryChunks)) {
+    return queryChunks.map((queryChunk) => collectSqlText(queryChunk)).join("");
+  }
+  const rawValue = Reflect.get(value, "value");
+  if (Array.isArray(rawValue)) {
+    return rawValue.map((rawChunk) => collectSqlText(rawChunk)).join("");
+  }
+  if (typeof rawValue === "string") return rawValue;
+  return "";
+}
+
 describe("syncRouter", () => {
   const createCaller = createTestCallerFactory(syncRouter);
 
@@ -214,6 +245,7 @@ describe("syncRouter", () => {
       getJobCounts: (...states: string[]) => mockGetJobCounts(id, states),
     }));
     mockGetJobs.mockResolvedValue([]);
+    mockImportQueueGetJobs.mockResolvedValue([]);
     mockImportQueueGetJobCounts.mockResolvedValue({
       waiting: 0,
       active: 0,
@@ -1238,7 +1270,7 @@ describe("syncRouter", () => {
       });
 
       const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
+        db: { execute: vi.fn().mockResolvedValue([{ is_admin: true }]) },
         userId: "user-1",
         timezone: "UTC",
       });
@@ -1293,6 +1325,21 @@ describe("syncRouter", () => {
         "delayed",
         "failed",
       );
+    });
+
+    it("rejects non-admin users before returning global queue counts", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([{ is_admin: false }]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.queueBackpressure()).rejects.toMatchObject({
+        code: "FORBIDDEN",
+        message: "Admin access required",
+      });
+      expect(mockGetProviderSyncQueue).not.toHaveBeenCalled();
+      expect(mockImportQueueGetJobCounts).not.toHaveBeenCalled();
     });
   });
 
@@ -2050,22 +2097,25 @@ describe("syncRouter", () => {
       expect(sensorStore.query).toHaveBeenCalledTimes(3);
       expect(sensorStore.query).toHaveBeenCalledWith(
         expect.any(Object),
-        expect.stringContaining("analytics.daily_recovery"),
+        expect.stringContaining("{userId:UUID}"),
         { userId: "user-1" },
         { priority: "dashboard" },
       );
-      expect(sensorStore.query).toHaveBeenCalledWith(
-        expect.any(Object),
-        expect.stringContaining("analytics.daily_sleep"),
-        { userId: "user-1" },
-        { priority: "dashboard" },
+      const readModelQueries = sensorStore.query.mock.calls.map((call) => call[1]);
+      expect(readModelQueries).toHaveLength(3);
+      expect(readModelQueries.every((queryText) => queryText.includes("{userId:UUID}"))).toBe(true);
+      expect(readModelQueries.every((queryText) => !queryText.includes("{userId:String}"))).toBe(
+        true,
       );
-      expect(sensorStore.query).toHaveBeenCalledWith(
-        expect.any(Object),
-        expect.stringContaining("analytics.daily_strain"),
-        { userId: "user-1" },
-        { priority: "dashboard" },
+      expect(readModelQueries.every((queryText) => queryText.includes("maxOrNull(date)"))).toBe(
+        true,
       );
+      expect(readModelQueries.every((queryText) => !queryText.includes("max(date)"))).toBe(true);
+      const rawFreshnessSql = mockExecute.mock.calls
+        .map((call) => collectSqlText(call[0]))
+        .join("\n");
+      expect(rawFreshnessSql).toContain("max(started_at)");
+      expect(rawFreshnessSql).not.toContain("max(start_time)");
       expect(mockLoggerWarn).not.toHaveBeenCalled();
     });
 
@@ -2115,7 +2165,7 @@ describe("syncRouter", () => {
       expect(sensorStore.query).toHaveBeenCalledTimes(3);
     });
 
-    it("marks read models stale when ClickHouse summaries lag raw data by more than one hour", async () => {
+    it("marks read models stale when ClickHouse summaries lag raw data by more than one day", async () => {
       const mockExecute = vi
         .fn()
         .mockResolvedValueOnce([{ rawRows: 42, latestRawAt: "2026-06-29T12:00:00.000Z" }])
@@ -2124,7 +2174,7 @@ describe("syncRouter", () => {
       const sensorStore = {
         query: vi.fn(async (_schema: unknown, queryText: string) => {
           if (queryText.includes("analytics.daily_recovery")) {
-            return [{ latestReadModelAt: "2026-06-29T10:00:00.000Z" }];
+            return [{ latestReadModelAt: "2026-06-27" }];
           }
           if (queryText.includes("analytics.daily_sleep")) {
             return [{ latestReadModelAt: "2026-06-29T08:00:00.000Z" }];
@@ -2149,9 +2199,9 @@ describe("syncRouter", () => {
         expect.objectContaining({
           key: "dailyMetrics",
           latestRawAt: "2026-06-29T12:00:00.000Z",
-          latestReadModelAt: "2026-06-29T10:00:00.000Z",
-          cdcLagSeconds: 7200,
-          readModelLagSeconds: 7200,
+          latestReadModelAt: "2026-06-27T00:00:00.000Z",
+          cdcLagSeconds: 172800,
+          readModelLagSeconds: 172800,
           status: "stale",
           message: "Daily metrics data is synced, but dashboard summaries are still catching up.",
         }),
@@ -2160,7 +2210,7 @@ describe("syncRouter", () => {
       expect(result.datasets[2]?.status).toBe("healthy");
     });
 
-    it("treats a one hour read-model lag as healthy", async () => {
+    it("treats same-day read-model timestamps as healthy", async () => {
       const mockExecute = vi
         .fn()
         .mockResolvedValueOnce([{ rawRows: 42, latestRawAt: "2026-06-29T12:00:00.000Z" }])
@@ -2193,11 +2243,38 @@ describe("syncRouter", () => {
       expect(result.datasets[0]).toEqual(
         expect.objectContaining({
           key: "dailyMetrics",
-          cdcLagSeconds: 3600,
-          readModelLagSeconds: 3600,
+          cdcLagSeconds: 0,
+          readModelLagSeconds: 0,
           status: "healthy",
         }),
       );
+    });
+
+    it("compares daily read-model freshness at date grain", async () => {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 42, latestRawAt: "2026-06-29T23:59:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 8, latestRawAt: "2026-06-29T18:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 3, latestRawAt: "2026-06-29T20:00:00.000Z" }]);
+      const sensorStore = {
+        query: vi.fn(async () => [{ latestReadModelAt: "2026-06-29" }]),
+      };
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("healthy");
+      expect(result.datasets.map((dataset) => dataset.readModelLagSeconds)).toEqual([0, 0, 0]);
+      expect(result.datasets.map((dataset) => dataset.status)).toEqual([
+        "healthy",
+        "healthy",
+        "healthy",
+      ]);
     });
 
     it("marks data blocked when raw data exists but read models are unavailable", async () => {
@@ -2223,6 +2300,37 @@ describe("syncRouter", () => {
           message: expect.stringContaining("ClickHouse mirrors are not current"),
         }),
       );
+    });
+
+    it("marks overall status missing when only some primary datasets are missing", async () => {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 12, latestRawAt: "2026-06-29T12:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }]);
+      const sensorStore = {
+        query: vi.fn(async (_schema: unknown, queryText: string) => {
+          if (queryText.includes("analytics.daily_recovery")) {
+            return [{ latestReadModelAt: "2026-06-29T12:00:00.000Z" }];
+          }
+          return [];
+        }),
+      };
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("missing");
+      expect(result.datasets.map((dataset) => dataset.status)).toEqual([
+        "healthy",
+        "missing",
+        "missing",
+      ]);
     });
 
     it("ignores active sync jobs for other users", async () => {
@@ -2279,6 +2387,32 @@ describe("syncRouter", () => {
 
       expect(result.overallStatus).toBe("syncing");
       expect(result.datasets[0]?.status).toBe("missing");
+    });
+
+    it("marks overall status syncing when an import job exists for the user", async () => {
+      mockImportQueueGetJobs.mockResolvedValue([
+        {
+          id: "import-1",
+          data: { userId: "user-1", providerId: "apple_health" },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+      ]);
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }]);
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("syncing");
+      expect(mockImportQueueGetJobs).toHaveBeenCalledWith(["waiting", "active", "delayed"]);
     });
   });
 

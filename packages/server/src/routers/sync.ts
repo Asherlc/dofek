@@ -30,6 +30,7 @@ import {
 import {
   CacheTTL,
   cachedProtectedQuery,
+  adminProcedure,
   protectedProcedure,
   publicProcedure,
   router,
@@ -227,7 +228,7 @@ const dataHealthDatasets = [
     key: "sleep",
     label: "Sleep",
     rawTable: "fitness.sleep_session",
-    rawLatestExpression: "max(start_time)",
+    rawLatestExpression: "max(started_at)",
     predicate: sqlTag``,
     readModelTable: "analytics.daily_sleep",
   },
@@ -235,7 +236,7 @@ const dataHealthDatasets = [
     key: "activity",
     label: "Activities",
     rawTable: "fitness.activity",
-    rawLatestExpression: "max(start_time)",
+    rawLatestExpression: "max(started_at)",
     predicate: sqlTag`AND provider_absent_at IS NULL AND deleted_at IS NULL`,
     readModelTable: "analytics.daily_strain",
   },
@@ -279,6 +280,14 @@ function secondsBetween(laterIso: string | null, earlierIso: string | null): num
   return Math.max(0, Math.round((later - earlier) / 1000));
 }
 
+function dateGrainSecondsBetween(laterIso: string | null, earlierIso: string | null): number | null {
+  if (laterIso === null || earlierIso === null) return null;
+  const laterDate = timestampToIsoString(laterIso)?.slice(0, 10);
+  const earlierDate = timestampToIsoString(earlierIso)?.slice(0, 10);
+  if (laterDate === undefined || earlierDate === undefined) return null;
+  return secondsBetween(`${laterDate}T00:00:00.000Z`, `${earlierDate}T00:00:00.000Z`);
+}
+
 function datasetStatus(input: {
   rawRows: number;
   latestReadModelAt: string | null;
@@ -315,25 +324,31 @@ function overallDataHealthStatus(
   if (hasActiveSync) return "syncing";
   if (statuses.includes("blocked")) return "blocked";
   if (statuses.includes("stale")) return "stale";
-  if (statuses.every((status) => status === "missing")) return "missing";
+  if (statuses.includes("missing")) return "missing";
   return "healthy";
 }
 
 async function hasActiveSyncForUser(userId: string): Promise<boolean> {
   try {
-    const jobsByProvider = await Promise.all(
-      [...getAllConfiguredProviderIds()].map((providerId) =>
-        getProviderSyncQueue(providerId).getJobs(["waiting", "active", "delayed"]),
+    const activeStates: Array<"waiting" | "active" | "delayed"> = [
+      "waiting",
+      "active",
+      "delayed",
+    ];
+    const [providerJobGroups, importJobs] = await Promise.all([
+      Promise.all(
+        [...getAllConfiguredProviderIds()].map((providerId) =>
+          getProviderSyncQueue(providerId).getJobs(activeStates),
+        ),
       ),
-    );
-    return jobsByProvider.some((jobs) =>
-      jobs.some((job) => {
-        const data = job.data;
-        return (
-          typeof data === "object" && data !== null && "userId" in data && data.userId === userId
-        );
-      }),
-    );
+      getImportQueue().getJobs(activeStates),
+    ]);
+    return [...providerJobGroups.flat(), ...importJobs].some((job) => {
+      const data = job.data;
+      return (
+        typeof data === "object" && data !== null && "userId" in data && data.userId === userId
+      );
+    });
   } catch (error) {
     captureException(error);
     return false;
@@ -555,7 +570,7 @@ export const syncRouter = router({
       };
     }),
 
-  queueBackpressure: protectedProcedure.output(queueBackpressureOutputSchema).query(async () => {
+  queueBackpressure: adminProcedure.output(queueBackpressureOutputSchema).query(async () => {
     const providerBackpressure = await Promise.all(
       [...getAllConfiguredProviderIds()].map(async (providerId) => {
         const counts = await getProviderSyncQueue(providerId).getJobCounts(
@@ -750,9 +765,9 @@ export const syncRouter = router({
         if (!sensorStore) return Promise.resolve([]);
         return sensorStore.query(
           readModelFreshnessSchema,
-          `SELECT max(date) AS latestReadModelAt
+          `SELECT maxOrNull(date) AS latestReadModelAt
            FROM ${dataset.readModelTable} FINAL
-           WHERE user_id = {userId:String}`,
+           WHERE user_id = {userId:UUID}`,
           { userId: ctx.userId },
           { priority: "dashboard" },
         );
@@ -765,7 +780,7 @@ export const syncRouter = router({
       const rawRows = rawRow?.rawRows ?? 0;
       const latestRawAt = timestampToIsoString(rawRow?.latestRawAt ?? null);
       const latestReadModelAt = timestampToIsoString(readModelRow?.latestReadModelAt ?? null);
-      const readModelLagSeconds = secondsBetween(latestRawAt, latestReadModelAt);
+      const readModelLagSeconds = dateGrainSecondsBetween(latestRawAt, latestReadModelAt);
       const status = datasetStatus({ rawRows, latestReadModelAt, readModelLagSeconds });
       return {
         key: dataset.key,
