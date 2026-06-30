@@ -15,6 +15,7 @@ import {
 import { Link, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
+import { DataReadinessBanner } from "../components/DataReadinessBanner.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { ProviderDisconnectControl } from "../components/ProviderDisconnectControl.tsx";
 import { ProviderLogo } from "../components/ProviderLogo.tsx";
@@ -56,6 +57,7 @@ export function ProviderDetailPage() {
 
   const providers = trpc.sync.providers.useQuery();
   const stats = trpc.sync.providerStats.useQuery();
+  const dataHealth = trpc.sync.dataHealth.useQuery();
   const trpcUtils = trpc.useUtils();
 
   const provider = (providers.data ?? []).find((p) => p.id === providerId);
@@ -250,6 +252,12 @@ export function ProviderDetailPage() {
           </div>
         </div>
       </div>
+
+      <DataReadinessBanner
+        data={dataHealth.data}
+        error={dataHealth.error}
+        loading={dataHealth.isLoading}
+      />
 
       {pushOnly && (
         <section className="card p-4 space-y-3">

@@ -37,6 +37,32 @@ const mockProviders: { data: MockProvider[]; isLoading: boolean } = {
 
 const mockStats = { data: [], isLoading: false };
 
+interface MockDataHealthSnapshot {
+  overallStatus: "blocked";
+  generatedAt: string;
+  datasets: Array<{
+    key: "activity";
+    label: string;
+    rawRows: number;
+    latestRawAt: string;
+    latestReadModelAt: null;
+    cdcLagSeconds: number;
+    readModelLagSeconds: null;
+    status: "blocked";
+    message: string;
+  }>;
+}
+
+const mockDataHealth: {
+  data: MockDataHealthSnapshot | null;
+  isLoading: boolean;
+  error: { message?: string } | null;
+} = {
+  data: null,
+  isLoading: false,
+  error: null,
+};
+
 const mockSyncMutation = { mutateAsync: vi.fn(), isPending: false };
 const mockDisconnectMutation = { mutateAsync: vi.fn(), isPending: false };
 const mockSettingsGetQuery = vi.fn().mockReturnValue({ data: null, isLoading: false });
@@ -49,6 +75,7 @@ vi.mock("../lib/trpc.ts", () => ({
     sync: {
       providers: { useQuery: () => mockProviders },
       providerStats: { useQuery: () => mockStats },
+      dataHealth: { useQuery: () => mockDataHealth },
       triggerSync: { useMutation: () => mockSyncMutation },
       syncStatus: { fetch: vi.fn() },
     },
@@ -86,6 +113,9 @@ vi.mock("../lib/poll-sync-job.ts", () => ({
 
 beforeEach(() => {
   vi.useFakeTimers();
+  mockDataHealth.data = null;
+  mockDataHealth.isLoading = false;
+  mockDataHealth.error = null;
 });
 
 afterEach(() => {
@@ -303,6 +333,44 @@ describe("ProviderDetailPage import-only providers", () => {
     expect(screen.getByText("Sync Controls")).toBeTruthy();
     expect(screen.getByText("Connected")).toBeTruthy();
     expect(screen.queryByText("Import only")).toBeNull();
+  });
+
+  it("shows provider data readiness when read models are blocked", async () => {
+    mockProviders.data = [
+      {
+        id: "strong-csv",
+        name: "Wahoo",
+        authorized: true,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+    mockDataHealth.data = {
+      overallStatus: "blocked",
+      generatedAt: "2026-06-30T12:00:00Z",
+      datasets: [
+        {
+          key: "activity",
+          label: "Activities",
+          rawRows: 12,
+          latestRawAt: "2026-06-29T12:00:00Z",
+          latestReadModelAt: null,
+          cdcLagSeconds: 90000,
+          readModelLagSeconds: null,
+          status: "blocked",
+          message: "Activity data is available, but ClickHouse mirrors are not current.",
+        },
+      ],
+    };
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(screen.getByText("Data pipeline needs attention")).toBeTruthy();
+    expect(
+      screen.getByText("Activity data is available, but ClickHouse mirrors are not current."),
+    ).toBeTruthy();
   });
 
   it("shows single-provider cooldown outcome without polling a fake job", async () => {
