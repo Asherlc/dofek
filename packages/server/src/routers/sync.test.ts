@@ -2048,7 +2048,156 @@ describe("syncRouter", () => {
       ]);
       expect(mockExecute).toHaveBeenCalledTimes(3);
       expect(sensorStore.query).toHaveBeenCalledTimes(3);
+      expect(sensorStore.query).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.stringContaining("analytics.daily_recovery"),
+        { userId: "user-1" },
+        { priority: "dashboard" },
+      );
+      expect(sensorStore.query).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.stringContaining("analytics.daily_sleep"),
+        { userId: "user-1" },
+        { priority: "dashboard" },
+      );
+      expect(sensorStore.query).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.stringContaining("analytics.daily_strain"),
+        { userId: "user-1" },
+        { priority: "dashboard" },
+      );
       expect(mockLoggerWarn).not.toHaveBeenCalled();
+    });
+
+    it("marks all datasets missing when no raw rows exist", async () => {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }]);
+      const sensorStore = {
+        query: vi.fn().mockResolvedValue([]),
+      };
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("missing");
+      expect(result.datasets).toEqual([
+        expect.objectContaining({
+          key: "dailyMetrics",
+          rawRows: 0,
+          latestRawAt: null,
+          latestReadModelAt: null,
+          cdcLagSeconds: null,
+          readModelLagSeconds: null,
+          status: "missing",
+          message: "No daily metrics data has been synced yet.",
+        }),
+        expect.objectContaining({
+          key: "sleep",
+          rawRows: 0,
+          status: "missing",
+          message: "No sleep data has been synced yet.",
+        }),
+        expect.objectContaining({
+          key: "activity",
+          rawRows: 0,
+          status: "missing",
+          message: "No activities data has been synced yet.",
+        }),
+      ]);
+      expect(sensorStore.query).toHaveBeenCalledTimes(3);
+    });
+
+    it("marks read models stale when ClickHouse summaries lag raw data by more than one hour", async () => {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 42, latestRawAt: "2026-06-29T12:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 8, latestRawAt: "2026-06-29T08:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 3, latestRawAt: "2026-06-29T10:00:00.000Z" }]);
+      const sensorStore = {
+        query: vi.fn(async (_schema: unknown, queryText: string) => {
+          if (queryText.includes("analytics.daily_recovery")) {
+            return [{ latestReadModelAt: "2026-06-29T10:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.daily_sleep")) {
+            return [{ latestReadModelAt: "2026-06-29T08:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.daily_strain")) {
+            return [{ latestReadModelAt: "2026-06-29T10:00:00.000Z" }];
+          }
+          return [];
+        }),
+      };
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("stale");
+      expect(result.datasets[0]).toEqual(
+        expect.objectContaining({
+          key: "dailyMetrics",
+          latestRawAt: "2026-06-29T12:00:00.000Z",
+          latestReadModelAt: "2026-06-29T10:00:00.000Z",
+          cdcLagSeconds: 7200,
+          readModelLagSeconds: 7200,
+          status: "stale",
+          message: "Daily metrics data is synced, but dashboard summaries are still catching up.",
+        }),
+      );
+      expect(result.datasets[1]?.status).toBe("healthy");
+      expect(result.datasets[2]?.status).toBe("healthy");
+    });
+
+    it("treats a one hour read-model lag as healthy", async () => {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 42, latestRawAt: "2026-06-29T12:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 8, latestRawAt: "2026-06-29T08:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 3, latestRawAt: "2026-06-29T10:00:00.000Z" }]);
+      const sensorStore = {
+        query: vi.fn(async (_schema: unknown, queryText: string) => {
+          if (queryText.includes("analytics.daily_recovery")) {
+            return [{ latestReadModelAt: "2026-06-29T11:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.daily_sleep")) {
+            return [{ latestReadModelAt: "2026-06-29T08:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.daily_strain")) {
+            return [{ latestReadModelAt: "2026-06-29T10:00:00.000Z" }];
+          }
+          return [];
+        }),
+      };
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("healthy");
+      expect(result.datasets[0]).toEqual(
+        expect.objectContaining({
+          key: "dailyMetrics",
+          cdcLagSeconds: 3600,
+          readModelLagSeconds: 3600,
+          status: "healthy",
+        }),
+      );
     });
 
     it("marks data blocked when raw data exists but read models are unavailable", async () => {
@@ -2074,6 +2223,36 @@ describe("syncRouter", () => {
           message: expect.stringContaining("ClickHouse mirrors are not current"),
         }),
       );
+    });
+
+    it("ignores active sync jobs for other users", async () => {
+      mockGetJobs.mockResolvedValue([
+        {
+          id: "job-1",
+          data: { userId: "other-user", providerId: "garmin" },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+      ]);
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }]);
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("missing");
+      expect(result.datasets.map((dataset) => dataset.status)).toEqual([
+        "missing",
+        "missing",
+        "missing",
+      ]);
     });
 
     it("marks overall status syncing when an active provider sync exists", async () => {
