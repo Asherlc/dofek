@@ -21,6 +21,7 @@ import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { RecoveryRing } from "../../components/charts/RecoveryRing";
 import { SleepBar } from "../../components/charts/SleepBar";
 import { StrainGauge } from "../../components/charts/StrainGauge";
+import { DataReadinessBanner } from "../../components/DataReadinessBanner";
 import { ProviderGuide } from "../../components/ProviderGuide";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { SkeletonCircle } from "../../components/Skeleton";
@@ -42,6 +43,7 @@ export default function TodayScreen() {
 
   // Consolidated dashboard data fetch
   const dashboardQuery = trpc.mobileDashboard.dashboard.useQuery({ endDate });
+  const dataHealthQuery = trpc.sync.dataHealth.useQuery();
   const dashboardData = dashboardQuery.data;
   const anomalyQuery = trpc.anomalyDetection.check.useQuery(
     { endDate },
@@ -73,7 +75,11 @@ export default function TodayScreen() {
 
   const { refreshing, onRefresh } = useRefresh({
     refresh: async () => {
-      await Promise.all([dashboardQuery.refetch(), anomalyQuery.refetch()]);
+      await Promise.all([
+        dashboardQuery.refetch(),
+        anomalyQuery.refetch(),
+        dataHealthQuery.refetch(),
+      ]);
     },
     invalidate: null,
   });
@@ -109,6 +115,8 @@ export default function TodayScreen() {
       {providerGuide.showProviderGuide && (
         <ProviderGuide onDismiss={providerGuide.dismiss} providers={providerGuide.providers} />
       )}
+
+      <DataReadinessBanner data={dataHealthQuery.data} loading={dataHealthQuery.isLoading} />
 
       {/* Anomaly Alert Banner */}
       {anomalies != null && anomalies.anomalies.length > 0 && (

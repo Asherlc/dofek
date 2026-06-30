@@ -23,6 +23,7 @@ import {
 } from "react-native";
 import Svg, { Polyline } from "react-native-svg";
 import { ActivityTypeIcon } from "../../components/ActivityTypeIcon";
+import { DataReadinessBanner } from "../../components/DataReadinessBanner";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
@@ -78,6 +79,7 @@ export default function ActivitiesScreen() {
   const overviewQuery = trpc.calendar.activityOverview.useQuery(queryInput, {
     placeholderData: (previousData) => previousData,
   });
+  const dataHealth = trpc.sync.dataHealth.useQuery();
   const bulkDelete = trpc.activity.bulkDelete.useMutation({
     onSuccess: async () => {
       await trpcUtils.calendar.weekList.invalidate();
@@ -152,6 +154,8 @@ export default function ActivitiesScreen() {
       >
         <Text style={styles.recordButtonText}>Record Activity</Text>
       </TouchableOpacity>
+
+      <DataReadinessBanner data={dataHealth.data} loading={dataHealth.isLoading} />
 
       <ActivityControls
         activityTypes={overviewQuery.data?.activityTypes ?? []}

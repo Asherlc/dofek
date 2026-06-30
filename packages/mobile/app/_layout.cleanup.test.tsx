@@ -248,6 +248,7 @@ describe("RootLayout background cleanup", () => {
     expect(queryCondition({ type: "query", path: "mobileDashboard.dashboard" })).toBe(true);
     expect(queryCondition({ type: "query", path: "mobileDashboard.recovery" })).toBe(true);
     expect(queryCondition({ type: "query", path: "mobileDashboard.training" })).toBe(true);
+    expect(queryCondition({ type: "query", path: "sync.dataHealth" })).toBe(true);
     expect(queryCondition({ type: "query", path: "anomalyDetection.check" })).toBe(false);
     expect(queryCondition({ type: "mutation", path: "mobileDashboard.dashboard" })).toBe(false);
     const mutationLink = Reflect.get(mutationSplitOptions, "true");

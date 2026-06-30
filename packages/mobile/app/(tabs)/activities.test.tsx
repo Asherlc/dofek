@@ -34,6 +34,11 @@ let bulkDeleteMutateAsync: ReturnType<typeof vi.fn>;
 let invalidateWeekList: ReturnType<typeof vi.fn>;
 let invalidateActivityOverview: ReturnType<typeof vi.fn>;
 let invalidateActivityList: ReturnType<typeof vi.fn>;
+let mockDataHealthQuery: {
+  data: unknown;
+  isLoading: boolean;
+  error: Error | null;
+};
 const routerPush = vi.fn();
 
 vi.mock("expo-router", () => ({
@@ -70,6 +75,11 @@ vi.mock("../../lib/trpc", () => ({
           isPending: false,
           error: null,
         }),
+      },
+    },
+    sync: {
+      dataHealth: {
+        useQuery: () => mockDataHealthQuery,
       },
     },
     useUtils: () => ({
@@ -147,8 +157,40 @@ describe("ActivitiesScreen", () => {
     invalidateWeekList = vi.fn();
     invalidateActivityOverview = vi.fn();
     invalidateActivityList = vi.fn();
+    mockDataHealthQuery = { data: undefined, isLoading: false, error: null };
     routerPush.mockReset();
     vi.restoreAllMocks();
+  });
+
+  it("shows activity readiness when activity summaries are blocked", () => {
+    mockDataHealthQuery = {
+      data: {
+        overallStatus: "blocked",
+        generatedAt: "2026-06-30T08:00:00.000Z",
+        datasets: [
+          {
+            key: "activity",
+            label: "Activities",
+            rawRows: 12,
+            latestRawAt: "2026-06-30T07:00:00.000Z",
+            latestReadModelAt: null,
+            cdcLagSeconds: null,
+            readModelLagSeconds: null,
+            status: "blocked",
+            message: "Activities data is available, but ClickHouse mirrors are not current.",
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    };
+
+    render(<ActivitiesScreen />);
+
+    expect(screen.getByText("Data pipeline needs attention")).toBeDefined();
+    expect(
+      screen.getByText("Activities data is available, but ClickHouse mirrors are not current."),
+    ).toBeDefined();
   });
 
   it("uses QueryStatePanel for overview loading state", () => {

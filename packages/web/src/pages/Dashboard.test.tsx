@@ -33,6 +33,9 @@ const mockHeartRateBaselineQuery = vi.hoisted(() =>
 const mockInsightsQuery = vi.hoisted(() =>
   vi.fn<() => MockInsightsQueryResult>(() => ({ data: [], isLoading: false, error: null })),
 );
+const mockDataHealthQuery = vi.hoisted(() =>
+  vi.fn<() => MockQueryResult<unknown>>(() => ({ data: undefined, isLoading: false, error: null })),
+);
 const mockDashboardEvidenceOverview = vi.hoisted(() => vi.fn());
 
 vi.mock("../components/DailyOverview.tsx", () => ({
@@ -83,6 +86,9 @@ vi.mock("../lib/trpc.ts", () => ({
     insights: {
       compute: { useQuery: mockInsightsQuery },
     },
+    sync: {
+      dataHealth: { useQuery: mockDataHealthQuery },
+    },
   },
 }));
 
@@ -105,7 +111,41 @@ describe("Dashboard", () => {
     mockTrendsQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mockHeartRateBaselineQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mockInsightsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+    mockDataHealthQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mockDashboardEvidenceOverview.mockClear();
+  });
+
+  it("shows data readiness when dashboard summaries are stale", () => {
+    mockDataHealthQuery.mockReturnValue({
+      data: {
+        overallStatus: "stale",
+        generatedAt: "2026-06-30T08:00:00.000Z",
+        datasets: [
+          {
+            key: "dailyMetrics",
+            label: "Daily metrics",
+            rawRows: 42,
+            latestRawAt: "2026-06-30T07:00:00.000Z",
+            latestReadModelAt: "2026-06-30T05:00:00.000Z",
+            cdcLagSeconds: 7200,
+            readModelLagSeconds: 7200,
+            status: "stale",
+            message: "Daily metrics data is synced, but dashboard summaries are still catching up.",
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    render(<Dashboard />);
+
+    expect(screen.getByText("Dashboard summaries are catching up")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Daily metrics data is synced, but dashboard summaries are still catching up.",
+      ),
+    ).toBeTruthy();
   });
 
   it("uses a loading panel while insights are loading", () => {
