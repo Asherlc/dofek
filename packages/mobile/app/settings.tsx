@@ -138,9 +138,6 @@ export default function SettingsScreen() {
 
   const currentUnitSystem: UnitSystem =
     unitSetting.data?.value === "imperial" ? "imperial" : "metric";
-  const hasMedicationDoseEvents = (medicationDoseEvents.data?.events.length ?? 0) > 0;
-  const showMedicationDoseEvents =
-    medicationDoseEvents.isLoading || medicationDoseEvents.error || hasMedicationDoseEvents;
 
   // ── Goal Weight ──
   const goalWeightSetting = trpc.settings.get.useQuery({ key: "goalWeight" });
@@ -424,15 +421,13 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      {showMedicationDoseEvents ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Medication Doses</Text>
-          <Text style={styles.sectionDescription}>Review imported medication dose events</Text>
-          <View style={styles.card}>
-            <MedicationDoseEventsPanel queryResult={medicationDoseEvents} />
-          </View>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Medication Doses</Text>
+        <Text style={styles.sectionDescription}>Review imported medication dose events</Text>
+        <View style={styles.card}>
+          <MedicationDoseEventsPanel queryResult={medicationDoseEvents} />
         </View>
-      ) : null}
+      </View>
 
       {/* ── Billing ── */}
       <View style={styles.section}>

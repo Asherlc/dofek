@@ -244,13 +244,14 @@ describe("SettingsScreen password", () => {
 });
 
 describe("SettingsScreen medication doses", () => {
-  it("hides medication dose review when no imported dose events exist", async () => {
+  it("shows medication dose empty state when no imported dose events exist", async () => {
     const { default: SettingsScreen } = await import("./settings");
 
     render(<SettingsScreen />);
 
-    expect(screen.queryByText("Medication Doses")).toBeNull();
-    expect(screen.queryByText("Review imported medication dose events")).toBeNull();
+    expect(screen.getByText("Medication Doses")).toBeTruthy();
+    expect(screen.getByText("Review imported medication dose events")).toBeTruthy();
+    expect(screen.getByText("No medication dose events yet.")).toBeTruthy();
   });
 });
 
