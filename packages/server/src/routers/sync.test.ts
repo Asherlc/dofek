@@ -199,7 +199,9 @@ import {
   toJobId,
 } from "./sync-helpers.ts";
 
-const routerConstructionCachedTtls = mockCachedProtectedQuery.mock.calls.map((call) => call[0]);
+const routerConstructionCachedTtlValues = mockCachedProtectedQuery.mock.calls.map(
+  (call) => call[0],
+);
 
 function createProvidersDbMock() {
   return {
@@ -243,7 +245,7 @@ describe("syncRouter", () => {
   const createCaller = createTestCallerFactory(syncRouter);
 
   it("uses a short cache for read-heavy protected queries", () => {
-    expect(routerConstructionCachedTtls).toEqual([120_000, 120_000, 120_000, 120_000]);
+    expect(routerConstructionCachedTtlValues).toEqual([120_000, 120_000, 120_000, 120_000]);
   });
 
   beforeEach(() => {
