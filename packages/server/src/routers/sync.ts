@@ -709,6 +709,7 @@ export const syncRouter = router({
       dataHealthDatasets,
       sensorStore ?? undefined,
       ctx.accessWindow,
+      ctx.timezone,
     );
 
     const datasets = dataHealthDatasets.map((dataset, index) => {
@@ -716,7 +717,10 @@ export const syncRouter = router({
       const rawRows = freshnessRow?.rawRows ?? 0;
       const latestRawAt = timestampToIsoString(freshnessRow?.latestRawAt ?? null);
       const latestReadModelAt = timestampToIsoString(freshnessRow?.latestReadModelAt ?? null);
-      const readModelLagSeconds = dateGrainSecondsBetween(latestRawAt, latestReadModelAt);
+      const readModelLagSeconds =
+        dataset.freshnessComparisonGrain === "timestamp"
+          ? secondsBetween(latestRawAt, latestReadModelAt)
+          : dateGrainSecondsBetween(latestRawAt, latestReadModelAt);
       const status = datasetStatus({ rawRows, latestReadModelAt, readModelLagSeconds });
       return {
         key: dataset.key,

@@ -301,6 +301,7 @@ describe("SyncRepository", () => {
       readModelLatestExpression: "maxOrNull(date)",
       readModelAccessExpression: "date",
       readModelPredicate: "",
+      freshnessComparisonGrain: "date" as const,
     };
 
     it("returns raw freshness without querying ClickHouse when no sensor store is configured", async () => {
@@ -458,7 +459,7 @@ describe("SyncRepository", () => {
 
     it("checks activity read-model freshness from all activity summary rows", async () => {
       const activityDataset = getDataHealthDataset("activity");
-      const { repo, query } = makeRepository([
+      const { repo, execute, query } = makeRepository([
         { rawRows: 1, latestRawAt: "2026-06-29T10:00:00.000Z" },
       ]);
       query.mockResolvedValueOnce([{ latestReadModelAt: "2026-06-29T10:00:00.000Z" }]);
@@ -473,13 +474,25 @@ describe("SyncRepository", () => {
           startDate: "2026-06-29",
           endDateExclusive: "2026-06-30",
         },
+        "America/Los_Angeles",
       );
 
+      const rawSql = collectSqlText(execute.mock.calls[0]?.[0]);
+      expect(rawSql).toContain("AT TIME ZONE");
+      expect(rawSql).not.toContain("started_at >= ");
       expect(query.mock.calls[0]?.[1]).toContain("maxOrNull(started_at)");
       expect(query.mock.calls[0]?.[1]).toContain("FROM analytics.activity_summary_rows FINAL");
-      expect(query.mock.calls[0]?.[1]).toContain("toDate(started_at) >= toDate");
+      expect(query.mock.calls[0]?.[1]).toContain(
+        "toDate(toTimeZone(started_at, {timezone:String})) >= toDate",
+      );
       expect(query.mock.calls[0]?.[1]).not.toContain("FROM analytics.daily_strain FINAL");
       expect(query.mock.calls[0]?.[1]).not.toContain("FROM analytics.daily_activity_load FINAL");
+      expect(query.mock.calls[0]?.[2]).toEqual({
+        userId: "user-1",
+        accessStartDate: "2026-06-29",
+        accessEndDateExclusive: "2026-06-30",
+        timezone: "America/Los_Angeles",
+      });
     });
   });
 

@@ -67,6 +67,7 @@ export const dataHealthDatasets = [
     readModelLatestExpression: "maxOrNull(date)",
     readModelAccessExpression: "date",
     readModelPredicate: "AND (hrv IS NOT NULL OR respiratory_rate IS NOT NULL)",
+    freshnessComparisonGrain: "date",
   },
   {
     key: "sleep",
@@ -80,6 +81,7 @@ export const dataHealthDatasets = [
     readModelLatestExpression: "maxOrNull(date)",
     readModelAccessExpression: "date",
     readModelPredicate: "",
+    freshnessComparisonGrain: "date",
   },
   {
     key: "activity",
@@ -87,12 +89,13 @@ export const dataHealthDatasets = [
     rawTable: "fitness.activity",
     rawLatestExpression: "max(started_at)",
     rawAccessColumn: "started_at",
-    rawAccessKind: "timestamp",
+    rawAccessKind: "local-date",
     predicate: sql`AND provider_absent_at IS NULL AND deleted_at IS NULL`,
     readModelTable: "analytics.activity_summary_rows",
     readModelLatestExpression: "maxOrNull(started_at)",
-    readModelAccessExpression: "toDate(started_at)",
+    readModelAccessExpression: "toDate(toTimeZone(started_at, {timezone:String}))",
     readModelPredicate: "",
+    freshnessComparisonGrain: "timestamp",
   },
 ] as const;
 
@@ -173,12 +176,13 @@ interface DataHealthDatasetQuery {
   rawTable: string;
   rawLatestExpression: string;
   rawAccessColumn: string;
-  rawAccessKind: "date" | "timestamp";
+  rawAccessKind: "date" | "local-date" | "timestamp";
   predicate: SQL;
   readModelTable: string;
   readModelLatestExpression: string;
   readModelAccessExpression: string;
   readModelPredicate: string;
+  freshnessComparisonGrain: "date" | "timestamp";
 }
 
 export interface DataHealthFreshnessRow {
@@ -191,12 +195,17 @@ export interface DataHealthFreshnessRow {
 function rawAccessWindowPredicate(
   dataset: DataHealthDatasetQuery,
   accessWindow: AccessWindow | undefined,
+  timezone: string,
 ): SQL {
   if (!accessWindow || accessWindow.kind === "full") return sql``;
   const accessColumn = sql.raw(dataset.rawAccessColumn);
   if (dataset.rawAccessKind === "date") {
     return sql`AND ${accessColumn} >= ${accessWindow.startDate}::date
                AND ${accessColumn} < ${accessWindow.endDateExclusive}::date`;
+  }
+  if (dataset.rawAccessKind === "local-date") {
+    return sql`AND (${accessColumn} AT TIME ZONE ${timezone})::date >= ${accessWindow.startDate}::date
+               AND (${accessColumn} AT TIME ZONE ${timezone})::date < ${accessWindow.endDateExclusive}::date`;
   }
   return sql`AND ${accessColumn} >= ${accessWindow.startDate}::timestamptz
              AND ${accessColumn} < ${accessWindow.endDateExclusive}::timestamptz`;
@@ -212,12 +221,18 @@ function readModelAccessWindowClause(
 }
 
 function readModelAccessWindowParams(
+  dataset: DataHealthDatasetQuery,
   accessWindow: AccessWindow | undefined,
+  timezone: string,
 ): Record<string, unknown> {
-  if (!accessWindow || accessWindow.kind === "full") return {};
+  const timezoneParam = dataset.readModelAccessExpression.includes("{timezone:String}")
+    ? { timezone }
+    : {};
+  if (!accessWindow || accessWindow.kind === "full") return timezoneParam;
   return {
     accessStartDate: accessWindow.startDate,
     accessEndDateExclusive: accessWindow.endDateExclusive,
+    ...timezoneParam,
   };
 }
 
@@ -372,6 +387,7 @@ export class SyncRepository {
     datasets: readonly DataHealthDatasetQuery[] = dataHealthDatasets,
     sensorStore?: DataHealthSensorStore,
     accessWindow?: AccessWindow,
+    timezone = "UTC",
   ): Promise<DataHealthFreshnessRow[]> {
     const rawFreshnessRows = await Promise.all(
       datasets.map((dataset) =>
@@ -382,7 +398,7 @@ export class SyncRepository {
                      ${sql.raw(dataset.rawLatestExpression)} AS "latestRawAt"
               FROM ${sql.raw(dataset.rawTable)}
               WHERE user_id = ${this.#userId}
-              ${rawAccessWindowPredicate(dataset, accessWindow)}
+              ${rawAccessWindowPredicate(dataset, accessWindow, timezone)}
               ${dataset.predicate}`,
         ),
       ),
@@ -397,7 +413,10 @@ export class SyncRepository {
            WHERE user_id = {userId:UUID}
            ${readModelAccessWindowClause(dataset, accessWindow)}
            ${dataset.readModelPredicate}`,
-          { userId: this.#userId, ...readModelAccessWindowParams(accessWindow) },
+          {
+            userId: this.#userId,
+            ...readModelAccessWindowParams(dataset, accessWindow, timezone),
+          },
           { priority: "dashboard" },
         );
       }),

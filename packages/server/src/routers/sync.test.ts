@@ -2253,6 +2253,47 @@ describe("syncRouter", () => {
       );
     });
 
+    it("compares activity read-model freshness at timestamp grain", async () => {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 42, latestRawAt: "2026-06-29T12:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 8, latestRawAt: "2026-06-29T08:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 3, latestRawAt: "2026-06-29T18:00:00.000Z" }]);
+      const sensorStore = {
+        query: vi.fn(async (_schema: unknown, queryText: string) => {
+          if (queryText.includes("analytics.daily_recovery")) {
+            return [{ latestReadModelAt: "2026-06-29T12:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.daily_sleep")) {
+            return [{ latestReadModelAt: "2026-06-29T08:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.activity_summary_rows")) {
+            return [{ latestReadModelAt: "2026-06-29T06:00:00.000Z" }];
+          }
+          return [];
+        }),
+      };
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "America/Los_Angeles",
+      });
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("stale");
+      expect(result.datasets[2]).toEqual(
+        expect.objectContaining({
+          key: "activity",
+          latestRawAt: "2026-06-29T18:00:00.000Z",
+          latestReadModelAt: "2026-06-29T06:00:00.000Z",
+          readModelLagSeconds: 43200,
+          status: "stale",
+        }),
+      );
+    });
+
     it("compares daily read-model freshness at date grain", async () => {
       const mockExecute = vi
         .fn()
@@ -2260,7 +2301,12 @@ describe("syncRouter", () => {
         .mockResolvedValueOnce([{ rawRows: 8, latestRawAt: "2026-06-29T18:00:00.000Z" }])
         .mockResolvedValueOnce([{ rawRows: 3, latestRawAt: "2026-06-29T20:00:00.000Z" }]);
       const sensorStore = {
-        query: vi.fn(async () => [{ latestReadModelAt: "2026-06-29" }]),
+        query: vi.fn(async (_schema: unknown, queryText: string) => {
+          if (queryText.includes("analytics.activity_summary_rows")) {
+            return [{ latestReadModelAt: "2026-06-29T20:00:00.000Z" }];
+          }
+          return [{ latestReadModelAt: "2026-06-29" }];
+        }),
       };
       const caller = createCaller({
         db: { execute: mockExecute },
