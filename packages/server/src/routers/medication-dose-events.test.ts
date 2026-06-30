@@ -46,6 +46,15 @@ describe("medicationDoseEventsRouter", () => {
 
     const result = await caller.list({ limit: 25 });
 
+    expect(Object.keys(db.select.mock.calls[0]?.[0] ?? {})).toEqual([
+      "id",
+      "providerId",
+      "medicationName",
+      "medicationConceptId",
+      "doseStatus",
+      "recordedAt",
+      "sourceName",
+    ]);
     expect(result.events).toEqual([
       {
         id: "event-1",
@@ -144,5 +153,30 @@ describe("medicationDoseEventsRouter", () => {
     const whereSql = collectSqlText(where.mock.calls[0]?.[0]);
     expect(whereSql).toContain(">=");
     expect(whereSql).toContain("<");
+  });
+
+  it("does not apply dose date bounds for full access windows", async () => {
+    const where = vi.fn(() => ({
+      orderBy: vi.fn(() => ({
+        limit: vi.fn().mockResolvedValue([]),
+      })),
+    }));
+    const db = {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({ where })),
+      })),
+    };
+    const caller = createCaller({
+      db,
+      userId: "user-1",
+      timezone: "UTC",
+      accessWindow: { kind: "full", paid: true, reason: "paid_grant" },
+    });
+
+    await caller.list({ limit: 25 });
+
+    const whereSql = collectSqlText(where.mock.calls[0]?.[0]);
+    expect(whereSql).not.toContain(">=");
+    expect(whereSql).not.toContain("<");
   });
 });
