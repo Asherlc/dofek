@@ -225,7 +225,9 @@ export default function ProvidersScreen() {
           return next;
         });
         if (pollingJobIds.current.size === 0) {
-          setAnySyncing(false);
+          if (pollingJobIds.current.size === 0) {
+            setAnySyncing(false);
+          }
         }
       };
 
@@ -360,10 +362,32 @@ export default function ProvidersScreen() {
       setSyncingProviders((prev) => new Set(prev).add(providerId));
       setAnySyncing(true);
       try {
-        const { jobId } = await syncMutation.mutateAsync({
+        const result = await syncMutation.mutateAsync({
           providerId,
           sinceDays: fullSync ? undefined : 7,
         });
+        const providerResult = result.providerResults?.find(
+          (entry) => entry.providerId === providerId,
+        );
+        if (providerResult?.status === "skippedCooldown" || providerResult?.status === "failed") {
+          setSyncingProviders((prev) => {
+            const next = new Set(prev);
+            next.delete(providerId);
+            return next;
+          });
+          setSyncProgress((prev) => ({
+            ...prev,
+            [providerId]: { message: providerResult.message },
+          }));
+          if (pollingJobIds.current.size === 0) {
+            setAnySyncing(false);
+          }
+          return;
+        }
+        const jobId =
+          providerResult?.status === "started" || providerResult?.status === "alreadyQueued"
+            ? providerResult.jobId
+            : result.jobId;
         await pollJob(jobId, [providerId]);
       } catch (error: unknown) {
         captureException(error, { context: "sync-provider" });
@@ -389,10 +413,53 @@ export default function ProvidersScreen() {
         const result = await syncMutation.mutateAsync({
           sinceDays: fullSync ? undefined : 7,
         });
+        const providerResults = result.providerResults ?? [];
         const providerJobMap = new Map(
           (result.providerJobs ?? []).map((job) => [job.providerId, job.jobId] as const),
         );
-        if (providerJobMap.size > 0) {
+        if (providerResults.length > 0) {
+          const hasPollableProviderResult = providerResults.some(
+            (providerResult) =>
+              providerResult.status === "started" || providerResult.status === "alreadyQueued",
+          );
+          await Promise.all(
+            ids.map(async (providerId) => {
+              const providerResult = providerResults.find(
+                (entry) => entry.providerId === providerId,
+              );
+              if (
+                providerResult?.status === "skippedCooldown" ||
+                providerResult?.status === "failed"
+              ) {
+                setSyncingProviders((prev) => {
+                  const next = new Set(prev);
+                  next.delete(providerId);
+                  return next;
+                });
+                setSyncProgress((prev) => ({
+                  ...prev,
+                  [providerId]: { message: providerResult.message },
+                }));
+                return;
+              }
+              if (
+                providerResult?.status === "started" ||
+                providerResult?.status === "alreadyQueued"
+              ) {
+                await pollJob(providerResult.jobId, [providerId]);
+                return;
+              }
+              setSyncingProviders((prev) => {
+                const next = new Set(prev);
+                next.delete(providerId);
+                return next;
+              });
+            }),
+          );
+          if (!hasPollableProviderResult) {
+            setAnySyncing(false);
+          }
+        } else if (providerJobMap.size > 0) {
           await Promise.all(
             ids.map(async (providerId) => {
               const jobId = providerJobMap.get(providerId);

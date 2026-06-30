@@ -305,6 +305,42 @@ describe("ProviderDetailPage import-only providers", () => {
     expect(screen.queryByText("Import only")).toBeNull();
   });
 
+  it("shows single-provider cooldown outcome without polling a fake job", async () => {
+    mockProviders.data = [
+      {
+        id: "strong-csv",
+        name: "Wahoo",
+        authorized: true,
+        authType: "oauth",
+        lastSyncedAt: null,
+        importOnly: false,
+      },
+    ];
+    mockSyncMutation.mutateAsync.mockResolvedValue({
+      jobId: "job-skipped",
+      jobIds: [],
+      providerJobs: [],
+      providerResults: [
+        {
+          providerId: "strong-csv",
+          status: "skippedCooldown",
+          message: "Provider sync skipped: rate-limit cooldown active",
+        },
+      ],
+    });
+    const { pollSyncJob } = await import("../lib/poll-sync-job.ts");
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByText("Sync Last 7 Days"));
+    });
+
+    expect(screen.getByText("Provider sync skipped: rate-limit cooldown active")).toBeTruthy();
+    expect(pollSyncJob).not.toHaveBeenCalled();
+  });
+
   it("does not trigger sync for an inverted date range", async () => {
     mockProviders.data = [
       {

@@ -387,6 +387,31 @@ describe("ProviderDetailScreen", () => {
       });
     });
 
+    it("shows provider cooldown outcome without polling a fake job", async () => {
+      mockSyncMutateAsync.mockResolvedValue({
+        jobId: "job-skipped",
+        jobIds: [],
+        providerJobs: [],
+        providerResults: [
+          {
+            providerId: "wahoo",
+            status: "skippedCooldown",
+            message: "Provider sync skipped: rate-limit cooldown active",
+          },
+        ],
+      });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      fireEvent.click(screen.getByText("Sync"));
+
+      await waitFor(() => {
+        expect(screen.getByText("Provider sync skipped: rate-limit cooldown active")).toBeTruthy();
+      });
+      expect(mockSyncStatusFetch).not.toHaveBeenCalled();
+    });
+
     it("triggers generic provider full sync when Full sync is clicked", async () => {
       mockSyncMutateAsync.mockResolvedValue({ jobId: "job-2" });
       mockSyncStatusFetch.mockResolvedValue({

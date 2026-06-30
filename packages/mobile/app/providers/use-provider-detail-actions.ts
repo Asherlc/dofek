@@ -281,10 +281,23 @@ export function useProviderDetailActions(
           return;
         }
 
-        const { jobId } = await syncMutation.mutateAsync({
+        const result = await syncMutation.mutateAsync({
           providerId,
           sinceDays,
         });
+        const providerResult = result.providerResults?.find(
+          (entry) => entry.providerId === providerId,
+        );
+        if (providerResult?.status === "skippedCooldown" || providerResult?.status === "failed") {
+          setIsSyncing(false);
+          setSyncProgress(null);
+          setSyncMessage(providerResult.message);
+          return;
+        }
+        const jobId =
+          providerResult?.status === "started" || providerResult?.status === "alreadyQueued"
+            ? providerResult.jobId
+            : result.jobId;
         await pollSyncJob(jobId);
       } catch (error: unknown) {
         captureException(error, {

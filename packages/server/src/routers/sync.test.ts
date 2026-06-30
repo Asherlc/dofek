@@ -15,6 +15,7 @@ const {
   mockCaptureException,
   mockInvalidateByPrefix,
   mockVeloHeroProvider,
+  mockStartWorker,
 } = vi.hoisted(() => ({
   mockAdd: vi.fn().mockResolvedValue({ id: "job-123" }),
   mockGetJob: vi.fn(),
@@ -34,6 +35,7 @@ const {
   mockCaptureException: vi.fn(),
   mockInvalidateByPrefix: vi.fn().mockResolvedValue(undefined),
   mockVeloHeroProvider: vi.fn(() => ({ id: "velohero" })),
+  mockStartWorker: vi.fn(),
 }));
 
 // Mock trpc
@@ -92,7 +94,7 @@ vi.mock("dofek/providers/types", () => ({
 }));
 
 vi.mock("../lib/start-worker.ts", () => ({
-  startWorker: vi.fn(),
+  startWorker: mockStartWorker,
 }));
 
 vi.mock("dofek/lib/cache", () => ({
@@ -823,6 +825,7 @@ describe("syncRouter", () => {
       ]);
       expect(result.providerJobs).toEqual([]);
       expect(result.jobIds).toEqual([]);
+      expect(mockStartWorker).not.toHaveBeenCalled();
     });
 
     it("reports an already queued provider without failing sync all", async () => {

@@ -84,10 +84,27 @@ export function ProviderDetailPage() {
       setSyncStatus("syncing");
       setSyncMessage(null);
       try {
-        const { jobId } = await syncMutation.mutateAsync({
+        const result = await syncMutation.mutateAsync({
           providerId,
           ...input,
         });
+        const providerResult = result.providerResults?.find(
+          (entry) => entry.providerId === providerId,
+        );
+        if (providerResult?.status === "skippedCooldown") {
+          setSyncStatus("done");
+          setSyncMessage(providerResult.message);
+          return;
+        }
+        if (providerResult?.status === "failed") {
+          setSyncStatus("error");
+          setSyncMessage(providerResult.message);
+          return;
+        }
+        const jobId =
+          providerResult?.status === "started" || providerResult?.status === "alreadyQueued"
+            ? providerResult.jobId
+            : result.jobId;
         await pollSyncJob({
           jobId,
           providerIds: [providerId],

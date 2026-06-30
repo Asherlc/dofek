@@ -398,7 +398,9 @@ export const syncRouter = router({
         ];
       });
 
-      startWorker();
+      if (providerJobs.length > 0) {
+        startWorker();
+      }
       return {
         jobId: providerJobs[0]?.jobId ?? `job-${Date.now()}`,
         jobIds: providerJobs.map((job) => job.jobId),
