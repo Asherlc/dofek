@@ -4,6 +4,7 @@ import { useState } from "react";
 import { DataSourcesPanel } from "../components/DataSourcesPanel.tsx";
 import { ExportPanel } from "../components/ExportPanel.tsx";
 import { LinkedAccountsPanel } from "../components/LinkedAccountsPanel.tsx";
+import { MedicationDoseEventsPanel } from "../components/MedicationDoseEventsPanel.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { PageSection } from "../components/PageSection.tsx";
 import { PasswordSettingsPanel } from "../components/PasswordSettingsPanel.tsx";
@@ -130,6 +131,10 @@ export function SettingsPage() {
 
       <PageSection title="Units" subtitle="Choose how measurements are displayed">
         <UnitSystemToggle />
+      </PageSection>
+
+      <PageSection title="Medication Doses" subtitle="Review imported medication dose events">
+        <MedicationDoseEventsPanel />
       </PageSection>
 
       <PageSection

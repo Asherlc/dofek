@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createTestCallerFactory } from "./test-helpers.ts";
+import { collectSqlText, createTestCallerFactory } from "./test-helpers.ts";
 
 const {
   mockAdd,
   mockGetJob,
   mockGetJobs,
+  mockGetJobCounts,
+  mockGetProviderSyncQueue,
+  mockImportQueueGetJobs,
+  mockImportQueueGetJobCounts,
   mockGetAllProviders,
   mockGetSyncProviders,
   mockRegisterProvider,
@@ -12,10 +16,21 @@ const {
   mockCaptureException,
   mockInvalidateByPrefix,
   mockVeloHeroProvider,
+  mockStartWorker,
+  mockCachedProtectedQuery,
 } = vi.hoisted(() => ({
   mockAdd: vi.fn().mockResolvedValue({ id: "job-123" }),
   mockGetJob: vi.fn(),
   mockGetJobs: vi.fn().mockResolvedValue([]),
+  mockGetJobCounts: vi.fn(),
+  mockGetProviderSyncQueue: vi.fn((id: string) => ({
+    add: mockAdd,
+    getJob: mockGetJob,
+    getJobs: mockGetJobs,
+    getJobCounts: (...states: string[]) => mockGetJobCounts(id, states),
+  })),
+  mockImportQueueGetJobs: vi.fn().mockResolvedValue([]),
+  mockImportQueueGetJobCounts: vi.fn(),
   mockGetAllProviders: vi.fn(() => []),
   mockGetSyncProviders: vi.fn(() => []),
   mockRegisterProvider: vi.fn(),
@@ -23,19 +38,38 @@ const {
   mockCaptureException: vi.fn(),
   mockInvalidateByPrefix: vi.fn().mockResolvedValue(undefined),
   mockVeloHeroProvider: vi.fn(() => ({ id: "velohero" })),
+  mockStartWorker: vi.fn(),
+  mockCachedProtectedQuery: vi.fn(),
 }));
 
 // Mock trpc
+type MockAdminDb = {
+  execute: (query: unknown) => Promise<Array<{ is_admin: boolean }>>;
+};
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
+  const { TRPCError } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; sensorStore?: unknown; userId: string | null; timezone: string }>()
+    .context<{ db: MockAdminDb; sensorStore?: unknown; userId: string | null; timezone: string }>()
     .create();
+  const adminProcedure = trpc.procedure.use(async ({ ctx, next }) => {
+    if (!ctx.userId) {
+      throw new TRPCError({ code: "UNAUTHORIZED", message: "Not authenticated" });
+    }
+    const rows = await ctx.db.execute({ type: "admin-check" });
+    if (rows[0]?.is_admin !== true) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
+    }
+    return next({ ctx });
+  });
+  mockCachedProtectedQuery.mockImplementation(() => trpc.procedure);
   return {
     router: trpc.router,
     publicProcedure: trpc.procedure,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    adminProcedure,
+    cachedProtectedQuery: mockCachedProtectedQuery,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -51,21 +85,23 @@ vi.mock("dofek/jobs/queues", () => ({
     removeOnComplete: { age: 86_400, count: 1_000 },
     removeOnFail: { age: 604_800, count: 1_000 },
   },
+  IMPORT_QUEUE: "import",
   createSyncQueue: vi.fn(() => ({
     add: mockAdd,
     getJob: mockGetJob,
     getJobs: mockGetJobs,
   })),
+  getImportQueue: vi.fn(() => ({
+    getJobs: mockImportQueueGetJobs,
+    getJobCounts: mockImportQueueGetJobCounts,
+  })),
   createProviderSyncQueue: vi.fn(() => ({
     add: mockAdd,
     getJob: mockGetJob,
     getJobs: mockGetJobs,
+    getJobCounts: (...states: string[]) => mockGetJobCounts("created-provider", states),
   })),
-  getProviderSyncQueue: vi.fn(() => ({
-    add: mockAdd,
-    getJob: mockGetJob,
-    getJobs: mockGetJobs,
-  })),
+  getProviderSyncQueue: mockGetProviderSyncQueue,
   providerSyncQueueName: vi.fn((id: string) => `sync-${id}`),
 }));
 
@@ -80,7 +116,7 @@ vi.mock("dofek/providers/types", () => ({
 }));
 
 vi.mock("../lib/start-worker.ts", () => ({
-  startWorker: vi.fn(),
+  startWorker: mockStartWorker,
 }));
 
 vi.mock("dofek/lib/cache", () => ({
@@ -163,6 +199,10 @@ import {
   toJobId,
 } from "./sync-helpers.ts";
 
+const routerConstructionCachedTtlValues = mockCachedProtectedQuery.mock.calls.map(
+  (call) => call[0],
+);
+
 function createProvidersDbMock() {
   return {
     execute: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([]),
@@ -189,10 +229,29 @@ function createSensorStoreQuery(responses: {
 describe("syncRouter", () => {
   const createCaller = createTestCallerFactory(syncRouter);
 
+  it("uses a short cache for read-heavy protected queries", () => {
+    expect(routerConstructionCachedTtlValues).toEqual([120_000, 120_000, 120_000]);
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetAllProviders.mockReturnValue([]);
     mockRegisterProvider.mockImplementation(() => undefined);
     mockVeloHeroProvider.mockImplementation(() => ({ id: "velohero" }));
+    mockGetProviderSyncQueue.mockImplementation((id: string) => ({
+      add: mockAdd,
+      getJob: mockGetJob,
+      getJobs: mockGetJobs,
+      getJobCounts: (...states: string[]) => mockGetJobCounts(id, states),
+    }));
+    mockGetJobs.mockResolvedValue([]);
+    mockImportQueueGetJobs.mockResolvedValue([]);
+    mockImportQueueGetJobCounts.mockResolvedValue({
+      waiting: 0,
+      active: 0,
+      delayed: 0,
+      failed: 0,
+    });
   });
 
   describe("ensureProvidersRegistered", () => {
@@ -723,6 +782,180 @@ describe("syncRouter", () => {
       );
     });
 
+    it("returns per-provider outcomes when one sync-all provider is rate limited", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "garmin",
+          name: "Garmin",
+          validate: () => null,
+          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+        },
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          validate: () => null,
+          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+        },
+      ]);
+      const enqueueSpy = vi
+        .spyOn(enqueueSyncJobModule, "enqueueSyncJob")
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(Object.assign({ id: "job-wahoo" }, { alreadyQueued: false }));
+
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            .mockResolvedValueOnce([{ provider_id: "garmin" }, { provider_id: "wahoo" }]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.triggerSync({ sinceDays: 1 });
+      enqueueSpy.mockRestore();
+
+      expect(result.providerResults).toEqual([
+        {
+          providerId: "garmin",
+          status: "skippedCooldown",
+          message: "Provider sync skipped: rate-limit cooldown active",
+        },
+        {
+          providerId: "wahoo",
+          status: "started",
+          jobId: "wahoo:job-wahoo",
+          queueName: "sync-wahoo",
+        },
+      ]);
+      expect(result.providerJobs).toEqual([
+        { providerId: "wahoo", jobId: "wahoo:job-wahoo", queueName: "sync-wahoo" },
+      ]);
+      expect(result.jobIds).toEqual(["wahoo:job-wahoo"]);
+    });
+
+    it("returns skippedCooldown for a single provider instead of throwing rate limit errors", async () => {
+      mockGetAllProviders.mockReturnValue([{ id: "garmin", name: "Garmin", validate: () => null }]);
+      const enqueueSpy = vi
+        .spyOn(enqueueSyncJobModule, "enqueueSyncJob")
+        .mockResolvedValueOnce(null);
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.triggerSync({ providerId: "garmin" });
+      enqueueSpy.mockRestore();
+
+      expect(result.providerResults).toEqual([
+        {
+          providerId: "garmin",
+          status: "skippedCooldown",
+          message: "Provider sync skipped: rate-limit cooldown active",
+        },
+      ]);
+      expect(result.providerJobs).toEqual([]);
+      expect(result.jobIds).toEqual([]);
+      expect(mockStartWorker).not.toHaveBeenCalled();
+    });
+
+    it("reports an already queued provider without failing sync all", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "whoop",
+          name: "WHOOP",
+          validate: () => null,
+          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+        },
+      ]);
+      mockGetJob.mockResolvedValueOnce({
+        id: "job-whoop",
+        getState: vi.fn().mockResolvedValue("waiting"),
+        remove: vi.fn(),
+      });
+
+      const caller = createCaller({
+        db: {
+          execute: vi.fn().mockResolvedValueOnce([{ provider_id: "whoop" }]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.triggerSync({ sinceDays: 1 });
+
+      expect(result.providerResults).toEqual([
+        {
+          providerId: "whoop",
+          status: "alreadyQueued",
+          jobId: "whoop:job-whoop",
+          queueName: "sync-whoop",
+        },
+      ]);
+      expect(result.providerJobs).toEqual([
+        { providerId: "whoop", jobId: "whoop:job-whoop", queueName: "sync-whoop" },
+      ]);
+      expect(result.jobIds).toEqual(["whoop:job-whoop"]);
+      expect(mockAdd).not.toHaveBeenCalled();
+    });
+
+    it("reports a failed provider without hiding successful providers", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "polar",
+          name: "Polar",
+          validate: () => null,
+          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+        },
+        {
+          id: "wahoo",
+          name: "Wahoo",
+          validate: () => null,
+          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+        },
+      ]);
+      const enqueueSpy = vi
+        .spyOn(enqueueSyncJobModule, "enqueueSyncJob")
+        .mockRejectedValueOnce(new Error("provider queue unavailable"))
+        .mockResolvedValueOnce(Object.assign({ id: "job-wahoo" }, { alreadyQueued: false }));
+
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            .mockResolvedValueOnce([{ provider_id: "polar" }, { provider_id: "wahoo" }]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.triggerSync({ sinceDays: 1 });
+      enqueueSpy.mockRestore();
+
+      expect(result.providerResults).toEqual([
+        {
+          providerId: "polar",
+          status: "failed",
+          message: "provider queue unavailable",
+        },
+        {
+          providerId: "wahoo",
+          status: "started",
+          jobId: "wahoo:job-wahoo",
+          queueName: "sync-wahoo",
+        },
+      ]);
+      expect(result.providerJobs).toEqual([
+        { providerId: "wahoo", jobId: "wahoo:job-wahoo", queueName: "sync-wahoo" },
+      ]);
+      expect(result.jobIds).toEqual(["wahoo:job-wahoo"]);
+      expect(mockCaptureException).toHaveBeenCalledWith(
+        expect.objectContaining({ message: "provider queue unavailable" }),
+      );
+    });
+
     it("excludes unconnected providers from sync-all fan-out", async () => {
       mockGetAllProviders.mockReturnValue([
         {
@@ -993,9 +1226,11 @@ describe("syncRouter", () => {
       expect(result.providerJobs[0]?.providerId).toBe("wahoo");
     });
 
-    it("returns TOO_MANY_REQUESTS when sync enqueue is skipped for rate-limit cooldown", async () => {
+    it("returns skippedCooldown when sync enqueue is skipped for rate-limit cooldown", async () => {
       mockGetAllProviders.mockReturnValue([{ id: "wahoo", name: "Wahoo", validate: () => null }]);
-      vi.spyOn(enqueueSyncJobModule, "enqueueSyncJob").mockResolvedValueOnce(null);
+      const enqueueSpy = vi
+        .spyOn(enqueueSyncJobModule, "enqueueSyncJob")
+        .mockResolvedValueOnce(null);
 
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -1003,10 +1238,108 @@ describe("syncRouter", () => {
         timezone: "UTC",
       });
 
-      await expect(caller.triggerSync({ providerId: "wahoo" })).rejects.toMatchObject({
-        code: "TOO_MANY_REQUESTS",
-        message: "Provider wahoo sync skipped: rate-limit cooldown active",
+      const result = await caller.triggerSync({ providerId: "wahoo" });
+      enqueueSpy.mockRestore();
+
+      expect(result.providerResults).toEqual([
+        {
+          providerId: "wahoo",
+          status: "skippedCooldown",
+          message: "Provider sync skipped: rate-limit cooldown active",
+        },
+      ]);
+    });
+  });
+
+  describe("queueBackpressure", () => {
+    it("returns counts for provider sync queues and the import queue", async () => {
+      mockGetJobCounts.mockImplementation((providerId: string) => {
+        if (providerId === "garmin") {
+          return Promise.resolve({ waiting: 2, active: 1, delayed: 3, failed: 4 });
+        }
+        if (providerId === "strava") {
+          return Promise.resolve({ waiting: 5, active: 0, delayed: 1, failed: 0 });
+        }
+        return Promise.resolve({ waiting: 0, active: 0, delayed: 0, failed: 0 });
       });
+      mockImportQueueGetJobCounts.mockResolvedValueOnce({
+        waiting: 7,
+        active: 1,
+        delayed: 0,
+        failed: 2,
+      });
+
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([{ is_admin: true }]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.queueBackpressure();
+
+      expect(result).toEqual([
+        {
+          queueName: "sync-strava",
+          providerId: "strava",
+          waiting: 5,
+          active: 0,
+          delayed: 1,
+          failed: 0,
+        },
+        {
+          queueName: "sync-garmin",
+          providerId: "garmin",
+          waiting: 2,
+          active: 1,
+          delayed: 3,
+          failed: 4,
+        },
+        {
+          queueName: "sync-whoop",
+          providerId: "whoop",
+          waiting: 0,
+          active: 0,
+          delayed: 0,
+          failed: 0,
+        },
+        {
+          queueName: "import",
+          waiting: 7,
+          active: 1,
+          delayed: 0,
+          failed: 2,
+        },
+      ]);
+      expect(mockGetProviderSyncQueue).toHaveBeenCalledWith("strava");
+      expect(mockGetProviderSyncQueue).toHaveBeenCalledWith("garmin");
+      expect(mockGetProviderSyncQueue).toHaveBeenCalledWith("whoop");
+      expect(mockGetJobCounts).toHaveBeenCalledWith("strava", [
+        "waiting",
+        "active",
+        "delayed",
+        "failed",
+      ]);
+      expect(mockImportQueueGetJobCounts).toHaveBeenCalledWith(
+        "waiting",
+        "active",
+        "delayed",
+        "failed",
+      );
+    });
+
+    it("rejects non-admin users before returning global queue counts", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([{ is_admin: false }]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.queueBackpressure()).rejects.toMatchObject({
+        code: "FORBIDDEN",
+        message: "Admin access required",
+      });
+      expect(mockGetProviderSyncQueue).not.toHaveBeenCalled();
+      expect(mockImportQueueGetJobCounts).not.toHaveBeenCalled();
     });
   });
 
@@ -1705,21 +2038,494 @@ describe("syncRouter", () => {
   });
 
   describe("dataHealth", () => {
-    it("returns row counts for primary user-owned raw tables", async () => {
-      const mockExecute = vi.fn().mockResolvedValue([{ count: 42 }]);
+    it("returns structured freshness state for primary datasets", async () => {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 42, latestRawAt: "2026-06-29T12:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 8, latestRawAt: "2026-06-29T08:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 3, latestRawAt: "2026-06-29T10:00:00.000Z" }]);
+      const sensorStore = {
+        query: vi.fn(async (_schema: unknown, queryText: string) => {
+          if (queryText.includes("analytics.daily_recovery")) {
+            return [{ latestReadModelAt: "2026-06-29T12:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.daily_sleep")) {
+            return [{ latestReadModelAt: "2026-06-29T08:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.activity_summary_rows")) {
+            return [{ latestReadModelAt: "2026-06-29T10:00:00.000Z" }];
+          }
+          return [];
+        }),
+      };
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("healthy");
+      expect(result.generatedAt).toEqual(expect.any(String));
+      expect(result.datasets).toEqual([
+        expect.objectContaining({
+          key: "dailyMetrics",
+          label: "Daily metrics",
+          rawRows: 42,
+          latestRawAt: "2026-06-29T12:00:00.000Z",
+          latestReadModelAt: "2026-06-29T12:00:00.000Z",
+          cdcLagSeconds: 0,
+          readModelLagSeconds: 0,
+          status: "healthy",
+        }),
+        expect.objectContaining({
+          key: "sleep",
+          label: "Sleep",
+          rawRows: 8,
+          status: "healthy",
+        }),
+        expect.objectContaining({
+          key: "activity",
+          label: "Activities",
+          rawRows: 3,
+          status: "healthy",
+        }),
+      ]);
+      expect(mockExecute).toHaveBeenCalledTimes(3);
+      expect(sensorStore.query).toHaveBeenCalledTimes(3);
+      expect(sensorStore.query).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.stringContaining("{userId:UUID}"),
+        { userId: "user-1" },
+        { priority: "dashboard" },
+      );
+      const readModelQueries = sensorStore.query.mock.calls.map((call) => call[1]);
+      expect(readModelQueries).toHaveLength(3);
+      expect(readModelQueries.every((queryText) => queryText.includes("{userId:UUID}"))).toBe(true);
+      expect(readModelQueries.every((queryText) => !queryText.includes("{userId:String}"))).toBe(
+        true,
+      );
+      expect(
+        readModelQueries.filter((queryText) => queryText.includes("maxOrNull(date)")),
+      ).toHaveLength(2);
+      expect(
+        readModelQueries.some((queryText) => queryText.includes("maxOrNull(started_at)")),
+      ).toBe(true);
+      expect(readModelQueries.every((queryText) => !queryText.includes("max(date)"))).toBe(true);
+      const rawFreshnessSql = mockExecute.mock.calls
+        .map((call) => collectSqlText(call[0]))
+        .join("\n");
+      expect(rawFreshnessSql).toContain("max(started_at)");
+      expect(rawFreshnessSql).toContain("started_at - INTERVAL '6 hours'");
+      expect(rawFreshnessSql).not.toContain("max(start_time)");
+      expect(mockLoggerWarn).not.toHaveBeenCalled();
+    });
+
+    it("marks all datasets missing when no raw rows exist", async () => {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }]);
+      const sensorStore = {
+        query: vi.fn().mockResolvedValue([]),
+      };
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("missing");
+      expect(result.datasets).toEqual([
+        expect.objectContaining({
+          key: "dailyMetrics",
+          rawRows: 0,
+          latestRawAt: null,
+          latestReadModelAt: null,
+          cdcLagSeconds: null,
+          readModelLagSeconds: null,
+          status: "missing",
+          message: "No daily metrics data has been synced yet.",
+        }),
+        expect.objectContaining({
+          key: "sleep",
+          rawRows: 0,
+          status: "missing",
+          message: "No sleep data has been synced yet.",
+        }),
+        expect.objectContaining({
+          key: "activity",
+          rawRows: 0,
+          status: "missing",
+          message: "No activities data has been synced yet.",
+        }),
+      ]);
+      expect(sensorStore.query).toHaveBeenCalledTimes(3);
+    });
+
+    it("marks read models stale when ClickHouse summaries lag raw data by more than one day", async () => {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 42, latestRawAt: "2026-06-29T12:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 8, latestRawAt: "2026-06-29T08:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 3, latestRawAt: "2026-06-29T10:00:00.000Z" }]);
+      const sensorStore = {
+        query: vi.fn(async (_schema: unknown, queryText: string) => {
+          if (queryText.includes("analytics.daily_recovery")) {
+            return [{ latestReadModelAt: "2026-06-27" }];
+          }
+          if (queryText.includes("analytics.daily_sleep")) {
+            return [{ latestReadModelAt: "2026-06-29T08:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.activity_summary_rows")) {
+            return [{ latestReadModelAt: "2026-06-29T10:00:00.000Z" }];
+          }
+          return [];
+        }),
+      };
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("stale");
+      expect(result.datasets[0]).toEqual(
+        expect.objectContaining({
+          key: "dailyMetrics",
+          latestRawAt: "2026-06-29T12:00:00.000Z",
+          latestReadModelAt: "2026-06-27T00:00:00.000Z",
+          cdcLagSeconds: 172800,
+          readModelLagSeconds: 172800,
+          status: "stale",
+          message: "Daily metrics data is synced, but dashboard summaries are still catching up.",
+        }),
+      );
+      expect(result.datasets[1]?.status).toBe("healthy");
+      expect(result.datasets[2]?.status).toBe("healthy");
+    });
+
+    it("treats same-day read-model timestamps as healthy", async () => {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 42, latestRawAt: "2026-06-29T12:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 8, latestRawAt: "2026-06-29T08:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 3, latestRawAt: "2026-06-29T10:00:00.000Z" }]);
+      const sensorStore = {
+        query: vi.fn(async (_schema: unknown, queryText: string) => {
+          if (queryText.includes("analytics.daily_recovery")) {
+            return [{ latestReadModelAt: "2026-06-29T11:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.daily_sleep")) {
+            return [{ latestReadModelAt: "2026-06-29T08:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.activity_summary_rows")) {
+            return [{ latestReadModelAt: "2026-06-29T10:00:00.000Z" }];
+          }
+          return [];
+        }),
+      };
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("healthy");
+      expect(result.datasets[0]).toEqual(
+        expect.objectContaining({
+          key: "dailyMetrics",
+          cdcLagSeconds: 0,
+          readModelLagSeconds: 0,
+          status: "healthy",
+        }),
+      );
+    });
+
+    it("compares activity read-model freshness at timestamp grain", async () => {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 42, latestRawAt: "2026-06-29T12:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 8, latestRawAt: "2026-06-29T08:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 3, latestRawAt: "2026-06-29T18:00:00.000Z" }]);
+      const sensorStore = {
+        query: vi.fn(async (_schema: unknown, queryText: string) => {
+          if (queryText.includes("analytics.daily_recovery")) {
+            return [{ latestReadModelAt: "2026-06-29T12:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.daily_sleep")) {
+            return [{ latestReadModelAt: "2026-06-29T08:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.activity_summary_rows")) {
+            return [{ latestReadModelAt: "2026-06-29T06:00:00.000Z" }];
+          }
+          return [];
+        }),
+      };
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "America/Los_Angeles",
+      });
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("stale");
+      expect(result.datasets[2]).toEqual(
+        expect.objectContaining({
+          key: "activity",
+          latestRawAt: "2026-06-29T18:00:00.000Z",
+          latestReadModelAt: "2026-06-29T06:00:00.000Z",
+          readModelLagSeconds: 43200,
+          status: "stale",
+        }),
+      );
+    });
+
+    it("compares daily read-model freshness at date grain", async () => {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 42, latestRawAt: "2026-06-29T23:59:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 8, latestRawAt: "2026-06-29T18:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 3, latestRawAt: "2026-06-29T20:00:00.000Z" }]);
+      const sensorStore = {
+        query: vi.fn(async (_schema: unknown, queryText: string) => {
+          if (queryText.includes("analytics.activity_summary_rows")) {
+            return [{ latestReadModelAt: "2026-06-29T20:00:00.000Z" }];
+          }
+          return [{ latestReadModelAt: "2026-06-29" }];
+        }),
+      };
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("healthy");
+      expect(result.datasets.map((dataset) => dataset.readModelLagSeconds)).toEqual([0, 0, 0]);
+      expect(result.datasets.map((dataset) => dataset.status)).toEqual([
+        "healthy",
+        "healthy",
+        "healthy",
+      ]);
+    });
+
+    it("marks data blocked when raw data exists but read models are unavailable", async () => {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 12, latestRawAt: "2026-06-29T12:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }]);
       const caller = createCaller({
         db: { execute: mockExecute },
         userId: "user-1",
         timezone: "UTC",
       });
+
       const result = await caller.dataHealth();
-      expect(result).toEqual({
-        dailyMetrics: 42,
-        sleep: 42,
-        activity: 42,
+
+      expect(result.overallStatus).toBe("blocked");
+      expect(result.datasets[0]).toEqual(
+        expect.objectContaining({
+          key: "dailyMetrics",
+          status: "blocked",
+          latestReadModelAt: null,
+          message: expect.stringContaining("ClickHouse mirrors are not current"),
+        }),
+      );
+    });
+
+    it("marks overall status missing when only some primary datasets are missing", async () => {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 12, latestRawAt: "2026-06-29T12:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }]);
+      const sensorStore = {
+        query: vi.fn(async (_schema: unknown, queryText: string) => {
+          if (queryText.includes("analytics.daily_recovery")) {
+            return [{ latestReadModelAt: "2026-06-29T12:00:00.000Z" }];
+          }
+          return [];
+        }),
+      };
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
       });
-      expect(mockExecute).toHaveBeenCalledTimes(3);
-      expect(mockLoggerWarn).not.toHaveBeenCalled();
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("missing");
+      expect(result.datasets.map((dataset) => dataset.status)).toEqual([
+        "healthy",
+        "missing",
+        "missing",
+      ]);
+    });
+
+    it("ignores active sync jobs for other users", async () => {
+      mockGetJobs.mockResolvedValue([
+        {
+          id: "job-1",
+          data: { userId: "other-user", providerId: "garmin" },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+      ]);
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }]);
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("missing");
+      expect(result.datasets.map((dataset) => dataset.status)).toEqual([
+        "missing",
+        "missing",
+        "missing",
+      ]);
+    });
+
+    it("marks overall status syncing when an active provider sync exists", async () => {
+      mockGetJobs.mockResolvedValue([
+        {
+          id: "job-1",
+          data: { userId: "user-1", providerId: "garmin" },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+      ]);
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }]);
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("syncing");
+      expect(result.datasets[0]?.status).toBe("missing");
+    });
+
+    it("marks overall status syncing for active jobs in registered provider queues", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "cycling-analytics",
+          name: "Cycling Analytics",
+          validate: () => null,
+          authSetup: () => ({ oauthConfig: { authUrl: "https://example.com" } }),
+        },
+      ]);
+      mockGetProviderSyncQueue.mockImplementation((id: string) => ({
+        add: mockAdd,
+        getJob: mockGetJob,
+        getJobs: vi.fn().mockResolvedValue(
+          id === "cycling-analytics"
+            ? [
+                {
+                  id: "job-1",
+                  data: { userId: "user-1", providerId: "cycling-analytics" },
+                  progress: {},
+                  getState: vi.fn().mockResolvedValue("waiting"),
+                },
+              ]
+            : [],
+        ),
+        getJobCounts: (...states: string[]) => mockGetJobCounts(id, states),
+      }));
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }]);
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("syncing");
+      expect(mockGetProviderSyncQueue).toHaveBeenCalledWith("cycling-analytics");
+    });
+
+    it("marks overall status syncing when an import job exists for the user", async () => {
+      mockImportQueueGetJobs.mockResolvedValue([
+        {
+          id: "import-1",
+          data: { userId: "user-1", providerId: "apple_health" },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+      ]);
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }]);
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("syncing");
+      expect(mockImportQueueGetJobs).toHaveBeenCalledWith(["waiting", "active", "delayed"]);
+    });
+
+    it("surfaces queue failures as stable readiness errors", async () => {
+      mockGetJobs.mockRejectedValueOnce(new Error("Redis connection refused"));
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }]);
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.dataHealth()).rejects.toMatchObject({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Unable to check sync readiness because the queue service is unavailable.",
+      });
+      expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error));
     });
   });
 

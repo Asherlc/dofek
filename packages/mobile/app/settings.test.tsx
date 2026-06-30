@@ -145,6 +145,11 @@ vi.mock("../lib/trpc", () => ({
         }),
       },
     },
+    medicationDoseEvents: {
+      list: {
+        useQuery: () => ({ data: { events: [] }, isLoading: false, error: null }),
+      },
+    },
     settings: {
       get: {
         useQuery: () => ({ data: { value: "metric" }, refetch: vi.fn() }),
@@ -235,6 +240,18 @@ describe("SettingsScreen password", () => {
 
     expect(await screen.findByPlaceholderText("Current password")).toBeTruthy();
     expect(await screen.findByText("Change Password")).toBeTruthy();
+  });
+});
+
+describe("SettingsScreen medication doses", () => {
+  it("shows medication dose empty state when no imported dose events exist", async () => {
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.getByText("Medication Doses")).toBeTruthy();
+    expect(screen.getByText("Review imported medication dose events")).toBeTruthy();
+    expect(screen.getByText("No medication dose events yet.")).toBeTruthy();
   });
 });
 

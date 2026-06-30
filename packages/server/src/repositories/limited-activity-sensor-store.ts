@@ -9,22 +9,10 @@ import type {
 
 const WEB_CLICKHOUSE_CONCURRENCY = 2;
 const DASHBOARD_CLICKHOUSE_CONCURRENCY = 2;
-const DASHBOARD_QUERY_MARKERS = [
-  "analytics.daily_recovery",
-  "analytics.daily_strain",
-  "analytics.v_body_measurement",
-  "analytics.v_daily_metrics",
-  "analytics.v_sleep",
-  "analytics.resting_heart_rate_sleep_window",
-];
 
 type LimitedOperation<T> = () => Promise<T>;
 
 const tracer = trace.getTracer("dofek-server");
-
-function isDashboardQuery(query: string): boolean {
-  return DASHBOARD_QUERY_MARKERS.some((marker) => query.includes(marker));
-}
 
 class ClickHouseQueueLimiter {
   readonly #name: string;
@@ -107,7 +95,7 @@ export class LimitedActivitySensorStore implements ActivitySensorStore {
     params: Record<string, unknown> = {},
     options: ActivitySensorQueryOptions = {},
   ): Promise<z.infer<TSchema>[]> {
-    const key = JSON.stringify([query, params]);
+    const key = JSON.stringify([query, params, options.priority ?? null]);
     if (!options.abortSignal) {
       const existing = this.#inFlightQueries.get(key);
       if (existing) {
@@ -116,7 +104,8 @@ export class LimitedActivitySensorStore implements ActivitySensorStore {
       }
     }
 
-    const limiter = isDashboardQuery(query) ? this.#dashboardLimiter : this.#regularLimiter;
+    const limiter =
+      options.priority === "dashboard" ? this.#dashboardLimiter : this.#regularLimiter;
     const promise = limiter.run(() => this.#delegate.query(schema, query, params, options));
     if (!options.abortSignal) {
       this.#inFlightQueries.set(

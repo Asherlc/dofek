@@ -153,6 +153,15 @@ vi.mock("../../theme", () => ({
     green: "#0f0",
     orange: "#f80",
   },
+  radius: {
+    md: 8,
+    lg: 12,
+  },
+  spacing: {
+    xs: 4,
+    sm: 8,
+    md: 12,
+  },
 }));
 
 vi.mock("../../lib/auth-context", () => ({
@@ -169,6 +178,7 @@ vi.mock("@dofek/format/format", () => ({
 
 const mockProvidersQuery = vi.fn();
 const mockProviderStatsQuery = vi.fn();
+const mockDataHealthQuery = vi.fn();
 const mockRecordsQuery = vi.fn();
 const mockLogsQuery = vi.fn();
 const mockSyncMutateAsync = vi.fn();
@@ -187,6 +197,7 @@ vi.mock("../../lib/trpc", () => ({
     sync: {
       providers: { useQuery: (...args: unknown[]) => mockProvidersQuery(...args) },
       providerStats: { useQuery: (...args: unknown[]) => mockProviderStatsQuery(...args) },
+      dataHealth: { useQuery: (...args: unknown[]) => mockDataHealthQuery(...args) },
       triggerSync: {
         useMutation: () => ({ mutateAsync: mockSyncMutateAsync, isPending: false }),
       },
@@ -264,6 +275,17 @@ const importOnlyProvider = {
   needsReauth: false,
 };
 
+const pushOnlyProvider = {
+  id: "whoop-ble",
+  name: "WHOOP BLE",
+  authType: "none",
+  authorized: true,
+  importOnly: false,
+  pushOnly: true,
+  lastSyncedAt: null,
+  needsReauth: false,
+};
+
 const appleHealthStats = {
   providerId: "apple_health",
   activities: 0,
@@ -276,6 +298,7 @@ const appleHealthStats = {
 function setupDefaultMocks() {
   mockProvidersQuery.mockReturnValue({ data: [authorizedProvider], isLoading: false });
   mockProviderStatsQuery.mockReturnValue({ data: [], isLoading: false });
+  mockDataHealthQuery.mockReturnValue({ data: null, isLoading: false, error: null });
   mockRecordsQuery.mockReturnValue({ data: { rows: [] }, isLoading: false });
   mockLogsQuery.mockReturnValue({ data: [], isLoading: false });
 }
@@ -285,6 +308,7 @@ describe("ProviderDetailScreen", () => {
     mockBack.mockReset();
     mockUseLocalSearchParams.mockReturnValue({ id: "wahoo" });
     mockSyncMutateAsync.mockReset();
+    mockDataHealthQuery.mockReset();
     mockDisconnectMutateAsync.mockReset();
     mockInvalidateProviders.mockReset();
     mockInvalidateProviderStats.mockReset();
@@ -336,6 +360,19 @@ describe("ProviderDetailScreen", () => {
       expect(screen.queryByText("Full sync")).toBeNull();
     });
 
+    it("does not render actions for push-only providers", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "whoop-ble" });
+      mockProvidersQuery.mockReturnValue({ data: [pushOnlyProvider], isLoading: false });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(screen.getByText("WHOOP BLE")).toBeTruthy();
+      expect(screen.queryByText("Connect")).toBeNull();
+      expect(screen.queryByText("Sync")).toBeNull();
+      expect(screen.queryByText("Full sync")).toBeNull();
+    });
+
     it("renders re-authorize button when provider needs reauth", async () => {
       mockProvidersQuery.mockReturnValue({
         data: [{ ...authorizedProvider, needsReauth: true }],
@@ -366,6 +403,38 @@ describe("ProviderDetailScreen", () => {
       expect(screen.queryByText("Full sync")).toBeNull();
     });
 
+    it("shows provider data readiness when read models are blocked", async () => {
+      mockDataHealthQuery.mockReturnValue({
+        data: {
+          overallStatus: "blocked",
+          generatedAt: "2026-06-30T12:00:00Z",
+          datasets: [
+            {
+              key: "activity",
+              label: "Activities",
+              rawRows: 12,
+              latestRawAt: "2026-06-29T12:00:00Z",
+              latestReadModelAt: null,
+              cdcLagSeconds: 90000,
+              readModelLagSeconds: null,
+              status: "blocked",
+              message: "Activity data is available, but ClickHouse mirrors are not current.",
+            },
+          ],
+        },
+        isLoading: false,
+        error: null,
+      });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      expect(screen.getByText("Data pipeline needs attention")).toBeTruthy();
+      expect(
+        screen.getByText("Activity data is available, but ClickHouse mirrors are not current."),
+      ).toBeTruthy();
+    });
+
     it("triggers generic provider sync with sinceDays=7 when Sync is clicked", async () => {
       mockSyncMutateAsync.mockResolvedValue({ jobId: "job-1" });
       mockSyncStatusFetch.mockResolvedValue({
@@ -385,6 +454,31 @@ describe("ProviderDetailScreen", () => {
           sinceDays: 7,
         });
       });
+    });
+
+    it("shows provider cooldown outcome without polling a fake job", async () => {
+      mockSyncMutateAsync.mockResolvedValue({
+        jobId: "job-skipped",
+        jobIds: [],
+        providerJobs: [],
+        providerResults: [
+          {
+            providerId: "wahoo",
+            status: "skippedCooldown",
+            message: "Provider sync skipped: rate-limit cooldown active",
+          },
+        ],
+      });
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      fireEvent.click(screen.getByText("Sync"));
+
+      await waitFor(() => {
+        expect(screen.getByText("Provider sync skipped: rate-limit cooldown active")).toBeTruthy();
+      });
+      expect(mockSyncStatusFetch).not.toHaveBeenCalled();
     });
 
     it("triggers generic provider full sync when Full sync is clicked", async () => {

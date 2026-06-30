@@ -4,9 +4,10 @@ import {
   type ProviderAuthFailureReason,
   providerAuthFailureReasonSchema,
 } from "dofek/providers/auth-errors";
-import { sql } from "drizzle-orm";
+import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import type { AccessWindow } from "../billing/entitlement.ts";
+import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
 // Zod row schemas
@@ -43,6 +44,60 @@ const clickHouseProviderStatsRowSchema = z.object({
   lab_results: z.coerce.number(),
   journal_entries: z.coerce.number(),
 });
+
+const dataHealthRawFreshnessRowSchema = z.object({
+  rawRows: z.coerce.number(),
+  latestRawAt: timestampStringSchema.nullable(),
+});
+
+const dataHealthReadModelFreshnessRowSchema = z.object({
+  latestReadModelAt: timestampStringSchema.nullable(),
+});
+
+export const dataHealthDatasets = [
+  {
+    key: "dailyMetrics",
+    label: "Daily metrics",
+    rawTable: "fitness.daily_metrics",
+    rawLatestExpression: "max(date::timestamptz)",
+    rawAccessColumn: "date",
+    rawAccessKind: "date",
+    predicate: sql`AND (hrv IS NOT NULL OR respiratory_rate_avg IS NOT NULL)`,
+    readModelTable: "analytics.daily_recovery",
+    readModelLatestExpression: "maxOrNull(date)",
+    readModelAccessExpression: "date",
+    readModelPredicate: "AND (hrv IS NOT NULL OR respiratory_rate IS NOT NULL)",
+    freshnessComparisonGrain: "date",
+  },
+  {
+    key: "sleep",
+    label: "Sleep",
+    rawTable: "fitness.sleep_session",
+    rawLatestExpression: "max((started_at - INTERVAL '6 hours')::date::timestamptz)",
+    rawAccessColumn: "(started_at - INTERVAL '6 hours')::date",
+    rawAccessKind: "date",
+    predicate: sql`AND is_nap = false`,
+    readModelTable: "analytics.daily_sleep",
+    readModelLatestExpression: "maxOrNull(date)",
+    readModelAccessExpression: "date",
+    readModelPredicate: "",
+    freshnessComparisonGrain: "date",
+  },
+  {
+    key: "activity",
+    label: "Activities",
+    rawTable: "fitness.activity",
+    rawLatestExpression: "max(started_at)",
+    rawAccessColumn: "started_at",
+    rawAccessKind: "local-date",
+    predicate: sql`AND provider_absent_at IS NULL AND deleted_at IS NULL`,
+    readModelTable: "analytics.activity_summary_rows",
+    readModelLatestExpression: "maxOrNull(started_at)",
+    readModelAccessExpression: "toDate(toTimeZone(started_at, {timezone:String}))",
+    readModelPredicate: "AND is_deleted = 0",
+    freshnessComparisonGrain: "timestamp",
+  },
+] as const;
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -104,6 +159,81 @@ interface ProviderStatsClickHouseStore {
     query: string,
     params?: Record<string, unknown>,
   ): Promise<z.infer<TSchema>[]>;
+}
+
+export interface DataHealthSensorStore {
+  query<TSchema extends z.ZodType>(
+    schema: TSchema,
+    query: string,
+    params?: Record<string, unknown>,
+    options?: { priority?: "dashboard" },
+  ): Promise<z.infer<TSchema>[]>;
+}
+
+interface DataHealthDatasetQuery {
+  key: (typeof dataHealthDatasets)[number]["key"];
+  label: string;
+  rawTable: string;
+  rawLatestExpression: string;
+  rawAccessColumn: string;
+  rawAccessKind: "date" | "local-date" | "timestamp";
+  predicate: SQL;
+  readModelTable: string;
+  readModelLatestExpression: string;
+  readModelAccessExpression: string;
+  readModelPredicate: string;
+  freshnessComparisonGrain: "date" | "timestamp";
+}
+
+export interface DataHealthFreshnessRow {
+  key: (typeof dataHealthDatasets)[number]["key"];
+  rawRows: number;
+  latestRawAt: string | null;
+  latestReadModelAt: string | null;
+}
+
+function rawAccessWindowPredicate(
+  dataset: DataHealthDatasetQuery,
+  accessWindow: AccessWindow | undefined,
+  timezone: string,
+): SQL {
+  if (!accessWindow || accessWindow.kind === "full") return sql``;
+  const accessColumn = sql.raw(dataset.rawAccessColumn);
+  if (dataset.rawAccessKind === "date") {
+    return sql`AND ${accessColumn} >= ${accessWindow.startDate}::date
+               AND ${accessColumn} < ${accessWindow.endDateExclusive}::date`;
+  }
+  if (dataset.rawAccessKind === "local-date") {
+    return sql`AND (${accessColumn} AT TIME ZONE ${timezone})::date >= ${accessWindow.startDate}::date
+               AND (${accessColumn} AT TIME ZONE ${timezone})::date < ${accessWindow.endDateExclusive}::date`;
+  }
+  return sql`AND ${accessColumn} >= ${accessWindow.startDate}::timestamptz
+             AND ${accessColumn} < ${accessWindow.endDateExclusive}::timestamptz`;
+}
+
+function readModelAccessWindowClause(
+  dataset: DataHealthDatasetQuery,
+  accessWindow: AccessWindow | undefined,
+): string {
+  if (!accessWindow || accessWindow.kind === "full") return "";
+  return `AND ${dataset.readModelAccessExpression} >= toDate({accessStartDate:String})
+          AND ${dataset.readModelAccessExpression} < toDate({accessEndDateExclusive:String})`;
+}
+
+function readModelAccessWindowParams(
+  dataset: DataHealthDatasetQuery,
+  accessWindow: AccessWindow | undefined,
+  timezone: string,
+): Record<string, unknown> {
+  const timezoneParam = dataset.readModelAccessExpression.includes("{timezone:String}")
+    ? { timezone }
+    : {};
+  if (!accessWindow || accessWindow.kind === "full") return timezoneParam;
+  return {
+    accessStartDate: accessWindow.startDate,
+    accessEndDateExclusive: accessWindow.endDateExclusive,
+    ...timezoneParam,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -250,6 +380,60 @@ export class SyncRepository {
       labResults: row.lab_results,
       journalEntries: row.journal_entries,
     }));
+  }
+
+  /** Freshness details for primary dashboard datasets. */
+  async getDataHealthFreshness(
+    datasets: readonly DataHealthDatasetQuery[] = dataHealthDatasets,
+    sensorStore?: DataHealthSensorStore,
+    accessWindow?: AccessWindow,
+    timezone = "UTC",
+  ): Promise<DataHealthFreshnessRow[]> {
+    const [rawFreshnessRows, readModelFreshnessRows] = await Promise.all([
+      Promise.all(
+        datasets.map((dataset) =>
+          executeWithSchema(
+            this.#db,
+            dataHealthRawFreshnessRowSchema,
+            sql`SELECT count(*)::int AS "rawRows",
+                       ${sql.raw(dataset.rawLatestExpression)} AS "latestRawAt"
+                FROM ${sql.raw(dataset.rawTable)}
+                WHERE user_id = ${this.#userId}
+                ${rawAccessWindowPredicate(dataset, accessWindow, timezone)}
+                ${dataset.predicate}`,
+          ),
+        ),
+      ),
+      Promise.all(
+        datasets.map((dataset) => {
+          if (!sensorStore) return Promise.resolve([]);
+          return sensorStore.query(
+            dataHealthReadModelFreshnessRowSchema,
+            `SELECT ${dataset.readModelLatestExpression} AS latestReadModelAt
+             FROM ${dataset.readModelTable} FINAL
+             WHERE user_id = {userId:UUID}
+             ${readModelAccessWindowClause(dataset, accessWindow)}
+             ${dataset.readModelPredicate}`,
+            {
+              userId: this.#userId,
+              ...readModelAccessWindowParams(dataset, accessWindow, timezone),
+            },
+            { priority: "dashboard" },
+          );
+        }),
+      ),
+    ]);
+
+    return datasets.map((dataset, index) => {
+      const rawRow = rawFreshnessRows[index]?.[0];
+      const readModelRow = readModelFreshnessRows[index]?.[0];
+      return {
+        key: dataset.key,
+        rawRows: rawRow?.rawRows ?? 0,
+        latestRawAt: rawRow?.latestRawAt ?? null,
+        latestReadModelAt: readModelRow?.latestReadModelAt ?? null,
+      };
+    });
   }
 
   async #getClickHouseProviderStats(): Promise<z.infer<typeof clickHouseProviderStatsRowSchema>[]> {

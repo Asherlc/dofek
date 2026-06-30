@@ -4,13 +4,19 @@ import type { SyncJobData } from "./queues.ts";
 
 const DUPLICATE_REQUEST_JOB_STATES = new Set(["active", "waiting", "delayed"]);
 
+export type EnqueuedSyncJob = Job<SyncJobData> & { alreadyQueued: boolean };
+
+function withAlreadyQueuedState(job: Job<SyncJobData>, alreadyQueued: boolean): EnqueuedSyncJob {
+  return Object.assign(job, { alreadyQueued });
+}
+
 export async function enqueueSyncJobWithRequestDedup(
   providerId: string,
   jobData: SyncJobData,
   jobOptions: JobsOptions,
   addJob: (name: string, data: SyncJobData, options: JobsOptions) => Promise<Job<SyncJobData>>,
   getJob: (jobId: string) => Promise<Job<SyncJobData> | undefined>,
-): Promise<Job<SyncJobData> | null> {
+): Promise<EnqueuedSyncJob | null> {
   const requestQuery = resolveSyncRequestQuery(providerId, jobData);
   const nextOptions: JobsOptions = { ...jobOptions };
 
@@ -23,11 +29,12 @@ export async function enqueueSyncJobWithRequestDedup(
     if (existing) {
       const state = await existing.getState();
       if (DUPLICATE_REQUEST_JOB_STATES.has(state)) {
-        return existing;
+        return withAlreadyQueuedState(existing, true);
       }
       await existing.remove();
     }
   }
 
-  return addJob("sync", jobData, nextOptions);
+  const job = await addJob("sync", jobData, nextOptions);
+  return withAlreadyQueuedState(job, false);
 }

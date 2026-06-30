@@ -35,6 +35,11 @@ let invalidateWeekList: ReturnType<typeof vi.fn>;
 let invalidateActivityOverview: ReturnType<typeof vi.fn>;
 let invalidateActivityList: ReturnType<typeof vi.fn>;
 let mockBulkDeleteShouldFail: boolean;
+let mockDataHealthQuery: {
+  data: unknown;
+  isLoading: boolean;
+  error: Error | null;
+};
 
 interface BulkDeleteVariables {
   ids: string[];
@@ -97,6 +102,11 @@ vi.mock("../lib/trpc.ts", () => ({
           isPending: false,
           error: null,
         }),
+      },
+    },
+    sync: {
+      dataHealth: {
+        useQuery: () => mockDataHealthQuery,
       },
     },
     useUtils: () => ({
@@ -183,6 +193,38 @@ describe("ActivitiesPage", () => {
     invalidateActivityOverview = vi.fn();
     invalidateActivityList = vi.fn();
     mockBulkDeleteShouldFail = false;
+    mockDataHealthQuery = { data: undefined, isLoading: false, error: null };
+  });
+
+  it("shows activity readiness when activity summaries are blocked", () => {
+    mockDataHealthQuery = {
+      data: {
+        overallStatus: "blocked",
+        generatedAt: "2026-06-30T08:00:00.000Z",
+        datasets: [
+          {
+            key: "activity",
+            label: "Activities",
+            rawRows: 12,
+            latestRawAt: "2026-06-30T07:00:00.000Z",
+            latestReadModelAt: null,
+            cdcLagSeconds: null,
+            readModelLagSeconds: null,
+            status: "blocked",
+            message: "Activities data is available, but ClickHouse mirrors are not current.",
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    };
+
+    render(<ActivitiesPage />);
+
+    expect(screen.getByText("Data pipeline needs attention")).toBeDefined();
+    expect(
+      screen.getByText("Activities data is available, but ClickHouse mirrors are not current."),
+    ).toBeDefined();
   });
 
   it("uses QueryStatePanel for loading state", () => {

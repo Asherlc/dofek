@@ -140,11 +140,13 @@ vi.mock("../logger.ts", () => ({
   },
 }));
 
+import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { logger } from "../logger.ts";
 import { computeReadinessScore } from "../repositories/training-recommendation.ts";
+import { isRecent } from "../services/dashboard-overview.ts";
 import * as mobileRecoveryTab from "../services/mobile-recovery-tab.ts";
 import * as mobileTrainingTab from "../services/mobile-training-tab.ts";
-import { isRecent, mobileDashboardRouter } from "./mobile-dashboard.ts";
+import { mobileDashboardRouter } from "./mobile-dashboard.ts";
 
 const createCaller = createTestCallerFactory(mobileDashboardRouter);
 
@@ -218,6 +220,36 @@ describe("mobileDashboard.dashboard", () => {
         },
       }),
     );
+  });
+
+  it("loads personalized readiness parameters for dashboard scoring", async () => {
+    vi.mocked(loadPersonalizedParams).mockClear();
+    const db = { execute: vi.fn() };
+    const caller = createCaller({
+      db,
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeSensorStore(
+        [],
+        0,
+        [],
+        [],
+        [
+          {
+            date: "2026-03-28",
+            hrv: 64,
+            hrv_score: 72,
+            resting_hr_score: 68,
+            sleep_score: 80,
+            respiratory_rate_score: 74,
+          },
+        ],
+      ),
+    });
+
+    await caller.dashboard({ endDate: "2026-03-28" });
+
+    expect(loadPersonalizedParams).toHaveBeenCalledWith(db, "user-1");
   });
 
   it("does not compute daily strain from rolling acute load when today is a rest day", async () => {
@@ -298,6 +330,37 @@ describe("mobileDashboard.dashboard", () => {
         accessStartDate: "2026-03-20",
         accessEndDateExclusive: "2026-03-29",
       });
+    }
+  });
+
+  it("prioritizes dashboard read-model queries for latency-sensitive overview loading", async () => {
+    const execute = vi.fn();
+    const sensorStore = makeSensorStore(
+      [{ metric_date: "2026-03-28", daily_load: 50 }],
+      0,
+      [sleepBaselineRow("2026-03-28", 480, 80)],
+      [],
+      [metricRow({ date: "2026-03-28" })],
+    );
+    const caller = createCaller({
+      db: { execute },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore,
+    });
+
+    await caller.dashboard({ endDate: "2026-03-28" });
+
+    const dashboardQueryCalls = vi
+      .mocked(sensorStore.query)
+      .mock.calls.filter((call) =>
+        ["analytics.daily_recovery", "analytics.daily_sleep", "analytics.daily_strain"].some(
+          (readModelName) => String(call[1]).includes(readModelName),
+        ),
+      );
+    expect(dashboardQueryCalls.length).toBeGreaterThan(0);
+    for (const queryCall of dashboardQueryCalls) {
+      expect(queryCall[3]).toEqual({ priority: "dashboard" });
     }
   });
 
@@ -517,6 +580,10 @@ describe("mobileDashboard.dashboard", () => {
 
   it("logs dashboard timing breakdowns for performance diagnosis", async () => {
     vi.mocked(logger.info).mockClear();
+    const performanceNow = vi
+      .spyOn(performance, "now")
+      .mockReturnValueOnce(1000)
+      .mockReturnValueOnce(1246);
     const execute = vi.fn();
     execute.mockResolvedValueOnce([metricRow({ date: "2026-03-28" })]);
     execute.mockResolvedValueOnce([]);
@@ -528,11 +595,15 @@ describe("mobileDashboard.dashboard", () => {
       sensorStore: makeSensorStore(),
     });
 
-    await caller.dashboard({ endDate: "2026-03-28" });
+    try {
+      await caller.dashboard({ endDate: "2026-03-28" });
 
-    expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
-      expect.stringContaining("[mobile-dashboard] dashboard timings"),
-    );
+      expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
+        "[mobile-dashboard] dashboard timings userId=user-1 endDate=2026-03-28 total=246ms",
+      );
+    } finally {
+      performanceNow.mockRestore();
+    }
   });
 
   it("builds sleep need from exactly seven high-HRV nights", async () => {

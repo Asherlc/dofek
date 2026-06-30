@@ -4,10 +4,6 @@ on:
   workflow_call:
 
 jobs:
-  detect-changes:
-    name: Detect Changes
-    uses: ./.github/workflows/detect-changes.yml
-
   # ── Security & supply chain ────────────────────────────────────────────
 
   secret-scan:
@@ -77,8 +73,6 @@ jobs:
 
   image-scan:
     name: Image Vulnerability Scan
-    needs: detect-changes
-    if: needs.detect-changes.outputs.docker_server == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -99,8 +93,8 @@ jobs:
             server
           load: true
           set: |
-            *.cache-from=type=gha,scope=server
-            *.cache-to=type=gha,mode=max,scope=server
+            *.cache-from=type=gha,scope=e2e
+            *.cache-to=type=gha,mode=max,scope=e2e
       - name: Scan server image (Grype)
         env:
           GRYPE_IMAGE: anchore/grype:v0.111.1@sha256:3c1cd2ff38196e753751fb1619b3b6787a6e3e79149f2a2aec57946d2c154cd2
@@ -164,25 +158,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-      - name: Setup Node and pnpm
-        uses: ./.github/actions/setup-node-pnpm
-      - name: Run lint
-        run: |
-          pnpm exec biome check . --max-diagnostics=500
-          pnpm lint:analytics-policy
-
-  lint-analytics-sql:
-    name: Analytics SQL Lint
-    needs: detect-changes
-    if: needs.detect-changes.outputs.analytics == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
     services:
       clickhouse:
         image: mirror.gcr.io/clickhouse/clickhouse-server:26.3.3.20-alpine@sha256:0b5334420a843292394d51d494c14be462cbba9c5e38f909ddab133b9cffee7b
@@ -206,8 +181,8 @@ jobs:
         uses: ./.github/actions/setup-node-pnpm
       - name: Setup uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8
-      - name: Run analytics SQL lint
-        run: pnpm lint:analytics-sql
+      - name: Run lint
+        run: pnpm lint
         env:
           CLICKHOUSE_URL: http://default:${{ github.run_id }}@127.0.0.1:8123
 
@@ -338,39 +313,50 @@ jobs:
         working-directory: ${{ matrix.package.dir }}
         run: pnpm run typecheck
 
-  node-static-checks:
-    name: Node Static Checks
+  sherif:
+    name: Sherif
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
-      - name: Run static checks
-        run: |
-          failed=0
+      - run: pnpm exec sherif
 
-          run_check() {
-            name="$1"
-            shift
-            echo "::group::$name"
-            "$@" || failed=1
-            echo "::endgroup::"
-          }
-
-          run_check "Sherif" pnpm exec sherif
-          run_check "Knip" pnpm knip
-          run_check "Spell Check" pnpm exec cspell --no-progress
-          run_check "Import Boundaries" pnpm exec depcruise --config .dependency-cruiser.cjs src/ packages/
-
-          exit "$failed"
+  knip:
+    name: Knip
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - run: pnpm knip
         env:
           CLICKHOUSE_URL: http://default:health@localhost:8123
 
+  spellcheck:
+    name: Spell Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - run: pnpm exec cspell --no-progress
+
+  import-boundaries:
+    name: Import Boundaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - run: pnpm exec depcruise --config .dependency-cruiser.cjs src/ packages/
+
   python-checks:
     name: Python Checks
-    needs: detect-changes
-    if: needs.detect-changes.outputs.ml == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -404,8 +390,6 @@ jobs:
 
   terraform-validate:
     name: Terraform Validate
-    needs: detect-changes
-    if: needs.detect-changes.outputs.terraform == 'true'
     runs-on: ubuntu-latest
     env:
       TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform-plugin-cache
@@ -436,8 +420,8 @@ jobs:
 
   swiftlint:
     name: SwiftLint
-    needs: detect-changes
-    if: needs.detect-changes.outputs.mobile == 'true'
+    needs: check-mobile-changes
+    if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: macos-14
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -451,8 +435,8 @@ jobs:
 
   periphery:
     name: Periphery
-    needs: detect-changes
-    if: needs.detect-changes.outputs.mobile == 'true'
+    needs: check-mobile-changes
+    if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: macos-14
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -482,7 +466,7 @@ jobs:
 
   quality-gate:
     name: Lint & Static Analysis
-    needs: [actionlint, lint, lint-analytics-sql, stylelint, yamllint, dotenv-lint, sqlfluff, tflint, typecheck, node-static-checks, python-checks, hadolint, terraform-validate, check-dns-records, swiftlint, periphery]
+    needs: [actionlint, lint, stylelint, yamllint, dotenv-lint, sqlfluff, tflint, typecheck, sherif, knip, spellcheck, import-boundaries, python-checks, hadolint, terraform-validate, check-dns-records, swiftlint, periphery]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -491,14 +475,16 @@ jobs:
           for result in \
             "${{ needs.actionlint.result }}" \
             "${{ needs.lint.result }}" \
-            "${{ needs.lint-analytics-sql.result }}" \
             "${{ needs.stylelint.result }}" \
             "${{ needs.yamllint.result }}" \
             "${{ needs.dotenv-lint.result }}" \
             "${{ needs.sqlfluff.result }}" \
             "${{ needs.tflint.result }}" \
             "${{ needs.typecheck.result }}" \
-            "${{ needs.node-static-checks.result }}" \
+            "${{ needs.sherif.result }}" \
+            "${{ needs.knip.result }}" \
+            "${{ needs.spellcheck.result }}" \
+            "${{ needs.import-boundaries.result }}" \
             "${{ needs.python-checks.result }}" \
             "${{ needs.hadolint.result }}" \
             "${{ needs.terraform-validate.result }}" \
@@ -537,15 +523,10 @@ jobs:
           path: coverage/
 
   test-integration:
-    name: Integration Tests (${{ matrix.shard }}/${{ matrix.total }})
+    name: Integration Tests
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4]
-        total: [4]
     services:
       postgres:
         image: mirror.gcr.io/timescale/timescaledb-ha:pg18.3-ts2.26.4-all
@@ -593,18 +574,18 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
-      - run: pnpm exec vitest run --project integration --coverage --shard=${{ matrix.shard }}/${{ matrix.total }}
+      - run: pnpm exec vitest run --project integration --coverage
         timeout-minutes: 12
         env:
           VITEST_COVERAGE_SKIP_THRESHOLDS: "true"
       - uses: codecov/codecov-action@e53489f4d376d79066609109e7a95a29eb3740b1 # v7.0.0
         with:
           files: coverage/lcov.info
-          flags: integration-${{ matrix.shard }}
+          flags: integration
           token: ${{ secrets.CODECOV_TOKEN }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: coverage-integration-${{ matrix.shard }}
+          name: coverage-integration
           path: coverage/
 
   coverage:
@@ -623,17 +604,13 @@ jobs:
           path: coverage-unit
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: coverage-integration-*
+          name: coverage-integration
           path: coverage-integration
       - name: Merge and check coverage
         run: |
           mkdir -p .nyc_output
           cp coverage-unit/coverage-final.json .nyc_output/unit.json
-          integration_index=0
-          for coverage_file in coverage-integration/*/coverage-final.json; do
-            cp "$coverage_file" ".nyc_output/integration-${integration_index}.json"
-            integration_index=$((integration_index + 1))
-          done
+          cp coverage-integration/coverage-final.json .nyc_output/integration.json
           pnpm exec nyc merge .nyc_output merged-coverage.json
           mkdir -p final-coverage
           cp merged-coverage.json final-coverage/coverage-final.json
@@ -642,11 +619,13 @@ jobs:
             --lines 93.5 --branches 89 --functions 94.5 --statements 93.5
       - name: Diff coverage (changed lines only)
         if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
           pip install diff-cover
           pnpm exec nyc report --temp-dir final-coverage --reporter=lcov --report-dir diff-coverage-lcov
           diff-cover diff-coverage-lcov/lcov.info \
-            --compare-branch=origin/${{ github.base_ref }} \
+            --compare-branch=origin/$BASE_REF \
             --fail-under=80 \
             --markdown-report diff-coverage.md || DIFF_FAILED=1
           if [ -f diff-coverage.md ]; then
@@ -676,8 +655,6 @@ jobs:
 
   test-e2e-web:
     name: E2E Tests (Web)
-    needs: detect-changes
-    if: needs.detect-changes.outputs.e2e_web == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -709,8 +686,8 @@ jobs:
             server
           load: true
           set: |
-            *.cache-from=type=gha,scope=server
-            *.cache-to=type=gha,mode=max,scope=server
+            *.cache-from=type=gha,scope=e2e
+            *.cache-to=type=gha,mode=max,scope=e2e
       - name: Start e2e dependencies
         run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build db clickhouse
       - name: Run e2e migrations
@@ -745,10 +722,50 @@ jobs:
 
   # ── Mobile tests ───────────────────────────────────────────────────────
 
+  check-mobile-changes:
+    name: Check Mobile Changes
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: check
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$EVENT_NAME" = "push" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            CHANGED=$(git diff --name-only origin/$BASE_REF...HEAD -- \
+              packages/mobile/ \
+              packages/auth/ \
+              packages/format/ \
+              packages/nutrition/ \
+              packages/onboarding/ \
+              packages/providers-meta/ \
+              packages/scoring/ \
+              packages/training/ \
+              packages/zones/ \
+              packages/server/ \
+              package.json \
+              pnpm-lock.yaml \
+              pnpm-workspace.yaml \
+              tsconfig.json)
+            if [ -n "$CHANGED" ]; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
   test-mobile:
     name: Mobile Tests
-    needs: detect-changes
-    if: needs.detect-changes.outputs.mobile == 'true'
+    needs: check-mobile-changes
+    if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -761,8 +778,8 @@ jobs:
 
   test-swift:
     name: Swift Tests
-    needs: detect-changes
-    if: needs.detect-changes.outputs.mobile == 'true'
+    needs: check-mobile-changes
+    if: needs.check-mobile-changes.outputs.changed == 'true'
     runs-on: macos-14
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -985,17 +1002,10 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
-      - uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
-        with:
-          path: reports/stryker-incremental.json
-          key: stryker-incremental-v1-${{ runner.os }}-${{ github.ref_name }}-${{ strategy.job-index }}-${{ hashFiles('pnpm-lock.yaml', 'stryker.ci.config.json', 'vitest.config.mutation.ts') }}
-          restore-keys: |
-            stryker-incremental-v1-${{ runner.os }}-${{ github.ref_name }}-${{ strategy.job-index }}-
-            stryker-incremental-v1-${{ runner.os }}-
       - name: Run Stryker
         env:
           MUTATE_FILES: ${{ matrix.files }}
-        run: pnpm exec stryker run stryker.ci.config.json --incremental --mutate "$MUTATE_FILES"
+        run: pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
@@ -1005,9 +1015,9 @@ jobs:
 
   mutation-swift:
     name: Swift Mutation Testing
-    needs: detect-changes
+    needs: check-mobile-changes
     runs-on: macos-14
-    if: github.event_name == 'pull_request' && needs.detect-changes.outputs.mobile == 'true'
+    if: github.event_name == 'pull_request' && needs.check-mobile-changes.outputs.changed == 'true'
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -1075,33 +1085,6 @@ jobs:
             exit 1
           fi
 
-  # ── PR quality gates ───────────────────────────────────────────────────
-
-  pr-size:
-    name: PR Size
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - name: Check PR size
-        run: |
-          STATS=$(git diff -w --numstat origin/${{ github.base_ref }}...HEAD)
-          ADDITIONS=$(echo "$STATS" | awk '{ add += $1 } END { print add+0 }')
-          DELETIONS=$(echo "$STATS" | awk '{ del += $2 } END { print del+0 }')
-          FILES=$(git diff -w --name-only origin/${{ github.base_ref }}...HEAD | wc -l | tr -d ' ')
-          echo "## PR Size" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **$ADDITIONS** additions, **$DELETIONS** deletions across **$FILES** files" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$ADDITIONS" -gt 2000 ]; then
-            echo "::warning::Large PR: $ADDITIONS additions across $FILES files. Consider splitting into smaller PRs."
-          fi
-          if [ "$ADDITIONS" -gt 8000 ]; then
-            echo "::error::PR exceeds 8000 additions ($ADDITIONS). Please split into smaller PRs."
-            exit 1
-          fi
-
   migration-lint:
     name: Migration Lint
     if: github.event_name == 'pull_request'
@@ -1131,7 +1114,7 @@ jobs:
 
   test-all-gate:
     name: Test Gate
-    needs: [security-gate, quality-gate, test-gate, test-e2e-web, test-mobile, test-swift, mutation-gate, mutation-swift, pr-size, migration-lint]
+    needs: [security-gate, quality-gate, test-gate, test-e2e-web, test-mobile, test-swift, mutation-gate, mutation-swift, migration-lint]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -1146,7 +1129,6 @@ jobs:
             "${{ needs.test-swift.result }}" \
             "${{ needs.mutation-gate.result }}" \
             "${{ needs.mutation-swift.result }}" \
-            "${{ needs.pr-size.result }}" \
             "${{ needs.migration-lint.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
               echo "Test gate failed"

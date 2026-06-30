@@ -295,7 +295,11 @@ importers:
 
   packages/filter-columns: {}
 
-  packages/format: {}
+  packages/format:
+    dependencies:
+      zod:
+        specifier: 3.25.76
+        version: 3.25.76
 
   packages/garmin-connect:
     dependencies:

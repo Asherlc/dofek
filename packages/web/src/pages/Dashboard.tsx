@@ -10,6 +10,7 @@ import { z } from "zod";
 import type { Insight } from "../components/CorrelationCard.tsx";
 import { DailyOverview } from "../components/DailyOverview.tsx";
 import { DashboardEvidenceOverview } from "../components/DashboardEvidenceOverview.tsx";
+import { DataReadinessBanner } from "../components/DataReadinessBanner.tsx";
 import { HealthStatusBar } from "../components/HealthStatusBar.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
@@ -174,6 +175,7 @@ export function Dashboard() {
   const trends = trpc.dailyMetrics.trends.useQuery({ days, endDate });
   const heartRateBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days, endDate });
   const insightsQuery = trpc.insights.compute.useQuery({ days, endDate });
+  const dataHealth = trpc.sync.dataHealth.useQuery();
   const trendData: TrendRow | undefined = trends.data
     ? trendRowSchema.parse(trends.data)
     : undefined;
@@ -217,6 +219,11 @@ export function Dashboard() {
 
   return (
     <PageLayout headerChildren={undefined}>
+      <DataReadinessBanner
+        data={dataHealth.data}
+        error={dataHealth.error}
+        loading={dataHealth.isLoading}
+      />
       <DailyOverview
         endDate={endDate}
         readiness={readinessData.data}

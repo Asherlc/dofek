@@ -23,6 +23,7 @@ interface ProviderRecord {
   authType: string;
   authorized: boolean;
   importOnly: boolean;
+  pushOnly: boolean;
   lastSyncedAt: string | null;
   needsReauth: boolean;
 }
@@ -33,6 +34,7 @@ export interface DisplayProvider {
   authType: string;
   authorized: boolean;
   importOnly: boolean;
+  pushOnly: boolean;
   lastSyncedAt: string | null;
 }
 
@@ -77,6 +79,7 @@ function createAppleHealthProvider(authorized: boolean): DisplayProvider {
     authType: "none",
     authorized,
     importOnly: false,
+    pushOnly: false,
     lastSyncedAt: null,
   };
 }
@@ -281,10 +284,24 @@ export function useProviderDetailActions(
           return;
         }
 
-        const { jobId } = await syncMutation.mutateAsync({
+        const result = await syncMutation.mutateAsync({
           providerId,
           sinceDays,
         });
+        const providerResult = result.providerResults?.find(
+          (entry) => entry.providerId === providerId,
+        );
+        if (providerResult?.status === "skippedCooldown" || providerResult?.status === "failed") {
+          setIsSyncing(false);
+          setSyncProgress(null);
+          setSyncMessage(providerResult.message);
+          return;
+        }
+        const jobId =
+          providerResult?.status === "started" || providerResult?.status === "alreadyQueued"
+            ? providerResult.jobId
+            : result.jobId;
+        if (!jobId) return;
         await pollSyncJob(jobId);
       } catch (error: unknown) {
         captureException(error, {
@@ -346,8 +363,10 @@ export function useProviderDetailActions(
     isSyncing,
     syncMessage,
     syncProgress,
-    shouldShowActions: Boolean(displayProvider && !displayProvider.importOnly),
-    shouldShowFullSync: isConnected && !needsReauth,
+    shouldShowActions: Boolean(
+      displayProvider && !displayProvider.importOnly && !displayProvider.pushOnly,
+    ),
+    shouldShowFullSync: isConnected && !needsReauth && displayProvider?.pushOnly !== true,
     shouldShowAppleHealthPermissionBanner:
       providerId === "apple_health" &&
       healthKitAvailable &&

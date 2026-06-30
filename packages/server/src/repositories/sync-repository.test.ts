@@ -1,6 +1,8 @@
+import { sql } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
-import { SyncRepository } from "./sync-repository.ts";
+import { dataHealthDatasets, SyncRepository } from "./sync-repository.ts";
+import { collectSqlText } from "./test-helpers.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -27,6 +29,12 @@ function makeRepository(
   const sensorStore = { query };
   const repo = new SyncRepository(db, "user-1", sensorStore);
   return { repo, execute, query, select };
+}
+
+function getDataHealthDataset(key: (typeof dataHealthDatasets)[number]["key"]) {
+  const dataset = dataHealthDatasets.find((candidate) => candidate.key === key);
+  if (!dataset) throw new Error(`${key} data health dataset is missing`);
+  return dataset;
 }
 
 // ---------------------------------------------------------------------------
@@ -277,6 +285,218 @@ describe("SyncRepository", () => {
       expect(querySql).toEqual(expect.stringContaining("is_deleted = 0"));
       expect(querySql).not.toEqual(expect.stringContaining("postgres_fitness.metric_stream"));
       expect(execute).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("getDataHealthFreshness", () => {
+    const dataHealthDataset = {
+      key: "dailyMetrics" as const,
+      label: "Daily metrics",
+      rawTable: "fitness.daily_metrics",
+      rawLatestExpression: "max(date::timestamptz)",
+      rawAccessColumn: "date",
+      rawAccessKind: "date" as const,
+      predicate: sql``,
+      readModelTable: "analytics.daily_recovery",
+      readModelLatestExpression: "maxOrNull(date)",
+      readModelAccessExpression: "date",
+      readModelPredicate: "",
+      freshnessComparisonGrain: "date" as const,
+    };
+
+    it("returns raw freshness without querying ClickHouse when no sensor store is configured", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValue([{ rawRows: 2, latestRawAt: new Date("2026-06-29T00:00:00.000Z") }]);
+      const db: Pick<import("dofek/db").Database, "execute" | "select"> = {
+        execute,
+        select: vi.fn(),
+      };
+      const repo = new SyncRepository(db, "user-1");
+
+      const result = await repo.getDataHealthFreshness([dataHealthDataset]);
+
+      expect(result).toEqual([
+        {
+          key: "dailyMetrics",
+          rawRows: 2,
+          latestRawAt: "2026-06-29T00:00:00.000Z",
+          latestReadModelAt: null,
+        },
+      ]);
+    });
+
+    it("normalizes read-model timestamps and passes dashboard priority", async () => {
+      const { repo, query } = makeRepository([
+        { rawRows: "4", latestRawAt: "2026-06-29 00:00:00+00" },
+      ]);
+      query.mockImplementationOnce(<TSchema extends z.ZodType>(schema: TSchema) =>
+        Promise.resolve([{ latestReadModelAt: "2026-06-29" }].map((row) => schema.parse(row))),
+      );
+
+      const result = await repo.getDataHealthFreshness([dataHealthDataset], { query });
+
+      expect(result).toEqual([
+        {
+          key: "dailyMetrics",
+          rawRows: 4,
+          latestRawAt: "2026-06-29T00:00:00.000Z",
+          latestReadModelAt: "2026-06-29T00:00:00.000Z",
+        },
+      ]);
+      expect(query).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining("FROM analytics.daily_recovery FINAL"),
+        { userId: "user-1" },
+        { priority: "dashboard" },
+      );
+    });
+
+    it("falls back to zero and null freshness when stores return no rows", async () => {
+      const { repo, query } = makeRepository([]);
+      query.mockResolvedValueOnce([]);
+
+      const result = await repo.getDataHealthFreshness([dataHealthDataset], { query });
+
+      expect(result).toEqual([
+        {
+          key: "dailyMetrics",
+          rawRows: 0,
+          latestRawAt: null,
+          latestReadModelAt: null,
+        },
+      ]);
+    });
+
+    it("scopes raw and read-model freshness to limited access windows", async () => {
+      const { repo, execute, query } = makeRepository([
+        { rawRows: 1, latestRawAt: "2026-06-03T00:00:00.000Z" },
+      ]);
+      query.mockImplementationOnce(<TSchema extends z.ZodType>(schema: TSchema) =>
+        Promise.resolve([{ latestReadModelAt: "2026-06-03" }].map((row) => schema.parse(row))),
+      );
+
+      await repo.getDataHealthFreshness(
+        [dataHealthDataset],
+        { query },
+        {
+          kind: "limited",
+          paid: false,
+          reason: "free_signup_week",
+          startDate: "2026-06-01",
+          endDateExclusive: "2026-06-08",
+        },
+      );
+
+      const rawSql = collectSqlText(execute.mock.calls[0]?.[0]);
+      expect(rawSql).toContain(">=");
+      expect(rawSql).toContain("<");
+      expect(rawSql).toContain("::date");
+      expect(query).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining("date >= toDate({accessStartDate:String})"),
+        {
+          userId: "user-1",
+          accessStartDate: "2026-06-01",
+          accessEndDateExclusive: "2026-06-08",
+        },
+        { priority: "dashboard" },
+      );
+    });
+
+    it("aligns raw sleep freshness to the daily sleep read-model day grain", async () => {
+      const sleepDataset = getDataHealthDataset("sleep");
+      const { repo, execute, query } = makeRepository([
+        { rawRows: 1, latestRawAt: "2026-06-29T00:00:00.000Z" },
+      ]);
+      query.mockResolvedValueOnce([{ latestReadModelAt: "2026-06-29T00:00:00.000Z" }]);
+
+      await repo.getDataHealthFreshness([sleepDataset], { query });
+
+      const rawSql = collectSqlText(execute.mock.calls[0]?.[0]);
+      expect(rawSql).toContain("started_at - INTERVAL '6 hours'");
+      expect(rawSql).not.toContain("max(started_at)");
+    });
+
+    it("filters raw sleep freshness by sleep-day access windows and excludes naps", async () => {
+      const sleepDataset = getDataHealthDataset("sleep");
+      const { repo, execute, query } = makeRepository([
+        { rawRows: 1, latestRawAt: "2026-06-29T00:00:00.000Z" },
+      ]);
+      query.mockResolvedValueOnce([{ latestReadModelAt: "2026-06-29T00:00:00.000Z" }]);
+
+      await repo.getDataHealthFreshness(
+        [sleepDataset],
+        { query },
+        {
+          kind: "limited",
+          paid: false,
+          reason: "free_signup_week",
+          startDate: "2026-06-29",
+          endDateExclusive: "2026-06-30",
+        },
+      );
+
+      const rawSql = collectSqlText(execute.mock.calls[0]?.[0]);
+      expect(rawSql).toContain("is_nap = false");
+      expect(rawSql).toContain("(started_at - INTERVAL '6 hours')::date");
+      expect(rawSql).not.toContain("started_at >= ");
+    });
+
+    it("checks daily metric read-model freshness against daily metric fields", async () => {
+      const dailyMetricsDataset = getDataHealthDataset("dailyMetrics");
+      const { repo, execute, query } = makeRepository([
+        { rawRows: 1, latestRawAt: "2026-06-29T00:00:00.000Z" },
+      ]);
+      query.mockResolvedValueOnce([{ latestReadModelAt: "2026-06-29T00:00:00.000Z" }]);
+
+      await repo.getDataHealthFreshness([dailyMetricsDataset], { query });
+
+      const rawSql = collectSqlText(execute.mock.calls[0]?.[0]);
+      expect(rawSql).toContain("hrv IS NOT NULL");
+      expect(rawSql).toContain("respiratory_rate_avg IS NOT NULL");
+      expect(query.mock.calls[0]?.[1]).toContain("FROM analytics.daily_recovery FINAL");
+      expect(query.mock.calls[0]?.[1]).toContain("hrv IS NOT NULL");
+      expect(query.mock.calls[0]?.[1]).toContain("respiratory_rate IS NOT NULL");
+    });
+
+    it("checks activity read-model freshness from all activity summary rows", async () => {
+      const activityDataset = getDataHealthDataset("activity");
+      const { repo, execute, query } = makeRepository([
+        { rawRows: 1, latestRawAt: "2026-06-29T10:00:00.000Z" },
+      ]);
+      query.mockResolvedValueOnce([{ latestReadModelAt: "2026-06-29T10:00:00.000Z" }]);
+
+      await repo.getDataHealthFreshness(
+        [activityDataset],
+        { query },
+        {
+          kind: "limited",
+          paid: false,
+          reason: "free_signup_week",
+          startDate: "2026-06-29",
+          endDateExclusive: "2026-06-30",
+        },
+        "America/Los_Angeles",
+      );
+
+      const rawSql = collectSqlText(execute.mock.calls[0]?.[0]);
+      expect(rawSql).toContain("AT TIME ZONE");
+      expect(rawSql).not.toContain("started_at >= ");
+      expect(query.mock.calls[0]?.[1]).toContain("maxOrNull(started_at)");
+      expect(query.mock.calls[0]?.[1]).toContain("FROM analytics.activity_summary_rows FINAL");
+      expect(query.mock.calls[0]?.[1]).toContain("is_deleted = 0");
+      expect(query.mock.calls[0]?.[1]).toContain(
+        "toDate(toTimeZone(started_at, {timezone:String})) >= toDate",
+      );
+      expect(query.mock.calls[0]?.[1]).not.toContain("FROM analytics.daily_strain FINAL");
+      expect(query.mock.calls[0]?.[1]).not.toContain("FROM analytics.daily_activity_load FINAL");
+      expect(query.mock.calls[0]?.[2]).toEqual({
+        userId: "user-1",
+        accessStartDate: "2026-06-29",
+        accessEndDateExclusive: "2026-06-30",
+        timezone: "America/Los_Angeles",
+      });
     });
   });
 

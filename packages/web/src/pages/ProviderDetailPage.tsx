@@ -15,6 +15,7 @@ import {
 import { Link, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
+import { DataReadinessBanner } from "../components/DataReadinessBanner.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { ProviderDisconnectControl } from "../components/ProviderDisconnectControl.tsx";
 import { ProviderLogo } from "../components/ProviderLogo.tsx";
@@ -56,6 +57,7 @@ export function ProviderDetailPage() {
 
   const providers = trpc.sync.providers.useQuery();
   const stats = trpc.sync.providerStats.useQuery();
+  const dataHealth = trpc.sync.dataHealth.useQuery();
   const trpcUtils = trpc.useUtils();
 
   const provider = (providers.data ?? []).find((p) => p.id === providerId);
@@ -84,10 +86,28 @@ export function ProviderDetailPage() {
       setSyncStatus("syncing");
       setSyncMessage(null);
       try {
-        const { jobId } = await syncMutation.mutateAsync({
+        const result = await syncMutation.mutateAsync({
           providerId,
           ...input,
         });
+        const providerResult = result.providerResults?.find(
+          (entry) => entry.providerId === providerId,
+        );
+        if (providerResult?.status === "skippedCooldown") {
+          setSyncStatus("done");
+          setSyncMessage(providerResult.message);
+          return;
+        }
+        if (providerResult?.status === "failed") {
+          setSyncStatus("error");
+          setSyncMessage(providerResult.message);
+          return;
+        }
+        const jobId =
+          providerResult?.status === "started" || providerResult?.status === "alreadyQueued"
+            ? providerResult.jobId
+            : result.jobId;
+        if (!jobId) return;
         await pollSyncJob({
           jobId,
           providerIds: [providerId],
@@ -233,6 +253,12 @@ export function ProviderDetailPage() {
           </div>
         </div>
       </div>
+
+      <DataReadinessBanner
+        data={dataHealth.data}
+        error={dataHealth.error}
+        loading={dataHealth.isLoading}
+      />
 
       {pushOnly && (
         <section className="card p-4 space-y-3">

@@ -19,6 +19,7 @@ import {
   View,
 } from "react-native";
 import { z } from "zod";
+import { MedicationDoseEventsPanel } from "../components/MedicationDoseEventsPanel";
 import { PersonalizationPanel } from "../components/PersonalizationPanel";
 import { ProviderLogo } from "../components/ProviderLogo";
 import { SlackIntegrationPanel } from "../components/SlackIntegrationPanel";
@@ -123,6 +124,7 @@ export default function SettingsScreen() {
     onError: (error) => Alert.alert("Error", error.message),
   });
   const billingStatus = trpc.billing.status.useQuery();
+  const medicationDoseEvents = trpc.medicationDoseEvents.list.useQuery({ limit: 50 });
   const checkoutSessionMutation = trpc.billing.createCheckoutSession.useMutation({
     onSuccess: ({ url }) => {
       void Linking.openURL(url);
@@ -416,6 +418,14 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             );
           })}
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Medication Doses</Text>
+        <Text style={styles.sectionDescription}>Review imported medication dose events</Text>
+        <View style={styles.card}>
+          <MedicationDoseEventsPanel queryResult={medicationDoseEvents} />
         </View>
       </View>
 

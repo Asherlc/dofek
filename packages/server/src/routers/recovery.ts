@@ -305,6 +305,7 @@ export const recoveryRouter = router({
               }
             : {}),
         },
+        { priority: "dashboard" },
       );
 
       const timeSeries = rows.map((row) => {
@@ -475,6 +476,7 @@ export const recoveryRouter = router({
               }
             : {}),
         },
+        { priority: "dashboard" },
       );
       const cutoffDate = new Date(input.endDate);
       cutoffDate.setDate(cutoffDate.getDate() - input.days);
@@ -591,6 +593,7 @@ export const recoveryRouter = router({
               }
             : {}),
         },
+        { priority: "dashboard" },
       );
 
       // Get daily loads for ACWR from the compact ClickHouse strain read model.
@@ -624,6 +627,7 @@ export const recoveryRouter = router({
               }
             : {}),
         },
+        { priority: "dashboard" },
       );
 
       // Compute readiness if we have metrics

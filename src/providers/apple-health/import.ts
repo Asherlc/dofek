@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { and, eq, gte, sql } from "drizzle-orm";
 import sax from "sax";
 import yauzl from "yauzl";
+import { z } from "zod";
 import type { SyncDatabase } from "../../db/index.ts";
 import { replaceMetricStreamBatch } from "../../db/metric-stream-writer.ts";
 import { finishProviderActivityListSync } from "../../db/provider-activity-sync.ts";
@@ -15,6 +16,7 @@ import {
   labPanel,
   labResult,
   medication,
+  medicationDoseEvent,
 } from "../../db/schema/clinical.ts";
 import { foodEntry } from "../../db/schema/nutrition.ts";
 import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
@@ -56,6 +58,85 @@ import {
 import type { HealthRecord } from "./records.ts";
 import type { ProgressInfo } from "./streaming.ts";
 import { streamHealthExport } from "./streaming.ts";
+
+const appleMedicationDoseEventSchema = z
+  .object({
+    uuid: z.string().optional(),
+    startDate: z.string(),
+    scheduledDate: z.string().nullable().optional(),
+    logStatus: z.union([z.number(), z.string()]).optional(),
+    medicationConceptIdentifier: z.string().nullable().optional(),
+    medicationDisplayName: z.string().nullable().optional(),
+    sourceName: z.string().nullable().optional(),
+  })
+  .passthrough();
+
+function normalizeOptionalString(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : null;
+}
+
+function parseMedicationDoseRecordedAt(value: string): Date {
+  const recordedAt = new Date(value);
+  if (Number.isNaN(recordedAt.getTime())) {
+    throw new Error(`Invalid medication dose event startDate: ${value}`);
+  }
+  return recordedAt;
+}
+
+function mapMedicationDoseStatus(logStatus: number | string | undefined): string {
+  if (logStatus === 1 || logStatus === "1") return "taken";
+  if (logStatus === 2 || logStatus === "2") return "skipped";
+  const statusText = typeof logStatus === "string" ? normalizeOptionalString(logStatus) : null;
+  return statusText ?? "unknown";
+}
+
+function medicationDoseEventName(input: {
+  medicationConceptIdentifier?: string | null | undefined;
+  medicationDisplayName?: string | null | undefined;
+}): string {
+  return (
+    normalizeOptionalString(input.medicationDisplayName) ??
+    normalizeOptionalString(input.medicationConceptIdentifier) ??
+    "Unknown medication"
+  );
+}
+
+function medicationDoseEventExternalId(input: {
+  medicationConceptIdentifier?: string | null | undefined;
+  medicationName: string;
+  scheduledDate?: string | null | undefined;
+  sourceFileName: string;
+  startDate: string;
+  uuid?: string | null | undefined;
+}): string {
+  const uuid = normalizeOptionalString(input.uuid);
+  if (uuid) return uuid;
+
+  return [
+    "apple-health-medication-dose",
+    input.startDate,
+    normalizeOptionalString(input.scheduledDate) ?? "unscheduled",
+    normalizeOptionalString(input.medicationConceptIdentifier) ?? input.medicationName,
+    input.sourceFileName,
+  ].join(":");
+}
+
+function medicationDoseEventConflictKey(row: typeof medicationDoseEvent.$inferInsert): string {
+  return `${row.userId}:${row.providerId}:${row.externalId}`;
+}
+
+function hasDuplicateMedicationDoseConflictKeys(
+  rows: Array<typeof medicationDoseEvent.$inferInsert>,
+): boolean {
+  const keys = new Set<string>();
+  for (const row of rows) {
+    const key = medicationDoseEventConflictKey(row);
+    if (keys.has(key)) return true;
+    keys.add(key);
+  }
+  return false;
+}
 
 /**
  * Extract export.xml from an Apple Health export ZIP file.
@@ -340,6 +421,17 @@ export async function importAppleHealthFile(
     logger.info(
       `[apple_health] ${labCounts.inserted} clinical records imported, ` +
         `${labCounts.skipped} skipped, ${labCounts.errors.length} errors`,
+    );
+
+    logger.info("[apple_health] Importing medication dose events...");
+    const doseEventCounts = await importMedicationDoseEvents(db, "apple_health", filePath);
+    result.recordsSynced += doseEventCounts.inserted;
+    if (doseEventCounts.errors.length > 0) {
+      result.errors.push(...doseEventCounts.errors);
+    }
+    logger.info(
+      `[apple_health] ${doseEventCounts.inserted} medication dose events imported, ` +
+        `${doseEventCounts.skipped} skipped, ${doseEventCounts.errors.length} errors`,
     );
   }
 
@@ -743,6 +835,103 @@ export async function importClinicalRecords(
   inserted += allergyBatch.length;
 
   return { inserted, skipped, errors };
+}
+
+export async function importMedicationDoseEvents(
+  db: SyncDatabase,
+  providerId: string,
+  zipPath: string,
+): Promise<{ inserted: number; skipped: number; errors: SyncError[] }> {
+  const errors: SyncError[] = [];
+  const scopedUserId = getTokenUserId();
+  if (!scopedUserId) {
+    throw new Error("apple-health medication dose import requires user context");
+  }
+
+  await db
+    .delete(medicationDoseEvent)
+    .where(
+      and(
+        eq(medicationDoseEvent.userId, scopedUserId),
+        eq(medicationDoseEvent.providerId, providerId),
+      ),
+    );
+
+  const doseEventFiles = await readZipEntries(
+    zipPath,
+    (name) => name.endsWith(".json") && name.includes("MedicationDoseEvent"),
+  );
+
+  if (doseEventFiles.length === 0) {
+    return { inserted: 0, skipped: 0, errors };
+  }
+
+  const skipped = 0;
+  const batch: (typeof medicationDoseEvent.$inferInsert)[] = [];
+
+  for (const file of doseEventFiles) {
+    try {
+      const raw: unknown = JSON.parse(file.data.toString("utf-8"));
+      const parsed = appleMedicationDoseEventSchema.parse(raw);
+      const medicationName = medicationDoseEventName(parsed);
+
+      batch.push({
+        providerId,
+        userId: scopedUserId,
+        externalId: medicationDoseEventExternalId({
+          ...parsed,
+          medicationName,
+          sourceFileName: file.name,
+        }),
+        medicationName,
+        medicationConceptId: normalizeOptionalString(parsed.medicationConceptIdentifier),
+        doseStatus: mapMedicationDoseStatus(parsed.logStatus),
+        recordedAt: parseMedicationDoseRecordedAt(parsed.startDate),
+        sourceName: normalizeOptionalString(parsed.sourceName),
+        raw,
+      });
+    } catch (err) {
+      errors.push({
+        message: `MedicationDoseEvent ${file.name}: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  }
+
+  const upsertMedicationDoseEvents = async (
+    values: Array<typeof medicationDoseEvent.$inferInsert>,
+  ) => {
+    await db
+      .insert(medicationDoseEvent)
+      .values(values)
+      .onConflictDoUpdate({
+        target: [
+          medicationDoseEvent.userId,
+          medicationDoseEvent.providerId,
+          medicationDoseEvent.externalId,
+        ],
+        set: {
+          medicationName: sql`excluded.medication_name`,
+          medicationConceptId: sql`excluded.medication_concept_id`,
+          doseStatus: sql`excluded.dose_status`,
+          recordedAt: sql`excluded.recorded_at`,
+          sourceName: sql`excluded.source_name`,
+          raw: sql`excluded.raw`,
+        },
+      });
+  };
+
+  for (let batchStart = 0; batchStart < batch.length; batchStart += 500) {
+    const batchSlice = batch.slice(batchStart, batchStart + 500);
+    if (hasDuplicateMedicationDoseConflictKeys(batchSlice)) {
+      for (const row of batchSlice) {
+        await upsertMedicationDoseEvents([row]);
+      }
+    } else {
+      await upsertMedicationDoseEvents(batchSlice);
+    }
+  }
+
+  return { inserted: batch.length, skipped, errors };
 }
 
 /**

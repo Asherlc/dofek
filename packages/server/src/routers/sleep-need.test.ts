@@ -24,8 +24,8 @@ vi.mock("../trpc.ts", async () => {
 
 vi.mock("../repositories/stress-repository.ts", () => ({
   StressRepository: class {
-    getStressScores(days: number, endDate: string) {
-      return stressRepositoryMock.getStressScores(days, endDate);
+    getStressScores(days: number, endDate: string, options?: { priority?: "dashboard" }) {
+      return stressRepositoryMock.getStressScores(days, endDate, options);
     }
   },
 }));
@@ -696,6 +696,28 @@ describe("sleepNeedRouter", () => {
       expect(
         queryTexts.filter((queryText) => queryText.includes("analytics.v_sleep")),
       ).toHaveLength(1);
+    });
+
+    it("uses dashboard priority for every sleep-performance ClickHouse read", async () => {
+      const rows = [
+        { date: "2026-03-14", duration_minutes: 450, efficiency_pct: 92 },
+        { date: "2026-03-01", duration_minutes: 480 },
+      ];
+      const clickHouseRows = toClickHouseSleepRows(rows);
+      const sensorStore = makeMockSensorStore([clickHouseRows, clickHouseRows, []]);
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-1",
+        sensorStore,
+      });
+
+      await caller.performance({ endDate: "2026-03-15" });
+
+      const queryOptions = vi.mocked(sensorStore.query).mock.calls.map((call) => call[3]);
+      expect(queryOptions).toEqual([{ priority: "dashboard" }, { priority: "dashboard" }]);
+      expect(stressRepositoryMock.getStressScores).toHaveBeenCalledWith(90, "2026-03-15", {
+        priority: "dashboard",
+      });
     });
 
     it("includes provenance from v_sleep on performance response", async () => {

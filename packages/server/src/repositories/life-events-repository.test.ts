@@ -397,6 +397,7 @@ describe("LifeEventsRepository", () => {
           endDate: "2025-06-13",
           days: 6,
         }),
+        undefined,
       );
     });
   });

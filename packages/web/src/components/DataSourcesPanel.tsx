@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import { trpc } from "../lib/trpc.ts";
+import { DataReadinessBanner } from "./DataReadinessBanner.tsx";
 import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./DataSourcesAuthModals.tsx";
 import type { ProviderState, SyncProviderSummary } from "./DataSourcesSyncTypes.ts";
 import type { FileImportZoneProps } from "./FileImportZone.tsx";
@@ -22,6 +23,7 @@ export function DataSourcesPanel() {
   const providers = trpc.sync.providers.useQuery();
   const stats = trpc.sync.providerStats.useQuery();
   const logs = trpc.sync.logs.useQuery({ limit: 100 });
+  const dataHealth = trpc.sync.dataHealth.useQuery();
   const syncMutation = trpc.sync.triggerSync.useMutation();
   const trpcUtils = trpc.useUtils();
 
@@ -63,10 +65,26 @@ export function DataSourcesPanel() {
     async (providerId: string, fullSync = false) => {
       updateState(providerId, { status: "syncing" });
       try {
-        const { jobId } = await syncMutation.mutateAsync({
+        const result = await syncMutation.mutateAsync({
           providerId,
           sinceDays: fullSync ? undefined : 7,
         });
+        const providerResult = result.providerResults?.find(
+          (entry) => entry.providerId === providerId,
+        );
+        if (providerResult?.status === "skippedCooldown") {
+          updateState(providerId, { status: "done", message: providerResult.message });
+          return;
+        }
+        if (providerResult?.status === "failed") {
+          updateState(providerId, { status: "error", message: providerResult.message });
+          return;
+        }
+        const jobId =
+          providerResult?.status === "started" || providerResult?.status === "alreadyQueued"
+            ? providerResult.jobId
+            : result.jobId;
+        if (!jobId) return;
         await doPollSyncJob(jobId, [providerId]);
       } catch (err: unknown) {
         updateState(providerId, {
@@ -96,23 +114,28 @@ export function DataSourcesPanel() {
         const result = await syncMutation.mutateAsync({
           sinceDays: fullSync ? undefined : 7,
         });
-        const providerJobMap = new Map(
-          (result.providerJobs ?? []).map((job) => [job.providerId, job.jobId] as const),
+        const providerResults = result.providerResults;
+        await Promise.all(
+          ids.map(async (providerId) => {
+            const providerResult = providerResults.find((entry) => entry.providerId === providerId);
+            if (providerResult?.status === "skippedCooldown") {
+              updateState(providerId, { status: "done", message: providerResult.message });
+              return;
+            }
+            if (providerResult?.status === "failed") {
+              updateState(providerId, { status: "error", message: providerResult.message });
+              return;
+            }
+            if (
+              providerResult?.status === "started" ||
+              providerResult?.status === "alreadyQueued"
+            ) {
+              await doPollSyncJob(providerResult.jobId, [providerId]);
+              return;
+            }
+            updateState(providerId, { status: "error", message: "Failed to start sync job" });
+          }),
         );
-        if (providerJobMap.size > 0) {
-          await Promise.all(
-            ids.map(async (providerId) => {
-              const jobId = providerJobMap.get(providerId);
-              if (!jobId) {
-                updateState(providerId, { status: "error", message: "Failed to start sync job" });
-                return;
-              }
-              await doPollSyncJob(jobId, [providerId]);
-            }),
-          );
-        } else {
-          await doPollSyncJob(result.jobId, ids);
-        }
       } catch (err: unknown) {
         for (const p of enabled) {
           updateState(p.id, {
@@ -343,6 +366,12 @@ export function DataSourcesPanel() {
           </div>
         )}
       </div>
+
+      <DataReadinessBanner
+        data={dataHealth.data}
+        error={dataHealth.error}
+        loading={dataHealth.isLoading}
+      />
 
       {providers.isLoading ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

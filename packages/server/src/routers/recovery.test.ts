@@ -417,6 +417,7 @@ describe("recoveryRouter.workloadRatio", () => {
     expect(queryText).toContain("analytics.daily_strain AS strain FINAL");
     expect(queryText).toContain("toDate(toTimeZone(toDateTime(strain.date), {timezone:String}))");
     expect(queryText).not.toContain("analytics.activity_summary");
+    expect(vi.mocked(sensorStore.query).mock.calls[0]?.[3]).toEqual({ priority: "dashboard" });
   });
 
   it("passes the user timezone when reading strain read-model dates", async () => {
@@ -767,6 +768,7 @@ describe("recoveryRouter.readinessScore", () => {
     expect(queryText).not.toContain("accessEndDateExclusive");
     expect(queryParams).not.toHaveProperty("accessStartDate");
     expect(queryParams).not.toHaveProperty("accessEndDateExclusive");
+    expect(vi.mocked(sensorStore.query).mock.calls[0]?.[3]).toEqual({ priority: "dashboard" });
   });
 
   it("computes readiness score from HRV, RHR, sleep efficiency, and respiratory rate", async () => {
@@ -1402,6 +1404,7 @@ describe("recoveryRouter.strainTarget", () => {
     expect(queryText).toContain("toString(strain.date) AS date");
     expect(queryText).toContain("strain.date >= toDate({windowStart:String})");
     expect(queryText).not.toContain("analytics.activity_summary");
+    expect(vi.mocked(sensorStore.query).mock.calls[1]?.[3]).toEqual({ priority: "dashboard" });
   });
 
   it("reads readiness from the daily recovery summary without Postgres metric assembly", async () => {
@@ -1498,6 +1501,7 @@ describe("recoveryRouter.strainTarget", () => {
       accessStartDate: "2026-03-10",
       accessEndDateExclusive: "2026-03-20",
     });
+    expect(vi.mocked(sensorStore.query).mock.calls[0]?.[3]).toEqual({ priority: "dashboard" });
 
     const queryText = String(vi.mocked(sensorStore.query).mock.calls[1]?.[1]);
     const queryParams = vi.mocked(sensorStore.query).mock.calls[1]?.[2];
@@ -1507,6 +1511,7 @@ describe("recoveryRouter.strainTarget", () => {
       accessStartDate: "2026-03-10",
       accessEndDateExclusive: "2026-03-20",
     });
+    expect(vi.mocked(sensorStore.query).mock.calls[1]?.[3]).toEqual({ priority: "dashboard" });
   });
 
   it("computes readiness from daily recovery component scores", async () => {

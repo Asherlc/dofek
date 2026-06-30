@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
-import type { ActivitySensorStore } from "./activity-repository.ts";
+import type { ActivitySensorQueryOptions, ActivitySensorStore } from "./activity-repository.ts";
 
 const nullableNumberSchema = z.preprocess(
   (value) => (value === undefined ? null : value),
@@ -45,6 +45,7 @@ export interface FetchSleepNightsInput {
   accessWindow?: AccessWindow;
   order?: "asc" | "desc";
   limit?: number;
+  queryOptions?: ActivitySensorQueryOptions;
 }
 
 const dailySleepPerformanceRowSchema = z.object({
@@ -68,6 +69,7 @@ export interface FetchDailySleepPerformanceNightsInput {
   endDate: string;
   days: number;
   accessWindow?: AccessWindow;
+  queryOptions?: ActivitySensorQueryOptions;
 }
 
 function accessWindowClause(accessWindow: AccessWindow | undefined): string {
@@ -146,6 +148,7 @@ export async function fetchSleepNights(
       ...(input.limit != null ? { limit: input.limit } : {}),
       ...accessWindowParams(input.accessWindow),
     },
+    input.queryOptions,
   );
   return rows.map((row) => clickHouseSleepNightSchema.parse(row));
 }
@@ -178,6 +181,7 @@ export async function fetchDailySleepPerformanceNights(
       days: input.days,
       ...accessWindowParams(input.accessWindow),
     },
+    input.queryOptions,
   );
   return rows.map((row) => dailySleepPerformanceRowSchema.parse(row));
 }

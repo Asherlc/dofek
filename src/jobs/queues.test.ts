@@ -137,6 +137,22 @@ describe("queues", () => {
     });
   });
 
+  describe("getImportQueue", () => {
+    it("reuses one import queue instance", async () => {
+      process.env.REDIS_URL = "redis://localhost:6379";
+      const { getImportQueue, IMPORT_QUEUE } = await import("./queues.ts");
+
+      const first = getImportQueue();
+      const second = getImportQueue();
+
+      expect(first).toBe(second);
+      expect(MockQueue).toHaveBeenCalledTimes(1);
+      expect(MockQueue).toHaveBeenCalledWith(IMPORT_QUEUE, {
+        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
+      });
+    });
+  });
+
   describe("providerSyncQueueName", () => {
     it("returns sync-{providerId} format", async () => {
       const { providerSyncQueueName } = await import("./queues.ts");

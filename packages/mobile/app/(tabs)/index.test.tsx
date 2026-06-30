@@ -8,6 +8,7 @@ const mockDashboardRefetch = vi.fn(() => Promise.resolve());
 const mockAnomalyRefetch = vi.fn(() => Promise.resolve());
 const mockDashboardUseQuery = vi.fn();
 const mockAnomalyUseQuery = vi.fn();
+const mockDataHealthUseQuery = vi.fn();
 const mockInvalidate = vi.fn();
 const mockUseRefresh = vi.fn((_options: unknown) => ({
   refreshing: false,
@@ -17,6 +18,8 @@ let mockDashboardLoading = false;
 let mockDashboardData: unknown;
 let mockDashboardError: Error | null = null;
 let mockAnomalyData: unknown;
+let mockDataHealthData: unknown;
+const mockDataHealthRefetch = vi.fn(() => Promise.resolve());
 
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: mockRouterPush }),
@@ -53,6 +56,18 @@ vi.mock("../../lib/trpc", () => ({
       },
     },
     sync: {
+      dataHealth: {
+        useQuery: (...parameters: unknown[]) => {
+          mockDataHealthUseQuery(...parameters);
+          return {
+            data: mockDataHealthData,
+            isLoading: false,
+            isError: false,
+            error: null,
+            refetch: mockDataHealthRefetch,
+          };
+        },
+      },
       triggerSync: {
         useMutation: () => ({
           mutate: vi.fn(),
@@ -158,11 +173,44 @@ describe("TodayScreen independent loading states", () => {
       latestDate: "2026-03-21",
     };
     mockAnomalyData = undefined;
+    mockDataHealthData = undefined;
     mockDashboardError = null;
     mockRouterPush.mockClear();
     mockDashboardRefetch.mockClear();
     mockInvalidate.mockClear();
+    mockDataHealthUseQuery.mockClear();
+    mockDataHealthRefetch.mockClear();
     mockUseRefresh.mockClear();
+  });
+
+  it("shows data readiness when dashboard summaries are stale", async () => {
+    mockDataHealthData = {
+      overallStatus: "stale",
+      generatedAt: "2026-06-30T08:00:00.000Z",
+      datasets: [
+        {
+          key: "dailyMetrics",
+          label: "Daily metrics",
+          rawRows: 42,
+          latestRawAt: "2026-06-30T07:00:00.000Z",
+          latestReadModelAt: "2026-06-30T05:00:00.000Z",
+          cdcLagSeconds: 7200,
+          readModelLagSeconds: 7200,
+          status: "stale",
+          message: "Daily metrics data is synced, but dashboard summaries are still catching up.",
+        },
+      ],
+    };
+
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
+
+    expect(screen.getByText("Dashboard summaries are catching up")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Daily metrics data is synced, but dashboard summaries are still catching up.",
+      ),
+    ).toBeTruthy();
   });
 
   afterEach(() => {
@@ -240,6 +288,13 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.getAllByText("Recovery").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Strain").length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByTestId("skeleton-circle")).toBeNull();
+  });
+
+  it("keeps chart tooltip buttons outside dashboard ring navigation buttons", async () => {
+    const { default: TodayScreen } = await import("./index");
+    const { container } = render(<TodayScreen />);
+
+    expect(container.querySelector("button button")).toBeNull();
   });
 
   it("does not enable anomaly detection during the initial dashboard load", async () => {

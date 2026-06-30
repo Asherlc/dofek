@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { collectSqlText } from "./test-helpers.ts";
 import { TrainingRepository } from "./training-repository.ts";
 
 // ---------------------------------------------------------------------------
@@ -8,22 +9,6 @@ import { TrainingRepository } from "./training-repository.ts";
 // ---------------------------------------------------------------------------
 
 describe("TrainingRepository", () => {
-  function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null;
-  }
-
-  function collectSqlText(value: unknown): string {
-    if (typeof value === "string") return value;
-    if (!isRecord(value)) return "";
-    if (Array.isArray(value.value)) {
-      return value.value.map((chunk) => (typeof chunk === "string" ? chunk : "")).join("");
-    }
-    if (Array.isArray(value.queryChunks)) {
-      return value.queryChunks.map((chunk) => collectSqlText(chunk)).join("");
-    }
-    return "";
-  }
-
   function executedSql(execute: ReturnType<typeof vi.fn>, callIndex = 0): string {
     return collectSqlText(execute.mock.calls[callIndex]?.[0]);
   }

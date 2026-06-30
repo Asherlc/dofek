@@ -149,7 +149,8 @@ function AuthGate() {
               operation.type === "query" &&
               (operation.path === "mobileDashboard.dashboard" ||
                 operation.path === "mobileDashboard.recovery" ||
-                operation.path === "mobileDashboard.training"),
+                operation.path === "mobileDashboard.training" ||
+                operation.path === "sync.dataHealth"),
             true: dashboardQueryLink,
             false: batchLink,
           }),

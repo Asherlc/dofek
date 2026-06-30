@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { DataReadinessBanner } from "../../components/DataReadinessBanner";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { useAuth } from "../../lib/auth-context";
 import { syncDofekFoodToHealthKit } from "../../lib/health-kit-food-writeback";
@@ -78,6 +79,7 @@ export default function ProvidersScreen() {
   const providers = trpc.sync.providers.useQuery();
   const stats = trpc.sync.providerStats.useQuery();
   const logs = trpc.sync.logs.useQuery({ limit: 50 });
+  const dataHealth = trpc.sync.dataHealth.useQuery();
   const syncMutation = trpc.sync.triggerSync.useMutation();
   const trpcUtils = trpc.useUtils();
   const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, { staleTime: 0 });
@@ -360,10 +362,33 @@ export default function ProvidersScreen() {
       setSyncingProviders((prev) => new Set(prev).add(providerId));
       setAnySyncing(true);
       try {
-        const { jobId } = await syncMutation.mutateAsync({
+        const result = await syncMutation.mutateAsync({
           providerId,
           sinceDays: fullSync ? undefined : 7,
         });
+        const providerResult = result.providerResults?.find(
+          (entry) => entry.providerId === providerId,
+        );
+        if (providerResult?.status === "skippedCooldown" || providerResult?.status === "failed") {
+          setSyncingProviders((prev) => {
+            const next = new Set(prev);
+            next.delete(providerId);
+            return next;
+          });
+          setSyncProgress((prev) => ({
+            ...prev,
+            [providerId]: { message: providerResult.message },
+          }));
+          if (pollingJobIds.current.size === 0) {
+            setAnySyncing(false);
+          }
+          return;
+        }
+        const jobId =
+          providerResult?.status === "started" || providerResult?.status === "alreadyQueued"
+            ? providerResult.jobId
+            : result.jobId;
+        if (!jobId) return;
         await pollJob(jobId, [providerId]);
       } catch (error: unknown) {
         captureException(error, { context: "sync-provider" });
@@ -380,7 +405,9 @@ export default function ProvidersScreen() {
 
   const handleSyncAll = useCallback(
     async (fullSync = false) => {
-      const enabled = (providers.data ?? []).filter((p) => p.authorized && !p.importOnly);
+      const enabled = (providers.data ?? []).filter(
+        (provider) => provider.authorized && !provider.importOnly && !provider.pushOnly,
+      );
       const ids = enabled.map((p) => p.id);
       if (ids.length === 0) return;
       setSyncingProviders(new Set(ids));
@@ -389,10 +416,53 @@ export default function ProvidersScreen() {
         const result = await syncMutation.mutateAsync({
           sinceDays: fullSync ? undefined : 7,
         });
+        const providerResults = result.providerResults ?? [];
         const providerJobMap = new Map(
           (result.providerJobs ?? []).map((job) => [job.providerId, job.jobId] as const),
         );
-        if (providerJobMap.size > 0) {
+        if (providerResults.length > 0) {
+          const hasPollableProviderResult = providerResults.some(
+            (providerResult) =>
+              providerResult.status === "started" || providerResult.status === "alreadyQueued",
+          );
+          await Promise.all(
+            ids.map(async (providerId) => {
+              const providerResult = providerResults.find(
+                (entry) => entry.providerId === providerId,
+              );
+              if (
+                providerResult?.status === "skippedCooldown" ||
+                providerResult?.status === "failed"
+              ) {
+                setSyncingProviders((prev) => {
+                  const next = new Set(prev);
+                  next.delete(providerId);
+                  return next;
+                });
+                setSyncProgress((prev) => ({
+                  ...prev,
+                  [providerId]: { message: providerResult.message },
+                }));
+                return;
+              }
+              if (
+                providerResult?.status === "started" ||
+                providerResult?.status === "alreadyQueued"
+              ) {
+                await pollJob(providerResult.jobId, [providerId]);
+                return;
+              }
+              setSyncingProviders((prev) => {
+                const next = new Set(prev);
+                next.delete(providerId);
+                return next;
+              });
+            }),
+          );
+          if (!hasPollableProviderResult) {
+            setAnySyncing(false);
+          }
+        } else if (providerJobMap.size > 0) {
           await Promise.all(
             ids.map(async (providerId) => {
               const jobId = providerJobMap.get(providerId);
@@ -407,7 +477,7 @@ export default function ProvidersScreen() {
               await pollJob(jobId, [providerId]);
             }),
           );
-        } else {
+        } else if (result.jobId) {
           await pollJob(result.jobId, ids);
         }
       } catch (error: unknown) {
@@ -449,11 +519,12 @@ export default function ProvidersScreen() {
   const providerList: Provider[] = (providers.error ? [] : (providers.data ?? [])).map((p) => ({
     id: p.id,
     label: p.name,
-    enabled: p.authorized && !p.importOnly,
+    enabled: p.authorized && !p.importOnly && !p.pushOnly,
     authStatus: p.needsReauth ? "expired" : p.authorized ? "connected" : "not_connected",
     authType: p.authType,
     lastSyncAt: p.lastSyncedAt,
     importOnly: p.importOnly,
+    pushOnly: p.pushOnly,
   }));
   const statsMap: Record<string, ProviderStats> = {};
   for (const s of stats.error ? [] : (stats.data ?? [])) {
@@ -552,6 +623,11 @@ export default function ProvidersScreen() {
       </View>
 
       {/* Data Sources */}
+      <DataReadinessBanner
+        data={dataHealth.data}
+        error={dataHealth.error}
+        loading={dataHealth.isLoading}
+      />
       <Text style={styles.sectionTitle}>Data Sources</Text>
       <ProviderCard
         provider={{
@@ -562,6 +638,7 @@ export default function ProvidersScreen() {
           authType: "none",
           lastSyncAt: null,
           importOnly: false,
+          pushOnly: false,
         }}
         stats={statsMap.apple_health}
         syncing={healthKitSyncing}

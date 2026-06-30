@@ -39,6 +39,7 @@ vi.mock("./routers/intervals.ts", () => ({ intervalsRouter: mockRouter }));
 vi.mock("./routers/journal.ts", () => ({ journalRouter: mockRouter }));
 vi.mock("./routers/life-events.ts", () => ({ lifeEventsRouter: mockRouter }));
 vi.mock("./routers/menstrual-cycle.ts", () => ({ menstrualCycleRouter: mockRouter }));
+vi.mock("./routers/medication-dose-events.ts", () => ({ medicationDoseEventsRouter: mockRouter }));
 vi.mock("./routers/mcp.ts", () => ({ mcpRouter: mockRouter }));
 vi.mock("./routers/monthly-report.ts", () => ({ monthlyReportRouter: mockRouter }));
 vi.mock("./routers/nutrition.ts", () => ({ nutritionRouter: mockRouter }));
@@ -155,6 +156,7 @@ describe("appRouter", () => {
       "stress",
       "healthspan",
       "menstrualCycle",
+      "medicationDoseEvents",
       "mcp",
       "mobileDashboard",
       "monthlyReport",

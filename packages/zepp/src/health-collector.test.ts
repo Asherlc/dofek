@@ -104,12 +104,16 @@ function makeSensors(overrides?: Partial<SensorConstructors>): SensorConstructor
   };
 }
 
+function formatLocalDate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 describe("collectHealthData", () => {
   it("collects all available sensor data", () => {
     const result = collectHealthData(makeSensors());
 
     expect(result.collectedAt).toBeGreaterThan(0);
-    expect(result.date).toBe(new Date().toISOString().slice(0, 10));
+    expect(result.date).toBe(formatLocalDate(new Date(result.collectedAt)));
     expect(result.steps).toBe(8432);
     expect(result.calories).toBe(420);
     expect(result.distance).toBe(6500);

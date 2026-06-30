@@ -1,4 +1,4 @@
-import type { Job, JobsOptions } from "bullmq";
+import type { JobsOptions } from "bullmq";
 import {
   type ProviderRateLimitCooldown,
   providerRateLimitCooldownJobId,
@@ -6,7 +6,7 @@ import {
   providerRateLimitDelayMs,
 } from "./provider-rate-limit-cooldown.ts";
 import { getProviderSyncQueue, SYNC_JOB_RETRY_OPTIONS, type SyncJobData } from "./queues.ts";
-import { enqueueSyncJobWithRequestDedup } from "./sync-request-job.ts";
+import { type EnqueuedSyncJob, enqueueSyncJobWithRequestDedup } from "./sync-request-job.ts";
 
 export type EnqueueSyncJobOptions = {
   /** When active, skip enqueue instead of scheduling a duplicate delayed job. */
@@ -30,7 +30,7 @@ export async function enqueueSyncJob(
   providerId: string,
   jobData: SyncJobData,
   options?: EnqueueSyncJobOptions,
-): Promise<Job<SyncJobData> | null> {
+): Promise<EnqueuedSyncJob | null> {
   const cooldown = await providerRateLimitCooldownStore.getActive(providerId, jobData.userId);
   if (cooldown && options?.skipWhenRateLimited) {
     return null;

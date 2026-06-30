@@ -18,6 +18,7 @@ import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { type ActivityMapLocation, ActivityMapTile } from "../components/ActivityMapTile.tsx";
 import { ActivityTypeIcon } from "../components/ActivityTypeIcon.tsx";
+import { DataReadinessBanner } from "../components/DataReadinessBanner.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { trpc } from "../lib/trpc.ts";
@@ -54,6 +55,7 @@ export function ActivitiesPage() {
   const overviewQuery = trpc.calendar.activityOverview.useQuery(queryInput, {
     placeholderData: (previousData) => previousData,
   });
+  const dataHealth = trpc.sync.dataHealth.useQuery();
   const bulkDelete = trpc.activity.bulkDelete.useMutation({
     onSuccess: async () => {
       await Promise.all([
@@ -166,6 +168,11 @@ export function ActivitiesPage() {
 
   return (
     <PageLayout title="Activities" subtitle={subtitle}>
+      <DataReadinessBanner
+        data={dataHealth.data}
+        error={dataHealth.error}
+        loading={dataHealth.isLoading}
+      />
       <div className="space-y-4">
         <ActivityControls
           activityTypes={overviewQuery.data?.activityTypes ?? []}

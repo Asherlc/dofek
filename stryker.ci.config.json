@@ -6,8 +6,7 @@
     "configFile": "vitest.config.mutation.ts"
   },
   "ignoreStatic": true,
-  "incremental": true,
-  "incrementalFile": "reports/stryker-incremental.json",
+  "incremental": false,
   "mutate": [
     "src/**/*.ts",
     "packages/format/src/**/*.ts",

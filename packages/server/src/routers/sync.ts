@@ -5,7 +5,9 @@ import type { Job, Queue } from "bullmq";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
 import {
   createSyncQueue,
+  getImportQueue,
   getProviderSyncQueue,
+  IMPORT_QUEUE,
   providerSyncQueueName,
   type SyncJobData,
 } from "dofek/jobs/queues";
@@ -13,18 +15,20 @@ import { syncWindowFromTriggerInput, syncWindowToJobData } from "dofek/jobs/sync
 import { queryCache } from "dofek/lib/cache";
 import { ProviderModel } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";
-import { sql as sqlTag } from "drizzle-orm";
 import { z } from "zod";
 import { hasCurrentProviderAuthFailure } from "../lib/provider-auth-state.ts";
+import { sanitizeErrorMessage } from "../lib/sanitize-error.ts";
 import { startWorker } from "../lib/start-worker.ts";
-import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import {
+  type DataHealthSensorStore,
+  dataHealthDatasets,
   type ProviderStatRow,
   type PushProviderLastReceived,
   SyncRepository,
 } from "../repositories/sync-repository.ts";
 import {
+  adminProcedure,
   CacheTTL,
   cachedProtectedQuery,
   protectedProcedure,
@@ -138,11 +142,188 @@ const syncJobDataSchema = z.object({
   checkpoint: z.unknown().optional(),
 });
 
-import { sanitizeErrorMessage } from "../lib/sanitize-error.ts";
+const providerJobOutputSchema = z.object({
+  providerId: z.string(),
+  jobId: z.string(),
+  queueName: z.string(),
+});
+
+const providerSyncResultSchema = z.discriminatedUnion("status", [
+  z.object({
+    providerId: z.string(),
+    status: z.literal("started"),
+    jobId: z.string(),
+    queueName: z.string(),
+  }),
+  z.object({
+    providerId: z.string(),
+    status: z.literal("skippedCooldown"),
+    message: z.string(),
+  }),
+  z.object({
+    providerId: z.string(),
+    status: z.literal("alreadyQueued"),
+    jobId: z.string(),
+    queueName: z.string(),
+  }),
+  z.object({
+    providerId: z.string(),
+    status: z.literal("failed"),
+    message: z.string(),
+  }),
+]);
+
+const triggerSyncOutputSchema = z.object({
+  jobId: z.string().optional(),
+  jobIds: z.array(z.string()),
+  providerJobs: z.array(providerJobOutputSchema),
+  providerResults: z.array(providerSyncResultSchema),
+});
+
+type ProviderSyncResult = z.infer<typeof providerSyncResultSchema>;
+
+const queueBackpressureOutputSchema = z.array(
+  z.object({
+    queueName: z.string(),
+    providerId: z.string().optional(),
+    waiting: z.number().int().nonnegative(),
+    active: z.number().int().nonnegative(),
+    delayed: z.number().int().nonnegative(),
+    failed: z.number().int().nonnegative(),
+  }),
+);
+
+const queueBackpressureStates = ["waiting", "active", "delayed", "failed"] as const;
+
+const dataReadinessStatusSchema = z.enum(["healthy", "syncing", "stale", "missing", "blocked"]);
+
+const dataHealthOutputSchema = z.object({
+  overallStatus: dataReadinessStatusSchema,
+  generatedAt: z.string(),
+  datasets: z.array(
+    z.object({
+      key: z.enum(["dailyMetrics", "sleep", "activity"]),
+      label: z.string(),
+      rawRows: z.number(),
+      latestRawAt: z.string().nullable(),
+      latestReadModelAt: z.string().nullable(),
+      cdcLagSeconds: z.number().nullable(),
+      readModelLagSeconds: z.number().nullable(),
+      status: dataReadinessStatusSchema,
+      message: z.string(),
+    }),
+  ),
+});
+
+function hasDataHealthSensorStore(value: unknown): value is DataHealthSensorStore {
+  if (typeof value !== "object" || value === null) return false;
+  return "query" in value && typeof value.query === "function";
+}
+
+function timestampToIsoString(value: string | Date | null): string | null {
+  if (value === null) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+}
+
+function secondsBetween(laterIso: string | null, earlierIso: string | null): number | null {
+  if (laterIso === null || earlierIso === null) return null;
+  const later = new Date(laterIso).getTime();
+  const earlier = new Date(earlierIso).getTime();
+  if (Number.isNaN(later) || Number.isNaN(earlier)) return null;
+  return Math.max(0, Math.round((later - earlier) / 1000));
+}
+
+function dateGrainSecondsBetween(
+  laterIso: string | null,
+  earlierIso: string | null,
+): number | null {
+  if (laterIso === null || earlierIso === null) return null;
+  const laterDate = timestampToIsoString(laterIso)?.slice(0, 10);
+  const earlierDate = timestampToIsoString(earlierIso)?.slice(0, 10);
+  if (laterDate === undefined || earlierDate === undefined) return null;
+  return secondsBetween(`${laterDate}T00:00:00.000Z`, `${earlierDate}T00:00:00.000Z`);
+}
+
+function datasetStatus(input: {
+  rawRows: number;
+  latestReadModelAt: string | null;
+  readModelLagSeconds: number | null;
+}): z.infer<typeof dataReadinessStatusSchema> {
+  if (input.rawRows === 0) return "missing";
+  if (input.latestReadModelAt === null) return "blocked";
+  if (input.readModelLagSeconds !== null && input.readModelLagSeconds > 3600) return "stale";
+  return "healthy";
+}
+
+function datasetMessage(input: {
+  label: string;
+  status: z.infer<typeof dataReadinessStatusSchema>;
+}): string {
+  switch (input.status) {
+    case "healthy":
+      return `${input.label} summaries are current.`;
+    case "syncing":
+      return `${input.label} data is syncing now.`;
+    case "stale":
+      return `${input.label} data is synced, but dashboard summaries are still catching up.`;
+    case "missing":
+      return `No ${input.label.toLowerCase()} data has been synced yet.`;
+    case "blocked":
+      return `${input.label} data is available, but ClickHouse mirrors are not current.`;
+  }
+}
+
+function overallDataHealthStatus(
+  statuses: Array<z.infer<typeof dataReadinessStatusSchema>>,
+  hasActiveSync: boolean,
+): z.infer<typeof dataReadinessStatusSchema> {
+  if (hasActiveSync) return "syncing";
+  if (statuses.includes("blocked")) return "blocked";
+  if (statuses.includes("stale")) return "stale";
+  if (statuses.includes("missing")) return "missing";
+  return "healthy";
+}
+
+async function hasActiveSyncForUser(userId: string): Promise<boolean> {
+  try {
+    const activeStates: Array<"waiting" | "active" | "delayed"> = ["waiting", "active", "delayed"];
+    const providerIds = new Set([
+      ...getAllConfiguredProviderIds(),
+      ...getAllProviders().map((provider) => provider.id),
+    ]);
+    const [providerJobGroups, importJobs] = await Promise.all([
+      Promise.all(
+        [...providerIds].map((providerId) =>
+          getProviderSyncQueue(providerId).getJobs(activeStates),
+        ),
+      ),
+      getImportQueue().getJobs(activeStates),
+    ]);
+    return [...providerJobGroups.flat(), ...importJobs].some((job) => {
+      const data = job.data;
+      return (
+        typeof data === "object" && data !== null && "userId" in data && data.userId === userId
+      );
+    });
+  } catch (error) {
+    captureException(error);
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Unable to check sync readiness because the queue service is unavailable.",
+    });
+  }
+}
+
 export { sanitizeErrorMessage };
 
 /** @deprecated Legacy queue for syncStatus/activeSyncs backward compat. */
 const legacySyncQueue = createSyncQueue();
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export const syncRouter = router({
   /** Public list of configured providers that have a user-facing connection or import flow. */
@@ -249,73 +430,138 @@ export const syncRouter = router({
     }),
 
   /** Trigger sync — enqueues a BullMQ job, returns immediately with jobId */
-  triggerSync: protectedProcedure.input(triggerSyncInput).mutation(async ({ ctx, input }) => {
-    await ensureProvidersRegistered();
-    const repo = new SyncRepository(ctx.db, ctx.userId);
+  triggerSync: protectedProcedure
+    .input(triggerSyncInput)
+    .output(triggerSyncOutputSchema)
+    .mutation(async ({ ctx, input }) => {
+      await ensureProvidersRegistered();
+      const repo = new SyncRepository(ctx.db, ctx.userId);
 
-    const providerIds: string[] = [];
+      const providerIds: string[] = [];
 
-    // Validate provider exists and is configured before enqueuing.
-    // For "sync all", fan out into one BullMQ job per connected provider.
-    if (input.providerId) {
-      const provider = getAllProviders().find((p) => p.id === input.providerId);
-      if (!provider) throw new Error(`Unknown provider: ${input.providerId}`);
-      const validation = provider.validate();
-      if (validation) throw new Error(`Provider not configured: ${validation}`);
-      providerIds.push(provider.id);
-    } else {
-      // Check which providers have tokens to determine connectivity
-      const allTokens = await repo.getConnectedProviderIds();
-      const tokenSet = new Set(allTokens.map((r) => r.providerId));
+      // Validate provider exists and is configured before enqueuing.
+      // For "sync all", fan out into one BullMQ job per connected provider.
+      if (input.providerId) {
+        const provider = getAllProviders().find(
+          (registeredProvider) => registeredProvider.id === input.providerId,
+        );
+        if (!provider) throw new Error(`Unknown provider: ${input.providerId}`);
+        const validation = provider.validate();
+        if (validation) throw new Error(`Provider not configured: ${validation}`);
+        providerIds.push(provider.id);
+      } else {
+        // Check which providers have tokens to determine connectivity
+        const allTokens = await repo.getConnectedProviderIds();
+        const tokenSet = new Set(allTokens.map((row) => row.providerId));
 
-      for (const provider of getAllProviders()) {
-        if (provider.validate() !== null) continue;
-        const model = new ProviderModel(provider, tokenSet, undefined, CUSTOM_AUTH_PROVIDERS);
-        if (model.importOnly || !model.isConnected) continue;
-        providerIds.push(model.id);
+        for (const provider of getAllProviders()) {
+          if (provider.validate() !== null) continue;
+          const model = new ProviderModel(provider, tokenSet, undefined, CUSTOM_AUTH_PROVIDERS);
+          if (model.importOnly || !model.isConnected) continue;
+          providerIds.push(model.id);
+        }
+
+        if (providerIds.length === 0) throw new Error("No configured providers available for sync");
       }
 
-      if (providerIds.length === 0) throw new Error("No configured providers available for sync");
-    }
+      const syncWindow = syncWindowFromTriggerInput({
+        sinceDays: input.sinceDays,
+        sinceDate: input.sinceDate,
+        untilDate: input.untilDate,
+      });
 
-    const syncWindow = syncWindowFromTriggerInput({
-      sinceDays: input.sinceDays,
-      sinceDate: input.sinceDate,
-      untilDate: input.untilDate,
-    });
+      const providerResults = await Promise.all(
+        providerIds.map(async (providerId): Promise<ProviderSyncResult> => {
+          try {
+            const job = await enqueueSyncJob(
+              providerId,
+              {
+                providerId,
+                userId: ctx.userId,
+                ...syncWindowToJobData(syncWindow, input.sinceDays),
+              },
+              { skipWhenRateLimited: true },
+            );
+            if (!job) {
+              return {
+                providerId,
+                status: "skippedCooldown",
+                message: "Provider sync skipped: rate-limit cooldown active",
+              };
+            }
+            const jobId = toJobId(job.id, providerId);
+            return {
+              providerId,
+              status: job.alreadyQueued ? "alreadyQueued" : "started",
+              jobId,
+              queueName: providerSyncQueueName(providerId),
+            };
+          } catch (error) {
+            captureException(error);
+            return {
+              providerId,
+              status: "failed",
+              message: errorMessage(error),
+            };
+          }
+        }),
+      );
 
-    const providerJobs = await Promise.all(
-      providerIds.map(async (providerId) => {
-        const job = await enqueueSyncJob(
-          providerId,
-          {
-            providerId,
-            userId: ctx.userId,
-            ...syncWindowToJobData(syncWindow, input.sinceDays),
-          },
-          { skipWhenRateLimited: true },
-        );
-        if (!job) {
-          throw new TRPCError({
-            code: "TOO_MANY_REQUESTS",
-            message: `Provider ${providerId} sync skipped: rate-limit cooldown active`,
-          });
+      const providerJobs = providerResults.flatMap((providerResult) => {
+        if (providerResult.status !== "started" && providerResult.status !== "alreadyQueued") {
+          return [];
         }
-        const jobId = toJobId(job.id, providerId);
+        return [
+          {
+            providerId: providerResult.providerId,
+            jobId: providerResult.jobId,
+            queueName: providerResult.queueName,
+          },
+        ];
+      });
+
+      if (providerJobs.length > 0) {
+        startWorker();
+      }
+      return {
+        jobId: providerJobs[0]?.jobId,
+        jobIds: providerJobs.map((job) => job.jobId),
+        providerJobs,
+        providerResults,
+      };
+    }),
+
+  queueBackpressure: adminProcedure.output(queueBackpressureOutputSchema).query(async () => {
+    const providerIds = new Set([
+      ...getAllConfiguredProviderIds(),
+      ...getAllProviders().map((p) => p.id),
+    ]);
+    const providerBackpressure = await Promise.all(
+      [...providerIds].map(async (providerId) => {
+        const counts = await getProviderSyncQueue(providerId).getJobCounts(
+          ...queueBackpressureStates,
+        );
         return {
-          providerId,
-          jobId,
           queueName: providerSyncQueueName(providerId),
+          providerId,
+          waiting: counts.waiting ?? 0,
+          active: counts.active ?? 0,
+          delayed: counts.delayed ?? 0,
+          failed: counts.failed ?? 0,
         };
       }),
     );
-
-    startWorker();
-    return {
-      jobId: providerJobs[0]?.jobId ?? `job-${Date.now()}`,
-      jobIds: providerJobs.map((job) => job.jobId),
-      providerJobs,
-    };
+    const importCounts = await getImportQueue().getJobCounts(...queueBackpressureStates);
+    return [
+      ...providerBackpressure,
+      {
+        queueName: IMPORT_QUEUE,
+        waiting: importCounts.waiting ?? 0,
+        active: importCounts.active ?? 0,
+        delayed: importCounts.delayed ?? 0,
+        failed: importCounts.failed ?? 0,
+      },
+    ];
   }),
 
   /** Poll sync job status — reads from BullMQ */
@@ -387,8 +633,12 @@ export const syncRouter = router({
     let jobs: Job<SyncJobData>[];
     try {
       const states: Array<"active" | "waiting" | "delayed"> = ["active", "waiting", "delayed"];
+      const providerIds = new Set([
+        ...getAllConfiguredProviderIds(),
+        ...getAllProviders().map((p) => p.id),
+      ]);
       const jobArrays: Job<SyncJobData>[][] = await Promise.all([
-        ...[...getAllConfiguredProviderIds()].map((id) => getProviderSyncQueue(id).getJobs(states)),
+        ...[...providerIds].map((id) => getProviderSyncQueue(id).getJobs(states)),
         legacySyncQueue.getJobs(states),
       ]);
       jobs = jobArrays.flat();
@@ -463,37 +713,48 @@ export const syncRouter = router({
       return repo.getProviderStats();
     }),
 
-  /** Diagnostic: row counts for primary user-owned raw tables. */
-  dataHealth: protectedProcedure.query(async ({ ctx }) => {
-    const countSchema = z.object({ count: z.coerce.number() });
-
-    const healthChecks = [
-      { key: "dailyMetrics", table: "fitness.daily_metrics", predicate: sqlTag`` },
-      { key: "sleep", table: "fitness.sleep_session", predicate: sqlTag`` },
-      {
-        key: "activity",
-        table: "fitness.activity",
-        predicate: sqlTag`AND provider_absent_at IS NULL AND deleted_at IS NULL`,
-      },
-    ] as const;
-
-    const counts = await Promise.all(
-      healthChecks.map(({ table, predicate }) =>
-        executeWithSchema(
-          ctx.db,
-          countSchema,
-          sqlTag`SELECT count(*)::int AS count FROM ${sqlTag.raw(table)}
-                 WHERE user_id = ${ctx.userId}
-                 ${predicate}`,
-        ),
-      ),
+  /** User-facing freshness/readiness state for primary dashboard datasets. */
+  dataHealth: protectedProcedure.output(dataHealthOutputSchema).query(async ({ ctx }) => {
+    const sensorStore = hasDataHealthSensorStore(ctx.sensorStore) ? ctx.sensorStore : null;
+    const repo = new SyncRepository(ctx.db, ctx.userId);
+    const freshnessRows = await repo.getDataHealthFreshness(
+      dataHealthDatasets,
+      sensorStore ?? undefined,
+      ctx.accessWindow,
+      ctx.timezone,
     );
 
-    const health: Record<string, number> = {};
-    for (const [index, { key }] of healthChecks.entries()) {
-      health[key] = counts[index]?.[0]?.count ?? 0;
-    }
+    const datasets = dataHealthDatasets.map((dataset, index) => {
+      const freshnessRow = freshnessRows[index];
+      const rawRows = freshnessRow?.rawRows ?? 0;
+      const latestRawAt = timestampToIsoString(freshnessRow?.latestRawAt ?? null);
+      const latestReadModelAt = timestampToIsoString(freshnessRow?.latestReadModelAt ?? null);
+      const readModelLagSeconds =
+        dataset.freshnessComparisonGrain === "timestamp"
+          ? secondsBetween(latestRawAt, latestReadModelAt)
+          : dateGrainSecondsBetween(latestRawAt, latestReadModelAt);
+      const status = datasetStatus({ rawRows, latestReadModelAt, readModelLagSeconds });
+      return {
+        key: dataset.key,
+        label: dataset.label,
+        rawRows,
+        latestRawAt,
+        latestReadModelAt,
+        cdcLagSeconds: readModelLagSeconds,
+        readModelLagSeconds,
+        status,
+        message: datasetMessage({ label: dataset.label, status }),
+      };
+    });
+    const hasActiveSync = await hasActiveSyncForUser(ctx.userId);
 
-    return health;
+    return {
+      overallStatus: overallDataHealthStatus(
+        datasets.map((dataset) => dataset.status),
+        hasActiveSync,
+      ),
+      generatedAt: new Date().toISOString(),
+      datasets,
+    };
   }),
 });
