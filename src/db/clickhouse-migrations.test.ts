@@ -592,6 +592,40 @@ describe("runClickHouseMigrations", () => {
     );
   });
 
+  it("skips activity sensor summary column alters when the dbt table does not exist yet", async () => {
+    const command = vi.fn().mockResolvedValue(undefined);
+    const query = vi.fn().mockImplementation(({ query: queryText }: { query: string }) => {
+      if (queryText.includes("0036_activity_sensor_summary_power_climbing_columns")) {
+        return { json: vi.fn().mockResolvedValue([{ migration_count: 0 }]) };
+      }
+      if (
+        queryText.includes("system.tables") &&
+        queryText.includes("activity_sensor_summary_rows")
+      ) {
+        return { json: vi.fn().mockResolvedValue([{ table_count: 0 }]) };
+      }
+      if (queryText.includes("system.tables")) {
+        return { json: vi.fn().mockResolvedValue(systemTablesQueryRows(queryText)) };
+      }
+      return { json: vi.fn().mockResolvedValue([{ migration_count: 1 }]) };
+    });
+
+    const count = await runClickHouseMigrations(
+      { command, query },
+      "postgres://health:fixture@db:5432/health",
+    );
+
+    expect(count).toBe(1);
+    const commandSql = command.mock.calls.map(([options]) => String(options.query)).join("\n");
+    expect(commandSql).not.toContain("ALTER TABLE analytics.activity_sensor_summary_rows");
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query:
+          "INSERT INTO analytics.schema_migrations (id) VALUES ('0036_activity_sensor_summary_power_climbing_columns')",
+      }),
+    );
+  });
+
   it("fails when the ClickHouse client cannot query migration state", async () => {
     await expect(
       runClickHouseMigrations(
