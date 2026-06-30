@@ -116,9 +116,7 @@ export function DataSourcesPanel() {
         const providerResults = result.providerResults;
         await Promise.all(
           ids.map(async (providerId) => {
-            const providerResult = providerResults.find(
-              (entry) => entry.providerId === providerId,
-            );
+            const providerResult = providerResults.find((entry) => entry.providerId === providerId);
             if (providerResult?.status === "skippedCooldown") {
               updateState(providerId, { status: "done", message: providerResult.message });
               return;
