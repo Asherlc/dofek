@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { DataReadinessBanner } from "../../components/DataReadinessBanner";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { useAuth } from "../../lib/auth-context";
 import { syncDofekFoodToHealthKit } from "../../lib/health-kit-food-writeback";
@@ -78,6 +79,7 @@ export default function ProvidersScreen() {
   const providers = trpc.sync.providers.useQuery();
   const stats = trpc.sync.providerStats.useQuery();
   const logs = trpc.sync.logs.useQuery({ limit: 50 });
+  const dataHealth = trpc.sync.dataHealth.useQuery();
   const syncMutation = trpc.sync.triggerSync.useMutation();
   const trpcUtils = trpc.useUtils();
   const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, { staleTime: 0 });
@@ -622,6 +624,7 @@ export default function ProvidersScreen() {
       </View>
 
       {/* Data Sources */}
+      <DataReadinessBanner data={dataHealth.data} loading={dataHealth.isLoading} />
       <Text style={styles.sectionTitle}>Data Sources</Text>
       <ProviderCard
         provider={{

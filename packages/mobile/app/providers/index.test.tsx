@@ -232,6 +232,7 @@ vi.mock("@dofek/format/format", () => ({
 const mockProvidersQuery = vi.fn();
 const mockStatsQuery = vi.fn();
 const mockLogsQuery = vi.fn();
+const mockDataHealthQuery = vi.fn();
 const mockActiveSyncsQuery = vi.fn();
 const mockInvalidate = vi.fn();
 const mockSyncStatusFetch = vi.fn();
@@ -247,6 +248,7 @@ vi.mock("../../lib/trpc", () => ({
       providers: { useQuery: (...args: unknown[]) => mockProvidersQuery(...args) },
       providerStats: { useQuery: (...args: unknown[]) => mockStatsQuery(...args) },
       logs: { useQuery: (...args: unknown[]) => mockLogsQuery(...args) },
+      dataHealth: { useQuery: (...args: unknown[]) => mockDataHealthQuery(...args) },
       triggerSync: { useMutation: () => ({ mutateAsync: mockSyncMutateAsync }) },
       activeSyncs: { useQuery: (...args: unknown[]) => mockActiveSyncsQuery(...args) },
     },
@@ -338,6 +340,7 @@ function setupDefaultMocks() {
   });
   mockStatsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
   mockLogsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+  mockDataHealthQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
   mockActiveSyncsQuery.mockReturnValue({ data: [] });
 }
 
@@ -663,6 +666,7 @@ describe("ProvidersScreen", () => {
     mockProvidersQuery.mockReset();
     mockStatsQuery.mockReset();
     mockLogsQuery.mockReset();
+    mockDataHealthQuery.mockReset();
     mockActiveSyncsQuery.mockReset();
     mockInvalidate.mockReset();
     mockSyncStatusFetch.mockReset();
@@ -736,6 +740,38 @@ describe("ProvidersScreen", () => {
 
     expect(screen.getByText("Sync All")).toBeTruthy();
     expect(screen.getByText("Full Sync All")).toBeTruthy();
+  });
+
+  it("renders dataset-level data readiness messages on the provider list", async () => {
+    mockDataHealthQuery.mockReturnValue({
+      data: {
+        overallStatus: "blocked",
+        generatedAt: "2026-06-30T08:00:00.000Z",
+        datasets: [
+          {
+            key: "sleep",
+            label: "Sleep",
+            rawRows: 12,
+            latestRawAt: "2026-06-30T07:00:00.000Z",
+            latestReadModelAt: null,
+            cdcLagSeconds: null,
+            readModelLagSeconds: null,
+            status: "blocked",
+            message: "Sleep data is synced, but dashboard summaries are blocked.",
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    const { default: ProvidersScreen } = await import("./index");
+    render(<ProvidersScreen />);
+
+    expect(screen.getByText("Data pipeline needs attention")).toBeTruthy();
+    expect(
+      screen.getByText("Sleep data is synced, but dashboard summaries are blocked."),
+    ).toBeTruthy();
   });
 
   it("shows an explicit error when providers fail to load", async () => {

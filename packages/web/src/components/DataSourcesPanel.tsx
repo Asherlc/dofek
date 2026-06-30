@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import { trpc } from "../lib/trpc.ts";
+import { DataReadinessBanner } from "./DataReadinessBanner.tsx";
 import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./DataSourcesAuthModals.tsx";
 import type { ProviderState, SyncProviderSummary } from "./DataSourcesSyncTypes.ts";
 import type { FileImportZoneProps } from "./FileImportZone.tsx";
@@ -22,6 +23,7 @@ export function DataSourcesPanel() {
   const providers = trpc.sync.providers.useQuery();
   const stats = trpc.sync.providerStats.useQuery();
   const logs = trpc.sync.logs.useQuery({ limit: 100 });
+  const dataHealth = trpc.sync.dataHealth.useQuery();
   const syncMutation = trpc.sync.triggerSync.useMutation();
   const trpcUtils = trpc.useUtils();
 
@@ -383,6 +385,8 @@ export function DataSourcesPanel() {
           </div>
         )}
       </div>
+
+      <DataReadinessBanner data={dataHealth.data} loading={dataHealth.isLoading} />
 
       {providers.isLoading ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
