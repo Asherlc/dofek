@@ -125,6 +125,7 @@ async function fetchRecoveryRows(
       endDate,
       ...recoveryAccessParams(ctx.accessWindow),
     },
+    { priority: "dashboard" },
   );
 }
 

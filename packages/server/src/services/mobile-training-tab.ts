@@ -210,6 +210,7 @@ export async function loadMobileTrainingTab(
         outputWindowStart: windowStart,
         ...accessParams,
       },
+      { priority: "dashboard" },
     ),
     ctx.sensorStore.query(
       strainTargetReadinessRowSchema,
@@ -232,6 +233,7 @@ export async function loadMobileTrainingTab(
         endDate,
         ...recoveryAccessParams(ctx.accessWindow),
       },
+      { priority: "dashboard" },
     ),
   ]);
 

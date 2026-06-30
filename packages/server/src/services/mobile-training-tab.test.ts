@@ -267,6 +267,26 @@ describe("loadMobileTrainingTab", () => {
     repos.cyclingSpy.mockRestore();
   });
 
+  it("passes dashboard priority to training dashboard read-model queries", async () => {
+    const query = makeQuery();
+    const repos = await mockTrainingRepos();
+
+    await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
+
+    const dashboardQueryCalls = query.mock.calls.filter((call) =>
+      ["analytics.daily_strain", "analytics.daily_recovery"].some((readModelName) =>
+        String(call[1]).includes(readModelName),
+      ),
+    );
+    expect(dashboardQueryCalls).toHaveLength(2);
+    for (const queryCall of dashboardQueryCalls) {
+      expect(queryCall[3]).toEqual({ priority: "dashboard" });
+    }
+
+    repos.trainingSpy.mockRestore();
+    repos.cyclingSpy.mockRestore();
+  });
+
   it("sets displayedDate from the most recent strain row", async () => {
     const repos = await mockTrainingRepos();
     const query = makeQuery([

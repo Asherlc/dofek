@@ -114,4 +114,28 @@ describe("LimitedActivitySensorStore", () => {
 
     expect(queryStartedBeforeRegularRelease).toBe(false);
   });
+
+  it("deduplicates identical in-flight queries across dashboard priority hints", async () => {
+    const rows = deferred<Array<{ value: number }>>();
+    const delegate = makeDelegate({
+      query: vi.fn(() => rows.promise),
+    });
+    const store = new LimitedActivitySensorStore(delegate, 1);
+    const schema = z.object({ value: z.number() });
+    const query = "SELECT value FROM analytics.daily_recovery WHERE user_id = {userId:String}";
+    const params = { userId: "user-1" };
+
+    const dashboardPromise = store.query(schema, query, params, { priority: "dashboard" });
+    const regularPromise = store.query(schema, query, params);
+    for (let microtaskTurn = 0; microtaskTurn < 5; microtaskTurn += 1) {
+      await Promise.resolve();
+    }
+
+    expect(delegate.query).toHaveBeenCalledTimes(1);
+
+    rows.resolve([{ value: 1 }]);
+
+    await expect(dashboardPromise).resolves.toEqual([{ value: 1 }]);
+    await expect(regularPromise).resolves.toEqual([{ value: 1 }]);
+  });
 });
