@@ -103,7 +103,6 @@ function medicationDoseEventName(input: {
 }
 
 function medicationDoseEventExternalId(input: {
-  logStatus?: number | string | undefined;
   medicationConceptIdentifier?: string | null | undefined;
   medicationName: string;
   scheduledDate?: string | null | undefined;
@@ -118,7 +117,6 @@ function medicationDoseEventExternalId(input: {
     input.startDate,
     normalizeOptionalString(input.scheduledDate) ?? "unscheduled",
     normalizeOptionalString(input.medicationConceptIdentifier) ?? input.medicationName,
-    mapMedicationDoseStatus(input.logStatus),
   ].join(":");
 }
 

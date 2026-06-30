@@ -90,3 +90,7 @@ export const HealthyHidden: Story = {
 export const LoadingHidden: Story = {
   args: { loading: true },
 };
+
+export const QueryError: Story = {
+  args: { error: new Error("ClickHouse read model query failed") },
+};

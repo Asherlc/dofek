@@ -31,7 +31,7 @@
 - Modify: `packages/server/src/repositories/clickhouse-activity-sensor-store.ts`
 - Test: `packages/server/src/repositories/limited-activity-sensor-store.test.ts`
 
-- [ ] **Step 1: Add the failing priority-routing test**
+- [ ] **Step 1 (RED): Add the failing priority-routing test**
 
 Add this test to `packages/server/src/repositories/limited-activity-sensor-store.test.ts`:
 
@@ -73,7 +73,7 @@ it("starts explicitly prioritized dashboard queries while regular work is queued
 });
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [ ] **Step 2 (RED): Run the focused test and verify the expected failure**
 
 ```bash
 rtk pnpm vitest run --project unit packages/server/src/repositories/limited-activity-sensor-store.test.ts --testNamePattern "explicitly prioritized dashboard"
@@ -81,7 +81,7 @@ rtk pnpm vitest run --project unit packages/server/src/repositories/limited-acti
 
 Expected: FAIL because `ActivitySensorStore.query` does not accept an options argument and `LimitedActivitySensorStore` still classifies dashboard queries by SQL text.
 
-- [ ] **Step 3: Add the minimal priority option**
+- [ ] **Step 3 (GREEN): Add the minimal priority option**
 
 Change the `ActivitySensorStore.query` signature to:
 
@@ -103,7 +103,7 @@ const limiter =
 
 Keep `ClickHouseActivitySensorStore.query` behavior identical except for accepting the fourth parameter.
 
-- [ ] **Step 4: Run the priority tests and verify GREEN**
+- [ ] **Step 4 (GREEN): Run the priority tests and verify the passing behavior**
 
 ```bash
 rtk pnpm vitest run --project unit packages/server/src/repositories/limited-activity-sensor-store.test.ts
@@ -111,7 +111,7 @@ rtk pnpm vitest run --project unit packages/server/src/repositories/limited-acti
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5 (REFACTOR): Commit the focused priority-routing change**
 
 ```bash
 rtk git add packages/server/src/repositories/activity-repository.ts packages/server/src/repositories/limited-activity-sensor-store.ts packages/server/src/repositories/clickhouse-activity-sensor-store.ts packages/server/src/repositories/limited-activity-sensor-store.test.ts
@@ -126,7 +126,7 @@ rtk git commit -m "perf: make dashboard clickhouse priority explicit"
 - Modify: `packages/server/src/routers/mobile-dashboard.ts`
 - Test: `packages/server/src/routers/mobile-dashboard.test.ts`
 
-- [ ] **Step 1: Add the failing service test**
+- [ ] **Step 1 (RED): Add the failing service test**
 
 Create `packages/server/src/services/dashboard-overview.test.ts` with:
 
@@ -187,7 +187,7 @@ describe("loadDashboardOverview", () => {
 });
 ```
 
-- [ ] **Step 2: Run the service test and verify RED**
+- [ ] **Step 2 (RED): Run the service test and verify the expected failure**
 
 ```bash
 rtk pnpm vitest run --project unit packages/server/src/services/dashboard-overview.test.ts
@@ -195,13 +195,13 @@ rtk pnpm vitest run --project unit packages/server/src/services/dashboard-overvi
 
 Expected: FAIL because `dashboard-overview.ts` does not exist.
 
-- [ ] **Step 3: Implement the service and route delegation**
+- [ ] **Step 3 (GREEN): Implement the service and route delegation**
 
 Create `loadDashboardOverview` with inputs `{ accessWindow, endDate, sensorStore, userId }`. Move only the read-model queries and response mapping currently embedded in `mobileDashboard.dashboard` into the service. Every `sensorStore.query` call in the service must pass `{ priority: "dashboard" }` and must read `analytics.daily_recovery`, `analytics.daily_sleep`, or `analytics.daily_strain`; it must not read `analytics.deduped_sensor`, `analytics.activity_sensor_sample`, or `fitness.metric_stream`.
 
 Update `mobileDashboard.dashboard` to call the service and keep the existing output schema unchanged.
 
-- [ ] **Step 4: Run service and router tests**
+- [ ] **Step 4 (GREEN): Run service and router tests**
 
 ```bash
 rtk pnpm vitest run --project unit packages/server/src/services/dashboard-overview.test.ts packages/server/src/routers/mobile-dashboard.test.ts
@@ -209,7 +209,7 @@ rtk pnpm vitest run --project unit packages/server/src/services/dashboard-overvi
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5 (REFACTOR): Commit the shared dashboard service change**
 
 ```bash
 rtk git add packages/server/src/services/dashboard-overview.ts packages/server/src/services/dashboard-overview.test.ts packages/server/src/routers/mobile-dashboard.ts packages/server/src/routers/mobile-dashboard.test.ts
@@ -224,7 +224,7 @@ rtk git commit -m "perf: share dashboard overview read model loader"
 - Modify: `packages/mobile/app/_layout.cleanup.test.tsx`
 - Modify: `packages/mobile/app/_layout.tsx`
 
-- [ ] **Step 1: Add failing client regression tests**
+- [ ] **Step 1 (RED): Add failing client regression tests**
 
 In `packages/web/src/lib/trpc.test.ts`, add a test asserting `recovery.readinessScore`, `recovery.workloadRatio`, `recovery.strainTarget`, `sleepNeed.performance`, and the new dashboard-adjacent `sync.dataHealth` query use the `httpLink`, while a non-dashboard query uses the stream batch link:
 
@@ -246,7 +246,7 @@ expect(routeLinkFor("mobileDashboard.training")).toBe("httpLink");
 expect(routeLinkFor("sync.dataHealth")).toBe("httpLink");
 ```
 
-- [ ] **Step 2: Run client tests and verify RED**
+- [ ] **Step 2 (RED): Run client tests and verify the expected failures**
 
 ```bash
 rtk pnpm vitest run --project unit packages/web/src/lib/trpc.test.ts
@@ -255,11 +255,11 @@ rtk pnpm vitest run --project mobile packages/mobile/app/_layout.cleanup.test.ts
 
 Expected: FAIL because the new `sync.dataHealth` dashboard-readiness route is not yet in the explicit unbatched routing set.
 
-- [ ] **Step 3: Keep only explicit unbatched paths**
+- [ ] **Step 3 (GREEN): Keep only explicit unbatched paths**
 
 Add only `sync.dataHealth` to the existing explicit unbatched route sets. Do not switch the whole dashboard to broad batching, and do not add concurrent client fan-out.
 
-- [ ] **Step 4: Run verification**
+- [ ] **Step 4 (GREEN): Run verification**
 
 ```bash
 rtk pnpm vitest run --project unit packages/web/src/lib/trpc.test.ts packages/server/src/repositories/limited-activity-sensor-store.test.ts packages/server/src/services/dashboard-overview.test.ts packages/server/src/routers/mobile-dashboard.test.ts
@@ -269,7 +269,7 @@ rtk pnpm tsc --noEmit
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5 (REFACTOR): Commit the transport-routing lock**
 
 ```bash
 rtk git add packages/web/src/lib/trpc.ts packages/web/src/lib/trpc.test.ts packages/mobile/app/_layout.tsx packages/mobile/app/_layout.cleanup.test.tsx

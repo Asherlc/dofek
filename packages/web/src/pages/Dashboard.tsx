@@ -219,7 +219,11 @@ export function Dashboard() {
 
   return (
     <PageLayout headerChildren={undefined}>
-      <DataReadinessBanner data={dataHealth.data} loading={dataHealth.isLoading} />
+      <DataReadinessBanner
+        data={dataHealth.data}
+        error={dataHealth.error}
+        loading={dataHealth.isLoading}
+      />
       <DailyOverview
         endDate={endDate}
         readiness={readinessData.data}

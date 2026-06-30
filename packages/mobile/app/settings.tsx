@@ -124,6 +124,7 @@ export default function SettingsScreen() {
     onError: (error) => Alert.alert("Error", error.message),
   });
   const billingStatus = trpc.billing.status.useQuery();
+  const medicationDoseEvents = trpc.medicationDoseEvents.list.useQuery({ limit: 50 });
   const checkoutSessionMutation = trpc.billing.createCheckoutSession.useMutation({
     onSuccess: ({ url }) => {
       void Linking.openURL(url);
@@ -137,6 +138,9 @@ export default function SettingsScreen() {
 
   const currentUnitSystem: UnitSystem =
     unitSetting.data?.value === "imperial" ? "imperial" : "metric";
+  const hasMedicationDoseEvents = (medicationDoseEvents.data?.events.length ?? 0) > 0;
+  const showMedicationDoseEvents =
+    medicationDoseEvents.isLoading || medicationDoseEvents.error || hasMedicationDoseEvents;
 
   // ── Goal Weight ──
   const goalWeightSetting = trpc.settings.get.useQuery({ key: "goalWeight" });
@@ -420,14 +424,15 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      {/* ── Medication Doses ── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Medication Doses</Text>
-        <Text style={styles.sectionDescription}>Review imported medication dose events</Text>
-        <View style={styles.card}>
-          <MedicationDoseEventsPanel />
+      {showMedicationDoseEvents ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Medication Doses</Text>
+          <Text style={styles.sectionDescription}>Review imported medication dose events</Text>
+          <View style={styles.card}>
+            <MedicationDoseEventsPanel queryResult={medicationDoseEvents} />
+          </View>
         </View>
-      </View>
+      ) : null}
 
       {/* ── Billing ── */}
       <View style={styles.section}>

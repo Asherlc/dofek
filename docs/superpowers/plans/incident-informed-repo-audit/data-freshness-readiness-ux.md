@@ -29,7 +29,7 @@
 - Modify: `packages/server/src/routers/sync.ts`
 - Test: `packages/server/src/routers/sync.test.ts`
 
-- [ ] **Step 1: Add the failing server test**
+- [ ] **Step 1 (RED): Add the failing server test**
 
 Add this test in `describe("syncRouter", ...)`:
 
@@ -63,7 +63,7 @@ it("returns structured data health when raw data is missing", async () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [ ] **Step 2 (RED): Run the test and verify the expected failure**
 
 ```bash
 rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts --testNamePattern "structured data health"
@@ -71,7 +71,7 @@ rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts --te
 
 Expected: FAIL because `dataHealth` currently returns `{ dailyMetrics, sleep, activity }` numeric counts.
 
-- [ ] **Step 3: Implement the output schema and mapping**
+- [ ] **Step 3 (GREEN): Implement the output schema and mapping**
 
 Add a `dataHealthOutputSchema` with:
 
@@ -97,7 +97,7 @@ const dataHealthOutputSchema = z.object({
 
 Return one dataset per current health check. For this first pass, derive `missing` from `rawRows === 0`, `healthy` from `rawRows > 0`, and set lag fields to `null`. Keep all computation server-side.
 
-- [ ] **Step 4: Run the server test**
+- [ ] **Step 4 (GREEN): Run the server test**
 
 ```bash
 rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts --testNamePattern "data health"
@@ -105,7 +105,7 @@ rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts --te
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5 (REFACTOR): Commit the structured readiness output**
 
 ```bash
 rtk git add packages/server/src/routers/sync.ts packages/server/src/routers/sync.test.ts
@@ -118,9 +118,9 @@ rtk git commit -m "feat: return structured data health"
 - Modify: `packages/server/src/routers/sync.ts`
 - Test: `packages/server/src/routers/sync.test.ts`
 
-- [ ] **Step 1: Add failing stale-state tests**
+- [ ] **Step 1 (RED): Add failing stale-state tests**
 
-Add tests named:
+Add these concrete tests to `packages/server/src/routers/sync.test.ts`:
 
 ```typescript
 it("marks data blocked when ClickHouse CDC mirrors are stale", async () => {
@@ -206,7 +206,7 @@ it("marks data syncing when an active sync job exists", async () => {
 
 Use concrete fixtures in each test: `latest_raw_at: "2026-06-29T12:00:00.000Z"`, `latest_read_model_at: "2026-06-29T10:00:00.000Z"`, and stale CDC timestamp `"2026-06-28T12:00:00.000Z"`.
 
-- [ ] **Step 2: Run the stale-state tests and verify RED**
+- [ ] **Step 2 (RED): Run the stale-state tests and verify the expected failures**
 
 ```bash
 rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts --testNamePattern "ClickHouse CDC mirrors|dbt read models|active sync job"
@@ -214,11 +214,11 @@ rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts --te
 
 Expected: FAIL because lag fields and active-sync state are not computed.
 
-- [ ] **Step 3: Add bounded freshness queries**
+- [ ] **Step 3 (GREEN): Add bounded freshness queries**
 
 Extend `dataHealth` with server-side queries for raw latest timestamps and read-model latest timestamps. Use existing read-model tables only: `analytics.daily_recovery`, `analytics.daily_sleep`, and `analytics.daily_strain`. Do not compute dashboard values in this endpoint; only return freshness metadata.
 
-- [ ] **Step 4: Run server tests**
+- [ ] **Step 4 (GREEN): Run server tests**
 
 ```bash
 rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts
@@ -226,7 +226,7 @@ rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5 (REFACTOR): Commit the freshness lag states**
 
 ```bash
 rtk git add packages/server/src/routers/sync.ts packages/server/src/routers/sync.test.ts
@@ -243,7 +243,7 @@ rtk git commit -m "feat: expose data freshness lag states"
 - Modify: `packages/web/src/pages/ActivitiesPage.tsx`
 - Modify: `packages/web/src/pages/ProviderDetailPage.tsx`
 
-- [ ] **Step 1: Add the failing component test**
+- [ ] **Step 1 (RED): Add the failing component test**
 
 Create `packages/web/src/components/DataReadinessBanner.test.tsx`:
 
@@ -281,7 +281,7 @@ describe("DataReadinessBanner", () => {
 });
 ```
 
-- [ ] **Step 2: Run the component test and verify RED**
+- [ ] **Step 2 (RED): Run the component test and verify the expected failure**
 
 ```bash
 rtk pnpm vitest run --project unit packages/web/src/components/DataReadinessBanner.test.tsx
@@ -289,7 +289,7 @@ rtk pnpm vitest run --project unit packages/web/src/components/DataReadinessBann
 
 Expected: FAIL because the component does not exist.
 
-- [ ] **Step 3: Implement the banner and concrete stories**
+- [ ] **Step 3 (GREEN): Implement the banner and concrete stories**
 
 Implement `DataReadinessBanner` as a compact unframed status band. It must render `health.datasets` messages from the server and must not recompute status from raw timestamps on the client.
 
@@ -305,11 +305,11 @@ export const Blocked = makeStory("blocked", "Activity data is available, but Cli
 
 Each story must pass a complete `health` prop with `overallStatus`, `generatedAt`, and one `datasets` entry containing `key`, `label`, `rawRows`, `latestRawAt`, `latestReadModelAt`, `cdcLagSeconds`, `readModelLagSeconds`, `status`, and `message`.
 
-- [ ] **Step 4: Wire web pages**
+- [ ] **Step 4 (GREEN): Wire web pages**
 
 On dashboard, activities, and provider detail pages, call `trpc.sync.dataHealth.useQuery()` and render the banner above the main content when `overallStatus !== "healthy"`.
 
-- [ ] **Step 5: Run web verification**
+- [ ] **Step 5 (GREEN): Run web verification**
 
 ```bash
 rtk pnpm vitest run --project unit packages/web/src/components/DataReadinessBanner.test.tsx packages/web/src/pages/Dashboard.test.tsx packages/web/src/pages/ActivitiesPage.test.tsx packages/web/src/pages/ProviderDetailPage.test.tsx
@@ -318,7 +318,7 @@ rtk pnpm storybook:web:build
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6 (REFACTOR): Commit the web readiness surfaces**
 
 ```bash
 rtk git add packages/web/src/components/DataReadinessBanner.tsx packages/web/src/components/DataReadinessBanner.test.tsx packages/web/src/components/DataReadinessBanner.stories.tsx packages/web/src/pages/Dashboard.tsx packages/web/src/pages/ActivitiesPage.tsx packages/web/src/pages/ProviderDetailPage.tsx
@@ -335,7 +335,7 @@ rtk git commit -m "feat: show web data readiness states"
 - Modify: `packages/mobile/app/(tabs)/activities.tsx`
 - Modify: `packages/mobile/app/providers/[id].tsx`
 
-- [ ] **Step 1: Add the failing mobile component test**
+- [ ] **Step 1 (RED): Add the failing mobile component test**
 
 Create `packages/mobile/components/DataReadinessBanner.test.tsx`:
 
@@ -373,7 +373,7 @@ describe("DataReadinessBanner", () => {
 });
 ```
 
-- [ ] **Step 2: Run the mobile component test and verify RED**
+- [ ] **Step 2 (RED): Run the mobile component test and verify the expected failure**
 
 ```bash
 rtk pnpm vitest run --project mobile packages/mobile/components/DataReadinessBanner.test.tsx
@@ -381,7 +381,7 @@ rtk pnpm vitest run --project mobile packages/mobile/components/DataReadinessBan
 
 Expected: FAIL because the component does not exist.
 
-- [ ] **Step 3: Implement the component, concrete stories, and screens**
+- [ ] **Step 3 (GREEN): Implement the component, concrete stories, and screens**
 
 Implement the mobile banner with the same prop shape as web. Create `DataReadinessBanner.stories.tsx` with named exports `Healthy`, `Syncing`, `Stale`, `Missing`, and `Blocked` using the same messages as the web stories. Render the banner on the mobile dashboard, activities tab, and provider detail screen from `trpc.sync.dataHealth.useQuery()`.
 
@@ -393,18 +393,18 @@ expect(screen.getByText("Activity data is available, but ClickHouse mirrors are 
 
 Expected screen fixtures must provide `overallStatus: "blocked"` and the blocked activity dataset from Step 1.
 
-- [ ] **Step 4: Run mobile verification**
+- [ ] **Step 4 (GREEN): Run mobile verification**
 
 ```bash
-rtk pnpm vitest run --project mobile packages/mobile/components/DataReadinessBanner.test.tsx packages/mobile/app/(tabs)/index.test.tsx packages/mobile/app/(tabs)/activities.test.tsx packages/mobile/app/providers/[id].test.tsx
+rtk pnpm vitest run --project mobile packages/mobile/components/DataReadinessBanner.test.tsx 'packages/mobile/app/(tabs)/index.test.tsx' 'packages/mobile/app/(tabs)/activities.test.tsx' 'packages/mobile/app/providers/[id].test.tsx'
 rtk pnpm storybook:mobile:build
 ```
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5 (REFACTOR): Commit the mobile readiness surfaces**
 
 ```bash
-rtk git add packages/mobile/components/DataReadinessBanner.tsx packages/mobile/components/DataReadinessBanner.test.tsx packages/mobile/components/DataReadinessBanner.stories.tsx packages/mobile/app/(tabs)/index.tsx packages/mobile/app/(tabs)/activities.tsx packages/mobile/app/providers/[id].tsx
+rtk git add packages/mobile/components/DataReadinessBanner.tsx packages/mobile/components/DataReadinessBanner.test.tsx packages/mobile/components/DataReadinessBanner.stories.tsx 'packages/mobile/app/(tabs)/index.tsx' 'packages/mobile/app/(tabs)/activities.tsx' 'packages/mobile/app/providers/[id].tsx'
 rtk git commit -m "feat: show mobile data readiness states"
 ```

@@ -15,14 +15,25 @@ const medicationDoseEventSchema = z.object({
   sourceName: z.string().nullable(),
 });
 
+type MedicationDoseEventsQueryResult = {
+  isLoading: boolean;
+  error: { message: string } | null;
+  data?: { events?: unknown } | null;
+};
+
 function formatDoseStatus(status: string): string {
   const normalized = status.trim();
   if (normalized.length === 0) return "Unknown";
   return `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)}`;
 }
 
-export function MedicationDoseEventsPanel() {
-  const doseEvents = trpc.medicationDoseEvents.list.useQuery({ limit: 50 });
+export function MedicationDoseEventsPanel({
+  queryResult,
+}: {
+  queryResult?: MedicationDoseEventsQueryResult;
+}) {
+  const internalDoseEvents = trpc.medicationDoseEvents.list.useQuery({ limit: 50 });
+  const doseEvents = queryResult ?? internalDoseEvents;
 
   if (doseEvents.isLoading) {
     return <QueryStatePanel variant="loading" minHeight={96} />;

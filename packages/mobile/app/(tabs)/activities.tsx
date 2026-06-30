@@ -155,7 +155,11 @@ export default function ActivitiesScreen() {
         <Text style={styles.recordButtonText}>Record Activity</Text>
       </TouchableOpacity>
 
-      <DataReadinessBanner data={dataHealth.data} loading={dataHealth.isLoading} />
+      <DataReadinessBanner
+        data={dataHealth.data}
+        error={dataHealth.error}
+        loading={dataHealth.isLoading}
+      />
 
       <ActivityControls
         activityTypes={overviewQuery.data?.activityTypes ?? []}

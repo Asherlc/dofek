@@ -34,6 +34,13 @@ describe("DataReadinessBanner", () => {
     expect(healthy.container.innerHTML).toBe("");
   });
 
+  it("surfaces data-health query errors when no readiness snapshot is available", () => {
+    render(<DataReadinessBanner error={new Error("ClickHouse read model query failed")} />);
+
+    expect(screen.getByText("Data readiness is unavailable")).toBeTruthy();
+    expect(screen.getByText("ClickHouse read model query failed")).toBeTruthy();
+  });
+
   it("shows blocked server readiness messages", () => {
     render(<DataReadinessBanner data={makeSnapshot()} />);
 

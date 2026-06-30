@@ -20,6 +20,7 @@ export interface DataReadinessSnapshot {
 
 interface DataReadinessBannerProps {
   data?: DataReadinessSnapshot;
+  error?: { message?: string } | null;
   loading?: boolean;
 }
 
@@ -37,8 +38,23 @@ const classNameByStatus: Record<Exclude<DataReadinessStatus, "healthy">, string>
   blocked: "border-red-300 bg-red-50 text-red-950",
 };
 
-export function DataReadinessBanner({ data, loading = false }: DataReadinessBannerProps) {
-  if (loading || !data || data.overallStatus === "healthy") return null;
+export function DataReadinessBanner({
+  data,
+  error = null,
+  loading = false,
+}: DataReadinessBannerProps) {
+  if (loading) return null;
+
+  if (error) {
+    return (
+      <output className="rounded-lg border border-red-300 bg-red-50 p-4 text-red-950">
+        <h2 className="text-sm font-semibold">Data readiness is unavailable</h2>
+        <p className="mt-1 text-sm">{error.message ?? "The data readiness check failed."}</p>
+      </output>
+    );
+  }
+
+  if (!data || data.overallStatus === "healthy") return null;
 
   const relevantDatasets = data.datasets.filter((dataset) => dataset.status !== "healthy");
   const status = data.overallStatus;

@@ -11,7 +11,7 @@ import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
-import type { ActivitySensorStore } from "./activity-repository.ts";
+import type { ActivitySensorQueryOptions, ActivitySensorStore } from "./activity-repository.ts";
 
 export type { WeeklyStressRow };
 
@@ -104,7 +104,11 @@ export class StressRepository extends BaseRepository {
     this.#sensorStore = sensorStore;
   }
 
-  async getStressScores(days: number, endDate: string): Promise<StressResult> {
+  async getStressScores(
+    days: number,
+    endDate: string,
+    queryOptions?: ActivitySensorQueryOptions,
+  ): Promise<StressResult> {
     const sensorStore = this.#requireSensorStore();
     const accessWindowClause =
       this.accessWindow.kind === "full"
@@ -140,6 +144,7 @@ export class StressRepository extends BaseRepository {
               accessEndDateExclusive: this.accessWindow.endDateExclusive,
             }),
       },
+      queryOptions,
     );
 
     const storedParams = await loadPersonalizedParams(this.db, this.userId);

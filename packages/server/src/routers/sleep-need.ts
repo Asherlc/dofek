@@ -324,6 +324,7 @@ export const sleepNeedRouter = router({
         endDate: input.endDate,
         days: 90,
         accessWindow: ctx.accessWindow,
+        queryOptions: { priority: "dashboard" },
       });
       const provenanceRows = await fetchSleepNights({
         sensorStore,
@@ -332,6 +333,7 @@ export const sleepNeedRouter = router({
         endDate: input.endDate,
         days: 14,
         accessWindow: ctx.accessWindow,
+        queryOptions: { priority: "dashboard" },
       });
       const lastSleep = performanceRows.at(-1) ?? null;
       if (!lastSleep || lastSleep.duration_minutes == null) {
@@ -357,7 +359,7 @@ export const sleepNeedRouter = router({
         tz,
         sensorStore,
         ctx.accessWindow,
-      ).getStressScores(90, input.endDate);
+      ).getStressScores(90, input.endDate, { priority: "dashboard" });
       const stressScore =
         stressResult.daily.find((stressRow) => stressRow.date === lastSleep.date)?.stressScore ??
         null;

@@ -7,28 +7,45 @@ const listInputSchema = z.object({
   limit: z.number().int().positive().max(100).default(50),
 });
 
-export const medicationDoseEventsRouter = router({
-  list: protectedProcedure.input(listInputSchema).query(async ({ ctx, input }) => {
-    const rows = await ctx.db
-      .select({
-        id: medicationDoseEvent.id,
-        providerId: medicationDoseEvent.providerId,
-        medicationName: medicationDoseEvent.medicationName,
-        medicationConceptId: medicationDoseEvent.medicationConceptId,
-        doseStatus: medicationDoseEvent.doseStatus,
-        recordedAt: medicationDoseEvent.recordedAt,
-        sourceName: medicationDoseEvent.sourceName,
-      })
-      .from(medicationDoseEvent)
-      .where(eq(medicationDoseEvent.userId, ctx.userId))
-      .orderBy(desc(medicationDoseEvent.recordedAt))
-      .limit(input.limit);
+const listOutputSchema = z.object({
+  events: z.array(
+    z.object({
+      id: z.string(),
+      providerId: z.string(),
+      medicationName: z.string(),
+      medicationConceptId: z.string().nullable(),
+      doseStatus: z.string(),
+      recordedAt: z.string(),
+      sourceName: z.string().nullable(),
+    }),
+  ),
+});
 
-    return {
-      events: rows.map((row) => ({
-        ...row,
-        recordedAt: row.recordedAt.toISOString(),
-      })),
-    };
-  }),
+export const medicationDoseEventsRouter = router({
+  list: protectedProcedure
+    .input(listInputSchema)
+    .output(listOutputSchema)
+    .query(async ({ ctx, input }) => {
+      const rows = await ctx.db
+        .select({
+          id: medicationDoseEvent.id,
+          providerId: medicationDoseEvent.providerId,
+          medicationName: medicationDoseEvent.medicationName,
+          medicationConceptId: medicationDoseEvent.medicationConceptId,
+          doseStatus: medicationDoseEvent.doseStatus,
+          recordedAt: medicationDoseEvent.recordedAt,
+          sourceName: medicationDoseEvent.sourceName,
+        })
+        .from(medicationDoseEvent)
+        .where(eq(medicationDoseEvent.userId, ctx.userId))
+        .orderBy(desc(medicationDoseEvent.recordedAt))
+        .limit(input.limit);
+
+      return {
+        events: rows.map((row) => ({
+          ...row,
+          recordedAt: row.recordedAt.toISOString(),
+        })),
+      };
+    }),
 });

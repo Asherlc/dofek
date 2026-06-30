@@ -28,9 +28,9 @@ import {
   SyncRepository,
 } from "../repositories/sync-repository.ts";
 import {
+  adminProcedure,
   CacheTTL,
   cachedProtectedQuery,
-  adminProcedure,
   protectedProcedure,
   publicProcedure,
   router,
@@ -280,7 +280,10 @@ function secondsBetween(laterIso: string | null, earlierIso: string | null): num
   return Math.max(0, Math.round((later - earlier) / 1000));
 }
 
-function dateGrainSecondsBetween(laterIso: string | null, earlierIso: string | null): number | null {
+function dateGrainSecondsBetween(
+  laterIso: string | null,
+  earlierIso: string | null,
+): number | null {
   if (laterIso === null || earlierIso === null) return null;
   const laterDate = timestampToIsoString(laterIso)?.slice(0, 10);
   const earlierDate = timestampToIsoString(earlierIso)?.slice(0, 10);
@@ -330,11 +333,7 @@ function overallDataHealthStatus(
 
 async function hasActiveSyncForUser(userId: string): Promise<boolean> {
   try {
-    const activeStates: Array<"waiting" | "active" | "delayed"> = [
-      "waiting",
-      "active",
-      "delayed",
-    ];
+    const activeStates: Array<"waiting" | "active" | "delayed"> = ["waiting", "active", "delayed"];
     const [providerJobGroups, importJobs] = await Promise.all([
       Promise.all(
         [...getAllConfiguredProviderIds()].map((providerId) =>

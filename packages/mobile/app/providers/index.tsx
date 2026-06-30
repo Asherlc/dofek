@@ -624,7 +624,11 @@ export default function ProvidersScreen() {
       </View>
 
       {/* Data Sources */}
-      <DataReadinessBanner data={dataHealth.data} loading={dataHealth.isLoading} />
+      <DataReadinessBanner
+        data={dataHealth.data}
+        error={dataHealth.error}
+        loading={dataHealth.isLoading}
+      />
       <Text style={styles.sectionTitle}>Data Sources</Text>
       <ProviderCard
         provider={{

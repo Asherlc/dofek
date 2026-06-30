@@ -243,6 +243,17 @@ describe("SettingsScreen password", () => {
   });
 });
 
+describe("SettingsScreen medication doses", () => {
+  it("hides medication dose review when no imported dose events exist", async () => {
+    const { default: SettingsScreen } = await import("./settings");
+
+    render(<SettingsScreen />);
+
+    expect(screen.queryByText("Medication Doses")).toBeNull();
+    expect(screen.queryByText("Review imported medication dose events")).toBeNull();
+  });
+});
+
 describe("SettingsScreen billing", () => {
   it("renders signup-week limited access notice", async () => {
     const { default: SettingsScreen } = await import("./settings");

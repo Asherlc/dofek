@@ -386,7 +386,11 @@ export function DataSourcesPanel() {
         )}
       </div>
 
-      <DataReadinessBanner data={dataHealth.data} loading={dataHealth.isLoading} />
+      <DataReadinessBanner
+        data={dataHealth.data}
+        error={dataHealth.error}
+        loading={dataHealth.isLoading}
+      />
 
       {providers.isLoading ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

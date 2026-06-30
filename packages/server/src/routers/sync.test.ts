@@ -41,18 +41,21 @@ const {
 }));
 
 // Mock trpc
+type MockAdminDb = {
+  execute: (query: unknown) => Promise<Array<{ is_admin: boolean }>>;
+};
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const { TRPCError } = await import("@trpc/server");
   const trpc = initTRPC
-    .context<{ db: unknown; sensorStore?: unknown; userId: string | null; timezone: string }>()
+    .context<{ db: MockAdminDb; sensorStore?: unknown; userId: string | null; timezone: string }>()
     .create();
   const adminProcedure = trpc.procedure.use(async ({ ctx, next }) => {
     if (!ctx.userId) {
       throw new TRPCError({ code: "UNAUTHORIZED", message: "Not authenticated" });
     }
-    const db = ctx.db as { execute: (query: unknown) => Promise<Array<{ is_admin: boolean }>> };
-    const rows = await db.execute({ type: "admin-check" });
+    const rows = await ctx.db.execute({ type: "admin-check" });
     if (rows[0]?.is_admin !== true) {
       throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
     }

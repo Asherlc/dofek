@@ -24,7 +24,7 @@
 - Modify: `packages/server/src/routers/sync.ts`
 - Test: `packages/server/src/routers/sync.test.ts`
 
-- [ ] **Step 1: Add the failing cooldown test**
+- [ ] **Step 1 (RED): Add the failing cooldown test**
 
 Add this test to `packages/server/src/routers/sync.test.ts`:
 
@@ -72,7 +72,7 @@ it("returns per-provider outcomes when one sync-all provider is rate limited", a
 });
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [ ] **Step 2 (RED): Run the test and verify the expected failure**
 
 ```bash
 rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts --testNamePattern "per-provider outcomes"
@@ -80,7 +80,7 @@ rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts --te
 
 Expected: FAIL because `triggerSync` throws `TOO_MANY_REQUESTS` on the first cooldown.
 
-- [ ] **Step 3: Implement outcome schema and sync-all behavior**
+- [ ] **Step 3 (GREEN): Implement outcome schema and sync-all behavior**
 
 Add a `triggerSyncOutputSchema` with:
 
@@ -95,7 +95,7 @@ const providerSyncResultSchema = z.discriminatedUnion("status", [
 
 For sync-all only, catch each provider enqueue result independently. Preserve single-provider behavior by still throwing for cooldown or failure when `input.providerId` is set.
 
-- [ ] **Step 4: Run server tests**
+- [ ] **Step 4 (GREEN): Run server tests**
 
 ```bash
 rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts
@@ -103,7 +103,7 @@ rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5 (REFACTOR): Commit the per-provider outcome contract**
 
 ```bash
 rtk git add packages/server/src/routers/sync.ts packages/server/src/routers/sync.test.ts
@@ -116,7 +116,7 @@ rtk git commit -m "feat: return per-provider sync outcomes"
 - Modify: `packages/server/src/routers/sync.ts`
 - Test: `packages/server/src/routers/sync.test.ts`
 
-- [ ] **Step 1: Add failing outcome tests**
+- [ ] **Step 1 (RED): Add failing outcome tests**
 
 Add two tests:
 
@@ -204,7 +204,7 @@ it("reports a failed provider without hiding successful providers", async () => 
 
 Use the same provider/token fixture style as Task 1, with concrete providers `whoop` and `polar`.
 
-- [ ] **Step 2: Run the outcome tests and verify RED**
+- [ ] **Step 2 (RED): Run the outcome tests and verify the expected failures**
 
 ```bash
 rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts --testNamePattern "already queued|failed provider"
@@ -212,11 +212,11 @@ rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts --te
 
 Expected: FAIL because `alreadyQueued` and per-provider failure are not represented.
 
-- [ ] **Step 3: Implement minimal outcome mapping**
+- [ ] **Step 3 (GREEN): Implement minimal outcome mapping**
 
 If `enqueueSyncJob` exposes enough information to distinguish an existing job, map it to `alreadyQueued`; otherwise add a small typed return value in `src/jobs/enqueue-sync-job.ts` and update only its call sites. For thrown errors in sync-all, call `captureException(error)` and return `{ providerId, status: "failed", message }`.
 
-- [ ] **Step 4: Run verification**
+- [ ] **Step 4 (GREEN): Run verification**
 
 ```bash
 rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts src/jobs/enqueue-sync-job.test.ts
@@ -224,7 +224,7 @@ rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts src/
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5 (REFACTOR): Commit queued and failed outcome handling**
 
 ```bash
 rtk git add packages/server/src/routers/sync.ts packages/server/src/routers/sync.test.ts src/jobs/enqueue-sync-job.ts src/jobs/enqueue-sync-job.test.ts
@@ -237,7 +237,7 @@ rtk git commit -m "feat: distinguish queued and failed provider syncs"
 - Modify: `packages/server/src/routers/sync.ts`
 - Test: `packages/server/src/routers/sync.test.ts`
 
-- [ ] **Step 1: Add failing queue-depth test**
+- [ ] **Step 1 (RED): Add failing queue-depth test**
 
 Add:
 
@@ -259,7 +259,7 @@ it("returns queue depth for active sync queues", async () => {
 });
 ```
 
-- [ ] **Step 2: Run the queue-depth test and verify RED**
+- [ ] **Step 2 (RED): Run the queue-depth test and verify the expected failure**
 
 ```bash
 rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts --testNamePattern "queue depth"
@@ -267,11 +267,11 @@ rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts --te
 
 Expected: FAIL because `activeSyncs` does not expose queue depth.
 
-- [ ] **Step 3: Add queue metadata**
+- [ ] **Step 3 (GREEN): Add queue metadata**
 
 Extend `activeSyncs` result items with `providerId`, `queueName`, and `queueDepth`. Compute depth from the already fetched waiting, delayed, and active jobs per queue; do not add a second Redis scan if the current data is enough.
 
-- [ ] **Step 4: Run server tests**
+- [ ] **Step 4 (GREEN): Run server tests**
 
 ```bash
 rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts
@@ -279,7 +279,7 @@ rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5 (REFACTOR): Commit queue backpressure visibility**
 
 ```bash
 rtk git add packages/server/src/routers/sync.ts packages/server/src/routers/sync.test.ts
@@ -298,11 +298,21 @@ rtk git commit -m "feat: expose sync queue backpressure"
 - Modify: `packages/mobile/app/providers/index.test.tsx`
 - Modify: `packages/mobile/app/providers/index.stories.tsx`
 
-- [ ] **Step 1: Add rendering tests**
+- [ ] **Step 1 (RED): Add concrete web and mobile rendering tests**
 
-Add web and mobile tests asserting a skipped Garmin result renders “Cooldown active”, a failed provider renders the server message, and a started provider still polls its `jobId`.
+In `packages/web/src/components/SyncProviderCard.test.tsx`, add test cases named:
 
-- [ ] **Step 2: Run UI tests and verify RED**
+- `renders skipped cooldown provider outcomes`: pass a Garmin `providerResults` entry with `{ providerId: "garmin", status: "skippedCooldown", message: "Provider sync skipped: rate-limit cooldown active" }` and expect `"Cooldown active"` plus the cooldown message.
+- `renders failed provider outcomes`: pass a Polar `providerResults` entry with `{ providerId: "polar", status: "failed", message: "provider queue unavailable" }` and expect `"provider queue unavailable"`.
+- `polls started provider jobs`: pass a Wahoo `providerResults` entry with `{ providerId: "wahoo", status: "started", jobId: "wahoo:job-wahoo", queueName: "sync-wahoo" }` and expect the existing job polling helper to receive `"wahoo:job-wahoo"`.
+
+In `packages/mobile/app/providers/index.test.tsx`, add matching cases named:
+
+- `renders skipped cooldown provider outcomes on mobile`: render the providers screen with the Garmin skipped result and expect `"Cooldown active"` plus the cooldown message.
+- `renders failed provider outcomes on mobile`: render the providers screen with the Polar failed result and expect `"provider queue unavailable"`.
+- `polls started provider jobs on mobile`: render the providers screen with the Wahoo started result and expect the mocked polling hook to receive `"wahoo:job-wahoo"`.
+
+- [ ] **Step 2 (RED): Run UI tests and verify the expected failures**
 
 ```bash
 rtk pnpm vitest run --project unit packages/web/src/components/SyncProviderCard.test.tsx
@@ -311,11 +321,11 @@ rtk pnpm vitest run --project mobile packages/mobile/app/providers/index.test.ts
 
 Expected: FAIL until the components consume `providerResults`.
 
-- [ ] **Step 3: Implement rendering**
+- [ ] **Step 3 (GREEN): Implement rendering**
 
 Map `providerResults` by `providerId`. Render `skippedCooldown`, `alreadyQueued`, and `failed` as per-provider statuses; continue polling `started` and `alreadyQueued` results with a `jobId`. Do not show disabled providers.
 
-- [ ] **Step 4: Run verification**
+- [ ] **Step 4 (GREEN): Run verification**
 
 ```bash
 rtk pnpm vitest run --project unit packages/web/src/components/SyncProviderCard.test.tsx
@@ -325,7 +335,7 @@ rtk pnpm tsc --noEmit
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5 (REFACTOR): Commit provider outcome rendering**
 
 ```bash
 rtk git add packages/web/src/components/DataSourcesPanel.tsx packages/web/src/components/SyncProviderCard.tsx packages/web/src/components/SyncProviderCard.test.tsx packages/web/src/components/SyncProviderCard.stories.tsx packages/mobile/app/providers/index.tsx packages/mobile/app/providers/provider-card.tsx packages/mobile/app/providers/index.test.tsx packages/mobile/app/providers/index.stories.tsx

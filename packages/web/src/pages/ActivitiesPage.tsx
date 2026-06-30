@@ -168,7 +168,11 @@ export function ActivitiesPage() {
 
   return (
     <PageLayout title="Activities" subtitle={subtitle}>
-      <DataReadinessBanner data={dataHealth.data} loading={dataHealth.isLoading} />
+      <DataReadinessBanner
+        data={dataHealth.data}
+        error={dataHealth.error}
+        loading={dataHealth.isLoading}
+      />
       <div className="space-y-4">
         <ActivityControls
           activityTypes={overviewQuery.data?.activityTypes ?? []}

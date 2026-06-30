@@ -486,7 +486,7 @@ describe("importAppleHealthFile", () => {
     expect(doseEventBatch).toEqual([
       expect.objectContaining({
         externalId:
-          "apple-health-medication-dose:2026-06-29T15:30:00.000Z:2026-06-29T15:00:00.000Z:rxnorm-123:skipped",
+          "apple-health-medication-dose:2026-06-29T15:30:00.000Z:2026-06-29T15:00:00.000Z:rxnorm-123",
         medicationName: "rxnorm-123",
         medicationConceptId: "rxnorm-123",
         doseStatus: "skipped",
@@ -520,12 +520,56 @@ describe("importAppleHealthFile", () => {
     );
     expect(doseEventBatch).toEqual([
       expect.objectContaining({
-        externalId:
-          "apple-health-medication-dose:2026-06-29T15:30:00.000Z:unscheduled:Vitamin D:paused",
+        externalId: "apple-health-medication-dose:2026-06-29T15:30:00.000Z:unscheduled:Vitamin D",
         medicationName: "Vitamin D",
         medicationConceptId: null,
         doseStatus: "paused",
         sourceName: null,
+      }),
+    ]);
+  });
+
+  it("keeps fallback medication dose external ids stable when dose status changes", async () => {
+    const zipPath = createClinicalZip(tmpDir, "dose-event-status-change", [
+      {
+        name: "MedicationDoseEvent-001.json",
+        content: JSON.stringify({
+          startDate: "2026-06-29T15:30:00.000Z",
+          scheduledDate: "2026-06-29T15:00:00.000Z",
+          logStatus: 1,
+          medicationConceptIdentifier: "rxnorm-123",
+        }),
+      },
+      {
+        name: "MedicationDoseEvent-002.json",
+        content: JSON.stringify({
+          startDate: "2026-06-29T15:30:00.000Z",
+          scheduledDate: "2026-06-29T15:00:00.000Z",
+          logStatus: 2,
+          medicationConceptIdentifier: "rxnorm-123",
+        }),
+      },
+    ]);
+    const { db, spies } = createRunImportMockDb();
+
+    const result = await importMedicationDoseEvents(db, "apple_health", zipPath);
+
+    expect(result.errors).toHaveLength(0);
+    const doseEventBatch = spies.values.mock.calls.find(([values]) =>
+      Array.isArray(values)
+        ? values.some((value) => value.medicationConceptId === "rxnorm-123")
+        : false,
+    )?.[0];
+    expect(doseEventBatch).toEqual([
+      expect.objectContaining({
+        externalId:
+          "apple-health-medication-dose:2026-06-29T15:30:00.000Z:2026-06-29T15:00:00.000Z:rxnorm-123",
+        doseStatus: "taken",
+      }),
+      expect.objectContaining({
+        externalId:
+          "apple-health-medication-dose:2026-06-29T15:30:00.000Z:2026-06-29T15:00:00.000Z:rxnorm-123",
+        doseStatus: "skipped",
       }),
     ]);
   });

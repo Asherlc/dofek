@@ -116,7 +116,11 @@ export default function TodayScreen() {
         <ProviderGuide onDismiss={providerGuide.dismiss} providers={providerGuide.providers} />
       )}
 
-      <DataReadinessBanner data={dataHealthQuery.data} loading={dataHealthQuery.isLoading} />
+      <DataReadinessBanner
+        data={dataHealthQuery.data}
+        error={dataHealthQuery.error}
+        loading={dataHealthQuery.isLoading}
+      />
 
       {/* Anomaly Alert Banner */}
       {anomalies != null && anomalies.anomalies.length > 0 && (
