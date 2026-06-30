@@ -2051,7 +2051,7 @@ describe("syncRouter", () => {
           if (queryText.includes("analytics.daily_sleep")) {
             return [{ latestReadModelAt: "2026-06-29T08:00:00.000Z" }];
           }
-          if (queryText.includes("analytics.daily_activity_load")) {
+          if (queryText.includes("analytics.activity_summary_rows")) {
             return [{ latestReadModelAt: "2026-06-29T10:00:00.000Z" }];
           }
           return [];
@@ -2182,7 +2182,7 @@ describe("syncRouter", () => {
           if (queryText.includes("analytics.daily_sleep")) {
             return [{ latestReadModelAt: "2026-06-29T08:00:00.000Z" }];
           }
-          if (queryText.includes("analytics.daily_activity_load")) {
+          if (queryText.includes("analytics.activity_summary_rows")) {
             return [{ latestReadModelAt: "2026-06-29T10:00:00.000Z" }];
           }
           return [];
@@ -2227,7 +2227,7 @@ describe("syncRouter", () => {
           if (queryText.includes("analytics.daily_sleep")) {
             return [{ latestReadModelAt: "2026-06-29T08:00:00.000Z" }];
           }
-          if (queryText.includes("analytics.daily_activity_load")) {
+          if (queryText.includes("analytics.activity_summary_rows")) {
             return [{ latestReadModelAt: "2026-06-29T10:00:00.000Z" }];
           }
           return [];

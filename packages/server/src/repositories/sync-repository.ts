@@ -89,7 +89,7 @@ export const dataHealthDatasets = [
     rawAccessColumn: "started_at",
     rawAccessKind: "timestamp",
     predicate: sql`AND provider_absent_at IS NULL AND deleted_at IS NULL`,
-    readModelTable: "analytics.daily_activity_load",
+    readModelTable: "analytics.activity_summary_rows",
     readModelLatestExpression: "maxOrNull(started_at)",
     readModelAccessExpression: "toDate(started_at)",
     readModelPredicate: "",

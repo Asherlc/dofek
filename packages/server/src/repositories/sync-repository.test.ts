@@ -456,7 +456,7 @@ describe("SyncRepository", () => {
       expect(query.mock.calls[0]?.[1]).toContain("respiratory_rate IS NOT NULL");
     });
 
-    it("checks activity read-model freshness from activity-derived rows", async () => {
+    it("checks activity read-model freshness from all activity summary rows", async () => {
       const activityDataset = getDataHealthDataset("activity");
       const { repo, query } = makeRepository([
         { rawRows: 1, latestRawAt: "2026-06-29T10:00:00.000Z" },
@@ -476,9 +476,10 @@ describe("SyncRepository", () => {
       );
 
       expect(query.mock.calls[0]?.[1]).toContain("maxOrNull(started_at)");
-      expect(query.mock.calls[0]?.[1]).toContain("FROM analytics.daily_activity_load FINAL");
+      expect(query.mock.calls[0]?.[1]).toContain("FROM analytics.activity_summary_rows FINAL");
       expect(query.mock.calls[0]?.[1]).toContain("toDate(started_at) >= toDate");
       expect(query.mock.calls[0]?.[1]).not.toContain("FROM analytics.daily_strain FINAL");
+      expect(query.mock.calls[0]?.[1]).not.toContain("FROM analytics.daily_activity_load FINAL");
     });
   });
 
