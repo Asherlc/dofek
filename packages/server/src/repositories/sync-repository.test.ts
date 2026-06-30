@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
-import { SyncRepository } from "./sync-repository.ts";
+import { dataHealthDatasets, SyncRepository } from "./sync-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -406,6 +406,21 @@ describe("SyncRepository", () => {
         },
         { priority: "dashboard" },
       );
+    });
+
+    it("aligns raw sleep freshness to the daily sleep read-model day grain", async () => {
+      const sleepDataset = dataHealthDatasets.find((dataset) => dataset.key === "sleep");
+      if (!sleepDataset) throw new Error("sleep data health dataset is missing");
+      const { repo, execute, query } = makeRepository([
+        { rawRows: 1, latestRawAt: "2026-06-29T00:00:00.000Z" },
+      ]);
+      query.mockResolvedValueOnce([{ latestReadModelAt: "2026-06-29T00:00:00.000Z" }]);
+
+      await repo.getDataHealthFreshness([sleepDataset], { query });
+
+      const rawSql = collectSqlText(execute.mock.calls[0]?.[0]);
+      expect(rawSql).toContain("started_at - INTERVAL '6 hours'");
+      expect(rawSql).not.toContain("max(started_at)");
     });
   });
 

@@ -69,7 +69,7 @@ export const dataHealthDatasets = [
     key: "sleep",
     label: "Sleep",
     rawTable: "fitness.sleep_session",
-    rawLatestExpression: "max(started_at)",
+    rawLatestExpression: "max((started_at - INTERVAL '6 hours')::date::timestamptz)",
     rawAccessColumn: "started_at",
     rawAccessKind: "timestamp",
     predicate: sql``,
