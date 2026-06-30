@@ -11092,3 +11092,38 @@ new incremental tables are populated.
   quiet. This fix prevents idle shutdown from creating BullMQ stalls, but a
   separate provider HTTP timeout policy may still be needed if Strava token
   refreshes can hang indefinitely.
+
+## 2026-06-30 — PR mutation jobs failed on readiness healthcheck coverage
+
+- **Symptoms:** PR #1394 failed `Test / Stryker (0)`, `Test / Stryker (1)`,
+  `Test / Stryker (3)`, then the aggregate `Test / Mutation Testing`,
+  `Test / Test Gate`, and `CI Gate` jobs.
+- **User impact:** The PR could not merge while mutation testing failed.
+- **Evidence:** The first attached Stryker logs failed during the initial dry
+  run with `createApp returns ready when Postgres, ClickHouse, and queues are
+  reachable` and `expected "spy" to be called at least once`. After that was
+  fixed, CI exposed no-coverage mutation failures in the SPA fallback exclusions
+  in `packages/server/src/index.ts` and direct-run healthcheck logic in
+  `src/jobs/worker-health.ts`.
+- **Root cause:** The `/readyz` Express route test asserted internal queue
+  spies while readiness and worker-health tests also mocked the same underlying
+  health modules, making Stryker's all-test dry run sensitive to module mock
+  state. Separately, redundant SPA fallback exclusions and the direct-run
+  worker-health path were in the mutated line ranges without focused coverage.
+- **Fix / mitigation:** Moved readiness dependency assertions into a colocated
+  `packages/server/src/lib/readiness.test.ts`, kept `index.test.ts` at the
+  route boundary by mocking `checkReadiness()`, removed redundant static
+  fallback exclusions for routes registered earlier, and added worker-health
+  tests for later queue failures, cleanup failures, direct-run Sentry setup,
+  non-direct imports, and missing `argv[1]`.
+- **Validation:** Local focused tests passed:
+  `pnpm vitest run packages/server/src/index.test.ts
+  packages/server/src/lib/readiness.test.ts src/jobs/worker-health.test.ts`.
+  Focused Stryker runs passed for `packages/server/src/lib/readiness.ts`,
+  `packages/server/src/index.ts`, and `src/jobs/worker-health.ts`; the
+  worker-health focused run reached 100% mutation score. `pnpm lint`,
+  `pnpm tsc --noEmit`, and `cd packages/server && pnpm tsc --noEmit` passed.
+  After pushing, GitHub reported 89 passed checks and 0 failed checks for the
+  PR before this baseline-only documentation update.
+- **Remaining risk:** Low. The documentation commit retriggers CI, but it does
+  not change runtime or test behavior.
