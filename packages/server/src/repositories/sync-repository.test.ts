@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
 import { SyncRepository } from "./sync-repository.ts";
@@ -277,6 +278,81 @@ describe("SyncRepository", () => {
       expect(querySql).toEqual(expect.stringContaining("is_deleted = 0"));
       expect(querySql).not.toEqual(expect.stringContaining("postgres_fitness.metric_stream"));
       expect(execute).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("getDataHealthFreshness", () => {
+    const dataHealthDataset = {
+      key: "dailyMetrics" as const,
+      label: "Daily metrics",
+      rawTable: "fitness.daily_metrics",
+      rawLatestExpression: "max(date::timestamptz)",
+      predicate: sql``,
+      readModelTable: "analytics.daily_recovery",
+    };
+
+    it("returns raw freshness without querying ClickHouse when no sensor store is configured", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValue([{ rawRows: 2, latestRawAt: new Date("2026-06-29T00:00:00.000Z") }]);
+      const db: Pick<import("dofek/db").Database, "execute" | "select"> = {
+        execute,
+        select: vi.fn(),
+      };
+      const repo = new SyncRepository(db, "user-1");
+
+      const result = await repo.getDataHealthFreshness([dataHealthDataset]);
+
+      expect(result).toEqual([
+        {
+          key: "dailyMetrics",
+          rawRows: 2,
+          latestRawAt: "2026-06-29T00:00:00.000Z",
+          latestReadModelAt: null,
+        },
+      ]);
+    });
+
+    it("normalizes read-model timestamps and passes dashboard priority", async () => {
+      const { repo, query } = makeRepository([
+        { rawRows: "4", latestRawAt: "2026-06-29 00:00:00+00" },
+      ]);
+      query.mockImplementationOnce(<TSchema extends z.ZodType>(schema: TSchema) =>
+        Promise.resolve([{ latestReadModelAt: "2026-06-29" }].map((row) => schema.parse(row))),
+      );
+
+      const result = await repo.getDataHealthFreshness([dataHealthDataset], { query });
+
+      expect(result).toEqual([
+        {
+          key: "dailyMetrics",
+          rawRows: 4,
+          latestRawAt: "2026-06-29T00:00:00.000Z",
+          latestReadModelAt: "2026-06-29T00:00:00.000Z",
+        },
+      ]);
+      expect(query).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining("FROM analytics.daily_recovery FINAL"),
+        { userId: "user-1" },
+        { priority: "dashboard" },
+      );
+    });
+
+    it("falls back to zero and null freshness when stores return no rows", async () => {
+      const { repo, query } = makeRepository([]);
+      query.mockResolvedValueOnce([]);
+
+      const result = await repo.getDataHealthFreshness([dataHealthDataset], { query });
+
+      expect(result).toEqual([
+        {
+          key: "dailyMetrics",
+          rawRows: 0,
+          latestRawAt: null,
+          latestReadModelAt: null,
+        },
+      ]);
     });
   });
 
