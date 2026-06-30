@@ -11141,3 +11141,37 @@ new incremental tables are populated.
   passed with no failed jobs before the baseline-only documentation update.
 - **Remaining risk:** Low. The documentation commit retriggers CI, but it does
   not change runtime or test behavior.
+
+## 2026-06-30 — PR watchOS build failed after stale Pods cache restore
+
+- **Symptoms:** PR
+  [#1394](https://github.com/Asherlc/dofek/pull/1394) failed
+  [`Build Mobile / watchOS Build`](https://github.com/Asherlc/dofek/actions/runs/28457051177/job/84334436158).
+- **User impact:** The PR could not merge while the mobile build gate was red.
+- **Evidence:** The failing step was `cd packages/mobile/ios && pod install`
+  immediately after a `pods-watchos-v9-*` cache hit restored
+  `packages/mobile/ios/Pods`. The first fatal line was
+  `xcodebuild: error: couldn't map cache file ... /T/xcrun_db ...`, followed
+  by CocoaPods repo metadata errors and
+  `Illegal byte sequence @ io_fread - .../packages/mobile/ios/Podfile`.
+  Earlier in the same job, `pnpm expo prebuild --clean --platform ios` had
+  already completed CocoaPods installation successfully with
+  `Pod installation complete!`.
+- **Root cause:** The watchOS workflow generated the native iOS project and
+  installed Pods through Expo prebuild, then restored a cached `Pods` directory
+  over that freshly generated state and ran CocoaPods a second time. The second
+  CocoaPods invocation failed before the watchOS build started.
+- **Fix / mitigation:** Removed the watchOS-only CocoaPods cache restore and
+  redundant second `pod install`, so the watchOS simulator build uses the Pods
+  state produced by the successful Expo prebuild step.
+- **Validation:** Local workflow checks passed with `yamllint`,
+  `actionlint -shellcheck= .github/workflows/build-mobile.yml`, `pnpm lint`,
+  `pnpm tsc --noEmit`, `cd packages/server && pnpm tsc --noEmit`, and
+  `cd packages/web && pnpm tsc --noEmit`. After pushing commit
+  [`a8258ab59`](https://github.com/Asherlc/dofek/commit/a8258ab594d7ae44f6663714f4056da29c041b15),
+  the follow-up
+  [`Build Mobile / watchOS Build`](https://github.com/Asherlc/dofek/actions/runs/28457564100/job/84336739173)
+  job completed successfully.
+- **Remaining risk:** Low. The iOS archive job still has its existing Pods cache
+  path because it was not the failing action in this incident; monitor it
+  separately before changing that broader build behavior.
