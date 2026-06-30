@@ -63,6 +63,7 @@ const appleMedicationDoseEventSchema = z
   .object({
     uuid: z.string().optional(),
     startDate: z.string(),
+    scheduledDate: z.string().nullable().optional(),
     logStatus: z.union([z.number(), z.string()]).optional(),
     medicationConceptIdentifier: z.string().nullable().optional(),
     medicationDisplayName: z.string().nullable().optional(),
@@ -99,6 +100,26 @@ function medicationDoseEventName(input: {
     normalizeOptionalString(input.medicationConceptIdentifier) ??
     "Unknown medication"
   );
+}
+
+function medicationDoseEventExternalId(input: {
+  logStatus?: number | string | undefined;
+  medicationConceptIdentifier?: string | null | undefined;
+  medicationName: string;
+  scheduledDate?: string | null | undefined;
+  startDate: string;
+  uuid?: string | null | undefined;
+}): string {
+  const uuid = normalizeOptionalString(input.uuid);
+  if (uuid) return uuid;
+
+  return [
+    "apple-health-medication-dose",
+    input.startDate,
+    normalizeOptionalString(input.scheduledDate) ?? "unscheduled",
+    normalizeOptionalString(input.medicationConceptIdentifier) ?? input.medicationName,
+    mapMedicationDoseStatus(input.logStatus),
+  ].join(":");
 }
 
 /**
@@ -820,7 +841,7 @@ export async function importMedicationDoseEvents(
     return { inserted: 0, skipped: 0, errors };
   }
 
-  let skipped = 0;
+  const skipped = 0;
   const batch: (typeof medicationDoseEvent.$inferInsert)[] = [];
 
   for (const file of doseEventFiles) {
@@ -832,7 +853,7 @@ export async function importMedicationDoseEvents(
       batch.push({
         providerId,
         userId: scopedUserId,
-        externalId: normalizeOptionalString(parsed.uuid),
+        externalId: medicationDoseEventExternalId({ ...parsed, medicationName }),
         medicationName,
         medicationConceptId: normalizeOptionalString(parsed.medicationConceptIdentifier),
         doseStatus: mapMedicationDoseStatus(parsed.logStatus),

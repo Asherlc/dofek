@@ -392,9 +392,7 @@ describe("importAppleHealthFile", () => {
     expect(result.errors).toHaveLength(0);
     const allValuesCalls = spies.values.mock.calls.map(([values]) => values);
     const doseEventBatch = allValuesCalls.find((values) =>
-      Array.isArray(values)
-        ? values.some((value) => value.medicationName === "rxnorm-123")
-        : false,
+      Array.isArray(values) ? values.some((value) => value.medicationName === "rxnorm-123") : false,
     );
     expect(doseEventBatch).toEqual([
       expect.objectContaining({
@@ -407,6 +405,44 @@ describe("importAppleHealthFile", () => {
         userId: "00000000-0000-0000-0000-000000000001",
         sourceName: "Apple Health",
         raw: expect.objectContaining({ uuid: "dose-1", logStatus: 1 }),
+      }),
+    ]);
+    expect(spies.onConflictDoNothing).toHaveBeenCalled();
+  });
+
+  it("derives a stable external id for medication dose events without uuid", async () => {
+    const zipPath = createClinicalZip(tmpDir, "dose-events-without-uuid", [
+      {
+        name: "MedicationDoseEvent-001.json",
+        content: JSON.stringify({
+          startDate: "2026-06-29T15:30:00.000Z",
+          scheduledDate: "2026-06-29T15:00:00.000Z",
+          logStatus: 2,
+          medicationConceptIdentifier: "rxnorm-123",
+          sourceName: "Apple Health",
+        }),
+      },
+    ]);
+    const { db, spies } = createRunImportMockDb();
+
+    const result = await importAppleHealthFile(db, zipPath, new Date("2026-01-01"));
+
+    expect(result.errors).toHaveLength(0);
+    const allValuesCalls = spies.values.mock.calls.map(([values]) => values);
+    const doseEventBatch = allValuesCalls.find((values) =>
+      Array.isArray(values)
+        ? values.some((value) =>
+            String(value.externalId).startsWith("apple-health-medication-dose:"),
+          )
+        : false,
+    );
+    expect(doseEventBatch).toEqual([
+      expect.objectContaining({
+        externalId:
+          "apple-health-medication-dose:2026-06-29T15:30:00.000Z:2026-06-29T15:00:00.000Z:rxnorm-123:skipped",
+        medicationName: "rxnorm-123",
+        medicationConceptId: "rxnorm-123",
+        doseStatus: "skipped",
       }),
     ]);
     expect(spies.onConflictDoNothing).toHaveBeenCalled();
