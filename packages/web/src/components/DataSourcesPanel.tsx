@@ -113,48 +113,30 @@ export function DataSourcesPanel() {
         const result = await syncMutation.mutateAsync({
           sinceDays: fullSync ? undefined : 7,
         });
-        const providerResults = result.providerResults ?? [];
-        const providerJobMap = new Map(
-          (result.providerJobs ?? []).map((job) => [job.providerId, job.jobId] as const),
+        const providerResults = result.providerResults;
+        await Promise.all(
+          ids.map(async (providerId) => {
+            const providerResult = providerResults.find(
+              (entry) => entry.providerId === providerId,
+            );
+            if (providerResult?.status === "skippedCooldown") {
+              updateState(providerId, { status: "done", message: providerResult.message });
+              return;
+            }
+            if (providerResult?.status === "failed") {
+              updateState(providerId, { status: "error", message: providerResult.message });
+              return;
+            }
+            if (
+              providerResult?.status === "started" ||
+              providerResult?.status === "alreadyQueued"
+            ) {
+              await doPollSyncJob(providerResult.jobId, [providerId]);
+              return;
+            }
+            updateState(providerId, { status: "error", message: "Failed to start sync job" });
+          }),
         );
-        if (providerResults.length > 0) {
-          await Promise.all(
-            ids.map(async (providerId) => {
-              const providerResult = providerResults.find(
-                (entry) => entry.providerId === providerId,
-              );
-              if (providerResult?.status === "skippedCooldown") {
-                updateState(providerId, { status: "done", message: providerResult.message });
-                return;
-              }
-              if (providerResult?.status === "failed") {
-                updateState(providerId, { status: "error", message: providerResult.message });
-                return;
-              }
-              if (
-                providerResult?.status === "started" ||
-                providerResult?.status === "alreadyQueued"
-              ) {
-                await doPollSyncJob(providerResult.jobId, [providerId]);
-                return;
-              }
-              updateState(providerId, { status: "error", message: "Failed to start sync job" });
-            }),
-          );
-        } else if (providerJobMap.size > 0) {
-          await Promise.all(
-            ids.map(async (providerId) => {
-              const jobId = providerJobMap.get(providerId);
-              if (!jobId) {
-                updateState(providerId, { status: "error", message: "Failed to start sync job" });
-                return;
-              }
-              await doPollSyncJob(jobId, [providerId]);
-            }),
-          );
-        } else {
-          await doPollSyncJob(result.jobId, ids);
-        }
       } catch (err: unknown) {
         for (const p of enabled) {
           updateState(p.id, {
