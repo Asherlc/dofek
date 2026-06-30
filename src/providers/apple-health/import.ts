@@ -65,7 +65,7 @@ const appleMedicationDoseEventSchema = z
     startDate: z.string(),
     logStatus: z.union([z.number(), z.string()]).optional(),
     medicationConceptIdentifier: z.string().nullable().optional(),
-    medicationDisplayName: z.string(),
+    medicationDisplayName: z.string().nullable().optional(),
     sourceName: z.string().nullable().optional(),
   })
   .passthrough();
@@ -88,6 +88,17 @@ function mapMedicationDoseStatus(logStatus: number | string | undefined): string
   if (logStatus === 2 || logStatus === "2") return "skipped";
   const statusText = typeof logStatus === "string" ? normalizeOptionalString(logStatus) : null;
   return statusText ?? "unknown";
+}
+
+function medicationDoseEventName(input: {
+  medicationConceptIdentifier?: string | null | undefined;
+  medicationDisplayName?: string | null | undefined;
+}): string {
+  return (
+    normalizeOptionalString(input.medicationDisplayName) ??
+    normalizeOptionalString(input.medicationConceptIdentifier) ??
+    "Unknown medication"
+  );
 }
 
 /**
@@ -816,11 +827,7 @@ export async function importMedicationDoseEvents(
     try {
       const raw: unknown = JSON.parse(file.data.toString("utf-8"));
       const parsed = appleMedicationDoseEventSchema.parse(raw);
-      const medicationName = normalizeOptionalString(parsed.medicationDisplayName);
-      if (!medicationName) {
-        skipped++;
-        continue;
-      }
+      const medicationName = medicationDoseEventName(parsed);
 
       batch.push({
         providerId,

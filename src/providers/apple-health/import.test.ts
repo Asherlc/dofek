@@ -381,7 +381,6 @@ describe("importAppleHealthFile", () => {
           endDate: "2026-06-29T15:30:00.000Z",
           logStatus: 1,
           medicationConceptIdentifier: "rxnorm-123",
-          medicationDisplayName: "Metformin 500 mg",
           sourceName: "Apple Health",
         }),
       },
@@ -394,13 +393,13 @@ describe("importAppleHealthFile", () => {
     const allValuesCalls = spies.values.mock.calls.map(([values]) => values);
     const doseEventBatch = allValuesCalls.find((values) =>
       Array.isArray(values)
-        ? values.some((value) => value.medicationName === "Metformin 500 mg")
+        ? values.some((value) => value.medicationName === "rxnorm-123")
         : false,
     );
     expect(doseEventBatch).toEqual([
       expect.objectContaining({
         externalId: "dose-1",
-        medicationName: "Metformin 500 mg",
+        medicationName: "rxnorm-123",
         medicationConceptId: "rxnorm-123",
         doseStatus: "taken",
         recordedAt: new Date("2026-06-29T15:30:00.000Z"),
