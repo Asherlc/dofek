@@ -1,0 +1,344 @@
+import type { AddressInfo } from "node:net";
+import express from "express";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const routeMocks = vi.hoisted(() => ({
+  captureException: vi.fn<(error: unknown) => void>(),
+  executeWithSchema: vi.fn<(...args: unknown[]) => Promise<Array<{ id: string }>>>(async () => []),
+  loggerError: vi.fn<(message: string) => void>(),
+  loggerWarn: vi.fn<(message: string) => void>(),
+  validateCompanionToken: vi.fn<(_db: unknown, token: string) => Promise<string | null>>(),
+}));
+
+vi.mock("@sentry/node", () => ({
+  captureException: routeMocks.captureException,
+}));
+
+vi.mock("../companion/token-repository.ts", () => ({
+  validateCompanionToken: routeMocks.validateCompanionToken,
+}));
+
+vi.mock("../lib/typed-sql.ts", () => ({
+  executeWithSchema: routeMocks.executeWithSchema,
+}));
+
+vi.mock("../logger.ts", () => ({
+  logger: {
+    error: routeMocks.loggerError,
+    warn: routeMocks.loggerWarn,
+  },
+}));
+
+import { createIngestZosHealthRouter } from "./ingest-zos-health.ts";
+
+const userId = "00000000-0000-0000-0000-000000000001";
+
+type InsertedValues = Record<string, unknown>;
+
+function createMockDatabase(
+  options: { executeError?: Error; insertedSleepSessionId?: string } = {},
+) {
+  const insertedValues: InsertedValues[] = [];
+  const execute = vi.fn<(_query: unknown) => Promise<Array<Record<string, unknown>>>>(async () => {
+    if (options.executeError) {
+      throw options.executeError;
+    }
+    return [];
+  });
+  const insert = vi.fn((_table: unknown) => ({
+    values: vi.fn((values: InsertedValues) => {
+      insertedValues.push(values);
+      return {
+        onConflictDoNothing: vi.fn(() => ({
+          returning: vi.fn(async () =>
+            options.insertedSleepSessionId === undefined
+              ? []
+              : [{ id: options.insertedSleepSessionId }],
+          ),
+        })),
+      };
+    }),
+  }));
+  const db = { execute, insert } satisfies import("dofek/db").Database;
+  return { db, execute, insert, insertedValues };
+}
+
+function createTestApp(db: import("dofek/db").Database) {
+  const app = express();
+  app.use("/api/ingest", createIngestZosHealthRouter({ db }));
+  return app;
+}
+
+function getPort(server: ReturnType<express.Express["listen"]>): number {
+  const address = server.address();
+  if (address !== null && typeof address === "object") {
+    return (address satisfies AddressInfo).port;
+  }
+  throw new Error("Server address is not an object");
+}
+
+async function post(
+  app: express.Express,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Promise<{ status: number; body: unknown }> {
+  return new Promise((resolve, reject) => {
+    const server = app.listen(0, () => {
+      const port = getPort(server);
+      fetch(`http://127.0.0.1:${port}/api/ingest/zos-health`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers },
+        body: JSON.stringify(body),
+      })
+        .then(async (response) => {
+          resolve({
+            status: response.status,
+            body: await response.json(),
+          });
+        })
+        .catch(reject)
+        .finally(() => {
+          server.close((error) => {
+            if (error) {
+              reject(error);
+            }
+          });
+        });
+    });
+  });
+}
+
+describe("createIngestZosHealthRouter", () => {
+  beforeEach(() => {
+    routeMocks.captureException.mockReset();
+    routeMocks.executeWithSchema.mockReset();
+    routeMocks.executeWithSchema.mockResolvedValue([]);
+    routeMocks.loggerError.mockReset();
+    routeMocks.loggerWarn.mockReset();
+    routeMocks.validateCompanionToken.mockReset();
+    routeMocks.validateCompanionToken.mockResolvedValue(userId);
+  });
+
+  it("returns 401 when the bearer token is missing", async () => {
+    const { db, execute, insert } = createMockDatabase();
+
+    const response = await post(createTestApp(db), {});
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({ error: "Companion token is required." });
+    expect(routeMocks.validateCompanionToken).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("returns 401 when the companion token is invalid", async () => {
+    routeMocks.validateCompanionToken.mockResolvedValue(null);
+    const { db, execute, insert } = createMockDatabase();
+
+    const response = await post(createTestApp(db), {}, { authorization: "Bearer invalid-token" });
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({ error: "Invalid or revoked companion token." });
+    expect(routeMocks.validateCompanionToken).toHaveBeenCalledWith(db, "invalid-token");
+    expect(execute).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("returns 500 when token validation fails", async () => {
+    const validationError = new Error("token repository unavailable");
+    routeMocks.validateCompanionToken.mockRejectedValue(validationError);
+    const { db, execute } = createMockDatabase();
+
+    const response = await post(createTestApp(db), {}, { authorization: "Bearer token-123" });
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ error: "Failed to validate companion token." });
+    expect(routeMocks.captureException).toHaveBeenCalledWith(validationError);
+    expect(routeMocks.loggerError).toHaveBeenCalledWith(
+      `[ingest-zos] Token validation failed: ${validationError}`,
+    );
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when the payload has no ingest sections", async () => {
+    const { db, execute, insert } = createMockDatabase();
+
+    const response = await post(createTestApp(db), {}, { authorization: "Bearer token-123" });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: "At least one of dailyMetrics, sleepSessions, or activities is required.",
+    });
+    expect(execute).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when the payload shape is invalid", async () => {
+    const { db, execute, insert } = createMockDatabase();
+
+    const response = await post(
+      createTestApp(db),
+      { dailyMetrics: "not-a-record" },
+      { authorization: "Bearer token-123" },
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({ error: "Invalid payload" });
+    expect(execute).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("stores daily metrics, sleep sessions with stages, and activities for a valid payload", async () => {
+    const { db, execute, insertedValues } = createMockDatabase({
+      insertedSleepSessionId: "sleep-session-1",
+    });
+
+    const response = await post(
+      createTestApp(db),
+      {
+        dailyMetrics: {
+          "2026-06-28": {
+            steps: 12_345,
+            calories: 450.5,
+            distanceKm: 8.7,
+            standHours: 11,
+            spo2Avg: 97.2,
+            skinTempC: 35.9,
+            stressHighMinutes: 21,
+            exerciseMinutes: 44,
+          },
+        },
+        sleepSessions: [
+          {
+            externalId: "sleep-1",
+            startedAt: "2026-06-27T22:30:00Z",
+            endedAt: "2026-06-28T06:30:00Z",
+            durationMinutes: 480,
+            deepMinutes: 90,
+            remMinutes: 100,
+            lightMinutes: 250,
+            awakeMinutes: 40,
+            efficiencyPct: 91.5,
+            stages: [
+              {
+                stage: "deep",
+                startedAt: "2026-06-27T23:00:00Z",
+                endedAt: "2026-06-28T00:15:00Z",
+              },
+            ],
+          },
+        ],
+        activities: [
+          {
+            externalId: "activity-1",
+            activityType: "running",
+            startedAt: "2026-06-28T14:00:00Z",
+            endedAt: "2026-06-28T15:00:00Z",
+            name: "Lunch Run",
+          },
+        ],
+      },
+      { authorization: "Bearer token-123" },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ status: "ok" });
+    expect(routeMocks.validateCompanionToken).toHaveBeenCalledWith(db, "token-123");
+    expect(execute).toHaveBeenCalledTimes(3);
+    expect(routeMocks.executeWithSchema).toHaveBeenCalledOnce();
+    expect(insertedValues).toHaveLength(2);
+    expect(insertedValues[0]).toMatchObject({
+      providerId: "amazfit-zepp",
+      userId,
+      externalId: "sleep-1",
+      durationMinutes: 480,
+      deepMinutes: 90,
+      remMinutes: 100,
+      lightMinutes: 250,
+      awakeMinutes: 40,
+      efficiencyPct: 91.5,
+      sourceName: "zepp-companion",
+    });
+    expect(insertedValues[0]?.startedAt).toEqual(new Date("2026-06-27T22:30:00Z"));
+    expect(insertedValues[0]?.endedAt).toEqual(new Date("2026-06-28T06:30:00Z"));
+    expect(insertedValues[1]).toMatchObject({
+      sessionId: "sleep-session-1",
+      stage: "deep",
+      sourceName: "zepp-companion",
+    });
+    expect(insertedValues[1]?.startedAt).toEqual(new Date("2026-06-27T23:00:00Z"));
+    expect(insertedValues[1]?.endedAt).toEqual(new Date("2026-06-28T00:15:00Z"));
+  });
+
+  it("uses an existing sleep session id when the sleep session insert conflicts", async () => {
+    routeMocks.executeWithSchema.mockResolvedValue([{ id: "existing-sleep-session" }]);
+    const { db, insertedValues } = createMockDatabase();
+
+    const response = await post(
+      createTestApp(db),
+      {
+        sleepSessions: [
+          {
+            externalId: "sleep-duplicate",
+            startedAt: "2026-06-27T22:30:00Z",
+            endedAt: "2026-06-28T06:30:00Z",
+            stages: [
+              {
+                stage: "rem",
+                startedAt: "2026-06-28T04:00:00Z",
+                endedAt: "2026-06-28T04:45:00Z",
+              },
+            ],
+          },
+        ],
+      },
+      { authorization: "Bearer token-123" },
+    );
+
+    expect(response.status).toBe(200);
+    expect(insertedValues[1]).toMatchObject({
+      sessionId: "existing-sleep-session",
+      stage: "rem",
+    });
+  });
+
+  it("skips daily metrics with invalid date keys", async () => {
+    const { db, execute } = createMockDatabase();
+
+    const response = await post(
+      createTestApp(db),
+      {
+        dailyMetrics: {
+          "not-a-date": { steps: 12_345 },
+          "2026-06-28": { steps: 9_876 },
+        },
+      },
+      { authorization: "Bearer token-123" },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ status: "ok" });
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(routeMocks.loggerWarn).toHaveBeenCalledWith(
+      "[ingest-zos] Invalid date: not-a-date, skipping",
+    );
+  });
+
+  it("returns 500 when ingest persistence fails", async () => {
+    const ingestError = new Error("database unavailable");
+    const { db } = createMockDatabase({ executeError: ingestError });
+
+    const response = await post(
+      createTestApp(db),
+      { dailyMetrics: { "2026-06-28": { steps: 12_345 } } },
+      { authorization: "Bearer token-123" },
+    );
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ error: "Failed to ingest health data." });
+    expect(routeMocks.captureException).toHaveBeenCalledWith(ingestError);
+    expect(routeMocks.loggerError).toHaveBeenCalledWith(
+      `[ingest-zos] Failed to ingest health data: ${ingestError}`,
+    );
+  });
+});
