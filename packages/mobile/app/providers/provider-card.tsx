@@ -101,18 +101,13 @@ export function ProviderCard({
   const canRunManualSync = !provider.importOnly && !provider.pushOnly;
 
   return (
-    <TouchableOpacity
-      style={styles.card}
-      onPress={onPress}
-      activeOpacity={0.7}
-      testID={`provider-card-${provider.id}`}
-    >
+    <View style={styles.card} testID={`provider-card-${provider.id}`}>
       <View style={styles.cardHeader}>
-        <View style={styles.cardTitleRow}>
+        <TouchableOpacity style={styles.cardTitleRow} onPress={onPress} activeOpacity={0.7}>
           <ProviderLogo provider={provider.id} serverUrl={serverUrl} size={24} />
           <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
           <Text style={styles.cardTitle}>{provider.label}</Text>
-        </View>
+        </TouchableOpacity>
         {canRunManualSync && (
           <TouchableOpacity
             style={[styles.syncButton, syncing && styles.syncButtonDisabled]}
@@ -175,7 +170,7 @@ export function ProviderCard({
       )}
 
       {stats && <ProviderStatsBreakdown stats={stats} />}
-    </TouchableOpacity>
+    </View>
   );
 }
 

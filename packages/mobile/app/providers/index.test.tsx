@@ -18,9 +18,17 @@ vi.mock("react-native", () => ({
       contentContainerStyle: _cs,
       activeOpacity: _ao,
       numberOfLines: _nl,
+      testID,
       ...rest
     } = props;
-    return React.createElement("div", rest, children);
+    return React.createElement(
+      "div",
+      {
+        ...(testID ? { "data-testid": testID } : {}),
+        ...rest,
+      },
+      children,
+    );
   },
   Text: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) => {
     const { style: _s, numberOfLines: _nl, ...rest } = props;
@@ -94,7 +102,7 @@ vi.mock("react-native", () => ({
     visible?: boolean;
   } & Record<string, unknown>) => {
     if (!visible) return null;
-    const { animationType: _at, transparent: _t, ...rest } = props;
+    const { animationType: _at, transparent: _t, onRequestClose: _orc, ...rest } = props;
     return React.createElement("div", { role: "dialog", ...rest }, children);
   },
   Image: ({
@@ -386,6 +394,24 @@ describe("providerActionLabel", () => {
 });
 
 describe("ProviderCard", () => {
+  it("does not nest action buttons inside the card detail button", async () => {
+    const { ProviderCard } = await import("./provider-card.tsx");
+    const { container } = render(
+      <ProviderCard
+        provider={makeProvider({ lastSyncAt: "2026-03-19T12:00:00Z" })}
+        stats={undefined}
+        syncing={false}
+        syncProgress={undefined}
+        onSync={noopFn}
+        onFullSync={noopFn}
+        onConnect={noopFn}
+        onPress={noopFn}
+      />,
+    );
+
+    expect(container.querySelector("button button")).toBeNull();
+  });
+
   describe("sync progress", () => {
     it("renders progress bar when syncing with percentage", async () => {
       const { ProviderCard } = await import("./provider-card.tsx");
