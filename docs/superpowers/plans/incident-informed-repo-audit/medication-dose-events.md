@@ -1,7 +1,5 @@
 # Medication Dose Events Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Ingest and display raw medication dose events using the existing `fitness.medication_dose_event` table without adding derived medication summaries.
 
 **Architecture:** Keep storage provider-agnostic and raw. Add Apple Health dose-event ingestion from the existing HealthKit bridge, expose a small server read router, and render equivalent web/mobile list surfaces.

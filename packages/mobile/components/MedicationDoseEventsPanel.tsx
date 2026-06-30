@@ -1,31 +1,16 @@
 import { formatDateTime } from "@dofek/format/format";
+import { formatDoseStatus, medicationDoseEventSchema } from "@dofek/format/medication-dose-events";
 import { StyleSheet, Text, View } from "react-native";
 import { z } from "zod";
 import { trpc } from "../lib/trpc";
 import { colors, radius, spacing } from "../theme";
 import { QueryStatePanel } from "./QueryStatePanel";
 
-const medicationDoseEventSchema = z.object({
-  id: z.string(),
-  providerId: z.string(),
-  medicationName: z.string(),
-  medicationConceptId: z.string().nullable(),
-  doseStatus: z.string(),
-  recordedAt: z.string(),
-  sourceName: z.string().nullable(),
-});
-
 type MedicationDoseEventsQueryResult = {
   isLoading: boolean;
   error: { message: string } | null;
   data?: { events?: unknown } | null;
 };
-
-function formatDoseStatus(status: string): string {
-  const normalized = status.trim();
-  if (normalized.length === 0) return "Unknown";
-  return `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)}`;
-}
 
 export function MedicationDoseEventsPanel({
   queryResult,

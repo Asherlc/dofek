@@ -1,7 +1,5 @@
 # Provider Sync All Resilience Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Make “sync all” return per-provider outcomes so one cooldown, duplicate queue job, or provider failure does not hide the status of every other provider.
 
 **Architecture:** Keep the existing per-provider BullMQ queues and Garmin cooldown behavior. Change only the `sync.triggerSync` response contract so all-provider sync returns `started`, `skippedCooldown`, `alreadyQueued`, or `failed` per provider, and expose global queue backpressure without silently converting failures to success.
@@ -12,11 +10,11 @@
 
 ## File Structure
 
-- Modify `packages/server/src/routers/sync.ts`: return per-provider outcomes from `triggerSync` and add queue backpressure visibility to `activeSyncs`.
-- Modify `packages/server/src/routers/sync.test.ts`: cover cooldown skip, already queued, failed provider, and global queue depth.
-- Modify `packages/web/src/components/DataSourcesPanel.tsx` and `packages/web/src/components/SyncProviderCard.tsx`: render per-provider sync outcomes.
-- Modify `packages/web/src/components/SyncProviderCard.test.tsx` and stories.
-- Modify `packages/mobile/app/providers/index.tsx`, `packages/mobile/app/providers/provider-card.tsx`, and `packages/mobile/app/providers/index.test.tsx`: render the same outcomes on mobile.
+- Server router: `packages/server/src/routers/sync.ts` returns per-provider outcomes from `triggerSync` and adds queue backpressure visibility to `activeSyncs`.
+- Server tests: `packages/server/src/routers/sync.test.ts` covers cooldown skip, already queued, failed provider, and global queue depth.
+- Web UI: `packages/web/src/components/DataSourcesPanel.tsx` and `packages/web/src/components/SyncProviderCard.tsx` render per-provider sync outcomes.
+- Web coverage: `packages/web/src/components/SyncProviderCard.test.tsx` and stories cover the rendered outcomes.
+- Mobile UI and coverage: `packages/mobile/app/providers/index.tsx`, `packages/mobile/app/providers/provider-card.tsx`, and `packages/mobile/app/providers/index.test.tsx` render the same outcomes on mobile.
 
 ### Task 1: Per-Provider Trigger Outcomes
 

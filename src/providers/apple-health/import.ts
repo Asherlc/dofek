@@ -106,6 +106,7 @@ function medicationDoseEventExternalId(input: {
   medicationConceptIdentifier?: string | null | undefined;
   medicationName: string;
   scheduledDate?: string | null | undefined;
+  sourceFileName: string;
   startDate: string;
   uuid?: string | null | undefined;
 }): string {
@@ -117,6 +118,7 @@ function medicationDoseEventExternalId(input: {
     input.startDate,
     normalizeOptionalString(input.scheduledDate) ?? "unscheduled",
     normalizeOptionalString(input.medicationConceptIdentifier) ?? input.medicationName,
+    input.sourceFileName,
   ].join(":");
 }
 
@@ -851,7 +853,11 @@ export async function importMedicationDoseEvents(
       batch.push({
         providerId,
         userId: scopedUserId,
-        externalId: medicationDoseEventExternalId({ ...parsed, medicationName }),
+        externalId: medicationDoseEventExternalId({
+          ...parsed,
+          medicationName,
+          sourceFileName: file.name,
+        }),
         medicationName,
         medicationConceptId: normalizeOptionalString(parsed.medicationConceptIdentifier),
         doseStatus: mapMedicationDoseStatus(parsed.logStatus),

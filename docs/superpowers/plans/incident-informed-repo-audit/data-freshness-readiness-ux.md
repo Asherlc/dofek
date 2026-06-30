@@ -1,7 +1,5 @@
 # Data Freshness Readiness UX Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Show users whether dashboard, activities, and provider data is missing, stale, syncing, or blocked instead of rendering unexplained empty states.
 
 **Architecture:** Extend the existing `sync.dataHealth` route from row counts into a typed readiness snapshot that combines Postgres raw data counts, ClickHouse CDC mirror freshness, dbt read-model freshness, and active sync state. Render the same server-computed state on web and mobile; clients only display labels, colors, and layout.

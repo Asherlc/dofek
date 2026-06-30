@@ -1,43 +1,23 @@
 import { formatDateTime } from "@dofek/format/format";
+import { formatDoseStatus, medicationDoseEventSchema } from "@dofek/format/medication-dose-events";
 import { z } from "zod";
 import { trpc } from "../lib/trpc.ts";
-
-const medicationDoseEventSchema = z.object({
-  id: z.string(),
-  providerId: z.string(),
-  medicationName: z.string(),
-  medicationConceptId: z.string().nullable(),
-  doseStatus: z.string(),
-  recordedAt: z.string(),
-  sourceName: z.string().nullable(),
-});
-
-function formatDoseStatus(status: string): string {
-  const normalized = status.trim();
-  if (normalized.length === 0) return "Unknown";
-  return `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)}`;
-}
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 export function MedicationDoseEventsPanel() {
   const doseEvents = trpc.medicationDoseEvents.list.useQuery({ limit: 50 });
 
   if (doseEvents.isLoading) {
-    return (
-      <div className="space-y-2">
-        {[1, 2, 3].map((index) => (
-          <div key={index} className="h-12 rounded bg-skeleton animate-pulse" />
-        ))}
-      </div>
-    );
+    return <QueryStatePanel variant="loading" height={96} />;
   }
 
   if (doseEvents.error) {
-    return <p className="text-sm text-red-400">{doseEvents.error.message}</p>;
+    return <QueryStatePanel error={doseEvents.error} height={96} />;
   }
 
   const events = z.array(medicationDoseEventSchema).parse(doseEvents.data?.events ?? []);
   if (events.length === 0) {
-    return <p className="text-sm text-subtle">No medication dose events yet.</p>;
+    return <QueryStatePanel variant="empty" height={96} message="No medication dose events yet." />;
   }
 
   return (

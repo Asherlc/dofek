@@ -486,7 +486,7 @@ describe("importAppleHealthFile", () => {
     expect(doseEventBatch).toEqual([
       expect.objectContaining({
         externalId:
-          "apple-health-medication-dose:2026-06-29T15:30:00.000Z:2026-06-29T15:00:00.000Z:rxnorm-123",
+          "apple-health-medication-dose:2026-06-29T15:30:00.000Z:2026-06-29T15:00:00.000Z:rxnorm-123:apple_health_export/clinical-records/MedicationDoseEvent-001.json",
         medicationName: "rxnorm-123",
         medicationConceptId: "rxnorm-123",
         doseStatus: "skipped",
@@ -520,7 +520,8 @@ describe("importAppleHealthFile", () => {
     );
     expect(doseEventBatch).toEqual([
       expect.objectContaining({
-        externalId: "apple-health-medication-dose:2026-06-29T15:30:00.000Z:unscheduled:Vitamin D",
+        externalId:
+          "apple-health-medication-dose:2026-06-29T15:30:00.000Z:unscheduled:Vitamin D:apple_health_export/clinical-records/MedicationDoseEvent-001.json",
         medicationName: "Vitamin D",
         medicationConceptId: null,
         doseStatus: "paused",
@@ -563,15 +564,77 @@ describe("importAppleHealthFile", () => {
     expect(doseEventBatch).toEqual([
       expect.objectContaining({
         externalId:
-          "apple-health-medication-dose:2026-06-29T15:30:00.000Z:2026-06-29T15:00:00.000Z:rxnorm-123",
+          "apple-health-medication-dose:2026-06-29T15:30:00.000Z:2026-06-29T15:00:00.000Z:rxnorm-123:apple_health_export/clinical-records/MedicationDoseEvent-001.json",
         doseStatus: "taken",
       }),
       expect.objectContaining({
         externalId:
-          "apple-health-medication-dose:2026-06-29T15:30:00.000Z:2026-06-29T15:00:00.000Z:rxnorm-123",
+          "apple-health-medication-dose:2026-06-29T15:30:00.000Z:2026-06-29T15:00:00.000Z:rxnorm-123:apple_health_export/clinical-records/MedicationDoseEvent-002.json",
         doseStatus: "skipped",
       }),
     ]);
+  });
+
+  it("preserves duplicate medication dose events without uuids by assigning distinct fallback external ids", async () => {
+    const zipPath = createClinicalZip(tmpDir, "dose-event-fallback-collision", [
+      {
+        name: "MedicationDoseEvent-001.json",
+        content: JSON.stringify({
+          startDate: "2026-06-29T15:30:00.000Z",
+          scheduledDate: "2026-06-29T15:00:00.000Z",
+          logStatus: 1,
+          medicationConceptIdentifier: "rxnorm-123",
+        }),
+      },
+      {
+        name: "MedicationDoseEvent-002.json",
+        content: JSON.stringify({
+          startDate: "2026-06-29T15:30:00.000Z",
+          scheduledDate: "2026-06-29T15:00:00.000Z",
+          logStatus: 1,
+          medicationConceptIdentifier: "rxnorm-123",
+        }),
+      },
+    ]);
+    const { db, spies } = createImportMockDb();
+    spies.values.mockImplementationOnce((values) => ({
+      onConflictDoNothing: spies.onConflictDoNothing,
+      onConflictDoUpdate: async (config: unknown) => {
+        if (!Array.isArray(values)) {
+          return spies.onConflictDoUpdate(config);
+        }
+
+        const externalIds = values.map((value) => String(value.externalId));
+        if (new Set(externalIds).size !== externalIds.length) {
+          throw new Error("ON CONFLICT DO UPDATE command cannot affect row a second time");
+        }
+
+        return spies.onConflictDoUpdate(config);
+      },
+    }));
+
+    const result = await importMedicationDoseEvents(db, "apple_health", zipPath);
+
+    expect(result).toEqual({ inserted: 2, skipped: 0, errors: [] });
+    const doseEventBatch = spies.values.mock.calls[0]?.[0];
+    expect(doseEventBatch).toHaveLength(2);
+    expect(doseEventBatch).toEqual([
+      expect.objectContaining({
+        medicationConceptId: "rxnorm-123",
+        doseStatus: "taken",
+        raw: expect.not.objectContaining({ uuid: expect.any(String) }),
+      }),
+      expect.objectContaining({
+        medicationConceptId: "rxnorm-123",
+        doseStatus: "taken",
+        raw: expect.not.objectContaining({ uuid: expect.any(String) }),
+      }),
+    ]);
+    const externalIds = Array.isArray(doseEventBatch)
+      ? doseEventBatch.map((value) => String(value.externalId))
+      : [];
+    expect(new Set(externalIds).size).toBe(2);
+    expect(externalIds[0]).not.toBe(externalIds[1]);
   });
 
   it("maps string, custom, and unknown medication dose statuses from Apple Health", async () => {

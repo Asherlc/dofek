@@ -5,7 +5,11 @@
   "type": "module",
   "exports": {
     "./format": "./src/format.ts",
+    "./medication-dose-events": "./src/medication-dose-events.ts",
     "./units": "./src/units.ts"
+  },
+  "dependencies": {
+    "zod": "3.25.76"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

@@ -17,6 +17,7 @@ const {
   mockInvalidateByPrefix,
   mockVeloHeroProvider,
   mockStartWorker,
+  mockCachedProtectedQuery,
 } = vi.hoisted(() => ({
   mockAdd: vi.fn().mockResolvedValue({ id: "job-123" }),
   mockGetJob: vi.fn(),
@@ -38,6 +39,7 @@ const {
   mockInvalidateByPrefix: vi.fn().mockResolvedValue(undefined),
   mockVeloHeroProvider: vi.fn(() => ({ id: "velohero" })),
   mockStartWorker: vi.fn(),
+  mockCachedProtectedQuery: vi.fn(),
 }));
 
 // Mock trpc
@@ -61,12 +63,13 @@ vi.mock("../trpc.ts", async () => {
     }
     return next({ ctx });
   });
+  mockCachedProtectedQuery.mockImplementation(() => trpc.procedure);
   return {
     router: trpc.router,
     publicProcedure: trpc.procedure,
     protectedProcedure: trpc.procedure,
     adminProcedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: mockCachedProtectedQuery,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -196,6 +199,8 @@ import {
   toJobId,
 } from "./sync-helpers.ts";
 
+const routerConstructionCachedTtls = mockCachedProtectedQuery.mock.calls.map((call) => call[0]);
+
 function createProvidersDbMock() {
   return {
     execute: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([]),
@@ -236,6 +241,10 @@ function collectSqlText(value: unknown): string {
 
 describe("syncRouter", () => {
   const createCaller = createTestCallerFactory(syncRouter);
+
+  it("uses a short cache for read-heavy protected queries", () => {
+    expect(routerConstructionCachedTtls).toEqual([120_000, 120_000, 120_000, 120_000]);
+  });
 
   beforeEach(() => {
     vi.clearAllMocks();

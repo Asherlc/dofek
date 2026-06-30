@@ -3,13 +3,18 @@ import type { z } from "zod";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { loadDashboardOverview } from "./dashboard-overview.ts";
 
-function makeSensorStore(): ActivitySensorStore {
+function makeSensorStore({
+  metricDate = "2026-06-29",
+}: {
+  metricDate?: string | Date;
+} = {}): ActivitySensorStore {
   return {
-    query: vi.fn(async (_schema: z.ZodType, queryText: string) => {
+    query: vi.fn(async <TSchema extends z.ZodType>(schema: TSchema, queryText: string) => {
       expect(queryText).not.toContain("analytics.deduped_sensor");
       expect(queryText).not.toContain("fitness.metric_stream");
+      let rows: Record<string, unknown>[];
       if (queryText.includes("analytics.daily_recovery")) {
-        return [
+        rows = [
           {
             date: "2026-06-29",
             hrv: 62,
@@ -19,9 +24,8 @@ function makeSensorStore(): ActivitySensorStore {
             respiratory_rate_score: 75,
           },
         ];
-      }
-      if (queryText.includes("analytics.daily_sleep")) {
-        return [
+      } else if (queryText.includes("analytics.daily_sleep")) {
+        rows = [
           {
             date: "2026-06-29",
             duration_minutes: 455,
@@ -31,11 +35,14 @@ function makeSensorStore(): ActivitySensorStore {
             awake_minutes: 30,
           },
         ];
+      } else if (queryText.includes("analytics.daily_strain") && queryText.includes(" AS load")) {
+        rows = [{ load: 0 }];
+      } else if (queryText.includes("analytics.daily_strain")) {
+        rows = [{ metric_date: metricDate, daily_load: 120 }];
+      } else {
+        rows = [];
       }
-      if (queryText.includes("analytics.daily_strain")) {
-        return [{ metric_date: "2026-06-29", daily_load: 120 }];
-      }
-      return [];
+      return rows.map((row) => schema.parse(row));
     }),
     getActivitySummaries: vi.fn().mockResolvedValue([]),
     getStream: vi.fn().mockResolvedValue([]),
@@ -68,5 +75,19 @@ describe("loadDashboardOverview", () => {
       expect.any(Object),
       { priority: "dashboard" },
     );
+  });
+
+  it("normalizes ClickHouse daily strain dates before building load maps", async () => {
+    const sensorStore = makeSensorStore({ metricDate: new Date("2026-06-29T00:00:00.000Z") });
+
+    const result = await loadDashboardOverview({
+      accessWindow: { kind: "full" },
+      endDate: "2026-06-29",
+      sensorStore,
+      userId: "user-1",
+    });
+
+    expect(result.strain.date).toBe("2026-06-29");
+    expect(result.strain.dailyStrain).toBeGreaterThan(0);
   });
 });

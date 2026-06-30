@@ -125,7 +125,7 @@ export async function loadDashboardOverview({
   const [dailyLoadRows, yesterdayLoadRows] = await Promise.all([
     sensorStore.query(
       z.object({
-        metric_date: z.string(),
+        metric_date: dateStringSchema,
         daily_load: z.coerce.number(),
       }),
       `SELECT

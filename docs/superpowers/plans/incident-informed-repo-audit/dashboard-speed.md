@@ -1,7 +1,5 @@
 # Dashboard Speed Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Keep dashboard-critical reads fast without reintroducing broad tRPC batching, ClickHouse fan-out, or request-time raw sensor aggregation.
 
 **Architecture:** Replace SQL-text queue classification with an explicit dashboard priority option on `ActivitySensorStore.query`. Move dashboard overview loading into a shared server service that reads dbt-owned incremental read models, then have web and mobile call that service through their existing routers.

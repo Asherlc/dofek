@@ -227,9 +227,7 @@ export default function ProvidersScreen() {
           return next;
         });
         if (pollingJobIds.current.size === 0) {
-          if (pollingJobIds.current.size === 0) {
-            setAnySyncing(false);
-          }
+          setAnySyncing(false);
         }
       };
 

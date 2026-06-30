@@ -3,6 +3,7 @@ import type { ClickHouseCommandClient } from "dofek/db/clickhouse";
 import { refreshBodyMeasurementReadModel } from "dofek/db/clickhouse-read-model-refresh";
 import type { z } from "zod";
 import type {
+  ActivitySensorQueryOptions,
   ActivitySensorStore,
   ActivitySensorWindow,
   StreamPointRow,
@@ -123,7 +124,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
     schema: TSchema,
     query: string,
     params: Record<string, unknown> = {},
-    _options?: { priority?: "dashboard" },
+    _options?: ActivitySensorQueryOptions,
   ): Promise<z.infer<TSchema>[]> {
     const result = await this.#client.query<Record<string, unknown>>({
       query,

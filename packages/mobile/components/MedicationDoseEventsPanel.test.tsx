@@ -47,4 +47,42 @@ describe("MedicationDoseEventsPanel", () => {
     expect(screen.getByText("Taken")).toBeTruthy();
     expect(screen.getByText("Apple Health")).toBeTruthy();
   });
+
+  it("renders the query state panel while loading", () => {
+    listUseQuery.mockReturnValue({
+      isLoading: true,
+      error: null,
+      data: undefined,
+    });
+
+    render(<MedicationDoseEventsPanel />);
+
+    expect(screen.getByTestId("query-state-loading")).toBeTruthy();
+  });
+
+  it("renders the query state panel for errors", () => {
+    listUseQuery.mockReturnValue({
+      isLoading: false,
+      error: { message: "Provider query failed" },
+      data: undefined,
+    });
+
+    render(<MedicationDoseEventsPanel />);
+
+    expect(screen.getByTestId("query-state-error")).toBeTruthy();
+    expect(screen.getByText("Provider query failed")).toBeTruthy();
+  });
+
+  it("renders the query state panel when no events exist", () => {
+    listUseQuery.mockReturnValue({
+      isLoading: false,
+      error: null,
+      data: { events: [] },
+    });
+
+    render(<MedicationDoseEventsPanel />);
+
+    expect(screen.getByTestId("query-state-empty")).toBeTruthy();
+    expect(screen.getByText("No medication dose events yet.")).toBeTruthy();
+  });
 });

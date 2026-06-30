@@ -1,4 +1,6 @@
-import type { AddressInfo } from "node:net";
+import type { IncomingHttpHeaders } from "node:http";
+import { ServerResponse } from "node:http";
+import { Duplex, Readable } from "node:stream";
 import express from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -69,12 +71,43 @@ function createTestApp(db: import("dofek/db").Database) {
   return app;
 }
 
-function getPort(server: ReturnType<express.Express["listen"]>): number {
-  const address = server.address();
-  if (address !== null && typeof address === "object") {
-    return (address satisfies AddressInfo).port;
+class InProcessSocket extends Duplex {
+  readonly #chunks: Buffer[] = [];
+
+  get responseBody(): string {
+    const rawResponse = Buffer.concat(this.#chunks).toString("utf8");
+    const bodyStart = rawResponse.indexOf("\r\n\r\n");
+    if (bodyStart === -1) {
+      throw new Error("Response body separator was not found");
+    }
+    return rawResponse.slice(bodyStart + 4);
   }
-  throw new Error("Server address is not an object");
+
+  override _write(
+    chunk: Buffer | string,
+    encoding: BufferEncoding,
+    callback: (error?: Error | null) => void,
+  ): void {
+    this.#chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
+    callback();
+  }
+}
+
+class InProcessRequest extends Readable {
+  headers: IncomingHttpHeaders;
+  method: string;
+  url: string;
+
+  constructor(payload: string, headers: IncomingHttpHeaders) {
+    super();
+    this.headers = headers;
+    this.method = "POST";
+    this.url = "/api/ingest/zos-health";
+    this.push(payload);
+    this.push(null);
+  }
+
+  override _read(): void {}
 }
 
 async function post(
@@ -82,29 +115,34 @@ async function post(
   body: unknown,
   headers: Record<string, string> = {},
 ): Promise<{ status: number; body: unknown }> {
+  const payload = JSON.stringify(body);
+  const socket = new InProcessSocket();
+  const request = new InProcessRequest(payload, {
+    "content-type": "application/json",
+    "content-length": Buffer.byteLength(payload).toString(),
+    ...headers,
+  });
+
+  const response: ServerResponse = Reflect.construct(ServerResponse, [request]);
+  Reflect.apply(response.assignSocket, response, [socket]);
+
   return new Promise((resolve, reject) => {
-    const server = app.listen(0, () => {
-      const port = getPort(server);
-      fetch(`http://127.0.0.1:${port}/api/ingest/zos-health`, {
-        method: "POST",
-        headers: { "content-type": "application/json", ...headers },
-        body: JSON.stringify(body),
-      })
-        .then(async (response) => {
-          resolve({
-            status: response.status,
-            body: await response.json(),
-          });
-        })
-        .catch(reject)
-        .finally(() => {
-          server.close((error) => {
-            if (error) {
-              reject(error);
-            }
-          });
-        });
+    response.on("finish", () => {
+      resolve({
+        status: response.statusCode,
+        body: JSON.parse(socket.responseBody),
+      });
     });
+    response.on("error", reject);
+    request.on("error", reject);
+
+    Reflect.apply(app.handle, app, [
+      request,
+      response,
+      (error: unknown) => {
+        reject(error instanceof Error ? error : new Error("Request was not handled"));
+      },
+    ]);
   });
 }
 

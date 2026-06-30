@@ -1,7 +1,5 @@
 # Technical Debt Cleanup Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Remove stale exports and split oversized files without changing product behavior.
 
 **Architecture:** Treat this as behavior-preserving cleanup. Start with static tooling regressions, then split one oversized module at a time while running the focused tests after every move.

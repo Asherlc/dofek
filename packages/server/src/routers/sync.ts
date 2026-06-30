@@ -744,64 +744,66 @@ export const syncRouter = router({
     }),
 
   /** User-facing freshness/readiness state for primary dashboard datasets. */
-  dataHealth: protectedProcedure.output(dataHealthOutputSchema).query(async ({ ctx }) => {
-    const sensorStore = hasDataHealthSensorStore(ctx.sensorStore) ? ctx.sensorStore : null;
-    const rawFreshnessRows = await Promise.all(
-      dataHealthDatasets.map((dataset) =>
-        executeWithSchema(
-          ctx.db,
-          rawFreshnessSchema,
-          sqlTag`SELECT count(*)::int AS "rawRows",
+  dataHealth: cachedProtectedQuery(CacheTTL.SHORT)
+    .output(dataHealthOutputSchema)
+    .query(async ({ ctx }) => {
+      const sensorStore = hasDataHealthSensorStore(ctx.sensorStore) ? ctx.sensorStore : null;
+      const rawFreshnessRows = await Promise.all(
+        dataHealthDatasets.map((dataset) =>
+          executeWithSchema(
+            ctx.db,
+            rawFreshnessSchema,
+            sqlTag`SELECT count(*)::int AS "rawRows",
                         ${sqlTag.raw(dataset.rawLatestExpression)} AS "latestRawAt"
                  FROM ${sqlTag.raw(dataset.rawTable)}
                  WHERE user_id = ${ctx.userId}
                  ${dataset.predicate}`,
+          ),
         ),
-      ),
-    );
-    const readModelFreshnessRows = await Promise.all(
-      dataHealthDatasets.map((dataset) => {
-        if (!sensorStore) return Promise.resolve([]);
-        return sensorStore.query(
-          readModelFreshnessSchema,
-          `SELECT maxOrNull(date) AS latestReadModelAt
+      );
+      const readModelFreshnessRows = await Promise.all(
+        dataHealthDatasets.map((dataset) => {
+          if (!sensorStore) return Promise.resolve([]);
+          return sensorStore.query(
+            readModelFreshnessSchema,
+            `SELECT maxOrNull(date) AS latestReadModelAt
            FROM ${dataset.readModelTable} FINAL
            WHERE user_id = {userId:UUID}`,
-          { userId: ctx.userId },
-          { priority: "dashboard" },
-        );
-      }),
-    );
+            { userId: ctx.userId },
+            { priority: "dashboard" },
+          );
+        }),
+      );
 
-    const datasets = dataHealthDatasets.map((dataset, index) => {
-      const rawRow = rawFreshnessRows[index]?.[0];
-      const readModelRow = readModelFreshnessRows[index]?.[0];
-      const rawRows = rawRow?.rawRows ?? 0;
-      const latestRawAt = timestampToIsoString(rawRow?.latestRawAt ?? null);
-      const latestReadModelAt = timestampToIsoString(readModelRow?.latestReadModelAt ?? null);
-      const readModelLagSeconds = dateGrainSecondsBetween(latestRawAt, latestReadModelAt);
-      const status = datasetStatus({ rawRows, latestReadModelAt, readModelLagSeconds });
+      const datasets = dataHealthDatasets.map((dataset, index) => {
+        const rawRow = rawFreshnessRows[index]?.[0];
+        const readModelRow = readModelFreshnessRows[index]?.[0];
+        const rawRows = rawRow?.rawRows ?? 0;
+        const latestRawAt = timestampToIsoString(rawRow?.latestRawAt ?? null);
+        const latestReadModelAt = timestampToIsoString(readModelRow?.latestReadModelAt ?? null);
+        const readModelLagSeconds = dateGrainSecondsBetween(latestRawAt, latestReadModelAt);
+        const status = datasetStatus({ rawRows, latestReadModelAt, readModelLagSeconds });
+        return {
+          key: dataset.key,
+          label: dataset.label,
+          rawRows,
+          latestRawAt,
+          latestReadModelAt,
+          cdcLagSeconds: readModelLagSeconds,
+          readModelLagSeconds,
+          status,
+          message: datasetMessage({ label: dataset.label, status }),
+        };
+      });
+      const hasActiveSync = await hasActiveSyncForUser(ctx.userId);
+
       return {
-        key: dataset.key,
-        label: dataset.label,
-        rawRows,
-        latestRawAt,
-        latestReadModelAt,
-        cdcLagSeconds: readModelLagSeconds,
-        readModelLagSeconds,
-        status,
-        message: datasetMessage({ label: dataset.label, status }),
+        overallStatus: overallDataHealthStatus(
+          datasets.map((dataset) => dataset.status),
+          hasActiveSync,
+        ),
+        generatedAt: new Date().toISOString(),
+        datasets,
       };
-    });
-    const hasActiveSync = await hasActiveSyncForUser(ctx.userId);
-
-    return {
-      overallStatus: overallDataHealthStatus(
-        datasets.map((dataset) => dataset.status),
-        hasActiveSync,
-      ),
-      generatedAt: new Date().toISOString(),
-      datasets,
-    };
-  }),
+    }),
 });
