@@ -2,8 +2,6 @@
 **Goal:** Show users whether dashboard, activities, and provider data is missing, stale, syncing, or blocked instead of rendering unexplained empty states.
 **Architecture:** Extend the existing `sync.dataHealth` route from row counts into a typed readiness snapshot that combines Postgres raw data counts, ClickHouse CDC mirror freshness, dbt read-model freshness, and active sync state. Render the same server-computed state on web and mobile; clients only display labels, colors, and layout.
 **Tech Stack:** TypeScript, tRPC, Zod, Drizzle, Vitest, React, React Native/Expo, Storybook.
-**Command Wrapper:** Commands intentionally start with `rtk`, this workspace's required local command wrapper. Run the command exactly as shown in this workspace.
----
 ## File Structure
 - Modify `packages/server/src/routers/sync.ts`: replace numeric-only `dataHealth` output with structured readiness/freshness details.
 - Modify `packages/server/src/routers/sync.test.ts`: cover missing, stale CDC, stale dbt, active sync, and healthy states.
@@ -50,7 +48,7 @@ it("returns structured data health when raw data is missing", async () => {
 ```
 - [ ] **Step 2 (RED): Run the test and verify the expected failure**
 ```bash
-rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts --testNamePattern "structured data health"
+pnpm vitest run --project unit packages/server/src/routers/sync.test.ts --testNamePattern "structured data health"
 ```
 Expected: FAIL because `dataHealth` currently returns `{ dailyMetrics, sleep, activity }` numeric counts.
 - [ ] **Step 3 (GREEN): Implement the output schema and mapping**
@@ -77,12 +75,12 @@ const dataHealthOutputSchema = z.object({
 Return one dataset per current health check. For this first pass, derive `missing` from `rawRows === 0`, `healthy` from `rawRows > 0`, and set lag fields to `null`. Keep all computation server-side.
 - [ ] **Step 4 (GREEN): Run the server test**
 ```bash
-rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts --testNamePattern "data health"
+pnpm vitest run --project unit packages/server/src/routers/sync.test.ts --testNamePattern "data health"
 ```
 - [ ] **Step 5 (REFACTOR): Commit the structured readiness output**
 ```bash
-rtk git add packages/server/src/routers/sync.ts packages/server/src/routers/sync.test.ts
-rtk git commit -m "feat: return structured data health"
+git add packages/server/src/routers/sync.ts packages/server/src/routers/sync.test.ts
+git commit -m "feat: return structured data health"
 ```
 ### Task 2: CDC And Read-Model Lag States
 **Files:**
@@ -166,19 +164,19 @@ it("marks data syncing when an active sync job exists", async () => {
 Use concrete fixtures in each test: `latest_raw_at: "2026-06-29T12:00:00.000Z"`, `latest_read_model_at: "2026-06-29T10:00:00.000Z"`, and stale CDC timestamp `"2026-06-28T12:00:00.000Z"`.
 - [ ] **Step 2 (RED): Run the stale-state tests and verify the expected failures**
 ```bash
-rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts --testNamePattern "ClickHouse CDC mirrors|dbt read models|active sync job"
+pnpm vitest run --project unit packages/server/src/routers/sync.test.ts --testNamePattern "ClickHouse CDC mirrors|dbt read models|active sync job"
 ```
 Expected: FAIL because lag fields and active-sync state are not computed.
 - [ ] **Step 3 (GREEN): Add bounded freshness queries**
 Extend `dataHealth` with server-side queries for raw latest timestamps and read-model latest timestamps. Use existing read-model tables only: `analytics.daily_recovery`, `analytics.daily_sleep`, and `analytics.daily_strain`. Do not compute dashboard values in this endpoint; only return freshness metadata.
 - [ ] **Step 4 (GREEN): Run server tests**
 ```bash
-rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts
+pnpm vitest run --project unit packages/server/src/routers/sync.test.ts
 ```
 - [ ] **Step 5 (REFACTOR): Commit the freshness lag states**
 ```bash
-rtk git add packages/server/src/routers/sync.ts packages/server/src/routers/sync.test.ts
-rtk git commit -m "feat: expose data freshness lag states"
+git add packages/server/src/routers/sync.ts packages/server/src/routers/sync.test.ts
+git commit -m "feat: expose data freshness lag states"
 ```
 ### Task 3: Web Readiness Banner
 **Files:**
@@ -223,7 +221,7 @@ describe("DataReadinessBanner", () => {
 ```
 - [ ] **Step 2 (RED): Run the component test and verify the expected failure**
 ```bash
-rtk pnpm vitest run --project unit packages/web/src/components/DataReadinessBanner.test.tsx
+pnpm vitest run --project unit packages/web/src/components/DataReadinessBanner.test.tsx
 ```
 Expected: FAIL because the component does not exist.
 - [ ] **Step 3 (GREEN): Implement the banner and concrete stories**
@@ -241,13 +239,13 @@ Each story must pass a complete `health` prop with `overallStatus`, `generatedAt
 On dashboard, activities, and provider detail pages, call `trpc.sync.dataHealth.useQuery()` and render the banner above the main content when `overallStatus !== "healthy"`.
 - [ ] **Step 5 (GREEN): Run web verification**
 ```bash
-rtk pnpm vitest run --project unit packages/web/src/components/DataReadinessBanner.test.tsx packages/web/src/pages/Dashboard.test.tsx packages/web/src/pages/ActivitiesPage.test.tsx packages/web/src/pages/ProviderDetailPage.test.tsx
-rtk pnpm storybook:web:build
+pnpm vitest run --project unit packages/web/src/components/DataReadinessBanner.test.tsx packages/web/src/pages/Dashboard.test.tsx packages/web/src/pages/ActivitiesPage.test.tsx packages/web/src/pages/ProviderDetailPage.test.tsx
+pnpm storybook:web:build
 ```
 - [ ] **Step 6 (REFACTOR): Commit the web readiness surfaces**
 ```bash
-rtk git add packages/web/src/components/DataReadinessBanner.tsx packages/web/src/components/DataReadinessBanner.test.tsx packages/web/src/components/DataReadinessBanner.stories.tsx packages/web/src/pages/Dashboard.tsx packages/web/src/pages/ActivitiesPage.tsx packages/web/src/pages/ProviderDetailPage.tsx
-rtk git commit -m "feat: show web data readiness states"
+git add packages/web/src/components/DataReadinessBanner.tsx packages/web/src/components/DataReadinessBanner.test.tsx packages/web/src/components/DataReadinessBanner.stories.tsx packages/web/src/pages/Dashboard.tsx packages/web/src/pages/ActivitiesPage.tsx packages/web/src/pages/ProviderDetailPage.tsx
+git commit -m "feat: show web data readiness states"
 ```
 ### Task 4: Mobile Readiness Banner
 **Files:**
@@ -292,7 +290,7 @@ describe("DataReadinessBanner", () => {
 ```
 - [ ] **Step 2 (RED): Run the mobile component test and verify the expected failure**
 ```bash
-rtk pnpm vitest run --project mobile packages/mobile/components/DataReadinessBanner.test.tsx
+pnpm vitest run --project mobile packages/mobile/components/DataReadinessBanner.test.tsx
 ```
 Expected: FAIL because the component does not exist.
 - [ ] **Step 3 (GREEN): Implement the component, concrete stories, and screens**
@@ -304,11 +302,11 @@ expect(screen.getByText("Activity data is available, but ClickHouse mirrors are 
 Expected screen fixtures must provide `overallStatus: "blocked"` and the blocked activity dataset from Step 1.
 - [ ] **Step 4 (GREEN): Run mobile verification**
 ```bash
-rtk pnpm vitest run --project mobile packages/mobile/components/DataReadinessBanner.test.tsx 'packages/mobile/app/(tabs)/index.test.tsx' 'packages/mobile/app/(tabs)/activities.test.tsx' 'packages/mobile/app/providers/[id].test.tsx'
-rtk pnpm storybook:mobile:build
+pnpm vitest run --project mobile packages/mobile/components/DataReadinessBanner.test.tsx 'packages/mobile/app/(tabs)/index.test.tsx' 'packages/mobile/app/(tabs)/activities.test.tsx' 'packages/mobile/app/providers/[id].test.tsx'
+pnpm storybook:mobile:build
 ```
 - [ ] **Step 5 (REFACTOR): Commit the mobile readiness surfaces**
 ```bash
-rtk git add packages/mobile/components/DataReadinessBanner.tsx packages/mobile/components/DataReadinessBanner.test.tsx packages/mobile/components/DataReadinessBanner.stories.tsx 'packages/mobile/app/(tabs)/index.tsx' 'packages/mobile/app/(tabs)/activities.tsx' 'packages/mobile/app/providers/[id].tsx'
-rtk git commit -m "feat: show mobile data readiness states"
+git add packages/mobile/components/DataReadinessBanner.tsx packages/mobile/components/DataReadinessBanner.test.tsx packages/mobile/components/DataReadinessBanner.stories.tsx 'packages/mobile/app/(tabs)/index.tsx' 'packages/mobile/app/(tabs)/activities.tsx' 'packages/mobile/app/providers/[id].tsx'
+git commit -m "feat: show mobile data readiness states"
 ```

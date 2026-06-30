@@ -2,8 +2,6 @@
 **Goal:** Keep dashboard-critical reads fast without reintroducing broad tRPC batching, ClickHouse fan-out, or request-time raw sensor aggregation.
 **Architecture:** Replace SQL-text queue classification with an explicit dashboard priority option on `ActivitySensorStore.query`. Move dashboard overview loading into a shared server service that reads dbt-owned incremental read models, then have web and mobile call that service through their existing routers.
 **Tech Stack:** TypeScript, tRPC, Zod, Vitest, ClickHouse, dbt-owned analytics read models, React, React Native/Expo.
-**Command Wrapper:** Commands intentionally start with `rtk`, this workspace's required local command wrapper. Run the command exactly as shown in this workspace.
----
 ## File Structure
 - Modify `packages/server/src/repositories/activity-repository.ts`: add a typed `priority?: "dashboard"` query option.
 - Modify `packages/server/src/repositories/limited-activity-sensor-store.ts`: route explicit dashboard-priority queries to the dashboard limiter and stop relying on SQL marker heuristics.
@@ -59,7 +57,7 @@ it("starts explicitly prioritized dashboard queries while regular work is queued
 ```
 - [ ] **Step 2 (RED): Run the focused test and verify the expected failure**
 ```bash
-rtk pnpm vitest run --project unit packages/server/src/repositories/limited-activity-sensor-store.test.ts --testNamePattern "explicitly prioritized dashboard"
+pnpm vitest run --project unit packages/server/src/repositories/limited-activity-sensor-store.test.ts --testNamePattern "explicitly prioritized dashboard"
 ```
 Expected: FAIL because `ActivitySensorStore.query` does not accept an options argument and `LimitedActivitySensorStore` still classifies dashboard queries by SQL text.
 - [ ] **Step 3 (GREEN): Add the minimal priority option**
@@ -80,12 +78,12 @@ const limiter =
 Keep `ClickHouseActivitySensorStore.query` behavior identical except for accepting the fourth parameter.
 - [ ] **Step 4 (GREEN): Run the priority tests and verify the passing behavior**
 ```bash
-rtk pnpm vitest run --project unit packages/server/src/repositories/limited-activity-sensor-store.test.ts
+pnpm vitest run --project unit packages/server/src/repositories/limited-activity-sensor-store.test.ts
 ```
 - [ ] **Step 5 (REFACTOR): Commit the focused priority-routing change**
 ```bash
-rtk git add packages/server/src/repositories/activity-repository.ts packages/server/src/repositories/limited-activity-sensor-store.ts packages/server/src/repositories/clickhouse-activity-sensor-store.ts packages/server/src/repositories/limited-activity-sensor-store.test.ts
-rtk git commit -m "perf: make dashboard clickhouse priority explicit"
+git add packages/server/src/repositories/activity-repository.ts packages/server/src/repositories/limited-activity-sensor-store.ts packages/server/src/repositories/clickhouse-activity-sensor-store.ts packages/server/src/repositories/limited-activity-sensor-store.test.ts
+git commit -m "perf: make dashboard clickhouse priority explicit"
 ```
 ### Task 2: Shared Dashboard Overview Service
 **Files:**
@@ -149,7 +147,7 @@ describe("loadDashboardOverview", () => {
 ```
 - [ ] **Step 2 (RED): Run the service test and verify the expected failure**
 ```bash
-rtk pnpm vitest run --project unit packages/server/src/services/dashboard-overview.test.ts
+pnpm vitest run --project unit packages/server/src/services/dashboard-overview.test.ts
 ```
 Expected: FAIL because `dashboard-overview.ts` does not exist.
 - [ ] **Step 3 (GREEN): Implement the service and route delegation**
@@ -157,12 +155,12 @@ Create `loadDashboardOverview` with inputs `{ accessWindow, endDate, sensorStore
 Update `mobileDashboard.dashboard` to call the service and keep the existing output schema unchanged.
 - [ ] **Step 4 (GREEN): Run service and router tests**
 ```bash
-rtk pnpm vitest run --project unit packages/server/src/services/dashboard-overview.test.ts packages/server/src/routers/mobile-dashboard.test.ts
+pnpm vitest run --project unit packages/server/src/services/dashboard-overview.test.ts packages/server/src/routers/mobile-dashboard.test.ts
 ```
 - [ ] **Step 5 (REFACTOR): Commit the shared dashboard service change**
 ```bash
-rtk git add packages/server/src/services/dashboard-overview.ts packages/server/src/services/dashboard-overview.test.ts packages/server/src/routers/mobile-dashboard.ts packages/server/src/routers/mobile-dashboard.test.ts
-rtk git commit -m "perf: share dashboard overview read model loader"
+git add packages/server/src/services/dashboard-overview.ts packages/server/src/services/dashboard-overview.test.ts packages/server/src/routers/mobile-dashboard.ts packages/server/src/routers/mobile-dashboard.test.ts
+git commit -m "perf: share dashboard overview read model loader"
 ```
 ### Task 3: Preserve Unbatched Dashboard Clients
 **Files:**
@@ -189,20 +187,20 @@ expect(routeLinkFor("sync.dataHealth")).toBe("httpLink");
 ```
 - [ ] **Step 2 (RED): Run client tests and verify the expected failures**
 ```bash
-rtk pnpm vitest run --project unit packages/web/src/lib/trpc.test.ts
-rtk pnpm vitest run --project mobile packages/mobile/app/_layout.cleanup.test.tsx
+pnpm vitest run --project unit packages/web/src/lib/trpc.test.ts
+pnpm vitest run --project mobile packages/mobile/app/_layout.cleanup.test.tsx
 ```
 Expected: FAIL because the new `sync.dataHealth` dashboard-readiness route is not yet in the explicit unbatched routing set.
 - [ ] **Step 3 (GREEN): Keep only explicit unbatched paths**
 Add only `sync.dataHealth` to the existing explicit unbatched route sets. Do not switch the whole dashboard to broad batching, and do not add concurrent client fan-out.
 - [ ] **Step 4 (GREEN): Run verification**
 ```bash
-rtk pnpm vitest run --project unit packages/web/src/lib/trpc.test.ts packages/server/src/repositories/limited-activity-sensor-store.test.ts packages/server/src/services/dashboard-overview.test.ts packages/server/src/routers/mobile-dashboard.test.ts
-rtk pnpm vitest run --project mobile packages/mobile/app/_layout.cleanup.test.tsx
-rtk pnpm tsc --noEmit
+pnpm vitest run --project unit packages/web/src/lib/trpc.test.ts packages/server/src/repositories/limited-activity-sensor-store.test.ts packages/server/src/services/dashboard-overview.test.ts packages/server/src/routers/mobile-dashboard.test.ts
+pnpm vitest run --project mobile packages/mobile/app/_layout.cleanup.test.tsx
+pnpm tsc --noEmit
 ```
 - [ ] **Step 5 (REFACTOR): Commit the transport-routing lock**
 ```bash
-rtk git add packages/web/src/lib/trpc.ts packages/web/src/lib/trpc.test.ts packages/mobile/app/_layout.tsx packages/mobile/app/_layout.cleanup.test.tsx
-rtk git commit -m "test: lock dashboard transport routing"
+git add packages/web/src/lib/trpc.ts packages/web/src/lib/trpc.test.ts packages/mobile/app/_layout.tsx packages/mobile/app/_layout.cleanup.test.tsx
+git commit -m "test: lock dashboard transport routing"
 ```

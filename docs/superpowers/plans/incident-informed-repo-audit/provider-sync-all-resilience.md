@@ -2,9 +2,7 @@
 **Goal:** Make “sync all” return per-provider outcomes so one cooldown, duplicate queue job, or provider failure does not hide the status of every other provider.
 **Architecture:** Keep the existing per-provider BullMQ queues and Garmin cooldown behavior. Change only the `sync.triggerSync` response contract so all-provider sync returns `started`, `skippedCooldown`, `alreadyQueued`, or `failed` per provider, and expose global queue backpressure without silently converting failures to success.
 **Tech Stack:** TypeScript, tRPC, Zod, BullMQ, Vitest, React, React Native/Expo.
-**Command Wrapper:** Commands intentionally start with `rtk`, this workspace's required local command wrapper. Run the command exactly as shown in this workspace.
 **Primary Sources:** Existing `triggerSync`, `activeSyncs`, and queue backpressure behavior lives in [`packages/server/src/routers/sync.ts`](../../../../packages/server/src/routers/sync.ts) and is covered by [`packages/server/src/routers/sync.test.ts`](../../../../packages/server/src/routers/sync.test.ts). Web provider sync rendering is in [`packages/web/src/components/DataSourcesPanel.tsx`](../../../../packages/web/src/components/DataSourcesPanel.tsx), [`packages/web/src/components/SyncProviderCard.tsx`](../../../../packages/web/src/components/SyncProviderCard.tsx), and [`packages/web/src/components/SyncProviderCard.test.tsx`](../../../../packages/web/src/components/SyncProviderCard.test.tsx). Mobile provider rendering is in [`packages/mobile/app/providers/index.tsx`](../../../../packages/mobile/app/providers/index.tsx) and [`packages/mobile/app/providers/provider-card.tsx`](../../../../packages/mobile/app/providers/provider-card.tsx).
----
 ## File Structure
 - Server router: `packages/server/src/routers/sync.ts` returns per-provider outcomes from `triggerSync` and adds queue backpressure visibility to `activeSyncs`.
 - Server tests: `packages/server/src/routers/sync.test.ts` covers cooldown skip, already queued, failed provider, and global queue depth.
@@ -60,7 +58,7 @@ it("returns per-provider outcomes when one sync-all provider is rate limited", a
 ```
 - [ ] **Step 2 (RED): Run the test and verify the expected failure**
 ```bash
-rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts --testNamePattern "per-provider outcomes"
+pnpm vitest run --project unit packages/server/src/routers/sync.test.ts --testNamePattern "per-provider outcomes"
 ```
 Expected: FAIL because `triggerSync` throws `TOO_MANY_REQUESTS` on the first cooldown.
 - [ ] **Step 3 (GREEN): Implement outcome schema and sync-all behavior**
@@ -76,12 +74,12 @@ const providerSyncResultSchema = z.discriminatedUnion("status", [
 For sync-all only, catch each provider enqueue result independently. Preserve single-provider behavior by still throwing for cooldown or failure when `input.providerId` is set.
 - [ ] **Step 4 (GREEN): Run server tests**
 ```bash
-rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts
+pnpm vitest run --project unit packages/server/src/routers/sync.test.ts
 ```
 - [ ] **Step 5 (REFACTOR): Commit the per-provider outcome contract**
 ```bash
-rtk git add packages/server/src/routers/sync.ts packages/server/src/routers/sync.test.ts
-rtk git commit -m "feat: return per-provider sync outcomes"
+git add packages/server/src/routers/sync.ts packages/server/src/routers/sync.test.ts
+git commit -m "feat: return per-provider sync outcomes"
 ```
 ### Task 2: Already Queued And Failed Outcomes
 **Files:**
@@ -168,19 +166,19 @@ it("reports a failed provider without hiding successful providers", async () => 
 Use the same provider/token fixture style as Task 1, with concrete providers `whoop` and `polar`.
 - [ ] **Step 2 (RED): Run the outcome tests and verify the expected failures**
 ```bash
-rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts --testNamePattern "already queued|failed provider"
+pnpm vitest run --project unit packages/server/src/routers/sync.test.ts --testNamePattern "already queued|failed provider"
 ```
 Expected: FAIL because `alreadyQueued` and per-provider failure are not represented.
 - [ ] **Step 3 (GREEN): Implement minimal outcome mapping**
 If `enqueueSyncJob` exposes enough information to distinguish an existing job, map it to `alreadyQueued`; otherwise add a small typed return value in `src/jobs/enqueue-sync-job.ts` and update only its call sites. For thrown errors in sync-all, call `captureException(error)` and return `{ providerId, status: "failed", message }`.
 - [ ] **Step 4 (GREEN): Run verification**
 ```bash
-rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts src/jobs/enqueue-sync-job.test.ts
+pnpm vitest run --project unit packages/server/src/routers/sync.test.ts src/jobs/enqueue-sync-job.test.ts
 ```
 - [ ] **Step 5 (REFACTOR): Commit queued and failed outcome handling**
 ```bash
-rtk git add packages/server/src/routers/sync.ts packages/server/src/routers/sync.test.ts src/jobs/enqueue-sync-job.ts src/jobs/enqueue-sync-job.test.ts
-rtk git commit -m "feat: distinguish queued and failed provider syncs"
+git add packages/server/src/routers/sync.ts packages/server/src/routers/sync.test.ts src/jobs/enqueue-sync-job.ts src/jobs/enqueue-sync-job.test.ts
+git commit -m "feat: distinguish queued and failed provider syncs"
 ```
 ### Task 3: Global Queue Backpressure Visibility
 **Files:**
@@ -205,19 +203,19 @@ it("returns queue depth for active sync queues", async () => {
 ```
 - [ ] **Step 2 (RED): Run the queue-depth test and verify the expected failure**
 ```bash
-rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts --testNamePattern "queue depth"
+pnpm vitest run --project unit packages/server/src/routers/sync.test.ts --testNamePattern "queue depth"
 ```
 Expected: FAIL because `activeSyncs` does not expose queue depth.
 - [ ] **Step 3 (GREEN): Add queue metadata**
 Extend `activeSyncs` result items with `providerId`, `queueName`, and `queueDepth`. Compute depth from the already fetched waiting, delayed, and active jobs per queue; do not add a second Redis scan if the current data is enough.
 - [ ] **Step 4 (GREEN): Run server tests**
 ```bash
-rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts
+pnpm vitest run --project unit packages/server/src/routers/sync.test.ts
 ```
 - [ ] **Step 5 (REFACTOR): Commit queue backpressure visibility**
 ```bash
-rtk git add packages/server/src/routers/sync.ts packages/server/src/routers/sync.test.ts
-rtk git commit -m "feat: expose sync queue backpressure"
+git add packages/server/src/routers/sync.ts packages/server/src/routers/sync.test.ts
+git commit -m "feat: expose sync queue backpressure"
 ```
 ### Task 4: Web And Mobile Outcome Rendering
 **Files:**
@@ -240,20 +238,20 @@ In `packages/mobile/app/providers/index.test.tsx`, add matching cases named:
 - `polls started provider jobs on mobile`: render the providers screen with the Wahoo started result and expect the mocked polling hook to receive `"wahoo:job-wahoo"`.
 - [ ] **Step 2 (RED): Run UI tests and verify the expected failures**
 ```bash
-rtk pnpm vitest run --project unit packages/web/src/components/SyncProviderCard.test.tsx
-rtk pnpm vitest run --project mobile packages/mobile/app/providers/index.test.tsx
+pnpm vitest run --project unit packages/web/src/components/SyncProviderCard.test.tsx
+pnpm vitest run --project mobile packages/mobile/app/providers/index.test.tsx
 ```
 Expected: FAIL until the components consume `providerResults`.
 - [ ] **Step 3 (GREEN): Implement rendering**
 Map `providerResults` by `providerId`. Render `skippedCooldown`, `alreadyQueued`, and `failed` as per-provider statuses; continue polling `started` and `alreadyQueued` results with a `jobId`. Do not show disabled providers.
 - [ ] **Step 4 (GREEN): Run verification**
 ```bash
-rtk pnpm vitest run --project unit packages/web/src/components/SyncProviderCard.test.tsx
-rtk pnpm vitest run --project mobile packages/mobile/app/providers/index.test.tsx
-rtk pnpm tsc --noEmit
+pnpm vitest run --project unit packages/web/src/components/SyncProviderCard.test.tsx
+pnpm vitest run --project mobile packages/mobile/app/providers/index.test.tsx
+pnpm tsc --noEmit
 ```
 - [ ] **Step 5 (REFACTOR): Commit provider outcome rendering**
 ```bash
-rtk git add packages/web/src/components/DataSourcesPanel.tsx packages/web/src/components/SyncProviderCard.tsx packages/web/src/components/SyncProviderCard.test.tsx packages/web/src/components/SyncProviderCard.stories.tsx packages/mobile/app/providers/index.tsx packages/mobile/app/providers/provider-card.tsx packages/mobile/app/providers/index.test.tsx packages/mobile/app/providers/index.stories.tsx
-rtk git commit -m "feat: render provider sync outcomes"
+git add packages/web/src/components/DataSourcesPanel.tsx packages/web/src/components/SyncProviderCard.tsx packages/web/src/components/SyncProviderCard.test.tsx packages/web/src/components/SyncProviderCard.stories.tsx packages/mobile/app/providers/index.tsx packages/mobile/app/providers/provider-card.tsx packages/mobile/app/providers/index.test.tsx packages/mobile/app/providers/index.stories.tsx
+git commit -m "feat: render provider sync outcomes"
 ```
