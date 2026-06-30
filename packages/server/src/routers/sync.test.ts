@@ -68,7 +68,7 @@ vi.mock("dofek/jobs/queues", () => ({
     getJob: mockGetJob,
     getJobs: mockGetJobs,
   })),
-  createImportQueue: vi.fn(() => ({
+  getImportQueue: vi.fn(() => ({
     getJobCounts: mockImportQueueGetJobCounts,
   })),
   createProviderSyncQueue: vi.fn(() => ({

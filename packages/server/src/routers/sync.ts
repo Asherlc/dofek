@@ -4,8 +4,8 @@ import { TRPCError } from "@trpc/server";
 import type { Job, Queue } from "bullmq";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
 import {
-  createImportQueue,
   createSyncQueue,
+  getImportQueue,
   getProviderSyncQueue,
   IMPORT_QUEUE,
   providerSyncQueueName,
@@ -198,7 +198,6 @@ export { sanitizeErrorMessage };
 
 /** @deprecated Legacy queue for syncStatus/activeSyncs backward compat. */
 const legacySyncQueue = createSyncQueue();
-const importQueue = createImportQueue();
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -424,7 +423,7 @@ export const syncRouter = router({
         };
       }),
     );
-    const importCounts = await importQueue.getJobCounts(...queueBackpressureStates);
+    const importCounts = await getImportQueue().getJobCounts(...queueBackpressureStates);
     return [
       ...providerBackpressure,
       {

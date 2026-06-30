@@ -170,6 +170,14 @@ export function createActivityDeleteAnalyticsQueue(
 
 let cachedPostSyncQueue: Queue<PostSyncJobData> | null = null;
 let cachedActivityDeleteAnalyticsQueue: Queue<ActivityAnalyticsJobData> | null = null;
+let cachedImportQueue: Queue<ImportJobData> | null = null;
+
+export function getImportQueue(): Queue<ImportJobData> {
+  if (!cachedImportQueue) {
+    cachedImportQueue = createImportQueue();
+  }
+  return cachedImportQueue;
+}
 
 export function getPostSyncQueue(): Queue<PostSyncJobData> {
   if (!cachedPostSyncQueue) {

@@ -14,10 +14,10 @@ import { bootstrapClickHouseFromEnv, createClickHouseClientFromEnv } from "dofek
 import {
   createActivityDeleteAnalyticsQueue,
   createExportQueue,
-  createImportQueue,
   createPostSyncQueue,
   createScheduledSyncQueue,
   createSyncQueue,
+  getImportQueue,
 } from "dofek/jobs/queues";
 import { sql } from "drizzle-orm";
 import express from "express";
@@ -147,7 +147,7 @@ function setupRoutes(
   });
 
   // ── BullMQ queues ──
-  const importQueue = createImportQueue();
+  const importQueue = getImportQueue();
   const syncQueue = createSyncQueue();
   const exportQueue = createExportQueue();
   const scheduledSyncQueue = createScheduledSyncQueue();

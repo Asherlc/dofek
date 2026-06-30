@@ -30,6 +30,7 @@ vi.mock("dofek/jobs/queues", () => ({
   createActivityDeleteAnalyticsQueue: vi.fn(),
   createExportQueue: vi.fn(),
   createImportQueue: vi.fn(),
+  getImportQueue: vi.fn(),
   createPostSyncQueue: vi.fn(),
   createScheduledSyncQueue: vi.fn(),
   createSyncQueue: vi.fn(),
