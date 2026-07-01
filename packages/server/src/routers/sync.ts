@@ -289,6 +289,15 @@ const importTypeToProviderId: Record<ImportJobData["importType"], string> = {
   "zos-app": "zos-app",
 };
 
+function isKnownImportType(importType: string): importType is ImportJobData["importType"] {
+  return importType in importTypeToProviderId;
+}
+
+function providerIdForImportType(importType: string): string | undefined {
+  if (!isKnownImportType(importType)) return undefined;
+  return importTypeToProviderId[importType];
+}
+
 function buildProviderNameById(): Map<string, string> {
   const names = new Map<string, string>();
   for (const provider of UPLOAD_IMPORT_PROVIDERS) {
@@ -358,7 +367,13 @@ async function getActiveSyncProvidersForUser(
     for (const job of importJobs) {
       const data = job.data;
       if (typeof data === "object" && data !== null && "userId" in data && data.userId === userId) {
-        syncingProviderIds.add(importTypeToProviderId[data.importType]);
+        const providerId =
+          "importType" in data && typeof data.importType === "string"
+            ? providerIdForImportType(data.importType)
+            : undefined;
+        if (providerId !== undefined) {
+          syncingProviderIds.add(providerId);
+        }
       }
     }
 

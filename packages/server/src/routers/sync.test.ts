@@ -2532,6 +2532,52 @@ describe("syncRouter", () => {
       expect(mockImportQueueGetJobs).toHaveBeenCalledWith(["waiting", "active"]);
     });
 
+    it("ignores import jobs with unknown import types", async () => {
+      mockImportQueueGetJobs.mockResolvedValue([
+        {
+          id: "import-stale",
+          data: {
+            userId: "user-1",
+            importType: "unknown-import-type",
+            filePath: "/tmp/stale.zip",
+            since: "2020-01-01T00:00:00.000Z",
+          },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+      ]);
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 42, latestRawAt: "2026-06-29T12:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 8, latestRawAt: "2026-06-29T08:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 3, latestRawAt: "2026-06-29T10:00:00.000Z" }]);
+      const sensorStore = {
+        query: vi.fn(async (_schema: unknown, queryText: string) => {
+          if (queryText.includes("analytics.daily_recovery")) {
+            return [{ latestReadModelAt: "2026-06-29T12:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.daily_sleep")) {
+            return [{ latestReadModelAt: "2026-06-29T08:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.activity_summary_rows")) {
+            return [{ latestReadModelAt: "2026-06-29T10:00:00.000Z" }];
+          }
+          return [];
+        }),
+      };
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("healthy");
+      expect(result.syncingProviders).toEqual([]);
+    });
+
     it("does not mark overall status syncing for delayed-only jobs", async () => {
       mockGetJobs.mockResolvedValue([]);
       mockImportQueueGetJobs.mockResolvedValue([]);
