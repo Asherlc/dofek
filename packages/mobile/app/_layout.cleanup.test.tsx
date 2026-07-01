@@ -334,11 +334,11 @@ describe("RootLayout background cleanup", () => {
       expect(mockInitBackgroundHealthKitSync).toHaveBeenCalled();
     });
 
-    expect(mockGetRequestStatus).toHaveBeenCalledOnce();
+    expect(mockGetRequestStatus).not.toHaveBeenCalled();
     expect(mockRequestPermissions).not.toHaveBeenCalled();
   });
 
-  it("automatically requests initial HealthKit permissions when the user has never seen the prompt", async () => {
+  it("does not automatically request HealthKit permissions when the local marker is unknown", async () => {
     mockIsHealthKitAvailable.mockReturnValue(true);
     mockHasEverAuthorized.mockReturnValue(false);
     mockGetRequestStatus.mockResolvedValue("shouldRequest");
@@ -347,8 +347,11 @@ describe("RootLayout background cleanup", () => {
     render(<RootLayout />);
 
     await waitFor(() => {
-      expect(mockRequestPermissions).toHaveBeenCalledOnce();
+      expect(mockInitBackgroundHealthKitSync).toHaveBeenCalled();
     });
+
+    expect(mockGetRequestStatus).not.toHaveBeenCalled();
+    expect(mockRequestPermissions).not.toHaveBeenCalled();
   });
 
   it("uses an unbatched link for the initial mobile dashboard query", async () => {
