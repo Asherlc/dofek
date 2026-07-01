@@ -98,6 +98,17 @@ export const Syncing: Story = {
   args: { data: syncingSnapshot },
 };
 
+export const StackedPageContent: Story = {
+  args: { data: syncingSnapshot },
+  render: (args) => (
+    <section className="space-y-4">
+      <h2 className="text-lg font-semibold text-foreground">Last 4 weeks</h2>
+      <DataReadinessBanner {...args} />
+      <div className="h-36 rounded-lg border border-border bg-surface" aria-hidden="true" />
+    </section>
+  ),
+};
+
 export const HealthyHidden: Story = {
   args: { data: { ...staleSnapshot, overallStatus: "healthy", datasets: [] } },
 };
