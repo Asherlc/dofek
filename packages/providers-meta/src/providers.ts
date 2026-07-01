@@ -41,6 +41,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   bodyspec: "BodySpec",
   dofek: "Dofek",
   whoop_ble: "WHOOP (Bluetooth)",
+  ble_heart_rate: "Heart Rate Monitor (Bluetooth)",
   "zos-app": "Zepp OS App",
 };
 
@@ -146,6 +147,7 @@ export const BRAND_COLORS: Readonly<Record<string, string>> = {
   bodyspec: "#00B4D8",
   dofek: "#4A9D8E",
   "amazfit-zepp": "#00B588",
+  ble_heart_rate: "#E0245E",
 };
 
 /** Providers that reuse another provider's logo asset. */
