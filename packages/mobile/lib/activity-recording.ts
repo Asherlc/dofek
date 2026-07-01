@@ -1,5 +1,5 @@
-import type { InertialMeasurementUnitService } from "./inertial-measurement-unit-service.ts";
 import type { GpsSample, LocationAdapter } from "./location-service.ts";
+import type { RecordingSensorService } from "./recording-sensor-service.ts";
 import { captureException } from "./telemetry";
 
 export type RecordingState = "idle" | "recording" | "paused" | "saving" | "error";
@@ -78,7 +78,7 @@ export function createActivityRecorder(
   locationAdapter: LocationAdapter,
   trpcClient: RecordingTrpcClient,
   sourceName: string,
-  inertialMeasurementUnitService?: InertialMeasurementUnitService,
+  sensorService?: RecordingSensorService,
 ): ActivityRecorder {
   let state: RecordingState = "idle";
   let activityType: string | null = null;
@@ -145,8 +145,8 @@ export function createActivityRecorder(
         }
       });
 
-      // Ensure accelerometer recording is active (best-effort, non-blocking)
-      inertialMeasurementUnitService?.ensureRecording().catch((error: unknown) => {
+      // Ensure sensor capture is active (best-effort, non-blocking)
+      sensorService?.ensureRecording().catch((error: unknown) => {
         // Best-effort — don't disrupt GPS recording
         captureException(error, { source: "activity-recording" });
       });
@@ -216,9 +216,9 @@ export function createActivityRecorder(
           })),
         });
 
-        // Sync accelerometer data for the activity window (best-effort)
+        // Sync sensor data for the activity window (best-effort)
         try {
-          await inertialMeasurementUnitService?.syncForTimeRange(startedAt, endedAt);
+          await sensorService?.syncForTimeRange(startedAt, endedAt);
         } catch {
           // Best-effort — don't fail the activity save
         }
