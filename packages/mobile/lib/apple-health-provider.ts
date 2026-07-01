@@ -17,6 +17,7 @@ import {
   type SyncTrpcClient,
   syncHealthKitToServer,
 } from "./health-kit-sync";
+import { captureException } from "./telemetry";
 
 export type AppleHealthRequestStatus = "unnecessary" | "shouldRequest" | "unavailable" | "unknown";
 
@@ -269,6 +270,7 @@ export function useAppleHealthProviderModel(
       setAuthorizationState(resolvedState);
       return resolvedState;
     } catch (error) {
+      captureException(error, { source: "apple-health-authorization-refresh" });
       authorizationErrorHandlerRef.current?.(error);
       throw error;
     }
@@ -276,7 +278,7 @@ export function useAppleHealthProviderModel(
 
   useEffect(() => {
     if (!enabled) return;
-    void refreshAuthorizationState();
+    void refreshAuthorizationState().catch(() => undefined);
   }, [enabled, refreshAuthorizationState]);
 
   const model = useMemo(

@@ -107,8 +107,10 @@ export default function ProvidersScreen() {
     setHealthKitProgress("Requesting permissions...");
     try {
       const result = await appleHealth.connect();
-      if (!result.granted || result.state.requestStatus === "unavailable") {
-        setHealthKitProgress("HealthKit is unavailable on this device");
+      if (result.state.requestStatus === "unavailable") {
+        setHealthKitProgress("Apple Health is unavailable on this device");
+      } else if (!result.granted) {
+        setHealthKitProgress("Apple Health permissions were not granted");
       } else {
         setHealthKitProgress(result.state.isConnected() ? "Connected" : undefined);
       }

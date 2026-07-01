@@ -56,8 +56,10 @@ function normalizeWorkout(workout: WorkoutSample): WorkoutSample {
 }
 
 function isAuthorizationNotDetermined(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.includes("Authorization not determined");
+  if (typeof error !== "object" || error === null || !("code" in error)) {
+    return false;
+  }
+  return error.code === "HEALTHKIT_AUTHORIZATION_NOT_DETERMINED";
 }
 
 /** Abstraction over HealthKit native module for testability */

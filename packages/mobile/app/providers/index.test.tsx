@@ -1563,6 +1563,26 @@ describe("ProvidersScreen", () => {
     });
   });
 
+  it("shows denied Apple Health permissions separately from device unavailability", async () => {
+    mockHasEverAuthorized.mockReturnValue(false);
+    mockGetRequestStatus.mockResolvedValue("shouldRequest");
+    mockRequestPermissions.mockResolvedValue(false);
+
+    await renderProvidersScreen();
+
+    await waitFor(() => {
+      const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+      expect(appleCard.getByText("Connect")).toBeTruthy();
+    });
+
+    const appleCard = within(screen.getByTestId("provider-card-apple_health"));
+    fireEvent.click(appleCard.getByText("Connect"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Apple Health permissions were not granted")).toBeTruthy();
+    });
+  });
+
   it("reports error to Sentry when Apple Health connect fails", async () => {
     const { captureException } = await import("../../lib/telemetry");
     const mockCaptureException = vi.mocked(captureException);

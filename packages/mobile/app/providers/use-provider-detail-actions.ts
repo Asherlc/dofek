@@ -155,8 +155,10 @@ export function useProviderDetailActions(
 
     try {
       const result = await appleHealth.connect();
-      if (!result.granted || result.state.requestStatus === "unavailable") {
-        setSyncMessage("HealthKit is unavailable on this device");
+      if (result.state.requestStatus === "unavailable") {
+        setSyncMessage("Apple Health is unavailable on this device");
+      } else if (!result.granted) {
+        setSyncMessage("Apple Health permissions were not granted");
       } else {
         setSyncMessage(result.state.isConnected() ? "Connected" : null);
       }

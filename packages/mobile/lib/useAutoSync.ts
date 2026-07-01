@@ -90,7 +90,7 @@ export function useAutoSync(latestDate: string | null | undefined) {
           "auto-sync",
           `HealthKit sync complete: ${result.inserted} inserted, ${result.errors.length} errors`,
         );
-        trpcUtils.invalidate();
+        await trpcUtils.invalidate();
       })
       .catch((error: unknown) => {
         logger.warn(

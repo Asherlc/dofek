@@ -618,6 +618,28 @@ describe("ProviderDetailScreen", () => {
         expect(mockRequestPermissions).toHaveBeenCalled();
       });
     });
+
+    it("shows denied Apple Health permissions separately from device unavailability", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
+      mockProvidersQuery.mockReturnValue({ data: [authorizedProvider], isLoading: false });
+      mockProviderStatsQuery.mockReturnValue({ data: [appleHealthStats], isLoading: false });
+      mockHasEverAuthorized.mockReturnValue(false);
+      mockGetRequestStatus.mockResolvedValue("shouldRequest");
+      mockRequestPermissions.mockResolvedValue(false);
+
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Connect")).toBeTruthy();
+      });
+
+      fireEvent.click(screen.getByText("Connect"));
+
+      await waitFor(() => {
+        expect(screen.getByText("Apple Health permissions were not granted")).toBeTruthy();
+      });
+    });
   });
 
   describe("Disconnect", () => {

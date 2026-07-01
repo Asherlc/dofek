@@ -5,7 +5,15 @@ import HealthKit
 // swiftlint:disable:next type_body_length
 public class HealthKitModule: Module {
     private let healthStore = HKHealthStore()
+    private let hasEverAuthorizedKey = "healthkit_has_ever_authorized"
     private var observerQueries: [HKObserverQuery] = []
+
+    private func isAuthorizationNotDetermined(_ error: Error) -> Bool {
+        guard let healthKitError = error as? HKError else {
+            return false
+        }
+        return healthKitError.code == .errorAuthorizationNotDetermined
+    }
 
     // swiftlint:disable:next cyclomatic_complexity function_body_length
     public func definition() -> ModuleDefinition {
@@ -23,8 +31,7 @@ public class HealthKitModule: Module {
         /// one-time migration that checks write-type authorization status for users who
         /// authorized before this flag was introduced.
         Function("hasEverAuthorized") {
-            let key = "healthkit_has_ever_authorized"
-            if UserDefaults.standard.bool(forKey: key) {
+            if UserDefaults.standard.bool(forKey: self.hasEverAuthorizedKey) {
                 return true
             }
             // Migration: check if any write type was previously authorized.
@@ -34,7 +41,7 @@ public class HealthKitModule: Module {
             for writeType in writeTypes {
                 let status = self.healthStore.authorizationStatus(for: writeType)
                 if status == .sharingAuthorized || status == .sharingDenied {
-                    UserDefaults.standard.set(true, forKey: key)
+                    UserDefaults.standard.set(true, forKey: self.hasEverAuthorizedKey)
                     return true
                 }
             }
@@ -51,7 +58,7 @@ public class HealthKitModule: Module {
                     let status = try await self.healthStore.statusForAuthorizationRequest(toShare: writeTypes, read: readTypes)
                     switch status {
                     case .unnecessary:
-                        UserDefaults.standard.set(true, forKey: "healthkit_has_ever_authorized")
+                        UserDefaults.standard.set(true, forKey: self.hasEverAuthorizedKey)
                         promise.resolve("unnecessary")
                     case .shouldRequest:
                         promise.resolve("shouldRequest")
@@ -72,7 +79,7 @@ public class HealthKitModule: Module {
             Task {
                 do {
                     try await self.healthStore.requestAuthorization(toShare: writeTypes, read: readTypes)
-                    UserDefaults.standard.set(true, forKey: "healthkit_has_ever_authorized")
+                    UserDefaults.standard.set(true, forKey: self.hasEverAuthorizedKey)
                     promise.resolve(true)
                 } catch {
                     promise.reject("HEALTHKIT_AUTH_ERROR", error.localizedDescription)
@@ -493,6 +500,13 @@ public class HealthKitModule: Module {
 
             query.initialResultsHandler = { _, results, error in
                 if let error = error {
+                    if self.isAuthorizationNotDetermined(error) {
+                        promise.reject(
+                            "HEALTHKIT_AUTHORIZATION_NOT_DETERMINED",
+                            "HealthKit authorization not determined"
+                        )
+                        return
+                    }
                     promise.reject("QUERY_ERROR", error.localizedDescription)
                     return
                 }

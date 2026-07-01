@@ -113,6 +113,8 @@ describe("useAutoSync", () => {
     mockMutateAsync.mockResolvedValue({ jobId: "test-job" });
     mockSyncStatusFetch.mockResolvedValue({ status: "done" });
     mockIsAvailable.mockReturnValue(false);
+    mockGetRequestStatus.mockResolvedValue("unnecessary");
+    mockRequestPermissions.mockResolvedValue(true);
     mockSyncDofekFoodToHealthKit.mockResolvedValue({ written: 0, skipped: 0, errors: [] });
   });
 
@@ -289,6 +291,19 @@ describe("useAutoSync", () => {
 
       expect(mockSyncHealthKitToServer).toHaveBeenCalled();
       expect(mockCaptureException).toHaveBeenCalledWith(hkError, {
+        source: "auto-sync-healthkit",
+      });
+    });
+
+    it("reports cache invalidation failures after HealthKit sync", async () => {
+      const invalidateError = new Error("invalidate failed");
+      mockMutateAsync.mockResolvedValue({});
+      mockInvalidate.mockRejectedValue(invalidateError);
+
+      renderHook(() => useAutoSync("2026-03-21"));
+      await act(() => vi.runAllTimersAsync());
+
+      expect(mockCaptureException).toHaveBeenCalledWith(invalidateError, {
         source: "auto-sync-healthkit",
       });
     });

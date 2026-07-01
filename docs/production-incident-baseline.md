@@ -11305,8 +11305,8 @@ new incremental tables are populated.
   even though they existed on-device.
 - **Evidence:** Production web logs for the active `dofek_web` tasks contained
   no `healthKitSync.pushWorkouts` tRPC calls in the last 24 hours, and
-  production Postgres had zero `apple_health` activities with `started_at >= now()
-  - interval '48 hours'`. The automatic and background mobile sync entrypoints
+  production Postgres had zero `apple_health` activities with
+  `started_at >= now() - interval '48 hours'`. The automatic and background mobile sync entrypoints
   still required `hasEverAuthorized()` before attempting HealthKit sync. That
   marker is a local flag set by `requestPermissions()` with a migration that can
   only infer prior write-type authorization, while Apple Health workouts are read

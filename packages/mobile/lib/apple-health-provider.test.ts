@@ -25,6 +25,12 @@ import {
   useAppleHealthProviderModel,
 } from "./apple-health-provider";
 
+const mockCaptureException = vi.hoisted(() => vi.fn());
+
+vi.mock("./telemetry", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
+
 function createNative(overrides: Partial<AppleHealthAuthorizationNative> = {}) {
   return {
     isAvailable: vi.fn(() => true),
@@ -210,6 +216,10 @@ describe("AppleHealthProviderModel", () => {
 });
 
 describe("useAppleHealthProviderModel", () => {
+  beforeEach(() => {
+    mockCaptureException.mockClear();
+  });
+
   it("refreshes authorization state on mount", async () => {
     const native = createNative({
       getRequestStatus: vi.fn(async () => "unnecessary" as const),
@@ -225,5 +235,30 @@ describe("useAppleHealthProviderModel", () => {
     await waitFor(() => {
       expect(result.current.authorizationState.isConnected()).toBe(true);
     });
+  });
+
+  it("reports and handles mount-time authorization refresh failures", async () => {
+    const authorizationError = new Error("HealthKit status failed");
+    const onAuthorizationError = vi.fn();
+    const native = createNative({
+      getRequestStatus: vi.fn(async () => {
+        throw authorizationError;
+      }),
+    });
+
+    renderHook(() =>
+      useAppleHealthProviderModel({
+        trpcClient: createTrpcClient(),
+        authorizationService: new AppleHealthAuthorizationService(native),
+        onAuthorizationError,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(mockCaptureException).toHaveBeenCalledWith(authorizationError, {
+        source: "apple-health-authorization-refresh",
+      });
+    });
+    expect(onAuthorizationError).toHaveBeenCalledWith(authorizationError);
   });
 });
