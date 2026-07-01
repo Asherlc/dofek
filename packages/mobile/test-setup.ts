@@ -466,6 +466,20 @@ vi.mock("./modules/whoop-ble", () => ({
   disconnect: vi.fn(),
 }));
 
+// ── BLE heart-rate native module mock ──────────────────────────────
+vi.mock("./modules/ble-heart-rate", () => ({
+  isBluetoothAvailable: vi.fn(() => false),
+  scanAndConnect: vi.fn(() => Promise.resolve({ id: "mock-device", name: "Mock HR" })),
+  connect: vi.fn(() => Promise.resolve({ id: "mock-device", name: "Mock HR" })),
+  getConnectionState: vi.fn(() => "idle"),
+  getBufferedSampleCount: vi.fn(() => 0),
+  peekBufferedSamples: vi.fn(() => Promise.resolve([])),
+  confirmSamplesDrain: vi.fn(),
+  disconnect: vi.fn(),
+  addConnectionStateListener: vi.fn(() => ({ remove: vi.fn() })),
+  addHeartRateListener: vi.fn(() => ({ remove: vi.fn() })),
+}));
+
 // ── React Native Maps mock ──────────────────────────────────────────
 vi.mock("react-native-maps", () => {
   const React = require("react");

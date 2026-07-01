@@ -365,8 +365,13 @@ describe("syncRouter", () => {
       const result = await caller.providers();
 
       // Peloton is filtered out because its validate() fails
-      expect(result).toHaveLength(5);
+      expect(result).toHaveLength(6);
       expect(result.find((p: { id: string }) => p.id === "peloton")).toBeUndefined();
+
+      const bleHeartRate = result.find((p: { id: string }) => p.id === "ble_heart_rate");
+      expect(bleHeartRate?.authType).toBe("push:mobile");
+      expect(bleHeartRate?.pushOnly).toBe(true);
+      expect(bleHeartRate?.name).toBe("Heart Rate Monitor (Bluetooth)");
 
       const whoopBle = result.find((p: { id: string }) => p.id === "whoop_ble");
       expect(whoopBle?.authType).toBe("push:mobile");
@@ -721,9 +726,10 @@ describe("syncRouter", () => {
       });
 
       const result = await caller.providers();
-      expect(result).toHaveLength(2);
+      expect(result).toHaveLength(3);
       expect(result[0]?.authType).toBe("none");
       expect(result[1]?.id).toBe("whoop_ble");
+      expect(result[2]?.id).toBe("ble_heart_rate");
     });
   });
 

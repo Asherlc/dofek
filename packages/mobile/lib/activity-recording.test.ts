@@ -319,7 +319,8 @@ describe("createActivityRecorder with IMU service", () => {
   });
 
   it("saves activity successfully even when IMU sync fails", async () => {
-    vi.mocked(imuService.syncForTimeRange).mockRejectedValue(new Error("Sync failed"));
+    const syncError = new Error("Sync failed");
+    vi.mocked(imuService.syncForTimeRange).mockRejectedValue(syncError);
 
     await recorder.start("cycling");
     location.emitSample(makeSample());
@@ -329,6 +330,10 @@ describe("createActivityRecorder with IMU service", () => {
 
     expect(activityId).toBe("activity-123");
     expect(recorder.getSnapshot().state).toBe("idle");
+    // Best-effort, but the failure must still reach telemetry (not be swallowed).
+    expect(mockCaptureException).toHaveBeenCalledWith(syncError, {
+      source: "activity-recording.syncForTimeRange",
+    });
   });
 
   it("works without IMU service (backwards compatible)", async () => {

@@ -19,6 +19,7 @@ describe("PROVIDER_LABELS", () => {
     expect(PROVIDER_LABELS.strava).toBe("Strava");
     expect(PROVIDER_LABELS.whoop).toBe("WHOOP (Cloud)");
     expect(PROVIDER_LABELS.whoop_ble).toBe("WHOOP (Bluetooth)");
+    expect(PROVIDER_LABELS.ble_heart_rate).toBe("Heart Rate Monitor (Bluetooth)");
     expect(PROVIDER_LABELS["ride-with-gps"]).toBe("Ride with GPS");
     expect(PROVIDER_LABELS["cronometer-csv"]).toBe("Cronometer");
     expect(PROVIDER_LABELS.fatsecret).toBe("fatsecret");
@@ -129,6 +130,7 @@ describe("BRAND_COLORS", () => {
   it("maps providers to hex color strings", () => {
     expect(BRAND_COLORS.velohero).toBe("#FF6600");
     expect(BRAND_COLORS.bodyspec).toBe("#00B4D8");
+    expect(BRAND_COLORS.ble_heart_rate).toBe("#E0245E");
   });
 });
 
@@ -146,6 +148,7 @@ describe("providerLogoType", () => {
 
   it("returns null for providers without logos", () => {
     expect(providerLogoType("velohero")).toBeNull();
+    expect(providerLogoType("ble_heart_rate")).toBeNull();
     expect(providerLogoType("unknown")).toBeNull();
   });
 });
