@@ -57,16 +57,16 @@ final class BleHeartRateSampleBuffer {
         lock.unlock()
     }
 
-    private static let isoFormatter: ISO8601DateFormatter = {
+    private func serialize(_ samples: [BleHeartRateSample]) -> [[String: Any]] {
+        // Use a local formatter: ISO8601DateFormatter is not thread-safe, and
+        // serialize runs after releasing the buffer lock, so a shared instance
+        // could be raced by concurrent drain calls. It is allocated once per
+        // page (not per sample), so the cost is negligible.
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
-    private func serialize(_ samples: [BleHeartRateSample]) -> [[String: Any]] {
         return samples.map { sample in
             [
-                "timestamp": Self.isoFormatter.string(from: sample.timestamp),
+                "timestamp": formatter.string(from: sample.timestamp),
                 "heartRateBpm": sample.heartRateBpm,
                 "rrIntervalsMs": sample.rrIntervalsMs,
             ]

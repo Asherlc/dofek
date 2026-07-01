@@ -64,7 +64,10 @@ final class BleHeartRateConnectionManager: NSObject {
     ) {
         let manager = ensureCentralManager()
         bleQueue.async {
-            guard self.connectCompletion == nil else {
+            // Reject if an attempt is in flight OR a peripheral is already
+            // connected — otherwise a second call would orphan the live
+            // peripheral without cancelling it.
+            guard self.connectCompletion == nil, self.connectedPeripheral == nil else {
                 completion(.failure(.busy))
                 return
             }
@@ -80,7 +83,10 @@ final class BleHeartRateConnectionManager: NSObject {
     ) {
         let manager = ensureCentralManager()
         bleQueue.async {
-            guard self.connectCompletion == nil else {
+            // Reject if an attempt is in flight OR a peripheral is already
+            // connected — otherwise a second call would orphan the live
+            // peripheral without cancelling it.
+            guard self.connectCompletion == nil, self.connectedPeripheral == nil else {
                 completion(.failure(.busy))
                 return
             }
