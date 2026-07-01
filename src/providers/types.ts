@@ -1,5 +1,6 @@
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
+import type { SyncDegradation } from "../sync/sync-degradation.ts";
 import type { SyncOptions, SyncRun } from "./sync-run.ts";
 
 export type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
@@ -68,6 +69,7 @@ export interface SyncResult {
   provider: string;
   recordsSynced: number;
   errors: SyncError[];
+  degradations?: SyncDegradation[];
   duration: number;
   /** When true, more BullMQ jobs will run to finish this sync run. */
   continued?: boolean;

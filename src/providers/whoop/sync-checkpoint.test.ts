@@ -18,6 +18,7 @@ const validCheckpoint: WhoopSyncCheckpoint = {
   ],
   apiStepIndex: 0,
   presentExternalIds: ["workout-1"],
+  developerWorkoutPaginationComplete: false,
 };
 
 describe("WHOOP sync checkpoint", () => {
@@ -34,6 +35,7 @@ describe("WHOOP sync checkpoint", () => {
     expect(checkpoint.cycles).toEqual([]);
     expect(checkpoint.apiSteps).toEqual([]);
     expect(checkpoint.presentExternalIds).toEqual([]);
+    expect(checkpoint.developerWorkoutPaginationComplete).toBe(false);
     expect(checkpoint.apiStepIndex).toBe(0);
     expect(checkpoint.recordsSynced).toBe(0);
     expect(checkpoint.runId.length).toBeGreaterThan(0);
@@ -44,13 +46,13 @@ describe("WHOOP sync checkpoint", () => {
   });
 
   it("applies schema defaults for omitted checkpoint fields", () => {
-    expect(
-      parseWhoopSyncCheckpoint({
-        runId: "run-2",
-        phase: "bootstrap",
-        cycleFetchCursorMs: 1,
-      }),
-    ).toEqual({
+    const parsed = parseWhoopSyncCheckpoint({
+      runId: "run-2",
+      phase: "bootstrap",
+      cycleFetchCursorMs: 1,
+    });
+
+    expect(parsed).toEqual({
       runId: "run-2",
       recordsSynced: 0,
       phase: "bootstrap",
@@ -59,7 +61,18 @@ describe("WHOOP sync checkpoint", () => {
       apiSteps: [],
       apiStepIndex: 0,
       presentExternalIds: [],
+      developerWorkoutPaginationComplete: false,
     });
+    expect(parsed?.developerWorkoutPaginationComplete).toBe(false);
+  });
+
+  it("preserves completed developer workout pagination state", () => {
+    expect(
+      parseWhoopSyncCheckpoint({
+        ...validCheckpoint,
+        developerWorkoutPaginationComplete: true,
+      })?.developerWorkoutPaginationComplete,
+    ).toBe(true);
   });
 
   it("returns null for invalid checkpoint payloads", () => {

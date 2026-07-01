@@ -32,9 +32,13 @@ export const whoopSyncCheckpointSchema = z.object({
   apiSteps: z.array(whoopSyncStepSchema).default([]),
   apiStepIndex: z.number().default(0),
   presentExternalIds: z.array(z.string()).default([]),
+  developerWorkoutPaginationComplete: z.boolean().optional(),
 });
 
-export type WhoopSyncCheckpoint = z.infer<typeof whoopSyncCheckpointSchema>;
+type ParsedWhoopSyncCheckpoint = z.infer<typeof whoopSyncCheckpointSchema>;
+export type WhoopSyncCheckpoint = ParsedWhoopSyncCheckpoint & {
+  developerWorkoutPaginationComplete: boolean;
+};
 
 export function createWhoopSyncCheckpoint(windowStartMs: number): WhoopSyncCheckpoint {
   return {
@@ -46,11 +50,15 @@ export function createWhoopSyncCheckpoint(windowStartMs: number): WhoopSyncCheck
     apiSteps: [],
     apiStepIndex: 0,
     presentExternalIds: [],
+    developerWorkoutPaginationComplete: false,
   };
 }
 
 export function parseWhoopSyncCheckpoint(raw: unknown): WhoopSyncCheckpoint | null {
   const parsed = whoopSyncCheckpointSchema.safeParse(raw);
   if (!parsed.success) return null;
-  return parsed.data;
+  return {
+    ...parsed.data,
+    developerWorkoutPaginationComplete: parsed.data.developerWorkoutPaginationComplete ?? false,
+  };
 }

@@ -34,6 +34,7 @@ export const syncLog = fitness.table(
     recordCount: integer("record_count").default(0),
     errorMessage: text("error_message"),
     authFailureReason: text("auth_failure_reason"),
+    degradationKind: text("degradation_kind"),
     durationMs: integer("duration_ms"),
     syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
   },

@@ -1,4 +1,5 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import { captureMessage } from "@sentry/node";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WhoopClient, WhoopRateLimitError } from "whoop-whoop/client";
 import type {
@@ -50,15 +51,33 @@ vi.mock("../metric-stream/redpanda-producer.ts", () => ({
 // Mocks for sync tests
 // ============================================================
 
-vi.mock("../db/sync-log.ts", () => ({
-  withSyncLog: vi.fn(
-    (
-      _db: unknown,
-      _provider: string,
-      _type: string,
-      fn: () => Promise<{ recordCount: number; result: number }>,
-    ) => fn().then((r) => r.result),
-  ),
+vi.mock("../db/sync-log.ts", async () => {
+  const { reportSyncDegradation } = await import("../sync/sync-degradation-reporting.ts");
+  return {
+    withSyncLog: vi.fn(
+      async (
+        _db: unknown,
+        _provider: string,
+        _type: string,
+        fn: () => Promise<{
+          recordCount: number;
+          result: unknown;
+          degradations?: Parameters<typeof reportSyncDegradation>[0][];
+        }>,
+      ) => {
+        const outcome = await fn();
+        for (const degradation of outcome.degradations ?? []) {
+          reportSyncDegradation(degradation);
+        }
+        return outcome.result;
+      },
+    ),
+  };
+});
+
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(),
+  captureMessage: vi.fn(),
 }));
 
 vi.mock("../db/tokens.ts", () => ({
@@ -103,6 +122,7 @@ vi.mock("../lib/provider-rate-limit-fetch.ts", async (importOriginal) => {
 });
 
 beforeEach(() => {
+  vi.mocked(captureMessage).mockClear();
   publishedMetricStreamBatches.length = 0;
   providerActivityAbsenceMocks.finishProviderActivityListSync.mockReset();
   providerActivityAbsenceMocks.finishProviderActivityListSync.mockResolvedValue(undefined);
@@ -167,7 +187,12 @@ function makeSyncMockFetch(options: {
   strainSteps?: number;
   sleepRateLimit?: boolean;
   developerWorkoutsError?: boolean;
+  developerWorkoutPages?: Array<{
+    records: Array<{ id: string; start: string; end: string }>;
+    next_token: string | null;
+  }>;
 }) {
+  let developerWorkoutPageIndex = 0;
   const mockFetch: typeof globalThis.fetch = (input: RequestInfo | URL, _init?: RequestInit) => {
     const url = input.toString();
 
@@ -271,6 +296,11 @@ function makeSyncMockFetch(options: {
     if (url.includes("developer/v2/activity/workout")) {
       if (options.developerWorkoutsError) {
         return Promise.resolve(new Response("developer error", { status: 500 }));
+      }
+      const developerWorkoutPage = options.developerWorkoutPages?.[developerWorkoutPageIndex];
+      developerWorkoutPageIndex += 1;
+      if (developerWorkoutPage) {
+        return Promise.resolve(Response.json(developerWorkoutPage));
       }
       return Promise.resolve(Response.json({ records: [], next_token: null }));
     }
@@ -1515,6 +1545,307 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
       continued: false,
     });
     expect(store.clear).not.toHaveBeenCalled();
+  });
+
+  it("queues the next developer workout page when the cursor advances", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-10T00:00:00Z"));
+    await mockStoredWhoopTokens();
+
+    const initialCheckpoint = {
+      runId: "run-next-developer-workout-token",
+      recordsSynced: 0,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: [],
+      apiSteps: [{ type: "developer_workouts", nextToken: "page-1" }, { type: "persist_workouts" }],
+      apiStepIndex: 0,
+      presentExternalIds: [],
+    };
+    const { store, saved } = makeCheckpointStore(initialCheckpoint);
+    const enqueueSyncContinuation = vi.fn(async () => undefined);
+    const provider = new WhoopProvider(
+      makeSyncMockFetch({
+        developerWorkoutPages: [
+          {
+            records: [
+              {
+                id: "current-workout",
+                start: "2026-03-01T12:00:00.000Z",
+                end: "2026-03-01T13:00:00.000Z",
+              },
+            ],
+            next_token: "page-2",
+          },
+        ],
+      }),
+    );
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+        enqueueSyncContinuation,
+      }),
+    );
+
+    expect(result).toEqual({
+      provider: "whoop",
+      recordsSynced: 0,
+      errors: [],
+      duration: 0,
+      continued: true,
+    });
+    expect(captureMessage).not.toHaveBeenCalledWith("Provider sync degraded", expect.anything());
+    expect(enqueueSyncContinuation).toHaveBeenCalledTimes(1);
+
+    const savedCheckpoint = requireRecord(saved[0], "expected saved next-token checkpoint");
+    expect(savedCheckpoint.apiStepIndex).toBe(1);
+    expect(savedCheckpoint.apiSteps).toEqual([
+      { type: "developer_workouts", nextToken: "page-1" },
+      { type: "developer_workouts", nextToken: "page-2" },
+      { type: "persist_workouts" },
+    ]);
+    expect(savedCheckpoint.presentExternalIds).toEqual(["current-workout"]);
+    expect(savedCheckpoint.developerWorkoutPaginationComplete).toBe(false);
+  });
+
+  it("records degraded pagination and advances to persist when developer workout token repeats", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-10T00:00:00Z"));
+    await mockStoredWhoopTokens();
+
+    const initialCheckpoint = {
+      runId: "run-repeated-developer-workout-token",
+      recordsSynced: 0,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: [],
+      apiSteps: [
+        { type: "developer_workouts", nextToken: "same-token" },
+        { type: "persist_workouts" },
+      ],
+      apiStepIndex: 0,
+      presentExternalIds: ["previous-workout"],
+    };
+    const { store, saved } = makeCheckpointStore(initialCheckpoint);
+    const enqueueSyncContinuation = vi.fn(async () => undefined);
+    const provider = new WhoopProvider(
+      makeSyncMockFetch({
+        developerWorkoutPages: [
+          {
+            records: [
+              {
+                id: "current-workout",
+                start: "2026-03-01T12:00:00.000Z",
+                end: "2026-03-01T13:00:00.000Z",
+              },
+            ],
+            next_token: "same-token",
+          },
+        ],
+      }),
+    );
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+        enqueueSyncContinuation,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      provider: "whoop",
+      recordsSynced: 0,
+      errors: [],
+      continued: true,
+      degradations: [
+        expect.objectContaining({
+          kind: "pagination_stalled",
+          context: expect.objectContaining({ pagesFetched: 2 }),
+        }),
+      ],
+    });
+    expect(enqueueSyncContinuation).toHaveBeenCalledTimes(1);
+
+    const savedCheckpoint = requireRecord(saved[0], "expected saved repeated-token checkpoint");
+    expect(savedCheckpoint.apiStepIndex).toBe(1);
+    expect(savedCheckpoint.apiSteps).toEqual([
+      { type: "developer_workouts", nextToken: "same-token" },
+      { type: "persist_workouts" },
+    ]);
+    expect(savedCheckpoint.presentExternalIds).toEqual(["previous-workout", "current-workout"]);
+    expect(captureMessage).toHaveBeenCalledWith(
+      "Provider sync degraded",
+      expect.objectContaining({
+        level: "warning",
+        tags: expect.objectContaining({
+          providerId: "whoop",
+          stepName: "developer_workouts",
+          degradationKind: "pagination_stalled",
+        }),
+      }),
+    );
+  });
+
+  it("degrades a repeated developer workout token when only the current step has seen it", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-10T00:00:00Z"));
+    await mockStoredWhoopTokens();
+
+    const initialCheckpoint = {
+      runId: "run-single-repeated-developer-workout-token",
+      recordsSynced: 0,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: [],
+      apiSteps: [{ type: "developer_workouts", nextToken: "same-token" }],
+      apiStepIndex: 0,
+      presentExternalIds: [],
+    };
+    const { store, saved } = makeCheckpointStore(initialCheckpoint);
+    const provider = new WhoopProvider(
+      makeSyncMockFetch({
+        developerWorkoutPages: [
+          {
+            records: [
+              {
+                id: "current-workout",
+                start: "2026-03-01T12:00:00.000Z",
+                end: "2026-03-01T13:00:00.000Z",
+              },
+            ],
+            next_token: "same-token",
+          },
+        ],
+      }),
+    );
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      provider: "whoop",
+      recordsSynced: 0,
+      errors: [],
+      continued: false,
+      degradations: [
+        expect.objectContaining({
+          kind: "pagination_stalled",
+          context: expect.objectContaining({ pagesFetched: 2 }),
+        }),
+      ],
+    });
+
+    const savedCheckpoint = requireRecord(
+      saved[0],
+      "expected saved single repeated-token checkpoint",
+    );
+    expect(savedCheckpoint.phase).toBe("done");
+    expect(savedCheckpoint.apiSteps).toEqual([
+      { type: "developer_workouts", nextToken: "same-token" },
+    ]);
+    expect(savedCheckpoint.presentExternalIds).toEqual(["current-workout"]);
+  });
+
+  it("persists workouts without absence reconciliation when developer workout pagination degrades", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-10T00:00:00Z"));
+    await mockStoredWhoopTokens();
+
+    const initialCheckpoint = {
+      runId: "run-repeated-developer-workout-token-before-persist",
+      recordsSynced: 0,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: [
+        {
+          days: ["2026-03-01"],
+          recovery: null,
+          sleep: null,
+          workouts: [
+            {
+              activity_id: "cycle-workout",
+              during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
+              timezone_offset: "-05:00",
+              sport_id: 0,
+              score: 8,
+              average_heart_rate: 130,
+              max_heart_rate: 160,
+              kilojoules: 1200,
+            },
+          ],
+        },
+      ],
+      apiSteps: [
+        { type: "developer_workouts", nextToken: "same-token" },
+        { type: "persist_workouts" },
+      ],
+      apiStepIndex: 0,
+      presentExternalIds: ["previous-workout"],
+    };
+    const { store } = makeCheckpointStore(initialCheckpoint);
+    const provider = new WhoopProvider(
+      makeSyncMockFetch({
+        developerWorkoutPages: [
+          {
+            records: [
+              {
+                id: "current-workout",
+                start: "2026-03-01T12:00:00.000Z",
+                end: "2026-03-01T13:00:00.000Z",
+              },
+            ],
+            next_token: "same-token",
+          },
+        ],
+      }),
+    );
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      provider: "whoop",
+      recordsSynced: 1,
+      errors: [],
+      continued: false,
+      degradations: [
+        expect.objectContaining({
+          kind: "pagination_stalled",
+          providerId: "whoop",
+          stepName: "developer_workouts",
+          context: expect.objectContaining({ pagesFetched: 2 }),
+        }),
+      ],
+    });
+    expect(findUpsertValues((record) => record.externalId === "cycle-workout")).toBeDefined();
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
   });
 });
 
