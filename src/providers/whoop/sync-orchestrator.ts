@@ -3,6 +3,8 @@ import { WhoopClient } from "whoop-whoop/client";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { runWithSyncStepAdmission } from "../../lib/sync-step-admission-context.ts";
 import { logger } from "../../logger.ts";
+import { fingerprintOpaqueValue } from "../pagination-fingerprint.ts";
+import type { SyncDegradation } from "../sync-degradation.ts";
 import type { SyncRun } from "../sync-run.ts";
 import { SyncWindow } from "../sync-window.ts";
 import type { SyncError, SyncResult } from "../types.ts";
@@ -34,6 +36,7 @@ type WhoopOrchestratorResult = {
   checkpoint: WhoopSyncCheckpoint;
   recordsSynced: number;
   errors: SyncError[];
+  degradations: SyncDegradation[];
   complete: boolean;
 };
 
@@ -139,6 +142,35 @@ function describeStep(step: WhoopSyncStep | "bootstrap_cycles" | "bootstrap_pers
 
 type WhoopStepDescription = WhoopSyncStep | "bootstrap_cycles" | "bootstrap_persist";
 
+function developerWorkoutTokensSeenByCurrentStep(checkpoint: WhoopSyncCheckpoint): Set<string> {
+  const tokens = new Set<string>();
+  for (const step of checkpoint.apiSteps.slice(0, checkpoint.apiStepIndex + 1)) {
+    if (step.type === "developer_workouts" && step.nextToken) {
+      tokens.add(step.nextToken);
+    }
+  }
+  return tokens;
+}
+
+function developerWorkoutPaginationDegradation(
+  checkpoint: WhoopSyncCheckpoint,
+  nextToken: string | null,
+): SyncDegradation | null {
+  if (!nextToken) return null;
+  if (!developerWorkoutTokensSeenByCurrentStep(checkpoint).has(nextToken)) return null;
+
+  return {
+    kind: "pagination_stalled",
+    providerId: "whoop",
+    stepName: "developer_workouts",
+    message: "WHOOP returned a repeated developer workout pagination cursor",
+    context: {
+      cursorFingerprint: fingerprintOpaqueValue(nextToken),
+      pagesFetched: 1,
+    },
+  };
+}
+
 function resolveStepDescription(checkpoint: WhoopSyncCheckpoint): WhoopStepDescription {
   if (checkpoint.phase === "bootstrap") {
     return checkpoint.cycleFetchCursorMs == null && checkpoint.cycles.length > 0
@@ -167,6 +199,7 @@ async function runBootstrapPersist(
     checkpoint,
     recordsSynced: checkpoint.recordsSynced,
     errors,
+    degradations: [],
     complete: false,
   };
 }
@@ -202,6 +235,7 @@ async function runBootstrapStep(
         checkpoint,
         recordsSynced: checkpoint.recordsSynced,
         errors,
+        degradations: [],
         complete: true,
       };
     }
@@ -209,6 +243,7 @@ async function runBootstrapStep(
       checkpoint,
       recordsSynced: checkpoint.recordsSynced,
       errors,
+      degradations: [],
       complete: false,
     };
   }
@@ -229,11 +264,13 @@ async function runApiStep(
       checkpoint,
       recordsSynced: checkpoint.recordsSynced,
       errors,
+      degradations: [],
       complete: true,
     };
   }
 
   const context = makeContext(run, client, checkpoint.cycles, errors);
+  const degradations: SyncDegradation[] = [];
   const absenceWindow = new SyncWindow({
     since: run.window.since,
     until: run.window.until,
@@ -267,14 +304,39 @@ async function runApiStep(
         );
         break;
       case "developer_workouts": {
-        const page = await fetchWhoopDeveloperWorkoutsPage(context, absenceWindow, step.nextToken);
-        checkpoint.presentExternalIds.push(...page.presentIds);
-        if (page.nextToken && !page.reachedWindowStart) {
-          checkpoint.apiSteps.splice(checkpoint.apiStepIndex + 1, 0, {
-            type: "developer_workouts",
-            nextToken: page.nextToken,
-          });
-        }
+        const developerWorkoutResult = await withSyncLog(
+          run.db,
+          "whoop",
+          "developer_workouts",
+          async () => {
+            const page = await fetchWhoopDeveloperWorkoutsPage(
+              context,
+              absenceWindow,
+              step.nextToken,
+            );
+            checkpoint.presentExternalIds.push(...page.presentIds);
+            const degradation = developerWorkoutPaginationDegradation(checkpoint, page.nextToken);
+
+            if (page.nextToken && !page.reachedWindowStart && !degradation) {
+              checkpoint.apiSteps.splice(checkpoint.apiStepIndex + 1, 0, {
+                type: "developer_workouts",
+                nextToken: page.nextToken,
+              });
+            }
+
+            return {
+              recordCount: page.presentIds.length,
+              result: {
+                recordsSynced: 0,
+                degradations: degradation ? [degradation] : [],
+              },
+              degradations: degradation ? [degradation] : [],
+            };
+          },
+          userId,
+        );
+        checkpoint.recordsSynced += developerWorkoutResult.recordsSynced;
+        degradations.push(...developerWorkoutResult.degradations);
         break;
       }
       case "persist_workouts":
@@ -349,6 +411,7 @@ async function runApiStep(
       checkpoint,
       recordsSynced: checkpoint.recordsSynced,
       errors,
+      degradations,
       complete: true,
     };
   }
@@ -357,6 +420,7 @@ async function runApiStep(
     checkpoint,
     recordsSynced: checkpoint.recordsSynced,
     errors,
+    degradations,
     complete: false,
   };
 }
@@ -388,6 +452,7 @@ async function runWhoopSyncStep(
     checkpoint,
     recordsSynced: checkpoint.recordsSynced,
     errors,
+    degradations: [],
     complete: true,
   };
 }
@@ -403,6 +468,7 @@ export async function runWhoopOrchestratedSync(
     createWhoopSyncCheckpoint(run.window.since.getTime());
 
   const errors: SyncError[] = [];
+  const degradations: SyncDegradation[] = [];
   let recordsSynced = checkpoint.recordsSynced;
 
   try {
@@ -425,6 +491,7 @@ export async function runWhoopOrchestratedSync(
       checkpoint = outcome.checkpoint;
       recordsSynced = checkpoint.recordsSynced;
       errors.push(...outcome.errors);
+      degradations.push(...outcome.degradations);
       await checkpointStore?.save(checkpoint);
 
       if (outcome.complete) {
@@ -437,6 +504,7 @@ export async function runWhoopOrchestratedSync(
           provider: "whoop",
           recordsSynced,
           errors,
+          ...(degradations.length > 0 ? { degradations } : {}),
           duration: Date.now() - startMs,
           continued: false,
         };
@@ -451,6 +519,7 @@ export async function runWhoopOrchestratedSync(
         provider: "whoop",
         recordsSynced,
         errors,
+        ...(degradations.length > 0 ? { degradations } : {}),
         duration: Date.now() - startMs,
         continued: true,
       };
@@ -466,6 +535,7 @@ export async function runWhoopOrchestratedSync(
       provider: "whoop",
       recordsSynced,
       errors,
+      ...(degradations.length > 0 ? { degradations } : {}),
       duration: Date.now() - startMs,
       continued: false,
     };

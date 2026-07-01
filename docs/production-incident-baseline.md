@@ -11296,3 +11296,43 @@ new incremental tables are populated.
 - **Remaining risk:** This does not backfill data by itself. Apple Health needs
   the updated mobile app running with HealthKit authorization, and WHOOP needs a
   new sync run to advance through the reordered activity steps.
+
+## 2026-07-01 — WHOOP cloud activity ingestion still stale after step reordering
+
+- **Symptoms:** WHOOP cloud activity rows remained stale even though WHOOP
+  recovery, sleep, and daily metrics continued syncing.
+- **User impact:** Recent WHOOP workouts were missing from activity surfaces.
+- **Evidence:** Production Postgres showed `fitness.activity` for provider
+  `whoop` still capped at `started_at = 2026-06-21 17:37:00.39+00` and
+  `created_at = 2026-06-22 08:12:32.049725+00`, while `fitness.daily_metrics`
+  reached `date = 2026-07-01` and `fitness.sleep_session` reached
+  `started_at = 2026-07-01 05:18:58.51+00`. In the prior 48 hours, WHOOP
+  `sync_log` had 228 successful `daily_activity` rows, 88 `sleep` rows, 88
+  `recovery` rows, and 2,028 successful `sleep_stages` rows with zero records,
+  but no `workouts` or `strength` rows. Redis completed WHOOP continuation jobs
+  showed checkpoints in `phase = "api"` with `persist_workouts` still pending
+  and repeated `developer_workouts` steps carrying the same `nextToken`
+  (`eyIkIjoib0AxIiwibyI6MjV9`), with `presentExternalIdsLength = 50`.
+  Sentry showed only one recent WHOOP server error in the last seven days:
+  `DOFEK-SERVER-47`, a 2026-06-29 cycle-bootstrap 401. Sentry logs had no WHOOP
+  entries in the last 24 hours, which matches the fact that the active failure
+  mode is successful HTTP pagination rather than a thrown exception.
+- **Root cause:** The WHOOP developer-workout continuation planner accepts a
+  repeated `next_token` from the WHOOP developer API and inserts another
+  identical `developer_workouts` step ahead of `persist_workouts`, so
+  pagination can loop forever and prevent fetched workout IDs from reaching the
+  persistence step.
+- **Fix / mitigation:** Added a WHOOP developer-workout pagination guard that
+  treats a repeated page token as a degraded sync, records a safe cursor
+  fingerprint in Sentry/log context, and advances the continuation plan to
+  `persist_workouts` instead of inserting another duplicate `developer_workouts`
+  fetch. Added shared provider sync-degradation types, sync-log degraded status,
+  and a reusable pagination guard for cross-provider migration.
+- **Validation:** Focused WHOOP and shared-provider regression tests passed, and
+  the full local test suite reached the final ClickHouse-backed predictions
+  suite before ClickHouse exceeded its 3 GiB container memory cap. After
+  restarting ClickHouse, `predictions.integration.test.ts` passed in isolation;
+  lint and typecheck also passed locally.
+- **Remaining risk:** Production still needs a fresh WHOOP sync after deploy to
+  confirm `workouts`/`strength` logs appear and `fitness.activity` advances
+  beyond 2026-06-21.

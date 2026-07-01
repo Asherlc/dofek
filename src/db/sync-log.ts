@@ -2,6 +2,8 @@ import {
   authFailureReasonFromError,
   type ProviderAuthFailureReason,
 } from "../providers/auth-errors.ts";
+import type { SyncDegradation, SyncDegradationKind } from "../providers/sync-degradation.ts";
+import { reportSyncDegradation } from "../providers/sync-degradation-reporting.ts";
 import type { SyncDatabase } from "./index.ts";
 import { syncLog } from "./schema/events.ts";
 import { getTokenUserId } from "./token-user-context.ts";
@@ -9,10 +11,11 @@ import { getTokenUserId } from "./token-user-context.ts";
 export interface SyncLogEntry {
   providerId: string;
   dataType: string;
-  status: "success" | "error";
+  status: "success" | "error" | "degraded";
   recordCount?: number;
   errorMessage?: string;
   authFailureReason?: ProviderAuthFailureReason;
+  degradationKind?: SyncDegradationKind;
   durationMs?: number;
   /** User ID for this sync log entry. */
   userId?: string;
@@ -38,6 +41,7 @@ export async function logSync(db: SyncDatabase, entry: SyncLogEntry): Promise<vo
     recordCount: entry.recordCount ?? 0,
     errorMessage: entry.errorMessage,
     authFailureReason: entry.authFailureReason,
+    degradationKind: entry.degradationKind,
     durationMs: entry.durationMs,
     userId: scopedUserId,
   });
@@ -51,17 +55,23 @@ export async function withSyncLog<T>(
   db: SyncDatabase,
   providerId: string,
   dataType: string,
-  fn: () => Promise<{ recordCount: number; result: T }>,
+  fn: () => Promise<{ recordCount: number; result: T; degradations?: SyncDegradation[] }>,
   userId?: string,
 ): Promise<T> {
   const start = Date.now();
   try {
-    const { recordCount, result } = await fn();
+    const { recordCount, result, degradations = [] } = await fn();
+    for (const degradation of degradations) {
+      reportSyncDegradation(degradation);
+    }
+    const firstDegradation = degradations[0];
     await logSync(db, {
       providerId,
       dataType,
-      status: "success",
+      status: firstDegradation ? "degraded" : "success",
       recordCount,
+      errorMessage: firstDegradation?.message,
+      degradationKind: firstDegradation?.kind,
       durationMs: Date.now() - start,
       userId,
     });

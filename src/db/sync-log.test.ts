@@ -30,6 +30,7 @@ describe("logSync", () => {
       recordCount: 42,
       errorMessage: undefined,
       authFailureReason: undefined,
+      degradationKind: undefined,
       durationMs: 1500,
       userId: "user-123",
     });
@@ -54,6 +55,7 @@ describe("logSync", () => {
       recordCount: 0,
       errorMessage: "API timeout",
       authFailureReason: undefined,
+      degradationKind: undefined,
       durationMs: 5000,
       userId: "user-456",
     });
@@ -76,6 +78,32 @@ describe("logSync", () => {
         authFailureReason: "access_token_expired",
       }),
     );
+  });
+
+  it("inserts a degraded log entry with degradation kind", async () => {
+    const entry: SyncLogEntry = {
+      providerId: "whoop",
+      dataType: "developer_workouts",
+      status: "degraded",
+      recordCount: 25,
+      degradationKind: "pagination_stalled",
+      errorMessage: "WHOOP returned a repeated workout cursor",
+      userId: "user-123",
+    };
+
+    await logSync(db.db, entry);
+
+    expect(db.spies.values).toHaveBeenCalledWith({
+      providerId: "whoop",
+      dataType: "developer_workouts",
+      status: "degraded",
+      recordCount: 25,
+      errorMessage: "WHOOP returned a repeated workout cursor",
+      authFailureReason: undefined,
+      degradationKind: "pagination_stalled",
+      durationMs: undefined,
+      userId: "user-123",
+    });
   });
 
   it("defaults recordCount to 0 when not provided", async () => {
@@ -131,6 +159,35 @@ describe("withSyncLog", () => {
         dataType: "activities",
         status: "success",
         recordCount: 10,
+      }),
+    );
+  });
+
+  it("logs degraded when the operation returns a degradation", async () => {
+    const fn = vi.fn().mockResolvedValue({
+      recordCount: 10,
+      result: "data",
+      degradations: [
+        {
+          kind: "pagination_stalled",
+          providerId: "whoop",
+          stepName: "developer_workouts",
+          message: "WHOOP returned a repeated workout cursor",
+        },
+      ],
+    });
+
+    const result = await withSyncLog(db.db, "whoop", "developer_workouts", fn, "user-123");
+
+    expect(result).toBe("data");
+    expect(db.spies.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "whoop",
+        dataType: "developer_workouts",
+        status: "degraded",
+        recordCount: 10,
+        errorMessage: "WHOOP returned a repeated workout cursor",
+        degradationKind: "pagination_stalled",
       }),
     );
   });
