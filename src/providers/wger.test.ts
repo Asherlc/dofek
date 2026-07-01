@@ -47,7 +47,7 @@ vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
 });
 
 vi.mock("../db/metric-stream-writer.ts", () => ({
-  writeMetricStreamBatch: vi.fn().mockResolvedValue(undefined),
+  writeMetricStreamBatch: vi.fn().mockResolvedValue(1),
 }));
 
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
@@ -334,7 +334,7 @@ describe("WgerProvider", () => {
     const { writeMetricStreamBatch } = await import("../db/metric-stream-writer.ts");
     vi.mocked(writeMetricStreamBatch)
       .mockRejectedValueOnce(new Error("weight write failed"))
-      .mockResolvedValue(undefined);
+      .mockResolvedValue(1);
 
     const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
       const url = String(input);
