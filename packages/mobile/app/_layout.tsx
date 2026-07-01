@@ -24,8 +24,8 @@ import { getVersionHeaders } from "../lib/version-headers";
 import { addBackgroundRefreshListener, scheduleRefresh } from "../modules/background-refresh";
 import {
   getRequestStatus,
-  isAvailable as isHealthKitAvailable,
   hasEverAuthorized,
+  isAvailable as isHealthKitAvailable,
   requestPermissions,
 } from "../modules/health-kit";
 import {
