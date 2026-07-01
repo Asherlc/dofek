@@ -99,6 +99,10 @@ public class HealthKitModule: Module {
                 limit: queryLimit, sortDescriptors: [sortDescriptor]
             ) { _, results, error in
                 if let error = error {
+                    if error.localizedDescription.contains("Authorization not determined") {
+                        promise.resolve([[String: Any]]())
+                        return
+                    }
                     promise.reject("QUERY_ERROR", error.localizedDescription)
                     return
                 }
@@ -135,6 +139,10 @@ public class HealthKitModule: Module {
                 limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]
             ) { _, results, error in
                 if let error = error {
+                    if error.localizedDescription.contains("Authorization not determined") {
+                        promise.resolve([[String: Any]]())
+                        return
+                    }
                     promise.reject("QUERY_ERROR", error.localizedDescription)
                     return
                 }
@@ -230,6 +238,10 @@ public class HealthKitModule: Module {
                 limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]
             ) { _, results, error in
                 if let error = error {
+                    if error.localizedDescription.contains("Authorization not determined") {
+                        promise.resolve([[String: Any]]())
+                        return
+                    }
                     promise.reject("QUERY_ERROR", error.localizedDescription)
                     return
                 }
@@ -573,9 +585,13 @@ public class HealthKitModule: Module {
                 dispatchGroup.enter()
                 self.healthStore.enableBackgroundDelivery(for: sampleType, frequency: .hourly) { _, error in
                     if let error = error {
-                        errorLock.lock()
-                        backgroundDeliveryErrors.append("\(sampleType.identifier): \(error.localizedDescription)")
-                        errorLock.unlock()
+                        // Skip types that haven't been authorized yet — they'll be
+                        // registered after the user grants permission via requestPermissions().
+                        if !error.localizedDescription.contains("Authorization not determined") {
+                            errorLock.lock()
+                            backgroundDeliveryErrors.append("\(sampleType.identifier): \(error.localizedDescription)")
+                            errorLock.unlock()
+                        }
                     }
                     dispatchGroup.leave()
                 }
