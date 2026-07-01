@@ -31,10 +31,14 @@ vi.mock("./trpc", () => ({
 
 const mockIsAvailable = vi.fn().mockReturnValue(false);
 const mockHasEverAuthorized = vi.fn().mockReturnValue(false);
+const mockGetRequestStatus = vi.fn().mockResolvedValue("unnecessary");
+const mockRequestPermissions = vi.fn().mockResolvedValue(true);
 
 vi.mock("../modules/health-kit", () => ({
   isAvailable: (...args: unknown[]) => mockIsAvailable(...args),
   hasEverAuthorized: (...args: unknown[]) => mockHasEverAuthorized(...args),
+  getRequestStatus: (...args: unknown[]) => mockGetRequestStatus(...args),
+  requestPermissions: (...args: unknown[]) => mockRequestPermissions(...args),
   queryDailyStatistics: vi.fn(),
   queryQuantitySamples: vi.fn(),
   queryWorkouts: vi.fn(),
@@ -109,6 +113,8 @@ describe("useAutoSync", () => {
     mockMutateAsync.mockResolvedValue({ jobId: "test-job" });
     mockSyncStatusFetch.mockResolvedValue({ status: "done" });
     mockIsAvailable.mockReturnValue(false);
+    mockGetRequestStatus.mockResolvedValue("unnecessary");
+    mockRequestPermissions.mockResolvedValue(true);
     mockSyncDofekFoodToHealthKit.mockResolvedValue({ written: 0, skipped: 0, errors: [] });
   });
 
@@ -245,18 +251,18 @@ describe("useAutoSync", () => {
       );
     });
 
-    it("skips HealthKit sync when never authorized", async () => {
+    it("runs HealthKit sync even when the legacy authorization flag is false", async () => {
       mockHasEverAuthorized.mockReturnValue(false);
 
       renderHook(() => useAutoSync("2026-03-21"));
       await act(() => vi.runAllTimersAsync());
 
-      expect(mockSyncHealthKitToServer).not.toHaveBeenCalled();
+      expect(mockSyncHealthKitToServer).toHaveBeenCalledWith(
+        expect.objectContaining({ syncRangeDays: 1 }),
+      );
     });
 
     it("syncs even when new types need permission (shouldRequest)", async () => {
-      // hasEverAuthorized is true — sync should proceed regardless of
-      // what getRequestStatus would return for new types
       mockHasEverAuthorized.mockReturnValue(true);
 
       renderHook(() => useAutoSync("2026-03-21"));
@@ -285,6 +291,19 @@ describe("useAutoSync", () => {
 
       expect(mockSyncHealthKitToServer).toHaveBeenCalled();
       expect(mockCaptureException).toHaveBeenCalledWith(hkError, {
+        source: "auto-sync-healthkit",
+      });
+    });
+
+    it("reports cache invalidation failures after HealthKit sync", async () => {
+      const invalidateError = new Error("invalidate failed");
+      mockMutateAsync.mockResolvedValue({});
+      mockInvalidate.mockRejectedValue(invalidateError);
+
+      renderHook(() => useAutoSync("2026-03-21"));
+      await act(() => vi.runAllTimersAsync());
+
+      expect(mockCaptureException).toHaveBeenCalledWith(invalidateError, {
         source: "auto-sync-healthkit",
       });
     });

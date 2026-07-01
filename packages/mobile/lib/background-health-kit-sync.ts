@@ -1,16 +1,7 @@
 import type { EventSubscription } from "expo-modules-core";
-import {
-  addSampleUpdateListener,
-  hasEverAuthorized,
-  isAvailable,
-  queryDailyStatistics,
-  queryQuantitySamples,
-  querySleepSamples,
-  queryWorkoutRoutes,
-  queryWorkouts,
-  setupBackgroundObservers,
-} from "../modules/health-kit";
-import { type SyncTrpcClient, syncHealthKitToServer } from "./health-kit-sync";
+import { addSampleUpdateListener, setupBackgroundObservers } from "../modules/health-kit";
+import { AppleHealthAuthorizationService, AppleHealthSyncService } from "./apple-health-provider";
+import type { SyncTrpcClient } from "./health-kit-sync";
 import { captureException, logger } from "./telemetry";
 
 const TAG = "bg-healthkit-sync";
@@ -28,17 +19,8 @@ function startHealthKitSync(trpcClient: SyncTrpcClient, onSyncComplete?: () => v
 
   syncing = true;
   logger.info(TAG, "Starting sync");
-  syncHealthKitToServer({
-    trpcClient,
-    healthKit: {
-      queryDailyStatistics,
-      queryQuantitySamples,
-      queryWorkouts,
-      querySleepSamples,
-      queryWorkoutRoutes,
-    },
-    syncRangeDays: 1,
-  })
+  new AppleHealthSyncService({ trpcClient })
+    .sync({ syncRangeDays: 1 })
     .then((result) => {
       logger.info(
         TAG,
@@ -75,13 +57,9 @@ export async function initBackgroundHealthKitSync(
   trpcClient: SyncTrpcClient,
   onSyncComplete?: () => void,
 ) {
-  if (!isAvailable()) {
+  const authorizationState = await new AppleHealthAuthorizationService().resolve();
+  if (!authorizationState.canAttemptSync()) {
     logger.info(TAG, "HealthKit not available, skipping init");
-    return;
-  }
-
-  if (!hasEverAuthorized()) {
-    logger.info(TAG, "HealthKit never authorized, skipping init");
     return;
   }
 
