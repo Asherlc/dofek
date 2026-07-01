@@ -25,12 +25,12 @@ function safeContext(context: SyncDegradationContext | undefined): SyncDegradati
 export function reportSyncDegradation(degradation: SyncDegradation): void {
   const context = safeContext(degradation.context);
   const details = {
+    ...context,
     kind: degradation.kind,
     providerId: degradation.providerId,
     stepName: degradation.stepName,
     message: degradation.message,
     externalId: degradation.externalId ?? null,
-    ...context,
   };
 
   logger.warn("[provider-sync] Degraded provider sync step", details);

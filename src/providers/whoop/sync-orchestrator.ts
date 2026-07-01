@@ -3,8 +3,8 @@ import { WhoopClient } from "whoop-whoop/client";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { runWithSyncStepAdmission } from "../../lib/sync-step-admission-context.ts";
 import { logger } from "../../logger.ts";
-import { fingerprintOpaqueValue } from "../pagination-fingerprint.ts";
-import type { SyncDegradation } from "../sync-degradation.ts";
+import { fingerprintOpaqueValue } from "../../sync/pagination-fingerprint.ts";
+import type { SyncDegradation } from "../../sync/sync-degradation.ts";
 import type { SyncRun } from "../sync-run.ts";
 import { SyncWindow } from "../sync-window.ts";
 import type { SyncError, SyncResult } from "../types.ts";
@@ -157,7 +157,8 @@ function developerWorkoutPaginationDegradation(
   nextToken: string | null,
 ): SyncDegradation | null {
   if (!nextToken) return null;
-  if (!developerWorkoutTokensSeenByCurrentStep(checkpoint).has(nextToken)) return null;
+  const seenTokens = developerWorkoutTokensSeenByCurrentStep(checkpoint);
+  if (!seenTokens.has(nextToken)) return null;
 
   return {
     kind: "pagination_stalled",
@@ -166,7 +167,7 @@ function developerWorkoutPaginationDegradation(
     message: "WHOOP returned a repeated developer workout pagination cursor",
     context: {
       cursorFingerprint: fingerprintOpaqueValue(nextToken),
-      pagesFetched: 1,
+      pagesFetched: seenTokens.size + 1,
     },
   };
 }
@@ -323,6 +324,9 @@ async function runApiStep(
                 nextToken: page.nextToken,
               });
             }
+            if (!page.nextToken || page.reachedWindowStart) {
+              checkpoint.developerWorkoutPaginationComplete = true;
+            }
 
             return {
               recordCount: page.presentIds.length,
@@ -348,6 +352,7 @@ async function runApiStep(
             const count = await persistWhoopWorkoutsFromCycles(
               context,
               new Set(checkpoint.presentExternalIds),
+              { reconcileAbsence: checkpoint.developerWorkoutPaginationComplete },
             );
             return { recordCount: count, result: count };
           },

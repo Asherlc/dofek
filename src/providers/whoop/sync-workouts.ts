@@ -96,6 +96,7 @@ export async function fetchWhoopDeveloperWorkoutsPage(
 export async function persistWhoopWorkoutsFromCycles(
   context: WhoopSyncContext,
   presentExternalIds: Set<string>,
+  persistenceOptions: { reconcileAbsence: boolean } = { reconcileAbsence: true },
 ): Promise<number> {
   const { db, providerId, options } = context;
   const { workouts, v2ActivityTypeByActivityId } = collectWhoopWorkouts(context);
@@ -152,13 +153,15 @@ export async function persistWhoopWorkoutsFromCycles(
     }
   }
 
-  await finishProviderActivityListSync(db, {
-    providerId,
-    userId: options?.userId,
-    windowStart: absenceWindow.since,
-    windowEnd: absenceWindow.until,
-    presentExternalIds,
-  });
+  if (persistenceOptions.reconcileAbsence) {
+    await finishProviderActivityListSync(db, {
+      providerId,
+      userId: options?.userId,
+      windowStart: absenceWindow.since,
+      windowEnd: absenceWindow.until,
+      presentExternalIds,
+    });
+  }
   return count;
 }
 

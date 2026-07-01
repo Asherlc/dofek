@@ -124,6 +124,7 @@ class ProviderPaginationGuard<TItem, TPageKey extends PageKey = string> {
   }
 
   #addDegradation(kind: SyncDegradation["kind"], message: string, pageKey: TPageKey): void {
+    this.#finalCursor = null;
     this.#degradations.push({
       kind,
       providerId: this.#options.providerId,

@@ -52,7 +52,7 @@ vi.mock("../metric-stream/redpanda-producer.ts", () => ({
 // ============================================================
 
 vi.mock("../db/sync-log.ts", async () => {
-  const { reportSyncDegradation } = await import("./sync-degradation-reporting.ts");
+  const { reportSyncDegradation } = await import("../sync/sync-degradation-reporting.ts");
   return {
     withSyncLog: vi.fn(
       async (
@@ -1622,6 +1622,89 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
         }),
       }),
     );
+  });
+
+  it("persists workouts without absence reconciliation when developer workout pagination degrades", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-10T00:00:00Z"));
+    await mockStoredWhoopTokens();
+
+    const initialCheckpoint = {
+      runId: "run-repeated-developer-workout-token-before-persist",
+      recordsSynced: 0,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: [
+        {
+          days: ["2026-03-01"],
+          recovery: null,
+          sleep: null,
+          workouts: [
+            {
+              activity_id: "cycle-workout",
+              during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
+              timezone_offset: "-05:00",
+              sport_id: 0,
+              score: 8,
+              average_heart_rate: 130,
+              max_heart_rate: 160,
+              kilojoules: 1200,
+            },
+          ],
+        },
+      ],
+      apiSteps: [
+        { type: "developer_workouts", nextToken: "same-token" },
+        { type: "persist_workouts" },
+      ],
+      apiStepIndex: 0,
+      presentExternalIds: ["previous-workout"],
+    };
+    const { store } = makeCheckpointStore(initialCheckpoint);
+    const provider = new WhoopProvider(
+      makeSyncMockFetch({
+        developerWorkoutPages: [
+          {
+            records: [
+              {
+                id: "current-workout",
+                start: "2026-03-01T12:00:00.000Z",
+                end: "2026-03-01T13:00:00.000Z",
+              },
+            ],
+            next_token: "same-token",
+          },
+        ],
+      }),
+    );
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      provider: "whoop",
+      recordsSynced: 1,
+      errors: [],
+      continued: false,
+      degradations: [
+        expect.objectContaining({
+          kind: "pagination_stalled",
+          providerId: "whoop",
+          stepName: "developer_workouts",
+          context: expect.objectContaining({ pagesFetched: 2 }),
+        }),
+      ],
+    });
+    expect(findUpsertValues((record) => record.externalId === "cycle-workout")).toBeDefined();
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
   });
 });
 

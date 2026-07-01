@@ -32,6 +32,7 @@ export const whoopSyncCheckpointSchema = z.object({
   apiSteps: z.array(whoopSyncStepSchema).default([]),
   apiStepIndex: z.number().default(0),
   presentExternalIds: z.array(z.string()).default([]),
+  developerWorkoutPaginationComplete: z.boolean().default(false),
 });
 
 export type WhoopSyncCheckpoint = z.infer<typeof whoopSyncCheckpointSchema>;
@@ -46,6 +47,7 @@ export function createWhoopSyncCheckpoint(windowStartMs: number): WhoopSyncCheck
     apiSteps: [],
     apiStepIndex: 0,
     presentExternalIds: [],
+    developerWorkoutPaginationComplete: false,
   };
 }
 

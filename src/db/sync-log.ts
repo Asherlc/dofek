@@ -2,8 +2,8 @@ import {
   authFailureReasonFromError,
   type ProviderAuthFailureReason,
 } from "../providers/auth-errors.ts";
-import type { SyncDegradation, SyncDegradationKind } from "../providers/sync-degradation.ts";
-import { reportSyncDegradation } from "../providers/sync-degradation-reporting.ts";
+import type { SyncDegradation, SyncDegradationKind } from "../sync/sync-degradation.ts";
+import { reportSyncDegradation } from "../sync/sync-degradation-reporting.ts";
 import type { SyncDatabase } from "./index.ts";
 import { syncLog } from "./schema/events.ts";
 import { getTokenUserId } from "./token-user-context.ts";
