@@ -46,6 +46,10 @@ vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
   };
 });
 
+vi.mock("../db/metric-stream-writer.ts", () => ({
+  writeMetricStreamBatch: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { loadTokens } from "../db/tokens.ts";
 import {
@@ -274,6 +278,53 @@ describe("WgerProvider", () => {
         presentExternalIds: new Set(["10"]),
       }),
     );
+  });
+
+  it("retains weight entries when pagination stalls on a repeated next URL", async () => {
+    process.env.WGER_CLIENT_ID = "id";
+    process.env.WGER_CLIENT_SECRET = "secret";
+
+    const repeatedNextUrl = "https://wger.de/api/v2/weightentry/?offset=50";
+    let weightRequests = 0;
+
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/workoutsession/")) {
+        return Response.json({ count: 0, next: null, previous: null, results: [] });
+      }
+      if (url.includes("/weightentry/")) {
+        weightRequests += 1;
+        return Response.json({
+          count: 2,
+          next: repeatedNextUrl,
+          previous: null,
+          results: [
+            { id: 1, date: "2026-03-02", weight: "80.0" },
+            { id: 2, date: "2026-03-01", weight: "79.5" },
+          ],
+        });
+      }
+      return new Response("not found", { status: 404 });
+    };
+
+    const db = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+
+    const provider = new WgerProvider(mockFetch);
+    const result = await provider.sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(weightRequests).toBe(2);
+    expect(result.recordsSynced).toBe(4);
   });
 });
 

@@ -1102,6 +1102,56 @@ describe("FitbitProvider", () => {
       );
       expectReasonableDuration(result.duration);
     });
+
+    it("retains sleep records when pagination stalls on a repeated offset", async () => {
+      setupEnv();
+      vi.useFakeTimers({ now: new Date("2026-03-01T12:00:00Z") });
+
+      const stalledSleep: FitbitSleepLog = { ...sampleSleep, logId: 87654321 };
+      let sleepRequests = 0;
+
+      const mockFetch: typeof globalThis.fetch = async (
+        input: RequestInfo | URL,
+      ): Promise<Response> => {
+        const url = input.toString();
+        if (url.includes("/activities/list.json")) {
+          return Response.json({
+            activities: [],
+            pagination: { next: "", previous: "", limit: 20, offset: 0, sort: "asc" },
+          });
+        }
+        if (url.includes("/sleep/list.json")) {
+          sleepRequests += 1;
+          return Response.json({
+            sleep: [stalledSleep],
+            pagination: { next: "/next", previous: "", limit: 0, offset: 0, sort: "asc" },
+          });
+        }
+        if (url.includes("/activities/date/")) {
+          return Response.json(sampleDailySummary);
+        }
+        if (url.includes("/body/log/weight/date/")) {
+          return Response.json({ weight: [] });
+        }
+        return new Response("Not found", { status: 404 });
+      };
+
+      const provider = new FitbitProvider(mockFetch);
+      const db = createMockDb();
+      const result = await provider.sync(
+        new SyncRun({
+          db: db,
+          window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        }),
+      );
+      vi.useRealTimers();
+
+      expect(result.errors).toHaveLength(0);
+      expect(sleepRequests).toBe(1);
+      expect(findValuesCall(db, (value) => value.externalId === "87654321").durationMinutes).toBe(
+        465,
+      );
+    });
   });
 
   describe("syncWebhookEvent()", () => {

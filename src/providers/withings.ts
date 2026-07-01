@@ -8,6 +8,7 @@ import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { fetchProviderPages } from "../sync/pagination.ts";
 import { isRetryableInfraError } from "../lib/retryable-infra-error.ts";
 import { logger } from "../logger.ts";
 import { ProviderAuthenticationFailedError, RefreshTokenRevokedError } from "./auth-errors.ts";
@@ -480,75 +481,85 @@ export class WithingsProvider implements WebhookProvider {
         "metric_stream",
         async () => {
           let count = 0;
-          let offset = 0;
-          let more = 1;
           let refreshedAfterAccessTokenRejection = false;
 
-          while (more) {
-            let response: Awaited<ReturnType<WithingsClient["getMeas"]>>;
-            try {
-              response = await client.getMeas(sinceUnix, nowUnix, offset);
-            } catch (err) {
-              if (!refreshedAfterAccessTokenRejection && isWithingsAccessTokenRejected(err)) {
-                logger.info("[withings] Access token rejected by API, refreshing and retrying...");
-                tokens = await this.#refreshTokens(db, tokens);
-                client = new WithingsClient(tokens.accessToken, this.#fetchFn);
-                refreshedAfterAccessTokenRejection = true;
-                continue;
-              }
-              throw err;
-            }
-
-            for (const group of response.measuregrps) {
-              const parsed = parseMeasureGroup(group);
-
-              // Skip empty groups (objectives or unknown types)
-              if (
-                parsed.weightKg === undefined &&
-                parsed.systolicBp === undefined &&
-                parsed.temperatureC === undefined
-              ) {
-                continue;
-              }
-
+          const pageResult = await fetchProviderPages({
+            providerId: this.id,
+            stepName: "metric_stream",
+            initialCursor: 0,
+            fetchPage: async (offset) => {
+              let response: Awaited<ReturnType<WithingsClient["getMeas"]>>;
               try {
-                await writeMetricStreamBatch(
-                  db,
-                  [
-                    {
-                      providerId: this.id,
-                      externalId: parsed.externalId,
-                      recordedAt: parsed.recordedAt,
-                      weightKg: parsed.weightKg,
-                      bodyFatPct: parsed.bodyFatPct,
-                      muscleMassKg: parsed.muscleMassKg,
-                      boneMassKg: parsed.boneMassKg,
-                      systolicBp: parsed.systolicBp,
-                      diastolicBp: parsed.diastolicBp,
-                      heartPulse: parsed.heartPulse,
-                      temperatureC: parsed.temperatureC,
-                    },
-                  ],
-                  SOURCE_TYPE_API,
-                  undefined,
-                  options?.metricStreamPublisher,
-                );
-                count++;
+                response = await client.getMeas(sinceUnix, nowUnix, offset ?? 0);
               } catch (err) {
-                throwIfProviderSyncAbortError(err);
-                errors.push({
-                  message: err instanceof Error ? err.message : String(err),
-                  externalId: parsed.externalId,
-                  cause: err,
-                });
+                if (!refreshedAfterAccessTokenRejection && isWithingsAccessTokenRejected(err)) {
+                  logger.info("[withings] Access token rejected by API, refreshing and retrying...");
+                  tokens = await this.#refreshTokens(db, tokens);
+                  client = new WithingsClient(tokens.accessToken, this.#fetchFn);
+                  refreshedAfterAccessTokenRejection = true;
+                  response = await client.getMeas(sinceUnix, nowUnix, offset ?? 0);
+                } else {
+                  throw err;
+                }
               }
+
+              return {
+                items: response.measuregrps,
+                nextCursor: response.more ? response.offset : null,
+              };
+            },
+          });
+
+          for (const group of pageResult.items) {
+            const parsed = parseMeasureGroup(group);
+
+            // Skip empty groups (objectives or unknown types)
+            if (
+              parsed.weightKg === undefined &&
+              parsed.systolicBp === undefined &&
+              parsed.temperatureC === undefined
+            ) {
+              continue;
             }
 
-            more = response.more;
-            offset = response.offset;
+            try {
+              await writeMetricStreamBatch(
+                db,
+                [
+                  {
+                    providerId: this.id,
+                    externalId: parsed.externalId,
+                    recordedAt: parsed.recordedAt,
+                    weightKg: parsed.weightKg,
+                    bodyFatPct: parsed.bodyFatPct,
+                    muscleMassKg: parsed.muscleMassKg,
+                    boneMassKg: parsed.boneMassKg,
+                    systolicBp: parsed.systolicBp,
+                    diastolicBp: parsed.diastolicBp,
+                    heartPulse: parsed.heartPulse,
+                    temperatureC: parsed.temperatureC,
+                  },
+                ],
+                SOURCE_TYPE_API,
+                undefined,
+                options?.metricStreamPublisher,
+              );
+              count++;
+            } catch (err) {
+              throwIfProviderSyncAbortError(err);
+              errors.push({
+                message: err instanceof Error ? err.message : String(err),
+                externalId: parsed.externalId,
+                cause: err,
+              });
+            }
           }
 
-          return { recordCount: count, result: count };
+          return {
+            recordCount: count,
+            result: count,
+            degradations: pageResult.degradations,
+          };
         },
         options?.userId,
       );

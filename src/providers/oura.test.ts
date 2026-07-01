@@ -10,7 +10,7 @@ import { healthEvent as healthEventTable } from "../db/schema/clinical.ts";
 import { logger } from "../logger.ts";
 import { OuraClient } from "./oura/client.ts";
 import { ouraOAuthConfig } from "./oura/oauth.ts";
-import { fetchAllPagesOptional } from "./oura/pagination.ts";
+import { fetchOuraPages, fetchOuraPagesOptional } from "./oura/pagination.ts";
 import { mapOuraActivityType, parseOuraDailyMetrics, parseOuraSleep } from "./oura/parsing.ts";
 import { OuraProvider } from "./oura/provider.ts";
 import {
@@ -2228,7 +2228,7 @@ describe("OuraProvider.sync()", () => {
       new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
     );
 
-    // No errors — 401s on optional scopes are silently skipped
+    // No errors — optional scope failures become degradations, not sync errors
     expect(result.errors).toHaveLength(0);
     // Readiness + activity should still have synced
     const val = findValuesCall(
@@ -2243,48 +2243,49 @@ describe("OuraProvider.sync()", () => {
 });
 
 // ============================================================
-// fetchAllPagesOptional tests
+// fetchOuraPagesOptional tests
 // ============================================================
 
-describe("fetchAllPagesOptional", () => {
+describe("fetchOuraPagesOptional", () => {
   it("returns data normally when the fetch succeeds", async () => {
     const fetchPage = async () => ({ data: [{ id: "x" }], next_token: null });
-    const result = await fetchAllPagesOptional(fetchPage, "test_endpoint");
-    expect(result).toEqual([{ id: "x" }]);
+    const result = await fetchOuraPagesOptional("oura", "test_endpoint", fetchPage);
+    expect(result.items).toEqual([{ id: "x" }]);
+    expect(result.degradations).toEqual([]);
   });
 
-  it("returns empty array on API error 401", async () => {
+  it("returns optional_endpoint_unavailable on API error 401", async () => {
     const fetchPage = async (): Promise<{ data: never[]; next_token: null }> => {
       throw new Error("API error 401: Unauthorized");
     };
-    const result = await fetchAllPagesOptional(fetchPage, "daily_stress");
-    expect(result).toEqual([]);
-  });
-
-  it("logs a warning on 401 with the endpoint name", async () => {
-    const warnSpy = vi.mocked(logger.warn);
-    warnSpy.mockClear();
-
-    const fetchPage = async (): Promise<{ data: never[]; next_token: null }> => {
-      throw new Error("API error 401: Unauthorized");
-    };
-    await fetchAllPagesOptional(fetchPage, "daily_resilience");
-
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("daily_resilience"));
+    const result = await fetchOuraPagesOptional("oura", "daily_stress", fetchPage);
+    expect(result.items).toEqual([]);
+    expect(result.degradations).toEqual([
+      {
+        kind: "optional_endpoint_unavailable",
+        providerId: "oura",
+        stepName: "daily_stress",
+        message: "Missing OAuth scope for daily_stress",
+      },
+    ]);
   });
 
   it("re-throws non-401 errors", async () => {
     const fetchPage = async (): Promise<{ data: never[]; next_token: null }> => {
       throw new Error("API error 500: Internal Server Error");
     };
-    await expect(fetchAllPagesOptional(fetchPage, "daily_stress")).rejects.toThrow("API error 500");
+    await expect(fetchOuraPagesOptional("oura", "daily_stress", fetchPage)).rejects.toThrow(
+      "API error 500",
+    );
   });
 
   it("re-throws 403 errors", async () => {
     const fetchPage = async (): Promise<{ data: never[]; next_token: null }> => {
       throw new Error("API error 403: Forbidden");
     };
-    await expect(fetchAllPagesOptional(fetchPage, "daily_stress")).rejects.toThrow("API error 403");
+    await expect(fetchOuraPagesOptional("oura", "daily_stress", fetchPage)).rejects.toThrow(
+      "API error 403",
+    );
   });
 
   it("paginates through multiple pages before returning", async () => {
@@ -2294,8 +2295,30 @@ describe("fetchAllPagesOptional", () => {
       if (page === 1) return { data: [{ id: "a" }], next_token: "tok2" };
       return { data: [{ id: "b" }], next_token: null };
     };
-    const result = await fetchAllPagesOptional(fetchPage, "test_endpoint");
-    expect(result).toEqual([{ id: "a" }, { id: "b" }]);
+    const result = await fetchOuraPagesOptional("oura", "test_endpoint", fetchPage);
+    expect(result.items).toEqual([{ id: "a" }, { id: "b" }]);
+    expect(result.degradations).toEqual([]);
+  });
+});
+
+describe("fetchOuraPages", () => {
+  it("stops on repeated next_token and retains fetched items", async () => {
+    const fetchPage = async (nextToken?: string) => {
+      if (!nextToken) {
+        return { data: [{ id: "first" }], next_token: "repeat-me" };
+      }
+      return { data: [{ id: "second" }], next_token: "repeat-me" };
+    };
+
+    const result = await fetchOuraPages("oura", "sleep", fetchPage);
+    expect(result.items).toEqual([{ id: "first" }, { id: "second" }]);
+    expect(result.degradations).toEqual([
+      expect.objectContaining({
+        kind: "pagination_stalled",
+        providerId: "oura",
+        stepName: "sleep",
+      }),
+    ]);
   });
 });
 

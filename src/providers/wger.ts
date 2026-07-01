@@ -12,6 +12,7 @@ import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { fetchProviderPages } from "../sync/pagination.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
@@ -267,64 +268,71 @@ export class WgerProvider implements SyncProvider {
         "metric_stream",
         async () => {
           let count = 0;
-          let url: string | null =
-            `${WGER_API_BASE}/weightentry/?format=json&ordering=-date&offset=0&limit=50`;
+          const initialUrl = `${WGER_API_BASE}/weightentry/?format=json&ordering=-date&offset=0&limit=50`;
+          const pageResult = await fetchProviderPages({
+            providerId: this.id,
+            stepName: "metric_stream",
+            initialCursor: initialUrl,
+            fetchPage: async (url) => {
+              const response = await this.#fetchFn(url, {
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                  Accept: "application/json",
+                },
+              });
 
-          while (url) {
-            const response = await this.#fetchFn(url, {
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-                Accept: "application/json",
-              },
-            });
-
-            if (!response.ok) {
-              const text = await response.text();
-              throw new Error(`Wger API error (${response.status}): ${text}`);
-            }
-
-            const data: WgerPaginatedResponse<WgerWeightEntry> = await response.json();
-            const entries = data.results ?? [];
-
-            for (const raw of entries) {
-              const entryDate = new Date(raw.date);
-              if (entryDate < since) {
-                url = null;
-                break;
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`Wger API error (${response.status}): ${text}`);
               }
 
-              const parsed = parseWgerWeightEntry(raw);
-              try {
-                await writeMetricStreamBatch(
-                  db,
-                  [
-                    {
-                      providerId: this.id,
-                      externalId: parsed.externalId,
-                      recordedAt: parsed.recordedAt,
-                      weightKg: parsed.weightKg,
-                    },
-                  ],
-                  SOURCE_TYPE_API,
-                  undefined,
-                  options?.metricStreamPublisher,
-                );
-                count++;
-              } catch (err) {
-                errors.push({
-                  message: err instanceof Error ? err.message : String(err),
-                  externalId: parsed.externalId,
-                  cause: err,
-                });
-              }
+              const data: WgerPaginatedResponse<WgerWeightEntry> = await response.json();
+              return {
+                items: data.results ?? [],
+                nextCursor: data.next,
+              };
+            },
+            shouldStopAfterPage: (page) =>
+              page.items.some((entry) => new Date(entry.date) < since),
+          });
+
+          for (const raw of pageResult.items) {
+            const entryDate = new Date(raw.date);
+            if (entryDate < since) {
+              continue;
             }
 
-            if (url) {
-              url = data.next;
+            const parsed = parseWgerWeightEntry(raw);
+            try {
+              await writeMetricStreamBatch(
+                db,
+                [
+                  {
+                    providerId: this.id,
+                    externalId: parsed.externalId,
+                    recordedAt: parsed.recordedAt,
+                    weightKg: parsed.weightKg,
+                  },
+                ],
+                SOURCE_TYPE_API,
+                undefined,
+                options?.metricStreamPublisher,
+              );
+              count++;
+            } catch (err) {
+              errors.push({
+                message: err instanceof Error ? err.message : String(err),
+                externalId: parsed.externalId,
+                cause: err,
+              });
             }
           }
 
-          return { recordCount: count, result: count };
+          return {
+            recordCount: count,
+            result: count,
+            degradations: pageResult.degradations,
+          };
         },
         options?.userId,
       );

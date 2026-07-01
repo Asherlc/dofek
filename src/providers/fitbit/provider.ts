@@ -14,6 +14,8 @@ import { finishProviderActivityListSync } from "../../db/provider-activity-sync.
 import { withSyncLog } from "../../db/sync-log.ts";
 import { ensureProvider } from "../../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
+import { fetchProviderPages } from "../../sync/pagination.ts";
+import type { SyncDegradation } from "../../sync/sync-degradation.ts";
 import type { SyncRun } from "../sync-run.ts";
 import type {
   ProviderAuthSetup,
@@ -24,7 +26,7 @@ import type {
   WebhookEvent,
   WebhookProvider,
 } from "../types.ts";
-import { FITBIT_API_BASE, FitbitClient } from "./client.ts";
+import { FITBIT_API_BASE, FitbitClient, type FitbitSleepLog } from "./client.ts";
 import {
   parseFitbitActivity,
   parseFitbitDailySummary,
@@ -68,6 +70,41 @@ export function fitbitOAuthConfig(host?: string): OAuthConfig | null {
 
 function formatDate(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+async function syncFitbitSleepWithGuardedPagination(
+  providerId: string,
+  client: FitbitClient,
+  afterDate: string,
+  persist: (raw: FitbitSleepLog) => Promise<void>,
+  handlePersistError: (err: unknown, externalId: string) => void,
+): Promise<{ count: number; degradations: SyncDegradation[] }> {
+  const pageResult = await fetchProviderPages({
+    providerId,
+    stepName: "sleep",
+    initialCursor: 0,
+    fetchPage: async (offset) => {
+      const response = await client.getSleepLogs(afterDate, offset ?? 0);
+      const nextOffset = (offset ?? 0) + response.pagination.limit;
+      const hasNext = response.pagination.next !== "";
+      return {
+        items: response.sleep,
+        nextCursor: hasNext ? nextOffset : null,
+      };
+    },
+  });
+
+  let count = 0;
+  for (const raw of pageResult.items) {
+    try {
+      await persist(raw);
+      count++;
+    } catch (err) {
+      handlePersistError(err, parseFitbitSleep(raw).externalId);
+    }
+  }
+
+  return { count, degradations: pageResult.degradations };
 }
 
 // ============================================================
@@ -280,32 +317,27 @@ export class FitbitProvider implements WebhookProvider {
         this.id,
         "sleep",
         async () => {
-          let count = 0;
-          let offset = 0;
-          let hasMore = true;
+          const sleepResult = await syncFitbitSleepWithGuardedPagination(
+            this.id,
+            client,
+            sinceDate,
+            async (raw) => {
+              await persistSleep(db, parseFitbitSleep(raw));
+            },
+            (err, externalId) => {
+              errors.push({
+                message: err instanceof Error ? err.message : String(err),
+                externalId,
+                cause: err,
+              });
+            },
+          );
 
-          while (hasMore) {
-            const response = await client.getSleepLogs(sinceDate, offset);
-
-            for (const raw of response.sleep) {
-              const parsed = parseFitbitSleep(raw);
-              try {
-                await persistSleep(db, parsed);
-                count++;
-              } catch (err) {
-                errors.push({
-                  message: err instanceof Error ? err.message : String(err),
-                  externalId: parsed.externalId,
-                  cause: err,
-                });
-              }
-            }
-
-            hasMore = response.pagination.next !== "";
-            offset += response.pagination.limit;
-          }
-
-          return { recordCount: count, result: count };
+          return {
+            recordCount: sleepResult.count,
+            result: sleepResult.count,
+            degradations: sleepResult.degradations,
+          };
         },
         options?.userId,
       );
@@ -514,32 +546,27 @@ export class FitbitProvider implements WebhookProvider {
             this.id,
             "sleep",
             async () => {
-              let count = 0;
-              let offset = 0;
-              let hasMore = true;
+              const sleepResult = await syncFitbitSleepWithGuardedPagination(
+                this.id,
+                client,
+                eventDate,
+                async (raw) => {
+                  await persistSleep(db, parseFitbitSleep(raw));
+                },
+                (err, externalId) => {
+                  errors.push({
+                    message: err instanceof Error ? err.message : String(err),
+                    externalId,
+                    cause: err,
+                  });
+                },
+              );
 
-              while (hasMore) {
-                const response = await client.getSleepLogs(eventDate, offset);
-
-                for (const raw of response.sleep) {
-                  const parsed = parseFitbitSleep(raw);
-                  try {
-                    await persistSleep(db, parsed);
-                    count++;
-                  } catch (err) {
-                    errors.push({
-                      message: err instanceof Error ? err.message : String(err),
-                      externalId: parsed.externalId,
-                      cause: err,
-                    });
-                  }
-                }
-
-                hasMore = response.pagination.next !== "";
-                offset += response.pagination.limit;
-              }
-
-              return { recordCount: count, result: count };
+              return {
+                recordCount: sleepResult.count,
+                result: sleepResult.count,
+                degradations: sleepResult.degradations,
+              };
             },
             options?.userId,
           );

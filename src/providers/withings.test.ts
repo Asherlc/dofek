@@ -283,6 +283,59 @@ describe("WithingsProvider.sync() — unit tests", () => {
     expect(callCount).toBe(2);
   });
 
+  it("retains measurements when pagination stalls on a repeated offset", async () => {
+    process.env.WITHINGS_CLIENT_ID = "test-id";
+    process.env.WITHINGS_CLIENT_SECRET = "test-secret";
+
+    const futureDate = new Date("2099-01-01");
+    const { db: mockDb } = createMockDb({
+      tokensResult: [
+        {
+          providerId: "withings",
+          accessToken: "valid-token",
+          refreshToken: "valid-refresh",
+          expiresAt: futureDate,
+          scopes: "user.metrics",
+        },
+      ],
+    });
+
+    let callCount = 0;
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      callCount += 1;
+      return Response.json({
+        status: 0,
+        body: {
+          measuregrps: [
+            {
+              grpid: 1000 + callCount,
+              date: 1709251200 + callCount,
+              category: 1,
+              measures: [{ type: 1, value: 72000 + callCount, unit: -3 }],
+            },
+          ],
+          more: 1,
+          offset: 50,
+        },
+      });
+    };
+
+    const provider = new WithingsProvider(mockFetch);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(callCount).toBe(2);
+    expect(result.recordsSynced).toBe(2);
+    expect(publishedMetricStreamBatches.flat()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ externalId: "1001", scalar: 72.001 }),
+        expect.objectContaining({ externalId: "1002", scalar: 72.002 }),
+      ]),
+    );
+  });
+
   it("skips empty groups (objectives or unknown types)", async () => {
     process.env.WITHINGS_CLIENT_ID = "test-id";
     process.env.WITHINGS_CLIENT_SECRET = "test-secret";
