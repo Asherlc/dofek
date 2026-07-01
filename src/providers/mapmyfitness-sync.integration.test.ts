@@ -60,7 +60,9 @@ interface MockFetchOptions {
   pages?: Array<{
     workouts: Array<ReturnType<typeof fakeWorkout>>;
     hasNext: boolean;
+    omitLinks?: boolean;
   }>;
+  onWorkoutRequest?: (offset: number) => void;
 }
 
 function mapmyfitHandlers(opts: MockFetchOptions) {
@@ -78,7 +80,9 @@ function mapmyfitHandlers(opts: MockFetchOptions) {
     }),
 
     // Workouts list (paginated via offset)
-    http.get("https://api.mapmyfitness.com/v7.1/workout/", () => {
+    http.get("https://api.mapmyfitness.com/v7.1/workout/", ({ request }) => {
+      const offset = Number(new URL(request.url).searchParams.get("offset") ?? "0");
+      opts.onWorkoutRequest?.(offset);
       const page = pages[pageIndex];
       pageIndex++;
       if (!page) {
@@ -90,9 +94,13 @@ function mapmyfitHandlers(opts: MockFetchOptions) {
       }
       return HttpResponse.json({
         _embedded: { workouts: page.workouts },
-        _links: {
-          next: page.hasNext ? [{ href: "/v7.1/workout/?offset=40" }] : undefined,
-        },
+        ...(page.omitLinks
+          ? {}
+          : {
+              _links: {
+                next: page.hasNext ? [{ href: "/v7.1/workout/?offset=40" }] : undefined,
+              },
+            }),
         total_count: page.workouts.length,
       });
     }),
@@ -248,12 +256,125 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
     expect(result.errors).toHaveLength(0);
   });
 
+  it("treats a missing pagination links object as a complete list", async () => {
+    await saveTokens(ctx.db, "mapmyfitness", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user_id:12345",
+    });
+
+    const offsets: number[] = [];
+    const workouts = [
+      fakeWorkout({ id: "mmf-no-links", start_datetime: "2026-04-04T08:00:00+00:00" }),
+    ];
+    server.use(
+      ...mapmyfitHandlers({
+        pages: [{ workouts, hasNext: false, omitLinks: true }],
+        onWorkoutRequest: (offset) => offsets.push(offset),
+      }),
+    );
+
+    const provider = new MapMyFitnessProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-15T00:00:00Z") }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.degradations).toEqual([]);
+    expect(offsets).toEqual([0]);
+  });
+
+  it("does not degrade when an empty page has no next link", async () => {
+    await saveTokens(ctx.db, "mapmyfitness", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user_id:12345",
+    });
+
+    server.use(...mapmyfitHandlers({ pages: [{ workouts: [], hasNext: false }] }));
+
+    const provider = new MapMyFitnessProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-15T00:00:00Z") }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.degradations).toEqual([]);
+  });
+
+  it("reconciles missing activities after a complete list", async () => {
+    const userId = "00000000-0000-0000-0000-000000000001";
+    await saveTokens(ctx.db, "mapmyfitness", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user_id:12345",
+    });
+    await ctx.db.insert(activity).values({
+      providerId: "mapmyfitness",
+      userId,
+      externalId: "mmf-reconcile-missing",
+      activityType: "running",
+      startedAt: new Date("2026-04-01T08:00:00Z"),
+      endedAt: new Date("2026-04-01T09:00:00Z"),
+    });
+
+    server.use(
+      ...mapmyfitHandlers({
+        pages: [
+          {
+            workouts: [
+              fakeWorkout({
+                id: "mmf-reconcile-present",
+                start_datetime: "2026-04-02T08:00:00+00:00",
+              }),
+            ],
+            hasNext: false,
+          },
+        ],
+      }),
+    );
+
+    const provider = new MapMyFitnessProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-15T00:00:00Z") }),
+        userId,
+      }),
+    );
+
+    expect(result.degradations).toEqual([]);
+    const [missing] = await ctx.db
+      .select({ providerAbsentAt: activity.providerAbsentAt })
+      .from(activity)
+      .where(eq(activity.externalId, "mmf-reconcile-missing"));
+    expect(missing?.providerAbsentAt).toBeInstanceOf(Date);
+  });
+
   it("reports degraded pagination and skips reconciliation when an empty page still has a next link", async () => {
     await saveTokens(ctx.db, "mapmyfitness", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",
       expiresAt: new Date("2027-01-01T00:00:00Z"),
       scopes: "user_id:12345",
+    });
+    const userId = "00000000-0000-0000-0000-000000000001";
+    await ctx.db.insert(activity).values({
+      providerId: "mapmyfitness",
+      userId,
+      externalId: "mmf-degraded-missing",
+      activityType: "running",
+      startedAt: new Date("2026-04-01T08:00:00Z"),
+      endedAt: new Date("2026-04-01T09:00:00Z"),
     });
 
     const page1Workouts = [
@@ -274,17 +395,74 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
       new SyncRun({
         db: ctx.db,
         window: SyncWindow.fromSince({ since: new Date("2026-03-15T00:00:00Z") }),
+        userId,
       }),
     );
 
     expect(result.recordsSynced).toBe(1);
     expect(result.degradations).toEqual([
-      expect.objectContaining({
+      {
         kind: "pagination_empty_page_with_cursor",
         providerId: "mapmyfitness",
         stepName: "activity_list",
-      }),
+        message: "MapMyFitness returned an empty workout page with a next link",
+        context: { offset: 40, pagesFetched: 2 },
+      },
     ]);
+    const [missing] = await ctx.db
+      .select({ providerAbsentAt: activity.providerAbsentAt })
+      .from(activity)
+      .where(eq(activity.externalId, "mmf-degraded-missing"));
+    expect(missing?.providerAbsentAt).toBeNull();
+  });
+
+  it("reports max-page degradation at the exact page guard and preserves offset progression", async () => {
+    await saveTokens(ctx.db, "mapmyfitness", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user_id:12345",
+    });
+
+    const offsets: number[] = [];
+    const pages = Array.from({ length: 100 }, (_, index) => ({
+      workouts: [
+        fakeWorkout({
+          id: `mmf-max-page-${index + 1}`,
+          start_datetime: "2026-04-01T08:00:00+00:00",
+        }),
+      ],
+      hasNext: true,
+    }));
+
+    server.use(
+      ...mapmyfitHandlers({
+        pages,
+        onWorkoutRequest: (offset) => offsets.push(offset),
+      }),
+    );
+
+    const provider = new MapMyFitnessProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-15T00:00:00Z") }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(100);
+    expect(result.degradations).toEqual([
+      {
+        kind: "pagination_max_pages_exceeded",
+        providerId: "mapmyfitness",
+        stepName: "activity_list",
+        message: "MapMyFitness workout pagination exceeded the maximum page guard",
+        context: { offset: 3960, pagesFetched: 100 },
+      },
+    ]);
+    expect(offsets).toHaveLength(100);
+    expect(offsets[0]).toBe(0);
+    expect(offsets.at(-1)).toBe(3960);
   });
 
   it("syncs workouts at the window end and skips workouts after it", async () => {
