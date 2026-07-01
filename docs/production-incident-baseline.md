@@ -11336,3 +11336,39 @@ new incremental tables are populated.
 - **Remaining risk:** Production still needs a fresh WHOOP sync after deploy to
   confirm `workouts`/`strength` logs appear and `fitness.activity` advances
   beyond 2026-06-21.
+
+## 2026-07-01 — Apple Health workout pushes blocked by stale authorization marker
+
+- **Symptoms:** Apple Health activities from the last 24 hours did not appear in
+  production activity tables.
+- **User impact:** Recent HealthKit workouts were missing from activity surfaces
+  even though they existed on-device.
+- **Evidence:** Production web logs for the active `dofek_web` tasks contained
+  no `healthKitSync.pushWorkouts` tRPC calls in the last 24 hours, and
+  production Postgres had zero `apple_health` activities with
+  `started_at >= now() - interval '48 hours'`. The automatic and background mobile sync entrypoints
+  still required `hasEverAuthorized()` before attempting HealthKit sync. That
+  marker is a local flag set by `requestPermissions()` with a migration that can
+  only infer prior write-type authorization, while Apple Health workouts are read
+  data. For users whose read authorization predates the local flag and is not
+  inferable from write types, the app skipped sync before querying workouts or
+  calling the server, so there was no Sentry error and no server log.
+- **Root cause:** `hasEverAuthorized()` was used as a sync eligibility gate even
+  though it is only reliable as a local UX/re-authorization marker.
+- **Fix / mitigation:** Automatic and background HealthKit sync now run whenever
+  HealthKit is available; `hasEverAuthorized()` remains available for provider UI
+  and new-type re-authorization prompting, but UI now also treats
+  `getRequestStatus() === "unnecessary"` as connected and the native
+  `getRequestStatus()` path backfills the stale local marker in that state. The
+  sync pipeline also treats only
+  `Authorization not determined` daily-statistics failures as empty daily stats,
+  matching the native raw sample/workout behavior so optional denied statistics
+  cannot abort workout sync.
+- **Validation:** Added and passed focused regression coverage with:
+  `pnpm vitest run packages/mobile/app/providers/index.test.tsx
+  packages/mobile/app/providers/[id].test.tsx packages/mobile/app/_layout.cleanup.test.tsx
+  packages/mobile/lib/background-health-kit-sync.test.ts packages/mobile/lib/useAutoSync.test.ts
+  packages/mobile/lib/health-kit-sync.test.ts`.
+- **Remaining risk:** This fix must be shipped to mobile clients before it can
+  resume device-originated Apple Health pushes. It does not alter WHOOP provider
+  behavior.

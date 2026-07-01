@@ -1,6 +1,7 @@
 import type { InertialMeasurementUnitSample } from "@dofek/imu";
 import * as Sentry from "@sentry/react-native";
 import { AppState, type AppStateStatus } from "react-native";
+import { DeviceSampleGroups, type DeviceScopedSample } from "./device-sample-groups.ts";
 import type { InertialMeasurementUnitUploadClient } from "./inertial-measurement-unit-service";
 import { captureException, logger } from "./telemetry";
 
@@ -8,6 +9,47 @@ const PERIODIC_DRAIN_INTERVAL_MS = 30_000; // Upload buffered samples every 30s
 const LOG_CATEGORY = "whoop-ble";
 const IMU_UPLOAD_BATCH_SIZE = 500;
 const REALTIME_UPLOAD_BATCH_SIZE = 500;
+const DEFAULT_WHOOP_DEVICE_ID = "WHOOP Strap";
+
+type BufferedInertialMeasurementUnitSample = InertialMeasurementUnitSample & DeviceScopedSample;
+type RealtimeDataSample = {
+  deviceId?: string;
+  timestamp: string;
+  rrIntervalMs: number;
+  quaternionW: number;
+  quaternionX: number;
+  quaternionY: number;
+  quaternionZ: number;
+  opticalRawHex: string;
+};
+
+function toInertialMeasurementUnitUploadSample(
+  sample: BufferedInertialMeasurementUnitSample,
+): InertialMeasurementUnitSample {
+  return {
+    timestamp: sample.timestamp,
+    x: sample.x,
+    y: sample.y,
+    z: sample.z,
+    gyroscopeX: sample.gyroscopeX,
+    gyroscopeY: sample.gyroscopeY,
+    gyroscopeZ: sample.gyroscopeZ,
+  };
+}
+
+function toRealtimeDataUploadSample(
+  sample: RealtimeDataSample,
+): Omit<RealtimeDataSample, "deviceId"> {
+  return {
+    timestamp: sample.timestamp,
+    rrIntervalMs: sample.rrIntervalMs,
+    quaternionW: sample.quaternionW,
+    quaternionX: sample.quaternionX,
+    quaternionY: sample.quaternionY,
+    quaternionZ: sample.quaternionZ,
+    opticalRawHex: sample.opticalRawHex,
+  };
+}
 
 /** Dependencies injected for testability (wraps the whoop-ble native module) */
 export interface WhoopBleSyncDeps {
@@ -16,19 +58,9 @@ export interface WhoopBleSyncDeps {
   connect(peripheralId: string): Promise<boolean>;
   startImuStreaming(): Promise<boolean>;
   stopImuStreaming(): Promise<boolean>;
-  peekBufferedSamples(maxCount?: number): Promise<InertialMeasurementUnitSample[]>;
+  peekBufferedSamples(maxCount?: number): Promise<BufferedInertialMeasurementUnitSample[]>;
   confirmSamplesDrain(count: number): void;
-  peekBufferedRealtimeData(maxCount?: number): Promise<
-    Array<{
-      timestamp: string;
-      rrIntervalMs: number;
-      quaternionW: number;
-      quaternionX: number;
-      quaternionY: number;
-      quaternionZ: number;
-      opticalRawHex: string;
-    }>
-  >;
+  peekBufferedRealtimeData(maxCount?: number): Promise<RealtimeDataSample[]>;
   confirmRealtimeDataDrain(count: number): void;
   addConnectionStateListener(
     callback: (event: { state: string; peripheralId?: string; error?: string }) => void,
@@ -283,16 +315,28 @@ async function drainBuffer(
     if (samples.length === 0) break;
 
     try {
-      const result = await trpcClient.inertialMeasurementUnitSync.pushSamples.mutate({
-        deviceId: "WHOOP Strap",
-        deviceType: "whoop",
-        samples,
-      });
+      const groups = new DeviceSampleGroups(
+        DEFAULT_WHOOP_DEVICE_ID,
+        toInertialMeasurementUnitUploadSample,
+      );
+      for (const sample of samples) {
+        groups.add(sample);
+      }
+
+      let inserted = 0;
+      for (const [deviceId, uploadSamples] of groups.entries()) {
+        const result = await trpcClient.inertialMeasurementUnitSync.pushSamples.mutate({
+          deviceId,
+          deviceType: "whoop",
+          samples: uploadSamples,
+        });
+        inserted += result.inserted;
+      }
       whoopDeps.confirmSamplesDrain(samples.length);
       totalImuUploaded += samples.length;
       logger.info(
         LOG_CATEGORY,
-        `uploaded ${samples.length} IMU samples (server inserted: ${result.inserted})`,
+        `uploaded ${samples.length} IMU samples (server inserted: ${inserted})`,
       );
     } catch (error: unknown) {
       logger.error(LOG_CATEGORY, `IMU upload failed, ${samples.length} samples retained: ${error}`);
@@ -315,24 +359,24 @@ async function drainBuffer(
       if (realtimeSamples.length === 0) break;
 
       try {
-        const uploadSamples = realtimeSamples.map((sample) => ({
-          timestamp: sample.timestamp,
-          rrIntervalMs: sample.rrIntervalMs,
-          quaternionW: sample.quaternionW,
-          quaternionX: sample.quaternionX,
-          quaternionY: sample.quaternionY,
-          quaternionZ: sample.quaternionZ,
-          opticalRawHex: sample.opticalRawHex,
-        }));
-        const result = await effectiveRealtimeClient.whoopBleSync.pushRealtimeData.mutate({
-          deviceId: "WHOOP Strap",
-          samples: uploadSamples,
-        });
+        const groups = new DeviceSampleGroups(DEFAULT_WHOOP_DEVICE_ID, toRealtimeDataUploadSample);
+        for (const sample of realtimeSamples) {
+          groups.add(sample);
+        }
+
+        let inserted = 0;
+        for (const [deviceId, uploadSamples] of groups.entries()) {
+          const result = await effectiveRealtimeClient.whoopBleSync.pushRealtimeData.mutate({
+            deviceId,
+            samples: uploadSamples,
+          });
+          inserted += result.inserted;
+        }
         whoopDeps.confirmRealtimeDataDrain(realtimeSamples.length);
         totalRealtimeUploaded += realtimeSamples.length;
         logger.info(
           LOG_CATEGORY,
-          `uploaded ${realtimeSamples.length} realtime samples (server inserted: ${result.inserted})`,
+          `uploaded ${realtimeSamples.length} realtime samples (server inserted: ${inserted})`,
         );
       } catch (error: unknown) {
         logger.error(

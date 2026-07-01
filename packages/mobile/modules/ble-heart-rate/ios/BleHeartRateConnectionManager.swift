@@ -354,6 +354,11 @@ extension BleHeartRateConnectionManager: CBPeripheralDelegate {
             let measurement = BleHeartRateMeasurementParser.parse(data)
         else { return }
 
-        delegate?.connectionManager(self, didReceiveMeasurement: measurement, at: Date())
+        delegate?.connectionManager(
+            self,
+            didReceiveMeasurement: measurement,
+            from: peripheral.identifier.uuidString,
+            at: Date()
+        )
     }
 }

@@ -4,6 +4,8 @@ const mockSetupBackgroundObservers = vi.fn().mockResolvedValue(true);
 const mockAddSampleUpdateListener = vi.fn().mockReturnValue({ remove: vi.fn() });
 const mockHasEverAuthorized = vi.fn().mockReturnValue(true);
 const mockIsAvailable = vi.fn().mockReturnValue(true);
+const mockGetRequestStatus = vi.fn().mockResolvedValue("unnecessary");
+const mockRequestPermissions = vi.fn().mockResolvedValue(true);
 const mockCaptureException = vi.fn();
 const mockLoggerInfo = vi.fn();
 const mockLoggerWarn = vi.fn();
@@ -12,6 +14,8 @@ const mockLoggerError = vi.fn();
 vi.mock("../modules/health-kit", () => ({
   isAvailable: (...args: unknown[]) => mockIsAvailable(...args),
   hasEverAuthorized: (...args: unknown[]) => mockHasEverAuthorized(...args),
+  getRequestStatus: (...args: unknown[]) => mockGetRequestStatus(...args),
+  requestPermissions: (...args: unknown[]) => mockRequestPermissions(...args),
   setupBackgroundObservers: (...args: unknown[]) => mockSetupBackgroundObservers(...args),
   addSampleUpdateListener: (...args: unknown[]) => mockAddSampleUpdateListener(...args),
   queryDailyStatistics: vi.fn().mockResolvedValue([]),
@@ -89,18 +93,16 @@ describe("initBackgroundHealthKitSync", () => {
     });
   });
 
-  it("skips setup when HealthKit was never authorized", async () => {
+  it("sets up sync even when the legacy authorization flag is false", async () => {
     mockHasEverAuthorized.mockReturnValueOnce(false);
     const client = createMockClient();
     await initBackgroundHealthKitSync(client);
 
-    expect(mockSetupBackgroundObservers).not.toHaveBeenCalled();
-    expect(mockAddSampleUpdateListener).not.toHaveBeenCalled();
+    expect(mockSetupBackgroundObservers).toHaveBeenCalledTimes(1);
+    expect(mockAddSampleUpdateListener).toHaveBeenCalledTimes(1);
   });
 
   it("proceeds with sync when previously authorized even if new types need permission", async () => {
-    // hasEverAuthorized returns true (default mock) — sync should proceed
-    // regardless of what getRequestStatus would return
     mockHasEverAuthorized.mockReturnValue(true);
     const client = createMockClient();
     await initBackgroundHealthKitSync(client);

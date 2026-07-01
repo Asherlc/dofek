@@ -14,27 +14,14 @@ import {
 } from "react-native";
 import { DataReadinessBanner } from "../../components/DataReadinessBanner";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
+import { useAppleHealthProviderModel } from "../../lib/apple-health-provider";
 import { useAuth } from "../../lib/auth-context";
 import { syncDofekFoodToHealthKit } from "../../lib/health-kit-food-writeback";
-import type { SyncTrpcClient } from "../../lib/health-kit-sync";
-import { syncHealthKitToServer } from "../../lib/health-kit-sync";
 import { importSharedFile, type ShareImportProgress } from "../../lib/share-import";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useRefresh } from "../../lib/useRefresh";
-import {
-  deleteDietarySamples,
-  getRequestStatus,
-  hasEverAuthorized,
-  isAvailable as isHealthKitAvailable,
-  queryDailyStatistics,
-  queryQuantitySamples,
-  querySleepSamples,
-  queryWorkoutRoutes,
-  queryWorkouts,
-  requestPermissions,
-  writeDietarySamples,
-} from "../../modules/health-kit";
+import { deleteDietarySamples, writeDietarySamples } from "../../modules/health-kit";
 import { colors } from "../../theme";
 import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./auth-modals.tsx";
 import {
@@ -105,38 +92,27 @@ export default function ProvidersScreen() {
 
   const sharedFileUri = Array.isArray(params.sharedFile) ? params.sharedFile[0] : params.sharedFile;
 
-  // HealthKit sync state
   const [healthKitSyncing, setHealthKitSyncing] = useState(false);
   const [healthKitProgress, setHealthKitProgress] = useState<string | undefined>();
-  const [healthKitPermissionStatus, setHealthKitPermissionStatus] = useState<
-    "unnecessary" | "shouldRequest" | "unavailable" | "unknown"
-  >("unknown");
-  const [healthKitEverAuthorized, setHealthKitEverAuthorized] = useState(false);
   const trpcClient = trpcUtils.client;
-
-  // Check HealthKit permission status on mount
-  useEffect(() => {
-    if (!isHealthKitAvailable()) return;
-    setHealthKitEverAuthorized(hasEverAuthorized());
-    getRequestStatus()
-      .then(setHealthKitPermissionStatus)
-      .catch((error: unknown) => {
-        captureException(error, { context: "healthkit-permission-check" });
-      });
-  }, []);
+  const appleHealth = useAppleHealthProviderModel({
+    trpcClient,
+    onAuthorizationError: (error) => {
+      captureException(error, { context: "healthkit-permission-check" });
+    },
+  });
 
   const handleHealthKitConnect = useCallback(async () => {
     setHealthKitSyncing(true);
     setHealthKitProgress("Requesting permissions...");
     try {
-      const granted = await requestPermissions();
-      setHealthKitEverAuthorized(hasEverAuthorized());
-      const status = await getRequestStatus();
-      setHealthKitPermissionStatus(status);
-      if (!granted || status === "unavailable") {
-        setHealthKitProgress("HealthKit is unavailable on this device");
+      const result = await appleHealth.connect();
+      if (result.state.requestStatus === "unavailable") {
+        setHealthKitProgress("Apple Health is unavailable on this device");
+      } else if (!result.granted) {
+        setHealthKitProgress("Apple Health permissions were not granted");
       } else {
-        setHealthKitProgress(status === "unnecessary" ? "Connected" : undefined);
+        setHealthKitProgress(result.state.isConnected() ? "Connected" : undefined);
       }
     } catch (error: unknown) {
       captureException(error, { context: "healthkit-connect" });
@@ -146,7 +122,7 @@ export default function ProvidersScreen() {
     } finally {
       setHealthKitSyncing(false);
     }
-  }, []);
+  }, [appleHealth]);
 
   const handleHealthKitSync = useCallback(
     async (fullSync = false) => {
@@ -154,31 +130,7 @@ export default function ProvidersScreen() {
       setAnySyncing(true);
       setHealthKitProgress("Starting HealthKit sync...");
       try {
-        const syncClient: SyncTrpcClient = {
-          healthKitSync: {
-            pushQuantitySamples: {
-              mutate: (input) => trpcClient.healthKitSync.pushQuantitySamples.mutate(input),
-            },
-            pushWorkouts: {
-              mutate: (input) => trpcClient.healthKitSync.pushWorkouts.mutate(input),
-            },
-            pushWorkoutRoutes: {
-              mutate: (input) => trpcClient.healthKitSync.pushWorkoutRoutes.mutate(input),
-            },
-            pushSleepSamples: {
-              mutate: (input) => trpcClient.healthKitSync.pushSleepSamples.mutate(input),
-            },
-          },
-        };
-        const result = await syncHealthKitToServer({
-          trpcClient: syncClient,
-          healthKit: {
-            queryDailyStatistics,
-            queryQuantitySamples,
-            queryWorkouts,
-            querySleepSamples,
-            queryWorkoutRoutes,
-          },
+        const result = await appleHealth.sync({
           syncRangeDays: fullSync ? null : 7,
           onProgress: setHealthKitProgress,
         });
@@ -206,7 +158,7 @@ export default function ProvidersScreen() {
         setAnySyncing(false);
       }
     },
-    [trpcClient, trpcUtils],
+    [appleHealth, trpcClient, trpcUtils],
   );
 
   const pollJob = useCallback(
@@ -514,8 +466,6 @@ export default function ProvidersScreen() {
     [serverUrl, sessionToken, trpcUtils],
   );
 
-  const healthKitAvailable = isHealthKitAvailable();
-
   const providerList: Provider[] = (providers.error ? [] : (providers.data ?? [])).map((p) => ({
     id: p.id,
     label: p.name,
@@ -536,6 +486,7 @@ export default function ProvidersScreen() {
 
   const isLoading = providers.isLoading;
   const enabledProviders = providerList.filter((p) => p.enabled);
+  const appleHealthProvider = appleHealth.model.toProviderCard();
 
   if (isLoading) {
     return (
@@ -631,14 +582,7 @@ export default function ProvidersScreen() {
       <Text style={styles.sectionTitle}>Data Sources</Text>
       <ProviderCard
         provider={{
-          id: "apple_health",
-          label: "Apple Health",
-          enabled: healthKitAvailable && healthKitEverAuthorized,
-          authStatus: healthKitEverAuthorized ? "connected" : "not_connected",
-          authType: "none",
-          lastSyncAt: null,
-          importOnly: false,
-          pushOnly: false,
+          ...appleHealthProvider,
         }}
         stats={statsMap.apple_health}
         syncing={healthKitSyncing}
@@ -650,15 +594,13 @@ export default function ProvidersScreen() {
         onConnect={handleHealthKitConnect}
         onPress={() => router.push("/providers/apple_health")}
       />
-      {healthKitAvailable &&
-        healthKitEverAuthorized &&
-        healthKitPermissionStatus === "shouldRequest" && (
-          <TouchableOpacity style={styles.permissionBanner} onPress={handleHealthKitConnect}>
-            <Text style={styles.permissionBannerText}>
-              Apple Health permissions need updating — tap to review
-            </Text>
-          </TouchableOpacity>
-        )}
+      {appleHealth.model.shouldShowPermissionBanner() && (
+        <TouchableOpacity style={styles.permissionBanner} onPress={handleHealthKitConnect}>
+          <Text style={styles.permissionBannerText}>
+            Apple Health permissions need updating — tap to review
+          </Text>
+        </TouchableOpacity>
+      )}
       {providers.error ? (
         <View style={styles.card}>
           <QueryStatePanel

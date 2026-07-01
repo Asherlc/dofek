@@ -141,6 +141,48 @@ describe("syncHealthKitToServer", () => {
     expect(firstCall[1]).toBe(expectedStartDate.toISOString());
   });
 
+  it("continues to workout sync when daily statistics authorization is not determined", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    healthKit.queryDailyStatistics.mockRejectedValue(
+      Object.assign(new Error("localized system message"), {
+        code: "HEALTHKIT_AUTHORIZATION_NOT_DETERMINED",
+      }),
+    );
+
+    const result = await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 1,
+    });
+
+    expect(result.inserted).toBeGreaterThan(0);
+    expect(healthKit.queryWorkouts).toHaveBeenCalledTimes(1);
+    expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workouts: expect.arrayContaining([expect.objectContaining({ uuid: "workout-1" })]),
+      }),
+    );
+  });
+
+  it("throws daily statistics errors without the stable not-determined code", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const dailyStatisticsError = Object.assign(new Error("Authorization not determined"), {
+      code: "QUERY_ERROR",
+    });
+    healthKit.queryDailyStatistics.mockRejectedValue(dailyStatisticsError);
+
+    await expect(
+      syncHealthKitToServer({
+        trpcClient: client,
+        healthKit,
+        syncRangeDays: 1,
+      }),
+    ).rejects.toThrow(dailyStatisticsError);
+    expect(healthKit.queryWorkouts).not.toHaveBeenCalled();
+  });
+
   it("batches large sample sets into groups of 500", async () => {
     const client = createMockClient();
     const healthKit = createMockHealthKit();

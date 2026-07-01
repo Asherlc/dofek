@@ -17,6 +17,10 @@ function sample(bpm: number): BleHeartRateSample {
   return sampleAt("2026-03-30T12:00:00.000Z", bpm);
 }
 
+function sampleForDevice(deviceId: string, bpm: number): BleHeartRateSample & { deviceId: string } {
+  return { ...sample(bpm), deviceId };
+}
+
 function makeDeps(): HeartRateRecordingServiceDeps {
   return {
     ble: {
@@ -63,6 +67,48 @@ describe("createHeartRateRecordingService", () => {
         samples: [sample(140), sample(141)],
       });
       expect(deps.ble.confirmSamplesDrain).toHaveBeenCalledWith(2);
+    });
+
+    it("groups buffered samples by captured device id before upload", async () => {
+      const strapA1 = sampleForDevice("strap-a", 140);
+      const strapB = sampleForDevice("strap-b", 141);
+      const strapA2 = sampleForDevice("strap-a", 142);
+      vi.mocked(deps.ble.peekBufferedSamples)
+        .mockResolvedValueOnce([strapA1, strapB, strapA2])
+        .mockResolvedValue([]);
+
+      await createHeartRateRecordingService(deps).syncForTimeRange(START, END);
+
+      expect(deps.trpcClient.bleHeartRateSync.pushSamples.mutate).toHaveBeenCalledTimes(2);
+      expect(deps.trpcClient.bleHeartRateSync.pushSamples.mutate).toHaveBeenNthCalledWith(1, {
+        deviceId: "strap-a",
+        samples: [
+          { timestamp: strapA1.timestamp, heartRateBpm: strapA1.heartRateBpm, rrIntervalsMs: [] },
+          { timestamp: strapA2.timestamp, heartRateBpm: strapA2.heartRateBpm, rrIntervalsMs: [] },
+        ],
+      });
+      expect(deps.trpcClient.bleHeartRateSync.pushSamples.mutate).toHaveBeenNthCalledWith(2, {
+        deviceId: "strap-b",
+        samples: [
+          { timestamp: strapB.timestamp, heartRateBpm: strapB.heartRateBpm, rrIntervalsMs: [] },
+        ],
+      });
+      expect(deps.ble.confirmSamplesDrain).toHaveBeenCalledWith(3);
+    });
+
+    it("leaves a mixed-device page buffered when one device upload fails", async () => {
+      const strapA = sampleForDevice("strap-a", 140);
+      const strapB = sampleForDevice("strap-b", 141);
+      vi.mocked(deps.ble.peekBufferedSamples).mockResolvedValue([strapA, strapB]);
+      vi.mocked(deps.trpcClient.bleHeartRateSync.pushSamples.mutate)
+        .mockResolvedValueOnce({ inserted: 1 })
+        .mockRejectedValueOnce(new Error("network"));
+
+      await expect(
+        createHeartRateRecordingService(deps).syncForTimeRange(START, END),
+      ).rejects.toThrow("network");
+
+      expect(deps.ble.confirmSamplesDrain).not.toHaveBeenCalled();
     });
 
     it("does not gate on live Bluetooth state — a persisted device ID is enough", async () => {
@@ -125,12 +171,14 @@ describe("createHeartRateRecordingService", () => {
       expect(deps.ble.confirmSamplesDrain).toHaveBeenCalledWith(2);
     });
 
-    it("does nothing when no monitor has ever connected", async () => {
+    it("does not upload or drain an empty buffer when no monitor has ever connected", async () => {
       vi.mocked(deps.ble.getDeviceId).mockReturnValue(null);
 
       await createHeartRateRecordingService(deps).syncForTimeRange(START, END);
 
-      expect(deps.ble.peekBufferedSamples).not.toHaveBeenCalled();
+      expect(deps.ble.peekBufferedSamples).toHaveBeenCalled();
+      expect(deps.trpcClient.bleHeartRateSync.pushSamples.mutate).not.toHaveBeenCalled();
+      expect(deps.ble.confirmSamplesDrain).not.toHaveBeenCalled();
     });
 
     it("does not upload or drain when there are no buffered samples", async () => {

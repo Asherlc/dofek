@@ -1,7 +1,5 @@
-import { providerLabel } from "@dofek/providers/providers";
 import { BLE_HEART_RATE_PROVIDER_ID } from "@dofek/providers/push-providers";
 import type { Database } from "dofek/db";
-import { sql } from "drizzle-orm";
 import { HEART_RATE, RR_INTERVAL_MS } from "../../../../src/db/sensor-channels.ts";
 import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
 import {
@@ -10,6 +8,7 @@ import {
 } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
 import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
+import { ensurePushProvider } from "./push-provider-repository.ts";
 
 const INSERT_BATCH_SIZE = 2000;
 
@@ -47,11 +46,11 @@ export class BleHeartRateSyncRepository {
   }
 
   async ensureProvider(): Promise<void> {
-    await this.#database.execute(
-      sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES (${BLE_HEART_RATE_PROVIDER_ID}, ${providerLabel(BLE_HEART_RATE_PROVIDER_ID)}, ${this.#userId})
-          ON CONFLICT (id) DO NOTHING`,
-    );
+    await ensurePushProvider({
+      database: this.#database,
+      providerId: BLE_HEART_RATE_PROVIDER_ID,
+      userId: this.#userId,
+    });
   }
 
   async insertSampleBatch(deviceId: string, samples: BleHeartRateSample[]): Promise<number> {

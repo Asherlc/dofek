@@ -1,21 +1,9 @@
 import * as WebBrowser from "expo-web-browser";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { useAppleHealthProviderModel } from "../../lib/apple-health-provider";
 import { useAuth } from "../../lib/auth-context";
-import type { SyncTrpcClient } from "../../lib/health-kit-sync";
-import { syncHealthKitToServer } from "../../lib/health-kit-sync";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
-import {
-  getRequestStatus,
-  hasEverAuthorized,
-  isAvailable as isHealthKitAvailable,
-  queryDailyStatistics,
-  queryQuantitySamples,
-  querySleepSamples,
-  queryWorkoutRoutes,
-  queryWorkouts,
-  requestPermissions,
-} from "../../modules/health-kit";
 
 interface ProviderRecord {
   id: string;
@@ -72,18 +60,6 @@ export interface ProviderDetailActionsResult {
   modals: ProviderDetailModals;
 }
 
-function createAppleHealthProvider(authorized: boolean): DisplayProvider {
-  return {
-    id: "apple_health",
-    name: "Apple Health",
-    authType: "none",
-    authorized,
-    importOnly: false,
-    pushOnly: false,
-    lastSyncedAt: null,
-  };
-}
-
 export function useProviderDetailActions(
   providerId: string | undefined,
 ): ProviderDetailActionsResult {
@@ -99,21 +75,23 @@ export function useProviderDetailActions(
     useState<CredentialAuthProvider | null>(null);
   const [whoopAuthOpen, setWhoopAuthOpen] = useState(false);
   const [garminAuthOpen, setGarminAuthOpen] = useState(false);
-  const [healthKitPermissionStatus, setHealthKitPermissionStatus] = useState<
-    "unnecessary" | "shouldRequest" | "unavailable" | "unknown"
-  >("unknown");
-  const [healthKitEverAuthorized, setHealthKitEverAuthorized] = useState(false);
 
   const pollingRef = useRef(false);
   const trpcClient = trpcUtils.client;
-  const healthKitAvailable = isHealthKitAvailable();
+  const appleHealth = useAppleHealthProviderModel({
+    trpcClient,
+    enabled: providerId === "apple_health",
+    onAuthorizationError: (error) => {
+      captureException(error, { context: "healthkit-permission-check" });
+    },
+  });
 
   const provider = (providers.data ?? []).find((currentProvider: ProviderRecord) => {
     return currentProvider.id === providerId;
   });
 
   const displayProvider =
-    providerId === "apple_health" ? createAppleHealthProvider(healthKitEverAuthorized) : provider;
+    providerId === "apple_health" ? appleHealth.model.toDisplayProvider() : provider;
 
   const isConnected = Boolean(displayProvider?.authorized);
   const needsReauth = Boolean(provider?.needsReauth);
@@ -123,18 +101,6 @@ export function useProviderDetailActions(
     trpcUtils.sync.providerStats.invalidate();
     trpcUtils.sync.logs.invalidate();
   }, [trpcUtils]);
-
-  useEffect(() => {
-    if (providerId !== "apple_health") return;
-    if (!healthKitAvailable) return;
-
-    setHealthKitEverAuthorized(hasEverAuthorized());
-    void getRequestStatus()
-      .then(setHealthKitPermissionStatus)
-      .catch((error: unknown) => {
-        captureException(error, { context: "healthkit-permission-check" });
-      });
-  }, [healthKitAvailable, providerId]);
 
   const pollSyncJob = useCallback(
     async (jobId: string) => {
@@ -188,15 +154,13 @@ export function useProviderDetailActions(
     setSyncMessage("Requesting permissions...");
 
     try {
-      const granted = await requestPermissions();
-      setHealthKitEverAuthorized(hasEverAuthorized());
-      const status = await getRequestStatus();
-      setHealthKitPermissionStatus(status);
-
-      if (!granted || status === "unavailable") {
-        setSyncMessage("HealthKit is unavailable on this device");
+      const result = await appleHealth.connect();
+      if (result.state.requestStatus === "unavailable") {
+        setSyncMessage("Apple Health is unavailable on this device");
+      } else if (!result.granted) {
+        setSyncMessage("Apple Health permissions were not granted");
       } else {
-        setSyncMessage(status === "unnecessary" ? "Connected" : null);
+        setSyncMessage(result.state.isConnected() ? "Connected" : null);
       }
 
       invalidateProviderData();
@@ -206,7 +170,7 @@ export function useProviderDetailActions(
     } finally {
       setIsSyncing(false);
     }
-  }, [invalidateProviderData]);
+  }, [appleHealth, invalidateProviderData]);
 
   const handleConnect = useCallback(async () => {
     if (!displayProvider || isSyncing) return;
@@ -247,32 +211,7 @@ export function useProviderDetailActions(
 
       try {
         if (providerId === "apple_health") {
-          const syncClient: SyncTrpcClient = {
-            healthKitSync: {
-              pushQuantitySamples: {
-                mutate: (input) => trpcClient.healthKitSync.pushQuantitySamples.mutate(input),
-              },
-              pushWorkouts: {
-                mutate: (input) => trpcClient.healthKitSync.pushWorkouts.mutate(input),
-              },
-              pushWorkoutRoutes: {
-                mutate: (input) => trpcClient.healthKitSync.pushWorkoutRoutes.mutate(input),
-              },
-              pushSleepSamples: {
-                mutate: (input) => trpcClient.healthKitSync.pushSleepSamples.mutate(input),
-              },
-            },
-          };
-
-          const result = await syncHealthKitToServer({
-            trpcClient: syncClient,
-            healthKit: {
-              queryDailyStatistics,
-              queryQuantitySamples,
-              queryWorkouts,
-              querySleepSamples,
-              queryWorkoutRoutes,
-            },
+          const result = await appleHealth.sync({
             syncRangeDays: sinceDays ?? null,
             onProgress: setSyncMessage,
           });
@@ -311,7 +250,7 @@ export function useProviderDetailActions(
         setSyncMessage("Failed to start sync");
       }
     },
-    [invalidateProviderData, isSyncing, pollSyncJob, providerId, syncMutation, trpcClient],
+    [appleHealth, invalidateProviderData, isSyncing, pollSyncJob, providerId, syncMutation],
   );
 
   const handlePrimaryAction = useCallback(async () => {
@@ -368,10 +307,7 @@ export function useProviderDetailActions(
     ),
     shouldShowFullSync: isConnected && !needsReauth && displayProvider?.pushOnly !== true,
     shouldShowAppleHealthPermissionBanner:
-      providerId === "apple_health" &&
-      healthKitAvailable &&
-      healthKitEverAuthorized &&
-      healthKitPermissionStatus === "shouldRequest",
+      providerId === "apple_health" && appleHealth.model.shouldShowPermissionBanner(),
     handlePrimaryAction,
     handleFullSync,
     modals: {

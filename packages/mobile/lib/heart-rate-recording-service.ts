@@ -1,7 +1,16 @@
 import type { BleHeartRateSample } from "../modules/ble-heart-rate";
+import { DeviceSampleGroups } from "./device-sample-groups.ts";
 import type { RecordingSensorService } from "./recording-sensor-service.ts";
 
 const UPLOAD_BATCH_SIZE = 5000;
+
+function toBleHeartRateUploadSample(sample: BleHeartRateSample): BleHeartRateSample {
+  return {
+    timestamp: sample.timestamp,
+    heartRateBpm: sample.heartRateBpm,
+    rrIntervalsMs: sample.rrIntervalsMs,
+  };
+}
 
 /** Abstraction over the BLE heart-rate module for activity recording. */
 export interface HeartRateBleDeps {
@@ -57,8 +66,7 @@ export function createHeartRateRecordingService(
       // keeps the device ID after a disconnect so buffered samples still upload
       // on save even when Bluetooth is off. Draining reads the local buffer and
       // needs no active connection.
-      const deviceId = ble.getDeviceId();
-      if (!deviceId) return;
+      const fallbackDeviceId = ble.getDeviceId();
 
       // Samples are buffered in arrival (chronological) order. Drain page by
       // page: drop everything at or before endedAt from the buffer, but upload
@@ -74,9 +82,16 @@ export function createHeartRateRecordingService(
 
         const drainable = page.filter((sample) => sample.timestamp <= endedAt);
         const inWindow = drainable.filter((sample) => sample.timestamp >= startedAt);
-        for (let offset = 0; offset < inWindow.length; offset += UPLOAD_BATCH_SIZE) {
-          const batch = inWindow.slice(offset, offset + UPLOAD_BATCH_SIZE);
-          await trpcClient.bleHeartRateSync.pushSamples.mutate({ deviceId, samples: batch });
+        const groups = new DeviceSampleGroups(fallbackDeviceId, toBleHeartRateUploadSample);
+        for (const sample of inWindow) {
+          groups.add(sample);
+        }
+
+        for (const [deviceId, samples] of groups.entries()) {
+          for (let offset = 0; offset < samples.length; offset += UPLOAD_BATCH_SIZE) {
+            const batch = samples.slice(offset, offset + UPLOAD_BATCH_SIZE);
+            await trpcClient.bleHeartRateSync.pushSamples.mutate({ deviceId, samples: batch });
+          }
         }
 
         ble.confirmSamplesDrain(drainable.length);
