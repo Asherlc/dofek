@@ -7,7 +7,11 @@ import { filterFutureSamples } from "./sample-validation.ts";
 // ── Zod schemas ──
 
 const bleHeartRateSampleSchema = z.object({
-  timestamp: z.string(), // ISO 8601 with millisecond precision
+  // Reject non-ISO strings at the boundary so a malformed mobile payload returns
+  // an input-validation error instead of failing later as an internal insert
+  // error. The mobile buffer serializes UTC timestamps with fractional seconds;
+  // `offset: true` also tolerates zoned forms.
+  timestamp: z.string().datetime({ offset: true }),
   /** Heart rate in bpm from the Heart Rate Measurement characteristic (0x2A37). */
   heartRateBpm: z.number().int().min(0).max(300),
   /** Beat-to-beat (R-R) intervals in milliseconds from the same notification. */

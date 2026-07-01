@@ -208,6 +208,16 @@ describe("bleHeartRateSyncRouter", () => {
       await expect(caller(ctx).pushSamples({ deviceId: "", samples: [] })).rejects.toThrow();
     });
 
+    it("rejects a non-ISO timestamp at the input boundary", async () => {
+      await expect(
+        caller(ctx).pushSamples({
+          deviceId: "Polar H10",
+          samples: [{ timestamp: "not-a-timestamp", heartRateBpm: 142, rrIntervalsMs: [] }],
+        }),
+      ).rejects.toThrow();
+      expect(metricStreamPublisher.publishRows).not.toHaveBeenCalled();
+    });
+
     it("filters out samples more than five minutes in the future", async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date("2026-03-30T12:00:00.000Z"));
