@@ -27,7 +27,6 @@ jobs:
   build-mobile:
     name: Build Mobile
     needs: detect-changes
-    if: needs.detect-changes.outputs.mobile == 'true'
     uses: ./.github/workflows/build-mobile.yml
     secrets: inherit
 
