@@ -1,18 +1,8 @@
 import { formatDateYmd } from "@dofek/format/format";
 import { useEffect, useRef } from "react";
-import {
-  deleteDietarySamples,
-  hasEverAuthorized,
-  isAvailable,
-  queryDailyStatistics,
-  queryQuantitySamples,
-  querySleepSamples,
-  queryWorkoutRoutes,
-  queryWorkouts,
-  writeDietarySamples,
-} from "../modules/health-kit";
+import { deleteDietarySamples, writeDietarySamples } from "../modules/health-kit";
+import { AppleHealthAuthorizationService, AppleHealthSyncService } from "./apple-health-provider";
 import { syncDofekFoodToHealthKit } from "./health-kit-food-writeback";
-import { syncHealthKitToServer } from "./health-kit-sync";
 import { captureException, logger } from "./telemetry";
 import { trpc } from "./trpc";
 
@@ -72,42 +62,42 @@ export function useAutoSync(latestDate: string | null | undefined) {
       });
 
     // Trigger HealthKit sync (iOS only)
-    if (isAvailable() && hasEverAuthorized()) {
-      logger.info("auto-sync", "Starting HealthKit sync");
-      syncHealthKitToServer({
-        trpcClient: trpcUtils.client,
-        healthKit: {
-          queryDailyStatistics,
-          queryQuantitySamples,
-          queryWorkouts,
-          querySleepSamples,
-          queryWorkoutRoutes,
-        },
-        syncRangeDays: 1,
+    const appleHealthAuthorization = new AppleHealthAuthorizationService();
+    const appleHealthSync = new AppleHealthSyncService({ trpcClient: trpcUtils.client });
+    void appleHealthAuthorization
+      .resolve()
+      .then((authorizationState) => {
+        if (!authorizationState.canAttemptSync()) {
+          return null;
+        }
+        logger.info("auto-sync", "Starting HealthKit sync");
+        return appleHealthSync.sync({ syncRangeDays: 1 });
       })
-        .then(async (result) => {
-          await syncDofekFoodToHealthKit({
-            trpcClient: trpcUtils.client,
-            healthKit: {
-              writeDietarySamples,
-              deleteDietarySamples,
-            },
-            startDate: latestDate,
-            endDate: todayYmd(),
-          });
-          logger.info(
-            "auto-sync",
-            `HealthKit sync complete: ${result.inserted} inserted, ${result.errors.length} errors`,
-          );
-          trpcUtils.invalidate();
-        })
-        .catch((error: unknown) => {
-          logger.warn(
-            "auto-sync",
-            `HealthKit sync failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          captureException(error, { source: "auto-sync-healthkit" });
+      .then(async (result) => {
+        if (!result) {
+          return;
+        }
+        await syncDofekFoodToHealthKit({
+          trpcClient: trpcUtils.client,
+          healthKit: {
+            writeDietarySamples,
+            deleteDietarySamples,
+          },
+          startDate: latestDate,
+          endDate: todayYmd(),
         });
-    }
+        logger.info(
+          "auto-sync",
+          `HealthKit sync complete: ${result.inserted} inserted, ${result.errors.length} errors`,
+        );
+        trpcUtils.invalidate();
+      })
+      .catch((error: unknown) => {
+        logger.warn(
+          "auto-sync",
+          `HealthKit sync failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        captureException(error, { source: "auto-sync-healthkit" });
+      });
   }, [latestDate, activeSyncs.isLoading, activeSyncs.data, triggerSync, trpcUtils]);
 }

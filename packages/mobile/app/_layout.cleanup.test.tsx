@@ -161,6 +161,11 @@ vi.mock("../modules/health-kit", () => ({
   isAvailable: (...args: unknown[]) => mockIsHealthKitAvailable(...args),
   hasEverAuthorized: (...args: unknown[]) => mockHasEverAuthorized(...args),
   requestPermissions: (...args: unknown[]) => mockRequestPermissions(...args),
+  queryDailyStatistics: vi.fn().mockResolvedValue([]),
+  queryQuantitySamples: vi.fn().mockResolvedValue([]),
+  queryWorkouts: vi.fn().mockResolvedValue([]),
+  querySleepSamples: vi.fn().mockResolvedValue([]),
+  queryWorkoutRoutes: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("./login", () => ({
@@ -365,6 +370,7 @@ describe("RootLayout background cleanup", () => {
   it("skips HealthKit re-auth when user has never authorized HealthKit", async () => {
     mockIsHealthKitAvailable.mockReturnValue(true);
     mockHasEverAuthorized.mockReturnValue(false);
+    mockGetRequestStatus.mockResolvedValue("shouldRequest");
 
     const RootLayout = await importRootLayout();
     render(<RootLayout />);
@@ -373,7 +379,7 @@ describe("RootLayout background cleanup", () => {
       expect(mockInitBackgroundHealthKitSync).toHaveBeenCalled();
     });
 
-    expect(mockGetRequestStatus).not.toHaveBeenCalled();
+    expect(mockGetRequestStatus).toHaveBeenCalled();
     expect(mockRequestPermissions).not.toHaveBeenCalled();
   });
 

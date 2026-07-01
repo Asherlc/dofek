@@ -98,7 +98,8 @@ export async function requestPermissions(): Promise<boolean> {
 /** Check if the user has ever completed the HealthKit authorization flow.
  * Returns true even if new types have been added since the last authorization —
  * this ensures syncing of already-authorized types continues uninterrupted.
- * Use `getRequestStatus()` separately to determine if new permissions should be prompted. */
+ * Use `getRequestStatus()` separately to determine if current permissions are complete
+ * or if new permissions should be prompted. */
 export function hasEverAuthorized(): boolean {
   return HealthKitModule.hasEverAuthorized();
 }

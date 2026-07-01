@@ -141,6 +141,28 @@ describe("syncHealthKitToServer", () => {
     expect(firstCall[1]).toBe(expectedStartDate.toISOString());
   });
 
+  it("continues to workout sync when daily statistics authorization is not determined", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    healthKit.queryDailyStatistics.mockRejectedValue(
+      new Error("Authorization not determined for HKQuantityTypeIdentifierStepCount"),
+    );
+
+    const result = await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 1,
+    });
+
+    expect(result.inserted).toBeGreaterThan(0);
+    expect(healthKit.queryWorkouts).toHaveBeenCalledTimes(1);
+    expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workouts: expect.arrayContaining([expect.objectContaining({ uuid: "workout-1" })]),
+      }),
+    );
+  });
+
   it("batches large sample sets into groups of 500", async () => {
     const client = createMockClient();
     const healthKit = createMockHealthKit();

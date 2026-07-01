@@ -55,6 +55,11 @@ function normalizeWorkout(workout: WorkoutSample): WorkoutSample {
   };
 }
 
+function isAuthorizationNotDetermined(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("Authorization not determined");
+}
+
 /** Abstraction over HealthKit native module for testability */
 export interface HealthKitAdapter {
   queryDailyStatistics(
@@ -135,7 +140,15 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
     const shortName = typeId.replace("HKQuantityTypeIdentifier", "");
     onProgress?.(`Querying ${shortName}... (${typeIndex + 1}/${totalTypes})`);
 
-    const dailyStats = await healthKit.queryDailyStatistics(typeId, startDate, endDate);
+    let dailyStats: DailyStatistic[];
+    try {
+      dailyStats = await healthKit.queryDailyStatistics(typeId, startDate, endDate);
+    } catch (error) {
+      if (!isAuthorizationNotDetermined(error)) {
+        throw error;
+      }
+      dailyStats = [];
+    }
     for (const stat of dailyStats) {
       allSamples.push({
         type: typeId,

@@ -18,9 +18,10 @@ public class HealthKitModule: Module {
         }
 
         /// Returns true if the user has ever completed the HealthKit authorization flow.
-        /// Uses a UserDefaults flag set by requestPermissions, with a one-time migration
-        /// that checks write-type authorization status for users who authorized before
-        /// this flag was introduced.
+        /// Uses a UserDefaults flag set by requestPermissions or by getRequestStatus when
+        /// HealthKit reports that the current authorization request is unnecessary, with a
+        /// one-time migration that checks write-type authorization status for users who
+        /// authorized before this flag was introduced.
         Function("hasEverAuthorized") {
             let key = "healthkit_has_ever_authorized"
             if UserDefaults.standard.bool(forKey: key) {
@@ -50,6 +51,7 @@ public class HealthKitModule: Module {
                     let status = try await self.healthStore.statusForAuthorizationRequest(toShare: writeTypes, read: readTypes)
                     switch status {
                     case .unnecessary:
+                        UserDefaults.standard.set(true, forKey: "healthkit_has_ever_authorized")
                         promise.resolve("unnecessary")
                     case .shouldRequest:
                         promise.resolve("shouldRequest")

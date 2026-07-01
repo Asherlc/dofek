@@ -6,6 +6,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { AppleHealthAuthorizationService } from "../lib/apple-health-provider";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { initBackgroundAccelerometerSync } from "../lib/background-accelerometer-sync";
 import {
@@ -22,12 +23,6 @@ import { createTrpcFetch } from "../lib/trpc-fetch";
 import { useWhoopBleSync } from "../lib/useWhoopBleSync";
 import { getVersionHeaders } from "../lib/version-headers";
 import { addBackgroundRefreshListener, scheduleRefresh } from "../modules/background-refresh";
-import {
-  getRequestStatus,
-  hasEverAuthorized,
-  isAvailable as isHealthKitAvailable,
-  requestPermissions,
-} from "../modules/health-kit";
 import {
   addConnectionStateListener as addWhoopConnectionStateListener,
   confirmRealtimeDataDrain as confirmWhoopRealtimeDataDrain,
@@ -218,21 +213,18 @@ function AuthGate() {
       captureException(error, { source: "bg-healthkit-sync" });
     });
 
-    // Re-request any HealthKit permissions that were added since the user last
-    // authorized. This covers new data types (e.g. clinical records) that
-    // existing users haven't been prompted for yet.
-    if (isHealthKitAvailable() && hasEverAuthorized()) {
-      getRequestStatus()
-        .then((status) => {
-          if (status === "shouldRequest") {
-            return requestPermissions();
-          }
-        })
-        .catch((error: unknown) => {
-          // Best-effort — failing to re-prompt is non-critical
-          captureException(error, { source: "bg-healthkit-sync-reauth" });
-        });
-    }
+    const appleHealthAuthorization = new AppleHealthAuthorizationService();
+    appleHealthAuthorization
+      .resolve()
+      .then((state) => {
+        if (state.needsPermissionUpdate()) {
+          return appleHealthAuthorization.requestPermissions();
+        }
+      })
+      .catch((error: unknown) => {
+        // Best-effort — failing to re-prompt is non-critical
+        captureException(error, { source: "bg-healthkit-sync-reauth" });
+      });
 
     // Start continuous accelerometer recording and background sync
     const imuSyncClient = {
