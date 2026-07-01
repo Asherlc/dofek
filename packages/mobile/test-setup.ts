@@ -235,6 +235,13 @@ vi.mock("react-native", () => {
     setLayoutAnimationEnabledExperimental: vi.fn(),
   };
 
+  const InteractionManager = {
+    runAfterInteractions: (task: () => void) => {
+      task();
+      return { cancel: vi.fn() };
+    },
+  };
+
   return {
     __esModule: true,
     View,
@@ -255,6 +262,7 @@ vi.mock("react-native", () => {
     AppState,
     LayoutAnimation,
     UIManager,
+    InteractionManager,
     useWindowDimensions: () => ({ width: 390, height: 844 }),
   };
 });

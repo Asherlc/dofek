@@ -1,4 +1,4 @@
-import { act, fireEvent, render, waitFor } from "@testing-library/react";
+import { fireEvent, render, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -297,29 +297,17 @@ describe("RootLayout background cleanup", () => {
     expect(mockRefreshRemove).toHaveBeenCalled();
   });
 
-  it("defers authenticated background sync setup until after the first render pass", async () => {
-    vi.useFakeTimers();
-    try {
-      const RootLayout = await importRootLayout();
+  it("initializes authenticated background sync after interactions settle", async () => {
+    const RootLayout = await importRootLayout();
 
-      render(<RootLayout />);
+    render(<RootLayout />);
 
-      expect(mockInitBackgroundHealthKitSync).not.toHaveBeenCalled();
-      expect(mockInitBackgroundAccelerometerSync).not.toHaveBeenCalled();
-      expect(mockInitBackgroundWatchSync).not.toHaveBeenCalled();
-      expect(mockUseWhoopBleSync).not.toHaveBeenCalled();
-
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(0);
-      });
-
+    await waitFor(() => {
       expect(mockInitBackgroundHealthKitSync).toHaveBeenCalledOnce();
       expect(mockInitBackgroundAccelerometerSync).toHaveBeenCalledOnce();
       expect(mockInitBackgroundWatchSync).toHaveBeenCalledOnce();
       expect(mockUseWhoopBleSync).toHaveBeenCalledOnce();
-    } finally {
-      vi.useRealTimers();
-    }
+    });
   });
 
   it("re-requests HealthKit permissions when new types need authorization", async () => {

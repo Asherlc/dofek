@@ -4,7 +4,14 @@ import { httpBatchLink, httpLink, splitLink } from "@trpc/client";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  InteractionManager,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AppleHealthAuthorizationService } from "../lib/apple-health-provider";
 import { AuthProvider, useAuth } from "../lib/auth-context";
@@ -175,12 +182,13 @@ function AuthGate() {
     }
 
     setBackgroundSyncReady(false);
-    const timerId = setTimeout(() => {
+    const interactionHandle = InteractionManager.runAfterInteractions(() => {
       setBackgroundSyncReady(true);
-    }, 0);
+    });
 
     return () => {
-      clearTimeout(timerId);
+      interactionHandle.cancel();
+      setBackgroundSyncReady(false);
     };
   }, [user]);
 

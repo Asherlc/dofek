@@ -31,6 +31,7 @@ import { Card } from "../../components/Card";
 import { SparkLine } from "../../components/charts/SparkLine";
 import { DaySelector } from "../../components/DaySelector";
 import { MetricCard } from "../../components/MetricCard";
+import { QueryStatePanel } from "../../components/QueryStatePanel";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useRefresh } from "../../lib/useRefresh";
@@ -173,7 +174,10 @@ export default function RecoveryScreen() {
   const [days, setDays] = useState(30);
   const endDate = useTodayQueryDate();
 
-  const recoveryQuery = trpc.mobileDashboard.recovery.useQuery({ days, endDate });
+  const recoveryQuery = trpc.mobileDashboard.recovery.useQuery(
+    { days, endDate },
+    { placeholderData: (previousData) => previousData },
+  );
   const recoveryData = recoveryQuery.data;
 
   const hrvData = recoveryData?.hrvVariability ?? [];
@@ -246,9 +250,7 @@ export default function RecoveryScreen() {
       <DaySelector days={days} onChange={setDays} />
 
       {isLoading ? (
-        <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading trends...</Text>
-        </View>
+        <QueryStatePanel variant="loading" minHeight={200} />
       ) : (
         <>
           {/* Recovery trend chart */}
@@ -577,16 +579,6 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 100,
     gap: 16,
-  },
-  loadingContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 80,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: colors.textTertiary,
   },
   chartRow: {
     flexDirection: "row",
