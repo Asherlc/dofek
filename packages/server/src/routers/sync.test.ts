@@ -2074,6 +2074,7 @@ describe("syncRouter", () => {
       const result = await caller.dataHealth();
 
       expect(result.overallStatus).toBe("healthy");
+      expect(result.syncingProviders).toEqual([]);
       expect(result.generatedAt).toEqual(expect.any(String));
       expect(result.datasets).toEqual([
         expect.objectContaining({
@@ -2420,6 +2421,13 @@ describe("syncRouter", () => {
     });
 
     it("marks overall status syncing when an active provider sync exists", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "garmin",
+          name: "Garmin",
+          validate: () => null,
+        },
+      ]);
       mockGetJobs.mockResolvedValue([
         {
           id: "job-1",
@@ -2442,6 +2450,7 @@ describe("syncRouter", () => {
       const result = await caller.dataHealth();
 
       expect(result.overallStatus).toBe("syncing");
+      expect(result.syncingProviders).toEqual([{ id: "garmin", name: "Garmin" }]);
       expect(result.datasets[0]?.status).toBe("missing");
     });
 
@@ -2485,6 +2494,9 @@ describe("syncRouter", () => {
       const result = await caller.dataHealth();
 
       expect(result.overallStatus).toBe("syncing");
+      expect(result.syncingProviders).toEqual([
+        { id: "cycling-analytics", name: "Cycling Analytics" },
+      ]);
       expect(mockGetProviderSyncQueue).toHaveBeenCalledWith("cycling-analytics");
     });
 
@@ -2492,7 +2504,12 @@ describe("syncRouter", () => {
       mockImportQueueGetJobs.mockResolvedValue([
         {
           id: "import-1",
-          data: { userId: "user-1", providerId: "apple_health" },
+          data: {
+            userId: "user-1",
+            importType: "apple-health",
+            filePath: "/tmp/apple-health.zip",
+            since: "2020-01-01T00:00:00.000Z",
+          },
           progress: {},
           getState: vi.fn().mockResolvedValue("waiting"),
         },
@@ -2511,7 +2528,44 @@ describe("syncRouter", () => {
       const result = await caller.dataHealth();
 
       expect(result.overallStatus).toBe("syncing");
-      expect(mockImportQueueGetJobs).toHaveBeenCalledWith(["waiting", "active", "delayed"]);
+      expect(result.syncingProviders).toEqual([{ id: "apple_health", name: "Apple Health" }]);
+      expect(mockImportQueueGetJobs).toHaveBeenCalledWith(["waiting", "active"]);
+    });
+
+    it("does not mark overall status syncing for delayed-only jobs", async () => {
+      mockGetJobs.mockResolvedValue([]);
+      mockImportQueueGetJobs.mockResolvedValue([]);
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 42, latestRawAt: "2026-06-29T12:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 8, latestRawAt: "2026-06-29T08:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 3, latestRawAt: "2026-06-29T10:00:00.000Z" }]);
+      const sensorStore = {
+        query: vi.fn(async (_schema: unknown, queryText: string) => {
+          if (queryText.includes("analytics.daily_recovery")) {
+            return [{ latestReadModelAt: "2026-06-29T12:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.daily_sleep")) {
+            return [{ latestReadModelAt: "2026-06-29T08:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.activity_summary_rows")) {
+            return [{ latestReadModelAt: "2026-06-29T10:00:00.000Z" }];
+          }
+          return [];
+        }),
+      };
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("healthy");
+      expect(result.syncingProviders).toEqual([]);
+      expect(mockGetJobs).toHaveBeenCalledWith(["waiting", "active"]);
     });
 
     it("surfaces queue failures as stable readiness errors", async () => {

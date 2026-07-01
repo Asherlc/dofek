@@ -69,6 +69,7 @@ const missingSnapshot: DataReadinessSnapshot = {
 const syncingSnapshot: DataReadinessSnapshot = {
   ...missingSnapshot,
   overallStatus: "syncing",
+  syncingProviders: [{ id: "garmin", name: "Garmin" }],
 };
 
 const meta = {

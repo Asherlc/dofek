@@ -19,6 +19,7 @@ export interface DataReadinessDataset {
 export interface DataReadinessSnapshot {
   overallStatus: DataReadinessStatus;
   generatedAt: string;
+  syncingProviders?: Array<{ id: string; name: string }>;
   datasets: DataReadinessDataset[];
 }
 
@@ -28,12 +29,32 @@ interface DataReadinessBannerProps {
   loading?: boolean;
 }
 
-const headingByStatus: Record<Exclude<DataReadinessStatus, "healthy">, string> = {
-  syncing: "Data is syncing now",
+const headingByStatus: Record<Exclude<DataReadinessStatus, "healthy" | "syncing">, string> = {
   stale: "Dashboard summaries are catching up",
   missing: "No data has synced yet",
   blocked: "Data pipeline needs attention",
 };
+
+function syncingHeading(providers: Array<{ name: string }>): string {
+  if (providers.length === 0) return "Data is syncing now";
+  if (providers.length === 1) return `Syncing ${providers[0]?.name ?? "data source"}`;
+  if (providers.length === 2) {
+    return `Syncing ${providers[0]?.name ?? "data source"} and ${providers[1]?.name ?? "data source"}`;
+  }
+  const leading = providers
+    .slice(0, -1)
+    .map((provider) => provider.name)
+    .join(", ");
+  const last = providers.at(-1)?.name ?? "data source";
+  return `Syncing ${leading}, and ${last}`;
+}
+
+function bannerHeading(data: DataReadinessSnapshot): string {
+  if (data.overallStatus === "syncing") {
+    return syncingHeading(data.syncingProviders ?? []);
+  }
+  return headingByStatus[data.overallStatus];
+}
 
 export function DataReadinessBanner({
   data,
@@ -64,7 +85,7 @@ export function DataReadinessBanner({
   return (
     <View style={[styles.banner, stylesByStatus[data.overallStatus]]}>
       <Text style={[styles.heading, isDarkBanner && styles.lightText]}>
-        {headingByStatus[data.overallStatus]}
+        {bannerHeading(data)}
       </Text>
       {relevantDatasets.map((dataset) => {
         const isDatasetDark =
