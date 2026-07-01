@@ -15,6 +15,7 @@ export interface BleHeartRateDevice {
  * same notification (empty when the strap does not report them).
  */
 export interface BleHeartRateSample {
+  deviceId?: string;
   timestamp: string; // ISO 8601
   heartRateBpm: number;
   rrIntervalsMs: number[];

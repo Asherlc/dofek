@@ -332,6 +332,8 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
         _ manager: WhoopBleConnectionManager,
         didReceiveData data: Data
     ) {
+        guard let deviceId = manager.connectedPeripheral?.identifier.uuidString else { return }
+
         dataNotificationCount += 1
         watchdog.recordDataReceived()
 
@@ -358,7 +360,7 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
             }
         }
 
-        sampleBuffer.appendRealtimeData(newRealtimeData)
+        sampleBuffer.appendRealtimeData(newRealtimeData, deviceId: deviceId)
 
         if newImuSamples.isEmpty && newRealtimeData.isEmpty {
             emptyExtractions += 1
@@ -381,7 +383,7 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
             }
         }
 
-        sampleBuffer.appendImuSamples(newImuSamples)
+        sampleBuffer.appendImuSamples(newImuSamples, deviceId: deviceId)
     }
 
     func connectionManager(

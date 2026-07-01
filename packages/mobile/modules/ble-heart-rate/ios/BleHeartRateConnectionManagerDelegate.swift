@@ -26,6 +26,7 @@ protocol BleHeartRateConnectionManagerDelegate: AnyObject {
     func connectionManager(
         _ manager: BleHeartRateConnectionManager,
         didReceiveMeasurement measurement: BleHeartRateMeasurement,
+        from deviceId: String,
         at timestamp: Date
     )
 }

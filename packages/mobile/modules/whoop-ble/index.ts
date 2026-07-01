@@ -10,6 +10,7 @@ export interface WhoopDevice {
 
 /** A single realtime data sample from a 0x28 REALTIME_DATA packet */
 export interface WhoopRealtimeDataSample {
+  deviceId?: string;
   timestamp: string; // ISO 8601
   /** R-R interval in milliseconds (beat-to-beat timing). 0 when unavailable. */
   rrIntervalMs: number;
@@ -22,6 +23,7 @@ export interface WhoopRealtimeDataSample {
 }
 
 interface NativeWhoopSample {
+  deviceId: string;
   timestamp: string;
   accelerometerX: number;
   accelerometerY: number;
@@ -31,8 +33,11 @@ interface NativeWhoopSample {
   gyroscopeZ: number;
 }
 
-function mapNativeSample(native: NativeWhoopSample): InertialMeasurementUnitSample {
+function mapNativeSample(
+  native: NativeWhoopSample,
+): InertialMeasurementUnitSample & { deviceId: string } {
   return {
+    deviceId: native.deviceId,
     timestamp: native.timestamp,
     x: native.accelerometerX,
     y: native.accelerometerY,
@@ -125,7 +130,7 @@ export async function startOpticalMode(): Promise<boolean> {
  */
 export async function peekBufferedSamples(
   maxCount?: number,
-): Promise<InertialMeasurementUnitSample[]> {
+): Promise<Array<InertialMeasurementUnitSample & { deviceId: string }>> {
   const natives: NativeWhoopSample[] = await WhoopBleModule.peekBufferedSamples(maxCount);
   return natives.map(mapNativeSample);
 }
@@ -169,7 +174,9 @@ export async function getBufferedRealtimeData(): Promise<WhoopRealtimeDataSample
  * Retrieve and clear the internal IMU sample buffer.
  * @deprecated Use peekBufferedSamples + confirmSamplesDrain instead.
  */
-export async function getBufferedSamples(): Promise<InertialMeasurementUnitSample[]> {
+export async function getBufferedSamples(): Promise<
+  Array<InertialMeasurementUnitSample & { deviceId: string }>
+> {
   const natives: NativeWhoopSample[] = await WhoopBleModule.getBufferedSamples();
   return natives.map(mapNativeSample);
 }

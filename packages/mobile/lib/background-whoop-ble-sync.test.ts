@@ -391,6 +391,115 @@ describe("background-whoop-ble-sync", () => {
     expect(whoopDeps.confirmSamplesDrain).toHaveBeenCalledWith(1);
   });
 
+  it("groups buffered IMU samples by captured device id before upload", async () => {
+    const strapA1 = {
+      deviceId: "whoop-a",
+      timestamp: "2026-03-27T10:00:00.000Z",
+      x: 1,
+      y: 2,
+      z: 3,
+      gyroscopeX: 10,
+      gyroscopeY: -20,
+      gyroscopeZ: 30,
+    };
+    const strapB = {
+      deviceId: "whoop-b",
+      timestamp: "2026-03-27T10:00:01.000Z",
+      x: 4,
+      y: 5,
+      z: 6,
+      gyroscopeX: 40,
+      gyroscopeY: -50,
+      gyroscopeZ: 60,
+    };
+    const strapA2 = {
+      deviceId: "whoop-a",
+      timestamp: "2026-03-27T10:00:02.000Z",
+      x: 7,
+      y: 8,
+      z: 9,
+      gyroscopeX: 70,
+      gyroscopeY: -80,
+      gyroscopeZ: 90,
+    };
+    vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValueOnce([strapA1, strapB, strapA2]);
+
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledTimes(2);
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenNthCalledWith(1, {
+      deviceId: "whoop-a",
+      deviceType: "whoop",
+      samples: [
+        {
+          timestamp: strapA1.timestamp,
+          x: strapA1.x,
+          y: strapA1.y,
+          z: strapA1.z,
+          gyroscopeX: strapA1.gyroscopeX,
+          gyroscopeY: strapA1.gyroscopeY,
+          gyroscopeZ: strapA1.gyroscopeZ,
+        },
+        {
+          timestamp: strapA2.timestamp,
+          x: strapA2.x,
+          y: strapA2.y,
+          z: strapA2.z,
+          gyroscopeX: strapA2.gyroscopeX,
+          gyroscopeY: strapA2.gyroscopeY,
+          gyroscopeZ: strapA2.gyroscopeZ,
+        },
+      ],
+    });
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenNthCalledWith(2, {
+      deviceId: "whoop-b",
+      deviceType: "whoop",
+      samples: [
+        {
+          timestamp: strapB.timestamp,
+          x: strapB.x,
+          y: strapB.y,
+          z: strapB.z,
+          gyroscopeX: strapB.gyroscopeX,
+          gyroscopeY: strapB.gyroscopeY,
+          gyroscopeZ: strapB.gyroscopeZ,
+        },
+      ],
+    });
+    expect(whoopDeps.confirmSamplesDrain).toHaveBeenCalledWith(3);
+  });
+
+  it("leaves a mixed-device IMU page buffered when one device upload fails", async () => {
+    const strapA = {
+      deviceId: "whoop-a",
+      timestamp: "2026-03-27T10:00:00.000Z",
+      x: 1,
+      y: 2,
+      z: 3,
+      gyroscopeX: 10,
+      gyroscopeY: -20,
+      gyroscopeZ: 30,
+    };
+    const strapB = {
+      deviceId: "whoop-b",
+      timestamp: "2026-03-27T10:00:01.000Z",
+      x: 4,
+      y: 5,
+      z: 6,
+      gyroscopeX: 40,
+      gyroscopeY: -50,
+      gyroscopeZ: 60,
+    };
+    vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValue([strapA, strapB]);
+    vi.mocked(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate)
+      .mockResolvedValueOnce({ inserted: 1 })
+      .mockRejectedValueOnce(new Error("network error"));
+
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    expect(whoopDeps.confirmSamplesDrain).not.toHaveBeenCalled();
+  });
+
   it("does not confirm drain when upload fails", async () => {
     const samples = [
       {
@@ -591,6 +700,121 @@ describe("realtime data (beat interval + quaternion) sync", () => {
           quaternionZ: 0.2,
           rrIntervalMs: 0,
           opticalRawHex: "000000000000000000000000000000000000",
+        },
+      ],
+    });
+  });
+
+  it("groups buffered realtime data by captured device id before upload", async () => {
+    type BufferedRealtimeSample = Awaited<
+      ReturnType<WhoopBleSyncDeps["peekBufferedRealtimeData"]>
+    >[number] & { deviceId: string };
+    const strapA1: BufferedRealtimeSample = {
+      deviceId: "whoop-a",
+      timestamp: "2026-03-30T12:00:00.000Z",
+      quaternionW: 0.02,
+      quaternionX: 0.68,
+      quaternionY: -0.71,
+      quaternionZ: 0.2,
+      rrIntervalMs: 0,
+      opticalRawHex: "000000000000000000000000000000000000",
+    };
+    const strapB: BufferedRealtimeSample = {
+      deviceId: "whoop-b",
+      timestamp: "2026-03-30T12:00:01.000Z",
+      quaternionW: 1,
+      quaternionX: 0,
+      quaternionY: 0,
+      quaternionZ: 0,
+      rrIntervalMs: 833,
+      opticalRawHex: "111111111111111111111111111111111111",
+    };
+    const strapA2: BufferedRealtimeSample = {
+      deviceId: "whoop-a",
+      timestamp: "2026-03-30T12:00:02.000Z",
+      quaternionW: 0,
+      quaternionX: 1,
+      quaternionY: 0,
+      quaternionZ: 0,
+      rrIntervalMs: 900,
+      opticalRawHex: "222222222222222222222222222222222222",
+    };
+    vi.mocked(whoopDeps.peekBufferedRealtimeData)
+      .mockResolvedValueOnce([strapA1, strapB, strapA2])
+      .mockResolvedValue([]);
+
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
+
+    expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenCalledTimes(2);
+    expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenNthCalledWith(1, {
+      deviceId: "whoop-a",
+      samples: [
+        {
+          timestamp: strapA1.timestamp,
+          quaternionW: strapA1.quaternionW,
+          quaternionX: strapA1.quaternionX,
+          quaternionY: strapA1.quaternionY,
+          quaternionZ: strapA1.quaternionZ,
+          rrIntervalMs: strapA1.rrIntervalMs,
+          opticalRawHex: strapA1.opticalRawHex,
+        },
+        {
+          timestamp: strapA2.timestamp,
+          quaternionW: strapA2.quaternionW,
+          quaternionX: strapA2.quaternionX,
+          quaternionY: strapA2.quaternionY,
+          quaternionZ: strapA2.quaternionZ,
+          rrIntervalMs: strapA2.rrIntervalMs,
+          opticalRawHex: strapA2.opticalRawHex,
+        },
+      ],
+    });
+    expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenNthCalledWith(2, {
+      deviceId: "whoop-b",
+      samples: [
+        {
+          timestamp: strapB.timestamp,
+          quaternionW: strapB.quaternionW,
+          quaternionX: strapB.quaternionX,
+          quaternionY: strapB.quaternionY,
+          quaternionZ: strapB.quaternionZ,
+          rrIntervalMs: strapB.rrIntervalMs,
+          opticalRawHex: strapB.opticalRawHex,
+        },
+      ],
+    });
+    expect(whoopDeps.confirmRealtimeDataDrain).toHaveBeenCalledWith(3);
+  });
+
+  it("uses the fallback device id for blank native realtime device ids", async () => {
+    vi.mocked(whoopDeps.peekBufferedRealtimeData)
+      .mockResolvedValueOnce([
+        {
+          deviceId: "  ",
+          timestamp: "2026-03-30T12:00:00.000Z",
+          quaternionW: 1,
+          quaternionX: 0,
+          quaternionY: 0,
+          quaternionZ: 0,
+          rrIntervalMs: 833,
+          opticalRawHex: "111111111111111111111111111111111111",
+        },
+      ])
+      .mockResolvedValue([]);
+
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
+
+    expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenCalledWith({
+      deviceId: "WHOOP Strap",
+      samples: [
+        {
+          timestamp: "2026-03-30T12:00:00.000Z",
+          quaternionW: 1,
+          quaternionX: 0,
+          quaternionY: 0,
+          quaternionZ: 0,
+          rrIntervalMs: 833,
+          opticalRawHex: "111111111111111111111111111111111111",
         },
       ],
     });

@@ -140,10 +140,12 @@ extension BleHeartRateModule: BleHeartRateConnectionManagerDelegate {
     func connectionManager(
         _ manager: BleHeartRateConnectionManager,
         didReceiveMeasurement measurement: BleHeartRateMeasurement,
+        from deviceId: String,
         at timestamp: Date
     ) {
         sampleBuffer.append(
             BleHeartRateSample(
+                deviceId: deviceId,
                 timestamp: timestamp,
                 heartRateBpm: measurement.heartRateBpm,
                 rrIntervalsMs: measurement.rrIntervalsMs

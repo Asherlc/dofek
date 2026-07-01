@@ -4,6 +4,7 @@ import XCTest
 final class BleHeartRateSampleBufferTests: XCTestCase {
     private func sample(bpm: Int, rrIntervals: [Int] = []) -> BleHeartRateSample {
         BleHeartRateSample(
+            deviceId: "strap-a",
             timestamp: Date(timeIntervalSince1970: 1_711_800_000),
             heartRateBpm: bpm,
             rrIntervalsMs: rrIntervals
@@ -34,6 +35,22 @@ final class BleHeartRateSampleBufferTests: XCTestCase {
         XCTAssertEqual(peeked[0]["timestamp"] as? String, "2024-03-30T12:00:00.000Z")
     }
 
+    func testPeekSerializesCapturedDeviceId() {
+        let buffer = BleHeartRateSampleBuffer()
+        buffer.append(
+            BleHeartRateSample(
+                deviceId: "strap-a",
+                timestamp: Date(timeIntervalSince1970: 1_711_800_000),
+                heartRateBpm: 142,
+                rrIntervalsMs: []
+            )
+        )
+
+        let peeked = buffer.peekSamples()
+
+        XCTAssertEqual(peeked[0]["deviceId"] as? String, "strap-a")
+    }
+
     func testPeekRespectsMaxCount() {
         let buffer = BleHeartRateSampleBuffer()
         buffer.append(sample(bpm: 60))
@@ -58,6 +75,47 @@ final class BleHeartRateSampleBufferTests: XCTestCase {
         buffer.append(sample(bpm: 60))
         buffer.confirmDrain(count: 5)
         XCTAssertEqual(buffer.sampleCount, 0)
+    }
+
+    func testConfirmDrainAfterOverflowOnlyRemovesStillBufferedPeekedSamples() {
+        let buffer = BleHeartRateSampleBuffer()
+        for index in 0..<86_400 {
+            buffer.append(sample(bpm: index))
+        }
+
+        let peeked = buffer.peekSamples(maxCount: 5)
+        XCTAssertEqual(peeked.map { $0["heartRateBpm"] as? Int }, [0, 1, 2, 3, 4])
+
+        for index in 86_400..<86_403 {
+            buffer.append(sample(bpm: index))
+        }
+
+        buffer.confirmDrain(count: 5)
+
+        let remaining = buffer.peekSamples(maxCount: 1)
+        XCTAssertEqual(remaining.first?["heartRateBpm"] as? Int, 5)
+    }
+
+    func testSecondPeekDoesNotResetInflightDrainCursorAfterOverflow() {
+        let buffer = BleHeartRateSampleBuffer()
+        for index in 0..<86_400 {
+            buffer.append(sample(bpm: index))
+        }
+
+        let uploadPage = buffer.peekSamples(maxCount: 5)
+        XCTAssertEqual(uploadPage.map { $0["heartRateBpm"] as? Int }, [0, 1, 2, 3, 4])
+
+        for index in 86_400..<86_403 {
+            buffer.append(sample(bpm: index))
+        }
+
+        let previewPage = buffer.peekSamples(maxCount: 1)
+        XCTAssertEqual(previewPage.first?["heartRateBpm"] as? Int, 3)
+
+        buffer.confirmDrain(count: 5)
+
+        let remaining = buffer.peekSamples(maxCount: 1)
+        XCTAssertEqual(remaining.first?["heartRateBpm"] as? Int, 5)
     }
 
     func testClearAllEmptiesBuffer() {

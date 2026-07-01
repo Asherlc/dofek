@@ -61,6 +61,11 @@ final class WhoopBleSampleBufferTests: XCTestCase {
         XCTAssertEqual(gyroZ, Double(sample.gyroscopeZ), accuracy: 0.001)
     }
 
+    func testPeekImuSamplesSerializesCapturedDeviceId() {
+        buffer.appendImuSamples(makeImuSamples(count: 1), deviceId: "whoop-a")
+        XCTAssertEqual(buffer.peekImuSamples()[0]["deviceId"] as? String, "whoop-a")
+    }
+
     func testDrainEmptyBufferReturnsEmptyArray() {
         let drained = buffer.drainImuSamples()
         XCTAssertTrue(drained.isEmpty)
@@ -209,6 +214,11 @@ final class WhoopBleSampleBufferTests: XCTestCase {
         XCTAssertNotNil(dict["opticalRawHex"] as? String)
     }
 
+    func testPeekRealtimeDataSerializesCapturedDeviceId() {
+        buffer.appendRealtimeData(makeRealtimeSamples(count: 1), deviceId: "whoop-a")
+        XCTAssertEqual(buffer.peekRealtimeData()[0]["deviceId"] as? String, "whoop-a")
+    }
+
     // MARK: - Overflow
 
     func testImuOverflowDropsOldestSamples() {
@@ -305,6 +315,19 @@ final class WhoopBleSampleBufferTests: XCTestCase {
         XCTAssertEqual(buffer.imuSampleCount, 0)
     }
 
+    func testConfirmImuDrainAfterOverflowDoesNotRemoveUnpeekedSamples() {
+        buffer.appendImuSamples(makeImuSamplesForOverflow(count: 500_000, startingAt: 0))
+
+        let peeked = buffer.peekImuSamples(maxCount: 3)
+        XCTAssertEqual(peeked.map { $0["accelerometerX"] as? Double }, [0.0, 1.0, 2.0])
+
+        buffer.appendImuSamples(makeImuSamplesForOverflow(count: 3, startingAt: 500_000))
+        buffer.confirmImuDrain(count: 3)
+
+        let remaining = buffer.peekImuSamples(maxCount: 1)
+        XCTAssertEqual(remaining.first?["accelerometerX"] as? Double, 3.0)
+    }
+
     func testPeekRealtimeDataDoesNotRemove() {
         buffer.appendRealtimeData(makeRealtimeSamples(count: 4))
 
@@ -321,41 +344,51 @@ final class WhoopBleSampleBufferTests: XCTestCase {
         XCTAssertEqual(buffer.realtimeSampleCount, 2)
     }
 
+    func testConfirmRealtimeDataDrainAfterOverflowOnlyRemovesStillBufferedPeekedSamples() {
+        buffer.appendRealtimeData(makeRealtimeSamplesForOverflow(count: 86_400, startingAt: 0))
+
+        let peeked = buffer.peekRealtimeData(maxCount: 5)
+        XCTAssertEqual(peeked.map { $0["rrIntervalMs"] as? Int }, [900, 901, 902, 903, 904])
+
+        buffer.appendRealtimeData(makeRealtimeSamplesForOverflow(count: 3, startingAt: 86_400))
+        buffer.confirmRealtimeDataDrain(count: 5)
+
+        let remaining = buffer.peekRealtimeData(maxCount: 1)
+        XCTAssertEqual(remaining.first?["rrIntervalMs"] as? Int, 905)
+    }
+
+    func testSecondRealtimePeekDoesNotResetInflightDrainCursorAfterOverflow() {
+        buffer.appendRealtimeData(makeRealtimeSamplesForOverflow(count: 86_400, startingAt: 0))
+        let uploadPage = buffer.peekRealtimeData(maxCount: 5)
+        XCTAssertEqual(uploadPage.map { $0["rrIntervalMs"] as? Int }, [900, 901, 902, 903, 904])
+        buffer.appendRealtimeData(makeRealtimeSamplesForOverflow(count: 3, startingAt: 86_400))
+        let previewPage = buffer.peekRealtimeData(maxCount: 1)
+        XCTAssertEqual(previewPage.first?["rrIntervalMs"] as? Int, 903)
+        buffer.confirmRealtimeDataDrain(count: 5)
+        let remaining = buffer.peekRealtimeData(maxCount: 1)
+        XCTAssertEqual(remaining.first?["rrIntervalMs"] as? Int, 905)
+    }
+
     func testPeekThenConfirmFullCycle() {
         buffer.appendImuSamples(makeImuSamples(count: 10))
-
-        // Peek 5
         let batch1 = buffer.peekImuSamples(maxCount: 5)
         XCTAssertEqual(batch1.count, 5)
         XCTAssertEqual(buffer.imuSampleCount, 10)
-
-        // Confirm 5
         buffer.confirmImuDrain(count: 5)
         XCTAssertEqual(buffer.imuSampleCount, 5)
-
-        // Peek remaining
         let batch2 = buffer.peekImuSamples(maxCount: 10)
         XCTAssertEqual(batch2.count, 5)
-
-        // Confirm remaining
         buffer.confirmImuDrain(count: 5)
         XCTAssertEqual(buffer.imuSampleCount, 0)
     }
 
     func testPeekWithoutConfirmRetainsSamplesForRetry() {
         buffer.appendImuSamples(makeImuSamples(count: 5))
-
-        // Simulate upload attempt: peek, then "fail" (don't confirm)
         let attempt1 = buffer.peekImuSamples(maxCount: 5)
         XCTAssertEqual(attempt1.count, 5)
-        // No confirm — simulating upload failure
-
-        // Retry: peek again, same samples should be there
         let attempt2 = buffer.peekImuSamples(maxCount: 5)
         XCTAssertEqual(attempt2.count, 5)
         XCTAssertEqual(buffer.imuSampleCount, 5)
-
-        // Now "succeed" and confirm
         buffer.confirmImuDrain(count: 5)
         XCTAssertEqual(buffer.imuSampleCount, 0)
     }
@@ -365,12 +398,8 @@ final class WhoopBleSampleBufferTests: XCTestCase {
 
         let peeked = buffer.peekImuSamples(maxCount: 3)
         XCTAssertEqual(peeked.count, 3)
-
-        // New samples arrive while first batch is unconfirmed
         buffer.appendImuSamples(makeImuSamples(count: 2))
         XCTAssertEqual(buffer.imuSampleCount, 5)
-
-        // Confirm the original 3
         buffer.confirmImuDrain(count: 3)
         XCTAssertEqual(buffer.imuSampleCount, 2)
     }
@@ -420,5 +449,42 @@ final class WhoopBleSampleBufferTests: XCTestCase {
             samples.append(sample)
         }
         return samples
+    }
+
+    private func makeImuSamplesForOverflow(count: Int, startingAt startIndex: Int) -> [WhoopImuSample] {
+        (startIndex..<(startIndex + count)).map { index in
+            WhoopImuSample(
+                timestampSeconds: 1711000000,
+                subSeconds: 0,
+                sampleIndex: 0,
+                samplesInFrame: 100,
+                accelerometerX: Float(index),
+                accelerometerY: 0,
+                accelerometerZ: 1.0,
+                gyroscopeX: 0,
+                gyroscopeY: 0,
+                gyroscopeZ: 0
+            )
+        }
+    }
+
+    private func makeRealtimeSamplesForOverflow(count: Int, startingAt startIndex: Int) -> [WhoopRealtimeDataSample] {
+        let indices = startIndex..<(startIndex + count)
+        return indices.map { index in
+            let timestampSeconds = UInt32(1_711_000_000 + index)
+            let heartRate = UInt8(60 + index % 50)
+            let rrIntervalMs = UInt16(900 + index % 1_000)
+            return WhoopRealtimeDataSample(
+                timestampSeconds: timestampSeconds,
+                subSeconds: 0,
+                heartRate: heartRate,
+                rrIntervalMs: rrIntervalMs,
+                quaternionW: 1.0,
+                quaternionX: 0,
+                quaternionY: 0,
+                quaternionZ: 0,
+                opticalBytes: Data(count: 18)
+            )
+        }
     }
 }
