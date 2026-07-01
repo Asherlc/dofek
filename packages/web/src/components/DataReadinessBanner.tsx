@@ -46,10 +46,16 @@ function syncingHeading(providers: Array<{ name: string }>): string {
 }
 
 function bannerHeading(data: DataReadinessSnapshot): string {
-  if (data.overallStatus === "syncing") {
-    return syncingHeading(data.syncingProviders ?? []);
+  switch (data.overallStatus) {
+    case "syncing":
+      return syncingHeading(data.syncingProviders ?? []);
+    case "stale":
+    case "missing":
+    case "blocked":
+      return headingByStatus[data.overallStatus];
+    default:
+      return "";
   }
-  return headingByStatus[data.overallStatus];
 }
 
 const classNameByStatus: Record<Exclude<DataReadinessStatus, "healthy">, string> = {
