@@ -19,41 +19,42 @@ const pushSamplesInput = z.object({
   samples: z.array(bleHeartRateSampleSchema),
 });
 
+const pushSamplesOutput = z.object({ inserted: z.number().int().min(0) });
+
 // ── Router ──
 
 export const bleHeartRateSyncRouter = router({
-  pushSamples: protectedProcedure.input(pushSamplesInput).mutation(async ({ ctx, input }) => {
-    const repository = new BleHeartRateSyncRepository(
-      ctx.db,
-      ctx.userId,
-      ctx.metricStreamPublisher,
-    );
+  pushSamples: protectedProcedure
+    .input(pushSamplesInput)
+    .output(pushSamplesOutput)
+    .mutation(async ({ ctx, input }) => {
+      const repository = new BleHeartRateSyncRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.metricStreamPublisher,
+      );
 
-    if (input.samples.length === 0) {
+      // Empty / all-filtered input flows through the same path: ensureProvider
+      // still runs and insertSampleBatch([]) returns 0.
+      const now = new Date();
+      const validSamples = filterFutureSamples(input.samples, now, "BLE heart rate");
       await repository.ensureProvider();
-      logger.info("BLE heart-rate push with 0 samples", { userId: ctx.userId });
-      return { inserted: 0 };
-    }
 
-    const now = new Date();
-    const validSamples = filterFutureSamples(input.samples, now, "BLE heart rate");
-    await repository.ensureProvider();
+      const firstTimestamp = validSamples[0]?.timestamp;
+      const lastTimestamp = validSamples[validSamples.length - 1]?.timestamp;
 
-    const firstTimestamp = validSamples[0]?.timestamp;
-    const lastTimestamp = validSamples[validSamples.length - 1]?.timestamp;
+      const inserted = await repository.insertSampleBatch(input.deviceId, validSamples);
 
-    const inserted = await repository.insertSampleBatch(input.deviceId, validSamples);
+      logger.info("BLE heart-rate data pushed", {
+        userId: ctx.userId,
+        deviceId: input.deviceId,
+        sampleCount: inserted,
+        filteredCount: input.samples.length - validSamples.length,
+        firstTimestamp,
+        lastTimestamp,
+        serverTime: now.toISOString(),
+      });
 
-    logger.info("BLE heart-rate data pushed", {
-      userId: ctx.userId,
-      deviceId: input.deviceId,
-      sampleCount: inserted,
-      filteredCount: input.samples.length - validSamples.length,
-      firstTimestamp,
-      lastTimestamp,
-      serverTime: now.toISOString(),
-    });
-
-    return { inserted };
-  }),
+      return { inserted };
+    }),
 });

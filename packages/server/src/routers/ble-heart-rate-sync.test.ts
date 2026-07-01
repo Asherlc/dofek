@@ -227,6 +227,30 @@ describe("bleHeartRateSyncRouter", () => {
       }
     });
 
+    it("reports the count of samples dropped as being in the future", async () => {
+      const { logger } = await import("../logger.ts");
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-03-30T12:00:00.000Z"));
+
+      try {
+        await caller(ctx).pushSamples({
+          deviceId: "Polar H10",
+          samples: [
+            { timestamp: "2026-03-30T11:59:59.000Z", heartRateBpm: 140, rrIntervalsMs: [] },
+            { timestamp: "2026-03-30T12:06:00.001Z", heartRateBpm: 142, rrIntervalsMs: [] },
+          ],
+        });
+
+        // One valid + one future-filtered → filteredCount must be 2 - 1 = 1.
+        expect(logger.info).toHaveBeenCalledWith(
+          "BLE heart-rate data pushed",
+          expect.objectContaining({ sampleCount: 1, filteredCount: 1 }),
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("handles batch splitting for large sample arrays", async () => {
       const samples = Array.from({ length: 2500 }, (_, index) => ({
         timestamp: new Date(1711800000000 + index * 1000).toISOString(),
