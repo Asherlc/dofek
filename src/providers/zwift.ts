@@ -337,6 +337,7 @@ export class ZwiftProvider implements SyncProvider {
 
             offset += ZWIFT_ACTIVITY_PAGE_SIZE;
             if (
+              !done &&
               activities.length >= ZWIFT_ACTIVITY_PAGE_SIZE &&
               pagesFetched >= ZWIFT_MAX_ACTIVITY_PAGES
             ) {

@@ -310,7 +310,7 @@ export class WahooProvider implements WebhookProvider {
       const parsed = parseWorkoutList(response);
 
       const total = parsed.total;
-      if (parsed.hasMore && parsed.workouts.length === 0) {
+      if (parsed.workouts.length === 0 && total > (parsed.page - 1) * parsed.perPage) {
         degradations.push({
           kind: "pagination_empty_page_with_cursor",
           providerId: this.id,

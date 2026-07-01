@@ -43,13 +43,25 @@ function fakeWorkout(overrides: Partial<WahooWorkout> = {}): WahooWorkout {
   };
 }
 
+function fakeWorkoutWithoutFitFile(overrides: Partial<WahooWorkout> = {}): WahooWorkout {
+  const workout = fakeWorkout(overrides);
+  if (!workout.workout_summary) return workout;
+  const { file: _file, ...summaryWithoutFile } = workout.workout_summary;
+  return { ...workout, workout_summary: summaryWithoutFile };
+}
+
 // Load a real FIT fixture for testing
 const FIT_FIXTURE_PATH = resolve(import.meta.dirname, "../fit/fixtures/test.fit");
 const fitFileBuffer = readFileSync(FIT_FIXTURE_PATH);
 
 function wahooHandlers(
   workouts: WahooWorkout[],
-  opts?: { fitFileError?: boolean; total?: number },
+  opts?: {
+    fitFileError?: boolean;
+    total?: number;
+    workoutPage?: (page: number) => WahooWorkout[];
+    onWorkoutRequest?: (page: number) => void;
+  },
 ) {
   let workoutListCallCount = 0;
   return [
@@ -74,8 +86,13 @@ function wahooHandlers(
     // Workout list
     http.get("https://api.wahooligan.com/v1/workouts", () => {
       workoutListCallCount++;
+      opts?.onWorkoutRequest?.(workoutListCallCount);
       return HttpResponse.json({
-        workouts: workoutListCallCount === 1 ? workouts : [],
+        workouts: opts?.workoutPage
+          ? opts.workoutPage(workoutListCallCount)
+          : workoutListCallCount === 1
+            ? workouts
+            : [],
         total: opts?.total ?? workouts.length,
         page: workoutListCallCount,
         per_page: 30,
@@ -278,8 +295,23 @@ describe("WahooProvider.sync() (integration)", () => {
       scopes: "user_read workouts_read",
     });
 
+    await ctx.db.insert(activity).values({
+      providerId: "wahoo",
+      userId: "00000000-0000-0000-0000-000000000001",
+      externalId: "9100",
+      activityType: "cycling",
+      startedAt: new Date("2026-04-02T10:00:00Z"),
+      name: "Missing Wahoo workout",
+    });
+
+    const requestedPages: number[] = [];
     const workouts = [fakeWorkout({ id: 9101, starts: "2026-04-01T10:00:00Z" })];
-    server.use(...wahooHandlers(workouts, { total: 61 }));
+    server.use(
+      ...wahooHandlers(workouts, {
+        total: 31,
+        onWorkoutRequest: (page) => requestedPages.push(page),
+      }),
+    );
 
     const provider = new WahooProvider();
     const result = await provider.sync(
@@ -293,12 +325,98 @@ describe("WahooProvider.sync() (integration)", () => {
 
     expect(result.recordsSynced).toBe(1);
     expect(result.degradations).toEqual([
-      expect.objectContaining({
+      {
         kind: "pagination_empty_page_with_cursor",
         providerId: "wahoo",
         stepName: "activity_list",
-      }),
+        message: "Wahoo returned an empty workout page while totals indicate more pages",
+        context: { page: 2, perPage: 30, total: 31 },
+      },
     ]);
+    expect(requestedPages).toEqual([1, 2]);
+
+    const rows = await ctx.db.select().from(activity).where(eq(activity.externalId, "9100"));
+    expect(rows[0]?.providerAbsentAt).toBeNull();
+  });
+
+  it("reconciles missing activities after a complete workout list", async () => {
+    await saveTokens(ctx.db, "wahoo", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user_read workouts_read",
+    });
+
+    await ctx.db.insert(activity).values({
+      providerId: "wahoo",
+      userId: "00000000-0000-0000-0000-000000000001",
+      externalId: "9200",
+      activityType: "cycling",
+      startedAt: new Date("2026-04-03T10:00:00Z"),
+      name: "Removed Wahoo workout",
+    });
+
+    const workouts = [fakeWorkout({ id: 9201, starts: "2026-04-01T10:00:00Z" })];
+    server.use(...wahooHandlers(workouts, { total: 1 }));
+
+    const provider = new WahooProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
+
+    expect(result.degradations).toEqual([]);
+
+    const rows = await ctx.db.select().from(activity).where(eq(activity.externalId, "9200"));
+    expect(rows[0]?.providerAbsentAt).toBeInstanceOf(Date);
+  });
+
+  it("reports max-page degradation at the exact page guard", async () => {
+    await saveTokens(ctx.db, "wahoo", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user_read workouts_read",
+    });
+
+    const requestedPages: number[] = [];
+    server.use(
+      ...wahooHandlers([], {
+        total: 3001,
+        workoutPage: (page) => [
+          fakeWorkoutWithoutFitFile({ id: 9300 + page, starts: "2026-04-01T10:00:00Z" }),
+        ],
+        onWorkoutRequest: (page) => requestedPages.push(page),
+      }),
+    );
+
+    const provider = new WahooProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(100);
+    expect(result.degradations).toEqual([
+      {
+        kind: "pagination_max_pages_exceeded",
+        providerId: "wahoo",
+        stepName: "activity_list",
+        message: "Wahoo workout pagination exceeded the maximum page guard",
+        context: { page: 100, perPage: 30, total: 3001 },
+      },
+    ]);
+    expect(requestedPages).toHaveLength(100);
+    expect(requestedPages[0]).toBe(1);
+    expect(requestedPages.at(-1)).toBe(100);
   });
 
   it("continues syncing if FIT file download fails", async () => {

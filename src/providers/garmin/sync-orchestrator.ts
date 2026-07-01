@@ -241,7 +241,7 @@ async function runActivitiesListStep(
   let followUpSteps: GarminSyncStep[];
   if (
     page.length === GARMIN_ACTIVITY_PAGE_SIZE &&
-    step.offset / GARMIN_ACTIVITY_PAGE_SIZE >= GARMIN_MAX_ACTIVITY_LIST_PAGES
+    step.offset / GARMIN_ACTIVITY_PAGE_SIZE >= GARMIN_MAX_ACTIVITY_LIST_PAGES - 1
   ) {
     degradations.push({
       kind: "pagination_stalled",

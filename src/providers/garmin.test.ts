@@ -1218,7 +1218,7 @@ describe("GarminProvider.sync()", () => {
 
     const checkpointStore = {
       load: vi.fn().mockResolvedValue({
-        ...createGarminSyncCheckpoint([{ type: "activities_list", offset: 5000 }]),
+        ...createGarminSyncCheckpoint([{ type: "activities_list", offset: 4950 }]),
         stepIndex: 0,
       }),
       save: vi.fn().mockResolvedValue(undefined),
@@ -1228,12 +1228,15 @@ describe("GarminProvider.sync()", () => {
     const result = await syncProvider(provider, db, since, { checkpoint: checkpointStore });
 
     expect(result.degradations).toEqual([
-      expect.objectContaining({
+      {
         kind: "pagination_stalled",
         providerId: "garmin",
         stepName: "activities_list",
-      }),
+        message: "Garmin activity pagination exceeded the maximum offset guard",
+        context: { offset: 4950, pageSize: 50 },
+      },
     ]);
+    expect(mocks.client.getActivities).toHaveBeenCalledExactlyOnceWith(4950, 50);
     expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
     expect(
       checkpointStore.save.mock.calls.some(([checkpoint]) =>
