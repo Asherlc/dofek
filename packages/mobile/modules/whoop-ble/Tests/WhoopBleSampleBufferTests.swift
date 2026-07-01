@@ -63,10 +63,7 @@ final class WhoopBleSampleBufferTests: XCTestCase {
 
     func testPeekImuSamplesSerializesCapturedDeviceId() {
         buffer.appendImuSamples(makeImuSamples(count: 1), deviceId: "whoop-a")
-
-        let peeked = buffer.peekImuSamples()
-
-        XCTAssertEqual(peeked[0]["deviceId"] as? String, "whoop-a")
+        XCTAssertEqual(buffer.peekImuSamples()[0]["deviceId"] as? String, "whoop-a")
     }
 
     func testDrainEmptyBufferReturnsEmptyArray() {
@@ -219,10 +216,7 @@ final class WhoopBleSampleBufferTests: XCTestCase {
 
     func testPeekRealtimeDataSerializesCapturedDeviceId() {
         buffer.appendRealtimeData(makeRealtimeSamples(count: 1), deviceId: "whoop-a")
-
-        let peeked = buffer.peekRealtimeData()
-
-        XCTAssertEqual(peeked[0]["deviceId"] as? String, "whoop-a")
+        XCTAssertEqual(buffer.peekRealtimeData()[0]["deviceId"] as? String, "whoop-a")
     }
 
     // MARK: - Overflow
@@ -482,13 +476,12 @@ final class WhoopBleSampleBufferTests: XCTestCase {
     }
 
     private func makeRealtimeSamplesForOverflow(count: Int, startingAt startIndex: Int) -> [WhoopRealtimeDataSample] {
-        var samples: [WhoopRealtimeDataSample] = []
-        samples.reserveCapacity(count)
-        for index in startIndex..<(startIndex + count) {
-            let timestampSeconds = 1711000000 + UInt32(index)
+        let indices = startIndex..<(startIndex + count)
+        return indices.map { index in
+            let timestampSeconds = UInt32(1_711_000_000 + index)
             let heartRate = UInt8(60 + index % 50)
             let rrIntervalMs = UInt16(900 + index % 1_000)
-            samples.append(WhoopRealtimeDataSample(
+            return WhoopRealtimeDataSample(
                 timestampSeconds: timestampSeconds,
                 subSeconds: 0,
                 heartRate: heartRate,
@@ -498,8 +491,7 @@ final class WhoopBleSampleBufferTests: XCTestCase {
                 quaternionY: 0,
                 quaternionZ: 0,
                 opticalBytes: Data(count: 18)
-            ))
+            )
         }
-        return samples
     }
 }
