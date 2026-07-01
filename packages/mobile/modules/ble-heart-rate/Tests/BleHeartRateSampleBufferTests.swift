@@ -2,8 +2,12 @@ import XCTest
 @testable import BleHeartRateLib
 
 final class BleHeartRateSampleBufferTests: XCTestCase {
-    private func sample(bpm: Int, rr: [Int] = []) -> BleHeartRateSample {
-        BleHeartRateSample(timestamp: Date(timeIntervalSince1970: 1_711_800_000), heartRateBpm: bpm, rrIntervalsMs: rr)
+    private func sample(bpm: Int, rrIntervals: [Int] = []) -> BleHeartRateSample {
+        BleHeartRateSample(
+            timestamp: Date(timeIntervalSince1970: 1_711_800_000),
+            heartRateBpm: bpm,
+            rrIntervalsMs: rrIntervals
+        )
     }
 
     func testAppendIncrementsCount() {
@@ -22,7 +26,7 @@ final class BleHeartRateSampleBufferTests: XCTestCase {
 
     func testPeekSerializesFields() {
         let buffer = BleHeartRateSampleBuffer()
-        buffer.append(sample(bpm: 142, rr: [1000, 500]))
+        buffer.append(sample(bpm: 142, rrIntervals: [1000, 500]))
         let peeked = buffer.peekSamples()
         XCTAssertEqual(peeked.count, 1)
         XCTAssertEqual(peeked[0]["heartRateBpm"] as? Int, 142)

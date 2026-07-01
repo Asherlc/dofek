@@ -70,7 +70,6 @@ iOS app rather than a server-side pull job.
 
 ## Permissions
 
-`packages/mobile/app.json` declares a single, generic
-`NSBluetoothAlwaysUsageDescription` covering all Bluetooth fitness devices
-(heart-rate monitors and WHOOP straps). `bluetooth-central` is listed under
+`packages/mobile/app.json` declares `NSBluetoothAlwaysUsageDescription` for
+connecting to Bluetooth heart-rate monitors. `bluetooth-central` is listed under
 `UIBackgroundModes` so streaming continues while recording in the background.
