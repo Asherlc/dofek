@@ -1547,6 +1547,73 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
     expect(store.clear).not.toHaveBeenCalled();
   });
 
+  it("queues the next developer workout page when the cursor advances", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-10T00:00:00Z"));
+    await mockStoredWhoopTokens();
+
+    const initialCheckpoint = {
+      runId: "run-next-developer-workout-token",
+      recordsSynced: 0,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: [],
+      apiSteps: [{ type: "developer_workouts", nextToken: "page-1" }, { type: "persist_workouts" }],
+      apiStepIndex: 0,
+      presentExternalIds: [],
+    };
+    const { store, saved } = makeCheckpointStore(initialCheckpoint);
+    const enqueueSyncContinuation = vi.fn(async () => undefined);
+    const provider = new WhoopProvider(
+      makeSyncMockFetch({
+        developerWorkoutPages: [
+          {
+            records: [
+              {
+                id: "current-workout",
+                start: "2026-03-01T12:00:00.000Z",
+                end: "2026-03-01T13:00:00.000Z",
+              },
+            ],
+            next_token: "page-2",
+          },
+        ],
+      }),
+    );
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+        enqueueSyncContinuation,
+      }),
+    );
+
+    expect(result).toEqual({
+      provider: "whoop",
+      recordsSynced: 0,
+      errors: [],
+      duration: 0,
+      continued: true,
+    });
+    expect(captureMessage).not.toHaveBeenCalledWith("Provider sync degraded", expect.anything());
+    expect(enqueueSyncContinuation).toHaveBeenCalledTimes(1);
+
+    const savedCheckpoint = requireRecord(saved[0], "expected saved next-token checkpoint");
+    expect(savedCheckpoint.apiStepIndex).toBe(1);
+    expect(savedCheckpoint.apiSteps).toEqual([
+      { type: "developer_workouts", nextToken: "page-1" },
+      { type: "developer_workouts", nextToken: "page-2" },
+      { type: "persist_workouts" },
+    ]);
+    expect(savedCheckpoint.presentExternalIds).toEqual(["current-workout"]);
+    expect(savedCheckpoint.developerWorkoutPaginationComplete).toBe(false);
+  });
+
   it("records degraded pagination and advances to persist when developer workout token repeats", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-10T00:00:00Z"));
@@ -1601,6 +1668,12 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
       recordsSynced: 0,
       errors: [],
       continued: true,
+      degradations: [
+        expect.objectContaining({
+          kind: "pagination_stalled",
+          context: expect.objectContaining({ pagesFetched: 2 }),
+        }),
+      ],
     });
     expect(enqueueSyncContinuation).toHaveBeenCalledTimes(1);
 
@@ -1622,6 +1695,74 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
         }),
       }),
     );
+  });
+
+  it("degrades a repeated developer workout token when only the current step has seen it", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-10T00:00:00Z"));
+    await mockStoredWhoopTokens();
+
+    const initialCheckpoint = {
+      runId: "run-single-repeated-developer-workout-token",
+      recordsSynced: 0,
+      phase: "api",
+      cycleFetchCursorMs: null,
+      cycles: [],
+      apiSteps: [{ type: "developer_workouts", nextToken: "same-token" }],
+      apiStepIndex: 0,
+      presentExternalIds: [],
+    };
+    const { store, saved } = makeCheckpointStore(initialCheckpoint);
+    const provider = new WhoopProvider(
+      makeSyncMockFetch({
+        developerWorkoutPages: [
+          {
+            records: [
+              {
+                id: "current-workout",
+                start: "2026-03-01T12:00:00.000Z",
+                end: "2026-03-01T13:00:00.000Z",
+              },
+            ],
+            next_token: "same-token",
+          },
+        ],
+      }),
+    );
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: makeChainableMock(),
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+        checkpoint: store,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      provider: "whoop",
+      recordsSynced: 0,
+      errors: [],
+      continued: false,
+      degradations: [
+        expect.objectContaining({
+          kind: "pagination_stalled",
+          context: expect.objectContaining({ pagesFetched: 2 }),
+        }),
+      ],
+    });
+
+    const savedCheckpoint = requireRecord(
+      saved[0],
+      "expected saved single repeated-token checkpoint",
+    );
+    expect(savedCheckpoint.phase).toBe("done");
+    expect(savedCheckpoint.apiSteps).toEqual([
+      { type: "developer_workouts", nextToken: "same-token" },
+    ]);
+    expect(savedCheckpoint.presentExternalIds).toEqual(["current-workout"]);
   });
 
   it("persists workouts without absence reconciliation when developer workout pagination degrades", async () => {

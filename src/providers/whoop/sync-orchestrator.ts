@@ -339,7 +339,6 @@ async function runApiStep(
           },
           userId,
         );
-        checkpoint.recordsSynced += developerWorkoutResult.recordsSynced;
         degradations.push(...developerWorkoutResult.degradations);
         break;
       }
