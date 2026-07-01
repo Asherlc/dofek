@@ -46,12 +46,15 @@ describe("createHeartRateRecordingService", () => {
       expect(deps.trpcClient.bleHeartRateSync.pushSamples.mutate).not.toHaveBeenCalled();
     });
 
-    it("does nothing when Bluetooth is unavailable", async () => {
+    it("discards stale samples even when Bluetooth is momentarily unavailable", async () => {
       vi.mocked(deps.ble.isAvailable).mockReturnValue(false);
+      vi.mocked(deps.ble.peekBufferedSamples)
+        .mockResolvedValueOnce([sample(70)])
+        .mockResolvedValue([]);
 
       await createHeartRateRecordingService(deps).ensureRecording();
 
-      expect(deps.ble.peekBufferedSamples).not.toHaveBeenCalled();
+      expect(deps.ble.confirmSamplesDrain).toHaveBeenCalledWith(1);
     });
   });
 
@@ -107,6 +110,39 @@ describe("createHeartRateRecordingService", () => {
 
       expect(deps.trpcClient.bleHeartRateSync.pushSamples.mutate).not.toHaveBeenCalled();
       expect(deps.ble.confirmSamplesDrain).not.toHaveBeenCalled();
+    });
+
+    it("uploads only samples within the activity window and stops at the boundary", async () => {
+      const endedAt = "2026-03-30T12:00:05.000Z";
+      const inFirst = {
+        timestamp: "2026-03-30T12:00:04.000Z",
+        heartRateBpm: 140,
+        rrIntervalsMs: [],
+      };
+      const inSecond = {
+        timestamp: "2026-03-30T12:00:05.000Z",
+        heartRateBpm: 141,
+        rrIntervalsMs: [],
+      };
+      const afterEnd = {
+        timestamp: "2026-03-30T12:00:06.000Z",
+        heartRateBpm: 142,
+        rrIntervalsMs: [],
+      };
+      vi.mocked(deps.ble.peekBufferedSamples).mockResolvedValueOnce([inFirst, inSecond, afterEnd]);
+
+      await createHeartRateRecordingService(deps).syncForTimeRange(
+        "2026-03-30T12:00:00.000Z",
+        endedAt,
+      );
+
+      expect(deps.trpcClient.bleHeartRateSync.pushSamples.mutate).toHaveBeenCalledTimes(1);
+      expect(deps.trpcClient.bleHeartRateSync.pushSamples.mutate).toHaveBeenCalledWith({
+        deviceId: "Polar H10",
+        samples: [inFirst, inSecond],
+      });
+      // Post-window sample is left buffered, not drained.
+      expect(deps.ble.confirmSamplesDrain).toHaveBeenCalledWith(2);
     });
 
     it("splits a large page into upload batches", async () => {

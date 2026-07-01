@@ -241,9 +241,11 @@ extension BleHeartRateConnectionManager: CBCentralManagerDelegate {
         didDisconnectPeripheral peripheral: CBPeripheral,
         error: Error?
     ) {
-        // If the drop happened mid-handshake, fail the pending connect with a
-        // typed error rather than letting it wait out the connect timeout.
+        // If the active peripheral dropped mid-handshake, fail the pending
+        // connect with a typed error rather than letting it wait out the connect
+        // timeout. Ignore stale callbacks from a peripheral we've moved on from.
         let wasConnecting = connectCompletion != nil
+            && connectedPeripheral?.identifier == peripheral.identifier
         state = .idle
         connectedPeripheral = nil
         if wasConnecting {
@@ -301,7 +303,13 @@ extension BleHeartRateConnectionManager: CBPeripheralDelegate {
         didUpdateNotificationStateFor characteristic: CBCharacteristic,
         error: Error?
     ) {
-        guard characteristic.uuid == BleHeartRateConstants.heartRateMeasurementUUID else { return }
+        // Ignore late callbacks from a peripheral we're no longer subscribing to,
+        // so a stale event can't complete the wrong connection attempt.
+        guard
+            characteristic.uuid == BleHeartRateConstants.heartRateMeasurementUUID,
+            state == .subscribing,
+            connectedPeripheral?.identifier == peripheral.identifier
+        else { return }
 
         if error != nil || !characteristic.isNotifying {
             abortConnection(peripheral, with: .notificationSubscriptionFailed)
