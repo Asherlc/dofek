@@ -79,7 +79,7 @@ async function syncFitbitSleepWithGuardedPagination(
   persist: (raw: FitbitSleepLog) => Promise<void>,
   handlePersistError: (err: unknown, externalId: string) => void,
 ): Promise<{ count: number; degradations: SyncDegradation[] }> {
-  const pageResult = await fetchProviderPages({
+  const pageResult = await fetchProviderPages<FitbitSleepLog, number>({
     providerId,
     stepName: "sleep",
     initialCursor: 0,

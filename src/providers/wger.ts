@@ -269,11 +269,14 @@ export class WgerProvider implements SyncProvider {
         async () => {
           let count = 0;
           const initialUrl = `${WGER_API_BASE}/weightentry/?format=json&ordering=-date&offset=0&limit=50`;
-          const pageResult = await fetchProviderPages({
+          const pageResult = await fetchProviderPages<WgerWeightEntry, string>({
             providerId: this.id,
             stepName: "metric_stream",
             initialCursor: initialUrl,
             fetchPage: async (url) => {
+              if (!url) {
+                throw new Error("Wger weight pagination missing page URL");
+              }
               const response = await this.#fetchFn(url, {
                 headers: {
                   Authorization: `Bearer ${accessToken}`,

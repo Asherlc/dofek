@@ -483,7 +483,7 @@ export class WithingsProvider implements WebhookProvider {
           let count = 0;
           let refreshedAfterAccessTokenRejection = false;
 
-          const pageResult = await fetchProviderPages({
+          const pageResult = await fetchProviderPages<WithingsMeasureGroup, number>({
             providerId: this.id,
             stepName: "metric_stream",
             initialCursor: 0,
