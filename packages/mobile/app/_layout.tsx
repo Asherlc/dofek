@@ -217,13 +217,12 @@ function AuthGate() {
     appleHealthAuthorization
       .resolve()
       .then((state) => {
-        if (state.needsPermissionUpdate()) {
+        if (!state.hasCompletedAuthorizationFlow && state.requestStatus === "shouldRequest") {
           return appleHealthAuthorization.requestPermissions();
         }
       })
       .catch((error: unknown) => {
-        // Best-effort — failing to re-prompt is non-critical
-        captureException(error, { source: "bg-healthkit-sync-reauth" });
+        captureException(error, { source: "bg-healthkit-sync-initial-auth" });
       });
 
     // Start continuous accelerometer recording and background sync

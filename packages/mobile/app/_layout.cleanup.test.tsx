@@ -322,7 +322,7 @@ describe("RootLayout background cleanup", () => {
     }
   });
 
-  it("re-requests HealthKit permissions when new types need authorization", async () => {
+  it("does not automatically request HealthKit permissions when new types need authorization", async () => {
     mockIsHealthKitAvailable.mockReturnValue(true);
     mockHasEverAuthorized.mockReturnValue(true);
     mockGetRequestStatus.mockResolvedValue("shouldRequest");
@@ -331,43 +331,14 @@ describe("RootLayout background cleanup", () => {
     render(<RootLayout />);
 
     await waitFor(() => {
-      expect(mockGetRequestStatus).toHaveBeenCalled();
-    });
-
-    expect(mockRequestPermissions).toHaveBeenCalledOnce();
-  });
-
-  it("does not re-request HealthKit permissions when all types are already authorized", async () => {
-    mockIsHealthKitAvailable.mockReturnValue(true);
-    mockHasEverAuthorized.mockReturnValue(true);
-    mockGetRequestStatus.mockResolvedValue("unnecessary");
-
-    const RootLayout = await importRootLayout();
-    render(<RootLayout />);
-
-    await waitFor(() => {
-      expect(mockGetRequestStatus).toHaveBeenCalled();
-    });
-
-    expect(mockRequestPermissions).not.toHaveBeenCalled();
-  });
-
-  it("skips HealthKit re-auth when HealthKit is not available", async () => {
-    mockIsHealthKitAvailable.mockReturnValue(false);
-
-    const RootLayout = await importRootLayout();
-    render(<RootLayout />);
-
-    // Small delay to allow any async effects to fire
-    await vi.waitFor(() => {
       expect(mockInitBackgroundHealthKitSync).toHaveBeenCalled();
     });
 
-    expect(mockGetRequestStatus).not.toHaveBeenCalled();
+    expect(mockGetRequestStatus).toHaveBeenCalledOnce();
     expect(mockRequestPermissions).not.toHaveBeenCalled();
   });
 
-  it("skips HealthKit re-auth when user has never authorized HealthKit", async () => {
+  it("automatically requests initial HealthKit permissions when the user has never seen the prompt", async () => {
     mockIsHealthKitAvailable.mockReturnValue(true);
     mockHasEverAuthorized.mockReturnValue(false);
     mockGetRequestStatus.mockResolvedValue("shouldRequest");
@@ -375,29 +346,8 @@ describe("RootLayout background cleanup", () => {
     const RootLayout = await importRootLayout();
     render(<RootLayout />);
 
-    await vi.waitFor(() => {
-      expect(mockInitBackgroundHealthKitSync).toHaveBeenCalled();
-    });
-
-    expect(mockGetRequestStatus).toHaveBeenCalled();
-    expect(mockRequestPermissions).not.toHaveBeenCalled();
-  });
-
-  it("reports HealthKit re-auth errors to Sentry", async () => {
-    mockIsHealthKitAvailable.mockReturnValue(true);
-    mockHasEverAuthorized.mockReturnValue(true);
-    mockGetRequestStatus.mockRejectedValue(new Error("HealthKit unavailable"));
-
-    const RootLayout = await importRootLayout();
-    render(<RootLayout />);
-
-    await vi.waitFor(() => {
-      expect(mockGetRequestStatus).toHaveBeenCalled();
-    });
-
-    const telemetry = await import("../lib/telemetry");
-    expect(telemetry.captureException).toHaveBeenCalledWith(expect.any(Error), {
-      source: "bg-healthkit-sync-reauth",
+    await waitFor(() => {
+      expect(mockRequestPermissions).toHaveBeenCalledOnce();
     });
   });
 
