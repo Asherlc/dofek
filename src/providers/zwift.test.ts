@@ -66,6 +66,9 @@ const { MockZwiftClient } = vi.hoisted(() => {
       expiresIn: 3600,
     };
     static activities: Array<Record<string, unknown>> = [];
+    static repeatActivitiesForEveryOffset = false;
+    static stopReturningActivitiesAtOffset: number | null = null;
+    static activityOffsets: number[] = [];
     static activityDetail: Record<string, unknown> = {};
     static fitnessData: Record<string, unknown> = {};
     static powerCurve: Record<string, unknown> = {};
@@ -87,12 +90,21 @@ const { MockZwiftClient } = vi.hoisted(() => {
     static refreshToken = vi.fn().mockImplementation(async () => MockZwiftClient.refreshResult);
 
     getActivities = vi.fn().mockImplementation(async (offset = 0) => {
+      MockZwiftClient.activityOffsets.push(offset);
       if (!/^\d+$/.test(this.athleteId)) {
         throw new Error(
           `Zwift API error (404): RESTEASY003210: Could not find resource for full path: https://us-or-rly101.zwift.com/api/profiles/${this.athleteId}/activities`,
         );
       }
-      return offset === 0 ? MockZwiftClient.activities : [];
+      if (
+        MockZwiftClient.stopReturningActivitiesAtOffset !== null &&
+        offset >= MockZwiftClient.stopReturningActivitiesAtOffset
+      ) {
+        return [];
+      }
+      return offset === 0 || MockZwiftClient.repeatActivitiesForEveryOffset
+        ? MockZwiftClient.activities
+        : [];
     });
     getActivityDetail = vi.fn().mockImplementation(async () => MockZwiftClient.activityDetail);
     getFitnessData = vi.fn().mockImplementation(async () => MockZwiftClient.fitnessData);
@@ -413,6 +425,9 @@ describe("ZwiftProvider.sync() — activity sync", () => {
   beforeEach(() => {
     providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
     providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
+    MockZwiftClient.repeatActivitiesForEveryOffset = false;
+    MockZwiftClient.stopReturningActivitiesAtOffset = null;
+    MockZwiftClient.activityOffsets = [];
   });
 
   it("syncs activities and metric streams", async () => {
@@ -553,6 +568,84 @@ describe("ZwiftProvider.sync() — activity sync", () => {
       db,
       expect.objectContaining({
         presentExternalIds: new Set(["100"]),
+      }),
+    );
+  });
+
+  it("stops with degraded pagination when a full page keeps advancing", async () => {
+    MockZwiftClient.repeatActivitiesForEveryOffset = true;
+    MockZwiftClient.activities = Array.from({ length: 20 }, (_, index) => ({
+      ...sampleActivity,
+      id: index + 1,
+      id_str: String(index + 1),
+    }));
+    MockZwiftClient.powerCurve = {};
+    MockZwiftClient.activityDetail = { fitnessData: {} };
+
+    const db = makeMockDb({
+      tokens: {
+        accessToken: "valid-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2099-01-01"),
+        scopes: "athleteId:12345",
+      },
+    });
+
+    const provider = new ZwiftProvider();
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
+
+    expect(result.degradations).toEqual([
+      {
+        kind: "pagination_max_pages_exceeded",
+        providerId: "zwift",
+        stepName: "activity_list",
+        message: "Zwift activity pagination exceeded the maximum page guard",
+        context: { offset: 2000, pageSize: 20, pagesFetched: 100 },
+      },
+    ]);
+    expect(MockZwiftClient.activityOffsets).toHaveLength(100);
+    expect(MockZwiftClient.activityOffsets[0]).toBe(0);
+    expect(MockZwiftClient.activityOffsets.at(-1)).toBe(1980);
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
+  });
+
+  it("does not degrade repeated partial activity pages before an empty page", async () => {
+    MockZwiftClient.repeatActivitiesForEveryOffset = true;
+    MockZwiftClient.stopReturningActivitiesAtOffset = 2000;
+    MockZwiftClient.activities = Array.from({ length: 19 }, (_, index) => ({
+      ...sampleActivity,
+      id: index + 1,
+      id_str: String(index + 1),
+      startDate: "2026-03-03T08:00:00Z",
+      endDate: "2026-03-03T09:00:00Z",
+    }));
+    MockZwiftClient.powerCurve = {};
+    MockZwiftClient.activityDetail = { fitnessData: {} };
+
+    const db = makeMockDb({
+      tokens: {
+        accessToken: "valid-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2099-01-01"),
+        scopes: "athleteId:12345",
+      },
+    });
+
+    const provider = new ZwiftProvider();
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
+
+    expect(result.degradations).toEqual([]);
+    expect(MockZwiftClient.activityOffsets).toHaveLength(101);
+    expect(MockZwiftClient.activityOffsets[0]).toBe(0);
+    expect(MockZwiftClient.activityOffsets.at(-1)).toBe(2000);
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        presentExternalIds: new Set(Array.from({ length: 19 }, (_, index) => String(index + 1))),
       }),
     );
   });

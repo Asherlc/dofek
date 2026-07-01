@@ -26,6 +26,7 @@ import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../logger.ts";
+import type { SyncDegradation } from "../sync/sync-degradation.ts";
 import { ProviderAuthorizationFailedError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type {
@@ -396,6 +397,7 @@ export class StravaNotFoundError extends Error {
 // ============================================================
 
 const STRAVA_AUTH_BASE = "https://www.strava.com/oauth";
+const STRAVA_MAX_ACTIVITY_PAGES = 100;
 
 export function stravaOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.STRAVA_CLIENT_ID;
@@ -727,6 +729,7 @@ export class StravaProvider implements WebhookProvider {
     const perPage = 30;
     let hasMore = true;
     let shouldStop = false;
+    const degradations: SyncDegradation[] = [];
     const presentActivityExternalIds = new Set<string>();
 
     while (hasMore && !shouldStop) {
@@ -897,6 +900,17 @@ export class StravaProvider implements WebhookProvider {
       }
 
       hasMore = parsed.hasMore && !shouldStop;
+      if (hasMore && page >= STRAVA_MAX_ACTIVITY_PAGES) {
+        degradations.push({
+          kind: "pagination_max_pages_exceeded",
+          providerId: this.id,
+          stepName: "activity_list",
+          message: "Strava activity pagination exceeded the maximum page guard",
+          context: { page, perPage },
+        });
+        shouldStop = true;
+        hasMore = false;
+      }
       page++;
     }
 
@@ -914,6 +928,7 @@ export class StravaProvider implements WebhookProvider {
       provider: this.id,
       recordsSynced,
       errors,
+      degradations,
       duration: Date.now() - start,
     };
   }

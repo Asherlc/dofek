@@ -9,6 +9,7 @@ import type { SyncDatabase } from "../../db/index.ts";
 import { finishProviderActivityListSync } from "../../db/provider-activity-sync.ts";
 import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../../logger.ts";
+import type { SyncDegradation } from "../../sync/sync-degradation.ts";
 import { AccessTokenExpiredError } from "../auth-errors.ts";
 import type { SyncRun } from "../sync-run.ts";
 import type {
@@ -28,6 +29,8 @@ import {
   wahooWebhookPayloadSchema,
 } from "./client.ts";
 import { parseWorkoutList, parseWorkoutSummary } from "./parsers.ts";
+
+const WAHOO_MAX_WORKOUT_PAGES = 100;
 
 export function wahooOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.WAHOO_CLIENT_ID;
@@ -300,12 +303,33 @@ export class WahooProvider implements WebhookProvider {
     const since = window.since;
     const syncWindowEnd = window.until;
     const presentActivityExternalIds = new Set<string>();
+    const degradations: SyncDegradation[] = [];
 
     while (hasMore) {
       const response = await client.getWorkouts(page);
       const parsed = parseWorkoutList(response);
 
       const total = parsed.total;
+      if (parsed.workouts.length === 0 && total > (parsed.page - 1) * parsed.perPage) {
+        degradations.push({
+          kind: "pagination_empty_page_with_cursor",
+          providerId: this.id,
+          stepName: "activity_list",
+          message: "Wahoo returned an empty workout page while totals indicate more pages",
+          context: { page: parsed.page, perPage: parsed.perPage, total },
+        });
+        break;
+      }
+      if (parsed.page < page) {
+        degradations.push({
+          kind: "pagination_stalled",
+          providerId: this.id,
+          stepName: "activity_list",
+          message: "Wahoo returned a non-progressing workout page number",
+          context: { requestedPage: page, responsePage: parsed.page, perPage: parsed.perPage },
+        });
+        break;
+      }
 
       for (const workout of parsed.workouts) {
         // Skip workouts before our sync window
@@ -333,21 +357,34 @@ export class WahooProvider implements WebhookProvider {
       }
 
       hasMore = hasMore && parsed.hasMore;
+      if (hasMore && page >= WAHOO_MAX_WORKOUT_PAGES) {
+        degradations.push({
+          kind: "pagination_max_pages_exceeded",
+          providerId: this.id,
+          stepName: "activity_list",
+          message: "Wahoo workout pagination exceeded the maximum page guard",
+          context: { page, perPage: parsed.perPage, total },
+        });
+        break;
+      }
       page++;
     }
 
-    await finishProviderActivityListSync(db, {
-      providerId: this.id,
-      userId: options?.userId,
-      windowStart: since,
-      windowEnd: syncWindowEnd,
-      presentExternalIds: presentActivityExternalIds,
-    });
+    if (degradations.length === 0) {
+      await finishProviderActivityListSync(db, {
+        providerId: this.id,
+        userId: options?.userId,
+        windowStart: since,
+        windowEnd: syncWindowEnd,
+        presentExternalIds: presentActivityExternalIds,
+      });
+    }
 
     return {
       provider: this.id,
       recordsSynced,
       errors,
+      degradations,
       duration: Date.now() - start,
     };
   }

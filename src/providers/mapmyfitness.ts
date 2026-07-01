@@ -10,6 +10,7 @@ import {
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import type { SyncDegradation } from "../sync/sync-degradation.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
@@ -19,6 +20,8 @@ import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./t
 
 const MAPMYFITNESS_API_BASE = "https://api.mapmyfitness.com";
 const _DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
+const MAPMYFITNESS_WORKOUT_PAGE_SIZE = 40;
+const MAPMYFITNESS_MAX_WORKOUT_PAGES = 100;
 
 interface MapMyFitnessWorkout {
   _links: { self: Array<{ id: string }> };
@@ -254,6 +257,7 @@ export class MapMyFitnessProvider implements SyncProvider {
     const since = window.since;
     const syncWindowEnd = window.until;
     const presentActivityExternalIds = new Set<string>();
+    const degradations: SyncDegradation[] = [];
 
     // Extract user ID from token scopes or use "-" for self
     const userId = tokens.scopes?.match(/user_id:(\S+)/)?.[1] ?? "-";
@@ -267,6 +271,7 @@ export class MapMyFitnessProvider implements SyncProvider {
           let count = 0;
           let offset = 0;
           let hasMore = true;
+          let pagesFetched = 0;
 
           while (hasMore) {
             const response = await client.getWorkouts(
@@ -275,8 +280,21 @@ export class MapMyFitnessProvider implements SyncProvider {
               formatDate(syncWindowEnd),
               offset,
             );
+            pagesFetched++;
             const workouts = response._embedded?.workouts ?? [];
-            if (workouts.length === 0) break;
+            const responseHasNext = !!response._links?.next?.length;
+            if (workouts.length === 0) {
+              if (responseHasNext) {
+                degradations.push({
+                  kind: "pagination_empty_page_with_cursor",
+                  providerId: this.id,
+                  stepName: "activity_list",
+                  message: "MapMyFitness returned an empty workout page with a next link",
+                  context: { offset, pagesFetched },
+                });
+              }
+              break;
+            }
 
             for (const raw of workouts) {
               const parsed = parseMapMyFitnessWorkout(raw);
@@ -313,18 +331,30 @@ export class MapMyFitnessProvider implements SyncProvider {
               }
             }
 
-            hasMore = !!response._links?.next?.length;
-            offset += 40;
+            hasMore = responseHasNext;
+            if (hasMore && pagesFetched >= MAPMYFITNESS_MAX_WORKOUT_PAGES) {
+              degradations.push({
+                kind: "pagination_max_pages_exceeded",
+                providerId: this.id,
+                stepName: "activity_list",
+                message: "MapMyFitness workout pagination exceeded the maximum page guard",
+                context: { offset, pagesFetched },
+              });
+              break;
+            }
+            offset += MAPMYFITNESS_WORKOUT_PAGE_SIZE;
           }
 
-          await finishProviderActivityListSync(db, {
-            providerId: this.id,
-            userId: options?.userId,
-            windowStart: since,
-            windowEnd: syncWindowEnd,
-            presentExternalIds: presentActivityExternalIds,
-          });
-          return { recordCount: count, result: count };
+          if (degradations.length === 0) {
+            await finishProviderActivityListSync(db, {
+              providerId: this.id,
+              userId: options?.userId,
+              windowStart: since,
+              windowEnd: syncWindowEnd,
+              presentExternalIds: presentActivityExternalIds,
+            });
+          }
+          return { recordCount: count, result: count, degradations };
         },
         options?.userId,
       );
@@ -340,6 +370,7 @@ export class MapMyFitnessProvider implements SyncProvider {
       provider: this.id,
       recordsSynced,
       errors,
+      degradations,
       duration: Date.now() - start,
     };
   }
