@@ -80,7 +80,7 @@ jobs:
             echo "- [Deploy OTA](${REPO_URL}/actions/workflows/deploy-ota.yml)"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # ── Docker image (main only, gated on changes) ─────────────────────────
+  # ── Docker image (main push or manual dispatch, gated on changes) ──────
 
   build-docker:
     name: Build Docker
