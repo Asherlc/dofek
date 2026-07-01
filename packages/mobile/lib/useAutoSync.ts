@@ -1,9 +1,9 @@
 import { formatDateYmd } from "@dofek/format/format";
 import { useEffect, useRef } from "react";
-import { InteractionManager } from "react-native";
 import { deleteDietarySamples, writeDietarySamples } from "../modules/health-kit";
 import { AppleHealthAuthorizationService, AppleHealthSyncService } from "./apple-health-provider";
 import { syncDofekFoodToHealthKit } from "./health-kit-food-writeback";
+import { runAfterUiIdle } from "./runAfterUiIdle";
 import { captureException, logger } from "./telemetry";
 import { trpc } from "./trpc";
 
@@ -39,7 +39,7 @@ export function useAutoSync(latestDate: string | null | undefined) {
     if ((activeSyncs.data?.length ?? 0) > 0) return;
     if (!latestDate) return;
 
-    const interactionHandle = InteractionManager.runAfterInteractions(() => {
+    const idleHandle = runAfterUiIdle(() => {
       if (triggered.current) return;
       triggered.current = true;
 
@@ -105,7 +105,7 @@ export function useAutoSync(latestDate: string | null | undefined) {
     });
 
     return () => {
-      interactionHandle.cancel();
+      idleHandle.cancel();
     };
   }, [latestDate, activeSyncs.isLoading, activeSyncs.data, triggerSync, trpcUtils]);
 }

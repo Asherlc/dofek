@@ -4,14 +4,7 @@ import { httpBatchLink, httpLink, splitLink } from "@trpc/client";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  InteractionManager,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AppleHealthAuthorizationService } from "../lib/apple-health-provider";
 import { AuthProvider, useAuth } from "../lib/auth-context";
@@ -23,6 +16,7 @@ import {
 import { initBackgroundWatchInertialMeasurementUnitSync } from "../lib/background-watch-inertial-measurement-unit-sync";
 import { syncWhoopBle, teardownBackgroundWhoopBleSync } from "../lib/background-whoop-ble-sync";
 import type { SyncTrpcClient } from "../lib/health-kit-sync";
+import { runAfterUiIdle } from "../lib/runAfterUiIdle";
 import { getTrpcUrl } from "../lib/server";
 import { captureException, initTelemetry, logger } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
@@ -182,12 +176,12 @@ function AuthGate() {
     }
 
     setBackgroundSyncReady(false);
-    const interactionHandle = InteractionManager.runAfterInteractions(() => {
+    const idleHandle = runAfterUiIdle(() => {
       setBackgroundSyncReady(true);
     });
 
     return () => {
-      interactionHandle.cancel();
+      idleHandle.cancel();
       setBackgroundSyncReady(false);
     };
   }, [user]);
