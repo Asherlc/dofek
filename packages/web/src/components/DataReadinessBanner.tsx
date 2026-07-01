@@ -47,7 +47,7 @@ export function DataReadinessBanner({
 
   if (error) {
     return (
-      <output className="rounded-lg border border-red-300 bg-red-50 p-4 text-red-950">
+      <output className="block w-full rounded-lg border border-red-300 bg-red-50 p-4 text-red-950">
         <h2 className="text-sm font-semibold">Data readiness is unavailable</h2>
         <p className="mt-1 text-sm">{error.message ?? "The data readiness check failed."}</p>
       </output>
@@ -61,7 +61,7 @@ export function DataReadinessBanner({
 
   return (
     <output
-      className={`rounded-lg border p-4 ${classNameByStatus[status]}`}
+      className={`block w-full rounded-lg border p-4 ${classNameByStatus[status]}`}
       aria-live={status === "syncing" ? "polite" : undefined}
     >
       <h2 className="text-sm font-semibold">{headingByStatus[status]}</h2>

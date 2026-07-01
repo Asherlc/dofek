@@ -67,6 +67,14 @@ describe("DataReadinessBanner", () => {
     expect(screen.getByText("No sleep data has been synced yet.")).toBeTruthy();
   });
 
+  it("uses full-width block layout so the banner does not clip in stacked page content", () => {
+    render(<DataReadinessBanner data={makeSnapshot()} />);
+
+    const classNames = screen.getByRole("status").className.split(/\s+/);
+    expect(classNames).toContain("block");
+    expect(classNames).toContain("w-full");
+  });
+
   it("uses blocked, syncing, and missing headings from the overall status", () => {
     const { rerender } = render(
       <DataReadinessBanner data={makeSnapshot({ overallStatus: "blocked" })} />,
