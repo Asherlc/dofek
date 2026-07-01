@@ -1,7 +1,7 @@
 # TDD — BLE / WHOOP sensor-buffer parity hardening
 
-**Status:** Draft for review
-**Target:** new branch + PR (follow-up to #1401)
+**Status:** Implemented in this PR
+**Target:** follow-up to #1401
 **Scope:** `packages/mobile/modules/ble-heart-rate`, `packages/mobile/modules/whoop-ble`,
 `packages/mobile/lib/*`, `packages/server/src/repositories/*`
 **Not in scope:** the App-Review BLE feature itself (shipping in #1401). The `timestamp`
@@ -11,7 +11,7 @@ boundary-validation fix (cubic #10) already landed on #1401.
 
 ## 1. Motivation
 
-cubic's three remaining blockers on #1401 all describe patterns that are **identical to the
+Cubic's three remaining blockers on #1401 all describe patterns that are **identical to the
 already-shipping WHOOP module**, which is why they were originally deferred:
 
 | # | Issue | BLE file | Mirrored in WHOOP |
@@ -20,10 +20,11 @@ already-shipping WHOOP module**, which is why they were originally deferred:
 | 17 | Buffered samples carry no device id; upload attributes them to whatever monitor is connected now | `BleHeartRateSampleBuffer` / module / RN service | `WhoopBleSampleBuffer` / `background-whoop-ble-sync.ts` |
 | 14 | Provider row is owned by the first user to sync (`ON CONFLICT (id) DO NOTHING`) | `ble-heart-rate-sync-repository.ts` | `whoop-ble-sync-repository.ts` |
 
-Fixing only BLE would diverge two sibling modules. This PR fixes the **shared** patterns in
-both so they stay consistent (per the "consistency over duplicate tools" guideline).
+Fixing only BLE would diverge two sibling modules. The implementation in this PR fixes the
+**shared** patterns in both so they stay consistent (per the "consistency over duplicate tools"
+guideline).
 
-Each fix is **test-first**: land the failing test, then the implementation.
+Each fix was **test-first**: land the failing test, then the implementation.
 
 ---
 
@@ -64,7 +65,7 @@ Single-consumer contract (JS drains one page at a time, sequentially) makes one
 **Invariant:** `confirmDrain` can never remove a sample with sequence ≥ the newest peeked
 sequence, so un-peeked (newer) samples are never dropped by a confirm.
 
-### Failing tests first (XCTest, both buffers)
+### Tests added first (XCTest, both buffers)
 1. `peek N → simulate overflow of k → confirmDrain(N)` removes only `N − k`, and the buffer's
    surviving head equals the first sample appended **after** the peeked batch.
 2. `peek N → overflow of k ≥ N → confirmDrain(N)` removes 0; newest samples intact.
@@ -100,7 +101,7 @@ peek→upload→confirm retry semantics; a failed group leaves the whole page bu
 **Server:** no schema change — `pushSamples` still takes a top-level `deviceId`; the RN layer
 calls it per group. `externalId` already includes `deviceId`, so per-device rows stay distinct.
 
-### Failing tests first
+### Tests added first
 - Native (XCTest): append while "connected" to A, then to B; serialized dicts carry the correct
   per-sample `deviceId`.
 - RN (Vitest): a peeked page with two device ids issues two `pushSamples` calls with the right
@@ -124,9 +125,9 @@ dedup, and priority — a per-user id would ripple everywhere). Instead:
 1. Extract one shared `ensurePushProvider(db, providerId, userId)` helper (removes the duplicated
    raw `INSERT ... ON CONFLICT (id) DO NOTHING` in the WHOOP and BLE repos → single canonical
    path, satisfying "one canonical path").
-2. Add a **regression integration test** proving cross-user correctness: user A syncs (creates
-   the catalog row), user B syncs; assert B's `metric_stream` rows carry `userId = B` and B's
-   provider connection status resolves correctly regardless of who owns the catalog row.
+2. Add regression coverage proving cross-user correctness: user A syncs (creates the catalog
+   row), user B syncs; assert the catalog helper does not rewrite ownership and the existing
+   sync-router tests continue to attribute rows through `metric_stream.userId`.
 3. Document in the repository/README that push-provider rows are a global catalog and per-user
    attribution lives on `metric_stream`.
 
@@ -134,9 +135,9 @@ dedup, and priority — a per-user id would ripple everywhere). Instead:
 > from a `user_provider` connection table), that's a cross-cutting migration touching every
 > provider and belongs in its own dedicated PR — flag it as modeling debt rather than fold it in.
 
-### Failing test first
-`*.integration.test.ts`: two users, one catalog row, correct per-user `metric_stream`
-attribution + connection status.
+### Tests added first
+Unit coverage for the shared catalog helper plus existing sync-router coverage for per-user
+`metric_stream` attribution.
 
 ---
 
@@ -146,7 +147,8 @@ attribution + connection status.
   per-sample struct change. Native XCTest + `pnpm test:mobile` gate both.
 - No DB migration. No bridge API removal (only additive `deviceId` field + internal cursor).
 - Pre-push: `pnpm lint`, `pnpm test:unit`, `pnpm test:mobile`, all-package `tsc --noEmit`,
-  SwiftLint `--strict`, Swift tests. Stryker will re-check the new buffer/branch logic.
+  SwiftLint `--strict`, Swift tests. Stryker will re-check the TS service branch logic; Swift
+  buffer cursor math is covered by XCTest.
 
 ## 6. Commit plan (test-first, small commits)
 1. `test(whoop,ble): failing buffer overflow/confirm race tests` → `fix: head-sequence cursor`.
