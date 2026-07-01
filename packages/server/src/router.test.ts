@@ -17,6 +17,7 @@ vi.mock("./routers/anomaly-detection.ts", () => ({ anomalyDetectionRouter: mockR
 vi.mock("./routers/auth.ts", () => ({ authRouter: mockRouter }));
 vi.mock("./routers/behavior-impact.ts", () => ({ behaviorImpactRouter: mockRouter }));
 vi.mock("./routers/billing.ts", () => ({ billingRouter: mockRouter }));
+vi.mock("./routers/ble-heart-rate-sync.ts", () => ({ bleHeartRateSyncRouter: mockRouter }));
 vi.mock("./routers/breathwork.ts", () => ({ breathworkRouter: mockRouter }));
 vi.mock("./routers/body.ts", () => ({ bodyRouter: mockRouter }));
 vi.mock("./routers/body-analytics.ts", () => ({ bodyAnalyticsRouter: mockRouter }));
@@ -114,6 +115,7 @@ describe("appRouter", () => {
       "auth",
       "behaviorImpact",
       "billing",
+      "bleHeartRateSync",
       "breathwork",
       "companionToken",
       "sleep",
