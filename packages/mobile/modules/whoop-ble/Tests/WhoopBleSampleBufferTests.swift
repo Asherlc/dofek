@@ -61,6 +61,14 @@ final class WhoopBleSampleBufferTests: XCTestCase {
         XCTAssertEqual(gyroZ, Double(sample.gyroscopeZ), accuracy: 0.001)
     }
 
+    func testPeekImuSamplesSerializesCapturedDeviceId() {
+        buffer.appendImuSamples(makeImuSamples(count: 1), deviceId: "whoop-a")
+
+        let peeked = buffer.peekImuSamples()
+
+        XCTAssertEqual(peeked[0]["deviceId"] as? String, "whoop-a")
+    }
+
     func testDrainEmptyBufferReturnsEmptyArray() {
         let drained = buffer.drainImuSamples()
         XCTAssertTrue(drained.isEmpty)
@@ -209,6 +217,14 @@ final class WhoopBleSampleBufferTests: XCTestCase {
         XCTAssertNotNil(dict["opticalRawHex"] as? String)
     }
 
+    func testPeekRealtimeDataSerializesCapturedDeviceId() {
+        buffer.appendRealtimeData(makeRealtimeSamples(count: 1), deviceId: "whoop-a")
+
+        let peeked = buffer.peekRealtimeData()
+
+        XCTAssertEqual(peeked[0]["deviceId"] as? String, "whoop-a")
+    }
+
     // MARK: - Overflow
 
     func testImuOverflowDropsOldestSamples() {
@@ -305,6 +321,19 @@ final class WhoopBleSampleBufferTests: XCTestCase {
         XCTAssertEqual(buffer.imuSampleCount, 0)
     }
 
+    func testConfirmImuDrainAfterOverflowDoesNotRemoveUnpeekedSamples() {
+        buffer.appendImuSamples(makeImuSamplesForOverflow(count: 500_000, startingAt: 0))
+
+        let peeked = buffer.peekImuSamples(maxCount: 3)
+        XCTAssertEqual(peeked.map { $0["accelerometerX"] as? Double }, [0.0, 1.0, 2.0])
+
+        buffer.appendImuSamples(makeImuSamplesForOverflow(count: 3, startingAt: 500_000))
+        buffer.confirmImuDrain(count: 3)
+
+        let remaining = buffer.peekImuSamples(maxCount: 1)
+        XCTAssertEqual(remaining.first?["accelerometerX"] as? Double, 3.0)
+    }
+
     func testPeekRealtimeDataDoesNotRemove() {
         buffer.appendRealtimeData(makeRealtimeSamples(count: 4))
 
@@ -319,6 +348,19 @@ final class WhoopBleSampleBufferTests: XCTestCase {
         _ = buffer.peekRealtimeData(maxCount: 2)
         buffer.confirmRealtimeDataDrain(count: 2)
         XCTAssertEqual(buffer.realtimeSampleCount, 2)
+    }
+
+    func testConfirmRealtimeDataDrainAfterOverflowOnlyRemovesStillBufferedPeekedSamples() {
+        buffer.appendRealtimeData(makeRealtimeSamplesForOverflow(count: 86_400, startingAt: 0))
+
+        let peeked = buffer.peekRealtimeData(maxCount: 5)
+        XCTAssertEqual(peeked.map { $0["rrIntervalMs"] as? Int }, [900, 901, 902, 903, 904])
+
+        buffer.appendRealtimeData(makeRealtimeSamplesForOverflow(count: 3, startingAt: 86_400))
+        buffer.confirmRealtimeDataDrain(count: 5)
+
+        let remaining = buffer.peekRealtimeData(maxCount: 1)
+        XCTAssertEqual(remaining.first?["rrIntervalMs"] as? Int, 905)
     }
 
     func testPeekThenConfirmFullCycle() {
@@ -418,6 +460,45 @@ final class WhoopBleSampleBufferTests: XCTestCase {
                 opticalBytes: Data(count: 18)
             )
             samples.append(sample)
+        }
+        return samples
+    }
+
+    private func makeImuSamplesForOverflow(count: Int, startingAt startIndex: Int) -> [WhoopImuSample] {
+        (startIndex..<(startIndex + count)).map { index in
+            WhoopImuSample(
+                timestampSeconds: 1711000000,
+                subSeconds: 0,
+                sampleIndex: 0,
+                samplesInFrame: 100,
+                accelerometerX: Float(index),
+                accelerometerY: 0,
+                accelerometerZ: 1.0,
+                gyroscopeX: 0,
+                gyroscopeY: 0,
+                gyroscopeZ: 0
+            )
+        }
+    }
+
+    private func makeRealtimeSamplesForOverflow(count: Int, startingAt startIndex: Int) -> [WhoopRealtimeDataSample] {
+        var samples: [WhoopRealtimeDataSample] = []
+        samples.reserveCapacity(count)
+        for index in startIndex..<(startIndex + count) {
+            let timestampSeconds = 1711000000 + UInt32(index)
+            let heartRate = UInt8(60 + index % 50)
+            let rrIntervalMs = UInt16(900 + index % 1_000)
+            samples.append(WhoopRealtimeDataSample(
+                timestampSeconds: timestampSeconds,
+                subSeconds: 0,
+                heartRate: heartRate,
+                rrIntervalMs: rrIntervalMs,
+                quaternionW: 1.0,
+                quaternionX: 0,
+                quaternionY: 0,
+                quaternionZ: 0,
+                opticalBytes: Data(count: 18)
+            ))
         }
         return samples
     }

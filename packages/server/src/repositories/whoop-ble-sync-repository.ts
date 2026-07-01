@@ -1,7 +1,5 @@
-import { providerLabel } from "@dofek/providers/providers";
 import { WHOOP_BLE_PROVIDER_ID } from "@dofek/providers/push-providers";
 import type { Database } from "dofek/db";
-import { sql } from "drizzle-orm";
 import { RR_INTERVAL_MS } from "../../../../src/db/sensor-channels.ts";
 import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
 import {
@@ -10,6 +8,7 @@ import {
 } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
 import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
+import { ensurePushProvider } from "./push-provider-repository.ts";
 
 const INSERT_BATCH_SIZE = 2000;
 
@@ -42,11 +41,11 @@ export class WhoopBleSyncRepository {
   }
 
   async ensureProvider(): Promise<void> {
-    await this.#database.execute(
-      sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES (${WHOOP_BLE_PROVIDER_ID}, ${providerLabel(WHOOP_BLE_PROVIDER_ID)}, ${this.#userId})
-          ON CONFLICT (id) DO NOTHING`,
-    );
+    await ensurePushProvider({
+      database: this.#database,
+      providerId: WHOOP_BLE_PROVIDER_ID,
+      userId: this.#userId,
+    });
   }
 
   async insertRealtimeDataBatch(

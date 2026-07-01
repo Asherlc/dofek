@@ -1,5 +1,26 @@
 import Foundation
 
+private final class PeekConfirmDrainCursor {
+    private var headSequence: UInt64 = 0
+    private var lastPeekBaseSequence: UInt64 = 0
+
+    func recordPeek() {
+        lastPeekBaseSequence = headSequence
+    }
+
+    func recordHeadRemoval(count: Int) {
+        guard count > 0 else { return }
+        headSequence += UInt64(count)
+    }
+
+    func confirmRemovalCount(requestedCount: Int, bufferedCount: Int) -> Int {
+        let requestedCount = max(0, requestedCount)
+        let evictedSincePeek = headSequence - lastPeekBaseSequence
+        guard evictedSincePeek < UInt64(requestedCount) else { return 0 }
+        return min(requestedCount - Int(evictedSincePeek), bufferedCount)
+    }
+}
+
 /// Thread-safe buffer accumulating heart-rate samples until the JS layer drains
 /// them for upload. Serializes samples into bridge-compatible dictionaries.
 ///
@@ -8,6 +29,7 @@ import Foundation
 final class BleHeartRateSampleBuffer {
     private var samples: [BleHeartRateSample] = []
     private let lock = NSLock()
+    private let drainCursor = PeekConfirmDrainCursor()
 
     /// ~24 hours at 1 Hz — heart-rate straps notify roughly once per second.
     private static let maxBufferSize = 86_400
@@ -27,12 +49,14 @@ final class BleHeartRateSampleBuffer {
         if samples.count > Self.maxBufferSize {
             let overflow = samples.count - Self.maxBufferSize
             samples.removeFirst(overflow)
+            drainCursor.recordHeadRemoval(count: overflow)
             overflowCount += 1
         }
     }
 
     func clearAll() {
         lock.lock()
+        drainCursor.recordHeadRemoval(count: samples.count)
         samples.removeAll()
         lock.unlock()
     }
@@ -45,6 +69,7 @@ final class BleHeartRateSampleBuffer {
         // empty batch rather than trapping in `prefix`.
         let peekCount = max(0, min(maxCount, samples.count))
         let peeked = Array(samples.prefix(peekCount))
+        drainCursor.recordPeek()
         lock.unlock()
         return serialize(peeked)
     }
@@ -52,8 +77,9 @@ final class BleHeartRateSampleBuffer {
     /// Remove the first `count` samples from the buffer after a successful upload.
     func confirmDrain(count: Int) {
         lock.lock()
-        let removeCount = max(0, min(count, samples.count))
+        let removeCount = drainCursor.confirmRemovalCount(requestedCount: count, bufferedCount: samples.count)
         samples.removeFirst(removeCount)
+        drainCursor.recordHeadRemoval(count: removeCount)
         lock.unlock()
     }
 
@@ -66,6 +92,7 @@ final class BleHeartRateSampleBuffer {
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return samples.map { sample in
             [
+                "deviceId": sample.deviceId,
                 "timestamp": formatter.string(from: sample.timestamp),
                 "heartRateBpm": sample.heartRateBpm,
                 "rrIntervalsMs": sample.rrIntervalsMs,
