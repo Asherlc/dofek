@@ -12,6 +12,7 @@ import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../logger.ts";
+import type { SyncDegradation } from "../sync/sync-degradation.ts";
 import {
   ProviderAuthenticationFailedError,
   ProviderStoredIdentityInvalidError,
@@ -23,6 +24,9 @@ import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./t
 // ============================================================
 // Provider implementation
 // ============================================================
+
+const ZWIFT_ACTIVITY_PAGE_SIZE = 20;
+const ZWIFT_MAX_ACTIVITY_PAGES = 100;
 
 export class ZwiftProvider implements SyncProvider {
   readonly id = "zwift";
@@ -232,6 +236,7 @@ export class ZwiftProvider implements SyncProvider {
     const since = window.since;
     const syncWindowEnd = window.until;
     const presentActivityExternalIds = new Set<string>();
+    const degradations: SyncDegradation[] = [];
     try {
       const activityCount = await withSyncLog(
         db,
@@ -240,13 +245,14 @@ export class ZwiftProvider implements SyncProvider {
         async () => {
           let count = 0;
           let offset = 0;
-          const PAGE_SIZE = 20;
           let done = false;
+          let pagesFetched = 0;
 
           while (!done) {
             const activities = await runWithAuthRetry((activeClient) =>
-              activeClient.getActivities(offset, PAGE_SIZE),
+              activeClient.getActivities(offset, ZWIFT_ACTIVITY_PAGE_SIZE),
             );
+            pagesFetched++;
             if (activities.length === 0) break;
 
             for (const raw of activities) {
@@ -329,17 +335,32 @@ export class ZwiftProvider implements SyncProvider {
               }
             }
 
-            offset += PAGE_SIZE;
+            offset += ZWIFT_ACTIVITY_PAGE_SIZE;
+            if (
+              activities.length >= ZWIFT_ACTIVITY_PAGE_SIZE &&
+              pagesFetched >= ZWIFT_MAX_ACTIVITY_PAGES
+            ) {
+              degradations.push({
+                kind: "pagination_max_pages_exceeded",
+                providerId: this.id,
+                stepName: "activity_list",
+                message: "Zwift activity pagination exceeded the maximum page guard",
+                context: { offset, pageSize: ZWIFT_ACTIVITY_PAGE_SIZE, pagesFetched },
+              });
+              done = true;
+            }
           }
 
-          await finishProviderActivityListSync(db, {
-            providerId: this.id,
-            userId: options?.userId,
-            windowStart: since,
-            windowEnd: syncWindowEnd,
-            presentExternalIds: presentActivityExternalIds,
-          });
-          return { recordCount: count, result: count };
+          if (degradations.length === 0) {
+            await finishProviderActivityListSync(db, {
+              providerId: this.id,
+              userId: options?.userId,
+              windowStart: since,
+              windowEnd: syncWindowEnd,
+              presentExternalIds: presentActivityExternalIds,
+            });
+          }
+          return { recordCount: count, result: count, degradations };
         },
         options?.userId,
       );
@@ -355,6 +376,7 @@ export class ZwiftProvider implements SyncProvider {
       provider: this.id,
       recordsSynced,
       errors,
+      degradations,
       duration: Date.now() - start,
     };
   }

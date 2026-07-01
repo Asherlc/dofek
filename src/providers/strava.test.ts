@@ -2348,6 +2348,43 @@ describe("StravaProvider.sync — additional coverage", () => {
     expect(activityPages).toEqual([1, 2]);
   });
 
+  it("stops with degraded pagination when full pages never terminate", async () => {
+    setupEnv();
+
+    const fullPage = Array.from({ length: 30 }, (_, index) => ({
+      ...MOCK_ACTIVITY,
+      id: index + 1,
+    }));
+    let activitiesCallCount = 0;
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      const urlStr = String(url);
+      if (urlStr.includes("/athlete/activities")) {
+        activitiesCallCount++;
+        return Promise.resolve(Response.json(fullPage));
+      }
+      if (urlStr.includes("/streams")) {
+        return Promise.resolve(Response.json([]));
+      }
+      return Promise.resolve(Response.json(MOCK_ACTIVITY));
+    });
+
+    const mockDb = createMockDb();
+    const provider = new StravaProvider(mockFetch);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
+
+    expect(activitiesCallCount).toBe(100);
+    expect(result.degradations).toEqual([
+      expect.objectContaining({
+        kind: "pagination_max_pages_exceeded",
+        providerId: "strava",
+        stepName: "activity_list",
+      }),
+    ]);
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
+  });
+
   it("invokes onProgress callback with synced activity count message", async () => {
     setupEnv();
 

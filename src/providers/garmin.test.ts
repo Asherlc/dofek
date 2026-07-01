@@ -1203,6 +1203,45 @@ describe("GarminProvider.sync()", () => {
     );
   });
 
+  it("records degraded pagination and skips reconciliation when the activity list keeps returning full pages", async () => {
+    const since = new Date("2026-01-01T00:00:00Z");
+    const fullPage = Array.from({ length: 50 }, (_, index) => ({ activityId: index + 1 }));
+    mocks.client.getActivities.mockResolvedValue(fullPage);
+    mocks.parseConnectActivity.mockImplementation((raw: { activityId: number }) => ({
+      externalId: String(raw.activityId),
+      activityType: "running",
+      name: `Run ${raw.activityId}`,
+      startedAt: new Date("2026-03-01T10:00:00Z"),
+      endedAt: new Date("2026-03-01T11:00:00Z"),
+      raw,
+    }));
+
+    const checkpointStore = {
+      load: vi.fn().mockResolvedValue({
+        ...createGarminSyncCheckpoint([{ type: "activities_list", offset: 5000 }]),
+        stepIndex: 0,
+      }),
+      save: vi.fn().mockResolvedValue(undefined),
+      clear: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await syncProvider(provider, db, since, { checkpoint: checkpointStore });
+
+    expect(result.degradations).toEqual([
+      expect.objectContaining({
+        kind: "pagination_stalled",
+        providerId: "garmin",
+        stepName: "activities_list",
+      }),
+    ]);
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
+    expect(
+      checkpointStore.save.mock.calls.some(([checkpoint]) =>
+        checkpoint.steps.some((step: GarminSyncStep) => step.type === "activity_reconcile"),
+      ),
+    ).toBe(false);
+  });
+
   it("syncs sleep data", async () => {
     mocks.client.getSleepData.mockResolvedValue({ sleepData: true });
     mocks.parseConnectSleep.mockReturnValue({

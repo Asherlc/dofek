@@ -66,6 +66,7 @@ const { MockZwiftClient } = vi.hoisted(() => {
       expiresIn: 3600,
     };
     static activities: Array<Record<string, unknown>> = [];
+    static repeatActivitiesForEveryOffset = false;
     static activityDetail: Record<string, unknown> = {};
     static fitnessData: Record<string, unknown> = {};
     static powerCurve: Record<string, unknown> = {};
@@ -92,7 +93,9 @@ const { MockZwiftClient } = vi.hoisted(() => {
           `Zwift API error (404): RESTEASY003210: Could not find resource for full path: https://us-or-rly101.zwift.com/api/profiles/${this.athleteId}/activities`,
         );
       }
-      return offset === 0 ? MockZwiftClient.activities : [];
+      return offset === 0 || MockZwiftClient.repeatActivitiesForEveryOffset
+        ? MockZwiftClient.activities
+        : [];
     });
     getActivityDetail = vi.fn().mockImplementation(async () => MockZwiftClient.activityDetail);
     getFitnessData = vi.fn().mockImplementation(async () => MockZwiftClient.fitnessData);
@@ -413,6 +416,7 @@ describe("ZwiftProvider.sync() — activity sync", () => {
   beforeEach(() => {
     providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
     providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
+    MockZwiftClient.repeatActivitiesForEveryOffset = false;
   });
 
   it("syncs activities and metric streams", async () => {
@@ -555,6 +559,40 @@ describe("ZwiftProvider.sync() — activity sync", () => {
         presentExternalIds: new Set(["100"]),
       }),
     );
+  });
+
+  it("stops with degraded pagination when a full page keeps advancing", async () => {
+    MockZwiftClient.repeatActivitiesForEveryOffset = true;
+    MockZwiftClient.activities = Array.from({ length: 20 }, (_, index) => ({
+      ...sampleActivity,
+      id: index + 1,
+      id_str: String(index + 1),
+    }));
+    MockZwiftClient.powerCurve = {};
+    MockZwiftClient.activityDetail = { fitnessData: {} };
+
+    const db = makeMockDb({
+      tokens: {
+        accessToken: "valid-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2099-01-01"),
+        scopes: "athleteId:12345",
+      },
+    });
+
+    const provider = new ZwiftProvider();
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
+
+    expect(result.degradations).toEqual([
+      expect.objectContaining({
+        kind: "pagination_max_pages_exceeded",
+        providerId: "zwift",
+        stepName: "activity_list",
+      }),
+    ]);
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
   });
 });
 

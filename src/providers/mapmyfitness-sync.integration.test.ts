@@ -248,6 +248,45 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
     expect(result.errors).toHaveLength(0);
   });
 
+  it("reports degraded pagination and skips reconciliation when an empty page still has a next link", async () => {
+    await saveTokens(ctx.db, "mapmyfitness", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user_id:12345",
+    });
+
+    const page1Workouts = [
+      fakeWorkout({ id: "mmf-degraded-p1", start_datetime: "2026-04-01T08:00:00+00:00" }),
+    ];
+
+    server.use(
+      ...mapmyfitHandlers({
+        pages: [
+          { workouts: page1Workouts, hasNext: true },
+          { workouts: [], hasNext: true },
+        ],
+      }),
+    );
+
+    const provider = new MapMyFitnessProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-15T00:00:00Z") }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.degradations).toEqual([
+      expect.objectContaining({
+        kind: "pagination_empty_page_with_cursor",
+        providerId: "mapmyfitness",
+        stepName: "activity_list",
+      }),
+    ]);
+  });
+
   it("syncs workouts at the window end and skips workouts after it", async () => {
     await saveTokens(ctx.db, "mapmyfitness", {
       accessToken: "valid-token",

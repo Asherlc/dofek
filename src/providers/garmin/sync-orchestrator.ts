@@ -26,6 +26,7 @@ import { saveTokens } from "../../db/tokens.ts";
 import { isRetryableInfraError } from "../../lib/retryable-infra-error.ts";
 import { runWithSyncStepAdmission } from "../../lib/sync-step-admission-context.ts";
 import { logger } from "../../logger.ts";
+import type { SyncDegradation } from "../../sync/sync-degradation.ts";
 import { ProviderAuthenticationFailedError } from "../auth-errors.ts";
 import type { SyncRun } from "../sync-run.ts";
 import type { SyncError, SyncOptions, SyncResult } from "../types.ts";
@@ -42,11 +43,13 @@ import {
 import { planGarminSyncSteps } from "./sync-step-plan.ts";
 
 export const GARMIN_ACTIVITY_PAGE_SIZE = 50;
+const GARMIN_MAX_ACTIVITY_LIST_PAGES = 100;
 
 type GarminOrchestratorResult = {
   checkpoint: GarminSyncCheckpoint;
   recordsSynced: number;
   errors: SyncError[];
+  degradations: SyncDegradation[];
   complete: boolean;
   stopSync?: boolean;
 };
@@ -161,8 +164,13 @@ async function runActivitiesListStep(
   until: Date,
   checkpoint: GarminSyncCheckpoint,
   step: Extract<GarminSyncStep, { type: "activities_list" }>,
-): Promise<{ checkpoint: GarminSyncCheckpoint; recordsSynced: number }> {
+): Promise<{
+  checkpoint: GarminSyncCheckpoint;
+  recordsSynced: number;
+  degradations: SyncDegradation[];
+}> {
   const page = await client.getActivities(step.offset, GARMIN_ACTIVITY_PAGE_SIZE);
+  const degradations: SyncDegradation[] = [];
 
   let recordsSynced = 0;
   const presentActivityExternalIds = new Set(checkpoint.presentActivityExternalIds);
@@ -230,13 +238,32 @@ async function runActivitiesListStep(
     }
   }
 
-  const followUpSteps: GarminSyncStep[] =
-    page.length === GARMIN_ACTIVITY_PAGE_SIZE
-      ? [{ type: "activities_list", offset: step.offset + page.length }]
-      : [...detailSteps, { type: "activity_reconcile" }];
+  let followUpSteps: GarminSyncStep[];
+  if (
+    page.length === GARMIN_ACTIVITY_PAGE_SIZE &&
+    step.offset / GARMIN_ACTIVITY_PAGE_SIZE >= GARMIN_MAX_ACTIVITY_LIST_PAGES
+  ) {
+    degradations.push({
+      kind: "pagination_stalled",
+      providerId,
+      stepName: "activities_list",
+      message: "Garmin activity pagination exceeded the maximum offset guard",
+      context: {
+        offset: step.offset,
+        pageSize: GARMIN_ACTIVITY_PAGE_SIZE,
+      },
+    });
+    followUpSteps = detailSteps;
+  } else {
+    followUpSteps =
+      page.length === GARMIN_ACTIVITY_PAGE_SIZE
+        ? [{ type: "activities_list", offset: step.offset + page.length }]
+        : [...detailSteps, { type: "activity_reconcile" }];
+  }
 
   return {
     recordsSynced,
+    degradations,
     checkpoint: insertStepsAfterCurrent(
       {
         ...checkpoint,
@@ -553,12 +580,14 @@ async function runGarminSyncStep(
   fetchFn: typeof globalThis.fetch,
 ): Promise<GarminOrchestratorResult> {
   const errors: SyncError[] = [];
+  const degradations: SyncDegradation[] = [];
   const step = checkpoint.steps[checkpoint.stepIndex];
   if (!step) {
     return {
       checkpoint: { ...checkpoint, phase: "done" },
       recordsSynced: checkpoint.recordsSynced,
       errors,
+      degradations,
       complete: true,
     };
   }
@@ -578,6 +607,7 @@ async function runGarminSyncStep(
       checkpoint,
       recordsSynced: checkpoint.recordsSynced,
       errors,
+      degradations,
       complete: false,
       stopSync: true,
     };
@@ -600,6 +630,7 @@ async function runGarminSyncStep(
           step,
         );
         recordsSynced += outcome.recordsSynced;
+        degradations.push(...outcome.degradations);
         nextCheckpoint = outcome.checkpoint;
         break;
       }
@@ -714,6 +745,7 @@ async function runGarminSyncStep(
       checkpoint: nextCheckpoint,
       recordsSynced: nextCheckpoint.recordsSynced,
       errors,
+      degradations,
       complete: true,
     };
   }
@@ -722,6 +754,7 @@ async function runGarminSyncStep(
     checkpoint: nextCheckpoint,
     recordsSynced: nextCheckpoint.recordsSynced,
     errors,
+    degradations,
     complete: false,
   };
 }
@@ -751,6 +784,7 @@ export async function runGarminOrchestratedSync(
     );
 
   const errors: SyncError[] = [];
+  const degradations: SyncDegradation[] = [];
   let recordsSynced = checkpoint.recordsSynced;
 
   try {
@@ -772,6 +806,7 @@ export async function runGarminOrchestratedSync(
       checkpoint = outcome.checkpoint;
       recordsSynced = checkpoint.recordsSynced;
       errors.push(...outcome.errors);
+      degradations.push(...outcome.degradations);
       await checkpointStore?.save(checkpoint);
 
       if (outcome.stopSync || outcome.complete) {
@@ -782,6 +817,7 @@ export async function runGarminOrchestratedSync(
           provider: "garmin",
           recordsSynced,
           errors,
+          degradations,
           duration: Date.now() - startMs,
           continued: false,
         };
@@ -796,6 +832,7 @@ export async function runGarminOrchestratedSync(
         provider: "garmin",
         recordsSynced,
         errors,
+        degradations,
         duration: Date.now() - startMs,
         continued: true,
       };
@@ -811,6 +848,7 @@ export async function runGarminOrchestratedSync(
       provider: "garmin",
       recordsSynced,
       errors,
+      degradations,
       duration: Date.now() - startMs,
       continued: false,
     };

@@ -47,7 +47,11 @@ function fakeWorkout(overrides: Partial<WahooWorkout> = {}): WahooWorkout {
 const FIT_FIXTURE_PATH = resolve(import.meta.dirname, "../fit/fixtures/test.fit");
 const fitFileBuffer = readFileSync(FIT_FIXTURE_PATH);
 
-function wahooHandlers(workouts: WahooWorkout[], opts?: { fitFileError?: boolean }) {
+function wahooHandlers(
+  workouts: WahooWorkout[],
+  opts?: { fitFileError?: boolean; total?: number },
+) {
+  let workoutListCallCount = 0;
   return [
     // Token refresh
     http.post("https://api.wahooligan.com/oauth/token", () => {
@@ -69,10 +73,11 @@ function wahooHandlers(workouts: WahooWorkout[], opts?: { fitFileError?: boolean
 
     // Workout list
     http.get("https://api.wahooligan.com/v1/workouts", () => {
+      workoutListCallCount++;
       return HttpResponse.json({
-        workouts,
-        total: workouts.length,
-        page: 1,
+        workouts: workoutListCallCount === 1 ? workouts : [],
+        total: opts?.total ?? workouts.length,
+        page: workoutListCallCount,
         per_page: 30,
         order: "descending",
         sort: "starts",
@@ -263,6 +268,37 @@ describe("WahooProvider.sync() (integration)", () => {
     expect(speedSamples.length).toBeGreaterThan(0);
     // All records should be linked to the activity
     expect(metrics.every((sample) => sample.activityId === activityId)).toBe(true);
+  });
+
+  it("reports degraded pagination and skips reconciliation when totals imply another empty page", async () => {
+    await saveTokens(ctx.db, "wahoo", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user_read workouts_read",
+    });
+
+    const workouts = [fakeWorkout({ id: 9101, starts: "2026-04-01T10:00:00Z" })];
+    server.use(...wahooHandlers(workouts, { total: 61 }));
+
+    const provider = new WahooProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.degradations).toEqual([
+      expect.objectContaining({
+        kind: "pagination_empty_page_with_cursor",
+        providerId: "wahoo",
+        stepName: "activity_list",
+      }),
+    ]);
   });
 
   it("continues syncing if FIT file download fails", async () => {
