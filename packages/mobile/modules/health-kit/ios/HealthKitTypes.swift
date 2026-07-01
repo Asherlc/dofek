@@ -116,6 +116,9 @@ let backgroundDeliveryTypes: Set<HKSampleType> = {
 
     for type in readTypes {
         guard let sampleType = type as? HKSampleType else { continue }
+        #if os(iOS)
+        if sampleType is HKClinicalType { continue }
+        #endif
         types.insert(sampleType)
     }
 

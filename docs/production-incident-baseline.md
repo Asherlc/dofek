@@ -11372,3 +11372,35 @@ new incremental tables are populated.
 - **Remaining risk:** This fix must be shipped to mobile clients before it can
   resume device-originated Apple Health pushes. It does not alter WHOOP provider
   behavior.
+
+## 2026-07-01 — HealthKit background delivery fails for clinical record types
+
+- **Symptoms:** Sentry reported one production mobile error:
+  `The operation couldn’t be completed. Unable to acquire legacy assertion on
+  com.apple.HealthPrivacyService`.
+- **User impact:** Background HealthKit observer setup could fail on-device for
+  the affected user, preventing HealthKit background sync wakeups from being
+  registered.
+- **Evidence:** Sentry issue
+  [DOFEK-MOBILE-12](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-12)
+  was first and last seen on 2026-07-01 at 18:34:51 UTC in production on iOS
+  26.5. Sentry Seer identified `enableBackgroundDelivery` being called for
+  unsupported `HKClinicalType` values. Local code inspection confirmed
+  `backgroundDeliveryTypes` was built from every readable `HKSampleType`,
+  including iOS-only clinical records.
+- **Root cause:** `readTypes` correctly included clinical records for read
+  authorization, but `backgroundDeliveryTypes` reused all readable sample types
+  and passed clinical record types into `HKHealthStore.enableBackgroundDelivery`,
+  which does not support those types.
+- **Fix / mitigation:** Keep clinical records readable, but exclude
+  `HKClinicalType` from `backgroundDeliveryTypes` before registering HealthKit
+  background delivery.
+- **Validation:** Focused Swift validation passed with
+  `swift test --package-path packages/mobile/modules/health-kit`, and the
+  HealthKit Swift package compiled against the iOS Simulator SDK with
+  `xcodebuild -scheme HealthKitLib-Package -destination 'generic/platform=iOS Simulator' -sdk iphonesimulator build`.
+- **Remaining risk:** The SwiftPM tests execute on macOS, so they cannot
+  exercise the iOS-only clinical-record branch directly. The iOS Simulator SDK
+  build confirms the branch compiles, but runtime confirmation requires a
+  shipped mobile build on a device with HealthKit clinical record types
+  available.
