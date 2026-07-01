@@ -33,7 +33,7 @@
         "NSHealthUpdateUsageDescription": "Dofek writes dietary data back to Apple Health so your nutrition is tracked alongside activity data.",
         "NSHealthClinicalHealthRecordsShareUsageDescription": "Dofek reads your clinical health records (like lab results) to provide a complete picture of your health.",
         "NSMotionUsageDescription": "Dofek records accelerometer data to analyze movement patterns, detect activities, and provide fitness insights.",
-        "NSBluetoothAlwaysUsageDescription": "Dofek connects to your WHOOP strap via Bluetooth to record accelerometer data during workouts.",
+        "NSBluetoothAlwaysUsageDescription": "Dofek connects to Bluetooth fitness devices — such as heart-rate monitors and WHOOP straps — to record your heart rate and movement data during workouts.",
         "UIBackgroundModes": ["bluetooth-central", "fetch", "location"],
         "BGTaskSchedulerPermittedIdentifiers": ["com.dofek.accelerometer-refresh"],
         "LSSupportsOpeningDocumentsInPlace": false,
@@ -117,6 +117,10 @@
               {
                 "name": "ExpoWhoopBle",
                 "path": "../modules/whoop-ble/ios"
+              },
+              {
+                "name": "ExpoBleHeartRate",
+                "path": "../modules/ble-heart-rate/ios"
               }
             ]
           }
