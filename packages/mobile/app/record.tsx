@@ -150,7 +150,6 @@ export default function RecordScreen() {
 
       const heartRateService = createHeartRateRecordingService({
         ble: {
-          isAvailable: isHeartRateBluetoothAvailable,
           getDeviceId: () => heartRateDeviceRef.current?.id ?? null,
           peekBufferedSamples: () => peekHeartRateSamples(),
           confirmSamplesDrain: confirmHeartRateDrain,

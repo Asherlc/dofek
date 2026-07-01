@@ -22,13 +22,13 @@ final class BleHeartRateSampleBuffer {
 
     func append(_ sample: BleHeartRateSample) {
         lock.lock()
+        defer { lock.unlock() }
         samples.append(sample)
         if samples.count > Self.maxBufferSize {
             let overflow = samples.count - Self.maxBufferSize
             samples.removeFirst(overflow)
             overflowCount += 1
         }
-        lock.unlock()
     }
 
     func clearAll() {
@@ -57,13 +57,16 @@ final class BleHeartRateSampleBuffer {
         lock.unlock()
     }
 
-    private func serialize(_ samples: [BleHeartRateSample]) -> [[String: Any]] {
+    private static let isoFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
 
+    private func serialize(_ samples: [BleHeartRateSample]) -> [[String: Any]] {
         return samples.map { sample in
             [
-                "timestamp": formatter.string(from: sample.timestamp),
+                "timestamp": Self.isoFormatter.string(from: sample.timestamp),
                 "heartRateBpm": sample.heartRateBpm,
                 "rrIntervalsMs": sample.rrIntervalsMs,
             ]

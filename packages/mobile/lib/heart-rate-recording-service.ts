@@ -6,8 +6,7 @@ const UPLOAD_BATCH_SIZE = 5000;
 /** Abstraction over the BLE heart-rate module for activity recording. */
 export interface HeartRateBleDeps {
   /** Whether Bluetooth is available on the device. */
-  isAvailable(): boolean;
-  /** The connected monitor's peripheral ID, or null when not connected. */
+  /** The connected (or last-connected) monitor's peripheral ID, or null. */
   getDeviceId(): string | null;
   /** Peek all buffered heart-rate samples without removing them. */
   peekBufferedSamples(): Promise<BleHeartRateSample[]>;
@@ -48,45 +47,43 @@ export function createHeartRateRecordingService(
 
   return {
     async ensureRecording(): Promise<void> {
-      // The device card owns connecting the monitor. Discard anything buffered
-      // before this activity started so the upload reflects only the current
-      // recording window. Draining reads the local buffer and needs no active
-      // connection, so run it regardless of the current Bluetooth state.
-      for (;;) {
-        const stale = await ble.peekBufferedSamples();
-        if (stale.length === 0) break;
-        ble.confirmSamplesDrain(stale.length);
-      }
+      // No destructive drain here: syncForTimeRange filters by the activity
+      // window at save, so pre-recording samples are dropped there without
+      // racing against early in-window samples.
     },
 
-    async syncForTimeRange(_startedAt: string, endedAt: string): Promise<void> {
-      if (!ble.isAvailable()) return;
-
+    async syncForTimeRange(startedAt: string, endedAt: string): Promise<void> {
+      // Gate on buffer access (a known device), not on live radio state: the UI
+      // keeps the device ID after a disconnect so buffered samples still upload
+      // on save even when Bluetooth is off. Draining reads the local buffer and
+      // needs no active connection.
       const deviceId = ble.getDeviceId();
       if (!deviceId) return;
 
       // Samples are buffered in arrival (chronological) order. Drain page by
-      // page — uploading only samples within the activity window — and stop at
-      // the first sample past endedAt so a still-connected strap's live stream
-      // is not chased into this activity. Pre-window samples were cleared on
-      // start. The native peek returns a bounded page, so the loop also lets a
-      // long session upload every in-window sample rather than just the first
-      // page. Each page is committed only after its upload succeeds.
+      // page: drop everything at or before endedAt from the buffer, but upload
+      // only the samples within [startedAt, endedAt]. Stopping at the first
+      // sample past endedAt keeps a still-connected strap's live stream from
+      // being chased into this activity. The native peek returns a bounded
+      // page, so the loop also lets a long session upload every in-window
+      // sample rather than just the first page. Each page is committed only
+      // after its upload succeeds.
       for (;;) {
         const page = await ble.peekBufferedSamples();
         if (page.length === 0) break;
 
-        const inWindow = page.filter((sample) => sample.timestamp <= endedAt);
+        const drainable = page.filter((sample) => sample.timestamp <= endedAt);
+        const inWindow = drainable.filter((sample) => sample.timestamp >= startedAt);
         for (let offset = 0; offset < inWindow.length; offset += UPLOAD_BATCH_SIZE) {
           const batch = inWindow.slice(offset, offset + UPLOAD_BATCH_SIZE);
           await trpcClient.bleHeartRateSync.pushSamples.mutate({ deviceId, samples: batch });
         }
 
-        ble.confirmSamplesDrain(inWindow.length);
+        ble.confirmSamplesDrain(drainable.length);
 
-        // A shorter in-window slice means this page crossed endedAt — stop and
+        // A shorter drainable slice means this page crossed endedAt — stop and
         // leave the post-window samples buffered.
-        if (inWindow.length < page.length) break;
+        if (drainable.length < page.length) break;
       }
     },
   };

@@ -64,6 +64,10 @@ final class BleHeartRateConnectionManager: NSObject {
     ) {
         let manager = ensureCentralManager()
         bleQueue.async {
+            guard self.connectCompletion == nil else {
+                completion(.failure(.busy))
+                return
+            }
             self.connectCompletion = completion
             self.runOrDefer(.scan, manager: manager)
         }
@@ -76,6 +80,10 @@ final class BleHeartRateConnectionManager: NSObject {
     ) {
         let manager = ensureCentralManager()
         bleQueue.async {
+            guard self.connectCompletion == nil else {
+                completion(.failure(.busy))
+                return
+            }
             self.connectCompletion = completion
             self.runOrDefer(.connect(peripheralId), manager: manager)
         }
@@ -83,6 +91,10 @@ final class BleHeartRateConnectionManager: NSObject {
 
     func disconnect() {
         bleQueue.async {
+            // Settle any in-flight connect so its JS promise never hangs when
+            // the user cancels while scanning or mid-handshake.
+            let pendingConnect = self.connectCompletion
+            self.connectCompletion = nil
             self.pendingOperation = nil
             self.centralManager?.stopScan()
             if let peripheral = self.connectedPeripheral {
@@ -90,6 +102,7 @@ final class BleHeartRateConnectionManager: NSObject {
             }
             self.connectedPeripheral = nil
             self.state = .idle
+            pendingConnect?(.failure(.disconnected(nil)))
         }
     }
 

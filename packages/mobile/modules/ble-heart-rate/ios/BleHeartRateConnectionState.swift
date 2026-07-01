@@ -22,4 +22,6 @@ enum BleHeartRateConnectionError: Error {
     case notificationSubscriptionFailed
     /// The peripheral disconnected before the handshake completed.
     case disconnected(String?)
+    /// A connection attempt is already in flight.
+    case busy
 }

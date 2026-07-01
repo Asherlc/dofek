@@ -93,6 +93,8 @@ public class BleHeartRateModule: Module {
                 promise.reject("NO_NOTIFY", "Could not subscribe to heart-rate notifications")
             case .disconnected(let message):
                 promise.reject("DISCONNECTED", message ?? "Monitor disconnected")
+            case .busy:
+                promise.reject("BUSY", "A connection attempt is already in progress")
             }
         }
     }

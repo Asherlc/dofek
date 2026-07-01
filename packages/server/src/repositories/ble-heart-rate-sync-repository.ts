@@ -64,7 +64,9 @@ export class BleHeartRateSyncRepository {
       const rows: MetricStreamRowInput[] = [];
 
       for (const sample of batch) {
-        const recordedAt = canonicalizeTimestampForExternalId(sample.timestamp);
+        // Canonicalized only to build stable external IDs; the row's recordedAt
+        // keeps the raw sample timestamp.
+        const canonicalRecordedAt = canonicalizeTimestampForExternalId(sample.timestamp);
 
         // A strap reports 0 bpm before it detects a heartbeat — skip those so
         // we never store a misleading zero-bpm reading.
@@ -73,7 +75,7 @@ export class BleHeartRateSyncRepository {
             recordedAt: sample.timestamp,
             userId: this.#userId,
             providerId: BLE_HEART_RATE_PROVIDER_ID,
-            externalId: `${BLE_HEART_RATE_PROVIDER_ID}:${deviceId}:${HEART_RATE}:${recordedAt}`,
+            externalId: `${BLE_HEART_RATE_PROVIDER_ID}:${deviceId}:${HEART_RATE}:${canonicalRecordedAt}`,
             deviceId,
             sourceType: "ble",
             channel: HEART_RATE,
@@ -89,7 +91,7 @@ export class BleHeartRateSyncRepository {
             recordedAt: sample.timestamp,
             userId: this.#userId,
             providerId: BLE_HEART_RATE_PROVIDER_ID,
-            externalId: `${BLE_HEART_RATE_PROVIDER_ID}:${deviceId}:${RR_INTERVAL_MS}:${recordedAt}:${index}`,
+            externalId: `${BLE_HEART_RATE_PROVIDER_ID}:${deviceId}:${RR_INTERVAL_MS}:${canonicalRecordedAt}:${index}`,
             deviceId,
             sourceType: "ble",
             channel: RR_INTERVAL_MS,

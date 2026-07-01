@@ -48,7 +48,8 @@ export const bleHeartRateSyncRouter = router({
       logger.info("BLE heart-rate data pushed", {
         userId: ctx.userId,
         deviceId: input.deviceId,
-        sampleCount: inserted,
+        sampleCount: validSamples.length,
+        rowsInserted: inserted,
         filteredCount: input.samples.length - validSamples.length,
         firstTimestamp,
         lastTimestamp,

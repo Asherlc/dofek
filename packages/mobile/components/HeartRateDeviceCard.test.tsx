@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { HeartRateDeviceCard, type HeartRateDeviceCardProps } from "./HeartRateDeviceCard";
 
 const baseProps: HeartRateDeviceCardProps = {
@@ -50,5 +50,31 @@ describe("HeartRateDeviceCard", () => {
   it("prompts to enable Bluetooth when it is unavailable", () => {
     render(<HeartRateDeviceCard {...baseProps} bluetoothAvailable={false} />);
     expect(screen.getByText("Turn on Bluetooth to connect a heart-rate monitor.")).toBeTruthy();
+  });
+
+  it("invokes onConnect when the connect button is pressed", () => {
+    const onConnect = vi.fn();
+    render(<HeartRateDeviceCard {...baseProps} onConnect={onConnect} />);
+
+    fireEvent.click(screen.getByText("Connect Monitor"));
+
+    expect(onConnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("invokes onDisconnect when the disconnect button is pressed", () => {
+    const onDisconnect = vi.fn();
+    render(
+      <HeartRateDeviceCard
+        {...baseProps}
+        connectionState="connected"
+        deviceName="Polar H10"
+        liveBpm={142}
+        onDisconnect={onDisconnect}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Disconnect"));
+
+    expect(onDisconnect).toHaveBeenCalledTimes(1);
   });
 });
