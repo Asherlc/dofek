@@ -421,6 +421,58 @@ describe("WgerProvider.sync() (integration)", () => {
     expect(metricStreamCapture.publishedMetricStreamRows).toHaveLength(0);
   });
 
+  it("stops weight pagination when a page includes an entry before the sync window", async () => {
+    await saveTokens(ctx.db, "wger", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "read",
+    });
+
+    let weightCalls = 0;
+
+    server.use(
+      http.get("https://wger.de/api/v2/workoutsession/*", () => {
+        return HttpResponse.json({ count: 0, next: null, previous: null, results: [] });
+      }),
+      http.get("https://wger.de/api/v2/weightentry/*", () => {
+        weightCalls += 1;
+        if (weightCalls === 1) {
+          return HttpResponse.json({
+            count: 2,
+            next: "https://wger.de/api/v2/weightentry/?format=json&ordering=-date&offset=50&limit=50",
+            previous: null,
+            results: [
+              fakeWeightEntry({ id: 501, date: "2026-03-05", weight: "81.0" }),
+              fakeWeightEntry({ id: 502, date: "2026-01-15", weight: "80.0" }),
+            ],
+          });
+        }
+        return HttpResponse.json({
+          count: 1,
+          next: null,
+          previous: null,
+          results: [fakeWeightEntry({ id: 503, date: "2026-03-04", weight: "79.0" })],
+        });
+      }),
+    );
+
+    const provider = new WgerProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(1);
+    expect(weightCalls).toBe(1);
+    expect(metricStreamCapture.publishedMetricStreamRows).toHaveLength(1);
+    expect(metricStreamCapture.publishedMetricStreamRows[0]?.externalId).toBe("501");
+  });
+
   it("stops pagination when session date is before since", async () => {
     await saveTokens(ctx.db, "wger", {
       accessToken: "valid-token",

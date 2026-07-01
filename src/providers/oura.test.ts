@@ -7,7 +7,6 @@ import {
   sleepSession as sleepSessionTable,
 } from "../db/schema/activity.ts";
 import { healthEvent as healthEventTable } from "../db/schema/clinical.ts";
-import { logger } from "../logger.ts";
 import { OuraClient } from "./oura/client.ts";
 import { ouraOAuthConfig } from "./oura/oauth.ts";
 import { fetchOuraPages, fetchOuraPagesOptional } from "./oura/pagination.ts";

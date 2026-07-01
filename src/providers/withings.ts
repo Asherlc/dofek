@@ -8,9 +8,9 @@ import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
-import { fetchProviderPages } from "../sync/pagination.ts";
 import { isRetryableInfraError } from "../lib/retryable-infra-error.ts";
 import { logger } from "../logger.ts";
+import { fetchProviderPages } from "../sync/pagination.ts";
 import { ProviderAuthenticationFailedError, RefreshTokenRevokedError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type {
@@ -493,7 +493,9 @@ export class WithingsProvider implements WebhookProvider {
                 response = await client.getMeas(sinceUnix, nowUnix, offset ?? 0);
               } catch (err) {
                 if (!refreshedAfterAccessTokenRejection && isWithingsAccessTokenRejected(err)) {
-                  logger.info("[withings] Access token rejected by API, refreshing and retrying...");
+                  logger.info(
+                    "[withings] Access token rejected by API, refreshing and retrying...",
+                  );
                   tokens = await this.#refreshTokens(db, tokens);
                   client = new WithingsClient(tokens.accessToken, this.#fetchFn);
                   refreshedAfterAccessTokenRejection = true;

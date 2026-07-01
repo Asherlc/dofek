@@ -295,8 +295,7 @@ export class WgerProvider implements SyncProvider {
                 nextCursor: data.next,
               };
             },
-            shouldStopAfterPage: (page) =>
-              page.items.some((entry) => new Date(entry.date) < since),
+            shouldStopAfterPage: (page) => page.items.some((entry) => new Date(entry.date) < since),
           });
 
           for (const raw of pageResult.items) {
@@ -319,7 +318,7 @@ export class WgerProvider implements SyncProvider {
                 ],
                 SOURCE_TYPE_API,
                 undefined,
-                options?.metricStreamPublisher,
+                options.metricStreamPublisher,
               );
               count++;
             } catch (err) {
