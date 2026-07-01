@@ -68,6 +68,7 @@ export async function syncSleep(context: SyncStepContext): Promise<number> {
                 awakeMinutes: parsed.awakeMinutes,
                 efficiencyPct: parsed.efficiencyPct,
                 sleepType: parsed.sleepType,
+                isNap: parsed.isNap,
               })
               .onConflictDoUpdate({
                 target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
@@ -81,6 +82,7 @@ export async function syncSleep(context: SyncStepContext): Promise<number> {
                   awakeMinutes: parsed.awakeMinutes,
                   efficiencyPct: parsed.efficiencyPct,
                   sleepType: parsed.sleepType,
+                  isNap: parsed.isNap,
                 },
               });
             count++;

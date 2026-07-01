@@ -246,6 +246,7 @@ export const sleepSession = fitness.table(
     awakeMinutes: integer("awake_minutes"),
     efficiencyPct: real("efficiency_pct"),
     sleepType: text("sleep_type"),
+    isNap: boolean("is_nap").notNull().default(false),
     sleepNeedBaselineMinutes: integer("sleep_need_baseline_minutes"),
     sleepNeedFromDebtMinutes: integer("sleep_need_from_debt_minutes"),
     sleepNeedFromStrainMinutes: integer("sleep_need_from_strain_minutes"),

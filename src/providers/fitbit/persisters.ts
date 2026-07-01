@@ -92,6 +92,7 @@ export async function persistSleep(db: SyncDatabase, parsed: ParsedFitbitSleep):
       awakeMinutes: parsed.awakeMinutes,
       efficiencyPct: parsed.efficiencyPct,
       sleepType: parsed.sleepType,
+      isNap: parsed.isNap,
     })
     .onConflictDoUpdate({
       target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
@@ -105,6 +106,7 @@ export async function persistSleep(db: SyncDatabase, parsed: ParsedFitbitSleep):
         awakeMinutes: parsed.awakeMinutes,
         efficiencyPct: parsed.efficiencyPct,
         sleepType: parsed.sleepType,
+        isNap: parsed.isNap,
       },
     });
 }

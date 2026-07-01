@@ -53,6 +53,7 @@ export function buildPostgresFitnessRawTableStatements(): string[] {
   awake_minutes Nullable(Int32),
   efficiency_pct Nullable(Float32),
   sleep_type Nullable(String),
+  is_nap Bool DEFAULT false,
   sleep_need_baseline_minutes Nullable(Int32),
   sleep_need_from_debt_minutes Nullable(Int32),
   sleep_need_from_strain_minutes Nullable(Int32),
