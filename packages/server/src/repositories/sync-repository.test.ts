@@ -539,7 +539,7 @@ describe("SyncRepository", () => {
       expect(query).toHaveBeenCalledWith(
         expect.anything(),
         expect.stringContaining("FROM ingest.metric_stream"),
-        { userId: "user-1", providerIds: ["whoop_ble"] },
+        { userId: "user-1", providerIds: ["whoop_ble", "ble_heart_rate"] },
       );
       expect(query.mock.calls[0]?.[1]).toContain("FINAL");
     });

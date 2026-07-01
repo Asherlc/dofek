@@ -4,6 +4,8 @@ enum BleHeartRateConnectionState: String {
     case scanning
     case connecting
     case discoveringServices
+    /// Characteristic found; waiting for the notify subscription to be confirmed.
+    case subscribing
     case ready
 }
 
@@ -16,4 +18,8 @@ enum BleHeartRateConnectionError: Error {
     case connectTimeout
     case serviceNotFound
     case characteristicNotFound
+    /// `setNotifyValue` failed, so no live measurements would arrive.
+    case notificationSubscriptionFailed
+    /// The peripheral disconnected before the handshake completed.
+    case disconnected(String?)
 }

@@ -216,11 +216,12 @@ export function createActivityRecorder(
           })),
         });
 
-        // Sync sensor data for the activity window (best-effort)
+        // Sync sensor data for the activity window (best-effort — don't fail
+        // the activity save, but surface the failure to telemetry)
         try {
           await sensorService?.syncForTimeRange(startedAt, endedAt);
-        } catch {
-          // Best-effort — don't fail the activity save
+        } catch (error) {
+          captureException(error, { source: "activity-recording.syncForTimeRange" });
         }
 
         state = "idle";

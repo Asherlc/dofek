@@ -50,6 +50,12 @@ final class BleHeartRateConnectionManager: NSObject {
         ensureCentralManager().state == .poweredOn
     }
 
+    /// Thread-safe read of the current state. `state` is mutated on `bleQueue`,
+    /// so JS-thread reads go through the queue to avoid a data race.
+    var currentStateValue: String {
+        bleQueue.sync { state.rawValue }
+    }
+
     // MARK: - Scan + connect
 
     /// Scan for a heart-rate strap and connect to the first one found.
@@ -149,7 +155,11 @@ final class BleHeartRateConnectionManager: NSObject {
         manager.connect(peripheral, options: nil)
 
         bleQueue.asyncAfter(deadline: .now() + Self.connectTimeoutSeconds) {
-            guard self.state == .connecting || self.state == .discoveringServices else { return }
+            guard
+                self.state == .connecting
+                    || self.state == .discoveringServices
+                    || self.state == .subscribing
+            else { return }
             manager.cancelPeripheralConnection(peripheral)
             self.state = .idle
             self.failPendingConnect(with: .connectTimeout)
@@ -160,6 +170,18 @@ final class BleHeartRateConnectionManager: NSObject {
         let completion = connectCompletion
         connectCompletion = nil
         completion?(.failure(error))
+    }
+
+    /// Tear down a half-open connection after a failed handshake so CoreBluetooth
+    /// does not stay connected to a strap this manager considers idle.
+    private func abortConnection(
+        _ peripheral: CBPeripheral,
+        with error: BleHeartRateConnectionError
+    ) {
+        centralManager?.cancelPeripheralConnection(peripheral)
+        connectedPeripheral = nil
+        state = .idle
+        failPendingConnect(with: error)
     }
 
     private func device(for peripheral: CBPeripheral) -> BleHeartRateDevice {
@@ -219,8 +241,14 @@ extension BleHeartRateConnectionManager: CBCentralManagerDelegate {
         didDisconnectPeripheral peripheral: CBPeripheral,
         error: Error?
     ) {
+        // If the drop happened mid-handshake, fail the pending connect with a
+        // typed error rather than letting it wait out the connect timeout.
+        let wasConnecting = connectCompletion != nil
         state = .idle
         connectedPeripheral = nil
+        if wasConnecting {
+            failPendingConnect(with: .disconnected(error?.localizedDescription))
+        }
         delegate?.connectionManagerDidDisconnect(
             self,
             peripheralId: peripheral.identifier.uuidString,
@@ -238,8 +266,7 @@ extension BleHeartRateConnectionManager: CBPeripheralDelegate {
                 $0.uuid == BleHeartRateConstants.heartRateServiceUUID
             })
         else {
-            state = .idle
-            failPendingConnect(with: .serviceNotFound)
+            abortConnection(peripheral, with: .serviceNotFound)
             return
         }
         peripheral.discoverCharacteristics(
@@ -258,14 +285,30 @@ extension BleHeartRateConnectionManager: CBPeripheralDelegate {
                 $0.uuid == BleHeartRateConstants.heartRateMeasurementUUID
             })
         else {
-            state = .idle
-            failPendingConnect(with: .characteristicNotFound)
+            abortConnection(peripheral, with: .characteristicNotFound)
             return
         }
 
+        // Don't declare the connection ready until the subscription is confirmed
+        // in didUpdateNotificationStateFor — otherwise a failed setNotifyValue
+        // would leave callers "connected" with no live data and no retry path.
+        state = .subscribing
         peripheral.setNotifyValue(true, for: characteristic)
-        state = .ready
+    }
 
+    func peripheral(
+        _ peripheral: CBPeripheral,
+        didUpdateNotificationStateFor characteristic: CBCharacteristic,
+        error: Error?
+    ) {
+        guard characteristic.uuid == BleHeartRateConstants.heartRateMeasurementUUID else { return }
+
+        if error != nil || !characteristic.isNotifying {
+            abortConnection(peripheral, with: .notificationSubscriptionFailed)
+            return
+        }
+
+        state = .ready
         let connectedDevice = device(for: peripheral)
         let completion = connectCompletion
         connectCompletion = nil

@@ -43,7 +43,7 @@ public class BleHeartRateModule: Module {
         }
 
         Function("getConnectionState") { () -> String in
-            self.connectionManager.state.rawValue
+            self.connectionManager.currentStateValue
         }
 
         Function("getBufferedSampleCount") { () -> Int in
@@ -70,7 +70,9 @@ public class BleHeartRateModule: Module {
         switch result {
         case .success(let device):
             // Bridge a nil name to an explicit null so JS sees `name: null`.
-            promise.resolve(["id": device.id, "name": device.name ?? NSNull()])
+            var payload: [String: Any] = ["id": device.id]
+            payload["name"] = device.name.map { $0 as Any } ?? NSNull()
+            promise.resolve(payload)
         case .failure(let error):
             switch error {
             case .bluetoothUnavailable:
@@ -87,6 +89,10 @@ public class BleHeartRateModule: Module {
                 promise.reject("NO_SERVICE", "Heart Rate Service not found")
             case .characteristicNotFound:
                 promise.reject("NO_CHARACTERISTIC", "Heart Rate Measurement characteristic not found")
+            case .notificationSubscriptionFailed:
+                promise.reject("NO_NOTIFY", "Could not subscribe to heart-rate notifications")
+            case .disconnected(let message):
+                promise.reject("DISCONNECTED", message ?? "Monitor disconnected")
             }
         }
     }

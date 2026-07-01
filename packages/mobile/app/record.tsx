@@ -183,7 +183,8 @@ export default function RecordScreen() {
     });
     const connectionSubscription = addHeartRateConnectionListener((event) => {
       if (event.state === "disconnected") {
-        heartRateDeviceRef.current = null;
+        // Keep heartRateDeviceRef so samples captured before the drop still
+        // upload under their device on save; only reset the visible state.
         setHeartRateDevice(null);
         setLiveBpm(null);
       }
@@ -215,7 +216,7 @@ export default function RecordScreen() {
 
   const handleDisconnectHeartRate = useCallback(() => {
     disconnectHeartRate();
-    heartRateDeviceRef.current = null;
+    // Keep heartRateDeviceRef so any buffered samples still upload on save.
     setHeartRateDevice(null);
     setLiveBpm(null);
   }, []);

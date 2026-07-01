@@ -51,13 +51,18 @@ enum BleHeartRateMeasurementParser {
         }
 
         // Energy Expended is a UInt16 we skip — it is a derived cumulative value,
-        // not raw data we store.
+        // not raw data we store. Reject a truncated packet that claims the field
+        // but lacks the bytes, since skipping would misalign R-R parsing.
         if hasEnergyExpended {
+            guard offset + 2 <= bytes.count else { return nil }
             offset += 2
         }
 
         var rrIntervalsMs: [Int] = []
         if hasRrIntervals {
+            // R-R intervals come in whole UInt16s; a stray trailing byte means a
+            // malformed notification, so reject it rather than emit partial data.
+            guard (bytes.count - offset).isMultiple(of: 2) else { return nil }
             while offset + 1 < bytes.count {
                 let rawUnits = Int(bytes[offset]) | (Int(bytes[offset + 1]) << 8)
                 offset += 2

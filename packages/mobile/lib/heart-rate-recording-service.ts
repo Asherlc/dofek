@@ -48,8 +48,16 @@ export function createHeartRateRecordingService(
 
   return {
     async ensureRecording(): Promise<void> {
-      // The device card owns connecting the monitor; buffering begins as soon
-      // as it is connected, so there is nothing to start here.
+      // The device card owns connecting the monitor. Discard anything buffered
+      // before this activity started so the upload reflects only the current
+      // recording window rather than stale pre-recording readings.
+      if (!ble.isAvailable()) return;
+
+      for (;;) {
+        const stale = await ble.peekBufferedSamples();
+        if (stale.length === 0) break;
+        ble.confirmSamplesDrain(stale.length);
+      }
     },
 
     async syncForTimeRange(_startedAt: string, _endedAt: string): Promise<void> {
@@ -58,15 +66,21 @@ export function createHeartRateRecordingService(
       const deviceId = ble.getDeviceId();
       if (!deviceId) return;
 
-      const samples = await ble.peekBufferedSamples();
-      if (samples.length === 0) return;
+      // The native peek returns a bounded page, so drain repeatedly until the
+      // buffer is empty — otherwise a long session would upload only the first
+      // page and leave the rest buffered. Each page is committed only after its
+      // upload succeeds, so a failure mid-drain leaves the remainder for retry.
+      for (;;) {
+        const samples = await ble.peekBufferedSamples();
+        if (samples.length === 0) break;
 
-      for (let offset = 0; offset < samples.length; offset += UPLOAD_BATCH_SIZE) {
-        const batch = samples.slice(offset, offset + UPLOAD_BATCH_SIZE);
-        await trpcClient.bleHeartRateSync.pushSamples.mutate({ deviceId, samples: batch });
+        for (let offset = 0; offset < samples.length; offset += UPLOAD_BATCH_SIZE) {
+          const batch = samples.slice(offset, offset + UPLOAD_BATCH_SIZE);
+          await trpcClient.bleHeartRateSync.pushSamples.mutate({ deviceId, samples: batch });
+        }
+
+        ble.confirmSamplesDrain(samples.length);
       }
-
-      ble.confirmSamplesDrain(samples.length);
     },
   };
 }

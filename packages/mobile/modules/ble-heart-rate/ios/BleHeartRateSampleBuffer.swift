@@ -41,7 +41,9 @@ final class BleHeartRateSampleBuffer {
     /// Call `confirmDrain(count:)` after a successful upload to remove them.
     func peekSamples(maxCount: Int = 1000) -> [[String: Any]] {
         lock.lock()
-        let peekCount = min(maxCount, samples.count)
+        // Clamp to a non-negative count so a negative bridge argument yields an
+        // empty batch rather than trapping in `prefix`.
+        let peekCount = max(0, min(maxCount, samples.count))
         let peeked = Array(samples.prefix(peekCount))
         lock.unlock()
         return serialize(peeked)
@@ -50,7 +52,7 @@ final class BleHeartRateSampleBuffer {
     /// Remove the first `count` samples from the buffer after a successful upload.
     func confirmDrain(count: Int) {
         lock.lock()
-        let removeCount = min(count, samples.count)
+        let removeCount = max(0, min(count, samples.count))
         samples.removeFirst(removeCount)
         lock.unlock()
     }

@@ -45,6 +45,18 @@ final class BleHeartRateMeasurementParserTests: XCTestCase {
         XCTAssertEqual(measurement?.rrIntervalsMs, [977])
     }
 
+    func testReturnsNilWhenEnergyExpendedFieldIsTruncated() {
+        // flags 0x08 (energy expended present), bpm 60, but only one energy byte.
+        let data = Data([0x08, 0x3C, 0xF4])
+        XCTAssertNil(BleHeartRateMeasurementParser.parse(data))
+    }
+
+    func testReturnsNilForOddTrailingRrByte() {
+        // flags 0x10 (RR present), bpm 60, then 3 bytes (one and a half UInt16s).
+        let data = Data([0x10, 0x3C, 0x00, 0x04, 0x00])
+        XCTAssertNil(BleHeartRateMeasurementParser.parse(data))
+    }
+
     func testReturnsNilForEmptyData() {
         XCTAssertNil(BleHeartRateMeasurementParser.parse(Data()))
     }
