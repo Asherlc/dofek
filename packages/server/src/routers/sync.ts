@@ -8,8 +8,8 @@ import {
   getImportQueue,
   getProviderSyncQueue,
   IMPORT_QUEUE,
-  providerSyncQueueName,
   type ImportJobData,
+  providerSyncQueueName,
   type SyncJobData,
 } from "dofek/jobs/queues";
 import { syncWindowFromTriggerInput, syncWindowToJobData } from "dofek/jobs/sync-window";

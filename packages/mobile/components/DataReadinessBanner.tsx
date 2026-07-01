@@ -90,9 +90,7 @@ export function DataReadinessBanner({
 
   return (
     <View style={[styles.banner, stylesByStatus[data.overallStatus]]}>
-      <Text style={[styles.heading, isDarkBanner && styles.lightText]}>
-        {bannerHeading(data)}
-      </Text>
+      <Text style={[styles.heading, isDarkBanner && styles.lightText]}>{bannerHeading(data)}</Text>
       {relevantDatasets.map((dataset) => {
         const isDatasetDark =
           dataset.status === "syncing" ||
