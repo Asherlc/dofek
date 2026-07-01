@@ -184,6 +184,8 @@ describe("fetchProviderPages", () => {
 
     expect(result.items).toEqual(["old-workout"]);
     expect(result.degradations).toEqual([]);
+    expect(result.pagesFetched).toBe(1);
+    expect(result.finalCursor).toBe("page-2");
     expect(result.completed).toBe(true);
     expect(result.stoppedByProviderRule).toBe(true);
   });
