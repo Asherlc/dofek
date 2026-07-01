@@ -170,7 +170,13 @@ export default function RecordScreen() {
 
   // Track Bluetooth availability + live heart-rate measurements for the UI.
   useEffect(() => {
+    // CoreBluetooth reports its state asynchronously — the central is `.unknown`
+    // for a moment after launch — so poll until it settles rather than reading
+    // a single (usually stale-false) value on mount.
     setBluetoothAvailable(isHeartRateBluetoothAvailable());
+    const availabilityInterval = setInterval(() => {
+      setBluetoothAvailable(isHeartRateBluetoothAvailable());
+    }, 2000);
 
     const measurementSubscription = addHeartRateListener((event) => {
       setLiveBpm(event.heartRateBpm);
@@ -184,6 +190,7 @@ export default function RecordScreen() {
     });
 
     return () => {
+      clearInterval(availabilityInterval);
       measurementSubscription.remove();
       connectionSubscription.remove();
     };
