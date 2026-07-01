@@ -3,9 +3,12 @@ import Foundation
 private final class PeekConfirmDrainCursor {
     private var headSequence: UInt64 = 0
     private var lastPeekBaseSequence: UInt64 = 0
+    private var hasInFlightPeek = false
 
     func recordPeek() {
+        guard !hasInFlightPeek else { return }
         lastPeekBaseSequence = headSequence
+        hasInFlightPeek = true
     }
 
     func recordHeadRemoval(count: Int) {
@@ -15,6 +18,10 @@ private final class PeekConfirmDrainCursor {
 
     func confirmRemovalCount(requestedCount: Int, bufferedCount: Int) -> Int {
         let requestedCount = max(0, requestedCount)
+        defer { hasInFlightPeek = false }
+        guard hasInFlightPeek else {
+            return min(requestedCount, bufferedCount)
+        }
         let evictedSincePeek = headSequence - lastPeekBaseSequence
         guard evictedSincePeek < UInt64(requestedCount) else { return 0 }
         return min(requestedCount - Int(evictedSincePeek), bufferedCount)

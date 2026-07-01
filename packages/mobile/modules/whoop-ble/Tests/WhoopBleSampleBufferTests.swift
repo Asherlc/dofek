@@ -357,41 +357,38 @@ final class WhoopBleSampleBufferTests: XCTestCase {
         XCTAssertEqual(remaining.first?["rrIntervalMs"] as? Int, 905)
     }
 
+    func testSecondRealtimePeekDoesNotResetInflightDrainCursorAfterOverflow() {
+        buffer.appendRealtimeData(makeRealtimeSamplesForOverflow(count: 86_400, startingAt: 0))
+        let uploadPage = buffer.peekRealtimeData(maxCount: 5)
+        XCTAssertEqual(uploadPage.map { $0["rrIntervalMs"] as? Int }, [900, 901, 902, 903, 904])
+        buffer.appendRealtimeData(makeRealtimeSamplesForOverflow(count: 3, startingAt: 86_400))
+        let previewPage = buffer.peekRealtimeData(maxCount: 1)
+        XCTAssertEqual(previewPage.first?["rrIntervalMs"] as? Int, 903)
+        buffer.confirmRealtimeDataDrain(count: 5)
+        let remaining = buffer.peekRealtimeData(maxCount: 1)
+        XCTAssertEqual(remaining.first?["rrIntervalMs"] as? Int, 905)
+    }
+
     func testPeekThenConfirmFullCycle() {
         buffer.appendImuSamples(makeImuSamples(count: 10))
-
-        // Peek 5
         let batch1 = buffer.peekImuSamples(maxCount: 5)
         XCTAssertEqual(batch1.count, 5)
         XCTAssertEqual(buffer.imuSampleCount, 10)
-
-        // Confirm 5
         buffer.confirmImuDrain(count: 5)
         XCTAssertEqual(buffer.imuSampleCount, 5)
-
-        // Peek remaining
         let batch2 = buffer.peekImuSamples(maxCount: 10)
         XCTAssertEqual(batch2.count, 5)
-
-        // Confirm remaining
         buffer.confirmImuDrain(count: 5)
         XCTAssertEqual(buffer.imuSampleCount, 0)
     }
 
     func testPeekWithoutConfirmRetainsSamplesForRetry() {
         buffer.appendImuSamples(makeImuSamples(count: 5))
-
-        // Simulate upload attempt: peek, then "fail" (don't confirm)
         let attempt1 = buffer.peekImuSamples(maxCount: 5)
         XCTAssertEqual(attempt1.count, 5)
-        // No confirm — simulating upload failure
-
-        // Retry: peek again, same samples should be there
         let attempt2 = buffer.peekImuSamples(maxCount: 5)
         XCTAssertEqual(attempt2.count, 5)
         XCTAssertEqual(buffer.imuSampleCount, 5)
-
-        // Now "succeed" and confirm
         buffer.confirmImuDrain(count: 5)
         XCTAssertEqual(buffer.imuSampleCount, 0)
     }
@@ -401,12 +398,8 @@ final class WhoopBleSampleBufferTests: XCTestCase {
 
         let peeked = buffer.peekImuSamples(maxCount: 3)
         XCTAssertEqual(peeked.count, 3)
-
-        // New samples arrive while first batch is unconfirmed
         buffer.appendImuSamples(makeImuSamples(count: 2))
         XCTAssertEqual(buffer.imuSampleCount, 5)
-
-        // Confirm the original 3
         buffer.confirmImuDrain(count: 3)
         XCTAssertEqual(buffer.imuSampleCount, 2)
     }

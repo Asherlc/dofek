@@ -96,6 +96,28 @@ final class BleHeartRateSampleBufferTests: XCTestCase {
         XCTAssertEqual(remaining.first?["heartRateBpm"] as? Int, 5)
     }
 
+    func testSecondPeekDoesNotResetInflightDrainCursorAfterOverflow() {
+        let buffer = BleHeartRateSampleBuffer()
+        for index in 0..<86_400 {
+            buffer.append(sample(bpm: index))
+        }
+
+        let uploadPage = buffer.peekSamples(maxCount: 5)
+        XCTAssertEqual(uploadPage.map { $0["heartRateBpm"] as? Int }, [0, 1, 2, 3, 4])
+
+        for index in 86_400..<86_403 {
+            buffer.append(sample(bpm: index))
+        }
+
+        let previewPage = buffer.peekSamples(maxCount: 1)
+        XCTAssertEqual(previewPage.first?["heartRateBpm"] as? Int, 3)
+
+        buffer.confirmDrain(count: 5)
+
+        let remaining = buffer.peekSamples(maxCount: 1)
+        XCTAssertEqual(remaining.first?["heartRateBpm"] as? Int, 5)
+    }
+
     func testClearAllEmptiesBuffer() {
         let buffer = BleHeartRateSampleBuffer()
         buffer.append(sample(bpm: 60))

@@ -786,6 +786,40 @@ describe("realtime data (beat interval + quaternion) sync", () => {
     expect(whoopDeps.confirmRealtimeDataDrain).toHaveBeenCalledWith(3);
   });
 
+  it("uses the fallback device id for blank native realtime device ids", async () => {
+    vi.mocked(whoopDeps.peekBufferedRealtimeData)
+      .mockResolvedValueOnce([
+        {
+          deviceId: "  ",
+          timestamp: "2026-03-30T12:00:00.000Z",
+          quaternionW: 1,
+          quaternionX: 0,
+          quaternionY: 0,
+          quaternionZ: 0,
+          rrIntervalMs: 833,
+          opticalRawHex: "111111111111111111111111111111111111",
+        },
+      ])
+      .mockResolvedValue([]);
+
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
+
+    expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenCalledWith({
+      deviceId: "WHOOP Strap",
+      samples: [
+        {
+          timestamp: "2026-03-30T12:00:00.000Z",
+          quaternionW: 1,
+          quaternionX: 0,
+          quaternionY: 0,
+          quaternionZ: 0,
+          rrIntervalMs: 833,
+          opticalRawHex: "111111111111111111111111111111111111",
+        },
+      ],
+    });
+  });
+
   it("requests bounded realtime batches from the native buffer", async () => {
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
 

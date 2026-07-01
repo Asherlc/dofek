@@ -16,7 +16,7 @@ export class DeviceSampleGroups<InputSample extends DeviceScopedSample, UploadSa
   }
 
   add(sample: InputSample): void {
-    const deviceId = sample.deviceId ?? this.#fallbackDeviceId;
+    const deviceId = sample.deviceId?.trim() || this.#fallbackDeviceId;
     if (!deviceId) {
       throw new Error("Buffered sample is missing deviceId");
     }
