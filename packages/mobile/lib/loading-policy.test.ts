@@ -31,6 +31,16 @@ describe("shouldShowBlockingLoading", () => {
     ).toBe(true);
   });
 
+  it("shows blocking loading for an empty array on the first request", () => {
+    expect(
+      shouldShowBlockingLoading({
+        data: [],
+        isLoading: true,
+        isFetching: true,
+      }),
+    ).toBe(true);
+  });
+
   it("shows blocking loading when an empty query is fetching for the first time", () => {
     expect(
       shouldShowBlockingLoading({

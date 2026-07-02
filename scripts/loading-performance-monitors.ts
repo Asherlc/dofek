@@ -1,20 +1,30 @@
 export type LoadingPerformanceMonitorType = "Threshold" | "MatchEvent";
 
-export interface LoadingPerformanceMonitorSpec {
+interface BaseLoadingPerformanceMonitorSpec {
   id: string;
   name: string;
-  type: LoadingPerformanceMonitorType;
   aplQuery: string;
   rangeMinutes: number;
   intervalMinutes: number;
-  operator?: "Above";
-  threshold?: number;
-  notifyByGroup?: boolean;
-  triggerAfterNPositiveResults?: number;
-  triggerFromNRuns?: number;
   owner: string;
   response: string;
 }
+
+interface ThresholdLoadingPerformanceMonitorSpec {
+  type: "Threshold";
+  operator: "Above";
+  threshold: number;
+  notifyByGroup?: boolean;
+  triggerAfterNPositiveResults?: number;
+  triggerFromNRuns?: number;
+}
+
+interface MatchEventLoadingPerformanceMonitorSpec {
+  type: "MatchEvent";
+}
+
+export type LoadingPerformanceMonitorSpec = BaseLoadingPerformanceMonitorSpec &
+  (ThresholdLoadingPerformanceMonitorSpec | MatchEventLoadingPerformanceMonitorSpec);
 
 const dataset = "dofek-logs";
 
