@@ -46,6 +46,7 @@ describe("DataReadinessBanner", () => {
     render(<DataReadinessBanner data={makeSnapshot()} />);
 
     expect(screen.getByText("Data pipeline needs attention")).toBeTruthy();
+    expect(screen.getByText("Last checked 2026-06-30 08:00 UTC")).toBeTruthy();
     expect(screen.getByText("Activities")).toBeTruthy();
     expect(
       screen.getByText("Activities data is available, but ClickHouse mirrors are not current."),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bannerHeading } from "./data-readiness-banner.ts";
+import { bannerHeading, freshnessLabel } from "./data-readiness-banner.ts";
 
 describe("bannerHeading", () => {
   it("returns non-syncing headings from overall status", () => {
@@ -32,5 +32,13 @@ describe("bannerHeading", () => {
 
   it("returns an empty heading for healthy status", () => {
     expect(bannerHeading({ overallStatus: "healthy" })).toBe("");
+  });
+});
+
+describe("freshnessLabel", () => {
+  it("formats the server-generated timestamp in UTC", () => {
+    expect(
+      freshnessLabel({ overallStatus: "stale", generatedAt: "2026-06-30T08:00:00.000Z" }),
+    ).toBe("Last checked 2026-06-30 08:00 UTC");
   });
 });

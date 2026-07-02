@@ -2,6 +2,7 @@ export type DataReadinessStatus = "healthy" | "syncing" | "stale" | "missing" | 
 
 export interface DataReadinessBannerSnapshot {
   overallStatus: DataReadinessStatus;
+  generatedAt?: string;
   syncingProviders?: Array<{ name: string }>;
 }
 
@@ -36,4 +37,17 @@ export function bannerHeading(data: DataReadinessBannerSnapshot): string {
     default:
       return "";
   }
+}
+
+export function freshnessLabel(data: DataReadinessBannerSnapshot): string {
+  if (!data.generatedAt) return "";
+
+  const generatedAt = new Date(data.generatedAt);
+  const year = generatedAt.getUTCFullYear();
+  const month = String(generatedAt.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(generatedAt.getUTCDate()).padStart(2, "0");
+  const hour = String(generatedAt.getUTCHours()).padStart(2, "0");
+  const minute = String(generatedAt.getUTCMinutes()).padStart(2, "0");
+
+  return `Last checked ${year}-${month}-${day} ${hour}:${minute} UTC`;
 }
