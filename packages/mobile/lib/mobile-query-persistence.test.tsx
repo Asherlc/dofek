@@ -1,29 +1,8 @@
 import { QUERY_CACHE_MAX_AGE_MS } from "@dofek/scoring/query-cache";
 import { dehydrate, QueryClient } from "@tanstack/react-query";
 import { persistQueryClientRestore } from "@tanstack/react-query-persist-client";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { createMobileQueryPersister, removeMobileQueryCache } from "./mobile-query-persistence";
-
-vi.mock("@react-native-async-storage/async-storage", () => {
-  const values = new Map<string, string>();
-  return {
-    default: {
-      getItem: vi.fn((key: string) => Promise.resolve(values.get(key) ?? null)),
-      setItem: vi.fn((key: string, value: string) => {
-        values.set(key, value);
-        return Promise.resolve();
-      }),
-      removeItem: vi.fn((key: string) => {
-        values.delete(key);
-        return Promise.resolve();
-      }),
-      clear: vi.fn(() => {
-        values.clear();
-        return Promise.resolve();
-      }),
-    },
-  };
-});
 
 function createQueryClient() {
   return new QueryClient({

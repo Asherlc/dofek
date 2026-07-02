@@ -4,7 +4,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { httpBatchLink, httpLink, splitLink } from "@trpc/client";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "../lib/auth-context";
@@ -16,7 +16,7 @@ import {
 import { initBackgroundWatchInertialMeasurementUnitSync } from "../lib/background-watch-inertial-measurement-unit-sync";
 import { syncWhoopBle, teardownBackgroundWhoopBleSync } from "../lib/background-whoop-ble-sync";
 import type { SyncTrpcClient } from "../lib/health-kit-sync";
-import { MobileQueryPersistenceProvider } from "../lib/mobile-query-persistence";
+import { MobileQueryPersistenceProvider, removeMobileQueryCache } from "../lib/mobile-query-persistence";
 import { runAfterUiIdle } from "../lib/runAfterUiIdle";
 import { getTrpcUrl } from "../lib/server";
 import { captureException, initTelemetry, logger } from "../lib/telemetry";
@@ -108,6 +108,7 @@ function AuthGate() {
   const { user, serverUrl, isLoading, sessionToken, bootstrapError, logout, retryBootstrap } =
     useAuth();
   const [backgroundSyncReady, setBackgroundSyncReady] = useState(false);
+  const previousUserIdRef = useRef<string | null>(null);
 
   const [queryClient] = useState(
     () =>
@@ -161,6 +162,18 @@ function AuthGate() {
       ],
     });
   }, [serverUrl, sessionToken]);
+
+  useLayoutEffect(() => {
+    const previousUserId = previousUserIdRef.current;
+    const currentUserId = user?.id ?? null;
+    if (previousUserId && previousUserId !== currentUserId) {
+      void removeMobileQueryCache(previousUserId).catch((error: unknown) => {
+        captureException(error, { source: "mobile-query-cache-user-switch", previousUserId });
+      });
+      queryClient.clear();
+    }
+    previousUserIdRef.current = currentUserId;
+  }, [queryClient, user?.id]);
 
   useEffect(() => {
     if (user) return;

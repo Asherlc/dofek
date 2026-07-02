@@ -6,7 +6,7 @@ import {
   useLocation,
   useNavigate,
 } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { QueryErrorBoundary } from "../components/QueryErrorBoundary.tsx";
 import { AuthProvider, useAuth } from "../lib/auth-context.tsx";
 import { removeWebQueryCache, WebQueryPersistenceProvider } from "../lib/query-persistence.ts";
@@ -35,7 +35,7 @@ function AuthGate() {
   const isPublic = PUBLIC_PATHS.has(location.pathname);
   const previousUserIdRef = useRef<string | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const previousUserId = previousUserIdRef.current;
     const currentUserId = user?.id ?? null;
     if (previousUserId && previousUserId !== currentUserId) {

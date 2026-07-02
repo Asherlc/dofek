@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const mockNavigate = vi.hoisted(() => vi.fn());
 const mockUseAuth = vi.hoisted(() => vi.fn());
 const mockUseLocation = vi.hoisted(() => vi.fn());
+const mockRemoveWebQueryCache = vi.hoisted(() => vi.fn());
 
 // Capture the component and validateSearch passed to createRootRoute so we can
 // test them directly, avoiding type assertions on the mocked Route object.
@@ -49,7 +50,7 @@ vi.mock("../lib/auth-context.tsx", () => ({
 
 vi.mock("../lib/query-persistence.ts", () => ({
   WebQueryPersistenceProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  removeWebQueryCache: vi.fn(),
+  removeWebQueryCache: mockRemoveWebQueryCache,
 }));
 
 // Import triggers createRootRoute, which captures the component.
@@ -59,11 +60,14 @@ function renderAuthGate() {
   if (!captured.component) throw new Error("Component not captured from createRootRoute");
   const Component = captured.component;
   const queryClient = new QueryClient();
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <Component />
-    </QueryClientProvider>,
-  );
+  return {
+    queryClient,
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        <Component />
+      </QueryClientProvider>,
+    ),
+  };
 }
 
 const authenticatedUser = { id: "u1", name: "Alice", email: null };
@@ -71,6 +75,7 @@ const authenticatedUser = { id: "u1", name: "Alice", email: null };
 afterEach(() => {
   cleanup();
   mockNavigate.mockClear();
+  mockRemoveWebQueryCache.mockClear();
 });
 
 describe("validateSearch", () => {
@@ -290,8 +295,36 @@ describe("AuthGate", () => {
     mockUseAuth.mockReturnValue({ user: authenticatedUser, isLoading: false, logout: vi.fn() });
     mockUseLocation.mockReturnValue({ pathname: "/dashboard" });
 
-    renderAuthGate();
+    const { getByTestId } = renderAuthGate();
 
-    expect(screen.getByTestId("outlet")).toBeTruthy();
+    expect(getByTestId("outlet")).toBeTruthy();
+  });
+
+  it("clears the previous user's persisted cache when the active user changes", () => {
+    mockUseAuth.mockReturnValue({
+      user: { id: "user-1", name: "Alice", email: null },
+      isLoading: false,
+      logout: vi.fn(),
+    });
+    mockUseLocation.mockReturnValue({ pathname: "/dashboard" });
+
+    const { queryClient, rerender } = renderAuthGate();
+    queryClient.setQueryData(["dashboard"], { readiness: "cached" });
+
+    mockUseAuth.mockReturnValue({
+      user: { id: "user-2", name: "Bob", email: null },
+      isLoading: false,
+      logout: vi.fn(),
+    });
+    const Component = captured.component;
+    if (!Component) throw new Error("Component not captured from createRootRoute");
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <Component />
+      </QueryClientProvider>,
+    );
+
+    expect(mockRemoveWebQueryCache).toHaveBeenCalledWith("user-1");
+    expect(queryClient.getQueryData(["dashboard"])).toBeUndefined();
   });
 });
