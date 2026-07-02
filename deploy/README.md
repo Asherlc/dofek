@@ -128,7 +128,7 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
               -> prune deploy <stack> with requested app image tag
 ```
 
-1. **Build**: GitHub Actions builds the `server` and `ml` images and pushes them to GHCR with the same tag.
+1. **Build**: GitHub Actions builds the `server` image for every `main` push and pushes it to GHCR with the commit-derived tag, because `Deploy Web` is triggered by the successful `CI` `workflow_run` for `main` and deploys that tag. See GitHub's `workflow_run` event documentation for the trigger behavior: https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run. The `ml` image is built only when ML image inputs change.
 2. **Terraform apply** (if infra changed): updates Cloudflare-managed production DNS and storage. `ORACLE_SERVER_HOST` is required for production DNS and deploy targeting.
 3. **Deploy Web Stack** (`deploy-web-stack.yml`):
    1. Install the Infisical CLI, login with OIDC machine identity (`identity-id=46b66f72-0c77-4cfe-be1b-a43395e77be7`), and render `${{ github.workspace }}/.env.<env>` from `.github/templates/infisical-dotenv.tmpl`.
