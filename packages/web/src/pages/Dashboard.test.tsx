@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { UnitConverter } from "@dofek/format/units";
+import { cleanup, render, screen } from "@testing-library/react";
 import type {
   ReadinessRow,
   SleepPerformanceInfo,
   StrainTargetResult,
   WorkloadRatioResult,
 } from "dofek-server/types";
-import { cleanup, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -23,7 +23,11 @@ type MockQueryResult<TData> = {
 };
 
 const mockReadinessQuery = vi.hoisted(() =>
-  vi.fn<() => MockQueryResult<ReadinessRow[]>>(() => ({ data: undefined, isLoading: false, error: null })),
+  vi.fn<() => MockQueryResult<ReadinessRow[]>>(() => ({
+    data: undefined,
+    isLoading: false,
+    error: null,
+  })),
 );
 const mockWorkloadQuery = vi.hoisted(() =>
   vi.fn<() => MockQueryResult<WorkloadRatioResult>>(() => ({
@@ -129,12 +133,31 @@ import {
 
 afterEach(cleanup);
 
-const coreDashboardQueryData = {
-  readiness: [] as ReadinessRow[],
-  workloadRatio: {} as WorkloadRatioResult,
-  strainTarget: {} as StrainTargetResult,
-  sleepPerformance: null as SleepPerformanceInfo | null,
-};
+function createCoreDashboardQueryData(): {
+  readiness: ReadinessRow[];
+  workloadRatio: WorkloadRatioResult;
+  strainTarget: StrainTargetResult;
+  sleepPerformance: SleepPerformanceInfo | null;
+} {
+  return {
+    readiness: [],
+    workloadRatio: {
+      displayedStrain: 0,
+      displayedDate: "2026-05-27",
+      timeSeries: [],
+    },
+    strainTarget: {
+      targetStrain: 12,
+      currentStrain: 8,
+      progressPercent: 67,
+      zone: "Maintain",
+      explanation: "Stay in range",
+    },
+    sleepPerformance: null,
+  };
+}
+
+const coreDashboardQueryData = createCoreDashboardQueryData();
 
 describe("Dashboard", () => {
   beforeEach(() => {
