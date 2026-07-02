@@ -70,17 +70,13 @@ describe("useRefresh", () => {
       await result.current.onRefresh();
     });
 
-    expect(mockNutritionAnalyticsAdaptiveTdeeInvalidate).toHaveBeenCalledOnce();
-    expect(mockNutritionAnalyticsCaloricBalanceInvalidate).toHaveBeenCalledOnce();
-    expect(mockNutritionAnalyticsMacroRatiosInvalidate).toHaveBeenCalledOnce();
-    expect(mockNutritionAnalyticsMicronutrientAdequacyInvalidate).toHaveBeenCalledOnce();
-    expect(mockInvalidate).not.toHaveBeenCalled();
+    expect(mockInvalidate).toHaveBeenCalledOnce();
     expect(result.current.refreshing).toBe(false);
   });
 
   it("stops refreshing after invalidation starts without waiting for refetches", async () => {
     let resolveInvalidate: () => void = () => {};
-    mockNutritionAnalyticsAdaptiveTdeeInvalidate.mockImplementationOnce(
+    mockInvalidate.mockImplementationOnce(
       () =>
         new Promise<void>((resolve) => {
           resolveInvalidate = resolve;
@@ -95,7 +91,7 @@ describe("useRefresh", () => {
       await Promise.resolve();
     });
 
-    expect(mockNutritionAnalyticsAdaptiveTdeeInvalidate).toHaveBeenCalledOnce();
+    expect(mockInvalidate).toHaveBeenCalledOnce();
     expect(result.current.refreshing).toBe(false);
 
     resolveInvalidate();
@@ -118,7 +114,8 @@ describe("useRefresh", () => {
   });
 
   it("resets refreshing to false even if invalidate rejects", async () => {
-    mockNutritionAnalyticsAdaptiveTdeeInvalidate.mockRejectedValueOnce(new Error("network error"));
+    const error = new Error("network error");
+    mockInvalidate.mockRejectedValueOnce(error);
 
     const { result } = renderHook(() => useRefresh());
 
@@ -127,6 +124,7 @@ describe("useRefresh", () => {
     });
 
     expect(result.current.refreshing).toBe(false);
+    expect(mockCaptureException).toHaveBeenCalledWith(error, { source: "useRefresh.invalidate" });
   });
 
   it("calls the extra callback alongside invalidate", async () => {
@@ -137,8 +135,7 @@ describe("useRefresh", () => {
       await result.current.onRefresh();
     });
 
-    expect(mockNutritionAnalyticsAdaptiveTdeeInvalidate).toHaveBeenCalledOnce();
-    expect(mockInvalidate).not.toHaveBeenCalled();
+    expect(mockInvalidate).toHaveBeenCalledOnce();
     expect(extra).toHaveBeenCalledOnce();
   });
 

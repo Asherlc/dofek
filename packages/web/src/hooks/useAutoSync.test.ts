@@ -288,7 +288,7 @@ describe("useAutoSync", () => {
 
   it("captures an exception when query invalidation fails after sync", async () => {
     const error = new Error("invalidation failed");
-    mockReadinessInvalidate.mockRejectedValue(error);
+    mockReadinessInvalidate.mockRejectedValueOnce(error);
     const { useAutoSync } = await import("./useAutoSync");
 
     renderHook(() => useAutoSync("2026-03-21"));

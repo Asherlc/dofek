@@ -12,6 +12,10 @@ const mockCalendarWeekListInvalidate = vi.fn();
 const mockDashboardInvalidate = vi.fn();
 const mockDataHealthInvalidate = vi.fn();
 const mockFoodByDateInvalidate = vi.fn();
+const mockNutritionAnalyticsAdaptiveTdeeInvalidate = vi.fn();
+const mockNutritionAnalyticsCaloricBalanceInvalidate = vi.fn();
+const mockNutritionAnalyticsMacroRatiosInvalidate = vi.fn();
+const mockNutritionAnalyticsMicronutrientAdequacyInvalidate = vi.fn();
 const mockRecoveryInvalidate = vi.fn();
 const mockTrainingInvalidate = vi.fn();
 const mockSyncStatusFetch = vi.fn();
@@ -47,6 +51,14 @@ vi.mock("./trpc", () => ({
       },
       food: {
         byDate: { invalidate: mockFoodByDateInvalidate },
+      },
+      nutritionAnalytics: {
+        adaptiveTdee: { invalidate: mockNutritionAnalyticsAdaptiveTdeeInvalidate },
+        caloricBalance: { invalidate: mockNutritionAnalyticsCaloricBalanceInvalidate },
+        macroRatios: { invalidate: mockNutritionAnalyticsMacroRatiosInvalidate },
+        micronutrientAdequacy: {
+          invalidate: mockNutritionAnalyticsMicronutrientAdequacyInvalidate,
+        },
       },
       client: {},
     }),
@@ -147,6 +159,10 @@ describe("useAutoSync", () => {
     mockDashboardInvalidate.mockResolvedValue(undefined);
     mockDataHealthInvalidate.mockResolvedValue(undefined);
     mockFoodByDateInvalidate.mockResolvedValue(undefined);
+    mockNutritionAnalyticsAdaptiveTdeeInvalidate.mockResolvedValue(undefined);
+    mockNutritionAnalyticsCaloricBalanceInvalidate.mockResolvedValue(undefined);
+    mockNutritionAnalyticsMacroRatiosInvalidate.mockResolvedValue(undefined);
+    mockNutritionAnalyticsMicronutrientAdequacyInvalidate.mockResolvedValue(undefined);
     mockRecoveryInvalidate.mockResolvedValue(undefined);
     mockTrainingInvalidate.mockResolvedValue(undefined);
   });
@@ -199,6 +215,10 @@ describe("useAutoSync", () => {
     expect(mockCalendarActivityOverviewInvalidate).toHaveBeenCalledOnce();
     expect(mockActivityListInvalidate).toHaveBeenCalledOnce();
     expect(mockFoodByDateInvalidate).toHaveBeenCalledOnce();
+    expect(mockNutritionAnalyticsAdaptiveTdeeInvalidate).toHaveBeenCalledOnce();
+    expect(mockNutritionAnalyticsCaloricBalanceInvalidate).toHaveBeenCalledOnce();
+    expect(mockNutritionAnalyticsMacroRatiosInvalidate).toHaveBeenCalledOnce();
+    expect(mockNutritionAnalyticsMicronutrientAdequacyInvalidate).toHaveBeenCalledOnce();
     expect(mockDataHealthInvalidate).toHaveBeenCalledOnce();
     expect(mockInvalidate).not.toHaveBeenCalled();
   });
@@ -224,6 +244,7 @@ describe("useAutoSync", () => {
 
     expect(mockDashboardInvalidate).toHaveBeenCalledOnce();
     expect(mockDataHealthInvalidate).toHaveBeenCalledOnce();
+    expect(mockNutritionAnalyticsAdaptiveTdeeInvalidate).toHaveBeenCalledOnce();
     expect(mockInvalidate).not.toHaveBeenCalled();
   });
 
@@ -235,6 +256,7 @@ describe("useAutoSync", () => {
 
     expect(mockDashboardInvalidate).toHaveBeenCalledOnce();
     expect(mockDataHealthInvalidate).toHaveBeenCalledOnce();
+    expect(mockNutritionAnalyticsAdaptiveTdeeInvalidate).toHaveBeenCalledOnce();
     expect(mockInvalidate).not.toHaveBeenCalled();
   });
 
@@ -288,6 +310,10 @@ describe("useAutoSync", () => {
       expect(mockCalendarActivityOverviewInvalidate).toHaveBeenCalled();
       expect(mockActivityListInvalidate).toHaveBeenCalled();
       expect(mockFoodByDateInvalidate).toHaveBeenCalled();
+      expect(mockNutritionAnalyticsAdaptiveTdeeInvalidate).toHaveBeenCalled();
+      expect(mockNutritionAnalyticsCaloricBalanceInvalidate).toHaveBeenCalled();
+      expect(mockNutritionAnalyticsMacroRatiosInvalidate).toHaveBeenCalled();
+      expect(mockNutritionAnalyticsMicronutrientAdequacyInvalidate).toHaveBeenCalled();
       expect(mockDataHealthInvalidate).toHaveBeenCalled();
       expect(mockInvalidate).not.toHaveBeenCalled();
     });
