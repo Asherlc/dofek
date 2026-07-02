@@ -7,6 +7,7 @@ function makeSnapshot(overrides: Partial<DataReadinessSnapshot> = {}): DataReadi
   return {
     overallStatus: "stale",
     generatedAt: "2026-06-30T08:00:00.000Z",
+    syncingProviders: [],
     datasets: [
       {
         key: "dailyMetrics",
@@ -81,8 +82,29 @@ describe("DataReadinessBanner", () => {
     );
     expect(screen.getByText("Data pipeline needs attention")).toBeTruthy();
 
-    rerender(<DataReadinessBanner data={makeSnapshot({ overallStatus: "syncing" })} />);
-    expect(screen.getByText("Data is syncing now")).toBeTruthy();
+    rerender(
+      <DataReadinessBanner
+        data={makeSnapshot({
+          overallStatus: "syncing",
+          syncingProviders: [{ id: "garmin", name: "Garmin" }],
+        })}
+      />,
+    );
+    expect(screen.getByText("Syncing Garmin")).toBeTruthy();
+
+    rerender(
+      <DataReadinessBanner
+        data={makeSnapshot({
+          overallStatus: "syncing",
+          syncingProviders: [
+            { id: "garmin", name: "Garmin" },
+            { id: "whoop", name: "WHOOP" },
+            { id: "strava", name: "Strava" },
+          ],
+        })}
+      />,
+    );
+    expect(screen.getByText("Syncing Garmin, WHOOP, and Strava")).toBeTruthy();
 
     rerender(<DataReadinessBanner data={makeSnapshot({ overallStatus: "missing" })} />);
     expect(screen.getByText("No data has synced yet")).toBeTruthy();

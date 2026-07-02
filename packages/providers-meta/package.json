@@ -7,7 +7,8 @@
     "./providers": "./src/providers.ts",
     "./provider-stats": "./src/provider-stats.ts",
     "./whoop": "./src/whoop.ts",
-    "./push-providers": "./src/push-providers.ts"
+    "./push-providers": "./src/push-providers.ts",
+    "./data-readiness-banner": "./src/data-readiness-banner.ts"
   },
   "dependencies": {
     "@dofek/format": "workspace:*"

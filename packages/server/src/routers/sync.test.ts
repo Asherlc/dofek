@@ -192,12 +192,7 @@ import {
   syncStatusInput,
   triggerSyncInput,
 } from "./sync.ts";
-import {
-  ensureProvidersRegistered,
-  mapBullMqStateToSyncStatus,
-  parseJobId,
-  toJobId,
-} from "./sync-helpers.ts";
+import { ensureProvidersRegistered, parseJobId, toJobId } from "./sync-helpers.ts";
 
 const routerConstructionCachedTtlValues = mockCachedProtectedQuery.mock.calls.map(
   (call) => call[0],
@@ -2044,6 +2039,34 @@ describe("syncRouter", () => {
   });
 
   describe("dataHealth", () => {
+    function createHealthyDataHealthCaller() {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 42, latestRawAt: "2026-06-29T12:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 8, latestRawAt: "2026-06-29T08:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 3, latestRawAt: "2026-06-29T10:00:00.000Z" }]);
+      const sensorStore = {
+        query: vi.fn(async (_schema: unknown, queryText: string) => {
+          if (queryText.includes("analytics.daily_recovery")) {
+            return [{ latestReadModelAt: "2026-06-29T12:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.daily_sleep")) {
+            return [{ latestReadModelAt: "2026-06-29T08:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.activity_summary_rows")) {
+            return [{ latestReadModelAt: "2026-06-29T10:00:00.000Z" }];
+          }
+          return [];
+        }),
+      };
+      return createCaller({
+        db: { execute: mockExecute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+    }
+
     it("returns structured freshness state for primary datasets", async () => {
       const mockExecute = vi
         .fn()
@@ -2074,6 +2097,7 @@ describe("syncRouter", () => {
       const result = await caller.dataHealth();
 
       expect(result.overallStatus).toBe("healthy");
+      expect(result.syncingProviders).toEqual([]);
       expect(result.generatedAt).toEqual(expect.any(String));
       expect(result.datasets).toEqual([
         expect.objectContaining({
@@ -2412,6 +2436,7 @@ describe("syncRouter", () => {
       const result = await caller.dataHealth();
 
       expect(result.overallStatus).toBe("missing");
+      expect(result.syncingProviders).toEqual([]);
       expect(result.datasets.map((dataset) => dataset.status)).toEqual([
         "missing",
         "missing",
@@ -2420,6 +2445,13 @@ describe("syncRouter", () => {
     });
 
     it("marks overall status syncing when an active provider sync exists", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "garmin",
+          name: "Garmin",
+          validate: () => null,
+        },
+      ]);
       mockGetJobs.mockResolvedValue([
         {
           id: "job-1",
@@ -2442,7 +2474,77 @@ describe("syncRouter", () => {
       const result = await caller.dataHealth();
 
       expect(result.overallStatus).toBe("syncing");
+      expect(result.syncingProviders).toEqual([{ id: "garmin", name: "Garmin" }]);
       expect(result.datasets[0]?.status).toBe("missing");
+    });
+
+    it("ignores active provider sync jobs for other users when datasets are healthy", async () => {
+      mockGetJobs.mockResolvedValue([
+        {
+          id: "job-1",
+          data: { userId: "other-user", providerId: "garmin" },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+      ]);
+      const caller = createHealthyDataHealthCaller();
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("healthy");
+      expect(result.syncingProviders).toEqual([]);
+    });
+
+    it("sorts syncing providers alphabetically by display name", async () => {
+      mockGetAllProviders.mockReturnValue([
+        { id: "whoop", name: "WHOOP", validate: () => null },
+        { id: "garmin", name: "Garmin", validate: () => null },
+      ]);
+      mockGetJobs.mockResolvedValue([
+        {
+          id: "job-whoop",
+          data: { userId: "user-1", providerId: "whoop" },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+        {
+          id: "job-garmin",
+          data: { userId: "user-1", providerId: "garmin" },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+      ]);
+      const caller = createHealthyDataHealthCaller();
+
+      const result = await caller.dataHealth();
+
+      expect(result.syncingProviders).toEqual([
+        { id: "garmin", name: "Garmin" },
+        { id: "whoop", name: "WHOOP" },
+      ]);
+    });
+
+    it("uses push provider display names for active push sync jobs", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "whoop_ble",
+          name: "Registered WHOOP BLE",
+          validate: () => null,
+        },
+      ]);
+      mockGetJobs.mockResolvedValue([
+        {
+          id: "job-ble",
+          data: { userId: "user-1", providerId: "whoop_ble" },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("active"),
+        },
+      ]);
+      const caller = createHealthyDataHealthCaller();
+
+      const result = await caller.dataHealth();
+
+      expect(result.syncingProviders).toEqual([{ id: "whoop_ble", name: "WHOOP (Bluetooth)" }]);
     });
 
     it("marks overall status syncing for active jobs in registered provider queues", async () => {
@@ -2485,6 +2587,9 @@ describe("syncRouter", () => {
       const result = await caller.dataHealth();
 
       expect(result.overallStatus).toBe("syncing");
+      expect(result.syncingProviders).toEqual([
+        { id: "cycling-analytics", name: "Cycling Analytics" },
+      ]);
       expect(mockGetProviderSyncQueue).toHaveBeenCalledWith("cycling-analytics");
     });
 
@@ -2492,7 +2597,12 @@ describe("syncRouter", () => {
       mockImportQueueGetJobs.mockResolvedValue([
         {
           id: "import-1",
-          data: { userId: "user-1", providerId: "apple_health" },
+          data: {
+            userId: "user-1",
+            importType: "apple-health",
+            filePath: "/tmp/apple-health.zip",
+            since: "2020-01-01T00:00:00.000Z",
+          },
           progress: {},
           getState: vi.fn().mockResolvedValue("waiting"),
         },
@@ -2511,7 +2621,214 @@ describe("syncRouter", () => {
       const result = await caller.dataHealth();
 
       expect(result.overallStatus).toBe("syncing");
-      expect(mockImportQueueGetJobs).toHaveBeenCalledWith(["waiting", "active", "delayed"]);
+      expect(result.syncingProviders).toEqual([{ id: "apple_health", name: "Apple Health" }]);
+      expect(mockImportQueueGetJobs).toHaveBeenCalledWith(["waiting", "active"]);
+    });
+
+    it("ignores import jobs with unknown import types", async () => {
+      mockImportQueueGetJobs.mockResolvedValue([
+        {
+          id: "import-stale",
+          data: {
+            userId: "user-1",
+            importType: "unknown-import-type",
+            filePath: "/tmp/stale.zip",
+            since: "2020-01-01T00:00:00.000Z",
+          },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+      ]);
+      const caller = createHealthyDataHealthCaller();
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("healthy");
+      expect(result.syncingProviders).toEqual([]);
+    });
+
+    it("ignores active import jobs for other users when datasets are healthy", async () => {
+      mockImportQueueGetJobs.mockResolvedValue([
+        {
+          id: "import-other-user",
+          data: {
+            userId: "other-user",
+            importType: "apple-health",
+            filePath: "/tmp/apple-health.zip",
+            since: "2020-01-01T00:00:00.000Z",
+          },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+      ]);
+      const caller = createHealthyDataHealthCaller();
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("healthy");
+      expect(result.syncingProviders).toEqual([]);
+    });
+
+    it("ignores import jobs with non-string importType values", async () => {
+      mockImportQueueGetJobs.mockResolvedValue([
+        {
+          id: "import-bad-type",
+          data: {
+            userId: "user-1",
+            importType: 123,
+            filePath: "/tmp/apple-health.zip",
+            since: "2020-01-01T00:00:00.000Z",
+          },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+      ]);
+      const caller = createHealthyDataHealthCaller();
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("healthy");
+      expect(result.syncingProviders).toEqual([]);
+    });
+
+    it("ignores import jobs missing importType", async () => {
+      mockImportQueueGetJobs.mockResolvedValue([
+        {
+          id: "import-no-type",
+          data: {
+            userId: "user-1",
+            filePath: "/tmp/apple-health.zip",
+            since: "2020-01-01T00:00:00.000Z",
+          },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+      ]);
+      const caller = createHealthyDataHealthCaller();
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("healthy");
+      expect(result.syncingProviders).toEqual([]);
+    });
+
+    it("marks overall status syncing for cronometer and zos import jobs", async () => {
+      mockImportQueueGetJobs.mockResolvedValue([
+        {
+          id: "import-cronometer",
+          data: {
+            userId: "user-1",
+            importType: "cronometer-csv",
+            filePath: "/tmp/cronometer.csv",
+            since: "2020-01-01T00:00:00.000Z",
+          },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+        {
+          id: "import-zos",
+          data: {
+            userId: "user-1",
+            importType: "zos-app",
+            filePath: "/tmp/zos.zip",
+            since: "2020-01-01T00:00:00.000Z",
+          },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("active"),
+        },
+      ]);
+      const caller = createHealthyDataHealthCaller();
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("syncing");
+      expect(result.syncingProviders).toEqual([
+        { id: "cronometer-csv", name: "cronometer-csv" },
+        { id: "zos-app", name: "zos-app" },
+      ]);
+    });
+
+    it("ignores provider sync jobs with malformed job data", async () => {
+      mockGetJobs.mockResolvedValue([
+        {
+          id: "job-null-data",
+          data: null,
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+        {
+          id: "job-string-data",
+          data: "invalid",
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+      ]);
+      const caller = createHealthyDataHealthCaller();
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("healthy");
+      expect(result.syncingProviders).toEqual([]);
+    });
+
+    it("falls back to queue provider id when sync job payload has empty providerId", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "garmin",
+          name: "Garmin",
+          validate: () => null,
+        },
+      ]);
+      mockGetJobs.mockResolvedValue([
+        {
+          id: "job-empty-provider",
+          data: { userId: "user-1", providerId: "" },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+      ]);
+      const caller = createHealthyDataHealthCaller();
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("syncing");
+      expect(result.syncingProviders).toEqual([{ id: "garmin", name: "Garmin" }]);
+    });
+
+    it("falls back to queue provider id when sync job payload has stale providerId", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "garmin",
+          name: "Garmin",
+          validate: () => null,
+        },
+      ]);
+      mockGetJobs.mockResolvedValue([
+        {
+          id: "job-stale-provider",
+          data: { userId: "user-1", providerId: "stale-unknown-provider" },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+      ]);
+      const caller = createHealthyDataHealthCaller();
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("syncing");
+      expect(result.syncingProviders).toEqual([{ id: "garmin", name: "Garmin" }]);
+    });
+
+    it("does not mark overall status syncing for delayed-only jobs", async () => {
+      mockGetJobs.mockResolvedValue([]);
+      mockImportQueueGetJobs.mockResolvedValue([]);
+      const caller = createHealthyDataHealthCaller();
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("healthy");
+      expect(result.syncingProviders).toEqual([]);
+      expect(mockGetJobs).toHaveBeenCalledWith(["waiting", "active"]);
     });
 
     it("surfaces queue failures as stable readiness errors", async () => {
@@ -2532,34 +2849,6 @@ describe("syncRouter", () => {
         message: "Unable to check sync readiness because the queue service is unavailable.",
       });
       expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error));
-    });
-  });
-
-  describe("mapBullMqStateToSyncStatus", () => {
-    it("maps 'completed' to 'done'", () => {
-      expect(mapBullMqStateToSyncStatus("completed")).toBe("done");
-    });
-
-    it("maps 'failed' to 'error'", () => {
-      expect(mapBullMqStateToSyncStatus("failed")).toBe("error");
-    });
-
-    it("maps 'active' to 'running' (default)", () => {
-      expect(mapBullMqStateToSyncStatus("active")).toBe("running");
-    });
-
-    it("maps 'waiting' to 'running' (default)", () => {
-      expect(mapBullMqStateToSyncStatus("waiting")).toBe("running");
-    });
-
-    it("maps unknown states to 'running' (default)", () => {
-      expect(mapBullMqStateToSyncStatus("delayed")).toBe("running");
-      expect(mapBullMqStateToSyncStatus("")).toBe("running");
-    });
-
-    it("does not swap 'completed' and 'failed' mappings", () => {
-      expect(mapBullMqStateToSyncStatus("completed")).not.toBe("error");
-      expect(mapBullMqStateToSyncStatus("failed")).not.toBe("done");
     });
   });
 });

@@ -1,3 +1,4 @@
+import { bannerHeading } from "@dofek/providers/data-readiness-banner";
 import { statusColors, textColors } from "@dofek/scoring/colors";
 import { StyleSheet, Text, View } from "react-native";
 import { colors, radius, spacing } from "../theme";
@@ -19,6 +20,7 @@ export interface DataReadinessDataset {
 export interface DataReadinessSnapshot {
   overallStatus: DataReadinessStatus;
   generatedAt: string;
+  syncingProviders?: Array<{ id: string; name: string }>;
   datasets: DataReadinessDataset[];
 }
 
@@ -27,13 +29,6 @@ interface DataReadinessBannerProps {
   error?: { message?: string } | null;
   loading?: boolean;
 }
-
-const headingByStatus: Record<Exclude<DataReadinessStatus, "healthy">, string> = {
-  syncing: "Data is syncing now",
-  stale: "Dashboard summaries are catching up",
-  missing: "No data has synced yet",
-  blocked: "Data pipeline needs attention",
-};
 
 export function DataReadinessBanner({
   data,
@@ -63,9 +58,7 @@ export function DataReadinessBanner({
 
   return (
     <View style={[styles.banner, stylesByStatus[data.overallStatus]]}>
-      <Text style={[styles.heading, isDarkBanner && styles.lightText]}>
-        {headingByStatus[data.overallStatus]}
-      </Text>
+      <Text style={[styles.heading, isDarkBanner && styles.lightText]}>{bannerHeading(data)}</Text>
       {relevantDatasets.map((dataset) => {
         const isDatasetDark =
           dataset.status === "syncing" ||

@@ -39,8 +39,12 @@ import {
   CUSTOM_AUTH_PROVIDERS,
   ensureProvidersRegistered,
   getAllConfiguredProviderIds,
+  importTypeFromJobData,
+  isJobDataForUser,
   mapBullMqStateToSyncStatus,
   parseJobId,
+  providerIdForImportType,
+  providerIdFromSyncJobData,
   toJobId,
   UPLOAD_IMPORT_PROVIDERS,
 } from "./sync-helpers.ts";
@@ -197,9 +201,15 @@ const queueBackpressureStates = ["waiting", "active", "delayed", "failed"] as co
 
 const dataReadinessStatusSchema = z.enum(["healthy", "syncing", "stale", "missing", "blocked"]);
 
+const syncingProviderSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+});
+
 const dataHealthOutputSchema = z.object({
   overallStatus: dataReadinessStatusSchema,
   generatedAt: z.string(),
+  syncingProviders: z.array(syncingProviderSchema),
   datasets: z.array(
     z.object({
       key: z.enum(["dailyMetrics", "sleep", "activity"]),
@@ -275,38 +285,90 @@ function datasetMessage(input: {
   }
 }
 
+function buildProviderNameById(): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const provider of UPLOAD_IMPORT_PROVIDERS) {
+    names.set(provider.id, provider.name);
+  }
+  for (const provider of getAllProviders()) {
+    names.set(provider.id, provider.name);
+  }
+  for (const provider of PUSH_PROVIDERS) {
+    names.set(provider.id, provider.name);
+  }
+  return names;
+}
+
+function providerDisplayName(providerId: string, providerNameById: Map<string, string>): string {
+  return providerNameById.get(providerId) ?? providerId;
+}
+
 function overallDataHealthStatus(
   statuses: Array<z.infer<typeof dataReadinessStatusSchema>>,
-  hasActiveSync: boolean,
+  syncingProviders: Array<z.infer<typeof syncingProviderSchema>>,
 ): z.infer<typeof dataReadinessStatusSchema> {
-  if (hasActiveSync) return "syncing";
+  if (syncingProviders.length > 0) return "syncing";
   if (statuses.includes("blocked")) return "blocked";
   if (statuses.includes("stale")) return "stale";
   if (statuses.includes("missing")) return "missing";
   return "healthy";
 }
 
-async function hasActiveSyncForUser(userId: string): Promise<boolean> {
+async function getActiveSyncProvidersForUser(
+  userId: string,
+): Promise<Array<z.infer<typeof syncingProviderSchema>>> {
   try {
-    const activeStates: Array<"waiting" | "active" | "delayed"> = ["waiting", "active", "delayed"];
+    await ensureProvidersRegistered();
+    const providerNameById = buildProviderNameById();
+    // Delayed jobs (rate-limit cooldown retries, backoff) are not actively syncing.
+    const activeStates: Array<"waiting" | "active"> = ["waiting", "active"];
     const providerIds = new Set([
       ...getAllConfiguredProviderIds(),
       ...getAllProviders().map((provider) => provider.id),
     ]);
+    const syncingProviderIds = new Set<string>();
+    const knownProviderIds = new Set(providerNameById.keys());
     const [providerJobGroups, importJobs] = await Promise.all([
       Promise.all(
-        [...providerIds].map((providerId) =>
-          getProviderSyncQueue(providerId).getJobs(activeStates),
-        ),
+        [...providerIds].map(async (providerId) => ({
+          providerId,
+          jobs: await getProviderSyncQueue(providerId).getJobs(activeStates),
+        })),
       ),
       getImportQueue().getJobs(activeStates),
     ]);
-    return [...providerJobGroups.flat(), ...importJobs].some((job) => {
+
+    for (const { providerId, jobs } of providerJobGroups) {
+      for (const job of jobs) {
+        const data = job.data;
+        if (!isJobDataForUser(data, userId)) {
+          continue;
+        }
+        const resolvedProviderId = providerIdFromSyncJobData(data, providerId, knownProviderIds);
+        if (resolvedProviderId !== undefined) {
+          syncingProviderIds.add(resolvedProviderId);
+        }
+      }
+    }
+
+    for (const job of importJobs) {
       const data = job.data;
-      return (
-        typeof data === "object" && data !== null && "userId" in data && data.userId === userId
-      );
-    });
+      if (!isJobDataForUser(data, userId)) {
+        continue;
+      }
+      const importType = importTypeFromJobData(data);
+      const providerId = importType === undefined ? undefined : providerIdForImportType(importType);
+      if (providerId !== undefined) {
+        syncingProviderIds.add(providerId);
+      }
+    }
+
+    return [...syncingProviderIds]
+      .map((id) => ({
+        id,
+        name: providerDisplayName(id, providerNameById),
+      }))
+      .sort((left, right) => left.name.localeCompare(right.name));
   } catch (error) {
     captureException(error);
     throw new TRPCError({
@@ -717,12 +779,15 @@ export const syncRouter = router({
   dataHealth: protectedProcedure.output(dataHealthOutputSchema).query(async ({ ctx }) => {
     const sensorStore = hasDataHealthSensorStore(ctx.sensorStore) ? ctx.sensorStore : null;
     const repo = new SyncRepository(ctx.db, ctx.userId);
-    const freshnessRows = await repo.getDataHealthFreshness(
-      dataHealthDatasets,
-      sensorStore ?? undefined,
-      ctx.accessWindow,
-      ctx.timezone,
-    );
+    const [freshnessRows, syncingProviders] = await Promise.all([
+      repo.getDataHealthFreshness(
+        dataHealthDatasets,
+        sensorStore ?? undefined,
+        ctx.accessWindow,
+        ctx.timezone,
+      ),
+      getActiveSyncProvidersForUser(ctx.userId),
+    ]);
 
     const datasets = dataHealthDatasets.map((dataset, index) => {
       const freshnessRow = freshnessRows[index];
@@ -746,14 +811,14 @@ export const syncRouter = router({
         message: datasetMessage({ label: dataset.label, status }),
       };
     });
-    const hasActiveSync = await hasActiveSyncForUser(ctx.userId);
 
     return {
       overallStatus: overallDataHealthStatus(
         datasets.map((dataset) => dataset.status),
-        hasActiveSync,
+        syncingProviders,
       ),
       generatedAt: new Date().toISOString(),
+      syncingProviders,
       datasets,
     };
   }),

@@ -80,7 +80,13 @@ export const Missing: Story = {
 };
 
 export const Syncing: Story = {
-  args: { data: { ...missingSnapshot, overallStatus: "syncing" } },
+  args: {
+    data: {
+      ...missingSnapshot,
+      overallStatus: "syncing",
+      syncingProviders: [{ id: "garmin", name: "Garmin" }],
+    },
+  },
 };
 
 export const HealthyHidden: Story = {

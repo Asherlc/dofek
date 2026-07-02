@@ -6,6 +6,7 @@ function makeSnapshot(overrides: Partial<DataReadinessSnapshot> = {}): DataReadi
   return {
     overallStatus: "blocked",
     generatedAt: "2026-06-30T08:00:00.000Z",
+    syncingProviders: [],
     datasets: [
       {
         key: "activity",
@@ -53,9 +54,14 @@ describe("DataReadinessBanner", () => {
 
   it("shows syncing, stale, and missing headings from the overall status", () => {
     const { rerender } = render(
-      <DataReadinessBanner data={makeSnapshot({ overallStatus: "syncing" })} />,
+      <DataReadinessBanner
+        data={makeSnapshot({
+          overallStatus: "syncing",
+          syncingProviders: [{ id: "garmin", name: "Garmin" }],
+        })}
+      />,
     );
-    expect(screen.getByText("Data is syncing now")).toBeTruthy();
+    expect(screen.getByText("Syncing Garmin")).toBeTruthy();
 
     rerender(<DataReadinessBanner data={makeSnapshot({ overallStatus: "stale" })} />);
     expect(screen.getByText("Dashboard summaries are catching up")).toBeTruthy();
