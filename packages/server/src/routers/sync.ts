@@ -8,7 +8,6 @@ import {
   getImportQueue,
   getProviderSyncQueue,
   IMPORT_QUEUE,
-  type ImportJobData,
   providerSyncQueueName,
   type SyncJobData,
 } from "dofek/jobs/queues";
@@ -40,8 +39,12 @@ import {
   CUSTOM_AUTH_PROVIDERS,
   ensureProvidersRegistered,
   getAllConfiguredProviderIds,
+  importTypeFromJobData,
+  isJobDataForUser,
   mapBullMqStateToSyncStatus,
   parseJobId,
+  providerIdForImportType,
+  providerIdFromSyncJobData,
   toJobId,
   UPLOAD_IMPORT_PROVIDERS,
 } from "./sync-helpers.ts";
@@ -282,28 +285,6 @@ function datasetMessage(input: {
   }
 }
 
-const importTypeToProviderId: Record<ImportJobData["importType"], string> = {
-  "apple-health": "apple_health",
-  "strong-csv": "strong-csv",
-  "cronometer-csv": "cronometer-csv",
-  "zos-app": "zos-app",
-};
-
-function providerIdForImportType(importType: string): string | undefined {
-  switch (importType) {
-    case "apple-health":
-      return importTypeToProviderId["apple-health"];
-    case "strong-csv":
-      return importTypeToProviderId["strong-csv"];
-    case "cronometer-csv":
-      return importTypeToProviderId["cronometer-csv"];
-    case "zos-app":
-      return importTypeToProviderId["zos-app"];
-    default:
-      return undefined;
-  }
-}
-
 function buildProviderNameById(): Map<string, string> {
   const names = new Map<string, string>();
   for (const provider of UPLOAD_IMPORT_PROVIDERS) {
@@ -359,27 +340,22 @@ async function getActiveSyncProvidersForUser(
     for (const { providerId, jobs } of providerJobGroups) {
       for (const job of jobs) {
         const data = job.data;
-        if (
-          typeof data === "object" &&
-          data !== null &&
-          "userId" in data &&
-          data.userId === userId
-        ) {
-          syncingProviderIds.add(data.providerId ?? providerId);
+        if (!isJobDataForUser(data, userId)) {
+          continue;
         }
+        syncingProviderIds.add(providerIdFromSyncJobData(data, providerId));
       }
     }
 
     for (const job of importJobs) {
       const data = job.data;
-      if (typeof data === "object" && data !== null && "userId" in data && data.userId === userId) {
-        const providerId =
-          "importType" in data && typeof data.importType === "string"
-            ? providerIdForImportType(data.importType)
-            : undefined;
-        if (providerId !== undefined) {
-          syncingProviderIds.add(providerId);
-        }
+      if (!isJobDataForUser(data, userId)) {
+        continue;
+      }
+      const importType = importTypeFromJobData(data);
+      const providerId = importType === undefined ? undefined : providerIdForImportType(importType);
+      if (providerId !== undefined) {
+        syncingProviderIds.add(providerId);
       }
     }
 

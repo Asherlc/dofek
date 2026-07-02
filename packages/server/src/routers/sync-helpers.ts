@@ -1,4 +1,5 @@
 import { getConfiguredProviderIds } from "dofek/jobs/provider-queue-config";
+import type { ImportJobData } from "dofek/jobs/queues";
 import { registerProviderSyncRequestResolver } from "dofek/jobs/sync-request-query-registration";
 import { CUSTOM_AUTH_PROVIDERS } from "dofek/lib/custom-auth-providers";
 import { registerProvider } from "dofek/providers/registry";
@@ -138,4 +139,54 @@ export function mapBullMqStateToSyncStatus(state: string): "running" | "done" | 
 
 export function getAllConfiguredProviderIds(): Set<string> {
   return new Set(getConfiguredProviderIds());
+}
+
+const importTypeToProviderId: Record<ImportJobData["importType"], string> = {
+  "apple-health": "apple_health",
+  "strong-csv": "strong-csv",
+  "cronometer-csv": "cronometer-csv",
+  "zos-app": "zos-app",
+};
+
+function isKnownImportType(importType: string): importType is ImportJobData["importType"] {
+  return Object.hasOwn(importTypeToProviderId, importType);
+}
+
+export function providerIdForImportType(importType: string): string | undefined {
+  if (!isKnownImportType(importType)) {
+    return undefined;
+  }
+  return importTypeToProviderId[importType];
+}
+
+export function isJobDataForUser(data: unknown, userId: string): data is object {
+  if (typeof data !== "object" || data === null) {
+    return false;
+  }
+  if (!("userId" in data)) {
+    return false;
+  }
+  return Reflect.get(data, "userId") === userId;
+}
+
+export function importTypeFromJobData(data: unknown): string | undefined {
+  if (typeof data !== "object" || data === null || !("importType" in data)) {
+    return undefined;
+  }
+  const importType = Reflect.get(data, "importType");
+  if (typeof importType !== "string") {
+    return undefined;
+  }
+  return importType;
+}
+
+export function providerIdFromSyncJobData(data: object, queueProviderId: string): string {
+  if (!("providerId" in data)) {
+    return queueProviderId;
+  }
+  const providerId = Reflect.get(data, "providerId");
+  if (providerId === undefined || providerId === null) {
+    return queueProviderId;
+  }
+  return typeof providerId === "string" ? providerId : queueProviderId;
 }

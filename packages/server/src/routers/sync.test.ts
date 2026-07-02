@@ -194,8 +194,11 @@ import {
 } from "./sync.ts";
 import {
   ensureProvidersRegistered,
+  importTypeFromJobData,
+  isJobDataForUser,
   mapBullMqStateToSyncStatus,
   parseJobId,
+  providerIdForImportType,
   toJobId,
 } from "./sync-helpers.ts";
 
@@ -2720,6 +2723,86 @@ describe("syncRouter", () => {
       expect(result.syncingProviders).toEqual([]);
     });
 
+    it("ignores import jobs missing importType", async () => {
+      mockImportQueueGetJobs.mockResolvedValue([
+        {
+          id: "import-no-type",
+          data: {
+            userId: "user-1",
+            filePath: "/tmp/apple-health.zip",
+            since: "2020-01-01T00:00:00.000Z",
+          },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+      ]);
+      const caller = createHealthyDataHealthCaller();
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("healthy");
+      expect(result.syncingProviders).toEqual([]);
+    });
+
+    it("marks overall status syncing for cronometer and zos import jobs", async () => {
+      mockImportQueueGetJobs.mockResolvedValue([
+        {
+          id: "import-cronometer",
+          data: {
+            userId: "user-1",
+            importType: "cronometer-csv",
+            filePath: "/tmp/cronometer.csv",
+            since: "2020-01-01T00:00:00.000Z",
+          },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+        {
+          id: "import-zos",
+          data: {
+            userId: "user-1",
+            importType: "zos-app",
+            filePath: "/tmp/zos.zip",
+            since: "2020-01-01T00:00:00.000Z",
+          },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("active"),
+        },
+      ]);
+      const caller = createHealthyDataHealthCaller();
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("syncing");
+      expect(result.syncingProviders).toEqual([
+        { id: "cronometer-csv", name: "cronometer-csv" },
+        { id: "zos-app", name: "zos-app" },
+      ]);
+    });
+
+    it("ignores provider sync jobs with malformed job data", async () => {
+      mockGetJobs.mockResolvedValue([
+        {
+          id: "job-null-data",
+          data: null,
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+        {
+          id: "job-string-data",
+          data: "invalid",
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+      ]);
+      const caller = createHealthyDataHealthCaller();
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("healthy");
+      expect(result.syncingProviders).toEqual([]);
+    });
+
     it("does not mark overall status syncing for delayed-only jobs", async () => {
       mockGetJobs.mockResolvedValue([]);
       mockImportQueueGetJobs.mockResolvedValue([]);
@@ -2802,6 +2885,45 @@ describe("syncRouter", () => {
     it("does not swap 'completed' and 'failed' mappings", () => {
       expect(mapBullMqStateToSyncStatus("completed")).not.toBe("error");
       expect(mapBullMqStateToSyncStatus("failed")).not.toBe("done");
+    });
+  });
+
+  describe("providerIdForImportType", () => {
+    it("maps known import types to provider ids", () => {
+      expect(providerIdForImportType("apple-health")).toBe("apple_health");
+      expect(providerIdForImportType("strong-csv")).toBe("strong-csv");
+      expect(providerIdForImportType("cronometer-csv")).toBe("cronometer-csv");
+      expect(providerIdForImportType("zos-app")).toBe("zos-app");
+    });
+
+    it("returns undefined for unknown import types", () => {
+      expect(providerIdForImportType("unknown-import-type")).toBeUndefined();
+    });
+  });
+
+  describe("isJobDataForUser", () => {
+    it("returns false for null, primitives, and objects without userId", () => {
+      expect(isJobDataForUser(null, "user-1")).toBe(false);
+      expect(isJobDataForUser("invalid", "user-1")).toBe(false);
+      expect(isJobDataForUser({ providerId: "garmin" }, "user-1")).toBe(false);
+    });
+
+    it("returns false for other users and true for matching users", () => {
+      expect(isJobDataForUser({ userId: "other-user" }, "user-1")).toBe(false);
+      expect(isJobDataForUser({ userId: "user-1" }, "user-1")).toBe(true);
+    });
+  });
+
+  describe("importTypeFromJobData", () => {
+    it("returns undefined for malformed job data", () => {
+      expect(importTypeFromJobData(null)).toBeUndefined();
+      expect(importTypeFromJobData("invalid")).toBeUndefined();
+      expect(importTypeFromJobData({ userId: "user-1" })).toBeUndefined();
+      expect(importTypeFromJobData({ userId: "user-1", importType: 123 })).toBeUndefined();
+    });
+
+    it("returns string import types", () => {
+      expect(importTypeFromJobData({ importType: "apple-health" })).toBe("apple-health");
     });
   });
 });
