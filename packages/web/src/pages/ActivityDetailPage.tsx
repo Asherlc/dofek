@@ -90,12 +90,21 @@ export function ActivityDetailPage() {
 
   const units = useUnitConverter();
   const detail = trpc.activity.byId.useQuery({ id });
-  const stream = trpc.activity.stream.useQuery({ id, maxPoints: 500 });
-  const hrZones = trpc.activity.hrZones.useQuery({ id });
+  const stream = trpc.activity.stream.useQuery(
+    { id, maxPoints: 500 },
+    { placeholderData: (previousData) => previousData },
+  );
+  const hrZones = trpc.activity.hrZones.useQuery(
+    { id },
+    { placeholderData: (previousData) => previousData },
+  );
   const points = stream.data ?? [];
   const hasPower = points.some((p) => p.power != null);
   const isCycling = detail.data != null && isCyclingActivity(detail.data.activityType);
-  const powerZones = trpc.activity.powerZones.useQuery({ id }, { enabled: isCycling && hasPower });
+  const powerZones = trpc.activity.powerZones.useQuery(
+    { id },
+    { enabled: isCycling && hasPower, placeholderData: (previousData) => previousData },
+  );
   const isStrengthActivity =
     detail.data != null && isStrengthActivityType(detail.data.activityType);
   const strengthExercises = trpc.activity.strengthExercises.useQuery(

@@ -137,7 +137,13 @@ function defaultMockHrZonesResult(): MockHrZonesResult {
   };
 }
 
-const mockHrZonesUseQuery = vi.fn(defaultMockHrZonesResult);
+const mockHrZonesUseQuery = vi.fn(
+  (_input?: unknown, _options?: unknown): MockHrZonesResult => defaultMockHrZonesResult(),
+);
+const mockStreamUseQuery = vi.fn((_input?: unknown, _options?: unknown) => ({
+  data: mockStreamPoints,
+  isLoading: false,
+}));
 const mockPowerZonesUseQuery = vi.fn(
   (
     _input?: unknown,
@@ -152,7 +158,7 @@ vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     activity: {
       byId: { useQuery: () => ({ data: mockActivity, isLoading: false, error: null }) },
-      stream: { useQuery: () => ({ data: mockStreamPoints, isLoading: false }) },
+      stream: { useQuery: mockStreamUseQuery },
       hrZones: { useQuery: mockHrZonesUseQuery },
       powerZones: { useQuery: mockPowerZonesUseQuery },
       strengthExercises: { useQuery: mockStrengthExercisesUseQuery },
@@ -172,8 +178,15 @@ vi.mock("leaflet", () => ({
 }));
 
 afterEach(() => {
+  mockStreamUseQuery.mockClear();
+  mockStreamUseQuery.mockImplementation((_input?: unknown, _options?: unknown) => ({
+    data: mockStreamPoints,
+    isLoading: false,
+  }));
   mockHrZonesUseQuery.mockReset();
-  mockHrZonesUseQuery.mockImplementation(defaultMockHrZonesResult);
+  mockHrZonesUseQuery.mockImplementation(
+    (_input?: unknown, _options?: unknown): MockHrZonesResult => defaultMockHrZonesResult(),
+  );
   mockStreamPoints.splice(
     0,
     mockStreamPoints.length,
@@ -220,6 +233,15 @@ function getQueryEnabledFlag(value: unknown): boolean | undefined {
 
   const enabled = Reflect.get(value, "enabled");
   return typeof enabled === "boolean" ? enabled : undefined;
+}
+
+function getPlaceholderData(value: unknown): ((previousData: unknown) => unknown) | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const placeholderData = Reflect.get(value, "placeholderData");
+  return typeof placeholderData === "function" ? placeholderData : undefined;
 }
 
 function getSeriesData(opt: Record<string, unknown>): Array<unknown> {
@@ -292,6 +314,21 @@ async function importPage() {
 }
 
 describe("ActivityDetailPage", () => {
+  it("keeps previous stream and zone data visible while refetching", async () => {
+    const ActivityDetailPage = await importPage();
+    renderWithUnits(<ActivityDetailPage />);
+
+    const previousStream = [{ recordedAt: "2026-03-18T07:00:00Z" }];
+    const previousZones = [{ zone: 1, seconds: 120 }];
+
+    expect(getPlaceholderData(mockStreamUseQuery.mock.calls[0]?.[1])?.(previousStream)).toBe(
+      previousStream,
+    );
+    expect(getPlaceholderData(mockHrZonesUseQuery.mock.calls[0]?.[1])?.(previousZones)).toBe(
+      previousZones,
+    );
+  });
+
   describe("provider tombstone status", () => {
     afterEach(() => {
       mockActivity.providerAbsentAt = null;
