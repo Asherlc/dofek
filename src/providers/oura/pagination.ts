@@ -12,21 +12,6 @@ function isOuraOptionalScopeError(err: unknown): boolean {
   return err instanceof OuraApiError && err.status === 401;
 }
 
-async function fetchAllPages<T>(
-  fetchPage: (nextToken?: string) => Promise<OuraListResponse<T>>,
-): Promise<T[]> {
-  const allData: T[] = [];
-  let nextToken: string | undefined;
-
-  do {
-    const response = await fetchPage(nextToken);
-    allData.push(...response.data);
-    nextToken = response.next_token || undefined;
-  } while (nextToken);
-
-  return allData;
-}
-
 export async function fetchOuraPages<T>(
   providerId: string,
   stepName: string,
@@ -71,7 +56,5 @@ export async function fetchOuraPagesOptional<T>(
     throw err;
   }
 }
-
-export { fetchAllPages };
 
 export const HEALTH_EVENT_BATCH_SIZE = 1000;

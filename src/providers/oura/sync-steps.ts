@@ -11,7 +11,6 @@ import type { SyncError, SyncOptions } from "../types.ts";
 import type { OuraClient } from "./client.ts";
 import { formatDate } from "./oauth.ts";
 import {
-  fetchAllPages,
   fetchOuraPages,
   fetchOuraPagesOptional,
   HEALTH_EVENT_BATCH_SIZE,
@@ -125,11 +124,11 @@ export async function syncWorkouts(context: SyncStepContext): Promise<number> {
       "workouts",
       async () => {
         let count = 0;
-        const allWorkouts = await fetchAllPages((nextToken) =>
+        const workoutPages = await fetchOuraPages(providerId, "workouts", (nextToken) =>
           client.getWorkouts(sinceDate, todayDate, nextToken),
         );
 
-        for (const workout of allWorkouts) {
+        for (const workout of workoutPages.items) {
           context.activityPresentExternalIds?.add(workout.id);
           try {
             await upsertProviderActivity(
@@ -161,7 +160,7 @@ export async function syncWorkouts(context: SyncStepContext): Promise<number> {
           }
         }
 
-        return { recordCount: count, result: count };
+        return { recordCount: count, result: count, degradations: workoutPages.degradations };
       },
       options?.userId,
     );
@@ -184,11 +183,11 @@ export async function syncSessions(context: SyncStepContext): Promise<number> {
       "sessions",
       async () => {
         let count = 0;
-        const allSessions = await fetchAllPages((nextToken) =>
+        const sessionPages = await fetchOuraPages(providerId, "sessions", (nextToken) =>
           client.getSessions(sinceDate, todayDate, nextToken),
         );
 
-        for (const session of allSessions) {
+        for (const session of sessionPages.items) {
           context.activityPresentExternalIds?.add(session.id);
           try {
             const sessionActivityType = mapOuraSessionType(session.type);
@@ -221,7 +220,7 @@ export async function syncSessions(context: SyncStepContext): Promise<number> {
           }
         }
 
-        return { recordCount: count, result: count };
+        return { recordCount: count, result: count, degradations: sessionPages.degradations };
       },
       options?.userId,
     );
@@ -254,8 +253,6 @@ export async function syncHeartRate(context: SyncStepContext, since: Date): Prom
           const windowEnd = Math.min(windowStart + windowMs, end);
           const startStr = formatDate(new Date(windowStart));
           const endStr = formatDate(new Date(windowEnd));
-          // Skip degenerate windows where start and end resolve to the same day
-          // (can happen when the 30-day boundary falls on "now")
           if (startStr === endStr) break;
           const chunk = await fetchOuraPages(providerId, "heart_rate", (nextToken) =>
             client.getHeartRate(startStr, endStr, nextToken),

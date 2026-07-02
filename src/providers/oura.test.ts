@@ -1498,6 +1498,30 @@ describe("OuraClient", () => {
     await expect(client.getVO2Max("2026-03-01", "2026-03-02")).rejects.toThrow("API error 500");
   });
 
+  it("truncates long error response bodies at 200 characters", async () => {
+    const longBody = "x".repeat(201);
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response(longBody, { status: 500 });
+    };
+
+    const client = new OuraClient("token", mockFetch);
+    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.toMatchObject({
+      message: expect.stringContaining("…"),
+    });
+  });
+
+  it("does not truncate error responses exactly at 200 characters", async () => {
+    const body200 = "x".repeat(200);
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response(body200, { status: 500 });
+    };
+
+    const client = new OuraClient("token", mockFetch);
+    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.toMatchObject({
+      message: expect.not.stringContaining("…"),
+    });
+  });
+
   it("fetches workouts with correct URL", async () => {
     let capturedUrl = "";
     const mockFetch: typeof globalThis.fetch = async (
