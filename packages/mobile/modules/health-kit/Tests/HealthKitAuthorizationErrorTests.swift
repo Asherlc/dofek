@@ -20,7 +20,12 @@ final class HealthKitAuthorizationErrorTests: XCTestCase {
     }
 
     func testUnrelatedErrorDoesNotResolveAsDeniedPermission() {
-        XCTAssertFalse(isUserCanceledHealthKitAuthorization(NSError()))
+        let error = NSError(
+            domain: NSCocoaErrorDomain,
+            code: CocoaError.fileNoSuchFile.rawValue
+        )
+
+        XCTAssertFalse(isUserCanceledHealthKitAuthorization(error))
     }
 
     func testDifferentHealthKitErrorDoesNotResolveAsDeniedPermission() {
