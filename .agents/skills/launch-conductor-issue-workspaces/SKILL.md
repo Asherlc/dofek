@@ -21,7 +21,7 @@ rtk pnpm tsx .agents/skills/launch-conductor-issue-workspaces/scripts/open-condu
 3. If the user says the workspaces opened under the wrong repo, rerun with an explicit root:
 
 ```bash
-rtk pnpm tsx .agents/skills/launch-conductor-issue-workspaces/scripts/open-conductor-issue-workspaces.ts --repo-root /Users/ashercohen/src/dofek --limit 10
+rtk pnpm tsx .agents/skills/launch-conductor-issue-workspaces/scripts/open-conductor-issue-workspaces.ts --repo-root ~/src/dofek --limit 10
 ```
 
 4. Report the exact issue numbers opened and the repo root used.
@@ -56,7 +56,7 @@ rtk pnpm tsx .agents/skills/launch-conductor-issue-workspaces/scripts/open-condu
 
 - Do not use `git rev-parse --show-toplevel` alone from inside a Conductor workspace; that returns the workspace path and can make Conductor attach the new workspace to the wrong repo entry.
 - Prefer the helper's default main-worktree detection from `git worktree list --porcelain`.
-- Use `--repo-root` when the intended repo root is known, such as `/Users/ashercohen/src/dofek`.
+- Use `--repo-root` when the intended repo root is known, such as `~/src/dofek`.
 - This deep-link workflow controls prompt and repo path. It does not reliably control model, provider, reasoning effort, approval mode, or fast mode.
 - If Conductor does not open the expected repo, ask the user to confirm the repo's main root in Conductor and rerun with `--repo-root`.
 

@@ -20,10 +20,25 @@ interface Options {
 }
 
 function run(command: string, args: string[]): string {
-  return execFileSync(command, args, {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  }).trim();
+  try {
+    return execFileSync(command, args, {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  } catch (error) {
+    const err = error as { stderr?: Buffer | string; message?: string; status?: number };
+    const stderr = err.stderr ? String(err.stderr).trim() : "";
+    const message = err.message ?? "Unknown error";
+    console.error(
+      [
+        "Error: Failed to run external command.",
+        `  Command: ${command} ${args.join(" ")}`,
+        `  Message: ${message}`,
+        ...(stderr ? [`  stderr: ${stderr}`] : []),
+      ].join("\n"),
+    );
+    process.exit(typeof err.status === "number" ? err.status : 1);
+  }
 }
 
 function usage(): never {
@@ -104,7 +119,15 @@ function isGitHubIssue(value: unknown): value is GitHubIssue {
 }
 
 function parseIssueArray(rawJson: string): GitHubIssue[] {
-  const parsedIssues: unknown = JSON.parse(rawJson);
+  let parsedIssues: unknown;
+  try {
+    parsedIssues = JSON.parse(rawJson);
+  } catch {
+    const preview = rawJson.length > 200 ? `${rawJson.slice(0, 200)}...` : rawJson;
+    throw new Error(
+      `Failed to parse GitHub CLI JSON output for issues. The output was not valid JSON. Raw output preview: ${preview}`,
+    );
+  }
   if (!Array.isArray(parsedIssues) || !parsedIssues.every(isGitHubIssue)) {
     throw new Error("GitHub CLI returned an unexpected issue list shape");
   }
@@ -112,7 +135,15 @@ function parseIssueArray(rawJson: string): GitHubIssue[] {
 }
 
 function parseIssue(rawJson: string): GitHubIssue {
-  const parsedIssue: unknown = JSON.parse(rawJson);
+  let parsedIssue: unknown;
+  try {
+    parsedIssue = JSON.parse(rawJson);
+  } catch {
+    const preview = rawJson.length > 200 ? `${rawJson.slice(0, 200)}...` : rawJson;
+    throw new Error(
+      `Failed to parse GitHub CLI JSON output for issue. The output was not valid JSON. Raw output preview: ${preview}`,
+    );
+  }
   if (!isGitHubIssue(parsedIssue)) {
     throw new Error("GitHub CLI returned an unexpected issue shape");
   }
@@ -132,9 +163,15 @@ function findMainWorktreeRoot(): string {
 
 function loadIssues(options: Options): GitHubIssue[] {
   if (options.issueRefs.length > 0) {
-    return options.issueRefs.map((issueRef) =>
-      parseIssue(run("gh", ["issue", "view", issueRef, "--json", "number,title,url"])),
-    );
+    const issues: GitHubIssue[] = [];
+    for (const issueRef of options.issueRefs) {
+      try {
+        issues.push(parseIssue(run("gh", ["issue", "view", issueRef, "--json", "number,title,url"])));
+      } catch (error) {
+        console.error(`Skipping invalid issue ref: ${issueRef} — ${(error as Error).message}`);
+      }
+    }
+    return issues;
   }
 
   const listArgs = [
