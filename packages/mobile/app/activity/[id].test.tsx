@@ -259,6 +259,15 @@ function getQueryEnabledFlag(value: unknown): boolean | undefined {
   return typeof enabled === "boolean" ? enabled : undefined;
 }
 
+function getPlaceholderData(value: unknown): ((previousData: unknown) => unknown) | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const placeholderData = Reflect.get(value, "placeholderData");
+  return typeof placeholderData === "function" ? placeholderData : undefined;
+}
+
 beforeEach(() => {
   mockByIdQuery.mockClear();
   mockStreamQuery.mockClear();
@@ -273,6 +282,21 @@ beforeEach(() => {
 });
 
 describe("ActivityDetailScreen", () => {
+  it("keeps previous stream and zone data visible while refetching", async () => {
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    const previousStream = [{ recordedAt: "2026-04-14T10:00:00.000Z" }];
+    const previousZones = [{ zone: 1, seconds: 120 }];
+
+    expect(getPlaceholderData(mockStreamQuery.mock.calls[0]?.[1])?.(previousStream)).toBe(
+      previousStream,
+    );
+    expect(getPlaceholderData(mockHrZonesQuery.mock.calls[0]?.[1])?.(previousZones)).toBe(
+      previousZones,
+    );
+  });
+
   it("renders without crashing when stream has heart rate and power data", async () => {
     const { default: ActivityDetailScreen } = await import("./[id]");
     render(React.createElement(ActivityDetailScreen));

@@ -304,14 +304,23 @@ export default function ActivityDetailScreen() {
   };
 
   const detail = trpc.activity.byId.useQuery({ id: id ?? "" }, { enabled: !!id });
-  const stream = trpc.activity.stream.useQuery({ id: id ?? "", maxPoints: 200 }, { enabled: !!id });
-  const hrZones = trpc.activity.hrZones.useQuery({ id: id ?? "" }, { enabled: !!id });
+  const stream = trpc.activity.stream.useQuery(
+    { id: id ?? "", maxPoints: 200 },
+    { enabled: !!id, placeholderData: (previousData) => previousData },
+  );
+  const hrZones = trpc.activity.hrZones.useQuery(
+    { id: id ?? "" },
+    { enabled: !!id, placeholderData: (previousData) => previousData },
+  );
   const points = stream.data ?? [];
   const hasPower = points.some((p) => p.power != null);
   const isCycling = detail.data != null && isCyclingActivity(detail.data.activityType);
   const powerZones = trpc.activity.powerZones.useQuery(
     { id: id ?? "" },
-    { enabled: !!id && isCycling && hasPower },
+    {
+      enabled: !!id && isCycling && hasPower,
+      placeholderData: (previousData) => previousData,
+    },
   );
   const isStrengthActivity =
     detail.data != null && isStrengthActivityType(detail.data.activityType);
