@@ -94,15 +94,22 @@ describe("LimitedActivitySensorStore", () => {
       "clickhouse.queue.wait_ms",
       expect.any(Number),
     );
-    expect(mockLoggerInfo).toHaveBeenCalledWith("clickhouse.queue_wait", {
+    expect(mockLoggerInfo).toHaveBeenCalledTimes(1);
+    const loggedQueueWait = mockLoggerInfo.mock.calls[0]?.[1];
+    expect(loggedQueueWait).toEqual({
       active: 0,
       concurrency: 2,
       depth: 0,
       queue: "dashboard",
       waitMs: expect.any(Number),
     });
-    expect(JSON.stringify(mockLoggerInfo.mock.calls)).not.toContain("user-1");
-    expect(JSON.stringify(mockLoggerInfo.mock.calls)).not.toContain("daily_recovery");
+    expect(Object.keys(loggedQueueWait).sort()).toEqual([
+      "active",
+      "concurrency",
+      "depth",
+      "queue",
+      "waitMs",
+    ]);
   });
 
   it("starts explicitly prioritized dashboard queries while regular work is queued", async () => {

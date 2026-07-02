@@ -38,7 +38,7 @@ class ClickHouseQueueLimiter {
   async #waitForSlot(): Promise<void> {
     const queuedBeforeAcquire = this.#queue.length;
     const activeBeforeAcquire = this.#active;
-    const waitStartedAt = Date.now();
+    const waitStartedAt = performance.now();
     await tracer.startActiveSpan("clickhouse.queue_wait", async (span) => {
       try {
         span.setAttribute("clickhouse.queue.name", this.#name);
@@ -46,7 +46,7 @@ class ClickHouseQueueLimiter {
         span.setAttribute("clickhouse.queue.active", activeBeforeAcquire);
         span.setAttribute("clickhouse.queue.depth", queuedBeforeAcquire);
         await this.#acquire();
-        const waitMs = Date.now() - waitStartedAt;
+        const waitMs = performance.now() - waitStartedAt;
         span.setAttribute("clickhouse.queue.wait_ms", waitMs);
         logger.info("clickhouse.queue_wait", {
           active: activeBeforeAcquire,
