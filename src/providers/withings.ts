@@ -505,57 +505,57 @@ export class WithingsProvider implements WebhookProvider {
                 }
               }
 
+              for (const group of response.measuregrps) {
+                const parsed = parseMeasureGroup(group);
+
+                // Skip empty groups (objectives or unknown types)
+                if (
+                  parsed.weightKg === undefined &&
+                  parsed.systolicBp === undefined &&
+                  parsed.temperatureC === undefined
+                ) {
+                  continue;
+                }
+
+                try {
+                  await writeMetricStreamBatch(
+                    db,
+                    [
+                      {
+                        providerId: this.id,
+                        externalId: parsed.externalId,
+                        recordedAt: parsed.recordedAt,
+                        weightKg: parsed.weightKg,
+                        bodyFatPct: parsed.bodyFatPct,
+                        muscleMassKg: parsed.muscleMassKg,
+                        boneMassKg: parsed.boneMassKg,
+                        systolicBp: parsed.systolicBp,
+                        diastolicBp: parsed.diastolicBp,
+                        heartPulse: parsed.heartPulse,
+                        temperatureC: parsed.temperatureC,
+                      },
+                    ],
+                    SOURCE_TYPE_API,
+                    undefined,
+                    options?.metricStreamPublisher,
+                  );
+                  count++;
+                } catch (err) {
+                  throwIfProviderSyncAbortError(err);
+                  errors.push({
+                    message: err instanceof Error ? err.message : String(err),
+                    externalId: parsed.externalId,
+                    cause: err,
+                  });
+                }
+              }
+
               return {
                 items: response.measuregrps,
                 nextCursor: response.more ? response.offset : null,
               };
             },
           });
-
-          for (const group of pageResult.items) {
-            const parsed = parseMeasureGroup(group);
-
-            // Skip empty groups (objectives or unknown types)
-            if (
-              parsed.weightKg === undefined &&
-              parsed.systolicBp === undefined &&
-              parsed.temperatureC === undefined
-            ) {
-              continue;
-            }
-
-            try {
-              await writeMetricStreamBatch(
-                db,
-                [
-                  {
-                    providerId: this.id,
-                    externalId: parsed.externalId,
-                    recordedAt: parsed.recordedAt,
-                    weightKg: parsed.weightKg,
-                    bodyFatPct: parsed.bodyFatPct,
-                    muscleMassKg: parsed.muscleMassKg,
-                    boneMassKg: parsed.boneMassKg,
-                    systolicBp: parsed.systolicBp,
-                    diastolicBp: parsed.diastolicBp,
-                    heartPulse: parsed.heartPulse,
-                    temperatureC: parsed.temperatureC,
-                  },
-                ],
-                SOURCE_TYPE_API,
-                undefined,
-                options?.metricStreamPublisher,
-              );
-              count++;
-            } catch (err) {
-              throwIfProviderSyncAbortError(err);
-              errors.push({
-                message: err instanceof Error ? err.message : String(err),
-                externalId: parsed.externalId,
-                cause: err,
-              });
-            }
-          }
 
           return {
             recordCount: count,

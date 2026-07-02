@@ -300,7 +300,7 @@ export class WgerProvider implements SyncProvider {
 
           for (const raw of pageResult.items) {
             const entryDate = new Date(raw.date);
-            if (entryDate < since) {
+            if (entryDate < since || entryDate >= syncWindowEnd) {
               continue;
             }
 

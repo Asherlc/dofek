@@ -21,7 +21,7 @@ async function fetchAllPages<T>(
   do {
     const response = await fetchPage(nextToken);
     allData.push(...response.data);
-    nextToken = response.next_token ?? undefined;
+    nextToken = response.next_token || undefined;
   } while (nextToken);
 
   return allData;
@@ -39,7 +39,7 @@ export async function fetchOuraPages<T>(
       const response = await fetchPage(cursor);
       return {
         items: response.data,
-        nextCursor: response.next_token ?? null,
+        nextCursor: response.next_token || null,
       };
     },
   });

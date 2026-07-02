@@ -2319,6 +2319,22 @@ describe("fetchOuraPages", () => {
       }),
     ]);
   });
+
+  it("treats empty-string next_token as end of pagination", async () => {
+    let fetchCount = 0;
+    const fetchPage = async (nextToken?: string) => {
+      fetchCount += 1;
+      if (!nextToken) {
+        return { data: [{ id: "first" }], next_token: "" };
+      }
+      return { data: [{ id: "duplicate" }], next_token: null };
+    };
+
+    const result = await fetchOuraPages("oura", "sleep", fetchPage);
+    expect(fetchCount).toBe(1);
+    expect(result.items).toEqual([{ id: "first" }]);
+    expect(result.degradations).toEqual([]);
+  });
 });
 
 // ============================================================

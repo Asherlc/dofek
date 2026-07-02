@@ -336,6 +336,64 @@ describe("WithingsProvider.sync() — unit tests", () => {
     );
   });
 
+  it("retains measurements from earlier pages when a later page fetch fails", async () => {
+    process.env.WITHINGS_CLIENT_ID = "test-id";
+    process.env.WITHINGS_CLIENT_SECRET = "test-secret";
+
+    const futureDate = new Date("2099-01-01");
+    const { db: mockDb } = createMockDb({
+      tokensResult: [
+        {
+          providerId: "withings",
+          accessToken: "valid-token",
+          refreshToken: "valid-refresh",
+          expiresAt: futureDate,
+          scopes: "user.metrics",
+        },
+      ],
+    });
+
+    let measureCallCount = 0;
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      measureCallCount += 1;
+      if (measureCallCount === 1) {
+        return Response.json({
+          status: 0,
+          body: {
+            measuregrps: [
+              {
+                grpid: 1001,
+                date: 1709251200,
+                category: 1,
+                measures: [{ type: 1, value: 72500, unit: -3 }],
+              },
+            ],
+            more: 1,
+            offset: 50,
+          },
+        });
+      }
+      return Response.json({ status: 500, body: {} });
+    };
+
+    const provider = new WithingsProvider(mockFetch);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
+    );
+
+    expect(measureCallCount).toBe(2);
+    expect(result.recordsSynced).toBe(0);
+    expect(publishedMetricStreamBatches.flat()).toContainEqual(
+      expect.objectContaining({
+        providerId: "withings",
+        externalId: "1001",
+        channel: "body_weight",
+      }),
+    );
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors[0]?.message).toContain("metric_stream");
+  });
+
   it("skips empty groups (objectives or unknown types)", async () => {
     process.env.WITHINGS_CLIENT_ID = "test-id";
     process.env.WITHINGS_CLIENT_SECRET = "test-secret";

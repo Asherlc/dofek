@@ -85,8 +85,7 @@ async function syncFitbitSleepWithGuardedPagination(
     initialCursor: 0,
     fetchPage: async (offset) => {
       const response = await client.getSleepLogs(afterDate, offset ?? 0);
-      const currentOffset = offset === undefined ? 0 : offset;
-      const nextOffset = currentOffset + response.pagination.limit;
+      const nextOffset = response.pagination.offset + response.pagination.limit;
       const hasNext = response.pagination.next !== "";
       return {
         items: response.sleep,
