@@ -1,11 +1,8 @@
+import { QUERY_CACHE_MAX_AGE_MS } from "@dofek/scoring/query-cache";
 import { dehydrate, QueryClient } from "@tanstack/react-query";
 import { persistQueryClientRestore } from "@tanstack/react-query-persist-client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  createMobileQueryPersister,
-  QUERY_CACHE_MAX_AGE_MS,
-  removeMobileQueryCache,
-} from "./mobile-query-persistence";
+import { createMobileQueryPersister, removeMobileQueryCache } from "./mobile-query-persistence";
 
 vi.mock("@react-native-async-storage/async-storage", () => {
   const values = new Map<string, string>();

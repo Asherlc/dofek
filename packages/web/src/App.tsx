@@ -1,3 +1,4 @@
+import { QUERY_CACHE_MAX_AGE_MS } from "@dofek/scoring/query-cache";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import { useState } from "react";
@@ -6,7 +7,6 @@ import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 import { UnitProvider } from "./components/UnitProvider.tsx";
 import { FetchingProvider } from "./lib/FetchingContext.tsx";
 import { capturePageView, initPostHog } from "./lib/posthog.ts";
-import { QUERY_CACHE_GC_TIME_MS } from "./lib/query-persistence.ts";
 import { createTRPCClient, trpc } from "./lib/trpc.ts";
 import { routeTree } from "./routeTree.gen.ts";
 
@@ -31,7 +31,7 @@ export function App() {
         defaultOptions: {
           queries: {
             staleTime: 5 * 60 * 1000, // 5 min — health data only changes on sync
-            gcTime: QUERY_CACHE_GC_TIME_MS,
+            gcTime: QUERY_CACHE_MAX_AGE_MS,
             refetchOnWindowFocus: false,
           },
         },

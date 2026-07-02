@@ -1,13 +1,10 @@
 /* @vitest-environment jsdom */
 
+import { QUERY_CACHE_MAX_AGE_MS } from "@dofek/scoring/query-cache";
 import { dehydrate, QueryClient } from "@tanstack/react-query";
 import { persistQueryClientRestore } from "@tanstack/react-query-persist-client";
 import { beforeEach, describe, expect, it } from "vitest";
-import {
-  createWebQueryPersister,
-  QUERY_CACHE_MAX_AGE_MS,
-  removeWebQueryCache,
-} from "./query-persistence.ts";
+import { createWebQueryPersister, removeWebQueryCache } from "./query-persistence.ts";
 
 function createQueryClient() {
   return new QueryClient({

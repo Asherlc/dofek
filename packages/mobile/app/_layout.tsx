@@ -1,3 +1,4 @@
+import { QUERY_CACHE_MAX_AGE_MS } from "@dofek/scoring/query-cache";
 import * as Sentry from "@sentry/react-native";
 import { QueryClient } from "@tanstack/react-query";
 import { httpBatchLink, httpLink, splitLink } from "@trpc/client";
@@ -15,10 +16,7 @@ import {
 import { initBackgroundWatchInertialMeasurementUnitSync } from "../lib/background-watch-inertial-measurement-unit-sync";
 import { syncWhoopBle, teardownBackgroundWhoopBleSync } from "../lib/background-whoop-ble-sync";
 import type { SyncTrpcClient } from "../lib/health-kit-sync";
-import {
-  MobileQueryPersistenceProvider,
-  QUERY_CACHE_GC_TIME_MS,
-} from "../lib/mobile-query-persistence";
+import { MobileQueryPersistenceProvider } from "../lib/mobile-query-persistence";
 import { runAfterUiIdle } from "../lib/runAfterUiIdle";
 import { getTrpcUrl } from "../lib/server";
 import { captureException, initTelemetry, logger } from "../lib/telemetry";
@@ -117,7 +115,7 @@ function AuthGate() {
         defaultOptions: {
           queries: {
             staleTime: 1000 * 60 * 5,
-            gcTime: QUERY_CACHE_GC_TIME_MS,
+            gcTime: QUERY_CACHE_MAX_AGE_MS,
             refetchOnMount: false,
             refetchOnWindowFocus: false,
           },
