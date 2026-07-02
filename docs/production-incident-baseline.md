@@ -11404,3 +11404,27 @@ new incremental tables are populated.
   build confirms the branch compiles, but runtime confirmation requires a
   shipped mobile build on a device with HealthKit clinical record types
   available.
+
+## 2026-07-02 — Oura Stryker CI shard failed after pagination helper refactor
+
+- **Symptoms:** GitHub Actions `Test / Stryker (2)` failed for PR #1430 with a
+  mutation score below the `75` break threshold.
+- **User impact:** The PR was blocked from merging; production behavior was not
+  affected.
+- **Evidence:** Attached CI log `Test___Stryker__2__84830326352.log` reported
+  survived mutants in `src/providers/oura/sync-steps.ts`, including the optional
+  scope check at line 40 and pagination token propagation at line 55.
+- **Root cause:** The previous direct helper tests were removed when Oura
+  pagination logic moved into `sync-steps.ts`, and the remaining provider-level
+  tests did not assert pagination token usage, degradation metadata, or negative
+  optional-scope error cases.
+- **Fix / mitigation:** Added Oura provider sync tests covering pagination token
+  following, missing-scope degradation logging, arbitrary 401-shaped fetch
+  errors, and non-401 Oura API errors.
+- **Validation:** `pnpm vitest run src/providers/oura.test.ts`, `pnpm tsc
+  --noEmit`, lint with local ClickHouse port `55011`, and targeted `pnpm exec
+  stryker run stryker.ci.config.json --mutate "src/providers/oura/sync-steps.ts"`
+  all passed. Targeted mutation score was `82.17`, above the `75` break
+  threshold.
+- **Remaining risk:** The full GitHub Actions matrix was still pending after the
+  fix commit was pushed.
