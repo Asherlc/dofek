@@ -15,6 +15,7 @@ import {
   fetchOuraPages,
   fetchOuraPagesOptional,
   HEALTH_EVENT_BATCH_SIZE,
+  type OuraPagesResult,
 } from "./pagination.ts";
 import {
   mapOuraActivityType,
@@ -293,6 +294,72 @@ export async function syncHeartRate(context: SyncStepContext, since: Date): Prom
   }
 }
 
+async function persistDailyStress(
+  db: SyncDatabase,
+  providerId: string,
+  stressPages: OuraPagesResult<OuraDailyStress>,
+): Promise<{ recordCount: number; result: number; degradations: SyncDegradation[] }> {
+  const rows = stressPages.items.map((stress) => ({
+    providerId,
+    externalId: stress.id,
+    type: "oura_daily_stress",
+    value: stress.stress_high,
+    valueText: stress.day_summary,
+    startDate: new Date(`${stress.day}T00:00:00`),
+  }));
+
+  for (let i = 0; i < rows.length; i += HEALTH_EVENT_BATCH_SIZE) {
+    await db
+      .insert(healthEvent)
+      .values(rows.slice(i, i + HEALTH_EVENT_BATCH_SIZE))
+      .onConflictDoUpdate({
+        target: [healthEvent.userId, healthEvent.providerId, healthEvent.externalId],
+        set: {
+          value: sql`excluded.value`,
+          valueText: sql`excluded.value_text`,
+        },
+      });
+  }
+
+  return {
+    recordCount: rows.length,
+    result: rows.length,
+    degradations: stressPages.degradations,
+  };
+}
+
+async function persistDailyResilience(
+  db: SyncDatabase,
+  providerId: string,
+  resiliencePages: OuraPagesResult<OuraDailyResilience>,
+): Promise<{ recordCount: number; result: number; degradations: SyncDegradation[] }> {
+  let count = 0;
+  for (const resilience of resiliencePages.items) {
+    await db
+      .insert(healthEvent)
+      .values({
+        providerId,
+        externalId: resilience.id,
+        type: "oura_daily_resilience",
+        valueText: resilience.level,
+        startDate: new Date(`${resilience.day}T00:00:00`),
+      })
+      .onConflictDoUpdate({
+        target: [healthEvent.userId, healthEvent.providerId, healthEvent.externalId],
+        set: {
+          valueText: resilience.level,
+        },
+      });
+    count++;
+  }
+
+  return {
+    recordCount: count,
+    result: count,
+    degradations: resiliencePages.degradations,
+  };
+}
+
 export async function syncDailyStress(context: SyncStepContext): Promise<number> {
   const { db, providerId, client, sinceDate, todayDate, errors, options } = context;
   try {
@@ -305,33 +372,7 @@ export async function syncDailyStress(context: SyncStepContext): Promise<number>
           client.getDailyStress(sinceDate, todayDate, nextToken),
         );
 
-        const rows = stressPages.items.map((stress) => ({
-          providerId,
-          externalId: stress.id,
-          type: "oura_daily_stress",
-          value: stress.stress_high,
-          valueText: stress.day_summary,
-          startDate: new Date(`${stress.day}T00:00:00`),
-        }));
-
-        for (let i = 0; i < rows.length; i += HEALTH_EVENT_BATCH_SIZE) {
-          await db
-            .insert(healthEvent)
-            .values(rows.slice(i, i + HEALTH_EVENT_BATCH_SIZE))
-            .onConflictDoUpdate({
-              target: [healthEvent.userId, healthEvent.providerId, healthEvent.externalId],
-              set: {
-                value: sql`excluded.value`,
-                valueText: sql`excluded.value_text`,
-              },
-            });
-        }
-
-        return {
-          recordCount: rows.length,
-          result: rows.length,
-          degradations: stressPages.degradations,
-        };
+        return persistDailyStress(db, providerId, stressPages);
       },
       options?.userId,
     );
@@ -357,33 +398,7 @@ export async function syncDailyStressWebhook(context: SyncStepContext): Promise<
           client.getDailyStress(sinceDate, todayDate, nextToken),
         );
 
-        const rows = stressPages.items.map((stress) => ({
-          providerId,
-          externalId: stress.id,
-          type: "oura_daily_stress",
-          value: stress.stress_high,
-          valueText: stress.day_summary,
-          startDate: new Date(`${stress.day}T00:00:00`),
-        }));
-
-        for (let i = 0; i < rows.length; i += HEALTH_EVENT_BATCH_SIZE) {
-          await db
-            .insert(healthEvent)
-            .values(rows.slice(i, i + HEALTH_EVENT_BATCH_SIZE))
-            .onConflictDoUpdate({
-              target: [healthEvent.userId, healthEvent.providerId, healthEvent.externalId],
-              set: {
-                value: sql`excluded.value`,
-                valueText: sql`excluded.value_text`,
-              },
-            });
-        }
-
-        return {
-          recordCount: rows.length,
-          result: rows.length,
-          degradations: stressPages.degradations,
-        };
+        return persistDailyStress(db, providerId, stressPages);
       },
       options?.userId,
     );
@@ -411,31 +426,7 @@ export async function syncDailyResilience(context: SyncStepContext): Promise<num
           (nextToken) => client.getDailyResilience(sinceDate, todayDate, nextToken),
         );
 
-        let count = 0;
-        for (const resilience of resiliencePages.items) {
-          await db
-            .insert(healthEvent)
-            .values({
-              providerId,
-              externalId: resilience.id,
-              type: "oura_daily_resilience",
-              valueText: resilience.level,
-              startDate: new Date(`${resilience.day}T00:00:00`),
-            })
-            .onConflictDoUpdate({
-              target: [healthEvent.userId, healthEvent.providerId, healthEvent.externalId],
-              set: {
-                valueText: resilience.level,
-              },
-            });
-          count++;
-        }
-
-        return {
-          recordCount: count,
-          result: count,
-          degradations: resiliencePages.degradations,
-        };
+        return persistDailyResilience(db, providerId, resiliencePages);
       },
       options?.userId,
     );
@@ -461,31 +452,7 @@ export async function syncDailyResilienceWebhook(context: SyncStepContext): Prom
           client.getDailyResilience(sinceDate, todayDate, nextToken),
         );
 
-        let count = 0;
-        for (const resilience of resiliencePages.items) {
-          await db
-            .insert(healthEvent)
-            .values({
-              providerId,
-              externalId: resilience.id,
-              type: "oura_daily_resilience",
-              valueText: resilience.level,
-              startDate: new Date(`${resilience.day}T00:00:00`),
-            })
-            .onConflictDoUpdate({
-              target: [healthEvent.userId, healthEvent.providerId, healthEvent.externalId],
-              set: {
-                valueText: resilience.level,
-              },
-            });
-          count++;
-        }
-
-        return {
-          recordCount: count,
-          result: count,
-          degradations: resiliencePages.degradations,
-        };
+        return persistDailyResilience(db, providerId, resiliencePages);
       },
       options?.userId,
     );
