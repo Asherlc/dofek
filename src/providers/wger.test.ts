@@ -21,6 +21,12 @@ const syncLogOutcomes = vi.hoisted<{ values: CapturedSyncLogOutcome[] }>(() => (
   values: [],
 }));
 
+afterEach(() => {
+  syncLogOutcomes.values = [];
+  providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
+  providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
+});
+
 vi.mock("../db/sync-log.ts", () => ({
   withSyncLog: vi.fn(
     async (
@@ -136,9 +142,6 @@ describe("wgerOAuthConfig", () => {
   const originalEnv = { ...process.env };
   afterEach(() => {
     process.env = { ...originalEnv };
-    syncLogOutcomes.values = [];
-    providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
-    providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
   });
 
   it("returns null when env vars missing", () => {
@@ -295,6 +298,10 @@ describe("WgerProvider", () => {
         presentExternalIds: new Set(["10"]),
       }),
     );
+  });
+
+  it("starts each sync test with a clean sync log capture", () => {
+    expect(syncLogOutcomes.values).toEqual([]);
   });
 
   it("handles repeated workout session pagination next URLs without hanging", async () => {
