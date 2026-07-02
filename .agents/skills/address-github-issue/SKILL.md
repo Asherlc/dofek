@@ -14,6 +14,7 @@ Resolve the issue number (works for both forms):
 ```bash
 ISSUE_NUMBER=$(gh issue view "$ARGUMENTS" --json number -q .number)
 ISSUE_URL=$(gh issue view "$ISSUE_NUMBER" --json url -q .url)
+ISSUE_ID=$(gh issue view "$ISSUE_NUMBER" --json id -q .id)
 export ISSUE_URL
 ```
 
@@ -47,8 +48,35 @@ if [ -z "$BRANCH_NAME" ]; then
   echo "No current branch is checked out; cannot attach a branch to issue #$ISSUE_NUMBER." >&2
   exit 1
 fi
+export BRANCH_NAME
 
-gh issue develop "$ISSUE_NUMBER" --name "$BRANCH_NAME"
+BRANCH_OID=$(git rev-parse HEAD)
+REPOSITORY_ID=$(gh repo view --json id -q .id)
+LINKED_BRANCH_EXISTS=$(
+  gh api graphql \
+    -f issueId="$ISSUE_ID" \
+    -f query='query($issueId: ID!) {
+      node(id: $issueId) {
+        ... on Issue {
+          linkedBranches(first: 100) { nodes { ref { name } } }
+        }
+      }
+    }' \
+    -q 'first(.data.node.linkedBranches.nodes[]? | select(.ref.name == env.BRANCH_NAME) | .ref.name) // ""'
+)
+
+if [ -z "$LINKED_BRANCH_EXISTS" ]; then
+  gh api graphql \
+    -f issueId="$ISSUE_ID" \
+    -f repositoryId="$REPOSITORY_ID" \
+    -f name="$BRANCH_NAME" \
+    -f oid="$BRANCH_OID" \
+    -f query='mutation($issueId: ID!, $repositoryId: ID!, $name: String!, $oid: GitObjectID!) {
+      createLinkedBranch(input: {issueId: $issueId, repositoryId: $repositoryId, name: $name, oid: $oid}) {
+        linkedBranch { ref { name } }
+      }
+    }'
+fi
 gh issue develop --list "$ISSUE_NUMBER"
 ```
 
@@ -69,7 +97,7 @@ PROJECT_ITEM_ID=$(
     --owner "$PROJECT_OWNER" \
     --format json \
     --limit 100 \
-    --query "repo:$REPOSITORY #$ISSUE_NUMBER is:issue" \
+    --query "repo:$REPOSITORY is:issue" \
     -q 'first(.items[] | select(.content.url == env.ISSUE_URL) | .id) // ""'
 )
 
