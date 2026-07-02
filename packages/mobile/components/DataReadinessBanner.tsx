@@ -1,3 +1,4 @@
+import { bannerHeading } from "@dofek/providers/data-readiness-banner";
 import { statusColors, textColors } from "@dofek/scoring/colors";
 import { StyleSheet, Text, View } from "react-native";
 import { colors, radius, spacing } from "../theme";
@@ -27,39 +28,6 @@ interface DataReadinessBannerProps {
   data?: DataReadinessSnapshot;
   error?: { message?: string } | null;
   loading?: boolean;
-}
-
-const headingByStatus: Record<Exclude<DataReadinessStatus, "healthy" | "syncing">, string> = {
-  stale: "Dashboard summaries are catching up",
-  missing: "No data has synced yet",
-  blocked: "Data pipeline needs attention",
-};
-
-function syncingHeading(providers: Array<{ name: string }>): string {
-  if (providers.length === 0) return "Data is syncing now";
-  if (providers.length === 1) return `Syncing ${providers[0]?.name ?? "data source"}`;
-  if (providers.length === 2) {
-    return `Syncing ${providers[0]?.name ?? "data source"} and ${providers[1]?.name ?? "data source"}`;
-  }
-  const leading = providers
-    .slice(0, -1)
-    .map((provider) => provider.name)
-    .join(", ");
-  const last = providers.at(-1)?.name ?? "data source";
-  return `Syncing ${leading}, and ${last}`;
-}
-
-function bannerHeading(data: DataReadinessSnapshot): string {
-  switch (data.overallStatus) {
-    case "syncing":
-      return syncingHeading(data.syncingProviders ?? []);
-    case "stale":
-    case "missing":
-    case "blocked":
-      return headingByStatus[data.overallStatus];
-    default:
-      return "";
-  }
 }
 
 export function DataReadinessBanner({

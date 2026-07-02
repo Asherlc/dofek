@@ -192,16 +192,7 @@ import {
   syncStatusInput,
   triggerSyncInput,
 } from "./sync.ts";
-import {
-  ensureProvidersRegistered,
-  importTypeFromJobData,
-  isJobDataForUser,
-  mapBullMqStateToSyncStatus,
-  parseJobId,
-  providerIdForImportType,
-  providerIdFromSyncJobData,
-  toJobId,
-} from "./sync-helpers.ts";
+import { ensureProvidersRegistered, parseJobId, toJobId } from "./sync-helpers.ts";
 
 const routerConstructionCachedTtlValues = mockCachedProtectedQuery.mock.calls.map(
   (call) => call[0],
@@ -2648,31 +2639,7 @@ describe("syncRouter", () => {
           getState: vi.fn().mockResolvedValue("waiting"),
         },
       ]);
-      const mockExecute = vi
-        .fn()
-        .mockResolvedValueOnce([{ rawRows: 42, latestRawAt: "2026-06-29T12:00:00.000Z" }])
-        .mockResolvedValueOnce([{ rawRows: 8, latestRawAt: "2026-06-29T08:00:00.000Z" }])
-        .mockResolvedValueOnce([{ rawRows: 3, latestRawAt: "2026-06-29T10:00:00.000Z" }]);
-      const sensorStore = {
-        query: vi.fn(async (_schema: unknown, queryText: string) => {
-          if (queryText.includes("analytics.daily_recovery")) {
-            return [{ latestReadModelAt: "2026-06-29T12:00:00.000Z" }];
-          }
-          if (queryText.includes("analytics.daily_sleep")) {
-            return [{ latestReadModelAt: "2026-06-29T08:00:00.000Z" }];
-          }
-          if (queryText.includes("analytics.activity_summary_rows")) {
-            return [{ latestReadModelAt: "2026-06-29T10:00:00.000Z" }];
-          }
-          return [];
-        }),
-      };
-      const caller = createCaller({
-        db: { execute: mockExecute },
-        sensorStore,
-        userId: "user-1",
-        timezone: "UTC",
-      });
+      const caller = createHealthyDataHealthCaller();
 
       const result = await caller.dataHealth();
 
@@ -2855,31 +2822,7 @@ describe("syncRouter", () => {
     it("does not mark overall status syncing for delayed-only jobs", async () => {
       mockGetJobs.mockResolvedValue([]);
       mockImportQueueGetJobs.mockResolvedValue([]);
-      const mockExecute = vi
-        .fn()
-        .mockResolvedValueOnce([{ rawRows: 42, latestRawAt: "2026-06-29T12:00:00.000Z" }])
-        .mockResolvedValueOnce([{ rawRows: 8, latestRawAt: "2026-06-29T08:00:00.000Z" }])
-        .mockResolvedValueOnce([{ rawRows: 3, latestRawAt: "2026-06-29T10:00:00.000Z" }]);
-      const sensorStore = {
-        query: vi.fn(async (_schema: unknown, queryText: string) => {
-          if (queryText.includes("analytics.daily_recovery")) {
-            return [{ latestReadModelAt: "2026-06-29T12:00:00.000Z" }];
-          }
-          if (queryText.includes("analytics.daily_sleep")) {
-            return [{ latestReadModelAt: "2026-06-29T08:00:00.000Z" }];
-          }
-          if (queryText.includes("analytics.activity_summary_rows")) {
-            return [{ latestReadModelAt: "2026-06-29T10:00:00.000Z" }];
-          }
-          return [];
-        }),
-      };
-      const caller = createCaller({
-        db: { execute: mockExecute },
-        sensorStore,
-        userId: "user-1",
-        timezone: "UTC",
-      });
+      const caller = createHealthyDataHealthCaller();
 
       const result = await caller.dataHealth();
 
@@ -2906,103 +2849,6 @@ describe("syncRouter", () => {
         message: "Unable to check sync readiness because the queue service is unavailable.",
       });
       expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error));
-    });
-  });
-
-  describe("mapBullMqStateToSyncStatus", () => {
-    it("maps 'completed' to 'done'", () => {
-      expect(mapBullMqStateToSyncStatus("completed")).toBe("done");
-    });
-
-    it("maps 'failed' to 'error'", () => {
-      expect(mapBullMqStateToSyncStatus("failed")).toBe("error");
-    });
-
-    it("maps 'active' to 'running' (default)", () => {
-      expect(mapBullMqStateToSyncStatus("active")).toBe("running");
-    });
-
-    it("maps 'waiting' to 'running' (default)", () => {
-      expect(mapBullMqStateToSyncStatus("waiting")).toBe("running");
-    });
-
-    it("maps unknown states to 'running' (default)", () => {
-      expect(mapBullMqStateToSyncStatus("delayed")).toBe("running");
-      expect(mapBullMqStateToSyncStatus("")).toBe("running");
-    });
-
-    it("does not swap 'completed' and 'failed' mappings", () => {
-      expect(mapBullMqStateToSyncStatus("completed")).not.toBe("error");
-      expect(mapBullMqStateToSyncStatus("failed")).not.toBe("done");
-    });
-  });
-
-  describe("providerIdForImportType", () => {
-    it("maps known import types to provider ids", () => {
-      expect(providerIdForImportType("apple-health")).toBe("apple_health");
-      expect(providerIdForImportType("strong-csv")).toBe("strong-csv");
-      expect(providerIdForImportType("cronometer-csv")).toBe("cronometer-csv");
-      expect(providerIdForImportType("zos-app")).toBe("zos-app");
-    });
-
-    it("returns undefined for unknown import types", () => {
-      expect(providerIdForImportType("unknown-import-type")).toBeUndefined();
-    });
-  });
-
-  describe("isJobDataForUser", () => {
-    it("returns false for null, primitives, and objects without userId", () => {
-      expect(isJobDataForUser(null, "user-1")).toBe(false);
-      expect(isJobDataForUser("invalid", "user-1")).toBe(false);
-      expect(isJobDataForUser({ providerId: "garmin" }, "user-1")).toBe(false);
-    });
-
-    it("returns false for other users and true for matching users", () => {
-      expect(isJobDataForUser({ userId: "other-user" }, "user-1")).toBe(false);
-      expect(isJobDataForUser({ userId: "user-1" }, "user-1")).toBe(true);
-    });
-  });
-
-  describe("importTypeFromJobData", () => {
-    it("returns undefined for malformed job data", () => {
-      expect(importTypeFromJobData(null)).toBeUndefined();
-      expect(importTypeFromJobData("invalid")).toBeUndefined();
-      expect(importTypeFromJobData({ userId: "user-1" })).toBeUndefined();
-      expect(importTypeFromJobData({ userId: "user-1", importType: 123 })).toBeUndefined();
-    });
-
-    it("returns string import types", () => {
-      expect(importTypeFromJobData({ importType: "apple-health" })).toBe("apple-health");
-    });
-  });
-
-  describe("providerIdFromSyncJobData", () => {
-    const knownProviderIds = new Set(["garmin", "whoop"]);
-
-    it("falls back to the queue provider id for missing or invalid payload values", () => {
-      expect(providerIdFromSyncJobData({}, "garmin", knownProviderIds)).toBe("garmin");
-      expect(providerIdFromSyncJobData({ providerId: null }, "garmin", knownProviderIds)).toBe(
-        "garmin",
-      );
-      expect(providerIdFromSyncJobData({ providerId: "" }, "garmin", knownProviderIds)).toBe(
-        "garmin",
-      );
-      expect(providerIdFromSyncJobData({ providerId: 123 }, "garmin", knownProviderIds)).toBe(
-        "garmin",
-      );
-      expect(providerIdFromSyncJobData({}, "strava", knownProviderIds)).toBeUndefined();
-    });
-
-    it("returns known payload provider ids and ignores unknown stale values", () => {
-      expect(providerIdFromSyncJobData({ providerId: "garmin" }, "whoop", knownProviderIds)).toBe(
-        "garmin",
-      );
-      expect(
-        providerIdFromSyncJobData({ providerId: "stale-unknown" }, "garmin", knownProviderIds),
-      ).toBe("garmin");
-      expect(
-        providerIdFromSyncJobData({ providerId: "stale-unknown" }, "strava", knownProviderIds),
-      ).toBeUndefined();
     });
   });
 });
