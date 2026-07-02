@@ -189,4 +189,34 @@ describe("fetchProviderPages", () => {
     expect(result.completed).toBe(true);
     expect(result.stoppedByProviderRule).toBe(true);
   });
+
+  it("processes fetched pages before a later page fetch fails", async () => {
+    const processedItems: string[] = [];
+    let calls = 0;
+
+    await expect(
+      fetchProviderPages<string, number>({
+        providerId: "komoot",
+        stepName: "activity_list",
+        initialCursor: 0,
+        fetchPage: async (cursor) => {
+          calls += 1;
+          if (cursor === 1) {
+            throw new Error("later page failed");
+          }
+
+          return {
+            items: ["tour-1"],
+            nextCursor: 1,
+          };
+        },
+        onPage: async (page) => {
+          processedItems.push(...page.items);
+        },
+      }),
+    ).rejects.toThrow("later page failed");
+
+    expect(calls).toBe(2);
+    expect(processedItems).toEqual(["tour-1"]);
+  });
 });

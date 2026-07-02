@@ -383,24 +383,25 @@ export class BodySpecProvider implements SyncProvider {
                 nextCursor: listResponse.pagination.has_more ? currentPage + 1 : null,
               };
             },
+            onPage: async (page) => {
+              for (const result of page.items) {
+                const resultTime = new Date(result.start_time);
+                if (resultTime < since) continue;
+                if (resultTime > until) continue;
+
+                try {
+                  count += await this.#syncResult(db, client, result.result_id, resultTime);
+                } catch (err) {
+                  errors.push({
+                    message: err instanceof Error ? err.message : String(err),
+                    externalId: result.result_id,
+                    cause: err,
+                  });
+                }
+              }
+            },
           });
           degradations.push(...pages.degradations);
-
-          for (const result of pages.items) {
-            const resultTime = new Date(result.start_time);
-            if (resultTime < since) continue;
-            if (resultTime > until) continue;
-
-            try {
-              count += await this.#syncResult(db, client, result.result_id, resultTime);
-            } catch (err) {
-              errors.push({
-                message: err instanceof Error ? err.message : String(err),
-                externalId: result.result_id,
-                cause: err,
-              });
-            }
-          }
 
           return { recordCount: count, result: count, degradations };
         },

@@ -46,7 +46,7 @@ function fakeTour(overrides: Partial<FakeKomootTour> = {}): FakeKomootTour {
 
 function komootHandlers(
   pages: FakeKomootTour[][],
-  opts?: { apiError?: boolean; onTourRequest?: (page: number) => void },
+  opts?: { apiError?: boolean; apiErrorPage?: number; onTourRequest?: (page: number) => void },
 ) {
   return [
     // Token refresh
@@ -67,6 +67,9 @@ function komootHandlers(
 
       const url = new URL(request.url);
       const page = Number.parseInt(url.searchParams.get("page") ?? "0", 10);
+      if (opts?.apiErrorPage === page) {
+        return new HttpResponse("Internal Server Error", { status: 500 });
+      }
       opts?.onTourRequest?.(page);
       const totalPages = pages.length;
       const currentPageTours = pages[page] ?? [];
@@ -189,6 +192,35 @@ describe("KomootProvider.sync() (integration)", () => {
 
     const trail = rows.find((r) => r.externalId === "8002");
     expect(trail?.activityType).toBe("trail_running");
+  });
+
+  it("persists already fetched tours before a later page request fails", async () => {
+    await saveTokens(ctx.db, "komoot", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "profile",
+    });
+
+    server.use(
+      ...komootHandlers([[fakeTour({ id: 8051, name: "Persisted Before Failure" })], []], {
+        apiErrorPage: 1,
+      }),
+    );
+
+    const provider = new KomootProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
+
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors[0]?.message).toContain("Komoot API error");
+
+    const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "komoot"));
+    expect(rows.some((row) => row.externalId === "8051")).toBe(true);
   });
 
   it("reports degraded pagination and skips reconciliation when an empty page still has a next page", async () => {

@@ -872,6 +872,55 @@ describe("BodySpecProvider", () => {
       expect(listCallCount).toBe(2);
     });
 
+    it("syncs already fetched results before a later page request fails", async () => {
+      const validTokens = {
+        accessToken: "valid-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2030-01-01"),
+        scopes: "read:results",
+      };
+      vi.mocked(loadTokens).mockResolvedValue(validTokens);
+
+      let listCallCount = 0;
+      const fetchFn = vi.fn().mockImplementation((url: string) => {
+        if (url.includes("/results/?")) {
+          listCallCount++;
+          if (listCallCount === 1) {
+            return Promise.resolve(
+              jsonResponse({
+                results: [{ result_id: "r1", start_time: "2025-06-15T10:00:00Z" }],
+                pagination: { page: 1, page_size: 1, results: 2, has_more: true },
+              }),
+            );
+          }
+          return Promise.resolve(errorResponse(500, "Internal Server Error"));
+        }
+        if (url.includes("/composition")) {
+          return Promise.resolve(jsonResponse(COMPOSITION_RESPONSE));
+        }
+        if (url.includes("/scan-info")) {
+          return Promise.resolve(jsonResponse(SCAN_INFO_RESPONSE));
+        }
+        return Promise.resolve(errorResponse(404, "Not Found"));
+      });
+
+      const provider = new BodySpecProvider(fetchFn);
+      const result = await provider.sync(
+        new SyncRun({
+          db: mockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2025-01-01") }),
+        }),
+      );
+
+      expect(result.errors.length).toBeGreaterThan(0);
+      expect(result.errors[0]?.message).toContain("API error 500");
+      expect(listCallCount).toBe(2);
+      expect(fetchFn).toHaveBeenCalledWith(
+        expect.stringContaining("/results/r1/dexa/composition"),
+        expect.any(Object),
+      );
+    });
+
     it("reports degraded pagination when an empty results page still has more results", async () => {
       const validTokens = {
         accessToken: "valid-token",

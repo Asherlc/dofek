@@ -419,44 +419,45 @@ export class Concept2Provider implements WebhookProvider {
                 nextCursor: nextPage <= data.meta.pagination.total_pages ? nextPage : null,
               };
             },
+            onPage: async (page) => {
+              for (const raw of page.items) {
+                const parsed = parseConcept2Result(raw);
+                if (parsed.startedAt.getTime() > syncWindowEnd.getTime()) {
+                  continue;
+                }
+                presentActivityExternalIds.add(parsed.externalId);
+                try {
+                  await upsertProviderActivity(
+                    db,
+                    {
+                      providerId: this.id,
+                      externalId: parsed.externalId,
+                      activityType: parsed.activityType,
+                      name: parsed.name,
+                      startedAt: parsed.startedAt,
+                      endedAt: parsed.endedAt,
+                      raw: parsed.raw,
+                    },
+                    {
+                      activityType: parsed.activityType,
+                      name: parsed.name,
+                      startedAt: parsed.startedAt,
+                      endedAt: parsed.endedAt,
+                      raw: parsed.raw,
+                    },
+                  );
+                  count++;
+                } catch (err) {
+                  errors.push({
+                    message: err instanceof Error ? err.message : String(err),
+                    externalId: parsed.externalId,
+                    cause: err,
+                  });
+                }
+              }
+            },
           });
           degradations.push(...pages.degradations);
-
-          for (const raw of pages.items) {
-            const parsed = parseConcept2Result(raw);
-            if (parsed.startedAt.getTime() > syncWindowEnd.getTime()) {
-              continue;
-            }
-            presentActivityExternalIds.add(parsed.externalId);
-            try {
-              await upsertProviderActivity(
-                db,
-                {
-                  providerId: this.id,
-                  externalId: parsed.externalId,
-                  activityType: parsed.activityType,
-                  name: parsed.name,
-                  startedAt: parsed.startedAt,
-                  endedAt: parsed.endedAt,
-                  raw: parsed.raw,
-                },
-                {
-                  activityType: parsed.activityType,
-                  name: parsed.name,
-                  startedAt: parsed.startedAt,
-                  endedAt: parsed.endedAt,
-                  raw: parsed.raw,
-                },
-              );
-              count++;
-            } catch (err) {
-              errors.push({
-                message: err instanceof Error ? err.message : String(err),
-                externalId: parsed.externalId,
-                cause: err,
-              });
-            }
-          }
 
           if (degradations.length === 0) {
             await finishProviderActivityListSync(db, {

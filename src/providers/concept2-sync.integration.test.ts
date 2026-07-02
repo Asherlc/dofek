@@ -58,6 +58,7 @@ function concept2Handlers(
   opts?: {
     totalPages?: number;
     apiError?: boolean;
+    apiErrorPage?: number;
     pageResults?: (page: number) => FakeConcept2Result[];
     onResultRequest?: (page: number) => void;
   },
@@ -83,6 +84,9 @@ function concept2Handlers(
 
       const url = new URL(request.url);
       const page = Number.parseInt(url.searchParams.get("page") ?? "1", 10);
+      if (opts?.apiErrorPage === page) {
+        return new HttpResponse("Internal Server Error", { status: 500 });
+      }
       opts?.onResultRequest?.(page);
 
       // For pagination tests: return results only on the requested page
@@ -268,6 +272,38 @@ describe("Concept2Provider.sync() (integration)", () => {
       .from(activity)
       .where(eq(activity.externalId, "concept2-degraded-missing"));
     expect(missing?.providerAbsentAt).toBeNull();
+  });
+
+  it("persists already fetched results before a later page request fails", async () => {
+    await saveTokens(ctx.db, "concept2", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user:read results:read",
+    });
+
+    server.use(
+      ...concept2Handlers([], {
+        totalPages: 2,
+        apiErrorPage: 2,
+        pageResults: (page) =>
+          page === 1 ? [fakeResult({ id: 6151, date: "2026-04-01 10:00:00" })] : [],
+      }),
+    );
+
+    const provider = new Concept2Provider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+      }),
+    );
+
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors[0]?.message).toContain("API error");
+
+    const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "concept2"));
+    expect(rows.some((row) => row.externalId === "6151")).toBe(true);
   });
 
   it("reports max-page degradation while preserving page <= totalPages semantics", async () => {
