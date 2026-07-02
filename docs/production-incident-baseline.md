@@ -11415,7 +11415,7 @@ new incremental tables are populated.
 - **Evidence:** Sentry issue
   [DOFEK-MOBILE-13](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-13)
   was first and last seen on 2026-07-02 at 14:10:01 UTC in production on iOS
-  26.5. The event was handled, had no stacktrace, and carried filtered
+  26.5. The event was handled, had no stack trace, and carried filtered
   HealthKit connect context. Local code inspection found
   `HKHealthStore.requestAuthorization` errors were all rejected from the native
   `requestPermissions` bridge, while the JavaScript connect flow already treats
