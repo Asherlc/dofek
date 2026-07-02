@@ -6,7 +6,6 @@ import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { AppleHealthAuthorizationService } from "../lib/apple-health-provider";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { initBackgroundAccelerometerSync } from "../lib/background-accelerometer-sync";
 import {
@@ -212,19 +211,6 @@ function AuthGate() {
       );
       captureException(error, { source: "bg-healthkit-sync" });
     });
-
-    const appleHealthAuthorization = new AppleHealthAuthorizationService();
-    appleHealthAuthorization
-      .resolve()
-      .then((state) => {
-        if (state.needsPermissionUpdate()) {
-          return appleHealthAuthorization.requestPermissions();
-        }
-      })
-      .catch((error: unknown) => {
-        // Best-effort — failing to re-prompt is non-critical
-        captureException(error, { source: "bg-healthkit-sync-reauth" });
-      });
 
     // Start continuous accelerometer recording and background sync
     const imuSyncClient = {
