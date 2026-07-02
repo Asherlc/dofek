@@ -285,4 +285,18 @@ describe("useAutoSync", () => {
     expect(mockDataHealthInvalidate).toHaveBeenCalledOnce();
     expect(mockInvalidate).not.toHaveBeenCalled();
   });
+
+  it("captures an exception when query invalidation fails after sync", async () => {
+    const error = new Error("invalidation failed");
+    mockReadinessInvalidate.mockRejectedValue(error);
+    const { useAutoSync } = await import("./useAutoSync");
+
+    renderHook(() => useAutoSync("2026-03-21"));
+    await mockTriggerSyncMutationOptions.at(-1)?.onSuccess?.();
+
+    expect(mockCaptureException).toHaveBeenCalledOnce();
+    expect(mockCaptureException).toHaveBeenCalledWith(error, {
+      context: "dashboard-auto-sync-invalidation",
+    });
+  });
 });
