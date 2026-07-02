@@ -27,7 +27,7 @@ Prefer the most specific existing docs folder:
 - Use `docs/superpowers/specs/` only when the task first needs a design/spec document separate from the implementation plan.
 - Use a domain-specific docs folder/file only when the plan belongs with an existing domain runbook or provider document.
 
-Name new plan files as `YYYY-MM-DD-short-slug.md`. Use the current local date, lowercase words, and hyphens.
+Name new plan files as `YYYY-MM-DD-short-slug.md`. Use the current local date in the workspace timezone, formatted like `rtk date +%F`, plus lowercase words and hyphens.
 
 ### 3. Write the TDD plan
 
@@ -101,14 +101,15 @@ Plan quality rules:
 
 Use `gh issue create` after the plan file exists. Put the plan path near the top of the issue body.
 
-Use a temp file for the issue body to avoid shell quoting problems:
+Use a temp file for the issue body to avoid shell quoting problems. Set `plan_path` to the actual plan file you created before opening the issue:
 
 ```bash
 issue_body_file="$(mktemp)"
-cat > "$issue_body_file" <<'EOF'
+plan_path="docs/superpowers/plans/2026-07-02-short-slug.md"
+cat > "$issue_body_file" <<EOF
 ## TDD Plan
 
-Plan: docs/superpowers/plans/YYYY-MM-DD-short-slug.md
+Plan: ${plan_path}
 
 ## Goal
 
