@@ -84,6 +84,7 @@ async function syncFitbitActivitiesWithGuardedPagination(
   persist: (raw: FitbitActivity) => Promise<void>,
   handlePersistError: (err: unknown, externalId: string) => void,
 ): Promise<{ count: number; degradations: SyncDegradation[]; completed: boolean }> {
+  let count = 0;
   const pageResult = await fetchProviderPages<FitbitActivity, number>({
     providerId,
     stepName: "activity",
@@ -97,18 +98,18 @@ async function syncFitbitActivitiesWithGuardedPagination(
         nextCursor: hasNext ? nextOffset : null,
       };
     },
+    onPage: async (pageResult) => {
+      for (const raw of pageResult.items) {
+        const parsed = parseFitbitActivity(raw);
+        try {
+          await persist(raw);
+          count++;
+        } catch (err) {
+          handlePersistError(err, parsed.externalId);
+        }
+      }
+    },
   });
-
-  let count = 0;
-  for (const raw of pageResult.items) {
-    const parsed = parseFitbitActivity(raw);
-    try {
-      await persist(raw);
-      count++;
-    } catch (err) {
-      handlePersistError(err, parsed.externalId);
-    }
-  }
 
   return { count, degradations: pageResult.degradations, completed: pageResult.completed };
 }

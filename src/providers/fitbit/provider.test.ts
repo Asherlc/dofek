@@ -1096,6 +1096,69 @@ describe("FitbitProvider", () => {
       }
     });
 
+    it("retains earlier activities when a later pagination request fails", async () => {
+      setupEnv();
+      vi.useFakeTimers({ now: new Date("2026-03-01T12:00:00Z") });
+      try {
+        const seenOffsets: number[] = [];
+
+        const mockFetch: typeof globalThis.fetch = async (
+          input: RequestInfo | URL,
+        ): Promise<Response> => {
+          const url = input.toString();
+          if (url.includes("/activities/list.json")) {
+            const offsetMatch = url.match(/[?&]offset=(\d+)/);
+            const offset = offsetMatch?.[1] ? Number(offsetMatch[1]) : 0;
+            seenOffsets.push(offset);
+            if (offset === 0) {
+              return Response.json({
+                activities: [sampleActivity],
+                pagination: { next: "/next", previous: "", limit: 1, offset: 0, sort: "asc" },
+              });
+            }
+            throw new Error("later activity page failed");
+          }
+          if (url.includes("/sleep/list.json")) {
+            return Response.json({
+              sleep: [],
+              pagination: { next: "", previous: "", limit: 20, offset: 0, sort: "asc" },
+            });
+          }
+          if (url.includes("/activities/date/")) {
+            return Response.json(sampleDailySummary);
+          }
+          if (url.includes("/body/log/weight/date/")) {
+            return Response.json({ weight: [] });
+          }
+          if (url.endsWith(".tcx")) {
+            return new Response("<TrainingCenterDatabase></TrainingCenterDatabase>", {
+              status: 200,
+            });
+          }
+          return new Response("Not found", { status: 404 });
+        };
+
+        const provider = new FitbitProvider(mockFetch);
+        const db = createMockDb();
+        const result = await provider.sync(
+          new SyncRun({
+            db: db,
+            window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+          }),
+        );
+
+        expect(seenOffsets).toEqual([0, 1]);
+        expect(result.errors).toContainEqual(
+          expect.objectContaining({
+            message: "activity: later activity page failed",
+          }),
+        );
+        expect(findValuesCall(db, (value) => value.externalId === "12345678").name).toBe("Run");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("paginates sleep sync by increasing offset", async () => {
       setupEnv();
       vi.useFakeTimers({ now: new Date("2026-03-01T12:00:00Z") });

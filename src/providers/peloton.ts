@@ -727,7 +727,10 @@ export class PelotonProvider implements SyncProvider {
             }
           },
           shouldStopAfterPage: (pageResult) =>
-            pageResult.items.some((workout) => new Date(workout.start_time * 1000) < since),
+            pageResult.items.some(
+              (workout) =>
+                workout.status === "COMPLETE" && new Date(workout.start_time * 1000) < since,
+            ),
         });
 
         logger.info(`[peloton] ${workoutCount} workouts, ${streamCount} metric stream rows`);

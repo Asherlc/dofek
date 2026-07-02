@@ -1021,6 +1021,40 @@ describe("PelotonProvider.sync — workout filtering", () => {
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
+  it("continues pagination when an older workout is not COMPLETE", async () => {
+    const since = new Date("2024-03-10T00:00:00.000Z");
+    const incompleteOlderWorkout = makeSyncWorkout({
+      id: "peloton-in-progress-older",
+      status: "IN_PROGRESS",
+      start_time: Math.floor(new Date("2024-03-01T08:00:00.000Z").getTime() / 1000),
+      end_time: Math.floor(new Date("2024-03-01T08:30:00.000Z").getTime() / 1000),
+    });
+    const completeNewerWorkout = makeSyncWorkout({
+      id: "peloton-complete-newer",
+      start_time: Math.floor(new Date("2024-03-12T08:00:00.000Z").getTime() / 1000),
+      end_time: Math.floor(new Date("2024-03-12T08:30:00.000Z").getTime() / 1000),
+    });
+
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ id: "user-123" }))
+      .mockResolvedValueOnce(Response.json(makeWorkoutListResponse([incompleteOlderWorkout], true)))
+      .mockResolvedValueOnce(Response.json(makeWorkoutListResponse([completeNewerWorkout])))
+      .mockResolvedValueOnce(Response.json(makeSyncPerformanceGraph(["heart_rate"])));
+
+    const mockDb = createMockDb();
+
+    const provider = new PelotonProvider(mockFetch);
+    const result = await provider.sync(
+      new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: since }) }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThan(0);
+    expect(mockDb.insert).toHaveBeenCalled();
+    expect(mockFetch).toHaveBeenCalledTimes(4);
+  });
+
   it("syncs workouts at the window end and skips workouts after it", async () => {
     const atEnd = makeSyncWorkout({
       id: "peloton-at-window-end",
