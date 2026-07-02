@@ -17,6 +17,7 @@ import { SleepBar } from "../components/charts/SleepBar";
 import { SparkLine } from "../components/charts/SparkLine";
 import { DaySelector } from "../components/DaySelector";
 import { MetricCard } from "../components/MetricCard";
+import { shouldShowBlockingLoading } from "../lib/loading-policy";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";
@@ -49,8 +50,11 @@ export default function SleepScreen() {
   const avgEfficiency =
     nightly.length > 0 ? nightly.reduce((sum, n) => sum + n.efficiency, 0) / nightly.length : 0;
 
-  const hasNoData = nightly.length === 0;
-  const isLoading = sleepQuery.isLoading || (sleepQuery.isFetching && hasNoData);
+  const isLoading = shouldShowBlockingLoading({
+    data: nightly,
+    isLoading: sleepQuery.isLoading,
+    isFetching: sleepQuery.isFetching,
+  });
   const { refreshing, onRefresh } = useRefresh();
 
   return (

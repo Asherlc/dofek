@@ -55,6 +55,16 @@ describe("ChartContainer", () => {
     expect(screen.getByTestId("chart")).toBeDefined();
   });
 
+  it("keeps existing data visible when loading is true during a refetch", () => {
+    render(
+      <ChartContainer loading={true} data={[{ value: 1 }]}>
+        <div data-testid="chart">Chart</div>
+      </ChartContainer>,
+    );
+    expect(screen.getByTestId("chart")).toBeDefined();
+    expect(document.querySelector(".animate-spin")).toBeNull();
+  });
+
   it("renders children when loading is false and data has elements", () => {
     render(
       <ChartContainer loading={false} data={[1, 2, 3]}>
