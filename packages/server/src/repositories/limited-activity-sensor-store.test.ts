@@ -92,7 +92,7 @@ describe("LimitedActivitySensorStore", () => {
     expect(mockSpan.setAttribute).toHaveBeenCalledWith("clickhouse.queue.depth", 0);
     expect(mockSpan.setAttribute).toHaveBeenCalledWith(
       "clickhouse.queue.wait_ms",
-      expect.any(Number),
+      expect.toSatisfy((val: number) => val >= 0 && val < 1000),
     );
     expect(mockLoggerInfo).toHaveBeenCalledTimes(1);
     const loggedQueueWait = mockLoggerInfo.mock.calls[0]?.[1];
@@ -101,7 +101,7 @@ describe("LimitedActivitySensorStore", () => {
       concurrency: 2,
       depth: 0,
       queue: "dashboard",
-      waitMs: expect.any(Number),
+      waitMs: expect.toSatisfy((val: number) => val >= 0 && val < 1000),
     });
     expect(Object.keys(loggedQueueWait).sort()).toEqual([
       "active",
