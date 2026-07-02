@@ -3,10 +3,28 @@ import { captureException } from "./telemetry";
 import { trpc } from "./trpc";
 
 type RefreshTask = () => Promise<void> | void;
+type TrpcUtils = ReturnType<typeof trpc.useUtils>;
 
 interface UseRefreshOptions {
   refresh?: RefreshTask;
   invalidate?: RefreshTask | null;
+}
+
+async function invalidateDefaultRefreshQueries(utils: TrpcUtils): Promise<void> {
+  await Promise.all([
+    utils.mobileDashboard.dashboard.invalidate(),
+    utils.mobileDashboard.recovery.invalidate(),
+    utils.mobileDashboard.training.invalidate(),
+    utils.calendar.weekList.invalidate(),
+    utils.calendar.activityOverview.invalidate(),
+    utils.activity.list.invalidate(),
+    utils.food.byDate.invalidate(),
+    utils.sync.dataHealth.invalidate(),
+    utils.nutritionAnalytics.adaptiveTdee.invalidate(),
+    utils.nutritionAnalytics.caloricBalance.invalidate(),
+    utils.nutritionAnalytics.macroRatios.invalidate(),
+    utils.nutritionAnalytics.micronutrientAdequacy.invalidate(),
+  ]);
 }
 
 /**
@@ -23,7 +41,7 @@ export function useRefresh(input?: RefreshTask | UseRefreshOptions): {
   const refresh = typeof input === "function" ? input : input?.refresh;
   const invalidate =
     typeof input === "function" || input?.invalidate === undefined
-      ? () => utils.invalidate()
+      ? () => invalidateDefaultRefreshQueries(utils)
       : input.invalidate;
 
   const onRefresh = useCallback(async () => {

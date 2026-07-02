@@ -61,7 +61,21 @@ export function useAutoSync(latestDate: string | null | undefined) {
   const triggered = useRef(false);
   const dataIsStale = isDataStale(latestDate);
   const attemptedForLatestDate = latestDate ? hasAttemptedAutoSyncForLatestDate(latestDate) : false;
-  const triggerSync = trpc.sync.triggerSync.useMutation();
+  const trpcUtils = trpc.useUtils();
+  const triggerSync = trpc.sync.triggerSync.useMutation({
+    onSuccess: async () => {
+      try {
+        await Promise.all([
+          trpcUtils.recovery.readinessScore.invalidate(),
+          trpcUtils.calendar.activityOverview.invalidate(),
+          trpcUtils.activity.list.invalidate(),
+          trpcUtils.sync.dataHealth.invalidate(),
+        ]);
+      } catch (error) {
+        captureException(error, { context: "dashboard-auto-sync-invalidation" });
+      }
+    },
+  });
   const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, {
     enabled: dataIsStale && !attemptedForLatestDate,
   });

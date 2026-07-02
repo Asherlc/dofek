@@ -18,6 +18,21 @@ function todayYmd(): string {
   return formatDateYmd();
 }
 
+type TrpcUtils = ReturnType<typeof trpc.useUtils>;
+
+async function invalidateSyncedHealthData(trpcUtils: TrpcUtils): Promise<void> {
+  await Promise.all([
+    trpcUtils.mobileDashboard.dashboard.invalidate(),
+    trpcUtils.mobileDashboard.recovery.invalidate(),
+    trpcUtils.mobileDashboard.training.invalidate(),
+    trpcUtils.calendar.weekList.invalidate(),
+    trpcUtils.calendar.activityOverview.invalidate(),
+    trpcUtils.activity.list.invalidate(),
+    trpcUtils.food.byDate.invalidate(),
+    trpcUtils.sync.dataHealth.invalidate(),
+  ]);
+}
+
 /**
  * Auto-sync hook for the iOS overview screen.
  * When the app opens and data is stale, triggers:
@@ -51,7 +66,7 @@ export function useAutoSync(latestDate: string | null | undefined) {
           const pollUntilDone = async (): Promise<void> => {
             const status = await trpcUtils.sync.syncStatus.fetch({ jobId }, { staleTime: 0 });
             if (!status || status.status === "done" || status.status === "error") {
-              await trpcUtils.invalidate();
+              await invalidateSyncedHealthData(trpcUtils);
               return;
             }
             await new Promise((r) => setTimeout(r, 2000));
@@ -93,7 +108,7 @@ export function useAutoSync(latestDate: string | null | undefined) {
             "auto-sync",
             `HealthKit sync complete: ${result.inserted} inserted, ${result.errors.length} errors`,
           );
-          await trpcUtils.invalidate();
+          await invalidateSyncedHealthData(trpcUtils);
         })
         .catch((error: unknown) => {
           logger.warn(

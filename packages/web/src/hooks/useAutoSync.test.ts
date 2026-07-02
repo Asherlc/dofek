@@ -11,23 +11,42 @@ type ActiveSyncsQuery = {
 type ActiveSyncsQueryOptions = {
   enabled: boolean;
 };
+type TriggerSyncMutationOptions = {
+  onSuccess?: () => void | Promise<void>;
+};
 
-const { mockActiveSyncs, mockCaptureException, mockMutate, mockUseQueryOptions } = vi.hoisted(
-  () => {
-    const mockActiveSyncs: ActiveSyncsQuery = {
-      data: [],
-      isLoading: false,
-    };
-    const mockUseQueryOptions: ActiveSyncsQueryOptions[] = [];
+const {
+  mockActivityInvalidate,
+  mockActiveSyncs,
+  mockCalendarActivityOverviewInvalidate,
+  mockCaptureException,
+  mockDataHealthInvalidate,
+  mockInvalidate,
+  mockMutate,
+  mockReadinessInvalidate,
+  mockUseQueryOptions,
+  mockTriggerSyncMutationOptions,
+} = vi.hoisted(() => {
+  const mockActiveSyncs: ActiveSyncsQuery = {
+    data: [],
+    isLoading: false,
+  };
+  const mockUseQueryOptions: ActiveSyncsQueryOptions[] = [];
+  const mockTriggerSyncMutationOptions: TriggerSyncMutationOptions[] = [];
 
-    return {
-      mockActiveSyncs,
-      mockCaptureException: vi.fn(),
-      mockMutate: vi.fn(),
-      mockUseQueryOptions,
-    };
-  },
-);
+  return {
+    mockActivityInvalidate: vi.fn(),
+    mockActiveSyncs,
+    mockCalendarActivityOverviewInvalidate: vi.fn(),
+    mockCaptureException: vi.fn(),
+    mockDataHealthInvalidate: vi.fn(),
+    mockInvalidate: vi.fn(),
+    mockMutate: vi.fn(),
+    mockReadinessInvalidate: vi.fn(),
+    mockUseQueryOptions,
+    mockTriggerSyncMutationOptions,
+  };
+});
 
 vi.mock("../lib/telemetry.ts", () => ({
   captureException: mockCaptureException,
@@ -37,7 +56,10 @@ vi.mock("../lib/trpc", () => ({
   trpc: {
     sync: {
       triggerSync: {
-        useMutation: () => ({ mutate: mockMutate }),
+        useMutation: (options?: TriggerSyncMutationOptions) => {
+          mockTriggerSyncMutationOptions.push(options ?? {});
+          return { mutate: mockMutate };
+        },
       },
       activeSyncs: {
         useQuery: (_input: undefined, options: ActiveSyncsQueryOptions) => {
@@ -45,7 +67,18 @@ vi.mock("../lib/trpc", () => ({
           return mockActiveSyncs;
         },
       },
+      dataHealth: { invalidate: mockDataHealthInvalidate },
     },
+    recovery: { readinessScore: { invalidate: mockReadinessInvalidate } },
+    calendar: { activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate } },
+    activity: { list: { invalidate: mockActivityInvalidate } },
+    useUtils: () => ({
+      invalidate: mockInvalidate,
+      sync: { dataHealth: { invalidate: mockDataHealthInvalidate } },
+      recovery: { readinessScore: { invalidate: mockReadinessInvalidate } },
+      calendar: { activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate } },
+      activity: { list: { invalidate: mockActivityInvalidate } },
+    }),
   },
 }));
 
@@ -91,7 +124,13 @@ describe("useAutoSync", () => {
     mockActiveSyncs.data = [];
     mockActiveSyncs.isLoading = false;
     mockCaptureException.mockClear();
+    mockActivityInvalidate.mockClear();
+    mockCalendarActivityOverviewInvalidate.mockClear();
+    mockDataHealthInvalidate.mockClear();
+    mockInvalidate.mockClear();
     mockMutate.mockClear();
+    mockReadinessInvalidate.mockClear();
+    mockTriggerSyncMutationOptions.length = 0;
     mockUseQueryOptions.length = 0;
   });
 
@@ -232,5 +271,18 @@ describe("useAutoSync", () => {
     hook.rerender({ latestDate: "2026-03-21" });
 
     expect(mockMutate).toHaveBeenCalledTimes(1);
+  });
+
+  it("invalidates dashboard health query families after provider sync succeeds", async () => {
+    const { useAutoSync } = await import("./useAutoSync");
+
+    renderHook(() => useAutoSync("2026-03-21"));
+    await mockTriggerSyncMutationOptions.at(-1)?.onSuccess?.();
+
+    expect(mockReadinessInvalidate).toHaveBeenCalledOnce();
+    expect(mockCalendarActivityOverviewInvalidate).toHaveBeenCalledOnce();
+    expect(mockActivityInvalidate).toHaveBeenCalledOnce();
+    expect(mockDataHealthInvalidate).toHaveBeenCalledOnce();
+    expect(mockInvalidate).not.toHaveBeenCalled();
   });
 });
