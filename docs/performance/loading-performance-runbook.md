@@ -76,5 +76,5 @@ Before closing the issue or PR:
 
 - Update the issue with before/after findings, including any Axiom blocker.
 - Link the PR to the issue with `Fixes #<issue>`.
-- If this was a production incident or operational debugging session, append the incident baseline with symptoms, evidence, root cause, fix, remaining risk, and follow-up work.
+- If this was a production incident or operational debugging session, update the incident baseline with symptoms, evidence, root cause, fix, remaining risk, and follow-up work.
 - If docs added third-party behavior claims, cite official docs, specs, or existing internal evidence.
