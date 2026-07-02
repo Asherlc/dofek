@@ -312,10 +312,11 @@ export class WahooProvider implements WebhookProvider {
         const response = await client.getWorkouts(page ?? 1);
         const parsed = parseWorkoutList(response);
         totalWorkouts = parsed.total;
-        const totalsImplyAnotherPage = parsed.total > (parsed.page - 1) * parsed.perPage;
+        const emptyPageWithExpectedRows =
+          parsed.workouts.length === 0 && parsed.total > (parsed.page - 1) * parsed.perPage;
         return {
           items: parsed.workouts,
-          nextCursor: parsed.hasMore || totalsImplyAnotherPage ? parsed.page + 1 : null,
+          nextCursor: parsed.hasMore || emptyPageWithExpectedRows ? parsed.page + 1 : null,
         };
       },
       onPage: async (pageResult) => {
