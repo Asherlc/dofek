@@ -7,9 +7,8 @@ import {
   sleepSession as sleepSessionTable,
 } from "../db/schema/activity.ts";
 import { healthEvent as healthEventTable } from "../db/schema/clinical.ts";
-import { OuraApiError, OuraClient } from "./oura/client.ts";
+import { OuraClient } from "./oura/client.ts";
 import { ouraOAuthConfig } from "./oura/oauth.ts";
-import { fetchOuraPages, fetchOuraPagesOptional } from "./oura/pagination.ts";
 import { mapOuraActivityType, parseOuraDailyMetrics, parseOuraSleep } from "./oura/parsing.ts";
 import { OuraProvider } from "./oura/provider.ts";
 import {
@@ -2301,102 +2300,6 @@ describe("OuraProvider.sync()", () => {
     // Stress/resilience fields are absent when scope is missing
     expect(val.stressHighMinutes).toBeUndefined();
     expect(val.resilienceLevel).toBeUndefined();
-  });
-});
-
-// ============================================================
-// fetchOuraPagesOptional tests
-// ============================================================
-
-describe("fetchOuraPagesOptional", () => {
-  it("returns data normally when the fetch succeeds", async () => {
-    const fetchPage = async () => ({ data: [{ id: "x" }], next_token: null });
-    const result = await fetchOuraPagesOptional("oura", "test_endpoint", fetchPage);
-    expect(result.items).toEqual([{ id: "x" }]);
-    expect(result.degradations).toEqual([]);
-  });
-
-  it("returns optional_endpoint_unavailable on API error 401", async () => {
-    const fetchPage = async (): Promise<{ data: never[]; next_token: null }> => {
-      throw new OuraApiError(401, "/v2/usercollection/daily_stress", "Unauthorized");
-    };
-    const result = await fetchOuraPagesOptional("oura", "daily_stress", fetchPage);
-    expect(result.items).toEqual([]);
-    expect(result.degradations).toEqual([
-      {
-        kind: "optional_endpoint_unavailable",
-        providerId: "oura",
-        stepName: "daily_stress",
-        message: "Missing OAuth scope for daily_stress",
-      },
-    ]);
-  });
-
-  it("re-throws non-401 errors", async () => {
-    const fetchPage = async (): Promise<{ data: never[]; next_token: null }> => {
-      throw new OuraApiError(500, "/v2/usercollection/daily_stress", "Internal Server Error");
-    };
-    await expect(fetchOuraPagesOptional("oura", "daily_stress", fetchPage)).rejects.toThrow(
-      "API error 500",
-    );
-  });
-
-  it("re-throws 403 errors", async () => {
-    const fetchPage = async (): Promise<{ data: never[]; next_token: null }> => {
-      throw new OuraApiError(403, "/v2/usercollection/daily_stress", "Forbidden");
-    };
-    await expect(fetchOuraPagesOptional("oura", "daily_stress", fetchPage)).rejects.toThrow(
-      "API error 403",
-    );
-  });
-
-  it("paginates through multiple pages before returning", async () => {
-    let page = 0;
-    const fetchPage = async (_nextToken?: string) => {
-      page++;
-      if (page === 1) return { data: [{ id: "a" }], next_token: "tok2" };
-      return { data: [{ id: "b" }], next_token: null };
-    };
-    const result = await fetchOuraPagesOptional("oura", "test_endpoint", fetchPage);
-    expect(result.items).toEqual([{ id: "a" }, { id: "b" }]);
-    expect(result.degradations).toEqual([]);
-  });
-});
-
-describe("fetchOuraPages", () => {
-  it("stops on repeated next_token and retains fetched items", async () => {
-    const fetchPage = async (nextToken?: string) => {
-      if (!nextToken) {
-        return { data: [{ id: "first" }], next_token: "repeat-me" };
-      }
-      return { data: [{ id: "second" }], next_token: "repeat-me" };
-    };
-
-    const result = await fetchOuraPages("oura", "sleep", fetchPage);
-    expect(result.items).toEqual([{ id: "first" }, { id: "second" }]);
-    expect(result.degradations).toEqual([
-      expect.objectContaining({
-        kind: "pagination_stalled",
-        providerId: "oura",
-        stepName: "sleep",
-      }),
-    ]);
-  });
-
-  it("treats empty-string next_token as end of pagination", async () => {
-    let fetchCount = 0;
-    const fetchPage = async (nextToken?: string) => {
-      fetchCount += 1;
-      if (!nextToken) {
-        return { data: [{ id: "first" }], next_token: "" };
-      }
-      return { data: [{ id: "duplicate" }], next_token: null };
-    };
-
-    const result = await fetchOuraPages("oura", "sleep", fetchPage);
-    expect(fetchCount).toBe(1);
-    expect(result.items).toEqual([{ id: "first" }]);
-    expect(result.degradations).toEqual([]);
   });
 });
 

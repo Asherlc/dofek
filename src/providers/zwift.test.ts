@@ -597,13 +597,16 @@ describe("ZwiftProvider.sync() — activity sync", () => {
     );
 
     expect(result.degradations).toEqual([
-      {
+      expect.objectContaining({
         kind: "pagination_max_pages_exceeded",
         providerId: "zwift",
         stepName: "activity_list",
-        message: "Zwift activity pagination exceeded the maximum page guard",
-        context: { offset: 2000, pageSize: 20, pagesFetched: 100 },
-      },
+        message: "Provider pagination exceeded the maximum page count",
+        context: {
+          cursorFingerprint: expect.any(String),
+          pagesFetched: 100,
+        },
+      }),
     ]);
     expect(MockZwiftClient.activityOffsets).toHaveLength(100);
     expect(MockZwiftClient.activityOffsets[0]).toBe(0);
@@ -611,7 +614,7 @@ describe("ZwiftProvider.sync() — activity sync", () => {
     expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
   });
 
-  it("does not degrade repeated partial activity pages before an empty page", async () => {
+  it("treats a partial activity page as a complete list without degradation", async () => {
     MockZwiftClient.repeatActivitiesForEveryOffset = true;
     MockZwiftClient.stopReturningActivitiesAtOffset = 2000;
     MockZwiftClient.activities = Array.from({ length: 19 }, (_, index) => ({
@@ -639,9 +642,7 @@ describe("ZwiftProvider.sync() — activity sync", () => {
     );
 
     expect(result.degradations).toEqual([]);
-    expect(MockZwiftClient.activityOffsets).toHaveLength(101);
-    expect(MockZwiftClient.activityOffsets[0]).toBe(0);
-    expect(MockZwiftClient.activityOffsets.at(-1)).toBe(2000);
+    expect(MockZwiftClient.activityOffsets).toEqual([0]);
     expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
       db,
       expect.objectContaining({

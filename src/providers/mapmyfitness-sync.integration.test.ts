@@ -401,13 +401,16 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
 
     expect(result.recordsSynced).toBe(1);
     expect(result.degradations).toEqual([
-      {
+      expect.objectContaining({
         kind: "pagination_empty_page_with_cursor",
         providerId: "mapmyfitness",
         stepName: "activity_list",
-        message: "MapMyFitness returned an empty workout page with a next link",
-        context: { offset: 40, pagesFetched: 2 },
-      },
+        message: "Provider returned an empty page with a continuation cursor",
+        context: {
+          cursorFingerprint: expect.any(String),
+          pagesFetched: 2,
+        },
+      }),
     ]);
     const [missing] = await ctx.db
       .select({ providerAbsentAt: activity.providerAbsentAt })
@@ -452,13 +455,16 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
 
     expect(result.recordsSynced).toBe(100);
     expect(result.degradations).toEqual([
-      {
+      expect.objectContaining({
         kind: "pagination_max_pages_exceeded",
         providerId: "mapmyfitness",
         stepName: "activity_list",
-        message: "MapMyFitness workout pagination exceeded the maximum page guard",
-        context: { offset: 3960, pagesFetched: 100 },
-      },
+        message: "Provider pagination exceeded the maximum page count",
+        context: {
+          cursorFingerprint: expect.any(String),
+          pagesFetched: 100,
+        },
+      }),
     ]);
     expect(offsets).toHaveLength(100);
     expect(offsets[0]).toBe(0);

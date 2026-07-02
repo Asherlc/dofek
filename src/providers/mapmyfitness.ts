@@ -10,6 +10,7 @@ import {
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { fetchProviderPages } from "../sync/pagination.ts";
 import type { SyncDegradation } from "../sync/sync-degradation.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
@@ -269,83 +270,66 @@ export class MapMyFitnessProvider implements SyncProvider {
         "activity",
         async () => {
           let count = 0;
-          let offset = 0;
-          let hasMore = true;
-          let pagesFetched = 0;
 
-          while (hasMore) {
-            const response = await client.getWorkouts(
-              userId,
-              formatDate(since),
-              formatDate(syncWindowEnd),
-              offset,
-            );
-            pagesFetched++;
-            const workouts = response._embedded?.workouts ?? [];
-            const responseHasNext = !!response._links?.next?.length;
-            if (workouts.length === 0) {
-              if (responseHasNext) {
-                degradations.push({
-                  kind: "pagination_empty_page_with_cursor",
-                  providerId: this.id,
-                  stepName: "activity_list",
-                  message: "MapMyFitness returned an empty workout page with a next link",
-                  context: { offset, pagesFetched },
-                });
-              }
-              break;
-            }
-
-            for (const raw of workouts) {
-              const parsed = parseMapMyFitnessWorkout(raw);
-              if (!parsed.externalId) continue;
-              if (parsed.startedAt > syncWindowEnd) continue;
-              presentActivityExternalIds.add(parsed.externalId);
-              try {
-                await upsertProviderActivity(
-                  db,
-                  {
-                    providerId: this.id,
+          const pages = await fetchProviderPages<MapMyFitnessWorkout, number>({
+            providerId: this.id,
+            stepName: "activity_list",
+            initialCursor: 0,
+            maxPages: MAPMYFITNESS_MAX_WORKOUT_PAGES,
+            fetchPage: async (offset) => {
+              const currentOffset = offset ?? 0;
+              const response = await client.getWorkouts(
+                userId,
+                formatDate(since),
+                formatDate(syncWindowEnd),
+                currentOffset,
+              );
+              const workouts = response._embedded?.workouts ?? [];
+              const responseHasNext = !!response._links?.next?.length;
+              return {
+                items: workouts,
+                nextCursor: responseHasNext ? currentOffset + MAPMYFITNESS_WORKOUT_PAGE_SIZE : null,
+              };
+            },
+            onPage: async (pageResult) => {
+              for (const raw of pageResult.items) {
+                const parsed = parseMapMyFitnessWorkout(raw);
+                if (!parsed.externalId) continue;
+                if (parsed.startedAt > syncWindowEnd) continue;
+                presentActivityExternalIds.add(parsed.externalId);
+                try {
+                  await upsertProviderActivity(
+                    db,
+                    {
+                      providerId: this.id,
+                      externalId: parsed.externalId,
+                      activityType: parsed.activityType,
+                      name: parsed.name,
+                      startedAt: parsed.startedAt,
+                      endedAt: parsed.endedAt,
+                      raw: parsed.raw,
+                    },
+                    {
+                      activityType: parsed.activityType,
+                      name: parsed.name,
+                      startedAt: parsed.startedAt,
+                      endedAt: parsed.endedAt,
+                      raw: parsed.raw,
+                    },
+                  );
+                  count++;
+                } catch (err) {
+                  errors.push({
+                    message: err instanceof Error ? err.message : String(err),
                     externalId: parsed.externalId,
-                    activityType: parsed.activityType,
-                    name: parsed.name,
-                    startedAt: parsed.startedAt,
-                    endedAt: parsed.endedAt,
-                    raw: parsed.raw,
-                  },
-                  {
-                    activityType: parsed.activityType,
-                    name: parsed.name,
-                    startedAt: parsed.startedAt,
-                    endedAt: parsed.endedAt,
-                    raw: parsed.raw,
-                  },
-                );
-                count++;
-              } catch (err) {
-                errors.push({
-                  message: err instanceof Error ? err.message : String(err),
-                  externalId: parsed.externalId,
-                  cause: err,
-                });
+                    cause: err,
+                  });
+                }
               }
-            }
+            },
+          });
 
-            hasMore = responseHasNext;
-            if (hasMore && pagesFetched >= MAPMYFITNESS_MAX_WORKOUT_PAGES) {
-              degradations.push({
-                kind: "pagination_max_pages_exceeded",
-                providerId: this.id,
-                stepName: "activity_list",
-                message: "MapMyFitness workout pagination exceeded the maximum page guard",
-                context: { offset, pagesFetched },
-              });
-              break;
-            }
-            offset += MAPMYFITNESS_WORKOUT_PAGE_SIZE;
-          }
-
-          if (degradations.length === 0) {
+          if (pages.degradations.length === 0) {
             await finishProviderActivityListSync(db, {
               providerId: this.id,
               userId: options?.userId,
@@ -354,7 +338,8 @@ export class MapMyFitnessProvider implements SyncProvider {
               presentExternalIds: presentActivityExternalIds,
             });
           }
-          return { recordCount: count, result: count, degradations };
+          degradations.push(...pages.degradations);
+          return { recordCount: count, result: count, degradations: pages.degradations };
         },
         options?.userId,
       );

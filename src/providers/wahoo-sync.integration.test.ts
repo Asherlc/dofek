@@ -325,13 +325,16 @@ describe("WahooProvider.sync() (integration)", () => {
 
     expect(result.recordsSynced).toBe(1);
     expect(result.degradations).toEqual([
-      {
+      expect.objectContaining({
         kind: "pagination_empty_page_with_cursor",
         providerId: "wahoo",
         stepName: "activity_list",
-        message: "Wahoo returned an empty workout page while totals indicate more pages",
-        context: { page: 2, perPage: 30, total: 31 },
-      },
+        message: "Provider returned an empty page with a continuation cursor",
+        context: {
+          cursorFingerprint: expect.any(String),
+          pagesFetched: 2,
+        },
+      }),
     ]);
     expect(requestedPages).toEqual([1, 2]);
 
@@ -406,13 +409,16 @@ describe("WahooProvider.sync() (integration)", () => {
 
     expect(result.recordsSynced).toBe(100);
     expect(result.degradations).toEqual([
-      {
+      expect.objectContaining({
         kind: "pagination_max_pages_exceeded",
         providerId: "wahoo",
         stepName: "activity_list",
-        message: "Wahoo workout pagination exceeded the maximum page guard",
-        context: { page: 100, perPage: 30, total: 3001 },
-      },
+        message: "Provider pagination exceeded the maximum page count",
+        context: {
+          cursorFingerprint: expect.any(String),
+          pagesFetched: 100,
+        },
+      }),
     ]);
     expect(requestedPages).toHaveLength(100);
     expect(requestedPages[0]).toBe(1);

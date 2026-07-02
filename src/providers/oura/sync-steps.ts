@@ -6,16 +6,11 @@ import { dailyMetrics, sleepSession } from "../../db/schema/activity.ts";
 import { healthEvent } from "../../db/schema/clinical.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
+import { fetchProviderPages } from "../../sync/pagination.ts";
 import type { SyncDegradation } from "../../sync/sync-degradation.ts";
 import type { SyncError, SyncOptions } from "../types.ts";
-import type { OuraClient } from "./client.ts";
+import { OuraApiError, type OuraClient } from "./client.ts";
 import { formatDate } from "./oauth.ts";
-import {
-  fetchOuraPages,
-  fetchOuraPagesOptional,
-  HEALTH_EVENT_BATCH_SIZE,
-  type OuraPagesResult,
-} from "./pagination.ts";
 import {
   mapOuraActivityType,
   mapOuraSessionType,
@@ -29,9 +24,66 @@ import type {
   OuraDailySpO2,
   OuraDailyStress,
   OuraHeartRate,
+  OuraListResponse,
   OuraSleepDocument,
   OuraVO2Max,
 } from "./schemas.ts";
+
+interface OuraPagesResult<T> {
+  items: T[];
+  degradations: SyncDegradation[];
+}
+
+const HEALTH_EVENT_BATCH_SIZE = 1000;
+
+function isOuraOptionalScopeError(err: unknown): boolean {
+  return err instanceof OuraApiError && err.status === 401;
+}
+
+async function fetchOuraPages<T>(
+  providerId: string,
+  stepName: string,
+  fetchPage: (nextToken?: string) => Promise<OuraListResponse<T>>,
+): Promise<OuraPagesResult<T>> {
+  const result = await fetchProviderPages({
+    providerId,
+    stepName,
+    fetchPage: async (cursor) => {
+      const response = await fetchPage(cursor);
+      return {
+        items: response.data,
+        nextCursor: response.next_token || null,
+      };
+    },
+  });
+
+  return { items: result.items, degradations: result.degradations };
+}
+
+async function fetchOuraPagesOptional<T>(
+  providerId: string,
+  stepName: string,
+  fetchPage: (nextToken?: string) => Promise<OuraListResponse<T>>,
+): Promise<OuraPagesResult<T>> {
+  try {
+    return await fetchOuraPages(providerId, stepName, fetchPage);
+  } catch (err) {
+    if (isOuraOptionalScopeError(err)) {
+      return {
+        items: [],
+        degradations: [
+          {
+            kind: "optional_endpoint_unavailable",
+            providerId,
+            stepName,
+            message: `Missing OAuth scope for ${stepName}`,
+          },
+        ],
+      };
+    }
+    throw err;
+  }
+}
 
 interface SyncStepContext {
   db: SyncDatabase;
