@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { createElement } from "react";
+import { AppState } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider, useAuth } from "./auth-context";
 
@@ -35,6 +36,7 @@ describe("auth-context", () => {
   describe("session token migration", () => {
     beforeEach(() => {
       vi.clearAllMocks();
+      AppState.currentState = "active";
     });
 
     it("re-saves the token on mount to migrate keychain accessibility", async () => {
@@ -68,6 +70,48 @@ describe("auth-context", () => {
       });
 
       expect(saveSessionToken).not.toHaveBeenCalled();
+    });
+
+    it("defers bootstrap when SecureStore is inaccessible in the background", async () => {
+      const auth = await import("./auth");
+      const { getSessionToken, saveSessionToken, fetchCurrentUser } = auth;
+      const appStateListeners: Array<(state: string) => void> = [];
+
+      AppState.currentState = "background";
+      vi.mocked(AppState.addEventListener).mockImplementation((_event, listener) => {
+        appStateListeners.push(listener);
+        return { remove: vi.fn() };
+      });
+      vi.mocked(getSessionToken).mockResolvedValue(null);
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      await waitFor(() => {
+        expect(result.current.isLoading).toBe(true);
+      });
+
+      expect(saveSessionToken).not.toHaveBeenCalled();
+      expect(result.current.user).toBeNull();
+
+      AppState.currentState = "active";
+      vi.mocked(getSessionToken).mockResolvedValue("existing-token");
+      vi.mocked(fetchCurrentUser).mockResolvedValue({
+        id: "user-1",
+        name: "Test User",
+        email: "test@example.com",
+      });
+
+      await act(async () => {
+        for (const listener of appStateListeners) {
+          listener("active");
+        }
+      });
+
+      await waitFor(() => {
+        expect(result.current.user).not.toBeNull();
+      });
+
+      expect(saveSessionToken).toHaveBeenCalledWith("existing-token");
     });
 
     it("keeps bootstrap failure separate from unauthenticated state", async () => {
