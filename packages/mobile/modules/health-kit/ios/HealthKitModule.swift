@@ -82,6 +82,10 @@ public class HealthKitModule: Module {
                     UserDefaults.standard.set(true, forKey: self.hasEverAuthorizedKey)
                     promise.resolve(true)
                 } catch {
+                    if isUserCanceledHealthKitAuthorization(error) {
+                        promise.resolve(false)
+                        return
+                    }
                     promise.reject("HEALTHKIT_AUTH_ERROR", error.localizedDescription)
                 }
             }
