@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useFetchingCount } from "../lib/FetchingContext.tsx";
+import { shouldShowBlockingLoading } from "../lib/loading-policy.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface ChartContainerProps {
@@ -27,7 +28,7 @@ export function ChartContainer({
 }: ChartContainerProps) {
   const fetchingCount = useFetchingCount();
 
-  if (loading) {
+  if (shouldShowBlockingLoading({ data, isLoading: loading })) {
     return <ChartLoadingSkeleton height={height} />;
   }
 
