@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { UnitConverter } from "@dofek/format/units";
 import { cleanup, render, screen } from "@testing-library/react";
+import type {
+  ReadinessRow,
+  SleepPerformanceInfo,
+  StrainTargetResult,
+  WorkloadRatioResult,
+} from "dofek-server/types";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -13,16 +19,41 @@ type MockInsightsQueryResult = {
 type MockQueryResult<TData> = {
   data: TData | undefined;
   isLoading: boolean;
+  isFetched?: boolean;
   error: Error | null;
 };
 
-const mockReadinessQuery = vi.hoisted(() => vi.fn(() => ({ data: undefined, isLoading: false })));
-const mockWorkloadQuery = vi.hoisted(() => vi.fn(() => ({ data: undefined, isLoading: false })));
+const mockReadinessQuery = vi.hoisted(() =>
+  vi.fn<() => MockQueryResult<ReadinessRow[]>>(() => ({
+    data: undefined,
+    isLoading: false,
+    isFetched: false,
+    error: null,
+  })),
+);
+const mockWorkloadQuery = vi.hoisted(() =>
+  vi.fn<() => MockQueryResult<WorkloadRatioResult>>(() => ({
+    data: undefined,
+    isLoading: false,
+    isFetched: false,
+    error: null,
+  })),
+);
 const mockStrainTargetQuery = vi.hoisted(() =>
-  vi.fn(() => ({ data: undefined, isLoading: false })),
+  vi.fn<() => MockQueryResult<StrainTargetResult>>(() => ({
+    data: undefined,
+    isLoading: false,
+    isFetched: false,
+    error: null,
+  })),
 );
 const mockSleepPerformanceQuery = vi.hoisted(() =>
-  vi.fn(() => ({ data: undefined, isLoading: false })),
+  vi.fn<() => MockQueryResult<SleepPerformanceInfo | null>>(() => ({
+    data: undefined,
+    isLoading: false,
+    isFetched: false,
+    error: null,
+  })),
 );
 const mockTrendsQuery = vi.hoisted(() =>
   vi.fn<() => MockQueryResult<unknown>>(() => ({ data: undefined, isLoading: false, error: null })),
@@ -101,13 +132,64 @@ import {
   buildSkinTempSeries,
   Dashboard,
   healthMonitorSubtitle,
+  isCoreDashboardReady,
   spo2TempSectionConfig,
 } from "./Dashboard";
 
 afterEach(cleanup);
 
+function createCoreDashboardQueryData(): {
+  readiness: ReadinessRow[];
+  workloadRatio: WorkloadRatioResult;
+  strainTarget: StrainTargetResult;
+  sleepPerformance: SleepPerformanceInfo | null;
+} {
+  return {
+    readiness: [],
+    workloadRatio: {
+      displayedStrain: 0,
+      displayedDate: "2026-05-27",
+      timeSeries: [],
+    },
+    strainTarget: {
+      targetStrain: 12,
+      currentStrain: 8,
+      progressPercent: 67,
+      zone: "Maintain",
+      explanation: "Stay in range",
+    },
+    sleepPerformance: null,
+  };
+}
+
+const coreDashboardQueryData = createCoreDashboardQueryData();
+
 describe("Dashboard", () => {
   beforeEach(() => {
+    mockReadinessQuery.mockReturnValue({
+      data: coreDashboardQueryData.readiness,
+      isLoading: false,
+      isFetched: true,
+      error: null,
+    });
+    mockWorkloadQuery.mockReturnValue({
+      data: coreDashboardQueryData.workloadRatio,
+      isLoading: false,
+      isFetched: true,
+      error: null,
+    });
+    mockStrainTargetQuery.mockReturnValue({
+      data: coreDashboardQueryData.strainTarget,
+      isLoading: false,
+      isFetched: true,
+      error: null,
+    });
+    mockSleepPerformanceQuery.mockReturnValue({
+      data: coreDashboardQueryData.sleepPerformance,
+      isLoading: false,
+      isFetched: true,
+      error: null,
+    });
     mockTrendsQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mockHeartRateBaselineQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mockInsightsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
@@ -146,6 +228,65 @@ describe("Dashboard", () => {
         "Daily metrics data is synced, but dashboard summaries are still catching up.",
       ),
     ).toBeTruthy();
+  });
+
+  it("does not enable insights during the initial core dashboard load", () => {
+    mockReadinessQuery.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isFetched: false,
+      error: null,
+    });
+    mockWorkloadQuery.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isFetched: false,
+      error: null,
+    });
+    mockStrainTargetQuery.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isFetched: false,
+      error: null,
+    });
+    mockSleepPerformanceQuery.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isFetched: false,
+      error: null,
+    });
+
+    render(<Dashboard />);
+
+    expect(mockInsightsQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ enabled: false }),
+    );
+  });
+
+  it("enables insights after core dashboard queries settle successfully", () => {
+    render(<Dashboard />);
+
+    expect(mockInsightsQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ enabled: true }),
+    );
+  });
+
+  it("enables insights after core dashboard queries settle, including on error", () => {
+    mockReadinessQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isFetched: true,
+      error: new Error("Readiness unavailable"),
+    });
+
+    render(<Dashboard />);
+
+    expect(mockInsightsQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ enabled: true }),
+    );
   });
 
   it("uses a loading panel while insights are loading", () => {
@@ -244,6 +385,30 @@ describe("Dashboard", () => {
         restingHeartRateError: chartError,
       }),
     );
+  });
+});
+
+describe("isCoreDashboardReady", () => {
+  it("returns false while any core dashboard query is still in flight", () => {
+    expect(
+      isCoreDashboardReady({
+        readinessSettled: false,
+        workloadRatioSettled: true,
+        strainTargetSettled: true,
+        sleepPerformanceSettled: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("returns true once all core dashboard queries have settled", () => {
+    expect(
+      isCoreDashboardReady({
+        readinessSettled: true,
+        workloadRatioSettled: true,
+        strainTargetSettled: true,
+        sleepPerformanceSettled: true,
+      }),
+    ).toBe(true);
   });
 });
 

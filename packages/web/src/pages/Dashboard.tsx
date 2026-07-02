@@ -164,6 +164,20 @@ export function buildHealthMetrics(trendData: TrendRow | undefined, units: UnitC
   return entries.filter((entry): entry is MetricEntry => entry !== false);
 }
 
+export function isCoreDashboardReady({
+  readinessSettled,
+  workloadRatioSettled,
+  strainTargetSettled,
+  sleepPerformanceSettled,
+}: {
+  readinessSettled: boolean;
+  workloadRatioSettled: boolean;
+  strainTargetSettled: boolean;
+  sleepPerformanceSettled: boolean;
+}): boolean {
+  return readinessSettled && workloadRatioSettled && strainTargetSettled && sleepPerformanceSettled;
+}
+
 export function Dashboard() {
   const units = useUnitConverter();
   const days = 30;
@@ -174,7 +188,16 @@ export function Dashboard() {
   const sleepPerformance = trpc.sleepNeed.performance.useQuery({ endDate });
   const trends = trpc.dailyMetrics.trends.useQuery({ days, endDate });
   const heartRateBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days, endDate });
-  const insightsQuery = trpc.insights.compute.useQuery({ days, endDate });
+  const coreDashboardReady = isCoreDashboardReady({
+    readinessSettled: readinessData.isFetched,
+    workloadRatioSettled: workloadRatio.isFetched,
+    strainTargetSettled: strainTarget.isFetched,
+    sleepPerformanceSettled: sleepPerformance.isFetched,
+  });
+  const insightsQuery = trpc.insights.compute.useQuery(
+    { days, endDate },
+    { enabled: coreDashboardReady },
+  );
   const dataHealth = trpc.sync.dataHealth.useQuery();
   const trendData: TrendRow | undefined = trends.data
     ? trendRowSchema.parse(trends.data)
