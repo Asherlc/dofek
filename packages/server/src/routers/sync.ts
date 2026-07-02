@@ -779,12 +779,15 @@ export const syncRouter = router({
   dataHealth: protectedProcedure.output(dataHealthOutputSchema).query(async ({ ctx }) => {
     const sensorStore = hasDataHealthSensorStore(ctx.sensorStore) ? ctx.sensorStore : null;
     const repo = new SyncRepository(ctx.db, ctx.userId);
-    const freshnessRows = await repo.getDataHealthFreshness(
-      dataHealthDatasets,
-      sensorStore ?? undefined,
-      ctx.accessWindow,
-      ctx.timezone,
-    );
+    const [freshnessRows, syncingProviders] = await Promise.all([
+      repo.getDataHealthFreshness(
+        dataHealthDatasets,
+        sensorStore ?? undefined,
+        ctx.accessWindow,
+        ctx.timezone,
+      ),
+      getActiveSyncProvidersForUser(ctx.userId),
+    ]);
 
     const datasets = dataHealthDatasets.map((dataset, index) => {
       const freshnessRow = freshnessRows[index];
@@ -808,7 +811,6 @@ export const syncRouter = router({
         message: datasetMessage({ label: dataset.label, status }),
       };
     });
-    const syncingProviders = await getActiveSyncProvidersForUser(ctx.userId);
 
     return {
       overallStatus: overallDataHealthStatus(
