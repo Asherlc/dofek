@@ -1,0 +1,4 @@
+interface:
+  display_name: "Launch Conductor Issue Workspaces"
+  short_description: "Open Conductor workspaces from GitHub issues"
+  default_prompt: "Open Conductor workspaces for the current repo issues."
