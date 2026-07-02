@@ -11,6 +11,7 @@ import {
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { fetchProviderPages } from "../sync/pagination.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
@@ -216,72 +217,79 @@ export class DecathlonProvider implements SyncProvider {
         "activity",
         async () => {
           let count = 0;
-          let nextUrl: string | undefined =
-            `${DECATHLON_API_BASE}/activities?after=${since.toISOString()}&limit=50`;
+          const initialUrl = `${DECATHLON_API_BASE}/activities?after=${since.toISOString()}&limit=50`;
 
-          while (nextUrl) {
-            const response = await this.#fetchFn(nextUrl, {
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-                Accept: "application/json",
-                ...(clientId ? { "x-api-key": clientId } : {}),
-              },
-            });
+          const pages = await fetchProviderPages<DecathlonActivity, string>({
+            providerId: this.id,
+            stepName: "activity",
+            initialCursor: initialUrl,
+            fetchPage: async (url) => {
+              if (!url) throw new Error("Decathlon pagination missing page URL");
+              const response = await this.#fetchFn(url, {
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                  Accept: "application/json",
+                  ...(clientId ? { "x-api-key": clientId } : {}),
+                },
+              });
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`Decathlon API error (${response.status}): ${text}`);
+              }
+              const data = decathlonActivitiesResponseSchema.parse(await response.json());
+              return {
+                items: data.data,
+                nextCursor: data.links?.next ?? null,
+              };
+            },
+          });
 
-            if (!response.ok) {
-              const text = await response.text();
-              throw new Error(`Decathlon API error (${response.status}): ${text}`);
+          for (const raw of pages.items) {
+            const parsed = parseDecathlonActivity(raw);
+            if (parsed.startedAt.getTime() > syncWindowEnd.getTime()) {
+              continue;
             }
-
-            const data = decathlonActivitiesResponseSchema.parse(await response.json());
-            const activities = data.data;
-            nextUrl = data.links?.next;
-
-            for (const raw of activities) {
-              const parsed = parseDecathlonActivity(raw);
-              if (parsed.startedAt.getTime() > syncWindowEnd.getTime()) {
-                continue;
-              }
-              presentActivityExternalIds.add(parsed.externalId);
-              try {
-                await upsertProviderActivity(
-                  db,
-                  {
-                    providerId: this.id,
-                    externalId: parsed.externalId,
-                    activityType: parsed.activityType,
-                    name: parsed.name,
-                    startedAt: parsed.startedAt,
-                    endedAt: parsed.endedAt,
-                    raw: parsed.raw,
-                  },
-                  {
-                    activityType: parsed.activityType,
-                    name: parsed.name,
-                    startedAt: parsed.startedAt,
-                    endedAt: parsed.endedAt,
-                    raw: parsed.raw,
-                  },
-                );
-                count++;
-              } catch (err) {
-                errors.push({
-                  message: err instanceof Error ? err.message : String(err),
+            presentActivityExternalIds.add(parsed.externalId);
+            try {
+              await upsertProviderActivity(
+                db,
+                {
+                  providerId: this.id,
                   externalId: parsed.externalId,
-                  cause: err,
-                });
-              }
+                  activityType: parsed.activityType,
+                  name: parsed.name,
+                  startedAt: parsed.startedAt,
+                  endedAt: parsed.endedAt,
+                  raw: parsed.raw,
+                },
+                {
+                  activityType: parsed.activityType,
+                  name: parsed.name,
+                  startedAt: parsed.startedAt,
+                  endedAt: parsed.endedAt,
+                  raw: parsed.raw,
+                },
+              );
+              count++;
+            } catch (err) {
+              errors.push({
+                message: err instanceof Error ? err.message : String(err),
+                externalId: parsed.externalId,
+                cause: err,
+              });
             }
           }
 
-          await finishProviderActivityListSync(db, {
-            providerId: this.id,
-            userId: options?.userId,
-            windowStart: since,
-            windowEnd: syncWindowEnd,
-            presentExternalIds: presentActivityExternalIds,
-          });
-          return { recordCount: count, result: count };
+          if (pages.degradations.length === 0) {
+            await finishProviderActivityListSync(db, {
+              providerId: this.id,
+              userId: options?.userId,
+              windowStart: since,
+              windowEnd: syncWindowEnd,
+              presentExternalIds: presentActivityExternalIds,
+            });
+          }
+          return { recordCount: count, result: count, degradations: pages.degradations };
         },
         options?.userId,
       );

@@ -275,6 +275,67 @@ describe("WgerProvider", () => {
       }),
     );
   });
+
+  it("handles repeated workout session pagination next URLs without hanging", async () => {
+    process.env.WGER_CLIENT_ID = "id";
+    process.env.WGER_CLIENT_SECRET = "secret";
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
+    providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
+
+    const repeatedUrl =
+      "https://wger.de/api/v2/workoutsession/?format=json&ordering=-date&offset=0&limit=50";
+    let callCount = 0;
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      callCount++;
+      if (url.includes("/workoutsession/")) {
+        return Response.json({
+          count: 2,
+          next: repeatedUrl,
+          previous: null,
+          results: [
+            {
+              id: 10,
+              date: "2026-03-01",
+              comment: "In Window",
+              impression: "2",
+              time_start: "09:00",
+              time_end: "10:00",
+            },
+          ],
+        });
+      }
+      if (url.includes("/weightentry/")) {
+        return Response.json({
+          count: 0,
+          next: null,
+          previous: null,
+          results: [],
+        });
+      }
+      return new Response("not found", { status: 404 });
+    };
+
+    const db = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+    const result = await new WgerProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+      }),
+    );
+
+    // First page records are retained; no hang
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
+    expect(callCount).toBeLessThanOrEqual(3);
+    // Reconciliation should NOT run for degraded pagination
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
+  });
 });
 
 describe("WgerProvider — rate-limit aware fetch wiring", () => {

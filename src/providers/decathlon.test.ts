@@ -181,6 +181,45 @@ describe("DecathlonProvider — rate-limit aware fetch wiring", () => {
     expect(result.recordsSynced).toBe(0);
   });
 
+  it("handles repeated links.next without hanging", async () => {
+    process.env.DECATHLON_CLIENT_ID = "test-id";
+    process.env.DECATHLON_CLIENT_SECRET = "test-secret";
+
+    const repeatedUrl =
+      "https://api.decathlon.net/sportstrackingdata/v2/activities?after=2026-03-01T00%3A00%3A00.000Z&limit=50";
+    let callCount = 0;
+    const mockFetch: typeof globalThis.fetch = async () => {
+      callCount++;
+      return Response.json({
+        data: [
+          {
+            id: "act-1",
+            name: "Run",
+            sport: "/v2/sports/381",
+            startdate: "2026-03-01T08:00:00Z",
+            duration: 3600,
+            dataSummaries: [],
+          },
+        ],
+        links: { next: repeatedUrl },
+      });
+    };
+
+    const db = createMockDb();
+    const result = await new DecathlonProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+      }),
+    );
+
+    // Should not error out — first page's records are retained
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
+    // Guard should have stopped after detecting repeated cursor
+    expect(callCount).toBeLessThanOrEqual(3);
+  });
+
   it("rejects malformed activity dates at the API boundary", async () => {
     process.env.DECATHLON_CLIENT_ID = "test-id";
     process.env.DECATHLON_CLIENT_SECRET = "test-secret";
