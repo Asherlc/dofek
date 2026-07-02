@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import {
   createRootRoute,
   Outlet,
@@ -5,9 +6,10 @@ import {
   useLocation,
   useNavigate,
 } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { QueryErrorBoundary } from "../components/QueryErrorBoundary.tsx";
 import { AuthProvider, useAuth } from "../lib/auth-context.tsx";
+import { removeWebQueryCache, WebQueryPersistenceProvider } from "../lib/query-persistence.ts";
 
 const PUBLIC_PATHS = new Set(["/", "/login", "/privacy", "/reset-password"]);
 
@@ -27,9 +29,21 @@ function PageTransition({ children }: { children: React.ReactNode }) {
 
 function AuthGate() {
   const { user, isLoading, bootstrapError, logout, retryBootstrap } = useAuth();
+  const queryClient = useQueryClient();
   const location = useLocation();
   const navigate = useNavigate();
   const isPublic = PUBLIC_PATHS.has(location.pathname);
+  const previousUserIdRef = useRef<string | null>(null);
+
+  useLayoutEffect(() => {
+    const previousUserId = previousUserIdRef.current;
+    const currentUserId = user?.id ?? null;
+    if (previousUserId && previousUserId !== currentUserId) {
+      removeWebQueryCache(previousUserId);
+      queryClient.clear();
+    }
+    previousUserIdRef.current = currentUserId;
+  }, [queryClient, user?.id]);
 
   useEffect(() => {
     if (!isLoading && !bootstrapError && !user && !isPublic) {
@@ -82,12 +96,20 @@ function AuthGate() {
     return null;
   }
 
-  return (
+  const content = (
     <PageTransition>
       <QueryErrorBoundary>
         <Outlet />
       </QueryErrorBoundary>
     </PageTransition>
+  );
+
+  if (!user) return content;
+
+  return (
+    <WebQueryPersistenceProvider key={user.id} queryClient={queryClient} userId={user.id}>
+      {content}
+    </WebQueryPersistenceProvider>
   );
 }
 

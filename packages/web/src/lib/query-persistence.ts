@@ -1,0 +1,65 @@
+import { QUERY_CACHE_MAX_AGE_MS } from "@dofek/scoring/query-cache";
+import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
+import type { QueryClient } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { createElement, type ReactNode, useMemo } from "react";
+import { captureException } from "./telemetry.ts";
+
+function queryCacheKey(userId: string) {
+  return `dofek-query-cache:${userId}`;
+}
+
+function webQueryCacheStorage() {
+  if (typeof window === "undefined") return undefined;
+  return window.localStorage;
+}
+
+export function createWebQueryPersister(userId: string) {
+  return createAsyncStoragePersister({
+    storage: webQueryCacheStorage(),
+    key: queryCacheKey(userId),
+    retry: ({ error }) => {
+      captureException(error, { source: "web-query-cache-persist-write", userId });
+      return undefined;
+    },
+  });
+}
+
+export function removeWebQueryCache(userId: string) {
+  try {
+    webQueryCacheStorage()?.removeItem(queryCacheKey(userId));
+  } catch (error: unknown) {
+    captureException(error, { source: "web-query-cache-clear", userId });
+  }
+}
+
+export function WebQueryPersistenceProvider({
+  children,
+  queryClient,
+  userId,
+}: {
+  children: ReactNode;
+  queryClient: QueryClient;
+  userId: string;
+}) {
+  const persister = useMemo(() => createWebQueryPersister(userId), [userId]);
+
+  return createElement(
+    PersistQueryClientProvider,
+    {
+      client: queryClient,
+      persistOptions: {
+        persister,
+        maxAge: QUERY_CACHE_MAX_AGE_MS,
+        buster: userId,
+      },
+      onError: () => {
+        captureException(new Error("Failed to restore persisted query cache"), {
+          source: "web-query-cache-persist",
+          userId,
+        });
+      },
+    },
+    children,
+  );
+}

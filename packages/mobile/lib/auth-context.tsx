@@ -17,6 +17,7 @@ import {
   getSessionToken,
   saveSessionToken,
 } from "./auth";
+import { removeMobileQueryCache } from "./mobile-query-persistence";
 import { SERVER_URL } from "./server";
 import { captureException } from "./telemetry";
 
@@ -124,22 +125,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    const currentUserId = user?.id;
+    const token = sessionToken;
     // Clear React state immediately so the UI shows the login screen
     setSessionToken(null);
     setUser(null);
     setBootstrapError(null);
 
-    // Async cleanup: notify server and clear secure storage
+    if (currentUserId) {
+      await removeMobileQueryCache(currentUserId);
+    }
+
     try {
-      if (sessionToken) {
-        await authLogout(SERVER_URL, sessionToken);
+      if (token) {
+        await authLogout(SERVER_URL, token);
       } else {
         await clearSessionToken();
       }
     } catch (error: unknown) {
       captureException(error, { source: "logout" });
     }
-  }, [sessionToken]);
+  }, [sessionToken, user?.id]);
 
   const value = useMemo(
     () => ({

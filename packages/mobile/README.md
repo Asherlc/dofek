@@ -34,6 +34,10 @@ cd packages/mobile
 pnpm start
 ```
 
+## Dependency pins
+
+- `@react-native-async-storage/async-storage@2.2.0` — stay on 2.2.x for Expo SDK 57. AsyncStorage 3.x breaks iOS builds on recent Expo SDKs; see [expo/expo#43757](https://github.com/expo/expo/issues/43757).
+
 ## Testing
 
 - **Component tests**: `pnpm test:mobile` from the repo root (Vitest mobile project)

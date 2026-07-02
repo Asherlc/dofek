@@ -1,5 +1,7 @@
 import { createElement, type ReactNode } from "react";
-import { vi } from "vitest";
+import { beforeEach, vi } from "vitest";
+
+const asyncStorageValues = vi.hoisted(() => new Map<string, string>());
 
 // Suppress React DOM warnings about unknown elements (View, Text, etc.)
 // since we render RN component names as HTML tags in the mock.
@@ -29,6 +31,32 @@ vi.mock("@sentry/react-native", () => ({
   setTag: vi.fn(),
   setExtra: vi.fn(),
 }));
+
+// Shared in-memory AsyncStorage mock for all mobile tests. Do not redeclare this
+// mock in individual test files — rely on test-setup.ts and the beforeEach reset.
+vi.mock("@react-native-async-storage/async-storage", () => {
+  return {
+    default: {
+      getItem: vi.fn((key: string) => Promise.resolve(asyncStorageValues.get(key) ?? null)),
+      setItem: vi.fn((key: string, value: string) => {
+        asyncStorageValues.set(key, value);
+        return Promise.resolve();
+      }),
+      removeItem: vi.fn((key: string) => {
+        asyncStorageValues.delete(key);
+        return Promise.resolve();
+      }),
+      clear: vi.fn(() => {
+        asyncStorageValues.clear();
+        return Promise.resolve();
+      }),
+    },
+  };
+});
+
+beforeEach(() => {
+  asyncStorageValues.clear();
+});
 
 // ── React Native mock ────────────────────────────────────────────────
 // react-native uses Flow syntax that Vitest can't parse. Provide minimal

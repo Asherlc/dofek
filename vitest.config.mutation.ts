@@ -36,6 +36,7 @@ export default defineConfig({
       "packages/providers-meta/src/**/*.test.ts",
       "packages/auth/src/**/*.test.ts",
       "packages/web/src/**/*.test.ts",
+      "packages/web/src/**/*.test.tsx",
       "packages/server/src/**/*.test.ts",
       "packages/garmin-connect/src/**/*.test.ts",
       "packages/eight-sleep/src/**/*.test.ts",

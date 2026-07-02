@@ -1,3 +1,4 @@
+import { QUERY_CACHE_MAX_AGE_MS } from "@dofek/scoring/query-cache";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import { useState } from "react";
@@ -30,7 +31,8 @@ export function App() {
         defaultOptions: {
           queries: {
             staleTime: 5 * 60 * 1000, // 5 min — health data only changes on sync
-            gcTime: 10 * 60 * 1000,
+            // Must be >= persist maxAge so restored query cache is not GC'd early.
+            gcTime: QUERY_CACHE_MAX_AGE_MS,
             refetchOnWindowFocus: false,
           },
         },

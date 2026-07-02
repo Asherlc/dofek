@@ -17,6 +17,7 @@
   ],
   "dictionaries": ["typescript", "node", "npm", "html", "css", "en_US"],
   "words": [
+    "refetches",
     "CPLUSPLUSFLAGS",
     "chunker",
     "dofek",
