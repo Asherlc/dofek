@@ -1408,7 +1408,9 @@ describe("OuraClient", () => {
     };
 
     const client = new OuraClient("bad-token", mockFetch);
-    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.toThrow(`${"x".repeat(200)}…`);
+    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.toThrow(
+      `${"x".repeat(200)}…`,
+    );
     await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.not.toThrow(body);
   });
 
