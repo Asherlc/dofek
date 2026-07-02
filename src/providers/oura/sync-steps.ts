@@ -396,7 +396,6 @@ export async function syncDailyStressWebhook(context: SyncStepContext): Promise<
         );
 
         return persistDailyStress(db, providerId, stressPages);
-
       },
       options?.userId,
     );
@@ -451,7 +450,6 @@ export async function syncDailyResilienceWebhook(context: SyncStepContext): Prom
         );
 
         return persistDailyResilience(db, providerId, resiliencePages);
-
       },
       options?.userId,
     );
@@ -503,7 +501,6 @@ export async function syncCardiovascularAge(context: SyncStepContext): Promise<n
           result: count,
           degradations: cvAgePages.degradations,
         };
-
       },
       options?.userId,
     );
@@ -601,7 +598,6 @@ export async function syncEnhancedTags(context: SyncStepContext): Promise<number
           result: count,
           degradations: enhancedTagPages.degradations,
         };
-
       },
       options?.userId,
     );
@@ -659,7 +655,6 @@ export async function syncRestMode(context: SyncStepContext): Promise<number> {
           result: count,
           degradations: restModePages.degradations,
         };
-
       },
       options?.userId,
     );
@@ -708,7 +703,6 @@ export async function syncSleepTime(context: SyncStepContext): Promise<number> {
           result: count,
           degradations: sleepTimePages.degradations,
         };
-
       },
       options?.userId,
     );
