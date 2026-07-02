@@ -31,7 +31,7 @@ Name new plan files as `YYYY-MM-DD-short-slug.md`. Use the current local date, l
 
 ### 3. Write the TDD plan
 
-The plan must be executable by another agent without re-discovering the whole problem. Use this structure unless the repo already has a stronger nearby convention:
+The plan must be executable by another agent without rediscovering the whole problem. Use this structure unless the repo already has a stronger nearby convention:
 
 ```markdown
 # <Feature or Fix> TDD Plan
