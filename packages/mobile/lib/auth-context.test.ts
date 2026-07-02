@@ -4,8 +4,14 @@ import { createElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider, useAuth } from "./auth-context";
 
+const mockRemoveMobileQueryCache = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+
 // expo-secure-store, expo-web-browser, expo-apple-authentication, and react-native
 // are mocked globally in test-setup.ts
+
+vi.mock("./mobile-query-persistence", () => ({
+  removeMobileQueryCache: mockRemoveMobileQueryCache,
+}));
 
 vi.mock("./auth", async (importOriginal) => {
   const original = await importOriginal<typeof import("./auth")>();
@@ -142,6 +148,7 @@ describe("auth-context", () => {
   describe("logout", () => {
     beforeEach(() => {
       vi.clearAllMocks();
+      mockRemoveMobileQueryCache.mockClear();
     });
 
     it("clears user state immediately even when server call is slow", async () => {
@@ -216,6 +223,30 @@ describe("auth-context", () => {
 
       expect(result.current.user).toBeNull();
       expect(result.current.sessionToken).toBeNull();
+    });
+
+    it("clears persisted query cache for the active user", async () => {
+      const { getSessionToken, fetchCurrentUser, logout: authLogout } = await import("./auth");
+
+      vi.mocked(getSessionToken).mockResolvedValue("test-token");
+      vi.mocked(fetchCurrentUser).mockResolvedValue({
+        id: "user-1",
+        name: "Test User",
+        email: "test@example.com",
+      });
+      vi.mocked(authLogout).mockResolvedValue();
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      await waitFor(() => {
+        expect(result.current.user).not.toBeNull();
+      });
+
+      await act(async () => {
+        await result.current.logout();
+      });
+
+      expect(mockRemoveMobileQueryCache).toHaveBeenCalledWith("user-1");
     });
   });
 });

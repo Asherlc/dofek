@@ -107,7 +107,7 @@ function AuthGate() {
   if (!user) return content;
 
   return (
-    <WebQueryPersistenceProvider queryClient={queryClient} userId={user.id}>
+    <WebQueryPersistenceProvider key={user.id} queryClient={queryClient} userId={user.id}>
       {content}
     </WebQueryPersistenceProvider>
   );

@@ -13,6 +13,10 @@ export function createWebQueryPersister(userId: string) {
   return createAsyncStoragePersister({
     storage: window.localStorage,
     key: queryCacheKey(userId),
+    retry: ({ error }) => {
+      captureException(error, { source: "web-query-cache-persist-write", userId });
+      return undefined;
+    },
   });
 }
 

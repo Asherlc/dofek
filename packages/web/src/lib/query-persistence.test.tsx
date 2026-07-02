@@ -241,4 +241,35 @@ describe("web query persistence", () => {
       { source: "web-query-cache-persist", userId: "user-1" },
     );
   });
+
+  it("reports storage write failures through the persister", async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: () => null,
+        setItem: () => {
+          throw new Error("QuotaExceededError");
+        },
+        removeItem: () => {},
+      },
+    });
+
+    const persister = createWebQueryPersister("user-1");
+    const persistPromise = persister.persistClient({
+      timestamp: Date.now(),
+      buster: "user-1",
+      clientState: dehydrate(createQueryClient()),
+    });
+
+    await vi.runAllTimersAsync();
+    await persistPromise;
+
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+      source: "web-query-cache-persist-write",
+      userId: "user-1",
+    });
+
+    vi.useRealTimers();
+  });
 });

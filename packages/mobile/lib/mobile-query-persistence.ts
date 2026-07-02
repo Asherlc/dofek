@@ -14,6 +14,10 @@ export function createMobileQueryPersister(userId: string) {
   return createAsyncStoragePersister({
     storage: AsyncStorage,
     key: queryCacheKey(userId),
+    retry: ({ error }) => {
+      captureException(error, { source: "mobile-query-cache-persist-write", userId });
+      return undefined;
+    },
   });
 }
 
