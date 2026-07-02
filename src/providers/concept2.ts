@@ -9,7 +9,7 @@ import {
   markProviderActivityAbsent,
   upsertProviderActivity,
 } from "../db/provider-activity-sync.ts";
-import { withSyncLog } from "../db/sync-log.ts";
+import { PartialSyncError, withSyncLog } from "../db/sync-log.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
@@ -460,11 +460,11 @@ export class Concept2Provider implements WebhookProvider {
             });
             degradations.push(...pages.degradations);
           } catch (err) {
-            errors.push({
-              message: `activity: ${err instanceof Error ? err.message : String(err)}`,
-              cause: err,
-            });
-            return { recordCount: count, result: count, degradations };
+            throw new PartialSyncError(
+              `activity: ${err instanceof Error ? err.message : String(err)}`,
+              count,
+              err,
+            );
           }
 
           if (degradations.length === 0) {
@@ -482,9 +482,12 @@ export class Concept2Provider implements WebhookProvider {
       );
       recordsSynced += activityCount;
     } catch (err) {
+      if (err instanceof PartialSyncError) {
+        recordsSynced += err.recordCount;
+      }
       errors.push({
-        message: `activity: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
+        message: err instanceof Error ? err.message : String(err),
+        cause: err instanceof PartialSyncError ? err.cause : err,
       });
     }
 

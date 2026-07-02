@@ -31,6 +31,17 @@ vi.mock("../db/tokens.ts", () => ({
 }));
 
 vi.mock("../db/sync-log.ts", () => ({
+  PartialSyncError: class PartialSyncError extends Error {
+    readonly recordCount: number;
+    override readonly cause: unknown;
+
+    constructor(message: string, recordCount: number, cause: unknown) {
+      super(message);
+      this.name = "PartialSyncError";
+      this.recordCount = recordCount;
+      this.cause = cause;
+    }
+  },
   withSyncLog: vi.fn(
     async (
       _db: unknown,
@@ -914,6 +925,7 @@ describe("BodySpecProvider", () => {
 
       expect(result.errors.length).toBeGreaterThan(0);
       expect(result.errors[0]?.message).toContain("API error 500");
+      expect(result.recordsSynced).toBe(1);
       expect(listCallCount).toBe(2);
       expect(fetchFn).toHaveBeenCalledWith(
         expect.stringContaining("/results/r1/dexa/composition"),

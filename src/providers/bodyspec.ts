@@ -4,7 +4,7 @@ import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { dexaScan, dexaScanRegion } from "../db/schema/events.ts";
-import { withSyncLog } from "../db/sync-log.ts";
+import { PartialSyncError, withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { fetchProviderPages } from "../sync/pagination.ts";
@@ -371,37 +371,45 @@ export class BodySpecProvider implements SyncProvider {
         async () => {
           let count = 0;
 
-          const pages = await fetchProviderPages<BodySpecResultSummary, number>({
-            providerId: this.id,
-            stepName: "dexa_scan",
-            initialCursor: 1,
-            fetchPage: async (page) => {
-              const currentPage = page ?? 1;
-              const listResponse = await client.listResults(currentPage);
-              return {
-                items: listResponse.results,
-                nextCursor: listResponse.pagination.has_more ? currentPage + 1 : null,
-              };
-            },
-            onPage: async (page) => {
-              for (const result of page.items) {
-                const resultTime = new Date(result.start_time);
-                if (resultTime < since) continue;
-                if (resultTime > until) continue;
+          try {
+            const pages = await fetchProviderPages<BodySpecResultSummary, number>({
+              providerId: this.id,
+              stepName: "dexa_scan",
+              initialCursor: 1,
+              fetchPage: async (page) => {
+                const currentPage = page ?? 1;
+                const listResponse = await client.listResults(currentPage);
+                return {
+                  items: listResponse.results,
+                  nextCursor: listResponse.pagination.has_more ? currentPage + 1 : null,
+                };
+              },
+              onPage: async (page) => {
+                for (const result of page.items) {
+                  const resultTime = new Date(result.start_time);
+                  if (resultTime < since) continue;
+                  if (resultTime > until) continue;
 
-                try {
-                  count += await this.#syncResult(db, client, result.result_id, resultTime);
-                } catch (err) {
-                  errors.push({
-                    message: err instanceof Error ? err.message : String(err),
-                    externalId: result.result_id,
-                    cause: err,
-                  });
+                  try {
+                    count += await this.#syncResult(db, client, result.result_id, resultTime);
+                  } catch (err) {
+                    errors.push({
+                      message: err instanceof Error ? err.message : String(err),
+                      externalId: result.result_id,
+                      cause: err,
+                    });
+                  }
                 }
-              }
-            },
-          });
-          degradations.push(...pages.degradations);
+              },
+            });
+            degradations.push(...pages.degradations);
+          } catch (err) {
+            throw new PartialSyncError(
+              `dexa_scan: ${err instanceof Error ? err.message : String(err)}`,
+              count,
+              err,
+            );
+          }
 
           return { recordCount: count, result: count, degradations };
         },
@@ -409,9 +417,12 @@ export class BodySpecProvider implements SyncProvider {
       );
       recordsSynced += scanCount;
     } catch (err) {
+      if (err instanceof PartialSyncError) {
+        recordsSynced += err.recordCount;
+      }
       errors.push({
-        message: `dexa_scan: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
+        message: err instanceof Error ? err.message : String(err),
+        cause: err instanceof PartialSyncError ? err.cause : err,
       });
     }
 

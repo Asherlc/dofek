@@ -16,6 +16,17 @@ const providerActivityAbsenceMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../db/sync-log.ts", () => ({
+  PartialSyncError: class PartialSyncError extends Error {
+    readonly recordCount: number;
+    override readonly cause: unknown;
+
+    constructor(message: string, recordCount: number, cause: unknown) {
+      super(message);
+      this.name = "PartialSyncError";
+      this.recordCount = recordCount;
+      this.cause = cause;
+    }
+  },
   withSyncLog: vi.fn(
     async (
       _db: unknown,
@@ -186,12 +197,14 @@ describe("CyclingAnalyticsProvider — rate-limit aware fetch wiring", () => {
       "0",
       "1",
     ]);
-    expect(new URL(requests[0]?.url ?? "").searchParams.get("start_date")).toBe(
-      "2026-03-01T00:00:00.000Z",
-    );
-    expect(new URL(requests[0]?.url ?? "").searchParams.get("limit")).toBe("50");
-    expect(requests[0]?.authorization).toBe("Bearer valid-access-token");
-    expect(requests[0]?.accept).toBe("application/json");
+    const firstRequest = requests[0];
+    expect(firstRequest).toBeDefined();
+    if (!firstRequest) throw new Error("expected first Cycling Analytics request");
+    const firstRequestUrl = new URL(firstRequest.url);
+    expect(firstRequestUrl.searchParams.get("start_date")).toBe("2026-03-01T00:00:00.000Z");
+    expect(firstRequestUrl.searchParams.get("limit")).toBe("50");
+    expect(firstRequest.authorization).toBe("Bearer valid-access-token");
+    expect(firstRequest.accept).toBe("application/json");
     expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
@@ -199,6 +212,48 @@ describe("CyclingAnalyticsProvider — rate-limit aware fetch wiring", () => {
         presentExternalIds: new Set(["10"]),
       }),
     );
+  });
+
+  it("preserves already fetched rides before a later page request fails", async () => {
+    process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
+    process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-secret";
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
+    providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
+
+    const mockFetch: typeof globalThis.fetch = async (input) => {
+      if (String(input).includes("page=1")) {
+        return new Response("rate exceeded", { status: 503 });
+      }
+
+      return Response.json({
+        rides: [
+          {
+            id: 11,
+            title: "First Page Ride",
+            date: "2026-03-01T08:00:00Z",
+            duration: 3600,
+          },
+        ],
+      });
+    };
+
+    const { db } = createMockDatabase();
+    const result = await new CyclingAnalyticsProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("cycling_analytics API service unavailable");
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ externalId: "11" }),
+      expect.any(Object),
+    );
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
   });
 
   it("syncs rides at the exact sync window end", async () => {

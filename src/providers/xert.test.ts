@@ -14,6 +14,17 @@ const providerActivityAbsenceMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../db/sync-log.ts", () => ({
+  PartialSyncError: class PartialSyncError extends Error {
+    readonly recordCount: number;
+    override readonly cause: unknown;
+
+    constructor(message: string, recordCount: number, cause: unknown) {
+      super(message);
+      this.name = "PartialSyncError";
+      this.recordCount = recordCount;
+      this.cause = cause;
+    }
+  },
   withSyncLog: vi.fn(
     async (
       _db: unknown,
@@ -575,6 +586,64 @@ describe("XertProvider", () => {
     expect(result.errors[0]?.message).toContain(
       "xert API service unavailable (503): rate exceeded",
     );
+  });
+
+  it("preserves already fetched activities before a later page request fails", async () => {
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
+    providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
+
+    let requestCount = 0;
+    const pageStart = Math.floor(new Date("2026-03-01T08:00:00Z").getTime() / 1000);
+    const mockFetch: typeof globalThis.fetch = async () => {
+      requestCount++;
+      if (requestCount === 2) {
+        return new Response("rate exceeded", { status: 503 });
+      }
+
+      return Response.json(
+        Array.from({ length: 50 }, (_, index) => ({
+          id: 7000 + index,
+          name: `Persisted Activity ${index}`,
+          sport: "Cycling",
+          startTimestamp: pageStart,
+          endTimestamp: pageStart + 3600,
+          duration: 3600,
+          distance: 30000,
+          power_avg: 200,
+          power_max: 400,
+          power_normalized: 210,
+          heartrate_avg: 150,
+          heartrate_max: 170,
+          cadence_avg: 85,
+          cadence_max: 100,
+          calories: 800,
+          elevation_gain: 200,
+          elevation_loss: 180,
+          xss: 90,
+          focus: 3,
+          difficulty: 2,
+        })),
+      );
+    };
+    const db = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+
+    const result = await new XertProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(50);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("xert API service unavailable");
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledTimes(50);
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
   });
 
   it("returns elapsed sync duration", async () => {

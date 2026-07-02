@@ -219,4 +219,25 @@ describe("fetchProviderPages", () => {
     expect(calls).toBe(2);
     expect(processedItems).toEqual(["tour-1"]);
   });
+
+  it("passes accumulated items to onPage across pages", async () => {
+    const seenAccumulatedItems: string[][] = [];
+
+    await fetchProviderPages<string, number>({
+      providerId: "komoot",
+      stepName: "activity_list",
+      initialCursor: 0,
+      fetchPage: async (cursor) => {
+        const currentCursor = cursor ?? 0;
+        return currentCursor === 0
+          ? { items: ["tour-1"], nextCursor: 1 }
+          : { items: ["tour-2"], nextCursor: null };
+      },
+      onPage: async (_page, allItems) => {
+        seenAccumulatedItems.push([...allItems]);
+      },
+    });
+
+    expect(seenAccumulatedItems).toEqual([["tour-1"], ["tour-1", "tour-2"]]);
+  });
 });

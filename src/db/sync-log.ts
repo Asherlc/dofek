@@ -21,6 +21,18 @@ export interface SyncLogEntry {
   userId?: string;
 }
 
+export class PartialSyncError extends Error {
+  readonly recordCount: number;
+  override readonly cause: unknown;
+
+  constructor(message: string, recordCount: number, cause: unknown) {
+    super(message);
+    this.name = "PartialSyncError";
+    this.recordCount = recordCount;
+    this.cause = cause;
+  }
+}
+
 function resolveUserId(userId?: string): string {
   const scopedUserId = userId ?? getTokenUserId();
   if (!scopedUserId) {
@@ -77,12 +89,14 @@ export async function withSyncLog<T>(
     });
     return result;
   } catch (err) {
+    const authFailureSource = err instanceof PartialSyncError ? err.cause : err;
     await logSync(db, {
       providerId,
       dataType,
       status: "error",
+      recordCount: err instanceof PartialSyncError ? err.recordCount : undefined,
       errorMessage: err instanceof Error ? err.message : String(err),
-      authFailureReason: authFailureReasonFromError(err),
+      authFailureReason: authFailureReasonFromError(authFailureSource),
       durationMs: Date.now() - start,
       userId,
     });

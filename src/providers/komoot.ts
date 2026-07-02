@@ -1,4 +1,5 @@
 import type { CanonicalActivityType } from "@dofek/training/training";
+import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
@@ -7,7 +8,7 @@ import {
   finishProviderActivityListSync,
   upsertProviderActivity,
 } from "../db/provider-activity-sync.ts";
-import { withSyncLog } from "../db/sync-log.ts";
+import { PartialSyncError, withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { fetchProviderPages } from "../sync/pagination.ts";
@@ -22,30 +23,35 @@ import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./t
 const KOMOOT_API_BASE = "https://external-api.komoot.de/v007";
 const _DEFAULT_REDIRECT_URI = "https://localhost:9876/callback";
 
-interface KomootTour {
-  id: number;
-  name: string;
-  sport: string;
-  date: string; // ISO datetime
-  distance: number; // meters
-  duration: number; // seconds
-  elevation_up?: number; // meters
-  elevation_down?: number; // meters
-  status: string; // "public", "private"
-  type: string; // "tour_recorded", "tour_planned"
-}
+const komootTourSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  sport: z.string(),
+  date: z.string(),
+  distance: z.number(),
+  duration: z.number(),
+  elevation_up: z.number().optional(),
+  elevation_down: z.number().optional(),
+  status: z.string(),
+  type: z.string(),
+});
 
-interface KomootToursResponse {
-  _embedded: {
-    tours: KomootTour[];
-  };
-  page: {
-    size: number;
-    totalElements: number;
-    totalPages: number;
-    number: number;
-  };
-}
+type KomootTour = z.infer<typeof komootTourSchema>;
+
+const komootToursResponseSchema = z.object({
+  _embedded: z
+    .object({
+      tours: z.array(komootTourSchema).optional().default([]),
+    })
+    .optional()
+    .default({ tours: [] }),
+  page: z.object({
+    size: z.number(),
+    totalElements: z.number(),
+    totalPages: z.number(),
+    number: z.number(),
+  }),
+});
 
 // ============================================================
 // Parsed types
@@ -224,10 +230,10 @@ export class KomootProvider implements SyncProvider {
                   throw new Error(`Komoot API error (${response.status}): ${text}`);
                 }
 
-                const data: KomootToursResponse = await response.json();
+                const data = komootToursResponseSchema.parse(await response.json());
                 const nextPage = currentPage + 1;
                 return {
-                  items: data._embedded?.tours ?? [],
+                  items: data._embedded.tours,
                   nextCursor: nextPage < data.page.totalPages ? nextPage : null,
                 };
               },
@@ -271,11 +277,11 @@ export class KomootProvider implements SyncProvider {
             });
             degradations.push(...pages.degradations);
           } catch (err) {
-            errors.push({
-              message: `activity: ${err instanceof Error ? err.message : String(err)}`,
-              cause: err,
-            });
-            return { recordCount: count, result: count, degradations };
+            throw new PartialSyncError(
+              `activity: ${err instanceof Error ? err.message : String(err)}`,
+              count,
+              err,
+            );
           }
 
           if (degradations.length === 0) {
@@ -293,9 +299,12 @@ export class KomootProvider implements SyncProvider {
       );
       recordsSynced += activityCount;
     } catch (err) {
+      if (err instanceof PartialSyncError) {
+        recordsSynced += err.recordCount;
+      }
       errors.push({
-        message: `activity: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
+        message: err instanceof Error ? err.message : String(err),
+        cause: err instanceof PartialSyncError ? err.cause : err,
       });
     }
 

@@ -8,7 +8,7 @@ import {
   finishProviderActivityListSync,
   upsertProviderActivity,
 } from "../db/provider-activity-sync.ts";
-import { withSyncLog } from "../db/sync-log.ts";
+import { PartialSyncError, withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { fetchProviderPages } from "../sync/pagination.ts";
@@ -266,68 +266,77 @@ export class XertProvider implements SyncProvider {
           let count = 0;
           const pageSize = 50;
 
-          const pages = await fetchProviderPages<XertActivity, number>({
-            providerId: this.id,
-            stepName: "activity_list",
-            initialCursor: 0,
-            fetchPage: async (page) => {
-              const currentPage = page ?? 0;
-              const url = `${XERT_API_BASE}/oauth/activity/?from=${Math.floor(since.getTime() / 1000)}&page=${currentPage}&limit=${pageSize}`;
-              const response = await this.#fetchFn(url, {
-                headers: {
-                  Authorization: `Bearer ${accessToken}`,
-                  Accept: "application/json",
-                },
-              });
+          try {
+            const pages = await fetchProviderPages<XertActivity, number>({
+              providerId: this.id,
+              stepName: "activity_list",
+              initialCursor: 0,
+              fetchPage: async (page) => {
+                const currentPage = page ?? 0;
+                const url = `${XERT_API_BASE}/oauth/activity/?from=${Math.floor(since.getTime() / 1000)}&page=${currentPage}&limit=${pageSize}`;
+                const response = await this.#fetchFn(url, {
+                  headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    Accept: "application/json",
+                  },
+                });
 
-              if (!response.ok) {
-                const text = await response.text();
-                throw new Error(`Xert API error (${response.status}): ${text}`);
-              }
+                if (!response.ok) {
+                  const text = await response.text();
+                  throw new Error(`Xert API error (${response.status}): ${text}`);
+                }
 
-              const data: XertActivity[] = await response.json();
-              return {
-                items: data,
-                nextCursor: data.length >= pageSize ? currentPage + 1 : null,
-              };
-            },
-          });
-          degradations.push(...pages.degradations);
-
-          for (const rawActivity of pages.items) {
-            const parsed = parseXertActivity(rawActivity);
-            if (parsed.startedAt < since || parsed.startedAt >= syncWindowEnd) {
-              continue;
-            }
-            presentActivityExternalIds.add(parsed.externalId);
-            try {
-              await upsertProviderActivity(
-                db,
-                {
-                  providerId: this.id,
-                  externalId: parsed.externalId,
-                  activityType: parsed.activityType,
-                  name: parsed.name,
-                  startedAt: parsed.startedAt,
-                  endedAt: parsed.endedAt,
-                  raw: parsed.raw,
-                },
-                {
-                  activityType: parsed.activityType,
-                  name: parsed.name,
-                  startedAt: parsed.startedAt,
-                  endedAt: parsed.endedAt,
-                  raw: parsed.raw,
-                },
-              );
-              count++;
-            } catch (err) {
-              errors.push({
-                message: err instanceof Error ? err.message : String(err),
-                externalId: parsed.externalId,
-                cause: err,
-              });
-            }
+                const data: XertActivity[] = await response.json();
+                return {
+                  items: data,
+                  nextCursor: data.length >= pageSize ? currentPage + 1 : null,
+                };
+              },
+              onPage: async (page) => {
+                for (const rawActivity of page.items) {
+                  const parsed = parseXertActivity(rawActivity);
+                  if (parsed.startedAt < since || parsed.startedAt >= syncWindowEnd) {
+                    continue;
+                  }
+                  presentActivityExternalIds.add(parsed.externalId);
+                  try {
+                    await upsertProviderActivity(
+                      db,
+                      {
+                        providerId: this.id,
+                        externalId: parsed.externalId,
+                        activityType: parsed.activityType,
+                        name: parsed.name,
+                        startedAt: parsed.startedAt,
+                        endedAt: parsed.endedAt,
+                        raw: parsed.raw,
+                      },
+                      {
+                        activityType: parsed.activityType,
+                        name: parsed.name,
+                        startedAt: parsed.startedAt,
+                        endedAt: parsed.endedAt,
+                        raw: parsed.raw,
+                      },
+                    );
+                    count++;
+                  } catch (err) {
+                    errors.push({
+                      message: err instanceof Error ? err.message : String(err),
+                      externalId: parsed.externalId,
+                      cause: err,
+                    });
+                  }
+                }
+              },
+            });
+            degradations.push(...pages.degradations);
+          } catch (err) {
+            throw new PartialSyncError(
+              `activity: ${err instanceof Error ? err.message : String(err)}`,
+              count,
+              err,
+            );
           }
 
           if (degradations.length === 0) {
@@ -345,9 +354,12 @@ export class XertProvider implements SyncProvider {
       );
       recordsSynced += activityCount;
     } catch (err) {
+      if (err instanceof PartialSyncError) {
+        recordsSynced += err.recordCount;
+      }
       errors.push({
-        message: `activity: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
+        message: err instanceof Error ? err.message : String(err),
+        cause: err instanceof PartialSyncError ? err.cause : err,
       });
     }
 
