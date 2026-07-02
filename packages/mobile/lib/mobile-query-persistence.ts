@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
 import type { QueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
-import { createElement, useMemo, type ReactNode } from "react";
+import { createElement, type ReactNode, useMemo } from "react";
 import { captureException } from "./telemetry";
 
 function queryCacheKey(userId: string) {

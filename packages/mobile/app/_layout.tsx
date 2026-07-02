@@ -16,7 +16,10 @@ import {
 import { initBackgroundWatchInertialMeasurementUnitSync } from "../lib/background-watch-inertial-measurement-unit-sync";
 import { syncWhoopBle, teardownBackgroundWhoopBleSync } from "../lib/background-whoop-ble-sync";
 import type { SyncTrpcClient } from "../lib/health-kit-sync";
-import { MobileQueryPersistenceProvider, removeMobileQueryCache } from "../lib/mobile-query-persistence";
+import {
+  MobileQueryPersistenceProvider,
+  removeMobileQueryCache,
+} from "../lib/mobile-query-persistence";
 import { runAfterUiIdle } from "../lib/runAfterUiIdle";
 import { getTrpcUrl } from "../lib/server";
 import { captureException, initTelemetry, logger } from "../lib/telemetry";

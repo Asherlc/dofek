@@ -2,7 +2,7 @@ import { QUERY_CACHE_MAX_AGE_MS } from "@dofek/scoring/query-cache";
 import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
 import type { QueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
-import { createElement, useMemo, type ReactNode } from "react";
+import { createElement, type ReactNode, useMemo } from "react";
 import { captureException } from "./telemetry.ts";
 
 function queryCacheKey(userId: string) {
