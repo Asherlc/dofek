@@ -19,6 +19,7 @@ import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../logger.ts";
+import { fetchProviderPages } from "../sync/pagination.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
@@ -596,140 +597,157 @@ export class PelotonProvider implements SyncProvider {
       async () => {
         let workoutCount = 0;
         let streamCount = 0;
-        let page = 0;
-        let hasMore = true;
+        let totalWorkouts = 0;
+        const pages = await fetchProviderPages<PelotonWorkout, number>({
+          providerId: this.id,
+          stepName: "workouts",
+          initialCursor: 0,
+          fetchPage: async (page) => {
+            const response = await client.getWorkouts(page ?? 0);
+            totalWorkouts = response.total;
+            return {
+              items: response.data,
+              nextCursor: response.show_next ? response.page + 1 : null,
+            };
+          },
+          onPage: async (pageResult) => {
+            for (const workout of pageResult.items) {
+              if (workout.status !== "COMPLETE") continue;
 
-        while (hasMore) {
-          const response = await client.getWorkouts(page);
-          const totalWorkouts = response.total;
-
-          for (const workout of response.data) {
-            if (workout.status !== "COMPLETE") continue;
-
-            const startedAt = new Date(workout.start_time * 1000);
-            if (startedAt < since) {
-              hasMore = false;
-              break;
-            }
-            if (startedAt > syncWindowEnd) continue;
-
-            const parsed = parseWorkout(workout);
-            presentActivityExternalIds.add(parsed.externalId);
-
-            // Upsert the activity first so we have an ID for metric stream events
-            let activityId: string | null = null;
-            try {
-              const row = await upsertProviderActivity(
-                db,
-                {
-                  providerId: this.id,
-                  externalId: parsed.externalId,
-                  activityType: parsed.activityType,
-                  startedAt: parsed.startedAt,
-                  endedAt: parsed.endedAt,
-                  name: parsed.name,
-                  timezone: parsed.timezone,
-                  stravaId: parsed.stravaId,
-                  raw: parsed.raw,
-                },
-                {
-                  activityType: parsed.activityType,
-                  startedAt: parsed.startedAt,
-                  endedAt: parsed.endedAt,
-                  name: parsed.name,
-                  timezone: parsed.timezone,
-                  stravaId: parsed.stravaId,
-                  raw: parsed.raw,
-                },
-              );
-
-              activityId = row?.id ?? null;
-              workoutCount++;
-              // no-mutate: Progress reporting is UX-only and can't fail in a testable way
-              if (onProgress && totalWorkouts > 0) {
-                // no-mutate
-                onProgress(
-                  Math.round((workoutCount / totalWorkouts) * 100),
-                  `${workoutCount}/${totalWorkouts} workouts`,
-                );
+              const startedAt = new Date(workout.start_time * 1000);
+              if (startedAt < since) {
+                continue;
               }
-            } catch (err) {
-              errors.push({
-                message: err instanceof Error ? err.message : String(err),
-                externalId: parsed.externalId,
-                cause: err,
-              });
-            }
+              if (startedAt > syncWindowEnd) continue;
 
-            // Fetch performance graph for time-series + summary enrichment
-            try {
-              const everyN = 5;
-              const graph = await client.getPerformanceGraph(workout.id, everyN);
-              const series = parsePerformanceGraph(graph, everyN);
+              const parsed = parseWorkout(workout);
+              presentActivityExternalIds.add(parsed.externalId);
 
-              // Insert time-series metric stream events linked to the activity
-              const hrSeries = series.find((s) => s.slug === "heart_rate");
-              // Discard pedaling metrics (power, cadence) when has_pedaling_metrics is false —
-              // the user may still have HR data from a chest strap or watch
-              const hasPedaling = workout.has_pedaling_metrics !== false;
-              const powerSeries = hasPedaling ? series.find((s) => s.slug === "output") : undefined;
-              const cadenceSeries = hasPedaling
-                ? series.find((s) => s.slug === "cadence")
-                : undefined;
-              const sampleCount =
-                hrSeries?.values.length ??
-                powerSeries?.values.length ??
-                cadenceSeries?.values.length ??
-                0;
-
-              if (sampleCount > 0 && activityId) {
-                const rows = [];
-                for (let i = 0; i < sampleCount; i++) {
-                  const recordedAt = new Date(startedAt.getTime() + i * everyN * 1000);
-                  rows.push({
-                    providerId: this.id,
-                    activityId,
-                    recordedAt,
-                    heartRate: hrSeries?.values[i] ?? null,
-                    power: powerSeries?.values[i] ?? null,
-                    cadence: cadenceSeries?.values[i] ?? null,
-                    // Indoor rides have no meaningful speed — omit it
-                  });
-                }
-
-                await replaceMetricStreamBatch(
+              // Upsert the activity first so we have an ID for metric stream events
+              let activityId: string | null = null;
+              try {
+                const row = await upsertProviderActivity(
                   db,
-                  { activityId },
-                  rows,
-                  SOURCE_TYPE_API,
-                  options?.metricStreamPublisher,
+                  {
+                    providerId: this.id,
+                    externalId: parsed.externalId,
+                    activityType: parsed.activityType,
+                    startedAt: parsed.startedAt,
+                    endedAt: parsed.endedAt,
+                    name: parsed.name,
+                    timezone: parsed.timezone,
+                    stravaId: parsed.stravaId,
+                    raw: parsed.raw,
+                  },
+                  {
+                    activityType: parsed.activityType,
+                    startedAt: parsed.startedAt,
+                    endedAt: parsed.endedAt,
+                    name: parsed.name,
+                    timezone: parsed.timezone,
+                    stravaId: parsed.stravaId,
+                    raw: parsed.raw,
+                  },
                 );
 
-                streamCount += rows.length;
+                activityId = row?.id ?? null;
+                workoutCount++;
+                // no-mutate: Progress reporting is UX-only and can't fail in a testable way
+                if (onProgress && totalWorkouts > 0) {
+                  // no-mutate
+                  onProgress(
+                    Math.round((workoutCount / totalWorkouts) * 100),
+                    `${workoutCount}/${totalWorkouts} workouts`,
+                  );
+                }
+              } catch (err) {
+                errors.push({
+                  message: err instanceof Error ? err.message : String(err),
+                  externalId: parsed.externalId,
+                  cause: err,
+                });
               }
-            } catch (err) {
-              // Performance graph failure is non-fatal — still save the workout
-              errors.push({
-                message: `Performance graph for ${workout.id}: ${err instanceof Error ? err.message : String(err)}`,
-                externalId: workout.id,
-                cause: err,
-              });
-            }
-          }
 
-          hasMore = hasMore && response.show_next;
-          page++;
-        }
+              // Fetch performance graph for time-series + summary enrichment
+              try {
+                const everyN = 5;
+                const graph = await client.getPerformanceGraph(workout.id, everyN);
+                const series = parsePerformanceGraph(graph, everyN);
+
+                // Insert time-series metric stream events linked to the activity
+                const hrSeries = series.find((s) => s.slug === "heart_rate");
+                // Discard pedaling metrics (power, cadence) when has_pedaling_metrics is false —
+                // the user may still have HR data from a chest strap or watch
+                const hasPedaling = workout.has_pedaling_metrics !== false;
+                const powerSeries = hasPedaling
+                  ? series.find((s) => s.slug === "output")
+                  : undefined;
+                const cadenceSeries = hasPedaling
+                  ? series.find((s) => s.slug === "cadence")
+                  : undefined;
+                const sampleCount =
+                  hrSeries?.values.length ??
+                  powerSeries?.values.length ??
+                  cadenceSeries?.values.length ??
+                  0;
+
+                if (sampleCount > 0 && activityId) {
+                  const rows = [];
+                  for (let i = 0; i < sampleCount; i++) {
+                    const recordedAt = new Date(startedAt.getTime() + i * everyN * 1000);
+                    rows.push({
+                      providerId: this.id,
+                      activityId,
+                      recordedAt,
+                      heartRate: hrSeries?.values[i] ?? null,
+                      power: powerSeries?.values[i] ?? null,
+                      cadence: cadenceSeries?.values[i] ?? null,
+                      // Indoor rides have no meaningful speed — omit it
+                    });
+                  }
+
+                  await replaceMetricStreamBatch(
+                    db,
+                    { activityId },
+                    rows,
+                    SOURCE_TYPE_API,
+                    options?.metricStreamPublisher,
+                  );
+
+                  streamCount += rows.length;
+                }
+              } catch (err) {
+                // Performance graph failure is non-fatal — still save the workout
+                errors.push({
+                  message: `Performance graph for ${workout.id}: ${err instanceof Error ? err.message : String(err)}`,
+                  externalId: workout.id,
+                  cause: err,
+                });
+              }
+            }
+          },
+          shouldStopAfterPage: (pageResult) =>
+            pageResult.items.some(
+              (workout) =>
+                workout.status === "COMPLETE" && new Date(workout.start_time * 1000) < since,
+            ),
+        });
 
         logger.info(`[peloton] ${workoutCount} workouts, ${streamCount} metric stream rows`);
-        await finishProviderActivityListSync(db, {
-          providerId: this.id,
-          userId,
-          windowStart: since,
-          windowEnd: syncWindowEnd,
-          presentExternalIds: presentActivityExternalIds,
-        });
-        return { recordCount: workoutCount + streamCount, result: workoutCount + streamCount };
+        if (pages.degradations.length === 0) {
+          await finishProviderActivityListSync(db, {
+            providerId: this.id,
+            userId,
+            windowStart: since,
+            windowEnd: syncWindowEnd,
+            presentExternalIds: presentActivityExternalIds,
+          });
+        }
+        return {
+          recordCount: workoutCount + streamCount,
+          result: workoutCount + streamCount,
+          degradations: pages.degradations,
+        };
       },
       userId,
     );

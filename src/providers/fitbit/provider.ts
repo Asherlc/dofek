@@ -26,7 +26,12 @@ import type {
   WebhookEvent,
   WebhookProvider,
 } from "../types.ts";
-import { FITBIT_API_BASE, FitbitClient, type FitbitSleepLog } from "./client.ts";
+import {
+  FITBIT_API_BASE,
+  type FitbitActivity,
+  FitbitClient,
+  type FitbitSleepLog,
+} from "./client.ts";
 import {
   parseFitbitActivity,
   parseFitbitDailySummary,
@@ -70,6 +75,43 @@ export function fitbitOAuthConfig(host?: string): OAuthConfig | null {
 
 function formatDate(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+async function syncFitbitActivitiesWithGuardedPagination(
+  providerId: string,
+  client: FitbitClient,
+  afterDate: string,
+  persist: (raw: FitbitActivity) => Promise<void>,
+  handlePersistError: (err: unknown, externalId: string) => void,
+): Promise<{ count: number; degradations: SyncDegradation[]; completed: boolean }> {
+  let count = 0;
+  const pageResult = await fetchProviderPages<FitbitActivity, number>({
+    providerId,
+    stepName: "activity",
+    initialCursor: 0,
+    fetchPage: async (offset) => {
+      const response = await client.getActivities(afterDate, offset ?? 0);
+      const nextOffset = response.pagination.offset + response.pagination.limit;
+      const hasNext = response.pagination.next !== "";
+      return {
+        items: response.activities,
+        nextCursor: hasNext ? nextOffset : null,
+      };
+    },
+    onPage: async (pageResult) => {
+      for (const raw of pageResult.items) {
+        const parsed = parseFitbitActivity(raw);
+        try {
+          await persist(raw);
+          count++;
+        } catch (err) {
+          handlePersistError(err, parsed.externalId);
+        }
+      }
+    },
+  });
+
+  return { count, degradations: pageResult.degradations, completed: pageResult.completed };
 }
 
 async function syncFitbitSleepWithGuardedPagination(
@@ -258,47 +300,46 @@ export class FitbitProvider implements WebhookProvider {
         this.id,
         "activity",
         async () => {
-          let count = 0;
-          let offset = 0;
-          let hasMore = true;
-
-          while (hasMore) {
-            const response = await client.getActivities(sinceDate, offset);
-
-            for (const raw of response.activities) {
+          const activityResult = await syncFitbitActivitiesWithGuardedPagination(
+            this.id,
+            client,
+            sinceDate,
+            async (raw) => {
               const parsed = parseFitbitActivity(raw);
               presentActivityExternalIds.add(parsed.externalId);
-              try {
-                const { errors: activityErrors } = await persistActivity(
-                  db,
-                  parsed,
-                  raw,
-                  client,
-                  options?.metricStreamPublisher,
-                );
-                errors.push(...activityErrors);
-                count++;
-              } catch (err) {
-                errors.push({
-                  message: err instanceof Error ? err.message : String(err),
-                  externalId: parsed.externalId,
-                  cause: err,
-                });
-              }
-            }
+              const { errors: activityErrors } = await persistActivity(
+                db,
+                parsed,
+                raw,
+                client,
+                options?.metricStreamPublisher,
+              );
+              errors.push(...activityErrors);
+            },
+            (err, externalId) => {
+              errors.push({
+                message: err instanceof Error ? err.message : String(err),
+                externalId,
+                cause: err,
+              });
+            },
+          );
 
-            hasMore = response.pagination.next !== "";
-            offset += response.pagination.limit;
+          if (activityResult.completed) {
+            await finishProviderActivityListSync(db, {
+              providerId: this.id,
+              userId: options?.userId,
+              windowStart: since,
+              windowEnd: syncWindowEnd,
+              presentExternalIds: presentActivityExternalIds,
+            });
           }
 
-          await finishProviderActivityListSync(db, {
-            providerId: this.id,
-            userId: options?.userId,
-            windowStart: since,
-            windowEnd: syncWindowEnd,
-            presentExternalIds: presentActivityExternalIds,
-          });
-          return { recordCount: count, result: count };
+          return {
+            recordCount: activityResult.count,
+            result: activityResult.count,
+            degradations: activityResult.degradations,
+          };
         },
         options?.userId,
       );
@@ -472,39 +513,35 @@ export class FitbitProvider implements WebhookProvider {
             this.id,
             "activity",
             async () => {
-              let count = 0;
-              let offset = 0;
-              let hasMore = true;
-
-              while (hasMore) {
-                const response = await client.getActivities(eventDate, offset);
-
-                for (const raw of response.activities) {
+              const activityResult = await syncFitbitActivitiesWithGuardedPagination(
+                this.id,
+                client,
+                eventDate,
+                async (raw) => {
                   const parsed = parseFitbitActivity(raw);
-                  try {
-                    const { errors: activityErrors } = await persistActivity(
-                      db,
-                      parsed,
-                      raw,
-                      client,
-                      options?.metricStreamPublisher,
-                    );
-                    errors.push(...activityErrors);
-                    count++;
-                  } catch (err) {
-                    errors.push({
-                      message: err instanceof Error ? err.message : String(err),
-                      externalId: parsed.externalId,
-                      cause: err,
-                    });
-                  }
-                }
+                  const { errors: activityErrors } = await persistActivity(
+                    db,
+                    parsed,
+                    raw,
+                    client,
+                    options?.metricStreamPublisher,
+                  );
+                  errors.push(...activityErrors);
+                },
+                (err, externalId) => {
+                  errors.push({
+                    message: err instanceof Error ? err.message : String(err),
+                    externalId,
+                    cause: err,
+                  });
+                },
+              );
 
-                hasMore = response.pagination.next !== "";
-                offset += response.pagination.limit;
-              }
-
-              return { recordCount: count, result: count };
+              return {
+                recordCount: activityResult.count,
+                result: activityResult.count,
+                degradations: activityResult.degradations,
+              };
             },
             options?.userId,
           );
