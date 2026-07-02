@@ -1,6 +1,6 @@
 ---
 name: address-github-issue
-description: Read a GitHub issue, implement the fix, open a PR, and link the PR and issue bidirectionally.
+description: Start work on a GitHub issue, attach the branch, move it to In Progress, implement the fix, open a PR, and link the PR and issue bidirectionally.
 ---
 
 # Address GitHub Issue
@@ -13,6 +13,8 @@ Resolve the issue number (works for both forms):
 
 ```bash
 ISSUE_NUMBER=$(gh issue view "$ARGUMENTS" --json number -q .number)
+ISSUE_URL=$(gh issue view "$ISSUE_NUMBER" --json url -q .url)
+export ISSUE_URL
 ```
 
 ## Steps
@@ -31,11 +33,68 @@ gh pr list --search "Fixes #${ISSUE_NUMBER} OR Closes #${ISSUE_NUMBER}" --state 
 
 If one already addresses the issue, stop and tell the user.
 
-### 2. Address it
+### 2. Start work
+
+Immediately attach the work branch to the issue and move the issue to In Progress in
+Asherlc's GitHub project 1.
+
+Link a GitHub development branch for the issue using the current branch name. Do not
+switch branches unless the user explicitly approved branch switching.
+
+```bash
+BRANCH_NAME=$(git branch --show-current)
+if [ -z "$BRANCH_NAME" ]; then
+  echo "No current branch is checked out; cannot attach a branch to issue #$ISSUE_NUMBER." >&2
+  exit 1
+fi
+
+gh issue develop "$ISSUE_NUMBER" --name "$BRANCH_NAME"
+gh issue develop --list "$ISSUE_NUMBER"
+```
+
+Move the issue to `In Progress` in <https://github.com/users/Asherlc/projects/1/views/1>.
+If the issue is not already in the project, add it first.
+
+The project commands require GitHub project scopes. If `gh` reports missing project
+scopes, stop and ask the user to run `gh auth refresh -s read:project -s project`;
+do not continue to implementation without the project move.
+
+```bash
+PROJECT_OWNER=Asherlc
+PROJECT_NUMBER=1
+REPOSITORY=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+PROJECT_ID=$(gh project view "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" --format json -q .id)
+PROJECT_ITEM_ID=$(
+  gh project item-list "$PROJECT_NUMBER" \
+    --owner "$PROJECT_OWNER" \
+    --format json \
+    --limit 100 \
+    --query "repo:$REPOSITORY #$ISSUE_NUMBER is:issue" \
+    -q 'first(.items[] | select(.content.url == env.ISSUE_URL) | .id) // ""'
+)
+
+if [ -z "$PROJECT_ITEM_ID" ]; then
+  PROJECT_ITEM_ID=$(gh project item-add "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" --url "$ISSUE_URL" --format json -q .id)
+fi
+
+STATUS_FIELD_ID=$(gh project field-list "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" --format json -q '.fields[] | select(.name == "Status") | .id')
+IN_PROGRESS_OPTION_ID=$(gh project field-list "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" --format json -q '.fields[] | select(.name == "Status") | .options[] | select(.name == "In Progress") | .id')
+
+gh project item-edit \
+  --id "$PROJECT_ITEM_ID" \
+  --project-id "$PROJECT_ID" \
+  --field-id "$STATUS_FIELD_ID" \
+  --single-select-option-id "$IN_PROGRESS_OPTION_ID"
+```
+
+Do not continue to implementation until the branch is linked and the project item is
+In Progress.
+
+### 3. Address it
 
 Implement the fix on the current branch. Use other skills as needed (`write-tests`, `ship-pr`, etc.).
 
-### 3. Link PR ↔ issue
+### 4. Link PR ↔ issue
 
 After opening the PR, ensure both directions are linked.
 
