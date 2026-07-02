@@ -61,8 +61,8 @@
 - Modify: this plan with the fresh query results if they differ from the checked-in evidence.
 - Optionally create: `.context/axiom-loading-phase-2.md` for raw query notes that should not live in docs.
 
-- [ ] Run Axiom discovery first: `rtk /Users/ashercohen/.agents/skills/axiom-sre/scripts/discover-axiom prod`.
-- [ ] Get schema for the actual dataset before filtering fields: `rtk sh -c "printf %s \"['dofek-logs'] | getschema\" | /Users/ashercohen/.agents/skills/axiom-sre/scripts/axiom-query prod --since 15m"`. If the limiter blocks it, record the trace ID in `.context/axiom-loading-phase-2.md` and ask for Axiom query access or a pasted export.
+- [ ] Run Axiom discovery first: `rtk "$HOME/.agents/skills/axiom-sre/scripts/discover-axiom" prod`.
+- [ ] Get schema for the actual dataset before filtering fields: `rtk sh -c "printf %s \"['dofek-logs'] | getschema\" | \"$HOME/.agents/skills/axiom-sre/scripts/axiom-query\" prod --since 15m"`. If the limiter blocks it, record the trace ID in `.context/axiom-loading-phase-2.md` and ask for Axiom query access or a pasted export.
 - [ ] Query recent slow tRPC logs by procedure for 24h or the largest allowed window:
   ```apl
   ['dofek-logs']
@@ -80,7 +80,7 @@
   ```
 - [ ] Query named loading suspects: `mobileDashboard.dashboard`, `anomalyDetection.check`, `activity.stream`, `recovery.readinessScore`, `recovery.workloadRatio`, `sync.dataHealth`, `sleep.latestStages`, and `healthspan.score`.
 - [ ] Record exact timestamps, counts, max/average durations, and whether the evidence points to client blanking, tRPC batching, queue wait, or ClickHouse execution time.
-- [ ] Do not start Task 7 ClickHouse work unless this task names a current slow backend family. If Axiom remains unavailable, keep Task 7 blocked and proceed only with client-side stale-data rendering and safe caching tasks.
+- [ ] Do not start Task 8 ClickHouse work unless this task names a current slow backend family. If Axiom remains unavailable, keep Task 8 blocked and proceed only with client-side stale-data rendering and safe caching tasks.
 
 ### Task 2: Add Cross-Client Failing Tests For Stale Data Rendering
 
@@ -178,7 +178,7 @@
 ### Task 8: Only Then Optimize Proven ClickHouse Bottlenecks
 
 **Files:**
-- Modify specific `analytics/models/**` dbt models or route query files only after Task 6 identifies a named bottleneck.
+- Modify specific `analytics/models/**` dbt models or route query files only after Task 7 identifies a named bottleneck.
 - Modify corresponding server tests and analytics policy tests.
 
 - [ ] Capture evidence for one slow query family: exact tRPC procedure, Axiom aggregate, first slow log line, ClickHouse query/log evidence, row counts or memory pressure if available, and why the current query shape is slow.

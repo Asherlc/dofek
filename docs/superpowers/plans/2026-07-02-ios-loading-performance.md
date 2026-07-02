@@ -55,7 +55,7 @@
 - [ ] Write `query-loading.test.ts` expecting a helper to return `true` only when a query is initially loading and has no data.
 - [ ] Add screen tests where the mocked query returns `{ data: existingData, isLoading: false, isFetching: true }` and assert existing cards/charts remain visible.
 - [ ] Add screen tests where the mocked query returns `{ data: undefined, isLoading: true, isFetching: true }` and assert the existing loading state still appears.
-- [ ] Run `rtk pnpm vitest run packages/mobile/lib/query-loading.test.ts packages/mobile/app/'(tabs)'/recovery.test.tsx packages/mobile/app/'(tabs)'/strain.test.tsx packages/mobile/app/'(tabs)'/activities.test.tsx packages/mobile/app/'(tabs)'/index.test.tsx packages/mobile/app/sleep.test.tsx --project mobile`.
+- [ ] Run `rtk pnpm vitest run packages/mobile/lib/query-loading.test.ts packages/mobile/app/\(tabs\)/recovery.test.tsx packages/mobile/app/\(tabs\)/strain.test.tsx packages/mobile/app/\(tabs\)/activities.test.tsx packages/mobile/app/\(tabs\)/index.test.tsx packages/mobile/app/sleep.test.tsx --project mobile`.
 - [ ] Confirm the tests fail because the helper does not exist and affected screens still gate too much UI on `isLoading`.
 
 ### Task 2: Implement The Minimal Mobile Loading Helper
@@ -68,7 +68,7 @@
 - [ ] Replace page-level `query.isLoading` checks with the helper, keeping explicit error states that do not hide existing data unnecessarily.
 - [ ] Use TanStack Query v5 `placeholderData: (previousData) => previousData` on date/window-controlled queries that do not already have it.
 - [ ] Keep loading skeletons only for data-specific widgets that have no cached value yet.
-- [ ] Run `rtk pnpm vitest run packages/mobile/lib/query-loading.test.ts packages/mobile/app/'(tabs)'/recovery.test.tsx packages/mobile/app/'(tabs)'/strain.test.tsx packages/mobile/app/'(tabs)'/activities.test.tsx packages/mobile/app/'(tabs)'/index.test.tsx packages/mobile/app/sleep.test.tsx --project mobile`.
+- [ ] Run `rtk pnpm vitest run packages/mobile/lib/query-loading.test.ts packages/mobile/app/\(tabs\)/recovery.test.tsx packages/mobile/app/\(tabs\)/strain.test.tsx packages/mobile/app/\(tabs\)/activities.test.tsx packages/mobile/app/\(tabs\)/index.test.tsx packages/mobile/app/sleep.test.tsx --project mobile`.
 - [ ] Confirm the focused mobile tests pass.
 
 ### Task 3: Persist The Mobile Query Cache Across App Restarts
