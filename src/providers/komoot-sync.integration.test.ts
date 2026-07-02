@@ -218,9 +218,43 @@ describe("KomootProvider.sync() (integration)", () => {
 
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("Komoot API error");
+    expect(result.recordsSynced).toBe(1);
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "komoot"));
     expect(rows.some((row) => row.externalId === "8051")).toBe(true);
+  });
+
+  it("skips tours after the bounded sync window end", async () => {
+    await saveTokens(ctx.db, "komoot", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "profile",
+    });
+
+    server.use(
+      ...komootHandlers([
+        [
+          fakeTour({ id: 8061, name: "Inside Window", date: "2026-03-01T10:00:00Z" }),
+          fakeTour({ id: 8062, name: "After Window", date: "2026-03-02T00:00:00Z" }),
+        ],
+      ]),
+    );
+
+    const provider = new KomootProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(1);
+
+    const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "komoot"));
+    expect(rows.some((row) => row.externalId === "8061")).toBe(true);
+    expect(rows.some((row) => row.externalId === "8062")).toBe(false);
   });
 
   it("reports degraded pagination and skips reconciliation when an empty page still has a next page", async () => {

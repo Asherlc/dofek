@@ -301,6 +301,7 @@ describe("Concept2Provider.sync() (integration)", () => {
 
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors[0]?.message).toContain("API error");
+    expect(result.recordsSynced).toBe(1);
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "concept2"));
     expect(rows.some((row) => row.externalId === "6151")).toBe(true);

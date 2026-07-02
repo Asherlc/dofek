@@ -406,58 +406,66 @@ export class Concept2Provider implements WebhookProvider {
           let count = 0;
           const sinceDate = since.toISOString().slice(0, 10);
 
-          const pages = await fetchProviderPages<Concept2Result, number>({
-            providerId: this.id,
-            stepName: "activity_list",
-            initialCursor: 1,
-            fetchPage: async (page) => {
-              const currentPage = page ?? 1;
-              const data = await client.getResults(sinceDate, currentPage);
-              const nextPage = currentPage + 1;
-              return {
-                items: data.data,
-                nextCursor: nextPage <= data.meta.pagination.total_pages ? nextPage : null,
-              };
-            },
-            onPage: async (page) => {
-              for (const raw of page.items) {
-                const parsed = parseConcept2Result(raw);
-                if (parsed.startedAt.getTime() > syncWindowEnd.getTime()) {
-                  continue;
-                }
-                presentActivityExternalIds.add(parsed.externalId);
-                try {
-                  await upsertProviderActivity(
-                    db,
-                    {
-                      providerId: this.id,
+          try {
+            const pages = await fetchProviderPages<Concept2Result, number>({
+              providerId: this.id,
+              stepName: "activity_list",
+              initialCursor: 1,
+              fetchPage: async (page) => {
+                const currentPage = page ?? 1;
+                const data = await client.getResults(sinceDate, currentPage);
+                const nextPage = currentPage + 1;
+                return {
+                  items: data.data,
+                  nextCursor: nextPage <= data.meta.pagination.total_pages ? nextPage : null,
+                };
+              },
+              onPage: async (page) => {
+                for (const raw of page.items) {
+                  const parsed = parseConcept2Result(raw);
+                  if (parsed.startedAt.getTime() > syncWindowEnd.getTime()) {
+                    continue;
+                  }
+                  presentActivityExternalIds.add(parsed.externalId);
+                  try {
+                    await upsertProviderActivity(
+                      db,
+                      {
+                        providerId: this.id,
+                        externalId: parsed.externalId,
+                        activityType: parsed.activityType,
+                        name: parsed.name,
+                        startedAt: parsed.startedAt,
+                        endedAt: parsed.endedAt,
+                        raw: parsed.raw,
+                      },
+                      {
+                        activityType: parsed.activityType,
+                        name: parsed.name,
+                        startedAt: parsed.startedAt,
+                        endedAt: parsed.endedAt,
+                        raw: parsed.raw,
+                      },
+                    );
+                    count++;
+                  } catch (err) {
+                    errors.push({
+                      message: err instanceof Error ? err.message : String(err),
                       externalId: parsed.externalId,
-                      activityType: parsed.activityType,
-                      name: parsed.name,
-                      startedAt: parsed.startedAt,
-                      endedAt: parsed.endedAt,
-                      raw: parsed.raw,
-                    },
-                    {
-                      activityType: parsed.activityType,
-                      name: parsed.name,
-                      startedAt: parsed.startedAt,
-                      endedAt: parsed.endedAt,
-                      raw: parsed.raw,
-                    },
-                  );
-                  count++;
-                } catch (err) {
-                  errors.push({
-                    message: err instanceof Error ? err.message : String(err),
-                    externalId: parsed.externalId,
-                    cause: err,
-                  });
+                      cause: err,
+                    });
+                  }
                 }
-              }
-            },
-          });
-          degradations.push(...pages.degradations);
+              },
+            });
+            degradations.push(...pages.degradations);
+          } catch (err) {
+            errors.push({
+              message: `activity: ${err instanceof Error ? err.message : String(err)}`,
+              cause: err,
+            });
+            return { recordCount: count, result: count, degradations };
+          }
 
           if (degradations.length === 0) {
             await finishProviderActivityListSync(db, {

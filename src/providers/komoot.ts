@@ -204,68 +204,79 @@ export class KomootProvider implements SyncProvider {
           let count = 0;
           const startDate = since.toISOString();
 
-          const pages = await fetchProviderPages<KomootTour, number>({
-            providerId: this.id,
-            stepName: "activity_list",
-            initialCursor: 0,
-            fetchPage: async (page) => {
-              const currentPage = page ?? 0;
-              const url = `${KOMOOT_API_BASE}/users/me/tours/?type=RECORDED&start_date=${startDate}&page=${currentPage}&limit=50&sort_field=date&sort_direction=desc`;
-              const response = await this.#fetchFn(url, {
-                headers: {
-                  Authorization: `Bearer ${accessToken}`,
-                  Accept: "application/hal+json",
-                },
-              });
+          try {
+            const pages = await fetchProviderPages<KomootTour, number>({
+              providerId: this.id,
+              stepName: "activity_list",
+              initialCursor: 0,
+              fetchPage: async (page) => {
+                const currentPage = page ?? 0;
+                const url = `${KOMOOT_API_BASE}/users/me/tours/?type=RECORDED&start_date=${startDate}&page=${currentPage}&limit=50&sort_field=date&sort_direction=desc`;
+                const response = await this.#fetchFn(url, {
+                  headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    Accept: "application/hal+json",
+                  },
+                });
 
-              if (!response.ok) {
-                const text = await response.text();
-                throw new Error(`Komoot API error (${response.status}): ${text}`);
-              }
-
-              const data: KomootToursResponse = await response.json();
-              const nextPage = currentPage + 1;
-              return {
-                items: data._embedded?.tours ?? [],
-                nextCursor: nextPage < data.page.totalPages ? nextPage : null,
-              };
-            },
-            onPage: async (page) => {
-              for (const raw of page.items) {
-                const parsed = parseKomootTour(raw);
-                presentActivityExternalIds.add(parsed.externalId);
-                try {
-                  await upsertProviderActivity(
-                    db,
-                    {
-                      providerId: this.id,
-                      externalId: parsed.externalId,
-                      activityType: parsed.activityType,
-                      name: parsed.name,
-                      startedAt: parsed.startedAt,
-                      endedAt: parsed.endedAt,
-                      raw: parsed.raw,
-                    },
-                    {
-                      activityType: parsed.activityType,
-                      name: parsed.name,
-                      startedAt: parsed.startedAt,
-                      endedAt: parsed.endedAt,
-                      raw: parsed.raw,
-                    },
-                  );
-                  count++;
-                } catch (err) {
-                  errors.push({
-                    message: err instanceof Error ? err.message : String(err),
-                    externalId: parsed.externalId,
-                    cause: err,
-                  });
+                if (!response.ok) {
+                  const text = await response.text();
+                  throw new Error(`Komoot API error (${response.status}): ${text}`);
                 }
-              }
-            },
-          });
-          degradations.push(...pages.degradations);
+
+                const data: KomootToursResponse = await response.json();
+                const nextPage = currentPage + 1;
+                return {
+                  items: data._embedded?.tours ?? [],
+                  nextCursor: nextPage < data.page.totalPages ? nextPage : null,
+                };
+              },
+              onPage: async (page) => {
+                for (const raw of page.items) {
+                  const parsed = parseKomootTour(raw);
+                  if (parsed.startedAt.getTime() > syncWindowEnd.getTime()) {
+                    continue;
+                  }
+                  presentActivityExternalIds.add(parsed.externalId);
+                  try {
+                    await upsertProviderActivity(
+                      db,
+                      {
+                        providerId: this.id,
+                        externalId: parsed.externalId,
+                        activityType: parsed.activityType,
+                        name: parsed.name,
+                        startedAt: parsed.startedAt,
+                        endedAt: parsed.endedAt,
+                        raw: parsed.raw,
+                      },
+                      {
+                        activityType: parsed.activityType,
+                        name: parsed.name,
+                        startedAt: parsed.startedAt,
+                        endedAt: parsed.endedAt,
+                        raw: parsed.raw,
+                      },
+                    );
+                    count++;
+                  } catch (err) {
+                    errors.push({
+                      message: err instanceof Error ? err.message : String(err),
+                      externalId: parsed.externalId,
+                      cause: err,
+                    });
+                  }
+                }
+              },
+            });
+            degradations.push(...pages.degradations);
+          } catch (err) {
+            errors.push({
+              message: `activity: ${err instanceof Error ? err.message : String(err)}`,
+              cause: err,
+            });
+            return { recordCount: count, result: count, degradations };
+          }
 
           if (degradations.length === 0) {
             await finishProviderActivityListSync(db, {
