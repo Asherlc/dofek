@@ -13,10 +13,13 @@ describe("runAfterUiIdle", () => {
   it("uses requestIdleCallback when available", () => {
     const task = vi.fn();
     const cancelIdleCallback = vi.fn();
-    const requestIdleCallback = vi.fn((_task: IdleRequestCallback, _options?: IdleRequestOptions) => {
-      _task({ didTimeout: false, timeRemaining: () => 0 } as IdleDeadline);
-      return 42;
-    });
+    const requestIdleCallback = vi.fn(
+      (idleTask: IdleRequestCallback, _options?: IdleRequestOptions) => {
+        const deadline = { didTimeout: false, timeRemaining: () => 0 } satisfies IdleDeadline;
+        idleTask(deadline);
+        return 42;
+      },
+    );
 
     vi.stubGlobal("requestIdleCallback", requestIdleCallback);
     vi.stubGlobal("cancelIdleCallback", cancelIdleCallback);
