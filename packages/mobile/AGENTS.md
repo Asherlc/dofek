@@ -14,6 +14,7 @@
 - **Charts**: Use `react-native-svg` for all chart implementations.
 - **Navigation**: Uses Expo Router. Screen paths map to `app/`.
 - **Query state handling**: Treat loading, error, and empty as separate UI states. Do not use `query.data ?? []` or similar fallbacks when `query.error` exists. Use `components/QueryStatePanel.tsx` for explicit error/empty/loading states on screens and cards.
+- **Loading performance**: Follow `../../docs/performance/loading-performance-runbook.md` for slow screens. Do not blank visible previous/cached data during background refetches; use blocking loading only when no usable data exists, preserve server error messages, and keep sync/refresh invalidation targeted to affected query families.
 
 ### Native Config Consistency
 - **app.json must stay in sync with the filesystem**: When removing or renaming files in `plugins/`, `native/`, or `targets/`, update `app.json` in the same commit. Specifically: plugin paths in `expo.plugins`, pod paths in `expo-build-properties` `extraPods`, and target configs under `@bacons/apple-targets`. A mismatch causes `expo prebuild` to crash, breaking all iOS/watchOS CI jobs.

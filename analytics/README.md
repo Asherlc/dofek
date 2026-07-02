@@ -25,6 +25,13 @@ over `analytics.activity_summary_rows FINAL`; the expensive activity/sample
 joins belong in incremental dbt models, not in web/API requests. Complex
 offline ClickHouse models can set dbt `query_settings` locally and use
 `max_threads=1` so offline builds do not compete with request traffic.
+For loading-performance work, follow
+[`docs/performance/loading-performance-runbook.md`](../docs/performance/loading-performance-runbook.md)
+before adding or changing analytics models. A new route-facing model is allowed
+only after fresh Axiom or recorded incident evidence names a request-time
+ClickHouse bottleneck, and the model should materialize the domain/grain needed
+by that route instead of becoming a generic `_summary`, `_aggregate`, or
+`_read_model` table.
 `daily_recovery`, `daily_strain`, `daily_sleep`, and
 `weekly_healthspan` are the named dashboard serving models. They build on compact ingredient
 models such as `daily_recovery_inputs`, `daily_activity_load`, and
