@@ -5,6 +5,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // ============================================================
 
 vi.mock("../db/sync-log.ts", () => ({
+  PartialSyncError: class PartialSyncError extends Error {
+    readonly recordCount: number;
+    override readonly cause: unknown;
+
+    constructor(message: string, recordCount: number, cause: unknown) {
+      super(message);
+      this.name = "PartialSyncError";
+      this.recordCount = recordCount;
+      this.cause = cause;
+    }
+  },
   withSyncLog: vi.fn(
     async (
       _db: unknown,

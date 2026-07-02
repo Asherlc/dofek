@@ -31,12 +31,23 @@ vi.mock("../db/tokens.ts", () => ({
 }));
 
 vi.mock("../db/sync-log.ts", () => ({
+  PartialSyncError: class PartialSyncError extends Error {
+    readonly recordCount: number;
+    override readonly cause: unknown;
+
+    constructor(message: string, recordCount: number, cause: unknown) {
+      super(message);
+      this.name = "PartialSyncError";
+      this.recordCount = recordCount;
+      this.cause = cause;
+    }
+  },
   withSyncLog: vi.fn(
     async (
       _db: unknown,
       _providerId: string,
       _dataType: string,
-      fn: () => Promise<{ recordCount: number; result: number }>,
+      fn: () => Promise<{ recordCount: number; result: number; degradations?: unknown[] }>,
     ) => {
       const { result } = await fn();
       return result;
@@ -870,6 +881,162 @@ describe("BodySpecProvider", () => {
 
       expect(result.recordsSynced).toBe(2);
       expect(listCallCount).toBe(2);
+    });
+
+    it("syncs already fetched results before a later page request fails", async () => {
+      const validTokens = {
+        accessToken: "valid-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2030-01-01"),
+        scopes: "read:results",
+      };
+      vi.mocked(loadTokens).mockResolvedValue(validTokens);
+
+      let listCallCount = 0;
+      const fetchFn = vi.fn().mockImplementation((url: string) => {
+        if (url.includes("/results/?")) {
+          listCallCount++;
+          if (listCallCount === 1) {
+            return Promise.resolve(
+              jsonResponse({
+                results: [{ result_id: "r1", start_time: "2025-06-15T10:00:00Z" }],
+                pagination: { page: 1, page_size: 1, results: 2, has_more: true },
+              }),
+            );
+          }
+          return Promise.resolve(errorResponse(500, "Internal Server Error"));
+        }
+        if (url.includes("/composition")) {
+          return Promise.resolve(jsonResponse(COMPOSITION_RESPONSE));
+        }
+        if (url.includes("/scan-info")) {
+          return Promise.resolve(jsonResponse(SCAN_INFO_RESPONSE));
+        }
+        return Promise.resolve(errorResponse(404, "Not Found"));
+      });
+
+      const provider = new BodySpecProvider(fetchFn);
+      const result = await provider.sync(
+        new SyncRun({
+          db: mockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2025-01-01") }),
+        }),
+      );
+
+      expect(result.errors.length).toBeGreaterThan(0);
+      expect(result.errors[0]?.message).toContain("API error 500");
+      expect(result.recordsSynced).toBe(1);
+      expect(listCallCount).toBe(2);
+      expect(fetchFn).toHaveBeenCalledWith(
+        expect.stringContaining("/results/r1/dexa/composition"),
+        expect.any(Object),
+      );
+    });
+
+    it("reports degraded pagination when an empty results page still has more results", async () => {
+      const validTokens = {
+        accessToken: "valid-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2030-01-01"),
+        scopes: "read:results",
+      };
+      vi.mocked(loadTokens).mockResolvedValue(validTokens);
+
+      let listCallCount = 0;
+      const fetchFn = vi.fn().mockImplementation((url: string) => {
+        if (url.includes("/results/?")) {
+          listCallCount++;
+          return Promise.resolve(
+            jsonResponse({
+              results: [],
+              pagination: {
+                page: listCallCount,
+                page_size: 100,
+                results: 101,
+                has_more: listCallCount === 1,
+              },
+            }),
+          );
+        }
+        return Promise.resolve(errorResponse(404, "Not Found"));
+      });
+
+      const provider = new BodySpecProvider(fetchFn);
+      const result = await provider.sync(
+        new SyncRun({
+          db: mockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2025-01-01") }),
+        }),
+      );
+
+      expect(result.recordsSynced).toBe(0);
+      expect(result.degradations?.[0]?.kind).toBe("pagination_empty_page_with_cursor");
+      expect(listCallCount).toBe(1);
+    });
+
+    it("reports max-page degradation at the exact page guard", async () => {
+      const validTokens = {
+        accessToken: "valid-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2030-01-01"),
+        scopes: "read:results",
+      };
+      vi.mocked(loadTokens).mockResolvedValue(validTokens);
+
+      let listCallCount = 0;
+      const fetchFn = vi.fn().mockImplementation((url: string) => {
+        if (url.includes("/results/?")) {
+          listCallCount++;
+          if (listCallCount > 100) {
+            return Promise.resolve(
+              jsonResponse({
+                results: [],
+                pagination: {
+                  page: listCallCount,
+                  page_size: 1,
+                  results: 100,
+                  has_more: false,
+                },
+              }),
+            );
+          }
+          return Promise.resolve(
+            jsonResponse({
+              results: [
+                {
+                  result_id: `guard-${listCallCount}`,
+                  start_time: "2025-06-15T10:00:00Z",
+                },
+              ],
+              pagination: {
+                page: listCallCount,
+                page_size: 1,
+                results: 101,
+                has_more: true,
+              },
+            }),
+          );
+        }
+        if (url.includes("/composition")) {
+          return Promise.resolve(jsonResponse(COMPOSITION_RESPONSE));
+        }
+        if (url.includes("/scan-info")) {
+          return Promise.resolve(jsonResponse(SCAN_INFO_RESPONSE));
+        }
+        return Promise.resolve(errorResponse(404, "Not Found"));
+      });
+
+      const provider = new BodySpecProvider(fetchFn);
+      const result = await provider.sync(
+        new SyncRun({
+          db: mockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2025-01-01") }),
+        }),
+      );
+
+      expect(result.recordsSynced).toBe(100);
+      expect(result.degradations?.[0]?.kind).toBe("pagination_max_pages_exceeded");
+      expect(listCallCount).toBe(100);
     });
 
     it("syncs with only composition (optional endpoints 404)", async () => {

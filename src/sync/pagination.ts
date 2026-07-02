@@ -14,6 +14,7 @@ export interface FetchProviderPagesOptions<TItem, TPageKey extends PageKey = str
   initialCursor?: TPageKey;
   maxPages?: number;
   fetchPage(cursor: TPageKey | undefined): Promise<ProviderPage<TItem, TPageKey>>;
+  onPage?(page: ProviderPage<TItem, TPageKey>, allItems: readonly TItem[]): Promise<void> | void;
   shouldStopAfterPage?(page: ProviderPage<TItem, TPageKey>, allItems: readonly TItem[]): boolean;
 }
 
@@ -62,6 +63,8 @@ class ProviderPaginationGuard<TItem, TPageKey extends PageKey = string> {
       this.#pagesFetched += 1;
       this.#items.push(...page.items);
       this.#finalCursor = page.nextCursor == null ? null : String(page.nextCursor);
+
+      await this.#options.onPage?.(page, this.#items);
 
       if (this.#options.shouldStopAfterPage?.(page, this.#items) === true) {
         this.#stoppedByProviderRule = true;

@@ -8,9 +8,11 @@ import {
   finishProviderActivityListSync,
   upsertProviderActivity,
 } from "../db/provider-activity-sync.ts";
-import { withSyncLog } from "../db/sync-log.ts";
+import { PartialSyncError, withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { fetchProviderPages } from "../sync/pagination.ts";
+import type { SyncDegradation } from "../sync/sync-degradation.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
@@ -254,6 +256,7 @@ export class XertProvider implements SyncProvider {
     const since = window.since;
     const syncWindowEnd = window.until;
     const presentActivityExternalIds = new Set<string>();
+    const degradations: SyncDegradation[] = [];
     try {
       const activityCount = await withSyncLog(
         db,
@@ -261,85 +264,105 @@ export class XertProvider implements SyncProvider {
         "activity",
         async () => {
           let count = 0;
-          let page = 0;
-          let hasMore = true;
           const pageSize = 50;
 
-          while (hasMore) {
-            const url = `${XERT_API_BASE}/oauth/activity/?from=${Math.floor(since.getTime() / 1000)}&page=${page}&limit=${pageSize}`;
-            const response = await this.#fetchFn(url, {
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-                Accept: "application/json",
+          try {
+            const pages = await fetchProviderPages<XertActivity, number>({
+              providerId: this.id,
+              stepName: "activity_list",
+              initialCursor: 0,
+              fetchPage: async (page) => {
+                const currentPage = page ?? 0;
+                const url = `${XERT_API_BASE}/oauth/activity/?from=${Math.floor(since.getTime() / 1000)}&page=${currentPage}&limit=${pageSize}`;
+                const response = await this.#fetchFn(url, {
+                  headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    Accept: "application/json",
+                  },
+                });
+
+                if (!response.ok) {
+                  const text = await response.text();
+                  throw new Error(`Xert API error (${response.status}): ${text}`);
+                }
+
+                const data: XertActivity[] = await response.json();
+                return {
+                  items: data,
+                  nextCursor: data.length >= pageSize ? currentPage + 1 : null,
+                };
+              },
+              onPage: async (page) => {
+                for (const rawActivity of page.items) {
+                  const parsed = parseXertActivity(rawActivity);
+                  if (parsed.startedAt < since || parsed.startedAt >= syncWindowEnd) {
+                    continue;
+                  }
+                  presentActivityExternalIds.add(parsed.externalId);
+                  try {
+                    await upsertProviderActivity(
+                      db,
+                      {
+                        providerId: this.id,
+                        externalId: parsed.externalId,
+                        activityType: parsed.activityType,
+                        name: parsed.name,
+                        startedAt: parsed.startedAt,
+                        endedAt: parsed.endedAt,
+                        raw: parsed.raw,
+                      },
+                      {
+                        activityType: parsed.activityType,
+                        name: parsed.name,
+                        startedAt: parsed.startedAt,
+                        endedAt: parsed.endedAt,
+                        raw: parsed.raw,
+                      },
+                    );
+                    count++;
+                  } catch (err) {
+                    errors.push({
+                      message: err instanceof Error ? err.message : String(err),
+                      externalId: parsed.externalId,
+                      cause: err,
+                    });
+                  }
+                }
               },
             });
-
-            if (!response.ok) {
-              const text = await response.text();
-              throw new Error(`Xert API error (${response.status}): ${text}`);
-            }
-
-            const data: XertActivity[] = await response.json();
-            hasMore = data.length >= pageSize;
-
-            for (const rawActivity of data) {
-              const parsed = parseXertActivity(rawActivity);
-              if (parsed.startedAt < since || parsed.startedAt >= syncWindowEnd) {
-                continue;
-              }
-              presentActivityExternalIds.add(parsed.externalId);
-              try {
-                await upsertProviderActivity(
-                  db,
-                  {
-                    providerId: this.id,
-                    externalId: parsed.externalId,
-                    activityType: parsed.activityType,
-                    name: parsed.name,
-                    startedAt: parsed.startedAt,
-                    endedAt: parsed.endedAt,
-                    raw: parsed.raw,
-                  },
-                  {
-                    activityType: parsed.activityType,
-                    name: parsed.name,
-                    startedAt: parsed.startedAt,
-                    endedAt: parsed.endedAt,
-                    raw: parsed.raw,
-                  },
-                );
-                count++;
-              } catch (err) {
-                errors.push({
-                  message: err instanceof Error ? err.message : String(err),
-                  externalId: parsed.externalId,
-                  cause: err,
-                });
-              }
-            }
-
-            page++;
+            degradations.push(...pages.degradations);
+          } catch (err) {
+            throw new PartialSyncError(
+              `activity: ${err instanceof Error ? err.message : String(err)}`,
+              count,
+              err,
+            );
           }
 
-          await finishProviderActivityListSync(db, {
-            providerId: this.id,
-            userId: options?.userId,
-            windowStart: since,
-            windowEnd: syncWindowEnd,
-            presentExternalIds: presentActivityExternalIds,
-          });
-          return { recordCount: count, result: count };
+          if (degradations.length === 0) {
+            await finishProviderActivityListSync(db, {
+              providerId: this.id,
+              userId: options?.userId,
+              windowStart: since,
+              windowEnd: syncWindowEnd,
+              presentExternalIds: presentActivityExternalIds,
+            });
+          }
+          return { recordCount: count, result: count, degradations };
         },
         options?.userId,
       );
       recordsSynced += activityCount;
     } catch (err) {
+      if (err instanceof PartialSyncError) {
+        recordsSynced += err.recordCount;
+      }
       errors.push({
-        message: `activity: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
+        message: err instanceof Error ? err.message : String(err),
+        cause: err instanceof PartialSyncError ? err.cause : err,
       });
     }
 
-    return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
+    return { provider: this.id, recordsSynced, errors, degradations, duration: Date.now() - start };
   }
 }

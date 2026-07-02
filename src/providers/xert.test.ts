@@ -14,12 +14,23 @@ const providerActivityAbsenceMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../db/sync-log.ts", () => ({
+  PartialSyncError: class PartialSyncError extends Error {
+    readonly recordCount: number;
+    override readonly cause: unknown;
+
+    constructor(message: string, recordCount: number, cause: unknown) {
+      super(message);
+      this.name = "PartialSyncError";
+      this.recordCount = recordCount;
+      this.cause = cause;
+    }
+  },
   withSyncLog: vi.fn(
     async (
       _db: unknown,
       _providerId: string,
       _dataType: string,
-      fn: () => Promise<{ recordCount: number; result: unknown }>,
+      fn: () => Promise<{ recordCount: number; result: unknown; degradations?: unknown[] }>,
     ) => {
       const { result } = await fn();
       return result;
@@ -363,5 +374,361 @@ describe("XertProvider", () => {
         presentExternalIds: new Set(["100"]),
       }),
     );
+  });
+
+  it("uses guarded page requests with auth headers and scoped reconciliation", async () => {
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
+    providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
+
+    const requests: Array<{ url: string; authorization: string | null; accept: string | null }> =
+      [];
+    const pageStart = Math.floor(new Date("2026-03-01T08:00:00Z").getTime() / 1000);
+    const mockFetch: typeof globalThis.fetch = async (input, init) => {
+      const headers = new Headers(init?.headers);
+      requests.push({
+        url: String(input),
+        authorization: headers.get("Authorization"),
+        accept: headers.get("Accept"),
+      });
+
+      if (String(input).includes("page=0")) {
+        return Response.json(
+          Array.from({ length: 50 }, (_, index) => ({
+            id: 1000 + index,
+            name: `Full Page Activity ${index}`,
+            sport: "Cycling",
+            startTimestamp: pageStart,
+            endTimestamp: pageStart + 3600,
+            duration: 3600,
+            distance: 30000,
+            power_avg: 200,
+            power_max: 400,
+            power_normalized: 210,
+            heartrate_avg: 150,
+            heartrate_max: 170,
+            cadence_avg: 85,
+            cadence_max: 100,
+            calories: 800,
+            elevation_gain: 200,
+            elevation_loss: 180,
+            xss: 90,
+            focus: 3,
+            difficulty: 2,
+          })),
+        );
+      }
+
+      return Response.json([]);
+    };
+
+    const db = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+    const result = await new XertProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(requests.map((request) => new URL(request.url).searchParams.get("page"))).toEqual([
+      "0",
+      "1",
+    ]);
+    expect(new URL(requests[0]?.url ?? "").searchParams.get("from")).toBe(
+      String(Math.floor(new Date("2026-03-01T00:00:00Z").getTime() / 1000)),
+    );
+    expect(new URL(requests[0]?.url ?? "").searchParams.get("limit")).toBe("50");
+    expect(requests[0]?.authorization).toBe("Bearer valid-access-token");
+    expect(requests[0]?.accept).toBe("application/json");
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        userId: "00000000-0000-0000-0000-000000000001",
+        presentExternalIds: new Set(Array.from({ length: 50 }, (_, index) => String(1000 + index))),
+      }),
+    );
+  });
+
+  it("syncs activities at the window start and skips activities before the start or at the end", async () => {
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
+    providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
+
+    const beforeWindowStart = Math.floor(new Date("2026-02-28T23:59:59Z").getTime() / 1000);
+    const atWindowStart = Math.floor(new Date("2026-03-01T00:00:00Z").getTime() / 1000);
+    const atWindowEnd = Math.floor(new Date("2026-03-02T00:00:00Z").getTime() / 1000);
+    const mockFetch: typeof globalThis.fetch = async () =>
+      Response.json([
+        {
+          id: 300,
+          name: "Before Window",
+          sport: "Cycling",
+          startTimestamp: beforeWindowStart,
+          endTimestamp: beforeWindowStart + 3600,
+          duration: 3600,
+          distance: 30000,
+          power_avg: 200,
+          power_max: 400,
+          power_normalized: 210,
+          heartrate_avg: 150,
+          heartrate_max: 170,
+          cadence_avg: 85,
+          cadence_max: 100,
+          calories: 800,
+          elevation_gain: 200,
+          elevation_loss: 180,
+          xss: 90,
+          focus: 3,
+          difficulty: 2,
+        },
+        {
+          id: 400,
+          name: "At Window Start",
+          sport: "Cycling",
+          startTimestamp: atWindowStart,
+          endTimestamp: atWindowStart + 3600,
+          duration: 3600,
+          distance: 30000,
+          power_avg: 200,
+          power_max: 400,
+          power_normalized: 210,
+          heartrate_avg: 150,
+          heartrate_max: 170,
+          cadence_avg: 85,
+          cadence_max: 100,
+          calories: 800,
+          elevation_gain: 200,
+          elevation_loss: 180,
+          xss: 90,
+          focus: 3,
+          difficulty: 2,
+        },
+        {
+          id: 500,
+          name: "At Window End",
+          sport: "Cycling",
+          startTimestamp: atWindowEnd,
+          endTimestamp: atWindowEnd + 3600,
+          duration: 3600,
+          distance: 30000,
+          power_avg: 200,
+          power_max: 400,
+          power_normalized: 210,
+          heartrate_avg: 150,
+          heartrate_max: 170,
+          cadence_avg: 85,
+          cadence_max: 100,
+          calories: 800,
+          elevation_gain: 200,
+          elevation_loss: 180,
+          xss: 90,
+          focus: 3,
+          difficulty: 2,
+        },
+      ]);
+
+    const db = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+    const result = await new XertProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(1);
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ externalId: "400" }),
+      expect.any(Object),
+    );
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).not.toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ externalId: "300" }),
+      expect.any(Object),
+    );
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).not.toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ externalId: "500" }),
+      expect.any(Object),
+    );
+  });
+
+  it("returns the provider API error from activity sync", async () => {
+    const mockFetch: typeof globalThis.fetch = async () =>
+      new Response("rate exceeded", { status: 503 });
+    const db = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+
+    const result = await new XertProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain(
+      "xert API service unavailable (503): rate exceeded",
+    );
+  });
+
+  it("preserves already fetched activities before a later page request fails", async () => {
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
+    providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
+
+    let requestCount = 0;
+    const pageStart = Math.floor(new Date("2026-03-01T08:00:00Z").getTime() / 1000);
+    const mockFetch: typeof globalThis.fetch = async () => {
+      requestCount++;
+      if (requestCount === 2) {
+        return new Response("rate exceeded", { status: 503 });
+      }
+
+      return Response.json(
+        Array.from({ length: 50 }, (_, index) => ({
+          id: 7000 + index,
+          name: `Persisted Activity ${index}`,
+          sport: "Cycling",
+          startTimestamp: pageStart,
+          endTimestamp: pageStart + 3600,
+          duration: 3600,
+          distance: 30000,
+          power_avg: 200,
+          power_max: 400,
+          power_normalized: 210,
+          heartrate_avg: 150,
+          heartrate_max: 170,
+          cadence_avg: 85,
+          cadence_max: 100,
+          calories: 800,
+          elevation_gain: 200,
+          elevation_loss: 180,
+          xss: 90,
+          focus: 3,
+          difficulty: 2,
+        })),
+      );
+    };
+    const db = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+
+    const result = await new XertProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(50);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("xert API service unavailable");
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledTimes(50);
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
+  });
+
+  it("returns elapsed sync duration", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-01T00:00:01.000Z"));
+    const mockFetch: typeof globalThis.fetch = async () => {
+      vi.setSystemTime(new Date("2026-03-01T00:00:01.375Z"));
+      return Response.json([]);
+    };
+    const db = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+
+    try {
+      const result = await new XertProvider(mockFetch).sync(
+        new SyncRun({
+          db,
+          window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+        }),
+      );
+
+      expect(result.duration).toBe(375);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports max-page degradation at the exact page guard", async () => {
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
+    providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
+
+    let requestCount = 0;
+    const pageStart = Math.floor(new Date("2026-03-01T08:00:00Z").getTime() / 1000);
+    const mockFetch: typeof globalThis.fetch = async () => {
+      requestCount++;
+      if (requestCount > 100) {
+        return Response.json([]);
+      }
+
+      return Response.json(
+        Array.from({ length: 50 }, (_, index) => ({
+          id: requestCount * 1000 + index,
+          name: `Guard Activity ${requestCount}-${index}`,
+          sport: "Cycling",
+          startTimestamp: pageStart,
+          endTimestamp: pageStart + 3600,
+          duration: 3600,
+          distance: 30000,
+          power_avg: 200,
+          power_max: 400,
+          power_normalized: 210,
+          heartrate_avg: 150,
+          heartrate_max: 170,
+          cadence_avg: 85,
+          cadence_max: 100,
+          calories: 800,
+          elevation_gain: 200,
+          elevation_loss: 180,
+          xss: 90,
+          focus: 3,
+          difficulty: 2,
+        })),
+      );
+    };
+
+    const db = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+    const result = await new XertProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(5000);
+    expect(result.degradations?.[0]?.kind).toBe("pagination_max_pages_exceeded");
+    expect(requestCount).toBe(100);
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
   });
 });

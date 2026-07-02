@@ -22,8 +22,8 @@ interface FakeKomootTour {
   date: string;
   distance: number;
   duration: number;
-  elevation_up?: number;
-  elevation_down?: number;
+  elevation_up?: number | null;
+  elevation_down?: number | null;
   status: string;
   type: string;
 }
@@ -44,7 +44,10 @@ function fakeTour(overrides: Partial<FakeKomootTour> = {}): FakeKomootTour {
   };
 }
 
-function komootHandlers(pages: FakeKomootTour[][], opts?: { apiError?: boolean }) {
+function komootHandlers(
+  pages: FakeKomootTour[][],
+  opts?: { apiError?: boolean; apiErrorPage?: number; onTourRequest?: (page: number) => void },
+) {
   return [
     // Token refresh
     http.post("https://auth.komoot.de/oauth/token", () => {
@@ -64,6 +67,10 @@ function komootHandlers(pages: FakeKomootTour[][], opts?: { apiError?: boolean }
 
       const url = new URL(request.url);
       const page = Number.parseInt(url.searchParams.get("page") ?? "0", 10);
+      if (opts?.apiErrorPage === page) {
+        return new HttpResponse("Internal Server Error", { status: 500 });
+      }
+      opts?.onTourRequest?.(page);
       const totalPages = pages.length;
       const currentPageTours = pages[page] ?? [];
 
@@ -185,6 +192,184 @@ describe("KomootProvider.sync() (integration)", () => {
 
     const trail = rows.find((r) => r.externalId === "8002");
     expect(trail?.activityType).toBe("trail_running");
+  });
+
+  it("syncs tours when optional elevation fields are null", async () => {
+    await saveTokens(ctx.db, "komoot", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "profile",
+    });
+
+    server.use(
+      ...komootHandlers([
+        [
+          fakeTour({
+            id: 8041,
+            name: "Flat Tour",
+            elevation_up: null,
+            elevation_down: null,
+          }),
+        ],
+      ]),
+    );
+
+    const provider = new KomootProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
+
+    const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "komoot"));
+    const tour = rows.find((row) => row.externalId === "8041");
+    expect(tour?.raw).toEqual(
+      expect.objectContaining({
+        elevationUp: null,
+        elevationDown: null,
+      }),
+    );
+  });
+
+  it("persists already fetched tours before a later page request fails", async () => {
+    await saveTokens(ctx.db, "komoot", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "profile",
+    });
+
+    server.use(
+      ...komootHandlers([[fakeTour({ id: 8051, name: "Persisted Before Failure" })], []], {
+        apiErrorPage: 1,
+      }),
+    );
+
+    const provider = new KomootProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
+
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors[0]?.message).toContain("Komoot API error");
+    expect(result.recordsSynced).toBe(1);
+
+    const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "komoot"));
+    expect(rows.some((row) => row.externalId === "8051")).toBe(true);
+  });
+
+  it("skips tours after the bounded sync window end", async () => {
+    await saveTokens(ctx.db, "komoot", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "profile",
+    });
+
+    server.use(
+      ...komootHandlers([
+        [
+          fakeTour({ id: 8061, name: "Inside Window", date: "2026-03-01T10:00:00Z" }),
+          fakeTour({ id: 8062, name: "After Window", date: "2026-03-02T00:00:00Z" }),
+        ],
+      ]),
+    );
+
+    const provider = new KomootProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(1);
+
+    const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "komoot"));
+    expect(rows.some((row) => row.externalId === "8061")).toBe(true);
+    expect(rows.some((row) => row.externalId === "8062")).toBe(false);
+  });
+
+  it("reports degraded pagination and skips reconciliation when an empty page still has a next page", async () => {
+    await saveTokens(ctx.db, "komoot", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "profile",
+    });
+    const userId = "00000000-0000-0000-0000-000000000001";
+    await ctx.db.insert(activity).values({
+      providerId: "komoot",
+      userId,
+      externalId: "komoot-degraded-missing",
+      activityType: "hiking",
+      startedAt: new Date("2026-03-01T10:00:00Z"),
+      endedAt: new Date("2026-03-01T11:00:00Z"),
+    });
+
+    server.use(
+      ...komootHandlers([
+        [fakeTour({ id: 8101, name: "First Page Tour" })],
+        [],
+        [fakeTour({ id: 8103, name: "Unreached Tour" })],
+      ]),
+    );
+
+    const provider = new KomootProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        userId,
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.degradations?.[0]?.kind).toBe("pagination_empty_page_with_cursor");
+
+    const [missing] = await ctx.db
+      .select({ providerAbsentAt: activity.providerAbsentAt })
+      .from(activity)
+      .where(eq(activity.externalId, "komoot-degraded-missing"));
+    expect(missing?.providerAbsentAt).toBeNull();
+  });
+
+  it("reports max-page degradation at the exact page guard", async () => {
+    await saveTokens(ctx.db, "komoot", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "profile",
+    });
+
+    const requestedPages: number[] = [];
+    const pages = Array.from({ length: 101 }, (_, index) => [
+      fakeTour({ id: 8200 + index, name: `Guard Tour ${index}` }),
+    ]);
+    server.use(...komootHandlers(pages, { onTourRequest: (page) => requestedPages.push(page) }));
+
+    const provider = new KomootProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(100);
+    expect(result.degradations?.[0]?.kind).toBe("pagination_max_pages_exceeded");
+    expect(requestedPages).toHaveLength(100);
+    expect(requestedPages[0]).toBe(0);
+    expect(requestedPages.at(-1)).toBe(99);
   });
 
   it("upserts on re-sync (no duplicates)", async () => {

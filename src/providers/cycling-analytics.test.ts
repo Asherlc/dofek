@@ -16,6 +16,17 @@ const providerActivityAbsenceMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../db/sync-log.ts", () => ({
+  PartialSyncError: class PartialSyncError extends Error {
+    readonly recordCount: number;
+    override readonly cause: unknown;
+
+    constructor(message: string, recordCount: number, cause: unknown) {
+      super(message);
+      this.name = "PartialSyncError";
+      this.recordCount = recordCount;
+      this.cause = cause;
+    }
+  },
   withSyncLog: vi.fn(
     async (
       _db: unknown,
@@ -139,6 +150,199 @@ describe("CyclingAnalyticsProvider — rate-limit aware fetch wiring", () => {
         presentExternalIds: new Set(["1"]),
       }),
     );
+  });
+
+  it("uses guarded page requests with auth headers and scoped reconciliation", async () => {
+    process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
+    process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-secret";
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
+    providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
+
+    const requests: Array<{ url: string; authorization: string | null; accept: string | null }> =
+      [];
+    const mockFetch: typeof globalThis.fetch = async (input, init) => {
+      const headers = new Headers(init?.headers);
+      requests.push({
+        url: String(input),
+        authorization: headers.get("Authorization"),
+        accept: headers.get("Accept"),
+      });
+
+      if (String(input).includes("page=0")) {
+        return Response.json({
+          rides: [
+            {
+              id: 10,
+              title: "First Page Ride",
+              date: "2026-03-01T08:00:00Z",
+              duration: 3600,
+            },
+          ],
+        });
+      }
+      return Response.json({ rides: [] });
+    };
+
+    const { db } = createMockDatabase();
+    const result = await new CyclingAnalyticsProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+        userId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(requests.map((request) => new URL(request.url).searchParams.get("page"))).toEqual([
+      "0",
+      "1",
+    ]);
+    const firstRequest = requests[0];
+    expect(firstRequest).toBeDefined();
+    if (!firstRequest) throw new Error("expected first Cycling Analytics request");
+    const firstRequestUrl = new URL(firstRequest.url);
+    expect(firstRequestUrl.searchParams.get("start_date")).toBe("2026-03-01T00:00:00.000Z");
+    expect(firstRequestUrl.searchParams.get("limit")).toBe("50");
+    expect(firstRequest.authorization).toBe("Bearer valid-access-token");
+    expect(firstRequest.accept).toBe("application/json");
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        userId: "00000000-0000-0000-0000-000000000001",
+        presentExternalIds: new Set(["10"]),
+      }),
+    );
+  });
+
+  it("preserves already fetched rides before a later page request fails", async () => {
+    process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
+    process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-secret";
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
+    providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
+
+    const mockFetch: typeof globalThis.fetch = async (input) => {
+      if (String(input).includes("page=1")) {
+        return new Response("rate exceeded", { status: 503 });
+      }
+
+      return Response.json({
+        rides: [
+          {
+            id: 11,
+            title: "First Page Ride",
+            date: "2026-03-01T08:00:00Z",
+            duration: 3600,
+          },
+        ],
+      });
+    };
+
+    const { db } = createMockDatabase();
+    const result = await new CyclingAnalyticsProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("cycling_analytics API service unavailable");
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ externalId: "11" }),
+      expect.any(Object),
+    );
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
+  });
+
+  it("syncs rides at the exact sync window end", async () => {
+    process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
+    process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-secret";
+    providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
+
+    const mockFetch: typeof globalThis.fetch = async (input) => {
+      if (String(input).includes("page=1")) {
+        return Response.json({ rides: [] });
+      }
+
+      return Response.json({
+        rides: [
+          {
+            id: 20,
+            title: "At Window End",
+            date: "2026-03-01T12:00:00Z",
+            duration: 3600,
+          },
+        ],
+      });
+    };
+
+    const { db } = createMockDatabase();
+    const result = await new CyclingAnalyticsProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromIsoRange({
+          sinceIso: "2026-03-01T00:00:00.000Z",
+          untilIso: "2026-03-01T12:00:00.000Z",
+        }),
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(1);
+    expect(providerActivityAbsenceMocks.upsertProviderActivity).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ externalId: "20" }),
+      expect.anything(),
+    );
+  });
+
+  it("returns the provider API error from activity sync", async () => {
+    process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
+    process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-secret";
+
+    const mockFetch: typeof globalThis.fetch = async () =>
+      new Response("service down", { status: 502 });
+    const { db } = createMockDatabase();
+    const result = await new CyclingAnalyticsProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain(
+      "cycling_analytics API service unavailable (502): service down",
+    );
+  });
+
+  it("returns elapsed sync duration", async () => {
+    process.env.CYCLING_ANALYTICS_CLIENT_ID = "test-id";
+    process.env.CYCLING_ANALYTICS_CLIENT_SECRET = "test-secret";
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-01T00:00:02.000Z"));
+    const mockFetch: typeof globalThis.fetch = async () => {
+      vi.setSystemTime(new Date("2026-03-01T00:00:02.625Z"));
+      return Response.json({ rides: [] });
+    };
+    const { db } = createMockDatabase();
+
+    try {
+      const result = await new CyclingAnalyticsProvider(mockFetch).sync(
+        new SyncRun({
+          db,
+          window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+        }),
+      );
+
+      expect(result.duration).toBe(625);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("treats null rides as an empty page", async () => {

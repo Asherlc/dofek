@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockDatabase } from "../providers/test-helpers.ts";
 import type { SyncLogEntry } from "./sync-log.ts";
-import { logSync, withSyncLog } from "./sync-log.ts";
+import { logSync, PartialSyncError, withSyncLog } from "./sync-log.ts";
 
 describe("logSync", () => {
   let db: ReturnType<typeof createMockDatabase>;
@@ -206,6 +206,25 @@ describe("withSyncLog", () => {
         status: "error",
         errorMessage: "sync failed",
         authFailureReason: undefined,
+      }),
+    );
+  });
+
+  it("logs partial record counts on partial sync failure", async () => {
+    const cause = new Error("page failed");
+    const fn = vi.fn().mockRejectedValue(new PartialSyncError("activity: page failed", 3, cause));
+
+    await expect(withSyncLog(db.db, "komoot", "activity", fn, "user-123")).rejects.toThrow(
+      "activity: page failed",
+    );
+
+    expect(db.spies.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "komoot",
+        dataType: "activity",
+        status: "error",
+        recordCount: 3,
+        errorMessage: "activity: page failed",
       }),
     );
   });
