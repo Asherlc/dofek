@@ -30,8 +30,8 @@ const komootTourSchema = z.object({
   date: z.string(),
   distance: z.number(),
   duration: z.number(),
-  elevation_up: z.number().optional(),
-  elevation_down: z.number().optional(),
+  elevation_up: z.number().nullable().optional(),
+  elevation_down: z.number().nullable().optional(),
   status: z.string(),
   type: z.string(),
 });

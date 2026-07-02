@@ -22,8 +22,8 @@ interface FakeKomootTour {
   date: string;
   distance: number;
   duration: number;
-  elevation_up?: number;
-  elevation_down?: number;
+  elevation_up?: number | null;
+  elevation_down?: number | null;
   status: string;
   type: string;
 }
@@ -192,6 +192,48 @@ describe("KomootProvider.sync() (integration)", () => {
 
     const trail = rows.find((r) => r.externalId === "8002");
     expect(trail?.activityType).toBe("trail_running");
+  });
+
+  it("syncs tours when optional elevation fields are null", async () => {
+    await saveTokens(ctx.db, "komoot", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "profile",
+    });
+
+    server.use(
+      ...komootHandlers([
+        [
+          fakeTour({
+            id: 8041,
+            name: "Flat Tour",
+            elevation_up: null,
+            elevation_down: null,
+          }),
+        ],
+      ]),
+    );
+
+    const provider = new KomootProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
+
+    const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "komoot"));
+    const tour = rows.find((row) => row.externalId === "8041");
+    expect(tour?.raw).toEqual(
+      expect.objectContaining({
+        elevationUp: null,
+        elevationDown: null,
+      }),
+    );
   });
 
   it("persists already fetched tours before a later page request fails", async () => {
