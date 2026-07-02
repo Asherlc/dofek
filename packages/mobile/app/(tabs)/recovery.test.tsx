@@ -5,13 +5,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let mockRecoveryData: Record<string, unknown> | undefined;
 let mockRecoveryLoading = false;
+let mockRecoveryFetching = false;
 let sparkLinePropsCalls: Record<string, unknown>[];
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
     mobileDashboard: {
       recovery: {
-        useQuery: () => ({ data: mockRecoveryData, isLoading: mockRecoveryLoading }),
+        useQuery: () => ({
+          data: mockRecoveryData,
+          isLoading: mockRecoveryLoading,
+          isFetching: mockRecoveryFetching,
+        }),
       },
     },
     useUtils: () => ({
@@ -73,6 +78,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
   beforeEach(() => {
     mockRecoveryData = undefined;
     mockRecoveryLoading = false;
+    mockRecoveryFetching = false;
     sparkLinePropsCalls = [];
   });
 
@@ -85,6 +91,31 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     expect(screen.getByText("30d")).toBeTruthy();
     expect(screen.getByTestId("query-state-loading")).toBeTruthy();
     expect(screen.queryByText("Loading trends...")).toBeNull();
+  });
+
+  it("keeps cached recovery data visible while refreshing", async () => {
+    mockRecoveryLoading = true;
+    mockRecoveryFetching = true;
+    mockRecoveryData = {
+      hrvVariability: [
+        { date: "2026-04-05", hrv: 50, rollingMean: 48, rollingCoefficientOfVariation: 2 },
+        { date: "2026-04-06", hrv: 44, rollingMean: 44, rollingCoefficientOfVariation: 4 },
+      ],
+      hrvBaseline: [],
+      readinessScore: [],
+      stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
+      trends: null,
+      dailyMetrics: [],
+      weight: [],
+      healthspan: { healthspanScore: null, metrics: [], trend: null },
+    };
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    expect(screen.queryByTestId("query-state-loading")).toBeNull();
+    expect(screen.getByText("Heart Rate Variability")).toBeTruthy();
+    expect(screen.getByText("44 ms")).toBeTruthy();
   });
 
   it("displays Heart Rate Variability from the recovery HRV query", async () => {

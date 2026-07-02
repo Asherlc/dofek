@@ -32,6 +32,7 @@ import { SparkLine } from "../../components/charts/SparkLine";
 import { DaySelector } from "../../components/DaySelector";
 import { MetricCard } from "../../components/MetricCard";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
+import { shouldShowBlockingLoading } from "../../lib/loading-policy";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useRefresh } from "../../lib/useRefresh";
@@ -230,7 +231,11 @@ export default function RecoveryScreen() {
 
   const [recoveryExpanded, setRecoveryExpanded] = useState(false);
 
-  const isLoading = recoveryQuery.isLoading;
+  const isLoading = shouldShowBlockingLoading({
+    data: recoveryData,
+    isLoading: recoveryQuery.isLoading,
+    isFetching: recoveryQuery.isFetching,
+  });
   const { refreshing, onRefresh } = useRefresh({
     invalidate: () => utils.mobileDashboard.recovery.invalidate().then(() => undefined),
   });

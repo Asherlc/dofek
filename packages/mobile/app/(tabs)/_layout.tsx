@@ -68,7 +68,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     borderTopColor: colors.surface,
     borderTopWidth: 0.5,
+    elevation: 8,
     paddingTop: 4,
+    position: "relative",
+    zIndex: 1,
   },
   tabBarItem: {
     borderRadius: 12,
