@@ -220,14 +220,17 @@ describe("AmazfitZeppClient workout history", () => {
 
     const result = await client.getWorkoutHistory("amazfit-zepp");
 
-    // Items from all pages are retained (2 pages were fetched before stall)
-    expect(result.items.length).toBeGreaterThanOrEqual(1);
+    expect(result.items).toHaveLength(2);
     expect(result.items[0]?.trackid).toBe(repeatedCursor);
-    // Degradations are reported instead of throwing
-    expect(result.degradations.length).toBeGreaterThanOrEqual(1);
-    for (const degradation of result.degradations) {
-      expect(degradation.kind).toBe("pagination_stalled");
-    }
+    expect(result.degradations).toEqual([
+      expect.objectContaining({
+        kind: "pagination_stalled",
+        context: expect.objectContaining({
+          cursorFingerprint: expect.stringMatching(/^[0-9a-f]{12}$/),
+          pagesFetched: 2,
+        }),
+      }),
+    ]);
   });
 
   it("throws a specific error for non-success HTTP responses", async () => {

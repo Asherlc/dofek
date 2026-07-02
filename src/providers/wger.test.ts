@@ -12,16 +12,30 @@ const providerActivityAbsenceMocks = vi.hoisted(() => ({
   upsertProviderActivity: vi.fn().mockResolvedValue({ id: "activity-id" }),
 }));
 
+interface CapturedSyncLogOutcome {
+  dataType: string;
+  degradations?: Array<{ kind: string; context?: unknown }>;
+}
+
+const syncLogOutcomes = vi.hoisted<{ values: CapturedSyncLogOutcome[] }>(() => ({
+  values: [],
+}));
+
 vi.mock("../db/sync-log.ts", () => ({
   withSyncLog: vi.fn(
     async (
       _db: unknown,
       _providerId: string,
       _dataType: string,
-      fn: () => Promise<{ recordCount: number; result: unknown }>,
+      fn: () => Promise<{
+        recordCount: number;
+        result: unknown;
+        degradations?: Array<{ kind: string; context?: unknown }>;
+      }>,
     ) => {
-      const { result } = await fn();
-      return result;
+      const outcome = await fn();
+      syncLogOutcomes.values.push({ dataType: _dataType, degradations: outcome.degradations });
+      return outcome.result;
     },
   ),
 }));
@@ -122,6 +136,9 @@ describe("wgerOAuthConfig", () => {
   const originalEnv = { ...process.env };
   afterEach(() => {
     process.env = { ...originalEnv };
+    syncLogOutcomes.values = [];
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
+    providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
   });
 
   it("returns null when env vars missing", () => {
@@ -287,7 +304,7 @@ describe("WgerProvider", () => {
     providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
 
     const repeatedUrl =
-      "https://wger.de/api/v2/workoutsession/?format=json&ordering=-date&offset=0&limit=50";
+      "https://wger.de/api/v2/workoutsession/?format=json&ordering=-date&offset=50&limit=50";
     let callCount = 0;
     const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -334,8 +351,20 @@ describe("WgerProvider", () => {
     );
 
     expect(result.errors).toHaveLength(0);
-    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
-    expect(callCount).toBeLessThanOrEqual(3);
+    expect(result.recordsSynced).toBe(2);
+    expect(callCount).toBe(3);
+    expect(syncLogOutcomes.values).toContainEqual({
+      dataType: "activity",
+      degradations: [
+        expect.objectContaining({
+          kind: "pagination_stalled",
+          context: expect.objectContaining({
+            cursorFingerprint: expect.stringMatching(/^[0-9a-f]{12}$/),
+            pagesFetched: 2,
+          }),
+        }),
+      ],
+    });
     expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
   });
 
@@ -449,6 +478,18 @@ describe("WgerProvider", () => {
     expect(result.errors).toHaveLength(0);
     expect(weightRequests).toBe(2);
     expect(result.recordsSynced).toBe(4);
+    expect(syncLogOutcomes.values).toContainEqual({
+      dataType: "metric_stream",
+      degradations: [
+        expect.objectContaining({
+          kind: "pagination_stalled",
+          context: expect.objectContaining({
+            cursorFingerprint: expect.stringMatching(/^[0-9a-f]{12}$/),
+            pagesFetched: 2,
+          }),
+        }),
+      ],
+    });
   });
 
   it("captures weight write errors without aborting the whole sync", async () => {
