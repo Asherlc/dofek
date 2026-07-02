@@ -7,7 +7,7 @@ import {
   sleepSession as sleepSessionTable,
 } from "../db/schema/activity.ts";
 import { healthEvent as healthEventTable } from "../db/schema/clinical.ts";
-import { OuraClient } from "./oura/client.ts";
+import { OuraApiError, OuraClient } from "./oura/client.ts";
 import { ouraOAuthConfig } from "./oura/oauth.ts";
 import { fetchOuraPages, fetchOuraPagesOptional } from "./oura/pagination.ts";
 import { mapOuraActivityType, parseOuraDailyMetrics, parseOuraSleep } from "./oura/parsing.ts";
@@ -2255,7 +2255,7 @@ describe("fetchOuraPagesOptional", () => {
 
   it("returns optional_endpoint_unavailable on API error 401", async () => {
     const fetchPage = async (): Promise<{ data: never[]; next_token: null }> => {
-      throw new Error("API error 401: Unauthorized");
+      throw new OuraApiError(401, "/v2/usercollection/daily_stress", "Unauthorized");
     };
     const result = await fetchOuraPagesOptional("oura", "daily_stress", fetchPage);
     expect(result.items).toEqual([]);
@@ -2271,7 +2271,7 @@ describe("fetchOuraPagesOptional", () => {
 
   it("re-throws non-401 errors", async () => {
     const fetchPage = async (): Promise<{ data: never[]; next_token: null }> => {
-      throw new Error("API error 500: Internal Server Error");
+      throw new OuraApiError(500, "/v2/usercollection/daily_stress", "Internal Server Error");
     };
     await expect(fetchOuraPagesOptional("oura", "daily_stress", fetchPage)).rejects.toThrow(
       "API error 500",
@@ -2280,7 +2280,7 @@ describe("fetchOuraPagesOptional", () => {
 
   it("re-throws 403 errors", async () => {
     const fetchPage = async (): Promise<{ data: never[]; next_token: null }> => {
-      throw new Error("API error 403: Forbidden");
+      throw new OuraApiError(403, "/v2/usercollection/daily_stress", "Forbidden");
     };
     await expect(fetchOuraPagesOptional("oura", "daily_stress", fetchPage)).rejects.toThrow(
       "API error 403",

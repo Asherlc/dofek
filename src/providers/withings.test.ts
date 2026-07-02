@@ -382,7 +382,7 @@ describe("WithingsProvider.sync() — unit tests", () => {
     );
 
     expect(measureCallCount).toBe(2);
-    expect(result.recordsSynced).toBe(0);
+    expect(result.recordsSynced).toBe(1);
     expect(publishedMetricStreamBatches.flat()).toContainEqual(
       expect.objectContaining({
         providerId: "withings",

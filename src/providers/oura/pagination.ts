@@ -1,5 +1,6 @@
 import { fetchProviderPages } from "../../sync/pagination.ts";
 import type { SyncDegradation } from "../../sync/sync-degradation.ts";
+import { OuraApiError } from "./client.ts";
 import type { OuraListResponse } from "./schemas.ts";
 
 export interface OuraPagesResult<T> {
@@ -8,8 +9,7 @@ export interface OuraPagesResult<T> {
 }
 
 function isOuraOptionalScopeError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err);
-  return message.includes("API error 401");
+  return err instanceof OuraApiError && err.status === 401;
 }
 
 async function fetchAllPages<T>(

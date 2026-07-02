@@ -1,4 +1,5 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import { captureException } from "@sentry/node";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -473,6 +474,7 @@ export class WithingsProvider implements WebhookProvider {
     let client = new WithingsClient(tokens.accessToken, this.#fetchFn);
     const sinceUnix = Math.floor(since.getTime() / 1000);
     const nowUnix = Math.floor(Date.now() / 1000);
+    let metricStreamRecordsSynced = 0;
 
     try {
       const measCount = await withSyncLog(
@@ -540,8 +542,10 @@ export class WithingsProvider implements WebhookProvider {
                     options?.metricStreamPublisher,
                   );
                   count++;
+                  metricStreamRecordsSynced = count;
                 } catch (err) {
                   throwIfProviderSyncAbortError(err);
+                  captureException(err);
                   errors.push({
                     message: err instanceof Error ? err.message : String(err),
                     externalId: parsed.externalId,
@@ -568,6 +572,7 @@ export class WithingsProvider implements WebhookProvider {
       recordsSynced += measCount;
     } catch (err) {
       throwIfProviderSyncAbortError(err);
+      recordsSynced += metricStreamRecordsSynced;
       errors.push({
         message: `metric_stream: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,

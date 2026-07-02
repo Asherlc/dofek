@@ -100,7 +100,7 @@ async function syncFitbitSleepWithGuardedPagination(
       await persist(raw);
       count++;
     } catch (err) {
-      handlePersistError(err, parseFitbitSleep(raw).externalId);
+      handlePersistError(err, String(raw.logId));
     }
   }
 
