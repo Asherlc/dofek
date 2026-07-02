@@ -46,6 +46,10 @@ vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
   };
 });
 
+vi.mock("../db/metric-stream-writer.ts", () => ({
+  writeMetricStreamBatch: vi.fn().mockResolvedValue(1),
+}));
+
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { loadTokens } from "../db/tokens.ts";
 import {
@@ -329,12 +333,170 @@ describe("WgerProvider", () => {
       }),
     );
 
-    // First page records are retained; no hang
     expect(result.errors).toHaveLength(0);
     expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
     expect(callCount).toBeLessThanOrEqual(3);
-    // Reconciliation should NOT run for degraded pagination
     expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
+  });
+
+  it("skips weight entries outside the bounded sync window", async () => {
+    process.env.WGER_CLIENT_ID = "id";
+    process.env.WGER_CLIENT_SECRET = "secret";
+
+    const { writeMetricStreamBatch } = await import("../db/metric-stream-writer.ts");
+
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/workoutsession/")) {
+        return Response.json({ count: 0, next: null, previous: null, results: [] });
+      }
+      if (url.includes("/weightentry/")) {
+        return Response.json({
+          count: 3,
+          next: null,
+          previous: null,
+          results: [
+            { id: 1, date: "2026-03-02", weight: "80.0" },
+            { id: 2, date: "2026-03-01", weight: "79.5" },
+            { id: 3, date: "2026-03-03", weight: "81.0" },
+          ],
+        });
+      }
+      return new Response("not found", { status: 404 });
+    };
+
+    const db = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+    const result = await new WgerProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-02" }),
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(2);
+    expect(writeMetricStreamBatch).toHaveBeenCalledTimes(2);
+    expect(writeMetricStreamBatch).toHaveBeenCalledWith(
+      db,
+      [expect.objectContaining({ externalId: "1" })],
+      expect.any(String),
+      undefined,
+      undefined,
+    );
+    expect(writeMetricStreamBatch).toHaveBeenCalledWith(
+      db,
+      [expect.objectContaining({ externalId: "2" })],
+      expect.any(String),
+      undefined,
+      undefined,
+    );
+    expect(writeMetricStreamBatch).not.toHaveBeenCalledWith(
+      db,
+      [expect.objectContaining({ externalId: "3" })],
+      expect.any(String),
+      undefined,
+      undefined,
+    );
+  });
+
+  it("retains weight entries when pagination stalls on a repeated next URL", async () => {
+    process.env.WGER_CLIENT_ID = "id";
+    process.env.WGER_CLIENT_SECRET = "secret";
+
+    const repeatedNextUrl = "https://wger.de/api/v2/weightentry/?offset=50";
+    let weightRequests = 0;
+
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/workoutsession/")) {
+        return Response.json({ count: 0, next: null, previous: null, results: [] });
+      }
+      if (url.includes("/weightentry/")) {
+        weightRequests += 1;
+        return Response.json({
+          count: 2,
+          next: repeatedNextUrl,
+          previous: null,
+          results: [
+            { id: 1, date: "2026-03-02", weight: "80.0" },
+            { id: 2, date: "2026-03-01", weight: "79.5" },
+          ],
+        });
+      }
+      return new Response("not found", { status: 404 });
+    };
+
+    const db = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+
+    const provider = new WgerProvider(mockFetch);
+    const result = await provider.sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(weightRequests).toBe(2);
+    expect(result.recordsSynced).toBe(4);
+  });
+
+  it("captures weight write errors without aborting the whole sync", async () => {
+    process.env.WGER_CLIENT_ID = "id";
+    process.env.WGER_CLIENT_SECRET = "secret";
+
+    const { writeMetricStreamBatch } = await import("../db/metric-stream-writer.ts");
+    vi.mocked(writeMetricStreamBatch)
+      .mockRejectedValueOnce(new Error("weight write failed"))
+      .mockResolvedValue(1);
+
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/workoutsession/")) {
+        return Response.json({ count: 0, next: null, previous: null, results: [] });
+      }
+      if (url.includes("/weightentry/")) {
+        return Response.json({
+          count: 2,
+          next: null,
+          previous: null,
+          results: [
+            { id: 1, date: "2026-03-02", weight: "80.0" },
+            { id: 2, date: "2026-03-01", weight: "79.5" },
+          ],
+        });
+      }
+      return new Response("not found", { status: 404 });
+    };
+
+    const db = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+
+    const provider = new WgerProvider(mockFetch);
+    const result = await provider.sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
+      }),
+    );
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.externalId).toBe("1");
+    expect(result.recordsSynced).toBe(1);
   });
 });
 

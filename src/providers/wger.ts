@@ -271,7 +271,6 @@ export class WgerProvider implements SyncProvider {
         async () => {
           let count = 0;
           const initialUrl = `${WGER_API_BASE}/weightentry/?format=json&ordering=-date&offset=0&limit=50`;
-
           const pages = await fetchProviderPages<WgerWeightEntry, string>({
             providerId: this.id,
             stepName: "metric_stream",
