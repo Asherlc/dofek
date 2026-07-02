@@ -41,4 +41,12 @@ describe("freshnessLabel", () => {
       freshnessLabel({ overallStatus: "stale", generatedAt: "2026-06-30T08:00:00.000Z" }),
     ).toBe("Last checked 2026-06-30 08:00 UTC");
   });
+
+  it("returns empty string when generatedAt is missing", () => {
+    expect(freshnessLabel({ overallStatus: "stale" })).toBe("");
+  });
+
+  it("returns empty string when generatedAt is an invalid date", () => {
+    expect(freshnessLabel({ overallStatus: "stale", generatedAt: "not-a-date" })).toBe("");
+  });
 });

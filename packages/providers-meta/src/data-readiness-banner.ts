@@ -43,6 +43,7 @@ export function freshnessLabel(data: DataReadinessBannerSnapshot): string {
   if (!data.generatedAt) return "";
 
   const generatedAt = new Date(data.generatedAt);
+  if (Number.isNaN(generatedAt.getTime())) return "";
   const year = generatedAt.getUTCFullYear();
   const month = String(generatedAt.getUTCMonth() + 1).padStart(2, "0");
   const day = String(generatedAt.getUTCDate()).padStart(2, "0");
