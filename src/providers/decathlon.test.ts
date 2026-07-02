@@ -286,6 +286,43 @@ describe("DecathlonProvider — rate-limit aware fetch wiring", () => {
     expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalled();
   });
 
+  it("includes activities exactly at the sync window end boundary", async () => {
+    process.env.DECATHLON_CLIENT_ID = "test-id";
+    process.env.DECATHLON_CLIENT_SECRET = "test-secret";
+
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/activities")) {
+        return Response.json({
+          data: [
+            {
+              id: "at-boundary",
+              name: "Run",
+              sport: "/v2/sports/381",
+              startdate: "2026-03-01T23:59:59.999Z",
+              duration: 0,
+              dataSummaries: [],
+            },
+          ],
+        });
+      }
+      return new Response("not found", { status: 404 });
+    };
+
+    const db = createMockDb();
+    const result = await new DecathlonProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(1);
+  });
+
   it("rejects malformed activity dates at the API boundary", async () => {
     process.env.DECATHLON_CLIENT_ID = "test-id";
     process.env.DECATHLON_CLIENT_SECRET = "test-secret";
