@@ -28,6 +28,10 @@ cd packages/web && pnpm tsc --noEmit
 pnpm test
 ```
 
+If the full workspace/PR diff contains only Markdown files (`*.md`), skip test
+commands such as `pnpm test`; report that tests were skipped because the change
+is documentation-only.
+
 ALL errors must be fixed before proceeding — regardless of whether they were introduced in this branch or already existed on main. Fix lint/type errors automatically. If tests fail, stop and report the failures to the user.
 
 ### 2. Push and open PR
