@@ -1815,6 +1815,37 @@ describe("OuraProvider.sync()", () => {
     ).toBe(true);
   });
 
+  it("persists Oura sleep pages fetched before a later page failure", async () => {
+    setupEnv();
+    const firstSleep = fakeSleepDoc({ id: "sleep-before-error" });
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const urlStr = input.toString();
+      if (urlStr.includes("/v2/usercollection/sleep_time")) {
+        return Response.json({ data: [], next_token: null });
+      }
+      if (urlStr.includes("/v2/usercollection/sleep") && urlStr.includes("next_token=page-2")) {
+        return new Response("temporary failure", { status: 502 });
+      }
+      if (urlStr.includes("/v2/usercollection/sleep")) {
+        return Response.json({ data: [firstSleep], next_token: "page-2" });
+      }
+      return Response.json({ data: [], next_token: null });
+    };
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
+
+    expect(result.errors.some((error) => error.message.includes("sleep"))).toBe(true);
+    const persistedSleep = findValuesCall(
+      db,
+      (values) => values.externalId === "sleep-before-error" && values.providerId === "oura",
+    );
+    expect(persistedSleep.durationMinutes).toBe(480);
+  });
+
   it("syncs workouts to activity table", async () => {
     setupEnv();
     const workout = fakeWorkout();

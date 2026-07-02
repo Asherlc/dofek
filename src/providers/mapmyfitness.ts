@@ -339,7 +339,7 @@ export class MapMyFitnessProvider implements SyncProvider {
             });
           }
           degradations.push(...pages.degradations);
-          return { recordCount: count, result: count, degradations: pages.degradations };
+          return { recordCount: count, result: count, degradations };
         },
         options?.userId,
       );

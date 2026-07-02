@@ -44,6 +44,7 @@ async function fetchOuraPages<T>(
   providerId: string,
   stepName: string,
   fetchPage: (nextToken?: string) => Promise<OuraListResponse<T>>,
+  onPage?: (items: readonly T[]) => Promise<void> | void,
 ): Promise<OuraPagesResult<T>> {
   const result = await fetchProviderPages({
     providerId,
@@ -55,6 +56,7 @@ async function fetchOuraPages<T>(
         nextCursor: response.next_token || null,
       };
     },
+    onPage: onPage ? (page) => onPage(page.items) : undefined,
   });
 
   return { items: result.items, degradations: result.degradations };
@@ -64,9 +66,10 @@ async function fetchOuraPagesOptional<T>(
   providerId: string,
   stepName: string,
   fetchPage: (nextToken?: string) => Promise<OuraListResponse<T>>,
+  onPage?: (items: readonly T[]) => Promise<void> | void,
 ): Promise<OuraPagesResult<T>> {
   try {
-    return await fetchOuraPages(providerId, stepName, fetchPage);
+    return await fetchOuraPages(providerId, stepName, fetchPage, onPage);
   } catch (err) {
     if (isOuraOptionalScopeError(err)) {
       return {
@@ -105,53 +108,56 @@ export async function syncSleep(context: SyncStepContext): Promise<number> {
       "sleep",
       async () => {
         let count = 0;
-        const sleepPages = await fetchOuraPages(providerId, "sleep", (nextToken) =>
-          client.getSleep(sinceDate, todayDate, nextToken),
+        const sleepPages = await fetchOuraPages(
+          providerId,
+          "sleep",
+          (nextToken) => client.getSleep(sinceDate, todayDate, nextToken),
+          async (items) => {
+            for (const raw of items) {
+              const parsed = parseOuraSleep(raw);
+              try {
+                await db
+                  .insert(sleepSession)
+                  .values({
+                    providerId,
+                    externalId: parsed.externalId,
+                    startedAt: parsed.startedAt,
+                    endedAt: parsed.endedAt,
+                    durationMinutes: parsed.durationMinutes,
+                    deepMinutes: parsed.deepMinutes,
+                    remMinutes: parsed.remMinutes,
+                    lightMinutes: parsed.lightMinutes,
+                    awakeMinutes: parsed.awakeMinutes,
+                    efficiencyPct: parsed.efficiencyPct,
+                    sleepType: parsed.sleepType,
+                    isNap: parsed.isNap,
+                  })
+                  .onConflictDoUpdate({
+                    target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
+                    set: {
+                      startedAt: parsed.startedAt,
+                      endedAt: parsed.endedAt,
+                      durationMinutes: parsed.durationMinutes,
+                      deepMinutes: parsed.deepMinutes,
+                      remMinutes: parsed.remMinutes,
+                      lightMinutes: parsed.lightMinutes,
+                      awakeMinutes: parsed.awakeMinutes,
+                      efficiencyPct: parsed.efficiencyPct,
+                      sleepType: parsed.sleepType,
+                      isNap: parsed.isNap,
+                    },
+                  });
+                count++;
+              } catch (err) {
+                errors.push({
+                  message: err instanceof Error ? err.message : String(err),
+                  externalId: parsed.externalId,
+                  cause: err,
+                });
+              }
+            }
+          },
         );
-
-        for (const raw of sleepPages.items) {
-          const parsed = parseOuraSleep(raw);
-          try {
-            await db
-              .insert(sleepSession)
-              .values({
-                providerId,
-                externalId: parsed.externalId,
-                startedAt: parsed.startedAt,
-                endedAt: parsed.endedAt,
-                durationMinutes: parsed.durationMinutes,
-                deepMinutes: parsed.deepMinutes,
-                remMinutes: parsed.remMinutes,
-                lightMinutes: parsed.lightMinutes,
-                awakeMinutes: parsed.awakeMinutes,
-                efficiencyPct: parsed.efficiencyPct,
-                sleepType: parsed.sleepType,
-                isNap: parsed.isNap,
-              })
-              .onConflictDoUpdate({
-                target: [sleepSession.userId, sleepSession.providerId, sleepSession.externalId],
-                set: {
-                  startedAt: parsed.startedAt,
-                  endedAt: parsed.endedAt,
-                  durationMinutes: parsed.durationMinutes,
-                  deepMinutes: parsed.deepMinutes,
-                  remMinutes: parsed.remMinutes,
-                  lightMinutes: parsed.lightMinutes,
-                  awakeMinutes: parsed.awakeMinutes,
-                  efficiencyPct: parsed.efficiencyPct,
-                  sleepType: parsed.sleepType,
-                  isNap: parsed.isNap,
-                },
-              });
-            count++;
-          } catch (err) {
-            errors.push({
-              message: err instanceof Error ? err.message : String(err),
-              externalId: parsed.externalId,
-              cause: err,
-            });
-          }
-        }
 
         return { recordCount: count, result: count, degradations: sleepPages.degradations };
       },
@@ -176,41 +182,44 @@ export async function syncWorkouts(context: SyncStepContext): Promise<number> {
       "workouts",
       async () => {
         let count = 0;
-        const workoutPages = await fetchOuraPages(providerId, "workouts", (nextToken) =>
-          client.getWorkouts(sinceDate, todayDate, nextToken),
+        const workoutPages = await fetchOuraPages(
+          providerId,
+          "workouts",
+          (nextToken) => client.getWorkouts(sinceDate, todayDate, nextToken),
+          async (items) => {
+            for (const workout of items) {
+              context.activityPresentExternalIds?.add(workout.id);
+              try {
+                await upsertProviderActivity(
+                  db,
+                  {
+                    providerId,
+                    externalId: workout.id,
+                    activityType: mapOuraActivityType(workout.activity),
+                    startedAt: new Date(workout.start_datetime),
+                    endedAt: new Date(workout.end_datetime),
+                    name: workout.label,
+                    raw: workout,
+                  },
+                  {
+                    activityType: mapOuraActivityType(workout.activity),
+                    startedAt: new Date(workout.start_datetime),
+                    endedAt: new Date(workout.end_datetime),
+                    name: workout.label,
+                    raw: workout,
+                  },
+                );
+                count++;
+              } catch (err) {
+                errors.push({
+                  message: `workout ${workout.id}: ${err instanceof Error ? err.message : String(err)}`,
+                  externalId: workout.id,
+                  cause: err,
+                });
+              }
+            }
+          },
         );
-
-        for (const workout of workoutPages.items) {
-          context.activityPresentExternalIds?.add(workout.id);
-          try {
-            await upsertProviderActivity(
-              db,
-              {
-                providerId,
-                externalId: workout.id,
-                activityType: mapOuraActivityType(workout.activity),
-                startedAt: new Date(workout.start_datetime),
-                endedAt: new Date(workout.end_datetime),
-                name: workout.label,
-                raw: workout,
-              },
-              {
-                activityType: mapOuraActivityType(workout.activity),
-                startedAt: new Date(workout.start_datetime),
-                endedAt: new Date(workout.end_datetime),
-                name: workout.label,
-                raw: workout,
-              },
-            );
-            count++;
-          } catch (err) {
-            errors.push({
-              message: `workout ${workout.id}: ${err instanceof Error ? err.message : String(err)}`,
-              externalId: workout.id,
-              cause: err,
-            });
-          }
-        }
 
         return { recordCount: count, result: count, degradations: workoutPages.degradations };
       },
@@ -235,42 +244,45 @@ export async function syncSessions(context: SyncStepContext): Promise<number> {
       "sessions",
       async () => {
         let count = 0;
-        const sessionPages = await fetchOuraPages(providerId, "sessions", (nextToken) =>
-          client.getSessions(sinceDate, todayDate, nextToken),
+        const sessionPages = await fetchOuraPages(
+          providerId,
+          "sessions",
+          (nextToken) => client.getSessions(sinceDate, todayDate, nextToken),
+          async (items) => {
+            for (const session of items) {
+              context.activityPresentExternalIds?.add(session.id);
+              try {
+                const sessionActivityType = mapOuraSessionType(session.type);
+                await upsertProviderActivity(
+                  db,
+                  {
+                    providerId,
+                    externalId: session.id,
+                    activityType: sessionActivityType,
+                    startedAt: new Date(session.start_datetime),
+                    endedAt: new Date(session.end_datetime),
+                    name: session.type,
+                    raw: session,
+                  },
+                  {
+                    activityType: sessionActivityType,
+                    startedAt: new Date(session.start_datetime),
+                    endedAt: new Date(session.end_datetime),
+                    name: session.type,
+                    raw: session,
+                  },
+                );
+                count++;
+              } catch (err) {
+                errors.push({
+                  message: `session ${session.id}: ${err instanceof Error ? err.message : String(err)}`,
+                  externalId: session.id,
+                  cause: err,
+                });
+              }
+            }
+          },
         );
-
-        for (const session of sessionPages.items) {
-          context.activityPresentExternalIds?.add(session.id);
-          try {
-            const sessionActivityType = mapOuraSessionType(session.type);
-            await upsertProviderActivity(
-              db,
-              {
-                providerId,
-                externalId: session.id,
-                activityType: sessionActivityType,
-                startedAt: new Date(session.start_datetime),
-                endedAt: new Date(session.end_datetime),
-                name: session.type,
-                raw: session,
-              },
-              {
-                activityType: sessionActivityType,
-                startedAt: new Date(session.start_datetime),
-                endedAt: new Date(session.end_datetime),
-                name: session.type,
-                raw: session,
-              },
-            );
-            count++;
-          } catch (err) {
-            errors.push({
-              message: `session ${session.id}: ${err instanceof Error ? err.message : String(err)}`,
-              externalId: session.id,
-              cause: err,
-            });
-          }
-        }
 
         return { recordCount: count, result: count, degradations: sessionPages.degradations };
       },
