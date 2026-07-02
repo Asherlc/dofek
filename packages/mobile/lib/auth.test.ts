@@ -18,6 +18,7 @@ import {
   logout,
   registerWithPassword,
   requestPasswordReset,
+  resetSessionTokenCacheForTests,
   saveSessionToken,
   startNativeAppleSignIn,
   startOAuthLogin,
@@ -573,6 +574,7 @@ describe("session token storage", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    resetSessionTokenCacheForTests();
     SecureStore = await import("expo-secure-store");
   });
 
@@ -588,6 +590,37 @@ describe("session token storage", () => {
     const token = await getSessionToken();
     expect(SecureStore.getItemAsync).toHaveBeenCalledWith("dofek_session_token");
     expect(token).toBe("stored-token");
+  });
+
+  it("getSessionToken returns cached token without hitting SecureStore again", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValueOnce("stored-token");
+    await getSessionToken();
+    await getSessionToken();
+
+    expect(SecureStore.getItemAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it("getSessionToken returns null when SecureStore is inaccessible", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockRejectedValueOnce(
+      new Error("User interaction is not allowed"),
+    );
+
+    await expect(getSessionToken()).resolves.toBeNull();
+  });
+
+  it("retries SecureStore after a transient accessibility failure without caching null", async () => {
+    vi.mocked(SecureStore.getItemAsync)
+      .mockRejectedValueOnce(new Error("User interaction is not allowed"))
+      .mockResolvedValueOnce("stored-token");
+
+    await expect(getSessionToken()).resolves.toBeNull();
+    expect(SecureStore.getItemAsync).toHaveBeenCalledTimes(1);
+
+    await expect(getSessionToken()).resolves.toBe("stored-token");
+    expect(SecureStore.getItemAsync).toHaveBeenCalledTimes(2);
+
+    await expect(getSessionToken()).resolves.toBe("stored-token");
+    expect(SecureStore.getItemAsync).toHaveBeenCalledTimes(2);
   });
 
   it("clearSessionToken deletes the correct key", async () => {

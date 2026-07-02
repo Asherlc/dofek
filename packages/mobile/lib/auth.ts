@@ -5,10 +5,14 @@ import {
   ConfiguredProvidersSchema,
 } from "@dofek/auth/auth";
 import * as AppleAuthentication from "expo-apple-authentication";
-import * as SecureStore from "expo-secure-store";
 import * as WebBrowser from "expo-web-browser";
 import { Platform } from "react-native";
 import { z } from "zod";
+import {
+  deleteSecureStoreItem,
+  readSecureStoreItem,
+  writeSecureStoreItem,
+} from "./secure-store-access";
 import { captureException } from "./telemetry";
 
 export { AuthUserSchema, ConfiguredProvidersSchema };
@@ -20,12 +24,9 @@ const ErrorResponseSchema = z.object({ error: z.string().min(1) });
 const invalidSessionResponseMessage =
   "The server returned an invalid session response. Please try again.";
 
-// AFTER_FIRST_UNLOCK allows background access (e.g. during background GPS recording)
-// even when the device is locked, as long as it's been unlocked once since boot.
-// The default WHEN_UNLOCKED causes errSecInteractionNotAllowed when accessed in background.
-const SESSION_TOKEN_STORE_OPTIONS = {
-  keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK,
-};
+// In-memory cache avoids SecureStore reads while iOS has the device locked in background.
+// Reads still fall back to SecureStore on cold start in the foreground.
+let cachedSessionToken: string | null | undefined;
 
 export interface AuthResult {
   session: string;
@@ -34,17 +35,34 @@ export interface AuthResult {
 
 /** Save the session token to secure storage. */
 export async function saveSessionToken(token: string): Promise<void> {
-  await SecureStore.setItemAsync(SESSION_TOKEN_KEY, token, SESSION_TOKEN_STORE_OPTIONS);
+  cachedSessionToken = token;
+  await writeSecureStoreItem(SESSION_TOKEN_KEY, token);
 }
 
 /** Get the saved session token, or null if not logged in. */
 export async function getSessionToken(): Promise<string | null> {
-  return SecureStore.getItemAsync(SESSION_TOKEN_KEY);
+  if (cachedSessionToken !== undefined) {
+    return cachedSessionToken;
+  }
+
+  const token = await readSecureStoreItem(SESSION_TOKEN_KEY);
+  // Only cache successful reads. A null from readSecureStoreItem may be a transient
+  // accessibility failure while the device is locked, not a confirmed logout.
+  if (token !== null) {
+    cachedSessionToken = token;
+  }
+  return token;
 }
 
 /** Clear the session token (logout). */
 export async function clearSessionToken(): Promise<void> {
-  await SecureStore.deleteItemAsync(SESSION_TOKEN_KEY);
+  cachedSessionToken = null;
+  await deleteSecureStoreItem(SESSION_TOKEN_KEY);
+}
+
+/** @internal Resets the in-memory session cache between tests. */
+export function resetSessionTokenCacheForTests(): void {
+  cachedSessionToken = undefined;
 }
 
 /** Validate the stored session token by calling /api/auth/me. Returns the user or null. */

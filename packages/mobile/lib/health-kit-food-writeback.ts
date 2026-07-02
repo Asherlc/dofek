@@ -1,5 +1,5 @@
-import * as SecureStore from "expo-secure-store";
 import { z } from "zod";
+import { readSecureStoreItem, writeSecureStoreItem } from "./secure-store-access";
 import { captureException } from "./telemetry";
 
 export const FOOD_WRITE_BACK_STORAGE_KEY = "dofek_healthkit_food_writeback_v1";
@@ -83,11 +83,8 @@ export interface FoodWriteBackResult {
 const ledgerSchema = z.record(z.string());
 
 export const secureStoreFoodWriteBackStorage: FoodWriteBackStorage = {
-  getItem: (key) => SecureStore.getItemAsync(key),
-  setItem: (key, value) =>
-    SecureStore.setItemAsync(key, value, {
-      keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK,
-    }),
+  getItem: (key) => readSecureStoreItem(key),
+  setItem: (key, value) => writeSecureStoreItem(key, value),
 };
 
 export function buildFoodWriteBackFingerprint(

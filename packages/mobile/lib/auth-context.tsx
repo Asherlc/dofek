@@ -5,8 +5,10 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
+import { AppState } from "react-native";
 import {
   type AuthUser,
   logout as authLogout,
@@ -44,12 +46,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const bootstrapDeferredRef = useRef(false);
 
   const retryBootstrap = useCallback(async () => {
     setIsLoading(true);
+    bootstrapDeferredRef.current = false;
+    let deferBootstrap = false;
     try {
       const token = await getSessionToken();
       if (!token) {
+        if (AppState.currentState !== "active") {
+          // iOS can relaunch the app in the background while the device is locked.
+          // SecureStore reads fail with errSecInteractionNotAllowed in that state,
+          // so defer auth restore until the user brings the app to the foreground.
+          deferBootstrap = true;
+          bootstrapDeferredRef.current = true;
+          setUser(null);
+          setSessionToken(null);
+          setBootstrapError(null);
+          return;
+        }
+
         setUser(null);
         setSessionToken(null);
         setBootstrapError(null);
@@ -76,13 +93,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(null);
       setBootstrapError(error instanceof Error ? error.message : String(error));
     } finally {
-      setIsLoading(false);
+      if (!deferBootstrap) {
+        setIsLoading(false);
+      }
     }
   }, []);
 
   // On mount, restore auth state from secure storage.
   useEffect(() => {
     void retryBootstrap();
+  }, [retryBootstrap]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active" && bootstrapDeferredRef.current) {
+        void retryBootstrap();
+      }
+    });
+
+    return () => subscription.remove();
   }, [retryBootstrap]);
 
   const onLoginSuccess = useCallback(async (token: string) => {
