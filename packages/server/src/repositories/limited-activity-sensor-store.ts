@@ -1,5 +1,6 @@
 import { trace } from "@opentelemetry/api";
 import type { z } from "zod";
+import { logger } from "../logger.ts";
 import type {
   ActivitySensorQueryOptions,
   ActivitySensorStore,
@@ -45,7 +46,15 @@ class ClickHouseQueueLimiter {
         span.setAttribute("clickhouse.queue.active", activeBeforeAcquire);
         span.setAttribute("clickhouse.queue.depth", queuedBeforeAcquire);
         await this.#acquire();
-        span.setAttribute("clickhouse.queue.wait_ms", Date.now() - waitStartedAt);
+        const waitMs = Date.now() - waitStartedAt;
+        span.setAttribute("clickhouse.queue.wait_ms", waitMs);
+        logger.info("clickhouse.queue_wait", {
+          active: activeBeforeAcquire,
+          concurrency: this.#concurrency,
+          depth: queuedBeforeAcquire,
+          queue: this.#name,
+          waitMs,
+        });
       } finally {
         span.end();
       }
