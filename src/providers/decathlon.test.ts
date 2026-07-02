@@ -16,16 +16,30 @@ const providerActivityAbsenceMocks = vi.hoisted(() => ({
   upsertProviderActivity: vi.fn().mockResolvedValue({ id: "activity-id" }),
 }));
 
+interface CapturedSyncLogOutcome {
+  dataType: string;
+  degradations?: Array<{ kind: string; context?: unknown }>;
+}
+
+const syncLogOutcomes = vi.hoisted<{ values: CapturedSyncLogOutcome[] }>(() => ({
+  values: [],
+}));
+
 vi.mock("../db/sync-log.ts", () => ({
   withSyncLog: vi.fn(
     async (
       _db: unknown,
       _providerId: string,
       _dataType: string,
-      fn: () => Promise<{ recordCount: number; result: unknown }>,
+      fn: () => Promise<{
+        recordCount: number;
+        result: unknown;
+        degradations?: Array<{ kind: string; context?: unknown }>;
+      }>,
     ) => {
-      const { result } = await fn();
-      return result;
+      const outcome = await fn();
+      syncLogOutcomes.values.push({ dataType: _dataType, degradations: outcome.degradations });
+      return outcome.result;
     },
   ),
 }));
@@ -84,6 +98,7 @@ describe("DecathlonProvider — rate-limit aware fetch wiring", () => {
     process.env = { ...originalEnv };
     providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
     providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
+    syncLogOutcomes.values = [];
   });
 
   it("surfaces a 429 as a ProviderRateLimitError tagged with providerId 'decathlon'", async () => {
@@ -215,11 +230,20 @@ describe("DecathlonProvider — rate-limit aware fetch wiring", () => {
     );
 
     expect(result.errors).toHaveLength(0);
-    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
-    // Guard went through repeated-cursor detection flow (at least 2 calls)
-    expect(callCount).toBeGreaterThanOrEqual(2);
-    expect(callCount).toBeLessThanOrEqual(3);
-    // Reconciliation is skipped when pagination degrades
+    expect(result.recordsSynced).toBe(2);
+    expect(callCount).toBe(2);
+    expect(syncLogOutcomes.values).toContainEqual({
+      dataType: "activity",
+      degradations: [
+        expect.objectContaining({
+          kind: "pagination_stalled",
+          context: expect.objectContaining({
+            cursorFingerprint: expect.stringMatching(/^[0-9a-f]{12}$/),
+            pagesFetched: 2,
+          }),
+        }),
+      ],
+    });
     expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
   });
 
