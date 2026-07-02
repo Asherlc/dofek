@@ -104,11 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setBootstrapError(null);
 
     if (currentUserId) {
-      try {
-        await removeMobileQueryCache(currentUserId);
-      } catch (error: unknown) {
-        captureException(error, { source: "logout-cache-clear" });
-      }
+      await removeMobileQueryCache(currentUserId);
     }
 
     try {

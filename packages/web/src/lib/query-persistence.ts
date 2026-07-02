@@ -9,9 +9,14 @@ function queryCacheKey(userId: string) {
   return `dofek-query-cache:${userId}`;
 }
 
+function webQueryCacheStorage() {
+  if (typeof window === "undefined") return undefined;
+  return window.localStorage;
+}
+
 export function createWebQueryPersister(userId: string) {
   return createAsyncStoragePersister({
-    storage: window.localStorage,
+    storage: webQueryCacheStorage(),
     key: queryCacheKey(userId),
     retry: ({ error }) => {
       captureException(error, { source: "web-query-cache-persist-write", userId });
@@ -22,7 +27,7 @@ export function createWebQueryPersister(userId: string) {
 
 export function removeWebQueryCache(userId: string) {
   try {
-    window.localStorage?.removeItem(queryCacheKey(userId));
+    webQueryCacheStorage()?.removeItem(queryCacheKey(userId));
   } catch (error: unknown) {
     captureException(error, { source: "web-query-cache-clear", userId });
   }

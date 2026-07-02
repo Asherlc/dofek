@@ -22,7 +22,11 @@ export function createMobileQueryPersister(userId: string) {
 }
 
 export async function removeMobileQueryCache(userId: string) {
-  await AsyncStorage.removeItem(queryCacheKey(userId));
+  try {
+    await AsyncStorage.removeItem(queryCacheKey(userId));
+  } catch (error: unknown) {
+    captureException(error, { source: "mobile-query-cache-clear", userId });
+  }
 }
 
 export function MobileQueryPersistenceProvider({
