@@ -2044,6 +2044,34 @@ describe("syncRouter", () => {
   });
 
   describe("dataHealth", () => {
+    function createHealthyDataHealthCaller() {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 42, latestRawAt: "2026-06-29T12:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 8, latestRawAt: "2026-06-29T08:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 3, latestRawAt: "2026-06-29T10:00:00.000Z" }]);
+      const sensorStore = {
+        query: vi.fn(async (_schema: unknown, queryText: string) => {
+          if (queryText.includes("analytics.daily_recovery")) {
+            return [{ latestReadModelAt: "2026-06-29T12:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.daily_sleep")) {
+            return [{ latestReadModelAt: "2026-06-29T08:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.activity_summary_rows")) {
+            return [{ latestReadModelAt: "2026-06-29T10:00:00.000Z" }];
+          }
+          return [];
+        }),
+      };
+      return createCaller({
+        db: { execute: mockExecute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+    }
+
     it("returns structured freshness state for primary datasets", async () => {
       const mockExecute = vi
         .fn()
@@ -2413,6 +2441,7 @@ describe("syncRouter", () => {
       const result = await caller.dataHealth();
 
       expect(result.overallStatus).toBe("missing");
+      expect(result.syncingProviders).toEqual([]);
       expect(result.datasets.map((dataset) => dataset.status)).toEqual([
         "missing",
         "missing",
@@ -2452,6 +2481,75 @@ describe("syncRouter", () => {
       expect(result.overallStatus).toBe("syncing");
       expect(result.syncingProviders).toEqual([{ id: "garmin", name: "Garmin" }]);
       expect(result.datasets[0]?.status).toBe("missing");
+    });
+
+    it("ignores active provider sync jobs for other users when datasets are healthy", async () => {
+      mockGetJobs.mockResolvedValue([
+        {
+          id: "job-1",
+          data: { userId: "other-user", providerId: "garmin" },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+      ]);
+      const caller = createHealthyDataHealthCaller();
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("healthy");
+      expect(result.syncingProviders).toEqual([]);
+    });
+
+    it("sorts syncing providers alphabetically by display name", async () => {
+      mockGetAllProviders.mockReturnValue([
+        { id: "whoop", name: "WHOOP", validate: () => null },
+        { id: "garmin", name: "Garmin", validate: () => null },
+      ]);
+      mockGetJobs.mockResolvedValue([
+        {
+          id: "job-whoop",
+          data: { userId: "user-1", providerId: "whoop" },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+        {
+          id: "job-garmin",
+          data: { userId: "user-1", providerId: "garmin" },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+      ]);
+      const caller = createHealthyDataHealthCaller();
+
+      const result = await caller.dataHealth();
+
+      expect(result.syncingProviders).toEqual([
+        { id: "garmin", name: "Garmin" },
+        { id: "whoop", name: "WHOOP" },
+      ]);
+    });
+
+    it("uses push provider display names for active push sync jobs", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "whoop_ble",
+          name: "Registered WHOOP BLE",
+          validate: () => null,
+        },
+      ]);
+      mockGetJobs.mockResolvedValue([
+        {
+          id: "job-ble",
+          data: { userId: "user-1", providerId: "whoop_ble" },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("active"),
+        },
+      ]);
+      const caller = createHealthyDataHealthCaller();
+
+      const result = await caller.dataHealth();
+
+      expect(result.syncingProviders).toEqual([{ id: "whoop_ble", name: "WHOOP (Bluetooth)" }]);
     });
 
     it("marks overall status syncing for active jobs in registered provider queues", async () => {
@@ -2571,6 +2669,50 @@ describe("syncRouter", () => {
         userId: "user-1",
         timezone: "UTC",
       });
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("healthy");
+      expect(result.syncingProviders).toEqual([]);
+    });
+
+    it("ignores active import jobs for other users when datasets are healthy", async () => {
+      mockImportQueueGetJobs.mockResolvedValue([
+        {
+          id: "import-other-user",
+          data: {
+            userId: "other-user",
+            importType: "apple-health",
+            filePath: "/tmp/apple-health.zip",
+            since: "2020-01-01T00:00:00.000Z",
+          },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+      ]);
+      const caller = createHealthyDataHealthCaller();
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("healthy");
+      expect(result.syncingProviders).toEqual([]);
+    });
+
+    it("ignores import jobs with non-string importType values", async () => {
+      mockImportQueueGetJobs.mockResolvedValue([
+        {
+          id: "import-bad-type",
+          data: {
+            userId: "user-1",
+            importType: 123,
+            filePath: "/tmp/apple-health.zip",
+            since: "2020-01-01T00:00:00.000Z",
+          },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+      ]);
+      const caller = createHealthyDataHealthCaller();
 
       const result = await caller.dataHealth();
 

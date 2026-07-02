@@ -289,13 +289,19 @@ const importTypeToProviderId: Record<ImportJobData["importType"], string> = {
   "zos-app": "zos-app",
 };
 
-function isKnownImportType(importType: string): importType is ImportJobData["importType"] {
-  return importType in importTypeToProviderId;
-}
-
 function providerIdForImportType(importType: string): string | undefined {
-  if (!isKnownImportType(importType)) return undefined;
-  return importTypeToProviderId[importType];
+  switch (importType) {
+    case "apple-health":
+      return importTypeToProviderId["apple-health"];
+    case "strong-csv":
+      return importTypeToProviderId["strong-csv"];
+    case "cronometer-csv":
+      return importTypeToProviderId["cronometer-csv"];
+    case "zos-app":
+      return importTypeToProviderId["zos-app"];
+    default:
+      return undefined;
+  }
 }
 
 function buildProviderNameById(): Map<string, string> {
