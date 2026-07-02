@@ -5,12 +5,6 @@ import {
   formatSpO2Measurement,
 } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
-import type {
-  ReadinessRow,
-  SleepPerformanceInfo,
-  StrainTargetResult,
-  WorkloadRatioResult,
-} from "dofek-server/types";
 import { useMemo } from "react";
 import { z } from "zod";
 import type { Insight } from "../components/CorrelationCard.tsx";
@@ -171,22 +165,17 @@ export function buildHealthMetrics(trendData: TrendRow | undefined, units: UnitC
 }
 
 export function isCoreDashboardReady({
-  readiness,
-  workloadRatio,
-  strainTarget,
-  sleepPerformance,
+  readinessSettled,
+  workloadRatioSettled,
+  strainTargetSettled,
+  sleepPerformanceSettled,
 }: {
-  readiness: ReadinessRow[] | undefined;
-  workloadRatio: WorkloadRatioResult | undefined;
-  strainTarget: StrainTargetResult | undefined;
-  sleepPerformance: SleepPerformanceInfo | null | undefined;
+  readinessSettled: boolean;
+  workloadRatioSettled: boolean;
+  strainTargetSettled: boolean;
+  sleepPerformanceSettled: boolean;
 }): boolean {
-  return (
-    readiness !== undefined &&
-    workloadRatio !== undefined &&
-    strainTarget !== undefined &&
-    sleepPerformance !== undefined
-  );
+  return readinessSettled && workloadRatioSettled && strainTargetSettled && sleepPerformanceSettled;
 }
 
 export function Dashboard() {
@@ -200,10 +189,10 @@ export function Dashboard() {
   const trends = trpc.dailyMetrics.trends.useQuery({ days, endDate });
   const heartRateBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days, endDate });
   const coreDashboardReady = isCoreDashboardReady({
-    readiness: readinessData.data,
-    workloadRatio: workloadRatio.data,
-    strainTarget: strainTarget.data,
-    sleepPerformance: sleepPerformance.data,
+    readinessSettled: readinessData.isFetched,
+    workloadRatioSettled: workloadRatio.isFetched,
+    strainTargetSettled: strainTarget.isFetched,
+    sleepPerformanceSettled: sleepPerformance.isFetched,
   });
   const insightsQuery = trpc.insights.compute.useQuery(
     { days, endDate },

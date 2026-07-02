@@ -19,6 +19,7 @@ type MockInsightsQueryResult = {
 type MockQueryResult<TData> = {
   data: TData | undefined;
   isLoading: boolean;
+  isFetched?: boolean;
   error: Error | null;
 };
 
@@ -26,6 +27,7 @@ const mockReadinessQuery = vi.hoisted(() =>
   vi.fn<() => MockQueryResult<ReadinessRow[]>>(() => ({
     data: undefined,
     isLoading: false,
+    isFetched: false,
     error: null,
   })),
 );
@@ -33,6 +35,7 @@ const mockWorkloadQuery = vi.hoisted(() =>
   vi.fn<() => MockQueryResult<WorkloadRatioResult>>(() => ({
     data: undefined,
     isLoading: false,
+    isFetched: false,
     error: null,
   })),
 );
@@ -40,6 +43,7 @@ const mockStrainTargetQuery = vi.hoisted(() =>
   vi.fn<() => MockQueryResult<StrainTargetResult>>(() => ({
     data: undefined,
     isLoading: false,
+    isFetched: false,
     error: null,
   })),
 );
@@ -47,6 +51,7 @@ const mockSleepPerformanceQuery = vi.hoisted(() =>
   vi.fn<() => MockQueryResult<SleepPerformanceInfo | null>>(() => ({
     data: undefined,
     isLoading: false,
+    isFetched: false,
     error: null,
   })),
 );
@@ -164,21 +169,25 @@ describe("Dashboard", () => {
     mockReadinessQuery.mockReturnValue({
       data: coreDashboardQueryData.readiness,
       isLoading: false,
+      isFetched: true,
       error: null,
     });
     mockWorkloadQuery.mockReturnValue({
       data: coreDashboardQueryData.workloadRatio,
       isLoading: false,
+      isFetched: true,
       error: null,
     });
     mockStrainTargetQuery.mockReturnValue({
       data: coreDashboardQueryData.strainTarget,
       isLoading: false,
+      isFetched: true,
       error: null,
     });
     mockSleepPerformanceQuery.mockReturnValue({
       data: coreDashboardQueryData.sleepPerformance,
       isLoading: false,
+      isFetched: true,
       error: null,
     });
     mockTrendsQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
@@ -222,10 +231,30 @@ describe("Dashboard", () => {
   });
 
   it("does not enable insights during the initial core dashboard load", () => {
-    mockReadinessQuery.mockReturnValue({ data: undefined, isLoading: true, error: null });
-    mockWorkloadQuery.mockReturnValue({ data: undefined, isLoading: true, error: null });
-    mockStrainTargetQuery.mockReturnValue({ data: undefined, isLoading: true, error: null });
-    mockSleepPerformanceQuery.mockReturnValue({ data: undefined, isLoading: true, error: null });
+    mockReadinessQuery.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isFetched: false,
+      error: null,
+    });
+    mockWorkloadQuery.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isFetched: false,
+      error: null,
+    });
+    mockStrainTargetQuery.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isFetched: false,
+      error: null,
+    });
+    mockSleepPerformanceQuery.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isFetched: false,
+      error: null,
+    });
 
     render(<Dashboard />);
 
@@ -235,7 +264,23 @@ describe("Dashboard", () => {
     );
   });
 
-  it("enables insights after core dashboard data is available", () => {
+  it("enables insights after core dashboard queries settle successfully", () => {
+    render(<Dashboard />);
+
+    expect(mockInsightsQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ enabled: true }),
+    );
+  });
+
+  it("enables insights after core dashboard queries settle, including on error", () => {
+    mockReadinessQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isFetched: true,
+      error: new Error("Readiness unavailable"),
+    });
+
     render(<Dashboard />);
 
     expect(mockInsightsQuery).toHaveBeenCalledWith(
@@ -344,13 +389,13 @@ describe("Dashboard", () => {
 });
 
 describe("isCoreDashboardReady", () => {
-  it("returns false while any core dashboard query is still unresolved", () => {
+  it("returns false while any core dashboard query is still in flight", () => {
     expect(
       isCoreDashboardReady({
-        readiness: undefined,
-        workloadRatio: coreDashboardQueryData.workloadRatio,
-        strainTarget: coreDashboardQueryData.strainTarget,
-        sleepPerformance: coreDashboardQueryData.sleepPerformance,
+        readinessSettled: false,
+        workloadRatioSettled: true,
+        strainTargetSettled: true,
+        sleepPerformanceSettled: true,
       }),
     ).toBe(false);
   });
@@ -358,21 +403,10 @@ describe("isCoreDashboardReady", () => {
   it("returns true once all core dashboard queries have settled", () => {
     expect(
       isCoreDashboardReady({
-        readiness: coreDashboardQueryData.readiness,
-        workloadRatio: coreDashboardQueryData.workloadRatio,
-        strainTarget: coreDashboardQueryData.strainTarget,
-        sleepPerformance: coreDashboardQueryData.sleepPerformance,
-      }),
-    ).toBe(true);
-  });
-
-  it("returns true when sleep performance resolves to null", () => {
-    expect(
-      isCoreDashboardReady({
-        readiness: coreDashboardQueryData.readiness,
-        workloadRatio: coreDashboardQueryData.workloadRatio,
-        strainTarget: coreDashboardQueryData.strainTarget,
-        sleepPerformance: null,
+        readinessSettled: true,
+        workloadRatioSettled: true,
+        strainTargetSettled: true,
+        sleepPerformanceSettled: true,
       }),
     ).toBe(true);
   });
