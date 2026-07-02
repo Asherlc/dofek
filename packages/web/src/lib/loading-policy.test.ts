@@ -12,6 +12,15 @@ describe("shouldShowBlockingLoading", () => {
     ).toBe(false);
   });
 
+  it("keeps existing object data visible while loading", () => {
+    expect(
+      shouldShowBlockingLoading({
+        data: { value: 1 },
+        isLoading: true,
+      }),
+    ).toBe(false);
+  });
+
   it("shows blocking loading only when the first request has no data yet", () => {
     expect(
       shouldShowBlockingLoading({
@@ -20,5 +29,24 @@ describe("shouldShowBlockingLoading", () => {
         isFetching: true,
       }),
     ).toBe(true);
+  });
+
+  it("shows blocking loading when an empty query is fetching for the first time", () => {
+    expect(
+      shouldShowBlockingLoading({
+        data: null,
+        isLoading: false,
+        isFetching: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not block when no query is loading or fetching", () => {
+    expect(
+      shouldShowBlockingLoading({
+        data: null,
+        isLoading: false,
+      }),
+    ).toBe(false);
   });
 });
