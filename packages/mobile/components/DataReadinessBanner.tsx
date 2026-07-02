@@ -1,4 +1,4 @@
-import { bannerHeading } from "@dofek/providers/data-readiness-banner";
+import { bannerHeading, freshnessLabel } from "@dofek/providers/data-readiness-banner";
 import { statusColors, textColors } from "@dofek/scoring/colors";
 import { StyleSheet, Text, View } from "react-native";
 import { colors, radius, spacing } from "../theme";
@@ -55,10 +55,14 @@ export function DataReadinessBanner({
     data.overallStatus === "stale" ||
     data.overallStatus === "blocked";
   const relevantDatasets = data.datasets.filter((dataset) => dataset.status !== "healthy");
+  const checkedAt = freshnessLabel(data);
 
   return (
     <View style={[styles.banner, stylesByStatus[data.overallStatus]]}>
       <Text style={[styles.heading, isDarkBanner && styles.lightText]}>{bannerHeading(data)}</Text>
+      {checkedAt ? (
+        <Text style={[styles.freshness, isDarkBanner && styles.lightText]}>{checkedAt}</Text>
+      ) : null}
       {relevantDatasets.map((dataset) => {
         const isDatasetDark =
           dataset.status === "syncing" ||
@@ -90,6 +94,11 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 14,
     fontWeight: "700",
+  },
+  freshness: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "600",
   },
   dataset: {
     borderRadius: radius.md,

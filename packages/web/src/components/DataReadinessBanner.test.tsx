@@ -58,6 +58,7 @@ describe("DataReadinessBanner", () => {
     render(<DataReadinessBanner data={makeSnapshot()} />);
 
     expect(screen.getByRole("status").textContent).toContain("Dashboard summaries are catching up");
+    expect(screen.getByText("Last checked 2026-06-30 08:00 UTC")).toBeTruthy();
     expect(screen.getByText("Daily metrics")).toBeTruthy();
     expect(
       screen.getByText(

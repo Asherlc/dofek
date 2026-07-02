@@ -1,4 +1,4 @@
-import { bannerHeading } from "@dofek/providers/data-readiness-banner";
+import { bannerHeading, freshnessLabel } from "@dofek/providers/data-readiness-banner";
 
 export type DataReadinessStatus = "healthy" | "syncing" | "stale" | "missing" | "blocked";
 
@@ -54,6 +54,7 @@ export function DataReadinessBanner({
 
   const relevantDatasets = data.datasets.filter((dataset) => dataset.status !== "healthy");
   const status = data.overallStatus;
+  const checkedAt = freshnessLabel(data);
 
   return (
     <output
@@ -61,6 +62,7 @@ export function DataReadinessBanner({
       aria-live={status === "syncing" ? "polite" : undefined}
     >
       <h2 className="text-sm font-semibold">{bannerHeading(data)}</h2>
+      {checkedAt ? <p className="mt-1 text-xs font-medium">{checkedAt}</p> : null}
       {relevantDatasets.length > 0 ? (
         <ul className="mt-3 grid gap-2 md:grid-cols-3">
           {relevantDatasets.map((dataset) => (
