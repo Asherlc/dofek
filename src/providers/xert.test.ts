@@ -19,7 +19,7 @@ vi.mock("../db/sync-log.ts", () => ({
       _db: unknown,
       _providerId: string,
       _dataType: string,
-      fn: () => Promise<{ recordCount: number; result: unknown }>,
+      fn: () => Promise<{ recordCount: number; result: unknown; degradations?: unknown[] }>,
     ) => {
       const { result } = await fn();
       return result;
@@ -363,5 +363,63 @@ describe("XertProvider", () => {
         presentExternalIds: new Set(["100"]),
       }),
     );
+  });
+
+  it("reports max-page degradation at the exact page guard", async () => {
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
+    providerActivityAbsenceMocks.upsertProviderActivity.mockClear();
+
+    let requestCount = 0;
+    const pageStart = Math.floor(new Date("2026-03-01T08:00:00Z").getTime() / 1000);
+    const mockFetch: typeof globalThis.fetch = async () => {
+      requestCount++;
+      if (requestCount > 100) {
+        return Response.json([]);
+      }
+
+      return Response.json(
+        Array.from({ length: 50 }, (_, index) => ({
+          id: requestCount * 1000 + index,
+          name: `Guard Activity ${requestCount}-${index}`,
+          sport: "Cycling",
+          startTimestamp: pageStart,
+          endTimestamp: pageStart + 3600,
+          duration: 3600,
+          distance: 30000,
+          power_avg: 200,
+          power_max: 400,
+          power_normalized: 210,
+          heartrate_avg: 150,
+          heartrate_max: 170,
+          cadence_avg: 85,
+          cadence_max: 100,
+          calories: 800,
+          elevation_gain: 200,
+          elevation_loss: 180,
+          xss: 90,
+          focus: 3,
+          difficulty: 2,
+        })),
+      );
+    };
+
+    const db = {
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn().mockResolvedValue([]),
+    };
+    const result = await new XertProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(5000);
+    expect(result.degradations?.[0]?.kind).toBe("pagination_max_pages_exceeded");
+    expect(requestCount).toBe(100);
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
   });
 });

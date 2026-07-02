@@ -7,6 +7,8 @@ import { dexaScan, dexaScanRegion } from "../db/schema/events.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { fetchProviderPages } from "../sync/pagination.ts";
+import type { SyncDegradation } from "../sync/sync-degradation.ts";
 import { ProviderHttpClient } from "./http-client.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
@@ -140,6 +142,7 @@ const resultsListResponseSchema = z.object({
   pagination: paginationSchema,
 });
 
+type BodySpecResultSummary = z.infer<typeof resultSchema>;
 export type BodySpecResultsListResponse = z.infer<typeof resultsListResponseSchema>;
 
 // ============================================================
@@ -358,6 +361,7 @@ export class BodySpecProvider implements SyncProvider {
     }
 
     const client = new BodySpecClient(tokens.accessToken, this.#fetchFn);
+    const degradations: SyncDegradation[] = [];
 
     try {
       const scanCount = await withSyncLog(
@@ -366,33 +370,39 @@ export class BodySpecProvider implements SyncProvider {
         "dexa_scan",
         async () => {
           let count = 0;
-          let page = 1;
-          let hasMore = true;
 
-          while (hasMore) {
-            const listResponse = await client.listResults(page);
+          const pages = await fetchProviderPages<BodySpecResultSummary, number>({
+            providerId: this.id,
+            stepName: "dexa_scan",
+            initialCursor: 1,
+            fetchPage: async (page) => {
+              const currentPage = page ?? 1;
+              const listResponse = await client.listResults(currentPage);
+              return {
+                items: listResponse.results,
+                nextCursor: listResponse.pagination.has_more ? currentPage + 1 : null,
+              };
+            },
+          });
+          degradations.push(...pages.degradations);
 
-            for (const result of listResponse.results) {
-              const resultTime = new Date(result.start_time);
-              if (resultTime < since) continue;
-              if (resultTime > until) continue;
+          for (const result of pages.items) {
+            const resultTime = new Date(result.start_time);
+            if (resultTime < since) continue;
+            if (resultTime > until) continue;
 
-              try {
-                count += await this.#syncResult(db, client, result.result_id, resultTime);
-              } catch (err) {
-                errors.push({
-                  message: err instanceof Error ? err.message : String(err),
-                  externalId: result.result_id,
-                  cause: err,
-                });
-              }
+            try {
+              count += await this.#syncResult(db, client, result.result_id, resultTime);
+            } catch (err) {
+              errors.push({
+                message: err instanceof Error ? err.message : String(err),
+                externalId: result.result_id,
+                cause: err,
+              });
             }
-
-            hasMore = listResponse.pagination.has_more;
-            page++;
           }
 
-          return { recordCount: count, result: count };
+          return { recordCount: count, result: count, degradations };
         },
         options?.userId,
       );
@@ -409,6 +419,7 @@ export class BodySpecProvider implements SyncProvider {
       recordsSynced,
       errors,
       duration: Date.now() - start,
+      degradations,
     };
   }
 

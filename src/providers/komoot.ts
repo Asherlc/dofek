@@ -10,6 +10,8 @@ import {
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { fetchProviderPages } from "../sync/pagination.ts";
+import type { SyncDegradation } from "../sync/sync-degradation.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
@@ -192,6 +194,7 @@ export class KomootProvider implements SyncProvider {
     const since = window.since;
     const syncWindowEnd = window.until;
     const presentActivityExternalIds = new Set<string>();
+    const degradations: SyncDegradation[] = [];
     try {
       const activityCount = await withSyncLog(
         db,
@@ -199,72 +202,80 @@ export class KomootProvider implements SyncProvider {
         "activity",
         async () => {
           let count = 0;
-          let page = 0;
-          let totalPages = 1;
           const startDate = since.toISOString();
 
-          while (page < totalPages) {
-            const url = `${KOMOOT_API_BASE}/users/me/tours/?type=RECORDED&start_date=${startDate}&page=${page}&limit=50&sort_field=date&sort_direction=desc`;
-            const response = await this.#fetchFn(url, {
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-                Accept: "application/hal+json",
-              },
-            });
+          const pages = await fetchProviderPages<KomootTour, number>({
+            providerId: this.id,
+            stepName: "activity_list",
+            initialCursor: 0,
+            fetchPage: async (page) => {
+              const currentPage = page ?? 0;
+              const url = `${KOMOOT_API_BASE}/users/me/tours/?type=RECORDED&start_date=${startDate}&page=${currentPage}&limit=50&sort_field=date&sort_direction=desc`;
+              const response = await this.#fetchFn(url, {
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                  Accept: "application/hal+json",
+                },
+              });
 
-            if (!response.ok) {
-              const text = await response.text();
-              throw new Error(`Komoot API error (${response.status}): ${text}`);
-            }
-
-            const data: KomootToursResponse = await response.json();
-            totalPages = data.page.totalPages;
-            const tours = data._embedded?.tours ?? [];
-
-            for (const raw of tours) {
-              const parsed = parseKomootTour(raw);
-              presentActivityExternalIds.add(parsed.externalId);
-              try {
-                await upsertProviderActivity(
-                  db,
-                  {
-                    providerId: this.id,
-                    externalId: parsed.externalId,
-                    activityType: parsed.activityType,
-                    name: parsed.name,
-                    startedAt: parsed.startedAt,
-                    endedAt: parsed.endedAt,
-                    raw: parsed.raw,
-                  },
-                  {
-                    activityType: parsed.activityType,
-                    name: parsed.name,
-                    startedAt: parsed.startedAt,
-                    endedAt: parsed.endedAt,
-                    raw: parsed.raw,
-                  },
-                );
-                count++;
-              } catch (err) {
-                errors.push({
-                  message: err instanceof Error ? err.message : String(err),
-                  externalId: parsed.externalId,
-                  cause: err,
-                });
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`Komoot API error (${response.status}): ${text}`);
               }
-            }
 
-            page++;
+              const data: KomootToursResponse = await response.json();
+              const nextPage = currentPage + 1;
+              return {
+                items: data._embedded?.tours ?? [],
+                nextCursor: nextPage < data.page.totalPages ? nextPage : null,
+              };
+            },
+          });
+          degradations.push(...pages.degradations);
+
+          for (const raw of pages.items) {
+            const parsed = parseKomootTour(raw);
+            presentActivityExternalIds.add(parsed.externalId);
+            try {
+              await upsertProviderActivity(
+                db,
+                {
+                  providerId: this.id,
+                  externalId: parsed.externalId,
+                  activityType: parsed.activityType,
+                  name: parsed.name,
+                  startedAt: parsed.startedAt,
+                  endedAt: parsed.endedAt,
+                  raw: parsed.raw,
+                },
+                {
+                  activityType: parsed.activityType,
+                  name: parsed.name,
+                  startedAt: parsed.startedAt,
+                  endedAt: parsed.endedAt,
+                  raw: parsed.raw,
+                },
+              );
+              count++;
+            } catch (err) {
+              errors.push({
+                message: err instanceof Error ? err.message : String(err),
+                externalId: parsed.externalId,
+                cause: err,
+              });
+            }
           }
 
-          await finishProviderActivityListSync(db, {
-            providerId: this.id,
-            userId: options?.userId,
-            windowStart: since,
-            windowEnd: syncWindowEnd,
-            presentExternalIds: presentActivityExternalIds,
-          });
-          return { recordCount: count, result: count };
+          if (degradations.length === 0) {
+            await finishProviderActivityListSync(db, {
+              providerId: this.id,
+              userId: options?.userId,
+              windowStart: since,
+              windowEnd: syncWindowEnd,
+              presentExternalIds: presentActivityExternalIds,
+            });
+          }
+          return { recordCount: count, result: count, degradations };
         },
         options?.userId,
       );
@@ -276,6 +287,6 @@ export class KomootProvider implements SyncProvider {
       });
     }
 
-    return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
+    return { provider: this.id, recordsSynced, errors, degradations, duration: Date.now() - start };
   }
 }

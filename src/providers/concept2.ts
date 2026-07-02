@@ -13,6 +13,8 @@ import { withSyncLog } from "../db/sync-log.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { fetchProviderPages } from "../sync/pagination.ts";
+import type { SyncDegradation } from "../sync/sync-degradation.ts";
 import { ProviderHttpClient } from "./http-client.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type {
@@ -394,6 +396,7 @@ export class Concept2Provider implements WebhookProvider {
     const since = window.since;
     const syncWindowEnd = window.until;
     const presentActivityExternalIds = new Set<string>();
+    const degradations: SyncDegradation[] = [];
     try {
       const activityCount = await withSyncLog(
         db,
@@ -401,61 +404,70 @@ export class Concept2Provider implements WebhookProvider {
         "activity",
         async () => {
           let count = 0;
-          let page = 1;
-          let totalPages = 1;
           const sinceDate = since.toISOString().slice(0, 10);
 
-          while (page <= totalPages) {
-            const data = await client.getResults(sinceDate, page);
-            totalPages = data.meta.pagination.total_pages;
+          const pages = await fetchProviderPages<Concept2Result, number>({
+            providerId: this.id,
+            stepName: "activity_list",
+            initialCursor: 1,
+            fetchPage: async (page) => {
+              const currentPage = page ?? 1;
+              const data = await client.getResults(sinceDate, currentPage);
+              const nextPage = currentPage + 1;
+              return {
+                items: data.data,
+                nextCursor: nextPage <= data.meta.pagination.total_pages ? nextPage : null,
+              };
+            },
+          });
+          degradations.push(...pages.degradations);
 
-            for (const raw of data.data) {
-              const parsed = parseConcept2Result(raw);
-              if (parsed.startedAt.getTime() > syncWindowEnd.getTime()) {
-                continue;
-              }
-              presentActivityExternalIds.add(parsed.externalId);
-              try {
-                await upsertProviderActivity(
-                  db,
-                  {
-                    providerId: this.id,
-                    externalId: parsed.externalId,
-                    activityType: parsed.activityType,
-                    name: parsed.name,
-                    startedAt: parsed.startedAt,
-                    endedAt: parsed.endedAt,
-                    raw: parsed.raw,
-                  },
-                  {
-                    activityType: parsed.activityType,
-                    name: parsed.name,
-                    startedAt: parsed.startedAt,
-                    endedAt: parsed.endedAt,
-                    raw: parsed.raw,
-                  },
-                );
-                count++;
-              } catch (err) {
-                errors.push({
-                  message: err instanceof Error ? err.message : String(err),
-                  externalId: parsed.externalId,
-                  cause: err,
-                });
-              }
+          for (const raw of pages.items) {
+            const parsed = parseConcept2Result(raw);
+            if (parsed.startedAt.getTime() > syncWindowEnd.getTime()) {
+              continue;
             }
-
-            page++;
+            presentActivityExternalIds.add(parsed.externalId);
+            try {
+              await upsertProviderActivity(
+                db,
+                {
+                  providerId: this.id,
+                  externalId: parsed.externalId,
+                  activityType: parsed.activityType,
+                  name: parsed.name,
+                  startedAt: parsed.startedAt,
+                  endedAt: parsed.endedAt,
+                  raw: parsed.raw,
+                },
+                {
+                  activityType: parsed.activityType,
+                  name: parsed.name,
+                  startedAt: parsed.startedAt,
+                  endedAt: parsed.endedAt,
+                  raw: parsed.raw,
+                },
+              );
+              count++;
+            } catch (err) {
+              errors.push({
+                message: err instanceof Error ? err.message : String(err),
+                externalId: parsed.externalId,
+                cause: err,
+              });
+            }
           }
 
-          await finishProviderActivityListSync(db, {
-            providerId: this.id,
-            userId: options?.userId,
-            windowStart: since,
-            windowEnd: syncWindowEnd,
-            presentExternalIds: presentActivityExternalIds,
-          });
-          return { recordCount: count, result: count };
+          if (degradations.length === 0) {
+            await finishProviderActivityListSync(db, {
+              providerId: this.id,
+              userId: options?.userId,
+              windowStart: since,
+              windowEnd: syncWindowEnd,
+              presentExternalIds: presentActivityExternalIds,
+            });
+          }
+          return { recordCount: count, result: count, degradations };
         },
         options?.userId,
       );
@@ -467,6 +479,6 @@ export class Concept2Provider implements WebhookProvider {
       });
     }
 
-    return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
+    return { provider: this.id, recordsSynced, errors, degradations, duration: Date.now() - start };
   }
 }
