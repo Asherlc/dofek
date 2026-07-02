@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ZWIFT_API_BASE, ZwiftClient } from "zwift-client/client";
 import { parseZwiftActivity, parseZwiftFitnessData } from "zwift-client/parsing";
+import type { ZwiftActivitySummary } from "zwift-client/types";
 import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
 import {
@@ -12,6 +13,7 @@ import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../logger.ts";
+import { fetchProviderPages } from "../sync/pagination.ts";
 import type { SyncDegradation } from "../sync/sync-degradation.ts";
 import {
   ProviderAuthenticationFailedError,
@@ -244,115 +246,111 @@ export class ZwiftProvider implements SyncProvider {
         "activity",
         async () => {
           let count = 0;
-          let offset = 0;
-          let done = false;
-          let pagesFetched = 0;
+          let reachedSyncWindowStart = false;
 
-          while (!done) {
-            const activities = await runWithAuthRetry((activeClient) =>
-              activeClient.getActivities(offset, ZWIFT_ACTIVITY_PAGE_SIZE),
-            );
-            pagesFetched++;
-            if (activities.length === 0) break;
+          const pages = await fetchProviderPages<ZwiftActivitySummary, number>({
+            providerId: this.id,
+            stepName: "activity_list",
+            initialCursor: 0,
+            maxPages: ZWIFT_MAX_ACTIVITY_PAGES,
+            fetchPage: async (offset) => {
+              const currentOffset = offset ?? 0;
+              const activities = await runWithAuthRetry((activeClient) =>
+                activeClient.getActivities(currentOffset, ZWIFT_ACTIVITY_PAGE_SIZE),
+              );
+              return {
+                items: activities,
+                nextCursor:
+                  activities.length >= ZWIFT_ACTIVITY_PAGE_SIZE
+                    ? currentOffset + ZWIFT_ACTIVITY_PAGE_SIZE
+                    : null,
+              };
+            },
+            onPage: async (pageResult) => {
+              for (const raw of pageResult.items) {
+                const actStart = new Date(raw.startDate);
+                if (actStart < since) {
+                  reachedSyncWindowStart = true;
+                  break;
+                }
+                if (actStart >= syncWindowEnd) {
+                  continue;
+                }
 
-            for (const raw of activities) {
-              const actStart = new Date(raw.startDate);
-              if (actStart < since) {
-                done = true;
-                break;
-              }
-              if (actStart >= syncWindowEnd) {
-                continue;
-              }
-
-              const parsed = parseZwiftActivity(raw);
-              presentActivityExternalIds.add(parsed.externalId);
-              try {
-                await upsertProviderActivity(
-                  db,
-                  {
-                    providerId: this.id,
-                    externalId: parsed.externalId,
-                    activityType: parsed.activityType,
-                    name: parsed.name,
-                    startedAt: parsed.startedAt,
-                    endedAt: parsed.endedAt,
-                    raw: parsed.raw,
-                  },
-                  {
-                    activityType: parsed.activityType,
-                    name: parsed.name,
-                    startedAt: parsed.startedAt,
-                    endedAt: parsed.endedAt,
-                    raw: parsed.raw,
-                  },
-                );
-                count++;
-
-                // Fetch detailed streams
+                const parsed = parseZwiftActivity(raw);
+                presentActivityExternalIds.add(parsed.externalId);
                 try {
-                  const detail = await runWithAuthRetry((activeClient) =>
-                    activeClient.getActivityDetail(raw.id),
-                  );
-                  const fullDataUrl = detail.fitnessData?.fullDataUrl;
-                  if (fullDataUrl) {
-                    const fitnessData = await runWithAuthRetry((activeClient) =>
-                      activeClient.getFitnessData(fullDataUrl),
-                    );
-                    const samples = parseZwiftFitnessData(fitnessData, parsed.startedAt);
-                    const metricRows = samples.map((s) => ({
+                  await upsertProviderActivity(
+                    db,
+                    {
                       providerId: this.id,
-                      recordedAt: s.recordedAt,
-                      heartRate: s.heartRate,
-                      power: s.power,
-                      cadence: s.cadence,
-                      altitude: s.altitude,
-                      lat: s.lat,
-                      lng: s.lng,
-                    }));
-                    await writeMetricStreamBatch(
-                      db,
-                      metricRows,
-                      SOURCE_TYPE_API,
-                      undefined,
-                      options?.metricStreamPublisher,
+                      externalId: parsed.externalId,
+                      activityType: parsed.activityType,
+                      name: parsed.name,
+                      startedAt: parsed.startedAt,
+                      endedAt: parsed.endedAt,
+                      raw: parsed.raw,
+                    },
+                    {
+                      activityType: parsed.activityType,
+                      name: parsed.name,
+                      startedAt: parsed.startedAt,
+                      endedAt: parsed.endedAt,
+                      raw: parsed.raw,
+                    },
+                  );
+                  count++;
+
+                  try {
+                    const detail = await runWithAuthRetry((activeClient) =>
+                      activeClient.getActivityDetail(raw.id),
                     );
+                    const fullDataUrl = detail.fitnessData?.fullDataUrl;
+                    if (fullDataUrl) {
+                      const fitnessData = await runWithAuthRetry((activeClient) =>
+                        activeClient.getFitnessData(fullDataUrl),
+                      );
+                      const samples = parseZwiftFitnessData(fitnessData, parsed.startedAt);
+                      const metricRows = samples.map((sample) => ({
+                        providerId: this.id,
+                        recordedAt: sample.recordedAt,
+                        heartRate: sample.heartRate,
+                        power: sample.power,
+                        cadence: sample.cadence,
+                        altitude: sample.altitude,
+                        lat: sample.lat,
+                        lng: sample.lng,
+                      }));
+                      await writeMetricStreamBatch(
+                        db,
+                        metricRows,
+                        SOURCE_TYPE_API,
+                        undefined,
+                        options?.metricStreamPublisher,
+                      );
+                    }
+                  } catch (streamErr) {
+                    errors.push({
+                      message: `streams ${parsed.externalId}: ${streamErr instanceof Error ? streamErr.message : String(streamErr)}`,
+                      externalId: parsed.externalId,
+                      cause: streamErr,
+                    });
                   }
-                } catch (streamErr) {
-                  // Non-fatal: log but continue
+                } catch (err) {
                   errors.push({
-                    message: `streams ${parsed.externalId}: ${streamErr instanceof Error ? streamErr.message : String(streamErr)}`,
+                    message: err instanceof Error ? err.message : String(err),
                     externalId: parsed.externalId,
-                    cause: streamErr,
+                    cause: err,
                   });
                 }
-              } catch (err) {
-                errors.push({
-                  message: err instanceof Error ? err.message : String(err),
-                  externalId: parsed.externalId,
-                  cause: err,
-                });
               }
-            }
+            },
+            shouldStopAfterPage: () => reachedSyncWindowStart,
+          });
 
-            offset += ZWIFT_ACTIVITY_PAGE_SIZE;
-            if (
-              !done &&
-              activities.length >= ZWIFT_ACTIVITY_PAGE_SIZE &&
-              pagesFetched >= ZWIFT_MAX_ACTIVITY_PAGES
-            ) {
-              degradations.push({
-                kind: "pagination_max_pages_exceeded",
-                providerId: this.id,
-                stepName: "activity_list",
-                message: "Zwift activity pagination exceeded the maximum page guard",
-                context: { offset, pageSize: ZWIFT_ACTIVITY_PAGE_SIZE, pagesFetched },
-              });
-              done = true;
-            }
-          }
+          degradations.push(...pages.degradations);
 
-          if (degradations.length === 0) {
+          if (pages.degradations.length === 0) {
             await finishProviderActivityListSync(db, {
               providerId: this.id,
               userId: options?.userId,
@@ -377,7 +375,7 @@ export class ZwiftProvider implements SyncProvider {
       provider: this.id,
       recordsSynced,
       errors,
-      degradations,
+      degradations: degradations.length > 0 ? degradations : undefined,
       duration: Date.now() - start,
     };
   }

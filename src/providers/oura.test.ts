@@ -7,9 +7,8 @@ import {
   sleepSession as sleepSessionTable,
 } from "../db/schema/activity.ts";
 import { healthEvent as healthEventTable } from "../db/schema/clinical.ts";
-import { OuraApiError, OuraClient } from "./oura/client.ts";
+import { OuraClient } from "./oura/client.ts";
 import { ouraOAuthConfig } from "./oura/oauth.ts";
-import { fetchOuraPages, fetchOuraPagesOptional } from "./oura/pagination.ts";
 import { mapOuraActivityType, parseOuraDailyMetrics, parseOuraSleep } from "./oura/parsing.ts";
 import { OuraProvider } from "./oura/provider.ts";
 import {
@@ -53,6 +52,12 @@ const { publishedMetricStreamBatches } = vi.hoisted<{
   publishedMetricStreamBatches: [],
 }));
 
+const { syncLogEntries } = vi.hoisted<{
+  syncLogEntries: Record<string, unknown>[];
+}>(() => ({
+  syncLogEntries: [],
+}));
+
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
   finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
   upsertProviderActivity: vi.fn().mockResolvedValue({ id: "activity-id" }),
@@ -87,6 +92,7 @@ vi.mock("../db/token-user-context.ts", () => ({
 
 afterEach(() => {
   publishedMetricStreamBatches.length = 0;
+  syncLogEntries.length = 0;
   providerActivityAbsenceMocks.finishProviderActivityListSync.mockReset();
   providerActivityAbsenceMocks.finishProviderActivityListSync.mockResolvedValue(undefined);
   providerActivityAbsenceMocks.upsertProviderActivity.mockReset();
@@ -101,12 +107,36 @@ vi.mock("../db/sync-log.ts", () => ({
   withSyncLog: vi.fn(
     async (
       _db: unknown,
-      _providerId: string,
-      _dataType: string,
-      fn: () => Promise<{ recordCount: number; result: unknown }>,
+      providerId: string,
+      dataType: string,
+      fn: () => Promise<{
+        recordCount: number;
+        result: unknown;
+        degradations?: Record<string, unknown>[];
+      }>,
     ) => {
-      const { result } = await fn();
-      return result;
+      try {
+        const { recordCount, result, degradations = [] } = await fn();
+        const firstDegradation = degradations[0];
+        syncLogEntries.push({
+          providerId,
+          dataType,
+          status: firstDegradation ? "degraded" : "success",
+          recordCount,
+          errorMessage: firstDegradation?.message,
+          degradationKind: firstDegradation?.kind,
+        });
+        return result;
+      } catch (err) {
+        syncLogEntries.push({
+          providerId,
+          dataType,
+          status: "error",
+          recordCount: undefined,
+          errorMessage: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
+      }
     },
   ),
 }));
@@ -1744,6 +1774,86 @@ describe("OuraProvider.sync()", () => {
     ]);
   });
 
+  it("follows Oura pagination tokens when syncing sleep sessions", async () => {
+    setupEnv();
+    const firstSleep = fakeSleepDoc({ id: "sleep-page-1" });
+    const secondSleep = fakeSleepDoc({ id: "sleep-page-2", day: "2026-03-02" });
+    const requestedUrls: string[] = [];
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const urlStr = input.toString();
+      requestedUrls.push(urlStr);
+      if (urlStr.includes("/v2/usercollection/sleep_time")) {
+        return Response.json({ data: [], next_token: null });
+      }
+      if (urlStr.includes("/v2/usercollection/sleep") && urlStr.includes("next_token=page-2")) {
+        return Response.json({ data: [secondSleep], next_token: null });
+      }
+      if (urlStr.includes("/v2/usercollection/sleep")) {
+        return Response.json({ data: [firstSleep], next_token: "page-2" });
+      }
+      return Response.json({ data: [], next_token: null });
+    };
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    const sleepExternalIds = filterValuesCalls(
+      db,
+      (values) => values.providerId === "oura" && typeof values.externalId === "string",
+    ).map((values) => values.externalId);
+    expect(sleepExternalIds).toContain("sleep-page-1");
+    expect(sleepExternalIds).toContain("sleep-page-2");
+    expect(
+      requestedUrls.some(
+        (requestedUrl) =>
+          requestedUrl.includes("/v2/usercollection/sleep") &&
+          requestedUrl.includes("next_token=page-2"),
+      ),
+    ).toBe(true);
+  });
+
+  it("persists Oura sleep pages fetched before a later page failure", async () => {
+    setupEnv();
+    const firstSleep = fakeSleepDoc({ id: "sleep-before-error" });
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const urlStr = input.toString();
+      if (urlStr.includes("/v2/usercollection/sleep_time")) {
+        return Response.json({ data: [], next_token: null });
+      }
+      if (urlStr.includes("/v2/usercollection/sleep") && urlStr.includes("next_token=page-2")) {
+        return new Response("temporary failure", { status: 502 });
+      }
+      if (urlStr.includes("/v2/usercollection/sleep")) {
+        return Response.json({ data: [firstSleep], next_token: "page-2" });
+      }
+      return Response.json({ data: [], next_token: null });
+    };
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
+
+    expect(result.errors.some((error) => error.message.includes("sleep"))).toBe(true);
+    const persistedSleep = findValuesCall(
+      db,
+      (values) => values.externalId === "sleep-before-error" && values.providerId === "oura",
+    );
+    expect(persistedSleep.durationMinutes).toBe(480);
+    expect(syncLogEntries).toContainEqual(
+      expect.objectContaining({
+        providerId: "oura",
+        dataType: "sleep",
+        status: "error",
+      }),
+    );
+  });
+
   it("syncs workouts to activity table", async () => {
     setupEnv();
     const workout = fakeWorkout();
@@ -2301,102 +2411,85 @@ describe("OuraProvider.sync()", () => {
     // Stress/resilience fields are absent when scope is missing
     expect(val.stressHighMinutes).toBeUndefined();
     expect(val.resilienceLevel).toBeUndefined();
-  });
-});
-
-// ============================================================
-// fetchOuraPagesOptional tests
-// ============================================================
-
-describe("fetchOuraPagesOptional", () => {
-  it("returns data normally when the fetch succeeds", async () => {
-    const fetchPage = async () => ({ data: [{ id: "x" }], next_token: null });
-    const result = await fetchOuraPagesOptional("oura", "test_endpoint", fetchPage);
-    expect(result.items).toEqual([{ id: "x" }]);
-    expect(result.degradations).toEqual([]);
-  });
-
-  it("returns optional_endpoint_unavailable on API error 401", async () => {
-    const fetchPage = async (): Promise<{ data: never[]; next_token: null }> => {
-      throw new OuraApiError(401, "/v2/usercollection/daily_stress", "Unauthorized");
-    };
-    const result = await fetchOuraPagesOptional("oura", "daily_stress", fetchPage);
-    expect(result.items).toEqual([]);
-    expect(result.degradations).toEqual([
-      {
-        kind: "optional_endpoint_unavailable",
-        providerId: "oura",
-        stepName: "daily_stress",
-        message: "Missing OAuth scope for daily_stress",
-      },
-    ]);
-  });
-
-  it("re-throws non-401 errors", async () => {
-    const fetchPage = async (): Promise<{ data: never[]; next_token: null }> => {
-      throw new OuraApiError(500, "/v2/usercollection/daily_stress", "Internal Server Error");
-    };
-    await expect(fetchOuraPagesOptional("oura", "daily_stress", fetchPage)).rejects.toThrow(
-      "API error 500",
+    const optionalEndpointRows = filterValuesCalls(
+      db,
+      (values) =>
+        values.type === "oura_daily_stress" ||
+        values.type === "oura_daily_resilience" ||
+        values.type === "oura_vo2_max" ||
+        values.type === "oura_cardiovascular_age",
     );
-  });
-
-  it("re-throws 403 errors", async () => {
-    const fetchPage = async (): Promise<{ data: never[]; next_token: null }> => {
-      throw new OuraApiError(403, "/v2/usercollection/daily_stress", "Forbidden");
-    };
-    await expect(fetchOuraPagesOptional("oura", "daily_stress", fetchPage)).rejects.toThrow(
-      "API error 403",
-    );
-  });
-
-  it("paginates through multiple pages before returning", async () => {
-    let page = 0;
-    const fetchPage = async (_nextToken?: string) => {
-      page++;
-      if (page === 1) return { data: [{ id: "a" }], next_token: "tok2" };
-      return { data: [{ id: "b" }], next_token: null };
-    };
-    const result = await fetchOuraPagesOptional("oura", "test_endpoint", fetchPage);
-    expect(result.items).toEqual([{ id: "a" }, { id: "b" }]);
-    expect(result.degradations).toEqual([]);
-  });
-});
-
-describe("fetchOuraPages", () => {
-  it("stops on repeated next_token and retains fetched items", async () => {
-    const fetchPage = async (nextToken?: string) => {
-      if (!nextToken) {
-        return { data: [{ id: "first" }], next_token: "repeat-me" };
-      }
-      return { data: [{ id: "second" }], next_token: "repeat-me" };
-    };
-
-    const result = await fetchOuraPages("oura", "sleep", fetchPage);
-    expect(result.items).toEqual([{ id: "first" }, { id: "second" }]);
-    expect(result.degradations).toEqual([
+    expect(optionalEndpointRows).toHaveLength(0);
+    expect(syncLogEntries).toContainEqual(
       expect.objectContaining({
-        kind: "pagination_stalled",
         providerId: "oura",
-        stepName: "sleep",
+        dataType: "daily_metrics",
+        status: "degraded",
+        errorMessage: "Missing OAuth scope for vO2_max",
+        degradationKind: "optional_endpoint_unavailable",
       }),
-    ]);
+    );
   });
 
-  it("treats empty-string next_token as end of pagination", async () => {
-    let fetchCount = 0;
-    const fetchPage = async (nextToken?: string) => {
-      fetchCount += 1;
-      if (!nextToken) {
-        return { data: [{ id: "first" }], next_token: "" };
+  it("reports non-Oura 401-shaped errors from scope-gated endpoints", async () => {
+    setupEnv();
+    const readiness = fakeReadiness();
+    const dailyActivity = fakeActivity();
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const urlStr = input.toString();
+      if (urlStr.includes("/v2/usercollection/daily_readiness")) {
+        return Response.json({ data: [readiness], next_token: null });
       }
-      return { data: [{ id: "duplicate" }], next_token: null };
+      if (urlStr.includes("/v2/usercollection/daily_activity")) {
+        return Response.json({ data: [dailyActivity], next_token: null });
+      }
+      if (urlStr.includes("/v2/usercollection/daily_stress")) {
+        throw Object.assign(new Error("network auth failure"), { status: 401 });
+      }
+      return Response.json({ data: [], next_token: null });
     };
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
 
-    const result = await fetchOuraPages("oura", "sleep", fetchPage);
-    expect(fetchCount).toBe(1);
-    expect(result.items).toEqual([{ id: "first" }]);
-    expect(result.degradations).toEqual([]);
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
+
+    expect(result.errors.some((error) => error.message.includes("daily_metrics"))).toBe(true);
+  });
+
+  it("reports non-401 Oura API errors from scope-gated endpoints", async () => {
+    setupEnv();
+    const readiness = fakeReadiness();
+    const dailyActivity = fakeActivity();
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const urlStr = input.toString();
+      if (urlStr.includes("/v2/usercollection/daily_readiness")) {
+        return Response.json({ data: [readiness], next_token: null });
+      }
+      if (urlStr.includes("/v2/usercollection/daily_activity")) {
+        return Response.json({ data: [dailyActivity], next_token: null });
+      }
+      if (urlStr.includes("/v2/usercollection/daily_stress")) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      return Response.json({ data: [], next_token: null });
+    };
+    const provider = new OuraProvider(mockFetch);
+    const db = createMockDb();
+
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
+
+    expect(result.errors.some((error) => error.message.includes("daily_stress"))).toBe(true);
+    expect(syncLogEntries).toContainEqual(
+      expect.objectContaining({
+        providerId: "oura",
+        dataType: "daily_stress",
+        status: "error",
+      }),
+    );
   });
 });
 
