@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/react-native";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { httpBatchLink, httpLink, splitLink } from "@trpc/client";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
@@ -15,6 +15,10 @@ import {
 import { initBackgroundWatchInertialMeasurementUnitSync } from "../lib/background-watch-inertial-measurement-unit-sync";
 import { syncWhoopBle, teardownBackgroundWhoopBleSync } from "../lib/background-whoop-ble-sync";
 import type { SyncTrpcClient } from "../lib/health-kit-sync";
+import {
+  MobileQueryPersistenceProvider,
+  QUERY_CACHE_GC_TIME_MS,
+} from "../lib/mobile-query-persistence";
 import { runAfterUiIdle } from "../lib/runAfterUiIdle";
 import { getTrpcUrl } from "../lib/server";
 import { captureException, initTelemetry, logger } from "../lib/telemetry";
@@ -113,7 +117,7 @@ function AuthGate() {
         defaultOptions: {
           queries: {
             staleTime: 1000 * 60 * 5,
-            gcTime: 1000 * 60 * 30,
+            gcTime: QUERY_CACHE_GC_TIME_MS,
             refetchOnMount: false,
             refetchOnWindowFocus: false,
           },
@@ -159,6 +163,11 @@ function AuthGate() {
       ],
     });
   }, [serverUrl, sessionToken]);
+
+  useEffect(() => {
+    if (user) return;
+    queryClient.clear();
+  }, [queryClient, user]);
 
   useEffect(() => {
     if (isLoading) return;
@@ -348,7 +357,7 @@ function AuthGate() {
   // Step 3: Authenticated — show the app
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
-      <QueryClientProvider client={queryClient}>
+      <MobileQueryPersistenceProvider queryClient={queryClient} userId={user.id}>
         {backgroundSyncReady && <WhoopBleSyncManager trpcClient={trpcClient} />}
         <Stack screenOptions={rootStackScreenOptions}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -435,7 +444,7 @@ function AuthGate() {
             }}
           />
         </Stack>
-      </QueryClientProvider>
+      </MobileQueryPersistenceProvider>
     </trpc.Provider>
   );
 }

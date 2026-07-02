@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -46,13 +47,23 @@ vi.mock("../lib/auth-context.tsx", () => ({
   useAuth: mockUseAuth,
 }));
 
+vi.mock("../lib/query-persistence.ts", () => ({
+  WebQueryPersistenceProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  removeWebQueryCache: vi.fn(),
+}));
+
 // Import triggers createRootRoute, which captures the component.
 import "./__root.tsx";
 
 function renderAuthGate() {
   if (!captured.component) throw new Error("Component not captured from createRootRoute");
   const Component = captured.component;
-  return render(<Component />);
+  const queryClient = new QueryClient();
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <Component />
+    </QueryClientProvider>,
+  );
 }
 
 const authenticatedUser = { id: "u1", name: "Alice", email: null };

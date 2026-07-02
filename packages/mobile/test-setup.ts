@@ -30,6 +30,27 @@ vi.mock("@sentry/react-native", () => ({
   setExtra: vi.fn(),
 }));
 
+vi.mock("@react-native-async-storage/async-storage", () => {
+  const values = new Map<string, string>();
+  return {
+    default: {
+      getItem: vi.fn((key: string) => Promise.resolve(values.get(key) ?? null)),
+      setItem: vi.fn((key: string, value: string) => {
+        values.set(key, value);
+        return Promise.resolve();
+      }),
+      removeItem: vi.fn((key: string) => {
+        values.delete(key);
+        return Promise.resolve();
+      }),
+      clear: vi.fn(() => {
+        values.clear();
+        return Promise.resolve();
+      }),
+    },
+  };
+});
+
 // ── React Native mock ────────────────────────────────────────────────
 // react-native uses Flow syntax that Vitest can't parse. Provide minimal
 // component implementations backed by plain React elements.

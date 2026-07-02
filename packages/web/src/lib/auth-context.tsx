@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { AuthUser } from "./auth.ts";
 import { logout as doLogout, fetchCurrentUser } from "./auth.ts";
+import { removeWebQueryCache } from "./query-persistence.ts";
 import { captureException } from "./telemetry.ts";
 
 interface AuthContextValue {
@@ -43,15 +44,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [retryBootstrap]);
 
   const logout = useCallback(async () => {
+    const currentUserId = user?.id;
     setUser(null);
     setBootstrapError(null);
+    if (currentUserId) removeWebQueryCache(currentUserId);
     try {
       await doLogout();
     } catch (error: unknown) {
       captureException(error, { source: "logout" });
       throw error;
     }
-  }, []);
+  }, [user?.id]);
 
   return (
     <AuthContext.Provider value={{ user, isLoading, bootstrapError, logout, retryBootstrap }}>

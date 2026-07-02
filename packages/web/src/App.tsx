@@ -6,6 +6,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 import { UnitProvider } from "./components/UnitProvider.tsx";
 import { FetchingProvider } from "./lib/FetchingContext.tsx";
 import { capturePageView, initPostHog } from "./lib/posthog.ts";
+import { QUERY_CACHE_GC_TIME_MS } from "./lib/query-persistence.ts";
 import { createTRPCClient, trpc } from "./lib/trpc.ts";
 import { routeTree } from "./routeTree.gen.ts";
 
@@ -30,7 +31,7 @@ export function App() {
         defaultOptions: {
           queries: {
             staleTime: 5 * 60 * 1000, // 5 min — health data only changes on sync
-            gcTime: 10 * 60 * 1000,
+            gcTime: QUERY_CACHE_GC_TIME_MS,
             refetchOnWindowFocus: false,
           },
         },
