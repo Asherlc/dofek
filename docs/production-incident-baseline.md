@@ -11462,3 +11462,34 @@ new incremental tables are populated.
 - **Remaining risk:** Runtime confirmation requires a shipped mobile build and a
   user canceling the Apple Health prompt; unrelated HealthKit authorization
   errors still reject and should remain visible in Sentry.
+
+## 2026-07-02 — Web deploy failed because CI skipped the deploy image
+
+- **Symptoms:** `Deploy Web Production / Resolve Web Deploy Target` failed
+  before checkout in run
+  [28620920862](https://github.com/Asherlc/dofek/actions/runs/28620920862/job/84876115853)
+  with `Docker image dofek:sha-0231520 not found.`
+- **User impact:** Production web deployment for commit
+  `0231520ca90741989fa75c814feb71ce217b717e` was blocked; no production
+  runtime regression was observed from this failed deploy.
+- **Evidence:** The triggering CI run
+  [28620181663](https://github.com/Asherlc/dofek/actions/runs/28620181663)
+  succeeded, but `Detect Changes` emitted `docker_server=false` and the
+  `Build Docker` job was skipped. The commit only changed web dashboard files,
+  while `Deploy Web` still computed and required image tag `sha-0231520`.
+- **Root cause:** CI only built the deploy image when `docker_server=true`, but
+  `Deploy Web` auto-runs after every successful `main` CI run and assumes
+  `ghcr.io/asherlc/dofek:sha-<short_sha>` exists.
+- **Fix / mitigation:** Updated `.github/workflows/ci.yml` so `main` push CI
+  always runs `Build Docker`, preserving change-based Docker skips for other
+  events, and documented the CI-to-deploy image invariant in
+  `deploy/README.md`.
+- **Validation:** `actionlint -shellcheck= .github/workflows/ci.yml`,
+  `pnpm lint`, root/server/web `pnpm tsc --noEmit`, and `git diff --check`
+  passed locally. A first `pnpm test` failed because local ClickHouse was not
+  exported from `.env.local`; the rerun with `.env.local` sourced was interrupted
+  by operator request after the previously failing ClickHouse-backed suites had
+  progressed.
+- **Remaining risk:** PR CI for
+  [#1456](https://github.com/Asherlc/dofek/pull/1456) was still pending when the
+  branch was pushed.
