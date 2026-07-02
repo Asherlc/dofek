@@ -11404,3 +11404,37 @@ new incremental tables are populated.
   build confirms the branch compiles, but runtime confirmation requires a
   shipped mobile build on a device with HealthKit clinical record types
   available.
+
+## 2026-07-02 — Apple Health authorization cancellation reported as production error
+
+- **Symptoms:** Sentry reported one handled production mobile error:
+  `The user canceled authorization.`
+- **User impact:** One user canceled the Apple Health authorization prompt; the
+  app showed the cancellation message as a connect failure and reported it as an
+  error even though no unexpected failure occurred.
+- **Evidence:** Sentry issue
+  [DOFEK-MOBILE-13](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-13)
+  was first and last seen on 2026-07-02 at 14:10:01 UTC in production on iOS
+  26.5. The event was handled, had no stacktrace, and carried filtered
+  HealthKit connect context. Local code inspection found
+  `HKHealthStore.requestAuthorization` errors were all rejected from the native
+  `requestPermissions` bridge, while the JavaScript connect flow already treats
+  a `false` permission result as the expected denied/canceled path. Apple
+  documents HealthKit errors through `HKError.Code`, including user-canceled
+  authorization cases:
+  https://developer.apple.com/documentation/healthkit/hkerror/code.
+- **Root cause:** The native HealthKit permission bridge treated
+  `HKError.Code.errorUserCanceled` as an exceptional authorization failure
+  instead of resolving the existing denied-permission result.
+- **Fix / mitigation:** Added a tested native HealthKit authorization-error
+  classifier and made `requestPermissions` resolve `false` for user-canceled
+  authorization while preserving rejection/reporting for other HealthKit
+  authorization errors.
+- **Validation:** Focused Swift validation passed with
+  `swift test --package-path packages/mobile/modules/health-kit`, and focused
+  mobile provider coverage passed with
+  `pnpm vitest run --project mobile packages/mobile/app/providers/index.test.tsx
+  packages/mobile/lib/apple-health-provider.test.ts`.
+- **Remaining risk:** Runtime confirmation requires a shipped mobile build and a
+  user canceling the Apple Health prompt; unrelated HealthKit authorization
+  errors still reject and should remain visible in Sentry.
