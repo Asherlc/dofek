@@ -180,13 +180,20 @@ export function importTypeFromJobData(data: unknown): string | undefined {
   return importType;
 }
 
-export function providerIdFromSyncJobData(data: object, queueProviderId: string): string {
+export function providerIdFromSyncJobData(
+  data: object,
+  queueProviderId: string,
+  knownProviderIds: ReadonlySet<string>,
+): string | undefined {
   if (!("providerId" in data)) {
-    return queueProviderId;
+    return knownProviderIds.has(queueProviderId) ? queueProviderId : undefined;
   }
   const providerId = Reflect.get(data, "providerId");
-  if (providerId === undefined || providerId === null) {
-    return queueProviderId;
+  if (typeof providerId !== "string" || providerId.length === 0) {
+    return knownProviderIds.has(queueProviderId) ? queueProviderId : undefined;
   }
-  return typeof providerId === "string" ? providerId : queueProviderId;
+  if (knownProviderIds.has(providerId)) {
+    return providerId;
+  }
+  return knownProviderIds.has(queueProviderId) ? queueProviderId : undefined;
 }

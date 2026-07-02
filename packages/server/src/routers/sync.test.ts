@@ -199,6 +199,7 @@ import {
   mapBullMqStateToSyncStatus,
   parseJobId,
   providerIdForImportType,
+  providerIdFromSyncJobData,
   toJobId,
 } from "./sync-helpers.ts";
 
@@ -2803,6 +2804,54 @@ describe("syncRouter", () => {
       expect(result.syncingProviders).toEqual([]);
     });
 
+    it("falls back to queue provider id when sync job payload has empty providerId", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "garmin",
+          name: "Garmin",
+          validate: () => null,
+        },
+      ]);
+      mockGetJobs.mockResolvedValue([
+        {
+          id: "job-empty-provider",
+          data: { userId: "user-1", providerId: "" },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+      ]);
+      const caller = createHealthyDataHealthCaller();
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("syncing");
+      expect(result.syncingProviders).toEqual([{ id: "garmin", name: "Garmin" }]);
+    });
+
+    it("falls back to queue provider id when sync job payload has stale providerId", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "garmin",
+          name: "Garmin",
+          validate: () => null,
+        },
+      ]);
+      mockGetJobs.mockResolvedValue([
+        {
+          id: "job-stale-provider",
+          data: { userId: "user-1", providerId: "stale-unknown-provider" },
+          progress: {},
+          getState: vi.fn().mockResolvedValue("waiting"),
+        },
+      ]);
+      const caller = createHealthyDataHealthCaller();
+
+      const result = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("syncing");
+      expect(result.syncingProviders).toEqual([{ id: "garmin", name: "Garmin" }]);
+    });
+
     it("does not mark overall status syncing for delayed-only jobs", async () => {
       mockGetJobs.mockResolvedValue([]);
       mockImportQueueGetJobs.mockResolvedValue([]);
@@ -2924,6 +2973,36 @@ describe("syncRouter", () => {
 
     it("returns string import types", () => {
       expect(importTypeFromJobData({ importType: "apple-health" })).toBe("apple-health");
+    });
+  });
+
+  describe("providerIdFromSyncJobData", () => {
+    const knownProviderIds = new Set(["garmin", "whoop"]);
+
+    it("falls back to the queue provider id for missing or invalid payload values", () => {
+      expect(providerIdFromSyncJobData({}, "garmin", knownProviderIds)).toBe("garmin");
+      expect(providerIdFromSyncJobData({ providerId: null }, "garmin", knownProviderIds)).toBe(
+        "garmin",
+      );
+      expect(providerIdFromSyncJobData({ providerId: "" }, "garmin", knownProviderIds)).toBe(
+        "garmin",
+      );
+      expect(providerIdFromSyncJobData({ providerId: 123 }, "garmin", knownProviderIds)).toBe(
+        "garmin",
+      );
+      expect(providerIdFromSyncJobData({}, "strava", knownProviderIds)).toBeUndefined();
+    });
+
+    it("returns known payload provider ids and ignores unknown stale values", () => {
+      expect(providerIdFromSyncJobData({ providerId: "garmin" }, "whoop", knownProviderIds)).toBe(
+        "garmin",
+      );
+      expect(
+        providerIdFromSyncJobData({ providerId: "stale-unknown" }, "garmin", knownProviderIds),
+      ).toBe("garmin");
+      expect(
+        providerIdFromSyncJobData({ providerId: "stale-unknown" }, "strava", knownProviderIds),
+      ).toBeUndefined();
     });
   });
 });

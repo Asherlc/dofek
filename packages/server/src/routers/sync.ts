@@ -327,6 +327,7 @@ async function getActiveSyncProvidersForUser(
       ...getAllProviders().map((provider) => provider.id),
     ]);
     const syncingProviderIds = new Set<string>();
+    const knownProviderIds = new Set(providerNameById.keys());
     const [providerJobGroups, importJobs] = await Promise.all([
       Promise.all(
         [...providerIds].map(async (providerId) => ({
@@ -343,7 +344,10 @@ async function getActiveSyncProvidersForUser(
         if (!isJobDataForUser(data, userId)) {
           continue;
         }
-        syncingProviderIds.add(providerIdFromSyncJobData(data, providerId));
+        const resolvedProviderId = providerIdFromSyncJobData(data, providerId, knownProviderIds);
+        if (resolvedProviderId !== undefined) {
+          syncingProviderIds.add(resolvedProviderId);
+        }
       }
     }
 
