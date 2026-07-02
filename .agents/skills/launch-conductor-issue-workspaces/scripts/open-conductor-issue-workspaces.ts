@@ -37,7 +37,7 @@ function run(command: string, args: string[]): string {
         ...(stderr ? [`  stderr: ${stderr}`] : []),
       ].join("\n"),
     );
-    process.exit(typeof err.status === "number" ? err.status : 1);
+    throw new Error(message);
   }
 }
 
