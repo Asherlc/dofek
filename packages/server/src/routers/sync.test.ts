@@ -18,6 +18,7 @@ const {
   mockVeloHeroProvider,
   mockStartWorker,
   mockCachedProtectedQuery,
+  mockProtectedQueryCache,
 } = vi.hoisted(() => ({
   mockAdd: vi.fn().mockResolvedValue({ id: "job-123" }),
   mockGetJob: vi.fn(),
@@ -40,6 +41,7 @@ const {
   mockVeloHeroProvider: vi.fn(() => ({ id: "velohero" })),
   mockStartWorker: vi.fn(),
   mockCachedProtectedQuery: vi.fn(),
+  mockProtectedQueryCache: new Map<string, { data: unknown; expiresAt: number }>(),
 }));
 
 // Mock trpc
@@ -63,7 +65,22 @@ vi.mock("../trpc.ts", async () => {
     }
     return next({ ctx });
   });
-  mockCachedProtectedQuery.mockImplementation(() => trpc.procedure);
+  mockCachedProtectedQuery.mockImplementation((ttlMs: number) =>
+    trpc.procedure.use(async ({ ctx, path, getRawInput, next }) => {
+      const rawInput = await getRawInput();
+      const key = `${ctx.userId ?? "anon"}:${path}:${JSON.stringify(rawInput)}`;
+      const hit = mockProtectedQueryCache.get(key);
+      if (hit && hit.expiresAt > Date.now()) {
+        return { ok: true as const, data: hit.data };
+      }
+
+      const result = await next();
+      if (result.ok) {
+        mockProtectedQueryCache.set(key, { data: result.data, expiresAt: Date.now() + ttlMs });
+      }
+      return result;
+    }),
+  );
   return {
     router: trpc.router,
     publicProcedure: trpc.procedure,
@@ -225,11 +242,12 @@ describe("syncRouter", () => {
   const createCaller = createTestCallerFactory(syncRouter);
 
   it("uses a short cache for read-heavy protected queries", () => {
-    expect(routerConstructionCachedTtlValues).toEqual([120_000, 120_000, 120_000]);
+    expect(routerConstructionCachedTtlValues).toEqual([120_000, 120_000, 120_000, 120_000]);
   });
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockProtectedQueryCache.clear();
     mockGetAllProviders.mockReturnValue([]);
     mockRegisterProvider.mockImplementation(() => undefined);
     mockVeloHeroProvider.mockImplementation(() => ({ id: "velohero" }));
@@ -2066,6 +2084,117 @@ describe("syncRouter", () => {
         timezone: "UTC",
       });
     }
+
+    it("reuses data health freshness for the same user within the short cache window", async () => {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 42, latestRawAt: "2026-06-29T12:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 8, latestRawAt: "2026-06-29T08:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 3, latestRawAt: "2026-06-29T10:00:00.000Z" }]);
+      const sensorStore = {
+        query: vi.fn(async (_schema: unknown, queryText: string) => {
+          if (queryText.includes("analytics.daily_recovery")) {
+            return [{ latestReadModelAt: "2026-06-29T12:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.daily_sleep")) {
+            return [{ latestReadModelAt: "2026-06-29T08:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.activity_summary_rows")) {
+            return [{ latestReadModelAt: "2026-06-29T10:00:00.000Z" }];
+          }
+          return [];
+        }),
+      };
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const first = await caller.dataHealth();
+      const second = await caller.dataHealth();
+
+      expect(second).toEqual(first);
+      expect(mockExecute).toHaveBeenCalledTimes(3);
+      expect(sensorStore.query).toHaveBeenCalledTimes(3);
+    });
+
+    it("does not share cached data health freshness across users", async () => {
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 42, latestRawAt: "2026-06-29T12:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 8, latestRawAt: "2026-06-29T08:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 3, latestRawAt: "2026-06-29T10:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 7, latestRawAt: "2026-06-30T12:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 4, latestRawAt: "2026-06-30T08:00:00.000Z" }])
+        .mockResolvedValueOnce([{ rawRows: 2, latestRawAt: "2026-06-30T10:00:00.000Z" }]);
+      const sensorStore = {
+        query: vi.fn(async (_schema: unknown, queryText: string) => {
+          if (queryText.includes("analytics.daily_recovery")) {
+            return [{ latestReadModelAt: "2026-06-30T12:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.daily_sleep")) {
+            return [{ latestReadModelAt: "2026-06-30T08:00:00.000Z" }];
+          }
+          if (queryText.includes("analytics.activity_summary_rows")) {
+            return [{ latestReadModelAt: "2026-06-30T10:00:00.000Z" }];
+          }
+          return [];
+        }),
+      };
+      const firstCaller = createCaller({
+        db: { execute: mockExecute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      const secondCaller = createCaller({
+        db: { execute: mockExecute },
+        sensorStore,
+        userId: "user-2",
+        timezone: "UTC",
+      });
+
+      const first = await firstCaller.dataHealth();
+      const second = await secondCaller.dataHealth();
+
+      expect(first.datasets[0]?.rawRows).toBe(42);
+      expect(second.datasets[0]?.rawRows).toBe(7);
+      expect(mockExecute).toHaveBeenCalledTimes(6);
+      expect(sensorStore.query).toHaveBeenCalledTimes(6);
+    });
+
+    it("does not cache data health infrastructure errors as successful data", async () => {
+      mockGetJobs.mockRejectedValueOnce(new Error("Redis connection refused"));
+      const mockExecute = vi
+        .fn()
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }])
+        .mockResolvedValueOnce([{ rawRows: 0, latestRawAt: null }]);
+      const caller = createCaller({
+        db: { execute: mockExecute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.dataHealth()).rejects.toMatchObject({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Unable to check sync readiness because the queue service is unavailable.",
+      });
+
+      mockGetJobs.mockResolvedValue([]);
+      const result = await caller.dataHealth();
+      const cachedResult = await caller.dataHealth();
+
+      expect(result.overallStatus).toBe("missing");
+      expect(cachedResult).toEqual(result);
+      expect(mockGetJobs).toHaveBeenCalledTimes(6);
+      expect(mockExecute).toHaveBeenCalledTimes(6);
+    });
 
     it("returns structured freshness state for primary datasets", async () => {
       const mockExecute = vi
