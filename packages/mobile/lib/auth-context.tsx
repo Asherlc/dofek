@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { AppState } from "react-native";
@@ -45,11 +46,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
-  const [bootstrapDeferred, setBootstrapDeferred] = useState(false);
+  const bootstrapDeferredRef = useRef(false);
 
   const retryBootstrap = useCallback(async () => {
     setIsLoading(true);
-    setBootstrapDeferred(false);
+    bootstrapDeferredRef.current = false;
     let deferBootstrap = false;
     try {
       const token = await getSessionToken();
@@ -59,7 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // SecureStore reads fail with errSecInteractionNotAllowed in that state,
           // so defer auth restore until the user brings the app to the foreground.
           deferBootstrap = true;
-          setBootstrapDeferred(true);
+          bootstrapDeferredRef.current = true;
           setUser(null);
           setSessionToken(null);
           setBootstrapError(null);
@@ -105,13 +106,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
-      if (nextState === "active" && bootstrapDeferred) {
+      if (nextState === "active" && bootstrapDeferredRef.current) {
         void retryBootstrap();
       }
     });
 
     return () => subscription.remove();
-  }, [bootstrapDeferred, retryBootstrap]);
+  }, [retryBootstrap]);
 
   const onLoginSuccess = useCallback(async (token: string) => {
     await saveSessionToken(token);

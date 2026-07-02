@@ -102,9 +102,8 @@ describe("auth-context", () => {
       });
 
       await act(async () => {
-        for (const listener of appStateListeners) {
-          listener("active");
-        }
+        const latestListener = appStateListeners.at(-1);
+        latestListener?.("active");
       });
 
       await waitFor(() => {
