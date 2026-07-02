@@ -79,12 +79,12 @@ jobs:
             echo "- [Deploy OTA](${REPO_URL}/actions/workflows/deploy-ota.yml)"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # ── Docker image (main push or manual dispatch, gated on changes) ──────
+  # ── Docker image (main push always publishes deploy image; others gated on changes) ──────
 
   build-docker:
     name: Build Docker
     needs: detect-changes
-    if: needs.detect-changes.outputs.docker_server == 'true'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || needs.detect-changes.outputs.docker_server == 'true'
     uses: ./.github/workflows/build-docker.yml
     secrets: inherit
 
