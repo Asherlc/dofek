@@ -32,6 +32,8 @@ vi.mock("@sentry/react-native", () => ({
   setExtra: vi.fn(),
 }));
 
+// Shared in-memory AsyncStorage mock for all mobile tests. Do not redeclare this
+// mock in individual test files — rely on test-setup.ts and the beforeEach reset.
 vi.mock("@react-native-async-storage/async-storage", () => {
   return {
     default: {

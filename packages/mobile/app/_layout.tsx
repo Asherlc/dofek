@@ -115,6 +115,7 @@ function AuthGate() {
         defaultOptions: {
           queries: {
             staleTime: 1000 * 60 * 5,
+            // Must be >= persist maxAge so restored query cache is not GC'd early.
             gcTime: QUERY_CACHE_MAX_AGE_MS,
             refetchOnMount: false,
             refetchOnWindowFocus: false,
