@@ -5,6 +5,33 @@ import type {
   ActivitySensorWindow,
   StreamPointRow,
 } from "./activity-repository.ts";
+
+const { mockLoggerInfo, mockSpan, mockStartActiveSpan } = vi.hoisted(() => {
+  const span = {
+    end: vi.fn(),
+    setAttribute: vi.fn(),
+  };
+  return {
+    mockLoggerInfo: vi.fn(),
+    mockSpan: span,
+    mockStartActiveSpan: vi.fn((_name, callback) => callback(span)),
+  };
+});
+
+vi.mock("@opentelemetry/api", () => ({
+  trace: {
+    getTracer: vi.fn(() => ({
+      startActiveSpan: mockStartActiveSpan,
+    })),
+  },
+}));
+
+vi.mock("../logger.ts", () => ({
+  logger: {
+    info: mockLoggerInfo,
+  },
+}));
+
 import { LimitedActivitySensorStore } from "./limited-activity-sensor-store.ts";
 
 function deferred<T>() {
@@ -45,6 +72,46 @@ function makeDelegate(overrides: Partial<ActivitySensorStore>): ActivitySensorSt
 }
 
 describe("LimitedActivitySensorStore", () => {
+  it("emits queue wait telemetry fields without health data", async () => {
+    const delegate = makeDelegate({
+      query: vi.fn().mockResolvedValue([{ value: 1 }]),
+    });
+    const store = new LimitedActivitySensorStore(delegate, 1);
+
+    await store.query(
+      z.object({ value: z.number() }),
+      "SELECT value FROM analytics.daily_recovery WHERE user_id = {userId:String}",
+      { userId: "user-1" },
+      { priority: "dashboard" },
+    );
+
+    expect(mockStartActiveSpan).toHaveBeenCalledWith("clickhouse.queue_wait", expect.any(Function));
+    expect(mockSpan.setAttribute).toHaveBeenCalledWith("clickhouse.queue.name", "dashboard");
+    expect(mockSpan.setAttribute).toHaveBeenCalledWith("clickhouse.queue.concurrency", 2);
+    expect(mockSpan.setAttribute).toHaveBeenCalledWith("clickhouse.queue.active", 0);
+    expect(mockSpan.setAttribute).toHaveBeenCalledWith("clickhouse.queue.depth", 0);
+    expect(mockSpan.setAttribute).toHaveBeenCalledWith(
+      "clickhouse.queue.wait_ms",
+      expect.toSatisfy((val: number) => val >= 0 && val < 1000),
+    );
+    expect(mockLoggerInfo).toHaveBeenCalledTimes(1);
+    const loggedQueueWait = mockLoggerInfo.mock.calls[0]?.[1];
+    expect(loggedQueueWait).toEqual({
+      active: 0,
+      concurrency: 2,
+      depth: 0,
+      queue: "dashboard",
+      waitMs: expect.toSatisfy((val: number) => val >= 0 && val < 1000),
+    });
+    expect(Object.keys(loggedQueueWait).sort()).toEqual([
+      "active",
+      "concurrency",
+      "depth",
+      "queue",
+      "waitMs",
+    ]);
+  });
+
   it("starts explicitly prioritized dashboard queries while regular work is queued", async () => {
     const events: string[] = [];
     const stream = deferred<StreamPointRow[]>();
