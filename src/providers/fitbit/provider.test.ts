@@ -1041,66 +1041,221 @@ describe("FitbitProvider", () => {
     it("paginates sleep sync by increasing offset", async () => {
       setupEnv();
       vi.useFakeTimers({ now: new Date("2026-03-01T12:00:00Z") });
+      try {
+        const firstSleep: FitbitSleepLog = sampleSleep;
+        const secondSleep: FitbitSleepLog = { ...sampleSleep, logId: 87654322 };
+        const seenSleepOffsets: number[] = [];
 
-      const firstSleep: FitbitSleepLog = sampleSleep;
-      const secondSleep: FitbitSleepLog = { ...sampleSleep, logId: 87654322 };
-      const seenSleepOffsets: number[] = [];
-
-      const mockFetch: typeof globalThis.fetch = async (
-        input: RequestInfo | URL,
-      ): Promise<Response> => {
-        const url = input.toString();
-        if (url.includes("/activities/list.json")) {
-          return Response.json({
-            activities: [],
-            pagination: { next: "", previous: "", limit: 20, offset: 0, sort: "asc" },
-          });
-        }
-        if (url.includes("/sleep/list.json")) {
-          const offsetMatch = url.match(/[?&]offset=(\d+)/);
-          const offset = offsetMatch?.[1] ? Number(offsetMatch[1]) : 0;
-          seenSleepOffsets.push(offset);
-          if (offset === 0) {
+        const mockFetch: typeof globalThis.fetch = async (
+          input: RequestInfo | URL,
+        ): Promise<Response> => {
+          const url = input.toString();
+          if (url.includes("/activities/list.json")) {
             return Response.json({
-              sleep: [firstSleep],
-              pagination: { next: "/next", previous: "", limit: 1, offset: 0, sort: "asc" },
+              activities: [],
+              pagination: { next: "", previous: "", limit: 20, offset: 0, sort: "asc" },
             });
           }
-          return Response.json({
-            sleep: [secondSleep],
-            pagination: { next: "", previous: "", limit: 1, offset: 1, sort: "asc" },
-          });
-        }
-        if (url.includes("/activities/date/")) {
-          return Response.json(sampleDailySummary);
-        }
-        if (url.includes("/body/log/weight/date/")) {
-          return Response.json({ weight: [] });
-        }
-        return new Response("Not found", { status: 404 });
-      };
+          if (url.includes("/sleep/list.json")) {
+            const offsetMatch = url.match(/[?&]offset=(\d+)/);
+            const offset = offsetMatch?.[1] ? Number(offsetMatch[1]) : 0;
+            seenSleepOffsets.push(offset);
+            if (offset === 0) {
+              return Response.json({
+                sleep: [firstSleep],
+                pagination: { next: "/next", previous: "", limit: 1, offset: 0, sort: "asc" },
+              });
+            }
+            return Response.json({
+              sleep: [secondSleep],
+              pagination: { next: "", previous: "", limit: 1, offset: 1, sort: "asc" },
+            });
+          }
+          if (url.includes("/activities/date/")) {
+            return Response.json(sampleDailySummary);
+          }
+          if (url.includes("/body/log/weight/date/")) {
+            return Response.json({ weight: [] });
+          }
+          return new Response("Not found", { status: 404 });
+        };
 
+        const provider = new FitbitProvider(mockFetch);
+        const db = createMockDb();
+        const result = await provider.sync(
+          new SyncRun({
+            db: db,
+            window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+          }),
+        );
+
+        expect(result.errors).toHaveLength(0);
+        // Both pages fetched: offset advanced from 0 to limit (1). A stopped loop
+        // (hasMore = false) would only see [0]; a decremented offset would not be [0, 1].
+        expect(seenSleepOffsets).toEqual([0, 1]);
+        expect(findValuesCall(db, (value) => value.externalId === "87654321").durationMinutes).toBe(
+          465,
+        );
+        expect(findValuesCall(db, (value) => value.externalId === "87654322").durationMinutes).toBe(
+          465,
+        );
+        expectReasonableDuration(result.duration);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("fetches a third sleep page when offset advances beyond the first page", async () => {
+      setupEnv();
+      vi.useFakeTimers({ now: new Date("2026-03-01T12:00:00Z") });
+      try {
+        const sleeps: FitbitSleepLog[] = [
+          { ...sampleSleep, logId: 87654321 },
+          { ...sampleSleep, logId: 87654322 },
+          { ...sampleSleep, logId: 87654323 },
+        ];
+        const seenSleepOffsets: number[] = [];
+
+        const mockFetch: typeof globalThis.fetch = async (
+          input: RequestInfo | URL,
+        ): Promise<Response> => {
+          const url = input.toString();
+          if (url.includes("/activities/list.json")) {
+            return Response.json({
+              activities: [],
+              pagination: { next: "", previous: "", limit: 20, offset: 0, sort: "asc" },
+            });
+          }
+          if (url.includes("/sleep/list.json")) {
+            const offsetMatch = url.match(/[?&]offset=(\d+)/);
+            const offset = offsetMatch?.[1] ? Number(offsetMatch[1]) : 0;
+            seenSleepOffsets.push(offset);
+            const pageIndex = offset / 10;
+            return Response.json({
+              sleep: [sleeps[pageIndex] ?? sleeps[0]],
+              pagination: {
+                next: pageIndex < 2 ? "/next" : "",
+                previous: "",
+                limit: 10,
+                offset,
+                sort: "asc",
+              },
+            });
+          }
+          if (url.includes("/activities/date/")) {
+            return Response.json(sampleDailySummary);
+          }
+          if (url.includes("/body/log/weight/date/")) {
+            return Response.json({ weight: [] });
+          }
+          return new Response("Not found", { status: 404 });
+        };
+
+        const provider = new FitbitProvider(mockFetch);
+        const db = createMockDb();
+        const result = await provider.sync(
+          new SyncRun({
+            db: db,
+            window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+          }),
+        );
+
+        expect(result.errors).toHaveLength(0);
+        expect(seenSleepOffsets).toEqual([0, 10, 20]);
+        expect(findValuesCall(db, (value) => value.externalId === "87654321").durationMinutes).toBe(
+          465,
+        );
+        expect(findValuesCall(db, (value) => value.externalId === "87654322").durationMinutes).toBe(
+          465,
+        );
+        expect(findValuesCall(db, (value) => value.externalId === "87654323").durationMinutes).toBe(
+          465,
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("captures per-record sleep insert errors without aborting the whole sync", async () => {
+      setupEnv();
+      const mockFetch = createMockApiFetch({
+        sleep: [sampleSleep, { ...sampleSleep, logId: 87654322 }],
+      });
       const provider = new FitbitProvider(mockFetch);
       const db = createMockDb();
+      let sleepInsertCount = 0;
+      db.onConflictDoUpdate.mockImplementation(() => {
+        sleepInsertCount += 1;
+        if (sleepInsertCount === 1) {
+          throw new Error("sleep insert failed");
+        }
+        return db;
+      });
+
       const result = await provider.sync(
         new SyncRun({
           db: db,
           window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
         }),
       );
-      vi.useRealTimers();
 
-      expect(result.errors).toHaveLength(0);
-      // Both pages fetched: offset advanced from 0 to limit (1). A stopped loop
-      // (hasMore = false) would only see [0]; a decremented offset would not be [0, 1].
-      expect(seenSleepOffsets).toEqual([0, 1]);
-      expect(findValuesCall(db, (value) => value.externalId === "87654321").durationMinutes).toBe(
-        465,
-      );
+      expect(result.errors.length).toBeGreaterThanOrEqual(1);
+      expect(result.errors.some((error) => error.externalId === "87654321")).toBe(true);
       expect(findValuesCall(db, (value) => value.externalId === "87654322").durationMinutes).toBe(
         465,
       );
-      expectReasonableDuration(result.duration);
+    });
+
+    it("retains sleep records when pagination stalls on a repeated offset", async () => {
+      setupEnv();
+      vi.useFakeTimers({ now: new Date("2026-03-01T12:00:00Z") });
+      try {
+        const stalledSleep: FitbitSleepLog = { ...sampleSleep, logId: 87654321 };
+        let sleepRequests = 0;
+
+        const mockFetch: typeof globalThis.fetch = async (
+          input: RequestInfo | URL,
+        ): Promise<Response> => {
+          const url = input.toString();
+          if (url.includes("/activities/list.json")) {
+            return Response.json({
+              activities: [],
+              pagination: { next: "", previous: "", limit: 20, offset: 0, sort: "asc" },
+            });
+          }
+          if (url.includes("/sleep/list.json")) {
+            sleepRequests += 1;
+            return Response.json({
+              sleep: [stalledSleep],
+              pagination: { next: "/next", previous: "", limit: 0, offset: 0, sort: "asc" },
+            });
+          }
+          if (url.includes("/activities/date/")) {
+            return Response.json(sampleDailySummary);
+          }
+          if (url.includes("/body/log/weight/date/")) {
+            return Response.json({ weight: [] });
+          }
+          return new Response("Not found", { status: 404 });
+        };
+
+        const provider = new FitbitProvider(mockFetch);
+        const db = createMockDb();
+        const result = await provider.sync(
+          new SyncRun({
+            db: db,
+            window: SyncWindow.fromSince({ since: new Date("2026-03-01T00:00:00Z") }),
+          }),
+        );
+
+        expect(result.errors).toHaveLength(0);
+        expect(sleepRequests).toBe(1);
+        expect(findValuesCall(db, (value) => value.externalId === "87654321").durationMinutes).toBe(
+          465,
+        );
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

@@ -6,10 +6,17 @@ import { dailyMetrics, sleepSession } from "../../db/schema/activity.ts";
 import { healthEvent } from "../../db/schema/clinical.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
+import type { SyncDegradation } from "../../sync/sync-degradation.ts";
 import type { SyncError, SyncOptions } from "../types.ts";
 import type { OuraClient } from "./client.ts";
 import { formatDate } from "./oauth.ts";
-import { fetchAllPages, fetchAllPagesOptional, HEALTH_EVENT_BATCH_SIZE } from "./pagination.ts";
+import {
+  fetchAllPages,
+  fetchOuraPages,
+  fetchOuraPagesOptional,
+  HEALTH_EVENT_BATCH_SIZE,
+  type OuraPagesResult,
+} from "./pagination.ts";
 import {
   mapOuraActivityType,
   mapOuraSessionType,
@@ -47,11 +54,11 @@ export async function syncSleep(context: SyncStepContext): Promise<number> {
       "sleep",
       async () => {
         let count = 0;
-        const allSleep = await fetchAllPages((nextToken) =>
+        const sleepPages = await fetchOuraPages(providerId, "sleep", (nextToken) =>
           client.getSleep(sinceDate, todayDate, nextToken),
         );
 
-        for (const raw of allSleep) {
+        for (const raw of sleepPages.items) {
           const parsed = parseOuraSleep(raw);
           try {
             await db
@@ -95,7 +102,7 @@ export async function syncSleep(context: SyncStepContext): Promise<number> {
           }
         }
 
-        return { recordCount: count, result: count };
+        return { recordCount: count, result: count, degradations: sleepPages.degradations };
       },
       options?.userId,
     );
@@ -238,6 +245,7 @@ export async function syncHeartRate(context: SyncStepContext, since: Date): Prom
       "heart_rate",
       async () => {
         const allHr: OuraHeartRate[] = [];
+        const degradations: SyncDegradation[] = [];
         const windowMs = 30 * 24 * 60 * 60 * 1000;
         let windowStart = since.getTime();
         const end = Date.now();
@@ -249,10 +257,12 @@ export async function syncHeartRate(context: SyncStepContext, since: Date): Prom
           // Skip degenerate windows where start and end resolve to the same day
           // (can happen when the 30-day boundary falls on "now")
           if (startStr === endStr) break;
-          const chunk = await fetchAllPages((nextToken) =>
+          const chunk = await fetchOuraPages(providerId, "heart_rate", (nextToken) =>
             client.getHeartRate(startStr, endStr, nextToken),
           );
-          allHr.push(...chunk);
+          allHr.push(...chunk.items);
+          degradations.push(...chunk.degradations);
+          if (chunk.degradations.length > 0) break;
           windowStart = windowEnd;
         }
 
@@ -270,7 +280,7 @@ export async function syncHeartRate(context: SyncStepContext, since: Date): Prom
           options?.metricStreamPublisher,
         );
 
-        return { recordCount: rows.length, result: rows.length };
+        return { recordCount: rows.length, result: rows.length, degradations };
       },
       options?.userId,
     );
@@ -284,6 +294,72 @@ export async function syncHeartRate(context: SyncStepContext, since: Date): Prom
   }
 }
 
+async function persistDailyStress(
+  db: SyncDatabase,
+  providerId: string,
+  stressPages: OuraPagesResult<OuraDailyStress>,
+): Promise<{ recordCount: number; result: number; degradations: SyncDegradation[] }> {
+  const rows = stressPages.items.map((stress) => ({
+    providerId,
+    externalId: stress.id,
+    type: "oura_daily_stress",
+    value: stress.stress_high,
+    valueText: stress.day_summary,
+    startDate: new Date(`${stress.day}T00:00:00`),
+  }));
+
+  for (let i = 0; i < rows.length; i += HEALTH_EVENT_BATCH_SIZE) {
+    await db
+      .insert(healthEvent)
+      .values(rows.slice(i, i + HEALTH_EVENT_BATCH_SIZE))
+      .onConflictDoUpdate({
+        target: [healthEvent.userId, healthEvent.providerId, healthEvent.externalId],
+        set: {
+          value: sql`excluded.value`,
+          valueText: sql`excluded.value_text`,
+        },
+      });
+  }
+
+  return {
+    recordCount: rows.length,
+    result: rows.length,
+    degradations: stressPages.degradations,
+  };
+}
+
+async function persistDailyResilience(
+  db: SyncDatabase,
+  providerId: string,
+  resiliencePages: OuraPagesResult<OuraDailyResilience>,
+): Promise<{ recordCount: number; result: number; degradations: SyncDegradation[] }> {
+  let count = 0;
+  for (const resilience of resiliencePages.items) {
+    await db
+      .insert(healthEvent)
+      .values({
+        providerId,
+        externalId: resilience.id,
+        type: "oura_daily_resilience",
+        valueText: resilience.level,
+        startDate: new Date(`${resilience.day}T00:00:00`),
+      })
+      .onConflictDoUpdate({
+        target: [healthEvent.userId, healthEvent.providerId, healthEvent.externalId],
+        set: {
+          valueText: resilience.level,
+        },
+      });
+    count++;
+  }
+
+  return {
+    recordCount: count,
+    result: count,
+    degradations: resiliencePages.degradations,
+  };
+}
+
 export async function syncDailyStress(context: SyncStepContext): Promise<number> {
   const { db, providerId, client, sinceDate, todayDate, errors, options } = context;
   try {
@@ -292,34 +368,11 @@ export async function syncDailyStress(context: SyncStepContext): Promise<number>
       providerId,
       "daily_stress",
       async () => {
-        const allStress = await fetchAllPagesOptional(
-          (nextToken) => client.getDailyStress(sinceDate, todayDate, nextToken),
-          "daily_stress",
+        const stressPages = await fetchOuraPagesOptional(providerId, "daily_stress", (nextToken) =>
+          client.getDailyStress(sinceDate, todayDate, nextToken),
         );
 
-        const rows = allStress.map((stress) => ({
-          providerId,
-          externalId: stress.id,
-          type: "oura_daily_stress",
-          value: stress.stress_high,
-          valueText: stress.day_summary,
-          startDate: new Date(`${stress.day}T00:00:00`),
-        }));
-
-        for (let i = 0; i < rows.length; i += HEALTH_EVENT_BATCH_SIZE) {
-          await db
-            .insert(healthEvent)
-            .values(rows.slice(i, i + HEALTH_EVENT_BATCH_SIZE))
-            .onConflictDoUpdate({
-              target: [healthEvent.userId, healthEvent.providerId, healthEvent.externalId],
-              set: {
-                value: sql`excluded.value`,
-                valueText: sql`excluded.value_text`,
-              },
-            });
-        }
-
-        return { recordCount: rows.length, result: rows.length };
+        return persistDailyStress(db, providerId, stressPages);
       },
       options?.userId,
     );
@@ -341,33 +394,11 @@ export async function syncDailyStressWebhook(context: SyncStepContext): Promise<
       providerId,
       "daily_stress",
       async () => {
-        const allStress = await fetchAllPages((nextToken) =>
+        const stressPages = await fetchOuraPages(providerId, "daily_stress", (nextToken) =>
           client.getDailyStress(sinceDate, todayDate, nextToken),
         );
 
-        const rows = allStress.map((stress) => ({
-          providerId,
-          externalId: stress.id,
-          type: "oura_daily_stress",
-          value: stress.stress_high,
-          valueText: stress.day_summary,
-          startDate: new Date(`${stress.day}T00:00:00`),
-        }));
-
-        for (let i = 0; i < rows.length; i += HEALTH_EVENT_BATCH_SIZE) {
-          await db
-            .insert(healthEvent)
-            .values(rows.slice(i, i + HEALTH_EVENT_BATCH_SIZE))
-            .onConflictDoUpdate({
-              target: [healthEvent.userId, healthEvent.providerId, healthEvent.externalId],
-              set: {
-                value: sql`excluded.value`,
-                valueText: sql`excluded.value_text`,
-              },
-            });
-        }
-
-        return { recordCount: rows.length, result: rows.length };
+        return persistDailyStress(db, providerId, stressPages);
       },
       options?.userId,
     );
@@ -389,32 +420,13 @@ export async function syncDailyResilience(context: SyncStepContext): Promise<num
       providerId,
       "daily_resilience",
       async () => {
-        const allResilience = await fetchAllPagesOptional(
-          (nextToken) => client.getDailyResilience(sinceDate, todayDate, nextToken),
+        const resiliencePages = await fetchOuraPagesOptional(
+          providerId,
           "daily_resilience",
+          (nextToken) => client.getDailyResilience(sinceDate, todayDate, nextToken),
         );
 
-        let count = 0;
-        for (const resilience of allResilience) {
-          await db
-            .insert(healthEvent)
-            .values({
-              providerId,
-              externalId: resilience.id,
-              type: "oura_daily_resilience",
-              valueText: resilience.level,
-              startDate: new Date(`${resilience.day}T00:00:00`),
-            })
-            .onConflictDoUpdate({
-              target: [healthEvent.userId, healthEvent.providerId, healthEvent.externalId],
-              set: {
-                valueText: resilience.level,
-              },
-            });
-          count++;
-        }
-
-        return { recordCount: count, result: count };
+        return persistDailyResilience(db, providerId, resiliencePages);
       },
       options?.userId,
     );
@@ -436,31 +448,11 @@ export async function syncDailyResilienceWebhook(context: SyncStepContext): Prom
       providerId,
       "daily_resilience",
       async () => {
-        const allResilience = await fetchAllPages((nextToken) =>
+        const resiliencePages = await fetchOuraPages(providerId, "daily_resilience", (nextToken) =>
           client.getDailyResilience(sinceDate, todayDate, nextToken),
         );
 
-        let count = 0;
-        for (const resilience of allResilience) {
-          await db
-            .insert(healthEvent)
-            .values({
-              providerId,
-              externalId: resilience.id,
-              type: "oura_daily_resilience",
-              valueText: resilience.level,
-              startDate: new Date(`${resilience.day}T00:00:00`),
-            })
-            .onConflictDoUpdate({
-              target: [healthEvent.userId, healthEvent.providerId, healthEvent.externalId],
-              set: {
-                valueText: resilience.level,
-              },
-            });
-          count++;
-        }
-
-        return { recordCount: count, result: count };
+        return persistDailyResilience(db, providerId, resiliencePages);
       },
       options?.userId,
     );
@@ -482,13 +474,14 @@ export async function syncCardiovascularAge(context: SyncStepContext): Promise<n
       providerId,
       "cardiovascular_age",
       async () => {
-        const allCvAge = await fetchAllPagesOptional(
-          (nextToken) => client.getDailyCardiovascularAge(sinceDate, todayDate, nextToken),
+        const cvAgePages = await fetchOuraPagesOptional(
+          providerId,
           "cardiovascular_age",
+          (nextToken) => client.getDailyCardiovascularAge(sinceDate, todayDate, nextToken),
         );
 
         let count = 0;
-        for (const cv of allCvAge) {
+        for (const cv of cvAgePages.items) {
           if (cv.vascular_age === null) continue;
           await db
             .insert(healthEvent)
@@ -506,7 +499,11 @@ export async function syncCardiovascularAge(context: SyncStepContext): Promise<n
           count++;
         }
 
-        return { recordCount: count, result: count };
+        return {
+          recordCount: count,
+          result: count,
+          degradations: cvAgePages.degradations,
+        };
       },
       options?.userId,
     );
@@ -528,12 +525,12 @@ export async function syncTags(context: SyncStepContext): Promise<number> {
       providerId,
       "tags",
       async () => {
-        const allTags = await fetchAllPages((nextToken) =>
+        const tagPages = await fetchOuraPages(providerId, "tags", (nextToken) =>
           client.getTags(sinceDate, todayDate, nextToken),
         );
 
         let count = 0;
-        for (const tag of allTags) {
+        for (const tag of tagPages.items) {
           await db
             .insert(healthEvent)
             .values({
@@ -550,7 +547,7 @@ export async function syncTags(context: SyncStepContext): Promise<number> {
           count++;
         }
 
-        return { recordCount: count, result: count };
+        return { recordCount: count, result: count, degradations: tagPages.degradations };
       },
       options?.userId,
     );
@@ -572,12 +569,12 @@ export async function syncEnhancedTags(context: SyncStepContext): Promise<number
       providerId,
       "enhanced_tags",
       async () => {
-        const allEnhancedTags = await fetchAllPages((nextToken) =>
+        const enhancedTagPages = await fetchOuraPages(providerId, "enhanced_tags", (nextToken) =>
           client.getEnhancedTags(sinceDate, todayDate, nextToken),
         );
 
         let count = 0;
-        for (const enhancedTag of allEnhancedTags) {
+        for (const enhancedTag of enhancedTagPages.items) {
           const tagName = enhancedTag.custom_name ?? enhancedTag.tag_type_code ?? "unknown";
           await db
             .insert(healthEvent)
@@ -599,7 +596,11 @@ export async function syncEnhancedTags(context: SyncStepContext): Promise<number
           count++;
         }
 
-        return { recordCount: count, result: count };
+        return {
+          recordCount: count,
+          result: count,
+          degradations: enhancedTagPages.degradations,
+        };
       },
       options?.userId,
     );
@@ -621,12 +622,12 @@ export async function syncRestMode(context: SyncStepContext): Promise<number> {
       providerId,
       "rest_mode",
       async () => {
-        const allRestMode = await fetchAllPages((nextToken) =>
+        const restModePages = await fetchOuraPages(providerId, "rest_mode", (nextToken) =>
           client.getRestModePeriods(sinceDate, todayDate, nextToken),
         );
 
         let count = 0;
-        for (const rm of allRestMode) {
+        for (const rm of restModePages.items) {
           const startDate = rm.start_time
             ? new Date(rm.start_time)
             : new Date(`${rm.start_day}T00:00:00`);
@@ -652,7 +653,11 @@ export async function syncRestMode(context: SyncStepContext): Promise<number> {
           count++;
         }
 
-        return { recordCount: count, result: count };
+        return {
+          recordCount: count,
+          result: count,
+          degradations: restModePages.degradations,
+        };
       },
       options?.userId,
     );
@@ -674,12 +679,12 @@ export async function syncSleepTime(context: SyncStepContext): Promise<number> {
       providerId,
       "sleep_time",
       async () => {
-        const allSleepTime = await fetchAllPages((nextToken) =>
+        const sleepTimePages = await fetchOuraPages(providerId, "sleep_time", (nextToken) =>
           client.getSleepTime(sinceDate, todayDate, nextToken),
         );
 
         let count = 0;
-        for (const st of allSleepTime) {
+        for (const st of sleepTimePages.items) {
           await db
             .insert(healthEvent)
             .values({
@@ -696,7 +701,11 @@ export async function syncSleepTime(context: SyncStepContext): Promise<number> {
           count++;
         }
 
-        return { recordCount: count, result: count };
+        return {
+          recordCount: count,
+          result: count,
+          degradations: sleepTimePages.degradations,
+        };
       },
       options?.userId,
     );
@@ -722,40 +731,77 @@ export async function syncDailyMetricsComposite(
       "daily_metrics",
       async () => {
         let count = 0;
+        const degradations: SyncDegradation[] = [];
 
         const fetchStress = useOptionalFetch
-          ? fetchAllPagesOptional(
-              (nextToken) => client.getDailyStress(sinceDate, todayDate, nextToken),
-              "daily_stress",
+          ? fetchOuraPagesOptional(providerId, "daily_stress", (nextToken) =>
+              client.getDailyStress(sinceDate, todayDate, nextToken),
             )
-          : fetchAllPages((nextToken) => client.getDailyStress(sinceDate, todayDate, nextToken));
+          : fetchOuraPages(providerId, "daily_stress", (nextToken) =>
+              client.getDailyStress(sinceDate, todayDate, nextToken),
+            );
 
         const fetchResilience = useOptionalFetch
-          ? fetchAllPagesOptional(
-              (nextToken) => client.getDailyResilience(sinceDate, todayDate, nextToken),
-              "daily_resilience",
+          ? fetchOuraPagesOptional(providerId, "daily_resilience", (nextToken) =>
+              client.getDailyResilience(sinceDate, todayDate, nextToken),
             )
-          : fetchAllPages((nextToken) =>
+          : fetchOuraPages(providerId, "daily_resilience", (nextToken) =>
               client.getDailyResilience(sinceDate, todayDate, nextToken),
             );
 
         const fetchVO2Max = useOptionalFetch
-          ? fetchAllPagesOptional(
-              (nextToken) => client.getVO2Max(sinceDate, todayDate, nextToken),
-              "vO2_max",
+          ? fetchOuraPagesOptional(providerId, "vO2_max", (nextToken) =>
+              client.getVO2Max(sinceDate, todayDate, nextToken),
             )
-          : fetchAllPages((nextToken) => client.getVO2Max(sinceDate, todayDate, nextToken));
+          : fetchOuraPages(providerId, "vO2_max", (nextToken) =>
+              client.getVO2Max(sinceDate, todayDate, nextToken),
+            );
 
-        const [allReadiness, allActivity, allSpO2, allVO2Max, allStress, allResilience, allSleep] =
-          await Promise.all([
-            fetchAllPages((nextToken) => client.getDailyReadiness(sinceDate, todayDate, nextToken)),
-            fetchAllPages((nextToken) => client.getDailyActivity(sinceDate, todayDate, nextToken)),
-            fetchAllPages((nextToken) => client.getDailySpO2(sinceDate, todayDate, nextToken)),
-            fetchVO2Max,
-            fetchStress,
-            fetchResilience,
-            fetchAllPages((nextToken) => client.getSleep(sinceDate, todayDate, nextToken)),
-          ]);
+        const [
+          readinessPages,
+          activityPages,
+          spo2Pages,
+          vo2MaxPages,
+          stressPages,
+          resiliencePages,
+          sleepPages,
+        ] = await Promise.all([
+          fetchOuraPages(providerId, "daily_readiness", (nextToken) =>
+            client.getDailyReadiness(sinceDate, todayDate, nextToken),
+          ),
+          fetchOuraPages(providerId, "daily_activity", (nextToken) =>
+            client.getDailyActivity(sinceDate, todayDate, nextToken),
+          ),
+          fetchOuraPages(providerId, "daily_spo2", (nextToken) =>
+            client.getDailySpO2(sinceDate, todayDate, nextToken),
+          ),
+          fetchVO2Max,
+          fetchStress,
+          fetchResilience,
+          fetchOuraPages(providerId, "sleep", (nextToken) =>
+            client.getSleep(sinceDate, todayDate, nextToken),
+          ),
+        ]);
+
+        for (const pageResult of [
+          readinessPages,
+          activityPages,
+          spo2Pages,
+          vo2MaxPages,
+          stressPages,
+          resiliencePages,
+          sleepPages,
+        ]) {
+          degradations.push(...pageResult.degradations);
+        }
+
+        const allReadiness = readinessPages.items;
+        const allActivity = activityPages.items;
+        const allSpO2 = spo2Pages.items;
+        const allVO2Max = vo2MaxPages.items;
+        const allStress = stressPages.items;
+        const allResilience = resiliencePages.items;
+        const allSleep = sleepPages.items;
 
         // Index by day for merging
         const readinessByDay = new Map<string, OuraDailyReadiness>();
@@ -860,7 +906,7 @@ export async function syncDailyMetricsComposite(
           }
         }
 
-        return { recordCount: count, result: count };
+        return { recordCount: count, result: count, degradations };
       },
       options?.userId,
     );
