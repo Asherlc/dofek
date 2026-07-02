@@ -102,6 +102,7 @@ describe("createTRPCClient", () => {
     expect(queryCondition({ type: "query", path: "sleepNeed.performance" })).toBe(true);
     expect(queryCondition({ type: "query", path: "sync.dataHealth" })).toBe(true);
     expect(queryCondition({ type: "query", path: "insights.compute" })).toBe(false);
+    expect(queryCondition({ type: "query", path: "anomalyDetection.check" })).toBe(false);
     expect(queryCondition({ type: "mutation", path: "recovery.readinessScore" })).toBe(false);
 
     const batchLinkOptions = httpBatchLinkMock.mock.calls[0]?.[0];

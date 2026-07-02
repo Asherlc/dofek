@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
 import { UnitConverter } from "@dofek/format/units";
+import type {
+  ReadinessRow,
+  SleepPerformanceInfo,
+  StrainTargetResult,
+  WorkloadRatioResult,
+} from "dofek-server/types";
 import { cleanup, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,13 +22,29 @@ type MockQueryResult<TData> = {
   error: Error | null;
 };
 
-const mockReadinessQuery = vi.hoisted(() => vi.fn(() => ({ data: undefined, isLoading: false })));
-const mockWorkloadQuery = vi.hoisted(() => vi.fn(() => ({ data: undefined, isLoading: false })));
+const mockReadinessQuery = vi.hoisted(() =>
+  vi.fn<() => MockQueryResult<ReadinessRow[]>>(() => ({ data: undefined, isLoading: false, error: null })),
+);
+const mockWorkloadQuery = vi.hoisted(() =>
+  vi.fn<() => MockQueryResult<WorkloadRatioResult>>(() => ({
+    data: undefined,
+    isLoading: false,
+    error: null,
+  })),
+);
 const mockStrainTargetQuery = vi.hoisted(() =>
-  vi.fn(() => ({ data: undefined, isLoading: false })),
+  vi.fn<() => MockQueryResult<StrainTargetResult>>(() => ({
+    data: undefined,
+    isLoading: false,
+    error: null,
+  })),
 );
 const mockSleepPerformanceQuery = vi.hoisted(() =>
-  vi.fn(() => ({ data: undefined, isLoading: false })),
+  vi.fn<() => MockQueryResult<SleepPerformanceInfo | null>>(() => ({
+    data: undefined,
+    isLoading: false,
+    error: null,
+  })),
 );
 const mockTrendsQuery = vi.hoisted(() =>
   vi.fn<() => MockQueryResult<unknown>>(() => ({ data: undefined, isLoading: false, error: null })),
@@ -101,13 +123,41 @@ import {
   buildSkinTempSeries,
   Dashboard,
   healthMonitorSubtitle,
+  isCoreDashboardReady,
   spo2TempSectionConfig,
 } from "./Dashboard";
 
 afterEach(cleanup);
 
+const coreDashboardQueryData = {
+  readiness: [] as ReadinessRow[],
+  workloadRatio: {} as WorkloadRatioResult,
+  strainTarget: {} as StrainTargetResult,
+  sleepPerformance: null as SleepPerformanceInfo | null,
+};
+
 describe("Dashboard", () => {
   beforeEach(() => {
+    mockReadinessQuery.mockReturnValue({
+      data: coreDashboardQueryData.readiness,
+      isLoading: false,
+      error: null,
+    });
+    mockWorkloadQuery.mockReturnValue({
+      data: coreDashboardQueryData.workloadRatio,
+      isLoading: false,
+      error: null,
+    });
+    mockStrainTargetQuery.mockReturnValue({
+      data: coreDashboardQueryData.strainTarget,
+      isLoading: false,
+      error: null,
+    });
+    mockSleepPerformanceQuery.mockReturnValue({
+      data: coreDashboardQueryData.sleepPerformance,
+      isLoading: false,
+      error: null,
+    });
     mockTrendsQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mockHeartRateBaselineQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mockInsightsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
@@ -146,6 +196,29 @@ describe("Dashboard", () => {
         "Daily metrics data is synced, but dashboard summaries are still catching up.",
       ),
     ).toBeTruthy();
+  });
+
+  it("does not enable insights during the initial core dashboard load", () => {
+    mockReadinessQuery.mockReturnValue({ data: undefined, isLoading: true, error: null });
+    mockWorkloadQuery.mockReturnValue({ data: undefined, isLoading: true, error: null });
+    mockStrainTargetQuery.mockReturnValue({ data: undefined, isLoading: true, error: null });
+    mockSleepPerformanceQuery.mockReturnValue({ data: undefined, isLoading: true, error: null });
+
+    render(<Dashboard />);
+
+    expect(mockInsightsQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ enabled: false }),
+    );
+  });
+
+  it("enables insights after core dashboard data is available", () => {
+    render(<Dashboard />);
+
+    expect(mockInsightsQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ enabled: true }),
+    );
   });
 
   it("uses a loading panel while insights are loading", () => {
@@ -244,6 +317,41 @@ describe("Dashboard", () => {
         restingHeartRateError: chartError,
       }),
     );
+  });
+});
+
+describe("isCoreDashboardReady", () => {
+  it("returns false while any core dashboard query is still unresolved", () => {
+    expect(
+      isCoreDashboardReady({
+        readiness: undefined,
+        workloadRatio: coreDashboardQueryData.workloadRatio,
+        strainTarget: coreDashboardQueryData.strainTarget,
+        sleepPerformance: coreDashboardQueryData.sleepPerformance,
+      }),
+    ).toBe(false);
+  });
+
+  it("returns true once all core dashboard queries have settled", () => {
+    expect(
+      isCoreDashboardReady({
+        readiness: coreDashboardQueryData.readiness,
+        workloadRatio: coreDashboardQueryData.workloadRatio,
+        strainTarget: coreDashboardQueryData.strainTarget,
+        sleepPerformance: coreDashboardQueryData.sleepPerformance,
+      }),
+    ).toBe(true);
+  });
+
+  it("returns true when sleep performance resolves to null", () => {
+    expect(
+      isCoreDashboardReady({
+        readiness: coreDashboardQueryData.readiness,
+        workloadRatio: coreDashboardQueryData.workloadRatio,
+        strainTarget: coreDashboardQueryData.strainTarget,
+        sleepPerformance: null,
+      }),
+    ).toBe(true);
   });
 });
 

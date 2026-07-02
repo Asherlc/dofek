@@ -5,6 +5,12 @@ import {
   formatSpO2Measurement,
 } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
+import type {
+  ReadinessRow,
+  SleepPerformanceInfo,
+  StrainTargetResult,
+  WorkloadRatioResult,
+} from "dofek-server/types";
 import { useMemo } from "react";
 import { z } from "zod";
 import type { Insight } from "../components/CorrelationCard.tsx";
@@ -164,6 +170,25 @@ export function buildHealthMetrics(trendData: TrendRow | undefined, units: UnitC
   return entries.filter((entry): entry is MetricEntry => entry !== false);
 }
 
+export function isCoreDashboardReady({
+  readiness,
+  workloadRatio,
+  strainTarget,
+  sleepPerformance,
+}: {
+  readiness: ReadinessRow[] | undefined;
+  workloadRatio: WorkloadRatioResult | undefined;
+  strainTarget: StrainTargetResult | undefined;
+  sleepPerformance: SleepPerformanceInfo | null | undefined;
+}): boolean {
+  return (
+    readiness !== undefined &&
+    workloadRatio !== undefined &&
+    strainTarget !== undefined &&
+    sleepPerformance !== undefined
+  );
+}
+
 export function Dashboard() {
   const units = useUnitConverter();
   const days = 30;
@@ -174,7 +199,16 @@ export function Dashboard() {
   const sleepPerformance = trpc.sleepNeed.performance.useQuery({ endDate });
   const trends = trpc.dailyMetrics.trends.useQuery({ days, endDate });
   const heartRateBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days, endDate });
-  const insightsQuery = trpc.insights.compute.useQuery({ days, endDate });
+  const coreDashboardReady = isCoreDashboardReady({
+    readiness: readinessData.data,
+    workloadRatio: workloadRatio.data,
+    strainTarget: strainTarget.data,
+    sleepPerformance: sleepPerformance.data,
+  });
+  const insightsQuery = trpc.insights.compute.useQuery(
+    { days, endDate },
+    { enabled: coreDashboardReady },
+  );
   const dataHealth = trpc.sync.dataHealth.useQuery();
   const trendData: TrendRow | undefined = trends.data
     ? trendRowSchema.parse(trends.data)
