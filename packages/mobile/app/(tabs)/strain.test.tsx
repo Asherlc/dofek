@@ -8,6 +8,7 @@ const mockRouterPush = vi.fn();
 type MockTrainingData = Record<string, unknown>;
 
 let mockTrainingData: MockTrainingData;
+let mockTrainingLoading = false;
 
 function defaultMockTrainingData(): MockTrainingData {
   return {
@@ -39,7 +40,12 @@ vi.mock("../../lib/trpc", () => ({
   trpc: {
     mobileDashboard: {
       training: {
-        useQuery: () => ({ data: mockTrainingData, isLoading: false, isError: false, error: null }),
+        useQuery: () => ({
+          data: mockTrainingData,
+          isLoading: mockTrainingLoading,
+          isError: false,
+          error: null,
+        }),
       },
     },
     useUtils: () => ({
@@ -71,6 +77,18 @@ describe("StrainScreen recent activity navigation", () => {
   beforeEach(() => {
     mockRouterPush.mockReset();
     mockTrainingData = defaultMockTrainingData();
+    mockTrainingLoading = false;
+  });
+
+  it("keeps day selector visible while training data is loading", async () => {
+    mockTrainingLoading = true;
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByText("30d")).toBeTruthy();
+    expect(screen.getByTestId("query-state-loading")).toBeTruthy();
+    expect(screen.queryByText("Loading strain data...")).toBeNull();
   });
 
   it("navigates to detail screen when a recent activity card is tapped", async () => {

@@ -15,6 +15,7 @@ import {
 import { initBackgroundWatchInertialMeasurementUnitSync } from "../lib/background-watch-inertial-measurement-unit-sync";
 import { syncWhoopBle, teardownBackgroundWhoopBleSync } from "../lib/background-whoop-ble-sync";
 import type { SyncTrpcClient } from "../lib/health-kit-sync";
+import { runAfterUiIdle } from "../lib/runAfterUiIdle";
 import { getTrpcUrl } from "../lib/server";
 import { captureException, initTelemetry, logger } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
@@ -174,12 +175,13 @@ function AuthGate() {
     }
 
     setBackgroundSyncReady(false);
-    const timerId = setTimeout(() => {
+    const idleHandle = runAfterUiIdle(() => {
       setBackgroundSyncReady(true);
-    }, 0);
+    });
 
     return () => {
-      clearTimeout(timerId);
+      idleHandle.cancel();
+      setBackgroundSyncReady(false);
     };
   }, [user]);
 

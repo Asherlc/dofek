@@ -4,13 +4,14 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let mockRecoveryData: Record<string, unknown> | undefined;
+let mockRecoveryLoading = false;
 let sparkLinePropsCalls: Record<string, unknown>[];
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
     mobileDashboard: {
       recovery: {
-        useQuery: () => ({ data: mockRecoveryData, isLoading: false }),
+        useQuery: () => ({ data: mockRecoveryData, isLoading: mockRecoveryLoading }),
       },
     },
     useUtils: () => ({
@@ -71,7 +72,19 @@ vi.mock("../../theme", () => ({
 describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
   beforeEach(() => {
     mockRecoveryData = undefined;
+    mockRecoveryLoading = false;
     sparkLinePropsCalls = [];
+  });
+
+  it("keeps day selector visible while recovery data is loading", async () => {
+    mockRecoveryLoading = true;
+
+    const { default: RecoveryScreen } = await import("./recovery");
+    render(<RecoveryScreen />);
+
+    expect(screen.getByText("30d")).toBeTruthy();
+    expect(screen.getByTestId("query-state-loading")).toBeTruthy();
+    expect(screen.queryByText("Loading trends...")).toBeNull();
   });
 
   it("displays Heart Rate Variability from the recovery HRV query", async () => {

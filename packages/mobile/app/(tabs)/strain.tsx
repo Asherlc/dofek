@@ -27,6 +27,7 @@ import { SparkLine } from "../../components/charts/SparkLine";
 import { StrainGauge } from "../../components/charts/StrainGauge";
 import { VerticalAscentChart } from "../../components/charts/VerticalAscentChart";
 import { DaySelector } from "../../components/DaySelector";
+import { QueryStatePanel } from "../../components/QueryStatePanel";
 import { safeParseRows } from "../../lib/safe-parse";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
@@ -42,7 +43,10 @@ export default function StrainScreen() {
   const units = useUnitConverter();
   const endDate = useTodayQueryDate();
 
-  const trainingQuery = trpc.mobileDashboard.training.useQuery({ days, endDate });
+  const trainingQuery = trpc.mobileDashboard.training.useQuery(
+    { days, endDate },
+    { placeholderData: (previousData) => previousData },
+  );
   const trainingData = trainingQuery.data;
 
   const workloadResult = trainingData?.workloadRatio;
@@ -115,9 +119,7 @@ export default function StrainScreen() {
       <DaySelector days={days} onChange={setDays} />
 
       {isLoading ? (
-        <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading strain data...</Text>
-        </View>
+        <QueryStatePanel variant="loading" minHeight={200} />
       ) : (
         <>
           {/* Current strain gauge */}
@@ -356,16 +358,6 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 100,
     gap: 16,
-  },
-  loadingContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 80,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: colors.textTertiary,
   },
   gaugeSection: {
     alignItems: "center",
