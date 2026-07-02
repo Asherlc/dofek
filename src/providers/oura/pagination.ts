@@ -12,6 +12,7 @@ function isOuraOptionalScopeError(err: unknown): boolean {
   return err instanceof OuraApiError && err.status === 401;
 }
 
+
 export async function fetchOuraPages<T>(
   providerId: string,
   stepName: string,

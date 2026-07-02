@@ -1373,6 +1373,45 @@ describe("OuraClient", () => {
     await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.toThrow(
       "Invalid API key provided",
     );
+    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.not.toThrow(
+      "Invalid API key provided…",
+    );
+  });
+
+  it("throws OuraApiError with structured status on API failures", async () => {
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response("Unauthorized", { status: 401 });
+    };
+
+    const client = new OuraClient("bad-token", mockFetch);
+    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.toMatchObject({
+      name: "OuraApiError",
+      status: 401,
+    });
+  });
+
+  it("includes error bodies up to 200 characters without truncation", async () => {
+    const body = "a".repeat(200);
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response(body, { status: 500 });
+    };
+
+    const client = new OuraClient("bad-token", mockFetch);
+    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.toThrow(body);
+    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.not.toThrow(`${body}…`);
+  });
+
+  it("truncates error bodies longer than 200 characters", async () => {
+    const body = "x".repeat(250);
+    const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
+      return new Response(body, { status: 500 });
+    };
+
+    const client = new OuraClient("bad-token", mockFetch);
+    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.toThrow(
+      `${"x".repeat(200)}…`,
+    );
+    await expect(client.getSleep("2026-03-01", "2026-03-02")).rejects.not.toThrow(body);
   });
 
   it("fetches daily SpO2 data successfully", async () => {

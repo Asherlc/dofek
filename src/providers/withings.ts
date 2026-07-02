@@ -1,4 +1,5 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import { captureException } from "@sentry/node";
 import { z } from "zod";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { getOAuthRedirectUri } from "../auth/oauth.ts";
@@ -10,6 +11,7 @@ import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "../db/toke
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { isRetryableInfraError } from "../lib/retryable-infra-error.ts";
 import { logger } from "../logger.ts";
+import { fetchProviderPages } from "../sync/pagination.ts";
 import { ProviderAuthenticationFailedError, RefreshTokenRevokedError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type {
@@ -472,6 +474,7 @@ export class WithingsProvider implements WebhookProvider {
     let client = new WithingsClient(tokens.accessToken, this.#fetchFn);
     const sinceUnix = Math.floor(since.getTime() / 1000);
     const nowUnix = Math.floor(Date.now() / 1000);
+    let metricStreamRecordsSynced = 0;
 
     try {
       const measCount = await withSyncLog(
@@ -480,81 +483,96 @@ export class WithingsProvider implements WebhookProvider {
         "metric_stream",
         async () => {
           let count = 0;
-          let offset = 0;
-          let more = 1;
           let refreshedAfterAccessTokenRejection = false;
 
-          while (more) {
-            let response: Awaited<ReturnType<WithingsClient["getMeas"]>>;
-            try {
-              response = await client.getMeas(sinceUnix, nowUnix, offset);
-            } catch (err) {
-              if (!refreshedAfterAccessTokenRejection && isWithingsAccessTokenRejected(err)) {
-                logger.info("[withings] Access token rejected by API, refreshing and retrying...");
-                tokens = await this.#refreshTokens(db, tokens);
-                client = new WithingsClient(tokens.accessToken, this.#fetchFn);
-                refreshedAfterAccessTokenRejection = true;
-                continue;
-              }
-              throw err;
-            }
-
-            for (const group of response.measuregrps) {
-              const parsed = parseMeasureGroup(group);
-
-              // Skip empty groups (objectives or unknown types)
-              if (
-                parsed.weightKg === undefined &&
-                parsed.systolicBp === undefined &&
-                parsed.temperatureC === undefined
-              ) {
-                continue;
-              }
-
+          const pageResult = await fetchProviderPages<WithingsMeasureGroup, number>({
+            providerId: this.id,
+            stepName: "metric_stream",
+            initialCursor: 0,
+            fetchPage: async (offset) => {
+              let response: Awaited<ReturnType<WithingsClient["getMeas"]>>;
               try {
-                await writeMetricStreamBatch(
-                  db,
-                  [
-                    {
-                      providerId: this.id,
-                      externalId: parsed.externalId,
-                      recordedAt: parsed.recordedAt,
-                      weightKg: parsed.weightKg,
-                      bodyFatPct: parsed.bodyFatPct,
-                      muscleMassKg: parsed.muscleMassKg,
-                      boneMassKg: parsed.boneMassKg,
-                      systolicBp: parsed.systolicBp,
-                      diastolicBp: parsed.diastolicBp,
-                      heartPulse: parsed.heartPulse,
-                      temperatureC: parsed.temperatureC,
-                    },
-                  ],
-                  SOURCE_TYPE_API,
-                  undefined,
-                  options?.metricStreamPublisher,
-                );
-                count++;
+                response = await client.getMeas(sinceUnix, nowUnix, offset ?? 0);
               } catch (err) {
-                throwIfProviderSyncAbortError(err);
-                errors.push({
-                  message: err instanceof Error ? err.message : String(err),
-                  externalId: parsed.externalId,
-                  cause: err,
-                });
+                if (!refreshedAfterAccessTokenRejection && isWithingsAccessTokenRejected(err)) {
+                  logger.info(
+                    "[withings] Access token rejected by API, refreshing and retrying...",
+                  );
+                  tokens = await this.#refreshTokens(db, tokens);
+                  client = new WithingsClient(tokens.accessToken, this.#fetchFn);
+                  refreshedAfterAccessTokenRejection = true;
+                  response = await client.getMeas(sinceUnix, nowUnix, offset ?? 0);
+                } else {
+                  throw err;
+                }
               }
-            }
 
-            more = response.more;
-            offset = response.offset;
-          }
+              for (const group of response.measuregrps) {
+                const parsed = parseMeasureGroup(group);
 
-          return { recordCount: count, result: count };
+                // Skip empty groups (objectives or unknown types)
+                if (
+                  parsed.weightKg === undefined &&
+                  parsed.systolicBp === undefined &&
+                  parsed.temperatureC === undefined
+                ) {
+                  continue;
+                }
+
+                try {
+                  await writeMetricStreamBatch(
+                    db,
+                    [
+                      {
+                        providerId: this.id,
+                        externalId: parsed.externalId,
+                        recordedAt: parsed.recordedAt,
+                        weightKg: parsed.weightKg,
+                        bodyFatPct: parsed.bodyFatPct,
+                        muscleMassKg: parsed.muscleMassKg,
+                        boneMassKg: parsed.boneMassKg,
+                        systolicBp: parsed.systolicBp,
+                        diastolicBp: parsed.diastolicBp,
+                        heartPulse: parsed.heartPulse,
+                        temperatureC: parsed.temperatureC,
+                      },
+                    ],
+                    SOURCE_TYPE_API,
+                    undefined,
+                    options?.metricStreamPublisher,
+                  );
+                  count++;
+                  metricStreamRecordsSynced = count;
+                } catch (err) {
+                  throwIfProviderSyncAbortError(err);
+                  captureException(err);
+                  errors.push({
+                    message: err instanceof Error ? err.message : String(err),
+                    externalId: parsed.externalId,
+                    cause: err,
+                  });
+                }
+              }
+
+              return {
+                items: response.measuregrps,
+                nextCursor: response.more ? response.offset : null,
+              };
+            },
+          });
+
+          return {
+            recordCount: count,
+            result: count,
+            degradations: pageResult.degradations,
+          };
         },
         options?.userId,
       );
       recordsSynced += measCount;
     } catch (err) {
       throwIfProviderSyncAbortError(err);
+      recordsSynced += metricStreamRecordsSynced;
       errors.push({
         message: `metric_stream: ${err instanceof Error ? err.message : String(err)}`,
         cause: err,
