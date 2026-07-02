@@ -132,6 +132,7 @@ vi.mock("../db/sync-log.ts", () => ({
           providerId,
           dataType,
           status: "error",
+          recordCount: undefined,
           errorMessage: err instanceof Error ? err.message : String(err),
         });
         throw err;
@@ -1844,6 +1845,13 @@ describe("OuraProvider.sync()", () => {
       (values) => values.externalId === "sleep-before-error" && values.providerId === "oura",
     );
     expect(persistedSleep.durationMinutes).toBe(480);
+    expect(syncLogEntries).toContainEqual(
+      expect.objectContaining({
+        providerId: "oura",
+        dataType: "sleep",
+        status: "error",
+      }),
+    );
   });
 
   it("syncs workouts to activity table", async () => {

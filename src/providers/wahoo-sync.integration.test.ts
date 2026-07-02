@@ -372,7 +372,7 @@ describe("WahooProvider.sync() (integration)", () => {
       }),
     );
 
-    expect(result.degradations).toEqual([]);
+    expect(result.degradations).toBeUndefined();
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.externalId, "9200"));
     expect(rows[0]?.providerAbsentAt).toBeInstanceOf(Date);

@@ -375,7 +375,7 @@ export class ZwiftProvider implements SyncProvider {
       provider: this.id,
       recordsSynced,
       errors,
-      degradations,
+      degradations: degradations.length > 0 ? degradations : undefined,
       duration: Date.now() - start,
     };
   }

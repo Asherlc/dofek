@@ -641,7 +641,7 @@ describe("ZwiftProvider.sync() — activity sync", () => {
       new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
     );
 
-    expect(result.degradations).toEqual([]);
+    expect(result.degradations).toBeUndefined();
     expect(MockZwiftClient.activityOffsets).toEqual([0]);
     expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalledWith(
       db,

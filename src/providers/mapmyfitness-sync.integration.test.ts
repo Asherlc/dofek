@@ -284,7 +284,7 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
     );
 
     expect(result.recordsSynced).toBe(1);
-    expect(result.degradations).toEqual([]);
+    expect(result.degradations).toBeUndefined();
     expect(offsets).toEqual([0]);
   });
 
@@ -307,7 +307,7 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
     );
 
     expect(result.recordsSynced).toBe(0);
-    expect(result.degradations).toEqual([]);
+    expect(result.degradations).toBeUndefined();
   });
 
   it("reconciles missing activities after a complete list", async () => {
@@ -352,7 +352,7 @@ describe("MapMyFitnessProvider.sync() (integration)", () => {
       }),
     );
 
-    expect(result.degradations).toEqual([]);
+    expect(result.degradations).toBeUndefined();
     const [missing] = await ctx.db
       .select({ providerAbsentAt: activity.providerAbsentAt })
       .from(activity)

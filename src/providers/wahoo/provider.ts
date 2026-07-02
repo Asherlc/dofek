@@ -361,7 +361,7 @@ export class WahooProvider implements WebhookProvider {
       provider: this.id,
       recordsSynced,
       errors,
-      degradations: pages.degradations,
+      degradations: pages.degradations.length > 0 ? pages.degradations : undefined,
       duration: Date.now() - start,
     };
   }
