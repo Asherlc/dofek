@@ -608,6 +608,21 @@ describe("session token storage", () => {
     await expect(getSessionToken()).resolves.toBeNull();
   });
 
+  it("retries SecureStore after a transient accessibility failure without caching null", async () => {
+    vi.mocked(SecureStore.getItemAsync)
+      .mockRejectedValueOnce(new Error("User interaction is not allowed"))
+      .mockResolvedValueOnce("stored-token");
+
+    await expect(getSessionToken()).resolves.toBeNull();
+    expect(SecureStore.getItemAsync).toHaveBeenCalledTimes(1);
+
+    await expect(getSessionToken()).resolves.toBe("stored-token");
+    expect(SecureStore.getItemAsync).toHaveBeenCalledTimes(2);
+
+    await expect(getSessionToken()).resolves.toBe("stored-token");
+    expect(SecureStore.getItemAsync).toHaveBeenCalledTimes(2);
+  });
+
   it("clearSessionToken deletes the correct key", async () => {
     await clearSessionToken();
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("dofek_session_token");

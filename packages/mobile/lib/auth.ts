@@ -46,7 +46,11 @@ export async function getSessionToken(): Promise<string | null> {
   }
 
   const token = await readSecureStoreItem(SESSION_TOKEN_KEY);
-  cachedSessionToken = token;
+  // Only cache successful reads. A null from readSecureStoreItem may be a transient
+  // accessibility failure while the device is locked, not a confirmed logout.
+  if (token !== null) {
+    cachedSessionToken = token;
+  }
   return token;
 }
 
