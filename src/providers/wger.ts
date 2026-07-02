@@ -177,78 +177,80 @@ export class WgerProvider implements SyncProvider {
         "activity",
         async () => {
           let count = 0;
-          let url: string | null =
-            `${WGER_API_BASE}/workoutsession/?format=json&ordering=-date&offset=0&limit=50`;
+          const initialUrl = `${WGER_API_BASE}/workoutsession/?format=json&ordering=-date&offset=0&limit=50`;
 
-          while (url) {
-            const response = await this.#fetchFn(url, {
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-                Accept: "application/json",
-              },
-            });
+          const pages = await fetchProviderPages<WgerWorkoutSession, string>({
+            providerId: this.id,
+            stepName: "activity",
+            initialCursor: initialUrl,
+            fetchPage: async (url) => {
+              if (!url) throw new Error("Wger workout pagination missing page URL");
+              const response = await this.#fetchFn(url, {
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                  Accept: "application/json",
+                },
+              });
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`Wger API error (${response.status}): ${text}`);
+              }
+              const data: WgerPaginatedResponse<WgerWorkoutSession> = await response.json();
+              return {
+                items: data.results ?? [],
+                nextCursor: data.next,
+              };
+            },
+            shouldStopAfterPage: (page) =>
+              page.items.some((session) => new Date(session.date) < since),
+          });
 
-            if (!response.ok) {
-              const text = await response.text();
-              throw new Error(`Wger API error (${response.status}): ${text}`);
+          for (const raw of pages.items) {
+            const sessionDate = new Date(raw.date);
+            if (sessionDate < since || sessionDate >= syncWindowEnd) {
+              continue;
             }
 
-            const data: WgerPaginatedResponse<WgerWorkoutSession> = await response.json();
-            const sessions = data.results ?? [];
-
-            for (const raw of sessions) {
-              const sessionDate = new Date(raw.date);
-              if (sessionDate < since) {
-                url = null;
-                break;
-              }
-              if (sessionDate >= syncWindowEnd) {
-                continue;
-              }
-
-              const parsed = parseWgerWorkoutSession(raw);
-              presentActivityExternalIds.add(parsed.externalId);
-              try {
-                await upsertProviderActivity(
-                  db,
-                  {
-                    providerId: this.id,
-                    externalId: parsed.externalId,
-                    activityType: parsed.activityType,
-                    name: parsed.name,
-                    startedAt: parsed.startedAt,
-                    raw: parsed.raw,
-                  },
-                  {
-                    activityType: parsed.activityType,
-                    name: parsed.name,
-                    startedAt: parsed.startedAt,
-                    raw: parsed.raw,
-                  },
-                );
-                count++;
-              } catch (err) {
-                errors.push({
-                  message: err instanceof Error ? err.message : String(err),
+            const parsed = parseWgerWorkoutSession(raw);
+            presentActivityExternalIds.add(parsed.externalId);
+            try {
+              await upsertProviderActivity(
+                db,
+                {
+                  providerId: this.id,
                   externalId: parsed.externalId,
-                  cause: err,
-                });
-              }
-            }
-
-            if (url) {
-              url = data.next;
+                  activityType: parsed.activityType,
+                  name: parsed.name,
+                  startedAt: parsed.startedAt,
+                  raw: parsed.raw,
+                },
+                {
+                  activityType: parsed.activityType,
+                  name: parsed.name,
+                  startedAt: parsed.startedAt,
+                  raw: parsed.raw,
+                },
+              );
+              count++;
+            } catch (err) {
+              errors.push({
+                message: err instanceof Error ? err.message : String(err),
+                externalId: parsed.externalId,
+                cause: err,
+              });
             }
           }
 
-          await finishProviderActivityListSync(db, {
-            providerId: this.id,
-            userId: options?.userId,
-            windowStart: since,
-            windowEnd: syncWindowEnd,
-            presentExternalIds: presentActivityExternalIds,
-          });
-          return { recordCount: count, result: count };
+          if (pages.degradations.length === 0) {
+            await finishProviderActivityListSync(db, {
+              providerId: this.id,
+              userId: options?.userId,
+              windowStart: since,
+              windowEnd: syncWindowEnd,
+              presentExternalIds: presentActivityExternalIds,
+            });
+          }
+          return { recordCount: count, result: count, degradations: pages.degradations };
         },
         options?.userId,
       );
@@ -269,26 +271,22 @@ export class WgerProvider implements SyncProvider {
         async () => {
           let count = 0;
           const initialUrl = `${WGER_API_BASE}/weightentry/?format=json&ordering=-date&offset=0&limit=50`;
-          const pageResult = await fetchProviderPages<WgerWeightEntry, string>({
+          const pages = await fetchProviderPages<WgerWeightEntry, string>({
             providerId: this.id,
             stepName: "metric_stream",
             initialCursor: initialUrl,
             fetchPage: async (url) => {
-              if (!url) {
-                throw new Error("Wger weight pagination missing page URL");
-              }
+              if (!url) throw new Error("Wger weight pagination missing page URL");
               const response = await this.#fetchFn(url, {
                 headers: {
                   Authorization: `Bearer ${accessToken}`,
                   Accept: "application/json",
                 },
               });
-
               if (!response.ok) {
                 const text = await response.text();
                 throw new Error(`Wger API error (${response.status}): ${text}`);
               }
-
               const data: WgerPaginatedResponse<WgerWeightEntry> = await response.json();
               return {
                 items: data.results ?? [],
@@ -298,7 +296,7 @@ export class WgerProvider implements SyncProvider {
             shouldStopAfterPage: (page) => page.items.some((entry) => new Date(entry.date) < since),
           });
 
-          for (const raw of pageResult.items) {
+          for (const raw of pages.items) {
             const entryDate = new Date(raw.date);
             if (entryDate < since || entryDate >= syncWindowEnd) {
               continue;
@@ -318,7 +316,7 @@ export class WgerProvider implements SyncProvider {
                 ],
                 SOURCE_TYPE_API,
                 undefined,
-                options.metricStreamPublisher,
+                options?.metricStreamPublisher,
               );
               count++;
             } catch (err) {
@@ -330,11 +328,7 @@ export class WgerProvider implements SyncProvider {
             }
           }
 
-          return {
-            recordCount: count,
-            result: count,
-            degradations: pageResult.degradations,
-          };
+          return { recordCount: count, result: count, degradations: pages.degradations };
         },
         options?.userId,
       );

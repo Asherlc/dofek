@@ -113,7 +113,7 @@ describe("AmazfitZeppClient workout history", () => {
     };
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
-    await client.getWorkoutHistory();
+    await client.getWorkoutHistory("amazfit-zepp");
 
     const request = requests[0];
     expect(String(request?.url)).toContain("/v1/sport/run/history.json");
@@ -164,9 +164,9 @@ describe("AmazfitZeppClient workout history", () => {
     };
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
-    const summaries = await client.getWorkoutHistory();
+    const summaries = await client.getWorkoutHistory("amazfit-zepp");
 
-    expect(summaries).toHaveLength(3);
+    expect(summaries.items).toHaveLength(3);
     expect(historyRequests).toHaveLength(2);
     expect(historyRequests[1]).toContain(`trackid=${secondPageCursor}`);
   });
@@ -194,14 +194,15 @@ describe("AmazfitZeppClient workout history", () => {
       );
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
-    const [summary] = await client.getWorkoutHistory();
+    const result = await client.getWorkoutHistory("amazfit-zepp");
 
-    expect(summary?.trackid).toBe(startedAt.getTime() / 1000);
-    expect(summary?.type).toBe(9);
-    expect(summary?.source).toBeUndefined();
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.trackid).toBe(startedAt.getTime() / 1000);
+    expect(result.items[0]?.type).toBe(9);
+    expect(result.items[0]?.source).toBeUndefined();
   });
 
-  it("throws when workout history pagination repeats a cursor", async () => {
+  it("returns a pagination_stalled degradation when cursor repeats", async () => {
     const startedAt = new Date("2026-02-06T14:00:00.000Z");
     const repeatedCursor = startedAt.getTime() / 1000;
     const fetchFn: typeof globalThis.fetch = async () =>
@@ -217,9 +218,16 @@ describe("AmazfitZeppClient workout history", () => {
       );
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
-    await expect(client.getWorkoutHistory()).rejects.toThrow(
-      `Amazfit/Zepp workout API error: repeated pagination cursor ${repeatedCursor}`,
-    );
+    const result = await client.getWorkoutHistory("amazfit-zepp");
+
+    // Items from all pages are retained (2 pages were fetched before stall)
+    expect(result.items.length).toBeGreaterThanOrEqual(1);
+    expect(result.items[0]?.trackid).toBe(repeatedCursor);
+    // Degradations are reported instead of throwing
+    expect(result.degradations.length).toBeGreaterThanOrEqual(1);
+    for (const degradation of result.degradations) {
+      expect(degradation.kind).toBe("pagination_stalled");
+    }
   });
 
   it("throws a specific error for non-success HTTP responses", async () => {
@@ -227,7 +235,7 @@ describe("AmazfitZeppClient workout history", () => {
       new Response("server error", { status: 500 });
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
-    await expect(client.getWorkoutHistory()).rejects.toThrow(
+    await expect(client.getWorkoutHistory("amazfit-zepp")).rejects.toThrow(
       "Amazfit/Zepp workout API error (500): server error",
     );
   });
@@ -237,7 +245,9 @@ describe("AmazfitZeppClient workout history", () => {
       new Response("unauthorized", { status: 401 });
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
-    await expect(client.getWorkoutHistory()).rejects.toThrow("Amazfit/Zepp access token expired.");
+    await expect(client.getWorkoutHistory("amazfit-zepp")).rejects.toThrow(
+      "Amazfit/Zepp access token expired.",
+    );
   });
 
   it("includes status code in error cause for workout HTTP 401 responses", async () => {
@@ -246,7 +256,7 @@ describe("AmazfitZeppClient workout history", () => {
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
     try {
-      await client.getWorkoutHistory();
+      await client.getWorkoutHistory("amazfit-zepp");
       expect.fail("Expected error to be thrown");
     } catch (error: unknown) {
       expect(error).toBeInstanceOf(AccessTokenExpiredError);
@@ -265,7 +275,7 @@ describe("AmazfitZeppClient workout history", () => {
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
     try {
-      await client.getWorkoutHistory();
+      await client.getWorkoutHistory("amazfit-zepp");
       expect.fail("Expected error to be thrown");
     } catch (error: unknown) {
       expect(error).toBeInstanceOf(AccessTokenExpiredError);
@@ -283,7 +293,9 @@ describe("AmazfitZeppClient workout history", () => {
       });
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
-    await expect(client.getWorkoutHistory()).rejects.toThrow("Amazfit/Zepp access token expired.");
+    await expect(client.getWorkoutHistory("amazfit-zepp")).rejects.toThrow(
+      "Amazfit/Zepp access token expired.",
+    );
   });
 
   it("throws generic error for non-1002 workout API error codes", async () => {
@@ -294,7 +306,7 @@ describe("AmazfitZeppClient workout history", () => {
       });
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
-    await expect(client.getWorkoutHistory()).rejects.toThrow(
+    await expect(client.getWorkoutHistory("amazfit-zepp")).rejects.toThrow(
       "Amazfit/Zepp workout API error: some other error",
     );
   });
@@ -310,7 +322,7 @@ describe("AmazfitZeppClient workout history", () => {
       );
     const client = new AmazfitZeppClient("token-123", "user-123", fetchFn);
 
-    await expect(client.getWorkoutHistory()).rejects.toThrow();
+    await expect(client.getWorkoutHistory("amazfit-zepp")).rejects.toThrow();
   });
 });
 

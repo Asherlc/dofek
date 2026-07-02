@@ -15,6 +15,8 @@ import { withSyncLog } from "../db/sync-log.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { deleteTokens, ensureProvider, loadTokens } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { fetchProviderPages } from "../sync/pagination.ts";
+import type { SyncDegradation } from "../sync/sync-degradation.ts";
 import {
   AccessTokenExpiredError,
   authFailureReasonFromError,
@@ -405,53 +407,52 @@ export class AmazfitZeppClient {
     return payload.data;
   }
 
-  async getWorkoutHistory(): Promise<ZeppWorkoutSummary[]> {
-    const summaries: ZeppWorkoutSummary[] = [];
-    let fromTrackId: number | undefined;
-    const seenCursors = new Set<number>();
-
-    while (true) {
-      const url = new URL("/v1/sport/run/history.json", this.#apiBaseUrl);
-      url.searchParams.set("userid", this.#userId);
-      if (fromTrackId !== undefined) {
-        url.searchParams.set("trackid", String(fromTrackId));
-      }
-
-      const response = await this.#fetchFn(url.toString(), {
-        headers: this.#headers(),
-      });
-
-      if (!response.ok) {
-        const text = await response.text();
-        if (response.status === 401) {
-          throw new AccessTokenExpiredError("Amazfit/Zepp", {
-            cause: new Error(`Amazfit/Zepp workout API error (${response.status}): ${text}`),
-          });
+  async getWorkoutHistory(
+    providerId: string,
+  ): Promise<{ items: ZeppWorkoutSummary[]; degradations: SyncDegradation[] }> {
+    const result = await fetchProviderPages<ZeppWorkoutSummary, number>({
+      providerId,
+      stepName: "workouts",
+      fetchPage: async (fromTrackId) => {
+        const url = new URL("/v1/sport/run/history.json", this.#apiBaseUrl);
+        url.searchParams.set("userid", this.#userId);
+        if (fromTrackId !== undefined) {
+          url.searchParams.set("trackid", String(fromTrackId));
         }
-        throw new Error(`Amazfit/Zepp workout API error (${response.status}): ${text}`);
-      }
 
-      const payload = zeppWorkoutHistoryResponseSchema.parse(await response.json());
-      if (payload.code !== 1) {
-        const message = payload.message ?? `code ${payload.code}`;
-        if (payload.code === 1002) {
-          throw new AccessTokenExpiredError("Amazfit/Zepp", {
-            cause: new Error(`Amazfit/Zepp workout API error: ${message}`),
-          });
+        const response = await this.#fetchFn(url.toString(), {
+          headers: this.#headers(),
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          if (response.status === 401) {
+            throw new AccessTokenExpiredError("Amazfit/Zepp", {
+              cause: new Error(`Amazfit/Zepp workout API error (${response.status}): ${text}`),
+            });
+          }
+          throw new Error(`Amazfit/Zepp workout API error (${response.status}): ${text}`);
         }
-        throw new Error(`Amazfit/Zepp workout API error: ${message}`);
-      }
 
-      summaries.push(...payload.data.summary);
-      if (payload.data.next === -1) return summaries;
-      if (seenCursors.has(payload.data.next)) {
-        throw new Error(
-          `Amazfit/Zepp workout API error: repeated pagination cursor ${payload.data.next}`,
-        );
-      }
-      seenCursors.add(payload.data.next);
-      fromTrackId = payload.data.next;
-    }
+        const payload = zeppWorkoutHistoryResponseSchema.parse(await response.json());
+        if (payload.code !== 1) {
+          const message = payload.message ?? `code ${payload.code}`;
+          if (payload.code === 1002) {
+            throw new AccessTokenExpiredError("Amazfit/Zepp", {
+              cause: new Error(`Amazfit/Zepp workout API error: ${message}`),
+            });
+          }
+          throw new Error(`Amazfit/Zepp workout API error: ${message}`);
+        }
+
+        return {
+          items: payload.data.summary,
+          nextCursor: payload.data.next === -1 ? null : payload.data.next,
+        };
+      },
+    });
+
+    return { items: result.items, degradations: result.degradations };
   }
 }
 
@@ -688,9 +689,9 @@ export class AmazfitZeppProvider implements SyncProvider {
           let synced = 0;
           const presentActivityExternalIds = new Set<string>();
           onProgress?.(0, "Fetching workout history");
-          const summaries = await client.getWorkoutHistory();
+          const workoutPages = await client.getWorkoutHistory(this.id);
 
-          for (const [workoutIndex, summary] of summaries.entries()) {
+          for (const [workoutIndex, summary] of workoutPages.items.entries()) {
             try {
               const parsed = parseZeppWorkoutSummary(summary);
               const isWithinWindow = parsed.startedAt >= since && parsed.startedAt <= window.until;
@@ -728,21 +729,23 @@ export class AmazfitZeppProvider implements SyncProvider {
               });
             }
             onProgress?.(
-              Math.round(((workoutIndex + 1) / summaries.length) * 100),
-              `${workoutIndex + 1}/${summaries.length} workouts`,
+              Math.round(((workoutIndex + 1) / workoutPages.items.length) * 100),
+              `${workoutIndex + 1}/${workoutPages.items.length} workouts`,
             );
           }
-          if (summaries.length === 0) onProgress?.(100, "0/0 workouts");
+          if (workoutPages.items.length === 0) onProgress?.(100, "0/0 workouts");
 
-          await finishProviderActivityListSync(db, {
-            providerId: this.id,
-            userId: scopedUserId,
-            windowStart: since,
-            windowEnd: window.until,
-            presentExternalIds: presentActivityExternalIds,
-          });
+          if (workoutPages.degradations.length === 0) {
+            await finishProviderActivityListSync(db, {
+              providerId: this.id,
+              userId: scopedUserId,
+              windowStart: since,
+              windowEnd: window.until,
+              presentExternalIds: presentActivityExternalIds,
+            });
+          }
 
-          return { recordCount: synced, result: synced };
+          return { recordCount: synced, result: synced, degradations: workoutPages.degradations };
         },
         scopedUserId,
       );

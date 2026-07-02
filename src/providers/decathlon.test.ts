@@ -181,6 +181,148 @@ describe("DecathlonProvider — rate-limit aware fetch wiring", () => {
     expect(result.recordsSynced).toBe(0);
   });
 
+  it("handles repeated links.next without hanging", async () => {
+    process.env.DECATHLON_CLIENT_ID = "test-id";
+    process.env.DECATHLON_CLIENT_SECRET = "test-secret";
+    providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
+
+    const repeatedUrl =
+      "https://api.decathlon.net/sportstrackingdata/v2/activities?after=2026-03-01T00%3A00%3A00.000Z&limit=50";
+    let callCount = 0;
+    const mockFetch: typeof globalThis.fetch = async () => {
+      callCount++;
+      return Response.json({
+        data: [
+          {
+            id: "act-1",
+            name: "Run",
+            sport: "/v2/sports/381",
+            startdate: "2026-03-01T08:00:00Z",
+            duration: 3600,
+            dataSummaries: [],
+          },
+        ],
+        links: { next: repeatedUrl },
+      });
+    };
+
+    const db = createMockDb();
+    const result = await new DecathlonProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
+    // Guard went through repeated-cursor detection flow (at least 2 calls)
+    expect(callCount).toBeGreaterThanOrEqual(2);
+    expect(callCount).toBeLessThanOrEqual(3);
+    // Reconciliation is skipped when pagination degrades
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).not.toHaveBeenCalled();
+  });
+
+  it("reports API errors during activity sync", async () => {
+    process.env.DECATHLON_CLIENT_ID = "test-id";
+    process.env.DECATHLON_CLIENT_SECRET = "test-secret";
+
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/activities")) {
+        return new Response("server error", { status: 500 });
+      }
+      return new Response("not found", { status: 404 });
+    };
+
+    const db = createMockDb();
+    const result = await new DecathlonProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({ sinceDate: "2026-03-01", untilDate: "2026-03-01" }),
+      }),
+    );
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("Decathlon API error (500)");
+    expect(result.recordsSynced).toBe(0);
+  });
+
+  it("skips activities after the exact sync window end boundary", async () => {
+    process.env.DECATHLON_CLIENT_ID = "test-id";
+    process.env.DECATHLON_CLIENT_SECRET = "test-secret";
+
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/activities")) {
+        return Response.json({
+          data: [
+            {
+              id: "after-boundary",
+              name: "Run",
+              sport: "/v2/sports/381",
+              startdate: "2026-03-02T00:00:00.001Z",
+              duration: 0,
+              dataSummaries: [],
+            },
+          ],
+        });
+      }
+      return new Response("not found", { status: 404 });
+    };
+
+    const db = createMockDb();
+    const result = await new DecathlonProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(0);
+    expect(providerActivityAbsenceMocks.finishProviderActivityListSync).toHaveBeenCalled();
+  });
+
+  it("includes activities exactly at the sync window end boundary", async () => {
+    process.env.DECATHLON_CLIENT_ID = "test-id";
+    process.env.DECATHLON_CLIENT_SECRET = "test-secret";
+
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/activities")) {
+        return Response.json({
+          data: [
+            {
+              id: "at-boundary",
+              name: "Run",
+              sport: "/v2/sports/381",
+              startdate: "2026-03-01T23:59:59.999Z",
+              duration: 0,
+              dataSummaries: [],
+            },
+          ],
+        });
+      }
+      return new Response("not found", { status: 404 });
+    };
+
+    const db = createMockDb();
+    const result = await new DecathlonProvider(mockFetch).sync(
+      new SyncRun({
+        db,
+        window: SyncWindow.fromDateRange({
+          sinceDate: "2026-03-01",
+          untilDate: "2026-03-01",
+        }),
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(1);
+  });
+
   it("rejects malformed activity dates at the API boundary", async () => {
     process.env.DECATHLON_CLIENT_ID = "test-id";
     process.env.DECATHLON_CLIENT_SECRET = "test-secret";
