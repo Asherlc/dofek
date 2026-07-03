@@ -3,10 +3,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const pgState = vi.hoisted<{
   connections: string[];
   endedConnections: string[];
+  queryFailures: Array<{ error: Error; remainingFailures: number; sqlIncludes: string }>;
   queries: Array<{ connectionString: string; sql: string }>;
 }>(() => ({
   connections: [],
   endedConnections: [],
+  queryFailures: [],
   queries: [],
 }));
 
@@ -30,6 +32,13 @@ vi.mock("pg", () => {
 
     async query(statement: string): Promise<{ rows: [] }> {
       pgState.queries.push({ connectionString: this.connectionString, sql: statement });
+      const matchingFailure = pgState.queryFailures.find(
+        (failure) => failure.remainingFailures > 0 && statement.includes(failure.sqlIncludes),
+      );
+      if (matchingFailure) {
+        matchingFailure.remainingFailures -= 1;
+        throw matchingFailure.error;
+      }
       return { rows: [] };
     }
 
@@ -60,6 +69,16 @@ vi.mock("testcontainers", () => ({
   },
 }));
 
+const originalBeforeExitListeners = process.listeners("beforeExit");
+
+const removeAddedBeforeExitListeners = (): void => {
+  for (const listener of process.listeners("beforeExit")) {
+    if (!originalBeforeExitListeners.includes(listener)) {
+      process.off("beforeExit", listener);
+    }
+  }
+};
+
 vi.mock("./index.ts", () => ({
   createDatabase: (connectionString: string) => ({
     $client: {
@@ -74,6 +93,7 @@ describe("setupTestDatabase", () => {
   const originalTestDatabaseUrl = process.env.TEST_DATABASE_URL;
 
   afterEach(() => {
+    removeAddedBeforeExitListeners();
     if (originalTestDatabaseUrl === undefined) {
       delete process.env.TEST_DATABASE_URL;
     } else {
@@ -81,6 +101,7 @@ describe("setupTestDatabase", () => {
     }
     pgState.connections.length = 0;
     pgState.endedConnections.length = 0;
+    pgState.queryFailures.length = 0;
     pgState.queries.length = 0;
     createDatabaseState.endedConnections.length = 0;
     vi.resetModules();
@@ -110,7 +131,7 @@ describe("setupTestDatabase", () => {
     );
     const dropDatabaseStatements = pgState.queries
       .map(({ sql }) => sql)
-      .filter((sql) => sql.startsWith('DROP DATABASE "test_'));
+      .filter((sql) => sql.startsWith('DROP DATABASE IF EXISTS "test_'));
     const templateConnectionLockStatements = pgState.queries
       .map(({ sql }) => sql)
       .filter((sql) => sql.startsWith('ALTER DATABASE "dofek_integration_template_'));
@@ -124,5 +145,57 @@ describe("setupTestDatabase", () => {
     expect(dropDatabaseStatements).toHaveLength(2);
     expect(templateConnectionLockStatements).toHaveLength(1);
     expect(templateBackendTerminationStatements.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("retries template creation after a transient failure", async () => {
+    process.env.TEST_DATABASE_URL = "postgres://test:test@localhost:5432/test";
+    pgState.queryFailures.push({
+      error: new Error("temporary create failure"),
+      remainingFailures: 1,
+      sqlIncludes: 'CREATE DATABASE "dofek_integration_template_',
+    });
+
+    const { setupTestDatabase } = await import("./test-helpers.ts");
+
+    await expect(setupTestDatabase()).rejects.toThrow("temporary create failure");
+    const context = await setupTestDatabase();
+    await context.cleanup();
+
+    const templateCreateStatements = pgState.queries
+      .map(({ sql }) => sql)
+      .filter((sql) => sql.startsWith('CREATE DATABASE "dofek_integration_template_'));
+
+    expect(templateCreateStatements).toHaveLength(2);
+  });
+
+  it("drops the process template database at process teardown", async () => {
+    process.env.TEST_DATABASE_URL = "postgres://test:test@localhost:5432/test";
+    const listenersBeforeSetup = process.listeners("beforeExit");
+
+    const { setupTestDatabase } = await import("./test-helpers.ts");
+
+    const context = await setupTestDatabase();
+    await context.cleanup();
+
+    const cleanupListener = process
+      .listeners("beforeExit")
+      .find((listener) => !listenersBeforeSetup.includes(listener));
+    if (!cleanupListener) {
+      throw new Error("Template cleanup listener was not registered");
+    }
+    process.off("beforeExit", cleanupListener);
+
+    const templateDropsBeforeCleanup = pgState.queries.filter(({ sql }) =>
+      sql.startsWith('DROP DATABASE IF EXISTS "dofek_integration_template_'),
+    ).length;
+    const cleanupResult = Reflect.apply(cleanupListener, process, []);
+    if (cleanupResult instanceof Promise) {
+      await cleanupResult;
+    }
+    const templateDropsAfterCleanup = pgState.queries.filter(({ sql }) =>
+      sql.startsWith('DROP DATABASE IF EXISTS "dofek_integration_template_'),
+    ).length;
+
+    expect(templateDropsAfterCleanup).toBe(templateDropsBeforeCleanup + 1);
   });
 });

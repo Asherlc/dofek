@@ -24,7 +24,7 @@ function dockerComposeOutput(args: string[]): string {
 
 function runOneShotService(service: string): void {
   dockerCompose(["up", "-d", "--no-build", service]);
-  const containerId = dockerComposeOutput(["ps", "-q", service]);
+  const containerId = dockerComposeOutput(["ps", "--all", "-q", service]);
   if (!containerId) {
     throw new Error(`Could not find ${service} container after docker compose up`);
   }

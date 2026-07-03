@@ -19,6 +19,8 @@ const isRunnableMigrationStatement = (statement: string): boolean =>
   statement.length > 0 && !statement.includes("CREATE OR REPLACE VIEW clickhouse.v_sleep AS");
 
 let templateDatabasePromise: Promise<string> | null = null;
+let templateDatabaseCleanup: { adminUrl: string; templateName: string } | null = null;
+let templateDatabaseCleanupRegistered = false;
 
 const databaseNameForUrl = (adminUrl: string, dbName: string): string => {
   const url = new URL(adminUrl);
@@ -29,7 +31,10 @@ const databaseNameForUrl = (adminUrl: string, dbName: string): string => {
 const processTemplateDatabaseName = (): string => `dofek_integration_template_${process.pid}`;
 
 async function ensureTemplateDatabase(adminUrl: string): Promise<string> {
-  templateDatabasePromise ??= createTemplateDatabase(adminUrl);
+  templateDatabasePromise ??= createTemplateDatabase(adminUrl).catch((error: unknown) => {
+    templateDatabasePromise = null;
+    throw error;
+  });
   return templateDatabasePromise;
 }
 
@@ -37,14 +42,18 @@ async function createTemplateDatabase(adminUrl: string): Promise<string> {
   const templateName = processTemplateDatabaseName();
   const admin = new Client({ connectionString: adminUrl });
   await admin.connect();
-  await admin.query(`DROP DATABASE IF EXISTS ${escapeIdentifier(templateName)} WITH (FORCE)`);
-  await admin.query(`CREATE DATABASE ${escapeIdentifier(templateName)}`);
-  await admin.end();
+  try {
+    await admin.query(`DROP DATABASE IF EXISTS ${escapeIdentifier(templateName)} WITH (FORCE)`);
+    await admin.query(`CREATE DATABASE ${escapeIdentifier(templateName)}`);
+  } finally {
+    await admin.end();
+  }
 
   const templateConnectionString = databaseNameForUrl(adminUrl, templateName);
   await waitForDatabase(templateConnectionString);
   await migrateTestDatabase(templateConnectionString);
   await lockTemplateDatabase(adminUrl, templateName);
+  registerTemplateDatabaseCleanup(adminUrl, templateName);
 
   return templateName;
 }
@@ -52,11 +61,41 @@ async function createTemplateDatabase(adminUrl: string): Promise<string> {
 async function lockTemplateDatabase(adminUrl: string, templateName: string): Promise<void> {
   const admin = new Client({ connectionString: adminUrl });
   await admin.connect();
-  await admin.query(
-    `ALTER DATABASE ${escapeIdentifier(templateName)} WITH ALLOW_CONNECTIONS false`,
-  );
-  await terminateDatabaseConnections(admin, templateName);
-  await admin.end();
+  try {
+    await admin.query(
+      `ALTER DATABASE ${escapeIdentifier(templateName)} WITH ALLOW_CONNECTIONS false`,
+    );
+    await terminateDatabaseConnections(admin, templateName);
+  } finally {
+    await admin.end();
+  }
+}
+
+function registerTemplateDatabaseCleanup(adminUrl: string, templateName: string): void {
+  templateDatabaseCleanup = { adminUrl, templateName };
+  if (templateDatabaseCleanupRegistered) return;
+
+  templateDatabaseCleanupRegistered = true;
+  process.once("beforeExit", cleanupTemplateDatabaseAtProcessExit);
+}
+
+async function cleanupTemplateDatabaseAtProcessExit(): Promise<void> {
+  const cleanup = templateDatabaseCleanup;
+  templateDatabaseCleanup = null;
+  templateDatabasePromise = null;
+  if (!cleanup) return;
+
+  await dropDatabase(cleanup.adminUrl, cleanup.templateName);
+}
+
+async function dropDatabase(adminUrl: string, dbName: string): Promise<void> {
+  const admin = new Client({ connectionString: adminUrl });
+  await admin.connect();
+  try {
+    await admin.query(`DROP DATABASE IF EXISTS ${escapeIdentifier(dbName)} WITH (FORCE)`);
+  } finally {
+    await admin.end();
+  }
 }
 
 async function terminateDatabaseConnections(admin: Client, dbName: string): Promise<void> {
@@ -243,10 +282,7 @@ export async function setupTestDatabase(): Promise<TestContext> {
       if (container) {
         await container.stop();
       } else if (adminUrl && dbName) {
-        const admin = new Client({ connectionString: adminUrl });
-        await admin.connect();
-        await admin.query(`DROP DATABASE ${escapeIdentifier(dbName)} WITH (FORCE)`);
-        await admin.end();
+        await dropDatabase(adminUrl, dbName);
       }
     },
   };
