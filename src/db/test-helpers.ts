@@ -21,6 +21,7 @@ const isRunnableMigrationStatement = (statement: string): boolean =>
 let templateDatabasePromise: Promise<string> | null = null;
 let templateDatabaseCleanup: { adminUrl: string; templateName: string } | null = null;
 let templateDatabaseCleanupRegistered = false;
+const templateDatabaseInstanceId = randomBytes(8).toString("hex");
 
 const databaseNameForUrl = (adminUrl: string, dbName: string): string => {
   const url = new URL(adminUrl);
@@ -28,7 +29,8 @@ const databaseNameForUrl = (adminUrl: string, dbName: string): string => {
   return url.toString();
 };
 
-const processTemplateDatabaseName = (): string => `dofek_integration_template_${process.pid}`;
+const processTemplateDatabaseName = (): string =>
+  `dofek_integration_template_${process.pid}_${templateDatabaseInstanceId}`;
 
 async function ensureTemplateDatabase(adminUrl: string): Promise<string> {
   templateDatabasePromise ??= createTemplateDatabase(adminUrl).catch((error: unknown) => {

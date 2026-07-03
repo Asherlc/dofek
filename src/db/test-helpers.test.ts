@@ -151,6 +151,25 @@ describe("setupTestDatabase", () => {
     expect(templateBackendTerminationStatements.length).toBeGreaterThanOrEqual(2);
   });
 
+  it("uses distinct template databases for isolated module instances in one process", async () => {
+    process.env.TEST_DATABASE_URL = "postgres://test:test@localhost:5432/test";
+
+    const firstModule = await import("./test-helpers.ts");
+    const firstContext = await firstModule.setupTestDatabase();
+    await firstContext.cleanup();
+
+    vi.resetModules();
+    const secondModule = await import("./test-helpers.ts");
+    const secondContext = await secondModule.setupTestDatabase();
+    await secondContext.cleanup();
+
+    const templateCreateStatements = pgState.queries
+      .map(({ sql }) => sql)
+      .filter((sql) => sql.startsWith('CREATE DATABASE "dofek_integration_template_'));
+
+    expect(new Set(templateCreateStatements).size).toBe(2);
+  });
+
   it("retries template creation after a transient failure", async () => {
     process.env.TEST_DATABASE_URL = "postgres://test:test@localhost:5432/test";
     pgState.queryFailures.push({
