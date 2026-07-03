@@ -1,3 +1,5 @@
+import { captureException } from "./telemetry";
+
 const BODY_PREVIEW_LIMIT = 240;
 
 function getResponseContentType(response: Response): string | null {
@@ -7,11 +9,6 @@ function getResponseContentType(response: Response): string | null {
 function isJsonResponse(response: Response): boolean {
   const contentType = getResponseContentType(response);
   return contentType?.includes("json") ?? false;
-}
-
-function responseHasEmptyBody(response: Response): boolean {
-  if (response.status === 204 || response.status === 205 || response.status === 304) return true;
-  return response.headers.get("content-length") === "0";
 }
 
 function buildContentTypeLabel(response: Response): string {
@@ -47,20 +44,31 @@ async function readBodyPreview(response: Response): Promise<string> {
   }
 }
 
-function withJsonParseDiagnostics(
+async function parseJsonBody(
   response: Response,
   input: Parameters<typeof fetch>[0],
-): Response {
-  const originalJson = response.json.bind(response);
-  response.json = async () => {
-    try {
-      return await originalJson();
-    } catch {
-      throw new Error(
-        `The server returned an invalid response for ${getTrpcPath(input)}: ${buildStatusLabel(response)}, ${buildContentTypeLabel(response)}`,
-      );
-    }
-  };
+): Promise<unknown> {
+  const bodyText = await response.text();
+  if (bodyText.trim().length === 0) {
+    throw new Error(
+      `The server returned an empty response for ${getTrpcPath(input)}: ${buildStatusLabel(response)}, ${buildContentTypeLabel(response)}`,
+    );
+  }
+
+  try {
+    return JSON.parse(bodyText);
+  } catch (error) {
+    const diagnosticError = new Error(
+      `The server returned an invalid response for ${getTrpcPath(input)}: ${buildStatusLabel(response)}, ${buildContentTypeLabel(response)}`,
+      { cause: error },
+    );
+    captureException(diagnosticError);
+    throw diagnosticError;
+  }
+}
+
+function withJsonBodyDiagnostics(response: Response, input: Parameters<typeof fetch>[0]): Response {
+  response.json = () => parseJsonBody(response, input);
   return response;
 }
 
@@ -68,12 +76,7 @@ export function createTrpcFetch(fetchImpl: typeof fetch = fetch): typeof fetch {
   return async (input, init) => {
     const response = await fetchImpl(input, init);
     if (isJsonResponse(response)) {
-      if (responseHasEmptyBody(response)) {
-        throw new Error(
-          `The server returned an empty response for ${getTrpcPath(input)}: ${buildStatusLabel(response)}, ${buildContentTypeLabel(response)}`,
-        );
-      }
-      return withJsonParseDiagnostics(response, input);
+      return withJsonBodyDiagnostics(response, input);
     }
 
     const bodyPreview = await readBodyPreview(response);
