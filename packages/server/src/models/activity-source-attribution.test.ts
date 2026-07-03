@@ -71,6 +71,37 @@ describe("ActivitySourceAttribution", () => {
     ]);
   });
 
+  it("keeps removed subsources when the same provider has a different active subsource", () => {
+    const attribution = ActivitySourceAttribution.fromEntries(
+      [{ providerId: "apple_health", externalId: "active-whoop", subsource: "WHOOP" }],
+      [
+        {
+          providerId: "apple_health",
+          externalId: "removed-strong",
+          memberActivityId: "member-strong",
+          providerAbsentAt: "2026-03-05T14:30:00.000Z",
+          subsource: "Strong",
+        },
+      ],
+    );
+
+    expect(attribution.toSourceLinks(mockLookup)).toEqual([
+      {
+        providerId: "apple_health",
+        label: "Strong (via Apple Health)",
+        url: null,
+        providerAbsentAt: "2026-03-05T14:30:00.000Z",
+        memberActivityId: "member-strong",
+      },
+      {
+        providerId: "apple_health",
+        label: "WHOOP (via Apple Health)",
+        url: null,
+        providerAbsentAt: null,
+      },
+    ]);
+  });
+
   it("exposes partial absent sources for client-side formatting", () => {
     const partial = ActivitySourceAttribution.fromEntries(
       [{ providerId: "garmin", externalId: "123" }],

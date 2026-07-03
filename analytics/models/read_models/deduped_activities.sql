@@ -29,7 +29,11 @@ absent_group_members AS (
         absent.id AS activity_id,
         absent.provider_id AS provider_id,
         absent.external_id AS external_id,
-        absent.provider_absent_at AS provider_absent_at
+        absent.provider_absent_at AS provider_absent_at,
+        coalesce(
+            nullIf(trim(BOTH ' ' FROM JSONExtractString(absent.raw, 'sourceName')), ''),
+            nullIf(trim(BOTH ' ' FROM absent.source_name), '')
+        ) AS subsource
     FROM final_groups
     INNER JOIN {{ source('postgres_fitness', 'activity') }} AS absent FINAL
         ON absent.id = final_groups.activity_id
@@ -48,7 +52,8 @@ absent_source_links AS (
                 'providerId', assumeNotNull(provider_id),
                 'externalId', assumeNotNull(external_id),
                 'memberActivityId', toString(activity_id),
-                'providerAbsentAt', toString(assumeNotNull(provider_absent_at))
+                'providerAbsentAt', toString(assumeNotNull(provider_absent_at)),
+                'subsource', coalesce(subsource, '')
             ),
             provider_id IS NOT null
             AND external_id IS NOT null

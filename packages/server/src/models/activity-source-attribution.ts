@@ -92,12 +92,18 @@ export class ActivitySourceAttribution {
     const activeLinks = this.#activeEntries.map((entry) =>
       ActivitySourceAttribution.#toSourceLink(entry, lookup),
     );
-    const activeProviderIds = new Set(this.#activeEntries.map((entry) => entry.providerId));
+    const activeSourceKeys = new Set(
+      this.#activeEntries.map((entry) => ActivitySourceAttribution.#sourceKey(entry)),
+    );
     const absentLinks = this.#absentEntries
-      .filter((entry) => !activeProviderIds.has(entry.providerId))
+      .filter((entry) => !activeSourceKeys.has(ActivitySourceAttribution.#sourceKey(entry)))
       .map((entry) => ActivitySourceAttribution.#toSourceLink(entry, lookup));
 
     return [...activeLinks, ...absentLinks].sort(ActivitySourceAttribution.#compareSourceLinks);
+  }
+
+  static #sourceKey(entry: SourceExternalIdEntry): string {
+    return `${entry.providerId}:${entry.subsource ?? ""}`;
   }
 
   static #toSourceLink(entry: SourceExternalIdEntry, lookup: ProviderLookup): SourceLink {

@@ -1,6 +1,6 @@
 # Activity Source Attribution Domain Model TDD Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:test-driven-development before implementation. If executing this plan task-by-task, also use superpowers:executing-plans or superpowers:subagent-driven-development as appropriate. Steps use checkbox (`- [ ]`) syntax for tracking.
+This plan uses test-first implementation steps. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Promote activity source attribution from generic provider/id JSON plumbing into a first-class typed read-model contract.
 

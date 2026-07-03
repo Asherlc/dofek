@@ -484,7 +484,11 @@ export class ActivityRepository extends BaseRepository {
                   'providerId', a.provider_id,
                   'externalId', a.external_id,
                   'memberActivityId', a.id::text,
-                  'providerAbsentAt', a.provider_absent_at
+                  'providerAbsentAt', a.provider_absent_at,
+                  'subsource', COALESCE(
+                    NULLIF(trim(a.raw->>'sourceName'), ''),
+                    NULLIF(trim(a.source_name), '')
+                  )
                 )
               )
               ELSE NULL

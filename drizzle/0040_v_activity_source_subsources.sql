@@ -29,7 +29,9 @@ tombstoned AS (
     a.external_id,
     a.started_at,
     a.ended_at,
-    a.provider_absent_at
+    a.provider_absent_at,
+    a.raw,
+    a.source_name
   FROM fitness.activity AS a
   WHERE
     a.provider_absent_at IS NOT null
@@ -46,7 +48,9 @@ effective_tombstoned AS (
     t.external_id,
     t.started_at,
     t.ended_at,
-    t.provider_absent_at
+    t.provider_absent_at,
+    t.raw,
+    t.source_name
   FROM tombstoned AS t
   WHERE t.provider_id <> 'apple_health'
   UNION ALL
@@ -57,7 +61,9 @@ effective_tombstoned AS (
     t.external_id,
     t.started_at,
     t.ended_at,
-    t.provider_absent_at
+    t.provider_absent_at,
+    t.raw,
+    t.source_name
   FROM tombstoned AS t
   INNER JOIN fitness.activity AS a ON t.id = a.id
   WHERE
@@ -212,7 +218,11 @@ absent_source_links AS (
         'providerId', t.provider_id,
         'externalId', t.external_id,
         'memberActivityId', t.id::text,
-        'providerAbsentAt', t.provider_absent_at
+        'providerAbsentAt', t.provider_absent_at,
+        'subsource', COALESCE(
+          NULLIF(TRIM(t.raw ->> 'sourceName'), ''),
+          NULLIF(TRIM(t.source_name), '')
+        )
       )
       ORDER BY t.provider_id
     ) AS absent_source_external_ids
