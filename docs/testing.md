@@ -10,6 +10,27 @@ docker compose ps db clickhouse redis
 pnpm exec vitest run --project integration
 ```
 
+For faster local integration runs against the shared compose database, point
+`TEST_DATABASE_URL` at the generated local Postgres URL:
+
+```bash
+pnpm compose:up
+set -a; . ./.env.local; set +a
+TEST_DATABASE_URL="$DATABASE_URL" pnpm exec vitest run --project integration
+```
+
+When `TEST_DATABASE_URL` is set, `setupTestDatabase()` creates one migrated
+template database for the current Vitest process and clones each isolated test
+database from that template. PostgreSQL supports creating a database from a
+template database with `CREATE DATABASE ... TEMPLATE ...`; cloning avoids
+replaying the full migration set for every integration test file while keeping
+per-file database isolation.
+
+Sources:
+
+- PostgreSQL `CREATE DATABASE` template option: https://www.postgresql.org/docs/current/sql-createdatabase.html
+- Vitest `--shard` option for splitting CI test runs: https://vitest.dev/guide/cli.html#shard
+
 Router integration tests that exercise activity sensor analytics use ClickHouse-backed
 test stores. The test helper isolates ClickHouse databases per test database, creates
 the current ClickHouse schema/read models directly, syncs the seeded Postgres fixtures,
@@ -18,6 +39,38 @@ and drops the isolated databases during test cleanup.
 Do not make router integration setup call the tracked production ClickHouse migration
 runner. Historical one-off migrations and backfills should not be replayed by broad
 test suites; tests should validate application behavior against the current schema.
+
+## Web E2E
+
+Use the full reset command when Dockerfiles, migrations, analytics models, or seeded
+state changed:
+
+```bash
+pnpm e2e:web
+```
+
+For repeated local runs after the E2E image and volumes already exist, reuse the
+stack instead:
+
+```bash
+pnpm e2e:web:reuse
+```
+
+`pnpm e2e:web:reuse` starts the existing E2E compose services with `--no-build`,
+waits for migrations and analytics setup, keeps volumes after Cypress exits, and
+passes extra flags through to Cypress:
+
+```bash
+pnpm e2e:web:reuse -- --spec cypress/e2e/dashboard.cy.ts
+```
+
+CI runs Cypress specs in one job because the Docker build, service startup,
+migrations, analytics setup, and server startup dominate the runtime. Manual
+spec sharding on GitHub-hosted runners repeats that setup for each shard.
+Cypress's built-in `--parallel` orchestration requires recorded Cypress Cloud
+runs, so the workflow does not use Cloud orchestration either.
+
+Source: Cypress parallelization requirements: https://docs.cypress.io/cloud/features/smart-orchestration/parallelization
 
 ## Chain-Mock Assertions (`values(...)`)
 

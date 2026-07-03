@@ -21,6 +21,7 @@
     "CPLUSPLUSFLAGS",
     "chunker",
     "dofek",
+    "datname",
     "Dokploy",
     "Podfile",
     "prebuilds",
