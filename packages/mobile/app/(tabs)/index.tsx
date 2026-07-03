@@ -5,6 +5,7 @@ import {
   formatSleepDebtInline,
 } from "@dofek/format/format";
 import { autoMealType } from "@dofek/nutrition/meal";
+import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { useRouter } from "expo-router";
 import { useEffect } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -42,7 +43,10 @@ export default function TodayScreen() {
   const endDate = useTodayQueryDate();
 
   // Consolidated dashboard data fetch
-  const dashboardQuery = trpc.mobileDashboard.dashboard.useQuery({ endDate });
+  const dashboardQuery = trpc.mobileDashboard.dashboard.useQuery(
+    { endDate },
+    { placeholderData: (previousData) => previousData },
+  );
   const dataHealthQuery = trpc.sync.dataHealth.useQuery();
   const dashboardData = dashboardQuery.data;
   const anomalyQuery = trpc.anomalyDetection.check.useQuery(
@@ -70,7 +74,11 @@ export default function TodayScreen() {
   const sleepNeed = dashboardData?.sleepNeed;
   const anomalies = anomalyQuery.data ?? dashboardData?.anomalies;
 
-  const isLoading = dashboardQuery.isLoading;
+  const isLoading = shouldShowBlockingLoading({
+    data: dashboardData,
+    isFetching: dashboardQuery.isFetching,
+    isLoading: dashboardQuery.isLoading,
+  });
   const isError = dashboardQuery.isError;
 
   const { refreshing, onRefresh } = useRefresh({

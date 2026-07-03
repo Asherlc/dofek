@@ -5,6 +5,7 @@ import {
   formatNumber,
   formatTrainingLoad,
 } from "@dofek/format/format";
+import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { aggregateWeeklyVolume, StrainScore, WorkloadRatio } from "@dofek/scoring/scoring";
 import {
   collapseWeeklyVolumeActivityTypes,
@@ -12,15 +13,7 @@ import {
 } from "@dofek/training/training";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import {
-  ActivityIndicator,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ActivityCard } from "../../components/ActivityCard";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { SparkLine } from "../../components/charts/SparkLine";
@@ -99,7 +92,11 @@ export default function StrainScreen() {
 
   const strainTrend = workloadData.map((d) => d.strain);
 
-  const isLoading = trainingQuery.isLoading;
+  const isLoading = shouldShowBlockingLoading({
+    data: trainingData,
+    isFetching: trainingQuery.isFetching,
+    isLoading: trainingQuery.isLoading,
+  });
   const { refreshing, onRefresh } = useRefresh({
     invalidate: () => utils.mobileDashboard.training.invalidate().then(() => undefined),
   });
@@ -311,9 +308,7 @@ export default function StrainScreen() {
                 <Text style={styles.sectionLinkButtonText}>View all</Text>
               </TouchableOpacity>
             </View>
-            {trainingQuery.isLoading ? (
-              <ActivityIndicator color={colors.accent} style={styles.activitiesLoader} />
-            ) : trainingQuery.isError || activitiesParsed.error ? (
+            {trainingQuery.isError || activitiesParsed.error ? (
               <Text style={styles.errorText}>
                 {trainingQuery.error?.message ?? "Failed to load activities."}
               </Text>
@@ -533,9 +528,6 @@ const styles = StyleSheet.create({
   },
   activitiesStack: {
     gap: 8,
-  },
-  activitiesLoader: {
-    paddingVertical: 24,
   },
   activitiesEmpty: {
     color: colors.textTertiary,

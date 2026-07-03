@@ -8,6 +8,7 @@ import {
   isToday,
   isYesterday,
 } from "@dofek/format/format";
+import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { sleepDebtColor } from "@dofek/scoring/scoring";
 import { useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -17,7 +18,6 @@ import { SleepBar } from "../components/charts/SleepBar";
 import { SparkLine } from "../components/charts/SparkLine";
 import { DaySelector } from "../components/DaySelector";
 import { MetricCard } from "../components/MetricCard";
-import { shouldShowBlockingLoading } from "../lib/loading-policy";
 import { trpc } from "../lib/trpc";
 import { useRefresh } from "../lib/useRefresh";
 import { colors } from "../theme";

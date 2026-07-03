@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shouldShowBlockingLoading } from "./loading-policy";
+import { shouldShowBlockingLoading } from "./loading-policy.ts";
 
 describe("shouldShowBlockingLoading", () => {
   it("keeps existing rows visible while a background refetch is active", () => {
