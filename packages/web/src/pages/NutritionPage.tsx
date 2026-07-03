@@ -16,6 +16,7 @@ import { FoodEntryRow } from "../components/FoodEntryRow.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { MacroBar } from "../components/MacroBar.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
+import { shouldShowBlockingLoading } from "../lib/loading-policy.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 
@@ -82,7 +83,10 @@ export function NutritionPage() {
 
   const dateString = formatDateForQuery(selectedDate);
 
-  const foodQuery = trpc.food.byDate.useQuery({ date: dateString });
+  const foodQuery = trpc.food.byDate.useQuery(
+    { date: dateString },
+    { placeholderData: (previousData) => previousData },
+  );
   const createMutation = trpc.food.create.useMutation({
     onSuccess: () => {
       foodQuery.refetch();
@@ -100,6 +104,11 @@ export function NutritionPage() {
   const [pendingAiMealItems, setPendingAiMealItems] = useState<AiMealItems>([]);
 
   const entries = foodQuery.error ? [] : z.array(foodEntrySchema).parse(foodQuery.data ?? []);
+  const isFoodBlockingLoading = shouldShowBlockingLoading({
+    data: entries,
+    isFetching: foodQuery.isFetching,
+    isLoading: foodQuery.isLoading,
+  });
 
   const dailyTotals = useMemo(() => computeDailyTotals(entries), [entries]);
 
@@ -347,7 +356,7 @@ export function NutritionPage() {
         </div>
 
         {/* Loading state */}
-        {foodQuery.isLoading && <ChartLoadingSkeleton height={200} />}
+        {isFoodBlockingLoading && <ChartLoadingSkeleton height={200} />}
 
         {foodQuery.error ? (
           <QueryStatePanel error={foodQuery.error} height={200} />
@@ -405,7 +414,7 @@ export function NutritionPage() {
             </div>
 
             {/* Meal sections */}
-            {!foodQuery.isLoading &&
+            {!isFoodBlockingLoading &&
               MEAL_ORDER.map((mealType) => {
                 const mealEntries = mealGroups.get(mealType) ?? [];
                 const mealCalories = computeMealCalories(mealEntries);

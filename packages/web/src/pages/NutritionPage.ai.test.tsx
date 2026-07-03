@@ -8,6 +8,12 @@ const analyzeItemsMutateAsyncMock = vi.fn();
 const createFoodMutateMock = vi.fn();
 const createAiEntryMutateAsyncMock = vi.fn();
 const deleteMutateMock = vi.fn();
+let foodByDateQuery: {
+  data: unknown[];
+  error: Error | null;
+  isFetching?: boolean;
+  isLoading: boolean;
+};
 
 vi.mock("../lib/telemetry.ts", () => ({
   captureException: vi.fn(),
@@ -22,12 +28,7 @@ vi.mock("../lib/trpc.ts", () => ({
     },
     food: {
       byDate: {
-        useQuery: () => ({
-          data: [],
-          error: null,
-          isLoading: false,
-          refetch: foodRefetchMock,
-        }),
+        useQuery: () => ({ ...foodByDateQuery, refetch: foodRefetchMock }),
       },
       create: {
         useMutation: () => ({
@@ -59,6 +60,11 @@ vi.mock("../lib/trpc.ts", () => ({
 describe("NutritionPage AI meal confirmation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    foodByDateQuery = {
+      data: [],
+      error: null,
+      isLoading: false,
+    };
     analyzeItemsMutateAsyncMock.mockResolvedValue({
       items: [
         {
@@ -122,5 +128,31 @@ describe("NutritionPage AI meal confirmation", () => {
     render(<NutritionPage />);
 
     expect(screen.getByText("Powered by fatsecret Platform API")).toBeTruthy();
+  });
+
+  it("keeps existing food entries visible during a background refetch", async () => {
+    foodByDateQuery = {
+      data: [
+        {
+          id: "food-1",
+          food_name: "Greek yogurt",
+          meal: "breakfast",
+          calories: 120,
+          protein_g: 18,
+          carbs_g: 7,
+          fat_g: 0,
+          food_description: "Plain yogurt",
+        },
+      ],
+      error: null,
+      isFetching: true,
+      isLoading: true,
+    };
+    const { NutritionPage } = await import("./NutritionPage");
+
+    render(<NutritionPage />);
+
+    expect(screen.getByText("Greek yogurt")).toBeTruthy();
+    expect(screen.queryByTestId("chart-loading-skeleton")).toBeNull();
   });
 });

@@ -28,6 +28,7 @@ import { StrainGauge } from "../../components/charts/StrainGauge";
 import { VerticalAscentChart } from "../../components/charts/VerticalAscentChart";
 import { DaySelector } from "../../components/DaySelector";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
+import { shouldShowBlockingLoading } from "../../lib/loading-policy";
 import { safeParseRows } from "../../lib/safe-parse";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
@@ -99,7 +100,11 @@ export default function StrainScreen() {
 
   const strainTrend = workloadData.map((d) => d.strain);
 
-  const isLoading = trainingQuery.isLoading;
+  const isLoading = shouldShowBlockingLoading({
+    data: trainingData,
+    isFetching: trainingQuery.isFetching,
+    isLoading: trainingQuery.isLoading,
+  });
   const { refreshing, onRefresh } = useRefresh({
     invalidate: () => utils.mobileDashboard.training.invalidate().then(() => undefined),
   });
@@ -311,7 +316,7 @@ export default function StrainScreen() {
                 <Text style={styles.sectionLinkButtonText}>View all</Text>
               </TouchableOpacity>
             </View>
-            {trainingQuery.isLoading ? (
+            {isLoading ? (
               <ActivityIndicator color={colors.accent} style={styles.activitiesLoader} />
             ) : trainingQuery.isError || activitiesParsed.error ? (
               <Text style={styles.errorText}>

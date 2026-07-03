@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { MacroSummary } from "../../components/MacroSummary";
 import { MealSection } from "../../components/MealSection";
+import { shouldShowBlockingLoading } from "../../lib/loading-policy";
 import { openExternalUrl } from "../../lib/open-external-url";
 import { safeParseRows } from "../../lib/safe-parse";
 import { captureException, logger } from "../../lib/telemetry";
@@ -65,7 +66,10 @@ export default function FoodScreen() {
   const calorieGoal =
     typeof calorieGoalQuery.data?.value === "number" ? calorieGoalQuery.data.value : 2000;
 
-  const foodQuery = trpc.food.byDate.useQuery({ date: dateString });
+  const foodQuery = trpc.food.byDate.useQuery(
+    { date: dateString },
+    { placeholderData: (previousData) => previousData },
+  );
   const analyzeItemsMutation = trpc.food.analyzeItemsWithAi.useMutation();
   const createAiEntryMutation = trpc.food.create.useMutation();
   type AiMealItems = Awaited<ReturnType<typeof analyzeItemsMutation.mutateAsync>>["items"];
@@ -76,6 +80,11 @@ export default function FoodScreen() {
 
   const entriesParsed = safeParseRows(FoodEntrySchema, foodQuery.data, "food:byDate");
   const entries = entriesParsed.data;
+  const isFoodBlockingLoading = shouldShowBlockingLoading({
+    data: entries,
+    isFetching: foodQuery.isFetching,
+    isLoading: foodQuery.isLoading,
+  });
 
   const dailyTotals = useMemo(() => {
     let totalCalories = 0;
@@ -323,7 +332,7 @@ export default function FoodScreen() {
           fatGrams={Math.round(dailyTotals.totalFat)}
         />
 
-        {foodQuery.isLoading ? (
+        {isFoodBlockingLoading ? (
           <Text style={styles.loadingText}>Loading...</Text>
         ) : foodQuery.isError || entriesParsed.error ? (
           <Text style={styles.errorText}>Failed to load food entries.</Text>
