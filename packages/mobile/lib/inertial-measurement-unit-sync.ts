@@ -2,6 +2,7 @@ import type { InertialMeasurementUnitSample } from "@dofek/imu";
 
 const UPLOAD_BATCH_SIZE = 5000;
 const TWELVE_HOURS_SECONDS = 12 * 3600;
+const SENSOR_QUERY_WINDOW_MS = 10 * 60 * 1000;
 const SENSOR_HISTORY_LOOKBACK_MS = 2.9 * 24 * 60 * 60 * 1000;
 
 /** Abstraction over CoreMotion native module for testability */
@@ -43,7 +44,7 @@ export interface InertialMeasurementUnitSyncResult {
 /**
  * Sync recorded IMU data from CMSensorRecorder to the server.
  *
- * 1. Queries from lastSyncTimestamp (or 3 days ago) to now
+ * 1. Queries from lastSyncTimestamp (or 3 days ago) in bounded windows
  * 2. Batches samples into 5,000-sample chunks
  * 3. Uploads each batch via tRPC
  * 4. Advances the sync cursor only after all batches succeed
@@ -66,6 +67,9 @@ export async function syncInertialMeasurementUnitToServer(
   const requestedFromDate = lastSync ? new Date(lastSync) : oldestQueryableDate;
   const fromDate =
     requestedFromDate < oldestQueryableDate ? oldestQueryableDate : requestedFromDate;
+  const queryWindowEndDate = new Date(
+    Math.min(fromDate.getTime() + SENSOR_QUERY_WINDOW_MS, now.getTime()),
+  );
 
   // Don't query into the future or if fromDate is after now
   if (fromDate >= now) {
@@ -75,11 +79,14 @@ export async function syncInertialMeasurementUnitToServer(
   }
 
   onProgress?.(`Querying IMU data from ${fromDate.toISOString()}...`);
-  const samples = await coreMotion.queryRecordedData(fromDate.toISOString(), now.toISOString());
+  const samples = await coreMotion.queryRecordedData(
+    fromDate.toISOString(),
+    queryWindowEndDate.toISOString(),
+  );
 
   if (samples.length === 0) {
     onProgress?.("No new IMU samples");
-    coreMotion.setLastSyncTimestamp(now.toISOString());
+    coreMotion.setLastSyncTimestamp(queryWindowEndDate.toISOString());
     await ensureRecording(coreMotion, onProgress);
     return { inserted: 0, recording: true };
   }
@@ -105,7 +112,7 @@ export async function syncInertialMeasurementUnitToServer(
   }
 
   // All batches succeeded — advance the cursor
-  coreMotion.setLastSyncTimestamp(now.toISOString());
+  coreMotion.setLastSyncTimestamp(queryWindowEndDate.toISOString());
   onProgress?.(`Synced ${totalInserted} IMU samples`);
 
   await ensureRecording(coreMotion, onProgress);
