@@ -316,7 +316,7 @@ export default function StrainScreen() {
                 <Text style={styles.sectionLinkButtonText}>View all</Text>
               </TouchableOpacity>
             </View>
-            {trainingQuery.isLoading ? (
+            {isLoading ? (
               <ActivityIndicator color={colors.accent} style={styles.activitiesLoader} />
             ) : trainingQuery.isError || activitiesParsed.error ? (
               <Text style={styles.errorText}>

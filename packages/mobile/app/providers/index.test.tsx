@@ -243,12 +243,26 @@ const mockLogsQuery = vi.fn();
 const mockDataHealthQuery = vi.fn();
 const mockActiveSyncsQuery = vi.fn();
 const mockInvalidate = vi.fn();
+const mockInvalidateProviders = vi.fn();
+const mockInvalidateProviderStats = vi.fn();
+const mockInvalidateLogs = vi.fn();
+const mockInvalidateDataHealth = vi.fn();
+const mockInvalidateActiveSyncs = vi.fn();
 const mockSyncStatusFetch = vi.fn();
 const mockCredentialSignIn = vi.fn();
 const mockGarminSignIn = vi.fn();
 const mockWhoopSignIn = vi.fn();
 const mockWhoopVerifyCode = vi.fn();
 const mockWhoopSaveTokens = vi.fn();
+const mockUseRefresh = vi.fn((_options: { invalidate?: () => Promise<void> } | undefined) => ({
+  refreshing: false,
+  onRefresh: vi.fn(),
+}));
+
+vi.mock("../../lib/useRefresh", () => ({
+  useRefresh: (options: { invalidate?: () => Promise<void> } | undefined) =>
+    mockUseRefresh(options),
+}));
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
@@ -285,9 +299,11 @@ vi.mock("../../lib/trpc", () => ({
         },
       },
       sync: {
-        providers: { invalidate: mockInvalidate },
-        providerStats: { invalidate: mockInvalidate },
-        logs: { invalidate: mockInvalidate },
+        providers: { invalidate: mockInvalidateProviders },
+        providerStats: { invalidate: mockInvalidateProviderStats },
+        logs: { invalidate: mockInvalidateLogs },
+        dataHealth: { invalidate: mockInvalidateDataHealth },
+        activeSyncs: { invalidate: mockInvalidateActiveSyncs },
         syncStatus: { fetch: mockSyncStatusFetch },
       },
     }),
@@ -708,7 +724,13 @@ describe("ProvidersScreen", () => {
     mockDataHealthQuery.mockReset();
     mockActiveSyncsQuery.mockReset();
     mockInvalidate.mockReset();
+    mockInvalidateProviders.mockReset();
+    mockInvalidateProviderStats.mockReset();
+    mockInvalidateLogs.mockReset();
+    mockInvalidateDataHealth.mockReset();
+    mockInvalidateActiveSyncs.mockReset();
     mockSyncStatusFetch.mockReset();
+    mockUseRefresh.mockClear();
     mockCredentialSignIn.mockReset();
     mockGarminSignIn.mockReset();
     mockWhoopSignIn.mockReset();
@@ -736,6 +758,19 @@ describe("ProvidersScreen", () => {
       const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
       expect(wahooCard.getByText("Full sync")).toBeTruthy();
     });
+  });
+
+  it("scopes pull-to-refresh to provider list query families", async () => {
+    await renderProvidersScreen();
+
+    const refreshOptions = mockUseRefresh.mock.calls.at(-1)?.[0];
+    await refreshOptions?.invalidate?.();
+
+    expect(mockInvalidateProviders).toHaveBeenCalled();
+    expect(mockInvalidateProviderStats).toHaveBeenCalled();
+    expect(mockInvalidateLogs).toHaveBeenCalledWith({ limit: 50 });
+    expect(mockInvalidateDataHealth).toHaveBeenCalled();
+    expect(mockInvalidateActiveSyncs).toHaveBeenCalled();
   });
 
   it("settles the mount-time HealthKit permission check without React act warnings", async () => {

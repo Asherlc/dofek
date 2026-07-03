@@ -33,7 +33,7 @@ vi.mock("../../lib/trpc", () => ({
         useQuery: (...parameters: unknown[]) => {
           mockDashboardUseQuery(...parameters);
           return {
-            data: mockDashboardError ? undefined : mockDashboardData,
+            data: mockDashboardData,
             isLoading: mockDashboardLoading,
             isFetching: mockDashboardFetching,
             isError: !!mockDashboardError,
@@ -243,6 +243,17 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.getByText("RECOVERY BREAKDOWN")).toBeTruthy();
   });
 
+  it("shows a non-blocking error when cached dashboard data fails to refresh", async () => {
+    mockDashboardError = new Error("Refresh failed");
+
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
+
+    expect(screen.getByText("Refresh failed")).toBeTruthy();
+    expect(screen.getByText("LAST NIGHT")).toBeTruthy();
+    expect(screen.getByText("RECOVERY BREAKDOWN")).toBeTruthy();
+  });
+
   it("shows skeleton placeholder for strain gauge while workload is loading", async () => {
     mockDashboardLoading = true;
     mockDashboardData = undefined;
@@ -399,6 +410,7 @@ describe("TodayScreen independent loading states", () => {
 
   it("shows a recovery error panel when the readiness query fails", async () => {
     mockDashboardError = new Error("Dashboard failed");
+    mockDashboardData = undefined;
 
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);
@@ -409,6 +421,7 @@ describe("TodayScreen independent loading states", () => {
   it("shows a sleep coach error card when the sleep-need query fails", async () => {
     // In consolidated approach, they share the same error state
     mockDashboardError = new Error("Dashboard failed");
+    mockDashboardData = undefined;
 
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);
