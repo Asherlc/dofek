@@ -62,13 +62,16 @@ describe("ClickHouseActivitySensorStore", () => {
         query: expect.stringContaining("analytics.activity_stream_points"),
         query_params: expect.objectContaining({
           activityIds: window.memberActivityIds,
+          maxPoints: 500,
           userId: window.userId,
         }),
       }),
     );
     const queryText = query.mock.calls[0]?.[0]?.query;
     expect(queryText).toContain("ARRAY JOIN points AS point");
-    expect(queryText).toContain("ORDER BY point.1");
+    expect(queryText).toContain("selected_point_times AS");
+    expect(queryText).toContain("toUInt64({maxPoints:UInt32})");
+    expect(queryText).toContain("ORDER BY selected_points.recorded_at");
     expect(queryText).not.toContain("analytics.activity_sensor_sample");
     expect(queryText).not.toContain("analytics.activity_location_sample");
     expect(queryText).not.toContain("fitness.metric_stream");
@@ -233,9 +236,9 @@ describe("ClickHouseActivitySensorStore", () => {
     );
     const queryText = query.mock.calls[0]?.[0]?.query;
     expect(queryText).toContain("analytics.activity_heart_rate_zones");
-    expect(queryText).toContain("ARRAY JOIN zones AS zone");
-    expect(queryText).toContain("sum(zone.2) AS seconds");
-    expect(queryText).toContain("GROUP BY zone.1");
+    expect(queryText).toContain("ARRAY JOIN zones AS zone_tuple");
+    expect(queryText).toContain("sum(zone_tuple.2) AS seconds");
+    expect(queryText).toContain("GROUP BY zone_tuple.1");
     expect(queryText).not.toContain("analytics.deduped_sensor");
     expect(queryText).not.toContain("analytics.activity_sensor_sample");
     expect(queryText).not.toContain("FROM (SELECT number AS zone FROM numbers(6)) AS zones");

@@ -918,16 +918,16 @@ function buildTestActivityStreamPointsSelectSql(databases: IsolatedClickHouseDat
 ),
 location_points AS (
   SELECT
-    user_id,
-    activity_id,
-    recorded_at,
-    CAST(any(lat), 'Nullable(Float64)') AS lat,
-    CAST(any(lng), 'Nullable(Float64)') AS lng
-  FROM ${databases.analytics}.activity_location_sample
-  WHERE is_deleted = 0
-    AND lat IS NOT NULL
-    AND lng IS NOT NULL
-  GROUP BY user_id, activity_id, recorded_at
+    location_samples.user_id AS user_id,
+    location_samples.activity_id AS activity_id,
+    location_samples.recorded_at AS recorded_at,
+    CAST(any(location_samples.lat), 'Nullable(Float64)') AS lat,
+    CAST(any(location_samples.lng), 'Nullable(Float64)') AS lng
+  FROM ${databases.analytics}.activity_location_sample AS location_samples
+  WHERE location_samples.is_deleted = 0
+    AND location_samples.lat IS NOT NULL
+    AND location_samples.lng IS NOT NULL
+  GROUP BY location_samples.user_id, location_samples.activity_id, location_samples.recorded_at
 ),
 combined_sample_times AS (
   SELECT user_id, activity_id, recorded_at FROM scalar_points

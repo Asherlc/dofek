@@ -353,28 +353,101 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
     return result.json();
   }
 
-  async getStream(window: ActivitySensorWindow, _maxPoints: number): Promise<StreamPointRow[]> {
+  async getStream(window: ActivitySensorWindow, maxPoints: number): Promise<StreamPointRow[]> {
     const result = await this.#client.query<StreamPointRow>({
       query: `
+        WITH expanded_points AS (
+          SELECT
+            point.1 AS recorded_at,
+            point.2 AS heart_rate,
+            point.3 AS power,
+            point.4 AS speed,
+            point.5 AS cadence,
+            point.6 AS altitude,
+            point.7 AS lat,
+            point.8 AS lng
+          FROM analytics.activity_stream_points FINAL
+          ARRAY JOIN points AS point
+          WHERE user_id = {userId:UUID}
+            AND activity_id IN {activityIds:Array(UUID)}
+            AND point.1 >= parseDateTime64BestEffort({windowStartedAt:String})
+            AND point.1 <= parseDateTime64BestEffort({windowEndedAt:String})
+        ),
+        grouped_points AS (
+          SELECT
+            recorded_at,
+            any(heart_rate) AS heart_rate,
+            any(power) AS power,
+            any(speed) AS speed,
+            any(cadence) AS cadence,
+            any(altitude) AS altitude,
+            any(lat) AS lat,
+            any(lng) AS lng
+          FROM expanded_points
+          GROUP BY recorded_at
+        ),
+        ranked_points AS (
+          SELECT
+            recorded_at,
+            heart_rate,
+            power,
+            speed,
+            cadence,
+            altitude,
+            lat,
+            lng,
+            row_number() OVER (ORDER BY recorded_at) AS point_index,
+            count() OVER () AS point_count
+          FROM grouped_points
+        ),
+        selected_points AS (
+          SELECT
+            recorded_at,
+            heart_rate,
+            power,
+            speed,
+            cadence,
+            altitude,
+            lat,
+            lng,
+            if(
+              point_count <= toUInt64({maxPoints:UInt32}),
+              point_index - 1,
+              intDiv(
+                (point_index - 1) * (toUInt64({maxPoints:UInt32}) - 1),
+                greatest(point_count - 1, 1)
+              )
+            ) AS sample_bucket
+          FROM ranked_points
+        ),
+        selected_point_times AS (
+          SELECT
+            sample_bucket,
+            if(
+              sample_bucket = toUInt64({maxPoints:UInt32}) - 1,
+              max(recorded_at),
+              min(recorded_at)
+            ) AS recorded_at
+          FROM selected_points
+          GROUP BY sample_bucket
+        )
         SELECT
-          toString(point.1) AS recorded_at,
-          point.2 AS heart_rate,
-          point.3 AS power,
-          point.4 AS speed,
-          point.5 AS cadence,
-          point.6 AS altitude,
-          point.7 AS lat,
-          point.8 AS lng
-        FROM analytics.activity_stream_points FINAL
-        ARRAY JOIN points AS point
-        WHERE user_id = {userId:UUID}
-          AND activity_id IN {activityIds:Array(UUID)}
-          AND point.1 >= parseDateTime64BestEffort({windowStartedAt:String})
-          AND point.1 <= parseDateTime64BestEffort({windowEndedAt:String})
-        ORDER BY point.1
+          toString(selected_points.recorded_at) AS recorded_at,
+          selected_points.heart_rate AS heart_rate,
+          selected_points.power AS power,
+          selected_points.speed AS speed,
+          selected_points.cadence AS cadence,
+          selected_points.altitude AS altitude,
+          selected_points.lat AS lat,
+          selected_points.lng AS lng
+        FROM selected_points
+        INNER JOIN selected_point_times
+          ON selected_point_times.sample_bucket = selected_points.sample_bucket
+          AND selected_point_times.recorded_at = selected_points.recorded_at
+        ORDER BY selected_points.recorded_at
       `,
       format: "JSONEachRow",
-      query_params: queryParams(window, {}),
+      query_params: queryParams(window, { maxPoints }),
     });
     const rows = await result.json();
     return rows.map((row) => ({
@@ -387,14 +460,14 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
     const result = await this.#client.query<HeartRateZoneSecondRow>({
       query: `
         SELECT
-          zone.1 AS zone,
-          sum(zone.2) AS seconds
+          zone_tuple.1 AS zone,
+          sum(zone_tuple.2) AS seconds
         FROM analytics.activity_heart_rate_zones FINAL
-        ARRAY JOIN zones AS zone
+        ARRAY JOIN zones AS zone_tuple
         WHERE user_id = {userId:UUID}
           AND activity_id IN {activityIds:Array(UUID)}
-        GROUP BY zone.1
-        ORDER BY zone.1
+        GROUP BY zone_tuple.1
+        ORDER BY zone_tuple.1
       `,
       format: "JSONEachRow",
       query_params: queryParams(window, {}),
