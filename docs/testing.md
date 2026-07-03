@@ -64,9 +64,11 @@ passes extra flags through to Cypress:
 pnpm e2e:web:reuse -- --spec cypress/e2e/dashboard.cy.ts
 ```
 
-CI splits Cypress specs across a matrix with explicit `--spec` groups. Cypress's
-built-in `--parallel` orchestration requires recorded Cypress Cloud runs, so the
-workflow uses manual spec groups instead of Cloud orchestration.
+CI runs Cypress specs in one job because the Docker build, service startup,
+migrations, analytics setup, and server startup dominate the runtime. Manual
+spec sharding on GitHub-hosted runners repeats that setup for each shard.
+Cypress's built-in `--parallel` orchestration requires recorded Cypress Cloud
+runs, so the workflow does not use Cloud orchestration either.
 
 Source: Cypress parallelization requirements: https://docs.cypress.io/cloud/features/smart-orchestration/parallelization
 
