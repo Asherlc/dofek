@@ -9,6 +9,11 @@ function isJsonResponse(response: Response): boolean {
   return contentType?.includes("json") ?? false;
 }
 
+function responseHasEmptyBody(response: Response): boolean {
+  if (response.status === 204 || response.status === 205 || response.status === 304) return true;
+  return response.headers.get("content-length") === "0";
+}
+
 function buildContentTypeLabel(response: Response): string {
   const contentType = getResponseContentType(response);
   return contentType ? `content-type ${contentType}` : "content-type absent";
@@ -42,11 +47,33 @@ async function readBodyPreview(response: Response): Promise<string> {
   }
 }
 
+function withJsonParseDiagnostics(
+  response: Response,
+  input: Parameters<typeof fetch>[0],
+): Response {
+  const originalJson = response.json.bind(response);
+  response.json = async () => {
+    try {
+      return await originalJson();
+    } catch {
+      throw new Error(
+        `The server returned an invalid response for ${getTrpcPath(input)}: ${buildStatusLabel(response)}, ${buildContentTypeLabel(response)}`,
+      );
+    }
+  };
+  return response;
+}
+
 export function createTrpcFetch(fetchImpl: typeof fetch = fetch): typeof fetch {
   return async (input, init) => {
     const response = await fetchImpl(input, init);
     if (isJsonResponse(response)) {
-      return response;
+      if (responseHasEmptyBody(response)) {
+        throw new Error(
+          `The server returned an empty response for ${getTrpcPath(input)}: ${buildStatusLabel(response)}, ${buildContentTypeLabel(response)}`,
+        );
+      }
+      return withJsonParseDiagnostics(response, input);
     }
 
     const bodyPreview = await readBodyPreview(response);

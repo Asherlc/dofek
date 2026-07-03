@@ -70,6 +70,38 @@ describe("createTrpcFetch", () => {
     );
   });
 
+  it("throws an actionable error when tRPC receives an empty JSON response", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(null, {
+        status: 204,
+        statusText: "No Content",
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const trpcFetch = createTrpcFetch(fetchImpl);
+
+    await expect(trpcFetch("https://dofek.test/api/trpc/sync.dataHealth")).rejects.toThrow(
+      "The server returned an empty response for sync.dataHealth: 204 No Content, content-type application/json",
+    );
+  });
+
+  it("replaces JSON parser errors with the tRPC path and response status", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response("", {
+        status: 200,
+        statusText: "OK",
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const trpcFetch = createTrpcFetch(fetchImpl);
+
+    const response = await trpcFetch("https://dofek.test/api/trpc/sync.dataHealth");
+
+    await expect(response.json()).rejects.toThrow(
+      "The server returned an invalid response for sync.dataHealth: 200 OK, content-type application/json",
+    );
+  });
+
   it("passes JSON responses through unchanged", async () => {
     const response = new Response(JSON.stringify({ result: { data: { json: { inserted: 1 } } } }), {
       status: 200,
