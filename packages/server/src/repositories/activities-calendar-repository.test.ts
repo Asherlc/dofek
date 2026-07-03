@@ -274,6 +274,7 @@ describe("ActivitiesCalendarRepository", () => {
       expect.objectContaining({ id: "latitude-only", location: null }),
       expect.objectContaining({ id: "longitude-only", location: null }),
     ]);
+    expect(sensorStore.query).toHaveBeenCalledTimes(2);
   });
 
   it("filters activities by activity type before grouping days", async () => {
