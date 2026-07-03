@@ -483,7 +483,7 @@ export class ActivityRepository extends BaseRepository {
                 jsonb_build_object(
                   'providerId', a.provider_id,
                   'externalId', a.external_id,
-                  'memberActivityId', a.id,
+                  'memberActivityId', a.id::text,
                   'providerAbsentAt', a.provider_absent_at
                 )
               )

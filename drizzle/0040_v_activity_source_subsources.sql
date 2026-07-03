@@ -211,7 +211,7 @@ absent_source_links AS (
       JSONB_BUILD_OBJECT(
         'providerId', t.provider_id,
         'externalId', t.external_id,
-        'memberActivityId', t.id,
+        'memberActivityId', t.id::text,
         'providerAbsentAt', t.provider_absent_at
       )
       ORDER BY t.provider_id
@@ -276,7 +276,7 @@ merged AS (
           JSONB_BUILD_OBJECT(
             'providerId', r.provider_id,
             'externalId', r.external_id,
-            'memberActivityId', r.id,
+            'memberActivityId', r.id::text,
             -- Preserve the per-member upstream app for grouped Apple Health rows.
             'subsource', COALESCE(
               NULLIF(TRIM(r.raw ->> 'sourceName'), ''),
