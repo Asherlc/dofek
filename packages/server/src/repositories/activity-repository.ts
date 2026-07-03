@@ -8,11 +8,6 @@ import { osmTilePreview } from "../lib/osm-tile.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivityRow } from "../models/activity.ts";
 import { getActivityRoutePreviews } from "./activity-route-preview.ts";
-import {
-  fetchRestingHeartRateRows,
-  localDateString,
-  representativeRestingHeartRate,
-} from "./resting-heart-rate-query.ts";
 
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
@@ -97,11 +92,6 @@ const activitySensorWindowRowSchema = z.object({
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema.nullable(),
   member_activity_ids: z.array(z.string()),
-});
-
-const heartRateZoneParamsRowSchema = z.object({
-  max_hr: z.coerce.number(),
-  resting_hr: z.coerce.number(),
 });
 
 const activitySummaryReadModelRowSchema = z.object({
@@ -214,11 +204,7 @@ export interface ActivitySensorStore {
     timezone: string,
   ): Promise<Array<{ duration_seconds: number; best_pace: number; activity_date: string }>>;
   getStream(window: ActivitySensorWindow, maxPoints: number): Promise<StreamPointRow[]>;
-  getHeartRateZoneSeconds(
-    window: ActivitySensorWindow,
-    maxHr: number,
-    restingHr: number,
-  ): Promise<z.infer<typeof hrZoneRowSchema>[]>;
+  getHeartRateZoneSeconds(window: ActivitySensorWindow): Promise<z.infer<typeof hrZoneRowSchema>[]>;
   getPowerZoneSeconds(
     window: ActivitySensorWindow,
     ftp: number,
@@ -591,11 +577,7 @@ export class ActivityRepository extends BaseRepository {
     const sensorStore = this.#requireSensorStore("heart-rate zones");
     const window = await this.#findActivitySensorWindow(activityId);
     if (!window) return mapHrZones([]);
-    const params = await this.#findHeartRateZoneParams(window);
-    if (!params) return mapHrZones([]);
-    return mapHrZones(
-      await sensorStore.getHeartRateZoneSeconds(window, params.max_hr, params.resting_hr),
-    );
+    return mapHrZones(await sensorStore.getHeartRateZoneSeconds(window));
   }
 
   /** Cycling power zone distribution for a single activity using 7 zones relative to FTP. */
@@ -639,38 +621,6 @@ export class ActivityRepository extends BaseRepository {
       endedAt: row.ended_at,
       memberActivityIds: row.member_activity_ids,
     };
-  }
-
-  async #findHeartRateZoneParams(
-    window: ActivitySensorWindow,
-  ): Promise<z.infer<typeof heartRateZoneParamsRowSchema> | null> {
-    const activityDate = localDateString(new Date(window.startedAt), this.timezone);
-    const restingHeartRateRows = await fetchRestingHeartRateRows({
-      sensorStore: this.#requireSensorStore("heart-rate zones"),
-      userId: this.userId,
-      timezone: this.timezone,
-      endDate: activityDate,
-      days: 3650,
-    });
-    const derivedRestingHeartRate = representativeRestingHeartRate(restingHeartRateRows);
-    const rows = await this.query(
-      heartRateZoneParamsRowSchema,
-      sql`SELECT
-            up.max_hr,
-          CASE
-            WHEN ${derivedRestingHeartRate}::real > 0
-              AND ${derivedRestingHeartRate}::real < up.max_hr
-            THEN ${derivedRestingHeartRate}::real
-            WHEN up.resting_hr > 0
-              AND up.resting_hr < up.max_hr
-            THEN up.resting_hr
-            ELSE LEAST(60, up.max_hr - 1)
-          END AS resting_hr
-          FROM fitness.user_profile up
-          WHERE up.id = ${this.userId}
-            AND up.max_hr > 1`,
-    );
-    return rows[0] ?? null;
   }
 
   /** Delete an activity by ID. */

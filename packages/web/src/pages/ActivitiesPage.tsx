@@ -51,7 +51,9 @@ export function ActivitiesPage() {
     ...(showHidden ? { includeProviderAbsent: true } : {}),
   };
   const trpcUtils = trpc.useUtils();
-  const query = trpc.calendar.weekList.useQuery(queryInput);
+  const query = trpc.calendar.weekList.useQuery(queryInput, {
+    placeholderData: (previousData) => previousData,
+  });
   const overviewQuery = trpc.calendar.activityOverview.useQuery(queryInput, {
     placeholderData: (previousData) => previousData,
   });
@@ -202,17 +204,22 @@ export function ActivitiesPage() {
         {restoreProviderAbsent.error ? (
           <QueryStatePanel error={restoreProviderAbsent.error} height={80} />
         ) : null}
-        {overviewQuery.isLoading ? (
+        {overviewQuery.isLoading && !overviewQuery.data ? (
           <QueryStatePanel variant="loading" height={120} />
-        ) : overviewQuery.isError ? (
+        ) : overviewQuery.isError && !overviewQuery.data ? (
           <QueryStatePanel error={overviewQuery.error} height={120} />
         ) : (
-          <ActivityOverview overview={overviewQuery.data} units={units} />
+          <>
+            {overviewQuery.isError ? (
+              <QueryStatePanel error={overviewQuery.error} height={72} />
+            ) : null}
+            <ActivityOverview overview={overviewQuery.data} units={units} />
+          </>
         )}
       </div>
-      {query.isLoading ? (
+      {query.isLoading && !query.data ? (
         <QueryStatePanel variant="loading" height={400} />
-      ) : query.isError ? (
+      ) : query.isError && !query.data ? (
         <QueryStatePanel error={query.error} height={200} />
       ) : !dayGroups || dayGroups.length === 0 ? (
         <QueryStatePanel
@@ -226,6 +233,7 @@ export function ActivitiesPage() {
         />
       ) : (
         <div className="space-y-7">
+          {query.isError ? <QueryStatePanel error={query.error} height={72} /> : null}
           {dayGroups.map((day) => (
             <section key={day.date}>
               <div className="mb-2 flex items-center gap-3">

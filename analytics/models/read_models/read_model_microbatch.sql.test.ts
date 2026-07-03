@@ -56,6 +56,8 @@ describe("production analytics read-model build", () => {
       "activity_location_sample",
       "activity_sensor_summary_rows",
       "activity_location_summary_rows",
+      "activity_stream_points",
+      "activity_heart_rate_zones",
       "activity_summary_rows",
       "activity_vo2max_estimate",
       "provider_stats",
@@ -363,6 +365,54 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).not.toContain(
       "INNER JOIN dirty_keys ON dirty_keys.activity_id = location_samples.activity_id",
     );
+  });
+
+  it("materializes activity stream points from bounded activity intermediaries", () => {
+    expect(existsSync(new URL("./activity_stream_points.sql", import.meta.url))).toBe(true);
+    const sql = readModel("activity_stream_points");
+    const normalizedSql = compactWhitespace(sql);
+
+    expect(sql).toContain("materialized='incremental'");
+    expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
+    expect(sql).toContain("order_by='(user_id, activity_id)'");
+    expect(sql).toContain("ref('activity_sensor_sample')");
+    expect(sql).toContain("ref('activity_location_sample')");
+    expect(sql).toContain("sample_dirty_keys AS");
+    expect(sql).toContain("location_dirty_keys AS");
+    expect(normalizedSql).toContain("FROM current_activity WHERE (SELECT is_empty FROM target_state)");
+    expect(sql).toContain("arraySort");
+    expect(sql).toContain("groupArray(tuple(");
+    expect(sql).toContain("toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version");
+    expect(normalizedSql).toContain("(sensor_samples.user_id, sensor_samples.activity_id) IN");
+    expect(normalizedSql).toContain("(location_samples.user_id, location_samples.activity_id) IN");
+    expect(normalizedSql).not.toContain("source('postgres_fitness', 'metric_stream')");
+    expect(normalizedSql).not.toContain("ref('deduped_sensor')");
+  });
+
+  it("materializes activity heart-rate zones from bounded activity samples", () => {
+    expect(existsSync(new URL("./activity_heart_rate_zones.sql", import.meta.url))).toBe(true);
+    const sql = readModel("activity_heart_rate_zones");
+    const normalizedSql = compactWhitespace(sql);
+
+    expect(sql).toContain("materialized='incremental'");
+    expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
+    expect(sql).toContain("order_by='(user_id, activity_id)'");
+    expect(sql).toContain("ref('activity_sensor_sample')");
+    expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
+    expect(sql).toContain("postgres_fitness.user_profile_current");
+    expect(sql).toContain("profile_recompute_lookback_days");
+    expect(sql).toContain("groupArray(tuple(");
+    expect(sql).toContain("zone_seconds AS");
+    expect(sql).toContain("channel = 'heart_rate'");
+    expect(normalizedSql).toContain("FROM current_activity WHERE (SELECT is_empty FROM target_state)");
+    expect(normalizedSql).toContain("ORDER BY resting.ended_at DESC");
+    expect(normalizedSql).toContain("resting.ended_at <= activity_bounds.started_at");
+    expect(normalizedSql).not.toContain(
+      "toDate(resting.ended_at) <= toDate(activity_bounds.started_at)",
+    );
+    expect(normalizedSql).toContain("(sensor_samples.user_id, sensor_samples.activity_id) IN");
+    expect(normalizedSql).not.toContain("ref('deduped_sensor')");
+    expect(normalizedSql).not.toContain("source('postgres_fitness', 'metric_stream')");
   });
 
   it("joins activity summary from bounded aggregate intermediaries", () => {

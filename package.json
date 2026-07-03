@@ -277,6 +277,13 @@
       "ws": "8.21.0",
       "yaml": "2.9.0"
     },
+    "packageExtensions": {
+      "@bacons/apple-targets@4.0.7": {
+        "dependencies": {
+          "@expo/image-utils": "0.11.1"
+        }
+      }
+    },
     "patchedDependencies": {
       "@expo/plist@0.0.18": "patches/@expo__plist@0.0.18.patch",
       "@expo/plist@0.8.0": "patches/@expo__plist@0.8.0.patch"

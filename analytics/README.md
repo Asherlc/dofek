@@ -19,7 +19,8 @@ activity/member aliases for downstream models. `sleep_heart_rate_sample`,
 intermediates over sample time. `resting_heart_rate_sleep_window` aggregates the
 sleep sample intermediary, while `activity_sensor_summary_rows` and
 `activity_location_summary_rows` aggregate the activity sample intermediaries
-before `activity_summary_rows` joins those compact per-activity summaries.
+before `activity_stream_points`, `activity_heart_rate_zones`, and
+`activity_summary_rows` join or aggregate those compact per-activity samples.
 The serving-facing `analytics.activity_summary` object is a thin ClickHouse view
 over `analytics.activity_summary_rows FINAL`; the expensive activity/sample
 joins belong in incremental dbt models, not in web/API requests. Complex
@@ -51,7 +52,8 @@ Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `sleep_heart_rate_sample`, `resting_heart_rate_sleep_window`,
 `daily_sleep`, `daily_recovery_inputs`, `daily_recovery`, `activity_sensor_sample`, `activity_location_sample`,
 `activity_sensor_summary_rows`, `activity_location_summary_rows`,
-`activity_summary_rows`, `activity_vo2max_estimate`, `provider_stats`,
+`activity_stream_points`, `activity_heart_rate_zones`, `activity_summary_rows`,
+`activity_vo2max_estimate`, `provider_stats`,
 `daily_activity_load`, `daily_strain`, `healthspan_activity_zone_minutes`,
 and `weekly_healthspan`. Sample-time models use dbt's `microbatch`
 incremental strategy with daily batches and short lookbacks so ClickHouse

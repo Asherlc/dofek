@@ -363,8 +363,6 @@ describe("Activity summary deduplication", () => {
         activityId: canonicalActivityId,
         memberActivityIds: expect.arrayContaining([canonicalActivityId, memberActivityId]),
       }),
-      190,
-      50,
     );
   });
 

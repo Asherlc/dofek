@@ -28,6 +28,7 @@ let mockOverviewQuery: {
   error: Error | null;
 };
 let weekListInput: unknown;
+let weekListOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
 let overviewInput: unknown;
 let overviewOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
 let bulkDeleteMutateAsync: ReturnType<typeof vi.fn>;
@@ -49,8 +50,12 @@ vi.mock("../../lib/trpc", () => ({
   trpc: {
     calendar: {
       weekList: {
-        useQuery: (input: unknown) => {
+        useQuery: (
+          input: unknown,
+          options: { placeholderData?: (previousData: unknown) => unknown } | undefined,
+        ) => {
           weekListInput = input;
+          weekListOptions = options;
           return mockQuery;
         },
       },
@@ -216,6 +221,20 @@ describe("ActivitiesScreen", () => {
     expect(screen.queryByText("TSS")).toBeNull();
   });
 
+  it("keeps placeholder activity data visible during background refetch errors", () => {
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity({ name: "Cached Ride" })] }],
+      isLoading: false,
+      isError: true,
+      error: new Error("Refetch failed"),
+    };
+
+    render(<ActivitiesScreen />);
+
+    expect(screen.getByText("Cached Ride")).toBeDefined();
+    expect(screen.getByText("Refetch failed")).toBeDefined();
+  });
+
   it("renders server-provided overview totals", () => {
     mockOverviewQuery = {
       data: {
@@ -267,6 +286,8 @@ describe("ActivitiesScreen", () => {
     });
     const previousOverview = { activityTypes: ["running"] };
     expect(overviewOptions?.placeholderData?.(previousOverview)).toBe(previousOverview);
+    const previousWeekList = [{ date: "2026-03-18", activities: [] }];
+    expect(weekListOptions?.placeholderData?.(previousWeekList)).toBe(previousWeekList);
   });
 
   it("navigates to activity detail when not selecting activities", () => {

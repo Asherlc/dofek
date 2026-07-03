@@ -274,6 +274,7 @@ describe("ActivitiesCalendarRepository", () => {
       expect.objectContaining({ id: "latitude-only", location: null }),
       expect.objectContaining({ id: "longitude-only", location: null }),
     ]);
+    expect(sensorStore.query).toHaveBeenCalledTimes(2);
   });
 
   it("filters activities by activity type before grouping days", async () => {
@@ -325,7 +326,12 @@ describe("ActivitiesCalendarRepository", () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
       [
-        makeActivityRow({ id: "activity-1", total_distance: 5000 }),
+        makeActivityRow({
+          id: "activity-1",
+          total_distance: 5000,
+          centroid_lat: 37.7749,
+          centroid_lng: -122.4194,
+        }),
         makeActivityRow({ id: "activity-2", elevation_gain_m: 50 }),
       ],
       [{ max_hr: null, resting_hr: null, ftp: null }],
@@ -361,7 +367,7 @@ describe("ActivitiesCalendarRepository", () => {
       expect.anything(),
       expect.stringContaining("FROM analytics.activity_location_sample"),
       {
-        activityIds: ["activity-1", "activity-2"],
+        activityIds: ["activity-1"],
         maxPoints: 96,
         userId: "00000000-0000-0000-0000-000000000001",
       },
@@ -905,7 +911,6 @@ describe("ActivitiesCalendarRepository", () => {
       [makeActivityRow({ id: "activity-1" })],
       [{ max_hr: null, resting_hr: null, ftp: 250 }],
       [],
-      [],
       [{ max_hr: null, resting_hr: null, ftp: null }],
     ]);
     const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
@@ -922,7 +927,7 @@ describe("ActivitiesCalendarRepository", () => {
         activities: [expect.objectContaining({ id: "activity-1", name: "Trainer Ride" })],
       },
     ]);
-    expect(sensorStore.query).toHaveBeenCalledTimes(4);
+    expect(sensorStore.query).toHaveBeenCalledTimes(3);
   });
 
   it("merges active and hidden activities by date while preferring active entries for duplicate ids", async () => {
@@ -941,7 +946,6 @@ describe("ActivitiesCalendarRepository", () => {
         }),
       ],
       [{ max_hr: null, resting_hr: null, ftp: 250 }],
-      [],
       [
         {
           id: "shared-id",
@@ -1655,7 +1659,6 @@ describe("ActivitiesCalendarRepository", () => {
         }),
       ],
       [{ max_hr: null, resting_hr: null, ftp: 250 }],
-      [],
       [
         {
           id: "hidden-late",

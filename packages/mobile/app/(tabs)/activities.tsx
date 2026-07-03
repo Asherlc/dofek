@@ -75,7 +75,9 @@ export default function ActivitiesScreen() {
     ...(selectedActivityType ? { activityType: selectedActivityType } : {}),
   };
   const trpcUtils = trpc.useUtils();
-  const query = trpc.calendar.weekList.useQuery(queryInput);
+  const query = trpc.calendar.weekList.useQuery(queryInput, {
+    placeholderData: (previousData) => previousData,
+  });
   const overviewQuery = trpc.calendar.activityOverview.useQuery(queryInput, {
     placeholderData: (previousData) => previousData,
   });
@@ -180,81 +182,101 @@ export default function ActivitiesScreen() {
         <QueryStatePanel variant="error" message={bulkDelete.error.message} />
       ) : null}
 
-      {overviewQuery.isLoading ? (
+      {overviewQuery.isLoading && !overviewQuery.data ? (
         <QueryStatePanel variant="loading" minHeight={100} />
-      ) : overviewQuery.isError ? (
+      ) : overviewQuery.isError && !overviewQuery.data ? (
         <QueryStatePanel variant="error" message={overviewQuery.error.message} />
       ) : (
-        <ActivityOverview overview={overviewQuery.data} units={units} />
+        <>
+          {overviewQuery.isError ? (
+            <QueryStatePanel
+              variant="error"
+              message={overviewQuery.error.message}
+              minHeight={72}
+              style={styles.backgroundErrorPanel}
+            />
+          ) : null}
+          <ActivityOverview overview={overviewQuery.data} units={units} />
+        </>
       )}
 
-      {query.isLoading ? (
+      {query.isLoading && !query.data ? (
         <QueryStatePanel variant="loading" minHeight={200} />
-      ) : query.isError ? (
+      ) : query.isError && !query.data ? (
         <QueryStatePanel variant="error" message={query.error.message} />
       ) : !dayGroups || dayGroups.length === 0 ? (
         <QueryStatePanel variant="empty" message={`No activities in the last ${weeks} weeks.`} />
       ) : (
-        dayGroups.map((day) => (
-          <View key={day.date} style={styles.daySection}>
-            <View style={styles.dayHeaderRow}>
-              <Text style={styles.dayHeader}>{formatDayHeader(day.date)}</Text>
-              <View style={styles.dayHeaderRule} />
-            </View>
-            {day.activities.map((activity) => (
-              <TouchableOpacity
-                key={activity.id}
-                activeOpacity={0.7}
-                onPress={() => {
-                  if (selectMode) {
-                    toggleSelectedActivity(activity.id);
-                    return;
-                  }
-                  router.push(`/activity/${activity.id}`);
-                }}
-                style={[
-                  styles.card,
-                  selectedActivityIds.has(activity.id) ? styles.cardSelected : null,
-                ]}
-              >
-                <View style={styles.cardContent}>
-                  <View style={styles.cardMain}>
-                    <View style={styles.titleRow}>
-                      <Text style={styles.activityName} numberOfLines={1}>
-                        {activity.name ?? formatActivityTypeLabel(activity.activityType)}
-                      </Text>
-                      {selectMode ? (
-                        <Text
-                          style={[
-                            styles.selectionPill,
-                            selectedActivityIds.has(activity.id)
-                              ? styles.selectionPillSelected
-                              : null,
-                          ]}
-                        >
-                          {selectedActivityIds.has(activity.id) ? "Selected" : "Select"}
+        <>
+          {query.isError ? (
+            <QueryStatePanel
+              variant="error"
+              message={query.error.message}
+              minHeight={72}
+              style={styles.backgroundErrorPanel}
+            />
+          ) : null}
+          {dayGroups.map((day) => (
+            <View key={day.date} style={styles.daySection}>
+              <View style={styles.dayHeaderRow}>
+                <Text style={styles.dayHeader}>{formatDayHeader(day.date)}</Text>
+                <View style={styles.dayHeaderRule} />
+              </View>
+              {day.activities.map((activity) => (
+                <TouchableOpacity
+                  key={activity.id}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    if (selectMode) {
+                      toggleSelectedActivity(activity.id);
+                      return;
+                    }
+                    router.push(`/activity/${activity.id}`);
+                  }}
+                  style={[
+                    styles.card,
+                    selectedActivityIds.has(activity.id) ? styles.cardSelected : null,
+                  ]}
+                >
+                  <View style={styles.cardContent}>
+                    <View style={styles.cardMain}>
+                      <View style={styles.titleRow}>
+                        <Text style={styles.activityName} numberOfLines={1}>
+                          {activity.name ?? formatActivityTypeLabel(activity.activityType)}
                         </Text>
-                      ) : null}
-                      <Text style={styles.typePill}>
-                        {formatActivityTypeLabel(activity.activityType)}
+                        {selectMode ? (
+                          <Text
+                            style={[
+                              styles.selectionPill,
+                              selectedActivityIds.has(activity.id)
+                                ? styles.selectionPillSelected
+                                : null,
+                            ]}
+                          >
+                            {selectedActivityIds.has(activity.id) ? "Selected" : "Select"}
+                          </Text>
+                        ) : null}
+                        <Text style={styles.typePill}>
+                          {formatActivityTypeLabel(activity.activityType)}
+                        </Text>
+                      </View>
+                      <Text style={styles.activityMeta}>
+                        {formatTime(activity.startedAt)} ·{" "}
+                        {formatDurationMinutes(activity.durationMin)}
                       </Text>
+                      <ActivityMetricStrip activity={activity} units={units} />
                     </View>
-                    <Text style={styles.activityMeta}>
-                      {formatTime(activity.startedAt)} ·{" "}
-                      {formatDurationMinutes(activity.durationMin)}
-                    </Text>
-                    <ActivityMetricStrip activity={activity} units={units} />
+                    {activity.location ? (
+                      <ActivityMapTile location={activity.location} />
+                    ) : (
+                      <ActivityTypeIcon activityType={activity.activityType} />
+                    )}
                   </View>
-                  {activity.location ? (
-                    <ActivityMapTile location={activity.location} />
-                  ) : (
-                    <ActivityTypeIcon activityType={activity.activityType} />
-                  )}
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        ))
+                </TouchableOpacity>
+              ))}
+            </View>
+          ))}
+        </>
       )}
     </ScrollView>
   );
@@ -606,6 +628,9 @@ const styles = StyleSheet.create({
   content: {
     padding: spacing.md,
     gap: spacing.md,
+  },
+  backgroundErrorPanel: {
+    marginBottom: spacing.md,
   },
   recordButton: {
     backgroundColor: colors.accent,
