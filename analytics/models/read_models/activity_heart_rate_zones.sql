@@ -150,7 +150,7 @@ resting_candidates AS (
     FROM activity_bounds
     INNER JOIN {{ ref('resting_heart_rate_sleep_window') }} AS resting FINAL
         ON resting.user_id = activity_bounds.user_id
-        AND toDate(resting.ended_at) <= toDate(activity_bounds.started_at)
+        AND resting.ended_at <= activity_bounds.started_at
     WHERE resting.is_deleted = 0
         AND resting.ended_at IS NOT null
         AND resting.resting_hr IS NOT null

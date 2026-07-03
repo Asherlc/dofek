@@ -232,7 +232,7 @@ describe("ActivitiesScreen", () => {
     render(<ActivitiesScreen />);
 
     expect(screen.getByText("Cached Ride")).toBeDefined();
-    expect(screen.queryByText("Refetch failed")).toBeNull();
+    expect(screen.getByText("Refetch failed")).toBeDefined();
   });
 
   it("renders server-provided overview totals", () => {

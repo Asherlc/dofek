@@ -273,7 +273,7 @@ describe("ActivitiesPage", () => {
     render(<ActivitiesPage />);
 
     expect(screen.getByText("Cached Ride")).toBeDefined();
-    expect(screen.queryByText("Refetch failed")).toBeNull();
+    expect(screen.getByText("Refetch failed")).toBeDefined();
   });
 
   it("lays out each day of activities as a responsive card grid", () => {

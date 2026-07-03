@@ -406,6 +406,10 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("channel = 'heart_rate'");
     expect(normalizedSql).toContain("FROM current_activity WHERE (SELECT is_empty FROM target_state)");
     expect(normalizedSql).toContain("ORDER BY resting.ended_at DESC");
+    expect(normalizedSql).toContain("resting.ended_at <= activity_bounds.started_at");
+    expect(normalizedSql).not.toContain(
+      "toDate(resting.ended_at) <= toDate(activity_bounds.started_at)",
+    );
     expect(normalizedSql).toContain("(sensor_samples.user_id, sensor_samples.activity_id) IN");
     expect(normalizedSql).not.toContain("ref('deduped_sensor')");
     expect(normalizedSql).not.toContain("source('postgres_fitness', 'metric_stream')");

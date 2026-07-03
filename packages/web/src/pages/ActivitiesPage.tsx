@@ -209,7 +209,12 @@ export function ActivitiesPage() {
         ) : overviewQuery.isError && !overviewQuery.data ? (
           <QueryStatePanel error={overviewQuery.error} height={120} />
         ) : (
-          <ActivityOverview overview={overviewQuery.data} units={units} />
+          <>
+            {overviewQuery.isError ? (
+              <QueryStatePanel error={overviewQuery.error} height={72} />
+            ) : null}
+            <ActivityOverview overview={overviewQuery.data} units={units} />
+          </>
         )}
       </div>
       {query.isLoading && !query.data ? (
@@ -228,6 +233,7 @@ export function ActivitiesPage() {
         />
       ) : (
         <div className="space-y-7">
+          {query.isError ? <QueryStatePanel error={query.error} height={72} /> : null}
           {dayGroups.map((day) => (
             <section key={day.date}>
               <div className="mb-2 flex items-center gap-3">
