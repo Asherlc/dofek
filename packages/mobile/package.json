@@ -92,11 +92,11 @@
     "@storybook/react-native-web-vite": "10.4.0",
     "@testing-library/react": "16.3.2",
     "@types/react": "19.2.14",
-    "playwright": "1.55.0",
+    "playwright": "1.55.1",
     "react-dom": "19.2.3",
     "react-native-web": "0.21.2",
     "storybook": "10.4.0",
     "typescript": "6.0.3",
-    "vite": "8.0.13"
+    "vite": "8.0.16"
   }
 }
