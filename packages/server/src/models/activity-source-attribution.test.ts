@@ -71,7 +71,7 @@ describe("ActivitySourceAttribution", () => {
     ]);
   });
 
-  it("keeps removed subsources when the same provider has a different active subsource", () => {
+  it("keeps removed source apps when the same provider has a different active source app", () => {
     const attribution = ActivitySourceAttribution.fromEntries(
       [{ providerId: "apple_health", externalId: "active-whoop", subsource: "WHOOP" }],
       [
