@@ -5,6 +5,7 @@ import {
   formatSleepDebtInline,
 } from "@dofek/format/format";
 import { autoMealType } from "@dofek/nutrition/meal";
+import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { useRouter } from "expo-router";
 import { useEffect } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -25,7 +26,6 @@ import { DataReadinessBanner } from "../../components/DataReadinessBanner";
 import { ProviderGuide } from "../../components/ProviderGuide";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { SkeletonCircle } from "../../components/Skeleton";
-import { shouldShowBlockingLoading } from "../../lib/loading-policy";
 import { trpc } from "../../lib/trpc";
 import { useAutoSync } from "../../lib/useAutoSync";
 import { useProviderGuide } from "../../lib/useProviderGuide";
@@ -76,8 +76,8 @@ export default function TodayScreen() {
 
   const isLoading = shouldShowBlockingLoading({
     data: dashboardData,
-    isLoading: dashboardQuery.isLoading,
     isFetching: dashboardQuery.isFetching,
+    isLoading: dashboardQuery.isLoading,
   });
   const isError = dashboardQuery.isError && dashboardData == null;
   const hasBackgroundError = dashboardQuery.isError && dashboardData != null;

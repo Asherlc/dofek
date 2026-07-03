@@ -15,11 +15,11 @@ const mockUseRefresh = vi.fn((_options: unknown) => ({
   onRefresh: vi.fn(),
 }));
 let mockDashboardLoading = false;
+let mockDashboardFetching = false;
 let mockDashboardData: unknown;
 let mockDashboardError: Error | null = null;
 let mockAnomalyData: unknown;
 let mockDataHealthData: unknown;
-let mockDashboardFetching = false;
 const mockDataHealthRefetch = vi.fn(() => Promise.resolve());
 
 vi.mock("expo-router", () => ({

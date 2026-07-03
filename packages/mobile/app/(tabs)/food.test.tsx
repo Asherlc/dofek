@@ -16,6 +16,12 @@ const mockUseRefresh = vi.fn((_options: { invalidate?: () => Promise<void> } | u
   refreshing: false,
   onRefresh: vi.fn(),
 }));
+let foodByDateQuery: {
+  data: unknown[];
+  isError: boolean;
+  isFetching?: boolean;
+  isLoading: boolean;
+};
 
 vi.mock("../../lib/open-external-url", () => ({
   openExternalUrl: (...args: unknown[]) => openExternalUrlMock(...args),
@@ -34,12 +40,7 @@ vi.mock("../../lib/trpc", () => ({
     },
     food: {
       byDate: {
-        useQuery: () => ({
-          data: [],
-          isError: false,
-          isLoading: false,
-          refetch: foodRefetchMock,
-        }),
+        useQuery: () => ({ ...foodByDateQuery, refetch: foodRefetchMock }),
       },
       analyzeItemsWithAi: {
         useMutation: () => ({ mutateAsync: analyzeItemsMutateAsyncMock, isPending: false }),
@@ -79,6 +80,11 @@ describe("FoodScreen AI meal confirmation", () => {
     vi.clearAllMocks();
     mockRouterPush.mockClear();
     openExternalUrlMock.mockClear();
+    foodByDateQuery = {
+      data: [],
+      isError: false,
+      isLoading: false,
+    };
     analyzeItemsMutateAsyncMock.mockResolvedValue({
       items: [
         {
@@ -198,5 +204,31 @@ describe("FoodScreen AI meal confirmation", () => {
     );
 
     expect(openExternalUrlMock).toHaveBeenCalledWith("https://www.fatsecret.com/", "food");
+  });
+
+  it("keeps existing food entries visible during a background refetch", async () => {
+    foodByDateQuery = {
+      data: [
+        {
+          id: "food-1",
+          food_name: "Greek yogurt",
+          meal: "breakfast",
+          calories: 120,
+          protein_g: 18,
+          carbs_g: 7,
+          fat_g: 0,
+          food_description: "Plain yogurt",
+        },
+      ],
+      isError: false,
+      isFetching: true,
+      isLoading: true,
+    };
+    const { default: FoodScreen } = await import("./food");
+
+    render(<FoodScreen />);
+
+    expect(screen.getByText("Greek yogurt")).toBeTruthy();
+    expect(screen.queryByText("Loading...")).toBeNull();
   });
 });

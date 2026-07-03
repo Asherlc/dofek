@@ -5,6 +5,7 @@ import {
   formatNumber,
   formatTrainingLoad,
 } from "@dofek/format/format";
+import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { aggregateWeeklyVolume, StrainScore, WorkloadRatio } from "@dofek/scoring/scoring";
 import {
   collapseWeeklyVolumeActivityTypes,
@@ -28,7 +29,6 @@ import { StrainGauge } from "../../components/charts/StrainGauge";
 import { VerticalAscentChart } from "../../components/charts/VerticalAscentChart";
 import { DaySelector } from "../../components/DaySelector";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
-import { shouldShowBlockingLoading } from "../../lib/loading-policy";
 import { safeParseRows } from "../../lib/safe-parse";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
@@ -102,8 +102,8 @@ export default function StrainScreen() {
 
   const isLoading = shouldShowBlockingLoading({
     data: trainingData,
-    isLoading: trainingQuery.isLoading,
     isFetching: trainingQuery.isFetching,
+    isLoading: trainingQuery.isLoading,
   });
   const { refreshing, onRefresh } = useRefresh({
     invalidate: () => utils.mobileDashboard.training.invalidate().then(() => undefined),
@@ -538,9 +538,6 @@ const styles = StyleSheet.create({
   },
   activitiesStack: {
     gap: 8,
-  },
-  activitiesLoader: {
-    paddingVertical: 24,
   },
   activitiesEmpty: {
     color: colors.textTertiary,

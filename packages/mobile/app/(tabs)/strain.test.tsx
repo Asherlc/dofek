@@ -79,6 +79,7 @@ describe("StrainScreen recent activity navigation", () => {
   beforeEach(() => {
     mockRouterPush.mockReset();
     mockTrainingData = defaultMockTrainingData();
+    mockTrainingFetching = false;
     mockTrainingLoading = false;
     mockTrainingFetching = false;
   });
@@ -112,6 +113,20 @@ describe("StrainScreen recent activity navigation", () => {
         workloadRatio: 1.13,
         readinessScore: 78,
       },
+      activities: [
+        {
+          id: 42,
+          name: "Morning Ride",
+          activity_type: "cycling",
+          started_at: "2026-03-28T07:00:00.000Z",
+          ended_at: "2026-03-28T08:00:00.000Z",
+          avg_hr: 150,
+          max_hr: 178,
+          avg_power: 240,
+          distance_meters: 24000,
+          calories: 640,
+        },
+      ],
     };
 
     const { default: StrainScreen } = await import("./strain");
@@ -120,6 +135,7 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.queryByTestId("query-state-loading")).toBeNull();
     expect(screen.getByText("Daily Strain Target")).toBeTruthy();
     expect(screen.getByText("71% reached")).toBeTruthy();
+    expect(screen.getByText("Morning Ride")).toBeTruthy();
   });
 
   it("navigates to detail screen when a recent activity card is tapped", async () => {
