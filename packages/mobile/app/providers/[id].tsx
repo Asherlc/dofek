@@ -773,6 +773,7 @@ export default function ProviderDetailScreen() {
       Promise.all([
         trpcUtils.providerDetail.records.invalidate({ providerId }),
         trpcUtils.providerDetail.logs.invalidate({ providerId }),
+        trpcUtils.sync.providers.invalidate(),
         trpcUtils.sync.providerStats.invalidate(),
         trpcUtils.sync.dataHealth.invalidate(),
       ]).then(() => undefined),

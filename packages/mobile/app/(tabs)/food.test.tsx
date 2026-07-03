@@ -12,6 +12,10 @@ const loggerInfoMock = vi.fn();
 const openExternalUrlMock = vi.fn(() => Promise.resolve(true));
 const invalidateFoodByDateMock = vi.fn(() => Promise.resolve());
 const invalidateSettingsGetMock = vi.fn(() => Promise.resolve());
+const mockUseRefresh = vi.fn((_options: { invalidate?: () => Promise<void> } | undefined) => ({
+  refreshing: false,
+  onRefresh: vi.fn(),
+}));
 
 vi.mock("../../lib/open-external-url", () => ({
   openExternalUrl: (...args: unknown[]) => openExternalUrlMock(...args),
@@ -59,7 +63,8 @@ vi.mock("../../lib/trpc", () => ({
 }));
 
 vi.mock("../../lib/useRefresh", () => ({
-  useRefresh: () => ({ refreshing: false, onRefresh: vi.fn() }),
+  useRefresh: (options: { invalidate?: () => Promise<void> } | undefined) =>
+    mockUseRefresh(options),
 }));
 
 vi.mock("../../lib/telemetry", () => ({
@@ -92,6 +97,20 @@ describe("FoodScreen AI meal confirmation", () => {
         },
       ],
     });
+  });
+
+  it("scopes pull-to-refresh to food entries and calorie goal", async () => {
+    const { default: FoodScreen } = await import("./food");
+
+    render(<FoodScreen />);
+
+    const refreshOptions = mockUseRefresh.mock.calls.at(-1)?.[0];
+    await refreshOptions?.invalidate?.();
+
+    expect(invalidateFoodByDateMock).toHaveBeenCalledWith({
+      date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+    });
+    expect(invalidateSettingsGetMock).toHaveBeenCalledWith({ key: "calorieGoal" });
   });
 
   it("waits for confirmation before creating AI parsed food entries", async () => {
