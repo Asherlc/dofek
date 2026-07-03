@@ -185,12 +185,24 @@ const mockSyncMutateAsync = vi.fn();
 const mockDisconnectMutateAsync = vi.fn();
 const mockInvalidateProviders = vi.fn();
 const mockInvalidateProviderStats = vi.fn();
+const mockInvalidateDataHealth = vi.fn();
+const mockInvalidateRecords = vi.fn();
+const mockInvalidateDetailLogs = vi.fn();
 const mockInvalidateLogs = vi.fn();
 const mockSyncStatusFetch = vi.fn();
 const mockSettingsGetQuery = vi.fn().mockReturnValue({ data: null, isLoading: false });
 const mockSettingsSetMutate = vi.fn();
 const mockSettingsGetSetData = vi.fn();
 const mockSettingsGetInvalidate = vi.fn();
+const mockUseRefresh = vi.fn((_options: { invalidate?: () => Promise<void> } | undefined) => ({
+  refreshing: false,
+  onRefresh: vi.fn(),
+}));
+
+vi.mock("../../lib/useRefresh", () => ({
+  useRefresh: (options: { invalidate?: () => Promise<void> } | undefined) =>
+    mockUseRefresh(options),
+}));
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
@@ -219,8 +231,13 @@ vi.mock("../../lib/trpc", () => ({
       sync: {
         providers: { invalidate: mockInvalidateProviders },
         providerStats: { invalidate: mockInvalidateProviderStats },
+        dataHealth: { invalidate: mockInvalidateDataHealth },
         logs: { invalidate: mockInvalidateLogs },
         syncStatus: { fetch: mockSyncStatusFetch },
+      },
+      providerDetail: {
+        records: { invalidate: mockInvalidateRecords },
+        logs: { invalidate: mockInvalidateDetailLogs },
       },
       settings: {
         get: { setData: mockSettingsGetSetData, invalidate: mockSettingsGetInvalidate },
@@ -312,6 +329,9 @@ describe("ProviderDetailScreen", () => {
     mockDisconnectMutateAsync.mockReset();
     mockInvalidateProviders.mockReset();
     mockInvalidateProviderStats.mockReset();
+    mockInvalidateDataHealth.mockReset();
+    mockInvalidateRecords.mockReset();
+    mockInvalidateDetailLogs.mockReset();
     mockInvalidateLogs.mockReset();
     mockSyncStatusFetch.mockReset();
     mockOpenBrowserAsync.mockReset();
@@ -323,6 +343,7 @@ describe("ProviderDetailScreen", () => {
     mockRequestPermissions.mockResolvedValue(true);
     mockSyncHealthKit.mockReset();
     mockAlertFn.mockReset();
+    mockUseRefresh.mockClear();
     setupDefaultMocks();
   });
 
@@ -727,6 +748,20 @@ describe("ProviderDetailScreen", () => {
         expect(mockInvalidateProviders).toHaveBeenCalled();
         expect(mockInvalidateProviderStats).toHaveBeenCalled();
       });
+    });
+
+    it("scopes pull-to-refresh to provider detail and provider metadata queries", async () => {
+      const { default: ProviderDetailScreen } = await import("./[id]");
+      render(<ProviderDetailScreen />);
+
+      const refreshOptions = mockUseRefresh.mock.calls.at(-1)?.[0];
+      await refreshOptions?.invalidate?.();
+
+      expect(mockInvalidateRecords).toHaveBeenCalledWith({ providerId: "wahoo" });
+      expect(mockInvalidateDetailLogs).toHaveBeenCalledWith({ providerId: "wahoo" });
+      expect(mockInvalidateProviders).toHaveBeenCalled();
+      expect(mockInvalidateProviderStats).toHaveBeenCalled();
+      expect(mockInvalidateDataHealth).toHaveBeenCalled();
     });
   });
 

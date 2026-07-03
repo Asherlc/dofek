@@ -79,7 +79,8 @@ export default function TodayScreen() {
     isFetching: dashboardQuery.isFetching,
     isLoading: dashboardQuery.isLoading,
   });
-  const isError = dashboardQuery.isError;
+  const isError = dashboardQuery.isError && dashboardData == null;
+  const hasBackgroundError = dashboardQuery.isError && dashboardData != null;
 
   const { refreshing, onRefresh } = useRefresh({
     refresh: async () => {
@@ -129,6 +130,14 @@ export default function TodayScreen() {
         error={dataHealthQuery.error}
         loading={dataHealthQuery.isLoading}
       />
+
+      {hasBackgroundError ? (
+        <QueryStatePanel
+          variant="error"
+          message={getQueryErrorMessage(dashboardQuery.error, "Failed to refresh dashboard.")}
+          minHeight={72}
+        />
+      ) : null}
 
       {/* Anomaly Alert Banner */}
       {anomalies != null && anomalies.anomalies.length > 0 && (

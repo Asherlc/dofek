@@ -7,9 +7,9 @@ const mockRouterPush = vi.fn();
 
 type MockTrainingData = Record<string, unknown>;
 
-let mockTrainingData: MockTrainingData;
-let mockTrainingFetching = false;
+let mockTrainingData: MockTrainingData | undefined;
 let mockTrainingLoading = false;
+let mockTrainingFetching = false;
 
 function defaultMockTrainingData(): MockTrainingData {
   return {
@@ -43,8 +43,8 @@ vi.mock("../../lib/trpc", () => ({
       training: {
         useQuery: () => ({
           data: mockTrainingData,
-          isFetching: mockTrainingFetching,
           isLoading: mockTrainingLoading,
+          isFetching: mockTrainingFetching,
           isError: false,
           error: null,
         }),
@@ -81,6 +81,7 @@ describe("StrainScreen recent activity navigation", () => {
     mockTrainingData = defaultMockTrainingData();
     mockTrainingFetching = false;
     mockTrainingLoading = false;
+    mockTrainingFetching = false;
   });
 
   it("keeps day selector visible while training data is loading", async () => {
@@ -95,9 +96,23 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.queryByText("Loading strain data...")).toBeNull();
   });
 
-  it("keeps training data visible during a background refetch", async () => {
+  it("keeps cached training data visible while refreshing", async () => {
+    mockTrainingLoading = true;
+    mockTrainingFetching = true;
     mockTrainingData = {
       ...defaultMockTrainingData(),
+      strainTarget: {
+        targetStrain: 14,
+        currentStrain: 10,
+        progressPercent: 71,
+        zone: "Push",
+        explanation: "Recovery is strong. Push for a high-strain day to build fitness.",
+        dailyLoad: 50,
+        acuteLoad: 90,
+        chronicLoad: 80,
+        workloadRatio: 1.13,
+        readinessScore: 78,
+      },
       activities: [
         {
           id: 42,
@@ -113,14 +128,14 @@ describe("StrainScreen recent activity navigation", () => {
         },
       ],
     };
-    mockTrainingFetching = true;
-    mockTrainingLoading = true;
 
     const { default: StrainScreen } = await import("./strain");
     render(<StrainScreen />);
 
-    expect(screen.getByText("Morning Ride")).toBeTruthy();
     expect(screen.queryByTestId("query-state-loading")).toBeNull();
+    expect(screen.getByText("Daily Strain Target")).toBeTruthy();
+    expect(screen.getByText("71% reached")).toBeTruthy();
+    expect(screen.getByText("Morning Ride")).toBeTruthy();
   });
 
   it("navigates to detail screen when a recent activity card is tapped", async () => {

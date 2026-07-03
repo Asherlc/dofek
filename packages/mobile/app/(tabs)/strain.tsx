@@ -13,7 +13,15 @@ import {
 } from "@dofek/training/training";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  ActivityIndicator,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { ActivityCard } from "../../components/ActivityCard";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { SparkLine } from "../../components/charts/SparkLine";
@@ -308,7 +316,9 @@ export default function StrainScreen() {
                 <Text style={styles.sectionLinkButtonText}>View all</Text>
               </TouchableOpacity>
             </View>
-            {trainingQuery.isError || activitiesParsed.error ? (
+            {isLoading ? (
+              <ActivityIndicator color={colors.accent} style={styles.activitiesLoader} />
+            ) : trainingQuery.isError || activitiesParsed.error ? (
               <Text style={styles.errorText}>
                 {trainingQuery.error?.message ?? "Failed to load activities."}
               </Text>
@@ -528,6 +538,9 @@ const styles = StyleSheet.create({
   },
   activitiesStack: {
     gap: 8,
+  },
+  activitiesLoader: {
+    paddingVertical: 24,
   },
   activitiesEmpty: {
     color: colors.textTertiary,

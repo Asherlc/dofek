@@ -62,6 +62,7 @@ export default function FoodScreen() {
     logger.info("screen-navigation", "Nutrition tab rendered", { route: "food" });
   }, []);
 
+  const trpcUtils = trpc.useUtils();
   const calorieGoalQuery = trpc.settings.get.useQuery({ key: "calorieGoal" });
   const calorieGoal =
     typeof calorieGoalQuery.data?.value === "number" ? calorieGoalQuery.data.value : 2000;
@@ -189,7 +190,13 @@ export default function FoodScreen() {
     setPendingAiMealItems([]);
   }
 
-  const { refreshing, onRefresh } = useRefresh();
+  const { refreshing, onRefresh } = useRefresh({
+    invalidate: () =>
+      Promise.all([
+        trpcUtils.food.byDate.invalidate({ date: dateString }),
+        trpcUtils.settings.get.invalidate({ key: "calorieGoal" }),
+      ]).then(() => undefined),
+  });
   const aiLoggingInProgress = analyzeItemsMutation.isPending || createAiEntryMutation.isPending;
 
   return (
