@@ -19,6 +19,7 @@ let mockDashboardData: unknown;
 let mockDashboardError: Error | null = null;
 let mockAnomalyData: unknown;
 let mockDataHealthData: unknown;
+let mockDashboardFetching = false;
 const mockDataHealthRefetch = vi.fn(() => Promise.resolve());
 
 vi.mock("expo-router", () => ({
@@ -34,6 +35,7 @@ vi.mock("../../lib/trpc", () => ({
           return {
             data: mockDashboardError ? undefined : mockDashboardData,
             isLoading: mockDashboardLoading,
+            isFetching: mockDashboardFetching,
             isError: !!mockDashboardError,
             error: mockDashboardError,
             refetch: mockDashboardRefetch,
@@ -132,6 +134,7 @@ vi.mock("../../theme", () => ({
 describe("TodayScreen independent loading states", () => {
   beforeEach(() => {
     mockDashboardLoading = false;
+    mockDashboardFetching = false;
     mockDashboardRefetch.mockClear();
     mockAnomalyRefetch.mockClear();
     mockDashboardUseQuery.mockClear();
@@ -219,6 +222,7 @@ describe("TodayScreen independent loading states", () => {
 
   it("shows skeleton placeholder for recovery ring while readiness is loading", async () => {
     mockDashboardLoading = true;
+    mockDashboardData = undefined;
 
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);
@@ -227,8 +231,21 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.getAllByTestId("skeleton-circle").length).toBeGreaterThanOrEqual(1);
   });
 
+  it("keeps cached dashboard data visible while refreshing", async () => {
+    mockDashboardLoading = true;
+    mockDashboardFetching = true;
+
+    const { default: TodayScreen } = await import("./index");
+    render(<TodayScreen />);
+
+    expect(screen.queryByTestId("skeleton-circle")).toBeNull();
+    expect(screen.getByText("LAST NIGHT")).toBeTruthy();
+    expect(screen.getByText("RECOVERY BREAKDOWN")).toBeTruthy();
+  });
+
   it("shows skeleton placeholder for strain gauge while workload is loading", async () => {
     mockDashboardLoading = true;
+    mockDashboardData = undefined;
 
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);
@@ -238,6 +255,7 @@ describe("TodayScreen independent loading states", () => {
 
   it("hides sleep summary section while sleep analytics is loading", async () => {
     mockDashboardLoading = true;
+    mockDashboardData = undefined;
 
     const { default: TodayScreen } = await import("./index");
     render(<TodayScreen />);

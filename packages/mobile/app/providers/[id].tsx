@@ -768,7 +768,15 @@ export default function ProviderDetailScreen() {
     Linking.openURL(`${serverUrl}/auth/provider/${providerId}`);
   }, [providerId, serverUrl]);
 
-  const { refreshing, onRefresh } = useRefresh();
+  const { refreshing, onRefresh } = useRefresh({
+    invalidate: () =>
+      Promise.all([
+        trpcUtils.providerDetail.records.invalidate({ providerId }),
+        trpcUtils.providerDetail.logs.invalidate({ providerId }),
+        trpcUtils.sync.providerStats.invalidate(),
+        trpcUtils.sync.dataHealth.invalidate(),
+      ]).then(() => undefined),
+  });
 
   if (isLoading || !providerId) {
     return (

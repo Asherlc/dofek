@@ -10,6 +10,8 @@ const createAiEntryMutateAsyncMock = vi.fn();
 const deleteMutateMock = vi.fn();
 const loggerInfoMock = vi.fn();
 const openExternalUrlMock = vi.fn(() => Promise.resolve(true));
+const invalidateFoodByDateMock = vi.fn(() => Promise.resolve());
+const invalidateSettingsGetMock = vi.fn(() => Promise.resolve());
 
 vi.mock("../../lib/open-external-url", () => ({
   openExternalUrl: (...args: unknown[]) => openExternalUrlMock(...args),
@@ -45,6 +47,14 @@ vi.mock("../../lib/trpc", () => ({
         useMutation: () => ({ mutate: deleteMutateMock, isPending: false }),
       },
     },
+    useUtils: () => ({
+      food: {
+        byDate: { invalidate: invalidateFoodByDateMock },
+      },
+      settings: {
+        get: { invalidate: invalidateSettingsGetMock },
+      },
+    }),
   },
 }));
 

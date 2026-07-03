@@ -35,6 +35,7 @@ let bulkDeleteMutateAsync: ReturnType<typeof vi.fn>;
 let invalidateWeekList: ReturnType<typeof vi.fn>;
 let invalidateActivityOverview: ReturnType<typeof vi.fn>;
 let invalidateActivityList: ReturnType<typeof vi.fn>;
+let invalidateDataHealth: ReturnType<typeof vi.fn>;
 let mockDataHealthQuery: {
   data: unknown;
   isLoading: boolean;
@@ -94,6 +95,9 @@ vi.mock("../../lib/trpc", () => ({
       },
       activity: {
         list: { invalidate: invalidateActivityList },
+      },
+      sync: {
+        dataHealth: { invalidate: invalidateDataHealth },
       },
     }),
   },
@@ -163,6 +167,7 @@ describe("ActivitiesScreen", () => {
     invalidateActivityOverview = vi.fn();
     invalidateActivityList = vi.fn();
     mockDataHealthQuery = { data: undefined, isLoading: false, error: null };
+    invalidateDataHealth = vi.fn();
     routerPush.mockReset();
     vi.restoreAllMocks();
   });

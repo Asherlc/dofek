@@ -25,6 +25,7 @@ import { DataReadinessBanner } from "../../components/DataReadinessBanner";
 import { ProviderGuide } from "../../components/ProviderGuide";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { SkeletonCircle } from "../../components/Skeleton";
+import { shouldShowBlockingLoading } from "../../lib/loading-policy";
 import { trpc } from "../../lib/trpc";
 import { useAutoSync } from "../../lib/useAutoSync";
 import { useProviderGuide } from "../../lib/useProviderGuide";
@@ -42,7 +43,10 @@ export default function TodayScreen() {
   const endDate = useTodayQueryDate();
 
   // Consolidated dashboard data fetch
-  const dashboardQuery = trpc.mobileDashboard.dashboard.useQuery({ endDate });
+  const dashboardQuery = trpc.mobileDashboard.dashboard.useQuery(
+    { endDate },
+    { placeholderData: (previousData) => previousData },
+  );
   const dataHealthQuery = trpc.sync.dataHealth.useQuery();
   const dashboardData = dashboardQuery.data;
   const anomalyQuery = trpc.anomalyDetection.check.useQuery(
@@ -70,8 +74,12 @@ export default function TodayScreen() {
   const sleepNeed = dashboardData?.sleepNeed;
   const anomalies = anomalyQuery.data ?? dashboardData?.anomalies;
 
-  const isLoading = dashboardQuery.isLoading;
-  const isError = dashboardQuery.isError;
+  const isLoading = shouldShowBlockingLoading({
+    data: dashboardData,
+    isLoading: dashboardQuery.isLoading,
+    isFetching: dashboardQuery.isFetching,
+  });
+  const isError = dashboardQuery.isError && dashboardData == null;
 
   const { refreshing, onRefresh } = useRefresh({
     refresh: async () => {

@@ -91,7 +91,15 @@ export default function ActivitiesScreen() {
       setSelectMode(false);
     },
   });
-  const { refreshing, onRefresh } = useRefresh();
+  const { refreshing, onRefresh } = useRefresh({
+    invalidate: () =>
+      Promise.all([
+        trpcUtils.calendar.weekList.invalidate(),
+        trpcUtils.calendar.activityOverview.invalidate(),
+        trpcUtils.activity.list.invalidate(),
+        trpcUtils.sync.dataHealth.invalidate(),
+      ]).then(() => undefined),
+  });
 
   const dayGroups = query.data;
   const hasActivities = dayGroups?.some((day) => day.activities.length > 0) ?? false;

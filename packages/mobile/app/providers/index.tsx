@@ -482,7 +482,16 @@ export default function ProvidersScreen() {
   }
   const logList: SyncLog[] = logs.error ? [] : (logs.data ?? []);
 
-  const { refreshing, onRefresh } = useRefresh();
+  const { refreshing, onRefresh } = useRefresh({
+    invalidate: () =>
+      Promise.all([
+        trpcUtils.sync.providers.invalidate(),
+        trpcUtils.sync.providerStats.invalidate(),
+        trpcUtils.sync.logs.invalidate({ limit: 50 }),
+        trpcUtils.sync.dataHealth.invalidate(),
+        trpcUtils.sync.activeSyncs.invalidate(),
+      ]).then(() => undefined),
+  });
 
   const isLoading = providers.isLoading;
   const enabledProviders = providerList.filter((p) => p.enabled);
