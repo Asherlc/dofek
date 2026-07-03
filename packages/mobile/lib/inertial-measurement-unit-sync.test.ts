@@ -110,6 +110,34 @@ describe("syncInertialMeasurementUnitToServer", () => {
     expect(fromDate).toBe("2026-05-17T21:24:00.000Z");
   });
 
+  it("limits each CoreMotion query to ten minutes while catching up", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-20T19:00:00.000Z"));
+
+    const queryRecordedData = vi.fn().mockResolvedValue([]);
+    const setLastSyncTimestamp = vi.fn();
+    const lastSync = new Date("2026-05-20T18:00:00.000Z").toISOString();
+    const coreMotion = makeAdapter({
+      getLastSyncTimestamp: () => lastSync,
+      queryRecordedData,
+      setLastSyncTimestamp,
+    });
+    const trpcClient = makeTrpcClient();
+
+    await syncInertialMeasurementUnitToServer({
+      trpcClient,
+      coreMotion,
+      deviceId: "iPhone 15 Pro",
+      deviceType: "iphone",
+    });
+
+    expect(queryRecordedData).toHaveBeenCalledTimes(1);
+    const [fromDate, toDate] = queryRecordedData.mock.calls[0];
+    expect(fromDate).toBe("2026-05-20T18:00:00.000Z");
+    expect(toDate).toBe("2026-05-20T18:10:00.000Z");
+    expect(setLastSyncTimestamp).toHaveBeenCalledWith("2026-05-20T18:10:00.000Z");
+  });
+
   it("uploads samples in batches of 5000", async () => {
     const samples = makeSamples(7500);
     const coreMotion = makeAdapter({
@@ -139,9 +167,14 @@ describe("syncInertialMeasurementUnitToServer", () => {
   });
 
   it("advances sync cursor only after all batches succeed", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-20T19:00:00.000Z"));
+
     const samples = makeSamples(100);
     const setLastSyncTimestamp = vi.fn();
+    const lastSync = new Date("2026-05-20T18:59:00.000Z").toISOString();
     const coreMotion = makeAdapter({
+      getLastSyncTimestamp: () => lastSync,
       queryRecordedData: vi.fn().mockResolvedValue(samples),
       setLastSyncTimestamp,
     });
@@ -155,9 +188,7 @@ describe("syncInertialMeasurementUnitToServer", () => {
     });
 
     expect(setLastSyncTimestamp).toHaveBeenCalledTimes(1);
-    // Should be called with a recent timestamp (within last second)
-    const savedTimestamp = new Date(setLastSyncTimestamp.mock.calls[0][0]).getTime();
-    expect(savedTimestamp).toBeGreaterThan(Date.now() - 2000);
+    expect(setLastSyncTimestamp).toHaveBeenCalledWith("2026-05-20T19:00:00.000Z");
   });
 
   it("does not advance cursor when upload fails", async () => {
