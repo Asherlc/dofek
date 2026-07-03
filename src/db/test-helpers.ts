@@ -76,7 +76,13 @@ function registerTemplateDatabaseCleanup(adminUrl: string, templateName: string)
   if (templateDatabaseCleanupRegistered) return;
 
   templateDatabaseCleanupRegistered = true;
-  process.once("beforeExit", cleanupTemplateDatabaseAtProcessExit);
+  process.once("beforeExit", () => {
+    void cleanupTemplateDatabaseAtProcessExit().catch((error: unknown) => {
+      process.emitWarning(error instanceof Error ? error : String(error), {
+        type: "TestDatabaseCleanupWarning",
+      });
+    });
+  });
 }
 
 async function cleanupTemplateDatabaseAtProcessExit(): Promise<void> {
@@ -238,11 +244,14 @@ export async function setupTestDatabase(): Promise<TestContext> {
     dbName = `test_${randomBytes(6).toString("hex")}`;
     const admin = new Client({ connectionString: adminUrl });
     await admin.connect();
-    await terminateDatabaseConnections(admin, templateName);
-    await admin.query(
-      `CREATE DATABASE ${escapeIdentifier(dbName)} WITH TEMPLATE ${escapeIdentifier(templateName)}`,
-    );
-    await admin.end();
+    try {
+      await terminateDatabaseConnections(admin, templateName);
+      await admin.query(
+        `CREATE DATABASE ${escapeIdentifier(dbName)} WITH TEMPLATE ${escapeIdentifier(templateName)}`,
+      );
+    } finally {
+      await admin.end();
+    }
 
     connectionString = databaseNameForUrl(adminUrl, dbName);
   } else {

@@ -79,6 +79,10 @@ const removeAddedBeforeExitListeners = (): void => {
   }
 };
 
+const waitForAsyncCleanup = async (): Promise<void> => {
+  await new Promise((resolveWait) => setTimeout(resolveWait, 0));
+};
+
 vi.mock("./index.ts", () => ({
   createDatabase: (connectionString: string) => ({
     $client: {
@@ -168,6 +172,28 @@ describe("setupTestDatabase", () => {
     expect(templateCreateStatements).toHaveLength(2);
   });
 
+  it("closes the admin connection when clone creation fails", async () => {
+    process.env.TEST_DATABASE_URL = "postgres://test:test@localhost:5432/test";
+    pgState.queryFailures.push({
+      error: new Error("temporary clone failure"),
+      remainingFailures: 1,
+      sqlIncludes: " WITH TEMPLATE ",
+    });
+
+    const { setupTestDatabase } = await import("./test-helpers.ts");
+
+    await expect(setupTestDatabase()).rejects.toThrow("temporary clone failure");
+
+    const adminConnections = pgState.connections.filter(
+      (connectionString) => connectionString === process.env.TEST_DATABASE_URL,
+    );
+    const endedAdminConnections = pgState.endedConnections.filter(
+      (connectionString) => connectionString === process.env.TEST_DATABASE_URL,
+    );
+
+    expect(endedAdminConnections).toHaveLength(adminConnections.length);
+  });
+
   it("drops the process template database at process teardown", async () => {
     process.env.TEST_DATABASE_URL = "postgres://test:test@localhost:5432/test";
     const listenersBeforeSetup = process.listeners("beforeExit");
@@ -192,6 +218,7 @@ describe("setupTestDatabase", () => {
     if (cleanupResult instanceof Promise) {
       await cleanupResult;
     }
+    await waitForAsyncCleanup();
     const templateDropsAfterCleanup = pgState.queries.filter(({ sql }) =>
       sql.startsWith('DROP DATABASE IF EXISTS "dofek_integration_template_'),
     ).length;
