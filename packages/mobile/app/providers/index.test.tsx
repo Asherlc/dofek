@@ -1006,6 +1006,91 @@ describe("ProvidersScreen", () => {
     expect(mockSyncStatusFetch).not.toHaveBeenCalled();
   });
 
+  it("shows sync-all failed provider outcomes without polling fake jobs", async () => {
+    mockSyncMutateAsync.mockResolvedValue({
+      jobId: "job-failed",
+      jobIds: [],
+      providerJobs: [],
+      providerResults: [
+        {
+          providerId: "wahoo",
+          status: "failed",
+          message: "provider queue unavailable",
+        },
+      ],
+    });
+
+    await renderProvidersScreen();
+
+    fireEvent.click(screen.getByText("Sync All"));
+
+    const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
+    await waitFor(() => {
+      expect(wahooCard.getByText("provider queue unavailable")).toBeTruthy();
+    });
+    expect(mockSyncStatusFetch).not.toHaveBeenCalled();
+  });
+
+  it("polls provider-scoped job ids for sync-all started and already queued outcomes", async () => {
+    const garminProvider = {
+      id: "garmin",
+      name: "Garmin",
+      authType: "oauth",
+      authorized: true,
+      importOnly: false,
+      lastSyncedAt: null,
+    };
+    mockProvidersQuery.mockReturnValue({
+      data: [connectedProvider, garminProvider],
+      isLoading: false,
+      error: null,
+    });
+    mockSyncMutateAsync.mockResolvedValue({
+      jobId: "wahoo:job-wahoo",
+      jobIds: ["wahoo:job-wahoo", "garmin:job-garmin"],
+      providerJobs: [
+        { providerId: "wahoo", jobId: "wahoo:job-wahoo", queueName: "sync-wahoo" },
+        { providerId: "garmin", jobId: "garmin:job-garmin", queueName: "sync-garmin" },
+      ],
+      providerResults: [
+        {
+          providerId: "wahoo",
+          status: "started",
+          jobId: "wahoo:job-wahoo",
+          queueName: "sync-wahoo",
+        },
+        {
+          providerId: "garmin",
+          status: "alreadyQueued",
+          jobId: "garmin:job-garmin",
+          queueName: "sync-garmin",
+        },
+      ],
+    });
+    mockSyncStatusFetch.mockResolvedValue({
+      status: "done",
+      providers: {
+        wahoo: { status: "done" },
+        garmin: { status: "done" },
+      },
+    });
+
+    await renderProvidersScreen();
+
+    fireEvent.click(screen.getByText("Sync All"));
+
+    await waitFor(() => {
+      expect(mockSyncStatusFetch).toHaveBeenCalledWith(
+        { jobId: "wahoo:job-wahoo" },
+        { staleTime: 0 },
+      );
+      expect(mockSyncStatusFetch).toHaveBeenCalledWith(
+        { jobId: "garmin:job-garmin" },
+        { staleTime: 0 },
+      );
+    });
+  });
+
   it("passes sinceDays: undefined when Full Sync All is clicked", async () => {
     mockSyncMutateAsync.mockResolvedValue({ jobId: "job-4", providerJobs: [] });
     mockSyncStatusFetch.mockResolvedValue({
