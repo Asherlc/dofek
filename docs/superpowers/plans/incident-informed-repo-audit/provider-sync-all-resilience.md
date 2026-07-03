@@ -1,4 +1,15 @@
 # Provider Sync All Resilience Implementation Plan
+
+> **Status note (2026-07-02):** The core implementation described here has already landed on
+> `origin/main`: `sync.triggerSync` returns per-provider `providerResults`, server tests cover
+> `skippedCooldown`, `alreadyQueued`, and `failed` outcomes, and web/mobile provider screens render
+> those outcomes without polling fake jobs for non-pollable results. Queue visibility landed as the
+> admin `sync.queueBackpressure` route instead of `queueDepth` fields on `activeSyncs`; keep that
+> shape unless a failing user-facing test proves active sync rows need queue depth too. Follow-up
+> verification and plan reconciliation are tracked in
+> [`2026-07-02-provider-sync-all-resilience-verification.md`](../2026-07-02-provider-sync-all-resilience-verification.md)
+> and GitHub issue #1458.
+
 **Goal:** Make “sync all” return per-provider outcomes so one cooldown, duplicate queue job, or provider failure does not hide the status of every other provider.
 **Architecture:** Keep the existing per-provider BullMQ queues and Garmin cooldown behavior. Change only the `sync.triggerSync` response contract so all-provider sync returns `started`, `skippedCooldown`, `alreadyQueued`, or `failed` per provider, and expose global queue backpressure without silently converting failures to success.
 **Tech Stack:** TypeScript, tRPC, Zod, BullMQ, Vitest, React, React Native/Expo.
