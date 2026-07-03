@@ -404,6 +404,47 @@ describe("ActivityDetailPage", () => {
       Object.assign(mockActivity, originalData);
     });
 
+    it("renders multiple Apple Health upstream app source links", async () => {
+      const originalData = { ...mockActivity };
+      Object.assign(mockActivity, {
+        providerId: "whoop",
+        subsource: "WHOOP",
+        sourceProviders: ["apple_health", "whoop"],
+        sourceLinks: [
+          {
+            providerId: "apple_health",
+            label: "Strong (via Apple Health)",
+            url: null,
+            providerAbsentAt: null,
+            memberActivityId: "strong-member",
+          },
+          {
+            providerId: "apple_health",
+            label: "WHOOP (via Apple Health)",
+            url: null,
+            providerAbsentAt: null,
+            memberActivityId: "whoop-apple-member",
+          },
+          {
+            providerId: "whoop",
+            label: "WHOOP (Cloud)",
+            url: "https://app.whoop.com/activities/whoop-cloud",
+            providerAbsentAt: null,
+            memberActivityId: "whoop-cloud-member",
+          },
+        ],
+      });
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      expect(screen.getByText(/Strong \(via Apple Health\)/)).toBeDefined();
+      expect(screen.getByText(/WHOOP \(via Apple Health\)/)).toBeDefined();
+      expect(screen.getByRole("link", { name: "WHOOP (Cloud)" })).toBeDefined();
+
+      Object.assign(mockActivity, originalData);
+    });
+
     it("renders removed source links without anchors", async () => {
       const originalData = { ...mockActivity };
       Object.assign(mockActivity, {

@@ -104,7 +104,15 @@ merged AS (
         maxIf(ranked.source_synced_at, ranked.activity_id IS NOT null) AS source_synced_at,
         arraySort(groupUniqArrayIf(ranked.provider_id, ranked.activity_id IS NOT null)) AS source_providers,
         groupArrayIf(
-            map('providerId', ranked.provider_id, 'externalId', ranked.external_id),
+            map(
+                'providerId', ranked.provider_id,
+                'externalId', ranked.external_id,
+                'memberActivityId', toString(ranked.activity_id),
+                'subsource', coalesce(
+                    nullIf(trim(BOTH ' ' FROM JSONExtractString(ranked.raw, 'sourceName')), ''),
+                    nullIf(trim(BOTH ' ' FROM ranked.source_name), '')
+                )
+            ),
             ranked.activity_id IS NOT null
             AND ranked.external_id IS NOT null
             AND ranked.external_id != ''

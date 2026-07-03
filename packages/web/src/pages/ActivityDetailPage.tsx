@@ -390,43 +390,63 @@ export function ActivityHeader({
 }
 
 function SourceLinks({ activity }: { activity: ActivityDetail }) {
-  const linkMap = new Map(activity.sourceLinks.map((link) => [link.providerId, link]));
+  if (activity.sourceLinks.length > 0) {
+    return (
+      <>
+        {activity.sourceLinks.map((link, index) => (
+          <span key={`${link.providerId}:${link.memberActivityId ?? link.label}`}>
+            {index > 0 && ", "}
+            <SourceLinkLabel link={link} />
+          </span>
+        ))}
+      </>
+    );
+  }
 
   return (
     <>
       {activity.sourceProviders.map((providerId, index) => {
-        const link = linkMap.get(providerId);
         return (
           <span key={providerId}>
             {index > 0 && ", "}
-            {link?.providerAbsentAt ? (
-              <span
-                className="text-amber-700 dark:text-amber-300 line-through decoration-amber-500/60"
-                title={
-                  link.providerAbsentAt
-                    ? `Removed ${formatDateTime(link.providerAbsentAt)}`
-                    : "Removed from provider sync"
-                }
-              >
-                {link.label} (removed)
-              </span>
-            ) : link?.url ? (
-              <a
-                href={link.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-accent hover:text-accent-secondary underline"
-              >
-                {link.label}
-              </a>
-            ) : (
-              providerSourceLabel(providerId, activity.subsource)
-            )}
+            {providerSourceLabel(providerId, activity.subsource)}
           </span>
         );
       })}
     </>
   );
+}
+
+function SourceLinkLabel({ link }: { link: ActivityDetail["sourceLinks"][number] }) {
+  if (link.providerAbsentAt) {
+    return (
+      <span
+        className="text-amber-700 dark:text-amber-300 line-through decoration-amber-500/60"
+        title={
+          link.providerAbsentAt
+            ? `Removed ${formatDateTime(link.providerAbsentAt)}`
+            : "Removed from provider sync"
+        }
+      >
+        {link.label} (removed)
+      </span>
+    );
+  }
+
+  if (link.url) {
+    return (
+      <a
+        href={link.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-accent hover:text-accent-secondary underline"
+      >
+        {link.label}
+      </a>
+    );
+  }
+
+  return <>{link.label}</>;
 }
 
 function RouteMap({

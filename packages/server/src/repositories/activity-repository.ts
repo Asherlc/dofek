@@ -41,6 +41,7 @@ const sourceExternalIdSchema = z.object({
   externalId: z.string(),
   memberActivityId: z.string().optional(),
   providerAbsentAt: timestampStringSchema.nullable().optional(),
+  subsource: z.string().nullable().optional(),
 });
 
 const activityDetailRowSchema = z.object({

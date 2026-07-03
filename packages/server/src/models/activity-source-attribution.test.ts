@@ -249,7 +249,7 @@ describe("ActivitySourceAttribution", () => {
     expect(attribution.toSourceLinks(mockLookup)).toEqual([
       {
         providerId: "apple_health",
-        label: "apple_health",
+        label: "Apple Health",
         url: null,
         providerAbsentAt: null,
       },

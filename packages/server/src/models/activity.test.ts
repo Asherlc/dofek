@@ -3,22 +3,29 @@ import { describe, expect, it } from "vitest";
 import { Activity, type ActivityRow, type ProviderLookup } from "./activity.ts";
 
 const mockLookup: ProviderLookup = (id: string) => {
-  const providers: Record<string, { name: string; activityUrl: (externalId: string) => string }> = {
-    strava: {
-      name: "Strava",
-      activityUrl: (externalId: string) => `https://www.strava.com/activities/${externalId}`,
-    },
-    wahoo: {
-      name: "Wahoo",
-      activityUrl: (externalId: string) =>
-        `https://systm.wahoofitness.com/history/activity-details/${externalId}`,
-    },
-    garmin: {
-      name: "Garmin",
-      activityUrl: (externalId: string) =>
-        `https://connect.garmin.com/modern/activity/${externalId}`,
-    },
-  };
+  const providers: Record<string, { name: string; activityUrl?: (externalId: string) => string }> =
+    {
+      apple_health: {
+        name: "Apple Health",
+      },
+      strava: {
+        name: "Strava",
+        activityUrl: (externalId: string) => `https://www.strava.com/activities/${externalId}`,
+      },
+      wahoo: {
+        name: "Wahoo",
+        activityUrl: (externalId: string) =>
+          `https://systm.wahoofitness.com/history/activity-details/${externalId}`,
+      },
+      whoop: {
+        name: "WHOOP (Cloud)",
+      },
+      garmin: {
+        name: "Garmin",
+        activityUrl: (externalId: string) =>
+          `https://connect.garmin.com/modern/activity/${externalId}`,
+      },
+    };
   return providers[id];
 };
 
@@ -129,7 +136,7 @@ describe("Activity", () => {
     ]);
   });
 
-  it("skips providers without activityUrl", () => {
+  it("labels providers without activityUrl", () => {
     const row: ActivityRow = {
       ...fullRow,
       source_external_ids: [
@@ -139,8 +146,73 @@ describe("Activity", () => {
     };
     const activity = new Activity(row, mockLookup);
 
-    expect(activity.sourceLinks).toHaveLength(1);
-    expect(activity.sourceLinks[0]?.providerId).toBe("strava");
+    expect(activity.sourceLinks).toEqual([
+      {
+        providerId: "apple_health",
+        label: "Apple Health",
+        url: null,
+        providerAbsentAt: null,
+      },
+      {
+        providerId: "strava",
+        label: "Strava",
+        url: "https://www.strava.com/activities/12345",
+        providerAbsentAt: null,
+      },
+    ]);
+  });
+
+  it("labels multiple Apple Health upstream apps in one deduped activity", () => {
+    const row: ActivityRow = {
+      ...fullRow,
+      provider_id: "whoop",
+      subsource: "WHOOP",
+      source_providers: ["apple_health", "whoop"],
+      source_external_ids: [
+        {
+          providerId: "apple_health",
+          externalId: "hk:workout:strong",
+          memberActivityId: "strong-member",
+          subsource: "Strong",
+        },
+        {
+          providerId: "apple_health",
+          externalId: "hk:workout:whoop",
+          memberActivityId: "whoop-apple-member",
+          subsource: "WHOOP",
+        },
+        {
+          providerId: "whoop",
+          externalId: "whoop-cloud",
+          memberActivityId: "whoop-cloud-member",
+        },
+      ],
+    };
+    const activity = new Activity(row, mockLookup);
+
+    expect(activity.sourceLinks).toEqual([
+      {
+        providerId: "apple_health",
+        label: "Strong (via Apple Health)",
+        url: null,
+        providerAbsentAt: null,
+        memberActivityId: "strong-member",
+      },
+      {
+        providerId: "apple_health",
+        label: "WHOOP (via Apple Health)",
+        url: null,
+        providerAbsentAt: null,
+        memberActivityId: "whoop-apple-member",
+      },
+      {
+        providerId: "whoop",
+        label: "WHOOP (Cloud)",
+        url: null,
+        providerAbsentAt: null,
+        memberActivityId: "whoop-cloud-member",
+      },
+    ]);
   });
 
   it("keeps source providers when source_external_ids is null", () => {
