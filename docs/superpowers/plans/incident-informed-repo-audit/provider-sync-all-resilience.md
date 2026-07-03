@@ -9,6 +9,10 @@
 > verification and plan reconciliation are tracked in
 > [`2026-07-02-provider-sync-all-resilience-verification.md`](../2026-07-02-provider-sync-all-resilience-verification.md)
 > and GitHub issue #1458.
+>
+> **Archive note (2026-07-03):** Treat the checklist below as the original historical TDD script,
+> not active outstanding work. Issue #1458 verified the implemented server, web, and mobile behavior
+> and recorded the remaining local lint blocker in the verification plan.
 
 **Goal:** Make “sync all” return per-provider outcomes so one cooldown, duplicate queue job, or provider failure does not hide the status of every other provider.
 **Architecture:** Keep the existing per-provider BullMQ queues and Garmin cooldown behavior. Change only the `sync.triggerSync` response contract so all-provider sync returns `started`, `skippedCooldown`, `alreadyQueued`, or `failed` per provider, and expose global queue backpressure without silently converting failures to success.

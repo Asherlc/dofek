@@ -84,7 +84,7 @@
 - [x] Run `rtk pnpm vitest run --project unit packages/server/src/routers/sync.test.ts packages/web/src/components/DataSourcesPanel.test.tsx`.
 - [x] Run `rtk pnpm vitest run --project mobile packages/mobile/app/providers/index.test.tsx`.
 - [x] Run `rtk pnpm tsc --noEmit`.
-- [ ] Run `rtk pnpm lint`.
+- [x] Run `rtk pnpm lint`.
 - [ ] Commit and push if implementation work is requested after this issue is picked up.
 
-Lint note: `rtk pnpm lint` passed Biome after formatting, then failed in `pnpm lint:analytics-sql` because dbt/sqlfluff could not authenticate to local ClickHouse at `http://127.0.0.1:8123` (`REQUIRED_PASSWORD`). This is an environment credential blocker, not a changed-file lint failure.
+Verification note (2026-07-03): focused server/web tests, focused mobile tests, and `rtk pnpm tsc --noEmit` passed. `rtk pnpm lint` passed Biome, then failed in `pnpm lint:analytics-sql` because dbt/sqlfluff could not connect to local ClickHouse at `http://127.0.0.1:8123` (`Connection refused`). This is an environment service blocker, not a changed-file lint failure.
