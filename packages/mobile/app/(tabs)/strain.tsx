@@ -539,6 +539,9 @@ const styles = StyleSheet.create({
   activitiesStack: {
     gap: 8,
   },
+  activitiesLoader: {
+    paddingVertical: 24,
+  },
   activitiesEmpty: {
     color: colors.textTertiary,
     fontSize: 13,
