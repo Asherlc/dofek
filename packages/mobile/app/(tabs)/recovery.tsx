@@ -7,6 +7,7 @@ import {
   formatSpO2,
 } from "@dofek/format/format";
 import { formatMeasurementText } from "@dofek/format/units";
+import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import {
   trendDirection as computeTrend,
   SCORE_ZONES,
@@ -32,7 +33,6 @@ import { SparkLine } from "../../components/charts/SparkLine";
 import { DaySelector } from "../../components/DaySelector";
 import { MetricCard } from "../../components/MetricCard";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
-import { shouldShowBlockingLoading } from "../../lib/loading-policy";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useRefresh } from "../../lib/useRefresh";

@@ -1,5 +1,6 @@
 import { formatCalories, formatDateLong, formatDateYmd } from "@dofek/format/format";
 import { autoMealType } from "@dofek/nutrition/meal";
+import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -14,7 +15,6 @@ import {
 } from "react-native";
 import { MacroSummary } from "../../components/MacroSummary";
 import { MealSection } from "../../components/MealSection";
-import { shouldShowBlockingLoading } from "../../lib/loading-policy";
 import { openExternalUrl } from "../../lib/open-external-url";
 import { safeParseRows } from "../../lib/safe-parse";
 import { captureException, logger } from "../../lib/telemetry";

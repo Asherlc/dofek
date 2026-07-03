@@ -5,6 +5,7 @@ import {
   formatNumber,
   formatTrainingLoad,
 } from "@dofek/format/format";
+import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { aggregateWeeklyVolume, StrainScore, WorkloadRatio } from "@dofek/scoring/scoring";
 import {
   collapseWeeklyVolumeActivityTypes,
@@ -12,15 +13,7 @@ import {
 } from "@dofek/training/training";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import {
-  ActivityIndicator,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ActivityCard } from "../../components/ActivityCard";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { SparkLine } from "../../components/charts/SparkLine";
@@ -28,7 +21,6 @@ import { StrainGauge } from "../../components/charts/StrainGauge";
 import { VerticalAscentChart } from "../../components/charts/VerticalAscentChart";
 import { DaySelector } from "../../components/DaySelector";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
-import { shouldShowBlockingLoading } from "../../lib/loading-policy";
 import { safeParseRows } from "../../lib/safe-parse";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
@@ -316,9 +308,7 @@ export default function StrainScreen() {
                 <Text style={styles.sectionLinkButtonText}>View all</Text>
               </TouchableOpacity>
             </View>
-            {isLoading ? (
-              <ActivityIndicator color={colors.accent} style={styles.activitiesLoader} />
-            ) : trainingQuery.isError || activitiesParsed.error ? (
+            {trainingQuery.isError || activitiesParsed.error ? (
               <Text style={styles.errorText}>
                 {trainingQuery.error?.message ?? "Failed to load activities."}
               </Text>
@@ -538,9 +528,6 @@ const styles = StyleSheet.create({
   },
   activitiesStack: {
     gap: 8,
-  },
-  activitiesLoader: {
-    paddingVertical: 24,
   },
   activitiesEmpty: {
     color: colors.textTertiary,

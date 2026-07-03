@@ -9,6 +9,7 @@ import {
   type FoodEntryNutrientDetail,
   foodEntryNutrientDetailsFromLegacyColumns,
 } from "@dofek/nutrition/food-entry-nutrition";
+import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { useMemo, useState } from "react";
 import { z } from "zod";
 import { AddFoodModal, type FoodFormData, type MealType } from "../components/AddFoodModal.tsx";
@@ -16,7 +17,6 @@ import { FoodEntryRow } from "../components/FoodEntryRow.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { MacroBar } from "../components/MacroBar.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
-import { shouldShowBlockingLoading } from "../lib/loading-policy.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
 

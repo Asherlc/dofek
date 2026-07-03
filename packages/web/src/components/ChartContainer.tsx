@@ -1,6 +1,6 @@
+import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import type { ReactNode } from "react";
 import { useFetchingCount } from "../lib/FetchingContext.tsx";
-import { shouldShowBlockingLoading } from "../lib/loading-policy.ts";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
 interface ChartContainerProps {
