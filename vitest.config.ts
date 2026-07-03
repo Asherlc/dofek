@@ -82,6 +82,8 @@ export default defineConfig({
         "**/fixtures/**",
         "**/node_modules/**",
         "**/routeTree.gen.ts",
+        "src/db/clickhouse-migrations.ts",
+        "src/db/clickhouse-migrations/**",
       ],
       thresholds: process.env.VITEST_COVERAGE_SKIP_THRESHOLDS
         ? undefined
