@@ -204,17 +204,17 @@ export function ActivitiesPage() {
         {restoreProviderAbsent.error ? (
           <QueryStatePanel error={restoreProviderAbsent.error} height={80} />
         ) : null}
-        {overviewQuery.isLoading ? (
+        {overviewQuery.isLoading && !overviewQuery.data ? (
           <QueryStatePanel variant="loading" height={120} />
-        ) : overviewQuery.isError ? (
+        ) : overviewQuery.isError && !overviewQuery.data ? (
           <QueryStatePanel error={overviewQuery.error} height={120} />
         ) : (
           <ActivityOverview overview={overviewQuery.data} units={units} />
         )}
       </div>
-      {query.isLoading ? (
+      {query.isLoading && !query.data ? (
         <QueryStatePanel variant="loading" height={400} />
-      ) : query.isError ? (
+      ) : query.isError && !query.data ? (
         <QueryStatePanel error={query.error} height={200} />
       ) : !dayGroups || dayGroups.length === 0 ? (
         <QueryStatePanel

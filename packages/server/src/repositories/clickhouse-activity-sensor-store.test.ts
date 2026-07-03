@@ -69,9 +69,13 @@ describe("ClickHouseActivitySensorStore", () => {
     );
     const queryText = query.mock.calls[0]?.[0]?.query;
     expect(queryText).toContain("ARRAY JOIN points AS point");
+    expect(queryText).toContain(
+      "any(tuple(heart_rate, power, speed, cadence, altitude, lat, lng)) AS point_values",
+    );
     expect(queryText).toContain("selected_point_times AS");
     expect(queryText).toContain("toUInt64({maxPoints:UInt32})");
     expect(queryText).toContain("ORDER BY selected_points.recorded_at");
+    expect(queryText).not.toContain("any(heart_rate) AS heart_rate");
     expect(queryText).not.toContain("analytics.activity_sensor_sample");
     expect(queryText).not.toContain("analytics.activity_location_sample");
     expect(queryText).not.toContain("fitness.metric_stream");
@@ -242,6 +246,44 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).not.toContain("analytics.deduped_sensor");
     expect(queryText).not.toContain("analytics.activity_sensor_sample");
     expect(queryText).not.toContain("FROM (SELECT number AS zone FROM numbers(6)) AS zones");
+  });
+
+  it("coerces numeric ClickHouse read-model rows at runtime", async () => {
+    const { store } = makeStore([
+      {
+        recorded_at: "2024-01-15 10:00:00.000",
+        heart_rate: "140",
+        power: "225.5",
+        speed: null,
+        cadence: "90",
+        altitude: null,
+        lat: "37.1",
+        lng: "-122.1",
+      },
+    ]);
+
+    const rows = await store.getStream(window, 500);
+
+    expect(rows).toEqual([
+      {
+        recorded_at: "2024-01-15T10:00:00.000Z",
+        heart_rate: 140,
+        power: 225.5,
+        speed: null,
+        cadence: 90,
+        altitude: null,
+        lat: 37.1,
+        lng: -122.1,
+      },
+    ]);
+  });
+
+  it("coerces heart-rate zone rows at runtime", async () => {
+    const { store } = makeStore([{ zone: "2", seconds: "15" }]);
+
+    const rows = await store.getHeartRateZoneSeconds(window);
+
+    expect(rows).toEqual([{ zone: 2, seconds: 15 }]);
   });
 
   it("clamps heart-rate duration windows to at least one sample", async () => {

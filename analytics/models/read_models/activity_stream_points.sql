@@ -8,7 +8,6 @@
     }
 ) }}
 
-{% set initial_lookback_days = var('initial_lookback_days', 120) %}
 {% set max_points = var('activity_stream_points_max_points', 500) %}
 
 WITH target_state AS (
@@ -38,7 +37,6 @@ initial_dirty_keys AS (
         user_id
     FROM current_activity
     WHERE (SELECT is_empty FROM target_state)
-        AND started_at >= now64(6, 'UTC') - INTERVAL {{ initial_lookback_days }} DAY
 ),
 
 sample_dirty_keys AS (

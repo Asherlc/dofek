@@ -1,7 +1,7 @@
 import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
 import type { ClickHouseCommandClient } from "dofek/db/clickhouse";
 import { refreshBodyMeasurementReadModel } from "dofek/db/clickhouse-read-model-refresh";
-import type { z } from "zod";
+import { z } from "zod";
 import type {
   ActivitySensorQueryOptions,
   ActivitySensorStore,
@@ -72,6 +72,22 @@ function normalizeClickHouseTimestamp(value: string): string {
   const timestamp = value.includes("T") ? value : `${value.replace(" ", "T")}Z`;
   return new Date(timestamp).toISOString();
 }
+
+const streamPointRowSchema = z.object({
+  recorded_at: z.string(),
+  heart_rate: z.coerce.number().nullable(),
+  power: z.coerce.number().nullable(),
+  speed: z.coerce.number().nullable(),
+  cadence: z.coerce.number().nullable(),
+  altitude: z.coerce.number().nullable(),
+  lat: z.coerce.number().nullable(),
+  lng: z.coerce.number().nullable(),
+});
+
+const heartRateZoneSecondRowSchema = z.object({
+  zone: z.coerce.number(),
+  seconds: z.coerce.number(),
+});
 
 function dedupedSamplesSql(channelPredicate = "1 = 1"): string {
   return `
@@ -354,7 +370,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
   }
 
   async getStream(window: ActivitySensorWindow, maxPoints: number): Promise<StreamPointRow[]> {
-    const result = await this.#client.query<StreamPointRow>({
+    const result = await this.#client.query<Record<string, unknown>>({
       query: `
         WITH expanded_points AS (
           SELECT
@@ -373,18 +389,24 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             AND point.1 >= parseDateTime64BestEffort({windowStartedAt:String})
             AND point.1 <= parseDateTime64BestEffort({windowEndedAt:String})
         ),
+        grouped_point_tuples AS (
+          SELECT
+            recorded_at,
+            any(tuple(heart_rate, power, speed, cadence, altitude, lat, lng)) AS point_values
+          FROM expanded_points
+          GROUP BY recorded_at
+        ),
         grouped_points AS (
           SELECT
             recorded_at,
-            any(heart_rate) AS heart_rate,
-            any(power) AS power,
-            any(speed) AS speed,
-            any(cadence) AS cadence,
-            any(altitude) AS altitude,
-            any(lat) AS lat,
-            any(lng) AS lng
-          FROM expanded_points
-          GROUP BY recorded_at
+            point_values.1 AS heart_rate,
+            point_values.2 AS power,
+            point_values.3 AS speed,
+            point_values.4 AS cadence,
+            point_values.5 AS altitude,
+            point_values.6 AS lat,
+            point_values.7 AS lng
+          FROM grouped_point_tuples
         ),
         ranked_points AS (
           SELECT
@@ -450,14 +472,17 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
       query_params: queryParams(window, { maxPoints }),
     });
     const rows = await result.json();
-    return rows.map((row) => ({
-      ...row,
-      recorded_at: normalizeClickHouseTimestamp(row.recorded_at),
-    }));
+    return rows.map((row) => {
+      const parsedRow = streamPointRowSchema.parse(row);
+      return {
+        ...parsedRow,
+        recorded_at: normalizeClickHouseTimestamp(parsedRow.recorded_at),
+      };
+    });
   }
 
   async getHeartRateZoneSeconds(window: ActivitySensorWindow): Promise<HeartRateZoneSecondRow[]> {
-    const result = await this.#client.query<HeartRateZoneSecondRow>({
+    const result = await this.#client.query<Record<string, unknown>>({
       query: `
         SELECT
           zone_tuple.1 AS zone,
@@ -472,7 +497,8 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
       format: "JSONEachRow",
       query_params: queryParams(window, {}),
     });
-    return result.json();
+    const rows = await result.json();
+    return rows.map((row) => heartRateZoneSecondRowSchema.parse(row));
   }
 
   async getPowerZoneSeconds(

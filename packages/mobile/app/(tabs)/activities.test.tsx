@@ -221,6 +221,20 @@ describe("ActivitiesScreen", () => {
     expect(screen.queryByText("TSS")).toBeNull();
   });
 
+  it("keeps placeholder activity data visible during background refetch errors", () => {
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity({ name: "Cached Ride" })] }],
+      isLoading: false,
+      isError: true,
+      error: new Error("Refetch failed"),
+    };
+
+    render(<ActivitiesScreen />);
+
+    expect(screen.getByText("Cached Ride")).toBeDefined();
+    expect(screen.queryByText("Refetch failed")).toBeNull();
+  });
+
   it("renders server-provided overview totals", () => {
     mockOverviewQuery = {
       data: {

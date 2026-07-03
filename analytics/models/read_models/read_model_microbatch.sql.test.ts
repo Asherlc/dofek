@@ -379,6 +379,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("ref('activity_location_sample')");
     expect(sql).toContain("sample_dirty_keys AS");
     expect(sql).toContain("location_dirty_keys AS");
+    expect(normalizedSql).toContain("FROM current_activity WHERE (SELECT is_empty FROM target_state)");
     expect(sql).toContain("arraySort");
     expect(sql).toContain("groupArray(tuple(");
     expect(sql).toContain("toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version");
@@ -399,9 +400,12 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("ref('activity_sensor_sample')");
     expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
     expect(sql).toContain("postgres_fitness.user_profile_current");
+    expect(sql).toContain("profile_recompute_lookback_days");
     expect(sql).toContain("groupArray(tuple(");
     expect(sql).toContain("zone_seconds AS");
     expect(sql).toContain("channel = 'heart_rate'");
+    expect(normalizedSql).toContain("FROM current_activity WHERE (SELECT is_empty FROM target_state)");
+    expect(normalizedSql).toContain("ORDER BY resting.ended_at DESC");
     expect(normalizedSql).toContain("(sensor_samples.user_id, sensor_samples.activity_id) IN");
     expect(normalizedSql).not.toContain("ref('deduped_sensor')");
     expect(normalizedSql).not.toContain("source('postgres_fitness', 'metric_stream')");

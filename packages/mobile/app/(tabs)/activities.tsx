@@ -182,17 +182,17 @@ export default function ActivitiesScreen() {
         <QueryStatePanel variant="error" message={bulkDelete.error.message} />
       ) : null}
 
-      {overviewQuery.isLoading ? (
+      {overviewQuery.isLoading && !overviewQuery.data ? (
         <QueryStatePanel variant="loading" minHeight={100} />
-      ) : overviewQuery.isError ? (
+      ) : overviewQuery.isError && !overviewQuery.data ? (
         <QueryStatePanel variant="error" message={overviewQuery.error.message} />
       ) : (
         <ActivityOverview overview={overviewQuery.data} units={units} />
       )}
 
-      {query.isLoading ? (
+      {query.isLoading && !query.data ? (
         <QueryStatePanel variant="loading" minHeight={200} />
-      ) : query.isError ? (
+      ) : query.isError && !query.data ? (
         <QueryStatePanel variant="error" message={query.error.message} />
       ) : !dayGroups || dayGroups.length === 0 ? (
         <QueryStatePanel variant="empty" message={`No activities in the last ${weeks} weeks.`} />

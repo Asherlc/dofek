@@ -982,22 +982,83 @@ GROUP BY point_rows.user_id, point_rows.activity_id, refresh_clock.refresh_versi
 }
 
 function buildTestActivityHeartRateZonesSelectSql(databases: IsolatedClickHouseDatabases): string {
-  return `WITH activity_metadata AS (
+  return `WITH activity_bounds AS (
   SELECT
     activity.activity_id AS activity_id,
     activity.user_id AS user_id,
+    activity.started_at AS started_at
+  FROM ${databases.analytics}.deduped_activities AS activity FINAL
+  WHERE activity.is_deleted = 0
+),
+resting_candidates AS (
+  SELECT
+    activity_bounds.activity_id AS activity_id,
+    activity_bounds.user_id AS user_id,
+    resting.resting_hr AS resting_hr,
+    row_number() OVER (
+      PARTITION BY activity_bounds.user_id, activity_bounds.activity_id
+      ORDER BY resting.ended_at DESC
+    ) AS recency_rank
+  FROM activity_bounds
+  INNER JOIN ${databases.analytics}.resting_heart_rate_sleep_window AS resting FINAL
+    ON resting.user_id = activity_bounds.user_id
+   AND toDate(resting.ended_at) <= toDate(activity_bounds.started_at)
+  WHERE resting.is_deleted = 0
+    AND resting.ended_at IS NOT NULL
+    AND resting.resting_hr IS NOT NULL
+    AND resting.resting_hr > 0
+),
+recent_resting_values AS (
+  SELECT
+    activity_id,
+    user_id,
+    arraySort(groupArray(toFloat64(resting_hr))) AS resting_values
+  FROM resting_candidates
+  WHERE recency_rank <= 14
+  GROUP BY activity_id, user_id
+),
+resting_by_activity AS (
+  SELECT
+    activity_id,
+    user_id,
+    if(
+      length(resting_values) = 0,
+      CAST(NULL, 'Nullable(Float64)'),
+      if(
+        modulo(length(resting_values), 2) = 1,
+        CAST(resting_values[intDiv(length(resting_values), 2) + 1], 'Nullable(Float64)'),
+        CAST(
+          (
+            resting_values[intDiv(length(resting_values), 2)]
+            + resting_values[intDiv(length(resting_values), 2) + 1]
+          ) / 2,
+          'Nullable(Float64)'
+        )
+      )
+    ) AS resting_hr
+  FROM recent_resting_values
+),
+activity_metadata AS (
+  SELECT
+    activity_bounds.activity_id AS activity_id,
+    activity_bounds.user_id AS user_id,
     user_profile.max_hr AS max_hr,
     CASE
+      WHEN resting_by_activity.resting_hr > 0
+       AND resting_by_activity.resting_hr < user_profile.max_hr
+        THEN resting_by_activity.resting_hr
       WHEN user_profile.resting_hr > 0
        AND user_profile.resting_hr < user_profile.max_hr
         THEN user_profile.resting_hr
       ELSE least(60, user_profile.max_hr - 1)
     END AS resting_hr
-  FROM ${databases.analytics}.deduped_activities AS activity FINAL
+  FROM activity_bounds
   INNER JOIN ${databases.postgresFitness}.user_profile_current AS user_profile
-    ON user_profile.id = activity.user_id
-  WHERE activity.is_deleted = 0
-    AND user_profile.max_hr > 1
+    ON user_profile.id = activity_bounds.user_id
+  LEFT JOIN resting_by_activity
+    ON resting_by_activity.activity_id = activity_bounds.activity_id
+   AND resting_by_activity.user_id = activity_bounds.user_id
+  WHERE user_profile.max_hr > 1
 ),
 heart_rate_samples AS (
   SELECT

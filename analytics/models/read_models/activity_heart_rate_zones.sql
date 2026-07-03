@@ -8,7 +8,7 @@
     }
 ) }}
 
-{% set initial_lookback_days = var('initial_lookback_days', 120) %}
+{% set profile_recompute_lookback_days = var('profile_recompute_lookback_days', 120) %}
 
 WITH target_state AS (
     SELECT
@@ -37,14 +37,14 @@ recent_current_activity AS (
         user_id,
         started_at
     FROM current_activity
-    WHERE started_at >= now64(6, 'UTC') - INTERVAL {{ initial_lookback_days }} DAY
+    WHERE started_at >= now64(6, 'UTC') - INTERVAL {{ profile_recompute_lookback_days }} DAY
 ),
 
 initial_dirty_keys AS (
     SELECT
         activity_id,
         user_id
-    FROM recent_current_activity
+    FROM current_activity
     WHERE (SELECT is_empty FROM target_state)
 ),
 
@@ -145,7 +145,7 @@ resting_candidates AS (
         resting.resting_hr AS resting_hr,
         row_number() OVER (
             PARTITION BY activity_bounds.user_id, activity_bounds.activity_id
-            ORDER BY toDate(resting.ended_at) DESC
+            ORDER BY resting.ended_at DESC
         ) AS recency_rank
     FROM activity_bounds
     INNER JOIN {{ ref('resting_heart_rate_sleep_window') }} AS resting FINAL

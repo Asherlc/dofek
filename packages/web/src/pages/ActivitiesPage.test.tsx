@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 interface MockQuery {
-  data: unknown[];
+  data: unknown[] | undefined;
   isLoading: boolean;
   isError: boolean;
   error: Error | null;
@@ -233,7 +233,7 @@ describe("ActivitiesPage", () => {
   });
 
   it("uses QueryStatePanel for loading state", () => {
-    mockQuery = { data: [], isLoading: true, isError: false, error: null };
+    mockQuery = { data: undefined, isLoading: true, isError: false, error: null };
 
     render(<ActivitiesPage />);
 
@@ -260,6 +260,20 @@ describe("ActivitiesPage", () => {
     expect(screen.getByText("Training Stress Score")).toBeDefined();
     expect(screen.getByText("100")).toBeDefined();
     expect(screen.queryByText("TSS")).toBeNull();
+  });
+
+  it("keeps placeholder activity data visible during background refetch errors", () => {
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity({ name: "Cached Ride" })] }],
+      isLoading: false,
+      isError: true,
+      error: new Error("Refetch failed"),
+    };
+
+    render(<ActivitiesPage />);
+
+    expect(screen.getByText("Cached Ride")).toBeDefined();
+    expect(screen.queryByText("Refetch failed")).toBeNull();
   });
 
   it("lays out each day of activities as a responsive card grid", () => {
