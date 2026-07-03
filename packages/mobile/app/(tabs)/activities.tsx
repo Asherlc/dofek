@@ -75,7 +75,9 @@ export default function ActivitiesScreen() {
     ...(selectedActivityType ? { activityType: selectedActivityType } : {}),
   };
   const trpcUtils = trpc.useUtils();
-  const query = trpc.calendar.weekList.useQuery(queryInput);
+  const query = trpc.calendar.weekList.useQuery(queryInput, {
+    placeholderData: (previousData) => previousData,
+  });
   const overviewQuery = trpc.calendar.activityOverview.useQuery(queryInput, {
     placeholderData: (previousData) => previousData,
   });

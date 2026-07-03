@@ -167,10 +167,8 @@ export class LimitedActivitySensorStore implements ActivitySensorStore {
     return this.#regularLimiter.run(() => this.#delegate.getStream(window, maxPoints));
   }
 
-  getHeartRateZoneSeconds(window: ActivitySensorWindow, maxHr: number, restingHr: number) {
-    return this.#regularLimiter.run(() =>
-      this.#delegate.getHeartRateZoneSeconds(window, maxHr, restingHr),
-    );
+  getHeartRateZoneSeconds(window: ActivitySensorWindow) {
+    return this.#regularLimiter.run(() => this.#delegate.getHeartRateZoneSeconds(window));
   }
 
   getPowerZoneSeconds(window: ActivitySensorWindow, ftp: number) {

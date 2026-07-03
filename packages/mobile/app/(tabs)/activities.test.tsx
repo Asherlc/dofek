@@ -28,6 +28,7 @@ let mockOverviewQuery: {
   error: Error | null;
 };
 let weekListInput: unknown;
+let weekListOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
 let overviewInput: unknown;
 let overviewOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
 let bulkDeleteMutateAsync: ReturnType<typeof vi.fn>;
@@ -49,8 +50,12 @@ vi.mock("../../lib/trpc", () => ({
   trpc: {
     calendar: {
       weekList: {
-        useQuery: (input: unknown) => {
+        useQuery: (
+          input: unknown,
+          options: { placeholderData?: (previousData: unknown) => unknown } | undefined,
+        ) => {
           weekListInput = input;
+          weekListOptions = options;
           return mockQuery;
         },
       },
@@ -267,6 +272,8 @@ describe("ActivitiesScreen", () => {
     });
     const previousOverview = { activityTypes: ["running"] };
     expect(overviewOptions?.placeholderData?.(previousOverview)).toBe(previousOverview);
+    const previousWeekList = [{ date: "2026-03-18", activities: [] }];
+    expect(weekListOptions?.placeholderData?.(previousWeekList)).toBe(previousWeekList);
   });
 
   it("navigates to activity detail when not selecting activities", () => {

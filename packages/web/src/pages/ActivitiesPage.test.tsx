@@ -27,6 +27,7 @@ let mockOverviewQuery: {
   error: Error | null;
 };
 let weekListInput: unknown;
+let weekListOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
 let overviewInput: unknown;
 let overviewOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
 let bulkDeleteMutate: ReturnType<typeof vi.fn>;
@@ -61,8 +62,12 @@ vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     calendar: {
       weekList: {
-        useQuery: (input: unknown) => {
+        useQuery: (
+          input: unknown,
+          options: { placeholderData?: (previousData: unknown) => unknown } | undefined,
+        ) => {
           weekListInput = input;
+          weekListOptions = options;
           return mockQuery;
         },
       },
@@ -331,6 +336,8 @@ describe("ActivitiesPage", () => {
     });
     const previousOverview = { activityTypes: ["running"] };
     expect(overviewOptions?.placeholderData?.(previousOverview)).toBe(previousOverview);
+    const previousWeekList = [{ date: "2026-03-18", activities: [] }];
+    expect(weekListOptions?.placeholderData?.(previousWeekList)).toBe(previousWeekList);
   });
 
   it("requests hidden activities when the show hidden toggle is enabled", () => {

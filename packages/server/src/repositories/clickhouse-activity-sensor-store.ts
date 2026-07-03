@@ -21,11 +21,6 @@ import type {
   PowerZoneSecondRow,
   Vo2MaxEstimateRow,
 } from "./clickhouse-activity-sensor-types.ts";
-import {
-  heartRateZoneCaseSql,
-  heartRateZoneNumbersSql,
-  heartRateZoneSqlParams,
-} from "./heart-rate-zone-sql.ts";
 
 interface ClickHouseActivitySensorClient
   extends ClickHouseQueryClient,
@@ -87,24 +82,6 @@ function dedupedSamplesSql(channelPredicate = "1 = 1"): string {
         scalar
       FROM analytics.deduped_sensor
       WHERE user_id = {userId:UUID}
-        AND recorded_at >= parseDateTime64BestEffort({windowStartedAt:String})
-        AND recorded_at <= parseDateTime64BestEffort({windowEndedAt:String})
-        AND is_deleted = 0
-        AND ${channelPredicate}
-    )
-  `;
-}
-
-function activityStreamSamplesSql(channelPredicate = "1 = 1"): string {
-  return `
-    WITH activity_samples AS (
-      SELECT
-        recorded_at,
-        channel,
-        scalar
-      FROM analytics.activity_sensor_sample
-      WHERE user_id = {userId:UUID}
-        AND activity_id IN {activityIds:Array(UUID)}
         AND recorded_at >= parseDateTime64BestEffort({windowStartedAt:String})
         AND recorded_at <= parseDateTime64BestEffort({windowEndedAt:String})
         AND is_deleted = 0
@@ -376,108 +353,28 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
     return result.json();
   }
 
-  async getStream(window: ActivitySensorWindow, maxPoints: number): Promise<StreamPointRow[]> {
+  async getStream(window: ActivitySensorWindow, _maxPoints: number): Promise<StreamPointRow[]> {
     const result = await this.#client.query<StreamPointRow>({
       query: `
-        ${activityStreamSamplesSql("channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude')")}
-        , location_samples AS (
-          SELECT recorded_at, lat, lng
-          FROM analytics.activity_location_sample
-          WHERE user_id = {userId:UUID}
-            AND activity_id IN {activityIds:Array(UUID)}
-            AND recorded_at >= parseDateTime64BestEffort({windowStartedAt:String})
-            AND recorded_at <= parseDateTime64BestEffort({windowEndedAt:String})
-            AND is_deleted = 0
-        ),
-        combined_sample_times AS (
-          SELECT recorded_at, 0 AS has_location FROM activity_samples
-          UNION ALL
-          SELECT recorded_at, 1 AS has_location FROM location_samples
-        ),
-        deduped_sample_times AS (
-          SELECT
-            recorded_at,
-            max(has_location) AS has_location
-          FROM combined_sample_times
-          GROUP BY recorded_at
-        ),
-        ranked_sample_times AS (
-          SELECT
-            recorded_at,
-            has_location,
-            row_number() OVER (ORDER BY recorded_at) AS row_number,
-            count() OVER () AS total
-          FROM deduped_sample_times
-        ),
-        bucketed_sample_times AS (
-          SELECT
-            recorded_at,
-            has_location,
-            total,
-            intDiv(
-              (row_number - 1) * (toUInt64({maxPoints:UInt32}) - 1),
-              greatest(total - 1, 1)
-            ) AS sample_bucket
-          FROM ranked_sample_times
-        ),
-        sample_times AS (
-          SELECT recorded_at
-          FROM bucketed_sample_times
-          WHERE total <= toUInt64({maxPoints:UInt32})
-          UNION DISTINCT
-          SELECT
-            if(
-              sample_bucket = 0,
-              min(recorded_at),
-              if(
-                sample_bucket = toUInt64({maxPoints:UInt32}) - 1,
-                max(recorded_at),
-                if(
-                  countIf(has_location = 1) > 0,
-                  argMinIf(recorded_at, recorded_at, has_location = 1),
-                  min(recorded_at)
-                )
-              )
-            ) AS recorded_at
-          FROM bucketed_sample_times
-          WHERE total > toUInt64({maxPoints:UInt32})
-          GROUP BY sample_bucket
-        ),
-        selected_scalar_points AS (
-          SELECT
-            sample_times.recorded_at AS recorded_at,
-            maxIf(activity_samples.scalar, activity_samples.channel = 'heart_rate') AS heart_rate,
-            maxIf(activity_samples.scalar, activity_samples.channel = 'power') AS power,
-            maxIf(activity_samples.scalar, activity_samples.channel = 'speed') AS speed,
-            maxIf(activity_samples.scalar, activity_samples.channel = 'cadence') AS cadence,
-            maxIf(activity_samples.scalar, activity_samples.channel = 'altitude') AS altitude
-          FROM sample_times
-          LEFT JOIN activity_samples
-            ON activity_samples.recorded_at = sample_times.recorded_at
-          GROUP BY sample_times.recorded_at
-        )
         SELECT
-          toString(sample_times.recorded_at) AS recorded_at,
-          selected_scalar_points.heart_rate AS heart_rate,
-          selected_scalar_points.power AS power,
-          selected_scalar_points.speed AS speed,
-          selected_scalar_points.cadence AS cadence,
-          selected_scalar_points.altitude AS altitude,
-          location_samples.lat AS lat,
-          location_samples.lng AS lng
-        FROM (
-          SELECT
-            sample_times.recorded_at AS recorded_at
-          FROM sample_times
-        ) AS sample_times
-        LEFT JOIN selected_scalar_points
-          ON selected_scalar_points.recorded_at = sample_times.recorded_at
-        LEFT JOIN location_samples
-          ON location_samples.recorded_at = sample_times.recorded_at
-        ORDER BY sample_times.recorded_at
+          toString(point.1) AS recorded_at,
+          point.2 AS heart_rate,
+          point.3 AS power,
+          point.4 AS speed,
+          point.5 AS cadence,
+          point.6 AS altitude,
+          point.7 AS lat,
+          point.8 AS lng
+        FROM analytics.activity_stream_points FINAL
+        ARRAY JOIN points AS point
+        WHERE user_id = {userId:UUID}
+          AND activity_id IN {activityIds:Array(UUID)}
+          AND point.1 >= parseDateTime64BestEffort({windowStartedAt:String})
+          AND point.1 <= parseDateTime64BestEffort({windowEndedAt:String})
+        ORDER BY point.1
       `,
       format: "JSONEachRow",
-      query_params: queryParams(window, { maxPoints }),
+      query_params: queryParams(window, {}),
     });
     const rows = await result.json();
     return rows.map((row) => ({
@@ -486,29 +383,21 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
     }));
   }
 
-  async getHeartRateZoneSeconds(
-    window: ActivitySensorWindow,
-    maxHr: number,
-    restingHr: number,
-  ): Promise<HeartRateZoneSecondRow[]> {
+  async getHeartRateZoneSeconds(window: ActivitySensorWindow): Promise<HeartRateZoneSecondRow[]> {
     const result = await this.#client.query<HeartRateZoneSecondRow>({
       query: `
-        ${dedupedSamplesSql("channel = 'heart_rate'")}
         SELECT
-          zone,
-          countIf(
-            CASE zone
-              ${heartRateZoneCaseSql("scalar")}
-              ELSE false
-            END
-          ) AS seconds
-        FROM (${heartRateZoneNumbersSql()}) AS zones
-        LEFT JOIN (SELECT scalar FROM deduped_samples) AS heart_rate_samples ON true
-        GROUP BY zone
-        ORDER BY zone
+          zone.1 AS zone,
+          sum(zone.2) AS seconds
+        FROM analytics.activity_heart_rate_zones FINAL
+        ARRAY JOIN zones AS zone
+        WHERE user_id = {userId:UUID}
+          AND activity_id IN {activityIds:Array(UUID)}
+        GROUP BY zone.1
+        ORDER BY zone.1
       `,
       format: "JSONEachRow",
-      query_params: queryParams(window, { maxHr, restingHr, ...heartRateZoneSqlParams() }),
+      query_params: queryParams(window, {}),
     });
     return result.json();
   }

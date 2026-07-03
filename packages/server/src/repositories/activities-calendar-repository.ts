@@ -217,9 +217,12 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       this.accessWindow,
     ).filterToVisibleActivities(activityRowsMatchingType);
     const activityIds = filteredActivityRows.map((row) => row.id);
+    const locationActivityIds = filteredActivityRows
+      .filter((row) => row.centroid_lat != null && row.centroid_lng != null)
+      .map((row) => row.id);
     const [caloriesRows, routePreviewByActivityId] = await Promise.all([
       this.#fetchCaloriesByActivityId(activityIds),
-      getActivityRoutePreviews(this.#sensorStore, this.userId, activityIds),
+      getActivityRoutePreviews(this.#sensorStore, this.userId, locationActivityIds),
     ]);
 
     const caloriesByActivityId = new Map(

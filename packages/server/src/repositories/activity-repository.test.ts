@@ -737,17 +737,15 @@ describe("ActivityRepository", () => {
   describe("getHrZones", () => {
     it("returns mapped HR zones from the configured sensor store", async () => {
       const { repo, execute, sensorStore } = makeRepositoryWithSensorStore([]);
-      execute
-        .mockResolvedValueOnce([
-          {
-            id: "activity-id",
-            user_id: "user-1",
-            started_at: "2024-01-15T10:00:00.000Z",
-            ended_at: "2024-01-15T11:00:00.000Z",
-            member_activity_ids: ["activity-id"],
-          },
-        ])
-        .mockResolvedValueOnce([{ max_hr: 190, resting_hr: 55 }]);
+      execute.mockResolvedValueOnce([
+        {
+          id: "activity-id",
+          user_id: "user-1",
+          started_at: "2024-01-15T10:00:00.000Z",
+          ended_at: "2024-01-15T11:00:00.000Z",
+          member_activity_ids: ["activity-id"],
+        },
+      ]);
       sensorStore.getHeartRateZoneSeconds.mockResolvedValueOnce([
         { zone: 0, seconds: 30 },
         { zone: 1, seconds: 120 },
@@ -771,101 +769,27 @@ describe("ActivityRepository", () => {
       );
     });
 
-    it("delegates to the configured sensor store after resolving the activity window and HR params", async () => {
+    it("delegates to the configured sensor store after resolving the activity window", async () => {
       const { repo, execute, sensorStore } = makeRepositoryWithSensorStore([]);
-      execute
-        .mockResolvedValueOnce([
-          {
-            id: "activity-id",
-            user_id: "user-1",
-            started_at: "2024-01-15T10:00:00.000Z",
-            ended_at: "2024-01-15T11:00:00.000Z",
-            member_activity_ids: ["activity-id"],
-          },
-        ])
-        .mockResolvedValueOnce([{ max_hr: 190, resting_hr: 55 }]);
-
-      await repo.getHrZones("activity-id");
-
-      expect(sensorStore.getHeartRateZoneSeconds).toHaveBeenCalledWith(
+      execute.mockResolvedValueOnce([
         {
-          activityId: "activity-id",
-          userId: "user-1",
-          startedAt: "2024-01-15T10:00:00.000Z",
-          endedAt: "2024-01-15T11:00:00.000Z",
-          memberActivityIds: ["activity-id"],
+          id: "activity-id",
+          user_id: "user-1",
+          started_at: "2024-01-15T10:00:00.000Z",
+          ended_at: "2024-01-15T11:00:00.000Z",
+          member_activity_ids: ["activity-id"],
         },
-        190,
-        55,
-      );
-    });
-
-    it("uses the median of recent resting HR readings instead of a single noisy night", async () => {
-      const { repo, execute, sensorStore } = makeRepositoryWithSensorStore([]);
-      // Apr 26-28 stable around 55-57, May 4 spiked to 85. Old code picked 85 (latest),
-      // which pushed every Karvonen boundary above the user's walking-zone HR.
-      sensorStore.query.mockResolvedValueOnce([
-        { date: "2026-04-26", resting_hr: 55 },
-        { date: "2026-04-27", resting_hr: 57 },
-        { date: "2026-04-28", resting_hr: 55 },
-        { date: "2026-05-04", resting_hr: 85 },
       ]);
-      execute
-        .mockResolvedValueOnce([
-          {
-            id: "activity-id",
-            user_id: "user-1",
-            started_at: "2026-05-18T19:40:00.000Z",
-            ended_at: "2026-05-18T20:08:59.000Z",
-            member_activity_ids: ["activity-id"],
-          },
-        ])
-        .mockResolvedValueOnce([{ max_hr: 194, resting_hr: 56 }]);
 
       await repo.getHrZones("activity-id");
 
-      const sqlObject = execute.mock.calls[1]?.[0];
-      const compiledQuery = dialect.sqlToQuery(sqlObject);
-      // The median of [55, 55, 57, 85] is (55 + 57) / 2 = 56, not 85.
-      expect(compiledQuery.params).toContain(56);
-      expect(compiledQuery.params).not.toContain(85);
-      expect(sensorStore.getHeartRateZoneSeconds).toHaveBeenCalledWith(
-        expect.objectContaining({ activityId: "activity-id" }),
-        194,
-        56,
-      );
-    });
-
-    it("queries a default resting HR when params are invalid", async () => {
-      const { repo, execute, sensorStore } = makeRepositoryWithSensorStore([]);
-      execute
-        .mockResolvedValueOnce([
-          {
-            id: "activity-id",
-            user_id: "user-1",
-            started_at: "2024-01-15T10:00:00.000Z",
-            ended_at: "2024-01-15T11:00:00.000Z",
-            member_activity_ids: ["activity-id"],
-          },
-        ])
-        .mockResolvedValueOnce([{ max_hr: 190, resting_hr: 60 }]);
-
-      await repo.getHrZones("activity-id");
-
-      const sqlObject = execute.mock.calls[1]?.[0];
-      const compiledQuery = dialect.sqlToQuery(sqlObject);
-      expect(compiledQuery.sql).toContain("ELSE LEAST(60, up.max_hr - 1)");
-      expect(sensorStore.getHeartRateZoneSeconds).toHaveBeenCalledWith(
-        {
-          activityId: "activity-id",
-          userId: "user-1",
-          startedAt: "2024-01-15T10:00:00.000Z",
-          endedAt: "2024-01-15T11:00:00.000Z",
-          memberActivityIds: ["activity-id"],
-        },
-        190,
-        60,
-      );
+      expect(sensorStore.getHeartRateZoneSeconds).toHaveBeenCalledWith({
+        activityId: "activity-id",
+        userId: "user-1",
+        startedAt: "2024-01-15T10:00:00.000Z",
+        endedAt: "2024-01-15T11:00:00.000Z",
+        memberActivityIds: ["activity-id"],
+      });
     });
   });
 

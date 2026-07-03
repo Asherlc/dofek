@@ -38,7 +38,7 @@ describe("ClickHouseActivitySensorStore", () => {
     });
   });
 
-  it("queries activity-keyed scalar samples and materialized location samples inside the activity window", async () => {
+  it("queries precomputed activity stream points from the ClickHouse read model", async () => {
     const { store, query } = makeStore([
       {
         recorded_at: "2024-01-15 10:00:00.000",
@@ -59,21 +59,22 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(query).toHaveBeenCalledWith(
       expect.objectContaining({
         format: "JSONEachRow",
-        query: expect.stringContaining("analytics.activity_sensor_sample"),
+        query: expect.stringContaining("analytics.activity_stream_points"),
         query_params: expect.objectContaining({
           activityIds: window.memberActivityIds,
           userId: window.userId,
-          maxPoints: 500,
         }),
       }),
     );
     const queryText = query.mock.calls[0]?.[0]?.query;
+    expect(queryText).toContain("ARRAY JOIN points AS point");
+    expect(queryText).toContain("ORDER BY point.1");
+    expect(queryText).not.toContain("analytics.activity_sensor_sample");
+    expect(queryText).not.toContain("analytics.activity_location_sample");
     expect(queryText).not.toContain("fitness.metric_stream");
     expect(queryText).not.toContain("fitness.deduped_sensor");
     expect(queryText).not.toContain("analytics.deduped_sensor");
     expect(queryText).not.toContain("analytics.deduped_location");
-    expect(queryText).toContain("activity_id IN {activityIds:Array(UUID)}");
-    expect(queryText).toContain("analytics.activity_location_sample");
   });
 
   it("queries activity summaries from the ClickHouse analytics schema", async () => {
@@ -201,7 +202,7 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).toContain("channel = 'power'");
   });
 
-  it("caps open-ended activity windows and downsamples by buckets", async () => {
+  it("caps open-ended activity windows before reading precomputed stream points", async () => {
     const openEndedWindow = { ...window, endedAt: undefined };
     const { store, query } = makeStore([]);
 
@@ -213,37 +214,13 @@ describe("ClickHouseActivitySensorStore", () => {
         windowEndedAt: "2024-01-15T22:00:00.000Z",
       }),
     );
-    expect(queryText).toContain("total <= toUInt64({maxPoints:UInt32})");
-    expect(queryText).toContain("(row_number - 1) * (toUInt64({maxPoints:UInt32}) - 1)");
+    expect(queryText).toContain("point.1 <= parseDateTime64BestEffort({windowEndedAt:String})");
   });
 
-  it("prefers GPS timestamps when downsampling activity stream points", async () => {
-    const { store, query } = makeStore([]);
-
-    await store.getStream(window, 500);
-
-    const queryText = query.mock.calls[0]?.[0]?.query;
-    expect(queryText).toContain("has_location");
-    expect(queryText).toContain("countIf(has_location = 1) > 0");
-    expect(queryText).toContain("argMinIf(recorded_at, recorded_at, has_location = 1)");
-  });
-
-  it("aggregates scalar stream values only for selected sample timestamps", async () => {
-    const { store, query } = makeStore([]);
-
-    await store.getStream(window, 500);
-
-    const queryText = query.mock.calls[0]?.[0]?.query;
-    expect(queryText).toContain("selected_scalar_points AS");
-    expect(queryText).toContain("FROM sample_times");
-    expect(queryText).toContain("LEFT JOIN activity_samples");
-    expect(queryText).not.toContain("FROM activity_samples\n          GROUP BY recorded_at");
-  });
-
-  it("generates heart-rate zone SQL from the shared zone definitions", async () => {
+  it("loads heart-rate zones from the ClickHouse read model", async () => {
     const { store, query } = makeStore([{ zone: 0, seconds: 5 }]);
 
-    const rows = await store.getHeartRateZoneSeconds(window, 190, 50);
+    const rows = await store.getHeartRateZoneSeconds(window);
 
     expect(rows).toEqual([{ zone: 0, seconds: 5 }]);
     expect(query).toHaveBeenCalledWith(
@@ -251,16 +228,17 @@ describe("ClickHouseActivitySensorStore", () => {
         format: "JSONEachRow",
         query_params: expect.objectContaining({
           activityIds: window.memberActivityIds,
-          maxHr: 190,
-          restingHr: 50,
         }),
       }),
     );
     const queryText = query.mock.calls[0]?.[0]?.query;
-    expect(queryText).toContain("WHEN 0 THEN scalar <");
-    expect(queryText).toContain("WHEN 1 THEN scalar >=");
-    expect(queryText).toContain("FROM (SELECT number AS zone FROM numbers(6)) AS zones");
-    expect(queryText).not.toContain("FROM (SELECT number + 1 AS zone FROM numbers(5)) AS zones");
+    expect(queryText).toContain("analytics.activity_heart_rate_zones");
+    expect(queryText).toContain("ARRAY JOIN zones AS zone");
+    expect(queryText).toContain("sum(zone.2) AS seconds");
+    expect(queryText).toContain("GROUP BY zone.1");
+    expect(queryText).not.toContain("analytics.deduped_sensor");
+    expect(queryText).not.toContain("analytics.activity_sensor_sample");
+    expect(queryText).not.toContain("FROM (SELECT number AS zone FROM numbers(6)) AS zones");
   });
 
   it("clamps heart-rate duration windows to at least one sample", async () => {
