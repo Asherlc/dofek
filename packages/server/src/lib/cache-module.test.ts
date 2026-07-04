@@ -1,10 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const originalEnv = { ...process.env };
+const sentryMocks = vi.hoisted(() => ({
+  captureException: vi.fn(),
+}));
+
+vi.mock("@sentry/node", () => ({
+  captureException: sentryMocks.captureException,
+}));
 
 describe("cache module environment selection", () => {
   afterEach(() => {
     vi.resetModules();
+    sentryMocks.captureException.mockReset();
     vi.doUnmock("bullmq");
     vi.doUnmock("dofek/jobs/queues");
     process.env = { ...originalEnv };
@@ -115,11 +123,37 @@ describe("cache module environment selection", () => {
 
     await expect(store.get("user-1:sync.dataHealth:undefined")).resolves.toBeUndefined();
 
+    expect(sentryMocks.captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { cacheStore: "redis", cacheOperation: "get" },
+    });
     expect(client.del).toHaveBeenCalledWith("query-cache:data:user-1:sync.dataHealth:undefined");
     expect(client.srem).toHaveBeenCalledWith(
       "query-cache:keys",
       "query-cache:data:user-1:sync.dataHealth:undefined",
     );
+  });
+
+  it("treats invalid Redis payloads as cache misses when eviction fails", async () => {
+    const evictionError = new Error("Redis cleanup failed");
+    const client = {
+      set: vi.fn(async () => "OK" as const),
+      get: vi.fn(async () => ""),
+      del: vi.fn(async () => {
+        throw evictionError;
+      }),
+      sadd: vi.fn(async () => 0),
+      smembers: vi.fn(async () => []),
+      srem: vi.fn(async () => 1),
+    };
+
+    const module = await import("dofek/lib/cache");
+    const store = new module.RedisCacheStore(async () => client);
+
+    await expect(store.get("user-1:sync.dataHealth:undefined")).resolves.toBeUndefined();
+
+    expect(sentryMocks.captureException).toHaveBeenCalledWith(evictionError, {
+      tags: { cacheStore: "redis", cacheOperation: "evictInvalidPayload" },
+    });
   });
 
   it("skips Redis deletes when invalidateAll sees an empty registry", async () => {

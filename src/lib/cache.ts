@@ -92,8 +92,14 @@ export class RedisCacheStore implements CacheStore {
       return JSON.parse(payload);
     } catch (error) {
       Sentry.captureException(error, { tags: { cacheStore: "redis", cacheOperation: "get" } });
-      await client.del(cacheKey);
-      await client.srem(CACHE_KEY_REGISTRY, cacheKey);
+      try {
+        await client.del(cacheKey);
+        await client.srem(CACHE_KEY_REGISTRY, cacheKey);
+      } catch (cleanupError) {
+        Sentry.captureException(cleanupError, {
+          tags: { cacheStore: "redis", cacheOperation: "evictInvalidPayload" },
+        });
+      }
       return undefined;
     }
   }
