@@ -256,10 +256,7 @@ describe("v2 format", () => {
     const parsed = parseHeader(header);
     expect(parsed.version).toBe(FORMAT_VERSION_V2);
 
-    const imuChunk = encodeImuChunk(
-      [{ tMs: 5, ax: 1, ay: 2, az: 3, gx: 4, gy: 5, gz: 6 }],
-      true,
-    );
+    const imuChunk = encodeImuChunk([{ tMs: 5, ax: 1, ay: 2, az: 3, gx: 4, gy: 5, gz: 6 }], true);
     const scalarChunk = encodePhysicalScalarChunk([
       { tMs: 10, channel: "heartRate", value: 72 },
       { tMs: 15, channel: "spo2", value: 0.98 },
