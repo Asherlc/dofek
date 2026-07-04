@@ -41,6 +41,7 @@ test-results/
 muter_logs/
 # Python
 .venv/
+.venv-analytics/
 __pycache__/
 *.pyc
 *.egg-info/
