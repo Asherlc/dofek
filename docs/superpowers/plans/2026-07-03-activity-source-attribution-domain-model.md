@@ -100,11 +100,12 @@ This plan uses test-first implementation steps. Steps use checkbox (`- [ ]`) syn
 - Modify: `analytics/models/read_models/deduped_activities.sql`
 - Modify: `analytics/models/read_models/read_model_microbatch.sql.test.ts`
 - Modify: `drizzle/_views/01_v_activity.sql`
-- Create: `drizzle/YYYY_v_activity_source_attribution_model.sql`
+- Create: `drizzle/0040_v_activity_source_subsources.sql`
 
 - [ ] Emit the typed source-attribution shape from deduped activity member rows.
 - [ ] Preserve per-member Apple Health upstream app names from `raw.sourceName` with a provider `source_name` fallback.
 - [ ] Include absent source entries with the same typed shape and removed timestamp.
+- [ ] Run `rtk pnpm migrate` after creating the Drizzle migration.
 - [ ] Run `rtk pnpm vitest run analytics/models/read_models/read_model_microbatch.sql.test.ts`.
 - [ ] Run `rtk pnpm lint:migrations`.
 
