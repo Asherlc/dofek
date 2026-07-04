@@ -114,6 +114,7 @@ Page(
       failedTransfer: nullable<FailedTransfer>(),
       sampleCount: 0,
       observedHzX100: 0,
+      sessionStartMs: 0,
       // biome-ignore lint/plugin/no-as-type-assertion: widens literal "A" to "A" | "B" for state field inference
       activeFile: "A" as ActiveFileSlot,
       hasCredentials: false,
@@ -280,6 +281,7 @@ Page(
         this.state.observedHzX100 = 0;
         this.state.activeFile = "A";
         const sessionStartMs = Date.now();
+        this.state.sessionStartMs = sessionStartMs;
         const physicalCollector = createPhysicalSensorCollector(
           {
             onScalarSample: (sample) => {
@@ -421,12 +423,11 @@ Page(
 
       const collector = this.state.collector;
       if (collector?.available) {
-        const sessionStartMs = Date.now();
         resetSessionFile(
           {
             formatVersion: 2,
             hasGyro: this.state.hasGyro,
-            sessionStartMs,
+            sessionStartMs: this.state.sessionStartMs,
             sampleCount: 0,
             accelFreqMode: collector.accelMode,
             gyroFreqMode: collector.gyroMode ?? 0,
@@ -434,7 +435,7 @@ Page(
           },
           this.activeFilePath(),
         );
-        this.state.physicalCollector?.start(sessionStartMs);
+        this.state.physicalCollector?.start(this.state.sessionStartMs);
       }
 
       this.publishSessionStatus("logging");

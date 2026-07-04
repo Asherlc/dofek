@@ -164,6 +164,8 @@ Units: accelerometer cm/s², gyroscope deg/s, latitude/longitude decimal degrees
 degrees, and sensor-native scalar units from `@zos/sensor` docs.
 
 `t_ms` is milliseconds since logging start (monotonic session clock based on `Date.now()` delta).
+When continuous recording auto-swaps between watch-side files for transfer, each file keeps the same
+session start timestamp so IMU, scalar physical, and location samples share one epoch.
 
 ## Decode with Python
 
