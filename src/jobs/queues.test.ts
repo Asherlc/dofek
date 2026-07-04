@@ -468,5 +468,15 @@ describe("queues", () => {
         },
       );
     });
+
+    it("does not enqueue a job when no activity ids are provided", async () => {
+      const { enqueueActivityRecomputeAnalyticsRefresh, createActivityDeleteAnalyticsQueue } =
+        await import("./queues.ts");
+
+      const queue = createActivityDeleteAnalyticsQueue({ host: "test", port: 9999 });
+      await enqueueActivityRecomputeAnalyticsRefresh("user-123", [], queue);
+
+      expect(mockQueueAdd).not.toHaveBeenCalled();
+    });
   });
 });

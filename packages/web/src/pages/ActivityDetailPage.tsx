@@ -160,7 +160,7 @@ export function ActivityDetailPage() {
           <span className="text-foreground">{activity.name ?? activity.activityType}</span>
         </div>
         <div className="flex items-center gap-2">
-          <RecomputeActivityButton activityId={id} />
+          <RecomputeActivityButton key={id} activityId={id} />
           <ActivityExportDropdown activityId={id} hasGps={hasGps} />
           <DeleteActivityButton activityId={id} />
         </div>
@@ -259,16 +259,20 @@ function RecomputeActivityButton({ activityId }: { activityId: string }) {
   const recomputeMutation = trpc.activity.recompute.useMutation({
     onSuccess: async () => {
       setIsRecomputing(true);
-      await Promise.all([
-        trpcUtils.activity.byId.invalidate({ id: activityId }),
-        trpcUtils.activity.stream.invalidate({ id: activityId, maxPoints: 500 }),
-        trpcUtils.activity.hrZones.invalidate({ id: activityId }),
-        trpcUtils.activity.powerZones.invalidate({ id: activityId }),
-        trpcUtils.activity.strengthExercises.invalidate({ id: activityId }),
-        trpcUtils.activity.list.invalidate(),
-        trpcUtils.calendar.weekList.invalidate(),
-        trpcUtils.calendar.activityOverview.invalidate(),
-      ]);
+      try {
+        await Promise.all([
+          trpcUtils.activity.byId.invalidate({ id: activityId }),
+          trpcUtils.activity.stream.invalidate({ id: activityId, maxPoints: 500 }),
+          trpcUtils.activity.hrZones.invalidate({ id: activityId }),
+          trpcUtils.activity.powerZones.invalidate({ id: activityId }),
+          trpcUtils.activity.strengthExercises.invalidate({ id: activityId }),
+          trpcUtils.activity.list.invalidate(),
+          trpcUtils.calendar.weekList.invalidate(),
+          trpcUtils.calendar.activityOverview.invalidate(),
+        ]);
+      } finally {
+        setIsRecomputing(false);
+      }
     },
   });
 

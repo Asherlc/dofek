@@ -365,16 +365,30 @@ export default function ActivityDetailScreen() {
   });
   const recomputeMutation = trpc.activity.recompute.useMutation({
     onSuccess: async () => {
-      if (!id) return;
+      if (!id) {
+        return;
+      }
       setIsRecomputing(true);
-      await Promise.all([
-        trpcUtils.activity.byId.invalidate({ id }),
-        trpcUtils.activity.stream.invalidate({ id, maxPoints: 200 }),
-        trpcUtils.activity.hrZones.invalidate({ id }),
-        trpcUtils.activity.powerZones.invalidate({ id }),
-        trpcUtils.activity.strengthExercises.invalidate({ id }),
-        trpcUtils.activity.list.invalidate(),
-      ]);
+      try {
+        await Promise.all([
+          trpcUtils.activity.byId.invalidate({ id }),
+          trpcUtils.activity.stream.invalidate({ id, maxPoints: 200 }),
+          trpcUtils.activity.hrZones.invalidate({ id }),
+          trpcUtils.activity.powerZones.invalidate({ id }),
+          trpcUtils.activity.strengthExercises.invalidate({ id }),
+          trpcUtils.activity.list.invalidate(),
+        ]);
+      } finally {
+        setIsRecomputing(false);
+      }
+    },
+    onError: (error) => {
+      setIsRecomputing(false);
+      captureException(error);
+      Alert.alert(
+        "Recompute Failed",
+        error instanceof Error ? error.message : "Unable to recompute activity.",
+      );
     },
   });
 

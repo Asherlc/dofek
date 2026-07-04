@@ -364,9 +364,6 @@ describe("ActivityDetailPage", () => {
     await waitFor(() => {
       expect(mockActivityByIdInvalidate).toHaveBeenCalledWith({ id: "test-123" });
     });
-    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Recomputing..." }).disabled).toBe(
-      true,
-    );
     expect(mockActivityStreamInvalidate).toHaveBeenCalledWith({
       id: "test-123",
       maxPoints: 500,
@@ -377,6 +374,11 @@ describe("ActivityDetailPage", () => {
     expect(mockActivityListInvalidate).toHaveBeenCalled();
     expect(mockCalendarWeekListInvalidate).toHaveBeenCalled();
     expect(mockCalendarActivityOverviewInvalidate).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(screen.getByRole<HTMLButtonElement>("button", { name: "Recompute" }).disabled).toBe(
+        false,
+      );
+    });
   });
 
   it("keeps previous stream and zone data visible while refetching", async () => {

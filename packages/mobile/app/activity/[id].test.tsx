@@ -2,7 +2,9 @@
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
+import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { captureException } from "../../lib/telemetry";
 
 function stripStyle({
   style: _s,
@@ -201,6 +203,7 @@ const mockHrZonesQuery = vi.fn();
 const mockPowerZonesQuery = vi.fn();
 const mockStrengthExercisesQuery = vi.fn();
 const mockRecomputeMutate = vi.fn();
+const mockRecomputeShouldFail = vi.fn(() => false);
 const mockActivityByIdInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityStreamInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityHrZonesInvalidate = vi.fn().mockResolvedValue(undefined);
@@ -217,9 +220,16 @@ vi.mock("../../lib/trpc", () => ({
       powerZones: { useQuery: (...args: unknown[]) => mockPowerZonesQuery(...args) },
       strengthExercises: { useQuery: (...args: unknown[]) => mockStrengthExercisesQuery(...args) },
       recompute: {
-        useMutation: (options?: { onSuccess?: () => Promise<void> }) => ({
+        useMutation: (options?: {
+          onSuccess?: () => Promise<void>;
+          onError?: (error: Error) => void;
+        }) => ({
           mutate: (input: { id: string }) => {
             mockRecomputeMutate(input);
+            if (mockRecomputeShouldFail()) {
+              options?.onError?.(new Error("Network unavailable"));
+              return;
+            }
             void options?.onSuccess?.();
           },
           isPending: false,
@@ -300,12 +310,16 @@ beforeEach(() => {
   mockPowerZonesQuery.mockClear();
   mockStrengthExercisesQuery.mockClear();
   mockRecomputeMutate.mockClear();
+  mockRecomputeShouldFail.mockReset();
+  mockRecomputeShouldFail.mockReturnValue(false);
   mockActivityByIdInvalidate.mockClear();
   mockActivityStreamInvalidate.mockClear();
   mockActivityHrZonesInvalidate.mockClear();
   mockActivityPowerZonesInvalidate.mockClear();
   mockActivityStrengthExercisesInvalidate.mockClear();
   mockActivityListInvalidate.mockClear();
+  vi.mocked(Alert.alert).mockClear();
+  vi.mocked(captureException).mockClear();
   mockByIdQuery.mockReturnValue({ data: baseCyclingActivity, isLoading: false, error: null });
   mockStreamQuery.mockReturnValue({ data: streamPointsWithHrAndPower, isLoading: false });
   mockHrZonesQuery.mockReturnValue({ data: [], isLoading: false, error: null });
@@ -325,7 +339,6 @@ describe("ActivityDetailScreen", () => {
     await waitFor(() => {
       expect(mockActivityByIdInvalidate).toHaveBeenCalledWith({ id: activityId });
     });
-    expect(screen.getByText("Recomputing...")).toBeTruthy();
     expect(mockActivityStreamInvalidate).toHaveBeenCalledWith({
       id: activityId,
       maxPoints: 200,
@@ -334,6 +347,20 @@ describe("ActivityDetailScreen", () => {
     expect(mockActivityPowerZonesInvalidate).toHaveBeenCalledWith({ id: activityId });
     expect(mockActivityStrengthExercisesInvalidate).toHaveBeenCalledWith({ id: activityId });
     expect(mockActivityListInvalidate).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(screen.getByText("Recompute")).toBeTruthy();
+    });
+  });
+
+  it("reports recompute failures and shows the server error", async () => {
+    mockRecomputeShouldFail.mockReturnValue(true);
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    fireEvent.click(screen.getByText("Recompute"));
+
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error));
+    expect(Alert.alert).toHaveBeenCalledWith("Recompute Failed", "Network unavailable");
   });
 
   it("keeps previous stream and zone data visible while refetching", async () => {
