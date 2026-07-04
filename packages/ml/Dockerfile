@@ -7,7 +7,7 @@
 # Run:
 #   docker run dofek-ml:local dofek-export --output-dir /tmp/unused
 
-FROM python:3.12-slim AS base
+FROM python:3.14-slim AS base
 
 # libpq for psycopg native driver
 RUN apt-get update && apt-get install -y --no-install-recommends libpq5 && \
