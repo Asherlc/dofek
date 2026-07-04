@@ -7,7 +7,7 @@ COPY package.json ./
 RUN npm install -g corepack@0.35.0 && corepack enable && corepack prepare --activate
 
 # dbt 1.10.x is incompatible with Alpine's Python 3.14; install tools on 3.12 instead.
-FROM python:3.12-alpine AS dbt-tools
+FROM python:3.14-alpine AS dbt-tools
 RUN apk add --no-cache build-base && \
     pip install --no-cache-dir \
       dbt-core==1.10.22 \
