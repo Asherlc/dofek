@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
+import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { captureException } from "../../lib/telemetry";
 
 function stripStyle({
   style: _s,
@@ -200,6 +202,16 @@ const mockStreamQuery = vi.fn();
 const mockHrZonesQuery = vi.fn();
 const mockPowerZonesQuery = vi.fn();
 const mockStrengthExercisesQuery = vi.fn();
+const mockRecomputeMutate = vi.fn();
+const mockRecomputeShouldFail = vi.fn(() => false);
+const mockActivityByIdInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockActivityStreamInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockActivityHrZonesInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockActivityPowerZonesInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockActivityStrengthExercisesInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockActivityListInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockCalendarWeekListInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockCalendarActivityOverviewInvalidate = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
@@ -209,9 +221,38 @@ vi.mock("../../lib/trpc", () => ({
       hrZones: { useQuery: (...args: unknown[]) => mockHrZonesQuery(...args) },
       powerZones: { useQuery: (...args: unknown[]) => mockPowerZonesQuery(...args) },
       strengthExercises: { useQuery: (...args: unknown[]) => mockStrengthExercisesQuery(...args) },
+      recompute: {
+        useMutation: (options?: {
+          onSuccess?: () => Promise<void>;
+          onError?: (error: Error) => void;
+        }) => ({
+          mutate: (input: { id: string }) => {
+            mockRecomputeMutate(input);
+            if (mockRecomputeShouldFail()) {
+              options?.onError?.(new Error("Network unavailable"));
+              return;
+            }
+            void options?.onSuccess?.();
+          },
+          isPending: false,
+        }),
+      },
       delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
     },
-    useUtils: () => ({ activity: { list: { invalidate: vi.fn() } } }),
+    useUtils: () => ({
+      activity: {
+        byId: { invalidate: mockActivityByIdInvalidate },
+        stream: { invalidate: mockActivityStreamInvalidate },
+        hrZones: { invalidate: mockActivityHrZonesInvalidate },
+        powerZones: { invalidate: mockActivityPowerZonesInvalidate },
+        strengthExercises: { invalidate: mockActivityStrengthExercisesInvalidate },
+        list: { invalidate: mockActivityListInvalidate },
+      },
+      calendar: {
+        weekList: { invalidate: mockCalendarWeekListInvalidate },
+        activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate },
+      },
+    }),
   },
 }));
 
@@ -274,6 +315,19 @@ beforeEach(() => {
   mockHrZonesQuery.mockClear();
   mockPowerZonesQuery.mockClear();
   mockStrengthExercisesQuery.mockClear();
+  mockRecomputeMutate.mockClear();
+  mockRecomputeShouldFail.mockReset();
+  mockRecomputeShouldFail.mockReturnValue(false);
+  mockActivityByIdInvalidate.mockClear();
+  mockActivityStreamInvalidate.mockClear();
+  mockActivityHrZonesInvalidate.mockClear();
+  mockActivityPowerZonesInvalidate.mockClear();
+  mockActivityStrengthExercisesInvalidate.mockClear();
+  mockActivityListInvalidate.mockClear();
+  mockCalendarWeekListInvalidate.mockClear();
+  mockCalendarActivityOverviewInvalidate.mockClear();
+  vi.mocked(Alert.alert).mockClear();
+  vi.mocked(captureException).mockClear();
   mockByIdQuery.mockReturnValue({ data: baseCyclingActivity, isLoading: false, error: null });
   mockStreamQuery.mockReturnValue({ data: streamPointsWithHrAndPower, isLoading: false });
   mockHrZonesQuery.mockReturnValue({ data: [], isLoading: false, error: null });
@@ -282,6 +336,50 @@ beforeEach(() => {
 });
 
 describe("ActivityDetailScreen", () => {
+  it("recomputes the activity and invalidates detail caches", async () => {
+    let finishByIdInvalidation: () => void = () => {};
+    const byIdInvalidation = new Promise<void>((resolve) => {
+      finishByIdInvalidation = resolve;
+    });
+    mockActivityByIdInvalidate.mockReturnValueOnce(byIdInvalidation);
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    fireEvent.click(screen.getByText("Recompute"));
+
+    const activityId = "00000000-0000-0000-0000-000000000001";
+    expect(mockRecomputeMutate).toHaveBeenCalledWith({ id: activityId });
+    await waitFor(() => {
+      expect(mockActivityByIdInvalidate).toHaveBeenCalledWith({ id: activityId });
+    });
+    expect(mockActivityStreamInvalidate).toHaveBeenCalledWith({
+      id: activityId,
+      maxPoints: 200,
+    });
+    expect(mockActivityHrZonesInvalidate).toHaveBeenCalledWith({ id: activityId });
+    expect(mockActivityPowerZonesInvalidate).toHaveBeenCalledWith({ id: activityId });
+    expect(mockActivityStrengthExercisesInvalidate).toHaveBeenCalledWith({ id: activityId });
+    expect(mockActivityListInvalidate).toHaveBeenCalled();
+    expect(mockCalendarWeekListInvalidate).toHaveBeenCalled();
+    expect(mockCalendarActivityOverviewInvalidate).toHaveBeenCalled();
+    expect(screen.getByText("Recomputing...")).toBeTruthy();
+    finishByIdInvalidation();
+    await waitFor(() => {
+      expect(screen.getByText("Recompute")).toBeTruthy();
+    });
+  });
+
+  it("reports recompute failures and shows the server error", async () => {
+    mockRecomputeShouldFail.mockReturnValue(true);
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    fireEvent.click(screen.getByText("Recompute"));
+
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error));
+    expect(Alert.alert).toHaveBeenCalledWith("Recompute Failed", "Network unavailable");
+  });
+
   it("keeps previous stream and zone data visible while refetching", async () => {
     const { default: ActivityDetailScreen } = await import("./[id]");
     render(React.createElement(ActivityDetailScreen));

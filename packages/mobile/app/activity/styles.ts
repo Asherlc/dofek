@@ -149,6 +149,24 @@ export const styles = StyleSheet.create({
     color: colors.textSecondary,
     lineHeight: 16,
   },
+  recomputeButton: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 14,
+    alignItems: "center",
+    marginTop: 16,
+  },
+  recomputeButtonPressed: {
+    opacity: 0.7,
+  },
+  recomputeButtonDisabled: {
+    opacity: 0.5,
+  },
+  recomputeButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.text,
+  },
   deleteButton: {
     backgroundColor: colors.surface,
     borderRadius: 12,

@@ -82,4 +82,20 @@ describe("processActivityDeleteAnalyticsJob", () => {
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:");
     expect(mockClose).toHaveBeenCalledOnce();
   });
+
+  it("rebuilds read models for recompute without waiting for PeerDB delete or restore state", async () => {
+    await processActivityDeleteAnalyticsJob({
+      data: {
+        type: "activity-recompute-analytics-refresh",
+        userId: "user-1",
+        activityIds: ["00000000-0000-0000-0000-000000000003"],
+      },
+    });
+
+    expect(mockWaitForPeerDbActivityDeletes).not.toHaveBeenCalled();
+    expect(mockWaitForPeerDbActivityRestores).not.toHaveBeenCalled();
+    expect(mockRunActivityReadModelBuild).toHaveBeenCalledOnce();
+    expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:");
+    expect(mockClose).toHaveBeenCalledOnce();
+  });
 });

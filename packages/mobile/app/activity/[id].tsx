@@ -356,10 +356,41 @@ export default function ActivityDetailScreen() {
   const trpcUtils = trpc.useUtils();
   const [exportingFormat, setExportingFormat] = useState<ActivityExportFormat | null>(null);
   const [exportModalVisible, setExportModalVisible] = useState(false);
+  const [isRecomputing, setIsRecomputing] = useState(false);
   const deleteMutation = trpc.activity.delete.useMutation({
     onSuccess: async () => {
       await trpcUtils.activity.list.invalidate();
       router.back();
+    },
+  });
+  const recomputeMutation = trpc.activity.recompute.useMutation({
+    onSuccess: async () => {
+      if (!id) {
+        return;
+      }
+      setIsRecomputing(true);
+      try {
+        await Promise.all([
+          trpcUtils.activity.byId.invalidate({ id }),
+          trpcUtils.activity.stream.invalidate({ id, maxPoints: 200 }),
+          trpcUtils.activity.hrZones.invalidate({ id }),
+          trpcUtils.activity.powerZones.invalidate({ id }),
+          trpcUtils.activity.strengthExercises.invalidate({ id }),
+          trpcUtils.activity.list.invalidate(),
+          trpcUtils.calendar.weekList.invalidate(),
+          trpcUtils.calendar.activityOverview.invalidate(),
+        ]);
+      } finally {
+        setIsRecomputing(false);
+      }
+    },
+    onError: (error) => {
+      setIsRecomputing(false);
+      captureException(error);
+      Alert.alert(
+        "Recompute Failed",
+        error instanceof Error ? error.message : "Unable to recompute activity.",
+      );
     },
   });
 
@@ -461,6 +492,11 @@ export default function ActivityDetailScreen() {
   const handleExport = () => {
     if (!id || !sessionToken) return;
     setExportModalVisible(true);
+  };
+
+  const handleRecompute = () => {
+    if (!id) return;
+    recomputeMutation.mutate({ id });
   };
 
   const handleExportFormatSelect = (format: ActivityExportFormat) => {
@@ -658,6 +694,20 @@ export default function ActivityDetailScreen() {
       )}
 
       {/* Export Activity */}
+      <Pressable
+        onPress={handleRecompute}
+        disabled={recomputeMutation.isPending || isRecomputing}
+        style={({ pressed }) => [
+          styles.recomputeButton,
+          pressed && styles.recomputeButtonPressed,
+          (recomputeMutation.isPending || isRecomputing) && styles.recomputeButtonDisabled,
+        ]}
+      >
+        <Text style={styles.recomputeButtonText}>
+          {recomputeMutation.isPending || isRecomputing ? "Recomputing..." : "Recompute"}
+        </Text>
+      </Pressable>
+
       <Pressable
         onPress={handleExport}
         disabled={exportingFormat != null || !sessionToken}

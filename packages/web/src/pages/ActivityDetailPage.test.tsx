@@ -3,7 +3,7 @@
 import { formatDateTime } from "@dofek/format/format";
 import type { UnitSystem } from "@dofek/format/units";
 import { UnitConverter } from "@dofek/format/units";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
@@ -153,6 +153,16 @@ const mockPowerZonesUseQuery = vi.fn(
     isLoading: false,
   }),
 );
+const mockRecomputeMutate = vi.fn();
+const mockRecomputeShouldFail = vi.fn(() => false);
+const mockActivityByIdInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockActivityStreamInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockActivityHrZonesInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockActivityPowerZonesInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockActivityStrengthExercisesInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockActivityListInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockCalendarWeekListInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockCalendarActivityOverviewInvalidate = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
@@ -162,9 +172,38 @@ vi.mock("../lib/trpc.ts", () => ({
       hrZones: { useQuery: mockHrZonesUseQuery },
       powerZones: { useQuery: mockPowerZonesUseQuery },
       strengthExercises: { useQuery: mockStrengthExercisesUseQuery },
+      recompute: {
+        useMutation: (options?: {
+          onSuccess?: () => Promise<void>;
+          onError?: (error: Error) => void;
+        }) => ({
+          mutate: (input: { id: string }) => {
+            mockRecomputeMutate(input);
+            if (mockRecomputeShouldFail()) {
+              options?.onError?.(new Error("Network unavailable"));
+              return;
+            }
+            void options?.onSuccess?.();
+          },
+          isPending: false,
+        }),
+      },
       delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
     },
-    useUtils: () => ({ activity: { list: { invalidate: vi.fn() } } }),
+    useUtils: () => ({
+      activity: {
+        byId: { invalidate: mockActivityByIdInvalidate },
+        stream: { invalidate: mockActivityStreamInvalidate },
+        hrZones: { invalidate: mockActivityHrZonesInvalidate },
+        powerZones: { invalidate: mockActivityPowerZonesInvalidate },
+        strengthExercises: { invalidate: mockActivityStrengthExercisesInvalidate },
+        list: { invalidate: mockActivityListInvalidate },
+      },
+      calendar: {
+        weekList: { invalidate: mockCalendarWeekListInvalidate },
+        activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate },
+      },
+    }),
   },
 }));
 
@@ -199,6 +238,17 @@ function renderWithUnits(ui: ReactNode, unitSystem: UnitSystem = "metric") {
   mockStrengthExercisesUseQuery.mockClear();
   mockHrZonesUseQuery.mockClear();
   mockPowerZonesUseQuery.mockClear();
+  mockRecomputeMutate.mockClear();
+  mockRecomputeShouldFail.mockReset();
+  mockRecomputeShouldFail.mockReturnValue(false);
+  mockActivityByIdInvalidate.mockClear();
+  mockActivityStreamInvalidate.mockClear();
+  mockActivityHrZonesInvalidate.mockClear();
+  mockActivityPowerZonesInvalidate.mockClear();
+  mockActivityStrengthExercisesInvalidate.mockClear();
+  mockActivityListInvalidate.mockClear();
+  mockCalendarWeekListInvalidate.mockClear();
+  mockCalendarActivityOverviewInvalidate.mockClear();
   return render(
     <UnitContext.Provider value={{ unitSystem, setUnitSystem: () => {} }}>
       {ui}
@@ -314,6 +364,48 @@ async function importPage() {
 }
 
 describe("ActivityDetailPage", () => {
+  it("recomputes the activity and invalidates detail caches", async () => {
+    const ActivityDetailPage = await importPage();
+    renderWithUnits(<ActivityDetailPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Recompute" }));
+
+    expect(mockRecomputeMutate).toHaveBeenCalledWith({ id: "test-123" });
+    await waitFor(() => {
+      expect(mockActivityByIdInvalidate).toHaveBeenCalledWith({ id: "test-123" });
+    });
+    expect(mockActivityStreamInvalidate).toHaveBeenCalledWith({
+      id: "test-123",
+      maxPoints: 500,
+    });
+    expect(mockActivityHrZonesInvalidate).toHaveBeenCalledWith({ id: "test-123" });
+    expect(mockActivityPowerZonesInvalidate).toHaveBeenCalledWith({ id: "test-123" });
+    expect(mockActivityStrengthExercisesInvalidate).toHaveBeenCalledWith({ id: "test-123" });
+    expect(mockActivityListInvalidate).toHaveBeenCalled();
+    expect(mockCalendarWeekListInvalidate).toHaveBeenCalled();
+    expect(mockCalendarActivityOverviewInvalidate).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(screen.getByRole<HTMLButtonElement>("button", { name: "Recompute" }).disabled).toBe(
+        false,
+      );
+    });
+  });
+
+  it("reports recompute failures and shows the server error", async () => {
+    const ActivityDetailPage = await importPage();
+    renderWithUnits(<ActivityDetailPage />);
+    mockRecomputeShouldFail.mockReturnValue(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Recompute" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Network unavailable")).toBeDefined();
+    });
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Recompute" }).disabled).toBe(
+      false,
+    );
+  });
+
   it("keeps previous stream and zone data visible while refetching", async () => {
     const ActivityDetailPage = await importPage();
     renderWithUnits(<ActivityDetailPage />);

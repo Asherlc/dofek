@@ -65,9 +65,16 @@ export interface ActivityRestoreAnalyticsJobData {
   activityIds: string[];
 }
 
+export interface ActivityRecomputeAnalyticsJobData {
+  type: "activity-recompute-analytics-refresh";
+  userId: string;
+  activityIds: string[];
+}
+
 export type ActivityAnalyticsJobData =
   | ActivityDeleteAnalyticsJobData
-  | ActivityRestoreAnalyticsJobData;
+  | ActivityRestoreAnalyticsJobData
+  | ActivityRecomputeAnalyticsJobData;
 
 // ── Queue names ──
 
@@ -90,6 +97,7 @@ const GLOBAL_POST_SYNC_JOB_NAME = "global-maintenance";
 const USER_REFIT_POST_SYNC_JOB_NAME = "user-refit";
 const ACTIVITY_DELETE_ANALYTICS_JOB_NAME = "activity-delete-analytics-refresh";
 const ACTIVITY_RESTORE_ANALYTICS_JOB_NAME = "activity-restore-analytics-refresh";
+const ACTIVITY_RECOMPUTE_ANALYTICS_JOB_NAME = "activity-recompute-analytics-refresh";
 const GLOBAL_POST_SYNC_DEDUPLICATION_ID = "post-sync:global-maintenance";
 
 /** Get the per-provider queue name for a given provider ID. */
@@ -237,6 +245,31 @@ export async function enqueueActivityRestoreAnalyticsRefresh(
       removeOnFail: { age: 604_800, count: 100 },
       attempts: 5,
       backoff: { type: "fixed", delay: 30_000 },
+    },
+  );
+}
+
+export async function enqueueActivityRecomputeAnalyticsRefresh(
+  userId: string,
+  activityIds: string[],
+  queue: Queue<ActivityAnalyticsJobData> = getActivityDeleteAnalyticsQueue(),
+): Promise<void> {
+  const uniqueActivityIds = [...new Set(activityIds)];
+  if (uniqueActivityIds.length === 0) return;
+
+  await queue.add(
+    ACTIVITY_RECOMPUTE_ANALYTICS_JOB_NAME,
+    {
+      type: "activity-recompute-analytics-refresh",
+      userId,
+      activityIds: uniqueActivityIds,
+    },
+    {
+      removeOnComplete: true,
+      removeOnFail: { age: 604_800, count: 100 },
+      attempts: 5,
+      backoff: { type: "fixed", delay: 30_000 },
+      jobId: `${ACTIVITY_RECOMPUTE_ANALYTICS_JOB_NAME}:${userId}`,
     },
   );
 }

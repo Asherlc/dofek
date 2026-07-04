@@ -17,6 +17,15 @@ export async function processActivityDeleteAnalyticsJob(job: ActivityAnalyticsJo
   const client = createClickHouseClientFromEnv();
 
   try {
+    if (job.data.type === "activity-recompute-analytics-refresh") {
+      await runActivityReadModelBuild();
+      await queryCache.invalidateByPrefix(`${userId}:`);
+      logger.info(
+        `[activity-recompute-analytics] Refreshed activity read models for ${activityIds.length} activities for user ${userId}`,
+      );
+      return;
+    }
+
     if (job.data.type === "activity-restore-analytics-refresh") {
       await waitForPeerDbActivityRestores(client, activityIds);
       await runActivityReadModelBuild();

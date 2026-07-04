@@ -41,6 +41,7 @@ import {
 } from "../lib/chartTheme.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
+import { RecomputeActivityButton } from "./activity-detail/components/RecomputeActivityButton.tsx";
 import { ProviderAbsentBanner } from "./ProviderAbsentBanner.tsx";
 
 const CHART_COLORS = {
@@ -80,7 +81,6 @@ function buildAxisPointerEvents(
 }
 
 const STRENGTH_ACTIVITY_TYPES = new Set(["strength", "strength_training", "functional_strength"]);
-
 function isStrengthActivityType(activityType: string): boolean {
   return STRENGTH_ACTIVITY_TYPES.has(activityType);
 }
@@ -160,6 +160,7 @@ export function ActivityDetailPage() {
           <span className="text-foreground">{activity.name ?? activity.activityType}</span>
         </div>
         <div className="flex items-center gap-2">
+          <RecomputeActivityButton key={id} activityId={id} />
           <ActivityExportDropdown activityId={id} hasGps={hasGps} />
           <DeleteActivityButton activityId={id} />
         </div>
