@@ -108,7 +108,13 @@ export async function importZosAppBin(
     };
   }
 
-  const externalId = `zos-app:${createHash("sha256").update(decoded.sessionStartMs.toString()).digest("hex").slice(0, 16)}`;
+  const segmentHash = createHash("sha256")
+    .update(decoded.sessionStartMs.toString())
+    .update("\0")
+    .update(binData)
+    .digest("hex")
+    .slice(0, 16);
+  const externalId = `zos-app:${segmentHash}`;
   const sessionStartAt = new Date(decoded.sessionStartMs);
   const rawData = binData.toString("base64");
 

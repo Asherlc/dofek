@@ -221,6 +221,19 @@ describe("importZosAppBin", () => {
     );
   });
 
+  it("generates distinct externalIds for segments with the same sessionStartMs", async () => {
+    mockDecodeBin.mockReturnValue(makeDecodedSession({ sessionStartMs: 1_719_300_000_000 }));
+
+    await importZosAppBin(mockDb, Buffer.from([0x01, 0x02]), "user-1");
+    await importZosAppBin(mockDb, Buffer.from([0x03, 0x04]), "user-1");
+
+    const firstExternalId = mockInsertValues.mock.calls[0]?.[0].externalId;
+    const secondExternalId = mockInsertValues.mock.calls[1]?.[0].externalId;
+    expect(firstExternalId).toMatch(/^zos-app:[a-f0-9]{16}$/);
+    expect(secondExternalId).toMatch(/^zos-app:[a-f0-9]{16}$/);
+    expect(firstExternalId).not.toBe(secondExternalId);
+  });
+
   it("stores rawData as base64", async () => {
     mockDecodeBin.mockReturnValue(makeDecodedSession());
     const binData = Buffer.from([0x49, 0x55, 0x4d, 0x31]);
