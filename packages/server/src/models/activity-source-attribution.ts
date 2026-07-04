@@ -6,6 +6,7 @@ export interface SourceExternalIdEntry {
   externalId: string;
   memberActivityId?: string;
   providerAbsentAt?: string | null;
+  subsource?: string | null;
 }
 
 /** Resolved provider source shown on activity detail and list cards. */
@@ -65,6 +66,7 @@ export class ActivitySourceAttribution {
           externalId,
           memberActivityId: map.memberActivityId ?? undefined,
           providerAbsentAt: map.providerAbsentAt ?? null,
+          subsource: map.subsource ?? null,
         },
       ];
     });
@@ -87,42 +89,51 @@ export class ActivitySourceAttribution {
   }
 
   toSourceLinks(lookup: ProviderLookup): SourceLink[] {
-    const linksByProvider = new Map<string, SourceLink>();
+    const activeLinks = this.#activeEntries.map((entry) =>
+      ActivitySourceAttribution.#toSourceLink(entry, lookup),
+    );
+    const activeSourceKeys = new Set(
+      this.#activeEntries.map((entry) => ActivitySourceAttribution.#sourceKey(entry)),
+    );
+    const absentLinks = this.#absentEntries
+      .filter((entry) => !activeSourceKeys.has(ActivitySourceAttribution.#sourceKey(entry)))
+      .map((entry) => ActivitySourceAttribution.#toSourceLink(entry, lookup));
 
-    for (const { providerId, externalId } of this.#activeEntries) {
-      const provider = lookup(providerId);
-      if (!provider?.activityUrl) continue;
-      linksByProvider.set(providerId, {
-        providerId,
-        label: provider.name,
-        url: provider.activityUrl(externalId),
-        providerAbsentAt: null,
-      });
-    }
+    return [...activeLinks, ...absentLinks].sort(ActivitySourceAttribution.#compareSourceLinks);
+  }
 
-    for (const entry of this.#absentEntries) {
-      if (linksByProvider.has(entry.providerId)) continue;
-      const provider = lookup(entry.providerId);
-      const label = provider?.name ?? entry.providerId;
-      const url =
-        provider?.activityUrl && entry.externalId ? provider.activityUrl(entry.externalId) : null;
-      linksByProvider.set(entry.providerId, {
-        providerId: entry.providerId,
-        label,
-        url,
-        providerAbsentAt: entry.providerAbsentAt ?? null,
-        memberActivityId: entry.memberActivityId,
-      });
-    }
+  static #sourceKey(entry: SourceExternalIdEntry): string {
+    return `${entry.providerId}:${entry.subsource ?? ""}`;
+  }
 
-    return [...linksByProvider.values()].sort((left, right) =>
-      left.providerId.localeCompare(right.providerId),
+  static #toSourceLink(entry: SourceExternalIdEntry, lookup: ProviderLookup): SourceLink {
+    const provider = lookup(entry.providerId);
+    const label = entry.subsource
+      ? providerSourceLabel(entry.providerId, entry.subsource)
+      : (provider?.name ?? providerSourceLabel(entry.providerId));
+    const url = provider?.activityUrl ? provider.activityUrl(entry.externalId) : null;
+
+    return {
+      providerId: entry.providerId,
+      label,
+      url,
+      providerAbsentAt: entry.providerAbsentAt ?? null,
+      ...(entry.memberActivityId ? { memberActivityId: entry.memberActivityId } : {}),
+    };
+  }
+
+  static #compareSourceLinks(left: SourceLink, right: SourceLink): number {
+    return (
+      left.providerId.localeCompare(right.providerId) ||
+      left.label.localeCompare(right.label) ||
+      (left.memberActivityId ?? "").localeCompare(right.memberActivityId ?? "")
     );
   }
 
   partialAbsentSources(): ProviderAbsentSource[] {
     return this.#absentEntries.map((entry) => ({
       providerId: entry.providerId,
+      ...(entry.subsource ? { subsource: entry.subsource } : {}),
       providerAbsentAt: entry.providerAbsentAt ?? null,
     }));
   }
@@ -157,7 +168,9 @@ export class ActivitySourceAttribution {
     if (entries.length === 0) return null;
     return entries
       .map((entry) => {
-        const providerLabel = lookup(entry.providerId)?.name ?? entry.providerId;
+        const providerLabel = entry.subsource
+          ? providerSourceLabel(entry.providerId, entry.subsource)
+          : (lookup(entry.providerId)?.name ?? providerSourceLabel(entry.providerId));
         const removedAt = entry.providerAbsentAt
           ? ` · ${formatDateTime(entry.providerAbsentAt)}`
           : "";

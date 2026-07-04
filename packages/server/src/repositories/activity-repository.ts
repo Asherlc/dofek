@@ -36,6 +36,7 @@ const sourceExternalIdSchema = z.object({
   externalId: z.string(),
   memberActivityId: z.string().optional(),
   providerAbsentAt: timestampStringSchema.nullable().optional(),
+  subsource: z.string().nullable().optional(),
 });
 
 const activityDetailRowSchema = z.object({
@@ -468,8 +469,12 @@ export class ActivityRepository extends BaseRepository {
                 jsonb_build_object(
                   'providerId', a.provider_id,
                   'externalId', a.external_id,
-                  'memberActivityId', a.id,
-                  'providerAbsentAt', a.provider_absent_at
+                  'memberActivityId', a.id::text,
+                  'providerAbsentAt', a.provider_absent_at,
+                  'subsource', COALESCE(
+                    NULLIF(trim(a.raw->>'sourceName'), ''),
+                    NULLIF(trim(a.source_name), '')
+                  )
                 )
               )
               ELSE NULL

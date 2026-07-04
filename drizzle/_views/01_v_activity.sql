@@ -32,7 +32,11 @@ tombstoned AS (
     a.external_id,
     a.started_at,
     a.ended_at,
-    a.provider_absent_at
+    a.provider_absent_at,
+    COALESCE(
+      NULLIF(trim(a.raw->>'sourceName'), ''),
+      NULLIF(trim(a.source_name), '')
+    ) AS subsource
   FROM fitness.activity a
   WHERE a.provider_absent_at IS NOT NULL
     AND a.deleted_at IS NULL
@@ -47,7 +51,8 @@ effective_tombstoned AS (
     t.external_id,
     t.started_at,
     t.ended_at,
-    t.provider_absent_at
+    t.provider_absent_at,
+    t.subsource
   FROM tombstoned t
   WHERE t.provider_id <> 'apple_health'
   UNION ALL
@@ -58,7 +63,8 @@ effective_tombstoned AS (
     t.external_id,
     t.started_at,
     t.ended_at,
-    t.provider_absent_at
+    t.provider_absent_at,
+    t.subsource
   FROM tombstoned t
   INNER JOIN fitness.activity a ON a.id = t.id
   WHERE t.provider_id = 'apple_health'
@@ -185,10 +191,11 @@ absent_source_links AS (
       jsonb_build_object(
         'providerId', t.provider_id,
         'externalId', t.external_id,
-        'memberActivityId', t.id,
-        'providerAbsentAt', t.provider_absent_at
+        'memberActivityId', t.id::text,
+        'providerAbsentAt', t.provider_absent_at,
+        'subsource', t.subsource
       )
-      ORDER BY t.provider_id
+      ORDER BY t.provider_id, t.id
     ) AS absent_source_external_ids
   FROM final_groups fg
   JOIN effective_tombstoned t ON t.id = fg.activity_id
@@ -230,7 +237,16 @@ merged AS (
      FROM final_groups fg2 JOIN ranked r ON r.id = fg2.activity_id
      WHERE fg2.group_id = b.group_id) AS source_providers,
     (SELECT jsonb_agg(
-       jsonb_build_object('providerId', r.provider_id, 'externalId', r.external_id)
+       jsonb_build_object(
+         'providerId', r.provider_id,
+         'externalId', r.external_id,
+         'memberActivityId', r.id::text,
+         -- Preserve the per-member upstream app for grouped Apple Health rows.
+         'subsource', COALESCE(
+           NULLIF(trim(r.raw->>'sourceName'), ''),
+           NULLIF(trim(r.source_name), '')
+         )
+       )
        ORDER BY r.provider_id
      )
      FROM final_groups fg2 JOIN ranked r ON r.id = fg2.activity_id

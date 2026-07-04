@@ -462,6 +462,49 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText(/Strong \(via Apple Health\)/)).toBeTruthy();
   });
 
+  it("renders multiple source links for grouped Apple Health activities", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: {
+        ...baseCyclingActivity,
+        providerId: "whoop",
+        subsource: "WHOOP",
+        sourceProviders: ["apple_health", "whoop"],
+        sourceLinks: [
+          {
+            providerId: "apple_health",
+            label: "Strong (via Apple Health)",
+            url: null,
+            providerAbsentAt: null,
+            memberActivityId: "strong-member",
+          },
+          {
+            providerId: "apple_health",
+            label: "WHOOP (via Apple Health)",
+            url: null,
+            providerAbsentAt: null,
+            memberActivityId: "whoop-apple-member",
+          },
+          {
+            providerId: "whoop",
+            label: "WHOOP (Cloud)",
+            url: "https://app.whoop.com/activities/whoop-cloud",
+            providerAbsentAt: null,
+            memberActivityId: "whoop-cloud-member",
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getByText(/Strong \(via Apple Health\)/)).toBeTruthy();
+    expect(screen.getByText(/WHOOP \(via Apple Health\)/)).toBeTruthy();
+    expect(screen.getByText(/WHOOP \(Cloud\)/)).toBeTruthy();
+  });
+
   it("shows removed provider status for provider-absent activities", async () => {
     mockByIdQuery.mockReturnValue({
       data: {

@@ -47,6 +47,83 @@ function activityIcon(type: string): string {
   return getActivityIconInfo(type).emoji;
 }
 
+interface ActivitySourceLink {
+  providerId: string;
+  label: string;
+  url: string | null;
+  providerAbsentAt?: string | null;
+  memberActivityId?: string | null;
+}
+
+interface ActivitySourceSummary {
+  sourceProviders: string[];
+  sourceLinks: ActivitySourceLink[];
+  subsource?: string | null;
+}
+
+function ActivitySourceLinks({ activity }: { activity: ActivitySourceSummary }) {
+  if (activity.sourceLinks.length > 0) {
+    return (
+      <>
+        {activity.sourceLinks.map((link, index) => (
+          <ActivitySourceLinkLabel
+            key={`${link.providerId}:${link.memberActivityId ?? link.label}`}
+            link={link}
+            prefix={index > 0 ? ", " : ""}
+          />
+        ))}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {activity.sourceProviders.map((providerId, index) => (
+        <Text key={providerId} style={styles.source}>
+          {index > 0 && ", "}
+          {providerSourceLabel(providerId, activity.subsource)}
+        </Text>
+      ))}
+    </>
+  );
+}
+
+function ActivitySourceLinkLabel({ link, prefix }: { link: ActivitySourceLink; prefix: string }) {
+  if (link.providerAbsentAt) {
+    return (
+      <Text style={styles.sourceRemoved}>
+        {prefix}
+        {link.label} (removed)
+      </Text>
+    );
+  }
+
+  if (link.url) {
+    const sourceUrl = link.url;
+    return (
+      <View style={styles.sourceLinkRow}>
+        {prefix && <Text style={styles.source}>{prefix}</Text>}
+        <Pressable
+          onPress={() => {
+            void Linking.openURL(sourceUrl);
+          }}
+          hitSlop={4}
+          style={styles.sourceLinkPressable}
+        >
+          <Text style={styles.sourceLink}>{link.label} ↗</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  return (
+    <Text style={styles.source}>
+      {prefix}
+      {link.label}
+    </Text>
+  );
+}
+
 // ── Stats Grid ──
 
 interface StatItem {
@@ -498,41 +575,7 @@ export default function ActivityDetailScreen() {
         {(activity.sourceLinks.length > 0 || activity.sourceProviders.length > 0) && (
           <View style={styles.sourceRow}>
             <Text style={styles.source}>Source: </Text>
-            {activity.sourceProviders.map((providerId: string, index: number) => {
-              const link = activity.sourceLinks.find(
-                (sourceLink) => sourceLink.providerId === providerId,
-              );
-              if (link?.providerAbsentAt) {
-                return (
-                  <Text key={providerId} style={styles.sourceRemoved}>
-                    {index > 0 && ", "}
-                    {link.label} (removed)
-                  </Text>
-                );
-              }
-              if (link?.url) {
-                return (
-                  <View key={providerId} style={styles.sourceLinkRow}>
-                    {index > 0 && <Text style={styles.source}>, </Text>}
-                    <Pressable
-                      onPress={() => {
-                        if (link.url) Linking.openURL(link.url);
-                      }}
-                      hitSlop={4}
-                      style={styles.sourceLinkPressable}
-                    >
-                      <Text style={styles.sourceLink}>{link.label} ↗</Text>
-                    </Pressable>
-                  </View>
-                );
-              }
-              return (
-                <Text key={providerId} style={styles.source}>
-                  {index > 0 && ", "}
-                  {providerSourceLabel(providerId, activity.subsource)}
-                </Text>
-              );
-            })}
+            <ActivitySourceLinks activity={activity} />
           </View>
         )}
         {activity.providerAbsentAt && <ProviderAbsentBanner activity={activity} />}

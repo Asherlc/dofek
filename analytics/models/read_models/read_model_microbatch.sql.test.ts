@@ -132,6 +132,8 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("ref('activity_duplicate_groups')");
     expect(sql).toContain("current_deduped_activities AS");
     expect(sql).toContain("member_activity_ids");
+    expect(sql).toContain("'memberActivityId', toString(ranked.activity_id)");
+    expect(sql).toContain("'subsource', coalesce(");
     expect(sql).toContain("assumeNotNull(user_id) AS user_id");
     expect(sql).toContain("stale_deduped_activities AS");
     expect(sql).toContain("{% if is_incremental() %}");

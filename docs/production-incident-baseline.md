@@ -11493,3 +11493,65 @@ new incremental tables are populated.
 - **Remaining risk:** PR CI for
   [#1456](https://github.com/Asherlc/dofek/pull/1456) was still pending when the
   branch was pushed.
+
+## 2026-07-03 — Strong Apple Health workout hidden by grouped source attribution
+
+- **Symptoms:** The July 2, 2026 strength workout detail showed `WHOOP (via
+  Apple Health), WHOOP (Cloud)` and did not show `Strong`, even though the
+  expected Strong workout had synced from Apple Health.
+- **User impact:** The workout was present in production data and visible as one
+  deduped activity, but the source attribution was misleading because the Strong
+  Apple Health member was not named in the activity detail source list.
+- **Evidence:** Production ClickHouse `postgres_fitness.activity FINAL` contains
+  Apple Health member `58ccbfde-7867-4e22-874b-8e54b7106112`,
+  `external_id = hk:workout:1A5306B6-84B6-4889-90C2-55BE600111BA`,
+  `raw.sourceName = Strong`, `activity_type = strength_training`, local start
+  `2026-07-02 07:46:57`, with no provider tombstone or delete marker.
+  `analytics.deduped_activity_members FINAL` maps that member to canonical
+  activity `2d9e3c60-6acc-46df-8fdd-5c00928ae27c`, whose group also includes
+  one WHOOP cloud row and six WHOOP Apple Health rows. CDC health logs reported
+  `[clickhouse-cdc-health] ok: checked 3 slots and 1 mirror`.
+- **Root cause:** Source attribution is modeled at provider granularity plus one
+  activity-level Apple Health `subsource`. The deduped group stores
+  `source_providers = {apple_health, whoop}` and multiple Apple Health
+  `source_external_ids`, but those entries do not carry per-member
+  `raw.sourceName`. The web source renderer therefore has only one
+  `apple_health` label and uses the group's single `subsource`, which was
+  `WHOOP`, so `Strong` was dropped from the displayed attribution.
+- **Fix / mitigation:** No data repair was needed. A code fix should preserve
+  per-member Apple Health source names in source attribution and render distinct
+  labels such as `Strong (via Apple Health)` and `WHOOP (via Apple Health)`
+  alongside `WHOOP (Cloud)`.
+- **Validation:** Read-only production queries confirmed the Strong row exists
+  in both the raw ClickHouse mirror and the deduped activity membership table;
+  no ClickHouse CDC staleness was observed.
+- **Remaining risk:** The UI will keep omitting secondary Apple Health app names
+  for deduped activities that contain multiple Apple Health sources until source
+  attribution carries per-member subsources.
+
+## 2026-07-03 — PR CI blocked by unused ClickHouse migration exports
+
+- **Symptoms:** PR
+  [#1468](https://github.com/Asherlc/dofek/pull/1468) had failing checks:
+  `Test / Knip`, `Test / Lint & Static Analysis`, `Test / Test Gate`, and
+  `CI Gate`.
+- **User impact:** The PR was blocked from merging; no production runtime impact.
+- **Evidence:** The root failing command was `pnpm knip` in GitHub job
+  `85077762079`. The first fatal output was `Unused exports (2)` for
+  `buildClickHouseMigrationStatements` in `src/db/clickhouse-migrations.ts` and
+  `clickHouseMigrationFileNames` in `src/db/clickhouse-migrations/registry.ts`.
+  The other attached failures were gate jobs reporting a required job failure.
+- **Root cause:** Follow-up ClickHouse migration test cleanup left two exported
+  helper APIs that no production or test code imported, and Knip correctly
+  rejected them as unused exports.
+- **Fix / mitigation:** Removed the unused exports instead of adding Knip
+  ignores or keeping dead public API.
+- **Validation:** Local `pnpm knip`, `pnpm lint`, root/server/web
+  `pnpm tsc --noEmit`, and
+  `pnpm vitest run src/db/clickhouse-migrations.test.ts
+  src/db/clickhouse-migrations/registry.test.ts` passed. GitHub rerun
+  `28688829698` showed `Test / Knip` and `Test / Lint & Static Analysis`
+  passing.
+- **Remaining risk:** Some unrelated long-running GitHub jobs were still pending
+  when this note was added, but the attached root failure and dependent gate
+  failures were remediated.
