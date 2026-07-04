@@ -385,6 +385,9 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version");
     expect(normalizedSql).toContain("(sensor_samples.user_id, sensor_samples.activity_id) IN");
     expect(normalizedSql).toContain("(location_samples.user_id, location_samples.activity_id) IN");
+    expect(sql).not.toContain("activity_stream_points_max_points");
+    expect(normalizedSql).not.toContain("modulo( point_index - 1");
+    expect(normalizedSql).not.toContain("intDiv(point_count");
     expect(normalizedSql).not.toContain("source('postgres_fitness', 'metric_stream')");
     expect(normalizedSql).not.toContain("ref('deduped_sensor')");
   });
