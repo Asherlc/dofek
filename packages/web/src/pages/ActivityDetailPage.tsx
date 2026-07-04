@@ -41,6 +41,7 @@ import {
 } from "../lib/chartTheme.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
+import { RecomputeActivityButton } from "./activity-detail/components/RecomputeActivityButton.tsx";
 import { ProviderAbsentBanner } from "./ProviderAbsentBanner.tsx";
 
 const CHART_COLORS = {
@@ -80,7 +81,6 @@ function buildAxisPointerEvents(
 }
 
 const STRENGTH_ACTIVITY_TYPES = new Set(["strength", "strength_training", "functional_strength"]);
-
 function isStrengthActivityType(activityType: string): boolean {
   return STRENGTH_ACTIVITY_TYPES.has(activityType);
 }
@@ -250,41 +250,6 @@ export function ActivityDetailPage() {
         )}
       </div>
     </PageLayout>
-  );
-}
-
-function RecomputeActivityButton({ activityId }: { activityId: string }) {
-  const [isRecomputing, setIsRecomputing] = useState(false);
-  const trpcUtils = trpc.useUtils();
-  const recomputeMutation = trpc.activity.recompute.useMutation({
-    onSuccess: async () => {
-      setIsRecomputing(true);
-      try {
-        await Promise.all([
-          trpcUtils.activity.byId.invalidate({ id: activityId }),
-          trpcUtils.activity.stream.invalidate({ id: activityId, maxPoints: 500 }),
-          trpcUtils.activity.hrZones.invalidate({ id: activityId }),
-          trpcUtils.activity.powerZones.invalidate({ id: activityId }),
-          trpcUtils.activity.strengthExercises.invalidate({ id: activityId }),
-          trpcUtils.activity.list.invalidate(),
-          trpcUtils.calendar.weekList.invalidate(),
-          trpcUtils.calendar.activityOverview.invalidate(),
-        ]);
-      } finally {
-        setIsRecomputing(false);
-      }
-    },
-  });
-
-  return (
-    <button
-      type="button"
-      onClick={() => recomputeMutation.mutate({ id: activityId })}
-      disabled={recomputeMutation.isPending || isRecomputing}
-      className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors cursor-pointer"
-    >
-      {recomputeMutation.isPending || isRecomputing ? "Recomputing..." : "Recompute"}
-    </button>
   );
 }
 

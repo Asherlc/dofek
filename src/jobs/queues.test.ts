@@ -465,6 +465,7 @@ describe("queues", () => {
           removeOnFail: { age: 604_800, count: 100 },
           attempts: 5,
           backoff: { type: "fixed", delay: 30_000 },
+          jobId: "activity-recompute-analytics-refresh:user-123",
         },
       );
     });

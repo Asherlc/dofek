@@ -154,6 +154,7 @@ const mockPowerZonesUseQuery = vi.fn(
   }),
 );
 const mockRecomputeMutate = vi.fn();
+const mockRecomputeShouldFail = vi.fn(() => false);
 const mockActivityByIdInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityStreamInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityHrZonesInvalidate = vi.fn().mockResolvedValue(undefined);
@@ -172,9 +173,16 @@ vi.mock("../lib/trpc.ts", () => ({
       powerZones: { useQuery: mockPowerZonesUseQuery },
       strengthExercises: { useQuery: mockStrengthExercisesUseQuery },
       recompute: {
-        useMutation: (options?: { onSuccess?: () => Promise<void> }) => ({
+        useMutation: (options?: {
+          onSuccess?: () => Promise<void>;
+          onError?: (error: Error) => void;
+        }) => ({
           mutate: (input: { id: string }) => {
             mockRecomputeMutate(input);
+            if (mockRecomputeShouldFail()) {
+              options?.onError?.(new Error("Network unavailable"));
+              return;
+            }
             void options?.onSuccess?.();
           },
           isPending: false,
@@ -231,6 +239,8 @@ function renderWithUnits(ui: ReactNode, unitSystem: UnitSystem = "metric") {
   mockHrZonesUseQuery.mockClear();
   mockPowerZonesUseQuery.mockClear();
   mockRecomputeMutate.mockClear();
+  mockRecomputeShouldFail.mockReset();
+  mockRecomputeShouldFail.mockReturnValue(false);
   mockActivityByIdInvalidate.mockClear();
   mockActivityStreamInvalidate.mockClear();
   mockActivityHrZonesInvalidate.mockClear();
@@ -379,6 +389,21 @@ describe("ActivityDetailPage", () => {
         false,
       );
     });
+  });
+
+  it("reports recompute failures and shows the server error", async () => {
+    const ActivityDetailPage = await importPage();
+    renderWithUnits(<ActivityDetailPage />);
+    mockRecomputeShouldFail.mockReturnValue(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Recompute" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Network unavailable")).toBeDefined();
+    });
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Recompute" }).disabled).toBe(
+      false,
+    );
   });
 
   it("keeps previous stream and zone data visible while refetching", async () => {

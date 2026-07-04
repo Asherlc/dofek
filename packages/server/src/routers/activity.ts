@@ -256,6 +256,9 @@ export const activityRouter = router({
         await invalidateActivityListCaches(ctx.userId);
         return { success: true };
       } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
         if (isRelationMissingError(error)) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",

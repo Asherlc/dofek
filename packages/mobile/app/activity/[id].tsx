@@ -377,6 +377,8 @@ export default function ActivityDetailScreen() {
           trpcUtils.activity.powerZones.invalidate({ id }),
           trpcUtils.activity.strengthExercises.invalidate({ id }),
           trpcUtils.activity.list.invalidate(),
+          trpcUtils.calendar.weekList.invalidate(),
+          trpcUtils.calendar.activityOverview.invalidate(),
         ]);
       } finally {
         setIsRecomputing(false);

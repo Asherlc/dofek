@@ -269,6 +269,7 @@ export async function enqueueActivityRecomputeAnalyticsRefresh(
       removeOnFail: { age: 604_800, count: 100 },
       attempts: 5,
       backoff: { type: "fixed", delay: 30_000 },
+      jobId: `${ACTIVITY_RECOMPUTE_ANALYTICS_JOB_NAME}:${userId}`,
     },
   );
 }

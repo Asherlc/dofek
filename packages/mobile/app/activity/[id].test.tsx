@@ -210,6 +210,8 @@ const mockActivityHrZonesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityPowerZonesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityStrengthExercisesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityListInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockCalendarWeekListInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockCalendarActivityOverviewInvalidate = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
@@ -245,6 +247,10 @@ vi.mock("../../lib/trpc", () => ({
         powerZones: { invalidate: mockActivityPowerZonesInvalidate },
         strengthExercises: { invalidate: mockActivityStrengthExercisesInvalidate },
         list: { invalidate: mockActivityListInvalidate },
+      },
+      calendar: {
+        weekList: { invalidate: mockCalendarWeekListInvalidate },
+        activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate },
       },
     }),
   },
@@ -318,6 +324,8 @@ beforeEach(() => {
   mockActivityPowerZonesInvalidate.mockClear();
   mockActivityStrengthExercisesInvalidate.mockClear();
   mockActivityListInvalidate.mockClear();
+  mockCalendarWeekListInvalidate.mockClear();
+  mockCalendarActivityOverviewInvalidate.mockClear();
   vi.mocked(Alert.alert).mockClear();
   vi.mocked(captureException).mockClear();
   mockByIdQuery.mockReturnValue({ data: baseCyclingActivity, isLoading: false, error: null });
@@ -329,6 +337,11 @@ beforeEach(() => {
 
 describe("ActivityDetailScreen", () => {
   it("recomputes the activity and invalidates detail caches", async () => {
+    let finishByIdInvalidation: () => void = () => {};
+    const byIdInvalidation = new Promise<void>((resolve) => {
+      finishByIdInvalidation = resolve;
+    });
+    mockActivityByIdInvalidate.mockReturnValueOnce(byIdInvalidation);
     const { default: ActivityDetailScreen } = await import("./[id]");
     render(React.createElement(ActivityDetailScreen));
 
@@ -347,6 +360,10 @@ describe("ActivityDetailScreen", () => {
     expect(mockActivityPowerZonesInvalidate).toHaveBeenCalledWith({ id: activityId });
     expect(mockActivityStrengthExercisesInvalidate).toHaveBeenCalledWith({ id: activityId });
     expect(mockActivityListInvalidate).toHaveBeenCalled();
+    expect(mockCalendarWeekListInvalidate).toHaveBeenCalled();
+    expect(mockCalendarActivityOverviewInvalidate).toHaveBeenCalled();
+    expect(screen.getByText("Recomputing...")).toBeTruthy();
+    finishByIdInvalidation();
     await waitFor(() => {
       expect(screen.getByText("Recompute")).toBeTruthy();
     });
