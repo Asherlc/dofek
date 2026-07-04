@@ -505,7 +505,7 @@ export class StravaProvider implements WebhookProvider {
         object_type: z.string(),
         owner_id: z.number(),
         subscription_id: z.number().optional(),
-        updates: z.record(z.unknown()).optional(),
+        updates: z.record(z.string(), z.unknown()).optional(),
       })
       .safeParse(body);
 

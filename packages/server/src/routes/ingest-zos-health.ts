@@ -52,7 +52,7 @@ const activitySchema = z.object({
 });
 
 const ingestPayloadSchema = z.object({
-  dailyMetrics: z.record(dailyMetricsDataSchema).optional(),
+  dailyMetrics: z.record(z.string(), dailyMetricsDataSchema).optional(),
   sleepSessions: z.array(sleepSessionSchema).optional(),
   activities: z.array(activitySchema).optional(),
 });

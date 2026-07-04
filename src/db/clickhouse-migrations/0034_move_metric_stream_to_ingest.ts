@@ -18,7 +18,7 @@ const legacyTableCountRowsSchema = z
 
 function parseLegacyTableCount(rows: unknown): number {
   const [firstRow] = legacyTableCountRowsSchema.parse(rows);
-  return Number(firstRow.count);
+  return Number(firstRow?.count);
 }
 
 async function legacyMetricStreamTableExists(client: ClickHouseCommandClient): Promise<boolean> {

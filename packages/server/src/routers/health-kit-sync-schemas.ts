@@ -46,7 +46,7 @@ export const workoutActivitySchema = z.object({
   activityType: z.number(),
   startDate: z.string(),
   endDate: z.string().optional(),
-  metadata: z.record(z.union([z.string(), z.number()])).optional(),
+  metadata: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
 });
 
 export const workoutSampleSchema = z.object({
@@ -59,7 +59,7 @@ export const workoutSampleSchema = z.object({
   totalDistance: z.number().nullish(),
   sourceName: z.string(),
   sourceBundle: z.string(),
-  metadata: z.record(z.union([z.string(), z.number()])).optional(),
+  metadata: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
   workoutActivities: z.array(workoutActivitySchema).optional(),
 });
 

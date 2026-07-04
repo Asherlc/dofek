@@ -1,4 +1,4 @@
-import type { ZodType, ZodTypeDef } from "zod";
+import type { ZodType } from "zod";
 import { captureException } from "./telemetry";
 
 interface ParseSuccess<T> {
@@ -21,7 +21,7 @@ type SafeParseResult<T> = ParseSuccess<T> | ParseFailure;
  * an empty list when the server response doesn't match the expected shape.
  */
 export function safeParseRows<T>(
-  schema: ZodType<T, ZodTypeDef, unknown>,
+  schema: ZodType<T>,
   rows: unknown,
   context: string,
 ): SafeParseResult<T> {

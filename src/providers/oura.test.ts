@@ -2509,7 +2509,7 @@ describe("OuraProvider.registerWebhook()", () => {
     process.env.OURA_CLIENT_SECRET = "test-client-secret";
 
     const requestBodies: Array<Record<string, unknown>> = [];
-    const requestHeaders: Array<Record<string, string>> = [];
+    const requestHeaders: Array<Record<string, unknown>> = [];
 
     const mockFetch: typeof globalThis.fetch = async (
       _input: RequestInfo | URL,
@@ -2517,10 +2517,10 @@ describe("OuraProvider.registerWebhook()", () => {
     ): Promise<Response> => {
       const headers = init?.headers;
       if (headers && typeof headers === "object" && !Array.isArray(headers)) {
-        requestHeaders.push(z.record(z.string()).parse(headers));
+        requestHeaders.push(z.record(z.string(), z.unknown()).parse(headers));
       }
       if (init?.body) {
-        const bodyParsed = z.record(z.unknown()).parse(JSON.parse(String(init.body)));
+        const bodyParsed = z.record(z.string(), z.unknown()).parse(JSON.parse(String(init.body)));
         requestBodies.push(bodyParsed);
       }
       return Response.json({ id: "sub-first-type" });
@@ -2635,7 +2635,7 @@ describe("OuraProvider.unregisterWebhook()", () => {
 
     let capturedUrl = "";
     let capturedMethod = "";
-    let capturedHeaders: Record<string, string> = {};
+    let capturedHeaders: Record<string, unknown> = {};
 
     const mockFetch: typeof globalThis.fetch = async (
       input: RequestInfo | URL,
@@ -2644,7 +2644,7 @@ describe("OuraProvider.unregisterWebhook()", () => {
       capturedUrl = input.toString();
       capturedMethod = init?.method ?? "GET";
       if (init?.headers && typeof init.headers === "object" && !Array.isArray(init.headers)) {
-        capturedHeaders = z.record(z.string()).parse(init.headers);
+        capturedHeaders = z.record(z.string(), z.unknown()).parse(init.headers);
       }
       return new Response(null, { status: 204 });
     };
@@ -2960,7 +2960,7 @@ describe("OuraProvider.syncWebhookEvent()", () => {
     const healthEventBatches = db.values.mock.calls
       .map((callArgs) => recordArraySchema.safeParse(callArgs[0]))
       .filter(
-        (parsed): parsed is z.SafeParseSuccess<Array<Record<string, unknown>>> => parsed.success,
+        (parsed): parsed is z.ZodSafeParseSuccess<Array<Record<string, unknown>>> => parsed.success,
       )
       .map((parsed) => parsed.data)
       .filter(

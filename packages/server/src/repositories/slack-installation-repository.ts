@@ -14,7 +14,7 @@ const botCredentialsRowSchema = z.object({
 });
 
 const rawInstallationRowSchema = z.object({
-  raw_installation: z.union([z.string(), z.record(z.unknown())]),
+  raw_installation: z.union([z.string(), z.record(z.string(), z.unknown())]),
 });
 
 function slackCredentialContext(
