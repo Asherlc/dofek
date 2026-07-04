@@ -100,6 +100,28 @@ describe("cache module environment selection", () => {
     expect(client.srem).not.toHaveBeenCalled();
   });
 
+  it("evicts invalid Redis payloads and treats them as cache misses", async () => {
+    const client = {
+      set: vi.fn(async () => "OK" as const),
+      get: vi.fn(async () => ""),
+      del: vi.fn(async () => 1),
+      sadd: vi.fn(async () => 0),
+      smembers: vi.fn(async () => []),
+      srem: vi.fn(async () => 1),
+    };
+
+    const module = await import("dofek/lib/cache");
+    const store = new module.RedisCacheStore(async () => client);
+
+    await expect(store.get("user-1:sync.dataHealth:undefined")).resolves.toBeUndefined();
+
+    expect(client.del).toHaveBeenCalledWith("query-cache:data:user-1:sync.dataHealth:undefined");
+    expect(client.srem).toHaveBeenCalledWith(
+      "query-cache:keys",
+      "query-cache:data:user-1:sync.dataHealth:undefined",
+    );
+  });
+
   it("skips Redis deletes when invalidateAll sees an empty registry", async () => {
     const client = {
       set: vi.fn(async () => "OK" as const),
