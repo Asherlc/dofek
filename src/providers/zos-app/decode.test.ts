@@ -321,4 +321,15 @@ describe("decodeBin", () => {
     expect(result.locationSamples[0]?.longitude).toBeCloseTo(-122.4194);
     expect(result.locationSamples[0]?.altitude).toBeCloseTo(18);
   });
+
+  it("throws on a truncated v2 chunk header", () => {
+    const header = createHeader({
+      formatVersion: 2,
+      hasGyro: false,
+      sampleCount: 0,
+    });
+    const buffer = concat(header, new Uint8Array([1]).buffer);
+
+    expect(() => decodeBin(buffer)).toThrow("Truncated v2 chunk header: 1 trailing bytes");
+  });
 });

@@ -232,6 +232,10 @@ function decodeV2Chunks(
     throw new Error(`Unsupported v2 chunk type: ${chunkType}`);
   }
 
+  if (offset !== view.byteLength) {
+    throw new Error(`Truncated v2 chunk header: ${view.byteLength - offset} trailing bytes`);
+  }
+
   return { samples, physicalSamples, locationSamples };
 }
 
