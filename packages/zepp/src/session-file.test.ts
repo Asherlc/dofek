@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createHeader } from "./imu-format.ts";
 
 type FileWriteArg = { path: string; data: ArrayBuffer };
 type FileReadArg = { path: string; options: { encoding: string } };
@@ -26,6 +27,7 @@ vi.mock("@zos/fs", () => ({
 import {
   appendPhysicalSamples,
   appendSamples,
+  appendSessionSamples,
   finalizeSessionFile,
   resetSessionFile,
 } from "./session-file.ts";
@@ -115,6 +117,52 @@ describe("appendPhysicalSamples", () => {
     const locationChunkOffset = 4 + 16;
     expect(view.getUint8(locationChunkOffset)).toBe(3);
     expect(view.getUint16(locationChunkOffset + 2, true)).toBe(1);
+  });
+});
+
+describe("appendSessionSamples", () => {
+  it("writes a v2 stream with typed imu, scalar, and location chunks", () => {
+    const header = createHeader({
+      formatVersion: 2,
+      hasGyro: true,
+      sessionStartMs: 1000,
+      sampleCount: 1,
+      accelFreqMode: 2,
+      gyroFreqMode: 2,
+      observedHzX100: 2600,
+    });
+
+    appendSessionSamples({
+      imuSamples: [{ tMs: 5, ax: 1, ay: 2, az: 3, gx: 4, gy: 5, gz: 6 }],
+      scalarSamples: [{ tMs: 10, channel: "heartRate", value: 72 }],
+      locationSamples: [{ tMs: 20, latitude: 37.1, longitude: -122.1 }],
+      hasGyro: true,
+      path: SESSION_FILE,
+    });
+
+    const writeCalls = mockWriteSync.mock.calls;
+    const writeFirstCall = writeCalls[0];
+    if (!writeFirstCall) throw new Error("expected writeSync to be called");
+
+    const appended = writeFirstCall[0].data;
+    const headerView = new DataView(header);
+    expect(headerView.getUint8(4)).toBe(2);
+    const view = new DataView(appended);
+
+    expect(view.getUint8(0)).toBe(1);
+    expect(view.getUint8(1)).toBe(1);
+    expect(view.getUint16(2, true)).toBe(1);
+    expect(view.getUint32(4, true)).toBe(5);
+
+    const scalarChunkOffset = 4 + 28;
+    expect(view.getUint8(scalarChunkOffset)).toBe(2);
+    expect(view.getUint16(scalarChunkOffset + 2, true)).toBe(1);
+    expect(view.getUint32(scalarChunkOffset + 4, true)).toBe(10);
+
+    const locationChunkOffset = scalarChunkOffset + 4 + 16;
+    expect(view.getUint8(locationChunkOffset)).toBe(3);
+    expect(view.getUint16(locationChunkOffset + 2, true)).toBe(1);
+    expect(view.getUint32(locationChunkOffset + 4, true)).toBe(20);
   });
 });
 

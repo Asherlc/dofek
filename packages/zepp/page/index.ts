@@ -32,8 +32,7 @@ import { collectHealthData } from "../src/health-collector.ts";
 import { createImuCollector, FREQ_MODES } from "../src/imu-collector.ts";
 import { createPhysicalSensorCollector } from "../src/physical-sensor-collector.ts";
 import {
-  appendPhysicalSamples,
-  appendSamples,
+  appendSessionSamples,
   finalizeSessionFile,
   resetSessionFile,
 } from "../src/session-file.ts";
@@ -299,6 +298,7 @@ Page(
 
         resetSessionFile(
           {
+            formatVersion: 2,
             hasGyro: collector.hasGyroscope,
             sessionStartMs,
             sampleCount: 0,
@@ -348,17 +348,19 @@ Page(
 
     flushBuffer(finalize: boolean) {
       const path = this.activeFilePath();
-      if (this.state.pendingBuffer.length) {
-        appendSamples(this.state.pendingBuffer, this.state.hasGyro, path);
-        this.state.pendingBuffer = [];
-      }
-
-      if (this.state.pendingScalarSamples.length || this.state.pendingLocationSamples.length) {
-        appendPhysicalSamples(
-          this.state.pendingScalarSamples,
-          this.state.pendingLocationSamples,
+      if (
+        this.state.pendingBuffer.length ||
+        this.state.pendingScalarSamples.length ||
+        this.state.pendingLocationSamples.length
+      ) {
+        appendSessionSamples({
+          imuSamples: this.state.pendingBuffer,
+          scalarSamples: this.state.pendingScalarSamples,
+          locationSamples: this.state.pendingLocationSamples,
+          hasGyro: this.state.hasGyro,
           path,
-        );
+        });
+        this.state.pendingBuffer = [];
         this.state.pendingScalarSamples = [];
         this.state.pendingLocationSamples = [];
       }
@@ -422,6 +424,7 @@ Page(
         const sessionStartMs = Date.now();
         resetSessionFile(
           {
+            formatVersion: 2,
             hasGyro: this.state.hasGyro,
             sessionStartMs,
             sampleCount: 0,

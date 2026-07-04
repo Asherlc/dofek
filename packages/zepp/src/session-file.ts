@@ -13,6 +13,7 @@ import {
   concatArrayBuffers,
   createHeader,
   encodeChunk,
+  encodeImuChunk,
   encodeLocationChunk,
   encodePhysicalScalarChunk,
   HEADER_SIZE,
@@ -20,7 +21,18 @@ import {
 } from "./imu-format.ts";
 import type { ImuSample, LocationSample, PhysicalScalarSample, SessionFileMeta } from "./types.ts";
 
-export function resetSessionFile(meta: SessionFileMeta, path: string): void {
+interface SessionSamples {
+  imuSamples: ImuSample[];
+  scalarSamples: PhysicalScalarSample[];
+  locationSamples: LocationSample[];
+  hasGyro: boolean;
+  path: string;
+}
+
+export function resetSessionFile(
+  meta: SessionFileMeta & { formatVersion?: number },
+  path: string,
+): void {
   const header = createHeader(meta);
   writeFileSync({ path, data: header });
 }
@@ -49,6 +61,38 @@ export function appendPhysicalSamples(
   if (!scalarSamples.length && !locationSamples.length) return;
 
   const chunks: ArrayBuffer[] = [];
+  if (scalarSamples.length) {
+    chunks.push(encodePhysicalScalarChunk(scalarSamples));
+  }
+  if (locationSamples.length) {
+    chunks.push(encodeLocationChunk(locationSamples));
+  }
+
+  const fd = openSync({
+    path,
+    flag: O_WRONLY | O_APPEND | O_CREAT,
+  });
+
+  try {
+    writeSync({ fd, data: concatArrayBuffers(chunks) });
+  } finally {
+    closeSync({ fd });
+  }
+}
+
+export function appendSessionSamples({
+  imuSamples,
+  scalarSamples,
+  locationSamples,
+  hasGyro,
+  path,
+}: SessionSamples): void {
+  if (!imuSamples.length && !scalarSamples.length && !locationSamples.length) return;
+
+  const chunks: ArrayBuffer[] = [];
+  if (imuSamples.length) {
+    chunks.push(encodeImuChunk(imuSamples, hasGyro));
+  }
   if (scalarSamples.length) {
     chunks.push(encodePhysicalScalarChunk(scalarSamples));
   }

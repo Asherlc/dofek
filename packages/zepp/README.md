@@ -136,21 +136,22 @@ data://imu/session.bin
 
 ## Binary format
 
-The file begins with a fixed 32-byte header, followed by append-only chunks. The original IMU
-chunk layout remains supported for accelerometer/gyroscope samples. Physical sensor data uses the
-v2 typed chunk layout appended to the same stream.
+The file begins with a fixed 32-byte header, followed by append-only chunks. Current Dofek Zepp
+recordings use format version `2` and typed chunks for all sample families: IMU, scalar physical
+sensors, and passive location. Legacy version `1` IMU-only files remain decode-only compatibility
+for older exports.
 
 | Section | Size | Contents |
 |---|---|---|---|
 | Header | 32 bytes | magic `IUM1` (LE bytes of `0x314D5549`), version (uint8), flags (uint8), reserved (uint16), session start unix ms (uint64), sample count (uint32), accel freq mode (uint8), gyro freq mode (uint8), measured Hz×100 (uint16), padding |
-| Legacy IMU chunk | 4 + N×record | `uint16 count`, reserved `uint16`, records |
-| Legacy IMU record (accel) | 16 bytes | `uint32 t_ms`, `float32 ax`, `float32 ay`, `float32 az` |
-| Legacy IMU record (+gyro) | 28 bytes | above + `float32 gx`, `float32 gy`, `float32 gz` |
 | v2 typed chunk header | 4 bytes | `uint8 type`, `uint8 flags`, `uint16 count` |
 | v2 type `1` IMU record (accel) | 16 bytes | `uint32 t_ms`, `float32 ax`, `float32 ay`, `float32 az` |
 | v2 type `1` IMU record (+gyro) | 28 bytes | above + `float32 gx`, `float32 gy`, `float32 gz`; flags bit `1` means gyro fields are present |
 | v2 type `2` scalar record | 16 bytes | `uint32 t_ms`, `uint8 channel`, `uint8 status`, reserved `uint16`, `float64 value` |
 | v2 type `3` location record | 24 bytes | `uint32 t_ms`, `float64 latitude`, `float64 longitude`, `float32 altitude` (`NaN` when absent) |
+| Legacy v1 IMU chunk | 4 + N×record | `uint16 count`, reserved `uint16`, records; older IMU-only exports only |
+| Legacy v1 IMU record (accel) | 16 bytes | `uint32 t_ms`, `float32 ax`, `float32 ay`, `float32 az` |
+| Legacy v1 IMU record (+gyro) | 28 bytes | above + `float32 gx`, `float32 gy`, `float32 gz` |
 
 Scalar channel ids: `1` heart rate, `2` blood oxygen saturation, `3` stress, `4` body
 temperature, `5` barometric pressure, `6` altitude, `7` compass heading.
