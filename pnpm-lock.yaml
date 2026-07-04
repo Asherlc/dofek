@@ -362,8 +362,8 @@ importers:
         specifier: 3.2.9
         version: 3.2.9
       '@formatjs/intl-locale':
-        specifier: 5.3.8
-        version: 5.3.8
+        specifier: 5.3.9
+        version: 5.3.9
       '@formatjs/intl-numberformat':
         specifier: 9.3.10
         version: 9.3.10
@@ -2673,11 +2673,17 @@ packages:
   '@formatjs/fast-memoize@3.1.5':
     resolution: {integrity: sha512-KLi3fan6WnCHmigd9pmEEN8Hid0v4wiFBW576M/d07KMWYecf1CvyMI3n34vCmHT4AoVqG2n702kiHbXjzZX2A==}
 
+  '@formatjs/fast-memoize@3.1.6':
+    resolution: {integrity: sha512-H5aexk1Le7T9TPmscacZ+1pR6CTa2n1wq+HDVGXhH8TzUlQQpeXzZs91dRtmFHrbeNbjPFPfQujUqm7MHgVoXQ==}
+
+  '@formatjs/intl-getcanonicallocales@3.2.10':
+    resolution: {integrity: sha512-iH9faynSJ7EO8h7VgMfkjGBMUvmmalyio2dTqB2tSSi8UZuWWfHmeQ/RT+Ztl/SUdrN5tm0SO3218uLQIkCGXw==}
+
   '@formatjs/intl-getcanonicallocales@3.2.9':
     resolution: {integrity: sha512-b1dLzhFSeccG5X1PY2KodVFRGd0p6tBPc7pRBJaW6A7+fMeZnwHOAJLkMsGNDyvM9XailkkstE4jzmNa1GVh5w==}
 
-  '@formatjs/intl-locale@5.3.8':
-    resolution: {integrity: sha512-pJgqQlg4zFoyCiVMXlKPBWpY7fAxvsUiShNmB/l8BW2ZwmFMefMWCrDzgocSH9WR+Z3pkihfjh1XbalCZhXc1Q==}
+  '@formatjs/intl-locale@5.3.9':
+    resolution: {integrity: sha512-h8xk+FFg0R9jZmX2r+75BglH5Bd++7pnCn5veN4Fv9a+E6TiYgD0QnYXbYOzOskLPKaTnFrUFkQ7OYJUasuONw==}
 
   '@formatjs/intl-localematcher@0.8.9':
     resolution: {integrity: sha512-GmB0F/gYh4Hdl4rLWjgDsgT+x4pB54fkJeRh8kAZ4XFzKeCK8dGs+SBJWXO42QZtOUni+IDWKNuCw6wiL4lTvw==}
@@ -2688,8 +2694,8 @@ packages:
   '@formatjs/intl-pluralrules@6.3.9':
     resolution: {integrity: sha512-0405uU1npNs5/N04tfIQ3pme96Xb51tEkCBTBKy8HMjAsssbhnK70gf8v3ogj1WqHf7WFRoFZu8clQTsvwBQNg==}
 
-  '@formatjs/intl-supportedvaluesof@2.3.7':
-    resolution: {integrity: sha512-ZTXEKijV5H08z19odngZPsXlmGndfukHuVnjd9qyER77XSk/yJwDMiSjoJYY5C5WxFs2UN4s/EMtu75e6Tp3ug==}
+  '@formatjs/intl-supportedvaluesof@2.3.8':
+    resolution: {integrity: sha512-webY7Ylc4CRRgxXFxZ4yRIr+9SKZyMLh+Hrsim4vG3HKSpD+T7d9XXvTdd6UDILyXf7BsqAa8l5/Nn2eENWCqw==}
 
   '@garmin/fitsdk@21.195.0':
     resolution: {integrity: sha512-DPTJ4qT091zjcETmPqohil7gdu5FOjemqnaTT/nMdxc+bRylOcSLbiIhAhCr6UtZEnhp1f/BwKhQjQML5WDA9A==}
@@ -15047,12 +15053,16 @@ snapshots:
 
   '@formatjs/fast-memoize@3.1.5': {}
 
+  '@formatjs/fast-memoize@3.1.6': {}
+
+  '@formatjs/intl-getcanonicallocales@3.2.10': {}
+
   '@formatjs/intl-getcanonicallocales@3.2.9': {}
 
-  '@formatjs/intl-locale@5.3.8':
+  '@formatjs/intl-locale@5.3.9':
     dependencies:
-      '@formatjs/intl-getcanonicallocales': 3.2.9
-      '@formatjs/intl-supportedvaluesof': 2.3.7
+      '@formatjs/intl-getcanonicallocales': 3.2.10
+      '@formatjs/intl-supportedvaluesof': 2.3.8
 
   '@formatjs/intl-localematcher@0.8.9':
     dependencies:
@@ -15068,9 +15078,9 @@ snapshots:
       '@formatjs/bigdecimal': 0.2.5
       '@formatjs/intl-localematcher': 0.8.9
 
-  '@formatjs/intl-supportedvaluesof@2.3.7':
+  '@formatjs/intl-supportedvaluesof@2.3.8':
     dependencies:
-      '@formatjs/fast-memoize': 3.1.5
+      '@formatjs/fast-memoize': 3.1.6
 
   '@garmin/fitsdk@21.195.0': {}
 
@@ -17139,9 +17149,7 @@ snapshots:
       metro-runtime: 0.84.4
     transitivePeerDependencies:
       - '@babel/core'
-      - bufferutil
       - supports-color
-      - utf-8-validate
 
   '@react-native/normalize-colors@0.74.89': {}
 
