@@ -77,46 +77,6 @@ const migrationFactories: ClickHouseMigrationFactory[] = [
   createMigration0037,
 ];
 
-export const clickHouseMigrationFileNames = [
-  "0001_clickhouse_analytics_schema_cleanup.ts",
-  "0002_clickhouse_postgres_bridge_and_activity_read_models.ts",
-  "0004_reenable_materialized_metric_stream.ts",
-  "0005_backfill_materialized_metric_stream.ts",
-  "0006_backfill_native_metric_stream.ts",
-  "0007_remaining_postgres_views_to_clickhouse.ts",
-  "0007_repair_legacy_metric_stream_engine.ts",
-  "0008_complete_provider_stats_raw_mirrors.ts",
-  "0009_drop_derived_resting_heart_rate_read_model.ts",
-  "0010_include_standalone_deduped_sensor_samples.ts",
-  "0011_activity_trend_daily_read_model.ts",
-  "0012_repair_metric_stream_backfill.ts",
-  "0013_metric_stream_location_point.ts",
-  "0014_resting_heart_rate_sleep_window_materialized_view.ts",
-  "0015_activity_summary_centroids.ts",
-  "0016_reduce_metric_stream_refresh_load.ts",
-  "0017_body_measurement_sample_projection.ts",
-  "0018_sensor_priority_raw_tables.ts",
-  "0019_non_sensor_read_models_as_views.ts",
-  "0020_incremental_deduped_sensor.ts",
-  "0021_incremental_resting_heart_rate.ts",
-  "0022_incremental_activity_summary.ts",
-  "0023_incremental_activity_vo2max_estimate.ts",
-  "0024_create_dbt_serving_read_model_tables.ts",
-  "0025_recreate_provider_stats_dbt_table.ts",
-  "0026_create_dashboard_tables.ts",
-  "0027_create_daily_sleep_table.ts",
-  "0028_create_domain_dashboard_tables.ts",
-  "0029_activity_provider_absence.ts",
-  "0030_activity_mirror_order_key.ts",
-  "0031_activity_user_soft_delete.ts",
-  "0032_deduped_activities_absent_source_links.ts",
-  "0033_recreate_deduped_activities_column_order.ts",
-  "0034_move_metric_stream_to_ingest.ts",
-  "0035_activity_summary_power_climbing_columns.ts",
-  "0036_activity_sensor_summary_power_climbing_columns.ts",
-  "0037_sleep_session_is_nap.ts",
-] as const;
-
 export function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigration[] {
   return migrationFactories.map((createMigration) => createMigration(postgresConnectionString));
 }
