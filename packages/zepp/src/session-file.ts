@@ -9,8 +9,16 @@ import {
   writeFileSync,
   writeSync,
 } from "@zos/fs";
-import { createHeader, encodeChunk, HEADER_SIZE, patchHeaderSampleCount } from "./imu-format.ts";
-import type { ImuSample, SessionFileMeta } from "./types.ts";
+import {
+  concatArrayBuffers,
+  createHeader,
+  encodeChunk,
+  encodeLocationChunk,
+  encodePhysicalScalarChunk,
+  HEADER_SIZE,
+  patchHeaderSampleCount,
+} from "./imu-format.ts";
+import type { ImuSample, LocationSample, PhysicalScalarSample, SessionFileMeta } from "./types.ts";
 
 export function resetSessionFile(meta: SessionFileMeta, path: string): void {
   const header = createHeader(meta);
@@ -28,6 +36,33 @@ export function appendSamples(samples: ImuSample[], hasGyro: boolean, path: stri
 
   try {
     writeSync({ fd, data: chunk });
+  } finally {
+    closeSync({ fd });
+  }
+}
+
+export function appendPhysicalSamples(
+  scalarSamples: PhysicalScalarSample[],
+  locationSamples: LocationSample[],
+  path: string,
+): void {
+  if (!scalarSamples.length && !locationSamples.length) return;
+
+  const chunks: ArrayBuffer[] = [];
+  if (scalarSamples.length) {
+    chunks.push(encodePhysicalScalarChunk(scalarSamples));
+  }
+  if (locationSamples.length) {
+    chunks.push(encodeLocationChunk(locationSamples));
+  }
+
+  const fd = openSync({
+    path,
+    flag: O_WRONLY | O_APPEND | O_CREAT,
+  });
+
+  try {
+    writeSync({ fd, data: concatArrayBuffers(chunks) });
   } finally {
     closeSync({ fd });
   }

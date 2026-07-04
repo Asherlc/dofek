@@ -8,12 +8,15 @@ import { writeFileSync } from "@zos/fs";
 import { showToast } from "@zos/interaction";
 import {
   Accelerometer,
+  Barometer,
   BloodOxygen,
   BodyTemperature,
   Calorie,
+  Compass,
   checkSensor,
   Distance,
   FatBurning,
+  Geolocation,
   Gyroscope,
   HeartRate,
   Pai,
@@ -27,7 +30,13 @@ import { log as Logger, px } from "@zos/utils";
 
 import { collectHealthData } from "../src/health-collector.ts";
 import { createImuCollector, FREQ_MODES } from "../src/imu-collector.ts";
-import { appendSamples, finalizeSessionFile, resetSessionFile } from "../src/session-file.ts";
+import { createPhysicalSensorCollector } from "../src/physical-sensor-collector.ts";
+import {
+  appendPhysicalSamples,
+  appendSamples,
+  finalizeSessionFile,
+  resetSessionFile,
+} from "../src/session-file.ts";
 import {
   AUTO_TRANSFER_SAMPLE_COUNT,
   FLUSH_SAMPLE_THRESHOLD,
@@ -36,7 +45,7 @@ import {
   SESSION_FILE_B,
   SESSION_META_FILE,
 } from "../src/storage-keys.ts";
-import type { ImuSample } from "../src/types.ts";
+import type { ImuSample, LocationSample, PhysicalScalarSample } from "../src/types.ts";
 
 type ActiveFileSlot = "A" | "B";
 type TransferTask = {
@@ -97,7 +106,10 @@ Page(
       enableGyro: false,
       freqModeIndex: 1,
       pendingBuffer: emptyArray<ImuSample>(),
+      pendingScalarSamples: emptyArray<PhysicalScalarSample>(),
+      pendingLocationSamples: emptyArray<LocationSample>(),
       collector: nullable<ReturnType<typeof createImuCollector>>(),
+      physicalCollector: nullable<ReturnType<typeof createPhysicalSensorCollector>>(),
       hasGyro: false,
       transferTask: nullable<TransferTask>(),
       failedTransfer: nullable<FailedTransfer>(),
@@ -263,14 +275,32 @@ Page(
         this.state.collector = collector;
         this.state.hasGyro = collector.hasGyroscope;
         this.state.pendingBuffer = [];
+        this.state.pendingScalarSamples = [];
+        this.state.pendingLocationSamples = [];
         this.state.sampleCount = 0;
         this.state.observedHzX100 = 0;
         this.state.activeFile = "A";
+        const sessionStartMs = Date.now();
+        const physicalCollector = createPhysicalSensorCollector(
+          {
+            onScalarSample: (sample) => {
+              this.state.pendingScalarSamples.push(sample);
+            },
+            onLocationSample: (sample) => {
+              this.state.pendingLocationSamples.push(sample);
+            },
+            onStatus: (status) => {
+              logger.log("physical sensors %j", status);
+            },
+          },
+          { now: Date.now, HeartRate, BloodOxygen, Barometer, Compass, Geolocation },
+        );
+        this.state.physicalCollector = physicalCollector;
 
         resetSessionFile(
           {
             hasGyro: collector.hasGyroscope,
-            sessionStartMs: Date.now(),
+            sessionStartMs,
             sampleCount: 0,
             accelFreqMode: collector.accelMode,
             gyroFreqMode: collector.gyroMode ?? 0,
@@ -279,6 +309,7 @@ Page(
           this.activeFilePath(),
         );
 
+        physicalCollector.start(sessionStartMs);
         collector.start();
         this.state.logging = true;
 
@@ -317,15 +348,20 @@ Page(
 
     flushBuffer(finalize: boolean) {
       const path = this.activeFilePath();
-      if (!this.state.pendingBuffer.length) {
-        if (finalize) {
-          finalizeSessionFile(this.state.sampleCount, this.state.observedHzX100, path);
-        }
-        return;
+      if (this.state.pendingBuffer.length) {
+        appendSamples(this.state.pendingBuffer, this.state.hasGyro, path);
+        this.state.pendingBuffer = [];
       }
 
-      appendSamples(this.state.pendingBuffer, this.state.hasGyro, path);
-      this.state.pendingBuffer = [];
+      if (this.state.pendingScalarSamples.length || this.state.pendingLocationSamples.length) {
+        appendPhysicalSamples(
+          this.state.pendingScalarSamples,
+          this.state.pendingLocationSamples,
+          path,
+        );
+        this.state.pendingScalarSamples = [];
+        this.state.pendingLocationSamples = [];
+      }
 
       if (finalize) {
         finalizeSessionFile(this.state.sampleCount, this.state.observedHzX100, path);
@@ -338,6 +374,7 @@ Page(
       }
 
       this.state.logging = false;
+      this.state.physicalCollector?.stop();
       this.state.collector?.stop();
       this.flushBuffer(true);
       this.writeMetaFile();
@@ -365,6 +402,7 @@ Page(
       }
 
       // Flush pending samples and finalize the current file before handing it off
+      this.state.physicalCollector?.stop();
       this.flushBuffer(false);
       finalizeSessionFile(this.state.sampleCount, this.state.observedHzX100, outgoingPath);
 
@@ -376,13 +414,16 @@ Page(
       this.state.sampleCount = 0;
       this.state.observedHzX100 = 0;
       this.state.pendingBuffer = [];
+      this.state.pendingScalarSamples = [];
+      this.state.pendingLocationSamples = [];
 
       const collector = this.state.collector;
       if (collector?.available) {
+        const sessionStartMs = Date.now();
         resetSessionFile(
           {
             hasGyro: this.state.hasGyro,
-            sessionStartMs: Date.now(),
+            sessionStartMs,
             sampleCount: 0,
             accelFreqMode: collector.accelMode,
             gyroFreqMode: collector.gyroMode ?? 0,
@@ -390,6 +431,7 @@ Page(
           },
           this.activeFilePath(),
         );
+        this.state.physicalCollector?.start(sessionStartMs);
       }
 
       this.publishSessionStatus("logging");

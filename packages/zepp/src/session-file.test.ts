@@ -23,7 +23,12 @@ vi.mock("@zos/fs", () => ({
   O_CREAT: 8,
 }));
 
-import { appendSamples, finalizeSessionFile, resetSessionFile } from "./session-file.ts";
+import {
+  appendPhysicalSamples,
+  appendSamples,
+  finalizeSessionFile,
+  resetSessionFile,
+} from "./session-file.ts";
 
 const SESSION_FILE = "data://imu/session.bin";
 const HEADER_SIZE = 32;
@@ -81,6 +86,35 @@ describe("appendSamples", () => {
     const writeFirstCall = writeCalls[0];
     if (!writeFirstCall) throw new Error("expected writeSync to be called");
     expect(writeFirstCall[0].data.byteLength).toBe(4 + 28);
+  });
+});
+
+describe("appendPhysicalSamples", () => {
+  it("appends physical sensor chunks", () => {
+    appendPhysicalSamples(
+      [{ tMs: 10, channel: "heartRate", value: 72 }],
+      [{ tMs: 20, latitude: 37.1, longitude: -122.1 }],
+      SESSION_FILE,
+    );
+
+    expect(mockOpenSync).toHaveBeenCalledWith({
+      path: SESSION_FILE,
+      flag: 1 | 4 | 8,
+    });
+    expect(mockWriteSync).toHaveBeenCalledTimes(1);
+    expect(mockCloseSync).toHaveBeenCalledTimes(1);
+
+    const writeCalls = mockWriteSync.mock.calls;
+    const writeFirstCall = writeCalls[0];
+    if (!writeFirstCall) throw new Error("expected writeSync to be called");
+
+    const view = new DataView(writeFirstCall[0].data);
+    expect(view.getUint8(0)).toBe(2);
+    expect(view.getUint16(2, true)).toBe(1);
+
+    const locationChunkOffset = 4 + 16;
+    expect(view.getUint8(locationChunkOffset)).toBe(3);
+    expect(view.getUint16(locationChunkOffset + 2, true)).toBe(1);
   });
 });
 
