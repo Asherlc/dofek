@@ -16,7 +16,7 @@ dependencies = [
 training = [
     "boto3>=1.35.0",
     "scikit-learn>=1.9.0",
-    "torch>=2.5.0",
+    "torch>=2.12.1",
 ]
 
 [project.scripts]
