@@ -175,6 +175,7 @@ tombstoned AS (
     activity.id AS id,
     activity.user_id AS user_id,
     activity.provider_id AS provider_id,
+    activity.activity_type AS activity_type,
     activity.external_id AS external_id,
     activity.started_at AS started_at,
     activity.ended_at AS ended_at,
@@ -190,6 +191,8 @@ clusterable AS (
   SELECT
     ranked.id AS id,
     ranked.user_id AS user_id,
+    ranked.provider_id AS provider_id,
+    ranked.activity_type AS activity_type,
     ranked.started_at AS started_at,
     coalesce(ranked.ended_at, ranked.started_at + INTERVAL 1 HOUR) AS ended_at
   FROM ranked
@@ -197,6 +200,8 @@ clusterable AS (
   SELECT
     tombstoned.id AS id,
     tombstoned.user_id AS user_id,
+    tombstoned.provider_id AS provider_id,
+    tombstoned.activity_type AS activity_type,
     tombstoned.started_at AS started_at,
     coalesce(tombstoned.ended_at, tombstoned.started_at + INTERVAL 1 HOUR) AS ended_at
   FROM tombstoned
@@ -209,15 +214,29 @@ pairs AS (
   INNER JOIN clusterable AS right_activity
     ON left_activity.user_id = right_activity.user_id
    AND toString(left_activity.id) < toString(right_activity.id)
-   AND dateDiff(
-      'second',
-      greatest(left_activity.started_at, right_activity.started_at),
-      least(left_activity.ended_at, right_activity.ended_at)
-    ) / nullIf(dateDiff(
-      'second',
-      least(left_activity.started_at, right_activity.started_at),
-      greatest(left_activity.ended_at, right_activity.ended_at)
-    ), 0) > 0.8
+   AND (
+     dateDiff(
+        'second',
+        greatest(left_activity.started_at, right_activity.started_at),
+        least(left_activity.ended_at, right_activity.ended_at)
+      ) / nullIf(dateDiff(
+        'second',
+        least(left_activity.started_at, right_activity.started_at),
+        greatest(left_activity.ended_at, right_activity.ended_at)
+      ), 0) > 0.8
+      OR (
+        left_activity.provider_id != right_activity.provider_id
+        AND left_activity.activity_type = right_activity.activity_type
+        AND dateDiff(
+          'second',
+          greatest(left_activity.started_at, right_activity.started_at),
+          least(left_activity.ended_at, right_activity.ended_at)
+        ) / nullIf(least(
+          dateDiff('second', left_activity.started_at, left_activity.ended_at),
+          dateDiff('second', right_activity.started_at, right_activity.ended_at)
+        ), 0) > 0.8
+      )
+    )
 ),
 graph_edges AS (
   SELECT id1 AS from_id, id2 AS to_id
