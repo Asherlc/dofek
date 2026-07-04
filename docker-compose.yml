@@ -167,7 +167,7 @@ services:
         condition: service_started
 
   collector:
-    image: otel/opentelemetry-collector-contrib:0.149.0
+    image: otel/opentelemetry-collector-contrib:0.155.0
     restart: unless-stopped
     user: "0:0"
     environment:
