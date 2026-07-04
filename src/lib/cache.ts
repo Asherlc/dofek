@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import { RedisConnection } from "bullmq";
 import { getRedisConnection } from "dofek/jobs/queues";
 
@@ -87,7 +88,20 @@ export class RedisCacheStore implements CacheStore {
       await client.srem(CACHE_KEY_REGISTRY, cacheKey);
       return undefined;
     }
-    return JSON.parse(payload);
+    try {
+      return JSON.parse(payload);
+    } catch (error) {
+      Sentry.captureException(error, { tags: { cacheStore: "redis", cacheOperation: "get" } });
+      try {
+        await client.del(cacheKey);
+        await client.srem(CACHE_KEY_REGISTRY, cacheKey);
+      } catch (cleanupError) {
+        Sentry.captureException(cleanupError, {
+          tags: { cacheStore: "redis", cacheOperation: "evictInvalidPayload" },
+        });
+      }
+      return undefined;
+    }
   }
 
   async set<T>(key: string, data: T, ttlMs: number): Promise<void> {

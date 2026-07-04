@@ -11555,3 +11555,27 @@ new incremental tables are populated.
 - **Remaining risk:** Some unrelated long-running GitHub jobs were still pending
   when this note was added, but the attached root failure and dependent gate
   failures were remediated.
+
+## 2026-07-04 — Data readiness unavailable from corrupt Redis query cache payload
+
+- **Symptoms:** The web dashboard displayed `Data readiness is unavailable` with
+  `Unexpected end of JSON input`.
+- **User impact:** Data-readiness status could not render even though the
+  underlying `sync.dataHealth` query could be recomputed.
+- **Evidence:** `sync.dataHealth` is a cached protected query. The Redis cache
+  implementation read `query-cache:data:<key>` and called `JSON.parse(payload)`
+  directly. A focused regression using an empty Redis payload reproduced the
+  same fatal `SyntaxError: Unexpected end of JSON input`.
+- **Root cause:** `RedisCacheStore.get()` treated corrupt cache bytes as a
+  request failure instead of evicting the unusable cache entry and allowing the
+  tRPC query to miss and recompute.
+- **Fix / mitigation:** `RedisCacheStore.get()` now reports the decode failure
+  to Sentry, deletes the corrupt Redis data key, removes it from the cache-key
+  registry, and returns `undefined` so callers proceed as a cache miss.
+- **Validation:** `pnpm vitest run packages/server/src/lib/cache-module.test.ts`
+  first failed on the reproduced parse error, then passed after the fix.
+  Adjacent cache suites also passed:
+  `pnpm vitest run packages/server/src/lib/cache.test.ts packages/server/src/lib/cache-extended.test.ts`.
+- **Remaining risk:** The original producer of the empty Redis payload was not
+  identified from local evidence. Future Sentry events with
+  `cacheStore=redis` and `cacheOperation=get` should be inspected if this recurs.
