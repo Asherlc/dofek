@@ -398,7 +398,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
-      - uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.TF_PLUGIN_CACHE_DIR }}
           key: terraform-provider-v1-${{ runner.os }}-${{ hashFiles('deploy/.terraform.lock.hcl') }}
@@ -442,7 +442,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             packages/mobile/modules/health-kit/.build
@@ -798,7 +798,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: packages/mobile/modules/health-kit/.build
           key: swift-build-v1-${{ hashFiles('packages/mobile/modules/health-kit/Package.swift') }}
@@ -1036,12 +1036,12 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: packages/mobile/modules/health-kit/.build
           key: swift-build-v1-${{ hashFiles('packages/mobile/modules/health-kit/Package.swift') }}
           restore-keys: swift-build-v1-
-      - uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: muter-cache
         with:
           path: /opt/homebrew/Cellar/muter
