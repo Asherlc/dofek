@@ -58,7 +58,7 @@ services:
       retries: 10
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     restart: unless-stopped
     ports:
       - "127.0.0.1:${REDIS_PORT:-0}:6379"
