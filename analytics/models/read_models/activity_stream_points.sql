@@ -8,8 +8,6 @@
     }
 ) }}
 
-{% set max_points = var('activity_stream_points_max_points', 500) %}
-
 WITH target_state AS (
     SELECT
         {% if is_incremental() %}
@@ -156,33 +154,12 @@ combined_sample_times AS (
     FROM location_points
 ),
 
-ranked_sample_times AS (
-    SELECT
-        user_id,
-        activity_id,
-        recorded_at,
-        row_number() OVER (
-            PARTITION BY user_id, activity_id
-            ORDER BY recorded_at
-        ) AS point_index,
-        count() OVER (
-            PARTITION BY user_id, activity_id
-        ) AS point_count
-    FROM combined_sample_times
-),
-
 sample_times AS (
     SELECT
         user_id,
         activity_id,
         recorded_at
-    FROM ranked_sample_times
-    WHERE point_index = 1
-        OR point_index = point_count
-        OR modulo(
-            point_index - 1,
-            greatest(1, intDiv(point_count + {{ max_points }} - 1, {{ max_points }}))
-        ) = 0
+    FROM combined_sample_times
 ),
 
 point_rows AS (
