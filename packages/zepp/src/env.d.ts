@@ -39,6 +39,9 @@ declare module "@zos/sensor" {
   }
 
   export class HeartRate {
+    getCurrent(): number;
+    onCurrentChange(callback: () => void): void;
+    offCurrentChange(callback: () => void): void;
     getToday(): number[];
     getResting(): number;
     getDailySummary(): { maximum?: { hr_value: number; time: number } };
@@ -73,9 +76,37 @@ declare module "@zos/sensor" {
   }
 
   export class BloodOxygen {
-    getCurrent(): { value: number };
+    start(): void;
+    stop(): void;
+    getCurrent(): { value?: number; status?: number };
+    onChange(callback: () => void): void;
+    offChange(callback: () => void): void;
     getLastDay(): number[];
     getLastFewHour(hours: number): Array<{ spo2: number; time: number }>;
+  }
+
+  export class Barometer {
+    getAirPressure(): number;
+    getAltitude(): number;
+    onChange(callback: () => void): void;
+    offChange(callback: () => void): void;
+  }
+
+  export class Compass {
+    start(): void;
+    stop(): void;
+    getStatus(): boolean;
+    getDirectionAngle(): number | "INVALID";
+    onChange(callback: () => void): void;
+    offChange(callback: () => void): void;
+  }
+
+  export class Geolocation {
+    getStatus(): string;
+    getLatitude(option?: { format?: "DD" }): number;
+    getLongitude(option?: { format?: "DD" }): number;
+    onChange(callback: () => void): void;
+    offChange(callback: () => void): void;
   }
 
   export class BodyTemperature {
@@ -101,7 +132,16 @@ declare module "@zos/sensor" {
     getCurrent(): number;
   }
 
-  export function checkSensor(sensor: new () => Accelerometer | Gyroscope): boolean;
+  export type SensorConstructor =
+    | (new () => Accelerometer)
+    | (new () => Gyroscope)
+    | (new () => HeartRate)
+    | (new () => BloodOxygen)
+    | (new () => Barometer)
+    | (new () => Compass)
+    | (new () => Geolocation);
+
+  export function checkSensor(sensor: SensorConstructor): boolean;
 }
 
 declare module "@zos/utils" {
