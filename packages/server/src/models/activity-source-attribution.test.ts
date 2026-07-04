@@ -109,6 +109,7 @@ describe("ActivitySourceAttribution", () => {
         {
           providerId: "strava",
           externalId: "99999",
+          subsource: "Strong",
           providerAbsentAt: "2026-03-05T14:30:00.000Z",
         },
       ],
@@ -117,6 +118,7 @@ describe("ActivitySourceAttribution", () => {
     expect(partial.partialAbsentSources()).toEqual([
       {
         providerId: "strava",
+        subsource: "Strong",
         providerAbsentAt: "2026-03-05T14:30:00.000Z",
       },
     ]);
@@ -148,6 +150,24 @@ describe("ActivitySourceAttribution", () => {
     expect(partial.partialAbsenceSummary(mockLookup)).toMatch(/Strava removed · Mar 5,/);
     expect(full.hasPartialAbsence).toBe(false);
     expect(full.partialAbsenceSummary(mockLookup)).toBeNull();
+  });
+
+  it("uses source app labels in partial absence summaries", () => {
+    const partial = ActivitySourceAttribution.fromEntries(
+      [{ providerId: "apple_health", externalId: "active-whoop", subsource: "WHOOP" }],
+      [
+        {
+          providerId: "apple_health",
+          externalId: "removed-strong",
+          providerAbsentAt: "2026-03-05T14:30:00.000Z",
+          subsource: "Strong",
+        },
+      ],
+    );
+
+    expect(partial.partialAbsenceSummary(mockLookup)).toMatch(
+      /Strong \(via Apple Health\) removed · Mar 5,/,
+    );
   });
 
   it("parses ClickHouse absent source maps", () => {

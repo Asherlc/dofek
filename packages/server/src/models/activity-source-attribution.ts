@@ -133,6 +133,7 @@ export class ActivitySourceAttribution {
   partialAbsentSources(): ProviderAbsentSource[] {
     return this.#absentEntries.map((entry) => ({
       providerId: entry.providerId,
+      ...(entry.subsource ? { subsource: entry.subsource } : {}),
       providerAbsentAt: entry.providerAbsentAt ?? null,
     }));
   }
@@ -167,7 +168,9 @@ export class ActivitySourceAttribution {
     if (entries.length === 0) return null;
     return entries
       .map((entry) => {
-        const providerLabel = lookup(entry.providerId)?.name ?? entry.providerId;
+        const providerLabel = entry.subsource
+          ? providerSourceLabel(entry.providerId, entry.subsource)
+          : (lookup(entry.providerId)?.name ?? providerSourceLabel(entry.providerId));
         const removedAt = entry.providerAbsentAt
           ? ` · ${formatDateTime(entry.providerAbsentAt)}`
           : "";
