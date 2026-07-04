@@ -135,10 +135,8 @@ export function createPhysicalSensorCollector(
         bloodOxygen.onChange(handleChange);
         subscribed = true;
         bloodOxygen.start();
-        stopHandlers.push(() => {
-          if (subscribed) bloodOxygen.offChange(handleChange);
-          bloodOxygen.stop();
-        });
+        stopHandlers.push(() => bloodOxygen.offChange(handleChange));
+        stopHandlers.push(() => bloodOxygen.stop());
         return true;
       } catch {
         if (subscribed) {
@@ -204,10 +202,8 @@ export function createPhysicalSensorCollector(
         compass.onChange(handleChange);
         subscribed = true;
         compass.start();
-        stopHandlers.push(() => {
-          if (subscribed) compass.offChange(handleChange);
-          compass.stop();
-        });
+        stopHandlers.push(() => compass.offChange(handleChange));
+        stopHandlers.push(() => compass.stop());
         return true;
       } catch {
         if (subscribed) {

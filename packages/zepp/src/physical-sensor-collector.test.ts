@@ -303,4 +303,53 @@ describe("createPhysicalSensorCollector", () => {
     expect(geolocationOffChange).toHaveBeenCalledTimes(1);
     expect(geolocationStop).not.toHaveBeenCalled();
   });
+
+  it("still stops BloodOxygen and Compass when unsubscribe fails", () => {
+    const { callbacks } = makeCallbacks();
+    const bloodOxygenStop = vi.fn();
+    const bloodOxygenOffChange = vi.fn(() => {
+      throw new Error("BloodOxygen unsubscribe failed");
+    });
+    const compassStop = vi.fn();
+    const compassOffChange = vi.fn(() => {
+      throw new Error("Compass unsubscribe failed");
+    });
+
+    class FakeBloodOxygen {
+      start() {}
+      stop = bloodOxygenStop;
+      getCurrent() {
+        return { value: 97, status: 0 };
+      }
+      onChange(_callback: SensorCallback) {}
+      offChange = bloodOxygenOffChange;
+    }
+
+    class FakeCompass {
+      start() {}
+      stop = compassStop;
+      getStatus() {
+        return true;
+      }
+      getDirectionAngle() {
+        return 270;
+      }
+      onChange(_callback: SensorCallback) {}
+      offChange = compassOffChange;
+    }
+
+    const collector = createPhysicalSensorCollector(callbacks, {
+      now: () => 1000,
+      BloodOxygen: FakeBloodOxygen,
+      Compass: FakeCompass,
+    });
+
+    collector.start(1000);
+
+    expect(() => collector.stop()).not.toThrow();
+    expect(bloodOxygenOffChange).toHaveBeenCalledTimes(1);
+    expect(bloodOxygenStop).toHaveBeenCalledTimes(1);
+    expect(compassOffChange).toHaveBeenCalledTimes(1);
+    expect(compassStop).toHaveBeenCalledTimes(1);
+  });
 });
