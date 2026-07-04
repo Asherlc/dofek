@@ -208,7 +208,9 @@ const TrainingStrengthRoute = TrainingStrengthRouteImport.update({
   id: '/strength',
   path: '/strength',
   getParentRoute: () => TrainingRoute,
-} as any)
+} as any).lazy(() =>
+  import('./routes/training/strength.lazy').then((d) => d.Route),
+)
 const TrainingRunningRoute = TrainingRunningRouteImport.update({
   id: '/running',
   path: '/running',
@@ -258,7 +260,7 @@ const ActivityIdRoute = ActivityIdRouteImport.update({
   id: '/activity/$id',
   path: '/activity/$id',
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any).lazy(() => import('./routes/activity.$id.lazy').then((d) => d.Route))
 const AdminUsersUserIdRoute = AdminUsersUserIdRouteImport.update({
   id: '/users/$userId',
   path: '/users/$userId',

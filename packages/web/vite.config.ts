@@ -20,7 +20,7 @@ function isPackage(id: string, packageName: string): boolean {
 
 function manualChunks(id: string): string | undefined {
   if (isPackage(id, "echarts") || isPackage(id, "echarts-for-react")) {
-    return "echarts";
+    return "echarts.lazy";
   }
 
   if (
