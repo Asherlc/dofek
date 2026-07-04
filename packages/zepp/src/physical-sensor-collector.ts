@@ -75,7 +75,13 @@ export function createPhysicalSensorCollector(
   }
 
   function emitScalar(sample: Omit<PhysicalScalarSample, "tMs">): void {
+    if (!running) return;
     callbacks.onScalarSample({ tMs: relativeTimeMs(), ...sample });
+  }
+
+  function emitLocation(sample: Omit<LocationSample, "tMs">): void {
+    if (!running) return;
+    callbacks.onLocationSample({ tMs: relativeTimeMs(), ...sample });
   }
 
   function setupHeartRate(): boolean {
@@ -84,6 +90,8 @@ export function createPhysicalSensorCollector(
     try {
       const heartRate = new deps.HeartRate();
       const handleChange = () => {
+        if (!running) return;
+
         try {
           const value = heartRate.getCurrent();
           if (Number.isFinite(value) && value > 0) {
@@ -110,6 +118,8 @@ export function createPhysicalSensorCollector(
       let subscribed = false;
 
       const handleChange = () => {
+        if (!running) return;
+
         try {
           const current = bloodOxygen.getCurrent();
           const value = current.value;
@@ -117,15 +127,14 @@ export function createPhysicalSensorCollector(
             return;
           }
 
-          const sample: PhysicalScalarSample = {
-            tMs: relativeTimeMs(),
+          const sample: Omit<PhysicalScalarSample, "tMs"> = {
             channel: "spo2",
             value: value / 100,
           };
           if (current.status !== undefined) {
             sample.status = current.status;
           }
-          callbacks.onScalarSample(sample);
+          emitScalar(sample);
         } catch {
           // Ignore failed reads for this sample.
         }
@@ -155,6 +164,8 @@ export function createPhysicalSensorCollector(
     try {
       const barometer = new deps.Barometer();
       const handleChange = () => {
+        if (!running) return;
+
         try {
           const pressure = barometer.getAirPressure();
           if (Number.isFinite(pressure)) {
@@ -186,6 +197,8 @@ export function createPhysicalSensorCollector(
       let subscribed = false;
 
       const handleChange = () => {
+        if (!running) return;
+
         try {
           if (!compass.getStatus()) return;
 
@@ -222,13 +235,15 @@ export function createPhysicalSensorCollector(
     try {
       const geolocation = new deps.Geolocation();
       const handleChange = () => {
+        if (!running) return;
+
         try {
           if (geolocation.getStatus() !== "A") return;
 
           const latitude = geolocation.getLatitude({ format: "DD" });
           const longitude = geolocation.getLongitude({ format: "DD" });
           if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
-            callbacks.onLocationSample({ tMs: relativeTimeMs(), latitude, longitude });
+            emitLocation({ latitude, longitude });
           }
         } catch {
           // Ignore failed reads for this sample.
