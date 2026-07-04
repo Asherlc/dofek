@@ -50,6 +50,7 @@ effective_tombstoned AS (
     t.id,
     t.user_id,
     t.provider_id,
+    t.activity_type,
     t.external_id,
     t.started_at,
     t.ended_at,
@@ -62,6 +63,7 @@ effective_tombstoned AS (
     t.id,
     t.user_id,
     t.provider_id,
+    t.activity_type,
     t.external_id,
     t.started_at,
     t.ended_at,
@@ -143,7 +145,7 @@ clusterable AS (
     t.activity_type,
     t.started_at,
     COALESCE(t.ended_at, t.started_at + interval '1 hour') AS ended_at
-  FROM tombstoned t
+  FROM effective_tombstoned t
 ),
 pairs AS (
   SELECT c1.id AS id1, c2.id AS id2

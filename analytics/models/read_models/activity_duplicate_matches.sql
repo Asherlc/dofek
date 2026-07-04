@@ -64,6 +64,13 @@ active_duplicate_matches AS (
             OR (
                 left_activity.provider_id != right_activity.provider_id
                 AND left_activity.activity_type = right_activity.activity_type
+                AND dateDiff('second', left_activity.started_at, left_activity.ended_at) > 0
+                AND dateDiff('second', right_activity.started_at, right_activity.ended_at) > 0
+                AND dateDiff(
+                    'second',
+                    greatest(left_activity.started_at, right_activity.started_at),
+                    least(left_activity.ended_at, right_activity.ended_at)
+                ) > 0
                 AND dateDiff(
                     'second',
                     greatest(left_activity.started_at, right_activity.started_at),
@@ -105,6 +112,13 @@ active_to_tombstoned_matches AS (
             OR (
                 left_activity.provider_id != right_activity.provider_id
                 AND left_activity.activity_type = right_activity.activity_type
+                AND dateDiff('second', left_activity.started_at, left_activity.ended_at) > 0
+                AND dateDiff('second', right_activity.started_at, right_activity.ended_at) > 0
+                AND dateDiff(
+                    'second',
+                    greatest(left_activity.started_at, right_activity.started_at),
+                    least(left_activity.ended_at, right_activity.ended_at)
+                ) > 0
                 AND dateDiff(
                     'second',
                     greatest(left_activity.started_at, right_activity.started_at),

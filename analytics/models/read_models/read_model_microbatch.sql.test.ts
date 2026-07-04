@@ -305,6 +305,20 @@ describe("production analytics read-model build", () => {
     expect(dedupedActivitiesSql).toContain("maxIf(ranked.source_synced_at, ranked.activity_id IS NOT null) AS source_synced_at");
   });
 
+  it("requires positive activity windows before shorter-window duplicate matching", () => {
+    const normalizedSql = compactWhitespace(readModel("activity_duplicate_matches"));
+
+    expect(normalizedSql).toContain(
+      "dateDiff('second', left_activity.started_at, left_activity.ended_at) > 0",
+    );
+    expect(normalizedSql).toContain(
+      "dateDiff('second', right_activity.started_at, right_activity.ended_at) > 0",
+    );
+    expect(normalizedSql).toContain(
+      "dateDiff( 'second', greatest(left_activity.started_at, right_activity.started_at), least(left_activity.ended_at, right_activity.ended_at) ) > 0",
+    );
+  });
+
   it("carries upstream source freshness through lookback microbatch intermediaries", () => {
     const dedupedSensorSql = readModel("deduped_sensor");
     const activitySensorSampleSql = readModel("activity_sensor_sample");

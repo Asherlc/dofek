@@ -288,6 +288,105 @@ describe("Activity summary deduplication", () => {
     }
   });
 
+  it("does not group active activities through a stale Apple tombstone", async () => {
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.provider (id, name, user_id)
+          VALUES ('whoop', 'WHOOP', ${TEST_USER_ID})
+          ON CONFLICT DO NOTHING`,
+    );
+
+    const activityIds = [
+      "00000000-0000-4000-8000-0000000000b1",
+      "00000000-0000-4000-8000-0000000000b2",
+      "00000000-0000-4000-8000-0000000000b3",
+      "00000000-0000-4000-8000-0000000000b4",
+    ];
+    const insertedIdArray = sql`ARRAY[${sql.join(
+      activityIds.map((activityId) => sql`${activityId}::uuid`),
+      sql`, `,
+    )}]`;
+
+    await testCtx.db.execute(sql`DELETE FROM fitness.activity WHERE id = ANY(${insertedIdArray})`);
+
+    await testCtx.db.execute(
+      sql`INSERT INTO fitness.activity (
+            id, provider_id, user_id, activity_type, external_id,
+            started_at, ended_at, provider_absent_at, name, raw
+          ) VALUES
+            (
+              ${activityIds[0]}::uuid,
+              'wahoo', ${TEST_USER_ID}, 'running', 'wahoo-stale-bridge-left',
+              TIMESTAMPTZ '2026-01-13 10:00:00+00',
+              TIMESTAMPTZ '2026-01-13 10:30:00+00',
+              NULL,
+              'Left Run',
+              '{}'::jsonb
+            ),
+            (
+              ${activityIds[1]}::uuid,
+              'whoop', ${TEST_USER_ID}, 'running', 'whoop-stale-bridge-right',
+              TIMESTAMPTZ '2026-01-13 10:40:00+00',
+              TIMESTAMPTZ '2026-01-13 11:10:00+00',
+              NULL,
+              'Right Run',
+              '{}'::jsonb
+            ),
+            (
+              ${activityIds[2]}::uuid,
+              'apple_health', ${TEST_USER_ID}, 'running', 'apple-stale-bridge',
+              TIMESTAMPTZ '2026-01-13 10:05:00+00',
+              TIMESTAMPTZ '2026-01-13 11:05:00+00',
+              NOW(),
+              'Stale Apple Bridge',
+              jsonb_build_object(
+                'metadata',
+                jsonb_build_object(
+                  'HKMetadataKeySyncIdentifier', 'stale-bridge-sync-id',
+                  'HKMetadataKeySyncVersion', '1'
+                )
+              )
+            ),
+            (
+              ${activityIds[3]}::uuid,
+              'apple_health', ${TEST_USER_ID}, 'running', 'apple-current-sibling',
+              TIMESTAMPTZ '2026-01-13 12:00:00+00',
+              TIMESTAMPTZ '2026-01-13 12:30:00+00',
+              NULL,
+              'Current Apple Sibling',
+              jsonb_build_object(
+                'metadata',
+                jsonb_build_object(
+                  'HKMetadataKeySyncIdentifier', 'stale-bridge-sync-id',
+                  'HKMetadataKeySyncVersion', '2'
+                )
+              )
+            )`,
+    );
+
+    try {
+      const activeIdArray = sql`ARRAY[${activityIds[0]}::uuid, ${activityIds[1]}::uuid]`;
+      const groupedRows = await testCtx.db.execute<{ member_activity_ids: string[] }>(
+        sql`SELECT member_activity_ids::text[] AS member_activity_ids
+            FROM fitness.v_activity
+            WHERE member_activity_ids && ${activeIdArray}
+            ORDER BY started_at`,
+      );
+
+      expect(groupedRows).toHaveLength(2);
+      expect(
+        groupedRows.some((row) =>
+          activityIds
+            .slice(0, 2)
+            .every((activityId) => row.member_activity_ids.includes(activityId)),
+        ),
+      ).toBe(false);
+    } finally {
+      await testCtx.db.execute(
+        sql`DELETE FROM fitness.activity WHERE id = ANY(${insertedIdArray})`,
+      );
+    }
+  });
+
   it("does not collapse long overlap chains into one canonical activity", async () => {
     const chainActivityIds = [
       "00000000-0000-4000-8000-000000000101",
