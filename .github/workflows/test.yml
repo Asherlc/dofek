@@ -215,7 +215,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: dotenv-linter/action-dotenv-linter@6c39ca3e4c1f440bf1911b4169c2056ec86c3f99 # v3.0.0
+      - uses: dotenv-linter/action-dotenv-linter@afde61cfda2ecffe7bea35837b6f20b956c88689 # v3.0.0
         with:
           reporter: github-check
           github_token: ${{ secrets.GITHUB_TOKEN }}
