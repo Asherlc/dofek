@@ -11528,3 +11528,30 @@ new incremental tables are populated.
 - **Remaining risk:** The UI will keep omitting secondary Apple Health app names
   for deduped activities that contain multiple Apple Health sources until source
   attribution carries per-member subsources.
+
+## 2026-07-03 — PR CI blocked by unused ClickHouse migration exports
+
+- **Symptoms:** PR
+  [#1468](https://github.com/Asherlc/dofek/pull/1468) had failing checks:
+  `Test / Knip`, `Test / Lint & Static Analysis`, `Test / Test Gate`, and
+  `CI Gate`.
+- **User impact:** The PR was blocked from merging; no production runtime impact.
+- **Evidence:** The root failing command was `pnpm knip` in GitHub job
+  `85077762079`. The first fatal output was `Unused exports (2)` for
+  `buildClickHouseMigrationStatements` in `src/db/clickhouse-migrations.ts` and
+  `clickHouseMigrationFileNames` in `src/db/clickhouse-migrations/registry.ts`.
+  The other attached failures were gate jobs reporting a required job failure.
+- **Root cause:** Follow-up ClickHouse migration test cleanup left two exported
+  helper APIs that no production or test code imported, and Knip correctly
+  rejected them as unused exports.
+- **Fix / mitigation:** Removed the unused exports instead of adding Knip
+  ignores or keeping dead public API.
+- **Validation:** Local `pnpm knip`, `pnpm lint`, root/server/web
+  `pnpm tsc --noEmit`, and
+  `pnpm vitest run src/db/clickhouse-migrations.test.ts
+  src/db/clickhouse-migrations/registry.test.ts` passed. GitHub rerun
+  `28688829698` showed `Test / Knip` and `Test / Lint & Static Analysis`
+  passing.
+- **Remaining risk:** Some unrelated long-running GitHub jobs were still pending
+  when this note was added, but the attached root failure and dependent gate
+  failures were remediated.
