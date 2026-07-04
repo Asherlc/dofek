@@ -78,7 +78,7 @@ declare module "@zos/sensor" {
   export class BloodOxygen {
     start(): void;
     stop(): void;
-    getCurrent(): { value?: number; status?: number };
+    getCurrent(): { value: number; status?: number };
     onChange(callback: () => void): void;
     offChange(callback: () => void): void;
     getLastDay(): number[];
