@@ -31,7 +31,7 @@ Out of scope:
 The raw stream should contain measurements that came directly from a sensor API with a timestamp or an event time:
 
 - `heart_rate`: beats per minute.
-- `blood_oxygen`: percent SpO2 for successful measurements.
+- `spo2`: blood oxygen saturation as a fraction from `0` to `1`, matching the existing metric-stream channel convention.
 - `stress`: Zepp stress value when a current measured timestamp is available.
 - `body_temperature`: Celsius body-surface temperature when a timestamp can be reconstructed from Zepp's documented sample cadence.
 - `barometric_pressure`: hPa air pressure from the barometer.
