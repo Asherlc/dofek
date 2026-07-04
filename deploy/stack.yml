@@ -337,7 +337,7 @@ services:
         failure_action: rollback
 
   metric-stream-r2-archive:
-    image: docker.redpanda.com/redpandadata/connect:4.94.1
+    image: docker.redpanda.com/redpandadata/connect:4.99.0
     command: ["run", "/connect/metric-stream-r2-archive.connect.yml"]
     environment:
       REDPANDA_BROKERS: ${REDPANDA_BROKERS:?REDPANDA_BROKERS is required}

@@ -147,7 +147,7 @@ services:
         condition: service_healthy
 
   metric-stream-r2-archive:
-    image: docker.redpanda.com/redpandadata/connect:4.94.1
+    image: docker.redpanda.com/redpandadata/connect:4.99.0
     profiles: ["metric-stream"]
     restart: unless-stopped
     command: ["run", "/connect/metric-stream-r2-archive.connect.yml"]
