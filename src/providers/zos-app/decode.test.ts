@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { decodeBin } from "./decode.ts";
 
 function createHeader(options: {
+  formatVersion?: number;
   hasGyro?: boolean;
   sessionStartMs?: number;
   sampleCount?: number;
@@ -12,7 +13,7 @@ function createHeader(options: {
   const buf = new ArrayBuffer(32);
   const view = new DataView(buf);
   view.setUint32(0, 0x314d5549, true);
-  view.setUint8(4, 1);
+  view.setUint8(4, options.formatVersion ?? 1);
   view.setUint8(5, options.hasGyro ? 1 : 0);
   view.setUint16(6, 0, true);
   const startMs = options.sessionStartMs ?? 0;
@@ -70,6 +71,91 @@ function encodeChunk(samples: TestSample[], hasGyro: boolean): ArrayBuffer {
       view.setFloat32(offset, sample.gz ?? 0, true);
       offset += 4;
     }
+  }
+  return buf;
+}
+
+function encodeV2ImuChunk(samples: TestSample[], hasGyro: boolean): ArrayBuffer {
+  const recordSize = hasGyro ? 28 : 16;
+  const buf = new ArrayBuffer(4 + samples.length * recordSize);
+  const view = new DataView(buf);
+  view.setUint8(0, 1);
+  view.setUint8(1, hasGyro ? 1 : 0);
+  view.setUint16(2, samples.length, true);
+  let offset = 4;
+  for (const sample of samples) {
+    view.setUint32(offset, sample.tMs, true);
+    offset += 4;
+    view.setFloat32(offset, sample.ax, true);
+    offset += 4;
+    view.setFloat32(offset, sample.ay, true);
+    offset += 4;
+    view.setFloat32(offset, sample.az, true);
+    offset += 4;
+    if (hasGyro) {
+      view.setFloat32(offset, sample.gx ?? 0, true);
+      offset += 4;
+      view.setFloat32(offset, sample.gy ?? 0, true);
+      offset += 4;
+      view.setFloat32(offset, sample.gz ?? 0, true);
+      offset += 4;
+    }
+  }
+  return buf;
+}
+
+interface TestPhysicalSample {
+  tMs: number;
+  channelId: number;
+  value: number;
+  status?: number;
+}
+
+function encodeV2ScalarChunk(samples: TestPhysicalSample[]): ArrayBuffer {
+  const buf = new ArrayBuffer(4 + samples.length * 16);
+  const view = new DataView(buf);
+  view.setUint8(0, 2);
+  view.setUint8(1, 0);
+  view.setUint16(2, samples.length, true);
+  let offset = 4;
+  for (const sample of samples) {
+    view.setUint32(offset, sample.tMs, true);
+    offset += 4;
+    view.setUint8(offset, sample.channelId);
+    offset += 1;
+    view.setUint8(offset, sample.status ?? 0);
+    offset += 1;
+    view.setUint16(offset, 0, true);
+    offset += 2;
+    view.setFloat64(offset, sample.value, true);
+    offset += 8;
+  }
+  return buf;
+}
+
+interface TestLocationSample {
+  tMs: number;
+  latitude: number;
+  longitude: number;
+  altitude?: number;
+}
+
+function encodeV2LocationChunk(samples: TestLocationSample[]): ArrayBuffer {
+  const buf = new ArrayBuffer(4 + samples.length * 24);
+  const view = new DataView(buf);
+  view.setUint8(0, 3);
+  view.setUint8(1, 0);
+  view.setUint16(2, samples.length, true);
+  let offset = 4;
+  for (const sample of samples) {
+    view.setUint32(offset, sample.tMs, true);
+    offset += 4;
+    view.setFloat64(offset, sample.latitude, true);
+    offset += 8;
+    view.setFloat64(offset, sample.longitude, true);
+    offset += 8;
+    view.setFloat32(offset, sample.altitude ?? Number.NaN, true);
+    offset += 4;
   }
   return buf;
 }
@@ -204,5 +290,35 @@ describe("decodeBin", () => {
 
     expect(result.samples).toHaveLength(0);
     expect(result.sampleCount).toBe(0);
+  });
+
+  it("decodes a v2 session with scalar physical samples and passive location", () => {
+    const header = createHeader({
+      formatVersion: 2,
+      hasGyro: false,
+      sessionStartMs: 1_700_000_000_000,
+      sampleCount: 1,
+    });
+    const imuChunk = encodeV2ImuChunk([{ tMs: 5, ax: 1, ay: 2, az: 3 }], false);
+    const scalarChunk = encodeV2ScalarChunk([
+      { tMs: 10, channelId: 1, value: 72, status: 0 },
+      { tMs: 15, channelId: 2, value: 0.98, status: 0 },
+    ]);
+    const locationChunk = encodeV2LocationChunk([
+      { tMs: 20, latitude: 37.7749, longitude: -122.4194, altitude: 18 },
+    ]);
+    const buffer = concat(header, imuChunk, scalarChunk, locationChunk);
+
+    const result = decodeBin(buffer);
+
+    expect(result.samples).toHaveLength(1);
+    expect(result.physicalSamples).toEqual([
+      { tMs: 10, channel: "heartRate", value: 72, status: 0 },
+      { tMs: 15, channel: "spo2", value: 0.98, status: 0 },
+    ]);
+    expect(result.locationSamples).toHaveLength(1);
+    expect(result.locationSamples[0]?.latitude).toBeCloseTo(37.7749);
+    expect(result.locationSamples[0]?.longitude).toBeCloseTo(-122.4194);
+    expect(result.locationSamples[0]?.altitude).toBeCloseTo(18);
   });
 });

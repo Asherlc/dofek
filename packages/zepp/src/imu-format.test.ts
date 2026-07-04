@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  CHUNK_TYPE_IMU,
+  CHUNK_TYPE_LOCATION,
+  CHUNK_TYPE_SCALAR,
   concatArrayBuffers,
   createHeader,
   encodeChunk,
+  encodeImuChunk,
+  encodeLocationChunk,
+  encodePhysicalScalarChunk,
   FLAG_HAS_GYRO,
   FORMAT_VERSION,
+  FORMAT_VERSION_V2,
   HEADER_SIZE,
   MAGIC,
   patchHeaderSampleCount,
@@ -236,5 +243,44 @@ describe("binary roundtrip", () => {
     const parsed = parseHeader(patched);
     expect(parsed.sampleCount).toBe(2);
     expect(parsed.observedHzX100).toBe(2600);
+  });
+});
+
+describe("v2 format", () => {
+  it("encodes v2 chunks with imu, scalar physical samples, and passive locations", () => {
+    const header = createHeader({
+      formatVersion: FORMAT_VERSION_V2,
+      hasGyro: true,
+      sampleCount: 1,
+    });
+    const parsed = parseHeader(header);
+    expect(parsed.version).toBe(FORMAT_VERSION_V2);
+
+    const imuChunk = encodeImuChunk(
+      [{ tMs: 5, ax: 1, ay: 2, az: 3, gx: 4, gy: 5, gz: 6 }],
+      true,
+    );
+    const scalarChunk = encodePhysicalScalarChunk([
+      { tMs: 10, channel: "heartRate", value: 72 },
+      { tMs: 15, channel: "spo2", value: 0.98 },
+    ]);
+    const locationChunk = encodeLocationChunk([
+      { tMs: 20, latitude: 37.7749, longitude: -122.4194, altitude: 18 },
+    ]);
+
+    const imuView = new DataView(imuChunk);
+    expect(imuView.getUint8(0)).toBe(CHUNK_TYPE_IMU);
+    expect(imuView.getUint8(1)).toBe(FLAG_HAS_GYRO);
+    expect(imuView.getUint16(2, true)).toBe(1);
+
+    const scalarView = new DataView(scalarChunk);
+    expect(scalarView.getUint8(0)).toBe(CHUNK_TYPE_SCALAR);
+    expect(scalarView.getUint8(1)).toBe(0);
+    expect(scalarView.getUint16(2, true)).toBe(2);
+
+    const locationView = new DataView(locationChunk);
+    expect(locationView.getUint8(0)).toBe(CHUNK_TYPE_LOCATION);
+    expect(locationView.getUint8(1)).toBe(0);
+    expect(locationView.getUint16(2, true)).toBe(1);
   });
 });

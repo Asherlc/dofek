@@ -8,7 +8,31 @@ export interface ImuSample {
   gz?: number;
 }
 
+export type PhysicalScalarChannel =
+  | "heartRate"
+  | "spo2"
+  | "stress"
+  | "bodyTemperature"
+  | "barometricPressure"
+  | "altitude"
+  | "compassHeading";
+
+export interface PhysicalScalarSample {
+  tMs: number;
+  channel: PhysicalScalarChannel;
+  value: number;
+  status?: number;
+}
+
+export interface LocationSample {
+  tMs: number;
+  latitude: number;
+  longitude: number;
+  altitude?: number;
+}
+
 export interface HeaderMeta {
+  formatVersion?: number;
   hasGyro?: boolean;
   sessionStartMs?: number;
   sampleCount?: number;
