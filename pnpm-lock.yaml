@@ -879,8 +879,8 @@ importers:
         version: 0.0.43
     devDependencies:
       '@zeppos/device-types':
-        specifier: ^3.0.0
-        version: 3.0.1
+        specifier: ^4.0.0
+        version: 4.0.0
       esbuild:
         specifier: 0.28.1
         version: 0.28.1
@@ -7541,8 +7541,8 @@ packages:
     resolution: {integrity: sha512-A9gOqLdi6cV4ibazAjcQufGj0B1y/vDqYrcuP6d/6x8P27gRS8643Dj9o1dEKtB6O7fwxb2FgBmJS2mX7gpvdw==}
     engines: {node: '>=14.6'}
 
-  '@zeppos/device-types@3.0.1':
-    resolution: {integrity: sha512-7rUsKLFiTdwIU3NarEKbEoQjr2X1kE6/8ra+mM3+zXDnwhELPowwC4Sl5UGS71PjTa9Rb+s4WygOHkjeEmJcoA==}
+  '@zeppos/device-types@4.0.0':
+    resolution: {integrity: sha512-As1r/7/+ucMbem6lqWIgzMqKw/vhzLNIz4muHF/LssL/5RZD5dfMR/pkaIb8YSrEnpGxRGFZffecPPMjsZO4Ag==}
 
   '@zeppos/zml@0.0.43':
     resolution: {integrity: sha512-3pmyT9qbNwcEh6Vu2khH+1OEeYInYm6zZWVQsp2Jz+UrvGo/xxp9cbqjfXiOh4LvM0b3p560tBWFtlROwKbL0w==}
@@ -20788,7 +20788,7 @@ snapshots:
 
   '@xmldom/xmldom@0.9.10': {}
 
-  '@zeppos/device-types@3.0.1': {}
+  '@zeppos/device-types@4.0.0': {}
 
   '@zeppos/zml@0.0.43': {}
 
