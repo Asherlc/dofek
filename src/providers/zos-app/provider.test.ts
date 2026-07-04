@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../../db/index.ts";
+import type { MetricStreamRowInput } from "../../metric-stream/events.ts";
 
 const mockEnsureProvider = vi.fn().mockResolvedValue(undefined);
 vi.mock("../../db/tokens.ts", () => ({
@@ -35,6 +36,8 @@ function makeDecodedSession(overrides: Record<string, unknown> = {}) {
     accelFreqMode: 2,
     gyroFreqMode: 0,
     observedHz: 26,
+    physicalSamples: [],
+    locationSamples: [],
     samples: Array.from({ length: 100 }, (_, index) => ({
       tMs: index * 20,
       ax: 0.01,
@@ -79,6 +82,122 @@ describe("importZosAppBin", () => {
     );
     expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
+  });
+
+  it("publishes decoded physical samples to metric stream", async () => {
+    const sessionStartMs = 1_719_300_000_000;
+    mockDecodeBin.mockReturnValue(
+      makeDecodedSession({
+        sessionStartMs,
+        physicalSamples: [
+          { tMs: 10, channel: "heartRate", value: 72, status: 0 },
+          { tMs: 15, channel: "spo2", value: 0.98, status: 0 },
+          { tMs: 20, channel: "barometricPressure", value: 1012.3, status: 0 },
+          { tMs: 25, channel: "compassHeading", value: 180, status: 0 },
+        ],
+        locationSamples: [{ tMs: 30, latitude: 37.7749, longitude: -122.4194, altitude: 18 }],
+      }),
+    );
+    const publishedRows: MetricStreamRowInput[] = [];
+    const metricStreamPublisher = {
+      publishRows: vi.fn(async (rows: readonly MetricStreamRowInput[]) => {
+        publishedRows.push(...rows);
+        return [];
+      }),
+    };
+
+    const result = await importZosAppBin(
+      mockDb,
+      Buffer.from([0x00]),
+      "00000000-0000-0000-0000-000000000001",
+      metricStreamPublisher,
+    );
+
+    expect(metricStreamPublisher.publishRows).toHaveBeenCalledTimes(1);
+    expect(publishedRows.map((row) => row.channel)).toEqual([
+      "heart_rate",
+      "spo2",
+      "barometric_pressure",
+      "compass_heading",
+      "location",
+      "altitude",
+    ]);
+    expect(publishedRows.map((row) => row.recordedAt)).toEqual([
+      new Date(sessionStartMs + 10),
+      new Date(sessionStartMs + 15),
+      new Date(sessionStartMs + 20),
+      new Date(sessionStartMs + 25),
+      new Date(sessionStartMs + 30),
+      new Date(sessionStartMs + 30),
+    ]);
+    expect(publishedRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ channel: "heart_rate", scalar: 72 }),
+        expect.objectContaining({ channel: "spo2", scalar: 0.98 }),
+        expect.objectContaining({ channel: "barometric_pressure", scalar: 1012.3 }),
+        expect.objectContaining({ channel: "compass_heading", scalar: 180 }),
+        expect.objectContaining({
+          channel: "location",
+          point: "SRID=4326;POINT(-122.4194 37.7749)",
+        }),
+        expect.objectContaining({ channel: "altitude", scalar: 18 }),
+      ]),
+    );
+    expect(result.recordsSynced).toBe(1 + publishedRows.length);
+    expect(JSON.stringify(vi.mocked(mockDb.execute).mock.calls)).not.toContain(
+      "fitness.metric_stream",
+    );
+  });
+
+  it("does not publish metric stream rows when decoded physical samples are absent", async () => {
+    mockDecodeBin.mockReturnValue(makeDecodedSession());
+    const metricStreamPublisher = {
+      publishRows: vi.fn(async () => []),
+    };
+
+    const result = await importZosAppBin(
+      mockDb,
+      Buffer.from([0x00]),
+      "00000000-0000-0000-0000-000000000001",
+      metricStreamPublisher,
+    );
+
+    expect(metricStreamPublisher.publishRows).not.toHaveBeenCalled();
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(0);
+    expect(JSON.stringify(vi.mocked(mockDb.execute).mock.calls)).not.toContain(
+      "fitness.metric_stream",
+    );
+  });
+
+  it("returns session count and publish error when physical sample publishing fails", async () => {
+    mockDecodeBin.mockReturnValue(
+      makeDecodedSession({
+        physicalSamples: [{ tMs: 10, channel: "heartRate", value: 72, status: 0 }],
+      }),
+    );
+    const metricStreamPublisher = {
+      publishRows: vi.fn(async () => {
+        throw new Error("redpanda unavailable");
+      }),
+    };
+
+    const result = await importZosAppBin(
+      mockDb,
+      Buffer.from([0x00]),
+      "00000000-0000-0000-0000-000000000001",
+      metricStreamPublisher,
+    );
+
+    expect(metricStreamPublisher.publishRows).toHaveBeenCalledTimes(1);
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toMatch(
+      /^Failed to publish Zepp physical samples: redpanda unavailable/,
+    );
+    expect(JSON.stringify(vi.mocked(mockDb.execute).mock.calls)).not.toContain(
+      "fitness.metric_stream",
+    );
   });
 
   it("stores gyroFreqMode when hasGyro is true", async () => {

@@ -19,6 +19,10 @@ export const SPEED = "speed";
 export const LOCATION = "location";
 /** Altitude in meters */
 export const ALTITUDE = "altitude";
+/** Barometric pressure in hPa */
+export const BAROMETRIC_PRESSURE = "barometric_pressure";
+/** Compass heading in degrees clockwise from north */
+export const COMPASS_HEADING = "compass_heading";
 /** Temperature in celsius */
 export const TEMPERATURE = "temperature";
 /** Grade in percent */
@@ -117,6 +121,8 @@ export const DRIZZLE_FIELD_TO_CHANNEL: Record<string, string> = {
   cadence: CADENCE,
   speed: SPEED,
   altitude: ALTITUDE,
+  barometricPressure: BAROMETRIC_PRESSURE,
+  compassHeading: COMPASS_HEADING,
   temperature: TEMPERATURE,
   grade: GRADE,
   verticalSpeed: VERTICAL_SPEED,
