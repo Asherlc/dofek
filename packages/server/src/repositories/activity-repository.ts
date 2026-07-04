@@ -628,6 +628,12 @@ export class ActivityRepository extends BaseRepository {
     };
   }
 
+  async getActivityMemberIds(activityId: string): Promise<string[] | null> {
+    const window = await this.#findActivitySensorWindow(activityId);
+    if (!window) return null;
+    return window.memberActivityIds;
+  }
+
   /** Delete an activity by ID. */
   async delete(activityId: string): Promise<void> {
     await this.bulkDelete([activityId]);

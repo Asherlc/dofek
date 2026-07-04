@@ -18,12 +18,15 @@ vi.mock("dofek/lib/cache", () => ({
 
 const mockEnqueueActivityDeleteAnalyticsRefresh = vi.fn().mockResolvedValue(undefined);
 const mockEnqueueActivityRestoreAnalyticsRefresh = vi.fn().mockResolvedValue(undefined);
+const mockEnqueueActivityRecomputeAnalyticsRefresh = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("dofek/jobs/queues", () => ({
   enqueueActivityDeleteAnalyticsRefresh: (...args: unknown[]) =>
     mockEnqueueActivityDeleteAnalyticsRefresh(...args),
   enqueueActivityRestoreAnalyticsRefresh: (...args: unknown[]) =>
     mockEnqueueActivityRestoreAnalyticsRefresh(...args),
+  enqueueActivityRecomputeAnalyticsRefresh: (...args: unknown[]) =>
+    mockEnqueueActivityRecomputeAnalyticsRefresh(...args),
 }));
 
 // Mock tRPC infrastructure
@@ -782,6 +785,51 @@ describe("activityRouter", () => {
         message:
           "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
       });
+    });
+  });
+
+  describe("recompute", () => {
+    beforeEach(() => {
+      mockEnqueueActivityRecomputeAnalyticsRefresh.mockClear();
+    });
+
+    it("enqueues recompute for all grouped member activities and invalidates caches", async () => {
+      const execute = vi.fn().mockResolvedValueOnce([
+        {
+          id: "00000000-0000-0000-0000-000000000001",
+          user_id: "user-1",
+          started_at: "2026-04-01T10:00:00Z",
+          ended_at: "2026-04-01T11:00:00Z",
+          member_activity_ids: [
+            "00000000-0000-0000-0000-000000000001",
+            "00000000-0000-0000-0000-000000000002",
+          ],
+        },
+      ]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.recompute({ id: "00000000-0000-0000-0000-000000000001" }),
+      ).resolves.toEqual({ success: true });
+
+      expect(mockEnqueueActivityRecomputeAnalyticsRefresh).toHaveBeenCalledWith("user-1", [
+        "00000000-0000-0000-0000-000000000001",
+        "00000000-0000-0000-0000-000000000002",
+      ]);
+      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:activity.");
+      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:calendar.");
+    });
+
+    it("throws NOT_FOUND when recomputing a missing activity", async () => {
+      const caller = makeCaller([]);
+
+      await expect(
+        caller.recompute({ id: "00000000-0000-0000-0000-000000000001" }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND", message: "Activity not found" });
     });
   });
 

@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { isRelationMissingError } from "dofek/db/dedup";
 import {
   enqueueActivityDeleteAnalyticsRefresh,
+  enqueueActivityRecomputeAnalyticsRefresh,
   enqueueActivityRestoreAnalyticsRefresh,
 } from "dofek/jobs/queues";
 import { queryCache } from "dofek/lib/cache";
@@ -56,6 +57,13 @@ async function scheduleActivityRestoreAnalyticsRefresh(
       extra: { userId, activityCount: activityIds.length },
     });
   }
+}
+
+async function scheduleActivityRecomputeAnalyticsRefresh(
+  userId: string,
+  activityIds: string[],
+): Promise<void> {
+  await enqueueActivityRecomputeAnalyticsRefresh(userId, activityIds);
 }
 
 export interface StrengthExerciseDetail {
@@ -233,6 +241,30 @@ export const activityRouter = router({
       const repo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);
       const exercises = await repo.getExercisesForActivity(input.id);
       return exercises.map((exercise) => exercise.toDetail());
+    }),
+
+  recompute: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+      try {
+        const memberActivityIds = await repo.getActivityMemberIds(input.id);
+        if (!memberActivityIds) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
+        }
+        await scheduleActivityRecomputeAnalyticsRefresh(ctx.userId, memberActivityIds);
+        await invalidateActivityListCaches(ctx.userId);
+        return { success: true };
+      } catch (error) {
+        if (isRelationMissingError(error)) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
+          });
+        }
+        throw error;
+      }
     }),
 
   delete: protectedProcedure

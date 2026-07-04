@@ -160,6 +160,7 @@ export function ActivityDetailPage() {
           <span className="text-foreground">{activity.name ?? activity.activityType}</span>
         </div>
         <div className="flex items-center gap-2">
+          <RecomputeActivityButton activityId={id} />
           <ActivityExportDropdown activityId={id} hasGps={hasGps} />
           <DeleteActivityButton activityId={id} />
         </div>
@@ -249,6 +250,37 @@ export function ActivityDetailPage() {
         )}
       </div>
     </PageLayout>
+  );
+}
+
+function RecomputeActivityButton({ activityId }: { activityId: string }) {
+  const [isRecomputing, setIsRecomputing] = useState(false);
+  const trpcUtils = trpc.useUtils();
+  const recomputeMutation = trpc.activity.recompute.useMutation({
+    onSuccess: async () => {
+      setIsRecomputing(true);
+      await Promise.all([
+        trpcUtils.activity.byId.invalidate({ id: activityId }),
+        trpcUtils.activity.stream.invalidate({ id: activityId, maxPoints: 500 }),
+        trpcUtils.activity.hrZones.invalidate({ id: activityId }),
+        trpcUtils.activity.powerZones.invalidate({ id: activityId }),
+        trpcUtils.activity.strengthExercises.invalidate({ id: activityId }),
+        trpcUtils.activity.list.invalidate(),
+        trpcUtils.calendar.weekList.invalidate(),
+        trpcUtils.calendar.activityOverview.invalidate(),
+      ]);
+    },
+  });
+
+  return (
+    <button
+      type="button"
+      onClick={() => recomputeMutation.mutate({ id: activityId })}
+      disabled={recomputeMutation.isPending || isRecomputing}
+      className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors cursor-pointer"
+    >
+      {recomputeMutation.isPending || isRecomputing ? "Recomputing..." : "Recompute"}
+    </button>
   );
 }
 

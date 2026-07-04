@@ -440,4 +440,33 @@ describe("queues", () => {
       expect(mockQueueAdd).not.toHaveBeenCalled();
     });
   });
+
+  describe("enqueueActivityRecomputeAnalyticsRefresh", () => {
+    it("adds an activity recompute analytics refresh job with retries", async () => {
+      const { enqueueActivityRecomputeAnalyticsRefresh, createActivityDeleteAnalyticsQueue } =
+        await import("./queues.ts");
+
+      const queue = createActivityDeleteAnalyticsQueue({ host: "test", port: 9999 });
+      await enqueueActivityRecomputeAnalyticsRefresh(
+        "user-123",
+        ["00000000-0000-0000-0000-000000000003", "00000000-0000-0000-0000-000000000003"],
+        queue,
+      );
+
+      expect(mockQueueAdd).toHaveBeenCalledWith(
+        "activity-recompute-analytics-refresh",
+        {
+          type: "activity-recompute-analytics-refresh",
+          userId: "user-123",
+          activityIds: ["00000000-0000-0000-0000-000000000003"],
+        },
+        {
+          removeOnComplete: true,
+          removeOnFail: { age: 604_800, count: 100 },
+          attempts: 5,
+          backoff: { type: "fixed", delay: 30_000 },
+        },
+      );
+    });
+  });
 });

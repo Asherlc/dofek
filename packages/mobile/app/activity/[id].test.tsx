@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -200,6 +200,13 @@ const mockStreamQuery = vi.fn();
 const mockHrZonesQuery = vi.fn();
 const mockPowerZonesQuery = vi.fn();
 const mockStrengthExercisesQuery = vi.fn();
+const mockRecomputeMutate = vi.fn();
+const mockActivityByIdInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockActivityStreamInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockActivityHrZonesInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockActivityPowerZonesInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockActivityStrengthExercisesInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockActivityListInvalidate = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
@@ -209,9 +216,27 @@ vi.mock("../../lib/trpc", () => ({
       hrZones: { useQuery: (...args: unknown[]) => mockHrZonesQuery(...args) },
       powerZones: { useQuery: (...args: unknown[]) => mockPowerZonesQuery(...args) },
       strengthExercises: { useQuery: (...args: unknown[]) => mockStrengthExercisesQuery(...args) },
+      recompute: {
+        useMutation: (options?: { onSuccess?: () => Promise<void> }) => ({
+          mutate: (input: { id: string }) => {
+            mockRecomputeMutate(input);
+            void options?.onSuccess?.();
+          },
+          isPending: false,
+        }),
+      },
       delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
     },
-    useUtils: () => ({ activity: { list: { invalidate: vi.fn() } } }),
+    useUtils: () => ({
+      activity: {
+        byId: { invalidate: mockActivityByIdInvalidate },
+        stream: { invalidate: mockActivityStreamInvalidate },
+        hrZones: { invalidate: mockActivityHrZonesInvalidate },
+        powerZones: { invalidate: mockActivityPowerZonesInvalidate },
+        strengthExercises: { invalidate: mockActivityStrengthExercisesInvalidate },
+        list: { invalidate: mockActivityListInvalidate },
+      },
+    }),
   },
 }));
 
@@ -274,6 +299,13 @@ beforeEach(() => {
   mockHrZonesQuery.mockClear();
   mockPowerZonesQuery.mockClear();
   mockStrengthExercisesQuery.mockClear();
+  mockRecomputeMutate.mockClear();
+  mockActivityByIdInvalidate.mockClear();
+  mockActivityStreamInvalidate.mockClear();
+  mockActivityHrZonesInvalidate.mockClear();
+  mockActivityPowerZonesInvalidate.mockClear();
+  mockActivityStrengthExercisesInvalidate.mockClear();
+  mockActivityListInvalidate.mockClear();
   mockByIdQuery.mockReturnValue({ data: baseCyclingActivity, isLoading: false, error: null });
   mockStreamQuery.mockReturnValue({ data: streamPointsWithHrAndPower, isLoading: false });
   mockHrZonesQuery.mockReturnValue({ data: [], isLoading: false, error: null });
@@ -282,6 +314,28 @@ beforeEach(() => {
 });
 
 describe("ActivityDetailScreen", () => {
+  it("recomputes the activity and invalidates detail caches", async () => {
+    const { default: ActivityDetailScreen } = await import("./[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    fireEvent.click(screen.getByText("Recompute"));
+
+    const activityId = "00000000-0000-0000-0000-000000000001";
+    expect(mockRecomputeMutate).toHaveBeenCalledWith({ id: activityId });
+    await waitFor(() => {
+      expect(mockActivityByIdInvalidate).toHaveBeenCalledWith({ id: activityId });
+    });
+    expect(screen.getByText("Recomputing...")).toBeTruthy();
+    expect(mockActivityStreamInvalidate).toHaveBeenCalledWith({
+      id: activityId,
+      maxPoints: 200,
+    });
+    expect(mockActivityHrZonesInvalidate).toHaveBeenCalledWith({ id: activityId });
+    expect(mockActivityPowerZonesInvalidate).toHaveBeenCalledWith({ id: activityId });
+    expect(mockActivityStrengthExercisesInvalidate).toHaveBeenCalledWith({ id: activityId });
+    expect(mockActivityListInvalidate).toHaveBeenCalled();
+  });
+
   it("keeps previous stream and zone data visible while refetching", async () => {
     const { default: ActivityDetailScreen } = await import("./[id]");
     render(React.createElement(ActivityDetailScreen));
