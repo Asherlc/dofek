@@ -31,9 +31,7 @@ updates:
     cooldown:
       default-days: 7
   - package-ecosystem: "docker-compose"
-    directories:
-      - "/"
-      - "/deploy"
+    directory: "/"
     schedule:
       interval: "weekly"
     cooldown:
