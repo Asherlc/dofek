@@ -69,6 +69,7 @@ export function createPhysicalSensorCollector(
   let running = false;
   let sessionStartMs = 0;
   let stopHandlers: StopHandler[] = [];
+  let activeGeneration = 0;
 
   function relativeTimeMs(): number {
     return deps.now() - sessionStartMs;
@@ -84,13 +85,18 @@ export function createPhysicalSensorCollector(
     callbacks.onLocationSample({ tMs: relativeTimeMs(), ...sample });
   }
 
+  function isCurrentGeneration(generation: number): boolean {
+    return running && generation === activeGeneration;
+  }
+
   function setupHeartRate(): boolean {
     if (!deps.HeartRate) return false;
 
     try {
       const heartRate = new deps.HeartRate();
+      const generation = activeGeneration;
       const handleChange = () => {
-        if (!running) return;
+        if (!isCurrentGeneration(generation)) return;
 
         try {
           const value = heartRate.getCurrent();
@@ -116,9 +122,10 @@ export function createPhysicalSensorCollector(
     try {
       const bloodOxygen = new deps.BloodOxygen();
       let subscribed = false;
+      const generation = activeGeneration;
 
       const handleChange = () => {
-        if (!running) return;
+        if (!isCurrentGeneration(generation)) return;
 
         try {
           const current = bloodOxygen.getCurrent();
@@ -163,8 +170,9 @@ export function createPhysicalSensorCollector(
 
     try {
       const barometer = new deps.Barometer();
+      const generation = activeGeneration;
       const handleChange = () => {
-        if (!running) return;
+        if (!isCurrentGeneration(generation)) return;
 
         try {
           const pressure = barometer.getAirPressure();
@@ -195,9 +203,10 @@ export function createPhysicalSensorCollector(
     try {
       const compass = new deps.Compass();
       let subscribed = false;
+      const generation = activeGeneration;
 
       const handleChange = () => {
-        if (!running) return;
+        if (!isCurrentGeneration(generation)) return;
 
         try {
           if (!compass.getStatus()) return;
@@ -234,8 +243,9 @@ export function createPhysicalSensorCollector(
 
     try {
       const geolocation = new deps.Geolocation();
+      const generation = activeGeneration;
       const handleChange = () => {
-        if (!running) return;
+        if (!isCurrentGeneration(generation)) return;
 
         try {
           if (geolocation.getStatus() !== "A") return;
@@ -277,6 +287,7 @@ export function createPhysicalSensorCollector(
       if (running) return;
 
       running = true;
+      activeGeneration += 1;
       sessionStartMs = startMs;
       stopHandlers = [];
 

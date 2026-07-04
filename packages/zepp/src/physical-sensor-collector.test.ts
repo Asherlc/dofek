@@ -469,4 +469,129 @@ describe("createPhysicalSensorCollector", () => {
     expect(scalarSamples).toEqual(scalarSamplesBeforeStop);
     expect(locationSamples).toEqual(locationSamplesBeforeStop);
   });
+
+  it("does not emit stale callbacks from a previous start after restart", () => {
+    const { callbacks, scalarSamples, locationSamples } = makeCallbacks();
+    const heartRateCallbacks: SensorCallback[] = [];
+    const bloodOxygenCallbacks: SensorCallback[] = [];
+    const barometerCallbacks: SensorCallback[] = [];
+    const compassCallbacks: SensorCallback[] = [];
+    const geolocationCallbacks: SensorCallback[] = [];
+    let now = 1000;
+
+    class FakeHeartRate {
+      getCurrent() {
+        return 72;
+      }
+      onCurrentChange(callback: SensorCallback) {
+        heartRateCallbacks.push(callback);
+      }
+      offCurrentChange(_callback: SensorCallback) {
+        throw new Error("HeartRate unsubscribe failed");
+      }
+    }
+
+    class FakeBloodOxygen {
+      start() {}
+      stop() {}
+      getCurrent() {
+        return { value: 97, status: 0 };
+      }
+      onChange(callback: SensorCallback) {
+        bloodOxygenCallbacks.push(callback);
+      }
+      offChange(_callback: SensorCallback) {
+        throw new Error("BloodOxygen unsubscribe failed");
+      }
+    }
+
+    class FakeBarometer {
+      getAirPressure() {
+        return 1012.3;
+      }
+      getAltitude() {
+        return 42;
+      }
+      onChange(callback: SensorCallback) {
+        barometerCallbacks.push(callback);
+      }
+      offChange(_callback: SensorCallback) {
+        throw new Error("Barometer unsubscribe failed");
+      }
+    }
+
+    class FakeCompass {
+      start() {}
+      stop() {}
+      getStatus() {
+        return true;
+      }
+      getDirectionAngle() {
+        return 270;
+      }
+      onChange(callback: SensorCallback) {
+        compassCallbacks.push(callback);
+      }
+      offChange(_callback: SensorCallback) {
+        throw new Error("Compass unsubscribe failed");
+      }
+    }
+
+    class FakeGeolocation {
+      getStatus() {
+        return "A";
+      }
+      getLatitude(_option?: { format?: "DD" }) {
+        return 37.1;
+      }
+      getLongitude(_option?: { format?: "DD" }) {
+        return -122.1;
+      }
+      onChange(callback: SensorCallback) {
+        geolocationCallbacks.push(callback);
+      }
+      offChange(_callback: SensorCallback) {
+        throw new Error("Geolocation unsubscribe failed");
+      }
+    }
+
+    const collector = createPhysicalSensorCollector(callbacks, {
+      now: () => now,
+      HeartRate: FakeHeartRate,
+      BloodOxygen: FakeBloodOxygen,
+      Barometer: FakeBarometer,
+      Compass: FakeCompass,
+      Geolocation: FakeGeolocation,
+    });
+
+    collector.start(1000);
+    expect(() => collector.stop()).not.toThrow();
+
+    now = 2000;
+    collector.start(2000);
+
+    requireCallback(heartRateCallbacks[0])();
+    requireCallback(bloodOxygenCallbacks[0])();
+    requireCallback(barometerCallbacks[0])();
+    requireCallback(compassCallbacks[0])();
+    requireCallback(geolocationCallbacks[0])();
+
+    expect(scalarSamples).toEqual([]);
+    expect(locationSamples).toEqual([]);
+
+    requireCallback(heartRateCallbacks[1])();
+    requireCallback(bloodOxygenCallbacks[1])();
+    requireCallback(barometerCallbacks[1])();
+    requireCallback(compassCallbacks[1])();
+    requireCallback(geolocationCallbacks[1])();
+
+    expect(scalarSamples).toEqual([
+      { tMs: 0, channel: "heartRate", value: 72 },
+      { tMs: 0, channel: "spo2", value: 0.97, status: 0 },
+      { tMs: 0, channel: "barometricPressure", value: 1012.3 },
+      { tMs: 0, channel: "altitude", value: 42 },
+      { tMs: 0, channel: "compassHeading", value: 270 },
+    ]);
+    expect(locationSamples).toEqual([{ tMs: 0, latitude: 37.1, longitude: -122.1 }]);
+  });
 });
