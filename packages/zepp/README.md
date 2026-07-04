@@ -1,18 +1,18 @@
-# Dofek Zepp (Amazfit T-Rex 3)
+# Dofek Zepp
 
 Zepp OS mini program that captures raw accelerometer (and optional gyroscope) samples on the watch, buffers them to a watch-side binary file, and exports the file to the phone over BLE. No vendor cloud — data path is **watch → phone Zepp app → local file**.
 
-## Target device
+## Target devices
 
-| Field | Value | Source |
+The app targets Zepp OS devices whose official Latest API_LEVEL is 3.0 or newer. This boundary comes from the APIs the app uses: file transfer, app service startup, and permission querying all start at API_LEVEL 3.0.
+
+| Requirement | Value | Source |
 |---|---|---|
-| Device | Amazfit T-Rex 3 | [Zepp OS device list](https://docs.zepp.com/docs/reference/related-resources/device-list/) |
-| Latest API_LEVEL | **4.0** (≥ 3.0 required for `@zos/sensor` Accelerometer/Gyroscope) | device list |
-| `deviceSource` | `8716544`, `8716545`, `8716547` | device list |
-| Screen | 480 × 480 round | device list |
-| `designWidth` | **480** | device list + [screen adaptation guide](https://docs.zepp.com/docs/guides/best-practice/multi-screen-adaption/) |
+| Device family | Zepp OS devices with Latest API_LEVEL >= 3.0 | [Zepp OS device list](https://docs.zepp.com/docs/reference/related-resources/device-list/) |
+| Required API_LEVEL | 3.0+ | [TransferFile](https://docs.zepp.com/docs/reference/device-app-api/newAPI/transfer-file/TransferFile/), [app-service start](https://docs.zepp.com/docs/reference/device-app-api/newAPI/app-service/start/), [queryPermission](https://docs.zepp.com/docs/reference/device-app-api/newAPI/app/queryPermission/) |
+| Screen targets | Round 480/466/454/416/360, square 432/390/320 widths | [Zepp OS device list](https://docs.zepp.com/docs/reference/related-resources/device-list/) and [app.json target docs](https://docs.zepp.com/docs/watchface/app-json/) |
 
-Configured in `app.json` under target `480x480-amazfit-t-rex-3`.
+Configured in `app.json` as screen-width target groups.
 
 ## Architecture
 
@@ -68,12 +68,12 @@ pnpm install
 zeus dev
 ```
 
-Choose a round 480 px simulator profile. Simulator sensor values are synthetic; delivered Hz will not match hardware.
+Choose a simulator profile matching one of the supported target widths. Simulator sensor values are synthetic; delivered Hz will not match hardware.
 
 ### On-device (Developer / Bridge mode)
 
 1. Enable Developer Mode in the Zepp mobile app.
-2. Connect the T-Rex 3 via Bridge.
+2. Connect a supported Zepp OS API_LEVEL 3.0+ device via Bridge.
 3. Build and install:
 
 ```bash
@@ -160,7 +160,7 @@ The script prints header metadata, row count, and a timestamp-derived Hz estimat
 
 ```text
 zepp/
-  app.json              # T-Rex 3 target + modules
+  app.json              # Zepp OS API_LEVEL 3.0+ targets + modules
   app.ts                # app entry
   page/index.ts         # watch UI + sensor collector
   app-service/imu_service.ts
