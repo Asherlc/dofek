@@ -70,11 +70,12 @@ export const inertialMeasurementUnitSyncRouter = router({
             validSamples,
           );
           const insertBatchMs = performance.now() - t1;
+          const totalMs = ensureProviderMs + insertBatchMs;
 
           span.setAttributes({
             "imu.ensureProviderMs": ensureProviderMs,
             "imu.insertBatchMs": insertBatchMs,
-            "imu.totalMs": ensureProviderMs + insertBatchMs,
+            "imu.totalMs": totalMs,
             "imu.sampleCount": inserted,
             "imu.filteredCount": input.samples.length - validSamples.length,
           });
@@ -90,7 +91,7 @@ export const inertialMeasurementUnitSyncRouter = router({
             serverTime: nowIso,
             ensureProviderMs,
             insertBatchMs,
-            totalMs: ensureProviderMs + insertBatchMs,
+            totalMs,
           });
 
           span.setStatus({ code: SpanStatusCode.OK });

@@ -314,18 +314,22 @@ async function drainBuffer(
     const samples = await whoopDeps.peekBufferedSamples(IMU_UPLOAD_BATCH_SIZE);
     if (samples.length === 0) break;
 
-    const groups = new DeviceSampleGroups(
-      DEFAULT_WHOOP_DEVICE_ID,
-      toInertialMeasurementUnitUploadSample,
-    );
-    for (const sample of samples) {
-      groups.add(sample);
-    }
-    const deviceIds = [...groups.entries()].map(([deviceId]) => deviceId);
-    const firstTimestamp = samples[0]?.timestamp;
-    const lastTimestamp = samples[samples.length - 1]?.timestamp;
+    let deviceIds: string[] = [];
+    let firstTimestamp: string | undefined;
+    let lastTimestamp: string | undefined;
 
     try {
+      const groups = new DeviceSampleGroups(
+        DEFAULT_WHOOP_DEVICE_ID,
+        toInertialMeasurementUnitUploadSample,
+      );
+      for (const sample of samples) {
+        groups.add(sample);
+      }
+      deviceIds = [...groups.entries()].map(([deviceId]) => deviceId);
+      firstTimestamp = samples[0]?.timestamp;
+      lastTimestamp = samples[samples.length - 1]?.timestamp;
+
       let inserted = 0;
       for (const [deviceId, uploadSamples] of groups.entries()) {
         const result = await trpcClient.inertialMeasurementUnitSync.pushSamples.mutate({
@@ -348,8 +352,8 @@ async function drainBuffer(
         bufferedSampleCount: samples.length,
         deviceCount: deviceIds.length,
         deviceIds,
-        firstTimestamp,
-        lastTimestamp,
+        firstTimestamp: firstTimestamp ?? samples[0]?.timestamp,
+        lastTimestamp: lastTimestamp ?? samples[samples.length - 1]?.timestamp,
       });
       break; // Stop draining — samples are still in the buffer for retry
     }
