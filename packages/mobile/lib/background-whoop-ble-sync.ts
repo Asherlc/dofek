@@ -314,7 +314,9 @@ async function drainBuffer(
     const samples = await whoopDeps.peekBufferedSamples(IMU_UPLOAD_BATCH_SIZE);
     if (samples.length === 0) break;
 
-    let deviceIds: string[] = [];
+    let deviceIds = Array.from(
+      new Set(samples.map((sample) => sample.deviceId?.trim() || DEFAULT_WHOOP_DEVICE_ID)),
+    );
     let firstTimestamp: string | undefined;
     let lastTimestamp: string | undefined;
 
