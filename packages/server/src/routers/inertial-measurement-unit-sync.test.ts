@@ -472,25 +472,37 @@ describe("inertialMeasurementUnitSyncRouter", () => {
         metricStreamPublisher,
         userId: "user-1",
       });
+      const nowSpy = vi.spyOn(performance, "now");
+      nowSpy.mockReturnValueOnce(100);
+      nowSpy.mockReturnValueOnce(112);
+      nowSpy.mockReturnValueOnce(112);
+      nowSpy.mockReturnValueOnce(150);
 
-      await caller.pushSamples({
-        deviceId: "Apple Watch",
-        deviceType: "apple_watch",
-        samples: [
-          makeSample({ timestamp: "2026-03-25T10:00:00.020Z" }),
-          makeSample({ timestamp: "2026-03-25T10:00:00.080Z" }),
-          makeSample({ timestamp: "2026-03-25T10:00:00.140Z" }),
-        ],
-      });
+      try {
+        await caller.pushSamples({
+          deviceId: "Apple Watch",
+          deviceType: "apple_watch",
+          samples: [
+            makeSample({ timestamp: "2026-03-25T10:00:00.020Z" }),
+            makeSample({ timestamp: "2026-03-25T10:00:00.080Z" }),
+            makeSample({ timestamp: "2026-03-25T10:00:00.140Z" }),
+          ],
+        });
 
-      expect(logger.info).toHaveBeenCalledWith(
-        "IMU samples pushed",
-        expect.objectContaining({
-          firstTimestamp: "2026-03-25T10:00:00.020Z",
-          lastTimestamp: "2026-03-25T10:00:00.140Z",
-          serverTime: expect.any(String),
-        }),
-      );
+        expect(logger.info).toHaveBeenCalledWith(
+          "IMU samples pushed",
+          expect.objectContaining({
+            firstTimestamp: "2026-03-25T10:00:00.020Z",
+            lastTimestamp: "2026-03-25T10:00:00.140Z",
+            serverTime: expect.any(String),
+            ensureProviderMs: 12,
+            insertBatchMs: 38,
+            totalMs: 50,
+          }),
+        );
+      } finally {
+        nowSpy.mockRestore();
+      }
     });
 
     it("reports failures to Sentry with the imu-push-samples source tag", async () => {

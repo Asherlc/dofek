@@ -501,6 +501,7 @@ describe("background-whoop-ble-sync", () => {
   });
 
   it("does not confirm drain when upload fails", async () => {
+    const { captureException } = await import("./telemetry");
     const samples = [
       {
         timestamp: "2026-03-27T10:00:00.000Z",
@@ -520,6 +521,45 @@ describe("background-whoop-ble-sync", () => {
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
 
     expect(whoopDeps.confirmSamplesDrain).not.toHaveBeenCalled();
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+      source: "whoop-ble-imu-upload",
+      bufferedSampleCount: 1,
+      deviceCount: 1,
+      deviceIds: ["WHOOP Strap"],
+      firstTimestamp: "2026-03-27T10:00:00.000Z",
+      lastTimestamp: "2026-03-27T10:00:00.000Z",
+    });
+  });
+
+  it("reports raw device context when IMU grouping fails before upload", async () => {
+    const { captureException } = await import("./telemetry");
+    const groupingError = new Error("malformed buffered sample");
+    const malformedSample = {
+      deviceId: "whoop-a",
+      timestamp: "2026-03-27T10:00:00.000Z",
+      get x() {
+        throw groupingError;
+      },
+      y: 2,
+      z: 3,
+      gyroscopeX: 10,
+      gyroscopeY: -20,
+      gyroscopeZ: 30,
+    };
+    vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValue([malformedSample]);
+
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).not.toHaveBeenCalled();
+    expect(whoopDeps.confirmSamplesDrain).not.toHaveBeenCalled();
+    expect(captureException).toHaveBeenCalledWith(groupingError, {
+      source: "whoop-ble-imu-upload",
+      bufferedSampleCount: 1,
+      deviceCount: 1,
+      deviceIds: ["whoop-a"],
+      firstTimestamp: "2026-03-27T10:00:00.000Z",
+      lastTimestamp: "2026-03-27T10:00:00.000Z",
+    });
   });
 
   it("resets connected on BLE disconnect event", async () => {

@@ -314,6 +314,12 @@ async function drainBuffer(
     const samples = await whoopDeps.peekBufferedSamples(IMU_UPLOAD_BATCH_SIZE);
     if (samples.length === 0) break;
 
+    let deviceIds = Array.from(
+      new Set(samples.map((sample) => sample.deviceId?.trim() || DEFAULT_WHOOP_DEVICE_ID)),
+    );
+    let firstTimestamp: string | undefined;
+    let lastTimestamp: string | undefined;
+
     try {
       const groups = new DeviceSampleGroups(
         DEFAULT_WHOOP_DEVICE_ID,
@@ -322,6 +328,9 @@ async function drainBuffer(
       for (const sample of samples) {
         groups.add(sample);
       }
+      deviceIds = [...groups.entries()].map(([deviceId]) => deviceId);
+      firstTimestamp = samples[0]?.timestamp;
+      lastTimestamp = samples[samples.length - 1]?.timestamp;
 
       let inserted = 0;
       for (const [deviceId, uploadSamples] of groups.entries()) {
@@ -340,7 +349,14 @@ async function drainBuffer(
       );
     } catch (error: unknown) {
       logger.error(LOG_CATEGORY, `IMU upload failed, ${samples.length} samples retained: ${error}`);
-      captureException(error, { source: "whoop-ble-imu-upload" });
+      captureException(error, {
+        source: "whoop-ble-imu-upload",
+        bufferedSampleCount: samples.length,
+        deviceCount: deviceIds.length,
+        deviceIds,
+        firstTimestamp: firstTimestamp ?? samples[0]?.timestamp,
+        lastTimestamp: lastTimestamp ?? samples[samples.length - 1]?.timestamp,
+      });
       break; // Stop draining — samples are still in the buffer for retry
     }
   }
