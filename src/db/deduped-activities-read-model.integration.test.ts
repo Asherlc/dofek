@@ -12,6 +12,8 @@ const testUserId = "00000000-0000-0000-0000-000000000303";
 type ClickHouseClient = ReturnType<typeof createClient>;
 
 interface SourceLinkRow {
+  providerId: string;
+  sourceLinkCount: number;
   subsource: string;
 }
 
@@ -44,7 +46,10 @@ ${renderDedupedActivitiesSelectSql(targetSchema)}`,
     });
 
     const result = await activeClient.query({
-      query: `SELECT source_external_ids[1]['subsource'] AS subsource
+      query: `SELECT
+          length(source_external_ids) AS sourceLinkCount,
+          source_external_ids[1]['providerId'] AS providerId,
+          source_external_ids[1]['subsource'] AS subsource
         FROM ${targetSchema}.deduped_activities FINAL
         WHERE activity_id = {activityId:UUID}
           AND is_deleted = 0`,
@@ -53,7 +58,7 @@ ${renderDedupedActivitiesSelectSql(targetSchema)}`,
     });
     const rows = await result.json<SourceLinkRow>();
 
-    expect(rows).toEqual([{ subsource: "" }]);
+    expect(rows).toEqual([{ providerId: "peloton", sourceLinkCount: 1, subsource: "" }]);
   }, 180_000);
 });
 
