@@ -9,8 +9,8 @@ const ENTRY_KEY_PREFIX = "slack:pending-entry:";
 const MESSAGE_INDEX_KEY_PREFIX = "slack:pending-message:";
 
 const pendingEntrySchema = z.object({
-  id: z.string().uuid(),
-  userId: z.string().uuid(),
+  id: z.guid(),
+  userId: z.guid(),
   date: z.string(),
   item: z.custom<NutritionItemWithMeal>(),
   channelId: z.string(),
@@ -33,7 +33,7 @@ export type PendingSlackEntry = {
 };
 
 interface RedisClient {
-  set(key: string, value: string, mode: "PX", millisecondsToExpire: number): Promise<"OK" | null>;
+  set(key: string, value: string, mode: "PX", millisecondsToExpire: number): Promise<string | null>;
   get(key: string): Promise<string | null>;
   del(...keys: string[]): Promise<number>;
 }
@@ -193,8 +193,8 @@ async function getSharedRedisClient(): Promise<RedisClient> {
   }
   const redisClient = await sharedRedisConnection.client;
   return {
-    set: async (key, value, mode, millisecondsToExpire) =>
-      redisClient.set(key, value, mode, millisecondsToExpire),
+    set: async (key, value, _mode, millisecondsToExpire) =>
+      redisClient.set(key, value, { PX: millisecondsToExpire }),
     get: async (key) => redisClient.get(key),
     del: async (...keys) => redisClient.del(...keys),
   };

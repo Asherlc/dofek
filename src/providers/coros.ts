@@ -280,7 +280,7 @@ export class CorosProvider implements WebhookProvider {
       return listParsed.data.sportDataList
         .map((item) => sportDataItemSchema.safeParse(item))
         .filter(
-          (result): result is z.SafeParseSuccess<z.infer<typeof sportDataItemSchema>> =>
+          (result): result is z.ZodSafeParseSuccess<z.infer<typeof sportDataItemSchema>> =>
             result.success,
         )
         .map((result) => ({

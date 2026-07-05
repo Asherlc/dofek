@@ -115,7 +115,7 @@ const v2ActivitySchema = z.object({
 
 /** Cycle must have the structure our sync code navigates */
 const cycleSchema = z.object({
-  recovery: z.record(z.unknown()).nullable().optional(),
+  recovery: z.record(z.string(), z.unknown()).nullable().optional(),
   v2_activities: z.array(v2ActivitySchema).optional(),
   sleeps: z.array(z.unknown()).optional(),
   workouts: z.array(z.unknown()).optional(),

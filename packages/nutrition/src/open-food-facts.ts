@@ -41,7 +41,7 @@ const openFoodFactsProductSchema = z
     brands: z.string().optional(),
     lang: z.string().optional(),
     serving_size: z.string().optional(),
-    nutriments: z.record(z.unknown()).optional(),
+    nutriments: z.record(z.string(), z.unknown()).optional(),
     image_front_small_url: z.string().optional(),
   })
   .catchall(z.unknown());

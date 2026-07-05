@@ -22,9 +22,9 @@ mkdirSync(JOB_FILES_DIR, { recursive: true });
 const EXPORT_FILENAME = "dofek-export.zip";
 const EXPORT_TTL_DAYS = 7;
 
-const insertExportRowSchema = z.object({ id: z.string().uuid() });
+const insertExportRowSchema = z.object({ id: z.guid() });
 const exportListRowSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   status: z.string(),
   filename: z.string(),
   size_bytes: z
@@ -38,7 +38,7 @@ const exportListRowSchema = z.object({
   error_message: z.string().nullable(),
 });
 const exportDownloadRowSchema = z.object({
-  user_id: z.string().uuid(),
+  user_id: z.guid(),
   status: z.string(),
   object_key: z.string().nullable(),
   expires_at: timestampStringSchema,

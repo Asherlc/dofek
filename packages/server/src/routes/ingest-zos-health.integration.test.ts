@@ -679,9 +679,8 @@ describe("POST /api/ingest/zos-health", () => {
   });
 
   // ── Mutation-killing: NaN-date defensive guards ──
-  // Zod's datetime({ offset: true }) accepts pathological offsets like "+99:00"
-  // but new Date() rejects them with Invalid Date (NaN from .getTime()).
-  // The route warns and skips those records.
+  // The ingest schema accepts pathological offsets like "+99:00", but new Date()
+  // rejects them with Invalid Date (NaN from .getTime()). The route warns and skips.
 
   it("skips sleep session whose Zod-valid offset produces an Invalid Date", async () => {
     const res = await post(app, "/api/ingest/zos-health", {

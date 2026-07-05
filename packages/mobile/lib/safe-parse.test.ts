@@ -39,10 +39,12 @@ describe("safeParseRows", () => {
     expect(mockCaptureException.mock.calls[0][1]).toHaveProperty("context", "myContext");
   });
 
-  it("handles null/undefined input", () => {
+  it("reports null input as a parse failure", () => {
     const result = safeParseRows(testSchema, null, "test");
     expect(result.data).toEqual([]);
-    expect(result.error).toBeNull();
+    expect(result.error).toBeInstanceOf(Error);
+    expect(result.error?.message).toContain("test: Zod parse failed");
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
   });
 
   it("handles empty array input", () => {

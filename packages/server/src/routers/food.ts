@@ -93,7 +93,7 @@ const createFoodEntrySchema = z
 
 const updateFoodEntrySchema = z
   .object({
-    id: z.string().uuid(),
+    id: z.guid(),
     date: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD format")
@@ -103,7 +103,8 @@ const updateFoodEntrySchema = z
     foodDescription: z.string().max(2000).nullish(),
     category: z.enum(foodCategoryValues).nullish(),
     numberOfUnits: z.number().positive().nullish(),
-    nutrients: nutrientsMapSchema.optional(),
+    // Zod 4 applies `.default({})` even on optional fields, which would wipe nutrients on every update.
+    nutrients: z.record(z.string(), z.number().nonnegative()).optional(),
   })
   .merge(nutrientFieldsSchema.partial());
 
@@ -188,14 +189,12 @@ export const foodRouter = router({
   }),
 
   /** Delete a food entry by id */
-  delete: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
-    .mutation(async ({ ctx, input }) => {
-      const repo = new FoodRepository(ctx.db, ctx.userId, ctx.timezone);
-      const result = await repo.delete(input.id);
-      await invalidateFoodCaches(ctx.userId);
-      return result;
-    }),
+  delete: protectedProcedure.input(z.object({ id: z.guid() })).mutation(async ({ ctx, input }) => {
+    const repo = new FoodRepository(ctx.db, ctx.userId, ctx.timezone);
+    const result = await repo.delete(input.id);
+    await invalidateFoodCaches(ctx.userId);
+    return result;
+  }),
 
   /** Analyze a food description with AI and return estimated nutrition data */
   analyzeWithAi: protectedProcedure

@@ -20,6 +20,7 @@ import { ensureProvider } from "../db/tokens.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../logger.ts";
 import { fetchProviderPages } from "../sync/pagination.ts";
+import { AccessTokenExpiredError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
@@ -235,7 +236,11 @@ export class PelotonClient {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`Peloton API error (${response.status}): ${text}`);
+      const apiError = new Error(`Peloton API error (${response.status}): ${text}`);
+      if (response.status === 401) {
+        throw new AccessTokenExpiredError("Peloton", { cause: apiError });
+      }
+      throw apiError;
     }
 
     return response.json();

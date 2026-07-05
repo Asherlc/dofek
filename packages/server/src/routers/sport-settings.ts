@@ -70,10 +70,8 @@ export const sportSettingsRouter = router({
   /**
    * Delete a sport settings entry.
    */
-  delete: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
-    .mutation(async ({ ctx, input }) => {
-      const repository = new SportSettingsRepository(ctx.db, ctx.userId);
-      return repository.delete(input.id);
-    }),
+  delete: protectedProcedure.input(z.object({ id: z.guid() })).mutation(async ({ ctx, input }) => {
+    const repository = new SportSettingsRepository(ctx.db, ctx.userId);
+    return repository.delete(input.id);
+  }),
 });

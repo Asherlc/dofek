@@ -45,7 +45,7 @@
     "simple-statistics": "7.8.9",
     "stripe": "22.1.0",
     "whoop-whoop": "workspace:*",
-    "zod": "3.25.76"
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/compression": "1.8.1",

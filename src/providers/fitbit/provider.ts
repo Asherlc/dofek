@@ -213,7 +213,9 @@ export class FitbitProvider implements WebhookProvider {
 
     return body
       .map((notification: unknown) => itemSchema.safeParse(notification))
-      .filter((result): result is z.SafeParseSuccess<z.infer<typeof itemSchema>> => result.success)
+      .filter(
+        (result): result is z.ZodSafeParseSuccess<z.infer<typeof itemSchema>> => result.success,
+      )
       .map((result) => ({
         ownerExternalId: result.data.ownerId,
         eventType: "update" as const,

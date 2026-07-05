@@ -216,6 +216,7 @@ describe("calendarRouter", () => {
       weeks: 8,
       endDate: "2026-03-20",
       activityType: "running",
+      includeProviderAbsent: false,
     });
   });
 
@@ -264,6 +265,7 @@ describe("calendarRouter", () => {
       weeks: 4,
       endDate: "2026-03-20",
       activityType: "running",
+      includeProviderAbsent: false,
     });
   });
 });

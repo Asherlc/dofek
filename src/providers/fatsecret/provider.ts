@@ -237,7 +237,7 @@ export class FatSecretProvider implements SyncProvider {
         // shape that fails Zod validation on the food_entries key (empty day variant).
         const isNoEntriesMessage = err instanceof Error && err.message.includes("No entries found");
         const isFoodEntriesZodError =
-          err instanceof z.ZodError && err.errors.some((issue) => issue.path[0] === "food_entries");
+          err instanceof z.ZodError && err.issues.some((issue) => issue.path[0] === "food_entries");
         if (!isNoEntriesMessage && !isFoodEntriesZodError) {
           const msg = err instanceof Error ? err.message : String(err);
           errors.push({ message: `Date ${current.toISOString().split("T")[0]}: ${msg}` });
