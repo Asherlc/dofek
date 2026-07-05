@@ -6,13 +6,13 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install -g corepack@0.35.0 && corepack enable && corepack prepare --activate
 
-FROM python:3.14-alpine AS dbt-tools
+FROM python:3.13-alpine AS dbt-tools
 RUN apk add --no-cache build-base && \
     pip install --no-cache-dir \
-      dbt-core==1.12.0b1 \
-      dbt-clickhouse \
-      sqlfluff==4.2.2 \
-      sqlfluff-templater-dbt==4.2.2
+    dbt-core==1.11.12 \
+    dbt-clickhouse==1.10.1 \
+    sqlfluff==4.2.2 \
+    sqlfluff-templater-dbt==4.2.2
 
 # ── Source stage: just copy files, no install ─────────────────────────
 FROM base AS source
@@ -70,11 +70,11 @@ RUN apk add --no-cache curl ca-certificates libbz2 && \
     curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-29.5.3.tgz" | \
       tar xz --strip-components=1 -C /usr/local/bin docker/docker && \
     apk del curl
-COPY --from=dbt-tools /usr/local/bin/python3.14 /usr/local/bin/python3.14
+COPY --from=dbt-tools /usr/local/bin/python3.13 /usr/local/bin/python3.13
 COPY --from=dbt-tools /usr/local/bin/dbt /usr/local/bin/dbt
 COPY --from=dbt-tools /usr/local/bin/sqlfluff /usr/local/bin/sqlfluff
-COPY --from=dbt-tools /usr/local/lib/python3.14 /usr/local/lib/python3.14
-COPY --from=dbt-tools /usr/local/lib/libpython3.14.so* /usr/local/lib/
+COPY --from=dbt-tools /usr/local/lib/python3.13 /usr/local/lib/python3.13
+COPY --from=dbt-tools /usr/local/lib/libpython3.13.so* /usr/local/lib/
 
 
 COPY --from=source --chown=node:node /app/src ./src
