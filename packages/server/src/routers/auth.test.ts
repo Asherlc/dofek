@@ -84,6 +84,18 @@ describe("authRouter", () => {
       ).rejects.toThrow(TRPCError);
     });
 
+    it("rejects invalid accountId before hitting the repository", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.unlinkAccount({ accountId: "not-a-valid-guid" }),
+      ).rejects.toThrow(TRPCError);
+    });
+
     it("throws NOT_FOUND when account does not belong to user", async () => {
       const execute = vi.fn();
       execute.mockResolvedValueOnce([{ count: "2" }]);

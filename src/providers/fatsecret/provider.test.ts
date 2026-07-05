@@ -1,5 +1,30 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SyncRun } from "../sync-run.ts";
+import { SyncWindow } from "../sync-window.ts";
 import { FatSecretProvider } from "./provider.ts";
+
+const mockLoadTokens = vi.fn();
+const mockEnsureProvider = vi.fn();
+
+vi.mock("../../db/tokens.ts", () => ({
+  loadTokens: (...args: unknown[]) => mockLoadTokens(...args),
+  ensureProvider: (...args: unknown[]) => mockEnsureProvider(...args),
+}));
+
+vi.mock("../../db/token-user-context.ts", () => ({
+  getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
+}));
+
+function createMockDb() {
+  const where = vi.fn().mockResolvedValue([]);
+  const from = vi.fn().mockReturnValue({ where });
+  const select = vi.fn().mockReturnValue({ from });
+  const returning = vi.fn().mockResolvedValue([]);
+  const onConflictDoNothing = vi.fn().mockReturnValue({ returning });
+  const values = vi.fn().mockReturnValue({ onConflictDoNothing });
+  const insert = vi.fn().mockReturnValue({ values });
+  return { db: { select, insert }, where, insert };
+}
 
 // Unit tests for the FatSecretProvider wiring (validation + auth setup).
 // OAuth signing lives in ./signing.test.ts, the API client and 3-legged token
@@ -106,5 +131,73 @@ describe("FatSecretProvider — constructor", () => {
     process.env.FATSECRET_CONSUMER_SECRET = "secret";
     const customFetch: typeof globalThis.fetch = () => Promise.resolve(new Response());
     expect(new FatSecretProvider(customFetch).id).toBe("fatsecret");
+  });
+});
+
+describe("FatSecretProvider.sync() — error handling", () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env.FATSECRET_CONSUMER_KEY = "key";
+    process.env.FATSECRET_CONSUMER_SECRET = "secret";
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "oauth1-token",
+      refreshToken: "oauth1-token-secret",
+      expiresAt: new Date("2099-01-01T00:00:00Z"),
+      scopes: null,
+    });
+    mockEnsureProvider.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    vi.clearAllMocks();
+  });
+
+  it("silently skips Zod validation errors on the food_entries path", async () => {
+    const { db } = createMockDb();
+    const mockFetch: typeof globalThis.fetch = async () =>
+      Response.json({ food_entries: { food_entry: "not-an-array" } });
+    const provider = new FatSecretProvider(mockFetch);
+    const since = new Date();
+    since.setUTCHours(0, 0, 0, 0);
+
+    const result = await provider.sync(
+      new SyncRun({ db: db as never, window: SyncWindow.fromSince({ since }) }),
+    );
+
+    expect(result.errors).toEqual([]);
+  });
+
+  it("records non-Zod API errors", async () => {
+    const { db } = createMockDb();
+    const mockFetch: typeof globalThis.fetch = async () =>
+      new Response("upstream failed", { status: 500 });
+    const provider = new FatSecretProvider(mockFetch);
+    const since = new Date();
+    since.setUTCHours(0, 0, 0, 0);
+
+    const result = await provider.sync(
+      new SyncRun({ db: db as never, window: SyncWindow.fromSince({ since }) }),
+    );
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toMatch(/^Date \d{4}-\d{2}-\d{2}:/);
+    expect(result.errors[0]?.message).toContain("FatSecret API error (500)");
+  });
+
+  it("silently skips explicit no-entries API errors", async () => {
+    const { db } = createMockDb();
+    const mockFetch: typeof globalThis.fetch = async () =>
+      Response.json({ error: { code: 7, message: "No entries found" } }, { status: 400 });
+    const provider = new FatSecretProvider(mockFetch);
+    const since = new Date();
+    since.setUTCHours(0, 0, 0, 0);
+
+    const result = await provider.sync(
+      new SyncRun({ db: db as never, window: SyncWindow.fromSince({ since }) }),
+    );
+
+    expect(result.errors).toEqual([]);
   });
 });

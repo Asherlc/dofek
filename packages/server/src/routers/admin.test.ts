@@ -241,6 +241,88 @@ describe("adminRouter", () => {
       expect(result.providers[0]?.id).toBe("whoop");
     });
 
+    it("returns unpaid access and null Stripe links when billing is absent", async () => {
+      const execute = vi.fn();
+      execute.mockResolvedValueOnce([
+        {
+          id: "00000000-0000-0000-0000-000000000001",
+          name: "Test",
+          email: "test@test.com",
+          birth_date: null,
+          is_admin: false,
+          created_at: "2026-04-10T18:30:00.000Z",
+          updated_at: "2026-04-10T18:30:00.000Z",
+        },
+      ]);
+      execute.mockResolvedValueOnce([]);
+      execute.mockResolvedValueOnce([]);
+      execute.mockResolvedValueOnce([]);
+      execute.mockResolvedValueOnce([]);
+      execute.mockResolvedValueOnce([]);
+      const caller = makeCaller(execute);
+
+      const result = await caller.userDetail({
+        userId: "00000000-0000-0000-0000-000000000001",
+      });
+
+      expect(result.flags.providerGuideDismissed).toBe(false);
+      expect(result.billing).toBeNull();
+      expect(result.access).toEqual({
+        kind: "limited",
+        paid: false,
+        reason: "free_signup_week",
+        startDate: "2026-04-10",
+        endDateExclusive: "2026-04-17",
+      });
+      expect(result.stripeLinks).toEqual({
+        customer: null,
+        subscription: null,
+      });
+    });
+
+    it("uses paid grant reason from billing when present", async () => {
+      const execute = vi.fn();
+      execute.mockResolvedValueOnce([
+        {
+          id: "00000000-0000-0000-0000-000000000001",
+          name: "Test",
+          email: "test@test.com",
+          birth_date: null,
+          is_admin: false,
+          created_at: "2026-04-10T18:30:00.000Z",
+          updated_at: "2026-04-10T18:30:00.000Z",
+        },
+      ]);
+      execute.mockResolvedValueOnce([{ value: false }]);
+      execute.mockResolvedValueOnce([
+        {
+          user_id: "00000000-0000-0000-0000-000000000001",
+          stripe_customer_id: null,
+          stripe_subscription_id: null,
+          stripe_subscription_status: null,
+          stripe_current_period_end: null,
+          paid_grant_reason: "existing_account",
+          created_at: "2026-04-10T18:30:00.000Z",
+          updated_at: "2026-04-10T18:30:00.000Z",
+        },
+      ]);
+      execute.mockResolvedValueOnce([]);
+      execute.mockResolvedValueOnce([]);
+      execute.mockResolvedValueOnce([]);
+      const caller = makeCaller(execute);
+
+      const result = await caller.userDetail({
+        userId: "00000000-0000-0000-0000-000000000001",
+      });
+
+      expect(result.flags.providerGuideDismissed).toBe(false);
+      expect(result.access).toEqual({ kind: "full", paid: true, reason: "paid_grant" });
+      expect(result.stripeLinks).toEqual({
+        customer: null,
+        subscription: null,
+      });
+    });
+
     it("throws when the target user does not exist", async () => {
       const caller = makeCaller(vi.fn().mockResolvedValueOnce([]));
 
