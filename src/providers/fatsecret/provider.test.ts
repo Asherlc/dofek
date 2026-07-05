@@ -161,7 +161,7 @@ describe("FatSecretProvider.sync() — error handling", () => {
   });
 
   it("records non-Zod API errors", async () => {
-    const { db: mockDb } = createMockDatabase();
+    const { db: mockDb, spies } = createMockDatabase();
     const mockFetch: typeof globalThis.fetch = async () =>
       new Response("upstream failed", { status: 500 });
     const provider = new FatSecretProvider(mockFetch);
@@ -175,6 +175,7 @@ describe("FatSecretProvider.sync() — error handling", () => {
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toMatch(/^Date \d{4}-\d{2}-\d{2}:/);
     expect(result.errors[0]?.message).toContain("FatSecret API error (500)");
+    expect(spies.insert).not.toHaveBeenCalled();
   });
 
   it("silently skips explicit no-entries API errors", async () => {
