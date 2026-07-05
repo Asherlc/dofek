@@ -78,6 +78,23 @@ describe("auth-context", () => {
       expect(saveSessionToken).not.toHaveBeenCalled();
     });
 
+    it("finishes bootstrap on a fresh inactive launch with no token", async () => {
+      const { getSessionToken, saveSessionToken } = await import("./auth");
+
+      AppState.currentState = "inactive";
+      vi.mocked(getSessionToken).mockResolvedValue(null);
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      await waitFor(() => {
+        expect(result.current.isLoading).toBe(false);
+      });
+
+      expect(result.current.user).toBeNull();
+      expect(result.current.bootstrapError).toBeNull();
+      expect(saveSessionToken).not.toHaveBeenCalled();
+    });
+
     it("defers bootstrap when SecureStore is inaccessible in the background", async () => {
       const auth = await import("./auth");
       const { getSessionToken, saveSessionToken, fetchCurrentUser } = auth;
