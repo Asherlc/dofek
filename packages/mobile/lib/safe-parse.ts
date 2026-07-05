@@ -25,7 +25,7 @@ export function safeParseRows<T>(
   rows: unknown,
   context: string,
 ): SafeParseResult<T> {
-  const result = schema.array().safeParse(rows ?? []);
+  const result = schema.array().safeParse(rows);
   if (result.success) {
     return { data: result.data, error: null };
   }
