@@ -670,12 +670,33 @@ describe("ProviderRateLimitCooldownStore", () => {
   it("uses the Redis cooldown store outside test environments", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("VITEST", "");
+
+    const mockClient = {
+      get: vi.fn<(key: string) => Promise<string | null>>().mockResolvedValue(null),
+      set: vi
+        .fn<(key: string, value: string, mode: "PX", ms: number) => Promise<string | null>>()
+        .mockResolvedValue("OK"),
+    };
+    vi.doMock("bullmq", () => ({
+      RedisConnection: vi.fn().mockImplementation(() => ({
+        get client() {
+          return Promise.resolve(mockClient);
+        },
+      })),
+    }));
+    vi.doMock("./queues.ts", () => ({
+      getRedisConnection: vi.fn().mockReturnValue({}),
+    }));
     vi.resetModules();
 
     const module = await import("./provider-rate-limit-cooldown.ts");
     expect(module.providerRateLimitCooldownStore).toBeInstanceOf(
       module.RedisProviderRateLimitCooldownStore,
     );
+
+    await expect(
+      module.providerRateLimitCooldownStore.getActive("garmin", "user-1"),
+    ).resolves.toBeNull();
 
     vi.unstubAllEnvs();
     vi.resetModules();
