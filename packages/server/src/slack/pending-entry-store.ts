@@ -9,8 +9,8 @@ const ENTRY_KEY_PREFIX = "slack:pending-entry:";
 const MESSAGE_INDEX_KEY_PREFIX = "slack:pending-message:";
 
 const pendingEntrySchema = z.object({
-  id: z.string().uuid(),
-  userId: z.string().uuid(),
+  id: z.guid(),
+  userId: z.guid(),
   date: z.string(),
   item: z.custom<NutritionItemWithMeal>(),
   channelId: z.string(),

@@ -44,7 +44,7 @@ export const authRouter = router({
   }),
 
   unlinkAccount: protectedProcedure
-    .input(z.object({ accountId: z.string().uuid() }))
+    .input(z.object({ accountId: z.guid() }))
     .mutation(async ({ ctx, input }) => {
       const repo = new AuthRepository(ctx.db, ctx.userId);
 

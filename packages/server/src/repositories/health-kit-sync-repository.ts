@@ -697,7 +697,7 @@ export class HealthKitSyncRepository {
         const externalId = `hk:sleep:${session.uuid}:${sourceName}`;
         const sessionResult = await executeWithSchema(
           this.#db,
-          z.object({ id: z.string().uuid() }),
+          z.object({ id: z.guid() }),
           sql`INSERT INTO fitness.sleep_session (user_id, provider_id, external_id, started_at, ended_at, duration_minutes, deep_minutes, rem_minutes, light_minutes, awake_minutes, sleep_type, source_name)
               VALUES (
                 ${this.#userId},

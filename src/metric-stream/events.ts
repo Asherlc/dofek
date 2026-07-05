@@ -40,15 +40,15 @@ const timestampInputSchema = z.union([z.string().min(1), z.date()]).transform((v
 
 export const metricStreamRowInputSchema = z
   .object({
-    id: z.string().uuid().optional(),
+    id: z.guid().optional(),
     recordedAt: timestampInputSchema,
-    userId: z.string().uuid(),
+    userId: z.guid(),
     providerId: nonEmptyStringSchema,
     externalId: optionalNullableTextSchema,
     deviceId: optionalNullableTextSchema,
     sourceType: nonEmptyStringSchema,
     channel: nonEmptyStringSchema,
-    activityId: z.string().uuid().nullable().optional(),
+    activityId: z.guid().nullable().optional(),
     scalar: z.number().finite().nullable().optional(),
     vector: z.array(z.number().finite()).min(1).nullable().optional(),
     point: optionalNullableTextSchema,
@@ -59,15 +59,15 @@ export const metricStreamRowInputSchema = z
 export const metricStreamEventV1Schema = z
   .object({
     version: z.literal(METRIC_STREAM_EVENT_VERSION),
-    id: z.string().uuid(),
+    id: z.guid(),
     recordedAt: z.string().datetime({ offset: true }),
-    userId: z.string().uuid(),
+    userId: z.guid(),
     providerId: nonEmptyStringSchema,
     externalId: optionalNullableTextSchema,
     deviceId: optionalNullableTextSchema,
     sourceType: nonEmptyStringSchema,
     channel: nonEmptyStringSchema,
-    activityId: z.string().uuid().nullable().optional(),
+    activityId: z.guid().nullable().optional(),
     scalar: z.number().finite().nullable().optional(),
     vector: z.array(z.number().finite()).min(1).nullable().optional(),
     point: optionalNullableTextSchema,
@@ -77,11 +77,11 @@ export const metricStreamEventV1Schema = z
 
 export const metricStreamDeleteScopeSchema = z
   .object({
-    userId: z.string().uuid().optional(),
+    userId: z.guid().optional(),
     providerId: nonEmptyStringSchema.optional(),
     externalId: optionalNullableTextSchema,
     channel: nonEmptyStringSchema.optional(),
-    activityId: z.string().uuid().optional(),
+    activityId: z.guid().optional(),
     recordedAtStart: timestampInputSchema.optional(),
     recordedAtEnd: timestampInputSchema.optional(),
   })

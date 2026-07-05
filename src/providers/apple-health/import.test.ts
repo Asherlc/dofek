@@ -861,7 +861,7 @@ describe("importAppleHealthFile", () => {
           "MedicationDoseEvent apple_health_export/clinical-records/MedicationDoseEvent-001.json: Invalid medication dose event startDate: not-a-date",
         ),
         expect.stringContaining("MedicationDoseEvent-002.json"),
-        expect.stringContaining("Expected string"),
+        expect.stringContaining("expected string"),
       ]),
     );
   });

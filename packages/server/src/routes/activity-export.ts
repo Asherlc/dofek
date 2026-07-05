@@ -9,7 +9,7 @@ import { exportActivityFile } from "../lib/activity-export-service.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 
 const exportFormatSchema = z.enum(["gpx", "tcx", "csv", "fit"]);
-const activityIdSchema = z.string().uuid();
+const activityIdSchema = z.guid();
 
 interface ActivityExportRouterDeps {
   db: Database;

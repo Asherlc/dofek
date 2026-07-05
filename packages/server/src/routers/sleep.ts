@@ -19,7 +19,7 @@ export const sleepRouter = router({
     }),
 
   stages: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ sessionId: z.string().uuid() }))
+    .input(z.object({ sessionId: z.guid() }))
     .query(({ ctx, input }) => {
       const repo = new SleepRepository(
         ctx.db,

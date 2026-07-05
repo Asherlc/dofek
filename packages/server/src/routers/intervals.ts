@@ -23,7 +23,7 @@ export const intervalsRouter = router({
    * Computes per-interval metrics from sensor stream based on interval time ranges.
    */
   byActivity: cachedProtectedQuery(CacheTTL.LONG)
-    .input(z.object({ activityId: z.string().uuid() }))
+    .input(z.object({ activityId: z.guid() }))
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "intervals.byActivity");
       const repo = new IntervalsRepository(ctx.db, ctx.userId, sensorStore);
@@ -35,7 +35,7 @@ export const intervalsRouter = router({
    * Splits activity into intervals based on significant changes in intensity.
    */
   detect: cachedProtectedQuery(CacheTTL.LONG)
-    .input(z.object({ activityId: z.string().uuid() }))
+    .input(z.object({ activityId: z.guid() }))
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "intervals.detect");
       const repo = new IntervalsRepository(ctx.db, ctx.userId, sensorStore);
