@@ -3,7 +3,8 @@ import type { ActivitySensorStore } from "../repositories/activity-repository.ts
 
 export function makeMockSensorStore(rows: unknown[] = []): ActivitySensorStore {
   return {
-    query: vi.fn(async () => rows),
+    // biome-ignore lint: mock generic method needs cast
+    query: vi.fn(async () => rows) as ActivitySensorStore["query"],
     getActivitySummaries: vi.fn().mockResolvedValue([]),
     getStream: vi.fn().mockResolvedValue([]),
     getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),

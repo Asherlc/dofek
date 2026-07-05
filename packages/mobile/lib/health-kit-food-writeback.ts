@@ -80,7 +80,7 @@ export interface FoodWriteBackResult {
   errors: string[];
 }
 
-const ledgerSchema = z.record(z.string());
+const ledgerSchema = z.record(z.string(), z.string());
 
 export const secureStoreFoodWriteBackStorage: FoodWriteBackStorage = {
   getItem: (key) => readSecureStoreItem(key),

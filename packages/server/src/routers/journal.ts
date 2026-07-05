@@ -49,7 +49,7 @@ export const journalRouter = router({
   update: protectedProcedure
     .input(
       z.object({
-        id: z.string().uuid(),
+        id: z.guid(),
         answerText: z.string().nullable().optional(),
         answerNumeric: z.number().nullable().optional(),
       }),
@@ -60,12 +60,10 @@ export const journalRouter = router({
     }),
 
   /** Delete a manual journal entry (only own entries via dofek provider) */
-  delete: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
-    .mutation(async ({ ctx, input }) => {
-      const repository = new JournalRepository(ctx.db, ctx.userId);
-      return repository.deleteEntry(input.id);
-    }),
+  delete: protectedProcedure.input(z.object({ id: z.guid() })).mutation(async ({ ctx, input }) => {
+    const repository = new JournalRepository(ctx.db, ctx.userId);
+    return repository.deleteEntry(input.id);
+  }),
 
   /** Create a custom journal question */
   createQuestion: protectedProcedure

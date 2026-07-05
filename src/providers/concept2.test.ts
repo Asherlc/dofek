@@ -386,9 +386,9 @@ describe("Concept2Provider", () => {
       // id is coerced to string by z.coerce.string()
       expect(events[0]?.objectId).toBe("12345");
       // The payload contains the Zod-parsed result (id coerced to string, passthrough for rest)
-      const metadataRecord = z.record(z.unknown()).parse(events[0]?.metadata);
+      const metadataRecord = z.record(z.string(), z.unknown()).parse(events[0]?.metadata);
       expect(metadataRecord.payload).toBeDefined();
-      const payloadRecord = z.record(z.unknown()).parse(metadataRecord.payload);
+      const payloadRecord = z.record(z.string(), z.unknown()).parse(metadataRecord.payload);
       expect(payloadRecord.id).toBe("12345");
       expect(payloadRecord.type).toBe("rower");
     });

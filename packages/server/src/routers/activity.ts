@@ -127,7 +127,7 @@ export const activityRouter = router({
     }),
 
   byId: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<ActivityDetail> => {
       const repo = new ActivityRepository(
         ctx.db,
@@ -149,7 +149,7 @@ export const activityRouter = router({
   stream: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(
       z.object({
-        id: z.string().uuid(),
+        id: z.guid(),
         maxPoints: z.number().int().min(10).max(10000).default(500),
       }),
     )
@@ -173,7 +173,7 @@ export const activityRouter = router({
     }),
 
   hrZones: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<ActivityHrZones> => {
       if (!ctx.sensorStore) {
         throw new TRPCError({
@@ -193,7 +193,7 @@ export const activityRouter = router({
     }),
 
   powerZones: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<ActivityPowerZonesResult | null> => {
       const activityRepo = new ActivityRepository(
         ctx.db,
@@ -225,7 +225,7 @@ export const activityRouter = router({
     }),
 
   strengthExercises: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<StrengthExerciseDetail[]> => {
       const activityRepo = new ActivityRepository(
         ctx.db,
@@ -244,7 +244,7 @@ export const activityRouter = router({
     }),
 
   recompute: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.guid() }))
     .mutation(async ({ ctx, input }) => {
       const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       try {
@@ -270,29 +270,27 @@ export const activityRouter = router({
       }
     }),
 
-  delete: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
-    .mutation(async ({ ctx, input }) => {
-      const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
-      try {
-        const { memberActivityIds } = await repo.bulkDelete([input.id]);
-        await invalidateActivityListCaches(ctx.userId);
-        await scheduleActivityAnalyticsRefresh(ctx.userId, memberActivityIds);
-        return { success: true };
-      } catch (error) {
-        if (isRelationMissingError(error)) {
-          throw new TRPCError({
-            code: "PRECONDITION_FAILED",
-            message:
-              "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
-          });
-        }
-        throw error;
+  delete: protectedProcedure.input(z.object({ id: z.guid() })).mutation(async ({ ctx, input }) => {
+    const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+    try {
+      const { memberActivityIds } = await repo.bulkDelete([input.id]);
+      await invalidateActivityListCaches(ctx.userId);
+      await scheduleActivityAnalyticsRefresh(ctx.userId, memberActivityIds);
+      return { success: true };
+    } catch (error) {
+      if (isRelationMissingError(error)) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "Activity data is unavailable because the activity view is missing. Run migrations and retry.",
+        });
       }
-    }),
+      throw error;
+    }
+  }),
 
   bulkDelete: protectedProcedure
-    .input(z.object({ ids: z.array(z.string().uuid()).min(1).max(MAX_BULK_DELETE_ACTIVITY_IDS) }))
+    .input(z.object({ ids: z.array(z.guid()).min(1).max(MAX_BULK_DELETE_ACTIVITY_IDS) }))
     .mutation(async ({ ctx, input }) => {
       const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       try {
@@ -313,7 +311,7 @@ export const activityRouter = router({
     }),
 
   restoreProviderAbsent: protectedProcedure
-    .input(z.object({ ids: z.array(z.string().uuid()).min(1).max(MAX_BULK_DELETE_ACTIVITY_IDS) }))
+    .input(z.object({ ids: z.array(z.guid()).min(1).max(MAX_BULK_DELETE_ACTIVITY_IDS) }))
     .mutation(async ({ ctx, input }) => {
       const repo = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       try {

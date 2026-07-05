@@ -14,7 +14,7 @@ export const healthReportRouter = router({
     .input(
       z.object({
         reportType: z.enum(["weekly", "monthly", "healthspan"]),
-        reportData: z.record(z.unknown()),
+        reportData: z.record(z.string(), z.unknown()),
         expiresInDays: z.number().min(1).max(90).nullable().default(null),
       }),
     )

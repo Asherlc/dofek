@@ -27,7 +27,7 @@ export const lifeEventsRouter = router({
   update: protectedProcedure
     .input(
       z.object({
-        id: z.string().uuid(),
+        id: z.guid(),
         label: z.string().min(1).optional(),
         startedAt: z.string().optional(),
         endedAt: z.string().nullable().optional(),
@@ -42,18 +42,16 @@ export const lifeEventsRouter = router({
       return repo.update(id, fields);
     }),
 
-  delete: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
-    .mutation(async ({ ctx, input }) => {
-      const repo = new LifeEventsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
-      return repo.delete(input.id);
-    }),
+  delete: protectedProcedure.input(z.object({ id: z.guid() })).mutation(async ({ ctx, input }) => {
+    const repo = new LifeEventsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
+    return repo.delete(input.id);
+  }),
 
   /** Analyze: compare metrics before vs after (or during vs outside) a life event */
   analyze: cachedProtectedQuery(CacheTTL.SHORT)
     .input(
       z.object({
-        id: z.string().uuid(),
+        id: z.guid(),
         windowDays: z.number().default(30),
       }),
     )

@@ -662,6 +662,7 @@ export const syncRouter = router({
     const progressSchema = z.object({
       providers: z
         .record(
+          z.string(),
           z.object({
             status: z.enum(["pending", "running", "done", "error"]),
             message: z.string().optional(),
@@ -711,6 +712,7 @@ export const syncRouter = router({
     const progressSchema = z.object({
       providers: z
         .record(
+          z.string(),
           z.object({
             status: z.enum(["pending", "running", "done", "error"]),
             message: z.string().optional(),
