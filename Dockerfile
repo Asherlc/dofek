@@ -6,14 +6,13 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install -g corepack@0.35.0 && corepack enable && corepack prepare --activate
 
-# dbt 1.10.x is incompatible with Alpine's Python 3.14; install tools on 3.12 instead.
 FROM python:3.14-alpine AS dbt-tools
 RUN apk add --no-cache build-base && \
     pip install --no-cache-dir \
-      dbt-core==1.10.22 \
-      dbt-clickhouse==1.10.0 \
-      sqlfluff==4.2.1 \
-      sqlfluff-templater-dbt==4.2.1
+      dbt-core==1.11.12 \
+      dbt-clickhouse==1.10.1 \
+      sqlfluff==4.2.2 \
+      sqlfluff-templater-dbt==4.2.2
 
 # ── Source stage: just copy files, no install ─────────────────────────
 FROM base AS source
@@ -71,11 +70,11 @@ RUN apk add --no-cache curl ca-certificates libbz2 && \
     curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-29.5.3.tgz" | \
       tar xz --strip-components=1 -C /usr/local/bin docker/docker && \
     apk del curl
-COPY --from=dbt-tools /usr/local/bin/python3.12 /usr/local/bin/python3.12
+COPY --from=dbt-tools /usr/local/bin/python3.14 /usr/local/bin/python3.14
 COPY --from=dbt-tools /usr/local/bin/dbt /usr/local/bin/dbt
 COPY --from=dbt-tools /usr/local/bin/sqlfluff /usr/local/bin/sqlfluff
-COPY --from=dbt-tools /usr/local/lib/python3.12 /usr/local/lib/python3.12
-COPY --from=dbt-tools /usr/local/lib/libpython3.12.so* /usr/local/lib/
+COPY --from=dbt-tools /usr/local/lib/python3.14 /usr/local/lib/python3.14
+COPY --from=dbt-tools /usr/local/lib/libpython3.14.so* /usr/local/lib/
 
 
 COPY --from=source --chown=node:node /app/src ./src
