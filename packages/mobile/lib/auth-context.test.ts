@@ -14,6 +14,12 @@ vi.mock("./mobile-query-persistence", () => ({
   removeMobileQueryCache: mockRemoveMobileQueryCache,
 }));
 
+const mockCaptureException = vi.hoisted(() => vi.fn());
+
+vi.mock("./telemetry", () => ({
+  captureException: mockCaptureException,
+}));
+
 vi.mock("./auth", async (importOriginal) => {
   const original = await importOriginal<typeof import("./auth")>();
   return {
@@ -105,7 +111,7 @@ describe("auth-context", () => {
         appStateListeners.push(listener);
         return { remove: vi.fn() };
       });
-      vi.mocked(getSessionToken).mockResolvedValue(null);
+      vi.mocked(getSessionToken).mockRejectedValue(new Error("User interaction is not allowed"));
 
       const { result } = renderHook(() => useAuth(), { wrapper });
 
@@ -115,6 +121,7 @@ describe("auth-context", () => {
 
       expect(saveSessionToken).not.toHaveBeenCalled();
       expect(result.current.user).toBeNull();
+      expect(mockCaptureException).not.toHaveBeenCalled();
 
       AppState.currentState = "active";
       vi.mocked(getSessionToken).mockResolvedValue("existing-token");
@@ -134,6 +141,24 @@ describe("auth-context", () => {
       });
 
       expect(saveSessionToken).toHaveBeenCalledWith("existing-token");
+    });
+
+    it("reports SecureStore restore failures to Sentry in the foreground", async () => {
+      const { getSessionToken } = await import("./auth");
+      const error = new Error("Calling the getValueWithKeyAsync function has failed");
+
+      AppState.currentState = "active";
+      vi.mocked(getSessionToken).mockRejectedValue(error);
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      await waitFor(() => {
+        expect(result.current.bootstrapError).toBe(
+          "Calling the getValueWithKeyAsync function has failed",
+        );
+      });
+
+      expect(mockCaptureException).toHaveBeenCalledWith(error, { source: "auth-state-restore" });
     });
 
     it("keeps bootstrap failure separate from unauthenticated state", async () => {
