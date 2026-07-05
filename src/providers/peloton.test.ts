@@ -1,6 +1,7 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { AccessTokenExpiredError } from "./auth-errors.ts";
 import {
   mapFitnessDiscipline,
   PelotonClient,
@@ -666,13 +667,13 @@ describe("PelotonProvider — provider info", () => {
 });
 
 describe("PelotonClient — error handling", () => {
-  it("throws on non-OK response", async () => {
+  it("throws an auth error for unauthorized responses", async () => {
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return new Response("Unauthorized", { status: 401 });
     };
 
     const client = new PelotonClient("bad-token", mockFetch);
-    await expect(client.getUserId()).rejects.toThrow("Peloton API error (401)");
+    await expect(client.getUserId()).rejects.toThrow(AccessTokenExpiredError);
   });
 
   it("caches userId after first call", async () => {
