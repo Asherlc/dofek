@@ -103,7 +103,8 @@ const updateFoodEntrySchema = z
     foodDescription: z.string().max(2000).nullish(),
     category: z.enum(foodCategoryValues).nullish(),
     numberOfUnits: z.number().positive().nullish(),
-    nutrients: nutrientsMapSchema.optional(),
+    // Zod 4 applies `.default({})` even on optional fields, which would wipe nutrients on every update.
+    nutrients: z.record(z.string(), z.number().nonnegative()).optional(),
   })
   .merge(nutrientFieldsSchema.partial());
 
