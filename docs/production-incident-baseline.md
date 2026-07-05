@@ -11141,6 +11141,49 @@ new incremental tables are populated.
   separate provider HTTP timeout policy may still be needed if Strava token
   refreshes can hang indefinitely.
 
+## 2026-07-05 — WHOOP sync jobs retriggered BullMQ stalled-job failure
+
+- **Symptoms:** Sentry issue
+  [`DOFEK-SERVER-2K`](https://east-bay-software.sentry.io/issues/7495560735/)
+  reported another production `UnrecoverableError: job stalled more than
+  allowable limit` event at `2026-07-04T17:59:58Z`, after the June 29
+  `autorun: false` fix had already landed.
+- **User impact:** WHOOP cloud sync work for the affected user (see
+  [`DOFEK-SERVER-2K`](https://east-bay-software.sentry.io/issues/7495560735/)
+  for identity) was interrupted and left failed entries in the `sync-whoop`
+  BullMQ queue.
+- **Evidence:** Sentry's latest event contained only BullMQ worker frames and
+  showed a worker start time of `2026-07-04T17:58:54Z`. Production queue
+  inspection showed `sync-whoop` still had an active WHOOP step-chain job and
+  nine failed jobs with `failedReason: "job stalled more than allowable limit"`.
+  Production worker logs showed the worker repeatedly processing WHOOP
+  step-chain jobs and also emitting large negative `TimeoutNegativeWarning`
+  values during BullMQ delayed scheduling. BullMQ documents that stalled jobs
+  fail after exceeding `maxStalledCount`, whose default is `1`, and recommends
+  investigating lock-renewal loss instead of simply increasing the limit:
+  https://docs.bullmq.io/guide/jobs/stalled and
+  https://api.docs.bullmq.io/interfaces/v4.WorkerOptions.html#maxstalledcount.
+- **Root cause:** The worker idle-shutdown accounting used a single numeric
+  `activeJobs` counter. When a new worker process received a BullMQ `failed`
+  event for a previously stalled job that this process had never marked active,
+  the counter decremented anyway. That could make the worker believe no jobs
+  were active and arm the five-minute idle shutdown timer while a real WHOOP
+  step-chain job was still running. Shutdown then stopped lock renewal and
+  caused the next BullMQ stall/fail cycle. BullMQ's `worker.close()` waits for
+  active jobs, but the local code was deciding to enter shutdown from incorrect
+  active-job state: https://docs.bullmq.io/guide/workers/graceful-shutdown.
+- **Fix / mitigation:** Replaced the raw active-job counter with tracked active
+  job identities keyed by worker name and job ID, while retaining a fallback
+  untracked counter for events without job IDs. A failed or completed event now
+  only changes idle accounting for a job this process actually marked active.
+- **Validation:** Added a regression test that failed before the fix by
+  simulating one active job plus a stale failed event for a different job. After
+  the fix, `pnpm vitest run src/jobs/worker.test.ts` passed.
+- **Remaining risk:** Medium until the fix is deployed and `DOFEK-SERVER-2K`
+  stays quiet. The production queue still had historical failed WHOOP jobs at
+  investigation time; those should be left to normal retry/user-triggered sync
+  behavior unless a separate data repair is requested.
+
 ## 2026-06-30 — PR mutation jobs failed on readiness healthcheck coverage
 
 - **Symptoms:** PR
