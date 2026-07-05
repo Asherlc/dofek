@@ -145,7 +145,7 @@ describe("FatSecretProvider.sync() — error handling", () => {
   });
 
   it("silently skips Zod validation errors on the food_entries path", async () => {
-    const { db: mockDb } = createMockDatabase();
+    const { db: mockDb, spies } = createMockDatabase();
     const mockFetch: typeof globalThis.fetch = async () =>
       Response.json({ food_entries: { food_entry: "not-an-array" } });
     const provider = new FatSecretProvider(mockFetch);
@@ -157,6 +157,7 @@ describe("FatSecretProvider.sync() — error handling", () => {
     );
 
     expect(result.errors).toEqual([]);
+    expect(spies.insert).not.toHaveBeenCalled();
   });
 
   it("records non-Zod API errors", async () => {

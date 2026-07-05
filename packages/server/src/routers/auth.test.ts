@@ -81,7 +81,7 @@ describe("authRouter", () => {
 
       await expect(
         caller.unlinkAccount({ accountId: "00000000-0000-0000-0000-000000000001" }),
-      ).rejects.toThrow(TRPCError);
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     });
 
     it("rejects invalid accountId before hitting the repository", async () => {
@@ -91,9 +91,9 @@ describe("authRouter", () => {
         timezone: "UTC",
       });
 
-      await expect(caller.unlinkAccount({ accountId: "not-a-valid-guid" })).rejects.toThrow(
-        TRPCError,
-      );
+      await expect(caller.unlinkAccount({ accountId: "not-a-valid-guid" })).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+      });
     });
 
     it("throws NOT_FOUND when account does not belong to user", async () => {
