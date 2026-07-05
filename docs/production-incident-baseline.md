@@ -11620,3 +11620,28 @@ new incremental tables are populated.
   occurrence but does not itself eliminate a proxy/server timeout. If the issue
   recurs, inspect the enriched batch context and server timing logs before
   changing batch size, request timeouts, or retry behavior.
+
+## 2026-07-05 — PR CI blocked by surviving IMU timing mutant
+
+- **Symptoms:** PR #1519 failed `Test / Stryker (0)`, with downstream
+  `Test / Mutation Testing`, `Test / Test Gate`, and `CI Gate` failures.
+- **User impact:** The PR could not merge while mutation testing was red.
+- **Evidence:** GitHub Actions run `28727184697`, job `85186568954`, reported
+  `[Survived] ArithmeticOperator` at
+  `packages/server/src/routers/inertial-measurement-unit-sync.ts:93:22`,
+  where Stryker changed `totalMs: ensureProviderMs + insertBatchMs` to
+  `totalMs: ensureProviderMs - insertBatchMs`. The first fatal Stryker line was
+  `Final mutation score 0.00 under breaking threshold 75, setting exit code to
+  1 (failure)`.
+- **Root cause:** The router test only asserted that `totalMs` was a number, so
+  it did not prove the logged total was the sum of the measured route timings.
+- **Fix / mitigation:** Tightened the IMU router test to mock
+  `performance.now()` and assert exact `ensureProviderMs`, `insertBatchMs`, and
+  `totalMs` values.
+- **Validation:** `pnpm exec vitest run
+  packages/server/src/routers/inertial-measurement-unit-sync.test.ts` passed.
+  A local Stryker dry run against the same file could not complete because the
+  local environment lacked `CLICKHOUSE_URL`; CI provides ClickHouse for the
+  mutation job.
+- **Remaining risk:** The pushed CI rerun must confirm the mutant is killed in
+  the full GitHub Actions environment.

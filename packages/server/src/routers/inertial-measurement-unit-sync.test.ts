@@ -472,6 +472,11 @@ describe("inertialMeasurementUnitSyncRouter", () => {
         metricStreamPublisher,
         userId: "user-1",
       });
+      const nowSpy = vi.spyOn(performance, "now");
+      nowSpy.mockReturnValueOnce(100);
+      nowSpy.mockReturnValueOnce(112);
+      nowSpy.mockReturnValueOnce(112);
+      nowSpy.mockReturnValueOnce(150);
 
       await caller.pushSamples({
         deviceId: "Apple Watch",
@@ -489,11 +494,12 @@ describe("inertialMeasurementUnitSyncRouter", () => {
           firstTimestamp: "2026-03-25T10:00:00.020Z",
           lastTimestamp: "2026-03-25T10:00:00.140Z",
           serverTime: expect.any(String),
-          ensureProviderMs: expect.any(Number),
-          insertBatchMs: expect.any(Number),
-          totalMs: expect.any(Number),
+          ensureProviderMs: 12,
+          insertBatchMs: 38,
+          totalMs: 50,
         }),
       );
+      nowSpy.mockRestore();
     });
 
     it("reports failures to Sentry with the imu-push-samples source tag", async () => {
