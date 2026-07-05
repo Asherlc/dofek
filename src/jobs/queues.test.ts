@@ -442,7 +442,7 @@ describe("queues", () => {
   });
 
   describe("enqueueActivityRecomputeAnalyticsRefresh", () => {
-    it("adds an activity recompute analytics refresh job with retries", async () => {
+    it("adds an activity recompute analytics refresh job with a BullMQ-safe custom id", async () => {
       const { enqueueActivityRecomputeAnalyticsRefresh, createActivityDeleteAnalyticsQueue } =
         await import("./queues.ts");
 
@@ -465,7 +465,7 @@ describe("queues", () => {
           removeOnFail: { age: 604_800, count: 100 },
           attempts: 5,
           backoff: { type: "fixed", delay: 30_000 },
-          jobId: "activity-recompute-analytics-refresh:user-123",
+          jobId: "activity-recompute-analytics-refresh-user-123",
         },
       );
     });

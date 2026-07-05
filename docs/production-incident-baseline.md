@@ -11579,3 +11579,27 @@ new incremental tables are populated.
 - **Remaining risk:** The original producer of the empty Redis payload was not
   identified from local evidence. Future Sentry events with
   `cacheStore=redis` and `cacheOperation=get` should be inspected if this recurs.
+
+## 2026-07-04 — Activity recompute failed on BullMQ custom job id
+
+- **Symptoms:** Sentry issue `DOFEK-SERVER-4B` reported
+  `Error: Custom Id cannot contain :` for tRPC path `activity.recompute`.
+- **User impact:** The affected dashboard activity recompute request failed
+  before the analytics refresh job could be enqueued. Sentry reported one
+  occurrence and zero impacted users.
+- **Evidence:** The event occurred at `2026-07-04T17:42:21.456Z`. The first
+  first-party frame was `enqueueActivityRecomputeAnalyticsRefresh()` in
+  `src/jobs/queues.ts`, and the stack ended in BullMQ
+  `Job.validateOptions()` throwing `Custom Id cannot contain :` after
+  `Queue.add()`.
+- **Root cause:** Activity recompute used
+  `activity-recompute-analytics-refresh:${userId}` as a BullMQ custom `jobId`,
+  but BullMQ rejects custom ids containing `:`.
+- **Fix / mitigation:** Changed the recompute analytics refresh `jobId` to use
+  a hyphen separator:
+  `activity-recompute-analytics-refresh-${userId}`.
+- **Validation:** `pnpm vitest run src/jobs/queues.test.ts` first failed on the
+  old colon-containing id, then passed with 31 tests after the fix.
+- **Remaining risk:** Other UI/status payloads may still contain colon-delimited
+  job identifiers for display or lookup, but this investigation found the
+  production enqueue failure in the activity recompute custom `jobId` option.
