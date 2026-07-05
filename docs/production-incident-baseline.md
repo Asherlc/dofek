@@ -11148,9 +11148,10 @@ new incremental tables are populated.
   reported another production `UnrecoverableError: job stalled more than
   allowable limit` event at `2026-07-04T17:59:58Z`, after the June 29
   `autorun: false` fix had already landed.
-- **User impact:** WHOOP cloud sync work for user
-  `f923fed7-d934-4cd9-8cb9-8e83020d0e69` was interrupted and left failed
-  entries in the `sync-whoop` BullMQ queue.
+- **User impact:** WHOOP cloud sync work for the affected user (see
+  [`DOFEK-SERVER-2K`](https://east-bay-software.sentry.io/issues/7495560735/)
+  for identity) was interrupted and left failed entries in the `sync-whoop`
+  BullMQ queue.
 - **Evidence:** Sentry's latest event contained only BullMQ worker frames and
   showed a worker start time of `2026-07-04T17:58:54Z`. Production queue
   inspection showed `sync-whoop` still had an active WHOOP step-chain job and
