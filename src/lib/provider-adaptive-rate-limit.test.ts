@@ -669,12 +669,34 @@ describe("providerAdaptiveRateLimitStore", () => {
     );
   });
 
-  it("uses the Redis store outside test environments", async () => {
+  it("uses the Redis store outside test environments and exercises getSharedRedisClient", async () => {
     vi.stubEnv("VITEST", "");
     vi.stubEnv("NODE_ENV", "production");
+
+    const mockClient = {
+      set: vi.fn().mockResolvedValue("OK"),
+      get: vi.fn().mockResolvedValue(null),
+    };
+    vi.doMock("bullmq", () => ({
+      RedisConnection: vi.fn().mockImplementation(() => ({
+        get client() {
+          return Promise.resolve(mockClient);
+        },
+      })),
+    }));
+    vi.doMock("../jobs/queues.ts", () => ({
+      getRedisConnection: vi.fn().mockReturnValue({}),
+    }));
     vi.resetModules();
+
     const mod = await import("./provider-adaptive-rate-limit.ts");
     expect(mod.providerAdaptiveRateLimitStore.constructor.name).toBe("RedisAdaptiveRateLimitStore");
+    await expect(
+      mod.providerAdaptiveRateLimitStore.getLearnedCooldownSeconds("garmin"),
+    ).resolves.toBeNull();
+
+    vi.unstubAllEnvs();
+    vi.resetModules();
   });
 
   it("waits for admission delay outside test environments", async () => {

@@ -33,7 +33,7 @@ export type PendingSlackEntry = {
 };
 
 interface RedisClient {
-  set(key: string, value: string, mode: "PX", millisecondsToExpire: number): Promise<"OK" | null>;
+  set(key: string, value: string, mode: "PX", millisecondsToExpire: number): Promise<string | null>;
   get(key: string): Promise<string | null>;
   del(...keys: string[]): Promise<number>;
 }
@@ -191,11 +191,10 @@ async function getSharedRedisClient(): Promise<RedisClient> {
       skipVersionCheck: true,
     });
   }
-  // biome-ignore lint/suspicious/noExplicitAny: bullmq 5.79.2 narrowed IRedisClient; runtime is ioredis Redis
-  const redisClient: any = await sharedRedisConnection.client;
+  const redisClient = await sharedRedisConnection.client;
   return {
-    set: async (key, value, mode, millisecondsToExpire) =>
-      redisClient.set(key, value, mode, millisecondsToExpire),
+    set: async (key, value, _mode, millisecondsToExpire) =>
+      redisClient.set(key, value, { PX: millisecondsToExpire }),
     get: async (key) => redisClient.get(key),
     del: async (...keys) => redisClient.del(...keys),
   };
