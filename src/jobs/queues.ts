@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { ConnectionOptions, JobsOptions } from "bullmq";
 import { Queue } from "bullmq";
 import type { ProviderSyncTier } from "./provider-queue-config.ts";
@@ -99,6 +100,14 @@ const ACTIVITY_DELETE_ANALYTICS_JOB_NAME = "activity-delete-analytics-refresh";
 const ACTIVITY_RESTORE_ANALYTICS_JOB_NAME = "activity-restore-analytics-refresh";
 const ACTIVITY_RECOMPUTE_ANALYTICS_JOB_NAME = "activity-recompute-analytics-refresh";
 const GLOBAL_POST_SYNC_DEDUPLICATION_ID = "post-sync:global-maintenance";
+
+function activityRecomputeAnalyticsJobId(userId: string, activityIds: string[]): string {
+  const activitySetHash = createHash("sha256")
+    .update([...activityIds].sort().join("\n"))
+    .digest("hex")
+    .slice(0, 16);
+  return `${ACTIVITY_RECOMPUTE_ANALYTICS_JOB_NAME}-${userId}-${activitySetHash}`;
+}
 
 /** Get the per-provider queue name for a given provider ID. */
 export function providerSyncQueueName(providerId: string): string {
@@ -269,7 +278,7 @@ export async function enqueueActivityRecomputeAnalyticsRefresh(
       removeOnFail: { age: 604_800, count: 100 },
       attempts: 5,
       backoff: { type: "fixed", delay: 30_000 },
-      jobId: `${ACTIVITY_RECOMPUTE_ANALYTICS_JOB_NAME}-${userId}`,
+      jobId: activityRecomputeAnalyticsJobId(userId, uniqueActivityIds),
     },
   );
 }

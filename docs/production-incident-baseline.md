@@ -11596,10 +11596,11 @@ new incremental tables are populated.
   `activity-recompute-analytics-refresh:${userId}` as a BullMQ custom `jobId`,
   but BullMQ rejects custom ids containing `:`.
 - **Fix / mitigation:** Changed the recompute analytics refresh `jobId` to use
-  a hyphen separator:
-  `activity-recompute-analytics-refresh-${userId}`.
+  hyphen-safe parts scoped by user and activity-id set hash:
+  `activity-recompute-analytics-refresh-${userId}-${activitySetHash}`.
 - **Validation:** `pnpm vitest run src/jobs/queues.test.ts` first failed on the
-  old colon-containing id, then passed with 31 tests after the fix.
+  old colon-containing id, then passed after the fix. Follow-up review added
+  coverage that different same-user activity sets use different custom ids.
 - **Remaining risk:** Other UI/status payloads may still contain colon-delimited
   job identifiers for display or lookup, but this investigation found the
   production enqueue failure in the activity recompute custom `jobId` option.

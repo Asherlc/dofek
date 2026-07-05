@@ -442,7 +442,7 @@ describe("queues", () => {
   });
 
   describe("enqueueActivityRecomputeAnalyticsRefresh", () => {
-    it("adds an activity recompute analytics refresh job with a BullMQ-safe custom id", async () => {
+    it("adds an activity recompute analytics refresh job with an activity-scoped BullMQ-safe custom id", async () => {
       const { enqueueActivityRecomputeAnalyticsRefresh, createActivityDeleteAnalyticsQueue } =
         await import("./queues.ts");
 
@@ -465,7 +465,7 @@ describe("queues", () => {
           removeOnFail: { age: 604_800, count: 100 },
           attempts: 5,
           backoff: { type: "fixed", delay: 30_000 },
-          jobId: "activity-recompute-analytics-refresh-user-123",
+          jobId: "activity-recompute-analytics-refresh-user-123-c67f2fc391b67892",
         },
       );
     });
@@ -478,6 +478,32 @@ describe("queues", () => {
       await enqueueActivityRecomputeAnalyticsRefresh("user-123", [], queue);
 
       expect(mockQueueAdd).not.toHaveBeenCalled();
+    });
+
+    it("uses different job ids for different recompute activity sets from the same user", async () => {
+      const { enqueueActivityRecomputeAnalyticsRefresh, createActivityDeleteAnalyticsQueue } =
+        await import("./queues.ts");
+
+      const queue = createActivityDeleteAnalyticsQueue({ host: "test", port: 9999 });
+      await enqueueActivityRecomputeAnalyticsRefresh(
+        "user-123",
+        ["00000000-0000-0000-0000-000000000003"],
+        queue,
+      );
+      await enqueueActivityRecomputeAnalyticsRefresh(
+        "user-123",
+        ["00000000-0000-0000-0000-000000000004"],
+        queue,
+      );
+
+      const firstCallOptions = mockQueueAdd.mock.calls[0]?.[2];
+      const secondCallOptions = mockQueueAdd.mock.calls[1]?.[2];
+      expect(firstCallOptions?.jobId).toBe(
+        "activity-recompute-analytics-refresh-user-123-c67f2fc391b67892",
+      );
+      expect(secondCallOptions?.jobId).toBe(
+        "activity-recompute-analytics-refresh-user-123-ca55ceea2bd0618b",
+      );
     });
   });
 });
