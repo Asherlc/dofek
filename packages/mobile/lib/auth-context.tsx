@@ -18,6 +18,7 @@ import {
   saveSessionToken,
 } from "./auth";
 import { removeMobileQueryCache } from "./mobile-query-persistence";
+import { isSecureStoreAccessibilityError } from "./secure-store-access";
 import { SERVER_URL } from "./server";
 import { captureException } from "./telemetry";
 
@@ -90,6 +91,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setBootstrapError(null);
       }
     } catch (error: unknown) {
+      if (isSecureStoreAccessibilityError(error) && AppState.currentState === "background") {
+        // iOS can relaunch the app in the background while the device is locked.
+        // SecureStore reads fail with errSecInteractionNotAllowed in that state,
+        // so defer auth restore until the user brings the app to the foreground.
+        deferBootstrap = true;
+        bootstrapDeferredRef.current = true;
+        setUser(null);
+        setSessionToken(null);
+        setBootstrapError(null);
+        return;
+      }
+
       captureException(error, { source: "auth-state-restore" });
       setUser(null);
       setBootstrapError(error instanceof Error ? error.message : String(error));

@@ -22,12 +22,14 @@ describe("secure-store-access", () => {
     expect(isSecureStoreAccessibilityError(new Error("Something else failed"))).toBe(false);
   });
 
-  it("returns null when SecureStore reads fail due to accessibility", async () => {
+  it("throws when SecureStore reads fail due to accessibility", async () => {
     vi.mocked(SecureStore.getItemAsync).mockRejectedValueOnce(
       new Error("User interaction is not allowed"),
     );
 
-    await expect(readSecureStoreItem("test-key")).resolves.toBeNull();
+    await expect(readSecureStoreItem("test-key")).rejects.toThrow(
+      "User interaction is not allowed",
+    );
   });
 
   it("rethrows unexpected SecureStore read failures", async () => {

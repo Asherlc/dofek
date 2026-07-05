@@ -13,14 +13,7 @@ export function isSecureStoreAccessibilityError(error: unknown): boolean {
 }
 
 export async function readSecureStoreItem(key: string): Promise<string | null> {
-  try {
-    return await SecureStore.getItemAsync(key);
-  } catch (error) {
-    if (isSecureStoreAccessibilityError(error)) {
-      return null;
-    }
-    throw error;
-  }
+  return await SecureStore.getItemAsync(key);
 }
 
 export async function writeSecureStoreItem(key: string, value: string): Promise<void> {
