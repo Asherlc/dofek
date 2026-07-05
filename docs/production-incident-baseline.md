@@ -11713,3 +11713,40 @@ new incremental tables are populated.
   mutation job.
 - **Remaining risk:** The pushed CI rerun must confirm the mutant is killed in
   the full GitHub Actions environment.
+
+## 2026-07-05 — Activity analytics dbt build failed on null source link subsource
+
+- **Symptoms:** Sentry issue `DOFEK-SERVER-4D` reported
+  `Error: dbt build --select activity_source_records+ failed with exit code 1`
+  five times in production between `2026-07-05T16:58:45Z` and
+  `2026-07-05T17:01:14Z`.
+- **User impact:** The scheduled `analytics-worker` build skipped
+  `deduped_activities` downstream models, so activity stream derived tables
+  could remain stale until a fixed dbt build succeeds.
+- **Evidence:** Production `analytics-worker` logs showed the first fatal dbt
+  line at `16:56:16Z`: `Failure in model deduped_activities`, with ClickHouse
+  exception code `349`, `Cannot convert NULL value to non-Nullable type`.
+  `cdc-health` was OK in the same window. Production ClickHouse had 1,295
+  active `analytics.activity_source_records` rows and 930 active source-link
+  rows where both `raw.sourceName` and `source_name` were absent, including
+  Peloton rows.
+- **Root cause:** `analytics.deduped_activities` serializes
+  `source_external_ids` as `Array(Map(String, String))`. The active-source map
+  expression allowed `subsource` to be `NULL` when neither the raw JSON
+  `sourceName` nor `source_name` existed, and ClickHouse rejected that null map
+  value for the non-null `String` map value type.
+- **Fix / mitigation:** Added an empty-string fallback only inside the
+  serialized `source_external_ids.subsource` map value, matching the existing
+  absent-source path while leaving canonical source fields nullable.
+- **Validation:** `CLICKHOUSE_URL=http://default:health@127.0.0.1:55001 pnpm
+  exec vitest run src/db/deduped-activities-read-model.integration.test.ts`
+  failed without the fallback with ClickHouse error `Cannot convert NULL value
+  to non-Nullable type` while inserting `source_external_ids`, then passed after
+  the fix. `pnpm exec vitest run
+  analytics/models/read_models/read_model_microbatch.sql.test.ts` also passed.
+  A production ClickHouse dry check of the fixed `groupArrayIf(map(...))`
+  expression over active source records returned all 1,295 source links without
+  error.
+- **Remaining risk:** `analytics-worker` was scaled to `0/0` by the time of
+  verification, so production still needs the code deployed and a follow-up
+  `activity_source_records+` dbt run to refresh downstream activity analytics.

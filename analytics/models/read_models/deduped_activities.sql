@@ -115,7 +115,8 @@ merged AS (
                 'memberActivityId', toString(ranked.activity_id),
                 'subsource', coalesce(
                     nullIf(trim(BOTH ' ' FROM JSONExtractString(ranked.raw, 'sourceName')), ''),
-                    nullIf(trim(BOTH ' ' FROM ranked.source_name), '')
+                    nullIf(trim(BOTH ' ' FROM ranked.source_name), ''),
+                    ''
                 )
             ),
             ranked.activity_id IS NOT null
