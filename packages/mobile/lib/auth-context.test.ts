@@ -116,9 +116,13 @@ describe("auth-context", () => {
       const { result } = renderHook(() => useAuth(), { wrapper });
 
       await waitFor(() => {
-        expect(result.current.isLoading).toBe(true);
+        expect(getSessionToken).toHaveBeenCalledTimes(1);
+      });
+      await act(async () => {
+        await Promise.resolve();
       });
 
+      expect(result.current.isLoading).toBe(true);
       expect(saveSessionToken).not.toHaveBeenCalled();
       expect(result.current.user).toBeNull();
       expect(mockCaptureException).not.toHaveBeenCalled();
@@ -133,6 +137,7 @@ describe("auth-context", () => {
 
       await act(async () => {
         const latestListener = appStateListeners.at(-1);
+        expect(latestListener).toBeDefined();
         latestListener?.("active");
       });
 

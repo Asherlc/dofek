@@ -95,6 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // iOS can relaunch the app in the background while the device is locked.
         // SecureStore reads fail with errSecInteractionNotAllowed in that state,
         // so defer auth restore until the user brings the app to the foreground.
+        deferBootstrap = true;
         bootstrapDeferredRef.current = true;
         setUser(null);
         setSessionToken(null);
