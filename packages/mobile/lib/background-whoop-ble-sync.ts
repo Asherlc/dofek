@@ -314,15 +314,18 @@ async function drainBuffer(
     const samples = await whoopDeps.peekBufferedSamples(IMU_UPLOAD_BATCH_SIZE);
     if (samples.length === 0) break;
 
-    try {
-      const groups = new DeviceSampleGroups(
-        DEFAULT_WHOOP_DEVICE_ID,
-        toInertialMeasurementUnitUploadSample,
-      );
-      for (const sample of samples) {
-        groups.add(sample);
-      }
+    const groups = new DeviceSampleGroups(
+      DEFAULT_WHOOP_DEVICE_ID,
+      toInertialMeasurementUnitUploadSample,
+    );
+    for (const sample of samples) {
+      groups.add(sample);
+    }
+    const deviceIds = [...groups.entries()].map(([deviceId]) => deviceId);
+    const firstTimestamp = samples[0]?.timestamp;
+    const lastTimestamp = samples[samples.length - 1]?.timestamp;
 
+    try {
       let inserted = 0;
       for (const [deviceId, uploadSamples] of groups.entries()) {
         const result = await trpcClient.inertialMeasurementUnitSync.pushSamples.mutate({
@@ -340,7 +343,14 @@ async function drainBuffer(
       );
     } catch (error: unknown) {
       logger.error(LOG_CATEGORY, `IMU upload failed, ${samples.length} samples retained: ${error}`);
-      captureException(error, { source: "whoop-ble-imu-upload" });
+      captureException(error, {
+        source: "whoop-ble-imu-upload",
+        bufferedSampleCount: samples.length,
+        deviceCount: deviceIds.length,
+        deviceIds,
+        firstTimestamp,
+        lastTimestamp,
+      });
       break; // Stop draining — samples are still in the buffer for retry
     }
   }

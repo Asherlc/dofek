@@ -489,6 +489,9 @@ describe("inertialMeasurementUnitSyncRouter", () => {
           firstTimestamp: "2026-03-25T10:00:00.020Z",
           lastTimestamp: "2026-03-25T10:00:00.140Z",
           serverTime: expect.any(String),
+          ensureProviderMs: expect.any(Number),
+          insertBatchMs: expect.any(Number),
+          totalMs: expect.any(Number),
         }),
       );
     });

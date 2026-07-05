@@ -11579,3 +11579,44 @@ new incremental tables are populated.
 - **Remaining risk:** The original producer of the empty Redis payload was not
   identified from local evidence. Future Sentry events with
   `cacheStore=redis` and `cacheOperation=get` should be inspected if this recurs.
+
+## 2026-07-05 — WHOOP BLE IMU upload returned proxy 408/502 responses
+
+- **Symptoms:** Sentry issue `DOFEK-MOBILE-10` reported
+  `Non-JSON tRPC response from inertialMeasurementUnitSync.pushSamples: 408
+  request timed out, content-type absent` from the mobile
+  `whoop-ble-imu-upload` path. Nearby events for the same upload path also
+  returned `502 bad gateway` HTML responses.
+- **User impact:** Buffered WHOOP BLE inertial samples were not confirmed as
+  drained for the failed request and remained queued for retry. One production
+  user was affected in Sentry.
+- **Evidence:** Sentry event `2a639343ab9d4acda72ea6965e2c3030` occurred at
+  `2026-07-05T01:20:06.287Z` on release
+  `com.dofek.app@1.0.0+1783012046`, with extra source
+  `whoop-ble-imu-upload`. Sentry search over the last 14 days found repeated
+  `inertialMeasurementUnitSync.pushSamples` non-JSON responses, including
+  408s and Cloudflare-style 502 HTML responses. The linked trace
+  `a2091da755b644ecb4eaa245f44e1203` had no server spans or logs attached.
+- **Root cause:** The immediate failure was a proxy/server timeout or bad
+  gateway response before tRPC produced JSON. The exact server-side slow or
+  unavailable step could not be proven from existing telemetry because the
+  mobile Sentry event did not include batch/device/time-range context, and the
+  server success log omitted the measured per-step timings.
+- **Fix / mitigation:** Added mobile Sentry context for failed WHOOP BLE IMU
+  uploads: buffered sample count, device count, device IDs, and first/last
+  sample timestamps. Added `ensureProviderMs`, `insertBatchMs`, and `totalMs`
+  to the server `IMU samples pushed` structured log.
+- **Validation:** Focused tests passed:
+  `pnpm --filter dofek-mobile exec vitest run
+  lib/background-whoop-ble-sync.test.ts` and
+  `pnpm exec vitest run
+  packages/server/src/routers/inertial-measurement-unit-sync.test.ts`. Mobile
+  lint passed with `pnpm --filter dofek-mobile lint`. TypeScript passed with
+  the repository `rtk pnpm --filter ... typecheck` command, which warned that
+  the filter is ignored for `pnpm tsc` and then reported no TypeScript errors.
+  Root `pnpm lint` passed Biome but stopped in analytics SQL lint because local
+  ClickHouse was not running at `127.0.0.1:8123`.
+- **Remaining risk:** This improves the evidence available on the next
+  occurrence but does not itself eliminate a proxy/server timeout. If the issue
+  recurs, inspect the enriched batch context and server timing logs before
+  changing batch size, request timeouts, or retry behavior.

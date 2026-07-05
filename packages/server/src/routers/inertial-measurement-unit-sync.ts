@@ -88,6 +88,9 @@ export const inertialMeasurementUnitSyncRouter = router({
             firstTimestamp,
             lastTimestamp,
             serverTime: nowIso,
+            ensureProviderMs,
+            insertBatchMs,
+            totalMs: ensureProviderMs + insertBatchMs,
           });
 
           span.setStatus({ code: SpanStatusCode.OK });
