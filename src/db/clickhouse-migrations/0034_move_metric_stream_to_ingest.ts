@@ -8,21 +8,26 @@ import {
 import type { ClickHouseCommandClient } from "../clickhouse.ts";
 import type { ClickHouseMigration } from "./types.ts";
 
+type LegacyTableCountRow = { count: string | number };
+
 const legacyTableCountRowsSchema = z
   .array(
     z.object({
       count: z.union([z.string().regex(/^\d+$/), z.number().int().nonnegative()]),
     }),
   )
-  .nonempty("Expected at least one row from system.tables count query");
+  .min(1, "Expected at least one row from system.tables count query");
 
-function parseLegacyTableCount(rows: unknown): number {
-  const parsed = legacyTableCountRowsSchema.parse(rows);
-  const firstRow = parsed[0];
+export function countFromLegacyTableRows(rows: readonly LegacyTableCountRow[]): number {
+  const firstRow = rows[0];
   if (!firstRow) {
     throw new Error("Expected at least one row from system.tables count query");
   }
   return Number(firstRow.count);
+}
+
+export function parseLegacyTableCount(rows: unknown): number {
+  return countFromLegacyTableRows(legacyTableCountRowsSchema.parse(rows));
 }
 
 async function legacyMetricStreamTableExists(client: ClickHouseCommandClient): Promise<boolean> {

@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ClickHouseCommandClient } from "../clickhouse.ts";
-import { createMigration } from "./0034_move_metric_stream_to_ingest.ts";
+import {
+  countFromLegacyTableRows,
+  createMigration,
+  parseLegacyTableCount,
+} from "./0034_move_metric_stream_to_ingest.ts";
 
 const postgresConnectionString = "postgres://test:test@localhost:5432/test";
 
@@ -15,6 +19,15 @@ function createClient(count: string): ClickHouseCommandClient {
 }
 
 describe("0034_move_metric_stream_to_ingest", () => {
+  it("parses numeric and string ClickHouse count rows", () => {
+    expect(parseLegacyTableCount([{ count: 2 }])).toBe(2);
+    expect(parseLegacyTableCount([{ count: "0" }])).toBe(0);
+    expect(countFromLegacyTableRows([{ count: "3" }])).toBe(3);
+    expect(() => countFromLegacyTableRows([])).toThrow(
+      /Expected at least one row from system.tables count query/,
+    );
+  });
+
   it("skips copying when the legacy metric_stream table does not exist", async () => {
     const client = createClient("0");
     const migration = createMigration();
