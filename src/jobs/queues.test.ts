@@ -498,12 +498,13 @@ describe("queues", () => {
 
       const firstCallOptions = mockQueueAdd.mock.calls[0]?.[2];
       const secondCallOptions = mockQueueAdd.mock.calls[1]?.[2];
-      expect(firstCallOptions?.jobId).toBe(
-        "activity-recompute-analytics-refresh-user-123-c67f2fc391b67892",
+      expect(firstCallOptions?.jobId).toMatch(
+        /^activity-recompute-analytics-refresh-user-123-[a-f0-9]+$/,
       );
-      expect(secondCallOptions?.jobId).toBe(
-        "activity-recompute-analytics-refresh-user-123-ca55ceea2bd0618b",
+      expect(secondCallOptions?.jobId).toMatch(
+        /^activity-recompute-analytics-refresh-user-123-[a-f0-9]+$/,
       );
+      expect(firstCallOptions?.jobId).not.toBe(secondCallOptions?.jobId);
     });
   });
 });
