@@ -1,34 +1,39 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ClickHouseCommandClient } from "../clickhouse.ts";
 import { createMigration } from "./0034_move_metric_stream_to_ingest.ts";
+
+const postgresConnectionString = "postgres://test:test@localhost:5432/test";
+
+function createClient(count: string): ClickHouseCommandClient {
+  const command = vi.fn();
+  return {
+    command,
+    query: vi.fn().mockResolvedValue({
+      json: async () => [{ count }],
+    }),
+  };
+}
 
 describe("0034_move_metric_stream_to_ingest", () => {
   it("skips copying when the legacy metric_stream table does not exist", async () => {
-    const command = vi.fn();
-    const client = {
-      query: vi.fn().mockResolvedValue({
-        json: async () => [{ count: "0" }],
-      }),
-      command,
-    };
+    const client = createClient("0");
+    const migration = createMigration();
+    expect(migration.run).toBeDefined();
 
-    await createMigration().run(client);
+    await migration.run?.(client, postgresConnectionString);
 
-    expect(command).not.toHaveBeenCalled();
+    expect(client.command).not.toHaveBeenCalled();
   });
 
   it("copies and drops the legacy table when it exists", async () => {
-    const command = vi.fn();
-    const client = {
-      query: vi.fn().mockResolvedValue({
-        json: async () => [{ count: "1" }],
-      }),
-      command,
-    };
+    const client = createClient("1");
+    const migration = createMigration();
+    expect(migration.run).toBeDefined();
 
-    await createMigration().run(client);
+    await migration.run?.(client, postgresConnectionString);
 
-    expect(command).toHaveBeenCalledTimes(2);
-    expect(command.mock.calls[0]?.[0]?.query).toContain("INSERT INTO");
-    expect(command.mock.calls[1]?.[0]?.query).toContain("DROP TABLE IF EXISTS");
+    expect(client.command).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(client.command).mock.calls[0]?.[0]?.query).toContain("INSERT INTO");
+    expect(vi.mocked(client.command).mock.calls[1]?.[0]?.query).toContain("DROP TABLE IF EXISTS");
   });
 });

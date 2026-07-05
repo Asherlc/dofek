@@ -17,7 +17,11 @@ const legacyTableCountRowsSchema = z
   .nonempty("Expected at least one row from system.tables count query");
 
 function parseLegacyTableCount(rows: unknown): number {
-  const [firstRow] = legacyTableCountRowsSchema.parse(rows);
+  const parsed = legacyTableCountRowsSchema.parse(rows);
+  const firstRow = parsed[0];
+  if (!firstRow) {
+    throw new Error("Expected at least one row from system.tables count query");
+  }
   return Number(firstRow.count);
 }
 

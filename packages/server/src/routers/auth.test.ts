@@ -91,9 +91,9 @@ describe("authRouter", () => {
         timezone: "UTC",
       });
 
-      await expect(
-        caller.unlinkAccount({ accountId: "not-a-valid-guid" }),
-      ).rejects.toThrow(TRPCError);
+      await expect(caller.unlinkAccount({ accountId: "not-a-valid-guid" })).rejects.toThrow(
+        TRPCError,
+      );
     });
 
     it("throws NOT_FOUND when account does not belong to user", async () => {
