@@ -131,7 +131,8 @@ const activityDeleteAnalyticsWorker = new Worker<ActivityAnalyticsJobData>(
 // ── Idle spin-down ──
 
 let idleTimer: NodeJS.Timeout | null = null;
-let activeJobs = 0;
+const activeJobKeys = new Set<string>();
+let untrackedActiveJobs = 0;
 
 function resetIdleTimer() {
   if (idleTimer) {
@@ -148,6 +149,35 @@ function startIdleTimer() {
   }, IDLE_TIMEOUT_MS);
 }
 
+function activeJobCount(): number {
+  return activeJobKeys.size + untrackedActiveJobs;
+}
+
+function jobKey(worker: Worker, job: { id?: string | number } | undefined): string | null {
+  if (job?.id == null) return null;
+  return `${worker.name}:${job.id}`;
+}
+
+function trackActiveJob(worker: Worker, job: { id?: string | number } | undefined): void {
+  const key = jobKey(worker, job);
+  if (key) {
+    activeJobKeys.add(key);
+    return;
+  }
+  untrackedActiveJobs++;
+}
+
+function finishActiveJob(worker: Worker, job: { id?: string | number } | undefined): void {
+  const key = jobKey(worker, job);
+  if (key) {
+    activeJobKeys.delete(key);
+    return;
+  }
+  if (untrackedActiveJobs > 0) {
+    untrackedActiveJobs--;
+  }
+}
+
 const allWorkers: Worker[] = [
   ...providerWorkers.values(),
   legacySyncWorker,
@@ -159,21 +189,21 @@ const allWorkers: Worker[] = [
 ];
 
 for (const worker of allWorkers) {
-  worker.on("active", () => {
-    activeJobs++;
+  worker.on("active", (job) => {
+    trackActiveJob(worker, job);
     resetIdleTimer();
   });
 
-  worker.on("completed", () => {
-    activeJobs--;
-    if (activeJobs <= 0) startIdleTimer();
+  worker.on("completed", (job) => {
+    finishActiveJob(worker, job);
+    if (activeJobCount() === 0) startIdleTimer();
   });
 
-  worker.on("failed", (_job, err) => {
-    activeJobs--;
+  worker.on("failed", (job, err) => {
+    finishActiveJob(worker, job);
     Sentry.captureException(err);
     logger.error(`[worker] Job failed: ${err.message}`);
-    if (activeJobs <= 0) startIdleTimer();
+    if (activeJobCount() === 0) startIdleTimer();
   });
 
   worker.on("error", (err) => {

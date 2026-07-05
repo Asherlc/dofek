@@ -274,6 +274,19 @@ describe("worker module", () => {
     getWorkerHandler("completed")();
   });
 
+  it("failed event handler ignores stale failed jobs for idle accounting", async () => {
+    const Sentry = await import("@sentry/node");
+    vi.mocked(Sentry.captureException).mockClear();
+    getWorkerHandler("active")({ id: "active-job" });
+    const setTimeoutBefore = setTimeoutSpy.mock.calls.length;
+
+    getWorkerHandler("failed")({ id: "stale-job" }, new Error("stale stalled job"));
+
+    expect(Sentry.captureException).toHaveBeenCalledOnce();
+    expect(setTimeoutSpy.mock.calls.length).toBe(setTimeoutBefore);
+    getWorkerHandler("completed")({ id: "active-job" });
+  });
+
   it("error event handler reports to Sentry and logs the error", async () => {
     const Sentry = await import("@sentry/node");
     const { logger } = await import("../logger.ts");
