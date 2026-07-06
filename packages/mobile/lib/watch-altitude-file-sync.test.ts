@@ -138,10 +138,12 @@ describe("syncWatchAltitudeFiles", () => {
 
     expect(result).toEqual({ totalInserted: 2001, filesProcessed: 1, filesFailed: 0 });
     expect(trpcClient.watchAltitudeSync.pushSamples.mutate).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(trpcClient.watchAltitudeSync.pushSamples.mutate).mock.calls[0]?.[0].samples)
-      .toHaveLength(2000);
-    expect(vi.mocked(trpcClient.watchAltitudeSync.pushSamples.mutate).mock.calls[1]?.[0].samples)
-      .toHaveLength(1);
+    expect(
+      vi.mocked(trpcClient.watchAltitudeSync.pushSamples.mutate).mock.calls[0]?.[0].samples,
+    ).toHaveLength(2000);
+    expect(
+      vi.mocked(trpcClient.watchAltitudeSync.pushSamples.mutate).mock.calls[1]?.[0].samples,
+    ).toHaveLength(1);
     expect(mockDeleteWatchFile).toHaveBeenCalledWith("watch-altitude-large.json.gz");
   });
 });

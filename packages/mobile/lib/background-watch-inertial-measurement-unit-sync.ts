@@ -2,7 +2,10 @@ import { AppState, type AppStateStatus } from "react-native";
 import { isWatchAppInstalled, isWatchPaired, requestWatchRecording } from "../modules/watch-motion";
 import type { InertialMeasurementUnitSyncTrpcClient } from "./inertial-measurement-unit-sync";
 import { captureException, logger } from "./telemetry";
-import { syncWatchAltitudeFiles, type WatchAltitudeSyncTrpcClient } from "./watch-altitude-file-sync";
+import {
+  syncWatchAltitudeFiles,
+  type WatchAltitudeSyncTrpcClient,
+} from "./watch-altitude-file-sync";
 import { syncWatchAccelerometerFiles } from "./watch-file-sync";
 
 const TAG = "bg-watch-sync";
