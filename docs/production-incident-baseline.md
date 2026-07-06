@@ -11623,6 +11623,34 @@ new incremental tables are populated.
   identified from local evidence. Future Sentry events with
   `cacheStore=redis` and `cacheOperation=get` should be inspected if this recurs.
 
+## 2026-07-06 — Data readiness unavailable from unbatched tRPC POST query
+
+- **Symptoms:** The mobile or web data-readiness banner showed
+  `Data readiness is unavailable`; the tRPC error payload for
+  `sync.dataHealth` was `BAD_REQUEST` / JSON-RPC `-32600` with
+  `Unexpected end of JSON input`.
+- **User impact:** Data-readiness status could not render, even though the
+  `sync.dataHealth` resolver could run when the request body was valid.
+- **Evidence:** `sync.dataHealth` was routed through `httpLink` with
+  `methodOverride: "POST"` on both web and mobile. In tRPC `11.12.0`,
+  `httpLink` serializes inputless POST queries with `body: undefined` while
+  sending `content-type: application/json`; the server JSON parser rejects that
+  empty body before the resolver runs. Focused routing tests failed while
+  `sync.dataHealth` still used the unbatched link.
+- **Root cause:** `sync.dataHealth` was incorrectly classified as an unbatched
+  dashboard query, causing inputless requests to use the empty-body `httpLink`
+  POST path instead of the batched query link's valid JSON body.
+- **Fix / mitigation:** Removed `sync.dataHealth` from the web and mobile
+  unbatched query routing lists so it uses the normal batched query link.
+  Added a Redis cache regression for the previous corrupt-payload failure mode
+  because it has the same user-facing banner text.
+- **Validation:** `pnpm vitest run packages/web/src/lib/trpc.test.ts
+  packages/mobile/app/_layout.cleanup.test.tsx
+  packages/server/src/lib/cache-redis.test.ts` passed.
+- **Remaining risk:** Other inputless queries still routed through unbatched
+  `httpLink` could hit the same empty-body parser failure if they are invoked
+  without input. The current change only moves the observed failing route.
+
 ## 2026-07-04 — Activity recompute failed on BullMQ custom job id
 
 - **Symptoms:** Sentry issue `DOFEK-SERVER-4B` reported

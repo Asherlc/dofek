@@ -69,6 +69,19 @@ describe("RedisCacheStore", () => {
     expect(await store.get("missing")).toBeUndefined();
   });
 
+  it("evicts malformed payloads and treats them as cache misses", async () => {
+    await fakeRedis.client.set("query-cache:data:user-1:sync.dataHealth:{}", "");
+    await fakeRedis.client.sadd(
+      "query-cache:keys",
+      "query-cache:data:user-1:sync.dataHealth:{}",
+    );
+
+    expect(await store.get("user-1:sync.dataHealth:{}")).toBeUndefined();
+    expect(fakeRedis.values.has("query-cache:data:user-1:sync.dataHealth:{}")).toBe(false);
+    expect(fakeRedis.sets.get("query-cache:keys")?.has("query-cache:data:user-1:sync.dataHealth:{}"))
+      .toBe(false);
+  });
+
   it("invalidateByPrefix removes only matching keys", async () => {
     await store.set("user1:food.byDate:{}", "data1", 60_000);
     await store.set("user1:food.dailyTotals:{}", "data2", 60_000);
