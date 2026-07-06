@@ -1,6 +1,4 @@
-import { QUERY_CACHE_MAX_AGE_MS } from "@dofek/scoring/query-cache";
 import * as Sentry from "@sentry/react-native";
-import { QueryClient } from "@tanstack/react-query";
 import { httpBatchLink, httpLink, splitLink } from "@trpc/client";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
@@ -17,6 +15,7 @@ import { initBackgroundWatchInertialMeasurementUnitSync } from "../lib/backgroun
 import { syncWhoopBle, teardownBackgroundWhoopBleSync } from "../lib/background-whoop-ble-sync";
 import type { SyncTrpcClient } from "../lib/health-kit-sync";
 import { MobileQueryPersistenceProvider } from "../lib/mobile-query-persistence";
+import { createAppQueryClient } from "../lib/query-client";
 import { runAfterUiIdle } from "../lib/runAfterUiIdle";
 import { getTrpcUrl } from "../lib/server";
 import { captureException, initTelemetry, logger } from "../lib/telemetry";
@@ -109,20 +108,7 @@ function AuthGate() {
     useAuth();
   const [backgroundSyncReady, setBackgroundSyncReady] = useState(false);
 
-  const [queryClient] = useState(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: {
-            staleTime: 1000 * 60 * 5,
-            // Must be >= persist maxAge so restored query cache is not GC'd early.
-            gcTime: QUERY_CACHE_MAX_AGE_MS,
-            refetchOnMount: false,
-            refetchOnWindowFocus: false,
-          },
-        },
-      }),
-  );
+  const [queryClient] = useState(createAppQueryClient);
 
   const trpcClient = useMemo(() => {
     const url = getTrpcUrl(serverUrl);

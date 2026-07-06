@@ -11778,3 +11778,36 @@ new incremental tables are populated.
 - **Remaining risk:** Other inputless queries still routed through unbatched
   `httpLink` could hit the same empty-body parser failure if they are invoked
   without input. The current change only moves the observed failing route.
+
+## 2026-07-06 — Handled tRPC query errors were visible in UI but not Sentry
+
+- **Symptoms:** Data-readiness failures could render in the web or mobile UI as
+  `Data readiness is unavailable` with the tRPC/React Query error message, while
+  the same client-side handled query error was not necessarily present as a
+  Sentry issue.
+- **User impact:** Users could see failed data-readiness checks, but production
+  telemetry could miss handled tRPC/query failures that React Query converted
+  into component state instead of uncaught exceptions.
+- **Evidence:** React Query exposes failed tRPC queries as `query.error` for
+  components to render. Those handled errors do not reach Sentry's automatic
+  unhandled exception capture path. Focused web and mobile regressions proved a
+  failed `sync.dataHealth`-shaped query now invokes `captureException`.
+- **Root cause:** The app relied on unhandled exception capture for query
+  failures, but React Query catches query function errors and stores them in the
+  query cache as handled state.
+- **Fix / mitigation:** Added web and mobile app QueryClient factories with a
+  `QueryCache.onError` handler that reports handled query errors to Sentry with
+  `source: react-query`, `queryHash`, serialized `queryKey`, and
+  `failureCount`. Wired both app roots to use those factories.
+- **Validation:** `pnpm exec vitest run
+  packages/web/src/lib/query-client.test.ts packages/web/src/lib/trpc.test.ts
+  packages/mobile/lib/query-client.test.ts
+  packages/mobile/app/_layout.cleanup.test.tsx` passed. Repository TypeScript
+  passed via `pnpm --filter dofek-web typecheck`; the local `rtk` wrapper warns
+  that package filters are ignored for the underlying root TypeScript command.
+  `pnpm lint` passed Biome, then stopped in analytics SQL lint because local
+  ClickHouse was not running at `127.0.0.1:8123`.
+- **Remaining risk:** This reports query failures after React Query marks them
+  failed. Mutations and imperative non-query tRPC client calls still need their
+  existing explicit `captureException` calls or separate mutation-cache
+  reporting if the product policy is expanded to all handled mutations too.
