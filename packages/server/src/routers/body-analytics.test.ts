@@ -188,7 +188,7 @@ describe("bodyAnalyticsRouter", () => {
       expect(result.prediction.periodDeltas).toBeDefined();
     });
 
-    it("returns a safe error when weight overview fetch fails", async () => {
+    it("propagates the underlying error when weight overview fetch fails", async () => {
       const caller = createCaller({
         db: { execute: vi.fn().mockRejectedValue(new Error("connection reset")) },
         sensorStore: makeMockSensorStore([]),
@@ -197,7 +197,7 @@ describe("bodyAnalyticsRouter", () => {
       });
 
       await expect(caller.weightOverview({ days: 90, endDate: "2026-03-15" })).rejects.toThrow(
-        "Failed to fetch weight overview.",
+        "connection reset",
       );
     });
   });

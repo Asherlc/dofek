@@ -1,5 +1,3 @@
-import { captureException } from "@sentry/node";
-import { TRPCError } from "@trpc/server";
 import type { Database } from "dofek/db";
 import { queryCache } from "dofek/lib/cache";
 import { z } from "zod";
@@ -57,21 +55,13 @@ export const bodyAnalyticsRouter = router({
   weightOverview: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(dateWindowInput)
     .query(async ({ ctx, input }) => {
-      try {
-        const goalWeightKg = await readGoalWeightKg(ctx.db, ctx.userId);
-        const repo = createBodyAnalyticsRepository(ctx);
-        const [smoothedWeight, prediction] = await Promise.all([
-          repo.getSmoothedWeight(input.days, input.endDate),
-          repo.getWeightPrediction(input.days, input.endDate, goalWeightKg),
-        ]);
-        return { smoothedWeight, prediction };
-      } catch (error) {
-        captureException(error);
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to fetch weight overview.",
-        });
-      }
+      const goalWeightKg = await readGoalWeightKg(ctx.db, ctx.userId);
+      const repo = createBodyAnalyticsRepository(ctx);
+      const [smoothedWeight, prediction] = await Promise.all([
+        repo.getSmoothedWeight(input.days, input.endDate),
+        repo.getWeightPrediction(input.days, input.endDate, goalWeightKg),
+      ]);
+      return { smoothedWeight, prediction };
     }),
 
   recomposition: cachedProtectedQuery(CacheTTL.MEDIUM)

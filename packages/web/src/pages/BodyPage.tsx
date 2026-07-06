@@ -199,7 +199,7 @@ export function BodyPage() {
       </PageSection>
 
       {/* SpO2 & Skin Temp */}
-      {(hasSpO2 || hasSkinTemp) && (
+      {(hasSpO2 || hasSkinTemp || spo2SectionError) && (
         <PageSection title={spo2TempTitle}>
           {spo2SectionError ? (
             <QueryStatePanel error={spo2SectionError} height={200} />
