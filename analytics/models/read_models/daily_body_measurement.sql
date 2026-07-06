@@ -2,7 +2,7 @@
     materialized='incremental',
     incremental_strategy='append',
     engine='ReplacingMergeTree(refresh_version)',
-    order_by='(user_id, recorded_at)',
+    order_by='(user_id, recorded_at, measurement_id)',
     query_settings={
         'max_threads': 1
     }
@@ -20,6 +20,7 @@ existing_measurements AS (
 
 body_source AS (
     SELECT
+        body.id AS measurement_id,
         body.user_id AS user_id,
         body.recorded_at AS recorded_at,
         body.weight_kg AS weight_kg,
@@ -48,6 +49,7 @@ refresh_clock AS (
 )
 
 SELECT
+    CAST(body_source.measurement_id, 'UUID') AS measurement_id,
     CAST(body_source.user_id, 'UUID') AS user_id,
     CAST(toDate(body_source.recorded_at), 'Date') AS date,
     body_source.recorded_at AS recorded_at,

@@ -216,6 +216,8 @@ describe("bodyAnalyticsRouter", () => {
       const result = await caller.weightPrediction({ days: 90, endDate: "2026-03-15" });
 
       expect(result.goal).toBeNull();
+      expect(result.ratePerWeek).not.toBeNull();
+      expect(result.projectionLine.length).toBeGreaterThan(0);
     });
 
     it("continues prediction when goal weight settings lookup fails", async () => {
@@ -229,10 +231,13 @@ describe("bodyAnalyticsRouter", () => {
         userId: "user-1",
         timezone: "UTC",
       });
-      const result = await caller.weightPrediction({ days: 90, endDate: "2026-03-15" });
 
-      expect(result.goal).toBeNull();
-      expect(result.ratePerWeek).not.toBeNull();
+      await expect(
+        caller.weightPrediction({ days: 90, endDate: "2026-03-15" }),
+      ).resolves.toMatchObject({
+        goal: null,
+        ratePerWeek: expect.any(Number),
+      });
     });
   });
 

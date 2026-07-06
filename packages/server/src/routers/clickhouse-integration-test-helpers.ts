@@ -471,7 +471,8 @@ sleep_score Nullable(Float64),
 respiratory_rate_score Nullable(Float64),
 refresh_version UInt64,
 refreshed_at DateTime64(9)`,
-    daily_body_measurement: `user_id UUID,
+    daily_body_measurement: `measurement_id UUID,
+user_id UUID,
 date Date,
 recorded_at DateTime64(6, 'UTC'),
 weight_kg Float64,
@@ -728,7 +729,7 @@ activity_count UInt64`,
               : shortViewName === "daily_recovery"
                 ? "(user_id, date)"
                 : shortViewName === "daily_body_measurement"
-                  ? "(user_id, recorded_at)"
+                  ? "(user_id, recorded_at, measurement_id)"
                   : shortViewName === "daily_activity_load" ||
                       shortViewName === "healthspan_activity_zone_minutes"
                     ? "(user_id, activity_id)"
@@ -1374,6 +1375,7 @@ CROSS JOIN refresh_clock`;
 function buildTestDailyBodyMeasurementSelectSql(databases: IsolatedClickHouseDatabases): string {
   return `WITH body_source AS (
   SELECT
+    id AS measurement_id,
     user_id,
     recorded_at,
     weight_kg,
@@ -1388,6 +1390,7 @@ refresh_clock AS (
     now64(9) AS refreshed_at
 )
 SELECT
+  CAST(body_source.measurement_id, 'UUID') AS measurement_id,
   CAST(body_source.user_id, 'UUID') AS user_id,
   CAST(toDate(body_source.recorded_at), 'Date') AS date,
   body_source.recorded_at AS recorded_at,
@@ -1535,8 +1538,8 @@ body_by_week AS (
   SELECT
     user_id,
     toMonday(date) AS week_start,
-    argMax(weight_kg, (recorded_at, refresh_version)) AS weight_kg,
-    argMax(body_fat_pct, (recorded_at, refresh_version)) AS body_fat_pct
+    argMax(weight_kg, (recorded_at, refresh_version, measurement_id)) AS weight_kg,
+    argMax(body_fat_pct, (recorded_at, refresh_version, measurement_id)) AS body_fat_pct
   FROM ${databases.analytics}.daily_body_measurement
   GROUP BY user_id, toMonday(date)
 ),

@@ -644,7 +644,7 @@ describe("production analytics read-model build", () => {
 
     expect(sql).toContain("materialized='incremental'");
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
-    expect(sql).toContain("order_by='(user_id, recorded_at)'");
+    expect(sql).toContain("order_by='(user_id, recorded_at, measurement_id)'");
     expect(sql).toContain("{% if is_incremental() %}");
     expect(sql).toContain("existing_measurements AS");
     expect(sql).toContain("analytics.v_body_measurement");
