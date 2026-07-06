@@ -2,7 +2,7 @@
     materialized='incremental',
     incremental_strategy='append',
     engine='ReplacingMergeTree(refresh_version)',
-    order_by='(user_id, recorded_at, measurement_id)',
+    order_by='(user_id, measurement_id)',
     query_settings={
         'max_threads': 1
     }
@@ -37,7 +37,7 @@ body_source AS (
             existing_measurements.user_id IS NULL
             -- Re-materialize a 7-day overlap for late updates; ReplacingMergeTree
             -- deduplicates rows by (user_id, recorded_at) on refresh_version.
-            OR body.recorded_at >= existing_measurements.latest_recorded_at - INTERVAL 7 DAY
+            OR toDate(body.recorded_at) >= toDate(existing_measurements.latest_recorded_at) - INTERVAL 7 DAY
         )
         {% endif %}
 ),
