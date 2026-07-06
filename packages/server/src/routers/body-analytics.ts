@@ -1,9 +1,19 @@
 import { queryCache } from "dofek/lib/cache";
+import type { Database } from "dofek/db";
 import { z } from "zod";
 import { endDateSchema } from "../lib/date-window.ts";
 import { BodyAnalyticsRepository } from "../repositories/body-analytics-repository.ts";
 import { SettingsRepository } from "../repositories/settings-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
+
+async function readGoalWeightKg(db: Pick<Database, "execute" | "transaction">, userId: string) {
+  const settingsRepo = new SettingsRepository(db, userId);
+  const goalSetting = await settingsRepo.get("goalWeight");
+  const parsedGoalWeightKg = goalSetting?.value != null ? Number(goalSetting.value) : null;
+  return parsedGoalWeightKg != null && Number.isFinite(parsedGoalWeightKg)
+    ? parsedGoalWeightKg
+    : null;
+}
 
 export type {
   BodyRecompositionRow,
@@ -56,14 +66,7 @@ export const bodyAnalyticsRouter = router({
   weightPrediction: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ days: z.number().default(90), endDate: endDateSchema }))
     .query(async ({ ctx, input }) => {
-      const settingsRepo = new SettingsRepository(ctx.db, ctx.userId);
-      const goalSetting = await settingsRepo.get("goalWeight");
-      const parsedGoalWeightKg = goalSetting?.value != null ? Number(goalSetting.value) : null;
-      const goalWeightKg =
-        parsedGoalWeightKg != null && Number.isFinite(parsedGoalWeightKg)
-          ? parsedGoalWeightKg
-          : null;
-
+      const goalWeightKg = await readGoalWeightKg(ctx.db, ctx.userId);
       const repo = new BodyAnalyticsRepository(
         ctx.db,
         ctx.userId,

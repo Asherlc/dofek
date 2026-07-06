@@ -70,6 +70,7 @@ describe("production analytics read-model build", () => {
       "daily_recovery",
       "daily_activity_load",
       "daily_strain",
+      "daily_body_measurement",
       "healthspan_activity_zone_minutes",
       "weekly_healthspan",
     ]);
@@ -615,7 +616,7 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).toContain("sensor_samples.user_id = activity_metadata.user_id");
   });
 
-  it("materializes the weekly healthspan model from compact inputs", () => {
+  it("materializes weekly healthspan from compact inputs", () => {
     const sql = readModel("weekly_healthspan");
     const normalizedSql = compactWhitespace(sql);
 
@@ -627,6 +628,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("ref('healthspan_activity_zone_minutes')");
     expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
     expect(sql).toContain("ref('activity_vo2max_estimate')");
+    expect(sql).toContain("ref('daily_body_measurement')");
     expect(sql).toContain("toMonday(toDate(started_at)) AS week_start");
     expect(sql).not.toContain("activity_date");
     expect(sql).toContain("argMax(vo2max, started_at) AS latest_vo2max");
@@ -634,5 +636,20 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("weekly_aerobic_min");
     expect(sql).toContain("weekly_high_intensity_min");
     expect(sql).toContain("latest_vo2max");
+  });
+
+  it("materializes daily body measurements from the body measurement view", () => {
+    const sql = readModel("daily_body_measurement");
+    const normalizedSql = compactWhitespace(sql);
+
+    expect(sql).toContain("materialized='incremental'");
+    expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
+    expect(sql).toContain("{% if is_incremental() %}");
+    expect(sql).toContain("existing_dates AS");
+    expect(sql).toContain("analytics.v_body_measurement");
+    expect(normalizedSql).toContain("PARTITION BY user_id, toDate(recorded_at)");
+    expect(normalizedSql).toContain("ORDER BY recorded_at DESC");
+    expect(sql).toContain("WHERE ranked_body.row_number = 1");
+    expect(sql).not.toContain("source('postgres_fitness', 'metric_stream')");
   });
 });

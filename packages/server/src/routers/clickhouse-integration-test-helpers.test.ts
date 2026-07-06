@@ -27,6 +27,7 @@ const testAnalyticsViewNames = [
   "analytics.activity_summary",
   "analytics.daily_activity_load",
   "analytics.daily_strain",
+  "analytics.daily_body_measurement",
   "analytics.healthspan_activity_zone_minutes",
   "analytics.weekly_healthspan",
   "analytics.activity_trend_daily",
