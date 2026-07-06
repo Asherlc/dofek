@@ -9,11 +9,17 @@ const autoSyncInvalidationMaxAttempts = 2;
 let fallbackAutoSyncAttemptKey: string | null = null;
 let reportedSessionStorageError = false;
 
-type TrpcUtils = ReturnType<typeof trpc.useUtils>;
 type InvalidatableQuery = { invalidate: () => Promise<void> };
+type AutoSyncTrpcUtils = {
+  recovery: { readinessScore: InvalidatableQuery };
+  calendar: { activityOverview: InvalidatableQuery };
+  activity: { list: InvalidatableQuery };
+  sync: { dataHealth: InvalidatableQuery };
+  bodyAnalytics: { weightOverview: InvalidatableQuery };
+};
 
 /** Queries refreshed after a successful dashboard auto-sync. */
-export function getAutoSyncInvalidationTargets(trpcUtils: TrpcUtils): InvalidatableQuery[] {
+export function getAutoSyncInvalidationTargets(trpcUtils: AutoSyncTrpcUtils): InvalidatableQuery[] {
   return [
     trpcUtils.recovery.readinessScore,
     trpcUtils.calendar.activityOverview,
@@ -23,7 +29,7 @@ export function getAutoSyncInvalidationTargets(trpcUtils: TrpcUtils): Invalidata
   ];
 }
 
-export async function invalidateAutoSyncQueries(trpcUtils: TrpcUtils): Promise<void> {
+export async function invalidateAutoSyncQueries(trpcUtils: AutoSyncTrpcUtils): Promise<void> {
   const invalidationTargets = getAutoSyncInvalidationTargets(trpcUtils);
   let lastError: unknown;
 

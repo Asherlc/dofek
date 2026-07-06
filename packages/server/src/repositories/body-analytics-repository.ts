@@ -518,9 +518,7 @@ export class BodyAnalyticsRepository extends BaseRepository {
     // is unavailable but the trend chart would still show a weekly change.
     if (ratePerWeek == null && smoothed.length >= 8) {
       const weeklyWindowPoints = interpolated.slice(-8);
-      if (
-        countActualWeightReadings(weeklyWindowPoints) >= MIN_ACTUAL_READINGS_FOR_7_DAY_DELTA
-      ) {
+      if (countActualWeightReadings(weeklyWindowPoints) >= MIN_ACTUAL_READINGS_FOR_7_DAY_DELTA) {
         const previousSmoothed = smoothed[smoothed.length - 8] ?? 0;
         ratePerWeek = Math.round((latest - previousSmoothed) * 100) / 100;
         slopePerDay = ratePerWeek / 7;

@@ -324,14 +324,12 @@ describe("useAutoSync", () => {
       bodyAnalytics: { weightOverview: { invalidate: mockWeightOverviewInvalidate } },
     };
 
-    const invalidationPromise = invalidateAutoSyncQueries(
-      trpcUtils as ReturnType<typeof import("../lib/trpc").trpc.useUtils>,
-    );
+    const invalidationPromise = invalidateAutoSyncQueries(trpcUtils);
     await vi.advanceTimersByTimeAsync(250);
     await invalidationPromise;
 
     expect(mockReadinessInvalidate).toHaveBeenCalledTimes(2);
     expect(mockCaptureException).not.toHaveBeenCalled();
-    expect(getAutoSyncInvalidationTargets(trpcUtils as never)).toHaveLength(5);
+    expect(getAutoSyncInvalidationTargets(trpcUtils)).toHaveLength(5);
   });
 });

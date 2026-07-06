@@ -108,9 +108,11 @@ export function BodyPage() {
 
   const skinTempSeries = useMemo(() => buildSkinTempSeries(metrics, units), [metrics, units]);
 
+  const smoothedWeightData = weightOverview.data?.smoothedWeight ?? [];
+
   const healthStatusError =
     (trends.isError && trends.data == null ? trends.error : null) ??
-    (smoothedWeight.isError && smoothedWeight.data == null ? smoothedWeight.error : null) ??
+    (weightOverview.isError && weightOverview.data == null ? weightOverview.error : null) ??
     (bodyRecomp.isError && bodyRecomp.data == null ? bodyRecomp.error : null);
 
   const healthMetrics = useMemo(() => {
@@ -118,13 +120,13 @@ export function BodyPage() {
 
     return buildBodyHealthMetrics({
       trendData,
-      weightData: smoothedWeight.data ?? [],
+      weightData: smoothedWeightData,
       recompData: bodyRecomp.data ?? [],
       days,
       endDate,
       units,
     });
-  }, [healthStatusError, trendData, smoothedWeight.data, bodyRecomp.data, days, endDate, units]);
+  }, [healthStatusError, trendData, smoothedWeightData, bodyRecomp.data, days, endDate, units]);
 
   const bodyInsights = useMemo(() => {
     const all: Insight[] = insightsQuery.data ?? [];
@@ -141,7 +143,6 @@ export function BodyPage() {
     );
   }, [weightOverview.data]);
 
-  const smoothedWeightData = weightOverview.data?.smoothedWeight ?? [];
   const hrvSectionError = getQueryError(hrvBaseline);
   const stressSectionError = getQueryError(stressData);
   const spo2SectionError = getQueryError(dailyMetrics);
@@ -175,7 +176,7 @@ export function BodyPage() {
       ) : (
         <HealthStatusBar
           metrics={healthMetrics}
-          loading={trends.isLoading || smoothedWeight.isLoading || bodyRecomp.isLoading}
+          loading={trends.isLoading || weightOverview.isLoading || bodyRecomp.isLoading}
         />
       )}
 

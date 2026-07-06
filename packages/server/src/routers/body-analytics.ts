@@ -1,12 +1,18 @@
 import { captureException } from "@sentry/node";
 import { TRPCError } from "@trpc/server";
-import { queryCache } from "dofek/lib/cache";
 import type { Database } from "dofek/db";
+import { queryCache } from "dofek/lib/cache";
 import { z } from "zod";
 import { endDateSchema } from "../lib/date-window.ts";
 import { BodyAnalyticsRepository } from "../repositories/body-analytics-repository.ts";
 import { SettingsRepository } from "../repositories/settings-repository.ts";
-import { CacheTTL, cachedProtectedQuery, protectedProcedure, router, type AuthenticatedContext } from "../trpc.ts";
+import {
+  type AuthenticatedContext,
+  CacheTTL,
+  cachedProtectedQuery,
+  protectedProcedure,
+  router,
+} from "../trpc.ts";
 
 export type {
   BodyRecompositionRow,
@@ -23,7 +29,9 @@ async function readGoalWeightKg(
   const settingsRepo = new SettingsRepository(db, userId);
   const goalSetting = await settingsRepo.get("goalWeight");
   const parsedGoalWeightKg = goalSetting?.value != null ? Number(goalSetting.value) : null;
-  return parsedGoalWeightKg != null && Number.isFinite(parsedGoalWeightKg) ? parsedGoalWeightKg : null;
+  return parsedGoalWeightKg != null && Number.isFinite(parsedGoalWeightKg)
+    ? parsedGoalWeightKg
+    : null;
 }
 
 function createBodyAnalyticsRepository(ctx: AuthenticatedContext) {
