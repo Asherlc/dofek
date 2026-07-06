@@ -39,7 +39,7 @@ export default defineConfig({
         test: {
           ...sharedTestConfig,
           name: "unit",
-          setupFiles: ["packages/web/test-setup.ts"],
+          setupFiles: ["@testing-library/jest-dom/vitest"],
           include: [
             "entrypoint.test.ts",
             "analytics/models/**/*.test.ts",
