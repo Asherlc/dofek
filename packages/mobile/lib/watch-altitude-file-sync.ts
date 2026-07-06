@@ -1,4 +1,9 @@
-import { deleteWatchFile, getPendingWatchAltitudeFileNames, readWatchAltitudeFile } from "../modules/watch-motion";
+import {
+  deleteWatchFile,
+  getPendingWatchAltitudeFileNames,
+  readWatchAltitudeFile,
+  type WatchAltitudeSample,
+} from "../modules/watch-motion";
 import { captureException, logger } from "./telemetry";
 
 const TAG = "watch-altitude-file-sync";
@@ -25,18 +30,15 @@ export interface WatchAltitudeFileSyncResult {
   filesFailed: number;
 }
 
-function parseAltitudeSample(raw: Record<string, unknown>) {
-  const timestamp = raw.timestamp;
-  const altitudeM = raw.altitudeM;
-  if (typeof timestamp !== "string" || typeof altitudeM !== "number") {
+function parseAltitudeSample(raw: WatchAltitudeSample): WatchAltitudeSample | null {
+  if (typeof raw.timestamp !== "string" || typeof raw.altitudeM !== "number") {
     return null;
   }
 
-  const pressureKPa = raw.pressureKPa;
   return {
-    timestamp,
-    altitudeM,
-    pressureKPa: typeof pressureKPa === "number" ? pressureKPa : undefined,
+    timestamp: raw.timestamp,
+    altitudeM: raw.altitudeM,
+    pressureKPa: typeof raw.pressureKPa === "number" ? raw.pressureKPa : undefined,
   };
 }
 
@@ -63,8 +65,8 @@ export async function syncWatchAltitudeFiles(
       logger.info(TAG, `Reading ${fileName}`);
       const rawSamples = await readWatchAltitudeFile(fileName);
       const samples = rawSamples
-        .map((sample) => parseAltitudeSample(sample as Record<string, unknown>))
-        .filter((sample): sample is NonNullable<typeof sample> => sample != null);
+        .map((sample) => parseAltitudeSample(sample))
+        .filter((sample): sample is WatchAltitudeSample => sample != null);
 
       logger.info(TAG, `${fileName}: ${samples.length} samples`);
 

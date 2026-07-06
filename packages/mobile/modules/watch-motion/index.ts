@@ -65,14 +65,14 @@ export interface WatchAltitudeSample {
 
 /** List pending Watch accelerometer transfer file names. */
 export function getPendingWatchFileNames(): string[] {
-  return WatchMotionModule.getPendingWatchFileNames().filter((fileName) =>
+  return WatchMotionModule.getPendingWatchFileNames().filter((fileName: string) =>
     fileName.startsWith("watch-accel-"),
   );
 }
 
 /** List pending Watch altitude transfer file names. */
 export function getPendingWatchAltitudeFileNames(): string[] {
-  return WatchMotionModule.getPendingWatchFileNames().filter((fileName) =>
+  return WatchMotionModule.getPendingWatchFileNames().filter((fileName: string) =>
     fileName.startsWith("watch-altitude-"),
   );
 }
