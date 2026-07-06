@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /** A barometric altitude sample transferred from the Apple Watch. */
 export const WatchAltitudeSampleSchema = z.object({
-  timestamp: z.string(),
+  timestamp: z.string().datetime({ offset: true }),
   altitudeM: z.number(),
   pressureKPa: z.number().optional(),
 });

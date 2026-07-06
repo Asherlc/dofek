@@ -28,21 +28,26 @@ final class AltimeterRecorder: ObservableObject {
 
     @Published var isRecording: Bool = false
     @Published private(set) var bufferedSampleCount: Int = 0
+    @Published private(set) var lastError: String?
 
     static var isAvailable: Bool {
         CMAltimeter.isRelativeAltitudeAvailable()
     }
 
     /// Start recording barometric altitude samples (~1 Hz).
-    /// Buffers samples in memory until `clearBufferedSamples()` is called after transfer.
+    /// Buffers samples in memory until `clearBufferedSamples(count:)` is called after transfer.
     func startRecording() {
-        guard Self.isAvailable else { return }
+        guard Self.isAvailable else {
+            publishError("Barometer not available on this device")
+            return
+        }
         guard !isRecording else { return }
 
         altimeter.startRelativeAltitudeUpdates(to: operationQueue) { [weak self] data, error in
             guard let self = self else { return }
             if let error = error {
                 NSLog("[AltimeterRecorder] update error: %@", error.localizedDescription)
+                self.publishError(error.localizedDescription)
                 return
             }
             guard let data = data else { return }
@@ -71,6 +76,7 @@ final class AltimeterRecorder: ObservableObject {
 
         DispatchQueue.main.async {
             self.isRecording = true
+            self.lastError = nil
         }
     }
 
@@ -109,6 +115,13 @@ final class AltimeterRecorder: ObservableObject {
     private func publishBufferedSampleCount(_ count: Int) {
         DispatchQueue.main.async {
             self.bufferedSampleCount = count
+        }
+    }
+
+    private func publishError(_ message: String) {
+        DispatchQueue.main.async {
+            self.lastError = message
+            self.isRecording = false
         }
     }
 }

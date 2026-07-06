@@ -72,6 +72,12 @@ struct ContentView: View {
                             .font(.caption)
                             .foregroundColor(.red)
                     }
+
+                    if let lastError = altimeterRecorder.lastError {
+                        Text(lastError)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
                 } header: {
                     Text("Altimeter")
                         .font(.caption)
