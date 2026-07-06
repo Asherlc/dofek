@@ -644,12 +644,11 @@ describe("production analytics read-model build", () => {
 
     expect(sql).toContain("materialized='incremental'");
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
+    expect(sql).toContain("order_by='(user_id, recorded_at)'");
     expect(sql).toContain("{% if is_incremental() %}");
-    expect(sql).toContain("existing_dates AS");
+    expect(sql).toContain("existing_measurements AS");
     expect(sql).toContain("analytics.v_body_measurement");
-    expect(normalizedSql).toContain("PARTITION BY user_id, toDate(recorded_at)");
-    expect(normalizedSql).toContain("ORDER BY recorded_at DESC");
-    expect(sql).toContain("WHERE ranked_body.row_number = 1");
+    expect(normalizedSql).not.toContain("row_number() OVER");
     expect(sql).not.toContain("source('postgres_fitness', 'metric_stream')");
   });
 });

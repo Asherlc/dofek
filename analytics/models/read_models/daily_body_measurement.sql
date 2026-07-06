@@ -2,17 +2,17 @@
     materialized='incremental',
     incremental_strategy='append',
     engine='ReplacingMergeTree(refresh_version)',
-    order_by='(user_id, date)',
+    order_by='(user_id, recorded_at)',
     query_settings={
         'max_threads': 1
     }
 ) }}
 
 WITH {% if is_incremental() %}
-existing_dates AS (
+existing_measurements AS (
     SELECT
         user_id,
-        max(date) AS latest_materialized_date
+        max(recorded_at) AS latest_recorded_at
     FROM {{ this }}
     GROUP BY user_id
 ),
@@ -26,31 +26,17 @@ body_source AS (
         body.body_fat_pct AS body_fat_pct
     FROM analytics.v_body_measurement AS body
     {% if is_incremental() %}
-    LEFT JOIN existing_dates
-        ON existing_dates.user_id = body.user_id
+    LEFT JOIN existing_measurements
+        ON existing_measurements.user_id = body.user_id
     {% endif %}
     WHERE body.weight_kg IS NOT NULL
         AND body.weight_kg > 0
         {% if is_incremental() %}
         AND (
-            existing_dates.user_id IS NULL
-            OR toDate(body.recorded_at) >= existing_dates.latest_materialized_date - INTERVAL 7 DAY
+            existing_measurements.user_id IS NULL
+            OR body.recorded_at >= existing_measurements.latest_recorded_at - INTERVAL 7 DAY
         )
         {% endif %}
-),
-
-ranked_body AS (
-    SELECT
-        user_id,
-        toDate(recorded_at) AS date,
-        recorded_at,
-        weight_kg,
-        body_fat_pct,
-        row_number() OVER (
-            PARTITION BY user_id, toDate(recorded_at)
-            ORDER BY recorded_at DESC
-        ) AS row_number
-    FROM body_source
 ),
 
 refresh_clock AS (
@@ -60,13 +46,12 @@ refresh_clock AS (
 )
 
 SELECT
-    CAST(ranked_body.user_id, 'UUID') AS user_id,
-    CAST(ranked_body.date, 'Date') AS date,
-    ranked_body.recorded_at AS recorded_at,
-    ranked_body.weight_kg AS weight_kg,
-    ranked_body.body_fat_pct AS body_fat_pct,
+    CAST(body_source.user_id, 'UUID') AS user_id,
+    CAST(toDate(body_source.recorded_at), 'Date') AS date,
+    body_source.recorded_at AS recorded_at,
+    body_source.weight_kg AS weight_kg,
+    body_source.body_fat_pct AS body_fat_pct,
     refresh_clock.refresh_version AS refresh_version,
     refresh_clock.refreshed_at AS refreshed_at
-FROM ranked_body
+FROM body_source
 CROSS JOIN refresh_clock
-WHERE ranked_body.row_number = 1

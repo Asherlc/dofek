@@ -708,7 +708,7 @@ activity_count UInt64`,
               : shortViewName === "daily_recovery"
                 ? "(user_id, date)"
                 : shortViewName === "daily_body_measurement"
-                  ? "(user_id, date)"
+                  ? "(user_id, recorded_at)"
                   : shortViewName === "daily_activity_load" ||
                       shortViewName === "healthspan_activity_zone_minutes"
                     ? "(user_id, activity_id)"
@@ -1352,17 +1352,12 @@ CROSS JOIN refresh_clock`;
 }
 
 function buildTestDailyBodyMeasurementSelectSql(databases: IsolatedClickHouseDatabases): string {
-  return `WITH ranked_body AS (
+  return `WITH body_source AS (
   SELECT
     user_id,
-    toDate(recorded_at) AS date,
     recorded_at,
     weight_kg,
-    body_fat_pct,
-    row_number() OVER (
-      PARTITION BY user_id, toDate(recorded_at)
-      ORDER BY recorded_at DESC
-    ) AS row_number
+    body_fat_pct
   FROM ${databases.analytics}.v_body_measurement
   WHERE weight_kg IS NOT NULL
     AND weight_kg > 0
@@ -1373,16 +1368,15 @@ refresh_clock AS (
     now64(9) AS refreshed_at
 )
 SELECT
-  CAST(ranked_body.user_id, 'UUID') AS user_id,
-  CAST(ranked_body.date, 'Date') AS date,
-  ranked_body.recorded_at AS recorded_at,
-  ranked_body.weight_kg AS weight_kg,
-  ranked_body.body_fat_pct AS body_fat_pct,
+  CAST(body_source.user_id, 'UUID') AS user_id,
+  CAST(toDate(body_source.recorded_at), 'Date') AS date,
+  body_source.recorded_at AS recorded_at,
+  body_source.weight_kg AS weight_kg,
+  body_source.body_fat_pct AS body_fat_pct,
   refresh_clock.refresh_version AS refresh_version,
   refresh_clock.refreshed_at AS refreshed_at
-FROM ranked_body
-CROSS JOIN refresh_clock
-WHERE ranked_body.row_number = 1`;
+FROM body_source
+CROSS JOIN refresh_clock`;
 }
 
 function buildTestRecoveryReadModelSelectSql(databases: IsolatedClickHouseDatabases): string {
