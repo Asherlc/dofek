@@ -1,3 +1,4 @@
+import { captureException } from "@sentry/node";
 import type { Database } from "dofek/db";
 import { queryCache } from "dofek/lib/cache";
 import { z } from "zod";
@@ -57,11 +58,23 @@ export const bodyAnalyticsRouter = router({
     .query(async ({ ctx, input }) => {
       const goalWeightKg = await readGoalWeightKg(ctx.db, ctx.userId);
       const repo = createBodyAnalyticsRepository(ctx);
-      const [smoothedWeight, prediction] = await Promise.all([
+      const [smoothedWeightResult, predictionResult] = await Promise.allSettled([
         repo.getSmoothedWeight(input.days, input.endDate),
         repo.getWeightPrediction(input.days, input.endDate, goalWeightKg),
       ]);
-      return { smoothedWeight, prediction };
+
+      if (smoothedWeightResult.status === "rejected") {
+        throw smoothedWeightResult.reason;
+      }
+
+      if (predictionResult.status === "rejected") {
+        captureException(predictionResult.reason);
+      }
+
+      return {
+        smoothedWeight: smoothedWeightResult.value,
+        prediction: predictionResult.status === "fulfilled" ? predictionResult.value : null,
+      };
     }),
 
   recomposition: cachedProtectedQuery(CacheTTL.MEDIUM)

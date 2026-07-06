@@ -136,12 +136,17 @@ export function BodyPage() {
   }, [insightsQuery.data]);
 
   const weightPredictionDisplay = useMemo(() => {
-    if (!weightOverview.data) return null;
+    if (!weightOverview.data?.prediction) return null;
     return enrichWeightPrediction(
       weightOverview.data.prediction,
       weightOverview.data.smoothedWeight,
     );
   }, [weightOverview.data]);
+
+  const predictionSectionError =
+    weightOverview.isSuccess && weightOverview.data.prediction == null
+      ? new Error("Weight prediction is temporarily unavailable.")
+      : null;
 
   const hrvSectionError = getQueryError(hrvBaseline);
   const stressSectionError = getQueryError(stressData);
@@ -230,6 +235,8 @@ export function BodyPage() {
             <ChartLoadingSkeleton height={48} />
           ) : weightOverview.isError ? (
             <QueryStatePanel error={weightOverview.error} height={48} />
+          ) : predictionSectionError ? (
+            <QueryStatePanel error={predictionSectionError} height={48} />
           ) : weightPredictionDisplay ? (
             <WeightPredictionSummary
               prediction={weightPredictionDisplay}
