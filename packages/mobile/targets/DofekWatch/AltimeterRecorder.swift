@@ -27,6 +27,7 @@ final class AltimeterRecorder: ObservableObject {
     }()
 
     @Published var isRecording: Bool = false
+    @Published private(set) var bufferedSampleCount: Int = 0
 
     static var isAvailable: Bool {
         CMAltimeter.isRelativeAltitudeAvailable()
@@ -67,7 +68,9 @@ final class AltimeterRecorder: ObservableObject {
                 "pressureKPa": pressureKPa,
             ]
             self.buffer.append(sample)
+            let count = self.buffer.count
             self.bufferLock.unlock()
+            self.publishBufferedSampleCount(count)
         }
 
         DispatchQueue.main.async {
@@ -92,19 +95,17 @@ final class AltimeterRecorder: ObservableObject {
         return samples
     }
 
-    /// Drain the buffer and reset the baseline after a successful transfer.
+    /// Drain transferred samples while keeping the session baseline for ongoing recording.
     func clearBufferedSamples() {
         bufferLock.lock()
         buffer = []
-        baselinePressureKPa = nil
         bufferLock.unlock()
+        publishBufferedSampleCount(0)
     }
 
-    /// Number of samples currently buffered.
-    var bufferedSampleCount: Int {
-        bufferLock.lock()
-        let count = buffer.count
-        bufferLock.unlock()
-        return count
+    private func publishBufferedSampleCount(_ count: Int) {
+        DispatchQueue.main.async {
+            self.bufferedSampleCount = count
+        }
     }
 }

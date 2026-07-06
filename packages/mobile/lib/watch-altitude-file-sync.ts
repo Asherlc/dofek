@@ -8,6 +8,8 @@ import { captureException, logger } from "./telemetry";
 
 const TAG = "watch-altitude-file-sync";
 const UPLOAD_BATCH_SIZE = 2000;
+/** Matches watch-file-sync.ts — Watch transfers always originate from the paired device. */
+const WATCH_DEVICE_ID = "Apple Watch";
 
 export interface WatchAltitudeSyncTrpcClient {
   watchAltitudeSync: {
@@ -85,7 +87,7 @@ export async function syncWatchAltitudeFiles(
           `${fileName}: uploading batch ${batchIndex}/${totalBatches} (${batch.length} samples)`,
         );
         const result = await trpcClient.watchAltitudeSync.pushSamples.mutate({
-          deviceId: "Apple Watch",
+          deviceId: WATCH_DEVICE_ID,
           samples: batch,
         });
         totalInserted += result.inserted;

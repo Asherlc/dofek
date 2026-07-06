@@ -5,7 +5,7 @@ import { captureException, logger } from "./telemetry";
 import { syncWatchAltitudeFiles, type WatchAltitudeSyncTrpcClient } from "./watch-altitude-file-sync";
 import { syncWatchAccelerometerFiles } from "./watch-file-sync";
 
-const TAG = "bg-watch-accel-sync";
+const TAG = "bg-watch-sync";
 
 export interface WatchSyncTrpcClient
   extends InertialMeasurementUnitSyncTrpcClient,
@@ -28,7 +28,7 @@ export function createWatchSyncClient(trpcClient: WatchSyncTrpcClient): WatchSyn
 }
 
 let appStateSubscription: ReturnType<typeof AppState.addEventListener> | null = null;
-let syncing = false;
+let syncChain: Promise<void> = Promise.resolve();
 
 /**
  * Initialize background Apple Watch IMU sync.
@@ -57,21 +57,18 @@ export async function initBackgroundWatchInertialMeasurementUnitSync(
     appStateSubscription = null;
   }
 
-  // Sync whenever the app comes to foreground
+  // Sync whenever the app comes to foreground. Chain promises so rapid AppState
+  // transitions cannot overlap sync work on the same client.
   appStateSubscription = AppState.addEventListener("change", (nextState: AppStateStatus) => {
-    logger.info(TAG, `AppState changed to: ${nextState}, syncing=${syncing}`);
+    logger.info(TAG, `AppState changed to: ${nextState}`);
     if (nextState !== "active") return;
-    if (syncing) return;
 
-    syncing = true;
-    syncAndRecord(trpcClient)
+    syncChain = syncChain
+      .then(() => syncAndRecord(trpcClient))
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
         logger.error(TAG, `sync failed: ${message}`);
         captureException(error, { source: TAG });
-      })
-      .finally(() => {
-        syncing = false;
       });
   });
 

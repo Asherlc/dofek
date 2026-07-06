@@ -75,10 +75,12 @@ final class WatchSessionDelegate: NSObject, ObservableObject, WCSessionDelegate 
         didFinish fileTransfer: WCSessionFileTransfer,
         error: Error?
     ) {
+        let transferredURL = fileTransfer.file.fileURL
         if let error = error {
             print("[DofekWatch] File transfer failed: \(error.localizedDescription)")
         } else {
             print("[DofekWatch] File transfer completed successfully")
+            try? FileManager.default.removeItem(at: transferredURL)
         }
     }
 }

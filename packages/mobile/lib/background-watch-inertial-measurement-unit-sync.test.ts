@@ -139,12 +139,12 @@ describe("background-watch-inertial-measurement-unit-sync", () => {
     await initBackgroundWatchInertialMeasurementUnitSync(trpcClient);
 
     expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
-      source: "bg-watch-accel-sync:accelerometer",
+      source: "bg-watch-sync:accelerometer",
     });
     expect(mockSyncWatchAltitudeFiles).toHaveBeenCalledTimes(1);
   });
 
-  it("resets syncing flag after error so next foreground event can sync", async () => {
+  it("queues another foreground sync after a prior sync failure completes", async () => {
     await initBackgroundWatchInertialMeasurementUnitSync(trpcClient);
 
     mockSyncWatchInertialMeasurementUnitFiles.mockRejectedValue(new Error("first failure"));
@@ -186,7 +186,7 @@ describe("background-watch-inertial-measurement-unit-sync", () => {
 
     await vi.waitFor(() => {
       expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
-        source: "bg-watch-accel-sync:altitude",
+        source: "bg-watch-sync:altitude",
       });
     });
   });

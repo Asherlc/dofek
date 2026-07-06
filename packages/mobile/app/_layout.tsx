@@ -224,7 +224,7 @@ function AuthGate() {
     // Start Apple Watch IMU sync (if Watch is paired)
     initBackgroundWatchInertialMeasurementUnitSync(imuSyncClient).catch((error: unknown) => {
       // Best-effort — Watch sync is non-critical
-      captureException(error, { source: "bg-watch-accel-sync" });
+      captureException(error, { source: "bg-watch-sync" });
     });
 
     // WHOOP BLE sync is now managed reactively via useWhoopBleSync hook

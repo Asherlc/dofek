@@ -107,6 +107,22 @@ describe("syncWatchAltitudeFiles", () => {
     });
   });
 
+  it("increments filesFailed when reading a file fails", async () => {
+    mockGetPendingWatchAltitudeFileNames.mockReturnValue(["watch-altitude-read-fail.json.gz"]);
+    const readError = new Error("File not found");
+    mockReadWatchAltitudeFile.mockRejectedValue(readError);
+
+    const result = await syncWatchAltitudeFiles(trpcClient);
+
+    expect(result).toEqual({ totalInserted: 0, filesProcessed: 0, filesFailed: 1 });
+    expect(trpcClient.watchAltitudeSync.pushSamples.mutate).not.toHaveBeenCalled();
+    expect(mockDeleteWatchFile).not.toHaveBeenCalled();
+    expect(mockCaptureException).toHaveBeenCalledWith(readError, {
+      source: "watch-altitude-file-sync",
+      extra: { fileName: "watch-altitude-read-fail.json.gz" },
+    });
+  });
+
   it("uploads large files in batches of 2000 samples", async () => {
     const samples = Array.from({ length: 2001 }, (_, index) => ({
       timestamp: `2026-03-30T12:00:${String(index % 60).padStart(2, "0")}.000Z`,
