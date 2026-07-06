@@ -115,7 +115,10 @@ public class WatchMotionModule: Module {
         /// Returns the parsed accelerometer samples from that file.
         AsyncFunction("readWatchFile") { (fileName: String, promise: Promise) in
             DispatchQueue.global(qos: .userInitiated).async {
-                let fileURL = self.pendingDirectory.appendingPathComponent(fileName)
+                guard let fileURL = self.pendingFileURL(for: fileName) else {
+                    promise.reject("INVALID_FILENAME", "Invalid pending file name")
+                    return
+                }
                 do {
                     let fileData = try Data(contentsOf: fileURL)
                     NSLog("[WatchMotion] readWatchFile %@: %d bytes", fileName, fileData.count)
@@ -132,7 +135,10 @@ public class WatchMotionModule: Module {
         /// Read and parse a single pending Watch altitude transfer file.
         AsyncFunction("readWatchAltitudeFile") { (fileName: String, promise: Promise) in
             DispatchQueue.global(qos: .userInitiated).async {
-                let fileURL = self.pendingDirectory.appendingPathComponent(fileName)
+                guard let fileURL = self.pendingFileURL(for: fileName) else {
+                    promise.reject("INVALID_FILENAME", "Invalid pending file name")
+                    return
+                }
                 do {
                     let fileData = try Data(contentsOf: fileURL)
                     let samples = try SampleFileParser.parse(fileData)
@@ -145,7 +151,10 @@ public class WatchMotionModule: Module {
 
         /// Delete a single pending Watch transfer file after successful upload.
         Function("deleteWatchFile") { (fileName: String) in
-            let fileURL = self.pendingDirectory.appendingPathComponent(fileName)
+            guard let fileURL = self.pendingFileURL(for: fileName) else {
+                NSLog("[WatchMotion] deleteWatchFile rejected invalid name: %@", fileName)
+                return
+            }
             NSLog("[WatchMotion] deleteWatchFile: %@", fileName)
             try? FileManager.default.removeItem(at: fileURL)
         }
@@ -187,6 +196,18 @@ public class WatchMotionModule: Module {
     }
 
     // MARK: - Pending file operations
+
+    private func isSafePendingFileName(_ fileName: String) -> Bool {
+        if fileName.isEmpty { return false }
+        if fileName.contains("..") { return false }
+        if fileName.contains("/") || fileName.contains("\\") { return false }
+        return fileName == (fileName as NSString).lastPathComponent
+    }
+
+    private func pendingFileURL(for fileName: String) -> URL? {
+        guard isSafePendingFileName(fileName) else { return nil }
+        return pendingDirectory.appendingPathComponent(fileName)
+    }
 
     private func listPendingFileNames() -> [String] {
         let contents = try? FileManager.default.contentsOfDirectory(

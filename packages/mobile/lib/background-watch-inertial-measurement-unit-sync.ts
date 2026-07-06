@@ -11,6 +11,22 @@ export interface WatchSyncTrpcClient
   extends InertialMeasurementUnitSyncTrpcClient,
     WatchAltitudeSyncTrpcClient {}
 
+/** Build the narrowed tRPC client used by background Watch sync helpers. */
+export function createWatchSyncClient(trpcClient: WatchSyncTrpcClient): WatchSyncTrpcClient {
+  return {
+    inertialMeasurementUnitSync: {
+      pushSamples: {
+        mutate: (input) => trpcClient.inertialMeasurementUnitSync.pushSamples.mutate(input),
+      },
+    },
+    watchAltitudeSync: {
+      pushSamples: {
+        mutate: (input) => trpcClient.watchAltitudeSync.pushSamples.mutate(input),
+      },
+    },
+  };
+}
+
 let appStateSubscription: ReturnType<typeof AppState.addEventListener> | null = null;
 let syncing = false;
 
@@ -70,8 +86,25 @@ export async function initBackgroundWatchInertialMeasurementUnitSync(
  * Sync pending Watch files and request the Watch to continue recording.
  */
 async function syncAndRecord(trpcClient: WatchSyncTrpcClient): Promise<void> {
-  await syncWatchAccelerometerFiles(trpcClient);
-  await syncWatchAltitudeFiles(trpcClient);
+  try {
+    await syncWatchAccelerometerFiles(trpcClient);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error(TAG, `Accelerometer sync failed: ${message}`);
+    captureException(error instanceof Error ? error : new Error(message), {
+      source: `${TAG}:accelerometer`,
+    });
+  }
+
+  try {
+    await syncWatchAltitudeFiles(trpcClient);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error(TAG, `Altitude sync failed: ${message}`);
+    captureException(error instanceof Error ? error : new Error(message), {
+      source: `${TAG}:altitude`,
+    });
+  }
 
   // Ask the Watch to restart recording and send any new data
   try {

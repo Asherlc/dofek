@@ -68,6 +68,7 @@ final class TransferManager: ObservableObject {
     private func performTransfer() {
         // Stream samples to a temp JSON file (memory-efficient)
         guard let result = accelerometerRecorder.streamSamplesToFile() else {
+            transferAltimeterSamples()
             DispatchQueue.main.async { [weak self] in
                 self?.isTransferring = false
                 self?.lastTransferStatus = "No new samples"
@@ -76,6 +77,8 @@ final class TransferManager: ObservableObject {
         }
 
         let gyroSamples = gyroscopeRecorder.queryNewSamples()
+        var tempFilesToCleanup: [URL] = [result.url]
+        var mergedURL: URL?
 
         DispatchQueue.main.async { [weak self] in
             self?.accelerometerRecorder.samplesSinceLastTransfer = result.count
@@ -86,11 +89,11 @@ final class TransferManager: ObservableObject {
             // If we have gyroscope data, re-read the accel file, merge, and rewrite
             let fileToCompress: URL
             if !gyroSamples.isEmpty {
-                let mergedURL = FileManager.default.temporaryDirectory
+                mergedURL = FileManager.default.temporaryDirectory
                     .appendingPathComponent("imu-merged-\(ISO8601DateFormatter().string(from: Date())).json")
-                try mergeGyroscopeIntoFile(accelFileURL: result.url, gyroSamples: gyroSamples, outputURL: mergedURL)
+                try mergeGyroscopeIntoFile(accelFileURL: result.url, gyroSamples: gyroSamples, outputURL: mergedURL!)
                 try? FileManager.default.removeItem(at: result.url)
-                fileToCompress = mergedURL
+                fileToCompress = mergedURL!
             } else {
                 fileToCompress = result.url
             }
@@ -99,9 +102,14 @@ final class TransferManager: ObservableObject {
             let compressedURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent("imu-\(ISO8601DateFormatter().string(from: Date())).json.gz")
             let compressedSize = try Self.compressFile(from: fileToCompress, to: compressedURL)
+            tempFilesToCleanup.append(compressedURL)
 
             // Clean up the uncompressed temp file
-            try? FileManager.default.removeItem(at: fileToCompress)
+            if fileToCompress != result.url {
+                try? FileManager.default.removeItem(at: fileToCompress)
+            } else {
+                try? FileManager.default.removeItem(at: result.url)
+            }
 
             // Transfer via WCSession
             let metadata: [String: Any] = [
@@ -112,6 +120,7 @@ final class TransferManager: ObservableObject {
             ]
 
             session.transferFile(compressedURL, metadata: metadata)
+            try? FileManager.default.removeItem(at: compressedURL)
 
             DispatchQueue.main.async { [weak self] in
                 self?.accelerometerRecorder.markTransferComplete()
@@ -121,8 +130,12 @@ final class TransferManager: ObservableObject {
 
             transferAltimeterSamples()
         } catch {
-            // Clean up temp files on error
-            try? FileManager.default.removeItem(at: result.url)
+            for url in tempFilesToCleanup {
+                try? FileManager.default.removeItem(at: url)
+            }
+            if let mergedURL {
+                try? FileManager.default.removeItem(at: mergedURL)
+            }
 
             DispatchQueue.main.async { [weak self] in
                 self?.lastTransferStatus = "Error: \(error.localizedDescription)"
@@ -240,24 +253,36 @@ final class TransferManager: ObservableObject {
         let altitudeSamples = altimeterRecorder.queryNewSamples()
         guard !altitudeSamples.isEmpty else { return }
 
+        var jsonURL: URL?
+        var compressedURL: URL?
+
         do {
-            let jsonURL = FileManager.default.temporaryDirectory
+            jsonURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent("altitude-\(ISO8601DateFormatter().string(from: Date())).json")
             let jsonData = try JSONSerialization.data(withJSONObject: altitudeSamples)
-            try jsonData.write(to: jsonURL)
+            try jsonData.write(to: jsonURL!)
 
-            let compressedURL = FileManager.default.temporaryDirectory
+            compressedURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent("altitude-\(ISO8601DateFormatter().string(from: Date())).json.gz")
-            _ = try Self.compressFile(from: jsonURL, to: compressedURL)
-            try? FileManager.default.removeItem(at: jsonURL)
+            _ = try Self.compressFile(from: jsonURL!, to: compressedURL!)
+            try? FileManager.default.removeItem(at: jsonURL!)
+            jsonURL = nil
 
             let metadata: [String: Any] = [
                 "type": "altitude_samples",
                 "sampleCount": altitudeSamples.count,
                 "transferredAt": ISO8601DateFormatter().string(from: Date()),
             ]
-            session.transferFile(compressedURL, metadata: metadata)
+            session.transferFile(compressedURL!, metadata: metadata)
+            try? FileManager.default.removeItem(at: compressedURL!)
+            compressedURL = nil
         } catch {
+            if let jsonURL {
+                try? FileManager.default.removeItem(at: jsonURL)
+            }
+            if let compressedURL {
+                try? FileManager.default.removeItem(at: compressedURL)
+            }
             DispatchQueue.main.async { [weak self] in
                 self?.lastTransferStatus = "Altitude transfer error: \(error.localizedDescription)"
             }

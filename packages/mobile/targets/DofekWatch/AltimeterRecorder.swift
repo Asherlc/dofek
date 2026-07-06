@@ -38,8 +38,15 @@ final class AltimeterRecorder: ObservableObject {
         guard Self.isAvailable else { return }
         guard !isRecording else { return }
 
+        baselinePressureKPa = nil
+
         altimeter.startRelativeAltitudeUpdates(to: operationQueue) { [weak self] data, error in
-            guard let self = self, let data = data, error == nil else { return }
+            guard let self = self else { return }
+            if let error = error {
+                NSLog("[AltimeterRecorder] update error: %@", error.localizedDescription)
+                return
+            }
+            guard let data = data else { return }
 
             let pressureKPa = data.pressure.doubleValue
             if self.baselinePressureKPa == nil {

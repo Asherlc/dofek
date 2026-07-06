@@ -63,6 +63,13 @@ export interface WatchAltitudeSample {
   pressureKPa?: number;
 }
 
+function isSafePendingFileName(fileName: string): boolean {
+  if (!fileName) return false;
+  if (fileName.includes("..")) return false;
+  if (fileName.includes("/") || fileName.includes("\\")) return false;
+  return fileName === fileName.split(/[/\\]/).pop();
+}
+
 /** List pending Watch accelerometer transfer file names. */
 export function getPendingWatchFileNames(): string[] {
   return WatchMotionModule.getPendingWatchFileNames().filter((fileName: string) =>
@@ -81,17 +88,26 @@ export function getPendingWatchAltitudeFileNames(): string[] {
  * @param fileName — file name within the pending directory
  * @returns Parsed accelerometer samples from that file */
 export async function readWatchFile(fileName: string): Promise<InertialMeasurementUnitSample[]> {
+  if (!isSafePendingFileName(fileName)) {
+    throw new Error(`Invalid pending watch file name: ${fileName}`);
+  }
   return WatchMotionModule.readWatchFile(fileName);
 }
 
 /** Read and parse a single pending Watch altitude transfer file. */
 export async function readWatchAltitudeFile(fileName: string): Promise<WatchAltitudeSample[]> {
+  if (!isSafePendingFileName(fileName)) {
+    throw new Error(`Invalid pending watch file name: ${fileName}`);
+  }
   return WatchMotionModule.readWatchAltitudeFile(fileName);
 }
 
 /** Delete a single pending Watch transfer file after successful upload.
  * @param fileName — file name within the pending directory */
 export function deleteWatchFile(fileName: string): void {
+  if (!isSafePendingFileName(fileName)) {
+    throw new Error(`Invalid pending watch file name: ${fileName}`);
+  }
   WatchMotionModule.deleteWatchFile(fileName);
 }
 

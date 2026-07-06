@@ -11,7 +11,7 @@ import {
   initBackgroundHealthKitSync,
   teardownBackgroundHealthKitSync,
 } from "../lib/background-health-kit-sync";
-import { initBackgroundWatchInertialMeasurementUnitSync } from "../lib/background-watch-inertial-measurement-unit-sync";
+import { initBackgroundWatchInertialMeasurementUnitSync, createWatchSyncClient } from "../lib/background-watch-inertial-measurement-unit-sync";
 import { syncWhoopBle, teardownBackgroundWhoopBleSync } from "../lib/background-whoop-ble-sync";
 import type { SyncTrpcClient } from "../lib/health-kit-sync";
 import { MobileQueryPersistenceProvider } from "../lib/mobile-query-persistence";
@@ -215,22 +215,7 @@ function AuthGate() {
     });
 
     // Start continuous accelerometer recording and background sync
-    const imuSyncClient = {
-      inertialMeasurementUnitSync: {
-        pushSamples: {
-          mutate: (
-            input: Parameters<typeof trpcClient.inertialMeasurementUnitSync.pushSamples.mutate>[0],
-          ) => trpcClient.inertialMeasurementUnitSync.pushSamples.mutate(input),
-        },
-      },
-      watchAltitudeSync: {
-        pushSamples: {
-          mutate: (
-            input: Parameters<typeof trpcClient.watchAltitudeSync.pushSamples.mutate>[0],
-          ) => trpcClient.watchAltitudeSync.pushSamples.mutate(input),
-        },
-      },
-    };
+    const imuSyncClient = createWatchSyncClient(trpcClient);
     initBackgroundAccelerometerSync(imuSyncClient).catch((error: unknown) => {
       // Best-effort — accelerometer sync is non-critical
       captureException(error, { source: "bg-accelerometer-sync" });

@@ -133,19 +133,15 @@ describe("background-watch-inertial-measurement-unit-sync", () => {
     expect(AppState.addEventListener).not.toHaveBeenCalled();
   });
 
-  it("calls captureException when foreground sync rejects", async () => {
+  it("calls captureException when accelerometer sync throws during init", async () => {
+    mockSyncWatchInertialMeasurementUnitFiles.mockRejectedValue(new Error("watch sync failed"));
+
     await initBackgroundWatchInertialMeasurementUnitSync(trpcClient);
 
-    const syncError = new Error("watch sync failed");
-    mockSyncWatchInertialMeasurementUnitFiles.mockRejectedValue(syncError);
-
-    appStateCallback?.("active");
-
-    await vi.waitFor(() => {
-      expect(mockCaptureException).toHaveBeenCalledWith(syncError, {
-        source: "bg-watch-accel-sync",
-      });
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+      source: "bg-watch-accel-sync:accelerometer",
     });
+    expect(mockSyncWatchAltitudeFiles).toHaveBeenCalledTimes(1);
   });
 
   it("resets syncing flag after error so next foreground event can sync", async () => {
@@ -171,6 +167,15 @@ describe("background-watch-inertial-measurement-unit-sync", () => {
       // Initial sync (1) + first foreground (2) + second foreground (3)
       expect(mockSyncWatchInertialMeasurementUnitFiles).toHaveBeenCalledTimes(3);
     });
+  });
+
+  it("continues altitude sync when accelerometer sync throws", async () => {
+    mockSyncWatchInertialMeasurementUnitFiles.mockRejectedValue(new Error("accel sync failed"));
+
+    await initBackgroundWatchInertialMeasurementUnitSync(trpcClient);
+
+    expect(mockSyncWatchAltitudeFiles).toHaveBeenCalledTimes(1);
+    expect(mockRequestWatchRecording).toHaveBeenCalledTimes(1);
   });
 
   it("teardown removes the AppState listener", async () => {

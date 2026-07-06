@@ -98,24 +98,33 @@ describe("watchAltitudeSyncRouter", () => {
         expect.objectContaining({
           providerId: "apple_motion",
           channel: "altitude",
+          deviceId: "Apple Watch",
+          recordedAt: "2026-03-30T12:00:00.000Z",
           scalar: 12.5,
           metadata: { pressure_kpa: 98.2 },
+          externalId: "apple_motion:Apple Watch:altitude:2026-03-30T12:00:00.000Z",
         }),
       ]);
     });
 
     it("filters future-dated samples", async () => {
-      const future = new Date(Date.now() + 10 * 60_000).toISOString();
-      const result = await caller(ctx).pushSamples({
-        deviceId: "Apple Watch",
-        samples: [
-          { timestamp: "2026-03-30T12:00:00.000Z", altitudeM: 5 },
-          { timestamp: future, altitudeM: 999 },
-        ],
-      });
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-03-30T12:00:00.000Z"));
 
-      expect(result).toEqual({ inserted: 1 });
-      expect(getPublishedRows(metricStreamPublisher)).toHaveLength(1);
+      try {
+        const result = await caller(ctx).pushSamples({
+          deviceId: "Apple Watch",
+          samples: [
+            { timestamp: "2026-03-30T12:00:00.000Z", altitudeM: 5 },
+            { timestamp: "2026-03-30T12:06:00.001Z", altitudeM: 999 },
+          ],
+        });
+
+        expect(result).toEqual({ inserted: 1 });
+        expect(getPublishedRows(metricStreamPublisher)).toHaveLength(1);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

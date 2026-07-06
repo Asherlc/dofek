@@ -85,4 +85,25 @@ describe("syncWatchAltitudeFiles", () => {
     expect(trpcClient.watchAltitudeSync.pushSamples.mutate).not.toHaveBeenCalled();
     expect(mockDeleteWatchFile).toHaveBeenCalledWith("watch-altitude-empty.json.gz");
   });
+
+  it("does not delete a file when upload fails", async () => {
+    mockGetPendingWatchAltitudeFileNames.mockReturnValue(["watch-altitude-fail.json.gz"]);
+    mockReadWatchAltitudeFile.mockResolvedValue([
+      {
+        timestamp: "2026-03-30T12:00:00.000Z",
+        altitudeM: 12.5,
+      },
+    ]);
+    const uploadError = new Error("Server error 500");
+    vi.mocked(trpcClient.watchAltitudeSync.pushSamples.mutate).mockRejectedValue(uploadError);
+
+    const result = await syncWatchAltitudeFiles(trpcClient);
+
+    expect(result).toEqual({ totalInserted: 0, filesProcessed: 0, filesFailed: 1 });
+    expect(mockDeleteWatchFile).not.toHaveBeenCalled();
+    expect(mockCaptureException).toHaveBeenCalledWith(uploadError, {
+      source: "watch-altitude-file-sync",
+      extra: { fileName: "watch-altitude-fail.json.gz" },
+    });
+  });
 });
