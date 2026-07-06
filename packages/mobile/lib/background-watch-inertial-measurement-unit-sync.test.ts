@@ -178,6 +178,19 @@ describe("background-watch-inertial-measurement-unit-sync", () => {
     expect(mockRequestWatchRecording).toHaveBeenCalledTimes(1);
   });
 
+  it("calls captureException when altitude sync throws during foreground sync", async () => {
+    await initBackgroundWatchInertialMeasurementUnitSync(trpcClient);
+
+    mockSyncWatchAltitudeFiles.mockRejectedValue(new Error("altitude sync failed"));
+    appStateCallback?.("active");
+
+    await vi.waitFor(() => {
+      expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+        source: "bg-watch-accel-sync:altitude",
+      });
+    });
+  });
+
   it("teardown removes the AppState listener", async () => {
     await initBackgroundWatchInertialMeasurementUnitSync(trpcClient);
 

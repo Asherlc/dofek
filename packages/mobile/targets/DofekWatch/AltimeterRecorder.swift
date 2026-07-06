@@ -33,12 +33,14 @@ final class AltimeterRecorder: ObservableObject {
     }
 
     /// Start recording barometric altitude samples (~1 Hz).
-    /// Buffers samples in memory until `queryNewSamples()` is called.
+    /// Buffers samples in memory until `clearBufferedSamples()` is called after transfer.
     func startRecording() {
         guard Self.isAvailable else { return }
         guard !isRecording else { return }
 
+        bufferLock.lock()
         baselinePressureKPa = nil
+        bufferLock.unlock()
 
         altimeter.startRelativeAltitudeUpdates(to: operationQueue) { [weak self] data, error in
             guard let self = self else { return }
@@ -49,23 +51,21 @@ final class AltimeterRecorder: ObservableObject {
             guard let data = data else { return }
 
             let pressureKPa = data.pressure.doubleValue
+
+            self.bufferLock.lock()
             if self.baselinePressureKPa == nil {
                 self.baselinePressureKPa = pressureKPa
             }
-
             let baseline = self.baselinePressureKPa ?? pressureKPa
             let altitudeM = AltitudeCalculator.relativeAltitudeMeters(
                 pressureKPa: pressureKPa,
                 baselinePressureKPa: baseline
             )
-
             let sample: [String: Any] = [
                 "timestamp": self.formatter.string(from: Date()),
                 "altitudeM": altitudeM,
                 "pressureKPa": pressureKPa,
             ]
-
-            self.bufferLock.lock()
             self.buffer.append(sample)
             self.bufferLock.unlock()
         }
@@ -83,15 +83,21 @@ final class AltimeterRecorder: ObservableObject {
         }
     }
 
-    /// Drain the buffer and return all recorded altitude samples.
-    /// After calling this, the internal buffer is empty and the baseline resets.
-    func queryNewSamples() -> [[String: Any]] {
+    /// Snapshot buffered samples without draining.
+    /// Use `clearBufferedSamples()` after a successful transfer.
+    func copyBufferedSamples() -> [[String: Any]] {
         bufferLock.lock()
         let samples = buffer
+        bufferLock.unlock()
+        return samples
+    }
+
+    /// Drain the buffer and reset the baseline after a successful transfer.
+    func clearBufferedSamples() {
+        bufferLock.lock()
         buffer = []
         baselinePressureKPa = nil
         bufferLock.unlock()
-        return samples
     }
 
     /// Number of samples currently buffered.

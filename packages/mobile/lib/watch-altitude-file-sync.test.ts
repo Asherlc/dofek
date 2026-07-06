@@ -106,4 +106,26 @@ describe("syncWatchAltitudeFiles", () => {
       extra: { fileName: "watch-altitude-fail.json.gz" },
     });
   });
+
+  it("uploads large files in batches of 2000 samples", async () => {
+    const samples = Array.from({ length: 2001 }, (_, index) => ({
+      timestamp: `2026-03-30T12:00:${String(index % 60).padStart(2, "0")}.000Z`,
+      altitudeM: index,
+    }));
+    mockGetPendingWatchAltitudeFileNames.mockReturnValue(["watch-altitude-large.json.gz"]);
+    mockReadWatchAltitudeFile.mockResolvedValue(samples);
+    vi.mocked(trpcClient.watchAltitudeSync.pushSamples.mutate)
+      .mockResolvedValueOnce({ inserted: 2000 })
+      .mockResolvedValueOnce({ inserted: 1 });
+
+    const result = await syncWatchAltitudeFiles(trpcClient);
+
+    expect(result).toEqual({ totalInserted: 2001, filesProcessed: 1, filesFailed: 0 });
+    expect(trpcClient.watchAltitudeSync.pushSamples.mutate).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(trpcClient.watchAltitudeSync.pushSamples.mutate).mock.calls[0]?.[0].samples)
+      .toHaveLength(2000);
+    expect(vi.mocked(trpcClient.watchAltitudeSync.pushSamples.mutate).mock.calls[1]?.[0].samples)
+      .toHaveLength(1);
+    expect(mockDeleteWatchFile).toHaveBeenCalledWith("watch-altitude-large.json.gz");
+  });
 });

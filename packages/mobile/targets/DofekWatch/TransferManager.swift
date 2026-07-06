@@ -120,7 +120,6 @@ final class TransferManager: ObservableObject {
             ]
 
             session.transferFile(compressedURL, metadata: metadata)
-            try? FileManager.default.removeItem(at: compressedURL)
 
             DispatchQueue.main.async { [weak self] in
                 self?.accelerometerRecorder.markTransferComplete()
@@ -262,7 +261,7 @@ final class TransferManager: ObservableObject {
     }
 
     private func transferAltimeterSamples() {
-        let altitudeSamples = altimeterRecorder.queryNewSamples()
+        let altitudeSamples = altimeterRecorder.copyBufferedSamples()
         guard !altitudeSamples.isEmpty else { return }
 
         var jsonURL: URL?
@@ -286,8 +285,7 @@ final class TransferManager: ObservableObject {
                 "transferredAt": ISO8601DateFormatter().string(from: Date()),
             ]
             session.transferFile(compressedURL!, metadata: metadata)
-            try? FileManager.default.removeItem(at: compressedURL!)
-            compressedURL = nil
+            altimeterRecorder.clearBufferedSamples()
         } catch {
             if let jsonURL {
                 try? FileManager.default.removeItem(at: jsonURL)
