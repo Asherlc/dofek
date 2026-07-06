@@ -496,11 +496,13 @@ export class BodyAnalyticsRepository extends BaseRepository {
     let slopePerDay = 0;
 
     const regressionWindowPoints = interpolated.slice(-regressionWindow);
+    const regressionWindowValues = smoothed.slice(-regressionWindow);
     if (
-      smoothed.length >= 8 &&
+      smoothed.length >= 7 &&
+      regressionWindowValues.every(Number.isFinite) &&
       countActualWeightReadings(regressionWindowPoints) >= MIN_ACTUAL_READINGS_FOR_WEIGHT_RATE
     ) {
-      const windowValues = smoothed.slice(-regressionWindow).map((value, index) => ({
+      const windowValues = regressionWindowValues.map((value, index) => ({
         dayIndex: index,
         value,
       }));
@@ -510,12 +512,26 @@ export class BodyAnalyticsRepository extends BaseRepository {
       rateConfidence = Math.round(regression.rSquared * 1000) / 1000;
     }
 
-    // Implied daily calories: 7700 kcal/kg
+    const latest = smoothed[smoothed.length - 1] ?? 0;
+
+    // Match the chart's weeklyChange bars: use 7-day smoothed delta when regression
+    // is unavailable but the trend chart would still show a weekly change.
+    if (ratePerWeek == null && smoothed.length >= 8) {
+      const weeklyWindowPoints = interpolated.slice(-8);
+      if (countActualWeightReadings(weeklyWindowPoints) >= MIN_ACTUAL_READINGS_FOR_7_DAY_DELTA) {
+        const previousSmoothed = smoothed[smoothed.length - 8] ?? 0;
+        ratePerWeek = Math.round((latest - previousSmoothed) * 100) / 100;
+        slopePerDay = ratePerWeek / 7;
+      }
+    }
+
+    // Implied daily calories: 7700 kcal/kg; omit when rate is negligible.
     const impliedDailyCalories =
-      ratePerWeek != null ? Math.round(((ratePerWeek / 7) * 7700 * 10) / 10) : null;
+      ratePerWeek != null && Math.abs(ratePerWeek) >= 0.01
+        ? Math.round((ratePerWeek / 7) * 7700)
+        : null;
 
     // Period deltas from smoothed values
-    const latest = smoothed[smoothed.length - 1] ?? 0;
     const computePeriodDelta = (daysBack: number, minimumActualReadings: number) => {
       const requiredPointCount = daysBack + 1;
       if (smoothed.length < requiredPointCount) return null;

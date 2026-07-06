@@ -1076,6 +1076,131 @@ describe("BodyAnalyticsRepository", () => {
       expect(result.rateConfidence ?? 0).toBeGreaterThan(0.9);
     });
 
+    it("computes ratePerWeek from seven consecutive daily weigh-ins", async () => {
+      const rows = Array.from({ length: 7 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: String(80 - index * 0.1),
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-06-01", null);
+
+      expect(result.ratePerWeek).not.toBeNull();
+      expect(result.ratePerWeek ?? 0).toBeLessThan(0);
+    });
+
+    it("falls back to 7-day smoothed delta when regression is unavailable", async () => {
+      const rows = [
+        { date: "2024-01-01", weight_kg: "95" },
+        { date: "2024-01-08", weight_kg: "94" },
+        { date: "2024-01-14", weight_kg: "93" },
+        { date: "2024-01-17", weight_kg: "92.5" },
+        { date: "2024-01-18", weight_kg: "92" },
+        { date: "2024-01-19", weight_kg: "91.5" },
+        { date: "2024-01-20", weight_kg: "91" },
+      ];
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-01-20", null);
+
+      expect(result.ratePerWeek).not.toBeNull();
+      expect(result.rateConfidence).toBeNull();
+      expect(result.impliedDailyCalories).not.toBeNull();
+      expect(result.ratePerWeek ?? 0).toBeLessThan(0);
+    });
+
+    it("does not overwrite a successful regression rate with the 7-day fallback", async () => {
+      const rows = Array.from({ length: 20 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: String(80 - index * 0.1),
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-06-01", null);
+
+      expect(result.rateConfidence).not.toBeNull();
+      expect(result.ratePerWeek).toBe(-0.51);
+    });
+
+    it("skips the 7-day fallback when the trailing window has too few actual readings", async () => {
+      const rows = [
+        { date: "2024-01-01", weight_kg: "90" },
+        { date: "2024-01-02", weight_kg: "90" },
+        { date: "2024-01-03", weight_kg: "90" },
+        { date: "2024-01-14", weight_kg: "89" },
+        { date: "2024-01-16", weight_kg: "88.5" },
+        { date: "2024-01-18", weight_kg: "88" },
+        { date: "2024-01-20", weight_kg: "87.5" },
+      ];
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-01-20", null);
+
+      expect(result.ratePerWeek).not.toBeNull();
+      expect(result.ratePerWeek).toBe(-0.77);
+      expect(result.impliedDailyCalories).toBe(-847);
+    });
+
+    it("computes the 7-day fallback rate from the trailing window, not the full history", async () => {
+      const rows = [
+        { date: "2024-01-01", weight_kg: "90" },
+        { date: "2024-01-05", weight_kg: "89.5" },
+        { date: "2024-01-09", weight_kg: "89" },
+        { date: "2024-01-13", weight_kg: "88.5" },
+        { date: "2024-01-27", weight_kg: "86" },
+        { date: "2024-01-28", weight_kg: "85.8" },
+        { date: "2024-01-29", weight_kg: "85.6" },
+      ];
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-01-29", null);
+
+      expect(result.ratePerWeek).toBeNull();
+    });
+
+    it("computes the fallback goal projection from the weekly rate, not a distorted daily slope", async () => {
+      const rows = [
+        { date: "2024-01-01", weight_kg: "90" },
+        { date: "2024-01-02", weight_kg: "90" },
+        { date: "2024-01-03", weight_kg: "90" },
+        { date: "2024-01-14", weight_kg: "89" },
+        { date: "2024-01-16", weight_kg: "88.5" },
+        { date: "2024-01-18", weight_kg: "88" },
+        { date: "2024-01-20", weight_kg: "87.5" },
+      ];
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-01-20", 80);
+
+      expect(result.goal?.daysRemaining).toBe(81);
+      expect(result.projectionLine[0]?.projectedWeight).toBe(88.7);
+    });
+
+    it("includes impliedDailyCalories when the rate is exactly at the reportable threshold", async () => {
+      const delta = 0.0008;
+      const rows = [
+        { date: "2024-01-01", weight_kg: "90" },
+        { date: "2024-01-02", weight_kg: "90" },
+        { date: "2024-01-03", weight_kg: "90" },
+        { date: "2024-01-14", weight_kg: String(90 - delta * 6) },
+        { date: "2024-01-16", weight_kg: String(90 - delta * 15) },
+        { date: "2024-01-18", weight_kg: String(90 - delta * 17) },
+        { date: "2024-01-20", weight_kg: String(90 - delta * 19) },
+      ];
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-01-20", null);
+
+      expect(result.ratePerWeek).toBe(-0.01);
+      expect(result.impliedDailyCalories).toBe(-11);
+    });
+
+    it("omits impliedDailyCalories when rate of change is negligible", async () => {
+      const rows = Array.from({ length: 14 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: "80",
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-01-14", null);
+
+      expect(result.ratePerWeek).not.toBeNull();
+      expect(Math.abs(result.ratePerWeek ?? 0)).toBeLessThan(0.01);
+      expect(result.impliedDailyCalories).toBeNull();
+    });
+
     it("does not report rate-derived prediction fields when recent weigh-ins are sparse", async () => {
       const rows = [
         { date: "2024-01-01", weight_kg: "95" },
@@ -1126,9 +1251,8 @@ describe("BodyAnalyticsRepository", () => {
       const { repo } = makeRepository(rows);
       const result = await repo.getWeightPrediction(90, "2024-06-01", null);
 
-      // 7700 kcal/kg: if losing ~0.7 kg/week → ~0.1 kg/day → ~770 kcal/day deficit
-      expect(result.impliedDailyCalories).not.toBeNull();
-      expect(result.impliedDailyCalories ?? 0).toBeLessThan(-500);
+      // 7700 kcal/kg: if losing ~0.5 kg/week → ~0.07 kg/day → ~561 kcal/day deficit
+      expect(result.impliedDailyCalories).toBe(-561);
     });
 
     it("returns goal projection when losing toward lower goal", async () => {

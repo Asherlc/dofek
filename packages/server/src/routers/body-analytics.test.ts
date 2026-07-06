@@ -1,5 +1,11 @@
+import { captureException } from "@sentry/node";
 import { describe, expect, it, vi } from "vitest";
+import { BodyAnalyticsRepository } from "../repositories/body-analytics-repository.ts";
 import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
+
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(),
+}));
 
 vi.mock("dofek/lib/cache", () => ({
   queryCache: { invalidateByPrefix: vi.fn().mockResolvedValue(undefined) },
@@ -167,6 +173,52 @@ describe("bodyAnalyticsRouter", () => {
       const result = await caller.weightTrend({});
 
       expect(result.trend).toBe("stable");
+    });
+  });
+
+  describe("weightOverview", () => {
+    it("returns smoothed weight and prediction from the same fetch", async () => {
+      const rows = Array.from({ length: 20 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: 80 - index * 0.1,
+      }));
+      const caller = makeCaller(rows);
+      const result = await caller.weightOverview({ days: 90, endDate: "2026-03-15" });
+
+      expect(result.smoothedWeight).toHaveLength(20);
+      expect(result.prediction?.ratePerWeek).not.toBeNull();
+      expect(result.prediction?.periodDeltas).toBeDefined();
+    });
+
+    it("propagates the underlying error when the smoothed weight fetch fails", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockRejectedValue(new Error("connection reset")) },
+        sensorStore: makeMockSensorStore([]),
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.weightOverview({ days: 90, endDate: "2026-03-15" })).rejects.toThrow(
+        "connection reset",
+      );
+    });
+
+    it("returns smoothed weight with a null prediction when only the prediction fetch fails", async () => {
+      const rows = Array.from({ length: 20 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: 80 - index * 0.1,
+      }));
+      const predictionError = new Error("regression blew up");
+      vi.spyOn(BodyAnalyticsRepository.prototype, "getWeightPrediction").mockRejectedValueOnce(
+        predictionError,
+      );
+      const caller = makeCaller(rows);
+
+      const result = await caller.weightOverview({ days: 90, endDate: "2026-03-15" });
+
+      expect(result.smoothedWeight).toHaveLength(20);
+      expect(result.prediction).toBeNull();
+      expect(captureException).toHaveBeenCalledWith(predictionError);
     });
   });
 

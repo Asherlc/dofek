@@ -1,4 +1,4 @@
-import { formatDateYmd, formatSpO2 } from "@dofek/format/format";
+import { formatSpO2 } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { useMemo } from "react";
 import { z } from "zod";
@@ -12,6 +12,7 @@ import {
 import { GoalWeightInput } from "../components/GoalWeightInput.tsx";
 import { HealthStatusBar } from "../components/HealthStatusBar.tsx";
 import { HrvBaselineChart } from "../components/HrvBaselineChart.tsx";
+import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { PageSection } from "../components/PageSection.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { SmoothedWeightChart } from "../components/SmoothedWeightChart.tsx";
@@ -19,9 +20,11 @@ import { StressChart } from "../components/StressChart.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
 import { WeightPredictionSummary } from "../components/WeightPredictionSummary.tsx";
+import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import { useBodyDays } from "../lib/bodyDaysContext.ts";
 import { buildBodyHealthMetrics } from "../lib/bodyHealthMetrics.ts";
 import { chartColors } from "../lib/chartTheme.ts";
+import { enrichWeightPrediction } from "../lib/enrichWeightPrediction.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { assertRows } from "../lib/utils.ts";
@@ -60,20 +63,23 @@ function buildSkinTempSeries(
   };
 }
 
+function getQueryError(...queries: Array<{ isError: boolean; error: unknown }>): unknown {
+  for (const query of queries) {
+    if (query.isError) return query.error;
+  }
+  return null;
+}
+
 export function BodyPage() {
   const units = useUnitConverter();
   const { days, setDays } = useBodyDays();
-  const endDate = useMemo(() => formatDateYmd(new Date()), []);
+  const endDate = useTodayQueryDate();
 
   const trends = trpc.dailyMetrics.trends.useQuery({ days, endDate });
   const dailyMetrics = trpc.dailyMetrics.list.useQuery({ days, endDate });
   const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days, endDate });
   const stressData = trpc.stress.scores.useQuery({ days, endDate });
-  const smoothedWeight = trpc.bodyAnalytics.smoothedWeight.useQuery({
-    days: Math.max(days, 90),
-    endDate,
-  });
-  const weightPrediction = trpc.bodyAnalytics.weightPrediction.useQuery({
+  const weightOverview = trpc.bodyAnalytics.weightOverview.useQuery({
     days: Math.max(days, 90),
     endDate,
   });
@@ -102,9 +108,11 @@ export function BodyPage() {
 
   const skinTempSeries = useMemo(() => buildSkinTempSeries(metrics, units), [metrics, units]);
 
+  const smoothedWeightData = weightOverview.data?.smoothedWeight ?? [];
+
   const healthStatusError =
     (trends.isError && trends.data == null ? trends.error : null) ??
-    (smoothedWeight.isError && smoothedWeight.data == null ? smoothedWeight.error : null) ??
+    (weightOverview.isError && weightOverview.data == null ? weightOverview.error : null) ??
     (bodyRecomp.isError && bodyRecomp.data == null ? bodyRecomp.error : null);
 
   const healthMetrics = useMemo(() => {
@@ -112,13 +120,13 @@ export function BodyPage() {
 
     return buildBodyHealthMetrics({
       trendData,
-      weightData: smoothedWeight.data ?? [],
+      weightData: smoothedWeightData,
       recompData: bodyRecomp.data ?? [],
       days,
       endDate,
       units,
     });
-  }, [healthStatusError, trendData, smoothedWeight.data, bodyRecomp.data, days, endDate, units]);
+  }, [healthStatusError, trendData, smoothedWeightData, bodyRecomp.data, days, endDate, units]);
 
   const bodyInsights = useMemo(() => {
     const all: Insight[] = insightsQuery.data ?? [];
@@ -126,6 +134,25 @@ export function BodyPage() {
       .filter((i) => i.confidence !== "insufficient" && isBodyInsight(i.metric))
       .sort((a, b) => Math.abs(b.effectSize) - Math.abs(a.effectSize));
   }, [insightsQuery.data]);
+
+  const weightPredictionDisplay = useMemo(() => {
+    if (!weightOverview.data?.prediction) return null;
+    return enrichWeightPrediction(
+      weightOverview.data.prediction,
+      weightOverview.data.smoothedWeight,
+    );
+  }, [weightOverview.data]);
+
+  const predictionSectionError =
+    weightOverview.isSuccess && weightOverview.data.prediction == null
+      ? new Error("Weight prediction is temporarily unavailable.")
+      : null;
+
+  const hrvSectionError = getQueryError(hrvBaseline);
+  const stressSectionError = getQueryError(stressData);
+  const spo2SectionError = getQueryError(dailyMetrics);
+  const bodyRecompSectionError = getQueryError(bodyRecomp);
+  const insightsSectionError = getQueryError(insightsQuery);
 
   // SpO2/temp chart config
   const spo2TempTitle =
@@ -154,34 +181,46 @@ export function BodyPage() {
       ) : (
         <HealthStatusBar
           metrics={healthMetrics}
-          loading={trends.isLoading || smoothedWeight.isLoading || bodyRecomp.isLoading}
+          loading={trends.isLoading || weightOverview.isLoading || bodyRecomp.isLoading}
         />
       )}
 
       {/* HRV & Resting HR */}
       <PageSection title="Heart Rate Variability & Resting Heart Rate">
-        <HrvBaselineChart data={hrvBaseline.data ?? []} loading={hrvBaseline.isLoading} />
+        {hrvSectionError ? (
+          <QueryStatePanel error={hrvSectionError} height={200} />
+        ) : (
+          <HrvBaselineChart data={hrvBaseline.data ?? []} loading={hrvBaseline.isLoading} />
+        )}
       </PageSection>
 
       {/* Stress */}
       <PageSection title="Stress Monitor">
-        <StressChart data={stressData.data} loading={stressData.isLoading} />
+        {stressSectionError ? (
+          <QueryStatePanel error={stressSectionError} height={200} />
+        ) : (
+          <StressChart data={stressData.data} loading={stressData.isLoading} />
+        )}
       </PageSection>
 
       {/* SpO2 & Skin Temp */}
-      {(hasSpO2 || hasSkinTemp) && (
+      {(hasSpO2 || hasSkinTemp || spo2SectionError) && (
         <PageSection title={spo2TempTitle}>
-          <TimeSeriesChart
-            series={[
-              ...(hasSpO2 ? [spo2Series] : []),
-              ...(hasSkinTemp
-                ? [hasSpO2 ? skinTempSeries : { ...skinTempSeries, yAxisIndex: 0 as const }]
-                : []),
-            ]}
-            height={200}
-            yAxis={spo2TempYAxis}
-            loading={dailyMetrics.isLoading}
-          />
+          {spo2SectionError ? (
+            <QueryStatePanel error={spo2SectionError} height={200} />
+          ) : (
+            <TimeSeriesChart
+              series={[
+                ...(hasSpO2 ? [spo2Series] : []),
+                ...(hasSkinTemp
+                  ? [hasSpO2 ? skinTempSeries : { ...skinTempSeries, yAxisIndex: 0 as const }]
+                  : []),
+              ]}
+              height={200}
+              yAxis={spo2TempYAxis}
+              loading={dailyMetrics.isLoading}
+            />
+          )}
         </PageSection>
       )}
 
@@ -192,9 +231,18 @@ export function BodyPage() {
             <h4 className="text-xs font-medium text-subtle uppercase">Weight Prediction</h4>
             <GoalWeightInput />
           </div>
-          {weightPrediction.data?.ratePerWeek != null && (
-            <WeightPredictionSummary prediction={weightPrediction.data} />
-          )}
+          {weightOverview.isPending ? (
+            <ChartLoadingSkeleton height={48} />
+          ) : weightOverview.isError ? (
+            <QueryStatePanel error={weightOverview.error} height={48} />
+          ) : predictionSectionError ? (
+            <QueryStatePanel error={predictionSectionError} height={48} />
+          ) : weightPredictionDisplay ? (
+            <WeightPredictionSummary
+              prediction={weightPredictionDisplay}
+              hasWeightTrendData={smoothedWeightData.length > 0}
+            />
+          ) : null}
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="card p-2 sm:p-4">
@@ -202,18 +250,24 @@ export function BodyPage() {
               <h4 className="text-xs font-medium text-subtle uppercase">Weight Trend</h4>
               <ChartDescriptionTooltip description="This chart shows your smoothed body weight trend over time, with goal weight and forward projection when set." />
             </div>
-            <SmoothedWeightChart
-              data={smoothedWeight.data ?? []}
-              prediction={weightPrediction.data}
-              loading={smoothedWeight.isLoading}
-            />
+            {weightOverview.isPending ? (
+              <SmoothedWeightChart data={[]} loading />
+            ) : weightOverview.isError ? (
+              <QueryStatePanel error={weightOverview.error} height={250} />
+            ) : (
+              <SmoothedWeightChart data={smoothedWeightData} prediction={weightPredictionDisplay} />
+            )}
           </div>
           <div className="card p-2 sm:p-4">
             <div className="mb-2 flex items-center gap-2">
               <h4 className="text-xs font-medium text-subtle uppercase">Recomposition</h4>
               <ChartDescriptionTooltip description="This chart shows how fat mass and lean mass have changed so you can track body recomposition, not just scale weight." />
             </div>
-            <BodyRecompositionChart data={bodyRecomp.data ?? []} loading={bodyRecomp.isLoading} />
+            {bodyRecompSectionError ? (
+              <QueryStatePanel error={bodyRecompSectionError} height={250} />
+            ) : (
+              <BodyRecompositionChart data={bodyRecomp.data ?? []} loading={bodyRecomp.isLoading} />
+            )}
           </div>
         </div>
       </PageSection>
@@ -229,7 +283,13 @@ export function BodyPage() {
         </PageSection>
       )}
 
-      {!insightsQuery.isLoading && bodyInsights.length > 0 && (
+      {insightsSectionError && (
+        <PageSection title="Body Insights" card={false}>
+          <QueryStatePanel error={insightsSectionError} height={120} />
+        </PageSection>
+      )}
+
+      {!insightsQuery.isLoading && !insightsSectionError && bodyInsights.length > 0 && (
         <PageSection title="Body Insights" card={false}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {bodyInsights.map((insight) => (
