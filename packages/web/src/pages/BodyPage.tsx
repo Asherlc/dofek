@@ -102,7 +102,10 @@ export function BodyPage() {
 
   const skinTempSeries = useMemo(() => buildSkinTempSeries(metrics, units), [metrics, units]);
 
-  const healthStatusError = trends.error ?? smoothedWeight.error ?? bodyRecomp.error ?? null;
+  const healthStatusError =
+    (trends.isError && trends.data == null ? trends.error : null) ??
+    (smoothedWeight.isError && smoothedWeight.data == null ? smoothedWeight.error : null) ??
+    (bodyRecomp.isError && bodyRecomp.data == null ? bodyRecomp.error : null);
 
   const healthMetrics = useMemo(() => {
     if (healthStatusError) return [];
