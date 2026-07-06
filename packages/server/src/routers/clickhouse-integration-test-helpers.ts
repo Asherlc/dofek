@@ -288,6 +288,26 @@ const rawTableSyncs: RawTableSync[] = [
     ],
   },
 ];
+export const clickHouseMigrationAnalyticsViewNames = [
+  "analytics.v_activity",
+  "analytics.v_activity_members",
+  "analytics.v_sleep",
+  "analytics.v_body_measurement",
+  "analytics.v_daily_metrics",
+  "analytics.provider_stats",
+  "analytics.deduped_sensor",
+  "analytics.resting_heart_rate_sleep_window",
+  "analytics.daily_recovery_inputs",
+  "analytics.daily_recovery",
+  "analytics.deduped_location",
+  "analytics.activity_summary",
+  "analytics.daily_activity_load",
+  "analytics.daily_strain",
+  "analytics.daily_body_measurement",
+  "analytics.healthspan_activity_zone_minutes",
+  "analytics.weekly_healthspan",
+  "analytics.activity_trend_daily",
+] as const;
 const analyticsBuildOrder = [
   "analytics.v_activity",
   "analytics.v_activity_members",
@@ -1515,8 +1535,8 @@ body_by_week AS (
   SELECT
     user_id,
     toMonday(date) AS week_start,
-    argMax(weight_kg, recorded_at) AS weight_kg,
-    argMax(body_fat_pct, recorded_at) AS body_fat_pct
+    argMax(weight_kg, (recorded_at, refresh_version)) AS weight_kg,
+    argMax(body_fat_pct, (recorded_at, refresh_version)) AS body_fat_pct
   FROM ${databases.analytics}.daily_body_measurement
   GROUP BY user_id, toMonday(date)
 ),

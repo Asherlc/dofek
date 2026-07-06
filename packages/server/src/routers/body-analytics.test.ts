@@ -217,6 +217,23 @@ describe("bodyAnalyticsRouter", () => {
 
       expect(result.goal).toBeNull();
     });
+
+    it("continues prediction when goal weight settings lookup fails", async () => {
+      const rows = Array.from({ length: 20 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: 80 - index * 0.1,
+      }));
+      const caller = createCaller({
+        db: { execute: vi.fn().mockRejectedValue(new Error("settings unavailable")) },
+        sensorStore: makeMockSensorStore(rows),
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      const result = await caller.weightPrediction({ days: 90, endDate: "2026-03-15" });
+
+      expect(result.goal).toBeNull();
+      expect(result.ratePerWeek).not.toBeNull();
+    });
   });
 
   describe("setGoalWeight", () => {

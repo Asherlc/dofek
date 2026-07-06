@@ -37,11 +37,9 @@ describe("fetchBodyWeightRows", () => {
     });
 
     const queryText = calls[0]?.query ?? "";
-    const groupByIndex = queryText.indexOf("GROUP BY local_date");
-    const innerBodyFatFilterIndex = queryText.indexOf("AND body_fat_pct IS NOT NULL");
-
-    expect(innerBodyFatFilterIndex).toBeGreaterThan(-1);
-    expect(innerBodyFatFilterIndex).toBeLessThan(groupByIndex);
+    expect(queryText).toMatch(
+      /FROM analytics\.daily_body_measurement FINAL[\s\S]*AND body_fat_pct IS NOT NULL[\s\S]*GROUP BY local_date/,
+    );
   });
 });
 

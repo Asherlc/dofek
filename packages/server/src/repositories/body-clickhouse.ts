@@ -94,8 +94,8 @@ export function bodyWeightDedupClickHouseQuery(
     FROM (
       SELECT
         toDate(toTimeZone(recorded_at, {timezone:String})) AS local_date,
-        argMax(weight_kg, recorded_at) AS weight_kg,
-        argMax(body_fat_pct, recorded_at) AS body_fat_pct
+        argMax(weight_kg, (recorded_at, refresh_version)) AS weight_kg,
+        argMax(body_fat_pct, (recorded_at, refresh_version)) AS body_fat_pct
       FROM analytics.daily_body_measurement FINAL
       WHERE user_id = {userId:UUID}
         AND toDate(toTimeZone(recorded_at, {timezone:String})) > subtractDays(${endDateExpression(endDate)}, {days:UInt32})

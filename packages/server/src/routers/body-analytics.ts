@@ -1,3 +1,4 @@
+import { captureException } from "@sentry/node";
 import type { Database } from "dofek/db";
 import { queryCache } from "dofek/lib/cache";
 import { z } from "zod";
@@ -7,12 +8,17 @@ import { SettingsRepository } from "../repositories/settings-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 async function readGoalWeightKg(db: Pick<Database, "execute" | "transaction">, userId: string) {
-  const settingsRepo = new SettingsRepository(db, userId);
-  const goalSetting = await settingsRepo.get("goalWeight");
-  const parsedGoalWeightKg = goalSetting?.value != null ? Number(goalSetting.value) : null;
-  return parsedGoalWeightKg != null && Number.isFinite(parsedGoalWeightKg)
-    ? parsedGoalWeightKg
-    : null;
+  try {
+    const settingsRepo = new SettingsRepository(db, userId);
+    const goalSetting = await settingsRepo.get("goalWeight");
+    const parsedGoalWeightKg = goalSetting?.value != null ? Number(goalSetting.value) : null;
+    return parsedGoalWeightKg != null && Number.isFinite(parsedGoalWeightKg)
+      ? parsedGoalWeightKg
+      : null;
+  } catch (error) {
+    captureException(error);
+    return null;
+  }
 }
 
 export type {
