@@ -116,7 +116,7 @@ export function BodyRecompositionChart({ data, loading }: BodyRecompositionChart
 
   return (
     <div className="space-y-2">
-      <div className="flex gap-4 text-sm">
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
         <span className={`font-medium ${fatChange <= 0 ? "text-green-400" : "text-red-400"}`}>
           Fat: {fatChange > 0 ? "+" : ""}
           {formatMeasurementText(units.formatWeight(fatChange))}
@@ -124,6 +124,9 @@ export function BodyRecompositionChart({ data, loading }: BodyRecompositionChart
         <span className={`font-medium ${leanChange >= 0 ? "text-green-400" : "text-red-400"}`}>
           Lean: {leanChange > 0 ? "+" : ""}
           {formatMeasurementText(units.formatWeight(leanChange))}
+        </span>
+        <span className="text-subtle text-xs">
+          {formatDateShort(first.date)} – {formatDateShort(last.date)}
         </span>
       </div>
       <DofekChart option={option} loading={loading} />

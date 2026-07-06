@@ -84,7 +84,7 @@ export function BodyPage() {
     endDate,
   });
   const bodyRecomp = trpc.bodyAnalytics.recomposition.useQuery({
-    days: Math.max(days, 180),
+    days,
     endDate,
   });
   const insightsQuery = trpc.insights.compute.useQuery({ days: Math.max(days, 90), endDate });
