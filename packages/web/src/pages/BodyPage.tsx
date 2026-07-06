@@ -12,19 +12,19 @@ import {
 import { GoalWeightInput } from "../components/GoalWeightInput.tsx";
 import { HealthStatusBar } from "../components/HealthStatusBar.tsx";
 import { HrvBaselineChart } from "../components/HrvBaselineChart.tsx";
+import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { PageSection } from "../components/PageSection.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { SmoothedWeightChart } from "../components/SmoothedWeightChart.tsx";
 import { StressChart } from "../components/StressChart.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
-import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { WeightPredictionSummary } from "../components/WeightPredictionSummary.tsx";
+import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import { useBodyDays } from "../lib/bodyDaysContext.ts";
 import { buildBodyHealthMetrics } from "../lib/bodyHealthMetrics.ts";
 import { chartColors } from "../lib/chartTheme.ts";
 import { enrichWeightPrediction } from "../lib/enrichWeightPrediction.ts";
-import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { assertRows } from "../lib/utils.ts";
@@ -135,7 +135,10 @@ export function BodyPage() {
 
   const weightPredictionDisplay = useMemo(() => {
     if (!weightOverview.data) return null;
-    return enrichWeightPrediction(weightOverview.data.prediction, weightOverview.data.smoothedWeight);
+    return enrichWeightPrediction(
+      weightOverview.data.prediction,
+      weightOverview.data.smoothedWeight,
+    );
   }, [weightOverview.data]);
 
   const smoothedWeightData = weightOverview.data?.smoothedWeight ?? [];
@@ -244,10 +247,7 @@ export function BodyPage() {
             ) : weightOverview.isError ? (
               <QueryStatePanel error={weightOverview.error} height={250} />
             ) : (
-              <SmoothedWeightChart
-                data={smoothedWeightData}
-                prediction={weightPredictionDisplay}
-              />
+              <SmoothedWeightChart data={smoothedWeightData} prediction={weightPredictionDisplay} />
             )}
           </div>
           <div className="card p-2 sm:p-4">
