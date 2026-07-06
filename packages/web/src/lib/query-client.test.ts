@@ -28,4 +28,15 @@ describe("createAppQueryClient", () => {
       failureCount: 1,
     });
   });
+
+  it("configures default query options", () => {
+    const queryClient = createAppQueryClient();
+    const defaults = queryClient.getDefaultOptions();
+
+    expect(defaults.queries).toMatchObject({
+      staleTime: 5 * 60 * 1000,
+      refetchOnWindowFocus: false,
+    });
+    expect(typeof defaults.queries?.gcTime).toBe("number");
+  });
 });
