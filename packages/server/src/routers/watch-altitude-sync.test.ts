@@ -18,6 +18,7 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
+import { logger } from "../logger.ts";
 import { watchAltitudeSyncRouter } from "./watch-altitude-sync.ts";
 
 function makeMockDb() {
@@ -53,6 +54,7 @@ describe("watchAltitudeSyncRouter", () => {
   let ctx: ReturnType<typeof makeCtx>;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     mockDb = makeMockDb();
     metricStreamPublisher = makeMetricStreamPublisher();
     ctx = makeCtx(mockDb, metricStreamPublisher);
@@ -105,6 +107,41 @@ describe("watchAltitudeSyncRouter", () => {
           externalId: "apple_motion:Apple Watch:altitude:2026-03-30T12:00:00.000Z",
         }),
       ]);
+      expect(logger.info).toHaveBeenCalledWith(
+        "Watch altitude data pushed",
+        expect.objectContaining({
+          userId: "test-user-id",
+          deviceId: "Apple Watch",
+          sampleCount: 1,
+          rowsInserted: 1,
+          filteredCount: 0,
+          firstTimestamp: "2026-03-30T12:00:00.000Z",
+          lastTimestamp: "2026-03-30T12:00:00.000Z",
+        }),
+      );
+    });
+
+    it("logs the full timestamp range for multi-sample pushes", async () => {
+      const result = await caller(ctx).pushSamples({
+        deviceId: "Apple Watch",
+        samples: [
+          { timestamp: "2026-03-30T12:00:00.000Z", altitudeM: 5 },
+          { timestamp: "2026-03-30T12:00:10.000Z", altitudeM: 8 },
+          { timestamp: "2026-03-30T12:00:20.000Z", altitudeM: 11 },
+        ],
+      });
+
+      expect(result).toEqual({ inserted: 3 });
+      expect(logger.info).toHaveBeenCalledWith(
+        "Watch altitude data pushed",
+        expect.objectContaining({
+          sampleCount: 3,
+          rowsInserted: 3,
+          filteredCount: 0,
+          firstTimestamp: "2026-03-30T12:00:00.000Z",
+          lastTimestamp: "2026-03-30T12:00:20.000Z",
+        }),
+      );
     });
 
     it("filters future-dated samples", async () => {
@@ -122,6 +159,16 @@ describe("watchAltitudeSyncRouter", () => {
 
         expect(result).toEqual({ inserted: 1 });
         expect(getPublishedRows(metricStreamPublisher)).toHaveLength(1);
+        expect(logger.info).toHaveBeenCalledWith(
+          "Watch altitude data pushed",
+          expect.objectContaining({
+            sampleCount: 1,
+            rowsInserted: 1,
+            filteredCount: 1,
+            firstTimestamp: "2026-03-30T12:00:00.000Z",
+            lastTimestamp: "2026-03-30T12:00:00.000Z",
+          }),
+        );
       } finally {
         vi.useRealTimers();
       }
