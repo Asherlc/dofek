@@ -47,6 +47,12 @@ struct ContentView: View {
                         Text("Gyroscope not available on this device")
                             .font(.caption)
                             .foregroundColor(.red)
+                    } else if !gyroscopeRecorder.isRecording {
+                        Button("Start Gyroscope") {
+                            gyroscopeRecorder.startRecording()
+                        }
+                        .font(.caption)
+                        .buttonStyle(.bordered)
                     }
                 } header: {
                     Text("Gyroscope")

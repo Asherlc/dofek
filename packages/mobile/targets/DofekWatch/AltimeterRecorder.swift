@@ -119,6 +119,7 @@ final class AltimeterRecorder: ObservableObject {
     }
 
     private func publishError(_ message: String) {
+        altimeter.stopRelativeAltitudeUpdates()
         DispatchQueue.main.async {
             self.lastError = message
             self.isRecording = false

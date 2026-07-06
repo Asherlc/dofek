@@ -319,7 +319,14 @@ final class TransferManager: ObservableObject {
         let sampleCount = pendingAltitudeSampleCounts.removeValue(forKey: transferredURL)
         pendingAltitudeLock.unlock()
 
-        guard error == nil, let sampleCount else { return }
+        if let error = error {
+            DispatchQueue.main.async { [weak self] in
+                self?.lastTransferStatus = "Altitude transfer error: \(error.localizedDescription)"
+            }
+            return
+        }
+
+        guard let sampleCount else { return }
 
         altimeterRecorder.clearBufferedSamples(count: sampleCount)
 
