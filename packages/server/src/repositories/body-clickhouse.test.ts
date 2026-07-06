@@ -38,7 +38,7 @@ describe("fetchBodyWeightRows", () => {
 
     const queryText = calls[0]?.query ?? "";
     expect(queryText).toMatch(
-      /FROM analytics\.daily_body_measurement FINAL[\s\S]*AND body_fat_pct IS NOT NULL[\s\S]*GROUP BY local_date/,
+      /FROM analytics\.daily_body_measurement FINAL[\s\S]*AND body_fat_pct IS NOT NULL[\s\S]*\) AS body_rows[\s\S]*GROUP BY local_date/,
     );
   });
 });
