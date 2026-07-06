@@ -648,6 +648,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("{% if is_incremental() %}");
     expect(sql).toContain("existing_measurements AS");
     expect(sql).toContain("analytics.v_body_measurement");
+    expect(normalizedSql).toContain("existing_measurements.latest_recorded_at) - INTERVAL 7 DAY");
     expect(normalizedSql).not.toContain("row_number() OVER");
     expect(sql).not.toContain("source('postgres_fitness', 'metric_stream')");
   });

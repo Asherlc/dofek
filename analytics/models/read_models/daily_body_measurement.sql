@@ -36,7 +36,7 @@ body_source AS (
         AND (
             existing_measurements.user_id IS NULL
             -- Re-materialize a 7-day overlap for late updates; ReplacingMergeTree
-            -- deduplicates rows by (user_id, recorded_at) on refresh_version.
+            -- deduplicates rows by (user_id, measurement_id) on refresh_version.
             OR toDate(body.recorded_at) >= toDate(existing_measurements.latest_recorded_at) - INTERVAL 7 DAY
         )
         {% endif %}

@@ -337,6 +337,7 @@ describe("bodyAnalyticsRouter", () => {
 
       expect(result.goal).toBeNull();
       expect(result.ratePerWeek).not.toBeNull();
+      expect(captureException).not.toHaveBeenCalled();
     });
   });
 
