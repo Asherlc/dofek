@@ -40,8 +40,7 @@ function stddev(values: number[]): number | null {
   if (values.length < 2) return null;
   const avg = mean(values);
   if (avg == null) return null;
-  const variance =
-    values.reduce((sum, value) => sum + (value - avg) ** 2, 0) / values.length;
+  const variance = values.reduce((sum, value) => sum + (value - avg) ** 2, 0) / values.length;
   return Math.sqrt(variance);
 }
 

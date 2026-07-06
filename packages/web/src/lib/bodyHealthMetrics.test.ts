@@ -1,29 +1,36 @@
-import { describe, expect, it } from "vitest";
 import { UnitConverter } from "@dofek/format/units";
+import { describe, expect, it } from "vitest";
 import { buildBodyHealthMetrics } from "./bodyHealthMetrics.ts";
+
+const units = new UnitConverter("metric");
+
+function buildMetrics(overrides: Partial<Parameters<typeof buildBodyHealthMetrics>[0]> = {}) {
+  return buildBodyHealthMetrics({
+    trendData: {
+      latest_resting_hr: 55,
+      avg_resting_hr: 56.2,
+      stddev_resting_hr: 3.1,
+    },
+    weightData: [
+      { date: "2026-06-01", smoothedWeight: 81.2 },
+      { date: "2026-06-15", smoothedWeight: 80.8 },
+      { date: "2026-06-30", smoothedWeight: 80.1 },
+    ],
+    recompData: [
+      { date: "2026-06-01", bodyFatPct: 19.5 },
+      { date: "2026-06-15", bodyFatPct: 19.1 },
+      { date: "2026-06-30", bodyFatPct: 18.8 },
+    ],
+    days: 30,
+    endDate: "2026-06-30",
+    units,
+    ...overrides,
+  });
+}
 
 describe("buildBodyHealthMetrics", () => {
   it("includes body weight, body fat %, and resting heart rate", () => {
-    const metrics = buildBodyHealthMetrics({
-      trendData: {
-        latest_resting_hr: 55,
-        avg_resting_hr: 56.2,
-        stddev_resting_hr: 3.1,
-      },
-      weightData: [
-        { date: "2026-06-01", smoothedWeight: 81.2 },
-        { date: "2026-06-15", smoothedWeight: 80.8 },
-        { date: "2026-06-30", smoothedWeight: 80.1 },
-      ],
-      recompData: [
-        { date: "2026-06-01", bodyFatPct: 19.5 },
-        { date: "2026-06-15", bodyFatPct: 19.1 },
-        { date: "2026-06-30", bodyFatPct: 18.8 },
-      ],
-      days: 30,
-      endDate: "2026-06-30",
-      units: new UnitConverter("metric"),
-    });
+    const metrics = buildMetrics();
 
     expect(metrics.map((metric) => metric.label)).toEqual([
       "Body Weight",
@@ -33,11 +40,13 @@ describe("buildBodyHealthMetrics", () => {
     expect(metrics[0]).toMatchObject({
       value: 80.1,
       avg: 80.7,
+      stddev: expect.closeTo(0.458, 2),
       lowerBetter: true,
     });
     expect(metrics[1]).toMatchObject({
       value: 18.8,
       avg: expect.closeTo(19.133, 2),
+      stddev: expect.closeTo(0.286, 2),
       unit: "%",
       lowerBetter: true,
     });
@@ -51,7 +60,7 @@ describe("buildBodyHealthMetrics", () => {
   });
 
   it("limits averages to the selected date window", () => {
-    const metrics = buildBodyHealthMetrics({
+    const metrics = buildMetrics({
       trendData: {
         latest_resting_hr: 52,
         avg_resting_hr: 54,
@@ -67,12 +76,80 @@ describe("buildBodyHealthMetrics", () => {
         { date: "2026-06-20", bodyFatPct: 18.5 },
         { date: "2026-06-29", bodyFatPct: 18.2 },
       ],
-      days: 30,
-      endDate: "2026-06-30",
-      units: new UnitConverter("metric"),
     });
 
     expect(metrics[0]?.avg).toBe(79.75);
     expect(metrics[1]?.avg).toBe(18.35);
+  });
+
+  it("excludes boundary and out-of-window measurements from averages", () => {
+    const metrics = buildMetrics({
+      weightData: [
+        { date: "2026-05-31", smoothedWeight: 100 },
+        { date: "2026-06-15", smoothedWeight: 80 },
+        { date: "2026-07-01", smoothedWeight: 99 },
+      ],
+      recompData: [
+        { date: "2026-05-31", bodyFatPct: 30 },
+        { date: "2026-06-15", bodyFatPct: 18 },
+        { date: "2026-07-01", bodyFatPct: 12 },
+      ],
+    });
+
+    expect(metrics[0]?.avg).toBe(80);
+    expect(metrics[1]?.avg).toBe(18);
+  });
+
+  it("falls back to the latest overall measurement when the window is empty", () => {
+    const metrics = buildMetrics({
+      weightData: [{ date: "2026-01-01", smoothedWeight: 90 }],
+      recompData: [{ date: "2026-01-01", bodyFatPct: 25 }],
+    });
+
+    expect(metrics[0]?.value).toBe(90);
+    expect(metrics[0]?.avg).toBeNull();
+    expect(metrics[0]?.stddev).toBeNull();
+    expect(metrics[1]?.value).toBe(25);
+    expect(metrics[1]?.avg).toBeNull();
+    expect(metrics[1]?.stddev).toBeNull();
+  });
+
+  it("returns null body metrics when no measurements exist", () => {
+    const metrics = buildMetrics({
+      weightData: [],
+      recompData: [],
+    });
+
+    expect(metrics[0]?.value).toBeNull();
+    expect(metrics[0]?.avg).toBeNull();
+    expect(metrics[0]?.stddev).toBeNull();
+    expect(metrics[1]?.value).toBeNull();
+    expect(metrics[1]?.avg).toBeNull();
+    expect(metrics[1]?.stddev).toBeNull();
+  });
+
+  it("returns null resting heart rate when trend data is missing", () => {
+    const metrics = buildMetrics({ trendData: undefined });
+
+    expect(metrics[2]?.value).toBeNull();
+    expect(metrics[2]?.avg).toBeNull();
+    expect(metrics[2]?.stddev).toBeNull();
+  });
+
+  it("returns null stddev for a single in-window measurement", () => {
+    const metrics = buildMetrics({
+      weightData: [{ date: "2026-06-15", smoothedWeight: 80 }],
+      recompData: [{ date: "2026-06-15", bodyFatPct: 18 }],
+    });
+
+    expect(metrics[0]?.stddev).toBeNull();
+    expect(metrics[1]?.stddev).toBeNull();
+  });
+
+  it("formats body weight with the provided unit converter", () => {
+    const metrics = buildMetrics();
+    const weightMetric = metrics[0];
+
+    expect(weightMetric?.formatValue?.(80.5)).toEqual(units.formatWeight(80.5));
   });
 });
