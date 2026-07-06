@@ -70,6 +70,7 @@ export function useAutoSync(latestDate: string | null | undefined) {
           trpcUtils.calendar.activityOverview.invalidate(),
           trpcUtils.activity.list.invalidate(),
           trpcUtils.sync.dataHealth.invalidate(),
+          trpcUtils.bodyAnalytics.weightOverview.invalidate(),
         ]);
       } catch (error) {
         captureException(error, { context: "dashboard-auto-sync-invalidation" });

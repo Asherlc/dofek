@@ -5,34 +5,90 @@ import { useUnitConverter } from "../lib/unitContext.ts";
 
 interface WeightPredictionSummaryProps {
   prediction: WeightPrediction;
+  hasWeightTrendData?: boolean;
 }
 
 function formatDate(isoDate: string): string {
   return formatDateMedium(isoDate);
 }
 
-export function WeightPredictionSummary({ prediction }: WeightPredictionSummaryProps) {
+function hasPredictionContent(prediction: WeightPrediction): boolean {
+  return (
+    prediction.ratePerWeek != null ||
+    prediction.goal != null ||
+    prediction.periodDeltas.days7 != null ||
+    prediction.periodDeltas.days14 != null ||
+    prediction.periodDeltas.days30 != null
+  );
+}
+
+function PeriodDelta({
+  label,
+  deltaKg,
+}: {
+  label: string;
+  deltaKg: number;
+}) {
   const units = useUnitConverter();
 
-  if (prediction.ratePerWeek == null) return null;
+  return (
+    <div>
+      <div className="text-subtle text-xs uppercase">{label}</div>
+      <div className="font-medium">
+        {deltaKg > 0 ? "+" : ""}
+        {formatMeasurementText(units.formatWeight(deltaKg))}
+      </div>
+    </div>
+  );
+}
+
+export function WeightPredictionSummary({
+  prediction,
+  hasWeightTrendData = false,
+}: WeightPredictionSummaryProps) {
+  const units = useUnitConverter();
+
+  if (!hasPredictionContent(prediction)) {
+    return (
+      <p className="text-sm text-muted">
+        {hasWeightTrendData
+          ? "Weight trend is available, but a prediction could not be calculated from the current data."
+          : "Not enough weigh-in data to estimate weight trend yet."}
+      </p>
+    );
+  }
 
   const rateColor =
-    Math.abs(prediction.ratePerWeek) < 0.05
+    prediction.ratePerWeek != null && Math.abs(prediction.ratePerWeek) < 0.05
       ? "text-muted"
-      : prediction.ratePerWeek > 0
+      : prediction.ratePerWeek != null && prediction.ratePerWeek > 0
         ? "text-green-400"
         : "text-red-400";
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
       {/* Rate */}
-      <div>
-        <div className="text-subtle text-xs uppercase">Rate</div>
-        <div className={`font-semibold ${rateColor}`}>
-          {prediction.ratePerWeek > 0 ? "+" : ""}
-          {formatMeasurementText(units.formatWeight(prediction.ratePerWeek))}/wk
+      {prediction.ratePerWeek != null && (
+        <div>
+          <div className="text-subtle text-xs uppercase">Rate</div>
+          <div className={`font-semibold ${rateColor}`}>
+            {prediction.ratePerWeek > 0 ? "+" : ""}
+            {formatMeasurementText(units.formatWeight(prediction.ratePerWeek))}/wk
+          </div>
         </div>
-      </div>
+      )}
+
+      {prediction.periodDeltas.days7 != null && (
+        <PeriodDelta label="7-Day Change" deltaKg={prediction.periodDeltas.days7} />
+      )}
+
+      {prediction.periodDeltas.days14 != null && (
+        <PeriodDelta label="14-Day Change" deltaKg={prediction.periodDeltas.days14} />
+      )}
+
+      {prediction.periodDeltas.days30 != null && (
+        <PeriodDelta label="30-Day Change" deltaKg={prediction.periodDeltas.days30} />
+      )}
 
       {/* Calorie estimate */}
       {prediction.impliedDailyCalories != null && (

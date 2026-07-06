@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { WeightPredictionSummary } from "./WeightPredictionSummary.tsx";
 
 describe("WeightPredictionSummary", () => {
-  it("shows rate-derived fields without a separate 7-day change row", () => {
+  it("shows rate-derived fields with period deltas", () => {
     render(
       <WeightPredictionSummary
         prediction={{
@@ -20,6 +20,86 @@ describe("WeightPredictionSummary", () => {
 
     expect(screen.getByText("-0.3 kg/wk")).toBeDefined();
     expect(screen.getByText("-330 kcal/day")).toBeDefined();
-    expect(screen.queryByText("7-Day Change")).toBeNull();
+    expect(screen.getByText("7-Day Change")).toBeDefined();
+    expect(screen.getByText("-1.2 kg")).toBeDefined();
+  });
+
+  it("shows period deltas when rate is unavailable", () => {
+    render(
+      <WeightPredictionSummary
+        prediction={{
+          ratePerWeek: null,
+          rateConfidence: null,
+          impliedDailyCalories: null,
+          periodDeltas: { days7: -0.4, days14: -0.8, days30: null },
+          goal: null,
+          projectionLine: [],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("7-Day Change")).toBeDefined();
+    expect(screen.getByText("-0.4 kg")).toBeDefined();
+    expect(screen.getByText("14-Day Change")).toBeDefined();
+    expect(screen.queryByText("Rate")).toBeNull();
+  });
+
+  it("shows goal info when rate is unavailable", () => {
+    render(
+      <WeightPredictionSummary
+        prediction={{
+          ratePerWeek: null,
+          rateConfidence: null,
+          impliedDailyCalories: null,
+          periodDeltas: { days7: null, days14: null, days30: null },
+          goal: { goalWeightKg: 75, remainingKg: -5, estimatedDate: null, daysRemaining: null },
+          projectionLine: [],
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/75\.0 kg — estimate unavailable/)).toBeDefined();
+    expect(screen.queryByText("Rate")).toBeNull();
+  });
+
+  it("shows an empty-state message when no rate or goal is available", () => {
+    render(
+      <WeightPredictionSummary
+        prediction={{
+          ratePerWeek: null,
+          rateConfidence: null,
+          impliedDailyCalories: null,
+          periodDeltas: { days7: null, days14: null, days30: null },
+          goal: null,
+          projectionLine: [],
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByText("Not enough weigh-in data to estimate weight trend yet."),
+    ).toBeDefined();
+  });
+
+  it("shows a different empty-state message when weight trend data exists", () => {
+    render(
+      <WeightPredictionSummary
+        hasWeightTrendData
+        prediction={{
+          ratePerWeek: null,
+          rateConfidence: null,
+          impliedDailyCalories: null,
+          periodDeltas: { days7: null, days14: null, days30: null },
+          goal: null,
+          projectionLine: [],
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "Weight trend is available, but a prediction could not be calculated from the current data.",
+      ),
+    ).toBeDefined();
   });
 });

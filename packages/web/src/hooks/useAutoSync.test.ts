@@ -24,6 +24,7 @@ const {
   mockInvalidate,
   mockMutate,
   mockReadinessInvalidate,
+  mockWeightOverviewInvalidate,
   mockUseQueryOptions,
   mockTriggerSyncMutationOptions,
 } = vi.hoisted(() => {
@@ -43,6 +44,7 @@ const {
     mockInvalidate: vi.fn(),
     mockMutate: vi.fn(),
     mockReadinessInvalidate: vi.fn(),
+    mockWeightOverviewInvalidate: vi.fn(),
     mockUseQueryOptions,
     mockTriggerSyncMutationOptions,
   };
@@ -72,12 +74,14 @@ vi.mock("../lib/trpc", () => ({
     recovery: { readinessScore: { invalidate: mockReadinessInvalidate } },
     calendar: { activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate } },
     activity: { list: { invalidate: mockActivityInvalidate } },
+    bodyAnalytics: { weightOverview: { invalidate: mockWeightOverviewInvalidate } },
     useUtils: () => ({
       invalidate: mockInvalidate,
       sync: { dataHealth: { invalidate: mockDataHealthInvalidate } },
       recovery: { readinessScore: { invalidate: mockReadinessInvalidate } },
       calendar: { activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate } },
       activity: { list: { invalidate: mockActivityInvalidate } },
+      bodyAnalytics: { weightOverview: { invalidate: mockWeightOverviewInvalidate } },
     }),
   },
 }));
@@ -130,6 +134,7 @@ describe("useAutoSync", () => {
     mockInvalidate.mockClear();
     mockMutate.mockClear();
     mockReadinessInvalidate.mockClear();
+    mockWeightOverviewInvalidate.mockClear();
     mockTriggerSyncMutationOptions.length = 0;
     mockUseQueryOptions.length = 0;
   });
@@ -283,6 +288,7 @@ describe("useAutoSync", () => {
     expect(mockCalendarActivityOverviewInvalidate).toHaveBeenCalledOnce();
     expect(mockActivityInvalidate).toHaveBeenCalledOnce();
     expect(mockDataHealthInvalidate).toHaveBeenCalledOnce();
+    expect(mockWeightOverviewInvalidate).toHaveBeenCalledOnce();
     expect(mockInvalidate).not.toHaveBeenCalled();
   });
 

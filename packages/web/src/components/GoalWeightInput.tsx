@@ -22,8 +22,9 @@ export function GoalWeightInput() {
 
   const mutation = trpc.bodyAnalytics.setGoalWeight.useMutation({
     onSuccess: () => {
-      utils.bodyAnalytics.weightPrediction.invalidate();
-      utils.settings.invalidate();
+      void utils.bodyAnalytics.weightOverview.invalidate();
+      void utils.bodyAnalytics.weightPrediction.invalidate();
+      void utils.settings.invalidate();
       setEditing(false);
     },
   });

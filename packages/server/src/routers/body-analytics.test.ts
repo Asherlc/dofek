@@ -170,6 +170,21 @@ describe("bodyAnalyticsRouter", () => {
     });
   });
 
+  describe("weightOverview", () => {
+    it("returns smoothed weight and prediction from the same fetch", async () => {
+      const rows = Array.from({ length: 20 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: 80 - index * 0.1,
+      }));
+      const caller = makeCaller(rows);
+      const result = await caller.weightOverview({ days: 90, endDate: "2026-03-15" });
+
+      expect(result.smoothedWeight).toHaveLength(20);
+      expect(result.prediction.ratePerWeek).not.toBeNull();
+      expect(result.prediction.periodDeltas).toBeDefined();
+    });
+  });
+
   describe("weightPrediction", () => {
     it("returns prediction with all fields when sufficient data", async () => {
       const rows = Array.from({ length: 20 }, (_, index) => ({

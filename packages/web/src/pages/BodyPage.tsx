@@ -1,6 +1,5 @@
 import {
   type FormattedMeasurement,
-  formatDateYmd,
   formatHRVMeasurement,
   formatSpO2,
   formatSpO2Measurement,
@@ -19,13 +18,17 @@ import { GoalWeightInput } from "../components/GoalWeightInput.tsx";
 import { HealthStatusBar } from "../components/HealthStatusBar.tsx";
 import { HrvBaselineChart } from "../components/HrvBaselineChart.tsx";
 import { PageSection } from "../components/PageSection.tsx";
+import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { SmoothedWeightChart } from "../components/SmoothedWeightChart.tsx";
 import { StressChart } from "../components/StressChart.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
+import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
 import { WeightPredictionSummary } from "../components/WeightPredictionSummary.tsx";
 import { useBodyDays } from "../lib/bodyDaysContext.ts";
 import { chartColors } from "../lib/chartTheme.ts";
+import { enrichWeightPrediction } from "../lib/enrichWeightPrediction.ts";
+import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { assertRows } from "../lib/utils.ts";
@@ -88,17 +91,13 @@ function buildSkinTempSeries(
 export function BodyPage() {
   const units = useUnitConverter();
   const { days, setDays } = useBodyDays();
-  const endDate = useMemo(() => formatDateYmd(new Date()), []);
+  const endDate = useTodayQueryDate();
 
   const trends = trpc.dailyMetrics.trends.useQuery({ days, endDate });
   const dailyMetrics = trpc.dailyMetrics.list.useQuery({ days, endDate });
   const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days, endDate });
   const stressData = trpc.stress.scores.useQuery({ days, endDate });
-  const smoothedWeight = trpc.bodyAnalytics.smoothedWeight.useQuery({
-    days: Math.max(days, 90),
-    endDate,
-  });
-  const weightPrediction = trpc.bodyAnalytics.weightPrediction.useQuery({
+  const weightOverview = trpc.bodyAnalytics.weightOverview.useQuery({
     days: Math.max(days, 90),
     endDate,
   });
@@ -163,6 +162,13 @@ export function BodyPage() {
       .sort((a, b) => Math.abs(b.effectSize) - Math.abs(a.effectSize));
   }, [insightsQuery.data]);
 
+  const weightPredictionDisplay = useMemo(() => {
+    if (!weightOverview.data) return null;
+    return enrichWeightPrediction(weightOverview.data.prediction, weightOverview.data.smoothedWeight);
+  }, [weightOverview.data]);
+
+  const smoothedWeightData = weightOverview.data?.smoothedWeight ?? [];
+
   // SpO2/temp chart config
   const spo2TempTitle =
     hasSpO2 && hasSkinTemp
@@ -221,9 +227,16 @@ export function BodyPage() {
             <h4 className="text-xs font-medium text-subtle uppercase">Weight Prediction</h4>
             <GoalWeightInput />
           </div>
-          {weightPrediction.data?.ratePerWeek != null && (
-            <WeightPredictionSummary prediction={weightPrediction.data} />
-          )}
+          {weightOverview.isPending ? (
+            <ChartLoadingSkeleton height={48} />
+          ) : weightOverview.isError ? (
+            <QueryStatePanel error={weightOverview.error} height={48} />
+          ) : weightPredictionDisplay ? (
+            <WeightPredictionSummary
+              prediction={weightPredictionDisplay}
+              hasWeightTrendData={smoothedWeightData.length > 0}
+            />
+          ) : null}
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="card p-2 sm:p-4">
@@ -232,9 +245,9 @@ export function BodyPage() {
               <ChartDescriptionTooltip description="This chart shows your smoothed body weight trend over time, with goal weight and forward projection when set." />
             </div>
             <SmoothedWeightChart
-              data={smoothedWeight.data ?? []}
-              prediction={weightPrediction.data}
-              loading={smoothedWeight.isLoading}
+              data={smoothedWeightData}
+              prediction={weightPredictionDisplay}
+              loading={weightOverview.isPending}
             />
           </div>
           <div className="card p-2 sm:p-4">
