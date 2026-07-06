@@ -1,7 +1,7 @@
 import Foundation
 import WatchConnectivity
 
-/// Coordinates querying accelerometer + gyroscope samples and sending them
+/// Coordinates querying accelerometer, gyroscope, and altimeter samples and sending them
 /// to the paired iPhone via WCSession.transferFile().
 /// Files are gzip-compressed JSON arrays.
 ///
@@ -10,6 +10,7 @@ import WatchConnectivity
 final class TransferManager: ObservableObject {
     private let accelerometerRecorder: AccelerometerRecorder
     private let gyroscopeRecorder: GyroscopeRecorder
+    private let altimeterRecorder: AltimeterRecorder
     private let session: WCSession
     private let workQueue = DispatchQueue(label: "com.dofek.watch.transfer", qos: .utility)
 
@@ -23,10 +24,12 @@ final class TransferManager: ObservableObject {
     init(
         accelerometerRecorder: AccelerometerRecorder,
         gyroscopeRecorder: GyroscopeRecorder,
+        altimeterRecorder: AltimeterRecorder,
         session: WCSession = .default
     ) {
         self.accelerometerRecorder = accelerometerRecorder
         self.gyroscopeRecorder = gyroscopeRecorder
+        self.altimeterRecorder = altimeterRecorder
         self.session = session
     }
 
@@ -115,6 +118,8 @@ final class TransferManager: ObservableObject {
                 self?.lastTransferStatus = "Sent \(result.count) samples (\(compressedSize / 1024) KB)"
                 self?.isTransferring = false
             }
+
+            transferAltimeterSamples()
         } catch {
             // Clean up temp files on error
             try? FileManager.default.removeItem(at: result.url)
@@ -229,6 +234,34 @@ final class TransferManager: ObservableObject {
         }
 
         return bestIndex
+    }
+
+    private func transferAltimeterSamples() {
+        let altitudeSamples = altimeterRecorder.queryNewSamples()
+        guard !altitudeSamples.isEmpty else { return }
+
+        do {
+            let jsonURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("altitude-\(ISO8601DateFormatter().string(from: Date())).json")
+            let jsonData = try JSONSerialization.data(withJSONObject: altitudeSamples)
+            try jsonData.write(to: jsonURL)
+
+            let compressedURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("altitude-\(ISO8601DateFormatter().string(from: Date())).json.gz")
+            _ = try Self.compressFile(from: jsonURL, to: compressedURL)
+            try? FileManager.default.removeItem(at: jsonURL)
+
+            let metadata: [String: Any] = [
+                "type": "altitude_samples",
+                "sampleCount": altitudeSamples.count,
+                "transferredAt": ISO8601DateFormatter().string(from: Date()),
+            ]
+            session.transferFile(compressedURL, metadata: metadata)
+        } catch {
+            DispatchQueue.main.async { [weak self] in
+                self?.lastTransferStatus = "Altitude transfer error: \(error.localizedDescription)"
+            }
+        }
     }
 
     /// Compress a file using zlib via Foundation's NSData.compressed(using:).

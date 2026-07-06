@@ -9,11 +9,13 @@ struct DofekWatchApp: App {
 
     @StateObject private var recorder = AccelerometerRecorder.shared
     @StateObject private var gyroscopeRecorder = GyroscopeRecorder.shared
+    @StateObject private var altimeterRecorder = AltimeterRecorder.shared
     @StateObject private var sessionDelegate = WatchSessionDelegate.shared
 
     @StateObject private var transferManager = TransferManager(
         accelerometerRecorder: AccelerometerRecorder.shared,
-        gyroscopeRecorder: GyroscopeRecorder.shared
+        gyroscopeRecorder: GyroscopeRecorder.shared,
+        altimeterRecorder: AltimeterRecorder.shared
     )
 
     init() {
@@ -40,6 +42,7 @@ struct DofekWatchApp: App {
             ContentView(
                 recorder: recorder,
                 gyroscopeRecorder: gyroscopeRecorder,
+                altimeterRecorder: altimeterRecorder,
                 transferManager: transferManager,
                 sessionDelegate: sessionDelegate
             )
@@ -51,6 +54,8 @@ struct DofekWatchApp: App {
                 recorder.startRecording()
                 // Start gyroscope recording (foreground only)
                 gyroscopeRecorder.startRecording()
+                // Start altimeter recording (foreground only)
+                altimeterRecorder.startRecording()
                 // Transfer any queued data
                 transferManager.transferNewSamples()
             case .background:
@@ -58,6 +63,8 @@ struct DofekWatchApp: App {
                 recorder.startRecording()
                 // Stop gyroscope — CMMotionManager requires foreground
                 gyroscopeRecorder.stopRecording()
+                // Stop altimeter — CMAltimeter requires foreground
+                altimeterRecorder.stopRecording()
             case .inactive:
                 break
             @unknown default:

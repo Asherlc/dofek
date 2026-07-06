@@ -223,6 +223,13 @@ function AuthGate() {
           ) => trpcClient.inertialMeasurementUnitSync.pushSamples.mutate(input),
         },
       },
+      watchAltitudeSync: {
+        pushSamples: {
+          mutate: (
+            input: Parameters<typeof trpcClient.watchAltitudeSync.pushSamples.mutate>[0],
+          ) => trpcClient.watchAltitudeSync.pushSamples.mutate(input),
+        },
+      },
     };
     initBackgroundAccelerometerSync(imuSyncClient).catch((error: unknown) => {
       // Best-effort — accelerometer sync is non-critical

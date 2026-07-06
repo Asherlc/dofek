@@ -56,10 +56,25 @@ export function acknowledgeWatchSamples(): void {
   WatchMotionModule.acknowledgeWatchSamples();
 }
 
-/** List the file names of pending Watch accelerometer transfer files.
- * Used by per-file sync to process files individually. */
+/** A barometric altitude sample transferred from the Apple Watch. */
+export interface WatchAltitudeSample {
+  timestamp: string;
+  altitudeM: number;
+  pressureKPa?: number;
+}
+
+/** List pending Watch accelerometer transfer file names. */
 export function getPendingWatchFileNames(): string[] {
-  return WatchMotionModule.getPendingWatchFileNames();
+  return WatchMotionModule.getPendingWatchFileNames().filter((fileName) =>
+    fileName.startsWith("watch-accel-"),
+  );
+}
+
+/** List pending Watch altitude transfer file names. */
+export function getPendingWatchAltitudeFileNames(): string[] {
+  return WatchMotionModule.getPendingWatchFileNames().filter((fileName) =>
+    fileName.startsWith("watch-altitude-"),
+  );
 }
 
 /** Read and parse a single pending Watch transfer file.
@@ -67,6 +82,11 @@ export function getPendingWatchFileNames(): string[] {
  * @returns Parsed accelerometer samples from that file */
 export async function readWatchFile(fileName: string): Promise<InertialMeasurementUnitSample[]> {
   return WatchMotionModule.readWatchFile(fileName);
+}
+
+/** Read and parse a single pending Watch altitude transfer file. */
+export async function readWatchAltitudeFile(fileName: string): Promise<WatchAltitudeSample[]> {
+  return WatchMotionModule.readWatchAltitudeFile(fileName);
 }
 
 /** Delete a single pending Watch transfer file after successful upload.

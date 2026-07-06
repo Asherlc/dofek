@@ -1,6 +1,6 @@
 import { AppState } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { InertialMeasurementUnitSyncTrpcClient } from "./inertial-measurement-unit-sync.ts";
+import type { WatchSyncTrpcClient } from "./background-watch-inertial-measurement-unit-sync.ts";
 
 let appStateCallback: ((state: string) => void) | null = null;
 const mockRemove = vi.fn();
@@ -29,10 +29,17 @@ vi.mock("../modules/watch-motion", () => ({
 const mockSyncWatchInertialMeasurementUnitFiles = vi.fn(() =>
   Promise.resolve({ totalInserted: 0, filesProcessed: 0, filesFailed: 0 }),
 );
+const mockSyncWatchAltitudeFiles = vi.fn(() =>
+  Promise.resolve({ totalInserted: 0, filesProcessed: 0, filesFailed: 0 }),
+);
 
 vi.mock("./watch-file-sync", () => ({
   syncWatchAccelerometerFiles: (...args: unknown[]) =>
     mockSyncWatchInertialMeasurementUnitFiles(...args),
+}));
+
+vi.mock("./watch-altitude-file-sync", () => ({
+  syncWatchAltitudeFiles: (...args: unknown[]) => mockSyncWatchAltitudeFiles(...args),
 }));
 
 const mockCaptureException = vi.fn();
@@ -47,9 +54,14 @@ const {
   teardownBackgroundWatchInertialMeasurementUnitSync,
 } = await import("./background-watch-inertial-measurement-unit-sync.ts");
 
-function makeMockTrpcClient(): InertialMeasurementUnitSyncTrpcClient {
+function makeMockTrpcClient(): WatchSyncTrpcClient {
   return {
     inertialMeasurementUnitSync: {
+      pushSamples: {
+        mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
+      },
+    },
+    watchAltitudeSync: {
       pushSamples: {
         mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
       },
@@ -58,7 +70,7 @@ function makeMockTrpcClient(): InertialMeasurementUnitSyncTrpcClient {
 }
 
 describe("background-watch-inertial-measurement-unit-sync", () => {
-  let trpcClient: InertialMeasurementUnitSyncTrpcClient;
+  let trpcClient: WatchSyncTrpcClient;
 
   beforeEach(() => {
     trpcClient = makeMockTrpcClient();
@@ -67,6 +79,12 @@ describe("background-watch-inertial-measurement-unit-sync", () => {
     mockCaptureException.mockClear();
     mockSyncWatchInertialMeasurementUnitFiles.mockReset();
     mockSyncWatchInertialMeasurementUnitFiles.mockResolvedValue({
+      totalInserted: 0,
+      filesProcessed: 0,
+      filesFailed: 0,
+    });
+    mockSyncWatchAltitudeFiles.mockReset();
+    mockSyncWatchAltitudeFiles.mockResolvedValue({
       totalInserted: 0,
       filesProcessed: 0,
       filesFailed: 0,
@@ -87,9 +105,10 @@ describe("background-watch-inertial-measurement-unit-sync", () => {
     await initBackgroundWatchInertialMeasurementUnitSync(trpcClient);
 
     expect(AppState.addEventListener).toHaveBeenCalledWith("change", expect.any(Function));
-    // Initial sync is called immediately during init
     expect(mockSyncWatchInertialMeasurementUnitFiles).toHaveBeenCalledTimes(1);
     expect(mockSyncWatchInertialMeasurementUnitFiles).toHaveBeenCalledWith(trpcClient);
+    expect(mockSyncWatchAltitudeFiles).toHaveBeenCalledTimes(1);
+    expect(mockSyncWatchAltitudeFiles).toHaveBeenCalledWith(trpcClient);
   });
 
   it("requests Watch recording after sync", async () => {

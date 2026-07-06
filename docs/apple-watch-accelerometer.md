@@ -75,9 +75,16 @@ The WatchKit app source lives in `packages/mobile/ios/DofekWatch/`. To add it to
 ## Supported Devices
 
 - **CMSensorRecorder**: Available on all Apple Watch models (Series 1+)
+- **CMAltimeter**: Available on Apple Watch Series 3+ for barometric altitude
 - **watchOS 10+**: Required for standalone app lifecycle (`@main App`)
 - **50 Hz sampling**: Same rate as iPhone CMSensorRecorder
 - **3-day retention**: Same as iPhone
+
+## Barometric Altitude
+
+The Watch app also records barometric altitude via `CMAltimeter` while in the foreground (~1 Hz). Samples are transferred as separate gzip JSON files with metadata `type: "altitude_samples"` and synced to `metric_stream` on the `altitude` channel via `watchAltitudeSync.pushSamples`.
+
+Relative elevation is derived from raw pressure readings rather than `CMAltitudeData.relativeAltitude`, which can spike when a workout session is paused.
 
 ## Testing
 

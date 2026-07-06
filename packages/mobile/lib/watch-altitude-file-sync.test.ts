@@ -1,0 +1,88 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { WatchAltitudeSyncTrpcClient } from "./watch-altitude-file-sync.ts";
+
+const mockGetPendingWatchAltitudeFileNames = vi.fn((): string[] => []);
+const mockReadWatchAltitudeFile = vi.fn(
+  (_fileName: string): Promise<Record<string, unknown>[]> => Promise.resolve([]),
+);
+const mockDeleteWatchFile = vi.fn();
+
+vi.mock("../modules/watch-motion", () => ({
+  getPendingWatchAltitudeFileNames: () => mockGetPendingWatchAltitudeFileNames(),
+  readWatchAltitudeFile: (fileName: string) => mockReadWatchAltitudeFile(fileName),
+  deleteWatchFile: (fileName: string) => mockDeleteWatchFile(fileName),
+}));
+
+const mockCaptureException = vi.fn();
+
+vi.mock("./telemetry", () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
+
+import { syncWatchAltitudeFiles } from "./watch-altitude-file-sync.ts";
+
+function makeTrpcClient(): WatchAltitudeSyncTrpcClient {
+  return {
+    watchAltitudeSync: {
+      pushSamples: {
+        mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
+      },
+    },
+  };
+}
+
+describe("syncWatchAltitudeFiles", () => {
+  let trpcClient: WatchAltitudeSyncTrpcClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    trpcClient = makeTrpcClient();
+  });
+
+  it("returns zero when no pending files", async () => {
+    mockGetPendingWatchAltitudeFileNames.mockReturnValue([]);
+
+    const result = await syncWatchAltitudeFiles(trpcClient);
+
+    expect(result).toEqual({ totalInserted: 0, filesProcessed: 0, filesFailed: 0 });
+  });
+
+  it("uploads parsed altitude samples and deletes the file on success", async () => {
+    mockGetPendingWatchAltitudeFileNames.mockReturnValue(["watch-altitude-001.json.gz"]);
+    mockReadWatchAltitudeFile.mockResolvedValue([
+      {
+        timestamp: "2026-03-30T12:00:00.000Z",
+        altitudeM: 12.5,
+        pressureKPa: 98.2,
+      },
+    ]);
+    vi.mocked(trpcClient.watchAltitudeSync.pushSamples.mutate).mockResolvedValue({ inserted: 1 });
+
+    const result = await syncWatchAltitudeFiles(trpcClient);
+
+    expect(result).toEqual({ totalInserted: 1, filesProcessed: 1, filesFailed: 0 });
+    expect(trpcClient.watchAltitudeSync.pushSamples.mutate).toHaveBeenCalledWith({
+      deviceId: "Apple Watch",
+      samples: [
+        {
+          timestamp: "2026-03-30T12:00:00.000Z",
+          altitudeM: 12.5,
+          pressureKPa: 98.2,
+        },
+      ],
+    });
+    expect(mockDeleteWatchFile).toHaveBeenCalledWith("watch-altitude-001.json.gz");
+  });
+
+  it("skips invalid samples and deletes empty files", async () => {
+    mockGetPendingWatchAltitudeFileNames.mockReturnValue(["watch-altitude-empty.json.gz"]);
+    mockReadWatchAltitudeFile.mockResolvedValue([{ timestamp: "bad", altitudeM: "nope" }]);
+
+    const result = await syncWatchAltitudeFiles(trpcClient);
+
+    expect(result).toEqual({ totalInserted: 0, filesProcessed: 1, filesFailed: 0 });
+    expect(trpcClient.watchAltitudeSync.pushSamples.mutate).not.toHaveBeenCalled();
+    expect(mockDeleteWatchFile).toHaveBeenCalledWith("watch-altitude-empty.json.gz");
+  });
+});

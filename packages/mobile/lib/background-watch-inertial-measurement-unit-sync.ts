@@ -2,9 +2,14 @@ import { AppState, type AppStateStatus } from "react-native";
 import { isWatchAppInstalled, isWatchPaired, requestWatchRecording } from "../modules/watch-motion";
 import type { InertialMeasurementUnitSyncTrpcClient } from "./inertial-measurement-unit-sync";
 import { captureException, logger } from "./telemetry";
+import { syncWatchAltitudeFiles, type WatchAltitudeSyncTrpcClient } from "./watch-altitude-file-sync";
 import { syncWatchAccelerometerFiles } from "./watch-file-sync";
 
 const TAG = "bg-watch-accel-sync";
+
+export interface WatchSyncTrpcClient
+  extends InertialMeasurementUnitSyncTrpcClient,
+    WatchAltitudeSyncTrpcClient {}
 
 let appStateSubscription: ReturnType<typeof AppState.addEventListener> | null = null;
 let syncing = false;
@@ -22,7 +27,7 @@ let syncing = false;
  * acknowledged.
  */
 export async function initBackgroundWatchInertialMeasurementUnitSync(
-  trpcClient: InertialMeasurementUnitSyncTrpcClient,
+  trpcClient: WatchSyncTrpcClient,
 ): Promise<void> {
   const paired = isWatchPaired();
   const installed = isWatchAppInstalled();
@@ -64,8 +69,9 @@ export async function initBackgroundWatchInertialMeasurementUnitSync(
 /**
  * Sync pending Watch files and request the Watch to continue recording.
  */
-async function syncAndRecord(trpcClient: InertialMeasurementUnitSyncTrpcClient): Promise<void> {
+async function syncAndRecord(trpcClient: WatchSyncTrpcClient): Promise<void> {
   await syncWatchAccelerometerFiles(trpcClient);
+  await syncWatchAltitudeFiles(trpcClient);
 
   // Ask the Watch to restart recording and send any new data
   try {

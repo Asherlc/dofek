@@ -129,6 +129,20 @@ public class WatchMotionModule: Module {
             }
         }
 
+        /// Read and parse a single pending Watch altitude transfer file.
+        AsyncFunction("readWatchAltitudeFile") { (fileName: String, promise: Promise) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let fileURL = self.pendingDirectory.appendingPathComponent(fileName)
+                do {
+                    let fileData = try Data(contentsOf: fileURL)
+                    let samples = try SampleFileParser.parse(fileData)
+                    promise.resolve(samples)
+                } catch {
+                    promise.reject("PARSE_ERROR", "Failed to parse \(fileName): \(error.localizedDescription)")
+                }
+            }
+        }
+
         /// Delete a single pending Watch transfer file after successful upload.
         Function("deleteWatchFile") { (fileName: String) in
             let fileURL = self.pendingDirectory.appendingPathComponent(fileName)
@@ -149,10 +163,12 @@ public class WatchMotionModule: Module {
 
     func handleReceivedFile(fileURL: URL, metadata: [String: Any]?) {
         let sampleCount = metadata?["sampleCount"] as? Int ?? -1
-        NSLog("[WatchMotion] Received file from Watch: %@ (%d samples)", fileURL.lastPathComponent, sampleCount)
+        let fileType = metadata?["type"] as? String ?? "accelerometer_samples"
+        NSLog("[WatchMotion] Received file from Watch: %@ (%d samples, type=%@)", fileURL.lastPathComponent, sampleCount, fileType)
 
         // Move the file to our pending directory
-        let destinationName = "watch-accel-\(UUID().uuidString).json.gz"
+        let destinationPrefix = fileType == "altitude_samples" ? "watch-altitude-" : "watch-accel-"
+        let destinationName = "\(destinationPrefix)\(UUID().uuidString).json.gz"
         let destination = pendingDirectory.appendingPathComponent(destinationName)
 
         do {

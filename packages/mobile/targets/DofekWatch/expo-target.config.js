@@ -10,7 +10,7 @@ module.exports = {
   frameworks: ["CoreMotion", "WatchConnectivity"],
   infoPlist: {
     NSMotionUsageDescription:
-      "Dofek records accelerometer data to track your movement and activity throughout the day.",
+      "Dofek records accelerometer and barometric altitude data to track your movement and elevation throughout the day.",
     RCTNewArchEnabled: true,
     ...(sentryDsn ? { SentryDsn: sentryDsn } : {}),
     WKApplication: true,
