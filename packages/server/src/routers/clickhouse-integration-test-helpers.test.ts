@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runClickHouseMigrations } from "../../../../src/db/clickhouse-migrations.ts";
 import {
+  clickHouseMigrationAnalyticsViewNames,
   createClickHouseTestActivitySensorStore,
   syncClickHouseTestActivitySensorStore,
 } from "./clickhouse-integration-test-helpers.ts";
@@ -11,26 +12,6 @@ const clickHouseMocks = vi.hoisted(() => ({
   createClickHouseClientFromEnv: vi.fn(),
   query: vi.fn(),
 }));
-
-const testAnalyticsViewNames = [
-  "analytics.v_activity",
-  "analytics.v_activity_members",
-  "analytics.v_sleep",
-  "analytics.v_body_measurement",
-  "analytics.v_daily_metrics",
-  "analytics.provider_stats",
-  "analytics.deduped_sensor",
-  "analytics.resting_heart_rate_sleep_window",
-  "analytics.daily_recovery_inputs",
-  "analytics.daily_recovery",
-  "analytics.deduped_location",
-  "analytics.activity_summary",
-  "analytics.daily_activity_load",
-  "analytics.daily_strain",
-  "analytics.healthspan_activity_zone_minutes",
-  "analytics.weekly_healthspan",
-  "analytics.activity_trend_daily",
-];
 
 vi.mock("../../../../src/db/clickhouse.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../../../src/db/clickhouse.ts")>();
@@ -43,7 +24,7 @@ vi.mock("../../../../src/db/clickhouse.ts", async (importOriginal) => {
 vi.mock("../../../../src/db/clickhouse-migrations.ts", () => ({
   runClickHouseMigrations: vi.fn(
     async (client: { command(options: { query: string }): Promise<unknown> }) => {
-      for (const viewName of testAnalyticsViewNames) {
+      for (const viewName of clickHouseMigrationAnalyticsViewNames) {
         const selectSql =
           viewName === "analytics.provider_stats"
             ? `SELECT

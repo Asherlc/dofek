@@ -288,6 +288,26 @@ const rawTableSyncs: RawTableSync[] = [
     ],
   },
 ];
+export const clickHouseMigrationAnalyticsViewNames = [
+  "analytics.v_activity",
+  "analytics.v_activity_members",
+  "analytics.v_sleep",
+  "analytics.v_body_measurement",
+  "analytics.v_daily_metrics",
+  "analytics.provider_stats",
+  "analytics.deduped_sensor",
+  "analytics.resting_heart_rate_sleep_window",
+  "analytics.daily_recovery_inputs",
+  "analytics.daily_recovery",
+  "analytics.deduped_location",
+  "analytics.activity_summary",
+  "analytics.daily_activity_load",
+  "analytics.daily_strain",
+  "analytics.daily_body_measurement",
+  "analytics.healthspan_activity_zone_minutes",
+  "analytics.weekly_healthspan",
+  "analytics.activity_trend_daily",
+] as const;
 const analyticsBuildOrder = [
   "analytics.v_activity",
   "analytics.v_activity_members",
@@ -309,6 +329,7 @@ const analyticsBuildOrder = [
   "analytics.activity_summary",
   "analytics.daily_activity_load",
   "analytics.daily_strain",
+  "analytics.daily_body_measurement",
   "analytics.healthspan_activity_zone_minutes",
   "analytics.weekly_healthspan",
   "analytics.activity_trend_daily",
@@ -448,6 +469,14 @@ hrv_score Nullable(Float64),
 resting_hr_score Nullable(Float64),
 sleep_score Nullable(Float64),
 respiratory_rate_score Nullable(Float64),
+refresh_version UInt64,
+refreshed_at DateTime64(9)`,
+    daily_body_measurement: `measurement_id UUID,
+user_id UUID,
+date Date,
+recorded_at DateTime64(6, 'UTC'),
+weight_kg Float64,
+body_fat_pct Nullable(Float64),
 refresh_version UInt64,
 refreshed_at DateTime64(9)`,
     v_body_measurement: `id UUID,
@@ -677,6 +706,7 @@ activity_count UInt64`,
     shortViewName === "daily_sleep" ||
     shortViewName === "daily_recovery_inputs" ||
     shortViewName === "daily_recovery" ||
+    shortViewName === "daily_body_measurement" ||
     shortViewName === "daily_activity_load" ||
     shortViewName === "daily_strain" ||
     shortViewName === "healthspan_activity_zone_minutes" ||
@@ -698,16 +728,18 @@ activity_count UInt64`,
               ? "(user_id, date)"
               : shortViewName === "daily_recovery"
                 ? "(user_id, date)"
-                : shortViewName === "daily_activity_load" ||
-                    shortViewName === "healthspan_activity_zone_minutes"
-                  ? "(user_id, activity_id)"
-                  : shortViewName === "daily_strain"
-                    ? "(user_id, date)"
-                    : shortViewName === "weekly_healthspan"
-                      ? "(user_id, week_start)"
-                      : shortViewName === "provider_stats"
-                        ? "(user_id, provider_id)"
-                        : "tuple()";
+                : shortViewName === "daily_body_measurement"
+                  ? "(user_id, recorded_at, measurement_id)"
+                  : shortViewName === "daily_activity_load" ||
+                      shortViewName === "healthspan_activity_zone_minutes"
+                    ? "(user_id, activity_id)"
+                    : shortViewName === "daily_strain"
+                      ? "(user_id, date)"
+                      : shortViewName === "weekly_healthspan"
+                        ? "(user_id, week_start)"
+                        : shortViewName === "provider_stats"
+                          ? "(user_id, provider_id)"
+                          : "tuple()";
   return `CREATE TABLE IF NOT EXISTS ${viewName} (
 ${columnDefinitions}
 )
@@ -1340,6 +1372,36 @@ FROM activity_load
 CROSS JOIN refresh_clock`;
 }
 
+function buildTestDailyBodyMeasurementSelectSql(databases: IsolatedClickHouseDatabases): string {
+  return `WITH body_source AS (
+  SELECT
+    id AS measurement_id,
+    user_id,
+    recorded_at,
+    weight_kg,
+    body_fat_pct
+  FROM ${databases.analytics}.v_body_measurement
+  WHERE weight_kg IS NOT NULL
+    AND weight_kg > 0
+),
+refresh_clock AS (
+  SELECT
+    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+    now64(9) AS refreshed_at
+)
+SELECT
+  CAST(body_source.measurement_id, 'UUID') AS measurement_id,
+  CAST(body_source.user_id, 'UUID') AS user_id,
+  CAST(toDate(body_source.recorded_at), 'Date') AS date,
+  body_source.recorded_at AS recorded_at,
+  body_source.weight_kg AS weight_kg,
+  body_source.body_fat_pct AS body_fat_pct,
+  refresh_clock.refresh_version AS refresh_version,
+  refresh_clock.refreshed_at AS refreshed_at
+FROM body_source
+CROSS JOIN refresh_clock`;
+}
+
 function buildTestRecoveryReadModelSelectSql(databases: IsolatedClickHouseDatabases): string {
   return `SELECT
   user_id,
@@ -1448,9 +1510,9 @@ function buildTestHealthspanReadModelSelectSql(databases: IsolatedClickHouseData
   UNION DISTINCT
   SELECT
     user_id,
-    toMonday(toDate(recorded_at)) AS week_start
-  FROM ${databases.analytics}.v_body_measurement
-  GROUP BY user_id, toMonday(toDate(recorded_at))
+    toMonday(date) AS week_start
+  FROM ${databases.analytics}.daily_body_measurement
+  GROUP BY user_id, toMonday(date)
 ),
 metrics AS (
   SELECT
@@ -1475,11 +1537,11 @@ zone_minutes AS (
 body_by_week AS (
   SELECT
     user_id,
-    toMonday(toDate(recorded_at)) AS week_start,
-    argMax(weight_kg, recorded_at) AS weight_kg,
-    argMax(body_fat_pct, recorded_at) AS body_fat_pct
-  FROM ${databases.analytics}.v_body_measurement
-  GROUP BY user_id, toMonday(toDate(recorded_at))
+    toMonday(date) AS week_start,
+    argMax(weight_kg, (recorded_at, refresh_version, measurement_id)) AS weight_kg,
+    argMax(body_fat_pct, (recorded_at, refresh_version, measurement_id)) AS body_fat_pct
+  FROM ${databases.analytics}.daily_body_measurement
+  GROUP BY user_id, toMonday(date)
 ),
 refresh_clock AS (
   SELECT
@@ -1905,6 +1967,11 @@ ${buildTestDailyActivityLoadSelectSql(defaultTestDatabases)}`,
     query: `CREATE VIEW IF NOT EXISTS analytics.daily_strain
 AS
 ${buildTestStrainReadModelSelectSql(defaultTestDatabases)}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.daily_body_measurement
+AS
+${buildTestDailyBodyMeasurementSelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.healthspan_activity_zone_minutes

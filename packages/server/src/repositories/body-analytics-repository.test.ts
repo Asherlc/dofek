@@ -295,7 +295,10 @@ describe("BodyAnalyticsRepository", () => {
     await repo.getRecomposition(180, "2024-06-01");
 
     expect(query).toHaveBeenCalledTimes(2);
-    expect(query.mock.calls[1]?.[1]).toContain("AND body_fat_pct IS NOT NULL");
+    const recompositionQuery = query.mock.calls[1]?.[1] ?? "";
+    expect(recompositionQuery).toMatch(
+      /FROM analytics\.daily_body_measurement FINAL[\s\S]*AND body_fat_pct IS NOT NULL[\s\S]*\) AS body_rows[\s\S]*GROUP BY local_date/,
+    );
   });
 
   describe("getSmoothedWeight", () => {

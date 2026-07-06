@@ -13,6 +13,20 @@ import {
   router,
 } from "../trpc.ts";
 
+async function readGoalWeightKg(db: Pick<Database, "execute" | "transaction">, userId: string) {
+  try {
+    const settingsRepo = new SettingsRepository(db, userId);
+    const goalSetting = await settingsRepo.get("goalWeight");
+    const parsedGoalWeightKg = goalSetting?.value != null ? Number(goalSetting.value) : null;
+    return parsedGoalWeightKg != null && Number.isFinite(parsedGoalWeightKg)
+      ? parsedGoalWeightKg
+      : null;
+  } catch (error) {
+    captureException(error);
+    return null;
+  }
+}
+
 export type {
   BodyRecompositionRow,
   SmoothedWeightRow,
@@ -20,18 +34,6 @@ export type {
 } from "../repositories/body-analytics-repository.ts";
 
 const dateWindowInput = z.object({ days: z.number().default(90), endDate: endDateSchema });
-
-async function readGoalWeightKg(
-  db: Pick<Database, "execute" | "transaction">,
-  userId: string,
-): Promise<number | null> {
-  const settingsRepo = new SettingsRepository(db, userId);
-  const goalSetting = await settingsRepo.get("goalWeight");
-  const parsedGoalWeightKg = goalSetting?.value != null ? Number(goalSetting.value) : null;
-  return parsedGoalWeightKg != null && Number.isFinite(parsedGoalWeightKg)
-    ? parsedGoalWeightKg
-    : null;
-}
 
 function createBodyAnalyticsRepository(ctx: AuthenticatedContext) {
   return new BodyAnalyticsRepository(

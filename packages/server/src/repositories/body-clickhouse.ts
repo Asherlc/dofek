@@ -93,22 +93,27 @@ export function bodyWeightDedupClickHouseQuery(
       body_fat_pct
     FROM (
       SELECT
-        toDate(toTimeZone(recorded_at, {timezone:String})) AS local_date,
-        weight_kg,
-        body_fat_pct,
-        recorded_at,
-        row_number() OVER (
-          PARTITION BY toDate(toTimeZone(recorded_at, {timezone:String}))
-          ORDER BY recorded_at DESC
-        ) AS row_number
-      FROM analytics.v_body_measurement
-      WHERE user_id = {userId:UUID}
-        AND weight_kg IS NOT NULL
-        AND weight_kg > 0
-        ${options.requireBodyFat ? "AND body_fat_pct IS NOT NULL" : ""}
-        AND toDate(toTimeZone(recorded_at, {timezone:String})) > subtractDays(${endDateExpression(endDate)}, {days:UInt32})
+        local_date,
+        argMax(weight_kg, (recorded_at, refresh_version, measurement_id)) AS weight_kg,
+        argMax(body_fat_pct, (recorded_at, refresh_version, measurement_id)) AS body_fat_pct
+      FROM (
+        SELECT
+          toDate(toTimeZone(recorded_at, {timezone:String})) AS local_date,
+          weight_kg,
+          body_fat_pct,
+          recorded_at,
+          refresh_version,
+          measurement_id
+        FROM analytics.daily_body_measurement FINAL
+        WHERE user_id = {userId:UUID}
+          AND toDate(toTimeZone(recorded_at, {timezone:String})) > subtractDays(${endDateExpression(endDate)}, {days:UInt32})
+          ${options.requireBodyFat ? "AND body_fat_pct IS NOT NULL" : ""}
+      ) AS body_rows
+      GROUP BY local_date
     )
-    WHERE row_number = 1
+    WHERE weight_kg IS NOT NULL
+      AND weight_kg > 0
+      ${options.requireBodyFat ? "AND body_fat_pct IS NOT NULL" : ""}
       ${accessWindowDateClause(options.accessWindow)}
     ORDER BY local_date ASC
   `;

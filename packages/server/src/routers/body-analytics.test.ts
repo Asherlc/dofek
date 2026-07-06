@@ -3,9 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { BodyAnalyticsRepository } from "../repositories/body-analytics-repository.ts";
 import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
-vi.mock("@sentry/node", () => ({
-  captureException: vi.fn(),
-}));
+vi.mock("@sentry/node", () => ({ captureException: vi.fn() }));
 
 vi.mock("dofek/lib/cache", () => ({
   queryCache: { invalidateByPrefix: vi.fn().mockResolvedValue(undefined) },
@@ -68,6 +66,10 @@ function makeCallerWithSettings(
     timezone: "UTC",
   });
 }
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe("bodyAnalyticsRouter", () => {
   describe("smoothedWeight", () => {
@@ -191,9 +193,11 @@ describe("bodyAnalyticsRouter", () => {
     });
 
     it("propagates the underlying error when the smoothed weight fetch fails", async () => {
+      const sensorStore = makeMockSensorStore([]);
+      sensorStore.query = vi.fn().mockRejectedValue(new Error("connection reset"));
       const caller = createCaller({
-        db: { execute: vi.fn().mockRejectedValue(new Error("connection reset")) },
-        sensorStore: makeMockSensorStore([]),
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        sensorStore,
         userId: "user-1",
         timezone: "UTC",
       });
@@ -268,6 +272,72 @@ describe("bodyAnalyticsRouter", () => {
       const result = await caller.weightPrediction({ days: 90, endDate: "2026-03-15" });
 
       expect(result.goal).toBeNull();
+      expect(result.ratePerWeek).not.toBeNull();
+      expect(result.projectionLine.length).toBeGreaterThan(0);
+    });
+
+    it("continues prediction when goal weight settings lookup fails", async () => {
+      const rows = Array.from({ length: 20 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: 80 - index * 0.1,
+      }));
+      const caller = createCaller({
+        db: { execute: vi.fn().mockRejectedValue(new Error("settings unavailable")) },
+        sensorStore: makeMockSensorStore(rows),
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.weightPrediction({ days: 90, endDate: "2026-03-15" }),
+      ).resolves.toMatchObject({
+        goal: null,
+        ratePerWeek: expect.any(Number),
+      });
+      expect(captureException).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns null goal when goal weight value is null", async () => {
+      const rows = Array.from({ length: 20 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: 80 - index * 0.1,
+      }));
+      const caller = makeCallerWithSettings(rows, [{ key: "goalWeight", value: null }]);
+      const result = await caller.weightPrediction({ days: 90, endDate: "2026-03-15" });
+
+      expect(result.goal).toBeNull();
+      expect(result.ratePerWeek).not.toBeNull();
+      expect(result.projectionLine.length).toBeGreaterThan(0);
+    });
+
+    it("returns null goal when no goal weight setting row exists", async () => {
+      const rows = Array.from({ length: 20 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: 80 - index * 0.1,
+      }));
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        sensorStore: makeMockSensorStore(rows),
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      const result = await caller.weightPrediction({ days: 90, endDate: "2026-03-15" });
+
+      expect(result.goal).toBeNull();
+      expect(captureException).not.toHaveBeenCalled();
+    });
+
+    it("returns null goal when goal weight value is not finite", async () => {
+      const rows = Array.from({ length: 20 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: 80 - index * 0.1,
+      }));
+      const caller = makeCallerWithSettings(rows, [{ key: "goalWeight", value: Infinity }]);
+      const result = await caller.weightPrediction({ days: 90, endDate: "2026-03-15" });
+
+      expect(result.goal).toBeNull();
+      expect(result.ratePerWeek).not.toBeNull();
+      expect(captureException).not.toHaveBeenCalled();
     });
   });
 

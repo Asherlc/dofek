@@ -93,11 +93,11 @@ vo2_by_week AS (
 body_by_week AS (
     SELECT
         user_id,
-        toMonday(toDate(recorded_at)) AS week_start,
-        argMax(weight_kg, recorded_at) AS weight_kg,
-        argMax(body_fat_pct, recorded_at) AS body_fat_pct
-    FROM analytics.v_body_measurement
-    GROUP BY user_id, toMonday(toDate(recorded_at))
+        toMonday(date) AS week_start,
+        argMax(weight_kg, (recorded_at, refresh_version, measurement_id)) AS weight_kg,
+        argMax(body_fat_pct, (recorded_at, refresh_version, measurement_id)) AS body_fat_pct
+    FROM {{ ref('daily_body_measurement') }} FINAL
+    GROUP BY user_id, toMonday(date)
 ),
 
 week_keys AS (
