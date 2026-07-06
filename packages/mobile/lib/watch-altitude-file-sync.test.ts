@@ -7,15 +7,11 @@ const mockReadWatchAltitudeFile = vi.fn(
 );
 const mockDeleteWatchFile = vi.fn();
 
-vi.mock("../modules/watch-motion", async (importOriginal) => {
-  const { WatchAltitudeSampleSchema } = await import("../modules/watch-motion/schemas.ts");
-  return {
-    WatchAltitudeSampleSchema,
-    getPendingWatchAltitudeFileNames: () => mockGetPendingWatchAltitudeFileNames(),
-    readWatchAltitudeFile: (fileName: string) => mockReadWatchAltitudeFile(fileName),
-    deleteWatchFile: (fileName: string) => mockDeleteWatchFile(fileName),
-  };
-});
+vi.mock("../modules/watch-motion", () => ({
+  getPendingWatchAltitudeFileNames: () => mockGetPendingWatchAltitudeFileNames(),
+  readWatchAltitudeFile: (fileName: string) => mockReadWatchAltitudeFile(fileName),
+  deleteWatchFile: (fileName: string) => mockDeleteWatchFile(fileName),
+}));
 
 const mockCaptureException = vi.fn();
 

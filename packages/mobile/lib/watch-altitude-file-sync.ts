@@ -2,9 +2,11 @@ import {
   deleteWatchFile,
   getPendingWatchAltitudeFileNames,
   readWatchAltitudeFile,
-  WatchAltitudeSampleSchema,
-  type WatchAltitudeSample,
 } from "../modules/watch-motion";
+import {
+  type WatchAltitudeSample,
+  WatchAltitudeSampleSchema,
+} from "../modules/watch-motion/schemas";
 import { captureException, logger } from "./telemetry";
 
 const TAG = "watch-altitude-file-sync";

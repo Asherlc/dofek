@@ -1,9 +1,7 @@
 import type { InertialMeasurementUnitSample } from "@dofek/imu";
 import { z } from "zod";
-import {
-  WatchAltitudeSampleSchema,
-  type WatchAltitudeSample,
-} from "./schemas";
+import type { WatchAltitudeSample } from "./schemas";
+import { WatchAltitudeSampleSchema } from "./schemas";
 import WatchMotionModule from "./src/WatchMotionModule";
 
 export interface WatchSyncStatus {
@@ -60,8 +58,6 @@ export async function getPendingWatchSamples(): Promise<InertialMeasurementUnitS
 export function acknowledgeWatchSamples(): void {
   WatchMotionModule.acknowledgeWatchSamples();
 }
-
-export { WatchAltitudeSampleSchema, type WatchAltitudeSample } from "./schemas";
 
 function isSafePendingFileName(fileName: string): boolean {
   if (!fileName) return false;
