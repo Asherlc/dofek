@@ -2,11 +2,10 @@ import { QUERY_CACHE_MAX_AGE_MS } from "@dofek/scoring/query-cache";
 import { type Query, QueryCache, QueryClient } from "@tanstack/react-query";
 import { captureException } from "./telemetry";
 
-function reportQueryError(error: Error, query: Query) {
-  captureException(error, {
+function reportQueryError(error: unknown, query: Query) {
+  captureException(error instanceof Error ? error : new Error(String(error)), {
     source: "react-query",
     queryHash: query.queryHash,
-    queryKey: JSON.stringify(query.queryKey),
     failureCount: query.state.fetchFailureCount,
   });
 }

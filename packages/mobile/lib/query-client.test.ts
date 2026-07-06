@@ -25,7 +25,6 @@ describe("createAppQueryClient", () => {
     expect(mockCaptureException).toHaveBeenCalledWith(queryError, {
       source: "react-query",
       queryHash: '[["sync","dataHealth"],{"type":"query"}]',
-      queryKey: '[["sync","dataHealth"],{"type":"query"}]',
       failureCount: 1,
     });
   });
