@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
+vi.mock("@sentry/node", () => ({
+  captureException: vi.fn(),
+}));
+
 vi.mock("dofek/lib/cache", () => ({
   queryCache: { invalidateByPrefix: vi.fn().mockResolvedValue(undefined) },
 }));
@@ -182,6 +186,19 @@ describe("bodyAnalyticsRouter", () => {
       expect(result.smoothedWeight).toHaveLength(20);
       expect(result.prediction.ratePerWeek).not.toBeNull();
       expect(result.prediction.periodDeltas).toBeDefined();
+    });
+
+    it("returns a safe error when weight overview fetch fails", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockRejectedValue(new Error("connection reset")) },
+        sensorStore: makeMockSensorStore([]),
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.weightOverview({ days: 90, endDate: "2026-03-15" })).rejects.toThrow(
+        "Failed to fetch weight overview.",
+      );
     });
   });
 

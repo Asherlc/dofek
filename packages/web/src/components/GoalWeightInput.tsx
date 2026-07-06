@@ -38,10 +38,12 @@ export function GoalWeightInput() {
     const parsed = Number.parseFloat(inputValue);
     if (Number.isNaN(parsed) || parsed <= 0) return;
     const weightKg = units.weightLabel === "lbs" ? parsed / 2.20462 : parsed;
+    setSaveError(null);
     mutation.mutate({ weightKg });
   };
 
   const handleClear = () => {
+    setSaveError(null);
     mutation.mutate({ weightKg: null });
   };
 
@@ -55,7 +57,10 @@ export function GoalWeightInput() {
             className="w-20 rounded bg-surface border border-border px-2 py-1 text-sm"
             placeholder={units.weightLabel}
             value={inputValue}
-            onChange={(event) => setInputValue(event.target.value)}
+            onChange={(event) => {
+              setInputValue(event.target.value);
+              if (saveError != null) setSaveError(null);
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter") handleSave();
               if (event.key === "Escape") {
@@ -90,42 +95,45 @@ export function GoalWeightInput() {
   }
 
   return (
-    <div className="flex items-center gap-2">
-      {currentGoalKg != null ? (
-        <>
-          <span className="text-xs text-muted">
-            Goal: {formatMeasurementText(units.formatWeight(currentGoalKg))}
-          </span>
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-2">
+        {currentGoalKg != null ? (
+          <>
+            <span className="text-xs text-muted">
+              Goal: {formatMeasurementText(units.formatWeight(currentGoalKg))}
+            </span>
+            <button
+              type="button"
+              className="text-xs text-primary hover:text-primary/80"
+              onClick={() => {
+                setInputValue(String(Math.round(units.convertWeight(currentGoalKg) * 10) / 10));
+                setEditing(true);
+              }}
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              className="text-xs text-muted hover:text-subtle"
+              onClick={handleClear}
+            >
+              Clear
+            </button>
+          </>
+        ) : (
           <button
             type="button"
             className="text-xs text-primary hover:text-primary/80"
             onClick={() => {
-              setInputValue(String(Math.round(units.convertWeight(currentGoalKg) * 10) / 10));
+              setInputValue("");
               setEditing(true);
             }}
           >
-            Edit
+            Set Goal Weight
           </button>
-          <button
-            type="button"
-            className="text-xs text-muted hover:text-subtle"
-            onClick={handleClear}
-          >
-            Clear
-          </button>
-        </>
-      ) : (
-        <button
-          type="button"
-          className="text-xs text-primary hover:text-primary/80"
-          onClick={() => {
-            setInputValue("");
-            setEditing(true);
-          }}
-        >
-          Set Goal Weight
-        </button>
-      )}
+        )}
+      </div>
+      {saveError != null && <p className="text-xs text-red-400">{saveError}</p>}
     </div>
   );
 }

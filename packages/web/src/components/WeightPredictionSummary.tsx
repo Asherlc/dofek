@@ -22,13 +22,7 @@ function hasPredictionContent(prediction: WeightPrediction): boolean {
   );
 }
 
-function PeriodDelta({
-  label,
-  deltaKg,
-}: {
-  label: string;
-  deltaKg: number;
-}) {
+function PeriodDelta({ label, deltaKg }: { label: string; deltaKg: number }) {
   const units = useUnitConverter();
   if (!Number.isFinite(deltaKg)) return null;
 
@@ -60,11 +54,13 @@ export function WeightPredictionSummary({
   }
 
   const rateColor =
-    prediction.ratePerWeek != null && Math.abs(prediction.ratePerWeek) < 0.05
+    prediction.ratePerWeek == null
       ? "text-muted"
-      : prediction.ratePerWeek != null && prediction.ratePerWeek > 0
-        ? "text-green-400"
-        : "text-red-400";
+      : Math.abs(prediction.ratePerWeek) < 0.05
+        ? "text-muted"
+        : prediction.ratePerWeek > 0
+          ? "text-green-400"
+          : "text-red-400";
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">

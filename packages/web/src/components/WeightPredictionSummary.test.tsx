@@ -18,10 +18,10 @@ describe("WeightPredictionSummary", () => {
       />,
     );
 
-    expect(screen.getByText("-0.3 kg/wk")).not.toBeNull();
-    expect(screen.getByText("-330 kcal/day")).not.toBeNull();
-    expect(screen.getByText("7-Day Change")).not.toBeNull();
-    expect(screen.getByText("-1.2 kg")).not.toBeNull();
+    expect(screen.getByText("-0.3 kg/wk")).toBeInTheDocument();
+    expect(screen.getByText("-330 kcal/day")).toBeInTheDocument();
+    expect(screen.getByText("7-Day Change")).toBeInTheDocument();
+    expect(screen.getByText("-1.2 kg")).toBeInTheDocument();
   });
 
   it("shows period deltas when rate is unavailable", () => {
@@ -38,10 +38,10 @@ describe("WeightPredictionSummary", () => {
       />,
     );
 
-    expect(screen.getByText("7-Day Change")).not.toBeNull();
-    expect(screen.getByText("-0.4 kg")).not.toBeNull();
-    expect(screen.getByText("14-Day Change")).not.toBeNull();
-    expect(screen.queryByText("Rate")).toBeNull();
+    expect(screen.getByText("7-Day Change")).toBeInTheDocument();
+    expect(screen.getByText("-0.4 kg")).toBeInTheDocument();
+    expect(screen.getByText("14-Day Change")).toBeInTheDocument();
+    expect(screen.queryByText("Rate")).not.toBeInTheDocument();
   });
 
   it("shows goal info when rate is unavailable", () => {
@@ -58,8 +58,8 @@ describe("WeightPredictionSummary", () => {
       />,
     );
 
-    expect(screen.getByText(/75\.0 kg — estimate unavailable/)).not.toBeNull();
-    expect(screen.queryByText("Rate")).toBeNull();
+    expect(screen.getByText(/75\.0 kg — estimate unavailable/)).toBeInTheDocument();
+    expect(screen.queryByText("Rate")).not.toBeInTheDocument();
   });
 
   it("shows an empty-state message when no rate or goal is available", () => {
@@ -76,7 +76,9 @@ describe("WeightPredictionSummary", () => {
       />,
     );
 
-    expect(screen.getByText("Not enough weigh-in data to estimate weight trend yet.")).not.toBeNull();
+    expect(
+      screen.getByText("Not enough weigh-in data to estimate weight trend yet."),
+    ).toBeInTheDocument();
   });
 
   it("shows a different empty-state message when weight trend data exists", () => {
@@ -98,6 +100,6 @@ describe("WeightPredictionSummary", () => {
       screen.getByText(
         "Weight trend is available, but a prediction could not be calculated from the current data.",
       ),
-    ).not.toBeNull();
+    ).toBeInTheDocument();
   });
 });

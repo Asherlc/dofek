@@ -39,6 +39,7 @@ export default defineConfig({
         test: {
           ...sharedTestConfig,
           name: "unit",
+          setupFiles: ["packages/web/test-setup.ts"],
           include: [
             "entrypoint.test.ts",
             "analytics/models/**/*.test.ts",

@@ -4,8 +4,43 @@ import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc";
 
 const autoSyncAttemptStorageKey = "dofek.dashboard.autoSyncAttempt";
+const autoSyncInvalidationRetryDelayMs = 250;
+const autoSyncInvalidationMaxAttempts = 2;
 let fallbackAutoSyncAttemptKey: string | null = null;
 let reportedSessionStorageError = false;
+
+type TrpcUtils = ReturnType<typeof trpc.useUtils>;
+type InvalidatableQuery = { invalidate: () => Promise<void> };
+
+/** Queries refreshed after a successful dashboard auto-sync. */
+export function getAutoSyncInvalidationTargets(trpcUtils: TrpcUtils): InvalidatableQuery[] {
+  return [
+    trpcUtils.recovery.readinessScore,
+    trpcUtils.calendar.activityOverview,
+    trpcUtils.activity.list,
+    trpcUtils.sync.dataHealth,
+    trpcUtils.bodyAnalytics.weightOverview,
+  ];
+}
+
+export async function invalidateAutoSyncQueries(trpcUtils: TrpcUtils): Promise<void> {
+  const invalidationTargets = getAutoSyncInvalidationTargets(trpcUtils);
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= autoSyncInvalidationMaxAttempts; attempt++) {
+    try {
+      await Promise.all(invalidationTargets.map((query) => query.invalidate()));
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < autoSyncInvalidationMaxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, autoSyncInvalidationRetryDelayMs));
+      }
+    }
+  }
+
+  captureException(lastError, { context: "dashboard-auto-sync-invalidation" });
+}
 
 /** Check whether the latest data date is before today (stale). */
 export function isDataStale(latestDate: string | null | undefined): boolean {
@@ -64,17 +99,7 @@ export function useAutoSync(latestDate: string | null | undefined) {
   const trpcUtils = trpc.useUtils();
   const triggerSync = trpc.sync.triggerSync.useMutation({
     onSuccess: async () => {
-      try {
-        await Promise.all([
-          trpcUtils.recovery.readinessScore.invalidate(),
-          trpcUtils.calendar.activityOverview.invalidate(),
-          trpcUtils.activity.list.invalidate(),
-          trpcUtils.sync.dataHealth.invalidate(),
-          trpcUtils.bodyAnalytics.weightOverview.invalidate(),
-        ]);
-      } catch (error) {
-        captureException(error, { context: "dashboard-auto-sync-invalidation" });
-      }
+      await invalidateAutoSyncQueries(trpcUtils);
     },
   });
   const activeSyncs = trpc.sync.activeSyncs.useQuery(undefined, {

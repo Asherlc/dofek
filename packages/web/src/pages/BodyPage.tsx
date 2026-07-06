@@ -88,6 +88,13 @@ function buildSkinTempSeries(
   };
 }
 
+function getQueryError(...queries: Array<{ isError: boolean; error: unknown }>): unknown {
+  for (const query of queries) {
+    if (query.isError) return query.error;
+  }
+  return null;
+}
+
 export function BodyPage() {
   const units = useUnitConverter();
   const { days, setDays } = useBodyDays();
@@ -168,6 +175,12 @@ export function BodyPage() {
   }, [weightOverview.data]);
 
   const smoothedWeightData = weightOverview.data?.smoothedWeight ?? [];
+  const healthSectionError = getQueryError(trends, dailyMetrics);
+  const hrvSectionError = getQueryError(hrvBaseline);
+  const stressSectionError = getQueryError(stressData);
+  const spo2SectionError = getQueryError(dailyMetrics);
+  const bodyRecompSectionError = getQueryError(bodyRecomp);
+  const insightsSectionError = getQueryError(insightsQuery);
 
   // SpO2/temp chart config
   const spo2TempTitle =
@@ -191,32 +204,48 @@ export function BodyPage() {
       </div>
 
       {/* Health Status Bar */}
-      <HealthStatusBar metrics={healthMetrics} loading={trends.isLoading} />
+      {healthSectionError ? (
+        <QueryStatePanel error={healthSectionError} height={64} />
+      ) : (
+        <HealthStatusBar metrics={healthMetrics} loading={trends.isLoading || dailyMetrics.isLoading} />
+      )}
 
       {/* HRV & Resting HR */}
       <PageSection title="Heart Rate Variability & Resting Heart Rate">
-        <HrvBaselineChart data={hrvBaseline.data ?? []} loading={hrvBaseline.isLoading} />
+        {hrvSectionError ? (
+          <QueryStatePanel error={hrvSectionError} height={200} />
+        ) : (
+          <HrvBaselineChart data={hrvBaseline.data ?? []} loading={hrvBaseline.isLoading} />
+        )}
       </PageSection>
 
       {/* Stress */}
       <PageSection title="Stress Monitor">
-        <StressChart data={stressData.data} loading={stressData.isLoading} />
+        {stressSectionError ? (
+          <QueryStatePanel error={stressSectionError} height={200} />
+        ) : (
+          <StressChart data={stressData.data} loading={stressData.isLoading} />
+        )}
       </PageSection>
 
       {/* SpO2 & Skin Temp */}
       {(hasSpO2 || hasSkinTemp) && (
         <PageSection title={spo2TempTitle}>
-          <TimeSeriesChart
-            series={[
-              ...(hasSpO2 ? [spo2Series] : []),
-              ...(hasSkinTemp
-                ? [hasSpO2 ? skinTempSeries : { ...skinTempSeries, yAxisIndex: 0 as const }]
-                : []),
-            ]}
-            height={200}
-            yAxis={spo2TempYAxis}
-            loading={dailyMetrics.isLoading}
-          />
+          {spo2SectionError ? (
+            <QueryStatePanel error={spo2SectionError} height={200} />
+          ) : (
+            <TimeSeriesChart
+              series={[
+                ...(hasSpO2 ? [spo2Series] : []),
+                ...(hasSkinTemp
+                  ? [hasSpO2 ? skinTempSeries : { ...skinTempSeries, yAxisIndex: 0 as const }]
+                  : []),
+              ]}
+              height={200}
+              yAxis={spo2TempYAxis}
+              loading={dailyMetrics.isLoading}
+            />
+          )}
         </PageSection>
       )}
 
@@ -260,7 +289,11 @@ export function BodyPage() {
               <h4 className="text-xs font-medium text-subtle uppercase">Recomposition</h4>
               <ChartDescriptionTooltip description="This chart shows how fat mass and lean mass have changed so you can track body recomposition, not just scale weight." />
             </div>
-            <BodyRecompositionChart data={bodyRecomp.data ?? []} loading={bodyRecomp.isLoading} />
+            {bodyRecompSectionError ? (
+              <QueryStatePanel error={bodyRecompSectionError} height={250} />
+            ) : (
+              <BodyRecompositionChart data={bodyRecomp.data ?? []} loading={bodyRecomp.isLoading} />
+            )}
           </div>
         </div>
       </PageSection>
@@ -276,7 +309,13 @@ export function BodyPage() {
         </PageSection>
       )}
 
-      {!insightsQuery.isLoading && bodyInsights.length > 0 && (
+      {insightsSectionError && (
+        <PageSection title="Body Insights" card={false}>
+          <QueryStatePanel error={insightsSectionError} height={120} />
+        </PageSection>
+      )}
+
+      {!insightsQuery.isLoading && !insightsSectionError && bodyInsights.length > 0 && (
         <PageSection title="Body Insights" card={false}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {bodyInsights.map((insight) => (
