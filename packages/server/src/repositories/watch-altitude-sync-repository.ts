@@ -9,7 +9,7 @@ import {
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
 import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
 
-const PROVIDER_ID = "apple_motion";
+const PROVIDER_SLUG = "apple_motion";
 const INSERT_BATCH_SIZE = 2000;
 
 export interface WatchAltitudeSample {
@@ -37,16 +37,23 @@ export class WatchAltitudeSyncRepository {
     return this.#metricStreamPublisher ?? getDefaultMetricStreamEventPublisher();
   }
 
+  #getProviderId(): string {
+    return `${PROVIDER_SLUG}:${this.#userId}`;
+  }
+
   async ensureProvider(): Promise<void> {
+    const providerId = this.#getProviderId();
     await this.#database.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES (${PROVIDER_ID}, 'Apple Motion', ${this.#userId})
+          VALUES (${providerId}, 'Apple Motion', ${this.#userId})
           ON CONFLICT (id) DO NOTHING`,
     );
   }
 
   async insertSampleBatch(deviceId: string, samples: WatchAltitudeSample[]): Promise<number> {
     if (samples.length === 0) return 0;
+
+    const providerId = this.#getProviderId();
 
     let totalInserted = 0;
 
@@ -60,8 +67,8 @@ export class WatchAltitudeSyncRepository {
         return {
           recordedAt: sample.timestamp,
           userId: this.#userId,
-          providerId: PROVIDER_ID,
-          externalId: `${PROVIDER_ID}:${deviceId}:${ALTITUDE}:${canonicalRecordedAt}`,
+          providerId,
+          externalId: `${providerId}:${deviceId}:${ALTITUDE}:${canonicalRecordedAt}`,
           deviceId,
           sourceType: SOURCE_TYPE_API,
           channel: ALTITUDE,

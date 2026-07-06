@@ -2,6 +2,7 @@ import {
   deleteWatchFile,
   getPendingWatchAltitudeFileNames,
   readWatchAltitudeFile,
+  WatchAltitudeSampleSchema,
   type WatchAltitudeSample,
 } from "../modules/watch-motion";
 import { captureException, logger } from "./telemetry";
@@ -32,16 +33,9 @@ export interface WatchAltitudeFileSyncResult {
   filesFailed: number;
 }
 
-function parseAltitudeSample(raw: WatchAltitudeSample): WatchAltitudeSample | null {
-  if (typeof raw.timestamp !== "string" || typeof raw.altitudeM !== "number") {
-    return null;
-  }
-
-  return {
-    timestamp: raw.timestamp,
-    altitudeM: raw.altitudeM,
-    pressureKPa: typeof raw.pressureKPa === "number" ? raw.pressureKPa : undefined,
-  };
+function parseAltitudeSample(raw: unknown): WatchAltitudeSample | null {
+  const result = WatchAltitudeSampleSchema.safeParse(raw);
+  return result.success ? result.data : null;
 }
 
 /**

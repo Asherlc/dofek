@@ -302,11 +302,13 @@ describe("RootLayout background cleanup", () => {
 
     rendered.unmount();
 
-    expect(mockTeardownBackgroundHealthKitSync).toHaveBeenCalled();
-    expect(mockTeardownBackgroundAccelerometerSync).toHaveBeenCalled();
-    expect(mockTeardownBackgroundWatchSync).toHaveBeenCalled();
-    expect(mockTeardownBackgroundWhoopBleSync).toHaveBeenCalled();
-    expect(mockRefreshRemove).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(mockTeardownBackgroundHealthKitSync).toHaveBeenCalled();
+      expect(mockTeardownBackgroundAccelerometerSync).toHaveBeenCalled();
+      expect(mockTeardownBackgroundWatchSync).toHaveBeenCalled();
+      expect(mockTeardownBackgroundWhoopBleSync).toHaveBeenCalled();
+      expect(mockRefreshRemove).toHaveBeenCalled();
+    });
   });
 
   it("initializes authenticated background sync after interactions settle", async () => {

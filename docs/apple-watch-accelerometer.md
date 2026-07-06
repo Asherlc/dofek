@@ -75,7 +75,7 @@ The WatchKit app source lives in `packages/mobile/ios/DofekWatch/`. To add it to
 ## Supported Devices
 
 - **CMSensorRecorder**: Available on all Apple Watch models (Series 1+)
-- **CMAltimeter**: Available on Apple Watch Series 3+ for barometric altitude
+- **CMAltimeter**: Available on Apple Watch Series 4+ for this app (watchOS 10+). See [Apple's watchOS 10 compatibility](https://www.apple.com/watchos/watchos-10/).
 - **watchOS 10+**: Required for standalone app lifecycle (`@main App`)
 - **50 Hz sampling**: Same rate as iPhone CMSensorRecorder
 - **3-day retention**: Same as iPhone

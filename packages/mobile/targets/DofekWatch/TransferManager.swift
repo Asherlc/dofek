@@ -13,6 +13,8 @@ final class TransferManager: ObservableObject {
     private let altimeterRecorder: AltimeterRecorder
     private let session: WCSession
     private let workQueue = DispatchQueue(label: "com.dofek.watch.transfer", qos: .utility)
+    private let pendingAltitudeLock = NSLock()
+    private var pendingAltitudeSampleCounts: [URL: Int] = [:]
 
     /// Maximum time difference (in seconds) for merging an accel sample
     /// with a gyro sample into a single 6-axis IMU sample.
@@ -31,6 +33,10 @@ final class TransferManager: ObservableObject {
         self.gyroscopeRecorder = gyroscopeRecorder
         self.altimeterRecorder = altimeterRecorder
         self.session = session
+
+        WatchSessionDelegate.shared.onFileTransferFinished = { [weak self] fileTransfer, error in
+            self?.handleFileTransferFinished(fileTransfer, error: error)
+        }
     }
 
     /// Query new samples from both recorders, merge by timestamp, serialize
@@ -68,10 +74,13 @@ final class TransferManager: ObservableObject {
     private func performTransfer() {
         // Stream samples to a temp JSON file (memory-efficient)
         guard let result = accelerometerRecorder.streamSamplesToFile() else {
+            let altitudeSamples = altimeterRecorder.copyBufferedSamples()
             transferAltimeterSamples()
             DispatchQueue.main.async { [weak self] in
                 self?.isTransferring = false
-                self?.lastTransferStatus = "No new samples"
+                if altitudeSamples.isEmpty {
+                    self?.lastTransferStatus = "No new samples"
+                }
             }
             return
         }
@@ -285,7 +294,9 @@ final class TransferManager: ObservableObject {
                 "transferredAt": ISO8601DateFormatter().string(from: Date()),
             ]
             session.transferFile(compressedURL!, metadata: metadata)
-            altimeterRecorder.clearBufferedSamples()
+            pendingAltitudeLock.lock()
+            pendingAltitudeSampleCounts[compressedURL!] = altitudeSamples.count
+            pendingAltitudeLock.unlock()
         } catch {
             if let jsonURL {
                 try? FileManager.default.removeItem(at: jsonURL)
@@ -296,6 +307,24 @@ final class TransferManager: ObservableObject {
             DispatchQueue.main.async { [weak self] in
                 self?.lastTransferStatus = "Altitude transfer error: \(error.localizedDescription)"
             }
+        }
+    }
+
+    private func handleFileTransferFinished(_ fileTransfer: WCSessionFileTransfer, error: Error?) {
+        let transferType = fileTransfer.file.metadata?["type"] as? String
+        guard transferType == "altitude_samples" else { return }
+
+        let transferredURL = fileTransfer.file.fileURL
+        pendingAltitudeLock.lock()
+        let sampleCount = pendingAltitudeSampleCounts.removeValue(forKey: transferredURL)
+        pendingAltitudeLock.unlock()
+
+        guard error == nil, let sampleCount else { return }
+
+        altimeterRecorder.clearBufferedSamples(count: sampleCount)
+
+        DispatchQueue.main.async { [weak self] in
+            self?.lastTransferStatus = "Sent \(sampleCount) altitude samples"
         }
     }
 

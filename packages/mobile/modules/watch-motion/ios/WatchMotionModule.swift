@@ -141,7 +141,9 @@ public class WatchMotionModule: Module {
                 }
                 do {
                     let fileData = try Data(contentsOf: fileURL)
+                    NSLog("[WatchMotion] readWatchAltitudeFile %@: %d bytes", fileName, fileData.count)
                     let samples = try SampleFileParser.parse(fileData)
+                    NSLog("[WatchMotion] readWatchAltitudeFile %@: parsed %d samples", fileName, samples.count)
                     promise.resolve(samples)
                 } catch {
                     promise.reject("PARSE_ERROR", "Failed to parse \(fileName): \(error.localizedDescription)")

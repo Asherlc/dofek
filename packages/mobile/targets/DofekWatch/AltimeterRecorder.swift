@@ -39,10 +39,6 @@ final class AltimeterRecorder: ObservableObject {
         guard Self.isAvailable else { return }
         guard !isRecording else { return }
 
-        bufferLock.lock()
-        baselinePressureKPa = nil
-        bufferLock.unlock()
-
         altimeter.startRelativeAltitudeUpdates(to: operationQueue) { [weak self] data, error in
             guard let self = self else { return }
             if let error = error {
@@ -95,12 +91,19 @@ final class AltimeterRecorder: ObservableObject {
         return samples
     }
 
-    /// Drain transferred samples while keeping the session baseline for ongoing recording.
-    func clearBufferedSamples() {
+    /// Remove transferred samples while preserving any newer in-flight entries.
+    /// Resets the session baseline only when the buffer is fully drained.
+    func clearBufferedSamples(count: Int) {
         bufferLock.lock()
-        buffer = []
+        if count >= buffer.count {
+            buffer.removeAll()
+            baselinePressureKPa = nil
+        } else if count > 0 {
+            buffer.removeFirst(count)
+        }
+        let remaining = buffer.count
         bufferLock.unlock()
-        publishBufferedSampleCount(0)
+        publishBufferedSampleCount(remaining)
     }
 
     private func publishBufferedSampleCount(_ count: Int) {

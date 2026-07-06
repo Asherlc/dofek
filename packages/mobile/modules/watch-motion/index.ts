@@ -1,4 +1,9 @@
 import type { InertialMeasurementUnitSample } from "@dofek/imu";
+import { z } from "zod";
+import {
+  WatchAltitudeSampleSchema,
+  type WatchAltitudeSample,
+} from "./schemas";
 import WatchMotionModule from "./src/WatchMotionModule";
 
 export interface WatchSyncStatus {
@@ -56,12 +61,7 @@ export function acknowledgeWatchSamples(): void {
   WatchMotionModule.acknowledgeWatchSamples();
 }
 
-/** A barometric altitude sample transferred from the Apple Watch. */
-export interface WatchAltitudeSample {
-  timestamp: string;
-  altitudeM: number;
-  pressureKPa?: number;
-}
+export { WatchAltitudeSampleSchema, type WatchAltitudeSample } from "./schemas";
 
 function isSafePendingFileName(fileName: string): boolean {
   if (!fileName) return false;
@@ -99,7 +99,8 @@ export async function readWatchAltitudeFile(fileName: string): Promise<WatchAlti
   if (!isSafePendingFileName(fileName)) {
     throw new Error(`Invalid pending watch file name: ${fileName}`);
   }
-  return WatchMotionModule.readWatchAltitudeFile(fileName);
+  const raw = await WatchMotionModule.readWatchAltitudeFile(fileName);
+  return z.array(WatchAltitudeSampleSchema).parse(raw);
 }
 
 /** Delete a single pending Watch transfer file after successful upload.

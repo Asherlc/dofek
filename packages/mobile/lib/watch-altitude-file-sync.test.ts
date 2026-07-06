@@ -7,11 +7,15 @@ const mockReadWatchAltitudeFile = vi.fn(
 );
 const mockDeleteWatchFile = vi.fn();
 
-vi.mock("../modules/watch-motion", () => ({
-  getPendingWatchAltitudeFileNames: () => mockGetPendingWatchAltitudeFileNames(),
-  readWatchAltitudeFile: (fileName: string) => mockReadWatchAltitudeFile(fileName),
-  deleteWatchFile: (fileName: string) => mockDeleteWatchFile(fileName),
-}));
+vi.mock("../modules/watch-motion", async (importOriginal) => {
+  const { WatchAltitudeSampleSchema } = await import("../modules/watch-motion/schemas.ts");
+  return {
+    WatchAltitudeSampleSchema,
+    getPendingWatchAltitudeFileNames: () => mockGetPendingWatchAltitudeFileNames(),
+    readWatchAltitudeFile: (fileName: string) => mockReadWatchAltitudeFile(fileName),
+    deleteWatchFile: (fileName: string) => mockDeleteWatchFile(fileName),
+  };
+});
 
 const mockCaptureException = vi.fn();
 
@@ -145,5 +149,28 @@ describe("syncWatchAltitudeFiles", () => {
       vi.mocked(trpcClient.watchAltitudeSync.pushSamples.mutate).mock.calls[1]?.[0].samples,
     ).toHaveLength(1);
     expect(mockDeleteWatchFile).toHaveBeenCalledWith("watch-altitude-large.json.gz");
+  });
+
+  it("does not delete a file when a later batch fails", async () => {
+    const samples = Array.from({ length: 2001 }, (_, index) => ({
+      timestamp: `2026-03-30T12:00:${String(index % 60).padStart(2, "0")}.000Z`,
+      altitudeM: index,
+    }));
+    mockGetPendingWatchAltitudeFileNames.mockReturnValue(["watch-altitude-partial.json.gz"]);
+    mockReadWatchAltitudeFile.mockResolvedValue(samples);
+    const batchError = new Error("Batch 2 failed");
+    vi.mocked(trpcClient.watchAltitudeSync.pushSamples.mutate)
+      .mockResolvedValueOnce({ inserted: 2000 })
+      .mockRejectedValueOnce(batchError);
+
+    const result = await syncWatchAltitudeFiles(trpcClient);
+
+    expect(result).toEqual({ totalInserted: 2000, filesProcessed: 0, filesFailed: 1 });
+    expect(trpcClient.watchAltitudeSync.pushSamples.mutate).toHaveBeenCalledTimes(2);
+    expect(mockDeleteWatchFile).not.toHaveBeenCalled();
+    expect(mockCaptureException).toHaveBeenCalledWith(batchError, {
+      source: "watch-altitude-file-sync",
+      extra: { fileName: "watch-altitude-partial.json.gz" },
+    });
   });
 });

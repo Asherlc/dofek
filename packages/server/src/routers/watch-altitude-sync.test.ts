@@ -98,13 +98,13 @@ describe("watchAltitudeSyncRouter", () => {
       expect(result).toEqual({ inserted: 1 });
       expect(getPublishedRows(metricStreamPublisher)).toEqual([
         expect.objectContaining({
-          providerId: "apple_motion",
+          providerId: "apple_motion:test-user-id",
           channel: "altitude",
           deviceId: "Apple Watch",
           recordedAt: "2026-03-30T12:00:00.000Z",
           scalar: 12.5,
           metadata: { pressure_kpa: 98.2 },
-          externalId: "apple_motion:Apple Watch:altitude:2026-03-30T12:00:00.000Z",
+          externalId: "apple_motion:test-user-id:Apple Watch:altitude:2026-03-30T12:00:00.000Z",
         }),
       ]);
       expect(logger.info).toHaveBeenCalledWith(

@@ -1,3 +1,6 @@
+#if canImport(Sentry)
+import Sentry
+#endif
 import Foundation
 import WatchConnectivity
 
@@ -14,6 +17,8 @@ final class WatchSessionDelegate: NSObject, ObservableObject, WCSessionDelegate 
     var onSyncRequested: (() -> Void)?
     /// Callback triggered when the iPhone requests recording to start/restart.
     var onRecordingRequested: (() -> Void)?
+    /// Callback triggered when a queued file transfer finishes.
+    var onFileTransferFinished: ((WCSessionFileTransfer, Error?) -> Void)?
 
     override private init() {
         super.init()
@@ -77,14 +82,20 @@ final class WatchSessionDelegate: NSObject, ObservableObject, WCSessionDelegate 
     ) {
         let transferredURL = fileTransfer.file.fileURL
         if let error = error {
-            print("[DofekWatch] File transfer failed: \(error.localizedDescription)")
+            NSLog("[DofekWatch] File transfer failed: %@", error.localizedDescription)
         } else {
-            print("[DofekWatch] File transfer completed successfully")
-            do {
-                try FileManager.default.removeItem(at: transferredURL)
-            } catch {
-                print("[DofekWatch] Failed to remove transferred file: \(error.localizedDescription)")
-            }
+            NSLog("[DofekWatch] File transfer completed successfully")
         }
+
+        do {
+            try FileManager.default.removeItem(at: transferredURL)
+        } catch {
+            NSLog("[DofekWatch] Failed to remove transferred file: %@", error.localizedDescription)
+            #if canImport(Sentry)
+            SentrySDK.capture(error: error)
+            #endif
+        }
+
+        onFileTransferFinished?(fileTransfer, error)
     }
 }
