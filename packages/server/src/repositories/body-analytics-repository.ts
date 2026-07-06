@@ -496,11 +496,13 @@ export class BodyAnalyticsRepository extends BaseRepository {
     let slopePerDay = 0;
 
     const regressionWindowPoints = interpolated.slice(-regressionWindow);
+    const regressionWindowValues = smoothed.slice(-regressionWindow);
     if (
       smoothed.length >= 7 &&
+      regressionWindowValues.every(Number.isFinite) &&
       countActualWeightReadings(regressionWindowPoints) >= MIN_ACTUAL_READINGS_FOR_WEIGHT_RATE
     ) {
-      const windowValues = smoothed.slice(-regressionWindow).map((value, index) => ({
+      const windowValues = regressionWindowValues.map((value, index) => ({
         dayIndex: index,
         value,
       }));

@@ -18,10 +18,10 @@ describe("WeightPredictionSummary", () => {
       />,
     );
 
-    screen.getByText("-0.3 kg/wk");
-    screen.getByText("-330 kcal/day");
-    screen.getByText("7-Day Change");
-    screen.getByText("-1.2 kg");
+    expect(screen.getByText("-0.3 kg/wk")).not.toBeNull();
+    expect(screen.getByText("-330 kcal/day")).not.toBeNull();
+    expect(screen.getByText("7-Day Change")).not.toBeNull();
+    expect(screen.getByText("-1.2 kg")).not.toBeNull();
   });
 
   it("shows period deltas when rate is unavailable", () => {
@@ -38,9 +38,9 @@ describe("WeightPredictionSummary", () => {
       />,
     );
 
-    screen.getByText("7-Day Change");
-    screen.getByText("-0.4 kg");
-    screen.getByText("14-Day Change");
+    expect(screen.getByText("7-Day Change")).not.toBeNull();
+    expect(screen.getByText("-0.4 kg")).not.toBeNull();
+    expect(screen.getByText("14-Day Change")).not.toBeNull();
     expect(screen.queryByText("Rate")).toBeNull();
   });
 
@@ -58,7 +58,7 @@ describe("WeightPredictionSummary", () => {
       />,
     );
 
-    screen.getByText(/75\.0 kg — estimate unavailable/);
+    expect(screen.getByText(/75\.0 kg — estimate unavailable/)).not.toBeNull();
     expect(screen.queryByText("Rate")).toBeNull();
   });
 
@@ -76,7 +76,7 @@ describe("WeightPredictionSummary", () => {
       />,
     );
 
-    screen.getByText("Not enough weigh-in data to estimate weight trend yet.");
+    expect(screen.getByText("Not enough weigh-in data to estimate weight trend yet.")).not.toBeNull();
   });
 
   it("shows a different empty-state message when weight trend data exists", () => {
@@ -94,8 +94,10 @@ describe("WeightPredictionSummary", () => {
       />,
     );
 
-    screen.getByText(
-      "Weight trend is available, but a prediction could not be calculated from the current data.",
-    );
+    expect(
+      screen.getByText(
+        "Weight trend is available, but a prediction could not be calculated from the current data.",
+      ),
+    ).not.toBeNull();
   });
 });

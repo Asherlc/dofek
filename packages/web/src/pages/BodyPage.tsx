@@ -244,11 +244,16 @@ export function BodyPage() {
               <h4 className="text-xs font-medium text-subtle uppercase">Weight Trend</h4>
               <ChartDescriptionTooltip description="This chart shows your smoothed body weight trend over time, with goal weight and forward projection when set." />
             </div>
-            <SmoothedWeightChart
-              data={smoothedWeightData}
-              prediction={weightPredictionDisplay}
-              loading={weightOverview.isPending}
-            />
+            {weightOverview.isPending ? (
+              <SmoothedWeightChart data={[]} loading />
+            ) : weightOverview.isError ? (
+              <QueryStatePanel error={weightOverview.error} height={250} />
+            ) : (
+              <SmoothedWeightChart
+                data={smoothedWeightData}
+                prediction={weightPredictionDisplay}
+              />
+            )}
           </div>
           <div className="card p-2 sm:p-4">
             <div className="mb-2 flex items-center gap-2">
