@@ -9,7 +9,9 @@ const mockCreateClient = vi.fn();
 const mockInitBackgroundHealthKitSync = vi.fn().mockResolvedValue(undefined);
 const mockTeardownBackgroundHealthKitSync = vi.fn();
 const mockInitBackgroundAccelerometerSync = vi.fn().mockResolvedValue(undefined);
+const mockTeardownBackgroundAccelerometerSync = vi.fn();
 const mockInitBackgroundWatchSync = vi.fn().mockResolvedValue(undefined);
+const mockTeardownBackgroundWatchSync = vi.fn();
 const mockTeardownBackgroundWhoopBleSync = vi.fn();
 const mockUseWhoopBleSync = vi.fn();
 const mockRefreshRemove = vi.fn();
@@ -91,11 +93,16 @@ vi.mock("../lib/background-health-kit-sync", () => ({
 vi.mock("../lib/background-accelerometer-sync", () => ({
   initBackgroundAccelerometerSync: (...args: unknown[]) =>
     mockInitBackgroundAccelerometerSync(...args),
+  teardownBackgroundAccelerometerSync: (...args: unknown[]) =>
+    mockTeardownBackgroundAccelerometerSync(...args),
 }));
 
 vi.mock("../lib/background-watch-inertial-measurement-unit-sync", () => ({
   initBackgroundWatchInertialMeasurementUnitSync: (...args: unknown[]) =>
     mockInitBackgroundWatchSync(...args),
+  teardownBackgroundWatchInertialMeasurementUnitSync: (...args: unknown[]) =>
+    mockTeardownBackgroundWatchSync(...args),
+  createWatchSyncClient: (client: unknown) => client,
 }));
 
 vi.mock("../lib/background-whoop-ble-sync", () => ({
@@ -180,6 +187,9 @@ mockCreateClient.mockImplementation(() => ({
     pushSleepSamples: { mutate: vi.fn() },
   },
   inertialMeasurementUnitSync: {
+    pushSamples: { mutate: vi.fn() },
+  },
+  watchAltitudeSync: {
     pushSamples: { mutate: vi.fn() },
   },
   whoopBleSync: {
@@ -292,9 +302,13 @@ describe("RootLayout background cleanup", () => {
 
     rendered.unmount();
 
-    expect(mockTeardownBackgroundHealthKitSync).toHaveBeenCalled();
-    expect(mockTeardownBackgroundWhoopBleSync).toHaveBeenCalled();
-    expect(mockRefreshRemove).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(mockTeardownBackgroundHealthKitSync).toHaveBeenCalled();
+      expect(mockTeardownBackgroundAccelerometerSync).toHaveBeenCalled();
+      expect(mockTeardownBackgroundWatchSync).toHaveBeenCalled();
+      expect(mockTeardownBackgroundWhoopBleSync).toHaveBeenCalled();
+      expect(mockRefreshRemove).toHaveBeenCalled();
+    });
   });
 
   it("initializes authenticated background sync after interactions settle", async () => {

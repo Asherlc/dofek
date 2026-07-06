@@ -1,7 +1,7 @@
 import Foundation
 import WatchConnectivity
 
-/// Coordinates querying accelerometer + gyroscope samples and sending them
+/// Coordinates querying accelerometer, gyroscope, and altimeter samples and sending them
 /// to the paired iPhone via WCSession.transferFile().
 /// Files are gzip-compressed JSON arrays.
 ///
@@ -10,8 +10,11 @@ import WatchConnectivity
 final class TransferManager: ObservableObject {
     private let accelerometerRecorder: AccelerometerRecorder
     private let gyroscopeRecorder: GyroscopeRecorder
+    private let altimeterRecorder: AltimeterRecorder
     private let session: WCSession
     private let workQueue = DispatchQueue(label: "com.dofek.watch.transfer", qos: .utility)
+    private let pendingAltitudeLock = NSLock()
+    private var pendingAltitudeSampleCounts: [URL: Int] = [:]
 
     /// Maximum time difference (in seconds) for merging an accel sample
     /// with a gyro sample into a single 6-axis IMU sample.
@@ -23,11 +26,17 @@ final class TransferManager: ObservableObject {
     init(
         accelerometerRecorder: AccelerometerRecorder,
         gyroscopeRecorder: GyroscopeRecorder,
+        altimeterRecorder: AltimeterRecorder,
         session: WCSession = .default
     ) {
         self.accelerometerRecorder = accelerometerRecorder
         self.gyroscopeRecorder = gyroscopeRecorder
+        self.altimeterRecorder = altimeterRecorder
         self.session = session
+
+        WatchSessionDelegate.shared.onFileTransferFinished = { [weak self] fileTransfer, error in
+            self?.handleFileTransferFinished(fileTransfer, error: error)
+        }
     }
 
     /// Query new samples from both recorders, merge by timestamp, serialize
@@ -65,14 +74,20 @@ final class TransferManager: ObservableObject {
     private func performTransfer() {
         // Stream samples to a temp JSON file (memory-efficient)
         guard let result = accelerometerRecorder.streamSamplesToFile() else {
+            let altitudeSamples = altimeterRecorder.copyBufferedSamples()
+            transferAltimeterSamples()
             DispatchQueue.main.async { [weak self] in
                 self?.isTransferring = false
-                self?.lastTransferStatus = "No new samples"
+                if altitudeSamples.isEmpty {
+                    self?.lastTransferStatus = "No new samples"
+                }
             }
             return
         }
 
         let gyroSamples = gyroscopeRecorder.queryNewSamples()
+        var tempFilesToCleanup: [URL] = [result.url]
+        var mergedURL: URL?
 
         DispatchQueue.main.async { [weak self] in
             self?.accelerometerRecorder.samplesSinceLastTransfer = result.count
@@ -83,11 +98,11 @@ final class TransferManager: ObservableObject {
             // If we have gyroscope data, re-read the accel file, merge, and rewrite
             let fileToCompress: URL
             if !gyroSamples.isEmpty {
-                let mergedURL = FileManager.default.temporaryDirectory
+                mergedURL = FileManager.default.temporaryDirectory
                     .appendingPathComponent("imu-merged-\(ISO8601DateFormatter().string(from: Date())).json")
-                try mergeGyroscopeIntoFile(accelFileURL: result.url, gyroSamples: gyroSamples, outputURL: mergedURL)
+                try mergeGyroscopeIntoFile(accelFileURL: result.url, gyroSamples: gyroSamples, outputURL: mergedURL!)
                 try? FileManager.default.removeItem(at: result.url)
-                fileToCompress = mergedURL
+                fileToCompress = mergedURL!
             } else {
                 fileToCompress = result.url
             }
@@ -96,9 +111,14 @@ final class TransferManager: ObservableObject {
             let compressedURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent("imu-\(ISO8601DateFormatter().string(from: Date())).json.gz")
             let compressedSize = try Self.compressFile(from: fileToCompress, to: compressedURL)
+            tempFilesToCleanup.append(compressedURL)
 
             // Clean up the uncompressed temp file
-            try? FileManager.default.removeItem(at: fileToCompress)
+            if fileToCompress != result.url {
+                try? FileManager.default.removeItem(at: fileToCompress)
+            } else {
+                try? FileManager.default.removeItem(at: result.url)
+            }
 
             // Transfer via WCSession
             let metadata: [String: Any] = [
@@ -115,14 +135,32 @@ final class TransferManager: ObservableObject {
                 self?.lastTransferStatus = "Sent \(result.count) samples (\(compressedSize / 1024) KB)"
                 self?.isTransferring = false
             }
-        } catch {
-            // Clean up temp files on error
-            try? FileManager.default.removeItem(at: result.url)
 
-            DispatchQueue.main.async { [weak self] in
-                self?.lastTransferStatus = "Error: \(error.localizedDescription)"
-                self?.isTransferring = false
-            }
+            transferAltimeterSamples()
+        } catch {
+            handleTransferFailure(
+                tempFilesToCleanup: tempFilesToCleanup,
+                mergedURL: mergedURL,
+                error: error
+            )
+        }
+    }
+
+    private func handleTransferFailure(
+        tempFilesToCleanup: [URL],
+        mergedURL: URL?,
+        error: Error
+    ) {
+        for url in tempFilesToCleanup {
+            try? FileManager.default.removeItem(at: url)
+        }
+        if let mergedURL {
+            try? FileManager.default.removeItem(at: mergedURL)
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.lastTransferStatus = "Error: \(error.localizedDescription)"
+            self?.isTransferring = false
         }
     }
 
@@ -229,6 +267,72 @@ final class TransferManager: ObservableObject {
         }
 
         return bestIndex
+    }
+
+    private func transferAltimeterSamples() {
+        let altitudeSamples = altimeterRecorder.copyBufferedSamples()
+        guard !altitudeSamples.isEmpty else { return }
+
+        var jsonURL: URL?
+        var compressedURL: URL?
+
+        do {
+            jsonURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("altitude-\(ISO8601DateFormatter().string(from: Date())).json")
+            let jsonData = try JSONSerialization.data(withJSONObject: altitudeSamples)
+            try jsonData.write(to: jsonURL!)
+
+            compressedURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("altitude-\(ISO8601DateFormatter().string(from: Date())).json.gz")
+            _ = try Self.compressFile(from: jsonURL!, to: compressedURL!)
+            try? FileManager.default.removeItem(at: jsonURL!)
+            jsonURL = nil
+
+            let metadata: [String: Any] = [
+                "type": "altitude_samples",
+                "sampleCount": altitudeSamples.count,
+                "transferredAt": ISO8601DateFormatter().string(from: Date()),
+            ]
+            session.transferFile(compressedURL!, metadata: metadata)
+            pendingAltitudeLock.lock()
+            pendingAltitudeSampleCounts[compressedURL!] = altitudeSamples.count
+            pendingAltitudeLock.unlock()
+        } catch {
+            if let jsonURL {
+                try? FileManager.default.removeItem(at: jsonURL)
+            }
+            if let compressedURL {
+                try? FileManager.default.removeItem(at: compressedURL)
+            }
+            DispatchQueue.main.async { [weak self] in
+                self?.lastTransferStatus = "Altitude transfer error: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func handleFileTransferFinished(_ fileTransfer: WCSessionFileTransfer, error: Error?) {
+        let transferType = fileTransfer.file.metadata?["type"] as? String
+        guard transferType == "altitude_samples" else { return }
+
+        let transferredURL = fileTransfer.file.fileURL
+        pendingAltitudeLock.lock()
+        let sampleCount = pendingAltitudeSampleCounts.removeValue(forKey: transferredURL)
+        pendingAltitudeLock.unlock()
+
+        if let error = error {
+            DispatchQueue.main.async { [weak self] in
+                self?.lastTransferStatus = "Altitude transfer error: \(error.localizedDescription)"
+            }
+            return
+        }
+
+        guard let sampleCount else { return }
+
+        altimeterRecorder.clearBufferedSamples(count: sampleCount)
+
+        DispatchQueue.main.async { [weak self] in
+            self?.lastTransferStatus = "Sent \(sampleCount) altitude samples"
+        }
     }
 
     /// Compress a file using zlib via Foundation's NSData.compressed(using:).
