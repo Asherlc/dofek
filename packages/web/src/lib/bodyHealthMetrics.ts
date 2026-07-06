@@ -1,4 +1,4 @@
-import type { FormattedMeasurement } from "@dofek/format/format";
+import { type FormattedMeasurement, formatDateYmdInTimeZone } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 
 export type BodyHealthMetricEntry = {
@@ -19,11 +19,14 @@ type BodyTrendRow = {
   stddev_resting_hr: number | null;
 };
 
+function dateWindowStartString(endDate: string, days: number): string {
+  const windowStart = new Date(`${endDate}T00:00:00Z`);
+  windowStart.setUTCDate(windowStart.getUTCDate() - days);
+  return formatDateYmdInTimeZone(windowStart, "UTC");
+}
+
 function isInDateWindow(date: string, days: number, endDate: string): boolean {
-  const end = new Date(`${endDate}T00:00:00`);
-  const start = new Date(end);
-  start.setDate(start.getDate() - days);
-  const startStr = start.toISOString().slice(0, 10);
+  const startStr = dateWindowStartString(endDate, days);
   return date > startStr && date <= endDate;
 }
 
@@ -40,7 +43,7 @@ function stddev(values: number[]): number | null {
   if (values.length < 2) return null;
   const avg = mean(values);
   if (avg == null) return null;
-  const variance = values.reduce((sum, value) => sum + (value - avg) ** 2, 0) / values.length;
+  const variance = values.reduce((sum, value) => sum + (value - avg) ** 2, 0) / (values.length - 1);
   return Math.sqrt(variance);
 }
 
@@ -67,7 +70,7 @@ export function buildBodyHealthMetrics({
   return [
     {
       label: "Body Weight",
-      value: windowedWeight.at(-1)?.smoothedWeight ?? weightData.at(-1)?.smoothedWeight ?? null,
+      value: windowedWeight.at(-1)?.smoothedWeight ?? null,
       avg: mean(smoothedWeights),
       stddev: stddev(smoothedWeights),
       formatValue: (value) => units.formatWeight(value),
@@ -75,7 +78,7 @@ export function buildBodyHealthMetrics({
     },
     {
       label: "Body Fat %",
-      value: windowedBodyFat.at(-1)?.bodyFatPct ?? recompData.at(-1)?.bodyFatPct ?? null,
+      value: windowedBodyFat.at(-1)?.bodyFatPct ?? null,
       avg: mean(bodyFatValues),
       stddev: stddev(bodyFatValues),
       unit: "%",

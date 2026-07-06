@@ -13,6 +13,7 @@ import { GoalWeightInput } from "../components/GoalWeightInput.tsx";
 import { HealthStatusBar } from "../components/HealthStatusBar.tsx";
 import { HrvBaselineChart } from "../components/HrvBaselineChart.tsx";
 import { PageSection } from "../components/PageSection.tsx";
+import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { SmoothedWeightChart } from "../components/SmoothedWeightChart.tsx";
 import { StressChart } from "../components/StressChart.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
@@ -101,18 +102,20 @@ export function BodyPage() {
 
   const skinTempSeries = useMemo(() => buildSkinTempSeries(metrics, units), [metrics, units]);
 
-  const healthMetrics = useMemo(
-    () =>
-      buildBodyHealthMetrics({
-        trendData,
-        weightData: smoothedWeight.data ?? [],
-        recompData: bodyRecomp.data ?? [],
-        days,
-        endDate,
-        units,
-      }),
-    [trendData, smoothedWeight.data, bodyRecomp.data, days, endDate, units],
-  );
+  const healthStatusError = trends.error ?? smoothedWeight.error ?? bodyRecomp.error ?? null;
+
+  const healthMetrics = useMemo(() => {
+    if (healthStatusError) return [];
+
+    return buildBodyHealthMetrics({
+      trendData,
+      weightData: smoothedWeight.data ?? [],
+      recompData: bodyRecomp.data ?? [],
+      days,
+      endDate,
+      units,
+    });
+  }, [healthStatusError, trendData, smoothedWeight.data, bodyRecomp.data, days, endDate, units]);
 
   const bodyInsights = useMemo(() => {
     const all: Insight[] = insightsQuery.data ?? [];
@@ -143,10 +146,14 @@ export function BodyPage() {
       </div>
 
       {/* Health Status Bar */}
-      <HealthStatusBar
-        metrics={healthMetrics}
-        loading={trends.isLoading || smoothedWeight.isLoading || bodyRecomp.isLoading}
-      />
+      {healthStatusError ? (
+        <QueryStatePanel error={healthStatusError} height={160} />
+      ) : (
+        <HealthStatusBar
+          metrics={healthMetrics}
+          loading={trends.isLoading || smoothedWeight.isLoading || bodyRecomp.isLoading}
+        />
+      )}
 
       {/* HRV & Resting HR */}
       <PageSection title="Heart Rate Variability & Resting Heart Rate">

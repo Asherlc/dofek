@@ -39,14 +39,14 @@ describe("buildBodyHealthMetrics", () => {
     ]);
     expect(metrics[0]).toMatchObject({
       value: 80.1,
-      avg: 80.7,
-      stddev: expect.closeTo(0.458, 2),
+      avg: expect.closeTo(80.7, 2),
+      stddev: expect.closeTo(0.557, 2),
       lowerBetter: true,
     });
     expect(metrics[1]).toMatchObject({
       value: 18.8,
       avg: expect.closeTo(19.133, 2),
-      stddev: expect.closeTo(0.286, 2),
+      stddev: expect.closeTo(0.351, 2),
       unit: "%",
       lowerBetter: true,
     });
@@ -100,16 +100,16 @@ describe("buildBodyHealthMetrics", () => {
     expect(metrics[1]?.avg).toBe(18);
   });
 
-  it("falls back to the latest overall measurement when the window is empty", () => {
+  it("returns null body metrics when the selected window has no measurements", () => {
     const metrics = buildMetrics({
       weightData: [{ date: "2026-01-01", smoothedWeight: 90 }],
       recompData: [{ date: "2026-01-01", bodyFatPct: 25 }],
     });
 
-    expect(metrics[0]?.value).toBe(90);
+    expect(metrics[0]?.value).toBeNull();
     expect(metrics[0]?.avg).toBeNull();
     expect(metrics[0]?.stddev).toBeNull();
-    expect(metrics[1]?.value).toBe(25);
+    expect(metrics[1]?.value).toBeNull();
     expect(metrics[1]?.avg).toBeNull();
     expect(metrics[1]?.stddev).toBeNull();
   });
