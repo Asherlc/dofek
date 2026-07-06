@@ -193,9 +193,11 @@ describe("bodyAnalyticsRouter", () => {
     });
 
     it("propagates the underlying error when the smoothed weight fetch fails", async () => {
+      const sensorStore = makeMockSensorStore([]);
+      sensorStore.query = vi.fn().mockRejectedValue(new Error("connection reset"));
       const caller = createCaller({
-        db: { execute: vi.fn().mockRejectedValue(new Error("connection reset")) },
-        sensorStore: makeMockSensorStore([]),
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        sensorStore,
         userId: "user-1",
         timezone: "UTC",
       });
