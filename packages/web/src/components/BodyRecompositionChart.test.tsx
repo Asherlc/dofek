@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { BodyRecompositionRow } from "../../../server/src/routers/body-analytics.ts";
@@ -169,5 +169,15 @@ describe("BodyRecompositionChart", () => {
     expect(tooltipHtml).toContain("167.3 lb");
     expect(tooltipHtml).not.toContain("22.266");
     expect(tooltipHtml).not.toContain("167.330658");
+  });
+
+  it("shows an insufficient-data message instead of a zero change for a single reading", () => {
+    const singleRow = sampleData[0];
+    if (!singleRow) throw new Error("Expected sample data");
+    const { container } = renderWithUnits(<BodyRecompositionChart data={[singleRow]} />);
+    const scoped = within(container);
+
+    expect(scoped.queryByTestId("echarts-mock")).toBeNull();
+    expect(scoped.getByText(/at least two weight \+ body fat readings/i)).toBeDefined();
   });
 });

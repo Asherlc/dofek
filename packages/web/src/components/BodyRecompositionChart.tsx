@@ -51,13 +51,13 @@ function isRecompositionDataPoint(value: unknown): value is RecompositionDataPoi
 export function BodyRecompositionChart({ data, loading }: BodyRecompositionChartProps) {
   const units = useUnitConverter();
 
-  if (data.length === 0) {
+  if (data.length < 2) {
     return (
       <DofekChart
         option={{}}
         loading={loading}
         empty={true}
-        emptyMessage="Need weight + body fat data for recomposition tracking"
+        emptyMessage="Need at least two weight + body fat readings in this range to show a recomposition change"
       />
     );
   }
