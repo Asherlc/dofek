@@ -89,7 +89,7 @@ final class AltimeterRecorder: ObservableObject {
     }
 
     /// Snapshot buffered samples without draining.
-    /// Use `clearBufferedSamples()` after a successful transfer.
+    /// Call `clearBufferedSamples(count:)` after WCSession confirms delivery.
     func copyBufferedSamples() -> [[String: Any]] {
         bufferLock.lock()
         let samples = buffer

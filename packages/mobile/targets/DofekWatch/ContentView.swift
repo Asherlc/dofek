@@ -77,6 +77,12 @@ struct ContentView: View {
                         Text(lastError)
                             .font(.caption)
                             .foregroundColor(.red)
+
+                        Button("Retry") {
+                            altimeterRecorder.startRecording()
+                        }
+                        .font(.caption)
+                        .buttonStyle(.bordered)
                     }
                 } header: {
                     Text("Altimeter")
