@@ -710,15 +710,15 @@ activity_count UInt64`,
                 : shortViewName === "daily_body_measurement"
                   ? "(user_id, date)"
                   : shortViewName === "daily_activity_load" ||
-                    shortViewName === "healthspan_activity_zone_minutes"
-                  ? "(user_id, activity_id)"
-                  : shortViewName === "daily_strain"
-                    ? "(user_id, date)"
-                    : shortViewName === "weekly_healthspan"
-                      ? "(user_id, week_start)"
-                      : shortViewName === "provider_stats"
-                        ? "(user_id, provider_id)"
-                        : "tuple()";
+                      shortViewName === "healthspan_activity_zone_minutes"
+                    ? "(user_id, activity_id)"
+                    : shortViewName === "daily_strain"
+                      ? "(user_id, date)"
+                      : shortViewName === "weekly_healthspan"
+                        ? "(user_id, week_start)"
+                        : shortViewName === "provider_stats"
+                          ? "(user_id, provider_id)"
+                          : "tuple()";
   return `CREATE TABLE IF NOT EXISTS ${viewName} (
 ${columnDefinitions}
 )

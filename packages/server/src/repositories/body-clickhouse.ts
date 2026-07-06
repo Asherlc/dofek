@@ -98,13 +98,12 @@ export function bodyWeightDedupClickHouseQuery(
         argMax(body_fat_pct, recorded_at) AS body_fat_pct
       FROM analytics.daily_body_measurement FINAL
       WHERE user_id = {userId:UUID}
-        AND weight_kg IS NOT NULL
-        AND weight_kg > 0
-        ${options.requireBodyFat ? "AND body_fat_pct IS NOT NULL" : ""}
         AND toDate(toTimeZone(recorded_at, {timezone:String})) > subtractDays(${endDateExpression(endDate)}, {days:UInt32})
       GROUP BY local_date
     )
-    WHERE 1 = 1
+    WHERE weight_kg IS NOT NULL
+      AND weight_kg > 0
+      ${options.requireBodyFat ? "AND body_fat_pct IS NOT NULL" : ""}
       ${accessWindowDateClause(options.accessWindow)}
     ORDER BY local_date ASC
   `;
