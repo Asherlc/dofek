@@ -22,6 +22,27 @@ describe("fetchBodyWeightRows", () => {
     expect(calls[0]?.query).toContain("analytics.daily_body_measurement FINAL");
     expect(calls[0]?.query).not.toContain("analytics.v_body_measurement");
   });
+
+  it("filters body-fat rows before local-date deduplication when required", async () => {
+    const calls: Array<{ query: string; params?: Record<string, unknown> }> = [];
+    const store: BodyClickHouseStore = {
+      async query(_schema, query, params) {
+        calls.push({ query, params });
+        return [];
+      },
+    };
+
+    await fetchBodyWeightRows(store, "user-1", "America/New_York", "now", 90, {
+      requireBodyFat: true,
+    });
+
+    const queryText = calls[0]?.query ?? "";
+    const groupByIndex = queryText.indexOf("GROUP BY local_date");
+    const innerBodyFatFilterIndex = queryText.indexOf("AND body_fat_pct IS NOT NULL");
+
+    expect(innerBodyFatFilterIndex).toBeGreaterThan(-1);
+    expect(innerBodyFatFilterIndex).toBeLessThan(groupByIndex);
+  });
 });
 
 describe("fetchBodyCompRows", () => {

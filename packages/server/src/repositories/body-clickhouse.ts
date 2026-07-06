@@ -99,6 +99,7 @@ export function bodyWeightDedupClickHouseQuery(
       FROM analytics.daily_body_measurement FINAL
       WHERE user_id = {userId:UUID}
         AND toDate(toTimeZone(recorded_at, {timezone:String})) > subtractDays(${endDateExpression(endDate)}, {days:UInt32})
+        ${options.requireBodyFat ? "AND body_fat_pct IS NOT NULL" : ""}
       GROUP BY local_date
     )
     WHERE weight_kg IS NOT NULL
