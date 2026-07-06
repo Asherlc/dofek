@@ -80,7 +80,11 @@ final class WatchSessionDelegate: NSObject, ObservableObject, WCSessionDelegate 
             print("[DofekWatch] File transfer failed: \(error.localizedDescription)")
         } else {
             print("[DofekWatch] File transfer completed successfully")
-            try? FileManager.default.removeItem(at: transferredURL)
+            do {
+                try FileManager.default.removeItem(at: transferredURL)
+            } catch {
+                print("[DofekWatch] Failed to remove transferred file: \(error.localizedDescription)")
+            }
         }
     }
 }

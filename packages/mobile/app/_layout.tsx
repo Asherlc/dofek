@@ -6,7 +6,10 @@ import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "../lib/auth-context";
-import { initBackgroundAccelerometerSync } from "../lib/background-accelerometer-sync";
+import {
+  initBackgroundAccelerometerSync,
+  teardownBackgroundAccelerometerSync,
+} from "../lib/background-accelerometer-sync";
 import {
   initBackgroundHealthKitSync,
   teardownBackgroundHealthKitSync,
@@ -14,6 +17,7 @@ import {
 import {
   createWatchSyncClient,
   initBackgroundWatchInertialMeasurementUnitSync,
+  teardownBackgroundWatchInertialMeasurementUnitSync,
 } from "../lib/background-watch-inertial-measurement-unit-sync";
 import { syncWhoopBle, teardownBackgroundWhoopBleSync } from "../lib/background-whoop-ble-sync";
 import type { SyncTrpcClient } from "../lib/health-kit-sync";
@@ -295,6 +299,8 @@ function AuthGate() {
 
     return () => {
       teardownBackgroundHealthKitSync();
+      teardownBackgroundAccelerometerSync();
+      teardownBackgroundWatchInertialMeasurementUnitSync();
       teardownBackgroundWhoopBleSync();
       refreshSubscription.remove();
     };
