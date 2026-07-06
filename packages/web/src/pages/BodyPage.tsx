@@ -1,10 +1,4 @@
-import {
-  type FormattedMeasurement,
-  formatDateYmd,
-  formatHRVMeasurement,
-  formatSpO2,
-  formatSpO2Measurement,
-} from "@dofek/format/format";
+import { formatDateYmd, formatSpO2 } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { useMemo } from "react";
 import { z } from "zod";
@@ -25,26 +19,16 @@ import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "../components/TimeSeriesChart.tsx";
 import { WeightPredictionSummary } from "../components/WeightPredictionSummary.tsx";
 import { useBodyDays } from "../lib/bodyDaysContext.ts";
+import { buildBodyHealthMetrics } from "../lib/bodyHealthMetrics.ts";
 import { chartColors } from "../lib/chartTheme.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { assertRows } from "../lib/utils.ts";
 
 const trendRowSchema = z.object({
-  avg_hrv: z.number().nullable(),
-  avg_spo2: z.number().nullable(),
-  avg_steps: z.number().nullable(),
-  avg_active_energy: z.number().nullable(),
-  avg_skin_temp: z.number().nullable(),
-  stddev_hrv: z.number().nullable(),
-  stddev_spo2: z.number().nullable(),
-  stddev_skin_temp: z.number().nullable(),
-  latest_hrv: z.number().nullable(),
-  latest_spo2: z.number().nullable(),
-  latest_steps: z.number().nullable(),
-  latest_active_energy: z.number().nullable(),
-  latest_skin_temp: z.number().nullable(),
-  latest_date: z.string().nullable(),
+  avg_resting_hr: z.number().nullable(),
+  latest_resting_hr: z.number().nullable(),
+  stddev_resting_hr: z.number().nullable(),
 });
 
 const dailyMetricRowSchema = z.object({
@@ -55,16 +39,6 @@ const dailyMetricRowSchema = z.object({
   steps: z.number().nullable(),
   active_energy_kcal: z.number().nullable(),
 });
-
-type MetricEntry = {
-  label: string;
-  value: number | null;
-  avg: number | null;
-  stddev: number | null;
-  unit?: string;
-  formatValue?: (value: number | null | undefined) => FormattedMeasurement;
-  lowerBetter?: boolean;
-};
 
 function isBodyInsight(metric: string): boolean {
   return /hrv|resting.?hr|heart.?rate|weight|body.?fat|bmi|spo2|skin.?temp/i.test(metric);
@@ -127,34 +101,18 @@ export function BodyPage() {
 
   const skinTempSeries = useMemo(() => buildSkinTempSeries(metrics, units), [metrics, units]);
 
-  const healthMetrics = useMemo(() => {
-    if (!trendData) return [];
-    const entries: (MetricEntry | false)[] = [
-      {
-        label: "Heart Rate Variability (HRV)",
-        value: trendData.latest_hrv,
-        avg: trendData.avg_hrv,
-        stddev: trendData.stddev_hrv,
-        formatValue: formatHRVMeasurement,
-        lowerBetter: false,
-      },
-      trendData.latest_spo2 != null && {
-        label: "SpO2",
-        value: trendData.latest_spo2,
-        avg: trendData.avg_spo2,
-        stddev: trendData.stddev_spo2,
-        formatValue: formatSpO2Measurement,
-      },
-      trendData.latest_skin_temp != null && {
-        label: "Skin Temp",
-        value: trendData.latest_skin_temp,
-        avg: trendData.avg_skin_temp,
-        stddev: trendData.stddev_skin_temp,
-        formatValue: (value) => units.formatTemperature(value),
-      },
-    ];
-    return entries.filter((entry): entry is MetricEntry => entry !== false);
-  }, [trendData, units]);
+  const healthMetrics = useMemo(
+    () =>
+      buildBodyHealthMetrics({
+        trendData,
+        weightData: smoothedWeight.data ?? [],
+        recompData: bodyRecomp.data ?? [],
+        days,
+        endDate,
+        units,
+      }),
+    [trendData, smoothedWeight.data, bodyRecomp.data, days, endDate, units],
+  );
 
   const bodyInsights = useMemo(() => {
     const all: Insight[] = insightsQuery.data ?? [];
@@ -185,7 +143,10 @@ export function BodyPage() {
       </div>
 
       {/* Health Status Bar */}
-      <HealthStatusBar metrics={healthMetrics} loading={trends.isLoading} />
+      <HealthStatusBar
+        metrics={healthMetrics}
+        loading={trends.isLoading || smoothedWeight.isLoading || bodyRecomp.isLoading}
+      />
 
       {/* HRV & Resting HR */}
       <PageSection title="Heart Rate Variability & Resting Heart Rate">
