@@ -1,4 +1,7 @@
 import type { InertialMeasurementUnitSample } from "@dofek/imu";
+import { z } from "zod";
+import type { WatchAltitudeSample } from "./schemas";
+import { WatchAltitudeSampleSchema } from "./schemas";
 import WatchMotionModule from "./src/WatchMotionModule";
 
 export interface WatchSyncStatus {
@@ -56,22 +59,52 @@ export function acknowledgeWatchSamples(): void {
   WatchMotionModule.acknowledgeWatchSamples();
 }
 
-/** List the file names of pending Watch accelerometer transfer files.
- * Used by per-file sync to process files individually. */
+function isSafePendingFileName(fileName: string): boolean {
+  if (!fileName) return false;
+  if (fileName.includes("..")) return false;
+  if (fileName.includes("/") || fileName.includes("\\")) return false;
+  return fileName === fileName.split(/[/\\]/).pop();
+}
+
+/** List pending Watch accelerometer transfer file names. */
 export function getPendingWatchFileNames(): string[] {
-  return WatchMotionModule.getPendingWatchFileNames();
+  return WatchMotionModule.getPendingWatchFileNames().filter((fileName: string) =>
+    fileName.startsWith("watch-accel-"),
+  );
+}
+
+/** List pending Watch altitude transfer file names. */
+export function getPendingWatchAltitudeFileNames(): string[] {
+  return WatchMotionModule.getPendingWatchFileNames().filter((fileName: string) =>
+    fileName.startsWith("watch-altitude-"),
+  );
 }
 
 /** Read and parse a single pending Watch transfer file.
  * @param fileName — file name within the pending directory
  * @returns Parsed accelerometer samples from that file */
 export async function readWatchFile(fileName: string): Promise<InertialMeasurementUnitSample[]> {
+  if (!isSafePendingFileName(fileName)) {
+    throw new Error(`Invalid pending watch file name: ${fileName}`);
+  }
   return WatchMotionModule.readWatchFile(fileName);
+}
+
+/** Read and parse a single pending Watch altitude transfer file. */
+export async function readWatchAltitudeFile(fileName: string): Promise<WatchAltitudeSample[]> {
+  if (!isSafePendingFileName(fileName)) {
+    throw new Error(`Invalid pending watch file name: ${fileName}`);
+  }
+  const raw = await WatchMotionModule.readWatchAltitudeFile(fileName);
+  return z.array(WatchAltitudeSampleSchema).parse(raw);
 }
 
 /** Delete a single pending Watch transfer file after successful upload.
  * @param fileName — file name within the pending directory */
 export function deleteWatchFile(fileName: string): void {
+  if (!isSafePendingFileName(fileName)) {
+    throw new Error(`Invalid pending watch file name: ${fileName}`);
+  }
   WatchMotionModule.deleteWatchFile(fileName);
 }
 

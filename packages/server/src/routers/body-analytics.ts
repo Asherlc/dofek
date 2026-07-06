@@ -5,7 +5,13 @@ import { z } from "zod";
 import { endDateSchema } from "../lib/date-window.ts";
 import { BodyAnalyticsRepository } from "../repositories/body-analytics-repository.ts";
 import { SettingsRepository } from "../repositories/settings-repository.ts";
-import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
+import {
+  type AuthenticatedContext,
+  CacheTTL,
+  cachedProtectedQuery,
+  protectedProcedure,
+  router,
+} from "../trpc.ts";
 
 async function readGoalWeightKg(db: Pick<Database, "execute" | "transaction">, userId: string) {
   try {
@@ -27,59 +33,71 @@ export type {
   WeightPrediction,
 } from "../repositories/body-analytics-repository.ts";
 
+const dateWindowInput = z.object({ days: z.number().default(90), endDate: endDateSchema });
+
+function createBodyAnalyticsRepository(ctx: AuthenticatedContext) {
+  return new BodyAnalyticsRepository(
+    ctx.db,
+    ctx.userId,
+    ctx.timezone,
+    ctx.accessWindow,
+    ctx.sensorStore,
+  );
+}
+
 // ── Router ───────────────────────────────────────────────────────────
 
 export const bodyAnalyticsRouter = router({
   smoothedWeight: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ days: z.number().default(90), endDate: endDateSchema }))
+    .input(dateWindowInput)
     .query(({ ctx, input }) => {
-      const repo = new BodyAnalyticsRepository(
-        ctx.db,
-        ctx.userId,
-        ctx.timezone,
-        ctx.accessWindow,
-        ctx.sensorStore,
-      );
+      const repo = createBodyAnalyticsRepository(ctx);
       return repo.getSmoothedWeight(input.days, input.endDate);
+    }),
+
+  weightOverview: cachedProtectedQuery(CacheTTL.MEDIUM)
+    .input(dateWindowInput)
+    .query(async ({ ctx, input }) => {
+      const goalWeightKg = await readGoalWeightKg(ctx.db, ctx.userId);
+      const repo = createBodyAnalyticsRepository(ctx);
+      const [smoothedWeightResult, predictionResult] = await Promise.allSettled([
+        repo.getSmoothedWeight(input.days, input.endDate),
+        repo.getWeightPrediction(input.days, input.endDate, goalWeightKg),
+      ]);
+
+      if (smoothedWeightResult.status === "rejected") {
+        throw smoothedWeightResult.reason;
+      }
+
+      if (predictionResult.status === "rejected") {
+        captureException(predictionResult.reason);
+      }
+
+      return {
+        smoothedWeight: smoothedWeightResult.value,
+        prediction: predictionResult.status === "fulfilled" ? predictionResult.value : null,
+      };
     }),
 
   recomposition: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ days: z.number().default(180), endDate: endDateSchema }))
     .query(({ ctx, input }) => {
-      const repo = new BodyAnalyticsRepository(
-        ctx.db,
-        ctx.userId,
-        ctx.timezone,
-        ctx.accessWindow,
-        ctx.sensorStore,
-      );
+      const repo = createBodyAnalyticsRepository(ctx);
       return repo.getRecomposition(input.days, input.endDate);
     }),
 
   weightTrend: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({}).default({}))
     .query(({ ctx }) => {
-      const repo = new BodyAnalyticsRepository(
-        ctx.db,
-        ctx.userId,
-        ctx.timezone,
-        ctx.accessWindow,
-        ctx.sensorStore,
-      );
+      const repo = createBodyAnalyticsRepository(ctx);
       return repo.getWeightTrend();
     }),
 
   weightPrediction: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ days: z.number().default(90), endDate: endDateSchema }))
+    .input(dateWindowInput)
     .query(async ({ ctx, input }) => {
       const goalWeightKg = await readGoalWeightKg(ctx.db, ctx.userId);
-      const repo = new BodyAnalyticsRepository(
-        ctx.db,
-        ctx.userId,
-        ctx.timezone,
-        ctx.accessWindow,
-        ctx.sensorStore,
-      );
+      const repo = createBodyAnalyticsRepository(ctx);
       return repo.getWeightPrediction(input.days, input.endDate, goalWeightKg);
     }),
 

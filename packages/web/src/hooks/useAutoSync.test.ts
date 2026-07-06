@@ -1,7 +1,11 @@
 /** @vitest-environment jsdom */
 import { renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { isDataStale } from "./useAutoSync";
+import {
+  getAutoSyncInvalidationTargets,
+  invalidateAutoSyncQueries,
+  isDataStale,
+} from "./useAutoSync";
 
 type ActiveSync = { jobId: string };
 type ActiveSyncsQuery = {
@@ -24,6 +28,7 @@ const {
   mockInvalidate,
   mockMutate,
   mockReadinessInvalidate,
+  mockWeightOverviewInvalidate,
   mockUseQueryOptions,
   mockTriggerSyncMutationOptions,
 } = vi.hoisted(() => {
@@ -43,6 +48,7 @@ const {
     mockInvalidate: vi.fn(),
     mockMutate: vi.fn(),
     mockReadinessInvalidate: vi.fn(),
+    mockWeightOverviewInvalidate: vi.fn(),
     mockUseQueryOptions,
     mockTriggerSyncMutationOptions,
   };
@@ -72,12 +78,14 @@ vi.mock("../lib/trpc", () => ({
     recovery: { readinessScore: { invalidate: mockReadinessInvalidate } },
     calendar: { activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate } },
     activity: { list: { invalidate: mockActivityInvalidate } },
+    bodyAnalytics: { weightOverview: { invalidate: mockWeightOverviewInvalidate } },
     useUtils: () => ({
       invalidate: mockInvalidate,
       sync: { dataHealth: { invalidate: mockDataHealthInvalidate } },
       recovery: { readinessScore: { invalidate: mockReadinessInvalidate } },
       calendar: { activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate } },
       activity: { list: { invalidate: mockActivityInvalidate } },
+      bodyAnalytics: { weightOverview: { invalidate: mockWeightOverviewInvalidate } },
     }),
   },
 }));
@@ -130,6 +138,7 @@ describe("useAutoSync", () => {
     mockInvalidate.mockClear();
     mockMutate.mockClear();
     mockReadinessInvalidate.mockClear();
+    mockWeightOverviewInvalidate.mockClear();
     mockTriggerSyncMutationOptions.length = 0;
     mockUseQueryOptions.length = 0;
   });
@@ -283,20 +292,44 @@ describe("useAutoSync", () => {
     expect(mockCalendarActivityOverviewInvalidate).toHaveBeenCalledOnce();
     expect(mockActivityInvalidate).toHaveBeenCalledOnce();
     expect(mockDataHealthInvalidate).toHaveBeenCalledOnce();
+    expect(mockWeightOverviewInvalidate).toHaveBeenCalledOnce();
     expect(mockInvalidate).not.toHaveBeenCalled();
   });
 
   it("captures an exception when query invalidation fails after sync", async () => {
     const error = new Error("invalidation failed");
-    mockReadinessInvalidate.mockRejectedValueOnce(error);
+    mockReadinessInvalidate.mockRejectedValue(error);
     const { useAutoSync } = await import("./useAutoSync");
 
     renderHook(() => useAutoSync("2026-03-21"));
-    await mockTriggerSyncMutationOptions.at(-1)?.onSuccess?.();
+    const onSuccessPromise = mockTriggerSyncMutationOptions.at(-1)?.onSuccess?.();
+    await vi.advanceTimersByTimeAsync(250);
+    await onSuccessPromise;
 
+    expect(mockReadinessInvalidate).toHaveBeenCalledTimes(2);
     expect(mockCaptureException).toHaveBeenCalledOnce();
     expect(mockCaptureException).toHaveBeenCalledWith(error, {
       context: "dashboard-auto-sync-invalidation",
     });
+  });
+
+  it("retries query invalidation once before reporting failure", async () => {
+    const error = new Error("transient invalidation failure");
+    mockReadinessInvalidate.mockRejectedValueOnce(error).mockResolvedValueOnce(undefined);
+    const trpcUtils = {
+      recovery: { readinessScore: { invalidate: mockReadinessInvalidate } },
+      calendar: { activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate } },
+      activity: { list: { invalidate: mockActivityInvalidate } },
+      sync: { dataHealth: { invalidate: mockDataHealthInvalidate } },
+      bodyAnalytics: { weightOverview: { invalidate: mockWeightOverviewInvalidate } },
+    };
+
+    const invalidationPromise = invalidateAutoSyncQueries(trpcUtils);
+    await vi.advanceTimersByTimeAsync(250);
+    await invalidationPromise;
+
+    expect(mockReadinessInvalidate).toHaveBeenCalledTimes(2);
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(getAutoSyncInvalidationTargets(trpcUtils)).toHaveLength(5);
   });
 });

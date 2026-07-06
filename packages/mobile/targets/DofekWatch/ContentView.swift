@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @ObservedObject var recorder: AccelerometerRecorder
     @ObservedObject var gyroscopeRecorder: GyroscopeRecorder
+    @ObservedObject var altimeterRecorder: AltimeterRecorder
     @ObservedObject var transferManager: TransferManager
     @ObservedObject var sessionDelegate: WatchSessionDelegate
 
@@ -46,9 +47,51 @@ struct ContentView: View {
                         Text("Gyroscope not available on this device")
                             .font(.caption)
                             .foregroundColor(.red)
+                    } else if !gyroscopeRecorder.isRecording {
+                        Button("Start Gyroscope") {
+                            gyroscopeRecorder.startRecording()
+                        }
+                        .font(.caption)
+                        .buttonStyle(.bordered)
                     }
                 } header: {
                     Text("Gyroscope")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                // Altimeter status
+                Section {
+                    HStack {
+                        Image(systemName: altimeterRecorder.isRecording ? "mountain.2.fill" : "mountain.2")
+                            .foregroundColor(altimeterRecorder.isRecording ? .orange : .gray)
+                        Text(altimeterRecorder.isRecording ? "Recording" : "Inactive")
+                            .font(.headline)
+                    }
+
+                    Text("Active in foreground only")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    if !AltimeterRecorder.isAvailable {
+                        Text("Barometer not available on this device")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+
+                    if let lastError = altimeterRecorder.lastError {
+                        Text(lastError)
+                            .font(.caption)
+                            .foregroundColor(.red)
+
+                        Button("Retry") {
+                            altimeterRecorder.startRecording()
+                        }
+                        .font(.caption)
+                        .buttonStyle(.bordered)
+                    }
+                } header: {
+                    Text("Altimeter")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -69,6 +112,10 @@ struct ContentView: View {
                         .foregroundColor(.secondary)
 
                     Text("\(gyroscopeRecorder.bufferedSampleCount) pending gyro samples")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    Text("\(altimeterRecorder.bufferedSampleCount) pending altitude samples")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
 
@@ -123,14 +170,16 @@ struct ContentView: View {
             }
 
             // Handle recording requests from iPhone
-            sessionDelegate.onRecordingRequested = { [weak recorder, weak gyroscopeRecorder] in
+            sessionDelegate.onRecordingRequested = { [weak recorder, weak gyroscopeRecorder, weak altimeterRecorder] in
                 recorder?.startRecording()
                 gyroscopeRecorder?.startRecording()
+                altimeterRecorder?.startRecording()
             }
 
             // Start recording immediately
             recorder.startRecording()
             gyroscopeRecorder.startRecording()
+            altimeterRecorder.startRecording()
         }
     }
 }
