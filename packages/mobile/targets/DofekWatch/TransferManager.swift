@@ -130,17 +130,29 @@ final class TransferManager: ObservableObject {
 
             transferAltimeterSamples()
         } catch {
-            for url in tempFilesToCleanup {
-                try? FileManager.default.removeItem(at: url)
-            }
-            if let mergedURL {
-                try? FileManager.default.removeItem(at: mergedURL)
-            }
+            handleTransferFailure(
+                tempFilesToCleanup: tempFilesToCleanup,
+                mergedURL: mergedURL,
+                error: error
+            )
+        }
+    }
 
-            DispatchQueue.main.async { [weak self] in
-                self?.lastTransferStatus = "Error: \(error.localizedDescription)"
-                self?.isTransferring = false
-            }
+    private func handleTransferFailure(
+        tempFilesToCleanup: [URL],
+        mergedURL: URL?,
+        error: Error
+    ) {
+        for url in tempFilesToCleanup {
+            try? FileManager.default.removeItem(at: url)
+        }
+        if let mergedURL {
+            try? FileManager.default.removeItem(at: mergedURL)
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.lastTransferStatus = "Error: \(error.localizedDescription)"
+            self?.isTransferring = false
         }
     }
 

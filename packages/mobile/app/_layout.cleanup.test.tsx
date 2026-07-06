@@ -96,6 +96,7 @@ vi.mock("../lib/background-accelerometer-sync", () => ({
 vi.mock("../lib/background-watch-inertial-measurement-unit-sync", () => ({
   initBackgroundWatchInertialMeasurementUnitSync: (...args: unknown[]) =>
     mockInitBackgroundWatchSync(...args),
+  createWatchSyncClient: (client: unknown) => client,
 }));
 
 vi.mock("../lib/background-whoop-ble-sync", () => ({
@@ -180,6 +181,9 @@ mockCreateClient.mockImplementation(() => ({
     pushSleepSamples: { mutate: vi.fn() },
   },
   inertialMeasurementUnitSync: {
+    pushSamples: { mutate: vi.fn() },
+  },
+  watchAltitudeSync: {
     pushSamples: { mutate: vi.fn() },
   },
   whoopBleSync: {
