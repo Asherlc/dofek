@@ -55,6 +55,7 @@ import { supportRouter } from "./routers/support.ts";
 import { syncRouter } from "./routers/sync.ts";
 import { trainingRouter } from "./routers/training.ts";
 import { trendsRouter } from "./routers/trends.ts";
+import { watchAltitudeSyncRouter } from "./routers/watch-altitude-sync.ts";
 import { weeklyReportRouter } from "./routers/weekly-report.ts";
 import { whoopAuthRouter } from "./routers/whoop-auth.ts";
 import { whoopBleSyncRouter } from "./routers/whoop-ble-sync.ts";
@@ -63,6 +64,7 @@ import { router } from "./trpc.ts";
 export const appRouter = router({
   admin: adminRouter,
   inertialMeasurementUnitSync: inertialMeasurementUnitSyncRouter,
+  watchAltitudeSync: watchAltitudeSyncRouter,
   activity: activityRouter,
   activityRecording: activityRecordingRouter,
   anomalyDetection: anomalyDetectionRouter,

@@ -64,6 +64,7 @@ vi.mock("./routers/sync.ts", () => ({ syncRouter: mockRouter }));
 vi.mock("./routers/training.ts", () => ({ trainingRouter: mockRouter }));
 vi.mock("./routers/trends.ts", () => ({ trendsRouter: mockRouter }));
 vi.mock("./routers/weekly-report.ts", () => ({ weeklyReportRouter: mockRouter }));
+vi.mock("./routers/watch-altitude-sync.ts", () => ({ watchAltitudeSyncRouter: mockRouter }));
 vi.mock("./routers/whoop-auth.ts", () => ({ whoopAuthRouter: mockRouter }));
 vi.mock("./routers/whoop-ble-sync.ts", () => ({ whoopBleSyncRouter: mockRouter }));
 vi.mock("./routers/admin.ts", () => ({ adminRouter: mockRouter }));
@@ -109,6 +110,7 @@ describe("appRouter", () => {
     const expectedRouters = [
       "admin",
       "inertialMeasurementUnitSync",
+      "watchAltitudeSync",
       "activity",
       "activityRecording",
       "anomalyDetection",

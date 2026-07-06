@@ -115,7 +115,10 @@ public class WatchMotionModule: Module {
         /// Returns the parsed accelerometer samples from that file.
         AsyncFunction("readWatchFile") { (fileName: String, promise: Promise) in
             DispatchQueue.global(qos: .userInitiated).async {
-                let fileURL = self.pendingDirectory.appendingPathComponent(fileName)
+                guard let fileURL = self.pendingFileURL(for: fileName) else {
+                    promise.reject("INVALID_FILENAME", "Invalid pending file name")
+                    return
+                }
                 do {
                     let fileData = try Data(contentsOf: fileURL)
                     NSLog("[WatchMotion] readWatchFile %@: %d bytes", fileName, fileData.count)
@@ -129,9 +132,31 @@ public class WatchMotionModule: Module {
             }
         }
 
+        /// Read and parse a single pending Watch altitude transfer file.
+        AsyncFunction("readWatchAltitudeFile") { (fileName: String, promise: Promise) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                guard let fileURL = self.pendingFileURL(for: fileName) else {
+                    promise.reject("INVALID_FILENAME", "Invalid pending file name")
+                    return
+                }
+                do {
+                    let fileData = try Data(contentsOf: fileURL)
+                    NSLog("[WatchMotion] readWatchAltitudeFile %@: %d bytes", fileName, fileData.count)
+                    let samples = try SampleFileParser.parse(fileData)
+                    NSLog("[WatchMotion] readWatchAltitudeFile %@: parsed %d samples", fileName, samples.count)
+                    promise.resolve(samples)
+                } catch {
+                    promise.reject("PARSE_ERROR", "Failed to parse \(fileName): \(error.localizedDescription)")
+                }
+            }
+        }
+
         /// Delete a single pending Watch transfer file after successful upload.
         Function("deleteWatchFile") { (fileName: String) in
-            let fileURL = self.pendingDirectory.appendingPathComponent(fileName)
+            guard let fileURL = self.pendingFileURL(for: fileName) else {
+                NSLog("[WatchMotion] deleteWatchFile rejected invalid name: %@", fileName)
+                return
+            }
             NSLog("[WatchMotion] deleteWatchFile: %@", fileName)
             try? FileManager.default.removeItem(at: fileURL)
         }
@@ -149,10 +174,12 @@ public class WatchMotionModule: Module {
 
     func handleReceivedFile(fileURL: URL, metadata: [String: Any]?) {
         let sampleCount = metadata?["sampleCount"] as? Int ?? -1
-        NSLog("[WatchMotion] Received file from Watch: %@ (%d samples)", fileURL.lastPathComponent, sampleCount)
+        let fileType = metadata?["type"] as? String ?? "accelerometer_samples"
+        NSLog("[WatchMotion] Received file from Watch: %@ (%d samples, type=%@)", fileURL.lastPathComponent, sampleCount, fileType)
 
         // Move the file to our pending directory
-        let destinationName = "watch-accel-\(UUID().uuidString).json.gz"
+        let destinationPrefix = fileType == "altitude_samples" ? "watch-altitude-" : "watch-accel-"
+        let destinationName = "\(destinationPrefix)\(UUID().uuidString).json.gz"
         let destination = pendingDirectory.appendingPathComponent(destinationName)
 
         do {
@@ -171,6 +198,18 @@ public class WatchMotionModule: Module {
     }
 
     // MARK: - Pending file operations
+
+    private func isSafePendingFileName(_ fileName: String) -> Bool {
+        if fileName.isEmpty { return false }
+        if fileName.contains("..") { return false }
+        if fileName.contains("/") || fileName.contains("\\") { return false }
+        return fileName == (fileName as NSString).lastPathComponent
+    }
+
+    private func pendingFileURL(for fileName: String) -> URL? {
+        guard isSafePendingFileName(fileName) else { return nil }
+        return pendingDirectory.appendingPathComponent(fileName)
+    }
 
     private func listPendingFileNames() -> [String] {
         let contents = try? FileManager.default.contentsOfDirectory(

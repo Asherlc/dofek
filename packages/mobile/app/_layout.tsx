@@ -6,12 +6,19 @@ import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "../lib/auth-context";
-import { initBackgroundAccelerometerSync } from "../lib/background-accelerometer-sync";
+import {
+  initBackgroundAccelerometerSync,
+  teardownBackgroundAccelerometerSync,
+} from "../lib/background-accelerometer-sync";
 import {
   initBackgroundHealthKitSync,
   teardownBackgroundHealthKitSync,
 } from "../lib/background-health-kit-sync";
-import { initBackgroundWatchInertialMeasurementUnitSync } from "../lib/background-watch-inertial-measurement-unit-sync";
+import {
+  createWatchSyncClient,
+  initBackgroundWatchInertialMeasurementUnitSync,
+  teardownBackgroundWatchInertialMeasurementUnitSync,
+} from "../lib/background-watch-inertial-measurement-unit-sync";
 import { syncWhoopBle, teardownBackgroundWhoopBleSync } from "../lib/background-whoop-ble-sync";
 import type { SyncTrpcClient } from "../lib/health-kit-sync";
 import { MobileQueryPersistenceProvider } from "../lib/mobile-query-persistence";
@@ -215,15 +222,7 @@ function AuthGate() {
     });
 
     // Start continuous accelerometer recording and background sync
-    const imuSyncClient = {
-      inertialMeasurementUnitSync: {
-        pushSamples: {
-          mutate: (
-            input: Parameters<typeof trpcClient.inertialMeasurementUnitSync.pushSamples.mutate>[0],
-          ) => trpcClient.inertialMeasurementUnitSync.pushSamples.mutate(input),
-        },
-      },
-    };
+    const imuSyncClient = createWatchSyncClient(trpcClient);
     initBackgroundAccelerometerSync(imuSyncClient).catch((error: unknown) => {
       // Best-effort — accelerometer sync is non-critical
       captureException(error, { source: "bg-accelerometer-sync" });
@@ -232,7 +231,7 @@ function AuthGate() {
     // Start Apple Watch IMU sync (if Watch is paired)
     initBackgroundWatchInertialMeasurementUnitSync(imuSyncClient).catch((error: unknown) => {
       // Best-effort — Watch sync is non-critical
-      captureException(error, { source: "bg-watch-accel-sync" });
+      captureException(error, { source: "bg-watch-sync" });
     });
 
     // WHOOP BLE sync is now managed reactively via useWhoopBleSync hook
@@ -300,6 +299,8 @@ function AuthGate() {
 
     return () => {
       teardownBackgroundHealthKitSync();
+      teardownBackgroundAccelerometerSync();
+      teardownBackgroundWatchInertialMeasurementUnitSync();
       teardownBackgroundWhoopBleSync();
       refreshSubscription.remove();
     };
