@@ -525,9 +525,11 @@ export class BodyAnalyticsRepository extends BaseRepository {
       }
     }
 
-    // Implied daily calories: 7700 kcal/kg
+    // Implied daily calories: 7700 kcal/kg; omit when rate is negligible.
     const impliedDailyCalories =
-      ratePerWeek != null ? Math.round(((ratePerWeek / 7) * 7700 * 10) / 10) : null;
+      ratePerWeek != null && Math.abs(ratePerWeek) >= 0.01
+        ? Math.round((ratePerWeek / 7) * 7700)
+        : null;
 
     // Period deltas from smoothed values
     const computePeriodDelta = (daysBack: number, minimumActualReadings: number) => {

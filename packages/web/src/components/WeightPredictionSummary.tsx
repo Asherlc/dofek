@@ -30,6 +30,7 @@ function PeriodDelta({
   deltaKg: number;
 }) {
   const units = useUnitConverter();
+  if (!Number.isFinite(deltaKg)) return null;
 
   return (
     <div>

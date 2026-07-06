@@ -1107,6 +1107,19 @@ describe("BodyAnalyticsRepository", () => {
       expect(result.ratePerWeek ?? 0).toBeLessThan(0);
     });
 
+    it("omits impliedDailyCalories when rate of change is negligible", async () => {
+      const rows = Array.from({ length: 14 }, (_, index) => ({
+        date: `2024-01-${String(index + 1).padStart(2, "0")}`,
+        weight_kg: "80",
+      }));
+      const { repo } = makeRepository(rows);
+      const result = await repo.getWeightPrediction(90, "2024-01-14", null);
+
+      expect(result.ratePerWeek).not.toBeNull();
+      expect(Math.abs(result.ratePerWeek ?? 0)).toBeLessThan(0.01);
+      expect(result.impliedDailyCalories).toBeNull();
+    });
+
     it("does not report rate-derived prediction fields when recent weigh-ins are sparse", async () => {
       const rows = [
         { date: "2024-01-01", weight_kg: "95" },

@@ -50,6 +50,21 @@ describe("enrichWeightPrediction", () => {
     ]);
 
     expect(result.ratePerWeek).toBe(-0.4);
-    expect(result.impliedDailyCalories).toBe(-440);
+    expect(result.impliedDailyCalories).toBeCloseTo(-440, 0);
+  });
+
+  it("omits impliedDailyCalories when weekly change is negligible", () => {
+    const result = enrichWeightPrediction(emptyPrediction, [
+      {
+        date: "2026-07-01",
+        rawWeight: 80,
+        smoothedWeight: 80,
+        weeklyChange: 0.005,
+        interpolated: false,
+      },
+    ]);
+
+    expect(result.ratePerWeek).toBe(0.005);
+    expect(result.impliedDailyCalories).toBeNull();
   });
 });

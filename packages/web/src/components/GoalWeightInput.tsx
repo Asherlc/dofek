@@ -14,6 +14,7 @@ export function GoalWeightInput() {
 
   const [editing, setEditing] = useState(false);
   const [inputValue, setInputValue] = useState("");
+  const [saveError, setSaveError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -25,7 +26,11 @@ export function GoalWeightInput() {
       void utils.bodyAnalytics.weightOverview.invalidate();
       void utils.bodyAnalytics.weightPrediction.invalidate();
       void utils.settings.invalidate();
+      setSaveError(null);
       setEditing(false);
+    },
+    onError: (error) => {
+      setSaveError(error.message);
     },
   });
 
@@ -42,35 +47,44 @@ export function GoalWeightInput() {
 
   if (editing) {
     return (
-      <div className="flex items-center gap-2">
-        <input
-          type="number"
-          step="0.1"
-          className="w-20 rounded bg-surface border border-border px-2 py-1 text-sm"
-          placeholder={units.weightLabel}
-          value={inputValue}
-          onChange={(event) => setInputValue(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") handleSave();
-            if (event.key === "Escape") setEditing(false);
-          }}
-          ref={inputRef}
-        />
-        <button
-          type="button"
-          className="text-xs text-primary hover:text-primary/80"
-          onClick={handleSave}
-          disabled={mutation.isPending}
-        >
-          Save
-        </button>
-        <button
-          type="button"
-          className="text-xs text-muted hover:text-subtle"
-          onClick={() => setEditing(false)}
-        >
-          Cancel
-        </button>
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            step="0.1"
+            className="w-20 rounded bg-surface border border-border px-2 py-1 text-sm"
+            placeholder={units.weightLabel}
+            value={inputValue}
+            onChange={(event) => setInputValue(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") handleSave();
+              if (event.key === "Escape") {
+                setSaveError(null);
+                setEditing(false);
+              }
+            }}
+            ref={inputRef}
+          />
+          <button
+            type="button"
+            className="text-xs text-primary hover:text-primary/80"
+            onClick={handleSave}
+            disabled={mutation.isPending}
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            className="text-xs text-muted hover:text-subtle"
+            onClick={() => {
+              setSaveError(null);
+              setEditing(false);
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+        {saveError != null && <p className="text-xs text-red-400">{saveError}</p>}
       </div>
     );
   }
