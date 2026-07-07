@@ -81,7 +81,7 @@ function CyclingTab() {
   type BodyRecord = NonNullable<typeof bodyData.data>[number];
   const latestBodyRecord = bodyData.data?.reduce<BodyRecord | null>((latestRecord, bodyRecord) => {
     if (latestRecord == null) return bodyRecord;
-    return bodyRecord.date > latestRecord.date ? bodyRecord : latestRecord;
+    return bodyRecord.recordedAt > latestRecord.recordedAt ? bodyRecord : latestRecord;
   }, null);
   const rawWeight = latestBodyRecord?.weightKg;
   const latestWeight = typeof rawWeight === "number" ? rawWeight : undefined;
