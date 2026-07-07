@@ -3,6 +3,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Insight } from "../../components/CorrelationCard.tsx";
+import { TRAINING_OVERVIEW_QUERY_OPTIONS } from "../../lib/trainingQueryOptions.ts";
 
 type MockInsightsQueryResult = {
   data: Insight[] | undefined;
@@ -87,6 +88,7 @@ async function importTrainingOverview() {
 
 describe("TrainingOverview training insights", () => {
   beforeEach(() => {
+    mockInsightsQuery.mockClear();
     mockInsightsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
   });
 
@@ -155,11 +157,13 @@ describe("TrainingOverview training insights", () => {
     const TrainingOverview = await importTrainingOverview();
     render(<TrainingOverview />);
 
+    expect(mockInsightsQuery).toHaveBeenCalledTimes(1);
     expect(mockInsightsQuery).toHaveBeenCalledWith(
       expect.objectContaining({
         days: 90,
+        endDate: expect.any(String),
       }),
-      expect.objectContaining({ staleTime: 120_000, gcTime: 1_800_000 }),
+      TRAINING_OVERVIEW_QUERY_OPTIONS,
     );
   });
 });

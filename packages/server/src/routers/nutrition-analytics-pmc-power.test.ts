@@ -107,17 +107,32 @@ function makeSensorStore(rows: unknown[] = []): SensorStore {
   };
 }
 
+function isPmcActivityChartQuery(queryText: string): boolean {
+  return queryText.includes("CROSS JOIN user_baseline ub");
+}
+
+function isPmcNormalizedPowerQuery(queryText: string): boolean {
+  return (
+    queryText.includes("FROM analytics.activity_summary") &&
+    queryText.includes("normalized_power IS NOT NULL")
+  );
+}
+
 function makePmcSensorStore(
   activityRows: unknown[],
   normalizedPowerRows: unknown[] = [],
 ): SensorStore {
-  let queryCallCount = 0;
   return {
     query: vi.fn(
-      async (schema: { parse: (row: unknown) => unknown }, _queryText = ""): Promise<unknown[]> => {
-        // PmcRepository.getChart issues two queries in order: activity chart, then NP.
-        queryCallCount++;
-        const rows = queryCallCount === 1 ? activityRows : normalizedPowerRows;
+      async (schema: { parse: (row: unknown) => unknown }, queryText = ""): Promise<unknown[]> => {
+        let rows: unknown[];
+        if (isPmcNormalizedPowerQuery(queryText)) {
+          rows = normalizedPowerRows;
+        } else if (isPmcActivityChartQuery(queryText)) {
+          rows = activityRows;
+        } else {
+          throw new Error(`Unexpected PMC sensor store query: ${queryText.slice(0, 160)}`);
+        }
         return rows.map((row) => schema.parse(row));
       },
     ),
