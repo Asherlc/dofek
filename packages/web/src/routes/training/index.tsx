@@ -10,6 +10,7 @@ import {
 import { ChartLoadingSkeleton } from "../../components/LoadingSkeleton.tsx";
 import { PageSection } from "../../components/PageSection.tsx";
 import { PmcChart } from "../../components/PmcChart.tsx";
+import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import { TrainingCalendar } from "../../components/TrainingCalendar.tsx";
 import { TrainingInsightsPanel } from "../../components/TrainingInsightsPanel.tsx";
@@ -44,7 +45,9 @@ export function TrainingOverview() {
   return (
     <>
       <Section title="Training Calendar" subtitle="Daily training activity heatmap">
-        {calendarData.isLoading ? (
+        {calendarData.error ? (
+          <QueryStatePanel error={calendarData.error} />
+        ) : calendarData.isLoading ? (
           <ChartLoadingSkeleton height={180} />
         ) : (
           <TrainingCalendar data={calendarData.data ?? []} />
@@ -55,11 +58,15 @@ export function TrainingOverview() {
         title="Fitness / Fatigue / Form"
         subtitle="Long-term fitness, short-term fatigue, and training form over time"
       >
-        <PmcChart
-          data={pmcData.data?.data ?? []}
-          model={pmcData.data?.model ?? null}
-          loading={pmcData.isLoading}
-        />
+        {pmcData.error ? (
+          <QueryStatePanel error={pmcData.error} />
+        ) : (
+          <PmcChart
+            data={pmcData.data?.data ?? []}
+            model={pmcData.data?.model ?? null}
+            loading={pmcData.isLoading}
+          />
+        )}
       </Section>
 
       <Section
@@ -90,6 +97,12 @@ export function TrainingOverview() {
               <CorrelationCard key={insight.id} insight={insight} />
             ))}
           </div>
+        </PageSection>
+      )}
+
+      {insightsQuery.error && (
+        <PageSection title="Training Insights" card={false}>
+          <QueryStatePanel error={insightsQuery.error} />
         </PageSection>
       )}
     </>

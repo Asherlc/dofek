@@ -69,7 +69,10 @@ function makeSequentialSensorStore(rowsByCall: Record<string, unknown>[][]): Act
         ) {
           return [];
         }
-        const rows = rowQueue.shift() ?? [];
+        const rows = rowQueue.shift();
+        if (rows == null) {
+          throw new Error("No mock sensor-store rows remain for this query");
+        }
         return rows.map((row) => schema.parse(row));
       },
     );

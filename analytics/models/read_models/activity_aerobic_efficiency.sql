@@ -90,7 +90,10 @@ z2_samples AS (
         any(am.resting_hr) AS resting_hr,
         round(avg(pwr.scalar), 1) AS avg_power_z2,
         round(avg(hr.scalar), 1) AS avg_hr_z2,
-        round(avg(pwr.scalar) / nullIf(avg(hr.scalar), 0), 3) AS efficiency_factor,
+        CASE
+            WHEN avg(hr.scalar) > 0
+                THEN round(avg(pwr.scalar) / avg(hr.scalar), 3)
+        END AS efficiency_factor,
         toInt32(count()) AS z2_samples
     FROM activity_meta AS am
     INNER JOIN {{ ref('activity_sensor_sample') }} AS hr

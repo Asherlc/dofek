@@ -14,6 +14,22 @@ SELECT * FROM sample_cte
     expect(extractCteSql(sql, "SAMPLE_CTE")).toContain("SELECT 1");
   });
 
+  it("matches CTE headers with comments between the name, AS, and opening parenthesis", () => {
+    const sql = `
+WITH block_commented /* explanation */ AS (
+  SELECT 1 AS value
+),
+line_commented AS -- explanation
+(
+  SELECT 2 AS value
+)
+SELECT * FROM block_commented
+`;
+
+    expect(extractCteSql(sql, "block_commented")).toContain("SELECT 1");
+    expect(extractCteSql(sql, "line_commented")).toContain("SELECT 2");
+  });
+
   it("ignores parentheses inside quotes and SQL comments", () => {
     const sql = `
 WITH commented AS (

@@ -55,6 +55,35 @@ function skipWhitespace(sql: string, startIndex: number): number {
   return cursorIndex;
 }
 
+function skipSqlTrivia(sql: string, startIndex: number): number {
+  let cursorIndex = startIndex;
+  let nextIndex = skipWhitespace(sql, cursorIndex);
+
+  while (nextIndex !== cursorIndex) {
+    cursorIndex = nextIndex;
+    if (sql[cursorIndex] === "-" && sql[cursorIndex + 1] === "-") {
+      cursorIndex = skipSqlLineComment(sql, cursorIndex);
+      nextIndex = skipWhitespace(sql, cursorIndex);
+      continue;
+    }
+    if (sql[cursorIndex] === "/" && sql[cursorIndex + 1] === "*") {
+      cursorIndex = skipSqlBlockComment(sql, cursorIndex);
+      nextIndex = skipWhitespace(sql, cursorIndex);
+      continue;
+    }
+    nextIndex = cursorIndex;
+  }
+
+  if (sql[cursorIndex] === "-" && sql[cursorIndex + 1] === "-") {
+    return skipSqlTrivia(sql, skipSqlLineComment(sql, cursorIndex));
+  }
+  if (sql[cursorIndex] === "/" && sql[cursorIndex + 1] === "*") {
+    return skipSqlTrivia(sql, skipSqlBlockComment(sql, cursorIndex));
+  }
+
+  return cursorIndex;
+}
+
 function matchCteHeaderEndIndex(sql: string, name: string, startIndex: number): number | null {
   if (isSqlIdentifierChar(sql[startIndex - 1])) {
     return null;
@@ -68,7 +97,7 @@ function matchCteHeaderEndIndex(sql: string, name: string, startIndex: number): 
     return null;
   }
 
-  let cursorIndex = skipWhitespace(sql, nameEndIndex);
+  let cursorIndex = skipSqlTrivia(sql, nameEndIndex);
   if (sql.slice(cursorIndex, cursorIndex + 2).toLowerCase() !== "as") {
     return null;
   }
@@ -77,7 +106,7 @@ function matchCteHeaderEndIndex(sql: string, name: string, startIndex: number): 
     return null;
   }
 
-  cursorIndex = skipWhitespace(sql, cursorIndex);
+  cursorIndex = skipSqlTrivia(sql, cursorIndex);
   return sql[cursorIndex] === "(" ? cursorIndex + 1 : null;
 }
 

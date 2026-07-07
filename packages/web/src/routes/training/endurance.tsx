@@ -2,6 +2,7 @@ import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
 import { createFileRoute } from "@tanstack/react-router";
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { PolarizationTrendChart } from "../../components/PolarizationTrendChart.tsx";
+import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { RampRateChart } from "../../components/RampRateChart.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import { TrainingMonotonyChart } from "../../components/TrainingMonotonyChart.tsx";
@@ -29,27 +30,39 @@ function EnduranceTab() {
         title="Polarization Index"
         subtitle="Weekly training distribution — above 2.0 means mostly easy and hard, little moderate"
       >
-        <PolarizationTrendChart
-          weeks={polarization.data?.weeks ?? []}
-          maxHr={polarization.data?.maxHr ?? null}
-          loading={polarization.isLoading}
-        />
+        {polarization.error ? (
+          <QueryStatePanel error={polarization.error} />
+        ) : (
+          <PolarizationTrendChart
+            weeks={polarization.data?.weeks ?? []}
+            maxHr={polarization.data?.maxHr ?? null}
+            loading={polarization.isLoading}
+          />
+        )}
       </Section>
 
       <Section
         title="Ramp Rate"
         subtitle="How quickly your fitness load is building week over week"
       >
-        <RampRateChart
-          data={rampRate.data?.weeks ?? []}
-          currentRampRate={rampRate.data?.currentRampRate ?? 0}
-          recommendation={rampRate.data?.recommendation ?? ""}
-          loading={rampRate.isLoading}
-        />
+        {rampRate.error ? (
+          <QueryStatePanel error={rampRate.error} />
+        ) : (
+          <RampRateChart
+            data={rampRate.data?.weeks ?? []}
+            currentRampRate={rampRate.data?.currentRampRate ?? 0}
+            recommendation={rampRate.data?.recommendation ?? ""}
+            loading={rampRate.isLoading}
+          />
+        )}
       </Section>
 
       <Section title="Training Monotony & Strain" subtitle="Weekly training load variability">
-        <TrainingMonotonyChart data={monotony.data ?? []} loading={monotony.isLoading} />
+        {monotony.error ? (
+          <QueryStatePanel error={monotony.error} />
+        ) : (
+          <TrainingMonotonyChart data={monotony.data ?? []} loading={monotony.isLoading} />
+        )}
       </Section>
 
       <Section title="Recent Endurance Activities" subtitle="Recent cardio and endurance workouts">

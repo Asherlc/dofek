@@ -163,7 +163,10 @@ describe("TrainingOverview training insights", () => {
         days: 90,
         endDate: expect.any(String),
       }),
-      TRAINING_OVERVIEW_QUERY_OPTIONS,
+      expect.objectContaining({
+        staleTime: TRAINING_OVERVIEW_QUERY_OPTIONS.staleTime,
+        gcTime: TRAINING_OVERVIEW_QUERY_OPTIONS.gcTime,
+      }),
     );
   });
 });

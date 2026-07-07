@@ -3,6 +3,7 @@ import { ChartDescriptionTooltip } from "../../components/ChartDescriptionToolti
 import { EstimatedMaxChart } from "../../components/EstimatedMaxChart.tsx";
 import { MuscleGroupVolumeChart } from "../../components/MuscleGroupVolumeChart.tsx";
 import { ProgressiveOverloadCards } from "../../components/ProgressiveOverloadCards.tsx";
+import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import { StrengthVolumeChart } from "../../components/StrengthVolumeChart.tsx";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
@@ -44,27 +45,52 @@ function StrengthTab() {
     <>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Section title="Strength Volume" subtitle="Weekly volume load over time">
-          <StrengthVolumeChart
-            data={strengthVolume.data ?? []}
-            loading={strengthVolume.isLoading}
-          />
+          {strengthVolume.error ? (
+            <QueryStatePanel error={strengthVolume.error} />
+          ) : (
+            <StrengthVolumeChart
+              data={strengthVolume.data ?? []}
+              loading={strengthVolume.isLoading}
+            />
+          )}
         </Section>
 
         <Section
           title="Estimated 1-Rep Max"
           subtitle="Estimated max single-rep strength per exercise over time"
         >
-          <EstimatedMaxChart exercises={estimatedMax.data ?? []} loading={estimatedMax.isLoading} />
+          {estimatedMax.error ? (
+            <QueryStatePanel error={estimatedMax.error} />
+          ) : (
+            <EstimatedMaxChart
+              exercises={estimatedMax.data ?? []}
+              loading={estimatedMax.isLoading}
+            />
+          )}
         </Section>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Section title="Muscle Group Volume" subtitle="Volume distribution by muscle group">
-          <MuscleGroupVolumeChart data={muscleVolume.data ?? []} loading={muscleVolume.isLoading} />
+          {muscleVolume.error ? (
+            <QueryStatePanel error={muscleVolume.error} />
+          ) : (
+            <MuscleGroupVolumeChart
+              data={muscleVolume.data ?? []}
+              loading={muscleVolume.isLoading}
+            />
+          )}
         </Section>
 
         <Section title="Progressive Overload" subtitle="Exercise-level overload trends">
-          <ProgressiveOverloadCards exercises={overload.data ?? []} loading={overload.isLoading} />
+          {overload.error ? (
+            <QueryStatePanel error={overload.error} />
+          ) : (
+            <ProgressiveOverloadCards
+              exercises={overload.data ?? []}
+              loading={overload.isLoading}
+            />
+          )}
         </Section>
       </div>
 

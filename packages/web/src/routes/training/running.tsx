@@ -5,6 +5,7 @@ import { ActivityTable, type ActivityTableColumn } from "../../components/Activi
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { DofekChart } from "../../components/DofekChart.tsx";
 import { ChartLoadingSkeleton } from "../../components/LoadingSkeleton.tsx";
+import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import {
   chartColors,
@@ -37,31 +38,51 @@ export function RunningTab() {
     <>
       {/* Pace Duration Curve */}
       <Section title="Pace Duration Curve" subtitle="Best sustained pace at each duration">
-        <PaceCurveChart
-          data={paceCurve.data?.points ?? []}
-          loading={paceCurve.isLoading}
-          units={units}
-        />
+        {paceCurve.error ? (
+          <QueryStatePanel error={paceCurve.error} />
+        ) : (
+          <PaceCurveChart
+            data={paceCurve.data?.points ?? []}
+            loading={paceCurve.isLoading}
+            units={units}
+          />
+        )}
       </Section>
 
       {/* Pace Trend + Running Dynamics side by side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Section title="Pace Trend" subtitle="Average pace per run over time">
-          <PaceTrendChart data={paceTrend.data ?? []} loading={paceTrend.isLoading} units={units} />
+          {paceTrend.error ? (
+            <QueryStatePanel error={paceTrend.error} />
+          ) : (
+            <PaceTrendChart
+              data={paceTrend.data ?? []}
+              loading={paceTrend.isLoading}
+              units={units}
+            />
+          )}
         </Section>
 
         <Section title="Cadence Trend" subtitle="Steps per minute over time">
-          <CadenceTrendChart data={dynamics.data ?? []} loading={dynamics.isLoading} />
+          {dynamics.error ? (
+            <QueryStatePanel error={dynamics.error} />
+          ) : (
+            <CadenceTrendChart data={dynamics.data ?? []} loading={dynamics.isLoading} />
+          )}
         </Section>
       </div>
 
       {/* Running Dynamics Table */}
       <Section title="Running Form" subtitle="Per-activity running dynamics">
-        <RunningDynamicsTable
-          data={dynamics.data ?? []}
-          loading={dynamics.isLoading}
-          units={units}
-        />
+        {dynamics.error ? (
+          <QueryStatePanel error={dynamics.error} />
+        ) : (
+          <RunningDynamicsTable
+            data={dynamics.data ?? []}
+            loading={dynamics.isLoading}
+            units={units}
+          />
+        )}
       </Section>
 
       <Section title="Recent Runs" subtitle="Recent running activities">

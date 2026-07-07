@@ -48,7 +48,14 @@ function makeSensorStore(
   const query = vi.fn(
     async (schema: { parse: (row: unknown) => unknown }, queryText = ""): Promise<unknown[]> => {
       const rows = queryText.includes("normalized_power") ? normalizedPowerRows : activityRows;
-      return rows.map((row) => schema.parse(row));
+      return rows.map((row, rowIndex) => {
+        try {
+          return schema.parse(row);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          throw new Error(`Invalid PMC sensor-store fixture at row ${rowIndex}: ${message}`);
+        }
+      });
     },
   );
   return {
