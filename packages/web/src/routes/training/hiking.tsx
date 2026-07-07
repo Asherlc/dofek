@@ -19,12 +19,15 @@ function HikingTab() {
   const hikingQueryDays = Math.max(days, 365);
 
   const gradeAdjustedPace = trpc.hiking.gradeAdjustedPace.useQuery(
+    { days },
+    TRAINING_SLOW_QUERY_OPTIONS,
+  );
+  const elevation = trpc.hiking.elevationProfile.useQuery(
     { days: hikingQueryDays },
     TRAINING_SLOW_QUERY_OPTIONS,
   );
-  const elevation = trpc.hiking.elevationProfile.useQuery({ days: hikingQueryDays });
   const biomechanics = trpc.hiking.walkingBiomechanics.useQuery(
-    { days: hikingQueryDays },
+    { days },
     TRAINING_SLOW_QUERY_OPTIONS,
   );
   const routeComparison = trpc.hiking.activityComparison.useQuery(
@@ -38,7 +41,7 @@ function HikingTab() {
         title="Grade-Adjusted Pace"
         subtitle="Minetti-model normalized pace for walks and hikes"
       >
-        {gradeAdjustedPace.error ? (
+        {gradeAdjustedPace.error && !gradeAdjustedPace.data ? (
           <QueryStatePanel error={gradeAdjustedPace.error} />
         ) : (
           <GradeAdjustedPaceTable
@@ -53,7 +56,7 @@ function HikingTab() {
           title="Elevation Gain"
           subtitle="Weekly cumulative elevation from hiking and walking"
         >
-          {elevation.error ? (
+          {elevation.error && !elevation.data ? (
             <QueryStatePanel error={elevation.error} />
           ) : (
             <ElevationGainChart data={elevation.data ?? []} loading={elevation.isLoading} />
@@ -61,7 +64,7 @@ function HikingTab() {
         </Section>
 
         <Section title="Walking Biomechanics" subtitle="Step length, gait symmetry, double support">
-          {biomechanics.error ? (
+          {biomechanics.error && !biomechanics.data ? (
             <QueryStatePanel error={biomechanics.error} />
           ) : (
             <WalkingBiomechanicsChart
@@ -73,7 +76,7 @@ function HikingTab() {
       </div>
 
       <Section title="Route Comparison" subtitle="Repeated routes compared over time">
-        {routeComparison.error ? (
+        {routeComparison.error && !routeComparison.data ? (
           <QueryStatePanel error={routeComparison.error} />
         ) : (
           <ActivityComparisonChart

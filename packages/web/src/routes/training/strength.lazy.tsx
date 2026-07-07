@@ -45,7 +45,7 @@ function StrengthTab() {
     <>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Section title="Strength Volume" subtitle="Weekly volume load over time">
-          {strengthVolume.error ? (
+          {strengthVolume.error && !strengthVolume.data ? (
             <QueryStatePanel error={strengthVolume.error} />
           ) : (
             <StrengthVolumeChart
@@ -59,7 +59,7 @@ function StrengthTab() {
           title="Estimated 1-Rep Max"
           subtitle="Estimated max single-rep strength per exercise over time"
         >
-          {estimatedMax.error ? (
+          {estimatedMax.error && !estimatedMax.data ? (
             <QueryStatePanel error={estimatedMax.error} />
           ) : (
             <EstimatedMaxChart
@@ -72,7 +72,7 @@ function StrengthTab() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Section title="Muscle Group Volume" subtitle="Volume distribution by muscle group">
-          {muscleVolume.error ? (
+          {muscleVolume.error && !muscleVolume.data ? (
             <QueryStatePanel error={muscleVolume.error} />
           ) : (
             <MuscleGroupVolumeChart
@@ -83,7 +83,7 @@ function StrengthTab() {
         </Section>
 
         <Section title="Progressive Overload" subtitle="Exercise-level overload trends">
-          {overload.error ? (
+          {overload.error && !overload.data ? (
             <QueryStatePanel error={overload.error} />
           ) : (
             <ProgressiveOverloadCards

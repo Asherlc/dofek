@@ -48,7 +48,7 @@ function RecoveryTab() {
           title="Readiness Score"
           subtitle="Composite score from HRV, resting HR, sleep, load balance"
         >
-          {readiness.error ? (
+          {readiness.error && !readiness.data ? (
             <QueryStatePanel error={readiness.error} />
           ) : (
             <ReadinessScoreCard data={readiness.data ?? []} loading={readiness.isLoading} />
@@ -59,7 +59,7 @@ function RecoveryTab() {
           title="Acute:Chronic Workload Ratio"
           subtitle="7-day vs 28-day training load ratio — stay between 0.8 and 1.3"
         >
-          {workloadRatio.error ? (
+          {workloadRatio.error && !workloadRatio.data ? (
             <QueryStatePanel error={workloadRatio.error} />
           ) : (
             <WorkloadRatioChart
@@ -75,7 +75,7 @@ function RecoveryTab() {
           title="Heart Rate Variability & Resting Heart Rate"
           subtitle="Daily recovery vitals with 7-day averages"
         >
-          {hrvBaseline.error ? (
+          {hrvBaseline.error && !hrvBaseline.data ? (
             <QueryStatePanel error={hrvBaseline.error} />
           ) : (
             <HrvBaselineChart data={hrvBaseline.data ?? []} loading={hrvBaseline.isLoading} />
@@ -83,7 +83,7 @@ function RecoveryTab() {
         </Section>
 
         <Section title="HRV Coefficient of Variation" subtitle="7-day rolling HRV variability">
-          {hrvVariability.error ? (
+          {hrvVariability.error && !hrvVariability.data ? (
             <QueryStatePanel error={hrvVariability.error} />
           ) : (
             <HrvVariabilityChart
@@ -97,7 +97,7 @@ function RecoveryTab() {
           title="Sleep Analytics"
           subtitle="Nightly sleep stages, efficiency, and sleep debt"
         >
-          {sleepData.error ? (
+          {sleepData.error && !sleepData.data ? (
             <QueryStatePanel error={sleepData.error} />
           ) : (
             <SleepAnalyticsChart

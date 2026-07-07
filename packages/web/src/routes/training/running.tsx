@@ -38,7 +38,7 @@ export function RunningTab() {
     <>
       {/* Pace Duration Curve */}
       <Section title="Pace Duration Curve" subtitle="Best sustained pace at each duration">
-        {paceCurve.error ? (
+        {paceCurve.error && !paceCurve.data ? (
           <QueryStatePanel error={paceCurve.error} />
         ) : (
           <PaceCurveChart
@@ -52,7 +52,7 @@ export function RunningTab() {
       {/* Pace Trend + Running Dynamics side by side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Section title="Pace Trend" subtitle="Average pace per run over time">
-          {paceTrend.error ? (
+          {paceTrend.error && !paceTrend.data ? (
             <QueryStatePanel error={paceTrend.error} />
           ) : (
             <PaceTrendChart
@@ -64,7 +64,7 @@ export function RunningTab() {
         </Section>
 
         <Section title="Cadence Trend" subtitle="Steps per minute over time">
-          {dynamics.error ? (
+          {dynamics.error && !dynamics.data ? (
             <QueryStatePanel error={dynamics.error} />
           ) : (
             <CadenceTrendChart data={dynamics.data ?? []} loading={dynamics.isLoading} />
@@ -74,7 +74,7 @@ export function RunningTab() {
 
       {/* Running Dynamics Table */}
       <Section title="Running Form" subtitle="Per-activity running dynamics">
-        {dynamics.error ? (
+        {dynamics.error && !dynamics.data ? (
           <QueryStatePanel error={dynamics.error} />
         ) : (
           <RunningDynamicsTable

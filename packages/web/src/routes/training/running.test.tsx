@@ -59,6 +59,28 @@ const mockDynamicsData = [
   },
 ];
 
+interface QueryResult<Data> {
+  data: Data;
+  isLoading: boolean;
+  error: Error | null;
+}
+
+let paceCurveQuery: QueryResult<typeof mockPaceCurveData> = {
+  data: mockPaceCurveData,
+  isLoading: false,
+  error: null,
+};
+let paceTrendQuery: QueryResult<typeof mockPaceTrendData> = {
+  data: mockPaceTrendData,
+  isLoading: false,
+  error: null,
+};
+let dynamicsQuery: QueryResult<typeof mockDynamicsData> = {
+  data: mockDynamicsData,
+  isLoading: false,
+  error: null,
+};
+
 vi.mock("../../lib/trainingDaysContext.ts", () => ({
   useTrainingDays: () => ({ days: 90 }),
 }));
@@ -71,11 +93,11 @@ vi.mock("../../lib/trpc.ts", () => ({
       },
     }),
     durationCurves: {
-      paceCurve: { useQuery: () => ({ data: mockPaceCurveData, isLoading: false }) },
+      paceCurve: { useQuery: () => paceCurveQuery },
     },
     running: {
-      paceTrend: { useQuery: () => ({ data: mockPaceTrendData, isLoading: false }) },
-      dynamics: { useQuery: () => ({ data: mockDynamicsData, isLoading: false }) },
+      paceTrend: { useQuery: () => paceTrendQuery },
+      dynamics: { useQuery: () => dynamicsQuery },
     },
     activity: {
       list: { useQuery: () => ({ data: { items: [], totalCount: 0 }, isLoading: false }) },
@@ -107,6 +129,9 @@ async function importRunningTab() {
 describe("RunningTab", () => {
   beforeEach(() => {
     mockNavigate.mockReset();
+    paceCurveQuery = { data: mockPaceCurveData, isLoading: false, error: null };
+    paceTrendQuery = { data: mockPaceTrendData, isLoading: false, error: null };
+    dynamicsQuery = { data: mockDynamicsData, isLoading: false, error: null };
   });
 
   afterEach(() => {
@@ -174,6 +199,22 @@ describe("RunningTab", () => {
       });
       expect(tooltipResult).toContain("6:");
       expect(tooltipResult).not.toContain("10:");
+    });
+  });
+
+  describe("background refetch errors", () => {
+    it("keeps cached running data visible when queries have data and an error", async () => {
+      const backgroundError = new Error("Transient refetch failure");
+      paceCurveQuery = { data: mockPaceCurveData, isLoading: false, error: backgroundError };
+      paceTrendQuery = { data: mockPaceTrendData, isLoading: false, error: backgroundError };
+      dynamicsQuery = { data: mockDynamicsData, isLoading: false, error: backgroundError };
+
+      const RunningTab = await importRunningTab();
+      renderWithUnits(<RunningTab />);
+
+      expect(screen.queryByText("Transient refetch failure")).toBeNull();
+      expect(screen.getAllByText("Morning Run").length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByTestId("echarts").length).toBeGreaterThanOrEqual(3);
     });
   });
 
