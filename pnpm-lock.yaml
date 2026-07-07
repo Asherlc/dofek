@@ -368,8 +368,8 @@ importers:
         specifier: 5.3.9
         version: 5.3.9
       '@formatjs/intl-numberformat':
-        specifier: 9.3.10
-        version: 9.3.10
+        specifier: 9.3.11
+        version: 9.3.11
       '@formatjs/intl-pluralrules':
         specifier: 6.3.9
         version: 6.3.9
@@ -2590,6 +2590,9 @@ packages:
   '@formatjs/bigdecimal@0.2.5':
     resolution: {integrity: sha512-2XTKNrZRaCUyXK2976wfutqxMBuPO/S/zbJnQdysLI2Zy5mWPVNVEkE6tsTcSVWSE7DgO88t8DtBy+uf3I8bxg==}
 
+  '@formatjs/bigdecimal@0.2.6':
+    resolution: {integrity: sha512-aPzKsGQOkQRHUEbyO/ZtYfr4EqaBQnSs6U4tzTla1xBnIdEHgY2GqEqso28UMwWRkzKqqTj5+/6BmuOsRkfn2A==}
+
   '@formatjs/fast-memoize@3.1.5':
     resolution: {integrity: sha512-KLi3fan6WnCHmigd9pmEEN8Hid0v4wiFBW576M/d07KMWYecf1CvyMI3n34vCmHT4AoVqG2n702kiHbXjzZX2A==}
 
@@ -2605,11 +2608,14 @@ packages:
   '@formatjs/intl-locale@5.3.9':
     resolution: {integrity: sha512-h8xk+FFg0R9jZmX2r+75BglH5Bd++7pnCn5veN4Fv9a+E6TiYgD0QnYXbYOzOskLPKaTnFrUFkQ7OYJUasuONw==}
 
+  '@formatjs/intl-localematcher@0.8.10':
+    resolution: {integrity: sha512-P/IC3qws3jH+1fEs+o0RIFgXKRaQlFehjS5W0FPAqdo6hgzawLl+eD0q0JjheQ3XtoOe5n8WSYfX06KQZI/QJA==}
+
   '@formatjs/intl-localematcher@0.8.9':
     resolution: {integrity: sha512-GmB0F/gYh4Hdl4rLWjgDsgT+x4pB54fkJeRh8kAZ4XFzKeCK8dGs+SBJWXO42QZtOUni+IDWKNuCw6wiL4lTvw==}
 
-  '@formatjs/intl-numberformat@9.3.10':
-    resolution: {integrity: sha512-wYboXVXZyTvuMBgwE0AxcXYxV8LM0IkH+lfCoBlRVNjCwNzdHVbRcUxDRHE+HbFkQ6/zWFkyguvIP5y3PAt+jw==}
+  '@formatjs/intl-numberformat@9.3.11':
+    resolution: {integrity: sha512-AF7I2OIV/kSTvUBBV5nnP+SBA71DiSRcK5O9buEcHohqcg5ZhAcWmLf9FCpMya/saHahi2E0IOS2oSP+keRP5g==}
 
   '@formatjs/intl-pluralrules@6.3.9':
     resolution: {integrity: sha512-0405uU1npNs5/N04tfIQ3pme96Xb51tEkCBTBKy8HMjAsssbhnK70gf8v3ogj1WqHf7WFRoFZu8clQTsvwBQNg==}
@@ -15102,6 +15108,8 @@ snapshots:
 
   '@formatjs/bigdecimal@0.2.5': {}
 
+  '@formatjs/bigdecimal@0.2.6': {}
+
   '@formatjs/fast-memoize@3.1.5': {}
 
   '@formatjs/fast-memoize@3.1.6': {}
@@ -15115,14 +15123,18 @@ snapshots:
       '@formatjs/intl-getcanonicallocales': 3.2.10
       '@formatjs/intl-supportedvaluesof': 2.3.8
 
+  '@formatjs/intl-localematcher@0.8.10':
+    dependencies:
+      '@formatjs/fast-memoize': 3.1.6
+
   '@formatjs/intl-localematcher@0.8.9':
     dependencies:
       '@formatjs/fast-memoize': 3.1.5
 
-  '@formatjs/intl-numberformat@9.3.10':
+  '@formatjs/intl-numberformat@9.3.11':
     dependencies:
-      '@formatjs/bigdecimal': 0.2.5
-      '@formatjs/intl-localematcher': 0.8.9
+      '@formatjs/bigdecimal': 0.2.6
+      '@formatjs/intl-localematcher': 0.8.10
 
   '@formatjs/intl-pluralrules@6.3.9':
     dependencies:
@@ -20881,14 +20893,14 @@ snapshots:
       msw: 2.12.11(@types/node@22.19.15)(typescript@6.0.3)
       vite: 7.3.6(@types/node@22.19.15)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0)
 
-  '@vitest/mocker@3.2.6(msw@2.12.11(@types/node@25.9.1)(typescript@6.0.3))(vite@7.3.6(@types/node@22.19.15)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))':
+  '@vitest/mocker@3.2.6(msw@2.12.11(@types/node@25.9.1)(typescript@6.0.3))(vite@7.3.6(@types/node@25.9.1)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))':
     dependencies:
       '@vitest/spy': 3.2.6
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
       msw: 2.12.11(@types/node@25.9.1)(typescript@6.0.3)
-      vite: 7.3.6(@types/node@22.19.15)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0)
+      vite: 7.3.6(@types/node@25.9.1)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0)
 
   '@vitest/pretty-format@3.2.4':
     dependencies:
@@ -26402,7 +26414,7 @@ snapshots:
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/expect': 3.2.6
-      '@vitest/mocker': 3.2.6(msw@2.12.11(@types/node@25.9.1)(typescript@6.0.3))(vite@7.3.6(@types/node@22.19.15)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))
+      '@vitest/mocker': 3.2.6(msw@2.12.11(@types/node@25.9.1)(typescript@6.0.3))(vite@7.3.6(@types/node@25.9.1)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))
       '@vitest/pretty-format': 3.2.6
       '@vitest/runner': 3.2.6
       '@vitest/snapshot': 3.2.6
