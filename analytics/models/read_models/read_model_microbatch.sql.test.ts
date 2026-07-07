@@ -60,6 +60,9 @@ describe("production analytics read-model build", () => {
       "activity_heart_rate_zones",
       "activity_summary_rows",
       "activity_vo2max_estimate",
+      "activity_aerobic_efficiency",
+      "activity_polarization_zones",
+      "activity_power_curve",
       "provider_stats",
     ]);
     expect(sleepDashboardMatch?.[1]?.split(" ")).toEqual([
