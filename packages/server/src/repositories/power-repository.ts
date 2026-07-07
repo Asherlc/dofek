@@ -8,13 +8,14 @@ import {
 } from "@dofek/training/power-analysis";
 import type { Database } from "dofek/db";
 import { z } from "zod";
+import { dateStringSchema } from "../lib/typed-sql.ts";
 import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 
 // ── Zod schemas ──────────────────────────────────────────────
 
 const normalizedPowerRowSchema = z.object({
   activity_id: z.string(),
-  activity_date: z.string(),
+  activity_date: dateStringSchema,
   activity_name: z.string().nullable(),
   normalized_power: z.coerce.number(),
 });
@@ -22,7 +23,7 @@ const normalizedPowerRowSchema = z.object({
 const powerCurvePointRowSchema = z.object({
   duration_seconds: z.coerce.number(),
   best_power: z.coerce.number(),
-  activity_date: z.string(),
+  activity_date: dateStringSchema,
 });
 
 // ── Repository ───────────────────────────────────────────────

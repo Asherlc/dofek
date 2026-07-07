@@ -5,16 +5,18 @@ const modelSql = readModelSql("activity_vo2max_estimate.sql");
 
 describe("activity_vo2max_estimate model", () => {
   it("includes trail running in the upstream activity filter", () => {
-    expect(extractCteSql(modelSql, "current_activity")).toContain("'trail_running'");
+    const currentActivitySql = extractCteSql(modelSql, "current_activity");
+
+    expect(currentActivitySql).toMatch(/activity_type IN \([\s\S]*'trail_running'[\s\S]*\)/);
   });
 
   it("reads bounded raw activity rows instead of the full deduping activity view", () => {
     const currentActivitySql = extractCteSql(modelSql, "current_activity");
 
     expect(currentActivitySql).toContain("source('postgres_fitness', 'activity')");
-    expect(currentActivitySql).toContain("_peerdb_is_deleted = 0");
-    expect(currentActivitySql).toContain("provider_absent_at IS null");
-    expect(currentActivitySql).toContain("deleted_at IS null");
+    expect(currentActivitySql).toMatch(
+      /WHERE _peerdb_is_deleted = 0\s+AND provider_absent_at IS null\s+AND deleted_at IS null/,
+    );
     expect(currentActivitySql).not.toContain("analytics.v_activity");
   });
 
