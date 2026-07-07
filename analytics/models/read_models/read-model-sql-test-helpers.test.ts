@@ -42,4 +42,22 @@ SELECT * FROM quoted
 
     expect(extractCteSql(sql, "quoted")).toContain("it''s fine (still in string)");
   });
+
+  it("ignores CTE-like text in comments and string literals while finding the start", () => {
+    const sql = `
+-- target AS (SELECT 'wrong')
+WITH decoy AS (
+  SELECT 'target AS (SELECT wrong)' AS label
+),
+target AS (
+  SELECT 'right' AS label
+)
+SELECT * FROM target
+`;
+
+    const body = extractCteSql(sql, "target");
+
+    expect(body).toContain("SELECT 'right'");
+    expect(body).not.toContain("wrong");
+  });
 });

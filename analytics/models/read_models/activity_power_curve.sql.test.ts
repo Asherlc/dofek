@@ -16,7 +16,12 @@ describe("activity_power_curve model", () => {
 
     expect(modelSql).toContain("existing_duration_rows AS (");
     expect(tombstoneRowsSql).toContain("existing_duration_rows.duration_seconds AS duration_seconds");
-    expect(tombstoneRowsSql).toContain("WHERE best_powers.activity_id IS NULL");
+    expect(tombstoneRowsSql).toContain(
+      "best_power_for_existing_duration.duration_seconds = existing_duration_rows.duration_seconds",
+    );
+    expect(tombstoneRowsSql).toContain(
+      "WHERE best_power_for_existing_duration.activity_id IS NULL",
+    );
     expect(modelSql).toContain("FROM tombstone_rows");
   });
 });

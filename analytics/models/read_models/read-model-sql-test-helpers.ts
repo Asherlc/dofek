@@ -13,15 +13,82 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function skipSqlLineComment(sql: string, startIndex: number): number {
+  let cursorIndex = startIndex + 2;
+  while (cursorIndex < sql.length && sql[cursorIndex] !== "\n") {
+    cursorIndex += 1;
+  }
+  return cursorIndex;
+}
+
+function skipSqlBlockComment(sql: string, startIndex: number): number {
+  let cursorIndex = startIndex + 2;
+  while (cursorIndex < sql.length - 1) {
+    if (sql[cursorIndex] === "*" && sql[cursorIndex + 1] === "/") {
+      return cursorIndex + 2;
+    }
+    cursorIndex += 1;
+  }
+  return sql.length;
+}
+
+function skipSqlStringLiteral(sql: string, startIndex: number): number {
+  let cursorIndex = startIndex + 1;
+  while (cursorIndex < sql.length) {
+    if (sql[cursorIndex] === "'" && sql[cursorIndex + 1] === "'") {
+      cursorIndex += 2;
+      continue;
+    }
+    if (sql[cursorIndex] === "'") {
+      return cursorIndex + 1;
+    }
+    cursorIndex += 1;
+  }
+  return sql.length;
+}
+
+function findCteBodyStartIndex(modelSql: string, name: string): number | null {
+  const startPattern = new RegExp(`\\b${escapeRegExp(name)}\\s+AS\\s*\\(`, "iy");
+  let cursorIndex = 0;
+
+  while (cursorIndex < modelSql.length) {
+    const currentChar = modelSql[cursorIndex];
+    const nextChar = modelSql[cursorIndex + 1];
+
+    if (currentChar === "-" && nextChar === "-") {
+      cursorIndex = skipSqlLineComment(modelSql, cursorIndex);
+      continue;
+    }
+
+    if (currentChar === "/" && nextChar === "*") {
+      cursorIndex = skipSqlBlockComment(modelSql, cursorIndex);
+      continue;
+    }
+
+    if (currentChar === "'") {
+      cursorIndex = skipSqlStringLiteral(modelSql, cursorIndex);
+      continue;
+    }
+
+    startPattern.lastIndex = cursorIndex;
+    const startMatch = startPattern.exec(modelSql);
+    if (startMatch) {
+      return startMatch.index + startMatch[0].length;
+    }
+
+    cursorIndex += 1;
+  }
+
+  return null;
+}
+
 /** Extract a CTE body, skipping parentheses inside quotes and SQL comments. */
 export function extractCteSql(modelSql: string, name: string): string {
-  const startPattern = new RegExp(`\\b${escapeRegExp(name)}\\s+AS\\s*\\(`, "i");
-  const startMatch = startPattern.exec(modelSql);
-  if (!startMatch) {
+  const bodyStartIndex = findCteBodyStartIndex(modelSql, name);
+  if (bodyStartIndex === null) {
     throw new Error(`Could not find ${name} CTE`);
   }
 
-  const bodyStartIndex = startMatch.index + startMatch[0].length;
   let cursorIndex = bodyStartIndex;
   let parenthesisDepth = 1;
 
@@ -30,38 +97,17 @@ export function extractCteSql(modelSql: string, name: string): string {
     const nextChar = modelSql[cursorIndex + 1];
 
     if (currentChar === "-" && nextChar === "-") {
-      cursorIndex += 2;
-      while (cursorIndex < modelSql.length && modelSql[cursorIndex] !== "\n") {
-        cursorIndex += 1;
-      }
+      cursorIndex = skipSqlLineComment(modelSql, cursorIndex);
       continue;
     }
 
     if (currentChar === "/" && nextChar === "*") {
-      cursorIndex += 2;
-      while (cursorIndex < modelSql.length - 1) {
-        if (modelSql[cursorIndex] === "*" && modelSql[cursorIndex + 1] === "/") {
-          cursorIndex += 2;
-          break;
-        }
-        cursorIndex += 1;
-      }
+      cursorIndex = skipSqlBlockComment(modelSql, cursorIndex);
       continue;
     }
 
     if (currentChar === "'") {
-      cursorIndex += 1;
-      while (cursorIndex < modelSql.length) {
-        if (modelSql[cursorIndex] === "'" && modelSql[cursorIndex + 1] === "'") {
-          cursorIndex += 2;
-          continue;
-        }
-        if (modelSql[cursorIndex] === "'") {
-          cursorIndex += 1;
-          break;
-        }
-        cursorIndex += 1;
-      }
+      cursorIndex = skipSqlStringLiteral(modelSql, cursorIndex);
       continue;
     }
 

@@ -151,10 +151,10 @@ active_rows AS (
     SELECT
         activity_keys.activity_id AS activity_id,
         activity_keys.user_id AS user_id,
-        best_powers.started_at AS started_at,
-        ad.activity_date AS activity_date,
+        toNullable(best_powers.started_at) AS started_at,
+        toNullable(ad.activity_date) AS activity_date,
         best_powers.duration_seconds AS duration_seconds,
-        best_powers.best_power AS best_power,
+        toNullable(best_powers.best_power) AS best_power,
         0 AS is_deleted,
         refresh_clock.refresh_version AS refresh_version,
         refresh_clock.refreshed_at AS refreshed_at
@@ -182,14 +182,15 @@ tombstone_rows AS (
         refresh_clock.refresh_version AS refresh_version,
         refresh_clock.refreshed_at AS refreshed_at
     FROM activity_keys
-    LEFT JOIN best_powers
-        ON best_powers.activity_id = activity_keys.activity_id
-        AND best_powers.user_id = activity_keys.user_id
     INNER JOIN existing_duration_rows
         ON existing_duration_rows.activity_id = activity_keys.activity_id
         AND existing_duration_rows.user_id = activity_keys.user_id
+    LEFT JOIN best_powers AS best_power_for_existing_duration
+        ON best_power_for_existing_duration.activity_id = existing_duration_rows.activity_id
+        AND best_power_for_existing_duration.user_id = existing_duration_rows.user_id
+        AND best_power_for_existing_duration.duration_seconds = existing_duration_rows.duration_seconds
     CROSS JOIN refresh_clock
-    WHERE best_powers.activity_id IS NULL
+    WHERE best_power_for_existing_duration.activity_id IS NULL
 )
 {% endif %}
 
