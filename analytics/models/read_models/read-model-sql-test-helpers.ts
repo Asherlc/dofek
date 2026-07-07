@@ -9,10 +9,6 @@ export function readModelSql(modelFileName: string): string {
   }
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function skipSqlLineComment(sql: string, startIndex: number): number {
   let cursorIndex = startIndex + 2;
   while (cursorIndex < sql.length && sql[cursorIndex] !== "\n") {
@@ -47,8 +43,45 @@ function skipSqlStringLiteral(sql: string, startIndex: number): number {
   return sql.length;
 }
 
+function isSqlIdentifierChar(value: string | undefined): boolean {
+  return value !== undefined && /[A-Za-z0-9_]/.test(value);
+}
+
+function skipWhitespace(sql: string, startIndex: number): number {
+  let cursorIndex = startIndex;
+  while (cursorIndex < sql.length && /\s/.test(sql[cursorIndex] ?? "")) {
+    cursorIndex += 1;
+  }
+  return cursorIndex;
+}
+
+function matchCteHeaderEndIndex(sql: string, name: string, startIndex: number): number | null {
+  if (isSqlIdentifierChar(sql[startIndex - 1])) {
+    return null;
+  }
+
+  const nameEndIndex = startIndex + name.length;
+  if (sql.slice(startIndex, nameEndIndex).toLowerCase() !== name.toLowerCase()) {
+    return null;
+  }
+  if (isSqlIdentifierChar(sql[nameEndIndex])) {
+    return null;
+  }
+
+  let cursorIndex = skipWhitespace(sql, nameEndIndex);
+  if (sql.slice(cursorIndex, cursorIndex + 2).toLowerCase() !== "as") {
+    return null;
+  }
+  cursorIndex += 2;
+  if (isSqlIdentifierChar(sql[cursorIndex])) {
+    return null;
+  }
+
+  cursorIndex = skipWhitespace(sql, cursorIndex);
+  return sql[cursorIndex] === "(" ? cursorIndex + 1 : null;
+}
+
 function findCteBodyStartIndex(modelSql: string, name: string): number | null {
-  const startPattern = new RegExp(`\\b${escapeRegExp(name)}\\s+AS\\s*\\(`, "iy");
   let cursorIndex = 0;
 
   while (cursorIndex < modelSql.length) {
@@ -70,10 +103,9 @@ function findCteBodyStartIndex(modelSql: string, name: string): number | null {
       continue;
     }
 
-    startPattern.lastIndex = cursorIndex;
-    const startMatch = startPattern.exec(modelSql);
-    if (startMatch) {
-      return startMatch.index + startMatch[0].length;
+    const headerEndIndex = matchCteHeaderEndIndex(modelSql, name, cursorIndex);
+    if (headerEndIndex !== null) {
+      return headerEndIndex;
     }
 
     cursorIndex += 1;
