@@ -368,9 +368,7 @@ function rewriteClickHouseDatabaseNames(
     .replace(/\banalytics\b/g, databases.analytics);
 }
 
-function buildTestAnalyticsTableStatement(viewName: "analytics.deduped_activities"): string;
-function buildTestAnalyticsTableStatement(viewName: string): string | null;
-function buildTestAnalyticsTableStatement(viewName: string): string | null {
+function buildTestAnalyticsTableStatement(viewName: string): string {
   const columnDefinitionsByViewName: Record<string, string> = {
     v_activity: `id UUID,
 provider_id String,
@@ -726,11 +724,11 @@ refreshed_at DateTime64(9)`,
   };
   const shortViewName = viewName.split(".").at(-1);
   if (!shortViewName) {
-    return null;
+    throw new Error(`Missing ClickHouse test analytics table name for ${viewName}`);
   }
   const columnDefinitions = columnDefinitionsByViewName[shortViewName];
   if (!columnDefinitions) {
-    return null;
+    throw new Error(`Missing ClickHouse test analytics table schema for ${viewName}`);
   }
   const engine =
     shortViewName === "deduped_activities" ||
@@ -1777,11 +1775,7 @@ function rewriteClickHouseTestCommand(
       viewName,
       buildTestAnalyticsSelectSql(viewName, trimmedSelectSql, databases),
     );
-    const tableStatement = buildTestAnalyticsTableStatement(viewName);
-    if (!tableStatement) {
-      throw new Error(`Missing ClickHouse test analytics table schema for ${viewName}`);
-    }
-    return [tableStatement];
+    return [buildTestAnalyticsTableStatement(viewName)];
   }
 
   if (
