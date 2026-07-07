@@ -6,8 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted<{
   capturedRouteComponent: ComponentType | null;
+  bodyRecords: Array<{ recordedAt: string; weightKg: number | null }>;
 }>(() => ({
   capturedRouteComponent: null,
+  bodyRecords: [],
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -97,10 +99,7 @@ vi.mock("../../lib/trpc.ts", () => ({
     body: {
       list: {
         useQuery: () => ({
-          data: [
-            { recordedAt: "2026-07-01", weightKg: null },
-            { recordedAt: "2026-06-01", weightKg: 100 },
-          ],
+          data: state.bodyRecords,
           isLoading: false,
           error: null,
         }),
@@ -118,8 +117,12 @@ async function renderCyclingTab() {
 
 describe("CyclingTab", () => {
   beforeEach(() => {
-    state.capturedRouteComponent = null;
     vi.resetModules();
+    state.capturedRouteComponent = null;
+    state.bodyRecords = [
+      { recordedAt: "2026-07-01", weightKg: null },
+      { recordedAt: "2026-06-01", weightKg: 100 },
+    ];
   });
 
   afterEach(() => {
@@ -133,5 +136,31 @@ describe("CyclingTab", () => {
     expect(screen.getByText("5.00")).toBeTruthy();
     expect(screen.getByText("50.2")).toBeTruthy();
     expect(screen.getByText("61")).toBeTruthy();
+  });
+
+  it("uses the newest numeric weight even when body records are out of order", async () => {
+    state.bodyRecords = [
+      { recordedAt: "2026-04-01", weightKg: 90 },
+      { recordedAt: "2026-07-01", weightKg: 80 },
+      { recordedAt: "2026-06-01", weightKg: 100 },
+    ];
+
+    await renderCyclingTab();
+
+    expect(screen.getByText("5.00")).toBeTruthy();
+    expect(screen.getByText("6.25")).toBeTruthy();
+  });
+
+  it("omits watts per kilogram and VO2max metrics when no numeric weight exists", async () => {
+    state.bodyRecords = [
+      { recordedAt: "2026-07-01", weightKg: null },
+      { recordedAt: "2026-06-01", weightKg: null },
+    ];
+
+    await renderCyclingTab();
+
+    expect(screen.getAllByText("--").length).toBeGreaterThanOrEqual(4);
+    expect(screen.queryByText("4.00")).toBeNull();
+    expect(screen.queryByText("50.2")).toBeNull();
   });
 });

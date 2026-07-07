@@ -76,9 +76,9 @@ async function renderHikingTab() {
 
 describe("HikingTab", () => {
   beforeEach(() => {
+    vi.resetModules();
     state.capturedRouteComponent = null;
     state.queryCalls.length = 0;
-    vi.resetModules();
   });
 
   afterEach(() => {
