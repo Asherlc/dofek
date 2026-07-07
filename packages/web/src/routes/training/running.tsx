@@ -28,7 +28,10 @@ export function RunningTab() {
   const { days } = useTrainingDays();
   const units = useUnitConverter();
 
-  const paceCurve = trpc.durationCurves.paceCurve.useQuery({ days });
+  const paceCurve = trpc.durationCurves.paceCurve.useQuery(
+    { days },
+    { staleTime: 300_000, gcTime: 1_800_000 },
+  );
   const paceTrend = trpc.running.paceTrend.useQuery({ days });
   const dynamics = trpc.running.dynamics.useQuery({ days });
 

@@ -17,6 +17,7 @@ function makeAnalyticsStore() {
     getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
     getPowerCurveSamples: vi.fn(),
     getNormalizedPowerSamples: vi.fn(),
+    query: vi.fn().mockResolvedValue([]),
     getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
     getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
     getPaceCurveRows: vi.fn().mockResolvedValue([]),
@@ -30,7 +31,12 @@ function makeAnalyticsStoreFromDb(db: ReturnType<typeof makeDb>) {
     getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
     getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
     getPowerCurveSamples: vi.fn(() => db.execute()),
-    getNormalizedPowerSamples: vi.fn(() => db.execute()),
+    query: vi.fn(async (_schema: unknown, queryText?: string) => {
+      if (queryText?.includes("activity_power_curve")) {
+        return [];
+      }
+      return db.execute();
+    }),
     getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
     getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
     getPaceCurveRows: vi.fn().mockResolvedValue([]),
@@ -119,7 +125,7 @@ describe("PowerRepository", () => {
   describe("getEftpTrend", () => {
     it("returns empty trend when no samples", async () => {
       const analyticsStore = makeAnalyticsStore();
-      analyticsStore.getNormalizedPowerSamples.mockResolvedValueOnce([]);
+      analyticsStore.query.mockResolvedValueOnce([]);
       analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
       const result = await repo.getEftpTrend(365);
@@ -137,34 +143,32 @@ describe("PowerRepository", () => {
 
       expect(result).toEqual({ trend: [], currentEftp: null, model: null });
       expect(db.execute).toHaveBeenCalledTimes(1);
-      expect(analyticsStore.getNormalizedPowerSamples).not.toHaveBeenCalled();
+      expect(analyticsStore.query).not.toHaveBeenCalled();
       expect(analyticsStore.getPowerCurveSamples).not.toHaveBeenCalled();
     });
 
-    it("reads eFTP samples from the ClickHouse analytics store instead of Postgres", async () => {
+    it("reads eFTP samples from the activity_summary read model", async () => {
       const analyticsStore = makeAnalyticsStore();
-      analyticsStore.getNormalizedPowerSamples.mockResolvedValueOnce([]);
+      analyticsStore.query.mockResolvedValueOnce([]);
       analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
       await repo.getEftpTrend(365);
 
-      expect(analyticsStore.getNormalizedPowerSamples).toHaveBeenCalledWith(365, "user-1", "UTC");
+      expect(analyticsStore.query).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining("analytics.activity_summary"),
+        expect.objectContaining({ days: 365 }),
+      );
       expect(analyticsStore.getPowerCurveSamples).toHaveBeenCalledWith(90, "user-1", "UTC");
     });
 
     it("computes eFTP as NP * 0.95", async () => {
-      // Build 300 samples at 1s intervals for a single activity
-      // (>= 240 samples required for NP computation)
-      const normalizedPowerSamples = Array.from({ length: 300 }, (_item, _index) => ({
-        activity_id: "act-1",
-        activity_date: "2024-06-15",
-        activity_name: "Morning Ride",
-        power: 200,
-        interval_s: 1,
-      }));
+      const npRows = [
+        { activity_id: "act-1", activity_date: "2024-06-15", activity_name: "Morning Ride", np: 200 },
+      ];
 
       const analyticsStore = makeAnalyticsStore();
-      analyticsStore.getNormalizedPowerSamples.mockResolvedValueOnce(normalizedPowerSamples);
+      analyticsStore.query.mockResolvedValueOnce(npRows);
       analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
       const result = await repo.getEftpTrend(365);
@@ -172,27 +176,21 @@ describe("PowerRepository", () => {
       expect(result.trend).toHaveLength(1);
       expect(result.trend[0]?.date).toBe("2024-06-15");
       expect(result.trend[0]?.activityName).toBe("Morning Ride");
-      // Constant 200W power => NP = 200, eFTP = 200 * 0.95 = 190
+      // NP = 200, eFTP = 200 * 0.95 = 190
       expect(result.trend[0]?.eftp).toBe(190);
     });
 
     it("rounds eFTP to integer (Math.round)", async () => {
-      // 300 samples of 251W constant power
-      // NP = 251, eFTP = 251 * 0.95 = 238.45 → rounds to 238
       const today = new Date().toISOString().slice(0, 10);
-      const normalizedPowerSamples = Array.from({ length: 300 }, () => ({
-        activity_id: "act-1",
-        activity_date: today,
-        activity_name: "Ride",
-        power: 251,
-        interval_s: 1,
-      }));
+      const npRows = [
+        { activity_id: "act-1", activity_date: today, activity_name: "Ride", np: 251 },
+      ];
       const analyticsStore = makeAnalyticsStore();
-      analyticsStore.getNormalizedPowerSamples.mockResolvedValueOnce(normalizedPowerSamples);
+      analyticsStore.query.mockResolvedValueOnce(npRows);
       analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
       const result = await repo.getEftpTrend(365);
-      // NP of constant 251W = 251, eFTP = 251 * 0.95 = 238.45 → 238
+      // NP = 251, eFTP = 251 * 0.95 = 238.45 → 238
       expect(result.trend[0]?.eftp).toBe(238);
       expect(Number.isInteger(result.trend[0]?.eftp)).toBe(true);
     });
@@ -202,15 +200,11 @@ describe("PowerRepository", () => {
       const oldDate = new Date();
       oldDate.setDate(oldDate.getDate() - 200);
       const dateStr = oldDate.toISOString().slice(0, 10);
-      const normalizedPowerSamples = Array.from({ length: 300 }, () => ({
-        activity_id: "act-1",
-        activity_date: dateStr,
-        activity_name: "Old Ride",
-        power: 200,
-        interval_s: 1,
-      }));
+      const npRows = [
+        { activity_id: "act-1", activity_date: dateStr, activity_name: "Old Ride", np: 200 },
+      ];
       const analyticsStore = makeAnalyticsStore();
-      analyticsStore.getNormalizedPowerSamples.mockResolvedValueOnce(normalizedPowerSamples);
+      analyticsStore.query.mockResolvedValueOnce(npRows);
       analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
       const result = await repo.getEftpTrend(365);
@@ -222,22 +216,18 @@ describe("PowerRepository", () => {
     it("falls back to max NP * 0.95 when CP model fails", async () => {
       // Use a recent date so the fallback filter includes it
       const today = new Date().toISOString().slice(0, 10);
-      const normalizedPowerSamples = Array.from({ length: 300 }, () => ({
-        activity_id: "act-1",
-        activity_date: today,
-        activity_name: "Ride",
-        power: 250,
-        interval_s: 1,
-      }));
+      const npRows = [
+        { activity_id: "act-1", activity_date: today, activity_name: "Ride", np: 250 },
+      ];
 
       const analyticsStore = makeAnalyticsStore();
-      analyticsStore.getNormalizedPowerSamples.mockResolvedValueOnce(normalizedPowerSamples);
+      analyticsStore.query.mockResolvedValueOnce(npRows);
       analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
       const result = await repo.getEftpTrend(365);
 
       expect(result.model).toBeNull();
-      // Constant 250W => NP = 250, eFTP = 250 * 0.95 = 237.5 => 238
+      // NP = 250, eFTP = 250 * 0.95 = 237.5 => 238
       expect(result.currentEftp).toBe(238);
     });
 
@@ -247,16 +237,15 @@ describe("PowerRepository", () => {
       oldDate.setDate(oldDate.getDate() - 91);
       const oldDateStr = oldDate.toISOString().slice(0, 10);
 
-      const normalizedPowerSamples = Array.from({ length: 300 }, () => ({
+      const npRows = Array.from({ length: 1 }, () => ({
         activity_id: "act-old",
         activity_date: oldDateStr,
         activity_name: "Old Ride",
-        power: 300,
-        interval_s: 1,
+        np: 300,
       }));
 
       const analyticsStore = makeAnalyticsStore();
-      analyticsStore.getNormalizedPowerSamples.mockResolvedValueOnce(normalizedPowerSamples);
+      analyticsStore.query.mockResolvedValueOnce(npRows);
       analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
       const result = await repo.getEftpTrend(365);
@@ -269,15 +258,11 @@ describe("PowerRepository", () => {
 
     it("uses 0.95 multiplier for eFTP (not 0.9 or 1.0)", async () => {
       const today = new Date().toISOString().slice(0, 10);
-      const normalizedPowerSamples = Array.from({ length: 300 }, () => ({
-        activity_id: "act-1",
-        activity_date: today,
-        activity_name: "Ride",
-        power: 200,
-        interval_s: 1,
-      }));
+      const npRows = [
+        { activity_id: "act-1", activity_date: today, activity_name: "Ride", np: 200 },
+      ];
       const analyticsStore = makeAnalyticsStore();
-      analyticsStore.getNormalizedPowerSamples.mockResolvedValueOnce(normalizedPowerSamples);
+      analyticsStore.query.mockResolvedValueOnce(npRows);
       analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
       const result = await repo.getEftpTrend(365);
@@ -285,12 +270,17 @@ describe("PowerRepository", () => {
       expect(result.trend[0]?.eftp).toBe(190);
     });
 
-    it("uses second db.execute call for 90-day power curve (separate from NP query)", async () => {
-      const db = makeDb([], []);
-      const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
+    it("uses sensorStore.query and getPowerCurveSamples (no db.execute for NP)", async () => {
+      const npRows = [
+        { activity_id: "act-1", activity_date: "2024-06-15", activity_name: "Ride", np: 200 },
+      ];
+      const analyticsStore = makeAnalyticsStore();
+      analyticsStore.query.mockResolvedValueOnce(npRows);
+      analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
+      const repo = new PowerRepository("user-1", "UTC", analyticsStore);
       await repo.getEftpTrend(365);
-      // First call: NP samples, Second call: power curve samples (90-day)
-      expect(db.execute).toHaveBeenCalledTimes(2);
+      expect(analyticsStore.query).toHaveBeenCalledTimes(1);
+      expect(analyticsStore.getPowerCurveSamples).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -358,14 +348,10 @@ describe("PowerRepository", () => {
   describe("getEftpTrend mapping", () => {
     it("maps activityName to trend output correctly (non-null case)", async () => {
       const today = new Date().toISOString().slice(0, 10);
-      const normalizedPowerSamples = Array.from({ length: 300 }, () => ({
-        activity_id: "act-named",
-        activity_date: today,
-        activity_name: "Evening Ride",
-        power: 220,
-        interval_s: 1,
-      }));
-      const db = makeDb(normalizedPowerSamples, []);
+      const npRows = [
+        { activity_id: "act-named", activity_date: today, activity_name: "Evening Ride", np: 220 },
+      ];
+      const db = makeDb(npRows, []);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
       const result = await repo.getEftpTrend(365);
 
@@ -378,14 +364,10 @@ describe("PowerRepository", () => {
 
     it("maps activityName as null when activity has no name", async () => {
       const today = new Date().toISOString().slice(0, 10);
-      const normalizedPowerSamples = Array.from({ length: 300 }, () => ({
-        activity_id: "act-noname",
-        activity_date: today,
-        activity_name: null,
-        power: 200,
-        interval_s: 1,
-      }));
-      const db = makeDb(normalizedPowerSamples, []);
+      const npRows = [
+        { activity_id: "act-noname", activity_date: today, activity_name: null, np: 200 },
+      ];
+      const db = makeDb(npRows, []);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
       const result = await repo.getEftpTrend(365);
 
@@ -394,28 +376,18 @@ describe("PowerRepository", () => {
     });
 
     it("currentEftp uses model.cp when CP model is available", async () => {
-      // We need enough varied power data to fit a CP model
-      // Create multiple activities with different durations and powers for the CP query
       const today = new Date().toISOString().slice(0, 10);
-      const npSamples = Array.from({ length: 300 }, () => ({
-        activity_id: "act-cp",
-        activity_date: today,
-        activity_name: "Test",
-        power: 250,
-        interval_s: 1,
-      }));
+      const npRows = [
+        { activity_id: "act-cp", activity_date: today, activity_name: "Test", np: 250 },
+      ];
 
-      // For CP model fitting, we need samples across multiple durations
-      // Build two activities with different power profiles for the power curve query
       const pcSamples = [
-        // Short high-power activity (sprint-like)
         ...Array.from({ length: 120 }, () => ({
           activity_id: "pc-sprint",
           activity_date: today,
           power: 400,
           interval_s: 1,
         })),
-        // Longer moderate-power activity
         ...Array.from({ length: 1200 }, () => ({
           activity_id: "pc-endurance",
           activity_date: today,
@@ -424,7 +396,7 @@ describe("PowerRepository", () => {
         })),
       ];
 
-      const db = makeDb(npSamples, pcSamples);
+      const db = makeDb(npRows, pcSamples);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
       const result = await repo.getEftpTrend(365);
 
@@ -436,14 +408,10 @@ describe("PowerRepository", () => {
 
     it("eFTP uses multiplication not division (NP * 0.95 not NP / 0.95)", async () => {
       const today = new Date().toISOString().slice(0, 10);
-      const normalizedPowerSamples = Array.from({ length: 300 }, () => ({
-        activity_id: "act-arith",
-        activity_date: today,
-        activity_name: "Test Ride",
-        power: 100,
-        interval_s: 1,
-      }));
-      const db = makeDb(normalizedPowerSamples, []);
+      const npRows = [
+        { activity_id: "act-arith", activity_date: today, activity_name: "Test Ride", np: 100 },
+      ];
+      const db = makeDb(npRows, []);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
       const result = await repo.getEftpTrend(365);
       // NP=100, eFTP = 100 * 0.95 = 95 (if / instead of *, would be ~105)
@@ -452,25 +420,18 @@ describe("PowerRepository", () => {
     });
 
     it("currentEftp fallback filters by >= cutoff (not > cutoff)", async () => {
-      // Test boundary: activity 89 days ago (safely within 90-day window)
       const exactCutoff = new Date();
       exactCutoff.setDate(exactCutoff.getDate() - 89);
       const cutoffStr = exactCutoff.toISOString().slice(0, 10);
 
-      const normalizedPowerSamples = Array.from({ length: 300 }, () => ({
-        activity_id: "act-boundary",
-        activity_date: cutoffStr,
-        activity_name: "Boundary Ride",
-        power: 200,
-        interval_s: 1,
-      }));
-      const db = makeDb(normalizedPowerSamples, []);
+      const npRows = [
+        { activity_id: "act-boundary", activity_date: cutoffStr, activity_name: "Boundary Ride", np: 200 },
+      ];
+      const db = makeDb(npRows, []);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
       const result = await repo.getEftpTrend(365);
 
-      // The activity is exactly at the 90-day cutoff (date >= cutoff should include it)
       expect(result.trend).toHaveLength(1);
-      // currentEftp should use this entry in fallback since date >= cutoff
       expect(result.currentEftp).toBe(190);
     });
 
@@ -491,14 +452,10 @@ describe("PowerRepository", () => {
 
     it("trend entry has exactly three keys: date, eftp, activityName", async () => {
       const today = new Date().toISOString().slice(0, 10);
-      const normalizedPowerSamples = Array.from({ length: 300 }, () => ({
-        activity_id: "act-keys",
-        activity_date: today,
-        activity_name: "Ride",
-        power: 200,
-        interval_s: 1,
-      }));
-      const db = makeDb(normalizedPowerSamples, []);
+      const npRows = [
+        { activity_id: "act-keys", activity_date: today, activity_name: "Ride", np: 200 },
+      ];
+      const db = makeDb(npRows, []);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
       const result = await repo.getEftpTrend(365);
 
@@ -536,24 +493,11 @@ describe("PowerRepository", () => {
       yesterday.setDate(yesterday.getDate() - 1);
       const yesterdayStr = yesterday.toISOString().slice(0, 10);
 
-      // Two activities with different power levels
-      const normalizedPowerSamples = [
-        ...Array.from({ length: 300 }, () => ({
-          activity_id: "act-high",
-          activity_date: today,
-          activity_name: "Strong Ride",
-          power: 300,
-          interval_s: 1,
-        })),
-        ...Array.from({ length: 300 }, () => ({
-          activity_id: "act-low",
-          activity_date: yesterdayStr,
-          activity_name: "Easy Ride",
-          power: 200,
-          interval_s: 1,
-        })),
+      const npRows = [
+        { activity_id: "act-high", activity_date: today, activity_name: "Strong Ride", np: 300 },
+        { activity_id: "act-low", activity_date: yesterdayStr, activity_name: "Easy Ride", np: 200 },
       ];
-      const db = makeDb(normalizedPowerSamples, []);
+      const db = makeDb(npRows, []);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
       const result = await repo.getEftpTrend(365);
 
@@ -566,16 +510,11 @@ describe("PowerRepository", () => {
 
   describe("mutation-killing: arithmetic and comparison operators", () => {
     it("eFTP rounding uses Math.round not Math.floor or Math.ceil", async () => {
-      // 210W * 0.95 = 199.5 -> Math.round = 200 (rounds up from .5)
       const today = new Date().toISOString().slice(0, 10);
-      const normalizedPowerSamples = Array.from({ length: 300 }, () => ({
-        activity_id: "act-round",
-        activity_date: today,
-        activity_name: "Test Ride",
-        power: 210,
-        interval_s: 1,
-      }));
-      const db = makeDb(normalizedPowerSamples, []);
+      const npRows = [
+        { activity_id: "act-round", activity_date: today, activity_name: "Test Ride", np: 210 },
+      ];
+      const db = makeDb(npRows, []);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
       const result = await repo.getEftpTrend(365);
       // NP=210, 210*0.95=199.5, Math.round(199.5)=200
@@ -588,23 +527,11 @@ describe("PowerRepository", () => {
       yesterday.setDate(yesterday.getDate() - 1);
       const yesterdayStr = yesterday.toISOString().slice(0, 10);
 
-      const normalizedPowerSamples = [
-        ...Array.from({ length: 300 }, () => ({
-          activity_id: "act-max-check",
-          activity_date: today,
-          activity_name: "Hard Ride",
-          power: 280,
-          interval_s: 1,
-        })),
-        ...Array.from({ length: 300 }, () => ({
-          activity_id: "act-min-check",
-          activity_date: yesterdayStr,
-          activity_name: "Easy Ride",
-          power: 180,
-          interval_s: 1,
-        })),
+      const npRows = [
+        { activity_id: "act-max-check", activity_date: today, activity_name: "Hard Ride", np: 280 },
+        { activity_id: "act-min-check", activity_date: yesterdayStr, activity_name: "Easy Ride", np: 180 },
       ];
-      const db = makeDb(normalizedPowerSamples, []);
+      const db = makeDb(npRows, []);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
       const result = await repo.getEftpTrend(365);
 
@@ -628,14 +555,15 @@ describe("PowerRepository", () => {
         vi.setSystemTime(new Date("2026-05-24T12:00:00.000Z"));
         const cutoff = new Date();
         cutoff.setDate(cutoff.getDate() - 90);
-        const normalizedPowerSamples = Array.from({ length: 300 }, () => ({
-          activity_id: "act-gte",
-          activity_date: cutoff.toISOString(),
-          activity_name: "Boundary Ride",
-          power: 240,
-          interval_s: 1,
-        }));
-        const db = makeDb(normalizedPowerSamples, []);
+        const npRows = [
+          {
+            activity_id: "act-gte",
+            activity_date: cutoff.toISOString(),
+            activity_name: "Boundary Ride",
+            np: 240,
+          },
+        ];
+        const db = makeDb(npRows, []);
         const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
         const result = await repo.getEftpTrend(365);
 
@@ -647,18 +575,11 @@ describe("PowerRepository", () => {
     });
 
     it("currentEftp prefers model.cp over fallback when model exists", async () => {
-      // let currentEftp = model?.cp ?? null
-      // If model?.cp was mutated to always use fallback, the value would differ
       const today = new Date().toISOString().slice(0, 10);
-      const npSamples = Array.from({ length: 300 }, () => ({
-        activity_id: "act-cp-pref",
-        activity_date: today,
-        activity_name: "Test",
-        power: 250,
-        interval_s: 1,
-      }));
+      const npRows = [
+        { activity_id: "act-cp-pref", activity_date: today, activity_name: "Test", np: 250 },
+      ];
 
-      // Build varied power curve data to fit a CP model
       const pcSamples = [
         ...Array.from({ length: 120 }, () => ({
           activity_id: "pc-short",
@@ -674,7 +595,7 @@ describe("PowerRepository", () => {
         })),
       ];
 
-      const db = makeDb(npSamples, pcSamples);
+      const db = makeDb(npRows, pcSamples);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
       const result = await repo.getEftpTrend(365);
 
@@ -718,16 +639,12 @@ describe("PowerRepository", () => {
       expect(result.points).toStrictEqual([]);
     });
 
-    it("getEftpTrend trend maps date from activityDate (not activityName)", async () => {
+    it("getEftpTrend trend maps date from activity_date (not activityName)", async () => {
       const today = new Date().toISOString().slice(0, 10);
-      const normalizedPowerSamples = Array.from({ length: 300 }, () => ({
-        activity_id: "act-date-map",
-        activity_date: today,
-        activity_name: "Not A Date",
-        power: 200,
-        interval_s: 1,
-      }));
-      const db = makeDb(normalizedPowerSamples, []);
+      const npRows = [
+        { activity_id: "act-date-map", activity_date: today, activity_name: "Not A Date", np: 200 },
+      ];
+      const db = makeDb(npRows, []);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
       const result = await repo.getEftpTrend(365);
 

@@ -25,9 +25,15 @@ export function TrainingOverview() {
   const { days } = useTrainingDays();
   const endDate = useMemo(() => formatDateYmd(new Date()), []);
 
-  const pmcData = trpc.pmc.chart.useQuery({ days });
-  const calendarData = trpc.calendar.calendarData.useQuery({ days });
-  const insightsQuery = trpc.insights.compute.useQuery({ days: Math.max(days, 90), endDate });
+  const pmcData = trpc.pmc.chart.useQuery({ days }, { staleTime: 120_000, gcTime: 1_800_000 });
+  const calendarData = trpc.calendar.calendarData.useQuery(
+    { days },
+    { staleTime: 120_000, gcTime: 1_800_000 },
+  );
+  const insightsQuery = trpc.insights.compute.useQuery(
+    { days: Math.max(days, 90), endDate },
+    { staleTime: 120_000, gcTime: 1_800_000 },
+  );
 
   const trainingInsights = useMemo(() => {
     const all: Insight[] = insightsQuery.data ?? [];

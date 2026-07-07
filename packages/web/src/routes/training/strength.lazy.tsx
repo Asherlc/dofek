@@ -22,10 +22,22 @@ const STRENGTH_ACTIVITY_TYPES = [
 function StrengthTab() {
   const { days } = useTrainingDays();
 
-  const strengthVolume = trpc.strength.volumeOverTime.useQuery({ days });
-  const estimatedMax = trpc.strength.estimatedOneRepMax.useQuery({ days });
-  const muscleVolume = trpc.strength.muscleGroupVolume.useQuery({ days });
-  const overload = trpc.strength.progressiveOverload.useQuery({ days });
+  const strengthVolume = trpc.strength.volumeOverTime.useQuery(
+    { days },
+    { staleTime: 120_000, gcTime: 1_800_000 },
+  );
+  const estimatedMax = trpc.strength.estimatedOneRepMax.useQuery(
+    { days },
+    { staleTime: 120_000, gcTime: 1_800_000 },
+  );
+  const muscleVolume = trpc.strength.muscleGroupVolume.useQuery(
+    { days },
+    { staleTime: 120_000, gcTime: 1_800_000 },
+  );
+  const overload = trpc.strength.progressiveOverload.useQuery(
+    { days },
+    { staleTime: 120_000, gcTime: 1_800_000 },
+  );
 
   return (
     <>

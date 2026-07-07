@@ -47,7 +47,7 @@ function makeSensorStore(
 ): ActivitySensorStore {
   const query = vi.fn(
     async (schema: { parse: (row: unknown) => unknown }, queryText = ""): Promise<unknown[]> => {
-      const rows = queryText.includes("rolling_30s_power") ? normalizedPowerRows : activityRows;
+      const rows = queryText.includes("normalized_power") ? normalizedPowerRows : activityRows;
       return rows.map((row) => schema.parse(row));
     },
   );
@@ -134,7 +134,7 @@ describe("PmcRepository", () => {
       expect(query).toHaveBeenNthCalledWith(
         2,
         expect.anything(),
-        expect.stringContaining("analytics.deduped_sensor"),
+        expect.stringContaining("analytics.activity_summary"),
         { userId: "user-1", queryDays: 407 },
       );
     });
@@ -179,12 +179,10 @@ describe("PmcRepository", () => {
       expect(query).toHaveBeenNthCalledWith(
         2,
         expect.anything(),
-        expect.stringContaining("INNER JOIN analytics.deduped_activities a"),
+        expect.stringContaining("FROM analytics.activity_summary"),
         expect.anything(),
       );
-      expect(vi.mocked(query).mock.calls[1]?.[1]).not.toContain("analytics.v_activity");
-      expect(vi.mocked(query).mock.calls[1]?.[1]).toContain("a.activity_id AS activity_id");
-      expect(vi.mocked(query).mock.calls[1]?.[1]).toContain("PARTITION BY a.activity_id");
+      expect(vi.mocked(query).mock.calls[1]?.[1]).toContain("normalized_power");
     });
 
     it("returns chart data built from ClickHouse rows", async () => {

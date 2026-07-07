@@ -53,18 +53,36 @@ function CyclingTab() {
   const { days } = useTrainingDays();
   const [variabilityOffset, setVariabilityOffset] = useState(0);
 
+  const STALE_TIME = 300_000; // 5 min — slow queries stay fresh between tab switches
+  const GC_TIME = 1_800_000; // 30 min
+
   // Recent period = user-selected range
-  const recentCurve = trpc.power.powerCurve.useQuery({ days });
-  const seasonCurve = trpc.power.powerCurve.useQuery({ days: 365 });
+  const recentCurve = trpc.power.powerCurve.useQuery(
+    { days },
+    { staleTime: STALE_TIME, gcTime: GC_TIME },
+  );
+  const seasonCurve = trpc.power.powerCurve.useQuery(
+    { days: 365 },
+    { staleTime: STALE_TIME, gcTime: GC_TIME },
+  );
   const eftpTrend = trpc.power.eftpTrend.useQuery({ days: 365 });
   const pmc = trpc.pmc.chart.useQuery({ days });
-  const efficiency = trpc.efficiency.aerobicEfficiency.useQuery({ days });
-  const variability = trpc.cyclingAdvanced.activityVariability.useQuery({
-    days,
-    limit: VARIABILITY_PAGE_SIZE,
-    offset: variabilityOffset,
-  });
-  const verticalAscent = trpc.cyclingAdvanced.verticalAscentRate.useQuery({ days });
+  const efficiency = trpc.efficiency.aerobicEfficiency.useQuery(
+    { days },
+    { staleTime: STALE_TIME, gcTime: GC_TIME },
+  );
+  const variability = trpc.cyclingAdvanced.activityVariability.useQuery(
+    {
+      days,
+      limit: VARIABILITY_PAGE_SIZE,
+      offset: variabilityOffset,
+    },
+    { staleTime: STALE_TIME, gcTime: GC_TIME },
+  );
+  const verticalAscent = trpc.cyclingAdvanced.verticalAscentRate.useQuery(
+    { days },
+    { staleTime: STALE_TIME, gcTime: GC_TIME },
+  );
   const bodyData = trpc.body.list.useQuery({ days: 365 });
 
   // Extract latest weight for w/kg calculations

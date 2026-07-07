@@ -21,6 +21,10 @@ function makeSensorStore(rows: unknown[]): ActivitySensorStore {
     .fn()
     .mockImplementation(
       async (schema: { parse: (row: unknown) => unknown }, queryText?: string) => {
+        // Read model queries return empty → exercises fallback to deduped_sensor
+        if (queryText?.includes("activity_aerobic_efficiency") || queryText?.includes("activity_polarization_zones")) {
+          return [];
+        }
         if (queryText?.includes("toInt32(count()) AS endurance_activities")) {
           return [
             schema.parse({
@@ -51,7 +55,11 @@ const diagnosticsBySensorStore = new WeakMap<ActivitySensorStore, Record<string,
 function makeSequentialSensorStore(rowsByCall: Record<string, unknown>[][]): ActivitySensorStore {
   const rowQueue = rowsByCall.map((rows) => [...rows]);
   const diagnosticRows = rowQueue.shift() ?? [];
-  const query = vi.fn().mockImplementation(async (schema: { parse: (row: unknown) => unknown }) => {
+  const query = vi.fn().mockImplementation(async (schema: { parse: (row: unknown) => unknown }, queryText?: string) => {
+    // Read model queries return empty → exercises fallback path
+    if (queryText?.includes("activity_aerobic_efficiency") || queryText?.includes("activity_polarization_zones")) {
+      return [];
+    }
     const rows = rowQueue.shift() ?? [];
     return rows.map((row) => schema.parse(row));
   });
@@ -114,33 +122,35 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
 
     await repo.getAerobicEfficiency(90);
 
-    expect(sensorStore.query).not.toHaveBeenCalled();
+    expect(sensorStore.query).toHaveBeenCalledTimes(1);
 
     warnSpy.mockRestore();
   });
 
   it("continues to the main aggregation when endurance activities exist", async () => {
     const { repo, sensorStore } = makeRepository([{ max_hr: 190 }]);
-    vi.mocked(sensorStore.query).mockResolvedValueOnce([
-      {
-        max_hr: 190,
-        date: "2025-06-01",
-        activity_type: "cycling",
-        name: "Morning Ride",
-        avg_power_z2: 180,
-        avg_hr_z2: 135,
-        efficiency_factor: 1.333,
-        z2_samples: 1800,
-      },
-    ]);
+    vi.mocked(sensorStore.query)
+      .mockResolvedValueOnce([]) // read model returns empty → fallback
+      .mockResolvedValueOnce([
+        {
+          max_hr: 190,
+          date: "2025-06-01",
+          activity_type: "cycling",
+          name: "Morning Ride",
+          avg_power_z2: 180,
+          avg_hr_z2: 135,
+          efficiency_factor: 1.333,
+          z2_samples: 1800,
+        },
+      ]);
 
     await repo.getAerobicEfficiency(90);
 
-    expect(sensorStore.query).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(sensorStore.query).mock.calls[0]?.[1]).toContain(
+    expect(sensorStore.query).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(sensorStore.query).mock.calls[1]?.[1]).toContain(
       "FROM analytics.activity_summary",
     );
-    expect(vi.mocked(sensorStore.query).mock.calls[0]?.[1]).toContain("analytics.v_activity");
+    expect(vi.mocked(sensorStore.query).mock.calls[1]?.[1]).toContain("analytics.v_activity");
   });
 
   it("does not run diagnostics when the main aggregation returns rows", async () => {
@@ -168,7 +178,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
 
     await repo.getAerobicEfficiency(90);
 
-    expect(sensorStore.query).toHaveBeenCalledTimes(1);
+    expect(sensorStore.query).toHaveBeenCalledTimes(2);
   });
 
   it("uses diagnostic max heart rate and logs context when no activities qualify", async () => {
@@ -196,10 +206,10 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
     expect(warnSpy).toHaveBeenCalledWith(
       "[aerobicEfficiency] Empty result for user=user-1 days=90: max_hr=192, endurance_activities=3, with_power=2, with_hr=1",
     );
-    expect(sensorStore.query).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(sensorStore.query).mock.calls[1]?.[1]).toContain("analytics.v_activity");
+    expect(sensorStore.query).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(sensorStore.query).mock.calls[2]?.[1]).toContain("analytics.v_activity");
     expect(sensorStore.query).toHaveBeenNthCalledWith(
-      2,
+      3,
       expect.anything(),
       expect.any(String),
       expect.objectContaining({
@@ -227,7 +237,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
     const result = await repo.getAerobicEfficiency(90);
 
     expect(result).toEqual({ maxHr: null, activities: [] });
-    expect(sensorStore.query).not.toHaveBeenCalled();
+    expect(sensorStore.query).toHaveBeenCalledTimes(1);
     expect(warnSpy).toHaveBeenCalledWith(
       "[aerobicEfficiency] Empty result for user=user-1 days=90: max_hr=null, endurance_activities=0, with_power=0, with_hr=0",
     );
@@ -254,7 +264,10 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
   it("reports diagnostic query failures to Sentry", async () => {
     const diagnosticError = new Error("diagnostic query failed");
     const sensorStore = makeSequentialSensorStore([]);
-    vi.mocked(sensorStore.query).mockResolvedValueOnce([]).mockRejectedValueOnce(diagnosticError);
+    vi.mocked(sensorStore.query)
+      .mockResolvedValueOnce([]) // read model returns empty
+      .mockResolvedValueOnce([]) // deduped_sensor returns empty → triggers diagnostics
+      .mockRejectedValueOnce(diagnosticError); // sample diagnostic fails → caught by .catch()
     const { repo, execute } = makeRepositoryWithSensorStore(sensorStore);
     execute.mockResolvedValueOnce([{ max_hr: 190, endurance_activities: 1 }]);
     const captureException = vi.mocked(Sentry.captureException);
@@ -450,10 +463,10 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
     expect(result).toEqual({ maxHr: null, weeks: [] });
   });
 
-  it("issues exactly one CH query", async () => {
+  it("issues exactly one CH query (read model attempt + fallback)", async () => {
     const { repo, sensorStore } = makeRepository([]);
     await repo.getPolarizationTrend(90);
-    expect(sensorStore.query).toHaveBeenCalledTimes(1);
+    expect(sensorStore.query).toHaveBeenCalledTimes(2);
   });
 
   it("uses the canonical Treff polarization zone boundaries in the query params", async () => {

@@ -15,7 +15,10 @@ export const Route = createFileRoute("/training/endurance")({
 function EnduranceTab() {
   const { days } = useTrainingDays();
 
-  const polarization = trpc.efficiency.polarizationTrend.useQuery({ days });
+  const polarization = trpc.efficiency.polarizationTrend.useQuery(
+    { days },
+    { staleTime: 300_000, gcTime: 1_800_000 },
+  );
   const rampRate = trpc.cyclingAdvanced.rampRate.useQuery({ days });
   const monotony = trpc.cyclingAdvanced.trainingMonotony.useQuery({ days });
 

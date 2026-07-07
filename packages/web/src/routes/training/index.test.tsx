@@ -159,6 +159,7 @@ describe("TrainingOverview training insights", () => {
       expect.objectContaining({
         days: 90,
       }),
+      expect.any(Object),
     );
   });
 });
