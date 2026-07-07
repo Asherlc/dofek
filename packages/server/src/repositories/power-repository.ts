@@ -99,12 +99,14 @@ export class PowerRepository {
       const points = STANDARD_DURATIONS.flatMap((durationSeconds) => {
         const best = byDuration.get(durationSeconds);
         if (!best) return [];
-        return [{
-          durationSeconds,
-          label: DURATION_LABELS[durationSeconds] ?? `${durationSeconds}s`,
-          bestPower: best.bestPower,
-          activityDate: best.activityDate,
-        }];
+        return [
+          {
+            durationSeconds,
+            label: DURATION_LABELS[durationSeconds] ?? `${durationSeconds}s`,
+            bestPower: best.bestPower,
+            activityDate: best.activityDate,
+          },
+        ];
       });
 
       return {

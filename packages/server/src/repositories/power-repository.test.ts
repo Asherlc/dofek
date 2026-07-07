@@ -164,7 +164,12 @@ describe("PowerRepository", () => {
 
     it("computes eFTP as NP * 0.95", async () => {
       const npRows = [
-        { activity_id: "act-1", activity_date: "2024-06-15", activity_name: "Morning Ride", np: 200 },
+        {
+          activity_id: "act-1",
+          activity_date: "2024-06-15",
+          activity_name: "Morning Ride",
+          np: 200,
+        },
       ];
 
       const analyticsStore = makeAnalyticsStore();
@@ -425,7 +430,12 @@ describe("PowerRepository", () => {
       const cutoffStr = exactCutoff.toISOString().slice(0, 10);
 
       const npRows = [
-        { activity_id: "act-boundary", activity_date: cutoffStr, activity_name: "Boundary Ride", np: 200 },
+        {
+          activity_id: "act-boundary",
+          activity_date: cutoffStr,
+          activity_name: "Boundary Ride",
+          np: 200,
+        },
       ];
       const db = makeDb(npRows, []);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
@@ -495,7 +505,12 @@ describe("PowerRepository", () => {
 
       const npRows = [
         { activity_id: "act-high", activity_date: today, activity_name: "Strong Ride", np: 300 },
-        { activity_id: "act-low", activity_date: yesterdayStr, activity_name: "Easy Ride", np: 200 },
+        {
+          activity_id: "act-low",
+          activity_date: yesterdayStr,
+          activity_name: "Easy Ride",
+          np: 200,
+        },
       ];
       const db = makeDb(npRows, []);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
@@ -529,7 +544,12 @@ describe("PowerRepository", () => {
 
       const npRows = [
         { activity_id: "act-max-check", activity_date: today, activity_name: "Hard Ride", np: 280 },
-        { activity_id: "act-min-check", activity_date: yesterdayStr, activity_name: "Easy Ride", np: 180 },
+        {
+          activity_id: "act-min-check",
+          activity_date: yesterdayStr,
+          activity_name: "Easy Ride",
+          np: 180,
+        },
       ];
       const db = makeDb(npRows, []);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));

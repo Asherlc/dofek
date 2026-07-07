@@ -22,7 +22,10 @@ function makeSensorStore(rows: unknown[]): ActivitySensorStore {
     .mockImplementation(
       async (schema: { parse: (row: unknown) => unknown }, queryText?: string) => {
         // Read model queries return empty → exercises fallback to deduped_sensor
-        if (queryText?.includes("activity_aerobic_efficiency") || queryText?.includes("activity_polarization_zones")) {
+        if (
+          queryText?.includes("activity_aerobic_efficiency") ||
+          queryText?.includes("activity_polarization_zones")
+        ) {
           return [];
         }
         if (queryText?.includes("toInt32(count()) AS endurance_activities")) {
@@ -55,14 +58,21 @@ const diagnosticsBySensorStore = new WeakMap<ActivitySensorStore, Record<string,
 function makeSequentialSensorStore(rowsByCall: Record<string, unknown>[][]): ActivitySensorStore {
   const rowQueue = rowsByCall.map((rows) => [...rows]);
   const diagnosticRows = rowQueue.shift() ?? [];
-  const query = vi.fn().mockImplementation(async (schema: { parse: (row: unknown) => unknown }, queryText?: string) => {
-    // Read model queries return empty → exercises fallback path
-    if (queryText?.includes("activity_aerobic_efficiency") || queryText?.includes("activity_polarization_zones")) {
-      return [];
-    }
-    const rows = rowQueue.shift() ?? [];
-    return rows.map((row) => schema.parse(row));
-  });
+  const query = vi
+    .fn()
+    .mockImplementation(
+      async (schema: { parse: (row: unknown) => unknown }, queryText?: string) => {
+        // Read model queries return empty → exercises fallback path
+        if (
+          queryText?.includes("activity_aerobic_efficiency") ||
+          queryText?.includes("activity_polarization_zones")
+        ) {
+          return [];
+        }
+        const rows = rowQueue.shift() ?? [];
+        return rows.map((row) => schema.parse(row));
+      },
+    );
   const sensorStore = {
     query,
     getActivitySummaries: vi.fn().mockResolvedValue([]),

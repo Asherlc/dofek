@@ -176,7 +176,7 @@ export class EfficiencyRepository extends BaseRepository {
 
     if (readModelRows.length > 0) {
       return {
-        maxHr: Number(readModelRows[0]!.max_hr),
+        maxHr: Number(readModelRows[0]?.max_hr),
         activities: readModelRows.map((row) => ({
           date: String(row.date),
           activityType: String(row.activity_type),

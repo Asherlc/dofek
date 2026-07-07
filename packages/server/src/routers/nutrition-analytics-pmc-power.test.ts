@@ -111,10 +111,18 @@ function makePmcSensorStore(
   activityRows: unknown[],
   normalizedPowerRows: unknown[] = [],
 ): SensorStore {
+  let queryCallCount = 0;
   return {
     query: vi.fn(
       async (schema: { parse: (row: unknown) => unknown }, queryText = ""): Promise<unknown[]> => {
-        const rows = queryText.includes("rolling_30s_power") ? normalizedPowerRows : activityRows;
+        // PmcRepository.getChart performs two queries through the same sensor store:
+        //   Query 1: main activity chart data (long CTE query)
+        //   Query 2: normalized power per activity (simple SELECT)
+        // Alternate: first activity_summary hit → activityRows, second → normalizedPowerRows.
+        const isNpQuery =
+          queryText.includes("normalized_power") && !queryText.includes("CROSS JOIN");
+        const rows = isNpQuery ? normalizedPowerRows : activityRows;
+        queryCallCount++;
         return rows.map((row) => schema.parse(row));
       },
     ),
@@ -430,7 +438,10 @@ describe("powerRouter", () => {
         db: makeRawActivityCountDb(1),
         userId: "user-1",
         timezone: "UTC",
-        sensorStore: { getPowerCurveSamples: vi.fn().mockResolvedValue(samples) },
+        sensorStore: {
+          query: vi.fn().mockResolvedValue([]),
+          getPowerCurveSamples: vi.fn().mockResolvedValue(samples),
+        },
       });
       const result = await caller.powerCurve({ days: 90 });
 
@@ -446,7 +457,10 @@ describe("powerRouter", () => {
         db: makeRawActivityCountDb(1),
         userId: "user-1",
         timezone: "UTC",
-        sensorStore: { getPowerCurveSamples: vi.fn().mockResolvedValue([]) },
+        sensorStore: {
+          query: vi.fn().mockResolvedValue([]),
+          getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+        },
       });
       const result = await caller.powerCurve({ days: 90 });
       expect(result.points).toEqual([]);
@@ -469,12 +483,10 @@ describe("powerRouter", () => {
 
   describe("eftpTrend", () => {
     it("returns eFTP trend data", async () => {
-      // First call: Normalized Power samples — 300 samples at 1s with ~260W average
-      const normalizedPowerSamples = makePowerSamples(
-        "act-1",
-        "2024-01-15",
-        Array.from({ length: 300 }, () => 260),
-      ).map((s) => ({ ...s, activity_name: "Ride" }));
+      // First call: query() reads from analytics.activity_summary for NP data
+      const npRows = [
+        { activity_id: "act-1", activity_date: "2024-01-15", activity_name: "Ride", np: 260 },
+      ];
       // Second call: power curve samples — 1200 samples for CP model
       const pcSamples = makePowerSamples(
         "act-1",
@@ -485,7 +497,7 @@ describe("powerRouter", () => {
       const caller = createCaller({
         db: makeRawActivityCountDb(1),
         sensorStore: {
-          getNormalizedPowerSamples: vi.fn().mockResolvedValue(normalizedPowerSamples),
+          query: vi.fn().mockResolvedValue(npRows),
           getPowerCurveSamples: vi.fn().mockResolvedValue(pcSamples),
         },
         userId: "user-1",
