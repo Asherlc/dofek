@@ -64,12 +64,14 @@ export class PowerRepository {
     }
 
     // Try pre-computed read model first (avoids expensive deduped_sensor scan)
+    // Convert started_at to the user's timezone so the date matches what the
+    // fallback (live) path returns — the stored activity_date is UTC-only.
     const readModelRows = await this.#sensorStore.query(
       powerCurvePointRowSchema,
       `SELECT
         duration_seconds,
         best_power,
-        activity_date
+        toString(toDate(toTimeZone(started_at, {timezone:String}))) AS activity_date
       FROM analytics.activity_power_curve FINAL
       WHERE user_id = {userId:UUID}
         AND is_deleted = 0
@@ -77,6 +79,7 @@ export class PowerRepository {
       ORDER BY duration_seconds`,
       {
         userId: this.#userId,
+        timezone: this.#timezone,
         days,
       },
     );

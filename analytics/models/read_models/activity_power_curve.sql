@@ -18,6 +18,7 @@ WITH activity_bounds AS (
     FROM {{ ref('activity_summary_rows') }} FINAL
     WHERE is_deleted = 0
         AND ended_at IS NOT NULL
+        AND activity_type IN ('cycling', 'road_cycling', 'mountain_biking', 'gravel_cycling', 'indoor_cycling', 'virtual_cycling', 'e_bike_cycling', 'cyclocross', 'track_cycling', 'bmx', 'hand_cycling', 'running', 'swimming', 'walking', 'hiking')
 ),
 
 {% if is_incremental() %}
