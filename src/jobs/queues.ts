@@ -106,7 +106,7 @@ function activityRecomputeAnalyticsJobId(userId: string, activityIds: string[]):
     .update([...activityIds].sort().join("\n"))
     .digest("hex")
     .slice(0, 16);
-  return `${ACTIVITY_RECOMPUTE_ANALYTICS_JOB_NAME}-${userId}-${activitySetHash}`;
+  return `${ACTIVITY_RECOMPUTE_ANALYTICS_JOB_NAME}-${userId.replaceAll(':', '-')}-${activitySetHash}`;
 }
 
 /** Get the per-provider queue name for a given provider ID. */
