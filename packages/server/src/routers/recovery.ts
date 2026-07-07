@@ -335,10 +335,10 @@ export const recoveryRouter = router({
    * Excludes naps. Sleep debt = cumulative deficit vs 8hr target over 14 days.
    */
   sleepAnalytics: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ days: z.number().default(90) }))
+    .input(z.object({ days: z.number().default(90), endDate: z.string().optional() }))
     .query(async ({ ctx, input }): Promise<SleepAnalyticsResult> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "recovery.sleepAnalytics");
-      const endDate = new Date().toISOString().slice(0, 10);
+      const endDate = input.endDate ?? new Date().toISOString().slice(0, 10);
       const rows = await fetchSleepNights({
         sensorStore,
         userId: ctx.userId,

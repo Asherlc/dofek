@@ -8,10 +8,12 @@ import { ChartDescriptionTooltip } from "../../components/ChartDescriptionToolti
 import { EftpTrendChart } from "../../components/EftpTrendChart.tsx";
 import { PmcChart } from "../../components/PmcChart.tsx";
 import { PowerCurveChart } from "../../components/PowerCurveChart.tsx";
+import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import { VerticalAscentChart } from "../../components/VerticalAscentChart.tsx";
 import { chartColors, chartThemeColors } from "../../lib/chartTheme.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
+import { TRAINING_SLOW_QUERY_OPTIONS } from "../../lib/trainingQueryOptions.ts";
 import { trpc } from "../../lib/trpc.ts";
 
 export const Route = createFileRoute("/training/cycling")({
@@ -54,21 +56,35 @@ function CyclingTab() {
   const [variabilityOffset, setVariabilityOffset] = useState(0);
 
   // Recent period = user-selected range
-  const recentCurve = trpc.power.powerCurve.useQuery({ days });
-  const seasonCurve = trpc.power.powerCurve.useQuery({ days: 365 });
+  const recentCurve = trpc.power.powerCurve.useQuery({ days }, TRAINING_SLOW_QUERY_OPTIONS);
+  const seasonCurve = trpc.power.powerCurve.useQuery({ days: 365 }, TRAINING_SLOW_QUERY_OPTIONS);
   const eftpTrend = trpc.power.eftpTrend.useQuery({ days: 365 });
   const pmc = trpc.pmc.chart.useQuery({ days });
-  const efficiency = trpc.efficiency.aerobicEfficiency.useQuery({ days });
-  const variability = trpc.cyclingAdvanced.activityVariability.useQuery({
-    days,
-    limit: VARIABILITY_PAGE_SIZE,
-    offset: variabilityOffset,
-  });
-  const verticalAscent = trpc.cyclingAdvanced.verticalAscentRate.useQuery({ days });
+  const efficiency = trpc.efficiency.aerobicEfficiency.useQuery(
+    { days },
+    TRAINING_SLOW_QUERY_OPTIONS,
+  );
+  const variability = trpc.cyclingAdvanced.activityVariability.useQuery(
+    {
+      days,
+      limit: VARIABILITY_PAGE_SIZE,
+      offset: variabilityOffset,
+    },
+    TRAINING_SLOW_QUERY_OPTIONS,
+  );
+  const verticalAscent = trpc.cyclingAdvanced.verticalAscentRate.useQuery(
+    { days },
+    TRAINING_SLOW_QUERY_OPTIONS,
+  );
   const bodyData = trpc.body.list.useQuery({ days: 365 });
 
-  // Extract latest weight for w/kg calculations
-  const rawWeight = bodyData.data?.[0]?.weightKg;
+  type BodyRecord = NonNullable<typeof bodyData.data>[number];
+  const latestBodyRecord = bodyData.data?.reduce<BodyRecord | null>((latestRecord, bodyRecord) => {
+    if (typeof bodyRecord.weightKg !== "number") return latestRecord;
+    if (latestRecord == null) return bodyRecord;
+    return bodyRecord.recordedAt > latestRecord.recordedAt ? bodyRecord : latestRecord;
+  }, null);
+  const rawWeight = latestBodyRecord?.weightKg;
   const latestWeight = typeof rawWeight === "number" ? rawWeight : undefined;
 
   // Build lookup: duration → best power for each period
@@ -107,12 +123,16 @@ function CyclingTab() {
       {/* Power Duration Curve with comparison */}
       <Section title="Power Duration Curve" subtitle="Best power at each duration">
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-6">
-          <PowerCurveChart
-            data={recentCurve.data?.points ?? []}
-            comparisonData={seasonCurve.data?.points ?? []}
-            model={recentModel}
-            loading={loading}
-          />
+          {(recentCurve.error ?? seasonCurve.error) ? (
+            <QueryStatePanel error={recentCurve.error ?? seasonCurve.error} />
+          ) : (
+            <PowerCurveChart
+              data={recentCurve.data?.points ?? []}
+              comparisonData={seasonCurve.data?.points ?? []}
+              model={recentModel}
+              loading={loading}
+            />
+          )}
           <PowerSummaryTable
             recentByDuration={recentByDuration}
             seasonByDuration={seasonByDuration}
@@ -141,7 +161,11 @@ function CyclingTab() {
         title="Fitness, Fatigue & Form"
         subtitle="42-day fitness (blue), 7-day fatigue (purple), form = fitness − fatigue"
       >
-        <PmcChart data={pmc.data?.data ?? []} model={pmc.data?.model} loading={pmc.isLoading} />
+        {pmc.error ? (
+          <QueryStatePanel error={pmc.error} />
+        ) : (
+          <PmcChart data={pmc.data?.data ?? []} model={pmc.data?.model} loading={pmc.isLoading} />
+        )}
       </Section>
 
       {/* eFTP Trend */}
@@ -149,11 +173,15 @@ function CyclingTab() {
         title="Estimated Threshold Power Trend"
         subtitle="Per-activity normalized power × 0.95"
       >
-        <EftpTrendChart
-          data={eftpTrend.data?.trend ?? []}
-          currentEftp={eftpTrend.data?.currentEftp ?? null}
-          loading={eftpTrend.isLoading}
-        />
+        {eftpTrend.error ? (
+          <QueryStatePanel error={eftpTrend.error} />
+        ) : (
+          <EftpTrendChart
+            data={eftpTrend.data?.trend ?? []}
+            currentEftp={eftpTrend.data?.currentEftp ?? null}
+            loading={eftpTrend.isLoading}
+          />
+        )}
       </Section>
 
       {/* Aerobic Efficiency + Activity Variability */}
@@ -162,21 +190,29 @@ function CyclingTab() {
           title="Aerobic Efficiency"
           subtitle="Power output per heartbeat at easy effort — higher means fitter"
         >
-          <AerobicEfficiencyChart
-            activities={efficiency.data?.activities ?? []}
-            maxHr={efficiency.data?.maxHr ?? null}
-            loading={efficiency.isLoading}
-          />
+          {efficiency.error ? (
+            <QueryStatePanel error={efficiency.error} />
+          ) : (
+            <AerobicEfficiencyChart
+              activities={efficiency.data?.activities ?? []}
+              maxHr={efficiency.data?.maxHr ?? null}
+              loading={efficiency.isLoading}
+            />
+          )}
         </Section>
 
         <Section
           title="Vertical Ascent Rate"
           subtitle="Climbing speed — meters gained per hour while ascending"
         >
-          <VerticalAscentChart
-            data={verticalAscent.data ?? []}
-            loading={verticalAscent.isLoading}
-          />
+          {verticalAscent.error ? (
+            <QueryStatePanel error={verticalAscent.error} />
+          ) : (
+            <VerticalAscentChart
+              data={verticalAscent.data ?? []}
+              loading={verticalAscent.isLoading}
+            />
+          )}
         </Section>
       </div>
 
@@ -184,14 +220,18 @@ function CyclingTab() {
         title="Activity Variability Index"
         subtitle="Normalized power vs average power ratio per activity"
       >
-        <ActivityVariabilityTable
-          data={variability.data?.rows ?? []}
-          totalCount={variability.data?.totalCount ?? 0}
-          offset={variabilityOffset}
-          limit={VARIABILITY_PAGE_SIZE}
-          onPageChange={setVariabilityOffset}
-          loading={variability.isLoading}
-        />
+        {variability.error ? (
+          <QueryStatePanel error={variability.error} />
+        ) : (
+          <ActivityVariabilityTable
+            data={variability.data?.rows ?? []}
+            totalCount={variability.data?.totalCount ?? 0}
+            offset={variabilityOffset}
+            limit={VARIABILITY_PAGE_SIZE}
+            onPageChange={setVariabilityOffset}
+            loading={variability.isLoading}
+          />
+        )}
       </Section>
 
       <Section title="Recent Cycling Activities" subtitle="Recent rides and cycling workouts">

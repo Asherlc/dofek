@@ -368,9 +368,7 @@ function rewriteClickHouseDatabaseNames(
     .replace(/\banalytics\b/g, databases.analytics);
 }
 
-function buildTestAnalyticsTableStatement(viewName: "analytics.deduped_activities"): string;
-function buildTestAnalyticsTableStatement(viewName: string): string | null;
-function buildTestAnalyticsTableStatement(viewName: string): string | null {
+function buildTestAnalyticsTableStatement(viewName: string): string {
   const columnDefinitionsByViewName: Record<string, string> = {
     v_activity: `id UUID,
 provider_id String,
@@ -688,14 +686,49 @@ power_samples UInt64,
 cadence_samples UInt64,
 speed_samples UInt64,
 activity_count UInt64`,
+    activity_power_curve: `activity_id UUID,
+user_id UUID,
+started_at Nullable(DateTime64(6, 'UTC')),
+activity_date Nullable(String),
+duration_seconds Int32,
+best_power Nullable(Int32),
+is_deleted UInt8,
+refresh_version UInt64,
+refreshed_at DateTime64(9)`,
+    activity_aerobic_efficiency: `activity_id UUID,
+user_id UUID,
+activity_type String,
+name Nullable(String),
+started_at DateTime64(6, 'UTC'),
+ended_at Nullable(DateTime64(6, 'UTC')),
+max_hr Nullable(Int16),
+resting_hr Nullable(Float64),
+avg_power_z2 Float64,
+avg_hr_z2 Float64,
+efficiency_factor Float64,
+z2_samples Int32,
+is_deleted UInt8,
+refresh_version UInt64,
+refreshed_at DateTime64(9)`,
+    activity_polarization_zones: `activity_id UUID,
+user_id UUID,
+activity_type String,
+started_at DateTime64(6, 'UTC'),
+max_hr Nullable(Int16),
+z1_seconds Int32,
+z2_seconds Int32,
+z3_seconds Int32,
+is_deleted UInt8,
+refresh_version UInt64,
+refreshed_at DateTime64(9)`,
   };
   const shortViewName = viewName.split(".").at(-1);
   if (!shortViewName) {
-    return null;
+    throw new Error(`Missing ClickHouse test analytics table name for ${viewName}`);
   }
   const columnDefinitions = columnDefinitionsByViewName[shortViewName];
   if (!columnDefinitions) {
-    return null;
+    throw new Error(`Missing ClickHouse test analytics table schema for ${viewName}`);
   }
   const engine =
     shortViewName === "deduped_activities" ||
@@ -711,7 +744,10 @@ activity_count UInt64`,
     shortViewName === "daily_strain" ||
     shortViewName === "healthspan_activity_zone_minutes" ||
     shortViewName === "weekly_healthspan" ||
-    shortViewName === "provider_stats"
+    shortViewName === "provider_stats" ||
+    shortViewName === "activity_power_curve" ||
+    shortViewName === "activity_aerobic_efficiency" ||
+    shortViewName === "activity_polarization_zones"
       ? "ReplacingMergeTree(refresh_version)"
       : "MergeTree";
   const orderBy =
@@ -739,7 +775,12 @@ activity_count UInt64`,
                         ? "(user_id, week_start)"
                         : shortViewName === "provider_stats"
                           ? "(user_id, provider_id)"
-                          : "tuple()";
+                          : shortViewName === "activity_power_curve"
+                            ? "(user_id, activity_id, duration_seconds)"
+                            : shortViewName === "activity_aerobic_efficiency" ||
+                                shortViewName === "activity_polarization_zones"
+                              ? "(user_id, activity_id)"
+                              : "tuple()";
   return `CREATE TABLE IF NOT EXISTS ${viewName} (
 ${columnDefinitions}
 )
@@ -1734,11 +1775,7 @@ function rewriteClickHouseTestCommand(
       viewName,
       buildTestAnalyticsSelectSql(viewName, trimmedSelectSql, databases),
     );
-    const tableStatement = buildTestAnalyticsTableStatement(viewName);
-    if (!tableStatement) {
-      throw new Error(`Missing ClickHouse test analytics table schema for ${viewName}`);
-    }
-    return [tableStatement];
+    return [buildTestAnalyticsTableStatement(viewName)];
   }
 
   if (
@@ -1984,6 +2021,19 @@ AS
 ${buildTestHealthspanReadModelSelectSql(defaultTestDatabases)}`,
   });
   await client.command({ query: buildActivityVo2MaxEstimateTableSql() });
+
+  // Dbt read model tables — created here as empty ReplacingMergeTree tables so
+  // repositories can query them without errors. The fallback path handles
+  // empty results from these tables.
+  await client.command({
+    query: buildTestAnalyticsTableStatement("analytics.activity_power_curve"),
+  });
+  await client.command({
+    query: buildTestAnalyticsTableStatement("analytics.activity_aerobic_efficiency"),
+  });
+  await client.command({
+    query: buildTestAnalyticsTableStatement("analytics.activity_polarization_zones"),
+  });
 }
 
 export async function syncClickHouseTestActivitySensorStore(

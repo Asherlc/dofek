@@ -107,6 +107,17 @@ function makeSensorStore(rows: unknown[] = []): SensorStore {
   };
 }
 
+function isPmcActivityChartQuery(queryText: string): boolean {
+  return queryText.includes("CROSS JOIN user_baseline ub");
+}
+
+function isPmcNormalizedPowerQuery(queryText: string): boolean {
+  return (
+    queryText.includes("FROM analytics.activity_summary") &&
+    queryText.includes("normalized_power IS NOT NULL")
+  );
+}
+
 function makePmcSensorStore(
   activityRows: unknown[],
   normalizedPowerRows: unknown[] = [],
@@ -114,7 +125,14 @@ function makePmcSensorStore(
   return {
     query: vi.fn(
       async (schema: { parse: (row: unknown) => unknown }, queryText = ""): Promise<unknown[]> => {
-        const rows = queryText.includes("rolling_30s_power") ? normalizedPowerRows : activityRows;
+        let rows: unknown[];
+        if (isPmcNormalizedPowerQuery(queryText)) {
+          rows = normalizedPowerRows;
+        } else if (isPmcActivityChartQuery(queryText)) {
+          rows = activityRows;
+        } else {
+          throw new Error(`Unexpected PMC sensor store query: ${queryText.slice(0, 160)}`);
+        }
         return rows.map((row) => schema.parse(row));
       },
     ),
@@ -430,7 +448,10 @@ describe("powerRouter", () => {
         db: makeRawActivityCountDb(1),
         userId: "user-1",
         timezone: "UTC",
-        sensorStore: { getPowerCurveSamples: vi.fn().mockResolvedValue(samples) },
+        sensorStore: {
+          query: vi.fn().mockResolvedValue([]),
+          getPowerCurveSamples: vi.fn().mockResolvedValue(samples),
+        },
       });
       const result = await caller.powerCurve({ days: 90 });
 
@@ -446,7 +467,10 @@ describe("powerRouter", () => {
         db: makeRawActivityCountDb(1),
         userId: "user-1",
         timezone: "UTC",
-        sensorStore: { getPowerCurveSamples: vi.fn().mockResolvedValue([]) },
+        sensorStore: {
+          query: vi.fn().mockResolvedValue([]),
+          getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+        },
       });
       const result = await caller.powerCurve({ days: 90 });
       expect(result.points).toEqual([]);
@@ -469,13 +493,16 @@ describe("powerRouter", () => {
 
   describe("eftpTrend", () => {
     it("returns eFTP trend data", async () => {
-      // First call: Normalized Power samples — 300 samples at 1s with ~260W average
-      const normalizedPowerSamples = makePowerSamples(
-        "act-1",
-        "2024-01-15",
-        Array.from({ length: 300 }, () => 260),
-      ).map((s) => ({ ...s, activity_name: "Ride" }));
-      // Second call: power curve samples — 1200 samples for CP model
+      // First call: query() reads from analytics.activity_summary for NP data
+      const npRows = [
+        {
+          activity_id: "act-1",
+          activity_date: "2024-01-15",
+          activity_name: "Ride",
+          normalized_power: 260,
+        },
+      ];
+      // Second call: power curve samples — 1200 samples for CP model fallback
       const pcSamples = makePowerSamples(
         "act-1",
         "2024-01-15",
@@ -485,7 +512,12 @@ describe("powerRouter", () => {
       const caller = createCaller({
         db: makeRawActivityCountDb(1),
         sensorStore: {
-          getNormalizedPowerSamples: vi.fn().mockResolvedValue(normalizedPowerSamples),
+          query: vi.fn(async (_schema, queryText = "") => {
+            if (queryText.includes("activity_power_curve")) {
+              return [];
+            }
+            return npRows;
+          }),
           getPowerCurveSamples: vi.fn().mockResolvedValue(pcSamples),
         },
         userId: "user-1",

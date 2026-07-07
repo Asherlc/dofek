@@ -53,7 +53,7 @@ Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `daily_sleep`, `daily_recovery_inputs`, `daily_recovery`, `activity_sensor_sample`, `activity_location_sample`,
 `activity_sensor_summary_rows`, `activity_location_summary_rows`,
 `activity_stream_points`, `activity_heart_rate_zones`, `activity_summary_rows`,
-`activity_vo2max_estimate`, `provider_stats`,
+`activity_vo2max_estimate`, `activity_aerobic_efficiency`, `activity_polarization_zones`, `activity_power_curve`, `provider_stats`,
 `daily_activity_load`, `daily_strain`, `healthspan_activity_zone_minutes`,
 and `weekly_healthspan`. Sample-time models use dbt's `microbatch`
 incremental strategy with daily batches and short lookbacks so ClickHouse

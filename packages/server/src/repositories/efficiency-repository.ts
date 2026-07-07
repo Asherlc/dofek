@@ -143,9 +143,53 @@ export class EfficiencyRepository extends BaseRepository {
    * Aerobic Efficiency (Efficiency Factor) per activity.
    * EF = avg power in Z2 / avg HR in Z2, where Z2 = 60-70% HRR (Karvonen).
    * Only includes activities with at least 5 minutes (300 samples) of Z2 data.
+   * Reads from the pre-computed activity_aerobic_efficiency read model when available.
    */
   async getAerobicEfficiency(days: number): Promise<AerobicEfficiencyResult> {
     const today = new Date().toISOString().slice(0, 10);
+
+    // Try pre-computed read model first (avoids expensive deduped_sensor scan)
+    const readModelRows = await this.#sensorStore.query(
+      efficiencyRowSchema,
+      `SELECT
+        max_hr AS max_hr,
+        toString(toDate(toTimeZone(started_at, {timezone:String}))) AS date,
+        activity_type AS activity_type,
+        name AS name,
+        avg_power_z2 AS avg_power_z2,
+        avg_hr_z2 AS avg_hr_z2,
+        efficiency_factor AS efficiency_factor,
+        z2_samples AS z2_samples
+      FROM analytics.activity_aerobic_efficiency FINAL
+      WHERE user_id = {userId:UUID}
+        AND has({enduranceTypes:Array(String)}, activity_type)
+        AND started_at > now() - INTERVAL {days:Int32} DAY
+        AND is_deleted = 0
+      ORDER BY started_at`,
+      {
+        userId: this.userId,
+        timezone: this.timezone,
+        days,
+        enduranceTypes: ENDURANCE_TYPES,
+      },
+    );
+
+    if (readModelRows.length > 0) {
+      return {
+        maxHr: Number(readModelRows[0]?.max_hr),
+        activities: readModelRows.map((row) => ({
+          date: String(row.date),
+          activityType: String(row.activity_type),
+          name: String(row.name ?? ""),
+          avgPowerZ2: Number(row.avg_power_z2),
+          avgHrZ2: Number(row.avg_hr_z2),
+          efficiencyFactor: Number(row.efficiency_factor),
+          z2Samples: Number(row.z2_samples),
+        })),
+      };
+    }
+
+    // Fall back to live deduped_sensor computation
     const activityDiagnostic = await this.#loadAerobicEfficiencyActivityDiagnostics(days);
 
     if (activityDiagnostic?.endurance_activities === 0) {
@@ -449,8 +493,52 @@ export class EfficiencyRepository extends BaseRepository {
    * Polarization Index trend per week using Treff 3-zone model.
    * PI = log10((f1 / (f2 * f3)) * 100) where f = fraction of total training time.
    * PI > 2.0 indicates a well-polarized training distribution.
+   * Reads from the pre-computed activity_polarization_zones read model when available.
    */
   async getPolarizationTrend(days: number): Promise<PolarizationTrendResult> {
+    // Try pre-computed read model first (avoids expensive deduped_sensor scan)
+    const readModelRows = await this.#sensorStore.query(
+      polarizationRowSchema,
+      `SELECT
+        any(max_hr) AS max_hr,
+        toString(toMonday(toTimeZone(started_at, {timezone:String}))) AS week,
+        toInt32(sum(z1_seconds)) AS z1_seconds,
+        toInt32(sum(z2_seconds)) AS z2_seconds,
+        toInt32(sum(z3_seconds)) AS z3_seconds
+      FROM analytics.activity_polarization_zones FINAL
+      WHERE user_id = {userId:UUID}
+        AND has({enduranceTypes:Array(String)}, activity_type)
+        AND started_at > now() - INTERVAL {days:Int32} DAY
+        AND is_deleted = 0
+      GROUP BY toMonday(toTimeZone(started_at, {timezone:String}))
+      ORDER BY week`,
+      {
+        userId: this.userId,
+        timezone: this.timezone,
+        days,
+        enduranceTypes: ENDURANCE_TYPES,
+      },
+    );
+
+    if (readModelRows.length > 0) {
+      const firstRow = readModelRows[0];
+      const maxHr = firstRow ? Number(firstRow.max_hr) : null;
+      const weeks: PolarizationWeek[] = readModelRows.map((row) => {
+        const z1 = Number(row.z1_seconds);
+        const z2 = Number(row.z2_seconds);
+        const z3 = Number(row.z3_seconds);
+        return {
+          week: String(row.week),
+          z1Seconds: z1,
+          z2Seconds: z2,
+          z3Seconds: z3,
+          polarizationIndex: computePolarizationIndex(z1, z2, z3),
+        };
+      });
+      return { maxHr, weeks };
+    }
+
+    // Fall back to live deduped_sensor computation
     const polZ1 = polarizationZone2.minPctHrmax;
     const polZ2 = polarizationZone3.minPctHrmax;
 

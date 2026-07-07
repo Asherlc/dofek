@@ -3,9 +3,11 @@ import { ActivityComparisonChart } from "../../components/ActivityComparisonChar
 import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { ElevationGainChart } from "../../components/ElevationGainChart.tsx";
 import { GradeAdjustedPaceTable } from "../../components/GradeAdjustedPaceTable.tsx";
+import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import { WalkingBiomechanicsChart } from "../../components/WalkingBiomechanicsChart.tsx";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
+import { TRAINING_SLOW_QUERY_OPTIONS } from "../../lib/trainingQueryOptions.ts";
 import { trpc } from "../../lib/trpc.ts";
 
 export const Route = createFileRoute("/training/hiking")({
@@ -14,11 +16,24 @@ export const Route = createFileRoute("/training/hiking")({
 
 function HikingTab() {
   const { days } = useTrainingDays();
+  const hikingQueryDays = Math.max(days, 365);
 
-  const gradeAdjustedPace = trpc.hiking.gradeAdjustedPace.useQuery({ days });
-  const elevation = trpc.hiking.elevationProfile.useQuery({ days: Math.max(days, 365) });
-  const biomechanics = trpc.hiking.walkingBiomechanics.useQuery({ days });
-  const routeComparison = trpc.hiking.activityComparison.useQuery({ days: Math.max(days, 365) });
+  const gradeAdjustedPace = trpc.hiking.gradeAdjustedPace.useQuery(
+    { days },
+    TRAINING_SLOW_QUERY_OPTIONS,
+  );
+  const elevation = trpc.hiking.elevationProfile.useQuery(
+    { days: hikingQueryDays },
+    TRAINING_SLOW_QUERY_OPTIONS,
+  );
+  const biomechanics = trpc.hiking.walkingBiomechanics.useQuery(
+    { days },
+    TRAINING_SLOW_QUERY_OPTIONS,
+  );
+  const routeComparison = trpc.hiking.activityComparison.useQuery(
+    { days: hikingQueryDays },
+    TRAINING_SLOW_QUERY_OPTIONS,
+  );
 
   return (
     <>
@@ -26,10 +41,14 @@ function HikingTab() {
         title="Grade-Adjusted Pace"
         subtitle="Minetti-model normalized pace for walks and hikes"
       >
-        <GradeAdjustedPaceTable
-          data={gradeAdjustedPace.data ?? []}
-          loading={gradeAdjustedPace.isLoading}
-        />
+        {gradeAdjustedPace.error && !gradeAdjustedPace.data ? (
+          <QueryStatePanel error={gradeAdjustedPace.error} />
+        ) : (
+          <GradeAdjustedPaceTable
+            data={gradeAdjustedPace.data ?? []}
+            loading={gradeAdjustedPace.isLoading}
+          />
+        )}
       </Section>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -37,22 +56,34 @@ function HikingTab() {
           title="Elevation Gain"
           subtitle="Weekly cumulative elevation from hiking and walking"
         >
-          <ElevationGainChart data={elevation.data ?? []} loading={elevation.isLoading} />
+          {elevation.error && !elevation.data ? (
+            <QueryStatePanel error={elevation.error} />
+          ) : (
+            <ElevationGainChart data={elevation.data ?? []} loading={elevation.isLoading} />
+          )}
         </Section>
 
         <Section title="Walking Biomechanics" subtitle="Step length, gait symmetry, double support">
-          <WalkingBiomechanicsChart
-            data={biomechanics.data ?? []}
-            loading={biomechanics.isLoading}
-          />
+          {biomechanics.error && !biomechanics.data ? (
+            <QueryStatePanel error={biomechanics.error} />
+          ) : (
+            <WalkingBiomechanicsChart
+              data={biomechanics.data ?? []}
+              loading={biomechanics.isLoading}
+            />
+          )}
         </Section>
       </div>
 
       <Section title="Route Comparison" subtitle="Repeated routes compared over time">
-        <ActivityComparisonChart
-          data={routeComparison.data ?? []}
-          loading={routeComparison.isLoading}
-        />
+        {routeComparison.error && !routeComparison.data ? (
+          <QueryStatePanel error={routeComparison.error} />
+        ) : (
+          <ActivityComparisonChart
+            data={routeComparison.data ?? []}
+            loading={routeComparison.isLoading}
+          />
+        )}
       </Section>
 
       <Section title="Recent Hikes" subtitle="Recent hiking activities">
