@@ -6,7 +6,7 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install -g corepack@0.35.0 && corepack enable && corepack prepare --activate
 
-FROM python:3.13-alpine AS dbt-tools
+FROM python:3.14-alpine AS dbt-tools
 RUN apk add --no-cache build-base && \
     pip install --no-cache-dir \
     dbt-core==1.11.12 \
