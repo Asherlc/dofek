@@ -70,7 +70,7 @@ power_samples AS (
             ORDER BY sensor.recorded_at
             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
         ) AS cumulative_sum
-    FROM activity_bounds am
+    FROM activity_bounds AS am
     INNER JOIN {{ ref('activity_sensor_sample') }} AS sensor
         ON sensor.activity_id = am.activity_id
         AND sensor.user_id = am.user_id
@@ -106,11 +106,11 @@ duration_windows AS (
         duration_values.duration_seconds AS duration_seconds,
         greatest(1, toInt32(round(duration_values.duration_seconds / sr.interval_s))) AS window_samples,
         (
-            ps.cumulative_sum - ifNull(prev_sample.cumulative_sum, 0)
+            ps.cumulative_sum - coalesce(prev_sample.cumulative_sum, 0)
         ) / toFloat64(greatest(1, toInt32(round(duration_values.duration_seconds / sr.interval_s)))) AS avg_power
     FROM duration_values
-    CROSS JOIN power_samples ps
-    INNER JOIN sample_rate sr
+    CROSS JOIN power_samples AS ps
+    INNER JOIN sample_rate AS sr
         ON sr.activity_id = ps.activity_id
     LEFT JOIN power_samples AS prev_sample
         ON prev_sample.activity_id = ps.activity_id
@@ -162,7 +162,7 @@ active_rows AS (
     INNER JOIN best_powers
         ON best_powers.activity_id = activity_keys.activity_id
         AND best_powers.user_id = activity_keys.user_id
-    LEFT JOIN activity_dates ad
+    LEFT JOIN activity_dates AS ad
         ON ad.activity_id = activity_keys.activity_id
     CROSS JOIN refresh_clock
 )
