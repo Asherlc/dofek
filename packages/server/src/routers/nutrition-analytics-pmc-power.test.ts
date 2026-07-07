@@ -495,7 +495,12 @@ describe("powerRouter", () => {
     it("returns eFTP trend data", async () => {
       // First call: query() reads from analytics.activity_summary for NP data
       const npRows = [
-        { activity_id: "act-1", activity_date: "2024-01-15", activity_name: "Ride", normalized_power: 260 },
+        {
+          activity_id: "act-1",
+          activity_date: "2024-01-15",
+          activity_name: "Ride",
+          normalized_power: 260,
+        },
       ];
       // Second call: power curve samples — 1200 samples for CP model fallback
       const pcSamples = makePowerSamples(

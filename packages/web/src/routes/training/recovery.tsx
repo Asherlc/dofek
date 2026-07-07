@@ -31,7 +31,10 @@ function RecoveryTab() {
     { days, endDate },
     TRAINING_OVERVIEW_QUERY_OPTIONS,
   );
-  const sleepData = trpc.recovery.sleepAnalytics.useQuery({ days }, TRAINING_OVERVIEW_QUERY_OPTIONS);
+  const sleepData = trpc.recovery.sleepAnalytics.useQuery(
+    { days },
+    TRAINING_OVERVIEW_QUERY_OPTIONS,
+  );
   const readiness = trpc.recovery.readinessScore.useQuery(
     { days, endDate },
     TRAINING_OVERVIEW_QUERY_OPTIONS,

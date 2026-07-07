@@ -16,9 +16,15 @@ export const Route = createFileRoute("/training/hiking")({
 function HikingTab() {
   const { days } = useTrainingDays();
 
-  const gradeAdjustedPace = trpc.hiking.gradeAdjustedPace.useQuery({ days }, TRAINING_SLOW_QUERY_OPTIONS);
+  const gradeAdjustedPace = trpc.hiking.gradeAdjustedPace.useQuery(
+    { days },
+    TRAINING_SLOW_QUERY_OPTIONS,
+  );
   const elevation = trpc.hiking.elevationProfile.useQuery({ days: Math.max(days, 365) });
-  const biomechanics = trpc.hiking.walkingBiomechanics.useQuery({ days }, TRAINING_SLOW_QUERY_OPTIONS);
+  const biomechanics = trpc.hiking.walkingBiomechanics.useQuery(
+    { days },
+    TRAINING_SLOW_QUERY_OPTIONS,
+  );
   const routeComparison = trpc.hiking.activityComparison.useQuery(
     { days: Math.max(days, 365) },
     TRAINING_SLOW_QUERY_OPTIONS,

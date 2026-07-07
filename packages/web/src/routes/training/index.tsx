@@ -27,7 +27,10 @@ export function TrainingOverview() {
   const endDate = useMemo(() => formatDateYmd(new Date()), []);
 
   const pmcData = trpc.pmc.chart.useQuery({ days }, TRAINING_OVERVIEW_QUERY_OPTIONS);
-  const calendarData = trpc.calendar.calendarData.useQuery({ days }, TRAINING_OVERVIEW_QUERY_OPTIONS);
+  const calendarData = trpc.calendar.calendarData.useQuery(
+    { days },
+    TRAINING_OVERVIEW_QUERY_OPTIONS,
+  );
   const insightsQuery = trpc.insights.compute.useQuery(
     { days: Math.max(days, 90), endDate },
     TRAINING_OVERVIEW_QUERY_OPTIONS,
