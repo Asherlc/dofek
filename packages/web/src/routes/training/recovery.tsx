@@ -8,6 +8,7 @@ import { ReadinessScoreCard } from "../../components/ReadinessScoreCard.tsx";
 import { SleepAnalyticsChart } from "../../components/SleepAnalyticsChart.tsx";
 import { WorkloadRatioChart } from "../../components/WorkloadRatioChart.tsx";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
+import { TRAINING_OVERVIEW_QUERY_OPTIONS } from "../../lib/trainingQueryOptions.ts";
 import { trpc } from "../../lib/trpc.ts";
 
 export const Route = createFileRoute("/training/recovery")({
@@ -20,23 +21,20 @@ function RecoveryTab() {
 
   const hrvVariability = trpc.recovery.hrvVariability.useQuery(
     { days, endDate },
-    { staleTime: 120_000, gcTime: 1_800_000 },
+    TRAINING_OVERVIEW_QUERY_OPTIONS,
   );
   const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery(
     { days, endDate },
-    { staleTime: 120_000, gcTime: 1_800_000 },
+    TRAINING_OVERVIEW_QUERY_OPTIONS,
   );
   const workloadRatio = trpc.recovery.workloadRatio.useQuery(
     { days, endDate },
-    { staleTime: 120_000, gcTime: 1_800_000 },
+    TRAINING_OVERVIEW_QUERY_OPTIONS,
   );
-  const sleepData = trpc.recovery.sleepAnalytics.useQuery(
-    { days },
-    { staleTime: 120_000, gcTime: 1_800_000 },
-  );
+  const sleepData = trpc.recovery.sleepAnalytics.useQuery({ days }, TRAINING_OVERVIEW_QUERY_OPTIONS);
   const readiness = trpc.recovery.readinessScore.useQuery(
     { days, endDate },
-    { staleTime: 120_000, gcTime: 1_800_000 },
+    TRAINING_OVERVIEW_QUERY_OPTIONS,
   );
 
   return (

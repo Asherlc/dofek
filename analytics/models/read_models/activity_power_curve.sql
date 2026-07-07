@@ -29,6 +29,15 @@ existing_activities AS (
     FROM {{ this }} FINAL
     WHERE is_deleted = 0
 ),
+
+existing_duration_rows AS (
+    SELECT
+        activity_id,
+        user_id,
+        duration_seconds
+    FROM {{ this }} FINAL
+    WHERE is_deleted = 0
+),
 {% endif %}
 
 activity_keys AS (
@@ -136,22 +145,76 @@ refresh_clock AS (
     SELECT
         toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
         now64(9) AS refreshed_at
+),
+
+active_rows AS (
+    SELECT
+        activity_keys.activity_id AS activity_id,
+        activity_keys.user_id AS user_id,
+        best_powers.started_at AS started_at,
+        ad.activity_date AS activity_date,
+        best_powers.duration_seconds AS duration_seconds,
+        best_powers.best_power AS best_power,
+        0 AS is_deleted,
+        refresh_clock.refresh_version AS refresh_version,
+        refresh_clock.refreshed_at AS refreshed_at
+    FROM activity_keys
+    INNER JOIN best_powers
+        ON best_powers.activity_id = activity_keys.activity_id
+        AND best_powers.user_id = activity_keys.user_id
+    LEFT JOIN activity_dates ad
+        ON ad.activity_id = activity_keys.activity_id
+    CROSS JOIN refresh_clock
 )
 
+{% if is_incremental() %}
+,
+
+tombstone_rows AS (
+    SELECT
+        activity_keys.activity_id AS activity_id,
+        activity_keys.user_id AS user_id,
+        CAST(NULL AS Nullable(DateTime64(6, 'UTC'))) AS started_at,
+        CAST(NULL AS Nullable(String)) AS activity_date,
+        existing_duration_rows.duration_seconds AS duration_seconds,
+        CAST(NULL AS Nullable(Int32)) AS best_power,
+        1 AS is_deleted,
+        refresh_clock.refresh_version AS refresh_version,
+        refresh_clock.refreshed_at AS refreshed_at
+    FROM activity_keys
+    LEFT JOIN best_powers
+        ON best_powers.activity_id = activity_keys.activity_id
+        AND best_powers.user_id = activity_keys.user_id
+    INNER JOIN existing_duration_rows
+        ON existing_duration_rows.activity_id = activity_keys.activity_id
+        AND existing_duration_rows.user_id = activity_keys.user_id
+    CROSS JOIN refresh_clock
+    WHERE best_powers.activity_id IS NULL
+)
+{% endif %}
+
 SELECT
-    activity_keys.activity_id AS activity_id,
-    activity_keys.user_id AS user_id,
-    best_powers.started_at AS started_at,
-    ad.activity_date AS activity_date,
-    best_powers.duration_seconds AS duration_seconds,
-    best_powers.best_power AS best_power,
-    if(best_powers.activity_id IS NULL, 1, 0) AS is_deleted,
-    refresh_clock.refresh_version AS refresh_version,
-    refresh_clock.refreshed_at AS refreshed_at
-FROM activity_keys
-LEFT JOIN best_powers
-    ON best_powers.activity_id = activity_keys.activity_id
-    AND best_powers.user_id = activity_keys.user_id
-LEFT JOIN activity_dates ad
-    ON ad.activity_id = activity_keys.activity_id
-CROSS JOIN refresh_clock
+    activity_id,
+    user_id,
+    started_at,
+    activity_date,
+    duration_seconds,
+    best_power,
+    is_deleted,
+    refresh_version,
+    refreshed_at
+FROM active_rows
+{% if is_incremental() %}
+UNION ALL
+SELECT
+    activity_id,
+    user_id,
+    started_at,
+    activity_date,
+    duration_seconds,
+    best_power,
+    is_deleted,
+    refresh_version,
+    refreshed_at
+FROM tombstone_rows
+{% endif %}

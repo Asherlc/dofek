@@ -114,15 +114,10 @@ function makePmcSensorStore(
   let queryCallCount = 0;
   return {
     query: vi.fn(
-      async (schema: { parse: (row: unknown) => unknown }, queryText = ""): Promise<unknown[]> => {
-        // PmcRepository.getChart performs two queries through the same sensor store:
-        //   Query 1: main activity chart data (long CTE query)
-        //   Query 2: normalized power per activity (simple SELECT)
-        // Alternate: first activity_summary hit → activityRows, second → normalizedPowerRows.
-        const isNpQuery =
-          queryText.includes("normalized_power") && !queryText.includes("CROSS JOIN");
-        const rows = isNpQuery ? normalizedPowerRows : activityRows;
+      async (schema: { parse: (row: unknown) => unknown }, _queryText = ""): Promise<unknown[]> => {
+        // PmcRepository.getChart issues two queries in order: activity chart, then NP.
         queryCallCount++;
+        const rows = queryCallCount === 1 ? activityRows : normalizedPowerRows;
         return rows.map((row) => schema.parse(row));
       },
     ),
@@ -485,9 +480,9 @@ describe("powerRouter", () => {
     it("returns eFTP trend data", async () => {
       // First call: query() reads from analytics.activity_summary for NP data
       const npRows = [
-        { activity_id: "act-1", activity_date: "2024-01-15", activity_name: "Ride", np: 260 },
+        { activity_id: "act-1", activity_date: "2024-01-15", activity_name: "Ride", normalized_power: 260 },
       ];
-      // Second call: power curve samples — 1200 samples for CP model
+      // Second call: power curve samples — 1200 samples for CP model fallback
       const pcSamples = makePowerSamples(
         "act-1",
         "2024-01-15",
@@ -497,7 +492,12 @@ describe("powerRouter", () => {
       const caller = createCaller({
         db: makeRawActivityCountDb(1),
         sensorStore: {
-          query: vi.fn().mockResolvedValue(npRows),
+          query: vi.fn(async (_schema, queryText = "") => {
+            if (queryText.includes("activity_power_curve")) {
+              return [];
+            }
+            return npRows;
+          }),
           getPowerCurveSamples: vi.fn().mockResolvedValue(pcSamples),
         },
         userId: "user-1",

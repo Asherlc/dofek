@@ -15,6 +15,7 @@ import { TrainingCalendar } from "../../components/TrainingCalendar.tsx";
 import { TrainingInsightsPanel } from "../../components/TrainingInsightsPanel.tsx";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
 import { filterTrainingInsights } from "../../lib/trainingInsights.ts";
+import { TRAINING_OVERVIEW_QUERY_OPTIONS } from "../../lib/trainingQueryOptions.ts";
 import { trpc } from "../../lib/trpc.ts";
 
 export const Route = createFileRoute("/training/")({
@@ -25,14 +26,11 @@ export function TrainingOverview() {
   const { days } = useTrainingDays();
   const endDate = useMemo(() => formatDateYmd(new Date()), []);
 
-  const pmcData = trpc.pmc.chart.useQuery({ days }, { staleTime: 120_000, gcTime: 1_800_000 });
-  const calendarData = trpc.calendar.calendarData.useQuery(
-    { days },
-    { staleTime: 120_000, gcTime: 1_800_000 },
-  );
+  const pmcData = trpc.pmc.chart.useQuery({ days }, TRAINING_OVERVIEW_QUERY_OPTIONS);
+  const calendarData = trpc.calendar.calendarData.useQuery({ days }, TRAINING_OVERVIEW_QUERY_OPTIONS);
   const insightsQuery = trpc.insights.compute.useQuery(
     { days: Math.max(days, 90), endDate },
-    { staleTime: 120_000, gcTime: 1_800_000 },
+    TRAINING_OVERVIEW_QUERY_OPTIONS,
   );
 
   const trainingInsights = useMemo(() => {

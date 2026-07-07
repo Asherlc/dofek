@@ -12,11 +12,11 @@ import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repo
 
 // ── Zod schemas ──────────────────────────────────────────────
 
-const npRowSchema = z.object({
+const normalizedPowerRowSchema = z.object({
   activity_id: z.string(),
   activity_date: z.string(),
   activity_name: z.string().nullable(),
-  np: z.coerce.number(),
+  normalized_power: z.coerce.number(),
 });
 
 const powerCurvePointRowSchema = z.object({
@@ -149,12 +149,12 @@ export class PowerRepository {
     }
 
     const rows = await this.#sensorStore.query(
-      npRowSchema,
+      normalizedPowerRowSchema,
       `SELECT
         toString(activity_id) AS activity_id,
         toString(toDate(toTimeZone(started_at, {timezone:String}))) AS activity_date,
         name AS activity_name,
-        round(normalized_power, 1) AS np
+        round(normalized_power, 1) AS normalized_power
       FROM analytics.activity_summary
       WHERE user_id = {userId:UUID}
         AND started_at > now() - INTERVAL {days:Int32} DAY
@@ -171,29 +171,20 @@ export class PowerRepository {
 
     const trend = rows.map((row) => ({
       date: row.activity_date,
-      eftp: Math.round(row.np * 0.95),
+      eftp: Math.round(row.normalized_power * 0.95),
       activityName: row.activity_name,
     }));
 
     // Compute current eFTP via CP model from last 90 days' power curve
-    const powerCurveSamples = await this.#sensorStore.getPowerCurveSamples(
-      90,
-      this.#userId,
-      this.#timezone,
-    );
-
-    const powerCurveResults = computePowerCurve(powerCurveSamples);
-    const model = fitCriticalPower(powerCurveResults);
+    const { model } = await this.getPowerCurve(90);
 
     // Fall back to 95% of best recent 20-min power if CP model can't fit
     let currentEftp: number | null = model?.cp ?? null;
     if (currentEftp == null) {
-      const recent = trend.filter((entry) => {
-        const date = new Date(entry.date);
-        const cutoff = new Date();
-        cutoff.setDate(cutoff.getDate() - 90);
-        return date >= cutoff;
-      });
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 90);
+      const cutoffDate = cutoff.toISOString().slice(0, 10);
+      const recent = trend.filter((entry) => entry.date >= cutoffDate);
       currentEftp = recent.length > 0 ? Math.max(...recent.map((entry) => entry.eftp)) : null;
     }
 

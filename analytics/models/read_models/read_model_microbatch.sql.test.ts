@@ -44,6 +44,8 @@ describe("production analytics read-model build", () => {
     const activityMatch = entrypoint.match(/^DBT_ACTIVITY_MODELS="([^"]+)"$/m);
     const sleepDashboardMatch = entrypoint.match(/^DBT_SLEEP_DASHBOARD_MODELS="([^"]+)"$/m);
 
+    // DBT_ACTIVITY_MODELS order is load-bearing: upstream intermediaries must build
+    // before downstream activity read models and provider_stats in run_dbt_safe_builds().
     expect(activityMatch?.[1]?.split(" ")).toEqual([
       "sensor_scalar_sample",
       "deduped_sensor",

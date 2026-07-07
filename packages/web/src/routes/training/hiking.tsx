@@ -6,6 +6,7 @@ import { GradeAdjustedPaceTable } from "../../components/GradeAdjustedPaceTable.
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import { WalkingBiomechanicsChart } from "../../components/WalkingBiomechanicsChart.tsx";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
+import { TRAINING_SLOW_QUERY_OPTIONS } from "../../lib/trainingQueryOptions.ts";
 import { trpc } from "../../lib/trpc.ts";
 
 export const Route = createFileRoute("/training/hiking")({
@@ -15,18 +16,12 @@ export const Route = createFileRoute("/training/hiking")({
 function HikingTab() {
   const { days } = useTrainingDays();
 
-  const gradeAdjustedPace = trpc.hiking.gradeAdjustedPace.useQuery(
-    { days },
-    { staleTime: 300_000, gcTime: 1_800_000 },
-  );
+  const gradeAdjustedPace = trpc.hiking.gradeAdjustedPace.useQuery({ days }, TRAINING_SLOW_QUERY_OPTIONS);
   const elevation = trpc.hiking.elevationProfile.useQuery({ days: Math.max(days, 365) });
-  const biomechanics = trpc.hiking.walkingBiomechanics.useQuery(
-    { days },
-    { staleTime: 300_000, gcTime: 1_800_000 },
-  );
+  const biomechanics = trpc.hiking.walkingBiomechanics.useQuery({ days }, TRAINING_SLOW_QUERY_OPTIONS);
   const routeComparison = trpc.hiking.activityComparison.useQuery(
     { days: Math.max(days, 365) },
-    { staleTime: 300_000, gcTime: 1_800_000 },
+    TRAINING_SLOW_QUERY_OPTIONS,
   );
 
   return (

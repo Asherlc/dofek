@@ -159,7 +159,7 @@ describe("TrainingOverview training insights", () => {
       expect.objectContaining({
         days: 90,
       }),
-      expect.any(Object),
+      expect.objectContaining({ staleTime: 120_000, gcTime: 1_800_000 }),
     );
   });
 });

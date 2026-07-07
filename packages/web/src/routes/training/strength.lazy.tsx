@@ -6,6 +6,7 @@ import { ProgressiveOverloadCards } from "../../components/ProgressiveOverloadCa
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import { StrengthVolumeChart } from "../../components/StrengthVolumeChart.tsx";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
+import { TRAINING_OVERVIEW_QUERY_OPTIONS } from "../../lib/trainingQueryOptions.ts";
 import { trpc } from "../../lib/trpc.ts";
 
 export const Route = createLazyFileRoute("/training/strength")({
@@ -22,22 +23,10 @@ const STRENGTH_ACTIVITY_TYPES = [
 function StrengthTab() {
   const { days } = useTrainingDays();
 
-  const strengthVolume = trpc.strength.volumeOverTime.useQuery(
-    { days },
-    { staleTime: 120_000, gcTime: 1_800_000 },
-  );
-  const estimatedMax = trpc.strength.estimatedOneRepMax.useQuery(
-    { days },
-    { staleTime: 120_000, gcTime: 1_800_000 },
-  );
-  const muscleVolume = trpc.strength.muscleGroupVolume.useQuery(
-    { days },
-    { staleTime: 120_000, gcTime: 1_800_000 },
-  );
-  const overload = trpc.strength.progressiveOverload.useQuery(
-    { days },
-    { staleTime: 120_000, gcTime: 1_800_000 },
-  );
+  const strengthVolume = trpc.strength.volumeOverTime.useQuery({ days }, TRAINING_OVERVIEW_QUERY_OPTIONS);
+  const estimatedMax = trpc.strength.estimatedOneRepMax.useQuery({ days }, TRAINING_OVERVIEW_QUERY_OPTIONS);
+  const muscleVolume = trpc.strength.muscleGroupVolume.useQuery({ days }, TRAINING_OVERVIEW_QUERY_OPTIONS);
+  const overload = trpc.strength.progressiveOverload.useQuery({ days }, TRAINING_OVERVIEW_QUERY_OPTIONS);
 
   return (
     <>

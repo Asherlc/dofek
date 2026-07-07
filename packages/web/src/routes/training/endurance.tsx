@@ -6,6 +6,7 @@ import { RampRateChart } from "../../components/RampRateChart.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import { TrainingMonotonyChart } from "../../components/TrainingMonotonyChart.tsx";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
+import { TRAINING_SLOW_QUERY_OPTIONS } from "../../lib/trainingQueryOptions.ts";
 import { trpc } from "../../lib/trpc.ts";
 
 export const Route = createFileRoute("/training/endurance")({
@@ -17,7 +18,7 @@ function EnduranceTab() {
 
   const polarization = trpc.efficiency.polarizationTrend.useQuery(
     { days },
-    { staleTime: 300_000, gcTime: 1_800_000 },
+    TRAINING_SLOW_QUERY_OPTIONS,
   );
   const rampRate = trpc.cyclingAdvanced.rampRate.useQuery({ days });
   const monotony = trpc.cyclingAdvanced.trainingMonotony.useQuery({ days });
