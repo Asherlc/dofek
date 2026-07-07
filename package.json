@@ -184,7 +184,7 @@
     "bullmq": "5.79.2",
     "drizzle-orm": "0.45.2",
     "eight-sleep-client": "workspace:*",
-    "fit-file-parser": "2.3.3",
+    "fit-file-parser": "3.0.2",
     "garmin-connect": "workspace:*",
     "kafkajs": "2.2.4",
     "nodemailer": "9.0.1",
