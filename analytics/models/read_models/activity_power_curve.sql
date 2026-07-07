@@ -93,7 +93,7 @@ duration_windows AS (
     SELECT
         ps.activity_id AS activity_id,
         ps.user_id AS user_id,
-        any(ps.started_at) AS started_at,
+        ps.started_at AS started_at,
         duration_values.duration_seconds AS duration_seconds,
         greatest(1, toInt32(round(duration_values.duration_seconds / sr.interval_s))) AS window_samples,
         (

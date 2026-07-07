@@ -88,20 +88,20 @@ export class PowerRepository {
       // Aggregate across activities: for each duration, find max best_power
       const byDuration = new Map<number, { bestPower: number; activityDate: string }>();
       for (const row of readModelRows) {
-        const d = Number(row.duration_seconds);
-        const p = Number(row.best_power);
-        const prev = byDuration.get(d);
-        if (!prev || p > prev.bestPower) {
-          byDuration.set(d, { bestPower: p, activityDate: String(row.activity_date) });
+        const durationSeconds = Number(row.duration_seconds);
+        const bestPower = Number(row.best_power);
+        const prev = byDuration.get(durationSeconds);
+        if (!prev || bestPower > prev.bestPower) {
+          byDuration.set(durationSeconds, { bestPower, activityDate: String(row.activity_date) });
         }
       }
 
-      const points = STANDARD_DURATIONS.flatMap((d) => {
-        const best = byDuration.get(d);
+      const points = STANDARD_DURATIONS.flatMap((durationSeconds) => {
+        const best = byDuration.get(durationSeconds);
         if (!best) return [];
         return [{
-          durationSeconds: d,
-          label: DURATION_LABELS[d] ?? `${d}s`,
+          durationSeconds,
+          label: DURATION_LABELS[durationSeconds] ?? `${durationSeconds}s`,
           bestPower: best.bestPower,
           activityDate: best.activityDate,
         }];

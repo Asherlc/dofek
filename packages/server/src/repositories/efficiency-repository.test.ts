@@ -463,7 +463,7 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
     expect(result).toEqual({ maxHr: null, weeks: [] });
   });
 
-  it("issues exactly one CH query (read model attempt + fallback)", async () => {
+  it("issues a read-model attempt plus a fallback CH query", async () => {
     const { repo, sensorStore } = makeRepository([]);
     await repo.getPolarizationTrend(90);
     expect(sensorStore.query).toHaveBeenCalledTimes(2);

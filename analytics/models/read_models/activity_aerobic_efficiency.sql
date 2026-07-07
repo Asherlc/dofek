@@ -69,7 +69,7 @@ activity_meta AS (
         activity_bounds.ended_at AS ended_at,
         activity_bounds.started_at AS activity_date,
         user_profile.max_hr AS max_hr,
-        coalesce(resting_by_activity.resting_hr, user_profile.resting_hr) AS resting_hr
+        coalesce(resting_by_activity.resting_hr, user_profile.resting_hr, 60) AS resting_hr
     FROM activity_bounds
     INNER JOIN postgres_fitness.user_profile_current AS user_profile
         ON user_profile.id = activity_bounds.user_id
