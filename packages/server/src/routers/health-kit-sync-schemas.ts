@@ -329,3 +329,11 @@ export const columnToAccumulatorKey: Record<string, keyof DailyMetricAccumulator
   walking_asymmetry_pct: "walkingAsymmetryPct",
   walking_steadiness: "walkingSteadiness",
 };
+
+export function getDailyMetricAccumulatorKey(column: string): keyof DailyMetricAccumulator {
+  const key = columnToAccumulatorKey[column];
+  if (!key) {
+    throw new Error(`Missing daily metric accumulator mapping for column: ${column}`);
+  }
+  return key;
+}

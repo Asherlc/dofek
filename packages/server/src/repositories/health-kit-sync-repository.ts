@@ -18,6 +18,9 @@ import { processWorkouts as processWorkoutsShared } from "../routers/health-kit-
 import {
   type AdditiveDailyMetricAccumulatorKey,
   additiveDailyMetricTypes,
+  type DailyMetricAccumulator,
+  getDailyMetricAccumulatorKey,
+  pointInTimeDailyMetricTypes,
 } from "../routers/health-kit-sync-schemas.ts";
 
 // ---------------------------------------------------------------------------
@@ -86,22 +89,6 @@ export interface SleepSample {
   sourceName: string;
 }
 
-/** Aggregated daily metric values for a single date */
-export interface DailyMetricAccumulator {
-  steps: number | null;
-  activeEnergyKcal: number | null;
-  basalEnergyKcal: number | null;
-  distanceKm: number | null;
-  flightsClimbed: number | null;
-  exerciseMinutes: number | null;
-  hrv: number | null;
-  walkingSpeed: number | null;
-  walkingStepLength: number | null;
-  walkingDoubleSupportPct: number | null;
-  walkingAsymmetryPct: number | null;
-  walkingSteadiness: number | null;
-}
-
 // ---------------------------------------------------------------------------
 // Type routing maps
 // ---------------------------------------------------------------------------
@@ -120,16 +107,6 @@ const bodyMeasurementTypes: Record<
   HKQuantityTypeIdentifierHeight: { column: "height_cm" },
 };
 
-/** Point-in-time daily metrics -- use latest value for the day */
-const pointInTimeDailyMetricTypes: Record<string, { column: string }> = {
-  HKQuantityTypeIdentifierHeartRateVariabilitySDNN: { column: "hrv" },
-  HKQuantityTypeIdentifierWalkingSpeed: { column: "walking_speed" },
-  HKQuantityTypeIdentifierWalkingStepLength: { column: "walking_step_length" },
-  HKQuantityTypeIdentifierWalkingDoubleSupportPercentage: { column: "walking_double_support_pct" },
-  HKQuantityTypeIdentifierWalkingAsymmetryPercentage: { column: "walking_asymmetry_pct" },
-  HKQuantityTypeIdentifierAppleWalkingSteadiness: { column: "walking_steadiness" },
-};
-
 /** Metric stream types and their column names */
 const metricStreamTypes: Record<string, { column: string }> = {
   HKQuantityTypeIdentifierHeartRate: { column: "heart_rate" },
@@ -138,22 +115,6 @@ const metricStreamTypes: Record<string, { column: string }> = {
   HKQuantityTypeIdentifierBloodGlucose: { column: "blood_glucose" },
   HKQuantityTypeIdentifierEnvironmentalAudioExposure: { column: "audio_exposure" },
   HKQuantityTypeIdentifierAppleSleepingWristTemperature: { column: "skin_temperature" },
-};
-
-/** Column name to accumulator key mapping */
-const columnToAccumulatorKey: Record<string, keyof DailyMetricAccumulator> = {
-  steps: "steps",
-  active_energy_kcal: "activeEnergyKcal",
-  basal_energy_kcal: "basalEnergyKcal",
-  distance_km: "distanceKm",
-  flights_climbed: "flightsClimbed",
-  exercise_minutes: "exerciseMinutes",
-  hrv: "hrv",
-  walking_speed: "walkingSpeed",
-  walking_step_length: "walkingStepLength",
-  walking_double_support_pct: "walkingDoubleSupportPct",
-  walking_asymmetry_pct: "walkingAsymmetryPct",
-  walking_steadiness: "walkingSteadiness",
 };
 
 const HEALTHKIT_STAGE_MAP: Record<string, string> = {
@@ -346,10 +307,8 @@ export function aggregateDailyMetricSamples(
       continue;
     }
 
-    const key = columnToAccumulatorKey[pointMapping.column];
-    if (key) {
-      (accumulator[key] as number | null) = sample.value;
-    }
+    const key = getDailyMetricAccumulatorKey(pointMapping.column);
+    accumulator[key] = sample.value;
   }
 
   // Select overnight HRV for each (date, source) using shared logic

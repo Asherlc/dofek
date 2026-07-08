@@ -26,10 +26,10 @@ import {
   additiveDailyMetricTypes,
   BATCH_SIZE,
   bodyMeasurementTypes,
-  columnToAccumulatorKey,
   createEmptyAccumulator,
   type DailyMetricAccumulator,
   type Database,
+  getDailyMetricAccumulatorKey,
   type HealthKitSample,
   INTEGER_DAILY_COLUMNS,
   INTEGER_METRIC_STREAM_COLUMNS,
@@ -201,10 +201,8 @@ export function aggregateDailyMetricSamples(
       continue;
     }
 
-    const key = columnToAccumulatorKey[pointMapping.column];
-    if (key) {
-      (accumulator[key] as number | null) = sample.value;
-    }
+    const key = getDailyMetricAccumulatorKey(pointMapping.column);
+    accumulator[key] = sample.value;
   }
 
   // Select overnight HRV for each (date, source) using shared logic
