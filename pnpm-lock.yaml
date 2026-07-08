@@ -134,8 +134,8 @@ importers:
         specifier: workspace:*
         version: link:packages/eight-sleep
       fit-file-parser:
-        specifier: 2.3.3
-        version: 2.3.3
+        specifier: 3.0.2
+        version: 3.0.2
       garmin-connect:
         specifier: workspace:*
         version: link:packages/garmin-connect
@@ -9350,8 +9350,8 @@ packages:
     resolution: {integrity: sha512-78/PXT1wlLLDgTzDs7sjq9hzz0vXD+zn+7wypEe4fXQxCmdmqfGsEPQxmiCSQI3ajFV91bVSsvNtrJRiW6nGng==}
     engines: {node: '>=10'}
 
-  fit-file-parser@2.3.3:
-    resolution: {integrity: sha512-TZPFfjkEev5TTd9RnZ4xn4k5ZSx2VZiKNjoZsHIkmQDK0S0XA7ebfdMLj76BK7kStsHh5WbK8Fmn/w85jgd0dA==}
+  fit-file-parser@3.0.2:
+    resolution: {integrity: sha512-Yg7XfByuKh8CypgHqNcZSLyV9aWo14pkZ1oWR8VfdHBhuJN856PvlfYAkLSTD58USE5S+iSYE9f9diil043Xag==}
 
   flat-cache@6.1.22:
     resolution: {integrity: sha512-N2dnzVJIphnNsjHcrxGW7DePckJ6haPrSFqpsBUhHYgwtKGVq4JrBGielEGD2fCVnsGm1zlBVZ8wGhkyuetgug==}
@@ -17266,7 +17266,9 @@ snapshots:
       metro-runtime: 0.84.4
     transitivePeerDependencies:
       - '@babel/core'
+      - bufferutil
       - supports-color
+      - utf-8-validate
 
   '@react-native/normalize-colors@0.74.89': {}
 
@@ -22922,7 +22924,7 @@ snapshots:
       locate-path: 6.0.0
       path-exists: 4.0.0
 
-  fit-file-parser@2.3.3:
+  fit-file-parser@3.0.2:
     dependencies:
       buffer: 6.0.3
 
