@@ -7,6 +7,63 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-07-07: Production schema hardening runbook
+
+### Symptoms
+
+Production schema inspection found several integrity gaps where the deployed
+database allowed states that the application already treats as invalid:
+nullable activity provider identifiers, nullable strength-set activity links,
+foreign keys with the wrong delete semantics, missing range/timestamp checks,
+and a nullable `_peerdb_synced_at` column on
+`analytics.body_measurement_sample`.
+
+### User Impact
+
+No confirmed user-facing outage was tied to this hardening pass. The risk was
+silent data corruption or invalid future writes, especially duplicate activity
+rows with null `external_id`, orphaned child rows after parent deletion, invalid
+negative measurements, and ClickHouse body-measurement sync timestamps that
+could remain null.
+
+### Evidence
+
+The runbook compared production data against the Drizzle schema and intended
+domain invariants before generating migrations. Existing data was compatible
+with the new nullability constraints except two Peloton activity rows where
+`ended_at == started_at`. Those rows had source duration data that had not
+reached the `fitness.activity` table.
+
+### Root Cause
+
+The database schema had drifted behind application-level invariants and domain
+rules: some constraints existed only in TypeScript/Drizzle expectations, some
+foreign key delete rules were left at defaults, and ClickHouse CDC metadata did
+not enforce a non-null sync timestamp after body-measurement ingestion.
+
+### Fix or Mitigation
+
+Added migrations to enforce `fitness.strength_set.activity_id` and
+`fitness.activity.external_id` as non-null, tighten foreign key delete rules,
+add check constraints for timestamp ordering and non-negative measurement
+ranges, create the active-activity dashboard index, and backfill/tighten
+`analytics.body_measurement_sample._peerdb_synced_at`. The migration also
+remediates the two zero-duration Peloton rows with a one-second `ended_at`
+floor so the new activity ordering constraint can be applied.
+
+### Validation
+
+Ran `pnpm lint`, `pnpm typecheck`, the focused Postgres migration integration
+suites, the full migration apply-path seed integration suite, and the new
+ClickHouse migration unit test. All passed locally with `db` and `redis`
+healthy under Docker Compose.
+
+### Remaining Risk
+
+The Peloton provider still needs a follow-up fix so real provider durations are
+written to `fitness.activity` instead of relying on the one-time migration
+repair for historical zero-duration rows.
+
 ## 2026-06-30: CI failed on pre-dbt ClickHouse migration and stale seed columns
 
 ### Symptoms

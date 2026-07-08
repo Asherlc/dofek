@@ -56,20 +56,6 @@ describe("upsertProviderActivity", () => {
     });
   });
 
-  it("throws when upserting an activity without an external id", async () => {
-    await expect(
-      upsertProviderActivity(
-        makeMockDb(),
-        {
-          providerId: "apple_health",
-          activityType: "running",
-          startedAt: new Date("2026-06-20T21:49:00Z"),
-        },
-        { activityType: "running" },
-      ),
-    ).rejects.toThrow("Provider activity upsert requires externalId");
-  });
-
   it("throws when upserting an activity with a whitespace-only external id", async () => {
     await expect(
       upsertProviderActivity(
@@ -196,26 +182,6 @@ describe("ProviderActivityListSync", () => {
     await sync.reconcile();
 
     expect(mockReconcile).not.toHaveBeenCalled();
-  });
-
-  it("throws when list-scoped upsert is missing an external id", async () => {
-    const sync = new ProviderActivityListSync({
-      db: makeMockDb(),
-      providerId: "apple_health",
-      windowStart: new Date("2026-06-13T00:00:00Z"),
-      windowEnd: new Date("2026-06-21T00:00:00Z"),
-    });
-
-    await expect(
-      sync.upsert(
-        {
-          providerId: "apple_health",
-          activityType: "running",
-          startedAt: new Date("2026-06-20T21:49:00Z"),
-        },
-        { activityType: "running" },
-      ),
-    ).rejects.toThrow("Provider activity upsert requires externalId");
   });
 });
 

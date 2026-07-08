@@ -143,7 +143,7 @@ export const exerciseAlias = fitness.table(
     id: uuid("id").primaryKey().defaultRandom(),
     exerciseId: uuid("exercise_id")
       .notNull()
-      .references(() => exercise.id),
+      .references(() => exercise.id, { onDelete: "cascade" }),
     providerId: text("provider_id")
       .notNull()
       .references(() => provider.id),

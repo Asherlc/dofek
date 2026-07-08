@@ -50,7 +50,7 @@ export const labResult = fitness.table(
       .notNull()
       .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
-    panelId: uuid("panel_id").references(() => labPanel.id),
+    panelId: uuid("panel_id").references(() => labPanel.id, { onDelete: "cascade" }),
     externalId: text("external_id"),
     testName: text("test_name").notNull(),
     loincCode: text("loinc_code"),
