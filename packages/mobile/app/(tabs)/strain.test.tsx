@@ -6,10 +6,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mockRouterPush = vi.fn();
 
 type MockTrainingData = Record<string, unknown>;
+type MockTrainingState = {
+  data: MockTrainingData | undefined;
+  isLoading: boolean;
+  isFetching: boolean;
+};
 
-let mockTrainingData: MockTrainingData | undefined;
-let mockTrainingLoading = false;
-let mockTrainingFetching = false;
+const mockTrainingState: MockTrainingState = {
+  data: undefined,
+  isLoading: false,
+  isFetching: false,
+};
 
 function defaultMockTrainingData(): MockTrainingData {
   return {
@@ -33,6 +40,12 @@ function defaultMockTrainingData(): MockTrainingData {
   };
 }
 
+function resetMockTrainingState() {
+  mockTrainingState.data = defaultMockTrainingData();
+  mockTrainingState.isLoading = false;
+  mockTrainingState.isFetching = false;
+}
+
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: mockRouterPush }),
 }));
@@ -42,9 +55,9 @@ vi.mock("../../lib/trpc", () => ({
     mobileDashboard: {
       training: {
         useQuery: () => ({
-          data: mockTrainingData,
-          isLoading: mockTrainingLoading,
-          isFetching: mockTrainingFetching,
+          data: mockTrainingState.data,
+          isLoading: mockTrainingState.isLoading,
+          isFetching: mockTrainingState.isFetching,
           isError: false,
           error: null,
         }),
@@ -66,27 +79,31 @@ vi.mock("../../lib/useTodayQueryDate", () => ({
   useTodayQueryDate: () => "2026-03-28",
 }));
 
-vi.mock("../../lib/units", async () => {
-  const { UnitConverter } = await import("@dofek/format/units");
-  const actual = await vi.importActual<typeof import("../../lib/units")>("../../lib/units");
-  return {
-    ...actual,
-    useUnitConverter: () => new UnitConverter("metric"),
-  };
-});
+vi.mock("../../lib/telemetry", () => ({
+  captureException: vi.fn(),
+}));
+
+vi.mock("../../lib/units", () => ({
+  useUnitConverter: () => ({
+    formatDistance: (km: number) => ({ text: `${km.toFixed(1)} km`, parts: [] }),
+    formatElevation: (meters: number) => ({ text: `${meters} m`, parts: [] }),
+    convertDistance: (km: number) => km,
+    distanceLabel: "km",
+  }),
+}));
+
+import { captureException } from "../../lib/telemetry";
 
 describe("StrainScreen recent activity navigation", () => {
   beforeEach(() => {
     mockRouterPush.mockReset();
-    mockTrainingData = defaultMockTrainingData();
-    mockTrainingFetching = false;
-    mockTrainingLoading = false;
-    mockTrainingFetching = false;
+    vi.mocked(captureException).mockReset();
+    resetMockTrainingState();
   });
 
   it("keeps day selector visible while training data is loading", async () => {
-    mockTrainingLoading = true;
-    mockTrainingData = undefined;
+    mockTrainingState.isLoading = true;
+    mockTrainingState.data = undefined;
 
     const { default: StrainScreen } = await import("./strain");
     render(<StrainScreen />);
@@ -96,10 +113,21 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.queryByText("Loading strain data...")).toBeNull();
   });
 
+  it("does not report response parse errors before training data loads", async () => {
+    mockTrainingState.isLoading = true;
+    mockTrainingState.data = undefined;
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByTestId("query-state-loading")).toBeTruthy();
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
   it("keeps cached training data visible while refreshing", async () => {
-    mockTrainingLoading = true;
-    mockTrainingFetching = true;
-    mockTrainingData = {
+    mockTrainingState.isLoading = true;
+    mockTrainingState.isFetching = true;
+    mockTrainingState.data = {
       ...defaultMockTrainingData(),
       strainTarget: {
         targetStrain: 14,
@@ -139,7 +167,7 @@ describe("StrainScreen recent activity navigation", () => {
   });
 
   it("navigates to detail screen when a recent activity card is tapped", async () => {
-    mockTrainingData = {
+    mockTrainingState.data = {
       ...defaultMockTrainingData(),
       activities: [
         {
@@ -166,7 +194,7 @@ describe("StrainScreen recent activity navigation", () => {
   });
 
   it("renders strain target card when target data is available", async () => {
-    mockTrainingData = {
+    mockTrainingState.data = {
       ...defaultMockTrainingData(),
       strainTarget: {
         targetStrain: 14,
@@ -192,7 +220,7 @@ describe("StrainScreen recent activity navigation", () => {
   });
 
   it("shows today's load separately from the rolling training load ratio", async () => {
-    mockTrainingData = {
+    mockTrainingState.data = {
       strainTarget: {
         targetStrain: 12,
         currentStrain: 0,
@@ -234,7 +262,7 @@ describe("StrainScreen recent activity navigation", () => {
   });
 
   it("does not use a prior displayed strain as today's strain fallback", async () => {
-    mockTrainingData = {
+    mockTrainingState.data = {
       strainTarget: undefined,
       workloadRatio: {
         displayedStrain: 13,
@@ -270,7 +298,7 @@ describe("StrainScreen recent activity navigation", () => {
   });
 
   it("navigates to activities list when tapping View all", async () => {
-    mockTrainingData = {
+    mockTrainingState.data = {
       ...defaultMockTrainingData(),
       activities: [
         {

@@ -302,6 +302,7 @@ export const clickHouseMigrationAnalyticsViewNames = [
   "analytics.deduped_location",
   "analytics.daily_endurance_load",
   "analytics.activity_summary",
+  "analytics.hiking_activity",
   "analytics.daily_activity_load",
   "analytics.weekly_endurance_ramp_rate",
   "analytics.weekly_training_monotony",
@@ -330,6 +331,7 @@ const analyticsBuildOrder = [
   "analytics.activity_heart_rate_zones",
   "analytics.activity_summary",
   "analytics.daily_endurance_load",
+  "analytics.hiking_activity",
   "analytics.daily_activity_load",
   "analytics.weekly_endurance_ramp_rate",
   "analytics.weekly_training_monotony",
@@ -638,6 +640,22 @@ normalized_power Nullable(Float64),
 smoothed_avg_power Nullable(Float64),
 climbing_elevation_gain_m Nullable(Float64),
 climbing_seconds Nullable(Int32)`,
+    hiking_activity: `activity_id UUID,
+user_id UUID,
+activity_type String,
+activity_name Nullable(String),
+started_at DateTime64(6, 'UTC'),
+ended_at Nullable(DateTime64(6, 'UTC')),
+distance_m Float64,
+duration_seconds Float64,
+average_pace_min_per_km Float64,
+elevation_gain_m Float64,
+elevation_loss_m Float64,
+average_grade_percent Float64,
+avg_heart_rate Nullable(Float64),
+is_deleted UInt8,
+refresh_version UInt64,
+refreshed_at DateTime64(9)`,
     daily_activity_load: `activity_id UUID,
 user_id UUID,
 started_at DateTime64(6, 'UTC'),
@@ -778,6 +796,7 @@ refreshed_at DateTime64(9)`,
     shortViewName === "healthspan_activity_zone_minutes" ||
     shortViewName === "weekly_healthspan" ||
     shortViewName === "provider_stats" ||
+    shortViewName === "hiking_activity" ||
     shortViewName === "activity_power_curve" ||
     shortViewName === "activity_aerobic_efficiency" ||
     shortViewName === "activity_polarization_zones"
@@ -814,7 +833,8 @@ refreshed_at DateTime64(9)`,
                             ? "(user_id, provider_id)"
                             : shortViewName === "activity_power_curve"
                               ? "(user_id, activity_id, duration_seconds)"
-                              : shortViewName === "activity_aerobic_efficiency" ||
+                              : shortViewName === "hiking_activity" ||
+                                  shortViewName === "activity_aerobic_efficiency" ||
                                   shortViewName === "activity_polarization_zones"
                                 ? "(user_id, activity_id)"
                                 : "tuple()";
@@ -1089,6 +1109,70 @@ SELECT
 FROM point_rows
 CROSS JOIN refresh_clock
 GROUP BY point_rows.user_id, point_rows.activity_id, refresh_clock.refresh_version`;
+}
+
+function buildTestHikingActivitySelectSql(databases: IsolatedClickHouseDatabases): string {
+  return `WITH activity_summary AS (
+  SELECT
+    activity_id,
+    user_id,
+    activity_type,
+    name,
+    started_at,
+    ended_at,
+    coalesce(total_distance, 0) AS distance_m,
+    coalesce(elevation_gain_m, 0) AS elevation_gain_m,
+    coalesce(elevation_loss_m, 0) AS elevation_loss_m,
+    avg_hr
+  FROM ${databases.analytics}.activity_summary
+  WHERE activity_type IN ('walking', 'hiking', 'trail_running')
+),
+refresh_clock AS (
+  SELECT
+    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+    now64(9) AS refreshed_at
+)
+SELECT
+  activity_summary.activity_id AS activity_id,
+  activity_summary.user_id AS user_id,
+  activity_summary.activity_type AS activity_type,
+  activity_summary.name AS activity_name,
+  activity_summary.started_at AS started_at,
+  activity_summary.ended_at AS ended_at,
+  round(activity_summary.distance_m, 1) AS distance_m,
+  if(
+    activity_summary.ended_at IS NOT NULL,
+    toFloat64(dateDiff('second', activity_summary.started_at, activity_summary.ended_at)),
+    0
+  ) AS duration_seconds,
+  if(
+    activity_summary.distance_m > 0 AND activity_summary.ended_at IS NOT NULL,
+    round(
+      (
+        dateDiff('second', activity_summary.started_at, activity_summary.ended_at) / 60.0
+      ) / (activity_summary.distance_m / 1000.0),
+      2
+    ),
+    0
+  ) AS average_pace_min_per_km,
+  round(activity_summary.elevation_gain_m, 1) AS elevation_gain_m,
+  round(activity_summary.elevation_loss_m, 1) AS elevation_loss_m,
+  if(
+    activity_summary.distance_m > 0,
+    round(
+      (
+        activity_summary.elevation_gain_m - activity_summary.elevation_loss_m
+      ) / activity_summary.distance_m * 100,
+      4
+    ),
+    0
+  ) AS average_grade_percent,
+  round(activity_summary.avg_hr, 1) AS avg_heart_rate,
+  toUInt8(0) AS is_deleted,
+  refresh_clock.refresh_version AS refresh_version,
+  refresh_clock.refreshed_at AS refreshed_at
+FROM activity_summary
+CROSS JOIN refresh_clock`;
 }
 
 function buildTestActivityHeartRateZonesSelectSql(databases: IsolatedClickHouseDatabases): string {
@@ -2265,6 +2349,11 @@ ${buildTestActivityStreamPointsSelectSql(defaultTestDatabases)}`,
     query: `CREATE VIEW IF NOT EXISTS analytics.activity_heart_rate_zones
 AS
 ${buildTestActivityHeartRateZonesSelectSql(defaultTestDatabases)}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.hiking_activity
+AS
+${buildTestHikingActivitySelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.daily_recovery_inputs

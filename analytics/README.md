@@ -26,6 +26,10 @@ over `analytics.activity_summary_rows FINAL`; the expensive activity/sample
 joins belong in incremental dbt models, not in web/API requests. Complex
 offline ClickHouse models can set dbt `query_settings` locally and use
 `max_threads=1` so offline builds do not compete with request traffic.
+`hiking_activity` materializes the per-activity hiking/walking/trail-running
+fields used by the hiking training page so its grade-adjusted pace, elevation,
+and route-comparison procedures do not repeatedly scan the broad activity
+summary view at request time.
 For loading-performance work, follow
 [`docs/performance/loading-performance-runbook.md`](../docs/performance/loading-performance-runbook.md)
 before adding or changing analytics models. A new route-facing model is allowed
@@ -53,7 +57,7 @@ Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `daily_sleep`, `daily_recovery_inputs`, `daily_recovery`, `activity_sensor_sample`, `activity_location_sample`,
 `activity_sensor_summary_rows`, `activity_location_summary_rows`,
 `activity_stream_points`, `activity_heart_rate_zones`, `activity_summary_rows`,
-`activity_vo2max_estimate`, `activity_aerobic_efficiency`, `activity_polarization_zones`, `activity_power_curve`, `provider_stats`,
+`hiking_activity`, `activity_vo2max_estimate`, `activity_aerobic_efficiency`, `activity_polarization_zones`, `activity_power_curve`, `provider_stats`,
 `daily_activity_load`, `daily_strain`, `healthspan_activity_zone_minutes`,
 and `weekly_healthspan`. Sample-time models use dbt's `microbatch`
 incremental strategy with daily batches and short lookbacks so ClickHouse

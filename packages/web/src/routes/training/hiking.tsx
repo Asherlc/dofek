@@ -14,6 +14,12 @@ export const Route = createFileRoute("/training/hiking")({
   component: HikingTab,
 });
 
+function shouldShowQueryError(query: { error: unknown; data: unknown }): boolean {
+  if (!query.error) return false;
+  if (Array.isArray(query.data)) return query.data.length === 0;
+  return !query.data;
+}
+
 function HikingTab() {
   const { days } = useTrainingDays();
   const hikingQueryDays = Math.max(days, 365);
@@ -41,7 +47,7 @@ function HikingTab() {
         title="Grade-Adjusted Pace"
         subtitle="Minetti-model normalized pace for walks and hikes"
       >
-        {gradeAdjustedPace.error && !gradeAdjustedPace.data ? (
+        {shouldShowQueryError(gradeAdjustedPace) ? (
           <QueryStatePanel error={gradeAdjustedPace.error} />
         ) : (
           <GradeAdjustedPaceTable
@@ -56,7 +62,7 @@ function HikingTab() {
           title="Elevation Gain"
           subtitle="Weekly cumulative elevation from hiking and walking"
         >
-          {elevation.error && !elevation.data ? (
+          {shouldShowQueryError(elevation) ? (
             <QueryStatePanel error={elevation.error} />
           ) : (
             <ElevationGainChart data={elevation.data ?? []} loading={elevation.isLoading} />
@@ -64,7 +70,7 @@ function HikingTab() {
         </Section>
 
         <Section title="Walking Biomechanics" subtitle="Step length, gait symmetry, double support">
-          {biomechanics.error && !biomechanics.data ? (
+          {shouldShowQueryError(biomechanics) ? (
             <QueryStatePanel error={biomechanics.error} />
           ) : (
             <WalkingBiomechanicsChart
@@ -76,7 +82,7 @@ function HikingTab() {
       </div>
 
       <Section title="Route Comparison" subtitle="Repeated routes compared over time">
-        {routeComparison.error && !routeComparison.data ? (
+        {shouldShowQueryError(routeComparison) ? (
           <QueryStatePanel error={routeComparison.error} />
         ) : (
           <ActivityComparisonChart

@@ -408,10 +408,10 @@ importers:
         version: 5.101.2(@tanstack/react-query@5.101.2(react@19.2.3))(react@19.2.3)
       '@trpc/client':
         specifier: 11.18.0
-        version: 11.18.0(typescript@6.0.3)
+        version: 11.18.0(@trpc/server@11.18.0(typescript@6.0.3))(typescript@6.0.3)
       '@trpc/react-query':
-        specifier: 11.12.0
-        version: 11.12.0(@tanstack/react-query@5.101.2(react@19.2.3))(@trpc/client@11.18.0(typescript@6.0.3))(react@19.2.3)(typescript@6.0.3)
+        specifier: 11.18.0
+        version: 11.18.0(@tanstack/react-query@5.101.2(react@19.2.3))(@trpc/client@11.18.0(@trpc/server@11.18.0(typescript@6.0.3))(typescript@6.0.3))(@trpc/server@11.18.0(typescript@6.0.3))(react@19.2.3)(typescript@6.0.3)
       dofek-server:
         specifier: workspace:*
         version: link:../server
@@ -623,8 +623,8 @@ importers:
         specifier: 0.2.3
         version: 0.2.3
       '@trpc/server':
-        specifier: 11.12.0
-        version: 11.12.0(typescript@6.0.3)
+        specifier: 11.18.0
+        version: 11.18.0(typescript@6.0.3)
       ai:
         specifier: 7.0.9
         version: 7.0.9(zod@4.4.3)
@@ -781,10 +781,10 @@ importers:
         version: 8.21.3(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       '@trpc/client':
         specifier: 11.18.0
-        version: 11.18.0(typescript@6.0.3)
+        version: 11.18.0(@trpc/server@11.18.0(typescript@6.0.3))(typescript@6.0.3)
       '@trpc/react-query':
-        specifier: 11.12.0
-        version: 11.12.0(@tanstack/react-query@5.101.2(react@19.2.3))(@trpc/client@11.18.0(typescript@6.0.3))(react@19.2.3)(typescript@6.0.3)
+        specifier: 11.18.0
+        version: 11.18.0(@tanstack/react-query@5.101.2(react@19.2.3))(@trpc/client@11.18.0(@trpc/server@11.18.0(typescript@6.0.3))(typescript@6.0.3))(@trpc/server@11.18.0(typescript@6.0.3))(react@19.2.3)(typescript@6.0.3)
       dofek-server:
         specifier: workspace:*
         version: link:../server
@@ -7220,17 +7220,18 @@ packages:
       '@trpc/server': 11.18.0
       typescript: '>=5.7.2'
 
-  '@trpc/react-query@11.12.0':
-    resolution: {integrity: sha512-SLJLlQw0XVc+oVD5RITLl0G7cAFJ4oSJXUcblTS8CKUET+J4r/Ot2hKfX+qhENcFM1ChllbwMrCbUHNOH7qU1A==}
+  '@trpc/react-query@11.18.0':
+    resolution: {integrity: sha512-C1+Wwm2pCeUJucI+bnFpxGYjNuvV+ko1BC1T9tUxBVdrhHRCdn9ubxdevdLSAa49XRJRJiZnSuzl3Ys/yvs1vg==}
     peerDependencies:
       '@tanstack/react-query': ^5.80.3
-      '@trpc/client': 11.12.0
-      '@trpc/server': 11.12.0
+      '@trpc/client': 11.18.0
+      '@trpc/server': 11.18.0
       react: 19.2.3
       typescript: '>=5.7.2'
 
-  '@trpc/server@11.12.0':
-    resolution: {integrity: sha512-rpZnf5FUjNndE/AjGIy+FvEHR52iBd0u0wySqWCwXj67wraj3qCuBr5Opcf0Te/g67C/YztqceFkLoG0r4mp4Q==}
+  '@trpc/server@11.18.0':
+    resolution: {integrity: sha512-JAvXOuNTxgXjIDfQaOvDq1j66LMNfDJUH1IU7Slfn8EvRv2EkH6ehu3A7zpYhjO0syHHiYg77v2lG2JFJgvw7Q==}
+    hasBin: true
     peerDependencies:
       typescript: '>=5.7.2'
 
@@ -20559,18 +20560,20 @@ snapshots:
       esm-env: 1.2.2
       tmcp: 1.19.4(typescript@6.0.3)
 
-  '@trpc/client@11.18.0(typescript@6.0.3)':
+  '@trpc/client@11.18.0(@trpc/server@11.18.0(typescript@6.0.3))(typescript@6.0.3)':
     dependencies:
+      '@trpc/server': 11.18.0(typescript@6.0.3)
       typescript: 6.0.3
 
-  '@trpc/react-query@11.12.0(@tanstack/react-query@5.101.2(react@19.2.3))(@trpc/client@11.18.0(typescript@6.0.3))(react@19.2.3)(typescript@6.0.3)':
+  '@trpc/react-query@11.18.0(@tanstack/react-query@5.101.2(react@19.2.3))(@trpc/client@11.18.0(@trpc/server@11.18.0(typescript@6.0.3))(typescript@6.0.3))(@trpc/server@11.18.0(typescript@6.0.3))(react@19.2.3)(typescript@6.0.3)':
     dependencies:
       '@tanstack/react-query': 5.101.2(react@19.2.3)
-      '@trpc/client': 11.18.0(typescript@6.0.3)
+      '@trpc/client': 11.18.0(@trpc/server@11.18.0(typescript@6.0.3))(typescript@6.0.3)
+      '@trpc/server': 11.18.0(typescript@6.0.3)
       react: 19.2.3
       typescript: 6.0.3
 
-  '@trpc/server@11.12.0(typescript@6.0.3)':
+  '@trpc/server@11.18.0(typescript@6.0.3)':
     dependencies:
       typescript: 6.0.3
 
