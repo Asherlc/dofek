@@ -157,6 +157,9 @@ describe("Predictions router (integration)", () => {
           RETURNING id`,
     );
     const exerciseId = exerciseResult[0]?.id;
+    if (!exerciseId) {
+      throw new Error("Failed to insert prediction exercise");
+    }
 
     for (let i = 60; i >= 1; i--) {
       if (i % 3 !== 0) continue;
@@ -173,20 +176,21 @@ describe("Predictions router (integration)", () => {
             ) RETURNING id`,
       );
       const workoutId = workoutResult[0]?.id;
+      if (!workoutId) {
+        throw new Error("Failed to insert prediction strength workout activity");
+      }
 
-      if (workoutId && exerciseId) {
-        const weight = 70 + (60 - i) * 0.5;
-        for (let setIdx = 0; setIdx < 3; setIdx++) {
-          await testCtx.db.execute(
-            sql`INSERT INTO fitness.strength_set (
+      const weight = 70 + (60 - i) * 0.5;
+      for (let setIdx = 0; setIdx < 3; setIdx++) {
+        await testCtx.db.execute(
+          sql`INSERT INTO fitness.strength_set (
                   activity_id, exercise_id, exercise_index, set_index,
                   set_type, weight_kg, reps
                 ) VALUES (
                   ${workoutId}, ${exerciseId}, 0, ${setIdx},
                   'working', ${weight}, 8
                 )`,
-          );
-        }
+        );
       }
     }
 

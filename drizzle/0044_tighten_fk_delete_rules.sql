@@ -6,6 +6,7 @@
 -- strength_set.exercise -> exercise: exercise is a shared catalog definition;
 --   deleting an exercise that is referenced by historical set rows is forbidden.
 -- exercise_alias.exercise -> exercise: aliases are owned by their exercise.
+-- exercise_alias.provider -> provider: aliases are provider-owned mappings.
 -- daily_metric_value.metric_type -> daily_metric_type: catalog FK; deleting
 --   a metric type that is in use should be forbidden, not orphan rows.
 
@@ -40,6 +41,17 @@ ON DELETE CASCADE ON UPDATE NO ACTION NOT VALID;
 --> statement-breakpoint
 ALTER TABLE fitness.exercise_alias
 VALIDATE CONSTRAINT exercise_alias_exercise_id_exercise_id_fk;
+
+--> statement-breakpoint
+ALTER TABLE fitness.exercise_alias
+DROP CONSTRAINT IF EXISTS exercise_alias_provider_id_provider_id_fk,
+ADD CONSTRAINT exercise_alias_provider_id_provider_id_fk
+FOREIGN KEY (provider_id) REFERENCES fitness.provider (id)
+ON DELETE CASCADE ON UPDATE NO ACTION NOT VALID;
+
+--> statement-breakpoint
+ALTER TABLE fitness.exercise_alias
+VALIDATE CONSTRAINT exercise_alias_provider_id_provider_id_fk;
 
 --> statement-breakpoint
 ALTER TABLE fitness.daily_metric_value

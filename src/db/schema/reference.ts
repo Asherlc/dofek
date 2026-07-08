@@ -146,7 +146,7 @@ export const exerciseAlias = fitness.table(
       .references(() => exercise.id, { onDelete: "cascade" }),
     providerId: text("provider_id")
       .notNull()
-      .references(() => provider.id),
+      .references(() => provider.id, { onDelete: "cascade" }),
     providerExerciseId: text("provider_exercise_id"),
     providerExerciseName: text("provider_exercise_name").notNull(),
   },
