@@ -3,7 +3,7 @@
     incremental_strategy='append',
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, activity_id)',
-    on_schema_change='append_new_columns',
+    on_schema_change='fail',
     query_settings={
         'max_threads': 1
     }

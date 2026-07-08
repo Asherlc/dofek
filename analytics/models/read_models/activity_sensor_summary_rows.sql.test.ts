@@ -1,5 +1,10 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import {
+  buildActivitySensorSummaryRowsTableSql,
+  extractClickHouseTableColumnNames,
+  extractDbtFinalSelectColumnNames,
+} from "../../../src/db/clickhouse-activity-sensor-summary.ts";
 
 const modelSql = readFileSync(
   new URL("./activity_sensor_summary_rows.sql", import.meta.url),
@@ -7,6 +12,18 @@ const modelSql = readFileSync(
 );
 
 describe("activity_sensor_summary_rows model", () => {
+  it("matches the canonical ClickHouse table column order", () => {
+    const tableColumns = extractClickHouseTableColumnNames(buildActivitySensorSummaryRowsTableSql());
+    const selectColumns = extractDbtFinalSelectColumnNames(modelSql, "dirty_keys");
+
+    expect(selectColumns).toEqual(tableColumns);
+  });
+
+  it("fails on schema drift instead of appending columns at the table tail", () => {
+    expect(modelSql).toContain("on_schema_change='fail'");
+    expect(modelSql).not.toContain("append_new_columns");
+  });
+
   describe("best_twenty_minute_power_per_activity window-sample-count clamp", () => {
     it("clamps the divisor to at least 1 so slow power cadences cannot divide by zero", () => {
       // Three call sites must use the same guarded expression, so a slow power

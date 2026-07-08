@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { buildActivitySensorSummaryRowsTableSql } from "./clickhouse-activity-sensor-summary.ts";
 import { buildActivitySummaryRowsTableSql } from "./clickhouse-activity-summary.ts";
 
 const canonicalActivityId = "00000000-0000-0000-0000-000000000111";
@@ -302,45 +303,10 @@ ORDER BY (user_id, member_activity_id)`;
 }
 
 function createActivitySensorSummaryRowsTableSql(targetSchema: string): string {
-  return `CREATE TABLE ${targetSchema}.activity_sensor_summary_rows (
-  activity_id UUID,
-  user_id UUID,
-  avg_hr Nullable(Float64),
-  max_hr Nullable(Int16),
-  min_hr Nullable(Int16),
-  avg_power Nullable(Float64),
-  max_power Nullable(Int16),
-  avg_speed Nullable(Float64),
-  max_speed Nullable(Float64),
-  avg_cadence Nullable(Float64),
-  elevation_gain_legacy Nullable(Float64),
-  avg_left_balance Nullable(Float64),
-  avg_left_torque_eff Nullable(Float64),
-  avg_right_torque_eff Nullable(Float64),
-  avg_left_pedal_smooth Nullable(Float64),
-  avg_right_pedal_smooth Nullable(Float64),
-  elevation_gain_m Nullable(Float64),
-  elevation_loss_m Nullable(Float64),
-  avg_stance_time Nullable(Float64),
-  avg_vertical_osc Nullable(Float64),
-  avg_ground_contact_time Nullable(Float64),
-  avg_stride_length Nullable(Float64),
-  sample_count Nullable(UInt64),
-  hr_sample_count Nullable(UInt64),
-  power_sample_count Nullable(UInt64),
-  first_sample_at Nullable(DateTime64(6, 'UTC')),
-  last_sample_at Nullable(DateTime64(6, 'UTC')),
-  best_twenty_minute_power Nullable(Float64),
-  normalized_power Nullable(Float64),
-  smoothed_avg_power Nullable(Float64),
-  climbing_elevation_gain_m Nullable(Float64),
-  climbing_seconds Nullable(Int32),
-  refresh_version UInt64,
-  is_deleted UInt8,
-  refreshed_at DateTime64(9, 'UTC')
-)
-ENGINE = ReplacingMergeTree(refresh_version)
-ORDER BY (user_id, activity_id)`;
+  return buildActivitySensorSummaryRowsTableSql().replace(
+    "analytics.activity_sensor_summary_rows",
+    `${targetSchema}.activity_sensor_summary_rows`,
+  );
 }
 
 function createActivityLocationSummaryRowsTableSql(targetSchema: string): string {
