@@ -112,6 +112,9 @@ describe("AerobicEfficiencyChart", () => {
     const option = JSON.parse(chartElement.dataset.option ?? "{}");
     const powerSeries = option.series.find((series: { name?: string }) => series.name === "Power");
 
+    expect(powerSeries).toBeDefined();
+    expect(Array.isArray(powerSeries.data)).toBe(true);
+    expect(powerSeries.data.length).toBeGreaterThanOrEqual(2);
     expect(powerSeries.data[0][0]).toBe("2026-03-10");
     expect(powerSeries.data[1][0]).toBe("2026-03-15");
   });

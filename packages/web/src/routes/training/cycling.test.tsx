@@ -7,9 +7,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted<{
   capturedRouteComponent: ComponentType | null;
   bodyRecords: Array<{ recordedAt: string; weightKg: number | null }>;
+  efficiencyActivities: Array<{
+    date: string;
+    activityType: string;
+    name: string;
+    avgPowerZ2: number;
+    avgHrZ2: number;
+    efficiencyFactor: number;
+    z2Samples: number;
+  }>;
+  capturedAerobicEfficiencyActivities: unknown[] | null;
 }>(() => ({
   capturedRouteComponent: null,
   bodyRecords: [],
+  efficiencyActivities: [],
+  capturedAerobicEfficiencyActivities: null,
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -26,7 +38,10 @@ vi.mock("../../components/ActivityVariabilityTable.tsx", () => ({
   ActivityVariabilityTable: () => <div data-testid="activity-variability" />,
 }));
 vi.mock("../../components/AerobicEfficiencyChart.tsx", () => ({
-  AerobicEfficiencyChart: () => <div data-testid="aerobic-efficiency" />,
+  AerobicEfficiencyChart: ({ activities }: { activities: unknown[] }) => {
+    state.capturedAerobicEfficiencyActivities = activities;
+    return <div data-testid="aerobic-efficiency" />;
+  },
 }));
 vi.mock("../../components/ChartDescriptionTooltip.tsx", () => ({
   ChartDescriptionTooltip: () => null,
@@ -87,7 +102,11 @@ vi.mock("../../lib/trpc.ts", () => ({
     },
     efficiency: {
       aerobicEfficiency: {
-        useQuery: () => ({ data: { activities: [], maxHr: null }, isLoading: false, error: null }),
+        useQuery: () => ({
+          data: { activities: state.efficiencyActivities, maxHr: null },
+          isLoading: false,
+          error: null,
+        }),
       },
     },
     cyclingAdvanced: {
@@ -123,6 +142,8 @@ describe("CyclingTab", () => {
       { recordedAt: "2026-07-01", weightKg: null },
       { recordedAt: "2026-06-01", weightKg: 100 },
     ];
+    state.efficiencyActivities = [];
+    state.capturedAerobicEfficiencyActivities = null;
   });
 
   afterEach(() => {
@@ -162,5 +183,33 @@ describe("CyclingTab", () => {
     expect(screen.getAllByText("--").length).toBeGreaterThanOrEqual(4);
     expect(screen.queryByText("4.00")).toBeNull();
     expect(screen.queryByText("50.2")).toBeNull();
+  });
+
+  it("passes only cycling aerobic efficiency activities to the chart", async () => {
+    const cyclingActivity = {
+      date: "2026-03-10",
+      activityType: "cycling",
+      name: "Morning Ride",
+      avgPowerZ2: 180,
+      avgHrZ2: 135,
+      efficiencyFactor: 1.333,
+      z2Samples: 600,
+    };
+    state.efficiencyActivities = [
+      cyclingActivity,
+      {
+        date: "2026-03-12",
+        activityType: "running",
+        name: "Easy Run",
+        avgPowerZ2: 220,
+        avgHrZ2: 145,
+        efficiencyFactor: 1.517,
+        z2Samples: 900,
+      },
+    ];
+
+    await renderCyclingTab();
+
+    expect(state.capturedAerobicEfficiencyActivities).toEqual([cyclingActivity]);
   });
 });

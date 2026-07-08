@@ -117,6 +117,9 @@ function CyclingTab() {
     seasonModel && seasonMap ? estimateTte(seasonModel.wPrime, seasonMap, seasonModel.cp) : null;
 
   const loading = recentCurve.isLoading || seasonCurve.isLoading;
+  const cyclingEfficiencyActivities = (efficiency.data?.activities ?? []).filter((activity) =>
+    CYCLING_ACTIVITY_TYPES.some((activityType) => activityType === activity.activityType),
+  );
 
   return (
     <>
@@ -194,7 +197,7 @@ function CyclingTab() {
             <QueryStatePanel error={efficiency.error} />
           ) : (
             <AerobicEfficiencyChart
-              activities={efficiency.data?.activities ?? []}
+              activities={cyclingEfficiencyActivities}
               maxHr={efficiency.data?.maxHr ?? null}
               loading={efficiency.isLoading}
             />
