@@ -1,11 +1,6 @@
 import { formatDateShort, formatIntensity, formatNumber } from "@dofek/format/format";
-import type { ActivityVariabilityRow } from "dofek-server/types";
+import type { ActivityVariabilityEmptyReason, ActivityVariabilityRow } from "dofek-server/types";
 import { ActivityTable, type ActivityTableColumn } from "./ActivityTable.tsx";
-
-type ActivityVariabilityEmptyReason =
-  | "no_cycling_activities"
-  | "no_ftp_estimate"
-  | "no_normalized_power";
 
 interface ActivityVariabilityTableProps {
   data: ActivityVariabilityRow[];

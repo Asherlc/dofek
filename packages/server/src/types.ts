@@ -10,6 +10,7 @@ export type { ActivityHrZones, StreamPoint } from "./routers/activity.ts";
 export type { CalendarDay } from "./routers/calendar.ts";
 // Cycling advanced router types
 export type {
+  ActivityVariabilityEmptyReason,
   ActivityVariabilityResult,
   ActivityVariabilityRow,
   PedalDynamicsRow,

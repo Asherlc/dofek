@@ -5,6 +5,9 @@ import {
   type ActivityVariabilityEmptyReason,
   CyclingAdvancedRepository,
 } from "../repositories/cycling-advanced-repository.ts";
+
+export type { ActivityVariabilityEmptyReason } from "../repositories/cycling-advanced-repository.ts";
+
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 function requireSensorStore(

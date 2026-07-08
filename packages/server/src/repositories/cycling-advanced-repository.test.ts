@@ -468,7 +468,10 @@ describe("CyclingAdvancedRepository", () => {
         .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
           [{ ftp: 250 }].map((row) => schema.parse(row)),
         )
-        .mockImplementationOnce(async () => []);
+        .mockImplementationOnce(async () => [])
+        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
+          [{ total: 0 }].map((row) => schema.parse(row)),
+        );
       const repo = new CyclingAdvancedRepository(
         { execute: vi.fn().mockResolvedValue([{ activity_count: 1 }]) },
         "user-1",
@@ -481,6 +484,31 @@ describe("CyclingAdvancedRepository", () => {
       expect(result.models).toEqual([]);
       expect(result.totalCount).toBe(0);
       expect(result.emptyReason).toBe("no_normalized_power");
+    });
+
+    it("does not report no_normalized_power when offset is past the data", async () => {
+      const sensorStore = makeSensorStore([]);
+      sensorStore.query = vi
+        .fn()
+        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
+          [{ ftp: 250 }].map((row) => schema.parse(row)),
+        )
+        .mockImplementationOnce(async () => [])
+        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
+          [{ total: 5 }].map((row) => schema.parse(row)),
+        );
+      const repo = new CyclingAdvancedRepository(
+        { execute: vi.fn().mockResolvedValue([{ activity_count: 1 }]) },
+        "user-1",
+        "UTC",
+        sensorStore,
+      );
+
+      const result = await repo.getActivityVariability(90, 20, 40);
+
+      expect(result.models).toEqual([]);
+      expect(result.totalCount).toBe(5);
+      expect(result.emptyReason).toBeNull();
     });
   });
 

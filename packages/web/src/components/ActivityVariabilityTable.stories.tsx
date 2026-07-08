@@ -94,3 +94,11 @@ export const NoNormalizedPower: Story = {
     emptyReason: "no_normalized_power",
   },
 };
+
+export const NoCyclingActivities: Story = {
+  args: {
+    data: [],
+    totalCount: 0,
+    emptyReason: "no_cycling_activities",
+  },
+};

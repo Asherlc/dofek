@@ -67,6 +67,6 @@ describe("ActivityVariabilityTable", () => {
 
     expect(
       screen.getByText("No cycling activities with enough power samples for variability yet."),
-    ).toBeTruthy();
+    ).toBeInTheDocument();
   });
 });
