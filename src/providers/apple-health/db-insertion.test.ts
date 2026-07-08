@@ -820,20 +820,6 @@ describe("upsertDailyMetricsBatch", () => {
     expect(capture.values[0]?.[0]).toMatchObject({ distanceKm: 5.2 });
   });
 
-  it("converts cycling distance from meters to km", async () => {
-    const { db, capture } = createMockDb();
-    const records = [
-      makeRecord({
-        type: "HKQuantityTypeIdentifierDistanceCycling",
-        value: 25000,
-        startDate: new Date("2024-03-01T10:00:00Z"),
-      }),
-    ];
-
-    await upsertDailyMetricsBatch(db, "p1", records);
-    expect(capture.values[0]?.[0]).toMatchObject({ cyclingDistanceKm: 25 });
-  });
-
   it("rounds flights climbed to integer", async () => {
     const { db, capture } = createMockDb();
     const records = [

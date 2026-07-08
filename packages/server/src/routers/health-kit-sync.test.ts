@@ -2078,12 +2078,6 @@ describe("healthKitSyncRouter", () => {
           uuid: "dist-1",
         }),
         makeSample({
-          type: "HKQuantityTypeIdentifierDistanceCycling",
-          value: 20000, // meters, should be transformed to 20 km
-          startDate: "2024-01-15T12:00:00Z",
-          uuid: "cycle-1",
-        }),
-        makeSample({
           type: "HKQuantityTypeIdentifierFlightsClimbed",
           value: 12,
           startDate: "2024-01-15T12:00:00Z",
@@ -2105,7 +2099,6 @@ describe("healthKitSyncRouter", () => {
       expect(jan15?.activeEnergyKcal).toBe(300);
       expect(jan15?.basalEnergyKcal).toBe(1500);
       expect(jan15?.distanceKm).toBe(5);
-      expect(jan15?.cyclingDistanceKm).toBe(20);
       expect(jan15?.flightsClimbed).toBe(12);
       expect(jan15?.exerciseMinutes).toBe(45);
     });
@@ -2148,6 +2141,12 @@ describe("healthKitSyncRouter", () => {
           startDate: "2024-01-15T10:00:00Z",
           uuid: "wa-1",
         }),
+        makeSample({
+          type: "HKQuantityTypeIdentifierAppleWalkingSteadiness",
+          value: 0.84,
+          startDate: "2024-01-15T10:00:00Z",
+          uuid: "steadiness-1",
+        }),
       ];
 
       const daily = aggregateDailyMetricSamples(samples);
@@ -2160,6 +2159,7 @@ describe("healthKitSyncRouter", () => {
       expect(jan15?.walkingStepLength).toBe(0.72);
       expect(jan15?.walkingDoubleSupportPct).toBe(0.28);
       expect(jan15?.walkingAsymmetryPct).toBe(0.05);
+      expect(jan15?.walkingSteadiness).toBe(0.84);
     });
 
     it("skips non-point, non-additive samples via continue (kills if(false) on !pointMapping continue)", () => {
@@ -2308,6 +2308,11 @@ describe("healthKitSyncRouter", () => {
             value: 0.05,
             uuid: "wa-insert",
           }),
+          makeSample({
+            type: "HKQuantityTypeIdentifierAppleWalkingSteadiness",
+            value: 0.84,
+            uuid: "steadiness-insert",
+          }),
         ],
       });
 
@@ -2325,6 +2330,7 @@ describe("healthKitSyncRouter", () => {
       expect(serialized).toContain("walking_step_length");
       expect(serialized).toContain("walking_double_support_pct");
       expect(serialized).toContain("walking_asymmetry_pct");
+      expect(serialized).toContain("walking_steadiness");
     });
 
     it("skips additive fields with zero value (kills raw > 0 to true/raw >= 0 mutations)", async () => {
@@ -2357,9 +2363,9 @@ describe("healthKitSyncRouter", () => {
       const result = await caller.pushQuantitySamples({
         samples: [
           makeSample({
-            type: "HKQuantityTypeIdentifierWalkingSpeed",
-            value: 1.3,
-            uuid: "speed-categorize",
+            type: "HKQuantityTypeIdentifierAppleWalkingSteadiness",
+            value: 0.84,
+            uuid: "steadiness-categorize",
           }),
         ],
       });

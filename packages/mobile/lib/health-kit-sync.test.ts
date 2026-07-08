@@ -85,6 +85,31 @@ describe("syncHealthKitToServer", () => {
     expect(healthKit.querySleepSamples).toHaveBeenCalledTimes(1);
   });
 
+  it("queries walking biomechanics quantity samples", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+
+    await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 1,
+    });
+
+    const queriedTypes = healthKit.queryQuantitySamples.mock.calls.map(
+      ([typeId]: [string, string, string]) => typeId,
+    );
+
+    expect(queriedTypes).toEqual(
+      expect.arrayContaining([
+        "HKQuantityTypeIdentifierWalkingSpeed",
+        "HKQuantityTypeIdentifierWalkingStepLength",
+        "HKQuantityTypeIdentifierWalkingDoubleSupportPercentage",
+        "HKQuantityTypeIdentifierWalkingAsymmetryPercentage",
+        "HKQuantityTypeIdentifierAppleWalkingSteadiness",
+      ]),
+    );
+  });
+
   it("reports progress via callback", async () => {
     const client = createMockClient();
     const healthKit = createMockHealthKit();
