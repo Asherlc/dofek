@@ -1,14 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
+const { mockCachedProtectedQuery } = vi.hoisted(() => ({
+  mockCachedProtectedQuery: vi.fn(),
+}));
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC.context<{ db: unknown; userId: string | null }>().create();
+  mockCachedProtectedQuery.mockImplementation(() => trpc.procedure);
   return {
     router: trpc.router,
     publicProcedure: trpc.procedure,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: mockCachedProtectedQuery,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -30,8 +35,13 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
 import { healthReportRouter } from "./health-report.ts";
 
 const createCaller = createTestCallerFactory(healthReportRouter);
+const routerConstructionCachePolicies = mockCachedProtectedQuery.mock.calls.map((call) => call[0]);
 
 describe("healthReportRouter", () => {
+  it("uses a short cache for report list queries", () => {
+    expect(routerConstructionCachePolicies).toEqual([{ maxAge: 120_000 }]);
+  });
+
   describe("generate", () => {
     it("creates a shared report and returns a share token", async () => {
       const insertedRow = {

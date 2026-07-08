@@ -2,15 +2,20 @@ import { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
+const { mockCachedProtectedQuery } = vi.hoisted(() => ({
+  mockCachedProtectedQuery: vi.fn(),
+}));
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
     .context<{ db: unknown; userId: string | null; timezone: string }>()
     .create();
+  mockCachedProtectedQuery.mockImplementation(() => trpc.procedure);
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: mockCachedProtectedQuery,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -37,8 +42,13 @@ import { queryCache } from "dofek/lib/cache";
 import { authRouter } from "./auth.ts";
 
 const createCaller = createTestCallerFactory(authRouter);
+const routerConstructionCachePolicies = mockCachedProtectedQuery.mock.calls.map((call) => call[0]);
 
 describe("authRouter", () => {
+  it("uses short caches for auth read queries", () => {
+    expect(routerConstructionCachePolicies).toEqual([{ maxAge: 120_000 }, { maxAge: 120_000 }]);
+  });
+
   describe("linkedAccounts", () => {
     it("returns mapped account rows", async () => {
       const rows = [

@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
+const { mockCachedProtectedQuery } = vi.hoisted(() => ({
+  mockCachedProtectedQuery: vi.fn(),
+}));
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
@@ -11,10 +15,11 @@ vi.mock("../trpc.ts", async () => {
       sensorStore?: { query: (...args: unknown[]) => Promise<unknown[]> };
     }>()
     .create();
+  mockCachedProtectedQuery.mockImplementation(() => trpc.procedure);
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: mockCachedProtectedQuery,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -36,6 +41,7 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
 import { lifeEventsRouter } from "./life-events.ts";
 
 const createCaller = createTestCallerFactory(lifeEventsRouter);
+const routerConstructionCachePolicies = mockCachedProtectedQuery.mock.calls.map((call) => call[0]);
 
 function makeCaller(rows: Record<string, unknown>[] = []) {
   return createCaller({
@@ -77,6 +83,10 @@ function makeSensorStore(bodyRows: Record<string, unknown>[] = [], sleepRows: un
 }
 
 describe("lifeEventsRouter", () => {
+  it("uses short caches for life event read queries", () => {
+    expect(routerConstructionCachePolicies).toEqual([{ maxAge: 120_000 }, { maxAge: 120_000 }]);
+  });
+
   describe("list", () => {
     it("returns life events from repository", async () => {
       const events = [
