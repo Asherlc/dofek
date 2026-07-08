@@ -1,7 +1,7 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import type { CanonicalActivityType } from "@dofek/training/training";
 import { captureException } from "@sentry/node";
-import { signInToZepp, ZeppInvalidCredentialsError } from "zepp-client/client";
+import { signInToZepp, ZeppInvalidCredentialsError, ZeppLoginExchangeError } from "zepp-client/client";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
@@ -484,6 +484,9 @@ export class AmazfitZeppProvider implements SyncProvider {
           result = await signInToZepp(email, password, fetchFn);
         } catch (error) {
           if (error instanceof ZeppInvalidCredentialsError) {
+            throw new ProviderInvalidCredentialsError("Amazfit/Zepp", { cause: error });
+          }
+          if (error instanceof ZeppLoginExchangeError) {
             throw new ProviderInvalidCredentialsError("Amazfit/Zepp", { cause: error });
           }
           throw error;
