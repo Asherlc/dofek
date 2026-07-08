@@ -13,22 +13,34 @@ ALTER TABLE fitness.lab_result
 DROP CONSTRAINT IF EXISTS lab_result_panel_id_fkey,
 ADD CONSTRAINT lab_result_panel_id_fkey
 FOREIGN KEY (panel_id) REFERENCES fitness.lab_panel (id)
-ON DELETE CASCADE ON UPDATE NO ACTION;
+ON DELETE CASCADE ON UPDATE NO ACTION NOT VALID;
+
+ALTER TABLE fitness.lab_result
+VALIDATE CONSTRAINT lab_result_panel_id_fkey;
 
 ALTER TABLE fitness.strength_set
 DROP CONSTRAINT IF EXISTS strength_set_exercise_id_exercise_id_fk,
 ADD CONSTRAINT strength_set_exercise_id_exercise_id_fk
 FOREIGN KEY (exercise_id) REFERENCES fitness.exercise (id)
-ON DELETE CASCADE ON UPDATE NO ACTION;
+ON DELETE CASCADE ON UPDATE NO ACTION NOT VALID;
+
+ALTER TABLE fitness.strength_set
+VALIDATE CONSTRAINT strength_set_exercise_id_exercise_id_fk;
 
 ALTER TABLE fitness.exercise_alias
 DROP CONSTRAINT IF EXISTS exercise_alias_exercise_id_exercise_id_fk,
 ADD CONSTRAINT exercise_alias_exercise_id_exercise_id_fk
 FOREIGN KEY (exercise_id) REFERENCES fitness.exercise (id)
-ON DELETE CASCADE ON UPDATE NO ACTION;
+ON DELETE CASCADE ON UPDATE NO ACTION NOT VALID;
+
+ALTER TABLE fitness.exercise_alias
+VALIDATE CONSTRAINT exercise_alias_exercise_id_exercise_id_fk;
 
 ALTER TABLE fitness.daily_metric_value
 DROP CONSTRAINT IF EXISTS daily_metric_value_metric_type_id_fkey,
 ADD CONSTRAINT daily_metric_value_metric_type_id_fkey
 FOREIGN KEY (metric_type_id) REFERENCES fitness.daily_metric_type (id)
-ON DELETE RESTRICT ON UPDATE NO ACTION;
+ON DELETE RESTRICT ON UPDATE NO ACTION NOT VALID;
+
+ALTER TABLE fitness.daily_metric_value
+VALIDATE CONSTRAINT daily_metric_value_metric_type_id_fkey;

@@ -17,40 +17,103 @@ WHERE ended_at IS NOT NULL AND ended_at <= started_at;
 -- activity: ended_at (when present) must be strictly after started_at.
 ALTER TABLE fitness.activity
 ADD CONSTRAINT activity_ended_after_started_chk
-CHECK (ended_at IS NULL OR ended_at > started_at);
+CHECK (ended_at IS NULL OR ended_at > started_at) NOT VALID;
+
+ALTER TABLE fitness.activity
+VALIDATE CONSTRAINT activity_ended_after_started_chk;
 
 -- strength_set: weights/reps/distance/duration are physical measurements and
 -- cannot be negative when present.
 ALTER TABLE fitness.strength_set
-ADD CONSTRAINT strength_set_weight_nonneg_chk CHECK (weight_kg IS NULL OR weight_kg >= 0),
-ADD CONSTRAINT strength_set_reps_nonneg_chk CHECK (reps IS NULL OR reps >= 0),
-ADD CONSTRAINT strength_set_distance_nonneg_chk CHECK (distance_meters IS NULL OR distance_meters >= 0),
-ADD CONSTRAINT strength_set_duration_nonneg_chk CHECK (duration_seconds IS NULL OR duration_seconds >= 0);
+ADD CONSTRAINT strength_set_weight_nonneg_chk CHECK (weight_kg IS NULL OR weight_kg >= 0) NOT VALID,
+ADD CONSTRAINT strength_set_reps_nonneg_chk CHECK (reps IS NULL OR reps >= 0) NOT VALID,
+ADD CONSTRAINT strength_set_distance_nonneg_chk CHECK (distance_meters IS NULL OR distance_meters >= 0) NOT VALID,
+ADD CONSTRAINT strength_set_duration_nonneg_chk CHECK (duration_seconds IS NULL OR duration_seconds >= 0) NOT VALID;
+
+ALTER TABLE fitness.strength_set
+VALIDATE CONSTRAINT strength_set_weight_nonneg_chk;
+
+ALTER TABLE fitness.strength_set
+VALIDATE CONSTRAINT strength_set_reps_nonneg_chk;
+
+ALTER TABLE fitness.strength_set
+VALIDATE CONSTRAINT strength_set_distance_nonneg_chk;
+
+ALTER TABLE fitness.strength_set
+VALIDATE CONSTRAINT strength_set_duration_nonneg_chk;
 
 -- daily_metrics: cumulative measurements cannot be negative when present.
 ALTER TABLE fitness.daily_metrics
-ADD CONSTRAINT daily_metrics_steps_nonneg_chk CHECK (steps IS NULL OR steps >= 0),
-ADD CONSTRAINT daily_metrics_active_energy_nonneg_chk CHECK (active_energy_kcal IS NULL OR active_energy_kcal >= 0),
-ADD CONSTRAINT daily_metrics_basal_energy_nonneg_chk CHECK (basal_energy_kcal IS NULL OR basal_energy_kcal >= 0),
-ADD CONSTRAINT daily_metrics_distance_nonneg_chk CHECK (distance_km IS NULL OR distance_km >= 0),
-ADD CONSTRAINT daily_metrics_cycling_distance_nonneg_chk CHECK (cycling_distance_km IS NULL OR cycling_distance_km >= 0),
-ADD CONSTRAINT daily_metrics_flights_climbed_nonneg_chk CHECK (flights_climbed IS NULL OR flights_climbed >= 0),
-ADD CONSTRAINT daily_metrics_exercise_minutes_nonneg_chk CHECK (exercise_minutes IS NULL OR exercise_minutes >= 0),
-ADD CONSTRAINT daily_metrics_hrv_nonneg_chk CHECK (hrv IS NULL OR hrv >= 0);
+ADD CONSTRAINT daily_metrics_steps_nonneg_chk CHECK (steps IS NULL OR steps >= 0) NOT VALID,
+ADD CONSTRAINT daily_metrics_active_energy_nonneg_chk CHECK (active_energy_kcal IS NULL OR active_energy_kcal >= 0) NOT VALID,
+ADD CONSTRAINT daily_metrics_basal_energy_nonneg_chk CHECK (basal_energy_kcal IS NULL OR basal_energy_kcal >= 0) NOT VALID,
+ADD CONSTRAINT daily_metrics_distance_nonneg_chk CHECK (distance_km IS NULL OR distance_km >= 0) NOT VALID,
+ADD CONSTRAINT daily_metrics_cycling_distance_nonneg_chk CHECK (cycling_distance_km IS NULL OR cycling_distance_km >= 0) NOT VALID,
+ADD CONSTRAINT daily_metrics_flights_climbed_nonneg_chk CHECK (flights_climbed IS NULL OR flights_climbed >= 0) NOT VALID,
+ADD CONSTRAINT daily_metrics_exercise_minutes_nonneg_chk CHECK (exercise_minutes IS NULL OR exercise_minutes >= 0) NOT VALID,
+ADD CONSTRAINT daily_metrics_hrv_nonneg_chk CHECK (hrv IS NULL OR hrv >= 0) NOT VALID;
+
+ALTER TABLE fitness.daily_metrics
+VALIDATE CONSTRAINT daily_metrics_steps_nonneg_chk;
+
+ALTER TABLE fitness.daily_metrics
+VALIDATE CONSTRAINT daily_metrics_active_energy_nonneg_chk;
+
+ALTER TABLE fitness.daily_metrics
+VALIDATE CONSTRAINT daily_metrics_basal_energy_nonneg_chk;
+
+ALTER TABLE fitness.daily_metrics
+VALIDATE CONSTRAINT daily_metrics_distance_nonneg_chk;
+
+ALTER TABLE fitness.daily_metrics
+VALIDATE CONSTRAINT daily_metrics_cycling_distance_nonneg_chk;
+
+ALTER TABLE fitness.daily_metrics
+VALIDATE CONSTRAINT daily_metrics_flights_climbed_nonneg_chk;
+
+ALTER TABLE fitness.daily_metrics
+VALIDATE CONSTRAINT daily_metrics_exercise_minutes_nonneg_chk;
+
+ALTER TABLE fitness.daily_metrics
+VALIDATE CONSTRAINT daily_metrics_hrv_nonneg_chk;
 
 -- sleep_session: durations cannot be negative, efficiency is a percentage.
 ALTER TABLE fitness.sleep_session
-ADD CONSTRAINT sleep_session_duration_nonneg_chk CHECK (duration_minutes IS NULL OR duration_minutes >= 0),
-ADD CONSTRAINT sleep_session_deep_nonneg_chk CHECK (deep_minutes IS NULL OR deep_minutes >= 0),
-ADD CONSTRAINT sleep_session_rem_nonneg_chk CHECK (rem_minutes IS NULL OR rem_minutes >= 0),
-ADD CONSTRAINT sleep_session_light_nonneg_chk CHECK (light_minutes IS NULL OR light_minutes >= 0),
-ADD CONSTRAINT sleep_session_awake_nonneg_chk CHECK (awake_minutes IS NULL OR awake_minutes >= 0),
-ADD CONSTRAINT sleep_session_efficiency_range_chk CHECK (efficiency_pct IS NULL OR (efficiency_pct >= 0 AND efficiency_pct <= 100));
+ADD CONSTRAINT sleep_session_duration_nonneg_chk CHECK (duration_minutes IS NULL OR duration_minutes >= 0) NOT VALID,
+ADD CONSTRAINT sleep_session_deep_nonneg_chk CHECK (deep_minutes IS NULL OR deep_minutes >= 0) NOT VALID,
+ADD CONSTRAINT sleep_session_rem_nonneg_chk CHECK (rem_minutes IS NULL OR rem_minutes >= 0) NOT VALID,
+ADD CONSTRAINT sleep_session_light_nonneg_chk CHECK (light_minutes IS NULL OR light_minutes >= 0) NOT VALID,
+ADD CONSTRAINT sleep_session_awake_nonneg_chk CHECK (awake_minutes IS NULL OR awake_minutes >= 0) NOT VALID,
+ADD CONSTRAINT sleep_session_efficiency_range_chk CHECK (efficiency_pct IS NULL OR (efficiency_pct >= 0 AND efficiency_pct <= 100)) NOT VALID;
+
+ALTER TABLE fitness.sleep_session
+VALIDATE CONSTRAINT sleep_session_duration_nonneg_chk;
+
+ALTER TABLE fitness.sleep_session
+VALIDATE CONSTRAINT sleep_session_deep_nonneg_chk;
+
+ALTER TABLE fitness.sleep_session
+VALIDATE CONSTRAINT sleep_session_rem_nonneg_chk;
+
+ALTER TABLE fitness.sleep_session
+VALIDATE CONSTRAINT sleep_session_light_nonneg_chk;
+
+ALTER TABLE fitness.sleep_session
+VALIDATE CONSTRAINT sleep_session_awake_nonneg_chk;
+
+ALTER TABLE fitness.sleep_session
+VALIDATE CONSTRAINT sleep_session_efficiency_range_chk;
 
 -- food_entry: serving amounts must be positive when present.
 ALTER TABLE fitness.food_entry
-ADD CONSTRAINT food_entry_serving_weight_pos_chk CHECK (serving_weight_grams IS NULL OR serving_weight_grams > 0),
-ADD CONSTRAINT food_entry_number_of_units_nonneg_chk CHECK (number_of_units IS NULL OR number_of_units >= 0);
+ADD CONSTRAINT food_entry_serving_weight_pos_chk CHECK (serving_weight_grams IS NULL OR serving_weight_grams > 0) NOT VALID,
+ADD CONSTRAINT food_entry_number_of_units_nonneg_chk CHECK (number_of_units IS NULL OR number_of_units >= 0) NOT VALID;
+
+ALTER TABLE fitness.food_entry
+VALIDATE CONSTRAINT food_entry_serving_weight_pos_chk;
+
+ALTER TABLE fitness.food_entry
+VALIDATE CONSTRAINT food_entry_number_of_units_nonneg_chk;
 
 -- lab_result: reference range low/high must be ordered when both present.
 ALTER TABLE fitness.lab_result
@@ -59,11 +122,17 @@ CHECK (
   reference_range_low IS NULL
   OR reference_range_high IS NULL
   OR reference_range_high >= reference_range_low
-);
+) NOT VALID;
+
+ALTER TABLE fitness.lab_result
+VALIDATE CONSTRAINT lab_result_range_order_chk;
 
 -- dexa_scan: body composition percentages cannot be negative when present.
 ALTER TABLE fitness.dexa_scan
-ADD CONSTRAINT dexa_scan_body_fat_pct_nonneg_chk CHECK (body_fat_pct IS NULL OR body_fat_pct >= 0);
+ADD CONSTRAINT dexa_scan_body_fat_pct_nonneg_chk CHECK (body_fat_pct IS NULL OR body_fat_pct >= 0) NOT VALID;
+
+ALTER TABLE fitness.dexa_scan
+VALIDATE CONSTRAINT dexa_scan_body_fat_pct_nonneg_chk;
 
 -- Partial index for dashboard activity visibility: every user-facing query
 -- filters out soft-deleted and provider-absent rows. A partial index on the
