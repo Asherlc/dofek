@@ -84,6 +84,7 @@ export class CyclingAdvancedRepository {
 
   /** Ramp rate: week-over-week CTL change based on HR TRIMP load. */
   async getRampRate(days: number): Promise<RampRateResultData> {
+    const loadDays = days + 42;
     const rows = await this.#sensorStore.query(
       rampRateRowSchema,
       `WITH cycling_daily_load AS (
@@ -98,6 +99,7 @@ export class CyclingAdvancedRepository {
         WHERE load.user_id = {userId:UUID}
           AND load.is_deleted = 0
           AND load.date IS NOT NULL
+          AND load.date > today() - INTERVAL {loadDays:Int32} DAY
           AND has({activityTypes:Array(String)}, activity.activity_type)
         GROUP BY
           load.user_id,
@@ -182,6 +184,7 @@ export class CyclingAdvancedRepository {
         userId: this.#userId,
         timezone: this.#timezone,
         days,
+        loadDays,
         activityTypes: CYCLING_TYPES,
       },
     );

@@ -149,7 +149,11 @@ describe("PmcRepository", () => {
 
       await repo.getChart(30);
 
-      const { params: activityParams } = findQueryCall(query, "CROSS JOIN user_baseline ub");
+      const { queryText: activityQuery, params: activityParams } = findQueryCall(
+        query,
+        "CROSS JOIN user_baseline ub",
+      );
+      expect(activityQuery).toContain("has({activityTypes:Array(String)}, asum.activity_type)");
       expect(activityParams).toMatchObject({
         userId: "user-1",
         timezone: "America/Los_Angeles",
@@ -157,7 +161,11 @@ describe("PmcRepository", () => {
       });
       expectCyclingOnlyActivityTypes(activityParams.activityTypes);
 
-      const { params: normalizedPowerParams } = findQueryCall(query, "normalized_power");
+      const { queryText: normalizedPowerQuery, params: normalizedPowerParams } = findQueryCall(
+        query,
+        "normalized_power",
+      );
+      expect(normalizedPowerQuery).toContain("has({activityTypes:Array(String)}, activity_type)");
       expect(normalizedPowerParams).toMatchObject({ userId: "user-1", queryDays: 407 });
       expectCyclingOnlyActivityTypes(normalizedPowerParams.activityTypes);
     });

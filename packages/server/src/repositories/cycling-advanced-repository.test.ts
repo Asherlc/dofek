@@ -275,10 +275,12 @@ describe("CyclingAdvancedRepository", () => {
       expect(query).not.toContain("resting_heart_rate");
       expect(query).toContain("analytics.activity_summary");
       expect(query).toContain("has({activityTypes:Array(String)}, activity.activity_type)");
+      expect(query).toContain("load.date > today() - INTERVAL {loadDays:Int32} DAY");
       expect(params).toMatchObject({
         userId: "user-1",
         timezone: "UTC",
         days: 30,
+        loadDays: 72,
       });
       expectCyclingOnlyActivityTypes(params.activityTypes);
     });
