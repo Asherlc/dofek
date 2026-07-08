@@ -72,15 +72,18 @@ export class PowerRepository {
     const readModelRows = await this.#sensorStore.query(
       powerCurvePointRowSchema,
       `SELECT
-        duration_seconds,
-        best_power,
-        toString(toDate(toTimeZone(started_at, {timezone:String}))) AS activity_date
-      FROM analytics.activity_power_curve FINAL
-      WHERE user_id = {userId:UUID}
-        AND is_deleted = 0
-        AND has({activityTypes:Array(String)}, activity_type)
-        AND started_at > now() - INTERVAL {days:Int32} DAY
-      ORDER BY duration_seconds`,
+        power_curve.duration_seconds AS duration_seconds,
+        power_curve.best_power AS best_power,
+        toString(toDate(toTimeZone(power_curve.started_at, {timezone:String}))) AS activity_date
+      FROM analytics.activity_power_curve AS power_curve FINAL
+      INNER JOIN analytics.activity_summary AS activity_summary FINAL
+        ON activity_summary.activity_id = power_curve.activity_id
+       AND activity_summary.user_id = power_curve.user_id
+      WHERE power_curve.user_id = {userId:UUID}
+        AND power_curve.is_deleted = 0
+        AND has({activityTypes:Array(String)}, activity_summary.activity_type)
+        AND power_curve.started_at > now() - INTERVAL {days:Int32} DAY
+      ORDER BY power_curve.duration_seconds`,
       {
         userId: this.#userId,
         timezone: this.#timezone,

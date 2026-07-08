@@ -153,6 +153,11 @@ describe("PowerRepository", () => {
         }),
       );
       expectCyclingOnlyActivityTypes(analyticsStore.query.mock.calls[0]?.[2]?.activityTypes);
+      const queryText = analyticsStore.query.mock.calls[0]?.[1];
+      expect(queryText).toContain("INNER JOIN analytics.activity_summary");
+      expect(queryText).toContain(
+        "has({activityTypes:Array(String)}, activity_summary.activity_type)",
+      );
 
       const fiveMinutePoint = result.points.find((point) => point.durationSeconds === 300);
       const twentyMinutePoint = result.points.find((point) => point.durationSeconds === 1200);
