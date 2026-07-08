@@ -1,4 +1,3 @@
-import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
 import type {
   ClickHouseQueryClient,
   NormalizedPowerSampleRow,
@@ -91,6 +90,7 @@ export async function getClickHouseNormalizedPowerSamples(
   days: number,
   userId: string,
   timezone: string,
+  activityTypes: readonly string[],
 ): Promise<NormalizedPowerSampleRow[]> {
   const result = await client.query<NormalizedPowerSampleRow>({
     query: `
@@ -141,7 +141,7 @@ export async function getClickHouseNormalizedPowerSamples(
         ORDER BY activity_info.activity_id, deduped_samples.recorded_at
       `,
     format: "JSONEachRow",
-    query_params: userWindowParams(days, userId, timezone, ENDURANCE_ACTIVITY_TYPES),
+    query_params: userWindowParams(days, userId, timezone, activityTypes),
   });
   return result.json();
 }
