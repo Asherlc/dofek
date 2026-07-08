@@ -6,12 +6,17 @@ import type {
   Vo2MaxEstimateRow,
 } from "./clickhouse-activity-sensor-types.ts";
 
-function userWindowParams(days: number, userId: string, timezone: string) {
+function userWindowParams(
+  days: number,
+  userId: string,
+  timezone: string,
+  activityTypes: readonly string[],
+) {
   return {
     days,
     userId,
     timezone,
-    enduranceActivityTypes: [...ENDURANCE_ACTIVITY_TYPES],
+    activityTypes: [...activityTypes],
   };
 }
 
@@ -29,6 +34,7 @@ export async function getClickHousePowerCurveSamples(
   days: number,
   userId: string,
   timezone: string,
+  activityTypes: readonly string[],
 ): Promise<PowerCurveSampleRow[]> {
   const result = await client.query<PowerCurveSampleRow>({
     query: `
@@ -56,7 +62,7 @@ export async function getClickHousePowerCurveSamples(
             AND deduped_samples.is_deleted = 0
             AND activity.started_at > now() - toIntervalDay({days:UInt32})
             AND activity.is_deleted = 0
-            AND has({enduranceActivityTypes:Array(String)}, activity.activity_type)
+            AND has({activityTypes:Array(String)}, activity.activity_type)
           GROUP BY activity.activity_id, activity.user_id, activity.started_at, activity.ended_at
           HAVING count() > 1
         )
@@ -75,7 +81,7 @@ export async function getClickHousePowerCurveSamples(
         ORDER BY activity_info.activity_id, deduped_samples.recorded_at
       `,
     format: "JSONEachRow",
-    query_params: userWindowParams(days, userId, timezone),
+    query_params: userWindowParams(days, userId, timezone, activityTypes),
   });
   return result.json();
 }
@@ -114,7 +120,7 @@ export async function getClickHouseNormalizedPowerSamples(
             AND deduped_samples.is_deleted = 0
             AND activity.started_at > now() - toIntervalDay({days:UInt32})
             AND activity.is_deleted = 0
-            AND has({enduranceActivityTypes:Array(String)}, activity.activity_type)
+            AND has({activityTypes:Array(String)}, activity.activity_type)
           GROUP BY activity.activity_id, activity.user_id, activity.started_at, activity.ended_at, activity.name
           HAVING count() >= 240
         )
@@ -135,7 +141,7 @@ export async function getClickHouseNormalizedPowerSamples(
         ORDER BY activity_info.activity_id, deduped_samples.recorded_at
       `,
     format: "JSONEachRow",
-    query_params: userWindowParams(days, userId, timezone),
+    query_params: userWindowParams(days, userId, timezone, ENDURANCE_ACTIVITY_TYPES),
   });
   return result.json();
 }

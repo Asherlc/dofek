@@ -1,4 +1,4 @@
-import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
+import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import { describe, expect, it, vi } from "vitest";
 import { PowerRepository } from "./power-repository.ts";
 
@@ -45,6 +45,13 @@ function makeAnalyticsStoreFromDb(db: ReturnType<typeof makeDb>) {
 }
 
 describe("PowerRepository", () => {
+  function expectCyclingOnlyActivityTypes(activityTypes: unknown) {
+    expect(activityTypes).toEqual([...CYCLING_ACTIVITY_TYPES]);
+    expect(activityTypes).not.toContain("walking");
+    expect(activityTypes).not.toContain("running");
+    expect(activityTypes).not.toContain("hiking");
+  }
+
   it("can be instantiated", () => {
     const db = makeDb();
     const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
@@ -79,7 +86,9 @@ describe("PowerRepository", () => {
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
       await repo.getPowerCurve(90);
 
-      expect(analyticsStore.getPowerCurveSamples).toHaveBeenCalledWith(90, "user-1", "UTC");
+      expect(analyticsStore.getPowerCurveSamples).toHaveBeenCalledWith(90, "user-1", "UTC", [
+        ...CYCLING_ACTIVITY_TYPES,
+      ]);
     });
 
     it("computes power curve from samples", async () => {
@@ -143,6 +152,13 @@ describe("PowerRepository", () => {
           days: 90,
         }),
       );
+      expectCyclingOnlyActivityTypes(analyticsStore.query.mock.calls[0]?.[2]?.activityTypes);
+      const queryText = analyticsStore.query.mock.calls[0]?.[1];
+      expect(queryText).toContain("INNER JOIN analytics.activity_summary AS activity_summary");
+      expect(queryText).not.toContain("analytics.activity_summary AS activity_summary FINAL");
+      expect(queryText).toContain(
+        "has({activityTypes:Array(String)}, activity_summary.activity_type)",
+      );
 
       const fiveMinutePoint = result.points.find((point) => point.durationSeconds === 300);
       const twentyMinutePoint = result.points.find((point) => point.durationSeconds === 1200);
@@ -196,10 +212,12 @@ describe("PowerRepository", () => {
         expect.stringContaining("analytics.activity_summary"),
         expect.objectContaining({
           days: 365,
-          enduranceTypes: [...ENDURANCE_ACTIVITY_TYPES],
         }),
       );
-      expect(analyticsStore.getPowerCurveSamples).toHaveBeenCalledWith(90, "user-1", "UTC");
+      expectCyclingOnlyActivityTypes(analyticsStore.query.mock.calls[0]?.[2]?.activityTypes);
+      expect(analyticsStore.getPowerCurveSamples).toHaveBeenCalledWith(90, "user-1", "UTC", [
+        ...CYCLING_ACTIVITY_TYPES,
+      ]);
     });
 
     it("computes eFTP as NP * 0.95", async () => {

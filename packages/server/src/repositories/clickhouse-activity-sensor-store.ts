@@ -165,8 +165,9 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
     days: number,
     userId: string,
     timezone: string,
+    activityTypes: readonly string[],
   ): Promise<PowerCurveSampleRow[]> {
-    return getClickHousePowerCurveSamples(this.#client, days, userId, timezone);
+    return getClickHousePowerCurveSamples(this.#client, days, userId, timezone, activityTypes);
   }
 
   async getNormalizedPowerSamples(

@@ -1,4 +1,3 @@
-import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
 import {
   type CriticalPowerModel,
   computePowerCurve,
@@ -6,10 +5,13 @@ import {
   fitCriticalPower,
   STANDARD_DURATIONS,
 } from "@dofek/training/power-analysis";
+import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import type { Database } from "dofek/db";
 import { z } from "zod";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
+
+const CYCLING_TYPES: string[] = [...CYCLING_ACTIVITY_TYPES];
 
 // ── Zod schemas ──────────────────────────────────────────────
 
@@ -70,18 +72,23 @@ export class PowerRepository {
     const readModelRows = await this.#sensorStore.query(
       powerCurvePointRowSchema,
       `SELECT
-        duration_seconds,
-        best_power,
-        toString(toDate(toTimeZone(started_at, {timezone:String}))) AS activity_date
-      FROM analytics.activity_power_curve FINAL
-      WHERE user_id = {userId:UUID}
-        AND is_deleted = 0
-        AND started_at > now() - INTERVAL {days:Int32} DAY
-      ORDER BY duration_seconds`,
+        power_curve.duration_seconds AS duration_seconds,
+        power_curve.best_power AS best_power,
+        toString(toDate(toTimeZone(power_curve.started_at, {timezone:String}))) AS activity_date
+      FROM analytics.activity_power_curve AS power_curve FINAL
+      INNER JOIN analytics.activity_summary AS activity_summary
+        ON activity_summary.activity_id = power_curve.activity_id
+       AND activity_summary.user_id = power_curve.user_id
+      WHERE power_curve.user_id = {userId:UUID}
+        AND power_curve.is_deleted = 0
+        AND has({activityTypes:Array(String)}, activity_summary.activity_type)
+        AND power_curve.started_at > now() - INTERVAL {days:Int32} DAY
+      ORDER BY power_curve.duration_seconds`,
       {
         userId: this.#userId,
         timezone: this.#timezone,
         days,
+        activityTypes: CYCLING_TYPES,
       },
     );
 
@@ -121,6 +128,7 @@ export class PowerRepository {
       days,
       this.#userId,
       this.#timezone,
+      CYCLING_TYPES,
     );
 
     const results = computePowerCurve(samples);
@@ -160,13 +168,13 @@ export class PowerRepository {
       WHERE user_id = {userId:UUID}
         AND started_at > now() - INTERVAL {days:Int32} DAY
         AND normalized_power IS NOT NULL
-        AND has({enduranceTypes:Array(String)}, activity_type)
+        AND has({activityTypes:Array(String)}, activity_type)
       ORDER BY started_at`,
       {
         userId: this.#userId,
         timezone: this.#timezone,
         days,
-        enduranceTypes: [...ENDURANCE_ACTIVITY_TYPES],
+        activityTypes: CYCLING_TYPES,
       },
     );
 
@@ -194,6 +202,9 @@ export class PowerRepository {
 
   async #loadRawActivityCount(days: number): Promise<number> {
     if (!this.#db) return 1;
-    return activityRepositoryFor(this.#db, this.#userId).countVisibleInWindow({ days });
+    return activityRepositoryFor(this.#db, this.#userId).countVisibleInWindow({
+      days,
+      activityTypes: CYCLING_TYPES,
+    });
   }
 }

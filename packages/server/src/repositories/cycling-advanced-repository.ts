@@ -1,4 +1,4 @@
-import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
+import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import type { Database } from "dofek/db";
 import { z } from "zod";
 import { dateStringSchema } from "../lib/typed-sql.ts";
@@ -13,7 +13,7 @@ import {
   VerticalAscentModel,
 } from "./cycling-advanced-models.ts";
 
-const ENDURANCE_TYPES: string[] = [...ENDURANCE_ACTIVITY_TYPES];
+const CYCLING_TYPES: string[] = [...CYCLING_ACTIVITY_TYPES];
 
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
@@ -84,14 +84,98 @@ export class CyclingAdvancedRepository {
 
   /** Ramp rate: week-over-week CTL change based on HR TRIMP load. */
   async getRampRate(days: number): Promise<RampRateResultData> {
+    const loadDays = days + 42;
     const rows = await this.#sensorStore.query(
       rampRateRowSchema,
-      `SELECT
+      `WITH cycling_daily_load AS (
+        SELECT
+          load.user_id AS user_id,
+          assumeNotNull(load.date) AS load_date,
+          sum(load.training_load) AS training_load
+        FROM analytics.daily_endurance_load AS load FINAL
+        INNER JOIN analytics.activity_summary AS activity
+          ON activity.activity_id = load.activity_id
+         AND activity.user_id = load.user_id
+        WHERE load.user_id = {userId:UUID}
+          AND load.is_deleted = 0
+          AND load.date IS NOT NULL
+          AND load.date > today() - INTERVAL {loadDays:Int32} DAY
+          AND has({activityTypes:Array(String)}, activity.activity_type)
+        GROUP BY
+          load.user_id,
+          load_date
+      ),
+      date_bounds AS (
+        SELECT
+          user_id,
+          min(load_date) AS first_load_date,
+          max(load_date) AS latest_load_date
+        FROM cycling_daily_load
+        GROUP BY user_id
+      ),
+      date_series AS (
+        SELECT
+          user_id,
+          first_load_date + INTERVAL date_offset DAY AS date
+        FROM date_bounds
+        ARRAY JOIN range(
+          toUInt32(dateDiff('day', first_load_date, latest_load_date) + 1)
+        ) AS date_offset
+      ),
+      ctl_by_date AS (
+        SELECT
+          date_series.user_id AS user_id,
+          date_series.date AS date,
+          sum(
+            cycling_daily_load.training_load
+            * (1.0 / 42.0)
+            * pow(41.0 / 42.0, dateDiff('day', cycling_daily_load.load_date, date_series.date))
+          ) AS ctl
+        FROM date_series
+        LEFT JOIN cycling_daily_load
+          ON cycling_daily_load.user_id = date_series.user_id
+         AND cycling_daily_load.load_date <= date_series.date
+        GROUP BY
+          date_series.user_id,
+          date_series.date
+      ),
+      weekly_ctl AS (
+        SELECT
+          user_id,
+          toMonday(date) AS week,
+          argMax(ctl, date) AS ctl_end
+        FROM ctl_by_date
+        GROUP BY
+          user_id,
+          toMonday(date)
+      ),
+      weekly_with_previous AS (
+        SELECT
+          user_id,
+          week,
+          ctl_end,
+          lagInFrame(toNullable(ctl_end), 1, CAST(NULL, 'Nullable(Float64)')) OVER (
+            PARTITION BY user_id ORDER BY week
+          ) AS previous_ctl_end
+        FROM weekly_ctl
+      ),
+      ramp AS (
+        SELECT
+          user_id,
+          week,
+          round(previous_ctl_end, 2) AS ctl_start,
+          round(ctl_end, 2) AS ctl_end,
+          round(ctl_end - previous_ctl_end, 2) AS ramp_rate,
+          0 AS is_deleted
+        FROM weekly_with_previous
+        WHERE previous_ctl_end IS NOT NULL
+      )
+      SELECT
         toString(ramp.week) AS week,
         ramp.ctl_start AS ctl_start,
         ramp.ctl_end AS ctl_end,
         ramp.ramp_rate AS ramp_rate
-      FROM analytics.weekly_endurance_ramp_rate AS ramp FINAL
+      FROM ramp
       WHERE ramp.user_id = {userId:UUID}
         AND ramp.is_deleted = 0
         AND ramp.week > toMonday(today() - INTERVAL {days:Int32} DAY)
@@ -100,6 +184,8 @@ export class CyclingAdvancedRepository {
         userId: this.#userId,
         timezone: this.#timezone,
         days,
+        loadDays,
+        activityTypes: CYCLING_TYPES,
       },
     );
 
@@ -133,12 +219,77 @@ export class CyclingAdvancedRepository {
   async getTrainingMonotony(days: number): Promise<TrainingMonotonyWeekModel[]> {
     const rows = await this.#sensorStore.query(
       monotonyRowSchema,
-      `SELECT
+      `WITH cycling_daily_load AS (
+        SELECT
+          load.user_id AS user_id,
+          assumeNotNull(load.date) AS load_date,
+          sum(load.training_load) AS training_load
+        FROM analytics.daily_endurance_load AS load FINAL
+        INNER JOIN analytics.activity_summary AS activity
+          ON activity.activity_id = load.activity_id
+         AND activity.user_id = load.user_id
+        WHERE load.user_id = {userId:UUID}
+          AND load.is_deleted = 0
+          AND load.date IS NOT NULL
+          AND has({activityTypes:Array(String)}, activity.activity_type)
+        GROUP BY
+          load.user_id,
+          load_date
+      ),
+      week_bounds AS (
+        SELECT
+          user_id,
+          toMonday(min(load_date)) AS first_week,
+          toMonday(max(load_date)) AS latest_week
+        FROM cycling_daily_load
+        GROUP BY user_id
+      ),
+      calendar_dates AS (
+        SELECT
+          user_id,
+          first_week + INTERVAL date_offset DAY AS load_date
+        FROM week_bounds
+        ARRAY JOIN range(toUInt32(dateDiff('day', first_week, latest_week + INTERVAL 6 DAY) + 1)) AS date_offset
+      ),
+      load_by_calendar_date AS (
+        SELECT
+          calendar_dates.user_id AS user_id,
+          calendar_dates.load_date AS load_date,
+          coalesce(cycling_daily_load.training_load, 0) AS training_load
+        FROM calendar_dates
+        LEFT JOIN cycling_daily_load
+          ON cycling_daily_load.user_id = calendar_dates.user_id
+         AND cycling_daily_load.load_date = calendar_dates.load_date
+      ),
+      weekly_stats AS (
+        SELECT
+          user_id,
+          toMonday(load_date) AS week,
+          avg(training_load) AS mean_load,
+          stddevPop(training_load) AS stdev_load,
+          sum(training_load) AS weekly_load
+        FROM load_by_calendar_date
+        GROUP BY
+          user_id,
+          toMonday(load_date)
+        HAVING stddevPop(training_load) > 1e-6
+      ),
+      monotony AS (
+        SELECT
+          user_id,
+          week,
+          round(mean_load / stdev_load, 2) AS monotony,
+          round(weekly_load * (mean_load / stdev_load), 1) AS strain,
+          round(weekly_load, 1) AS weekly_load,
+          0 AS is_deleted
+        FROM weekly_stats
+      )
+      SELECT
         toString(monotony.week) AS week,
         monotony.monotony AS monotony,
         monotony.strain AS strain,
         monotony.weekly_load AS weekly_load
-      FROM analytics.weekly_training_monotony AS monotony FINAL
+      FROM monotony
       WHERE monotony.user_id = {userId:UUID}
         AND monotony.is_deleted = 0
         AND monotony.week >= toMonday(today() - INTERVAL {days:Int32} DAY)
@@ -147,6 +298,7 @@ export class CyclingAdvancedRepository {
         userId: this.#userId,
         timezone: this.#timezone,
         days,
+        activityTypes: CYCLING_TYPES,
       },
     );
 
@@ -169,13 +321,13 @@ export class CyclingAdvancedRepository {
         round(max(asum.best_twenty_minute_power) * 0.95, 1) AS ftp
       FROM analytics.activity_summary asum
       WHERE asum.user_id = {userId:UUID}
-        AND has({enduranceTypes:Array(String)}, asum.activity_type)
+        AND has({activityTypes:Array(String)}, asum.activity_type)
         AND asum.started_at > now() - INTERVAL {days:Int32} DAY
         AND asum.best_twenty_minute_power IS NOT NULL`,
       {
         userId: this.#userId,
         days,
-        enduranceTypes: ENDURANCE_TYPES,
+        activityTypes: CYCLING_TYPES,
       },
     );
     return ftpResult[0]?.ftp ?? null;
@@ -205,7 +357,7 @@ export class CyclingAdvancedRepository {
         toInt32(count() OVER ()) AS total_count
       FROM analytics.activity_summary asum
       WHERE asum.user_id = {userId:UUID}
-        AND has({enduranceTypes:Array(String)}, asum.activity_type)
+        AND has({activityTypes:Array(String)}, asum.activity_type)
         AND asum.started_at > now() - INTERVAL {days:Int32} DAY
         AND asum.normalized_power IS NOT NULL
       ORDER BY asum.started_at DESC
@@ -215,7 +367,7 @@ export class CyclingAdvancedRepository {
         userId: this.#userId,
         timezone: this.#timezone,
         days,
-        enduranceTypes: ENDURANCE_TYPES,
+        activityTypes: CYCLING_TYPES,
         limit,
         offset,
       },
@@ -257,7 +409,7 @@ export class CyclingAdvancedRepository {
         toInt32(asum.climbing_seconds) AS climbing_seconds
       FROM analytics.activity_summary asum
       WHERE asum.user_id = {userId:UUID}
-        AND has({enduranceTypes:Array(String)}, asum.activity_type)
+        AND has({activityTypes:Array(String)}, asum.activity_type)
         AND asum.started_at > now() - INTERVAL {days:Int32} DAY
         AND asum.climbing_seconds > 60
       ORDER BY asum.started_at`,
@@ -265,7 +417,7 @@ export class CyclingAdvancedRepository {
         userId: this.#userId,
         timezone: this.#timezone,
         days,
-        enduranceTypes: ENDURANCE_TYPES,
+        activityTypes: CYCLING_TYPES,
       },
     );
 
@@ -295,7 +447,7 @@ export class CyclingAdvancedRepository {
         ON va.id = asum.activity_id
        AND va.user_id = asum.user_id
       WHERE asum.user_id = {userId:UUID}
-        AND has({enduranceTypes:Array(String)}, asum.activity_type)
+        AND has({activityTypes:Array(String)}, asum.activity_type)
         AND asum.started_at > now() - INTERVAL {days:Int32} DAY
         AND asum.avg_left_balance IS NOT NULL
       ORDER BY asum.started_at`,
@@ -303,7 +455,7 @@ export class CyclingAdvancedRepository {
         userId: this.#userId,
         timezone: this.#timezone,
         days,
-        enduranceTypes: ENDURANCE_TYPES,
+        activityTypes: CYCLING_TYPES,
       },
     );
 
@@ -322,7 +474,7 @@ export class CyclingAdvancedRepository {
   async #loadRawActivityCount(days: number): Promise<number> {
     return activityRepositoryFor(this.#db, this.#userId).countVisibleInWindow({
       days,
-      activityTypes: ENDURANCE_TYPES,
+      activityTypes: CYCLING_TYPES,
     });
   }
 }

@@ -1,3 +1,4 @@
+import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import { computePolarizationIndex, POLARIZATION_ZONES } from "@dofek/zones/zones";
 import * as Sentry from "@sentry/node";
 import { describe, expect, it, vi } from "vitest";
@@ -110,6 +111,13 @@ function makeRepositoryWithSensorStore(sensorStore: ActivitySensorStore) {
   return { repo, execute, sensorStore };
 }
 
+function expectCyclingOnlyActivityTypes(activityTypes: unknown) {
+  expect(activityTypes).toEqual([...CYCLING_ACTIVITY_TYPES]);
+  expect(activityTypes).not.toContain("walking");
+  expect(activityTypes).not.toContain("running");
+  expect(activityTypes).not.toContain("hiking");
+}
+
 // ---------------------------------------------------------------------------
 // getAerobicEfficiency
 // ---------------------------------------------------------------------------
@@ -164,6 +172,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
       "FROM analytics.activity_summary",
     );
     expect(vi.mocked(sensorStore.query).mock.calls[1]?.[1]).toContain("analytics.v_activity");
+    expectCyclingOnlyActivityTypes(vi.mocked(sensorStore.query).mock.calls[1]?.[2]?.activityTypes);
   });
 
   it("does not run diagnostics when the main aggregation returns rows", async () => {
@@ -228,9 +237,9 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
       expect.objectContaining({
         userId: "user-1",
         days: 90,
-        enduranceTypes: expect.arrayContaining(["cycling", "running"]),
       }),
     );
+    expectCyclingOnlyActivityTypes(vi.mocked(sensorStore.query).mock.calls[2]?.[2]?.activityTypes);
 
     warnSpy.mockRestore();
   });
@@ -411,6 +420,17 @@ describe("EfficiencyRepository.getAerobicDecoupling", () => {
     expect(sensorStore.query).toHaveBeenCalledTimes(1);
   });
 
+  it("filters decoupling to cycling activity types", async () => {
+    const { repo, sensorStore } = makeRepository([]);
+
+    await repo.getAerobicDecoupling(90);
+
+    const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    expect(queryText).toContain("has({activityTypes:Array(String)}, asum.activity_type)");
+    expect(queryText).not.toContain("enduranceTypes");
+    expectCyclingOnlyActivityTypes(vi.mocked(sensorStore.query).mock.calls[0]?.[2]?.activityTypes);
+  });
+
   it("maps rows to AerobicDecouplingActivity objects", async () => {
     const { repo } = makeRepository([
       {
@@ -480,6 +500,21 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
     const { repo, sensorStore } = makeRepository([]);
     await repo.getPolarizationTrend(90);
     expect(sensorStore.query).toHaveBeenCalledTimes(2);
+  });
+
+  it("filters polarization read model and fallback to cycling activity types", async () => {
+    const { repo, sensorStore } = makeRepository([]);
+
+    await repo.getPolarizationTrend(90);
+
+    const readModelQuery = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    const fallbackQuery = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
+    expect(readModelQuery).toContain("has({activityTypes:Array(String)}, activity_type)");
+    expect(fallbackQuery).toContain("has({activityTypes:Array(String)}, asum.activity_type)");
+    expect(readModelQuery).not.toContain("enduranceTypes");
+    expect(fallbackQuery).not.toContain("enduranceTypes");
+    expectCyclingOnlyActivityTypes(vi.mocked(sensorStore.query).mock.calls[0]?.[2]?.activityTypes);
+    expectCyclingOnlyActivityTypes(vi.mocked(sensorStore.query).mock.calls[1]?.[2]?.activityTypes);
   });
 
   it("uses the canonical Treff polarization zone boundaries in the query params", async () => {

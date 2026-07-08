@@ -114,7 +114,10 @@ describe("Activity summary deduplication", () => {
     const recentLoadWeek = dateDaysAgo(3);
 
     const queryMock: ActivitySensorStore["query"] = async (_schema, queryText) => {
-      if (queryText.includes("analytics.weekly_endurance_ramp_rate")) {
+      if (
+        queryText.includes("analytics.weekly_endurance_ramp_rate") ||
+        queryText.includes("analytics.daily_endurance_load")
+      ) {
         return [
           {
             week: previousLoadWeek,

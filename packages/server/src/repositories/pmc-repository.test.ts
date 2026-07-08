@@ -1,3 +1,4 @@
+import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import { describe, expect, it, vi } from "vitest";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { PmcRepository } from "./pmc-repository.ts";
@@ -93,7 +94,27 @@ function makeRepoHarness(
   };
 }
 
+function findQueryCall(
+  query: ReturnType<typeof makeSensorStore>["query"],
+  includes: string,
+): { queryText: string; params: Record<string, unknown> } {
+  const call = vi.mocked(query).mock.calls.find((queryCall) => queryCall[1]?.includes(includes));
+  const queryText = call?.[1];
+  const params = call?.[2];
+  if (!call || typeof queryText !== "string" || params === null || typeof params !== "object") {
+    throw new Error(`Expected ClickHouse query containing ${includes}`);
+  }
+  return { queryText, params };
+}
+
 describe("PmcRepository", () => {
+  function expectCyclingOnlyActivityTypes(activityTypes: unknown) {
+    expect(activityTypes).toEqual([...CYCLING_ACTIVITY_TYPES]);
+    expect(activityTypes).not.toContain("walking");
+    expect(activityTypes).not.toContain("running");
+    expect(activityTypes).not.toContain("hiking");
+  }
+
   describe("getChart", () => {
     it("returns empty data with generic model when no raw activities exist", async () => {
       const { repo } = makeRepoHarness([], [], "UTC", 0);
@@ -128,22 +149,36 @@ describe("PmcRepository", () => {
 
       await repo.getChart(30);
 
-      expect(query).toHaveBeenNthCalledWith(
-        1,
-        expect.anything(),
-        expect.stringContaining("analytics.activity_summary"),
-        expect.objectContaining({
-          userId: "user-1",
-          timezone: "America/Los_Angeles",
-          queryDays: 407,
-        }),
+      const { queryText: activityQuery, params: activityParams } = findQueryCall(
+        query,
+        "CROSS JOIN user_baseline ub",
       );
-      expect(query).toHaveBeenNthCalledWith(
-        2,
-        expect.anything(),
-        expect.stringContaining("analytics.activity_summary"),
-        { userId: "user-1", queryDays: 407 },
+      expect(activityQuery).toContain("has({activityTypes:Array(String)}, asum.activity_type)");
+      expect(activityParams).toMatchObject({
+        userId: "user-1",
+        timezone: "America/Los_Angeles",
+        queryDays: 407,
+      });
+      expectCyclingOnlyActivityTypes(activityParams.activityTypes);
+
+      const { queryText: normalizedPowerQuery, params: normalizedPowerParams } = findQueryCall(
+        query,
+        "normalized_power",
       );
+      expect(normalizedPowerQuery).toContain("has({activityTypes:Array(String)}, activity_type)");
+      expect(normalizedPowerParams).toMatchObject({ userId: "user-1", queryDays: 407 });
+      expectCyclingOnlyActivityTypes(normalizedPowerParams.activityTypes);
+    });
+
+    it("filters fallback max heart rate baseline to cycling activity types", async () => {
+      const { repo, query } = makeRepoHarness([makeActivityRow()], []);
+
+      await repo.getChart(30);
+
+      const activityQuery = vi.mocked(query).mock.calls[0]?.[1];
+      expect(activityQuery).toContain("SELECT maxIf(max_hr, max_hr > 0)");
+      expect(activityQuery).toContain("has({activityTypes:Array(String)}, activity_type)");
+      expectCyclingOnlyActivityTypes(vi.mocked(query).mock.calls[0]?.[2]?.activityTypes);
     });
 
     it("extends query history when requested display days exceed the minimum history", async () => {
@@ -151,18 +186,19 @@ describe("PmcRepository", () => {
 
       await repo.getChart(400);
 
-      expect(query).toHaveBeenNthCalledWith(
-        1,
-        expect.anything(),
-        expect.stringContaining("INTERVAL {queryDays:Int32} DAY"),
-        expect.objectContaining({ queryDays: 442 }),
+      const { queryText: activityQuery, params: activityParams } = findQueryCall(
+        query,
+        "CROSS JOIN user_baseline ub",
       );
-      expect(query).toHaveBeenNthCalledWith(
-        2,
-        expect.anything(),
-        expect.stringContaining("INTERVAL {queryDays:Int32} DAY"),
-        expect.objectContaining({ queryDays: 442 }),
+      expect(activityQuery).toContain("INTERVAL {queryDays:Int32} DAY");
+      expect(activityParams).toMatchObject({ queryDays: 442 });
+
+      const { queryText: normalizedPowerQuery, params: normalizedPowerParams } = findQueryCall(
+        query,
+        "normalized_power",
       );
+      expect(normalizedPowerQuery).toContain("INTERVAL {queryDays:Int32} DAY");
+      expect(normalizedPowerParams).toMatchObject({ queryDays: 442 });
     });
 
     it("reads sample counts from the activity summary read model", async () => {

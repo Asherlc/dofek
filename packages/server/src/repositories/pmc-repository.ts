@@ -1,4 +1,5 @@
 import type { PmcChartResult, PmcDataPoint, TssModelInfo } from "@dofek/training/pmc";
+import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import { TrainingStressCalculator } from "@dofek/training/training-load";
 
 import type { Database } from "dofek/db";
@@ -12,6 +13,8 @@ import { activityRepositoryFor } from "./activity-repository.ts";
 import { PmcChartCalculator } from "./pmc-chart-calculator.ts";
 import { PmcTrainingLoadCalculator } from "./pmc-training-load-calculator.ts";
 import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
+
+const CYCLING_TYPES: string[] = [...CYCLING_ACTIVITY_TYPES];
 
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
@@ -90,6 +93,7 @@ export class PmcRepository extends BaseRepository {
           coalesce(nullIf(up.max_hr, 0), (
             SELECT maxIf(max_hr, max_hr > 0) FROM analytics.activity_summary
             WHERE user_id = {userId:UUID}
+              AND has({activityTypes:Array(String)}, activity_type)
           )) AS global_max_hr,
           coalesce(nullIf(up.resting_hr, 0), (
             SELECT resting_hr FROM resting_heart_rate
@@ -114,12 +118,14 @@ export class PmcRepository extends BaseRepository {
       CROSS JOIN user_baseline ub
       WHERE asum.user_id = {userId:UUID}
         AND asum.started_at > now() - INTERVAL {queryDays:Int32} DAY
+        AND has({activityTypes:Array(String)}, asum.activity_type)
         AND asum.ended_at IS NOT NULL
         AND coalesce(asum.hr_sample_count, 0) > 0`,
       {
         userId: this.userId,
         timezone: this.timezone,
         queryDays,
+        activityTypes: CYCLING_TYPES,
         rhrEndDate: today,
         rhrWindowStart: dateWindowStartString(today, queryDays),
       },
@@ -141,8 +147,9 @@ export class PmcRepository extends BaseRepository {
       FROM analytics.activity_summary
       WHERE user_id = {userId:UUID}
         AND started_at > now() - INTERVAL {queryDays:Int32} DAY
+        AND has({activityTypes:Array(String)}, activity_type)
         AND normalized_power IS NOT NULL`,
-      { userId: this.userId, queryDays },
+      { userId: this.userId, queryDays, activityTypes: CYCLING_TYPES },
     );
 
     const trainingStressCalculator = new TrainingStressCalculator(genderFactor, exponent);
@@ -177,6 +184,7 @@ export class PmcRepository extends BaseRepository {
       this.accessWindow,
     ).countVisibleInWindow({
       days,
+      activityTypes: CYCLING_TYPES,
     });
   }
 }
