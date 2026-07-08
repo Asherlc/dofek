@@ -110,8 +110,26 @@ describe("Activity summary deduplication", () => {
 
     const previousLoadDate = dateDaysAgo(14);
     const recentLoadDate = dateDaysAgo(3);
+    const previousLoadWeek = dateDaysAgo(14);
+    const recentLoadWeek = dateDaysAgo(3);
 
     const queryMock: ActivitySensorStore["query"] = async (_schema, queryText) => {
+      if (queryText.includes("analytics.weekly_endurance_ramp_rate")) {
+        return [
+          {
+            week: previousLoadWeek,
+            ctl_start: 50,
+            ctl_end: 50,
+            ramp_rate: 0,
+          },
+          {
+            week: recentLoadWeek,
+            ctl_start: 50,
+            ctl_end: 52,
+            ramp_rate: 2,
+          },
+        ];
+      }
       if (queryText.includes("SELECT date, resting_hr")) {
         return [{ date: previousLoadDate, resting_hr: 50 }];
       }

@@ -1,7 +1,6 @@
 import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
 import type { Database } from "dofek/db";
 import { z } from "zod";
-import { dateWindowStartString } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { activityRepositoryFor } from "./activity-repository.ts";
@@ -13,7 +12,6 @@ import {
   TrainingMonotonyWeekModel,
   VerticalAscentModel,
 } from "./cycling-advanced-models.ts";
-import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
 
 const ENDURANCE_TYPES: string[] = [...ENDURANCE_ACTIVITY_TYPES];
 
@@ -21,9 +19,11 @@ const ENDURANCE_TYPES: string[] = [...ENDURANCE_ACTIVITY_TYPES];
 // Zod schemas for raw DB rows
 // ---------------------------------------------------------------------------
 
-const dailyLoadSchema = z.object({
-  day: dateStringSchema,
-  trimp: z.coerce.number(),
+const rampRateRowSchema = z.object({
+  week: dateStringSchema,
+  ctl_start: z.coerce.number(),
+  ctl_end: z.coerce.number(),
+  ramp_rate: z.coerce.number(),
 });
 
 const monotonyRowSchema = z.object({
@@ -84,133 +84,35 @@ export class CyclingAdvancedRepository {
 
   /** Ramp rate: week-over-week CTL change based on HR TRIMP load. */
   async getRampRate(days: number): Promise<RampRateResultData> {
-    const today = new Date().toISOString().slice(0, 10);
-    const dailyLoads = await this.#sensorStore.query(
-      dailyLoadSchema,
-      `WITH ${restingHeartRateClickHouseCte()},
-      activity_meta AS (
-        SELECT
-          asum.activity_id AS id,
-          asum.started_at AS started_at,
-          asum.ended_at AS ended_at,
-          asum.avg_hr AS avg_hr,
-          toDate(toTimeZone(asum.started_at, {timezone:String})) AS day,
-          up.max_hr AS max_hr,
-          coalesce(up.resting_hr, drhr.resting_hr, 60) AS resting_hr_val
-        FROM analytics.activity_summary asum
-        INNER JOIN analytics.v_activity va
-          ON va.id = asum.activity_id
-         AND va.user_id = asum.user_id
-        INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
-        LEFT JOIN resting_heart_rate drhr
-          ON drhr.date = toString(toDate(toTimeZone(asum.started_at, {timezone:String})))
-        WHERE asum.user_id = {userId:UUID}
-          AND has({enduranceTypes:Array(String)}, asum.activity_type)
-          AND asum.started_at > now() - INTERVAL ({days:Int32} + 42) DAY
-          AND asum.ended_at IS NOT NULL
-          AND asum.avg_hr IS NOT NULL
-          AND asum.avg_hr > 0
-          AND up.max_hr IS NOT NULL
-      )
-      SELECT
-        toString(day) AS day,
-        sum(if(max_hr > resting_hr_val AND avg_hr > resting_hr_val,
-          dateDiff('second', started_at, ended_at) / 60.0
-          * (toFloat64(avg_hr - resting_hr_val) / toFloat64(max_hr - resting_hr_val))
-          * 0.64 * exp(1.92 * (toFloat64(avg_hr - resting_hr_val) / toFloat64(max_hr - resting_hr_val)))
-          / (60.0 * 0.85 * 0.64 * exp(1.92 * 0.85))
-          * 100,
-          0)) AS trimp
-      FROM activity_meta
-      GROUP BY day
-      ORDER BY day`,
+    const rows = await this.#sensorStore.query(
+      rampRateRowSchema,
+      `SELECT
+        toString(ramp.week) AS week,
+        ramp.ctl_start AS ctl_start,
+        ramp.ctl_end AS ctl_end,
+        ramp.ramp_rate AS ramp_rate
+      FROM analytics.weekly_endurance_ramp_rate AS ramp FINAL
+      WHERE ramp.user_id = {userId:UUID}
+        AND ramp.week > toMonday(today() - INTERVAL {days:Int32} DAY)
+      ORDER BY ramp.week`,
       {
         userId: this.#userId,
         timezone: this.#timezone,
         days,
-        enduranceTypes: ENDURANCE_TYPES,
-        rhrEndDate: today,
-        rhrWindowStart: dateWindowStartString(today, days + 42),
       },
     );
 
-    if (dailyLoads.length === 0)
-      return { weeks: [], currentRampRate: 0, recommendation: "No data" };
+    if (rows.length === 0) return { weeks: [], currentRampRate: 0, recommendation: "No data" };
 
-    // Fill in zero-load days and compute CTL (42-day EWMA)
-    const loadMap = new Map<string, number>();
-    for (const row of dailyLoads) {
-      loadMap.set(row.day, row.trimp);
-    }
-
-    const firstLoad = dailyLoads[0];
-    const lastLoad = dailyLoads[dailyLoads.length - 1];
-    if (!firstLoad || !lastLoad)
-      return { weeks: [], currentRampRate: 0, recommendation: "No data" };
-    const startDate = new Date(firstLoad.day);
-    const endDate = new Date(lastLoad.day);
-    const ctlByDate = new Map<string, number>();
-    let ctl = 0;
-
-    for (
-      let current = new Date(startDate);
-      current <= endDate;
-      current.setDate(current.getDate() + 1)
-    ) {
-      const key = current.toISOString().slice(0, 10);
-      const load = loadMap.get(key) ?? 0;
-      ctl = ctl + (load - ctl) / 42;
-      ctlByDate.set(key, ctl);
-    }
-
-    // Group into weeks and compute ramp rate
-    const ctlEntries = [...ctlByDate.entries()].sort(([dateA], [dateB]) =>
-      dateA.localeCompare(dateB),
-    );
-
-    // Filter to only the requested date range (exclude the 42-day warmup)
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - days);
-    const cutoffStr = cutoffDate.toISOString().slice(0, 10);
-    const filtered = ctlEntries.filter(([dateStr]) => dateStr >= cutoffStr);
-
-    // Group by ISO week
-    const weekMap = new Map<string, { first: number; last: number }>();
-    for (const [dateStr, ctlValue] of filtered) {
-      const dateObj = new Date(dateStr);
-      const dayOfWeek = dateObj.getDay();
-      const monday = new Date(dateObj);
-      monday.setDate(dateObj.getDate() - ((dayOfWeek + 6) % 7));
-      const weekKey = monday.toISOString().slice(0, 10);
-
-      const existing = weekMap.get(weekKey);
-      if (!existing) {
-        weekMap.set(weekKey, { first: ctlValue, last: ctlValue });
-      } else {
-        existing.last = ctlValue;
-      }
-    }
-
-    const weeks: RampRateWeekModel[] = [];
-    const weekKeys = [...weekMap.keys()].sort();
-    for (let idx = 1; idx < weekKeys.length; idx++) {
-      const prevKey = weekKeys[idx - 1];
-      const currKey = weekKeys[idx];
-      if (!prevKey || !currKey) continue;
-      const prevWeek = weekMap.get(prevKey);
-      const currWeek = weekMap.get(currKey);
-      if (!prevWeek || !currWeek) continue;
-
-      const rampRate = Math.round((currWeek.last - prevWeek.last) * 100) / 100;
-      weeks.push(
+    const weeks = rows.map(
+      (row) =>
         new RampRateWeekModel({
-          week: currKey,
-          ctlStart: Math.round(prevWeek.last * 100) / 100,
-          ctlEnd: Math.round(currWeek.last * 100) / 100,
-          rampRate,
+          week: row.week,
+          ctlStart: row.ctl_start,
+          ctlEnd: row.ctl_end,
+          rampRate: row.ramp_rate,
         }),
-      );
-    }
+    );
 
     const currentRampRate = weeks.length > 0 ? (weeks[weeks.length - 1]?.rampRate ?? 0) : 0;
 
@@ -228,71 +130,21 @@ export class CyclingAdvancedRepository {
 
   /** Training monotony: weekly monotony (mean daily load / stdev) and strain. */
   async getTrainingMonotony(days: number): Promise<TrainingMonotonyWeekModel[]> {
-    const today = new Date().toISOString().slice(0, 10);
     const rows = await this.#sensorStore.query(
       monotonyRowSchema,
-      `WITH ${restingHeartRateClickHouseCte()},
-      activity_meta AS (
-        SELECT
-          asum.activity_id AS id,
-          asum.started_at AS started_at,
-          asum.ended_at AS ended_at,
-          asum.avg_hr AS avg_hr,
-          toDate(toTimeZone(asum.started_at, {timezone:String})) AS day,
-          up.max_hr AS max_hr,
-          coalesce(up.resting_hr, drhr.resting_hr, 60) AS resting_hr_val
-        FROM analytics.activity_summary asum
-        INNER JOIN analytics.v_activity va
-          ON va.id = asum.activity_id
-         AND va.user_id = asum.user_id
-        INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
-        LEFT JOIN resting_heart_rate drhr
-          ON drhr.date = toString(toDate(toTimeZone(asum.started_at, {timezone:String})))
-        WHERE asum.user_id = {userId:UUID}
-          AND has({enduranceTypes:Array(String)}, asum.activity_type)
-          AND asum.started_at > now() - INTERVAL {days:Int32} DAY
-          AND asum.ended_at IS NOT NULL
-          AND asum.avg_hr IS NOT NULL
-          AND asum.avg_hr > 0
-          AND up.max_hr IS NOT NULL
-      ),
-      daily_loads AS (
-        SELECT
-          day,
-          sum(if(max_hr > resting_hr_val AND avg_hr > resting_hr_val,
-            dateDiff('second', started_at, ended_at) / 60.0
-            * (toFloat64(avg_hr - resting_hr_val) / toFloat64(max_hr - resting_hr_val))
-            * 0.64 * exp(1.92 * (toFloat64(avg_hr - resting_hr_val) / toFloat64(max_hr - resting_hr_val)))
-            / (60.0 * 0.85 * 0.64 * exp(1.92 * 0.85))
-            * 100,
-            0)) AS trimp
-        FROM activity_meta
-        GROUP BY day
-      ),
-      weekly_stats AS (
-        SELECT
-          toMonday(day) AS week,
-          avg(trimp) AS mean_load,
-          stddevPop(trimp) AS stdev_load,
-          sum(trimp) AS weekly_load
-        FROM daily_loads
-        GROUP BY toMonday(day)
-        HAVING stddevPop(trimp) > 0
-      )
-      SELECT
-        toString(week) AS week,
-        round(mean_load / stdev_load, 2) AS monotony,
-        round(weekly_load * (mean_load / stdev_load), 1) AS strain,
-        round(weekly_load, 1) AS weekly_load
-      FROM weekly_stats
-      ORDER BY week`,
+      `SELECT
+        toString(monotony.week) AS week,
+        monotony.monotony AS monotony,
+        monotony.strain AS strain,
+        monotony.weekly_load AS weekly_load
+      FROM analytics.weekly_training_monotony AS monotony FINAL
+      WHERE monotony.user_id = {userId:UUID}
+        AND monotony.week >= toMonday(today() - INTERVAL {days:Int32} DAY)
+      ORDER BY monotony.week`,
       {
         userId: this.#userId,
         timezone: this.#timezone,
         days,
-        enduranceTypes: ENDURANCE_TYPES,
-        rhrEndDate: today,
-        rhrWindowStart: dateWindowStartString(today, days),
       },
     );
 

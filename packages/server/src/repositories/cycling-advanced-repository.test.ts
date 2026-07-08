@@ -233,18 +233,6 @@ describe("CyclingAdvancedRepository", () => {
     return { repo, execute, sensorStore };
   }
 
-  function recentDailyLoads(count: number, loadForIndex: (index: number) => number) {
-    const today = new Date();
-    return Array.from({ length: count }, (_, index) => {
-      const date = new Date(today);
-      date.setDate(today.getDate() - (count - 1 - index));
-      return {
-        day: date.toISOString().slice(0, 10),
-        trimp: loadForIndex(index),
-      };
-    });
-  }
-
   describe("getRampRate", () => {
     beforeEach(() => {
       vi.useFakeTimers();
@@ -255,7 +243,7 @@ describe("CyclingAdvancedRepository", () => {
       vi.useRealTimers();
     });
 
-    it("returns no-data result when no daily loads", async () => {
+    it("returns no-data result when no ramp rate rows exist", async () => {
       const { repo } = makeRepository([]);
       const result = await repo.getRampRate(90);
       expect(result.weeks).toEqual([]);
@@ -263,47 +251,59 @@ describe("CyclingAdvancedRepository", () => {
       expect(result.recommendation).toBe("No data");
     });
 
-    it("issues exactly one CH query for the daily-load aggregation", async () => {
+    it("issues exactly one CH query for the weekly read model", async () => {
       const { repo, sensorStore } = makeRepository([]);
       await repo.getRampRate(30);
       expect(sensorStore.query).toHaveBeenCalledTimes(1);
     });
 
-    it("queries ClickHouse with warmup window and endurance activity filter", async () => {
+    it("queries ClickHouse weekly endurance ramp rate read model", async () => {
       const { repo, sensorStore } = makeRepository([]);
       await repo.getRampRate(30);
       const [, query, params] = sensorStore.query.mock.calls[0];
-      expect(query).toContain("analytics.activity_summary");
-      expect(query).toContain("INTERVAL ({days:Int32} + 42) DAY");
-      expect(query).toContain("has({enduranceTypes:Array(String)}, asum.activity_type)");
+      expect(query).toContain("analytics.weekly_endurance_ramp_rate");
+      expect(query).toContain("ramp.week > toMonday(today() - INTERVAL {days:Int32} DAY)");
+      expect(query).not.toContain("resting_heart_rate");
+      expect(query).not.toContain("analytics.activity_summary");
+      expect(query).not.toContain("analytics.daily_endurance_load");
       expect(params).toMatchObject({
         userId: "user-1",
         timezone: "UTC",
         days: 30,
       });
-      expect(params.enduranceTypes).toContain("cycling");
     });
 
-    it("computes safe ramp rate from steady low load", async () => {
-      const { repo } = makeRepository(recentDailyLoads(35, () => 20));
+    it("returns safe recommendation for low current ramp rate", async () => {
+      const { repo } = makeRepository([
+        { week: "2026-04-20", ctl_start: 12.1, ctl_end: 14.4, ramp_rate: 2.3 },
+      ]);
       const result = await repo.getRampRate(30);
-      expect(result.weeks.length).toBeGreaterThanOrEqual(3);
+      expect(result.weeks).toHaveLength(1);
       expect(result.currentRampRate).toBeGreaterThan(0);
       expect(result.currentRampRate).toBeLessThan(5);
       expect(result.recommendation).toBe("Safe: ramp rate is within sustainable range");
-      expect(result.weeks.at(-1)?.ctlEnd).toBeGreaterThan(result.weeks[0]?.ctlStart ?? 0);
+      expect(result.weeks[0]?.toDetail()).toEqual({
+        week: "2026-04-20",
+        ctlStart: 12.1,
+        ctlEnd: 14.4,
+        rampRate: 2.3,
+      });
     });
 
-    it("computes aggressive ramp rate for moderate load increase", async () => {
-      const { repo } = makeRepository(recentDailyLoads(35, (index) => (index < 14 ? 20 : 120)));
+    it("returns aggressive recommendation for moderate current ramp rate", async () => {
+      const { repo } = makeRepository([
+        { week: "2026-04-20", ctl_start: 20, ctl_end: 26.2, ramp_rate: 6.2 },
+      ]);
       const result = await repo.getRampRate(30);
       expect(result.currentRampRate).toBeGreaterThanOrEqual(5);
       expect(result.currentRampRate).toBeLessThanOrEqual(7);
       expect(result.recommendation).toBe("Aggressive: monitor fatigue closely and ensure recovery");
     });
 
-    it("computes danger recommendation for large load increase", async () => {
-      const { repo } = makeRepository(recentDailyLoads(35, (index) => (index < 14 ? 20 : 200)));
+    it("returns danger recommendation for high current ramp rate", async () => {
+      const { repo } = makeRepository([
+        { week: "2026-04-20", ctl_start: 20, ctl_end: 28.4, ramp_rate: 8.4 },
+      ]);
       const result = await repo.getRampRate(30);
       expect(result.currentRampRate).toBeGreaterThan(7);
       expect(result.recommendation).toBe(
@@ -329,19 +329,20 @@ describe("CyclingAdvancedRepository", () => {
       expect(result[0]?.toDetail().monotony).toBe(1.8);
     });
 
-    it("queries training monotony with weekly stats and user parameters", async () => {
+    it("queries training monotony from weekly read model with user parameters", async () => {
       const { repo, sensorStore } = makeRepository([]);
       await repo.getTrainingMonotony(45);
       const [, query, params] = sensorStore.query.mock.calls[0];
-      expect(query).toContain("weekly_stats");
-      expect(query).toContain("stddevPop(trimp) > 0");
-      expect(query).toContain("round(weekly_load * (mean_load / stdev_load), 1)");
+      expect(query).toContain("analytics.weekly_training_monotony");
+      expect(query).toContain("monotony.week >= toMonday(today() - INTERVAL {days:Int32} DAY)");
+      expect(query).not.toContain("resting_heart_rate");
+      expect(query).not.toContain("analytics.activity_summary");
+      expect(query).not.toContain("analytics.daily_endurance_load");
       expect(params).toMatchObject({
         userId: "user-1",
         timezone: "UTC",
         days: 45,
       });
-      expect(params.enduranceTypes).toContain("cycling");
     });
   });
 

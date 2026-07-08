@@ -300,8 +300,11 @@ export const clickHouseMigrationAnalyticsViewNames = [
   "analytics.daily_recovery_inputs",
   "analytics.daily_recovery",
   "analytics.deduped_location",
+  "analytics.daily_endurance_load",
   "analytics.activity_summary",
   "analytics.daily_activity_load",
+  "analytics.weekly_endurance_ramp_rate",
+  "analytics.weekly_training_monotony",
   "analytics.daily_strain",
   "analytics.daily_body_measurement",
   "analytics.healthspan_activity_zone_minutes",
@@ -321,6 +324,7 @@ const analyticsBuildOrder = [
   "analytics.daily_recovery_inputs",
   "analytics.daily_recovery",
   "analytics.deduped_location",
+  "analytics.daily_endurance_load",
   "analytics.activity_location_sample",
   "analytics.activity_sensor_sample",
   "analytics.activity_location_sample",
@@ -328,6 +332,8 @@ const analyticsBuildOrder = [
   "analytics.activity_heart_rate_zones",
   "analytics.activity_summary",
   "analytics.daily_activity_load",
+  "analytics.weekly_endurance_ramp_rate",
+  "analytics.weekly_training_monotony",
   "analytics.daily_strain",
   "analytics.daily_body_measurement",
   "analytics.healthspan_activity_zone_minutes",
@@ -640,6 +646,29 @@ ended_at DateTime64(6, 'UTC'),
 daily_load Nullable(Float64),
 refresh_version UInt64,
 refreshed_at DateTime64(9)`,
+    daily_endurance_load: `activity_id UUID,
+user_id UUID,
+started_at Nullable(DateTime64(6, 'UTC')),
+ended_at Nullable(DateTime64(6, 'UTC')),
+date Nullable(Date),
+training_load Float64,
+is_deleted UInt8,
+refresh_version UInt64,
+refreshed_at DateTime64(9)`,
+    weekly_endurance_ramp_rate: `user_id UUID,
+week Date,
+ctl_start Float64,
+ctl_end Float64,
+ramp_rate Float64,
+refresh_version UInt64,
+refreshed_at DateTime64(9)`,
+    weekly_training_monotony: `user_id UUID,
+week Date,
+monotony Float64,
+strain Float64,
+weekly_load Float64,
+refresh_version UInt64,
+refreshed_at DateTime64(9)`,
     daily_strain: `user_id UUID,
 date Date,
 daily_load Float64,
@@ -740,7 +769,10 @@ refreshed_at DateTime64(9)`,
     shortViewName === "daily_recovery_inputs" ||
     shortViewName === "daily_recovery" ||
     shortViewName === "daily_body_measurement" ||
+    shortViewName === "daily_endurance_load" ||
     shortViewName === "daily_activity_load" ||
+    shortViewName === "weekly_endurance_ramp_rate" ||
+    shortViewName === "weekly_training_monotony" ||
     shortViewName === "daily_strain" ||
     shortViewName === "healthspan_activity_zone_minutes" ||
     shortViewName === "weekly_healthspan" ||
@@ -766,21 +798,25 @@ refreshed_at DateTime64(9)`,
                 ? "(user_id, date)"
                 : shortViewName === "daily_body_measurement"
                   ? "(user_id, recorded_at, measurement_id)"
-                  : shortViewName === "daily_activity_load" ||
+                  : shortViewName === "daily_endurance_load" ||
+                      shortViewName === "daily_activity_load" ||
                       shortViewName === "healthspan_activity_zone_minutes"
                     ? "(user_id, activity_id)"
-                    : shortViewName === "daily_strain"
-                      ? "(user_id, date)"
-                      : shortViewName === "weekly_healthspan"
-                        ? "(user_id, week_start)"
-                        : shortViewName === "provider_stats"
-                          ? "(user_id, provider_id)"
-                          : shortViewName === "activity_power_curve"
-                            ? "(user_id, activity_id, duration_seconds)"
-                            : shortViewName === "activity_aerobic_efficiency" ||
-                                shortViewName === "activity_polarization_zones"
-                              ? "(user_id, activity_id)"
-                              : "tuple()";
+                    : shortViewName === "weekly_endurance_ramp_rate" ||
+                        shortViewName === "weekly_training_monotony"
+                      ? "(user_id, week)"
+                      : shortViewName === "daily_strain"
+                        ? "(user_id, date)"
+                        : shortViewName === "weekly_healthspan"
+                          ? "(user_id, week_start)"
+                          : shortViewName === "provider_stats"
+                            ? "(user_id, provider_id)"
+                            : shortViewName === "activity_power_curve"
+                              ? "(user_id, activity_id, duration_seconds)"
+                              : shortViewName === "activity_aerobic_efficiency" ||
+                                  shortViewName === "activity_polarization_zones"
+                                ? "(user_id, activity_id)"
+                                : "tuple()";
   return `CREATE TABLE IF NOT EXISTS ${viewName} (
 ${columnDefinitions}
 )
@@ -1413,6 +1449,157 @@ FROM activity_load
 CROSS JOIN refresh_clock`;
 }
 
+function buildTestDailyEnduranceLoadSelectSql(databases: IsolatedClickHouseDatabases): string {
+  return `WITH activity_load AS (
+  SELECT
+    activity_id,
+    user_id,
+    started_at,
+    assumeNotNull(ended_at) AS ended_at,
+    toDate(started_at) AS date,
+    dateDiff('second', started_at, assumeNotNull(ended_at)) / 60.0 AS duration_minutes,
+    assumeNotNull(avg_hr) AS avg_hr,
+    assumeNotNull(max_hr) AS max_hr,
+    60 AS resting_hr
+  FROM ${databases.analytics}.activity_summary
+  WHERE ended_at IS NOT NULL
+    AND avg_hr IS NOT NULL
+    AND max_hr IS NOT NULL
+),
+training_load AS (
+  SELECT
+    activity_id,
+    user_id,
+    started_at,
+    ended_at,
+    date,
+    if(max_hr > resting_hr AND avg_hr > resting_hr,
+      duration_minutes
+      * intensity
+      * 0.64 * exp(1.92 * intensity)
+      / (60.0 * 0.85 * 0.64 * exp(1.92 * 0.85))
+      * 100,
+      0
+    ) AS training_load
+  FROM (
+    SELECT
+      activity_id,
+      user_id,
+      started_at,
+      ended_at,
+      date,
+      duration_minutes,
+      avg_hr,
+      max_hr,
+      resting_hr,
+      toFloat64(avg_hr - resting_hr) / toFloat64(max_hr - resting_hr) AS intensity
+    FROM activity_load
+  )
+),
+refresh_clock AS (
+  SELECT
+    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+    now64(9) AS refreshed_at
+)
+SELECT
+  training_load.activity_id AS activity_id,
+  training_load.user_id AS user_id,
+  training_load.started_at AS started_at,
+  training_load.ended_at AS ended_at,
+  training_load.date AS date,
+  training_load.training_load AS training_load,
+  0 AS is_deleted,
+  refresh_clock.refresh_version AS refresh_version,
+  refresh_clock.refreshed_at AS refreshed_at
+FROM training_load
+CROSS JOIN refresh_clock`;
+}
+
+function buildTestWeeklyEnduranceRampRateSelectSql(databases: IsolatedClickHouseDatabases): string {
+  return `WITH weekly_load AS (
+  SELECT
+    user_id,
+    toMonday(assumeNotNull(date)) AS week,
+    sum(training_load) AS weekly_load
+  FROM ${databases.analytics}.daily_endurance_load
+  WHERE is_deleted = 0
+    AND date IS NOT NULL
+  GROUP BY
+    user_id,
+    toMonday(assumeNotNull(date))
+),
+weekly_with_previous AS (
+  SELECT
+    user_id,
+    week,
+    weekly_load AS ctl_end,
+    lagInFrame(weekly_load, 1) OVER (
+      PARTITION BY user_id ORDER BY week
+      ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+    ) AS previous_ctl_end
+  FROM weekly_load
+),
+refresh_clock AS (
+  SELECT
+    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+    now64(9) AS refreshed_at
+)
+SELECT
+  weekly_with_previous.user_id AS user_id,
+  weekly_with_previous.week AS week,
+  round(weekly_with_previous.previous_ctl_end, 2) AS ctl_start,
+  round(weekly_with_previous.ctl_end, 2) AS ctl_end,
+  round(weekly_with_previous.ctl_end - weekly_with_previous.previous_ctl_end, 2) AS ramp_rate,
+  refresh_clock.refresh_version AS refresh_version,
+  refresh_clock.refreshed_at AS refreshed_at
+FROM weekly_with_previous
+CROSS JOIN refresh_clock
+WHERE weekly_with_previous.previous_ctl_end IS NOT NULL`;
+}
+
+function buildTestWeeklyTrainingMonotonySelectSql(databases: IsolatedClickHouseDatabases): string {
+  return `WITH daily_load AS (
+  SELECT
+    user_id,
+    assumeNotNull(date) AS load_date,
+    sum(training_load) AS training_load
+  FROM ${databases.analytics}.daily_endurance_load
+  WHERE is_deleted = 0
+    AND date IS NOT NULL
+  GROUP BY
+    user_id,
+    load_date
+),
+weekly_stats AS (
+  SELECT
+    user_id,
+    toMonday(load_date) AS week,
+    avg(training_load) AS mean_load,
+    stddevPop(training_load) AS stdev_load,
+    sum(training_load) AS weekly_load
+  FROM daily_load
+  GROUP BY
+    user_id,
+    toMonday(load_date)
+  HAVING stddevPop(training_load) > 0
+),
+refresh_clock AS (
+  SELECT
+    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+    now64(9) AS refreshed_at
+)
+SELECT
+  weekly_stats.user_id AS user_id,
+  weekly_stats.week AS week,
+  round(weekly_stats.mean_load / weekly_stats.stdev_load, 2) AS monotony,
+  round(weekly_stats.weekly_load * (weekly_stats.mean_load / weekly_stats.stdev_load), 1) AS strain,
+  round(weekly_stats.weekly_load, 1) AS weekly_load,
+  refresh_clock.refresh_version AS refresh_version,
+  refresh_clock.refreshed_at AS refreshed_at
+FROM weekly_stats
+CROSS JOIN refresh_clock`;
+}
+
 function buildTestDailyBodyMeasurementSelectSql(databases: IsolatedClickHouseDatabases): string {
   return `WITH body_source AS (
   SELECT
@@ -1994,6 +2181,21 @@ ${buildTestDailySleepSelectSql(defaultTestDatabases)}`,
     query: `CREATE VIEW IF NOT EXISTS analytics.daily_recovery
 AS
 ${buildTestRecoveryReadModelSelectSql(defaultTestDatabases)}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.daily_endurance_load
+AS
+${buildTestDailyEnduranceLoadSelectSql(defaultTestDatabases)}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.weekly_endurance_ramp_rate
+AS
+${buildTestWeeklyEnduranceRampRateSelectSql(defaultTestDatabases)}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.weekly_training_monotony
+AS
+${buildTestWeeklyTrainingMonotonySelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.daily_activity_load

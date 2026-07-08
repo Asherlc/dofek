@@ -73,6 +73,9 @@ describe("production analytics read-model build", () => {
       "daily_sleep",
       "daily_recovery_inputs",
       "daily_recovery",
+      "daily_endurance_load",
+      "weekly_endurance_ramp_rate",
+      "weekly_training_monotony",
       "daily_activity_load",
       "daily_strain",
       "daily_body_measurement",
@@ -530,6 +533,51 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("'max_threads': 1");
     expect(sql).not.toContain("ref('activity_sensor_sample')");
     expect(sql).not.toContain("ref('deduped_sensor')");
+  });
+
+  it("materializes daily endurance load from activity summary rows and resting heart rate", () => {
+    const sql = readModel("daily_endurance_load");
+
+    expect(sql).toContain("materialized='incremental'");
+    expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
+    expect(sql).toContain("ref('activity_summary_rows')");
+    expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
+    expect(sql).toContain("postgres_fitness.user_profile_current");
+    expect(sql).toContain("activity_type IN (");
+    expect(sql).toContain("'road_cycling'");
+    expect(sql).toContain("0.64 * exp(1.92 * intensity)");
+    expect(sql).toContain("training_load");
+    expect(sql).not.toContain("ref('activity_sensor_sample')");
+    expect(sql).not.toContain("ref('deduped_sensor')");
+  });
+
+  it("materializes weekly endurance ramp rate from daily endurance load", () => {
+    const sql = readModel("weekly_endurance_ramp_rate");
+
+    expect(sql).toContain("materialized='incremental'");
+    expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
+    expect(sql).toContain("ref('daily_endurance_load')");
+    expect(sql).toContain("pow(41.0 / 42.0");
+    expect(sql).toContain("lagInFrame(ctl_end");
+    expect(sql).toContain("ramp_rate");
+    expect(sql).not.toContain("ref('activity_sensor_sample')");
+    expect(sql).not.toContain("ref('deduped_sensor')");
+    expect(sql).not.toContain("ref('activity_summary_rows')");
+  });
+
+  it("materializes weekly training monotony from daily endurance load", () => {
+    const sql = readModel("weekly_training_monotony");
+
+    expect(sql).toContain("materialized='incremental'");
+    expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
+    expect(sql).toContain("ref('daily_endurance_load')");
+    expect(sql).toContain("stddevPop(training_load)");
+    expect(sql).toContain(
+      "round(weekly_stats.weekly_load * (weekly_stats.mean_load / weekly_stats.stdev_load), 1)",
+    );
+    expect(sql).not.toContain("ref('activity_sensor_sample')");
+    expect(sql).not.toContain("ref('deduped_sensor')");
+    expect(sql).not.toContain("ref('activity_summary_rows')");
   });
 
   it("materializes daily recovery inputs from compact daily and sleep sources", () => {
