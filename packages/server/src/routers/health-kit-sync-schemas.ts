@@ -258,12 +258,12 @@ export const ROUTE_CHANNELS: Array<{
 
 /** Aggregated daily metric values for a single date */
 export interface DailyMetricAccumulator {
-  steps: number;
-  activeEnergyKcal: number;
-  basalEnergyKcal: number;
-  distanceKm: number;
-  flightsClimbed: number;
-  exerciseMinutes: number;
+  steps: number | null;
+  activeEnergyKcal: number | null;
+  basalEnergyKcal: number | null;
+  distanceKm: number | null;
+  flightsClimbed: number | null;
+  exerciseMinutes: number | null;
   hrv: number | null;
   walkingSpeed: number | null;
   walkingStepLength: number | null;
@@ -272,14 +272,37 @@ export interface DailyMetricAccumulator {
   walkingSteadiness: number | null;
 }
 
+export type AdditiveDailyMetricAccumulatorKey =
+  | "steps"
+  | "activeEnergyKcal"
+  | "basalEnergyKcal"
+  | "distanceKm"
+  | "flightsClimbed"
+  | "exerciseMinutes";
+
+const additiveDailyMetricAccumulatorKeys = new Set<keyof DailyMetricAccumulator>([
+  "steps",
+  "activeEnergyKcal",
+  "basalEnergyKcal",
+  "distanceKm",
+  "flightsClimbed",
+  "exerciseMinutes",
+]);
+
+export function isAdditiveDailyMetricAccumulatorKey(
+  key: keyof DailyMetricAccumulator,
+): key is AdditiveDailyMetricAccumulatorKey {
+  return additiveDailyMetricAccumulatorKeys.has(key);
+}
+
 export function createEmptyAccumulator(): DailyMetricAccumulator {
   return {
-    steps: 0,
-    activeEnergyKcal: 0,
-    basalEnergyKcal: 0,
-    distanceKm: 0,
-    flightsClimbed: 0,
-    exerciseMinutes: 0,
+    steps: null,
+    activeEnergyKcal: null,
+    basalEnergyKcal: null,
+    distanceKm: null,
+    flightsClimbed: null,
+    exerciseMinutes: null,
     hrv: null,
     walkingSpeed: null,
     walkingStepLength: null,

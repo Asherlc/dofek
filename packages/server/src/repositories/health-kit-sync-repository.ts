@@ -84,18 +84,41 @@ export interface SleepSample {
 
 /** Aggregated daily metric values for a single date */
 export interface DailyMetricAccumulator {
-  steps: number;
-  activeEnergyKcal: number;
-  basalEnergyKcal: number;
-  distanceKm: number;
-  flightsClimbed: number;
-  exerciseMinutes: number;
+  steps: number | null;
+  activeEnergyKcal: number | null;
+  basalEnergyKcal: number | null;
+  distanceKm: number | null;
+  flightsClimbed: number | null;
+  exerciseMinutes: number | null;
   hrv: number | null;
   walkingSpeed: number | null;
   walkingStepLength: number | null;
   walkingDoubleSupportPct: number | null;
   walkingAsymmetryPct: number | null;
   walkingSteadiness: number | null;
+}
+
+type AdditiveDailyMetricAccumulatorKey =
+  | "steps"
+  | "activeEnergyKcal"
+  | "basalEnergyKcal"
+  | "distanceKm"
+  | "flightsClimbed"
+  | "exerciseMinutes";
+
+const additiveDailyMetricAccumulatorKeys = new Set<keyof DailyMetricAccumulator>([
+  "steps",
+  "activeEnergyKcal",
+  "basalEnergyKcal",
+  "distanceKm",
+  "flightsClimbed",
+  "exerciseMinutes",
+]);
+
+function isAdditiveDailyMetricAccumulatorKey(
+  key: keyof DailyMetricAccumulator,
+): key is AdditiveDailyMetricAccumulatorKey {
+  return additiveDailyMetricAccumulatorKeys.has(key);
 }
 
 // ---------------------------------------------------------------------------
@@ -304,12 +327,12 @@ export function categorize(
 
 function createEmptyAccumulator(): DailyMetricAccumulator {
   return {
-    steps: 0,
-    activeEnergyKcal: 0,
-    basalEnergyKcal: 0,
-    distanceKm: 0,
-    flightsClimbed: 0,
-    exerciseMinutes: 0,
+    steps: null,
+    activeEnergyKcal: null,
+    basalEnergyKcal: null,
+    distanceKm: null,
+    flightsClimbed: null,
+    exerciseMinutes: null,
     hrv: null,
     walkingSpeed: null,
     walkingStepLength: null,
@@ -344,8 +367,8 @@ export function aggregateDailyMetricSamples(
         ? additiveMapping.transform(sample.value)
         : sample.value;
       const key = columnToAccumulatorKey[additiveMapping.column];
-      if (key) {
-        (accumulator[key] as number) += value;
+      if (key && isAdditiveDailyMetricAccumulatorKey(key)) {
+        accumulator[key] = (accumulator[key] ?? 0) + value;
       }
       continue;
     }
@@ -473,7 +496,7 @@ export class HealthKitSyncRepository {
       insertValues.push(sql`${sourceName ?? null}`);
 
       // Additive fields: replace with the complete day-total from this sync.
-      const additiveFields: Array<{ column: string; key: keyof DailyMetricAccumulator }> = [
+      const additiveFields: Array<{ column: string; key: AdditiveDailyMetricAccumulatorKey }> = [
         { column: "steps", key: "steps" },
         { column: "active_energy_kcal", key: "activeEnergyKcal" },
         { column: "basal_energy_kcal", key: "basalEnergyKcal" },
@@ -483,8 +506,8 @@ export class HealthKitSyncRepository {
       ];
 
       for (const { column, key } of additiveFields) {
-        const raw = Number(accumulator[key]);
-        if (raw > 0) {
+        const raw = accumulator[key];
+        if (raw !== null) {
           const value = INTEGER_DAILY_COLUMNS.has(column) ? Math.round(raw) : raw;
           insertColumns.push(sql`${sql.identifier(column)}`);
           insertValues.push(sql`${value}`);

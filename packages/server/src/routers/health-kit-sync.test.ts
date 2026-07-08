@@ -2333,9 +2333,13 @@ describe("healthKitSyncRouter", () => {
       expect(serialized).toContain("walking_steadiness");
     });
 
-    it("skips additive fields with zero value (kills raw > 0 to true/raw >= 0 mutations)", async () => {
-      // If only zero-value additive fields are sent, the setClauses will be empty
-      // and processDailyMetrics should skip the INSERT (continue on setClauses.length === 0)
+    it("writes additive fields with zero value when a zero sample is present", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
       const samples = [
         makeSample({
           type: "HKQuantityTypeIdentifierStepCount",
@@ -2350,6 +2354,14 @@ describe("healthKitSyncRouter", () => {
 
       // Steps should be 0 since value is 0
       expect(jan15?.steps).toBe(0);
+
+      await caller.pushQuantitySamples({ samples });
+      const dailyInsertCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return serialized.includes("daily_metrics") && serialized.includes("INSERT");
+      });
+      expect(dailyInsertCall).toBeDefined();
+      expect(JSON.stringify(dailyInsertCall?.[0])).toContain("steps");
     });
 
     it("properly categorizes pointInTimeDailyMetric types (kills if(false) mutation on categorize)", async () => {

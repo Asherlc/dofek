@@ -22,6 +22,7 @@ import { computeBoundsFromIsoTimestamps } from "../lib/health-kit-sync-helpers.t
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import {
+  type AdditiveDailyMetricAccumulatorKey,
   additiveDailyMetricTypes,
   BATCH_SIZE,
   bodyMeasurementTypes,
@@ -32,6 +33,7 @@ import {
   type HealthKitSample,
   INTEGER_DAILY_COLUMNS,
   INTEGER_METRIC_STREAM_COLUMNS,
+  isAdditiveDailyMetricAccumulatorKey,
   metricStreamTypes,
   PROVIDER_ID,
   pointInTimeDailyMetricTypes,
@@ -186,8 +188,8 @@ export function aggregateDailyMetricSamples(
         ? additiveMapping.transform(sample.value)
         : sample.value;
       const key = columnToAccumulatorKey[additiveMapping.column];
-      if (key) {
-        (accumulator[key] as number) += value;
+      if (key && isAdditiveDailyMetricAccumulatorKey(key)) {
+        accumulator[key] = (accumulator[key] ?? 0) + value;
       }
       continue;
     }
@@ -249,7 +251,7 @@ export async function processDailyMetrics(
     // Additive fields: replace with the complete day-total from this sync.
     // Each iOS sync sends all samples for the 7-day window, so the in-memory
     // accumulator already contains the full sum — no need to add to existing.
-    const additiveFields: Array<{ column: string; key: keyof DailyMetricAccumulator }> = [
+    const additiveFields: Array<{ column: string; key: AdditiveDailyMetricAccumulatorKey }> = [
       { column: "steps", key: "steps" },
       { column: "active_energy_kcal", key: "activeEnergyKcal" },
       { column: "basal_energy_kcal", key: "basalEnergyKcal" },
@@ -259,8 +261,8 @@ export async function processDailyMetrics(
     ];
 
     for (const { column, key } of additiveFields) {
-      const raw = Number(accumulator[key]);
-      if (raw > 0) {
+      const raw = accumulator[key];
+      if (raw !== null) {
         // Integer columns (steps, flights_climbed, exercise_minutes) need rounding;
         // real columns (active_energy_kcal, basal_energy_kcal, distance_km) don't.
         const value = INTEGER_DAILY_COLUMNS.has(column) ? Math.round(raw) : raw;

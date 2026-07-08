@@ -380,8 +380,8 @@ describe("aggregateDailyMetricSamples", () => {
     const result = aggregateDailyMetricSamples(samples);
     // An accumulator is created for the date/source, but the unknown type doesn't modify any field
     const accumulator = result.get("2024-01-15\0iPhone");
-    expect(accumulator?.steps).toBe(0);
-    expect(accumulator?.activeEnergyKcal).toBe(0);
+    expect(accumulator?.steps).toBeNull();
+    expect(accumulator?.activeEnergyKcal).toBeNull();
     expect(Object.hasOwn(accumulator ?? {}, "restingHr")).toBe(false);
   });
 
@@ -532,11 +532,11 @@ describe("aggregateDailyMetricSamples", () => {
     const result = aggregateDailyMetricSamples(samples);
     const accumulator = result.get("2024-01-15\0iPhone");
     expect(accumulator?.steps).toBe(100);
-    expect(accumulator?.activeEnergyKcal).toBe(0);
-    expect(accumulator?.basalEnergyKcal).toBe(0);
-    expect(accumulator?.distanceKm).toBe(0);
-    expect(accumulator?.flightsClimbed).toBe(0);
-    expect(accumulator?.exerciseMinutes).toBe(0);
+    expect(accumulator?.activeEnergyKcal).toBeNull();
+    expect(accumulator?.basalEnergyKcal).toBeNull();
+    expect(accumulator?.distanceKm).toBeNull();
+    expect(accumulator?.flightsClimbed).toBeNull();
+    expect(accumulator?.exerciseMinutes).toBeNull();
     expect(accumulator?.hrv).toBeNull();
     expect(accumulator?.walkingSpeed).toBeNull();
     expect(accumulator?.walkingStepLength).toBeNull();
@@ -1766,7 +1766,7 @@ describe("aggregateDailyMetricSamples (mutation-killing: transforms)", () => {
     // Should still create an accumulator but with all defaults
     const accumulator = result.get("2024-01-15\0iPhone");
     if (accumulator) {
-      expect(accumulator.steps).toBe(0);
+      expect(accumulator.steps).toBeNull();
       expect(Object.hasOwn(accumulator, "restingHr")).toBe(false);
       expect(Object.hasOwn(accumulator, "vo2max")).toBe(false);
     }
@@ -2073,10 +2073,9 @@ describe("HealthKitSyncRepository.processMetricStream (mutation: inserted count)
 });
 
 describe("HealthKitSyncRepository.processDailyMetrics (mutation: additive > 0 guard)", () => {
-  it("skips additive fields with value 0 (only inserts when > 0)", async () => {
+  it("does not write absent additive fields when point-in-time values are present", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     const repo = new HealthKitSyncRepository({ execute }, "user-1");
-    // A point-in-time metric with value should still insert even though steps=0.
     const samples: HealthKitSample[] = [
       {
         type: "HKQuantityTypeIdentifierWalkingSpeed",
@@ -2092,12 +2091,14 @@ describe("HealthKitSyncRepository.processDailyMetrics (mutation: additive > 0 gu
     const result = await repo.processDailyMetrics(samples);
     expect(result).toBe(1);
     expect(execute).toHaveBeenCalledTimes(1);
+    const serialized = JSON.stringify(execute.mock.calls[0]?.[0]);
+    expect(serialized).not.toContain("steps");
+    expect(serialized).toContain("walking_speed");
   });
 
-  it("skips upsert when only zero-value additive fields and no point-in-time fields", async () => {
+  it("writes zero-value additive fields when a zero sample is present", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     const repo = new HealthKitSyncRepository({ execute }, "user-1");
-    // StepCount with value 0 — additive sum is 0, not > 0, so no set clause
     const samples: HealthKitSample[] = [
       {
         type: "HKQuantityTypeIdentifierStepCount",
@@ -2112,8 +2113,8 @@ describe("HealthKitSyncRepository.processDailyMetrics (mutation: additive > 0 gu
     ];
     const result = await repo.processDailyMetrics(samples);
     expect(result).toBe(1);
-    // setClauses would be empty, so the upsert is skipped
-    expect(execute).not.toHaveBeenCalled();
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(execute.mock.calls[0]?.[0])).toContain("steps");
   });
 });
 
