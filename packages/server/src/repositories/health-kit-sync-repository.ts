@@ -88,7 +88,6 @@ export interface DailyMetricAccumulator {
   activeEnergyKcal: number;
   basalEnergyKcal: number;
   distanceKm: number;
-  cyclingDistanceKm: number;
   flightsClimbed: number;
   exerciseMinutes: number;
   hrv: number | null;
@@ -96,6 +95,7 @@ export interface DailyMetricAccumulator {
   walkingStepLength: number | null;
   walkingDoubleSupportPct: number | null;
   walkingAsymmetryPct: number | null;
+  walkingSteadiness: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -128,10 +128,6 @@ const additiveDailyMetricTypes: Record<
     column: "distance_km",
     transform: (value) => value / 1000,
   },
-  HKQuantityTypeIdentifierDistanceCycling: {
-    column: "cycling_distance_km",
-    transform: (value) => value / 1000,
-  },
   HKQuantityTypeIdentifierFlightsClimbed: { column: "flights_climbed" },
   HKQuantityTypeIdentifierAppleExerciseTime: { column: "exercise_minutes" },
 };
@@ -143,6 +139,7 @@ const pointInTimeDailyMetricTypes: Record<string, { column: string }> = {
   HKQuantityTypeIdentifierWalkingStepLength: { column: "walking_step_length" },
   HKQuantityTypeIdentifierWalkingDoubleSupportPercentage: { column: "walking_double_support_pct" },
   HKQuantityTypeIdentifierWalkingAsymmetryPercentage: { column: "walking_asymmetry_pct" },
+  HKQuantityTypeIdentifierAppleWalkingSteadiness: { column: "walking_steadiness" },
 };
 
 /** Metric stream types and their column names */
@@ -161,7 +158,6 @@ const columnToAccumulatorKey: Record<string, keyof DailyMetricAccumulator> = {
   active_energy_kcal: "activeEnergyKcal",
   basal_energy_kcal: "basalEnergyKcal",
   distance_km: "distanceKm",
-  cycling_distance_km: "cyclingDistanceKm",
   flights_climbed: "flightsClimbed",
   exercise_minutes: "exerciseMinutes",
   hrv: "hrv",
@@ -169,6 +165,7 @@ const columnToAccumulatorKey: Record<string, keyof DailyMetricAccumulator> = {
   walking_step_length: "walkingStepLength",
   walking_double_support_pct: "walkingDoubleSupportPct",
   walking_asymmetry_pct: "walkingAsymmetryPct",
+  walking_steadiness: "walkingSteadiness",
 };
 
 const HEALTHKIT_STAGE_MAP: Record<string, string> = {
@@ -311,7 +308,6 @@ function createEmptyAccumulator(): DailyMetricAccumulator {
     activeEnergyKcal: 0,
     basalEnergyKcal: 0,
     distanceKm: 0,
-    cyclingDistanceKm: 0,
     flightsClimbed: 0,
     exerciseMinutes: 0,
     hrv: null,
@@ -319,6 +315,7 @@ function createEmptyAccumulator(): DailyMetricAccumulator {
     walkingStepLength: null,
     walkingDoubleSupportPct: null,
     walkingAsymmetryPct: null,
+    walkingSteadiness: null,
   };
 }
 
@@ -481,7 +478,6 @@ export class HealthKitSyncRepository {
         { column: "active_energy_kcal", key: "activeEnergyKcal" },
         { column: "basal_energy_kcal", key: "basalEnergyKcal" },
         { column: "distance_km", key: "distanceKm" },
-        { column: "cycling_distance_km", key: "cyclingDistanceKm" },
         { column: "flights_climbed", key: "flightsClimbed" },
         { column: "exercise_minutes", key: "exerciseMinutes" },
       ];
@@ -503,6 +499,7 @@ export class HealthKitSyncRepository {
         { column: "walking_step_length", key: "walkingStepLength" },
         { column: "walking_double_support_pct", key: "walkingDoubleSupportPct" },
         { column: "walking_asymmetry_pct", key: "walkingAsymmetryPct" },
+        { column: "walking_steadiness", key: "walkingSteadiness" },
       ];
 
       for (const { column, key } of pointFields) {

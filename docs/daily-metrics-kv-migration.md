@@ -55,7 +55,7 @@ the view without breaking callers.
 | Column                      | Decision   | Reason |
 | --------------------------- | ---------- | ------ |
 | `id`, `user_id`, `provider_id`, `date`, `source_name`, `created_at` | **stay native** | Row identity; needed for FKs, indexes, dedup |
-| `hrv`, `spo2_avg`, `respiratory_rate_avg`, `steps`, `active_energy_kcal`, `basal_energy_kcal`, `distance_km`, `cycling_distance_km`, `flights_climbed`, `exercise_minutes`, `walking_speed`, `walking_step_length`, `walking_double_support_pct`, `walking_asymmetry_pct`, `walking_steadiness`, `stand_hours`, `skin_temp_c`, `stress_high_minutes`, `recovery_high_minutes`, `push_count`, `wheelchair_distance_km`, `uv_exposure` | **move to KV** | All numeric, all sparse, all read through the view |
+| `hrv`, `spo2_avg`, `respiratory_rate_avg`, `steps`, `active_energy_kcal`, `basal_energy_kcal`, `distance_km`, `flights_climbed`, `exercise_minutes`, `walking_speed`, `walking_step_length`, `walking_double_support_pct`, `walking_asymmetry_pct`, `walking_steadiness`, `stand_hours`, `skin_temp_c`, `stress_high_minutes`, `recovery_high_minutes`, `push_count`, `wheelchair_distance_km`, `uv_exposure` | **move to KV** | All numeric, all sparse, all read through the view |
 | `resilience_level` (text)   | **decide** | KV `value` column is `real`. Options below. |
 
 ### `resilience_level` (text enum) options

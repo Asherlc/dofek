@@ -163,7 +163,6 @@ export const dailyMetrics = fitness.table(
     activeEnergyKcal: real("active_energy_kcal"),
     basalEnergyKcal: real("basal_energy_kcal"),
     distanceKm: real("distance_km"), // walking + running
-    cyclingDistanceKm: real("cycling_distance_km"),
     flightsClimbed: integer("flights_climbed"),
     exerciseMinutes: integer("exercise_minutes"),
     walkingSpeed: real("walking_speed"), // m/s

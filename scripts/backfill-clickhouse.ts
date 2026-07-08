@@ -103,7 +103,6 @@ async function main() {
         "active_energy_kcal",
         "basal_energy_kcal",
         "distance_km",
-        "cycling_distance_km",
         "flights_climbed",
         "exercise_minutes",
         "walking_speed",

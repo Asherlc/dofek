@@ -254,7 +254,6 @@ export async function processDailyMetrics(
       { column: "active_energy_kcal", key: "activeEnergyKcal" },
       { column: "basal_energy_kcal", key: "basalEnergyKcal" },
       { column: "distance_km", key: "distanceKm" },
-      { column: "cycling_distance_km", key: "cyclingDistanceKm" },
       { column: "flights_climbed", key: "flightsClimbed" },
       { column: "exercise_minutes", key: "exerciseMinutes" },
     ];
@@ -263,7 +262,7 @@ export async function processDailyMetrics(
       const raw = Number(accumulator[key]);
       if (raw > 0) {
         // Integer columns (steps, flights_climbed, exercise_minutes) need rounding;
-        // real columns (active_energy_kcal, basal_energy_kcal, distance_km, cycling_distance_km) don't.
+        // real columns (active_energy_kcal, basal_energy_kcal, distance_km) don't.
         const value = INTEGER_DAILY_COLUMNS.has(column) ? Math.round(raw) : raw;
         insertColumns.push(sql`${sql.identifier(column)}`);
         insertValues.push(sql`${value}`);
@@ -278,6 +277,7 @@ export async function processDailyMetrics(
       { column: "walking_step_length", key: "walkingStepLength" },
       { column: "walking_double_support_pct", key: "walkingDoubleSupportPct" },
       { column: "walking_asymmetry_pct", key: "walkingAsymmetryPct" },
+      { column: "walking_steadiness", key: "walkingSteadiness" },
     ];
 
     for (const { column, key } of pointFields) {

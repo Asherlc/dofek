@@ -33,6 +33,7 @@ A column is raw if the data originates from a sensor or external system and **ca
 | `daily_metrics.headphone_audio_exposure` | Same as environmental — raw readings in sensor_sample, never aggregated to daily. Removed in migration 0042. |
 | `daily_metrics.resting_hr` | Derived from low-percentile sleep-window heart-rate samples. Removed in migration 0007. |
 | `daily_metrics.vo2max` | Derived from qualifying activity-level estimates using transparent public equations. Removed in migration 0007. |
+| `daily_metrics.cycling_distance_km` | Derivable from activity distance/routes/sensor streams instead of stored as a duplicate daily total. Removed in migration 0046. |
 
 The ClickHouse `analytics.activity_summary` read model computes these values from mirrored raw sensor data, including total distance (haversine over GPS points) and elevation gain/loss (altitude deltas).
 
@@ -49,7 +50,6 @@ The ClickHouse `analytics.activity_summary` read model computes these values fro
 | `active_energy_kcal` | Device-computed from HR, motion, body metrics across the full 24-hour day (not just activities). We lack the continuous sensor data. |
 | `basal_energy_kcal` | Based on BMR formulas using body composition. The formula + inputs aren't stored. |
 | `distance_km` | All-day walking/running distance from step count + stride length. Includes non-activity movement we don't track. |
-| `cycling_distance_km` | All-day cycling distance, often from phone GPS during commutes. Not linked to recorded activities. |
 | `flights_climbed` | Barometric altimeter counts. Raw pressure data not stored. |
 | `exercise_minutes` | Device-determined from sustained HR elevation. Proprietary threshold logic. |
 | `walking_speed`, `walking_step_length`, etc. | Apple Health walking analysis from phone accelerometer + gyroscope during daily walking. Raw IMU data not stored. |

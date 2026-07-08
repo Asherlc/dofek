@@ -385,25 +385,6 @@ describe("aggregateDailyMetricSamples", () => {
     expect(Object.hasOwn(accumulator ?? {}, "restingHr")).toBe(false);
   });
 
-  it("accumulates cycling distance with transform (meters to km)", () => {
-    const samples = [
-      makeSample({
-        type: "HKQuantityTypeIdentifierDistanceCycling",
-        value: 10000,
-        uuid: "1",
-      }),
-      makeSample({
-        type: "HKQuantityTypeIdentifierDistanceCycling",
-        value: 5000,
-        uuid: "2",
-      }),
-    ];
-    const result = aggregateDailyMetricSamples(samples);
-    const accumulator = result.get("2024-01-15\0iPhone");
-    // 10000/1000 + 5000/1000 = 10 + 5 = 15 km
-    expect(accumulator?.cyclingDistanceKm).toBeCloseTo(15.0);
-  });
-
   it("accumulates basal energy burned", () => {
     const samples = [
       makeSample({
@@ -554,7 +535,6 @@ describe("aggregateDailyMetricSamples", () => {
     expect(accumulator?.activeEnergyKcal).toBe(0);
     expect(accumulator?.basalEnergyKcal).toBe(0);
     expect(accumulator?.distanceKm).toBe(0);
-    expect(accumulator?.cyclingDistanceKm).toBe(0);
     expect(accumulator?.flightsClimbed).toBe(0);
     expect(accumulator?.exerciseMinutes).toBe(0);
     expect(accumulator?.hrv).toBeNull();
@@ -1674,7 +1654,6 @@ describe("categorize (mutation-killing: priority order)", () => {
     expect(categorize("HKQuantityTypeIdentifierDistanceWalkingRunning")).toBe(
       "additiveDailyMetric",
     );
-    expect(categorize("HKQuantityTypeIdentifierDistanceCycling")).toBe("additiveDailyMetric");
     expect(categorize("HKQuantityTypeIdentifierFlightsClimbed")).toBe("additiveDailyMetric");
     expect(categorize("HKQuantityTypeIdentifierAppleExerciseTime")).toBe("additiveDailyMetric");
   });
@@ -1730,20 +1709,6 @@ describe("aggregateDailyMetricSamples (mutation-killing: transforms)", () => {
     const accumulator = result.get("2024-01-15\0iPhone");
     // 5000 / 1000 = 5.0 (not 50, 500, or 5000000)
     expect(accumulator?.distanceKm).toBe(5.0);
-  });
-
-  it("cycling distance transform divides by 1000", () => {
-    const samples = [
-      makeSample({
-        type: "HKQuantityTypeIdentifierDistanceCycling",
-        value: 7500,
-        uuid: "cd1",
-      }),
-    ];
-    const result = aggregateDailyMetricSamples(samples);
-    const accumulator = result.get("2024-01-15\0iPhone");
-    // 7500 / 1000 = 7.5
-    expect(accumulator?.cyclingDistanceKm).toBe(7.5);
   });
 
   it("uses compound key with null separator (date\\0source)", () => {

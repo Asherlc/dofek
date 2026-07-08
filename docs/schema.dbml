@@ -402,7 +402,6 @@ table fitness.daily_metrics {
   active_energy_kcal real
   basal_energy_kcal real
   distance_km real
-  cycling_distance_km real
   flights_climbed integer
   exercise_minutes integer
   walking_speed real

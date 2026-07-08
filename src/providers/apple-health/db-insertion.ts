@@ -88,7 +88,6 @@ export const DAILY_METRIC_TYPES = new Set([
   "HKQuantityTypeIdentifierActiveEnergyBurned",
   "HKQuantityTypeIdentifierBasalEnergyBurned",
   "HKQuantityTypeIdentifierDistanceWalkingRunning",
-  "HKQuantityTypeIdentifierDistanceCycling",
   "HKQuantityTypeIdentifierFlightsClimbed",
   "HKQuantityTypeIdentifierAppleExerciseTime",
   "HKQuantityTypeIdentifierAppleStandTime",
@@ -115,7 +114,6 @@ const ADDITIVE_DAILY_TYPES = new Set([
   "HKQuantityTypeIdentifierActiveEnergyBurned",
   "HKQuantityTypeIdentifierBasalEnergyBurned",
   "HKQuantityTypeIdentifierDistanceWalkingRunning",
-  "HKQuantityTypeIdentifierDistanceCycling",
   "HKQuantityTypeIdentifierFlightsClimbed",
   "HKQuantityTypeIdentifierAppleExerciseTime",
   "HKQuantityTypeIdentifierAppleStandTime",
@@ -368,9 +366,6 @@ export async function upsertDailyMetricsBatch(
         case "HKQuantityTypeIdentifierDistanceWalkingRunning":
           row.distanceKm = value / 1000;
           break;
-        case "HKQuantityTypeIdentifierDistanceCycling":
-          row.cyclingDistanceKm = value / 1000;
-          break;
         case "HKQuantityTypeIdentifierFlightsClimbed":
           row.flightsClimbed = Math.round(value);
           break;
@@ -447,7 +442,6 @@ export async function upsertDailyMetricsBatch(
               activeEnergyKcal: sql`coalesce(${dailyMetrics.activeEnergyKcal}, 0) + coalesce(excluded.active_energy_kcal, 0)`,
               basalEnergyKcal: sql`coalesce(${dailyMetrics.basalEnergyKcal}, 0) + coalesce(excluded.basal_energy_kcal, 0)`,
               distanceKm: sql`coalesce(${dailyMetrics.distanceKm}, 0) + coalesce(excluded.distance_km, 0)`,
-              cyclingDistanceKm: sql`coalesce(${dailyMetrics.cyclingDistanceKm}, 0) + coalesce(excluded.cycling_distance_km, 0)`,
               flightsClimbed: sql`coalesce(${dailyMetrics.flightsClimbed}, 0) + coalesce(excluded.flights_climbed, 0)`,
               exerciseMinutes: sql`coalesce(${dailyMetrics.exerciseMinutes}, 0) + coalesce(excluded.exercise_minutes, 0)`,
               standHours: sql`coalesce(${dailyMetrics.standHours}, 0) + coalesce(excluded.stand_hours, 0)`,

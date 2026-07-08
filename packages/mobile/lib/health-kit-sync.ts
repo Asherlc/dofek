@@ -30,6 +30,11 @@ export const NON_ADDITIVE_QUANTITY_TYPES = [
   "HKQuantityTypeIdentifierOxygenSaturation",
   "HKQuantityTypeIdentifierRespiratoryRate",
   "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
+  "HKQuantityTypeIdentifierWalkingSpeed",
+  "HKQuantityTypeIdentifierWalkingStepLength",
+  "HKQuantityTypeIdentifierWalkingDoubleSupportPercentage",
+  "HKQuantityTypeIdentifierWalkingAsymmetryPercentage",
+  "HKQuantityTypeIdentifierAppleWalkingSteadiness",
 ];
 
 const ALL_QUANTITY_TYPES = [...ADDITIVE_QUANTITY_TYPES, ...NON_ADDITIVE_QUANTITY_TYPES];
