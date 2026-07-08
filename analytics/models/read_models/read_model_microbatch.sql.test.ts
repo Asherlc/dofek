@@ -61,6 +61,7 @@ describe("production analytics read-model build", () => {
       "activity_stream_points",
       "activity_heart_rate_zones",
       "activity_summary_rows",
+      "hiking_activity",
       "activity_vo2max_estimate",
       "activity_aerobic_efficiency",
       "activity_polarization_zones",
