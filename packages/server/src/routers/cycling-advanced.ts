@@ -1,7 +1,10 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
-import { CyclingAdvancedRepository } from "../repositories/cycling-advanced-repository.ts";
+import {
+  type ActivityVariabilityEmptyReason,
+  CyclingAdvancedRepository,
+} from "../repositories/cycling-advanced-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 function requireSensorStore(
@@ -50,6 +53,7 @@ export interface ActivityVariabilityRow {
 export interface ActivityVariabilityResult {
   rows: ActivityVariabilityRow[];
   totalCount: number;
+  emptyReason: ActivityVariabilityEmptyReason | null;
 }
 
 export interface VerticalAscentRow {
@@ -104,7 +108,7 @@ export const cyclingAdvancedRouter = router({
     .query(async ({ ctx, input }): Promise<ActivityVariabilityResult> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "cyclingAdvanced");
       const repo = new CyclingAdvancedRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
-      const { models, totalCount } = await repo.getActivityVariability(
+      const { models, totalCount, emptyReason } = await repo.getActivityVariability(
         input.days,
         input.limit,
         input.offset,
@@ -112,6 +116,7 @@ export const cyclingAdvancedRouter = router({
       return {
         rows: models.map((model) => model.toDetail()),
         totalCount,
+        emptyReason,
       };
     }),
 

@@ -100,7 +100,7 @@ describe("cyclingAdvancedRouter", () => {
       // doesn't issue the second query.
       const caller = makeCaller([[]]);
       const result = await caller.activityVariability({ days: 90 });
-      expect(result).toEqual({ rows: [], totalCount: 0 });
+      expect(result).toEqual({ rows: [], totalCount: 0, emptyReason: "no_ftp_estimate" });
     });
 
     it("computes VI and IF from FTP plus per-activity rows", async () => {
@@ -122,6 +122,7 @@ describe("cyclingAdvancedRouter", () => {
 
       expect(result.rows).toHaveLength(1);
       expect(result.totalCount).toBe(1);
+      expect(result.emptyReason).toBeNull();
       expect(result.rows[0]?.normalizedPower).toBe(230);
       expect(result.rows[0]?.activityName).toBe("Ride");
       // VI = NP / avgPower = 230/200 = 1.15.

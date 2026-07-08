@@ -394,6 +394,7 @@ describe("CyclingAdvancedRepository", () => {
       const result = await repo.getActivityVariability(90, 20, 0);
       expect(result.models).toEqual([]);
       expect(result.totalCount).toBe(0);
+      expect(result.emptyReason).toBe("no_cycling_activities");
     });
 
     it("returns empty result when raw activities exist but no FTP", async () => {
@@ -401,6 +402,7 @@ describe("CyclingAdvancedRepository", () => {
       const result = await repo.getActivityVariability(90, 20, 0);
       expect(result.models).toEqual([]);
       expect(result.totalCount).toBe(0);
+      expect(result.emptyReason).toBe("no_ftp_estimate");
     });
 
     it("does not scan activity_summary or deduped_sensor when no raw activities exist", async () => {
@@ -440,6 +442,7 @@ describe("CyclingAdvancedRepository", () => {
       expect(result.models).toHaveLength(1);
       expect(result.models[0]).toBeInstanceOf(ActivityVariabilityModel);
       expect(result.totalCount).toBe(1);
+      expect(result.emptyReason).toBeNull();
       expect(sensorStore.query).toHaveBeenCalledTimes(2);
       const [, query, params] = sensorStore.query.mock.calls[1];
       expect(query).toContain("analytics.activity_summary");
@@ -456,6 +459,28 @@ describe("CyclingAdvancedRepository", () => {
         offset: 0,
       });
       expectCyclingOnlyActivityTypes(params.activityTypes);
+    });
+
+    it("reports missing normalized power when FTP exists but variability rows are empty", async () => {
+      const sensorStore = makeSensorStore([]);
+      sensorStore.query = vi
+        .fn()
+        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
+          [{ ftp: 250 }].map((row) => schema.parse(row)),
+        )
+        .mockImplementationOnce(async () => []);
+      const repo = new CyclingAdvancedRepository(
+        { execute: vi.fn().mockResolvedValue([{ activity_count: 1 }]) },
+        "user-1",
+        "UTC",
+        sensorStore,
+      );
+
+      const result = await repo.getActivityVariability(90, 20, 0);
+
+      expect(result.models).toEqual([]);
+      expect(result.totalCount).toBe(0);
+      expect(result.emptyReason).toBe("no_normalized_power");
     });
   });
 

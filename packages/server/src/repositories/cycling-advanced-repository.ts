@@ -15,6 +15,11 @@ import {
 
 const CYCLING_TYPES: string[] = [...CYCLING_ACTIVITY_TYPES];
 
+export type ActivityVariabilityEmptyReason =
+  | "no_cycling_activities"
+  | "no_ftp_estimate"
+  | "no_normalized_power";
+
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
 // ---------------------------------------------------------------------------
@@ -338,13 +343,17 @@ export class CyclingAdvancedRepository {
     days: number,
     limit: number,
     offset: number,
-  ): Promise<{ models: ActivityVariabilityModel[]; totalCount: number }> {
+  ): Promise<{
+    models: ActivityVariabilityModel[];
+    totalCount: number;
+    emptyReason: ActivityVariabilityEmptyReason | null;
+  }> {
     if ((await this.#loadRawActivityCount(days)) === 0) {
-      return { models: [], totalCount: 0 };
+      return { models: [], totalCount: 0, emptyReason: "no_cycling_activities" };
     }
 
     const ftp = await this.getEstimatedFtp(days);
-    if (!ftp) return { models: [], totalCount: 0 };
+    if (!ftp) return { models: [], totalCount: 0, emptyReason: "no_ftp_estimate" };
 
     const rows = await this.#sensorStore.query(
       variabilityRowSchema,
@@ -390,6 +399,7 @@ export class CyclingAdvancedRepository {
           ),
       ),
       totalCount,
+      emptyReason: rows.length === 0 ? "no_normalized_power" : null,
     };
   }
 
