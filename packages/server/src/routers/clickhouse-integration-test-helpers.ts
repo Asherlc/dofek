@@ -1452,21 +1452,70 @@ CROSS JOIN refresh_clock`;
 }
 
 function buildTestDailyEnduranceLoadSelectSql(databases: IsolatedClickHouseDatabases): string {
-  return `WITH activity_load AS (
+  return `WITH activity_bounds AS (
   SELECT
     activity_id,
     user_id,
+    activity_type,
     started_at,
     assumeNotNull(ended_at) AS ended_at,
-    toDate(started_at) AS date,
-    dateDiff('second', started_at, assumeNotNull(ended_at)) / 60.0 AS duration_minutes,
-    assumeNotNull(avg_hr) AS avg_hr,
-    assumeNotNull(max_hr) AS max_hr,
-    60 AS resting_hr
+    assumeNotNull(avg_hr) AS avg_hr
   FROM ${databases.analytics}.activity_summary
   WHERE ended_at IS NOT NULL
     AND avg_hr IS NOT NULL
-    AND max_hr IS NOT NULL
+    AND avg_hr > 0
+),
+resting_by_activity AS (
+  SELECT
+    activity_bounds.activity_id AS activity_id,
+    activity_bounds.user_id AS user_id,
+    argMax(resting.resting_hr, resting.ended_at) AS resting_hr
+  FROM activity_bounds
+  INNER JOIN ${databases.analytics}.resting_heart_rate_sleep_window AS resting FINAL
+    ON resting.user_id = activity_bounds.user_id
+   AND toDate(resting.ended_at) <= toDate(activity_bounds.started_at)
+  WHERE resting.is_deleted = 0
+    AND resting.ended_at IS NOT NULL
+    AND resting.resting_hr IS NOT NULL
+  GROUP BY
+    activity_bounds.activity_id,
+    activity_bounds.user_id
+),
+activity_load AS (
+  SELECT
+    activity_bounds.activity_id AS activity_id,
+    activity_bounds.user_id AS user_id,
+    activity_bounds.started_at AS started_at,
+    activity_bounds.ended_at AS ended_at,
+    toDate(activity_bounds.started_at) AS date,
+    dateDiff('second', activity_bounds.started_at, activity_bounds.ended_at) / 60.0 AS duration_minutes,
+    activity_bounds.avg_hr AS avg_hr,
+    user_profile.max_hr AS max_hr,
+    coalesce(resting_by_activity.resting_hr, nullIf(user_profile.resting_hr, 0), 60) AS resting_hr
+  FROM activity_bounds
+  INNER JOIN ${databases.postgresFitness}.user_profile_current AS user_profile
+    ON user_profile.id = activity_bounds.user_id
+  LEFT JOIN resting_by_activity
+    ON resting_by_activity.activity_id = activity_bounds.activity_id
+   AND resting_by_activity.user_id = activity_bounds.user_id
+  WHERE activity_bounds.activity_type IN (
+      'cycling',
+      'road_cycling',
+      'mountain_biking',
+      'gravel_cycling',
+      'indoor_cycling',
+      'virtual_cycling',
+      'e_bike_cycling',
+      'cyclocross',
+      'track_cycling',
+      'bmx',
+      'hand_cycling',
+      'running',
+      'swimming',
+      'walking',
+      'hiking'
+    )
+    AND user_profile.max_hr IS NOT NULL
 ),
 training_load AS (
   SELECT
