@@ -46,12 +46,20 @@ export function extractClickHouseTableColumnNames(createTableSql: string): strin
     throw new Error("Could not parse ClickHouse CREATE TABLE column list");
   }
 
-  return bodyMatch[1]
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .map((line) => line.replace(/,$/, "").split(/\s+/)[0])
-    .filter((column): column is string => column !== undefined && column.length > 0);
+  const columnNames: string[] = [];
+  for (const line of bodyMatch[1].split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    const name = trimmed.replace(/,$/, "").split(/\s+/)[0];
+    if (name) {
+      columnNames.push(name);
+    }
+  }
+
+  return columnNames;
 }
 
 export function extractDbtFinalSelectColumnNames(modelSql: string, fromTable: string): string[] {
