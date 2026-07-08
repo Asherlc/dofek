@@ -15,6 +15,11 @@ import {
 
 const CYCLING_TYPES: string[] = [...CYCLING_ACTIVITY_TYPES];
 
+export type ActivityVariabilityEmptyReason =
+  | "no_cycling_activities"
+  | "no_ftp_estimate"
+  | "no_normalized_power";
+
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
 // ---------------------------------------------------------------------------
@@ -43,6 +48,8 @@ const variabilityRowSchema = z.object({
   avg_power: z.coerce.number(),
   total_count: z.coerce.number(),
 });
+
+const variabilityCountSchema = z.object({ total: z.coerce.number() });
 
 const vamRowSchema = z.object({
   date: dateStringSchema,
@@ -338,13 +345,17 @@ export class CyclingAdvancedRepository {
     days: number,
     limit: number,
     offset: number,
-  ): Promise<{ models: ActivityVariabilityModel[]; totalCount: number }> {
+  ): Promise<{
+    models: ActivityVariabilityModel[];
+    totalCount: number;
+    emptyReason: ActivityVariabilityEmptyReason | null;
+  }> {
     if ((await this.#loadRawActivityCount(days)) === 0) {
-      return { models: [], totalCount: 0 };
+      return { models: [], totalCount: 0, emptyReason: "no_cycling_activities" };
     }
 
     const ftp = await this.getEstimatedFtp(days);
-    if (!ftp) return { models: [], totalCount: 0 };
+    if (!ftp) return { models: [], totalCount: 0, emptyReason: "no_ftp_estimate" };
 
     const rows = await this.#sensorStore.query(
       variabilityRowSchema,
@@ -373,7 +384,31 @@ export class CyclingAdvancedRepository {
       },
     );
 
-    const totalCount = rows[0]?.total_count ?? 0;
+    let totalCount = rows[0]?.total_count ?? 0;
+    let emptyReason: ActivityVariabilityEmptyReason | null = null;
+
+    if (rows.length === 0) {
+      // The count() OVER () total is absent on an empty page, so it cannot
+      // distinguish "no normalized power data" from "offset past the data".
+      // Re-query the count so pagination stays correct and the UI shows the
+      // right empty state instead of a misleading "no_normalized_power".
+      const countRows = await this.#sensorStore.query(
+        variabilityCountSchema,
+        `SELECT count() AS total
+        FROM analytics.activity_summary asum
+        WHERE asum.user_id = {userId:UUID}
+          AND has({activityTypes:Array(String)}, asum.activity_type)
+          AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+          AND asum.normalized_power IS NOT NULL`,
+        {
+          userId: this.#userId,
+          days,
+          activityTypes: CYCLING_TYPES,
+        },
+      );
+      totalCount = countRows[0]?.total ?? 0;
+      emptyReason = totalCount === 0 ? "no_normalized_power" : null;
+    }
 
     return {
       models: rows.map(
@@ -390,6 +425,7 @@ export class CyclingAdvancedRepository {
           ),
       ),
       totalCount,
+      emptyReason,
     };
   }
 

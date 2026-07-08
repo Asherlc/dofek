@@ -12019,3 +12019,32 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   remediated in this migration) — source-side duration parsing bug is
   tracked as a separate follow-up. Migration `0045` includes a comment
   pointing future maintainers to investigate.
+
+## 2026-07-08 — Cycling Variability Empty Despite Power Samples
+
+- **Symptoms:** Cycling Activity Variability Index showed an empty state even
+  for a 45 minute Peloton/Strava ride with visible power data on the activity
+  detail page.
+- **User impact:** Cycling variability, normalized power, and intensity factor
+  rows were hidden for affected rides even though power samples existed.
+- **Evidence:** Production ClickHouse showed activity
+  `49a7d1f3-1039-43fd-b8c0-79b6b54e48e6` had 2,700 active
+  `analytics.activity_sensor_sample` power rows spanning the full ride, but
+  `analytics.activity_summary_rows` had null `avg_power`,
+  `power_sample_count`, `best_twenty_minute_power`, and `normalized_power`.
+  The intermediate `analytics.activity_sensor_summary_rows` row had shifted
+  lifecycle/analytics values (`is_deleted = 204`, timestamp-like
+  `smoothed_avg_power`, and a 1970 `refreshed_at`), indicating positional
+  column drift during incremental inserts.
+- **Root cause:** `activity_sensor_summary_rows.sql` emitted appended power
+  analytics columns before `refresh_version`, `is_deleted`, and
+  `refreshed_at`, while the existing production table schema had those
+  lifecycle columns before the appended analytics columns. Incremental append
+  inserts landed values by position, corrupting the row and causing downstream
+  `activity_summary_rows` to ignore it.
+- **Fix / mitigation:** Reordered the model select list so lifecycle columns
+  match the existing production table order before appended power analytics
+  columns. Added a regression test for that ordering.
+- **Remaining risk / follow-up:** Existing corrupted production rows need a
+  post-deploy read-model rebuild or targeted backfill so already-affected
+  activities receive corrected power aggregates.

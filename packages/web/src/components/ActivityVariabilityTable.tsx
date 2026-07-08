@@ -1,5 +1,5 @@
 import { formatDateShort, formatIntensity, formatNumber } from "@dofek/format/format";
-import type { ActivityVariabilityRow } from "dofek-server/types";
+import type { ActivityVariabilityEmptyReason, ActivityVariabilityRow } from "dofek-server/types";
 import { ActivityTable, type ActivityTableColumn } from "./ActivityTable.tsx";
 
 interface ActivityVariabilityTableProps {
@@ -9,12 +9,23 @@ interface ActivityVariabilityTableProps {
   limit: number;
   onPageChange: (newOffset: number) => void;
   loading?: boolean;
+  emptyReason?: ActivityVariabilityEmptyReason | null;
 }
 
 function getVariabilityColor(variabilityIndex: number): string {
   if (variabilityIndex < 1.05) return "text-green-400";
   if (variabilityIndex <= 1.1) return "text-yellow-400";
   return "text-red-400";
+}
+
+function getEmptyMessage(emptyReason: ActivityVariabilityEmptyReason | null | undefined): string {
+  if (emptyReason === "no_ftp_estimate") {
+    return "No recent cycling activities long enough to estimate threshold power.";
+  }
+  if (emptyReason === "no_normalized_power") {
+    return "No cycling activities with enough power samples for variability yet.";
+  }
+  return "No cycling activities available.";
 }
 
 export function ActivityVariabilityTable({
@@ -24,6 +35,7 @@ export function ActivityVariabilityTable({
   limit,
   onPageChange,
   loading,
+  emptyReason,
 }: ActivityVariabilityTableProps) {
   if (loading) {
     return (
@@ -36,7 +48,7 @@ export function ActivityVariabilityTable({
   if (data.length === 0 && offset === 0) {
     return (
       <div className="flex items-center justify-center h-[100px]">
-        <span className="text-dim text-sm">No activities with power data available</span>
+        <span className="text-dim text-sm">{getEmptyMessage(emptyReason)}</span>
       </div>
     );
   }

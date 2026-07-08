@@ -233,6 +233,7 @@ function CyclingTab() {
             limit={VARIABILITY_PAGE_SIZE}
             onPageChange={setVariabilityOffset}
             loading={variability.isLoading}
+            emptyReason={variability.data?.emptyReason}
           />
         )}
       </Section>
