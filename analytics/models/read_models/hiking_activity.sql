@@ -19,10 +19,31 @@ WITH activity_summary AS (
         coalesce(total_distance, 0) AS distance_m,
         coalesce(elevation_gain_m, 0) AS elevation_gain_m,
         coalesce(elevation_loss_m, 0) AS elevation_loss_m,
-        avg_hr
+        avg_hr,
+        refreshed_at
     FROM {{ ref('activity_summary_rows') }} FINAL
     WHERE is_deleted = 0
         AND activity_type IN ('walking', 'hiking', 'trail_running')
+),
+
+target_state AS (
+    SELECT
+        coalesce(
+            max(refreshed_at),
+            toDateTime64('1970-01-01 00:00:00', 9, 'UTC')
+        ) AS last_refreshed_at,
+        {% if is_incremental() %}(count() = 0){% else %}1{% endif %} AS is_empty
+    FROM {% if is_incremental() %}{{ this }}{% else %}(SELECT CAST(null, 'Nullable(DateTime64(9, ''UTC''))') AS refreshed_at){% endif %}
+),
+
+activity_summary_dirty_keys AS (
+    SELECT
+        activity_summary.activity_id AS activity_id,
+        activity_summary.user_id AS user_id
+    FROM activity_summary
+    CROSS JOIN target_state
+    WHERE target_state.is_empty
+        OR activity_summary.refreshed_at > target_state.last_refreshed_at
 ),
 
 {% if is_incremental() %}
@@ -62,12 +83,12 @@ active_rows AS (
         activity_summary.ended_at AS ended_at,
         round(activity_summary.distance_m, 1) AS distance_m,
         if(
-            activity_summary.ended_at IS NOT NULL,
+            activity_summary.ended_at IS NOT null,
             toFloat64(dateDiff('second', activity_summary.started_at, activity_summary.ended_at)),
             0
         ) AS duration_seconds,
         if(
-            activity_summary.distance_m > 0 AND activity_summary.ended_at IS NOT NULL,
+            activity_summary.distance_m > 0 AND activity_summary.ended_at IS NOT null,
             round(
                 (
                     dateDiff('second', activity_summary.started_at, activity_summary.ended_at) / 60.0
@@ -93,6 +114,9 @@ active_rows AS (
         refresh_clock.refresh_version AS refresh_version,
         refresh_clock.refreshed_at AS refreshed_at
     FROM activity_summary
+    INNER JOIN activity_summary_dirty_keys
+        ON activity_summary_dirty_keys.activity_id = activity_summary.activity_id
+        AND activity_summary_dirty_keys.user_id = activity_summary.user_id
     CROSS JOIN refresh_clock
 )
 
@@ -118,11 +142,11 @@ tombstone_rows AS (
         refresh_clock.refresh_version AS refresh_version,
         refresh_clock.refreshed_at AS refreshed_at
     FROM existing_hiking_activity
-    LEFT JOIN active_rows
-        ON active_rows.activity_id = existing_hiking_activity.activity_id
-        AND active_rows.user_id = existing_hiking_activity.user_id
+    LEFT JOIN activity_summary
+        ON activity_summary.activity_id = existing_hiking_activity.activity_id
+        AND activity_summary.user_id = existing_hiking_activity.user_id
     CROSS JOIN refresh_clock
-    WHERE active_rows.activity_id IS NULL
+    WHERE activity_summary.activity_id IS NULL
 )
 {% endif %}
 

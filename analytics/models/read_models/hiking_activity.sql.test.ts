@@ -16,7 +16,21 @@ describe("hiking_activity model", () => {
       "activity_type IN ('walking', 'hiking', 'trail_running')",
     );
     expect(activitySummarySql).toContain("is_deleted = 0");
+    expect(activitySummarySql).toContain("refreshed_at");
     expect(activitySummarySql).not.toContain("ended_at IS NOT NULL");
+  });
+
+  it("limits incremental active row rewrites to changed activity summary rows", () => {
+    const activeRowsSql = extractCteSql(modelSql, "active_rows");
+    const dirtyKeysSql = extractCteSql(modelSql, "activity_summary_dirty_keys");
+
+    expect(modelSql).toContain("target_state AS (");
+    expect(dirtyKeysSql).toContain("activity_summary.refreshed_at > target_state.last_refreshed_at");
+    expect(activeRowsSql).toContain("INNER JOIN activity_summary_dirty_keys");
+    expect(activeRowsSql).toContain(
+      "activity_summary_dirty_keys.activity_id = activity_summary.activity_id",
+    );
+    expect(activeRowsSql).toContain("activity_summary_dirty_keys.user_id = activity_summary.user_id");
   });
 
   it("precomputes hiking page activity metrics", () => {
@@ -26,7 +40,7 @@ describe("hiking_activity model", () => {
     expect(modelSql).toContain("elevation_gain_m");
     expect(modelSql).toContain("elevation_loss_m");
     expect(modelSql).toContain("avg_heart_rate");
-    expect(modelSql).toContain("activity_summary.ended_at IS NOT NULL");
+    expect(modelSql).toContain("activity_summary.ended_at IS NOT null");
   });
 
   it("emits tombstones for activities that leave the hiking activity set", () => {
@@ -35,6 +49,7 @@ describe("hiking_activity model", () => {
     expect(modelSql).toContain("existing_hiking_activity AS (");
     expect(tombstoneRowsSql).toContain("existing_hiking_activity.activity_id AS activity_id");
     expect(tombstoneRowsSql).toContain("1 AS is_deleted");
-    expect(tombstoneRowsSql).toContain("WHERE active_rows.activity_id IS NULL");
+    expect(tombstoneRowsSql).toContain("LEFT JOIN activity_summary");
+    expect(tombstoneRowsSql).toContain("WHERE activity_summary.activity_id IS NULL");
   });
 });
