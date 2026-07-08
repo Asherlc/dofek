@@ -1,4 +1,4 @@
-import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
+import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import type { Database } from "dofek/db";
 import { z } from "zod";
 import { dateStringSchema } from "../lib/typed-sql.ts";
@@ -13,7 +13,7 @@ import {
   VerticalAscentModel,
 } from "./cycling-advanced-models.ts";
 
-const ENDURANCE_TYPES: string[] = [...ENDURANCE_ACTIVITY_TYPES];
+const CYCLING_TYPES: string[] = [...CYCLING_ACTIVITY_TYPES];
 
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
@@ -169,13 +169,13 @@ export class CyclingAdvancedRepository {
         round(max(asum.best_twenty_minute_power) * 0.95, 1) AS ftp
       FROM analytics.activity_summary asum
       WHERE asum.user_id = {userId:UUID}
-        AND has({enduranceTypes:Array(String)}, asum.activity_type)
+        AND has({activityTypes:Array(String)}, asum.activity_type)
         AND asum.started_at > now() - INTERVAL {days:Int32} DAY
         AND asum.best_twenty_minute_power IS NOT NULL`,
       {
         userId: this.#userId,
         days,
-        enduranceTypes: ENDURANCE_TYPES,
+        activityTypes: CYCLING_TYPES,
       },
     );
     return ftpResult[0]?.ftp ?? null;
@@ -205,7 +205,7 @@ export class CyclingAdvancedRepository {
         toInt32(count() OVER ()) AS total_count
       FROM analytics.activity_summary asum
       WHERE asum.user_id = {userId:UUID}
-        AND has({enduranceTypes:Array(String)}, asum.activity_type)
+        AND has({activityTypes:Array(String)}, asum.activity_type)
         AND asum.started_at > now() - INTERVAL {days:Int32} DAY
         AND asum.normalized_power IS NOT NULL
       ORDER BY asum.started_at DESC
@@ -215,7 +215,7 @@ export class CyclingAdvancedRepository {
         userId: this.#userId,
         timezone: this.#timezone,
         days,
-        enduranceTypes: ENDURANCE_TYPES,
+        activityTypes: CYCLING_TYPES,
         limit,
         offset,
       },
@@ -257,7 +257,7 @@ export class CyclingAdvancedRepository {
         toInt32(asum.climbing_seconds) AS climbing_seconds
       FROM analytics.activity_summary asum
       WHERE asum.user_id = {userId:UUID}
-        AND has({enduranceTypes:Array(String)}, asum.activity_type)
+        AND has({activityTypes:Array(String)}, asum.activity_type)
         AND asum.started_at > now() - INTERVAL {days:Int32} DAY
         AND asum.climbing_seconds > 60
       ORDER BY asum.started_at`,
@@ -265,7 +265,7 @@ export class CyclingAdvancedRepository {
         userId: this.#userId,
         timezone: this.#timezone,
         days,
-        enduranceTypes: ENDURANCE_TYPES,
+        activityTypes: CYCLING_TYPES,
       },
     );
 
@@ -295,7 +295,7 @@ export class CyclingAdvancedRepository {
         ON va.id = asum.activity_id
        AND va.user_id = asum.user_id
       WHERE asum.user_id = {userId:UUID}
-        AND has({enduranceTypes:Array(String)}, asum.activity_type)
+        AND has({activityTypes:Array(String)}, asum.activity_type)
         AND asum.started_at > now() - INTERVAL {days:Int32} DAY
         AND asum.avg_left_balance IS NOT NULL
       ORDER BY asum.started_at`,
@@ -303,7 +303,7 @@ export class CyclingAdvancedRepository {
         userId: this.#userId,
         timezone: this.#timezone,
         days,
-        enduranceTypes: ENDURANCE_TYPES,
+        activityTypes: CYCLING_TYPES,
       },
     );
 
@@ -322,7 +322,7 @@ export class CyclingAdvancedRepository {
   async #loadRawActivityCount(days: number): Promise<number> {
     return activityRepositoryFor(this.#db, this.#userId).countVisibleInWindow({
       days,
-      activityTypes: ENDURANCE_TYPES,
+      activityTypes: CYCLING_TYPES,
     });
   }
 }

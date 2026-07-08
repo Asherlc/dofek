@@ -1,3 +1,4 @@
+import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import { describe, expect, it, vi } from "vitest";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { PmcRepository } from "./pmc-repository.ts";
@@ -94,6 +95,13 @@ function makeRepoHarness(
 }
 
 describe("PmcRepository", () => {
+  function expectCyclingOnlyActivityTypes(activityTypes: unknown) {
+    expect(activityTypes).toEqual([...CYCLING_ACTIVITY_TYPES]);
+    expect(activityTypes).not.toContain("walking");
+    expect(activityTypes).not.toContain("running");
+    expect(activityTypes).not.toContain("hiking");
+  }
+
   describe("getChart", () => {
     it("returns empty data with generic model when no raw activities exist", async () => {
       const { repo } = makeRepoHarness([], [], "UTC", 0);
@@ -138,12 +146,14 @@ describe("PmcRepository", () => {
           queryDays: 407,
         }),
       );
+      expectCyclingOnlyActivityTypes(vi.mocked(query).mock.calls[0]?.[2]?.activityTypes);
       expect(query).toHaveBeenNthCalledWith(
         2,
         expect.anything(),
         expect.stringContaining("analytics.activity_summary"),
-        { userId: "user-1", queryDays: 407 },
+        expect.objectContaining({ userId: "user-1", queryDays: 407 }),
       );
+      expectCyclingOnlyActivityTypes(vi.mocked(query).mock.calls[1]?.[2]?.activityTypes);
     });
 
     it("extends query history when requested display days exceed the minimum history", async () => {

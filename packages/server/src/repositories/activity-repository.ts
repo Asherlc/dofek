@@ -182,6 +182,7 @@ export interface ActivitySensorStore {
     days: number,
     userId: string,
     timezone: string,
+    activityTypes: readonly string[],
   ): Promise<z.infer<typeof powerCurveSampleSchema>[]>;
   getNormalizedPowerSamples(
     days: number,

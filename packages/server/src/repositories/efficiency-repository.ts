@@ -1,4 +1,5 @@
 import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
+import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import { computePolarizationIndex, HEART_RATE_ZONES, POLARIZATION_ZONES } from "@dofek/zones/zones";
 import * as Sentry from "@sentry/node";
 import type { Database } from "dofek/db";
@@ -11,6 +12,7 @@ import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
 
+const CYCLING_TYPES: string[] = [...CYCLING_ACTIVITY_TYPES];
 const ENDURANCE_TYPES: string[] = [...ENDURANCE_ACTIVITY_TYPES];
 
 function requireHeartRateZone(zoneNumber: number) {
@@ -162,7 +164,7 @@ export class EfficiencyRepository extends BaseRepository {
         z2_samples AS z2_samples
       FROM analytics.activity_aerobic_efficiency FINAL
       WHERE user_id = {userId:UUID}
-        AND has({enduranceTypes:Array(String)}, activity_type)
+        AND has({activityTypes:Array(String)}, activity_type)
         AND started_at > now() - INTERVAL {days:Int32} DAY
         AND is_deleted = 0
       ORDER BY started_at`,
@@ -170,7 +172,7 @@ export class EfficiencyRepository extends BaseRepository {
         userId: this.userId,
         timezone: this.timezone,
         days,
-        enduranceTypes: ENDURANCE_TYPES,
+        activityTypes: CYCLING_TYPES,
       },
     );
 
@@ -225,7 +227,7 @@ export class EfficiencyRepository extends BaseRepository {
         LEFT JOIN resting_heart_rate drhr
           ON drhr.date = toString(toDate(toTimeZone(asum.started_at, {timezone:String})))
         WHERE asum.user_id = {userId:UUID}
-          AND has({enduranceTypes:Array(String)}, asum.activity_type)
+          AND has({activityTypes:Array(String)}, asum.activity_type)
           AND asum.started_at > now() - INTERVAL {days:Int32} DAY
           AND up.max_hr IS NOT NULL
       )
@@ -260,7 +262,7 @@ export class EfficiencyRepository extends BaseRepository {
         userId: this.userId,
         timezone: this.timezone,
         days,
-        enduranceTypes: ENDURANCE_TYPES,
+        activityTypes: CYCLING_TYPES,
         b1: aerobicEfficiencyZone.minPctHrr,
         b2: aerobicEfficiencyZone.maxPctHrr,
         rhrEndDate: today,
@@ -307,7 +309,7 @@ export class EfficiencyRepository extends BaseRepository {
             FROM fitness.v_activity
             WHERE user_id = ${this.userId}::uuid
               AND activity_type IN (${sql.join(
-                ENDURANCE_TYPES.map((activityType) => sql`${activityType}`),
+                CYCLING_TYPES.map((activityType) => sql`${activityType}`),
                 sql`, `,
               )})
               AND started_at > CURRENT_TIMESTAMP - ${days}::int * INTERVAL '1 day'
@@ -353,7 +355,7 @@ export class EfficiencyRepository extends BaseRepository {
           ON va.id = asum.activity_id
          AND va.user_id = asum.user_id
         WHERE asum.user_id = {userId:UUID}
-          AND has({enduranceTypes:Array(String)}, asum.activity_type)
+          AND has({activityTypes:Array(String)}, asum.activity_type)
           AND asum.started_at > now() - INTERVAL {days:Int32} DAY
       ),
       sensor_samples_by_activity AS (
@@ -379,7 +381,7 @@ export class EfficiencyRepository extends BaseRepository {
       {
         userId: this.userId,
         days,
-        enduranceTypes: ENDURANCE_TYPES,
+        activityTypes: CYCLING_TYPES,
       },
     );
 

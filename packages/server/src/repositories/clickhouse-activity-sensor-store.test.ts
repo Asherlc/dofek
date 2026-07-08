@@ -121,13 +121,16 @@ describe("ClickHouseActivitySensorStore", () => {
   it("loads power curve samples from activity summary", async () => {
     const { store, query } = makeStore([]);
 
-    await store.getPowerCurveSamples(90, window.userId, "UTC");
+    await store.getPowerCurveSamples(90, window.userId, "UTC", ["cycling"]);
 
     const queryText = query.mock.calls[0]?.[0]?.query;
     expect(queryText).toContain("analytics.deduped_activities");
     expect(queryText).not.toContain("analytics.v_activity");
     expect(queryText).toContain("activity.activity_id AS activity_id");
     expect(queryText).toContain("analytics.deduped_sensor");
+    expect(query.mock.calls[0]?.[0]?.query_params).toMatchObject({
+      activityTypes: ["cycling"],
+    });
   });
 
   it("loads normalized power samples from activity summary", async () => {

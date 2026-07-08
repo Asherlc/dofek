@@ -1,3 +1,4 @@
+import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import { computePolarizationIndex, POLARIZATION_ZONES } from "@dofek/zones/zones";
 import * as Sentry from "@sentry/node";
 import { describe, expect, it, vi } from "vitest";
@@ -115,6 +116,13 @@ function makeRepositoryWithSensorStore(sensorStore: ActivitySensorStore) {
 // ---------------------------------------------------------------------------
 
 describe("EfficiencyRepository.getAerobicEfficiency", () => {
+  function expectCyclingOnlyActivityTypes(activityTypes: unknown) {
+    expect(activityTypes).toEqual([...CYCLING_ACTIVITY_TYPES]);
+    expect(activityTypes).not.toContain("walking");
+    expect(activityTypes).not.toContain("running");
+    expect(activityTypes).not.toContain("hiking");
+  }
+
   it("returns null maxHr and empty activities when no data", async () => {
     const { repo } = makeRepository([]);
     const result = await repo.getAerobicEfficiency(180);
@@ -164,6 +172,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
       "FROM analytics.activity_summary",
     );
     expect(vi.mocked(sensorStore.query).mock.calls[1]?.[1]).toContain("analytics.v_activity");
+    expectCyclingOnlyActivityTypes(vi.mocked(sensorStore.query).mock.calls[1]?.[2]?.activityTypes);
   });
 
   it("does not run diagnostics when the main aggregation returns rows", async () => {
@@ -228,9 +237,9 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
       expect.objectContaining({
         userId: "user-1",
         days: 90,
-        enduranceTypes: expect.arrayContaining(["cycling", "running"]),
       }),
     );
+    expectCyclingOnlyActivityTypes(vi.mocked(sensorStore.query).mock.calls[2]?.[2]?.activityTypes);
 
     warnSpy.mockRestore();
   });

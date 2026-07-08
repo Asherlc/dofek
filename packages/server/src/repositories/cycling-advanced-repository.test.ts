@@ -1,3 +1,4 @@
+import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ActivityVariabilityModel,
@@ -233,6 +234,13 @@ describe("CyclingAdvancedRepository", () => {
     return { repo, execute, sensorStore };
   }
 
+  function expectCyclingOnlyActivityTypes(activityTypes: unknown) {
+    expect(activityTypes).toEqual([...CYCLING_ACTIVITY_TYPES]);
+    expect(activityTypes).not.toContain("walking");
+    expect(activityTypes).not.toContain("running");
+    expect(activityTypes).not.toContain("hiking");
+  }
+
   describe("getRampRate", () => {
     beforeEach(() => {
       vi.useFakeTimers();
@@ -372,7 +380,7 @@ describe("CyclingAdvancedRepository", () => {
         userId: "user-1",
         days: 60,
       });
-      expect(params.enduranceTypes).toContain("cycling");
+      expectCyclingOnlyActivityTypes(params.activityTypes);
     });
   });
 
@@ -443,6 +451,7 @@ describe("CyclingAdvancedRepository", () => {
         limit: 20,
         offset: 0,
       });
+      expectCyclingOnlyActivityTypes(params.activityTypes);
     });
   });
 
@@ -509,7 +518,7 @@ describe("CyclingAdvancedRepository", () => {
         timezone: "UTC",
         days: 90,
       });
-      expect(params.enduranceTypes).toContain("cycling");
+      expectCyclingOnlyActivityTypes(params.activityTypes);
     });
   });
 
@@ -549,7 +558,7 @@ describe("CyclingAdvancedRepository", () => {
         timezone: "UTC",
         days: 90,
       });
-      expect(params.enduranceTypes).toContain("cycling");
+      expectCyclingOnlyActivityTypes(params.activityTypes);
     });
   });
 });

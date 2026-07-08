@@ -135,9 +135,14 @@ export class LimitedActivitySensorStore implements ActivitySensorStore {
     return this.#regularLimiter.run(() => this.#delegate.getActivitySummaries(activityIds));
   }
 
-  getPowerCurveSamples(days: number, userId: string, timezone: string) {
+  getPowerCurveSamples(
+    days: number,
+    userId: string,
+    timezone: string,
+    activityTypes: readonly string[],
+  ) {
     return this.#regularLimiter.run(() =>
-      this.#delegate.getPowerCurveSamples(days, userId, timezone),
+      this.#delegate.getPowerCurveSamples(days, userId, timezone, activityTypes),
     );
   }
 
