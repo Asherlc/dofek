@@ -239,6 +239,16 @@ describe("HikingRepository", () => {
       await repo.getGradeAdjustedPaces(30);
       expect(execute).toHaveBeenCalledTimes(1);
     });
+
+    it("reads from the hiking activity read model", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await repo.getGradeAdjustedPaces(30);
+
+      const query = execute.mock.calls[0]?.[1];
+      expect(query).toContain("FROM analytics.hiking_activity");
+      expect(query).not.toContain("FROM analytics.activity_summary");
+    });
   });
 
   describe("getElevationProfile", () => {
@@ -250,6 +260,16 @@ describe("HikingRepository", () => {
       expect(result).toHaveLength(1);
       expect(result[0]).toBeInstanceOf(ElevationWeek);
       expect(result[0]?.toDetail().elevationGainMeters).toBe(1500);
+    });
+
+    it("reads from the hiking activity read model", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await repo.getElevationProfile(365);
+
+      const query = execute.mock.calls[0]?.[1];
+      expect(query).toContain("FROM analytics.hiking_activity");
+      expect(query).not.toContain("FROM analytics.activity_summary");
     });
   });
 
@@ -344,6 +364,17 @@ describe("HikingRepository", () => {
       const result = await repo.getRepeatedRoutes(365);
       expect(result[0]?.toDetail().instances[0]?.avgHeartRate).toBeNull();
       expect(result[0]?.toDetail().instances[1]?.avgHeartRate).toBe(130);
+    });
+
+    it("reads from the hiking activity read model", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await repo.getRepeatedRoutes(365);
+
+      const query = execute.mock.calls[0]?.[1];
+      expect(query).toContain("FROM analytics.hiking_activity");
+      expect(query).toContain("hiking.duration_seconds > 0");
+      expect(query).not.toContain("FROM analytics.activity_summary");
     });
   });
 });

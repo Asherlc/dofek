@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import type { ComponentType } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TRAINING_SLOW_QUERY_OPTIONS } from "../../lib/trainingQueryOptions.ts";
@@ -14,9 +14,11 @@ interface QueryCall {
 const state = vi.hoisted<{
   capturedRouteComponent: ComponentType | null;
   queryCalls: QueryCall[];
+  queryError: Error | null;
 }>(() => ({
   capturedRouteComponent: null,
   queryCalls: [],
+  queryError: null,
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -52,7 +54,7 @@ vi.mock("../../lib/trainingDaysContext.ts", () => ({
 function recordQuery(name: string) {
   return (input: unknown, options?: unknown) => {
     state.queryCalls.push({ name, input, options });
-    return { data: [], isLoading: false, error: null };
+    return { data: [], isLoading: false, error: state.queryError };
   };
 }
 
@@ -79,6 +81,7 @@ describe("HikingTab", () => {
     vi.resetModules();
     state.capturedRouteComponent = null;
     state.queryCalls.length = 0;
+    state.queryError = null;
   });
 
   afterEach(() => {
@@ -94,5 +97,13 @@ describe("HikingTab", () => {
       { name: "walkingBiomechanics", input: { days: 90 }, options: TRAINING_SLOW_QUERY_OPTIONS },
       { name: "activityComparison", input: { days: 365 }, options: TRAINING_SLOW_QUERY_OPTIONS },
     ]);
+  });
+
+  it("shows hiking query errors when the only cached data is empty", async () => {
+    state.queryError = new Error("Error in input stream");
+
+    await renderHikingTab();
+
+    expect(screen.getAllByText("Error in input stream")).toHaveLength(4);
   });
 });
