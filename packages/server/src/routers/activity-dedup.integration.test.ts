@@ -121,22 +121,30 @@ describe("Activity summary deduplication", () => {
             ctl_start: 50,
             ctl_end: 50,
             ramp_rate: 0,
+            is_deleted: 0,
           },
           {
             week: recentLoadWeek,
             ctl_start: 50,
             ctl_end: 52,
             ramp_rate: 2,
+            is_deleted: 0,
           },
         ];
       }
       if (queryText.includes("SELECT date, resting_hr")) {
         return [{ date: previousLoadDate, resting_hr: 50 }];
       }
-      return [
-        { day: previousLoadDate, trimp: 50 },
-        { day: recentLoadDate, trimp: 52 },
-      ];
+      if (queryText.includes("analytics.daily_activity_load")) {
+        return [
+          { day: previousLoadDate, trimp: 50 },
+          { day: recentLoadDate, trimp: 52 },
+        ];
+      }
+      if (queryText.includes("analytics.activity_location_sample")) {
+        return [];
+      }
+      throw new Error(`Unrecognized query text: ${queryText}`);
     };
 
     sensorStore = {

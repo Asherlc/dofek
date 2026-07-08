@@ -262,6 +262,7 @@ describe("CyclingAdvancedRepository", () => {
       await repo.getRampRate(30);
       const [, query, params] = sensorStore.query.mock.calls[0];
       expect(query).toContain("analytics.weekly_endurance_ramp_rate");
+      expect(query).toContain("ramp.is_deleted = 0");
       expect(query).toContain("ramp.week > toMonday(today() - INTERVAL {days:Int32} DAY)");
       expect(query).not.toContain("resting_heart_rate");
       expect(query).not.toContain("analytics.activity_summary");
@@ -334,6 +335,7 @@ describe("CyclingAdvancedRepository", () => {
       await repo.getTrainingMonotony(45);
       const [, query, params] = sensorStore.query.mock.calls[0];
       expect(query).toContain("analytics.weekly_training_monotony");
+      expect(query).toContain("monotony.is_deleted = 0");
       expect(query).toContain("monotony.week >= toMonday(today() - INTERVAL {days:Int32} DAY)");
       expect(query).not.toContain("resting_heart_rate");
       expect(query).not.toContain("analytics.activity_summary");

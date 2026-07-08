@@ -6,6 +6,7 @@ const weeklyEnduranceRampRateTableSql = `CREATE TABLE IF NOT EXISTS analytics.we
   ctl_start Float64,
   ctl_end Float64,
   ramp_rate Float64,
+  is_deleted UInt8,
   refresh_version UInt64,
   refreshed_at DateTime64(9, 'UTC')
 )
@@ -18,6 +19,7 @@ const weeklyTrainingMonotonyTableSql = `CREATE TABLE IF NOT EXISTS analytics.wee
   monotony Float64,
   strain Float64,
   weekly_load Float64,
+  is_deleted UInt8,
   refresh_version UInt64,
   refreshed_at DateTime64(9, 'UTC')
 )

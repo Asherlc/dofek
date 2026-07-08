@@ -51,7 +51,7 @@ resting_by_activity AS (
     SELECT
         activity_bounds.activity_id AS activity_id,
         activity_bounds.user_id AS user_id,
-        argMax(resting.resting_hr, toDate(resting.ended_at)) AS resting_hr
+        argMax(resting.resting_hr, resting.ended_at) AS resting_hr
     FROM activity_bounds
     INNER JOIN {{ ref('resting_heart_rate_sleep_window') }} AS resting FINAL
         ON resting.user_id = activity_bounds.user_id
@@ -74,7 +74,7 @@ activity_load AS (
         dateDiff('second', activity_bounds.started_at, activity_bounds.ended_at) / 60.0 AS duration_minutes,
         activity_bounds.avg_hr AS avg_hr,
         user_profile.max_hr AS max_hr,
-        coalesce(resting_by_activity.resting_hr, user_profile.resting_hr, 60) AS resting_hr
+        coalesce(resting_by_activity.resting_hr, nullIf(user_profile.resting_hr, 0), 60) AS resting_hr
     FROM activity_bounds
     INNER JOIN postgres_fitness.user_profile_current AS user_profile
         ON user_profile.id = activity_bounds.user_id
@@ -127,7 +127,11 @@ training_load AS (
             avg_hr,
             max_hr,
             resting_hr,
-            toFloat64(avg_hr - resting_hr) / toFloat64(max_hr - resting_hr) AS intensity
+            if(
+                max_hr > resting_hr,
+                toFloat64(avg_hr - resting_hr) / toFloat64(max_hr - resting_hr),
+                0
+            ) AS intensity
         FROM activity_load
     )
 ),

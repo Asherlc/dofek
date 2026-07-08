@@ -9,7 +9,18 @@
     }
 ) }}
 
-WITH daily_load AS (
+WITH changed_users AS (
+    SELECT DISTINCT user_id
+    FROM {{ ref('daily_endurance_load') }} FINAL
+    {% if is_incremental() %}
+    WHERE refreshed_at >= (
+            SELECT coalesce(max(refreshed_at), toDateTime64(0, 9, 'UTC'))
+            FROM {{ this }} FINAL
+        )
+    {% endif %}
+),
+
+daily_load AS (
     SELECT
         user_id,
         assumeNotNull(date) AS load_date,
@@ -17,6 +28,7 @@ WITH daily_load AS (
     FROM {{ ref('daily_endurance_load') }} FINAL
     WHERE is_deleted = 0
         AND date IS NOT NULL
+        AND user_id IN (SELECT user_id FROM changed_users)
     GROUP BY
         user_id,
         load_date
@@ -77,9 +89,44 @@ weekly_with_previous AS (
         ctl_end,
         lagInFrame(ctl_end, 1, CAST(NULL, 'Nullable(Float64)')) OVER (
             PARTITION BY user_id ORDER BY week
-            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
         ) AS previous_ctl_end
     FROM weekly_ctl
+),
+
+current_rows AS (
+    SELECT
+        weekly_with_previous.user_id AS user_id,
+        weekly_with_previous.week AS week,
+        round(weekly_with_previous.previous_ctl_end, 2) AS ctl_start,
+        round(weekly_with_previous.ctl_end, 2) AS ctl_end,
+        round(weekly_with_previous.ctl_end - weekly_with_previous.previous_ctl_end, 2) AS ramp_rate
+    FROM weekly_with_previous
+    WHERE weekly_with_previous.previous_ctl_end IS NOT NULL
+),
+
+{% if is_incremental() %}
+existing_keys AS (
+    SELECT DISTINCT
+        user_id,
+        week
+    FROM {{ this }} FINAL
+    WHERE is_deleted = 0
+        AND user_id IN (SELECT user_id FROM changed_users)
+),
+{% endif %}
+
+result_keys AS (
+    SELECT
+        user_id,
+        week
+    FROM current_rows
+    {% if is_incremental() %}
+    UNION DISTINCT
+    SELECT
+        user_id,
+        week
+    FROM existing_keys
+    {% endif %}
 ),
 
 refresh_clock AS (
@@ -89,13 +136,16 @@ refresh_clock AS (
 )
 
 SELECT
-    weekly_with_previous.user_id AS user_id,
-    weekly_with_previous.week AS week,
-    round(weekly_with_previous.previous_ctl_end, 2) AS ctl_start,
-    round(weekly_with_previous.ctl_end, 2) AS ctl_end,
-    round(weekly_with_previous.ctl_end - weekly_with_previous.previous_ctl_end, 2) AS ramp_rate,
+    result_keys.user_id AS user_id,
+    result_keys.week AS week,
+    coalesce(current_rows.ctl_start, 0) AS ctl_start,
+    coalesce(current_rows.ctl_end, 0) AS ctl_end,
+    coalesce(current_rows.ramp_rate, 0) AS ramp_rate,
+    if(current_rows.user_id IS NULL, 1, 0) AS is_deleted,
     refresh_clock.refresh_version AS refresh_version,
     refresh_clock.refreshed_at AS refreshed_at
-FROM weekly_with_previous
+FROM result_keys
+LEFT JOIN current_rows
+    ON current_rows.user_id = result_keys.user_id
+    AND current_rows.week = result_keys.week
 CROSS JOIN refresh_clock
-WHERE weekly_with_previous.previous_ctl_end IS NOT NULL

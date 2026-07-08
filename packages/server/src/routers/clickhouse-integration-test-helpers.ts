@@ -660,6 +660,7 @@ week Date,
 ctl_start Float64,
 ctl_end Float64,
 ramp_rate Float64,
+is_deleted UInt8,
 refresh_version UInt64,
 refreshed_at DateTime64(9)`,
     weekly_training_monotony: `user_id UUID,
@@ -667,6 +668,7 @@ week Date,
 monotony Float64,
 strain Float64,
 weekly_load Float64,
+is_deleted UInt8,
 refresh_version UInt64,
 refreshed_at DateTime64(9)`,
     daily_strain: `user_id UUID,
@@ -1492,7 +1494,11 @@ training_load AS (
       avg_hr,
       max_hr,
       resting_hr,
-      toFloat64(avg_hr - resting_hr) / toFloat64(max_hr - resting_hr) AS intensity
+      if(
+        max_hr > resting_hr,
+        toFloat64(avg_hr - resting_hr) / toFloat64(max_hr - resting_hr),
+        0
+      ) AS intensity
     FROM activity_load
   )
 ),
@@ -1516,28 +1522,71 @@ CROSS JOIN refresh_clock`;
 }
 
 function buildTestWeeklyEnduranceRampRateSelectSql(databases: IsolatedClickHouseDatabases): string {
-  return `WITH weekly_load AS (
+  return `WITH daily_load AS (
   SELECT
     user_id,
-    toMonday(assumeNotNull(date)) AS week,
-    sum(training_load) AS weekly_load
+    assumeNotNull(date) AS load_date,
+    sum(training_load) AS training_load
   FROM ${databases.analytics}.daily_endurance_load
   WHERE is_deleted = 0
     AND date IS NOT NULL
   GROUP BY
     user_id,
-    toMonday(assumeNotNull(date))
+    load_date
+),
+date_bounds AS (
+  SELECT
+    user_id,
+    min(load_date) AS first_load_date,
+    max(load_date) AS latest_load_date
+  FROM daily_load
+  GROUP BY user_id
+),
+date_series AS (
+  SELECT
+    user_id,
+    first_load_date + INTERVAL date_offset DAY AS date
+  FROM date_bounds
+  ARRAY JOIN range(
+    toUInt32(dateDiff('day', first_load_date, latest_load_date) + 1)
+  ) AS date_offset
+),
+ctl_by_date AS (
+  SELECT
+    date_series.user_id AS user_id,
+    date_series.date AS date,
+    sum(
+      daily_load.training_load
+      * (1.0 / 42.0)
+      * pow(41.0 / 42.0, dateDiff('day', daily_load.load_date, date_series.date))
+    ) AS ctl
+  FROM date_series
+  LEFT JOIN daily_load
+    ON daily_load.user_id = date_series.user_id
+    AND daily_load.load_date <= date_series.date
+  GROUP BY
+    date_series.user_id,
+    date_series.date
+),
+weekly_ctl AS (
+  SELECT
+    user_id,
+    toMonday(date) AS week,
+    argMax(ctl, date) AS ctl_end
+  FROM ctl_by_date
+  GROUP BY
+    user_id,
+    toMonday(date)
 ),
 weekly_with_previous AS (
   SELECT
     user_id,
     week,
-    weekly_load AS ctl_end,
-    lagInFrame(weekly_load, 1) OVER (
+    ctl_end,
+    lagInFrame(ctl_end, 1, CAST(NULL, 'Nullable(Float64)')) OVER (
       PARTITION BY user_id ORDER BY week
-      ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
     ) AS previous_ctl_end
-  FROM weekly_load
+  FROM weekly_ctl
 ),
 refresh_clock AS (
   SELECT
@@ -1550,6 +1599,7 @@ SELECT
   round(weekly_with_previous.previous_ctl_end, 2) AS ctl_start,
   round(weekly_with_previous.ctl_end, 2) AS ctl_end,
   round(weekly_with_previous.ctl_end - weekly_with_previous.previous_ctl_end, 2) AS ramp_rate,
+  0 AS is_deleted,
   refresh_clock.refresh_version AS refresh_version,
   refresh_clock.refreshed_at AS refreshed_at
 FROM weekly_with_previous
@@ -1581,7 +1631,7 @@ weekly_stats AS (
   GROUP BY
     user_id,
     toMonday(load_date)
-  HAVING stddevPop(training_load) > 0
+  HAVING stddevPop(training_load) > 1e-6
 ),
 refresh_clock AS (
   SELECT
@@ -1594,6 +1644,7 @@ SELECT
   round(weekly_stats.mean_load / weekly_stats.stdev_load, 2) AS monotony,
   round(weekly_stats.weekly_load * (weekly_stats.mean_load / weekly_stats.stdev_load), 1) AS strain,
   round(weekly_stats.weekly_load, 1) AS weekly_load,
+  0 AS is_deleted,
   refresh_clock.refresh_version AS refresh_version,
   refresh_clock.refreshed_at AS refreshed_at
 FROM weekly_stats

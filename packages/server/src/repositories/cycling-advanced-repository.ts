@@ -93,6 +93,7 @@ export class CyclingAdvancedRepository {
         ramp.ramp_rate AS ramp_rate
       FROM analytics.weekly_endurance_ramp_rate AS ramp FINAL
       WHERE ramp.user_id = {userId:UUID}
+        AND ramp.is_deleted = 0
         AND ramp.week > toMonday(today() - INTERVAL {days:Int32} DAY)
       ORDER BY ramp.week`,
       {
@@ -139,6 +140,7 @@ export class CyclingAdvancedRepository {
         monotony.weekly_load AS weekly_load
       FROM analytics.weekly_training_monotony AS monotony FINAL
       WHERE monotony.user_id = {userId:UUID}
+        AND monotony.is_deleted = 0
         AND monotony.week >= toMonday(today() - INTERVAL {days:Int32} DAY)
       ORDER BY monotony.week`,
       {

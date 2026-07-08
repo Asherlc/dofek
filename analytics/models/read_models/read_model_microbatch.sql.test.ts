@@ -543,8 +543,11 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("ref('activity_summary_rows')");
     expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
     expect(sql).toContain("postgres_fitness.user_profile_current");
+    expect(sql).toContain("argMax(resting.resting_hr, resting.ended_at)");
+    expect(sql).toContain("nullIf(user_profile.resting_hr, 0)");
     expect(sql).toContain("activity_type IN (");
     expect(sql).toContain("'road_cycling'");
+    expect(sql).toContain("if(\n                max_hr > resting_hr");
     expect(sql).toContain("0.64 * exp(1.92 * intensity)");
     expect(sql).toContain("training_load");
     expect(sql).not.toContain("ref('activity_sensor_sample')");
@@ -557,9 +560,11 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("materialized='incremental'");
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
     expect(sql).toContain("ref('daily_endurance_load')");
+    expect(sql).toContain("WITH changed_users AS");
     expect(sql).toContain("pow(41.0 / 42.0");
     expect(sql).toContain("lagInFrame(ctl_end");
     expect(sql).toContain("ramp_rate");
+    expect(sql).toContain("if(current_rows.user_id IS NULL, 1, 0) AS is_deleted");
     expect(sql).not.toContain("ref('activity_sensor_sample')");
     expect(sql).not.toContain("ref('deduped_sensor')");
     expect(sql).not.toContain("ref('activity_summary_rows')");
@@ -571,10 +576,13 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("materialized='incremental'");
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
     expect(sql).toContain("ref('daily_endurance_load')");
+    expect(sql).toContain("WITH changed_users AS");
     expect(sql).toContain("stddevPop(training_load)");
+    expect(sql).toContain("HAVING stddevPop(training_load) > 1e-6");
     expect(sql).toContain(
-      "round(weekly_stats.weekly_load * (weekly_stats.mean_load / weekly_stats.stdev_load), 1)",
+      "round(weekly_load * (mean_load / stdev_load), 1)",
     );
+    expect(sql).toContain("if(current_rows.user_id IS NULL, 1, 0) AS is_deleted");
     expect(sql).not.toContain("ref('activity_sensor_sample')");
     expect(sql).not.toContain("ref('deduped_sensor')");
     expect(sql).not.toContain("ref('activity_summary_rows')");
