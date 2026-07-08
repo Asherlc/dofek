@@ -407,11 +407,11 @@ importers:
         specifier: 5.101.2
         version: 5.101.2(@tanstack/react-query@5.101.2(react@19.2.3))(react@19.2.3)
       '@trpc/client':
-        specifier: 11.12.0
-        version: 11.12.0(@trpc/server@11.12.0(typescript@6.0.3))(typescript@6.0.3)
+        specifier: 11.18.0
+        version: 11.18.0(typescript@6.0.3)
       '@trpc/react-query':
         specifier: 11.12.0
-        version: 11.12.0(@tanstack/react-query@5.101.2(react@19.2.3))(@trpc/client@11.12.0(@trpc/server@11.12.0(typescript@6.0.3))(typescript@6.0.3))(@trpc/server@11.12.0(typescript@6.0.3))(react@19.2.3)(typescript@6.0.3)
+        version: 11.12.0(@tanstack/react-query@5.101.2(react@19.2.3))(@trpc/client@11.18.0(typescript@6.0.3))(react@19.2.3)(typescript@6.0.3)
       dofek-server:
         specifier: workspace:*
         version: link:../server
@@ -780,11 +780,11 @@ importers:
         specifier: 8.21.3
         version: 8.21.3(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       '@trpc/client':
-        specifier: 11.12.0
-        version: 11.12.0(@trpc/server@11.12.0(typescript@6.0.3))(typescript@6.0.3)
+        specifier: 11.18.0
+        version: 11.18.0(typescript@6.0.3)
       '@trpc/react-query':
         specifier: 11.12.0
-        version: 11.12.0(@tanstack/react-query@5.101.2(react@19.2.3))(@trpc/client@11.12.0(@trpc/server@11.12.0(typescript@6.0.3))(typescript@6.0.3))(@trpc/server@11.12.0(typescript@6.0.3))(react@19.2.3)(typescript@6.0.3)
+        version: 11.12.0(@tanstack/react-query@5.101.2(react@19.2.3))(@trpc/client@11.18.0(typescript@6.0.3))(react@19.2.3)(typescript@6.0.3)
       dofek-server:
         specifier: workspace:*
         version: link:../server
@@ -7202,10 +7202,11 @@ packages:
       '@tmcp/auth':
         optional: true
 
-  '@trpc/client@11.12.0':
-    resolution: {integrity: sha512-zTwFKQdE99pvNm7kXFdHo5xIQpGqpQJHtqVkT9o+i8h/0fbDOUBEEbFVICiMsNA+GiXskoaDRX2l+z6ir+Ug3w==}
+  '@trpc/client@11.18.0':
+    resolution: {integrity: sha512-wOqeg3Fvl25V1ZisQhUD3K8G60ZJDlSGJNSyeXrLH24xAo5w6GSR2Kzb1cSNY9Y+IQ2YZvYGZstBU+V/ulo/ow==}
+    hasBin: true
     peerDependencies:
-      '@trpc/server': 11.12.0
+      '@trpc/server': 11.18.0
       typescript: '>=5.7.2'
 
   '@trpc/react-query@11.12.0':
@@ -20532,16 +20533,14 @@ snapshots:
       esm-env: 1.2.2
       tmcp: 1.19.4(typescript@6.0.3)
 
-  '@trpc/client@11.12.0(@trpc/server@11.12.0(typescript@6.0.3))(typescript@6.0.3)':
+  '@trpc/client@11.18.0(typescript@6.0.3)':
     dependencies:
-      '@trpc/server': 11.12.0(typescript@6.0.3)
       typescript: 6.0.3
 
-  '@trpc/react-query@11.12.0(@tanstack/react-query@5.101.2(react@19.2.3))(@trpc/client@11.12.0(@trpc/server@11.12.0(typescript@6.0.3))(typescript@6.0.3))(@trpc/server@11.12.0(typescript@6.0.3))(react@19.2.3)(typescript@6.0.3)':
+  '@trpc/react-query@11.12.0(@tanstack/react-query@5.101.2(react@19.2.3))(@trpc/client@11.18.0(typescript@6.0.3))(react@19.2.3)(typescript@6.0.3)':
     dependencies:
       '@tanstack/react-query': 5.101.2(react@19.2.3)
-      '@trpc/client': 11.12.0(@trpc/server@11.12.0(typescript@6.0.3))(typescript@6.0.3)
-      '@trpc/server': 11.12.0(typescript@6.0.3)
+      '@trpc/client': 11.18.0(typescript@6.0.3)
       react: 19.2.3
       typescript: 6.0.3
 
@@ -20881,14 +20880,14 @@ snapshots:
       msw: 2.12.11(@types/node@22.19.15)(typescript@6.0.3)
       vite: 7.3.6(@types/node@22.19.15)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0)
 
-  '@vitest/mocker@3.2.6(msw@2.12.11(@types/node@25.9.1)(typescript@6.0.3))(vite@7.3.6(@types/node@22.19.15)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))':
+  '@vitest/mocker@3.2.6(msw@2.12.11(@types/node@25.9.1)(typescript@6.0.3))(vite@7.3.6(@types/node@25.9.1)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))':
     dependencies:
       '@vitest/spy': 3.2.6
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
       msw: 2.12.11(@types/node@25.9.1)(typescript@6.0.3)
-      vite: 7.3.6(@types/node@22.19.15)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0)
+      vite: 7.3.6(@types/node@25.9.1)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0)
 
   '@vitest/pretty-format@3.2.4':
     dependencies:
@@ -26402,7 +26401,7 @@ snapshots:
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/expect': 3.2.6
-      '@vitest/mocker': 3.2.6(msw@2.12.11(@types/node@25.9.1)(typescript@6.0.3))(vite@7.3.6(@types/node@22.19.15)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))
+      '@vitest/mocker': 3.2.6(msw@2.12.11(@types/node@25.9.1)(typescript@6.0.3))(vite@7.3.6(@types/node@25.9.1)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))
       '@vitest/pretty-format': 3.2.6
       '@vitest/runner': 3.2.6
       '@vitest/snapshot': 3.2.6
