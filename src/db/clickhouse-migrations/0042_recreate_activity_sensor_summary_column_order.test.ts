@@ -12,7 +12,9 @@ const activitySummaryTable = "analytics.activity_summary_rows";
 describe("0042_recreate_activity_sensor_summary_column_order", () => {
   it("renames old tables to preserve data, then recreates and copies", () => {
     const migration = createMigration();
-    const sensorColumns = extractClickHouseTableColumnNames(buildActivitySensorSummaryRowsTableSql());
+    const sensorColumns = extractClickHouseTableColumnNames(
+      buildActivitySensorSummaryRowsTableSql(),
+    );
     const summaryColumns = extractClickHouseTableColumnNames(buildActivitySummaryRowsTableSql());
 
     expect(migration.id).toBe("0042_recreate_activity_sensor_summary_column_order");

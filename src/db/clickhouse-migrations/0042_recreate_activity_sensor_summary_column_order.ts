@@ -1,4 +1,7 @@
-import { buildActivitySensorSummaryRowsTableSql, extractClickHouseTableColumnNames } from "../clickhouse-activity-sensor-summary.ts";
+import {
+  buildActivitySensorSummaryRowsTableSql,
+  extractClickHouseTableColumnNames,
+} from "../clickhouse-activity-sensor-summary.ts";
 import {
   buildActivitySummaryRowsTableSql,
   buildActivitySummaryViewSql,
