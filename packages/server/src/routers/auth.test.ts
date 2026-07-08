@@ -49,6 +49,18 @@ describe("authRouter", () => {
     expect(routerConstructionCachePolicies).toEqual([{ maxAge: 120_000 }, { maxAge: 120_000 }]);
   });
 
+  describe("passwordCredentialStatus", () => {
+    it("returns whether the user has a password credential", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([{ user_id: "user-1" }]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.passwordCredentialStatus()).resolves.toEqual({ hasPassword: true });
+    });
+  });
+
   describe("linkedAccounts", () => {
     it("returns mapped account rows", async () => {
       const rows = [
