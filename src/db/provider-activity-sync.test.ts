@@ -210,4 +210,19 @@ describe("finishProviderActivityListSync", () => {
       presentExternalIds: new Set(["123"]),
     });
   });
+
+  it("propagates provider activity absence reconciliation errors", async () => {
+    const db = makeMockDb();
+    mockReconcile.mockRejectedValueOnce(new Error("reconciliation failed"));
+
+    await expect(
+      finishProviderActivityListSync(db, {
+        providerId: "strava",
+        userId: "user-1",
+        windowStart: new Date("2026-06-01T00:00:00Z"),
+        windowEnd: new Date("2026-06-21T00:00:00Z"),
+        presentExternalIds: new Set(["123"]),
+      }),
+    ).rejects.toThrow("reconciliation failed");
+  });
 });

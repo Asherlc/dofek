@@ -164,7 +164,7 @@ describe("Settings router", () => {
                 '2024-01-15T10:00:00Z',
                 'Delete Me'
               )
-              ON CONFLICT DO NOTHING`,
+              ON CONFLICT (id) DO NOTHING`,
         ),
         testCtx.db.execute(
           sql`INSERT INTO fitness.sync_log (provider_id, user_id, data_type, status)

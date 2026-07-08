@@ -18,7 +18,9 @@ import { ZwiftProvider } from "./zwift.ts";
 
 function fakeZwiftActivitySummary(overrides: Record<string, unknown> = {}) {
   const startDate =
-    typeof overrides.startDate === "string" ? overrides.startDate : "2026-03-01T10:00:00Z";
+    typeof overrides.startDate === "string" && !Number.isNaN(Date.parse(overrides.startDate))
+      ? overrides.startDate
+      : "2026-03-01T10:00:00Z";
   const endDate =
     typeof overrides.endDate === "string"
       ? overrides.endDate

@@ -67,7 +67,7 @@ describe("healthspan zone time with variable-interval HR data", () => {
           ) VALUES (
             'test_provider', ${TEST_USER_ID}, 'healthspan-apple-watch-hiit', 'cycling',
             CURRENT_TIMESTAMP - INTERVAL '2 days',
-            CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '600 seconds',
+            (CURRENT_TIMESTAMP - INTERVAL '2 days') + INTERVAL '600 seconds',
             'Apple Watch HIIT'
           ) RETURNING id`,
     );
@@ -302,7 +302,7 @@ describe("healthspan zone time with variable-interval HR data", () => {
           ) VALUES (
             'test_provider', ${TEST_USER_ID}, 'healthspan-power-zone-intervals', 'cycling',
             CURRENT_TIMESTAMP - INTERVAL '1 day',
-            CURRENT_TIMESTAMP - INTERVAL '1 day' + INTERVAL '600 seconds',
+            (CURRENT_TIMESTAMP - INTERVAL '1 day') + INTERVAL '600 seconds',
             'Power Zone Intervals'
           ) RETURNING id`,
     );
