@@ -3,4 +3,4 @@
 -- nullable before .notNull() was added to the schema. All 1020 rows have a value,
 -- so tighten the column to match the source of truth.
 ALTER TABLE fitness.strength_set
-  ALTER COLUMN activity_id SET NOT NULL;
+ALTER COLUMN activity_id SET NOT NULL;

@@ -16,6 +16,21 @@ CREATE VIEW analytics.activity_note_summary AS SELECT id, note FROM fitness.acti
     expect(violations).toEqual([]);
   });
 
+  it("allows Postgres foreign keys with ON DELETE clauses", () => {
+    const violations = lintMigrationPolicyFile(
+      "drizzle/0044_tighten_fk_delete_rules.sql",
+      `
+ALTER TABLE fitness.lab_result
+DROP CONSTRAINT IF EXISTS lab_result_panel_id_fkey,
+ADD CONSTRAINT lab_result_panel_id_fkey
+FOREIGN KEY (panel_id) REFERENCES fitness.lab_panel (id)
+ON DELETE CASCADE ON UPDATE NO ACTION;
+`,
+    );
+
+    expect(violations).toEqual([]);
+  });
+
   it("ignores blocked phrases inside SQL comments", () => {
     const violations = lintMigrationPolicyFile(
       "drizzle/0027_document_backfill.sql",
@@ -52,7 +67,7 @@ FROM fitness.body_measurement;
 
   it("blocks ClickHouse refresh and mutation statements in deploy migrations", () => {
     const violations = lintMigrationPolicyFile(
-      "drizzle/0027_bad_clickhouse.sql",
+      "src/db/clickhouse-sql/bad_mutation.sql",
       `
 SYSTEM REFRESH VIEW analytics.activity_summary;
 SYSTEM WAIT VIEW analytics.activity_summary;

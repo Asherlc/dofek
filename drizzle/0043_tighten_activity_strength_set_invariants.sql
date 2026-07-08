@@ -7,7 +7,7 @@
 -- (src/db/schema/activity.ts) with an ON DELETE CASCADE FK to activity.id,
 -- but the Postgres column was created nullable. All 1020 rows have a value.
 ALTER TABLE fitness.strength_set
-  ALTER COLUMN activity_id SET NOT NULL;
+ALTER COLUMN activity_id SET NOT NULL;
 
 -- activity.external_id is part of unique index activity_provider_external_idx
 -- (user_id, provider_id, external_id) and 100% populated in prod. Without
@@ -15,4 +15,4 @@ ALTER TABLE fitness.strength_set
 -- here is a real invariant: each (user, provider) row must map 1:1 to a
 -- provider-side id. Tighten to enforce that invariant at insert time.
 ALTER TABLE fitness.activity
-  ALTER COLUMN external_id SET NOT NULL;
+ALTER COLUMN external_id SET NOT NULL;
