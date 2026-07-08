@@ -7,6 +7,58 @@ full incident log or a replacement for runbooks. Use it to build shared memory
 about the kinds of issues this system encounters, the signals that identified
 them, and the durability work they suggest.
 
+## 2026-07-08: Migration hardening PR CI follow-up
+
+### Symptoms
+
+PR CI failed in `Test / SQLFluff`, multiple integration-test shards, and later
+`Test / Stryker (0)` after schema-hardening migrations were added and production
+migrations were run.
+
+### User Impact
+
+No production outage was observed during the migration run, but the PR could not
+merge until the migration SQL, test fixtures, and mutation coverage matched the
+hardened schema.
+
+### Evidence
+
+SQLFluff flagged migration formatting. Integration failures came from direct
+`fitness.activity` inserts without the new non-null `external_id` and provider
+fixtures that produced invalid activity durations. Stryker reported
+`Final mutation score 65.67 under breaking threshold 75` for
+`0038_body_measurement_sample_synced_at_non_nullable.ts`.
+
+### Root Cause
+
+The migrations correctly tightened production constraints, but several raw
+integration fixtures bypassed provider sync helpers and still inserted
+pre-migration activity shapes. The ClickHouse migration tests also did not cover
+partial schema metadata and fallback paths strongly enough for mutation testing.
+
+### Fix / Mitigation
+
+Updated direct activity fixtures to include stable `external_id` values, fixed
+Xert and Zwift duration fixture derivation, tightened the SQL migrations per
+review feedback, made ClickHouse migration `0038` idempotent against target
+schema/default metadata, and added focused mutation-killing tests.
+
+### Validation
+
+Production migrations applied successfully, and an idempotency rerun showed zero
+pending migrations. Local validation passed with `pnpm lint`, `pnpm typecheck`,
+focused unit and integration tests, SQLFluff, migration lint, and
+`pnpm exec stryker run stryker.ci.config.json --mutate
+src/db/clickhouse-migrations/0038_body_measurement_sample_synced_at_non_nullable.ts`
+at an 85.07 mutation score. The final PR check query reported no failing or
+pending checks.
+
+### Remaining Risk
+
+Future schema-hardening migrations can hit the same class of stale raw fixtures
+if tests insert directly into constrained tables instead of using canonical
+setup helpers.
+
 ## 2026-07-07: Production schema hardening runbook
 
 ### Symptoms
