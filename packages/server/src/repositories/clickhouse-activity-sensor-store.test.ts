@@ -136,7 +136,7 @@ describe("ClickHouseActivitySensorStore", () => {
   it("loads normalized power samples from activity summary", async () => {
     const { store, query } = makeStore([]);
 
-    await store.getNormalizedPowerSamples(365, window.userId, "UTC");
+    await store.getNormalizedPowerSamples(365, window.userId, "UTC", ["cycling"]);
 
     const queryText = query.mock.calls[0]?.[0]?.query;
     expect(queryText).toContain("analytics.deduped_activities");
@@ -146,7 +146,7 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).toContain("has({activityTypes:Array(String)}, activity.activity_type)");
     expect(queryText).not.toContain("enduranceActivityTypes");
     expect(query.mock.calls[0]?.[0]?.query_params).toMatchObject({
-      activityTypes: expect.any(Array),
+      activityTypes: ["cycling"],
     });
   });
 

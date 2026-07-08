@@ -52,4 +52,21 @@ describe("ActivityVariabilityTable", () => {
       params: { id: "activity-1" },
     });
   });
+
+  it("explains when activities have no normalized power data", () => {
+    render(
+      <ActivityVariabilityTable
+        data={[]}
+        totalCount={0}
+        offset={0}
+        limit={20}
+        onPageChange={() => {}}
+        emptyReason="no_normalized_power"
+      />,
+    );
+
+    expect(
+      screen.getByText("No cycling activities with enough power samples for variability yet."),
+    ).toBeInTheDocument();
+  });
 });

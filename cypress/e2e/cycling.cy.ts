@@ -31,7 +31,7 @@ describe("Cycling Page", () => {
       "be.visible",
     );
     cy.contains("No activities with altitude data available").should("be.visible");
-    cy.contains("No activities with power data available").should("be.visible");
+    cy.contains("No power data").should("be.visible");
   });
 
   it("aerobicEfficiency API returns valid response for empty data", () => {
