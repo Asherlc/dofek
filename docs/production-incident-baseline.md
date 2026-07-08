@@ -11928,3 +11928,94 @@ new incremental tables are populated.
   failed. Mutations and imperative non-query tRPC client calls still need their
   existing explicit `captureException` calls or separate mutation-cache
   reporting if the product policy is expanded to all handled mutations too.
+
+## 2026-07-07 — DOFEK-SERVER-4F: ZodError on body.list from NULL `_peerdb_synced_at`
+
+- **Symptoms:** Sentry issue `DOFEK-SERVER-4F` raised a `ZodError` at
+  `packages/server/src/repositories/clickhouse-activity-sensor-store.ts:129`
+  (`schema.parse(row)`) on the `body.list` tRPC procedure. Error message:
+  `Invalid input: expected string, received null` at path `created_at`.
+- **User impact:** Production `body.list` query crashed for one user on first
+  observation; 1 event recorded. Body composition dashboard would have
+  failed to load.
+- **Evidence:** Prod ClickHouse `analytics.body_measurement_sample` had a
+  `Nullable(DateTime64(9)) _peerdb_synced_at` column despite the
+  source-of-truth DDL in `src/db/clickhouse-sql-helpers.ts` declaring it
+  non-Nullable. 31 of 7971 rows had `_peerdb_synced_at IS NULL` (all
+  `apple_health`, `provider_version=0`) — legacy rows from before the
+  proper MV ingest path. The `analytics.v_body_measurement` read model
+  projected `_peerdb_synced_at AS created_at`, so NULLs reached
+  `bodyMeasurementClickHouseSchema.created_at: timestampStringSchema`
+  (`z.union([z.string(), z.date()])`), which correctly rejected NULL.
+- **Root cause:** PeerDB created `analytics.body_measurement_sample` with
+  all-Nullable columns during CDC setup, so the later
+  `CREATE TABLE IF NOT EXISTS` non-Nullable DDL never took effect (no-op).
+  Legacy rows from direct inserts had no `_peerdb_synced_at` value.
+- **Fix / mitigation:** ClickHouse migration `0038` (1) backfills legacy
+  NULL rows using `UPDATE _peerdb_synced_at = recorded_at` (the row's own
+  sample timestamp as the best-available proxy for when the sample was
+  created) and (2) `ALTER TABLE ... MODIFY COLUMN _peerdb_synced_at
+  DateTime64(9) DEFAULT now()` (non-Nullable). The Zod schema stays
+  strict; no on-the-fly `coalesce` in the read model.
+- **Validation:** Unit tests for migration `0038` pass; local
+  `pnpm setup-db` applied all 38 ClickHouse migrations cleanly;
+  `pnpm vitest run` reports 11,020 tests with 0 failures.
+
+## 2026-07-07 — Database integrity tightening pass
+
+Comprehensive audit of prod Postgres + ClickHouse against source-of-truth
+Drizzle schema and runtime Zod schemas. Findings and remediations:
+
+- **Postgres drift (Drizzle `.notNull()` but Postgres nullable):** Only
+  `fitness.strength_set.activity_id`. Tightened via migration `0042`
+  (`ALTER COLUMN ... SET NOT NULL`).
+- **Hard unique invariants:** `fitness.activity.external_id` was nullable
+  in Postgres despite backing the unique index
+  `activity_provider_external_idx (user_id, provider_id, external_id)`
+  and being 100% populated in prod. Tightened to NOT NULL in migration
+  `0043` plus Drizzle `.notNull()`.
+- **FK delete rules:** 4 FKs were `NO ACTION` when `CASCADE` or
+  `RESTRICT` is the correct semantics. Migration `0044`:
+  - `lab_result.panel_id → lab_panel.id` (CASCADE)
+  - `strength_set.exercise_id → exercise.id` (CASCADE)
+  - `exercise_alias.exercise_id → exercise.id` (CASCADE)
+  - `daily_metric_value.metric_type_id → daily_metric_type.id` (RESTRICT)
+  Drizzle `.references(... { onDelete: "..." })` updated to match.
+- **CHECK constraints:** None existed in prod. Migration `0045` adds:
+  - `activity.ended_at > started_at` (when ended_at present)
+  - Non-negative ranges on `strength_set`, `daily_metrics`, `sleep_session`
+  - 0–100 range on `sleep_session.efficiency_pct`
+  - Positive `food_entry.serving_weight_grams`, non-negative `number_of_units`
+  - Lab range ordering `lab_result.reference_range_high >= reference_range_low`
+  - Non-negative `dexa_scan.body_fat_pct`
+- **Existing data remediation:** 2 `fitness.activity` rows had
+  `ended_at == started_at` (Peloton zero-duration artefacts — Peloton
+  source-side duration parsing bug is tracked separately). Migrated
+  to `started_at + INTERVAL '1 second'` as a minimal-inflation placeholder
+  to satisfy the new CHECK.
+- **Partial index:** Created `activity_active_user_started_idx` on
+  `fitness.activity (user_id, started_at DESC) WHERE deleted_at IS NULL
+  AND provider_absent_at IS NULL` to back the high-frequency dashboard
+  soft-delete + tombstone filter.
+- **Drizzle schema synced:** `src/db/schema/activity.ts` (`externalId`
+  `.notNull()`, `strength_set.exercise_id` and `exercise_alias.exercise_id`
+  `onDelete: "cascade"`, `daily_metric_value.metric_type_id`
+  `onDelete: "restrict"`). `src/db/schema/clinical.ts`
+  (`lab_result.panel_id` `onDelete: "cascade"`).
+- **ClickHouse audit:** Confirmed only `analytics.body_measurement_sample`
+  had the type-drift Nullable column among ~50 PeerDB-replicated tables.
+- **Test cleanup:** `provider-activity-sync.test.ts` had two negative test
+  cases for the "missing external id" runtime guard; both became
+  redundant once `externalId` is `notNull()` at the type level and were
+  deleted. Three integration tests that inserted activities without
+  `external_id` were updated to include it so the new NOT NULL
+  constraint holds.
+- **Validation:** All migrations applied cleanly to local Postgres +
+  ClickHouse stack. `pnpm vitest run --project unit` reports 10,999 passed
+  / 21 skipped / 0 failed. Integration tests for `predictions`,
+  `router-coverage`, and `export` pass.
+- **Remaining risk / follow-up:** Peloton provider produces
+  zero-duration activities (3 known cases including 2 Peloton rows
+  remediated in this migration) — source-side duration parsing bug is
+  tracked as a separate follow-up. Migration `0045` includes a comment
+  pointing future maintainers to investigate.
