@@ -289,7 +289,7 @@ requires-dist = [
     { name = "boto3", marker = "extra == 'training'", specifier = ">=1.43.38" },
     { name = "numpy", specifier = ">=2.5.0" },
     { name = "pandas", specifier = ">=2.2.3" },
-    { name = "psycopg", extras = ["binary"], specifier = ">=3.2.0" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
     { name = "pyarrow", specifier = ">=23.0.1" },
     { name = "scikit-learn", marker = "extra == 'training'", specifier = ">=1.9.0" },
     { name = "torch", marker = "extra == 'training'", specifier = ">=2.12.1" },
