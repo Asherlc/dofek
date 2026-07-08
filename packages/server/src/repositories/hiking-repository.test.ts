@@ -373,6 +373,7 @@ describe("HikingRepository", () => {
 
       const query = execute.mock.calls[0]?.[1];
       expect(query).toContain("FROM analytics.hiking_activity");
+      expect(query).toContain("hiking.duration_seconds > 0");
       expect(query).not.toContain("FROM analytics.activity_summary");
     });
   });

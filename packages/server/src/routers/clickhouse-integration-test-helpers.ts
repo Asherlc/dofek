@@ -1088,8 +1088,7 @@ function buildTestHikingActivitySelectSql(databases: IsolatedClickHouseDatabases
     coalesce(elevation_loss_m, 0) AS elevation_loss_m,
     avg_hr
   FROM ${databases.analytics}.activity_summary
-  WHERE ended_at IS NOT NULL
-    AND activity_type IN ('walking', 'hiking', 'trail_running')
+  WHERE activity_type IN ('walking', 'hiking', 'trail_running')
 ),
 refresh_clock AS (
   SELECT
@@ -1104,9 +1103,13 @@ SELECT
   activity_summary.started_at AS started_at,
   activity_summary.ended_at AS ended_at,
   round(activity_summary.distance_m, 1) AS distance_m,
-  toFloat64(dateDiff('second', activity_summary.started_at, activity_summary.ended_at)) AS duration_seconds,
   if(
-    activity_summary.distance_m > 0,
+    activity_summary.ended_at IS NOT NULL,
+    toFloat64(dateDiff('second', activity_summary.started_at, activity_summary.ended_at)),
+    0
+  ) AS duration_seconds,
+  if(
+    activity_summary.distance_m > 0 AND activity_summary.ended_at IS NOT NULL,
     round(
       (
         dateDiff('second', activity_summary.started_at, activity_summary.ended_at) / 60.0

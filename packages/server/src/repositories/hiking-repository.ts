@@ -360,6 +360,7 @@ export class HikingRepository {
           AND hiking.started_at > now() - INTERVAL {days:Int32} DAY
           AND hiking.activity_type IN ('walking', 'hiking', 'trail_running')
           AND hiking.activity_name IS NOT NULL
+          AND hiking.duration_seconds > 0
       ),
       repeated_names AS (
         SELECT activity_name

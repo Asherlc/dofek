@@ -16,6 +16,7 @@ describe("hiking_activity model", () => {
       "activity_type IN ('walking', 'hiking', 'trail_running')",
     );
     expect(activitySummarySql).toContain("is_deleted = 0");
+    expect(activitySummarySql).not.toContain("ended_at IS NOT NULL");
   });
 
   it("precomputes hiking page activity metrics", () => {
@@ -25,6 +26,7 @@ describe("hiking_activity model", () => {
     expect(modelSql).toContain("elevation_gain_m");
     expect(modelSql).toContain("elevation_loss_m");
     expect(modelSql).toContain("avg_heart_rate");
+    expect(modelSql).toContain("activity_summary.ended_at IS NOT NULL");
   });
 
   it("emits tombstones for activities that leave the hiking activity set", () => {
