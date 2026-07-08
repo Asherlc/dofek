@@ -1,7 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CacheTTL, requestCacheTtl } from "./trpc.ts";
 
 describe("requestCacheTtl", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("keeps the configured TTL when the local day boundary is farther away", () => {
     const ttl = requestCacheTtl(
       { maxAge: CacheTTL.LONG, expiresAt: "localDayBoundary" },
@@ -52,5 +56,19 @@ describe("requestCacheTtl", () => {
     );
 
     expect(ttl).toBe(CacheTTL.LONG);
+  });
+
+  it("rethrows unexpected local day boundary calculation errors", () => {
+    vi.spyOn(Intl, "DateTimeFormat").mockImplementation(() => {
+      throw new Error("calendar service unavailable");
+    });
+
+    expect(() =>
+      requestCacheTtl(
+        { maxAge: CacheTTL.LONG, expiresAt: "localDayBoundary" },
+        "UTC",
+        new Date("2026-07-08T23:45:00.000Z"),
+      ),
+    ).toThrow("calendar service unavailable");
   });
 });
