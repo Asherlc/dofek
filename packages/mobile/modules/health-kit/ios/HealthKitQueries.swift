@@ -43,14 +43,14 @@ enum HealthKitQueries {
         case HKQuantityTypeIdentifier.bodyFatPercentage.rawValue,
              HKQuantityTypeIdentifier.oxygenSaturation.rawValue,
              HKQuantityTypeIdentifier.walkingDoubleSupportPercentage.rawValue,
-             HKQuantityTypeIdentifier.walkingAsymmetryPercentage.rawValue:
+             HKQuantityTypeIdentifier.walkingAsymmetryPercentage.rawValue,
+             HKQuantityTypeIdentifier.appleWalkingSteadiness.rawValue:
             return .percent()
         case HKQuantityTypeIdentifier.height.rawValue:
             return .meterUnit(with: .centi)
         case HKQuantityTypeIdentifier.heartRateVariabilitySDNN.rawValue:
             return .secondUnit(with: .milli)
-        case HKQuantityTypeIdentifier.distanceWalkingRunning.rawValue,
-             HKQuantityTypeIdentifier.distanceCycling.rawValue:
+        case HKQuantityTypeIdentifier.distanceWalkingRunning.rawValue:
             return .meter()
         case HKQuantityTypeIdentifier.activeEnergyBurned.rawValue,
              HKQuantityTypeIdentifier.basalEnergyBurned.rawValue,

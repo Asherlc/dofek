@@ -22,13 +22,14 @@ import { computeBoundsFromIsoTimestamps } from "../lib/health-kit-sync-helpers.t
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import {
+  type AdditiveDailyMetricAccumulatorKey,
   additiveDailyMetricTypes,
   BATCH_SIZE,
   bodyMeasurementTypes,
-  columnToAccumulatorKey,
   createEmptyAccumulator,
   type DailyMetricAccumulator,
   type Database,
+  getDailyMetricAccumulatorKey,
   type HealthKitSample,
   INTEGER_DAILY_COLUMNS,
   INTEGER_METRIC_STREAM_COLUMNS,
@@ -185,10 +186,8 @@ export function aggregateDailyMetricSamples(
       const value = additiveMapping.transform
         ? additiveMapping.transform(sample.value)
         : sample.value;
-      const key = columnToAccumulatorKey[additiveMapping.column];
-      if (key) {
-        (accumulator[key] as number) += value;
-      }
+      const key = additiveMapping.accumulatorKey;
+      accumulator[key] = (accumulator[key] ?? 0) + value;
       continue;
     }
 
@@ -202,10 +201,8 @@ export function aggregateDailyMetricSamples(
       continue;
     }
 
-    const key = columnToAccumulatorKey[pointMapping.column];
-    if (key) {
-      (accumulator[key] as number | null) = sample.value;
-    }
+    const key = getDailyMetricAccumulatorKey(pointMapping.column);
+    accumulator[key] = sample.value;
   }
 
   // Select overnight HRV for each (date, source) using shared logic
@@ -249,21 +246,20 @@ export async function processDailyMetrics(
     // Additive fields: replace with the complete day-total from this sync.
     // Each iOS sync sends all samples for the 7-day window, so the in-memory
     // accumulator already contains the full sum — no need to add to existing.
-    const additiveFields: Array<{ column: string; key: keyof DailyMetricAccumulator }> = [
+    const additiveFields: Array<{ column: string; key: AdditiveDailyMetricAccumulatorKey }> = [
       { column: "steps", key: "steps" },
       { column: "active_energy_kcal", key: "activeEnergyKcal" },
       { column: "basal_energy_kcal", key: "basalEnergyKcal" },
       { column: "distance_km", key: "distanceKm" },
-      { column: "cycling_distance_km", key: "cyclingDistanceKm" },
       { column: "flights_climbed", key: "flightsClimbed" },
       { column: "exercise_minutes", key: "exerciseMinutes" },
     ];
 
     for (const { column, key } of additiveFields) {
-      const raw = Number(accumulator[key]);
-      if (raw > 0) {
+      const raw = accumulator[key];
+      if (raw !== null) {
         // Integer columns (steps, flights_climbed, exercise_minutes) need rounding;
-        // real columns (active_energy_kcal, basal_energy_kcal, distance_km, cycling_distance_km) don't.
+        // real columns (active_energy_kcal, basal_energy_kcal, distance_km) don't.
         const value = INTEGER_DAILY_COLUMNS.has(column) ? Math.round(raw) : raw;
         insertColumns.push(sql`${sql.identifier(column)}`);
         insertValues.push(sql`${value}`);
@@ -278,6 +274,7 @@ export async function processDailyMetrics(
       { column: "walking_step_length", key: "walkingStepLength" },
       { column: "walking_double_support_pct", key: "walkingDoubleSupportPct" },
       { column: "walking_asymmetry_pct", key: "walkingAsymmetryPct" },
+      { column: "walking_steadiness", key: "walkingSteadiness" },
     ];
 
     for (const { column, key } of pointFields) {

@@ -133,17 +133,6 @@ const ACTIVITY: DailyMetricTypeDefinition[] = [
     legacyColumnName: "distance_km",
   },
   {
-    id: "cycling_distance_km",
-    displayName: "Cycling Distance",
-    unit: "km",
-    category: "activity",
-    priorityCategory: "activity",
-    sortOrder: 204,
-    isInteger: false,
-    legacyFieldName: "cyclingDistanceKm",
-    legacyColumnName: "cycling_distance_km",
-  },
-  {
     id: "flights_climbed",
     displayName: "Flights Climbed",
     unit: "flights",

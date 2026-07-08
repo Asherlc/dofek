@@ -15,6 +15,13 @@ import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metri
 import { computeBoundsFromIsoTimestamps } from "../lib/health-kit-sync-helpers.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { processWorkouts as processWorkoutsShared } from "../routers/health-kit-sync-processors.ts";
+import {
+  type AdditiveDailyMetricAccumulatorKey,
+  additiveDailyMetricTypes,
+  type DailyMetricAccumulator,
+  getDailyMetricAccumulatorKey,
+  pointInTimeDailyMetricTypes,
+} from "../routers/health-kit-sync-schemas.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -82,22 +89,6 @@ export interface SleepSample {
   sourceName: string;
 }
 
-/** Aggregated daily metric values for a single date */
-export interface DailyMetricAccumulator {
-  steps: number;
-  activeEnergyKcal: number;
-  basalEnergyKcal: number;
-  distanceKm: number;
-  cyclingDistanceKm: number;
-  flightsClimbed: number;
-  exerciseMinutes: number;
-  hrv: number | null;
-  walkingSpeed: number | null;
-  walkingStepLength: number | null;
-  walkingDoubleSupportPct: number | null;
-  walkingAsymmetryPct: number | null;
-}
-
 // ---------------------------------------------------------------------------
 // Type routing maps
 // ---------------------------------------------------------------------------
@@ -116,35 +107,6 @@ const bodyMeasurementTypes: Record<
   HKQuantityTypeIdentifierHeight: { column: "height_cm" },
 };
 
-/** Additive daily metrics -- values that should be summed within a day */
-const additiveDailyMetricTypes: Record<
-  string,
-  { column: string; transform?: (value: number) => number }
-> = {
-  HKQuantityTypeIdentifierStepCount: { column: "steps" },
-  HKQuantityTypeIdentifierActiveEnergyBurned: { column: "active_energy_kcal" },
-  HKQuantityTypeIdentifierBasalEnergyBurned: { column: "basal_energy_kcal" },
-  HKQuantityTypeIdentifierDistanceWalkingRunning: {
-    column: "distance_km",
-    transform: (value) => value / 1000,
-  },
-  HKQuantityTypeIdentifierDistanceCycling: {
-    column: "cycling_distance_km",
-    transform: (value) => value / 1000,
-  },
-  HKQuantityTypeIdentifierFlightsClimbed: { column: "flights_climbed" },
-  HKQuantityTypeIdentifierAppleExerciseTime: { column: "exercise_minutes" },
-};
-
-/** Point-in-time daily metrics -- use latest value for the day */
-const pointInTimeDailyMetricTypes: Record<string, { column: string }> = {
-  HKQuantityTypeIdentifierHeartRateVariabilitySDNN: { column: "hrv" },
-  HKQuantityTypeIdentifierWalkingSpeed: { column: "walking_speed" },
-  HKQuantityTypeIdentifierWalkingStepLength: { column: "walking_step_length" },
-  HKQuantityTypeIdentifierWalkingDoubleSupportPercentage: { column: "walking_double_support_pct" },
-  HKQuantityTypeIdentifierWalkingAsymmetryPercentage: { column: "walking_asymmetry_pct" },
-};
-
 /** Metric stream types and their column names */
 const metricStreamTypes: Record<string, { column: string }> = {
   HKQuantityTypeIdentifierHeartRate: { column: "heart_rate" },
@@ -153,22 +115,6 @@ const metricStreamTypes: Record<string, { column: string }> = {
   HKQuantityTypeIdentifierBloodGlucose: { column: "blood_glucose" },
   HKQuantityTypeIdentifierEnvironmentalAudioExposure: { column: "audio_exposure" },
   HKQuantityTypeIdentifierAppleSleepingWristTemperature: { column: "skin_temperature" },
-};
-
-/** Column name to accumulator key mapping */
-const columnToAccumulatorKey: Record<string, keyof DailyMetricAccumulator> = {
-  steps: "steps",
-  active_energy_kcal: "activeEnergyKcal",
-  basal_energy_kcal: "basalEnergyKcal",
-  distance_km: "distanceKm",
-  cycling_distance_km: "cyclingDistanceKm",
-  flights_climbed: "flightsClimbed",
-  exercise_minutes: "exerciseMinutes",
-  hrv: "hrv",
-  walking_speed: "walkingSpeed",
-  walking_step_length: "walkingStepLength",
-  walking_double_support_pct: "walkingDoubleSupportPct",
-  walking_asymmetry_pct: "walkingAsymmetryPct",
 };
 
 const HEALTHKIT_STAGE_MAP: Record<string, string> = {
@@ -307,18 +253,18 @@ export function categorize(
 
 function createEmptyAccumulator(): DailyMetricAccumulator {
   return {
-    steps: 0,
-    activeEnergyKcal: 0,
-    basalEnergyKcal: 0,
-    distanceKm: 0,
-    cyclingDistanceKm: 0,
-    flightsClimbed: 0,
-    exerciseMinutes: 0,
+    steps: null,
+    activeEnergyKcal: null,
+    basalEnergyKcal: null,
+    distanceKm: null,
+    flightsClimbed: null,
+    exerciseMinutes: null,
     hrv: null,
     walkingSpeed: null,
     walkingStepLength: null,
     walkingDoubleSupportPct: null,
     walkingAsymmetryPct: null,
+    walkingSteadiness: null,
   };
 }
 
@@ -346,10 +292,8 @@ export function aggregateDailyMetricSamples(
       const value = additiveMapping.transform
         ? additiveMapping.transform(sample.value)
         : sample.value;
-      const key = columnToAccumulatorKey[additiveMapping.column];
-      if (key) {
-        (accumulator[key] as number) += value;
-      }
+      const key = additiveMapping.accumulatorKey;
+      accumulator[key] = (accumulator[key] ?? 0) + value;
       continue;
     }
 
@@ -363,10 +307,8 @@ export function aggregateDailyMetricSamples(
       continue;
     }
 
-    const key = columnToAccumulatorKey[pointMapping.column];
-    if (key) {
-      (accumulator[key] as number | null) = sample.value;
-    }
+    const key = getDailyMetricAccumulatorKey(pointMapping.column);
+    accumulator[key] = sample.value;
   }
 
   // Select overnight HRV for each (date, source) using shared logic
@@ -476,19 +418,18 @@ export class HealthKitSyncRepository {
       insertValues.push(sql`${sourceName ?? null}`);
 
       // Additive fields: replace with the complete day-total from this sync.
-      const additiveFields: Array<{ column: string; key: keyof DailyMetricAccumulator }> = [
+      const additiveFields: Array<{ column: string; key: AdditiveDailyMetricAccumulatorKey }> = [
         { column: "steps", key: "steps" },
         { column: "active_energy_kcal", key: "activeEnergyKcal" },
         { column: "basal_energy_kcal", key: "basalEnergyKcal" },
         { column: "distance_km", key: "distanceKm" },
-        { column: "cycling_distance_km", key: "cyclingDistanceKm" },
         { column: "flights_climbed", key: "flightsClimbed" },
         { column: "exercise_minutes", key: "exerciseMinutes" },
       ];
 
       for (const { column, key } of additiveFields) {
-        const raw = Number(accumulator[key]);
-        if (raw > 0) {
+        const raw = accumulator[key];
+        if (raw !== null) {
           const value = INTEGER_DAILY_COLUMNS.has(column) ? Math.round(raw) : raw;
           insertColumns.push(sql`${sql.identifier(column)}`);
           insertValues.push(sql`${value}`);
@@ -503,6 +444,7 @@ export class HealthKitSyncRepository {
         { column: "walking_step_length", key: "walkingStepLength" },
         { column: "walking_double_support_pct", key: "walkingDoubleSupportPct" },
         { column: "walking_asymmetry_pct", key: "walkingAsymmetryPct" },
+        { column: "walking_steadiness", key: "walkingSteadiness" },
       ];
 
       for (const { column, key } of pointFields) {

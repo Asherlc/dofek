@@ -38,6 +38,7 @@ import { createMigration as createMigration0037 } from "./0037_sleep_session_is_
 import { createMigration as createMigration0038 } from "./0038_body_measurement_sample_synced_at_non_nullable.ts";
 import { createMigration as createMigration0039 } from "./0039_create_daily_endurance_load_table.ts";
 import { createMigration as createMigration0040 } from "./0040_create_weekly_endurance_training_tables.ts";
+import { createMigration as createMigration0041 } from "./0041_drop_daily_metrics_cycling_distance.ts";
 import type { ClickHouseMigration, ClickHouseMigrationFactory } from "./types.ts";
 
 const migrationFactories: ClickHouseMigrationFactory[] = [
@@ -81,6 +82,7 @@ const migrationFactories: ClickHouseMigrationFactory[] = [
   createMigration0038,
   createMigration0039,
   createMigration0040,
+  createMigration0041,
 ];
 
 export function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigration[] {

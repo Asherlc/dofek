@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { workoutActivityTypeMap } from "./health-kit-sync-schemas.ts";
+import { getDailyMetricAccumulatorKey, workoutActivityTypeMap } from "./health-kit-sync-schemas.ts";
 
 describe("workoutActivityTypeMap", () => {
   // HKWorkoutActivityType rawValues from Apple documentation.
@@ -64,5 +64,17 @@ describe("workoutActivityTypeMap", () => {
         `rawValue ${rawValue} has camelCase value "${activityType}"`,
       ).not.toMatch(/[a-z][A-Z]/);
     }
+  });
+});
+
+describe("getDailyMetricAccumulatorKey", () => {
+  it("returns the accumulator key for a mapped daily metric column", () => {
+    expect(getDailyMetricAccumulatorKey("walking_speed")).toBe("walkingSpeed");
+  });
+
+  it("throws when a daily metric column is missing an accumulator mapping", () => {
+    expect(() => getDailyMetricAccumulatorKey("missing_daily_metric_column")).toThrow(
+      "Missing daily metric accumulator mapping for column: missing_daily_metric_column",
+    );
   });
 });

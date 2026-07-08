@@ -29,7 +29,7 @@ async function seedDailyMetrics(sql: Sql, random: SeedRandom, today: Date): Prom
       INSERT INTO fitness.daily_metrics (
         date, provider_id, user_id, hrv, spo2_avg,
         respiratory_rate_avg, skin_temp_c, stress_high_minutes, recovery_high_minutes,
-        steps, active_energy_kcal, basal_energy_kcal, distance_km, cycling_distance_km,
+        steps, active_energy_kcal, basal_energy_kcal, distance_km,
         flights_climbed, exercise_minutes, walking_speed, walking_step_length,
         walking_double_support_pct, walking_asymmetry_pct, walking_steadiness,
         stand_hours, resilience_level, source_name
@@ -39,7 +39,7 @@ async function seedDailyMetrics(sql: Sql, random: SeedRandom, today: Date): Prom
         ${random.float(13.2, 16.8, 1)}, ${random.float(35.8, 36.9, 1)},
         ${highStressDay ? 180 : random.int(20, 85)}, ${highStressDay ? 20 : random.int(70, 180)},
         ${steps}, ${hardBlock ? random.int(780, 1_150) : random.int(360, 760)}, 1810,
-        ${random.float(4.2, 11.5, 1)}, ${hardBlock ? random.float(18, 55, 1) : random.float(0, 18, 1)},
+        ${random.float(4.2, 11.5, 1)},
         ${random.int(3, 24)}, ${hardBlock ? random.int(55, 125) : random.int(22, 70)},
         ${random.float(1.15, 1.55, 2)}, ${random.float(68, 86, 1)},
         ${random.float(18, 27, 1)}, ${random.float(0, 2.5, 1)},

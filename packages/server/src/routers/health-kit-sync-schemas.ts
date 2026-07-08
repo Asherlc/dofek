@@ -111,21 +111,34 @@ export const bodyMeasurementTypes: Record<
 /** Additive daily metrics -- values that should be summed within a day */
 export const additiveDailyMetricTypes: Record<
   string,
-  { column: string; transform?: (value: number) => number }
+  {
+    column: string;
+    accumulatorKey: AdditiveDailyMetricAccumulatorKey;
+    transform?: (value: number) => number;
+  }
 > = {
-  HKQuantityTypeIdentifierStepCount: { column: "steps" },
-  HKQuantityTypeIdentifierActiveEnergyBurned: { column: "active_energy_kcal" },
-  HKQuantityTypeIdentifierBasalEnergyBurned: { column: "basal_energy_kcal" },
+  HKQuantityTypeIdentifierStepCount: { column: "steps", accumulatorKey: "steps" },
+  HKQuantityTypeIdentifierActiveEnergyBurned: {
+    column: "active_energy_kcal",
+    accumulatorKey: "activeEnergyKcal",
+  },
+  HKQuantityTypeIdentifierBasalEnergyBurned: {
+    column: "basal_energy_kcal",
+    accumulatorKey: "basalEnergyKcal",
+  },
   HKQuantityTypeIdentifierDistanceWalkingRunning: {
     column: "distance_km",
+    accumulatorKey: "distanceKm",
     transform: (value) => value / 1000,
   },
-  HKQuantityTypeIdentifierDistanceCycling: {
-    column: "cycling_distance_km",
-    transform: (value) => value / 1000,
+  HKQuantityTypeIdentifierFlightsClimbed: {
+    column: "flights_climbed",
+    accumulatorKey: "flightsClimbed",
   },
-  HKQuantityTypeIdentifierFlightsClimbed: { column: "flights_climbed" },
-  HKQuantityTypeIdentifierAppleExerciseTime: { column: "exercise_minutes" },
+  HKQuantityTypeIdentifierAppleExerciseTime: {
+    column: "exercise_minutes",
+    accumulatorKey: "exerciseMinutes",
+  },
 };
 
 /** Point-in-time daily metrics -- use latest value for the day */
@@ -135,6 +148,7 @@ export const pointInTimeDailyMetricTypes: Record<string, { column: string }> = {
   HKQuantityTypeIdentifierWalkingStepLength: { column: "walking_step_length" },
   HKQuantityTypeIdentifierWalkingDoubleSupportPercentage: { column: "walking_double_support_pct" },
   HKQuantityTypeIdentifierWalkingAsymmetryPercentage: { column: "walking_asymmetry_pct" },
+  HKQuantityTypeIdentifierAppleWalkingSteadiness: { column: "walking_steadiness" },
 };
 
 /** Metric stream types and their column names */
@@ -261,34 +275,42 @@ export const ROUTE_CHANNELS: Array<{
 
 /** Aggregated daily metric values for a single date */
 export interface DailyMetricAccumulator {
-  steps: number;
-  activeEnergyKcal: number;
-  basalEnergyKcal: number;
-  distanceKm: number;
-  cyclingDistanceKm: number;
-  flightsClimbed: number;
-  exerciseMinutes: number;
+  steps: number | null;
+  activeEnergyKcal: number | null;
+  basalEnergyKcal: number | null;
+  distanceKm: number | null;
+  flightsClimbed: number | null;
+  exerciseMinutes: number | null;
   hrv: number | null;
   walkingSpeed: number | null;
   walkingStepLength: number | null;
   walkingDoubleSupportPct: number | null;
   walkingAsymmetryPct: number | null;
+  walkingSteadiness: number | null;
 }
+
+export type AdditiveDailyMetricAccumulatorKey =
+  | "steps"
+  | "activeEnergyKcal"
+  | "basalEnergyKcal"
+  | "distanceKm"
+  | "flightsClimbed"
+  | "exerciseMinutes";
 
 export function createEmptyAccumulator(): DailyMetricAccumulator {
   return {
-    steps: 0,
-    activeEnergyKcal: 0,
-    basalEnergyKcal: 0,
-    distanceKm: 0,
-    cyclingDistanceKm: 0,
-    flightsClimbed: 0,
-    exerciseMinutes: 0,
+    steps: null,
+    activeEnergyKcal: null,
+    basalEnergyKcal: null,
+    distanceKm: null,
+    flightsClimbed: null,
+    exerciseMinutes: null,
     hrv: null,
     walkingSpeed: null,
     walkingStepLength: null,
     walkingDoubleSupportPct: null,
     walkingAsymmetryPct: null,
+    walkingSteadiness: null,
   };
 }
 
@@ -298,7 +320,6 @@ export const columnToAccumulatorKey: Record<string, keyof DailyMetricAccumulator
   active_energy_kcal: "activeEnergyKcal",
   basal_energy_kcal: "basalEnergyKcal",
   distance_km: "distanceKm",
-  cycling_distance_km: "cyclingDistanceKm",
   flights_climbed: "flightsClimbed",
   exercise_minutes: "exerciseMinutes",
   hrv: "hrv",
@@ -306,4 +327,13 @@ export const columnToAccumulatorKey: Record<string, keyof DailyMetricAccumulator
   walking_step_length: "walkingStepLength",
   walking_double_support_pct: "walkingDoubleSupportPct",
   walking_asymmetry_pct: "walkingAsymmetryPct",
+  walking_steadiness: "walkingSteadiness",
 };
+
+export function getDailyMetricAccumulatorKey(column: string): keyof DailyMetricAccumulator {
+  const key = columnToAccumulatorKey[column];
+  if (!key) {
+    throw new Error(`Missing daily metric accumulator mapping for column: ${column}`);
+  }
+  return key;
+}

@@ -2078,12 +2078,6 @@ describe("healthKitSyncRouter", () => {
           uuid: "dist-1",
         }),
         makeSample({
-          type: "HKQuantityTypeIdentifierDistanceCycling",
-          value: 20000, // meters, should be transformed to 20 km
-          startDate: "2024-01-15T12:00:00Z",
-          uuid: "cycle-1",
-        }),
-        makeSample({
           type: "HKQuantityTypeIdentifierFlightsClimbed",
           value: 12,
           startDate: "2024-01-15T12:00:00Z",
@@ -2105,7 +2099,6 @@ describe("healthKitSyncRouter", () => {
       expect(jan15?.activeEnergyKcal).toBe(300);
       expect(jan15?.basalEnergyKcal).toBe(1500);
       expect(jan15?.distanceKm).toBe(5);
-      expect(jan15?.cyclingDistanceKm).toBe(20);
       expect(jan15?.flightsClimbed).toBe(12);
       expect(jan15?.exerciseMinutes).toBe(45);
     });
@@ -2148,6 +2141,12 @@ describe("healthKitSyncRouter", () => {
           startDate: "2024-01-15T10:00:00Z",
           uuid: "wa-1",
         }),
+        makeSample({
+          type: "HKQuantityTypeIdentifierAppleWalkingSteadiness",
+          value: 0.84,
+          startDate: "2024-01-15T10:00:00Z",
+          uuid: "steadiness-1",
+        }),
       ];
 
       const daily = aggregateDailyMetricSamples(samples);
@@ -2160,6 +2159,7 @@ describe("healthKitSyncRouter", () => {
       expect(jan15?.walkingStepLength).toBe(0.72);
       expect(jan15?.walkingDoubleSupportPct).toBe(0.28);
       expect(jan15?.walkingAsymmetryPct).toBe(0.05);
+      expect(jan15?.walkingSteadiness).toBe(0.84);
     });
 
     it("skips non-point, non-additive samples via continue (kills if(false) on !pointMapping continue)", () => {
@@ -2308,6 +2308,11 @@ describe("healthKitSyncRouter", () => {
             value: 0.05,
             uuid: "wa-insert",
           }),
+          makeSample({
+            type: "HKQuantityTypeIdentifierAppleWalkingSteadiness",
+            value: 0.84,
+            uuid: "steadiness-insert",
+          }),
         ],
       });
 
@@ -2325,11 +2330,49 @@ describe("healthKitSyncRouter", () => {
       expect(serialized).toContain("walking_step_length");
       expect(serialized).toContain("walking_double_support_pct");
       expect(serialized).toContain("walking_asymmetry_pct");
+      expect(serialized).toContain("walking_steadiness");
     });
 
-    it("skips additive fields with zero value (kills raw > 0 to true/raw >= 0 mutations)", async () => {
-      // If only zero-value additive fields are sent, the setClauses will be empty
-      // and processDailyMetrics should skip the INSERT (continue on setClauses.length === 0)
+    it("does not write absent additive fields for point-in-time-only samples", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.pushQuantitySamples({
+        samples: [
+          makeSample({
+            type: "HKQuantityTypeIdentifierWalkingSpeed",
+            value: 1.3,
+            uuid: "walking-speed-only",
+          }),
+        ],
+      });
+
+      const dailyInsertCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return serialized.includes("daily_metrics") && serialized.includes("INSERT");
+      });
+      expect(dailyInsertCall).toBeDefined();
+      const serialized = JSON.stringify(dailyInsertCall?.[0]);
+      expect(serialized).toContain("walking_speed");
+      expect(serialized).not.toContain("steps");
+      expect(serialized).not.toContain("active_energy_kcal");
+      expect(serialized).not.toContain("basal_energy_kcal");
+      expect(serialized).not.toContain("distance_km");
+      expect(serialized).not.toContain("flights_climbed");
+      expect(serialized).not.toContain("exercise_minutes");
+    });
+
+    it("writes additive fields with zero value when a zero sample is present", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
       const samples = [
         makeSample({
           type: "HKQuantityTypeIdentifierStepCount",
@@ -2344,6 +2387,14 @@ describe("healthKitSyncRouter", () => {
 
       // Steps should be 0 since value is 0
       expect(jan15?.steps).toBe(0);
+
+      await caller.pushQuantitySamples({ samples });
+      const dailyInsertCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return serialized.includes("daily_metrics") && serialized.includes("INSERT");
+      });
+      expect(dailyInsertCall).toBeDefined();
+      expect(JSON.stringify(dailyInsertCall?.[0])).toContain("steps");
     });
 
     it("properly categorizes pointInTimeDailyMetric types (kills if(false) mutation on categorize)", async () => {
@@ -2357,9 +2408,9 @@ describe("healthKitSyncRouter", () => {
       const result = await caller.pushQuantitySamples({
         samples: [
           makeSample({
-            type: "HKQuantityTypeIdentifierWalkingSpeed",
-            value: 1.3,
-            uuid: "speed-categorize",
+            type: "HKQuantityTypeIdentifierAppleWalkingSteadiness",
+            value: 0.84,
+            uuid: "steadiness-categorize",
           }),
         ],
       });
