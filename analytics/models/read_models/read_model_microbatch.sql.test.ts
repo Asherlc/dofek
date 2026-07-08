@@ -547,7 +547,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("nullIf(user_profile.resting_hr, 0)");
     expect(sql).toContain("activity_type IN (");
     expect(sql).toContain("'road_cycling'");
-    expect(sql).toContain("if(\n                max_hr > resting_hr");
+    expect(compactWhitespace(sql)).toContain("if( max_hr > resting_hr");
     expect(sql).toContain("0.64 * exp(1.92 * intensity)");
     expect(sql).toContain("training_load");
     expect(sql).not.toContain("ref('activity_sensor_sample')");

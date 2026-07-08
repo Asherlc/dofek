@@ -33,6 +33,34 @@ daily_load AS (
         load_date
 ),
 
+week_bounds AS (
+    SELECT
+        user_id,
+        toMonday(min(load_date)) AS first_week,
+        toMonday(max(load_date)) AS latest_week
+    FROM daily_load
+    GROUP BY user_id
+),
+
+calendar_dates AS (
+    SELECT
+        user_id,
+        first_week + INTERVAL date_offset DAY AS load_date
+    FROM week_bounds
+    ARRAY JOIN range(toUInt32(dateDiff('day', first_week, latest_week + INTERVAL 6 DAY) + 1)) AS date_offset
+),
+
+load_by_calendar_date AS (
+    SELECT
+        calendar_dates.user_id AS user_id,
+        calendar_dates.load_date AS load_date,
+        coalesce(daily_load.training_load, 0) AS training_load
+    FROM calendar_dates
+    LEFT JOIN daily_load
+        ON daily_load.user_id = calendar_dates.user_id
+        AND daily_load.load_date = calendar_dates.load_date
+),
+
 weekly_stats AS (
     SELECT
         user_id,
@@ -40,7 +68,7 @@ weekly_stats AS (
         avg(training_load) AS mean_load,
         stddevPop(training_load) AS stdev_load,
         sum(training_load) AS weekly_load
-    FROM daily_load
+    FROM load_by_calendar_date
     GROUP BY
         user_id,
         toMonday(load_date)

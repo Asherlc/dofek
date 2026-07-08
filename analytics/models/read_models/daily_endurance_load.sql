@@ -8,7 +8,22 @@
     }
 ) }}
 
-WITH activity_bounds AS (
+WITH {% if is_incremental() %}
+target_state AS (
+    SELECT coalesce(max(refreshed_at), toDateTime64(0, 9, 'UTC')) AS last_refreshed_at
+    FROM {{ this }} FINAL
+),
+
+changed_activity_keys AS (
+    SELECT DISTINCT
+        activity_id,
+        user_id
+    FROM {{ ref('activity_summary_rows') }} FINAL
+    WHERE refreshed_at > (SELECT last_refreshed_at FROM target_state)
+),
+{% endif %}
+
+activity_bounds AS (
     SELECT
         activity_id,
         user_id,
@@ -21,6 +36,9 @@ WITH activity_bounds AS (
         AND ended_at IS NOT NULL
         AND avg_hr IS NOT NULL
         AND avg_hr > 0
+        {% if is_incremental() %}
+            AND (activity_id, user_id) IN (SELECT activity_id, user_id FROM changed_activity_keys)
+        {% endif %}
 ),
 
 {% if is_incremental() %}
@@ -30,6 +48,7 @@ existing_activities AS (
         user_id
     FROM {{ this }} FINAL
     WHERE is_deleted = 0
+        AND (activity_id, user_id) IN (SELECT activity_id, user_id FROM changed_activity_keys)
 ),
 {% endif %}
 
