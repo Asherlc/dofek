@@ -372,6 +372,20 @@ function isNaiveClickHouseMaterializedView(statement: string): boolean {
   return !toTargetPattern.test(header);
 }
 
+function isClickHouseFilePath(filePath: string): boolean {
+  return filePath.startsWith("analytics/") || filePath.startsWith("src/db/clickhouse-sql/");
+}
+
+function isClickHouseOnlyRule(ruleName: string): boolean {
+  return (
+    ruleName.startsWith("clickhouse-") ||
+    ruleName === "system-refresh-view" ||
+    ruleName === "system-wait-view" ||
+    ruleName === "refresh-every" ||
+    ruleName === "optimize-final"
+  );
+}
+
 export function lintMigrationPolicyFile(
   filePath: string,
   content: string,
@@ -396,6 +410,10 @@ export function lintMigrationPolicyFile(
 
   for (const statement of statements) {
     for (const rule of riskyStatementRules) {
+      if (isClickHouseOnlyRule(rule.ruleName) && !isClickHouseFilePath(filePath)) {
+        continue;
+      }
+
       if (rule.ruleName === "clickhouse-naive-materialized-view") {
         if (isNaiveClickHouseMaterializedView(statement.text)) {
           violations.push(buildViolation(filePath, statement, rule));

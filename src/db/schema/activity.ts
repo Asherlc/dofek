@@ -29,7 +29,7 @@ export const strengthSet = fitness.table(
       .references(() => activity.id, { onDelete: "cascade" }),
     exerciseId: uuid("exercise_id")
       .notNull()
-      .references(() => exercise.id),
+      .references(() => exercise.id, { onDelete: "cascade" }),
     exerciseIndex: integer("exercise_index").notNull(),
     setIndex: integer("set_index").notNull(),
     setType: setTypeEnum("set_type").default("working"),
@@ -61,7 +61,7 @@ export const activity = fitness.table(
       .notNull()
       .$defaultFn(resolveImplicitUserId)
       .references(() => userProfile.id),
-    externalId: text("external_id"),
+    externalId: text("external_id").notNull(),
     activityType: activityTypeEnum("activity_type").notNull(),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
     endedAt: timestamp("ended_at", { withTimezone: true }),
@@ -211,7 +211,7 @@ export const dailyMetricValue = fitness.table(
       .references(() => dailyMetrics.id, { onDelete: "cascade" }),
     metricTypeId: text("metric_type_id")
       .notNull()
-      .references(() => dailyMetricType.id),
+      .references(() => dailyMetricType.id, { onDelete: "restrict" }),
     value: real("value").notNull(),
   },
   (table) => [

@@ -35,10 +35,11 @@ describe("Activity router", () => {
 
     const insertedActivities = await testCtx.db.execute<{ id: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, activity_type, started_at, ended_at, name
           ) VALUES (
             'test_provider',
             ${TEST_USER_ID},
+            'metric-stream-only-activity',
             'running',
             CURRENT_TIMESTAMP - INTERVAL '2 days',
             CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '30 minutes',
@@ -53,11 +54,12 @@ describe("Activity router", () => {
 
     const filteredActivities = await testCtx.db.execute<{ id: string; activity_type: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, activity_type, started_at, ended_at, name
           ) VALUES
           (
             'test_provider',
             ${TEST_USER_ID},
+            'filtered-cycling-activity',
             'cycling',
             CURRENT_TIMESTAMP - INTERVAL '1 day',
             CURRENT_TIMESTAMP - INTERVAL '1 day' + INTERVAL '75 minutes',
@@ -66,6 +68,7 @@ describe("Activity router", () => {
           (
             'test_provider',
             ${TEST_USER_ID},
+            'filtered-walking-activity',
             'walking',
             CURRENT_TIMESTAMP - INTERVAL '12 hours',
             CURRENT_TIMESTAMP - INTERVAL '12 hours' + INTERVAL '40 minutes',

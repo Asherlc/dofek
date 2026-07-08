@@ -154,16 +154,17 @@ describe("Settings router", () => {
       );
       await Promise.all([
         testCtx.db.execute(
-          sql`INSERT INTO fitness.activity (id, provider_id, user_id, activity_type, started_at, name)
+          sql`INSERT INTO fitness.activity (id, provider_id, user_id, external_id, activity_type, started_at, name)
               VALUES (
                 '22222222-2222-2222-2222-222222222222',
                 'settings-wipe-provider',
                 ${SETTINGS_TEST_USER_ID},
+                'settings-delete-me',
                 'running',
                 '2024-01-15T10:00:00Z',
                 'Delete Me'
               )
-              ON CONFLICT DO NOTHING`,
+              ON CONFLICT (id) DO NOTHING`,
         ),
         testCtx.db.execute(
           sql`INSERT INTO fitness.sync_log (provider_id, user_id, data_type, status)

@@ -118,9 +118,9 @@ describe("Router coverage", () => {
 
       const actResult = await testCtx.db.execute<{ id: string }>(
         sql`INSERT INTO fitness.activity (
-              provider_id, user_id, activity_type, started_at, ended_at, name
+              provider_id, user_id, external_id, activity_type, started_at, ended_at, name
             ) VALUES (
-              'test_provider', ${TEST_USER_ID}, 'cycling',
+              'test_provider', ${TEST_USER_ID}, ${`stress-ride-${actIdx}`}, 'cycling',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + ${durationSec}::int * INTERVAL '1 second',
               ${`Training Ride ${actIdx}`}
