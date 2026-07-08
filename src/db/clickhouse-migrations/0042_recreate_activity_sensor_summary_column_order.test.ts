@@ -18,6 +18,7 @@ describe("0042_recreate_activity_sensor_summary_column_order", () => {
     const summaryColumns = extractClickHouseTableColumnNames(buildActivitySummaryRowsTableSql());
 
     expect(migration.id).toBe("0042_recreate_activity_sensor_summary_column_order");
+    expect(migration.run).toBeDefined();
     expect(migration.statements).toEqual([
       "DROP VIEW IF EXISTS analytics.activity_summary",
       `RENAME TABLE ${sensorSummaryTable} TO ${sensorSummaryTable}_old,
