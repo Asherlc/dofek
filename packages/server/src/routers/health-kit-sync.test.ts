@@ -2333,6 +2333,39 @@ describe("healthKitSyncRouter", () => {
       expect(serialized).toContain("walking_steadiness");
     });
 
+    it("does not write absent additive fields for point-in-time-only samples", async () => {
+      const execute = makeExecute();
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.pushQuantitySamples({
+        samples: [
+          makeSample({
+            type: "HKQuantityTypeIdentifierWalkingSpeed",
+            value: 1.3,
+            uuid: "walking-speed-only",
+          }),
+        ],
+      });
+
+      const dailyInsertCall = execute.mock.calls.find((call: unknown[]) => {
+        const serialized = JSON.stringify(call[0]);
+        return serialized.includes("daily_metrics") && serialized.includes("INSERT");
+      });
+      expect(dailyInsertCall).toBeDefined();
+      const serialized = JSON.stringify(dailyInsertCall?.[0]);
+      expect(serialized).toContain("walking_speed");
+      expect(serialized).not.toContain("steps");
+      expect(serialized).not.toContain("active_energy_kcal");
+      expect(serialized).not.toContain("basal_energy_kcal");
+      expect(serialized).not.toContain("distance_km");
+      expect(serialized).not.toContain("flights_climbed");
+      expect(serialized).not.toContain("exercise_minutes");
+    });
+
     it("writes additive fields with zero value when a zero sample is present", async () => {
       const execute = makeExecute();
       const caller = createCaller({

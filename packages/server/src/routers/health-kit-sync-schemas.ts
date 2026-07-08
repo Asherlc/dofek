@@ -111,17 +111,34 @@ export const bodyMeasurementTypes: Record<
 /** Additive daily metrics -- values that should be summed within a day */
 export const additiveDailyMetricTypes: Record<
   string,
-  { column: string; transform?: (value: number) => number }
+  {
+    column: string;
+    accumulatorKey: AdditiveDailyMetricAccumulatorKey;
+    transform?: (value: number) => number;
+  }
 > = {
-  HKQuantityTypeIdentifierStepCount: { column: "steps" },
-  HKQuantityTypeIdentifierActiveEnergyBurned: { column: "active_energy_kcal" },
-  HKQuantityTypeIdentifierBasalEnergyBurned: { column: "basal_energy_kcal" },
+  HKQuantityTypeIdentifierStepCount: { column: "steps", accumulatorKey: "steps" },
+  HKQuantityTypeIdentifierActiveEnergyBurned: {
+    column: "active_energy_kcal",
+    accumulatorKey: "activeEnergyKcal",
+  },
+  HKQuantityTypeIdentifierBasalEnergyBurned: {
+    column: "basal_energy_kcal",
+    accumulatorKey: "basalEnergyKcal",
+  },
   HKQuantityTypeIdentifierDistanceWalkingRunning: {
     column: "distance_km",
+    accumulatorKey: "distanceKm",
     transform: (value) => value / 1000,
   },
-  HKQuantityTypeIdentifierFlightsClimbed: { column: "flights_climbed" },
-  HKQuantityTypeIdentifierAppleExerciseTime: { column: "exercise_minutes" },
+  HKQuantityTypeIdentifierFlightsClimbed: {
+    column: "flights_climbed",
+    accumulatorKey: "flightsClimbed",
+  },
+  HKQuantityTypeIdentifierAppleExerciseTime: {
+    column: "exercise_minutes",
+    accumulatorKey: "exerciseMinutes",
+  },
 };
 
 /** Point-in-time daily metrics -- use latest value for the day */
@@ -279,21 +296,6 @@ export type AdditiveDailyMetricAccumulatorKey =
   | "distanceKm"
   | "flightsClimbed"
   | "exerciseMinutes";
-
-const additiveDailyMetricAccumulatorKeys = new Set<keyof DailyMetricAccumulator>([
-  "steps",
-  "activeEnergyKcal",
-  "basalEnergyKcal",
-  "distanceKm",
-  "flightsClimbed",
-  "exerciseMinutes",
-]);
-
-export function isAdditiveDailyMetricAccumulatorKey(
-  key: keyof DailyMetricAccumulator,
-): key is AdditiveDailyMetricAccumulatorKey {
-  return additiveDailyMetricAccumulatorKeys.has(key);
-}
 
 export function createEmptyAccumulator(): DailyMetricAccumulator {
   return {

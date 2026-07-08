@@ -33,7 +33,6 @@ import {
   type HealthKitSample,
   INTEGER_DAILY_COLUMNS,
   INTEGER_METRIC_STREAM_COLUMNS,
-  isAdditiveDailyMetricAccumulatorKey,
   metricStreamTypes,
   PROVIDER_ID,
   pointInTimeDailyMetricTypes,
@@ -187,10 +186,8 @@ export function aggregateDailyMetricSamples(
       const value = additiveMapping.transform
         ? additiveMapping.transform(sample.value)
         : sample.value;
-      const key = columnToAccumulatorKey[additiveMapping.column];
-      if (key && isAdditiveDailyMetricAccumulatorKey(key)) {
-        accumulator[key] = (accumulator[key] ?? 0) + value;
-      }
+      const key = additiveMapping.accumulatorKey;
+      accumulator[key] = (accumulator[key] ?? 0) + value;
       continue;
     }
 
