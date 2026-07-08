@@ -30,8 +30,6 @@ function fakeZwiftActivitySummary(overrides: Record<string, unknown> = {}) {
     id_str: "100001",
     profileId: 42,
     name: "Watopia Hilly Route",
-    startDate,
-    endDate,
     distanceInMeters: 35000,
     avgHeartRate: 155,
     maxHeartRate: 182,
@@ -46,6 +44,8 @@ function fakeZwiftActivitySummary(overrides: Record<string, unknown> = {}) {
     rideOnGiven: 5,
     activityRideOnCount: 12,
     ...overrides,
+    startDate,
+    endDate,
   };
 }
 
@@ -105,6 +105,18 @@ function fakeZwiftPowerCurve(overrides: Record<string, unknown> = {}) {
 // JWT with sub claim for athleteId 42
 const FAKE_JWT_PAYLOAD = Buffer.from(JSON.stringify({ sub: "42" })).toString("base64url");
 const FAKE_ACCESS_TOKEN = `header.${FAKE_JWT_PAYLOAD}.signature`;
+
+describe("fakeZwiftActivitySummary", () => {
+  it("keeps validated dates after applying overrides", () => {
+    const summary = fakeZwiftActivitySummary({
+      startDate: "not-a-date",
+      endDate: undefined,
+    });
+
+    expect(summary.startDate).toBe("2026-03-01T10:00:00Z");
+    expect(summary.endDate).toBe("2026-03-01T11:00:00.000Z");
+  });
+});
 
 // ============================================================
 // MSW handler factory
