@@ -58,6 +58,14 @@ suites, the full migration apply-path seed integration suite, and the new
 ClickHouse migration unit test. All passed locally with `db` and `redis`
 healthy under Docker Compose.
 
+The production run used image
+`ghcr.io/asherlc/dofek:migration-ci-docs-ff64b4d` built from commit
+`ff64b4dd4`. The first production run applied four Postgres migrations
+(`0042` through `0045`) and one ClickHouse migration
+(`0038_body_measurement_sample_synced_at_non_nullable`). A second production
+run completed with zero pending Postgres migrations and zero ClickHouse
+migrations applied.
+
 ### Remaining Risk
 
 The Peloton provider still needs a follow-up fix so real provider durations are
