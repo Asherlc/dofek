@@ -154,7 +154,6 @@ export const pointInTimeDailyMetricTypes: Record<string, { column: string }> = {
 /** Metric stream types and their column names */
 export const metricStreamTypes: Record<string, { column: string }> = {
   HKQuantityTypeIdentifierHeartRate: { column: "heart_rate" },
-  HKQuantityTypeIdentifierCyclingPower: { column: "power" },
   HKQuantityTypeIdentifierOxygenSaturation: { column: "spo2" },
   HKQuantityTypeIdentifierRespiratoryRate: { column: "respiratory_rate" },
   HKQuantityTypeIdentifierBloodGlucose: { column: "blood_glucose" },

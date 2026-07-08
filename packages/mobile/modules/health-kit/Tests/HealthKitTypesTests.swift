@@ -81,13 +81,6 @@ final class HealthKitTypesTests: XCTestCase {
         XCTAssertTrue(readTypes.contains(HKSeriesType.workoutRoute()))
     }
 
-    func testReadTypesContainsCyclingPowerWhenAvailable() {
-        if #available(iOS 17.0, macOS 14.0, *) {
-            let cyclingPowerType = HKQuantityType.quantityType(forIdentifier: .cyclingPower)!
-            XCTAssertTrue(readTypes.contains(cyclingPowerType))
-        }
-    }
-
     func testReadTypesContainsClinicalTypes() {
         #if os(iOS)
         let clinicalIdentifiers: [HKClinicalTypeIdentifier] = [
@@ -115,8 +108,8 @@ final class HealthKitTypesTests: XCTestCase {
     }
 
     func testReadTypesTotalCount() {
-        // 52 quantity types + 5 category types + 1 workout type + 1 workout route = 59
-        var expectedCount = 59
+        // 51 quantity types + 5 category types + 1 workout type + 1 workout route = 58
+        var expectedCount = 58
         #if os(iOS)
         expectedCount += 7 // allergy, condition, immunization, lab, medication, procedure, vital
         if #available(iOS 16.4, *) { expectedCount += 1 } // clinicalNote
