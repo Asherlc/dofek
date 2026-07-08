@@ -44,7 +44,7 @@ describe("activity_sensor_summary_rows model", () => {
       expect(unguardedMatches).toHaveLength(0);
     });
 
-    it("keeps lifecycle columns before appended power analytics columns", () => {
+    it("keeps appended power analytics columns before lifecycle columns", () => {
       const lifecycleColumnIndex = modelSql.indexOf("toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version");
       const bestTwentyMinutePowerIndex = modelSql.indexOf(
         "best_twenty_minute_power_per_activity.best_twenty_minute_power AS best_twenty_minute_power",
@@ -52,7 +52,7 @@ describe("activity_sensor_summary_rows model", () => {
 
       expect(lifecycleColumnIndex).toBeGreaterThan(-1);
       expect(bestTwentyMinutePowerIndex).toBeGreaterThan(-1);
-      expect(lifecycleColumnIndex).toBeLessThan(bestTwentyMinutePowerIndex);
+      expect(bestTwentyMinutePowerIndex).toBeLessThan(lifecycleColumnIndex);
     });
   });
 });
