@@ -562,7 +562,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("ref('daily_endurance_load')");
     expect(sql).toContain("WITH changed_users AS");
     expect(sql).toContain("pow(41.0 / 42.0");
-    expect(sql).toContain("lagInFrame(ctl_end");
+    expect(sql).toContain("lagInFrame(toNullable(ctl_end)");
     expect(sql).toContain("ramp_rate");
     expect(sql).toContain("if(current_rows.user_id IS NULL, 1, 0) AS is_deleted");
     expect(sql).not.toContain("ref('activity_sensor_sample')");

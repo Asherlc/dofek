@@ -1632,7 +1632,7 @@ weekly_with_previous AS (
     user_id,
     week,
     ctl_end,
-    lagInFrame(ctl_end, 1, CAST(NULL, 'Nullable(Float64)')) OVER (
+    lagInFrame(toNullable(ctl_end), 1, CAST(NULL, 'Nullable(Float64)')) OVER (
       PARTITION BY user_id ORDER BY week
     ) AS previous_ctl_end
   FROM weekly_ctl
