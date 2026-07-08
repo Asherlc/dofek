@@ -57,14 +57,14 @@ export default function StrainScreen() {
 
   const activitiesParsed = safeParseRows(
     ActivityRowSchema,
-    trainingData == null ? [] : trainingData.activities,
+    trainingData?.activities ?? [],
     "strain:activities",
   );
   const activities = activitiesParsed.data;
 
   const weeklyVolumeParsed = safeParseRows(
     WeeklyVolumeRowSchema,
-    trainingData == null ? [] : trainingData.weeklyVolume,
+    trainingData?.weeklyVolume ?? [],
     "strain:weeklyVolume",
   );
   const weeklyVolume = weeklyVolumeParsed.data;
