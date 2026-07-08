@@ -156,6 +156,17 @@ describe("PmcRepository", () => {
       expectCyclingOnlyActivityTypes(vi.mocked(query).mock.calls[1]?.[2]?.activityTypes);
     });
 
+    it("filters fallback max heart rate baseline to cycling activity types", async () => {
+      const { repo, query } = makeRepoHarness([makeActivityRow()], []);
+
+      await repo.getChart(30);
+
+      const activityQuery = vi.mocked(query).mock.calls[0]?.[1];
+      expect(activityQuery).toContain("SELECT maxIf(max_hr, max_hr > 0)");
+      expect(activityQuery).toContain("has({activityTypes:Array(String)}, activity_type)");
+      expectCyclingOnlyActivityTypes(vi.mocked(query).mock.calls[0]?.[2]?.activityTypes);
+    });
+
     it("extends query history when requested display days exceed the minimum history", async () => {
       const { repo, query } = makeRepoHarness([], [], "UTC", 1);
 

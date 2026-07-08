@@ -120,7 +120,7 @@ export async function getClickHouseNormalizedPowerSamples(
             AND deduped_samples.is_deleted = 0
             AND activity.started_at > now() - toIntervalDay({days:UInt32})
             AND activity.is_deleted = 0
-            AND has({enduranceActivityTypes:Array(String)}, activity.activity_type)
+            AND has({activityTypes:Array(String)}, activity.activity_type)
           GROUP BY activity.activity_id, activity.user_id, activity.started_at, activity.ended_at, activity.name
           HAVING count() >= 240
         )

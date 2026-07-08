@@ -93,6 +93,7 @@ export class PmcRepository extends BaseRepository {
           coalesce(nullIf(up.max_hr, 0), (
             SELECT maxIf(max_hr, max_hr > 0) FROM analytics.activity_summary
             WHERE user_id = {userId:UUID}
+              AND has({activityTypes:Array(String)}, activity_type)
           )) AS global_max_hr,
           coalesce(nullIf(up.resting_hr, 0), (
             SELECT resting_hr FROM resting_heart_rate
