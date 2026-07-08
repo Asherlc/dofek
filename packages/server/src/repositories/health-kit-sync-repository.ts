@@ -15,6 +15,10 @@ import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metri
 import { computeBoundsFromIsoTimestamps } from "../lib/health-kit-sync-helpers.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { processWorkouts as processWorkoutsShared } from "../routers/health-kit-sync-processors.ts";
+import {
+  type AdditiveDailyMetricAccumulatorKey,
+  additiveDailyMetricTypes,
+} from "../routers/health-kit-sync-schemas.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -98,14 +102,6 @@ export interface DailyMetricAccumulator {
   walkingSteadiness: number | null;
 }
 
-type AdditiveDailyMetricAccumulatorKey =
-  | "steps"
-  | "activeEnergyKcal"
-  | "basalEnergyKcal"
-  | "distanceKm"
-  | "flightsClimbed"
-  | "exerciseMinutes";
-
 // ---------------------------------------------------------------------------
 // Type routing maps
 // ---------------------------------------------------------------------------
@@ -122,39 +118,6 @@ const bodyMeasurementTypes: Record<
   },
   HKQuantityTypeIdentifierBodyMassIndex: { column: "bmi" },
   HKQuantityTypeIdentifierHeight: { column: "height_cm" },
-};
-
-/** Additive daily metrics -- values that should be summed within a day */
-const additiveDailyMetricTypes: Record<
-  string,
-  {
-    column: string;
-    accumulatorKey: AdditiveDailyMetricAccumulatorKey;
-    transform?: (value: number) => number;
-  }
-> = {
-  HKQuantityTypeIdentifierStepCount: { column: "steps", accumulatorKey: "steps" },
-  HKQuantityTypeIdentifierActiveEnergyBurned: {
-    column: "active_energy_kcal",
-    accumulatorKey: "activeEnergyKcal",
-  },
-  HKQuantityTypeIdentifierBasalEnergyBurned: {
-    column: "basal_energy_kcal",
-    accumulatorKey: "basalEnergyKcal",
-  },
-  HKQuantityTypeIdentifierDistanceWalkingRunning: {
-    column: "distance_km",
-    accumulatorKey: "distanceKm",
-    transform: (value) => value / 1000,
-  },
-  HKQuantityTypeIdentifierFlightsClimbed: {
-    column: "flights_climbed",
-    accumulatorKey: "flightsClimbed",
-  },
-  HKQuantityTypeIdentifierAppleExerciseTime: {
-    column: "exercise_minutes",
-    accumulatorKey: "exerciseMinutes",
-  },
 };
 
 /** Point-in-time daily metrics -- use latest value for the day */
