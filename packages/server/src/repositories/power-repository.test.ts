@@ -154,7 +154,8 @@ describe("PowerRepository", () => {
       );
       expectCyclingOnlyActivityTypes(analyticsStore.query.mock.calls[0]?.[2]?.activityTypes);
       const queryText = analyticsStore.query.mock.calls[0]?.[1];
-      expect(queryText).toContain("INNER JOIN analytics.activity_summary");
+      expect(queryText).toContain("INNER JOIN analytics.activity_summary AS activity_summary");
+      expect(queryText).not.toContain("analytics.activity_summary AS activity_summary FINAL");
       expect(queryText).toContain(
         "has({activityTypes:Array(String)}, activity_summary.activity_type)",
       );

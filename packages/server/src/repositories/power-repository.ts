@@ -76,7 +76,7 @@ export class PowerRepository {
         power_curve.best_power AS best_power,
         toString(toDate(toTimeZone(power_curve.started_at, {timezone:String}))) AS activity_date
       FROM analytics.activity_power_curve AS power_curve FINAL
-      INNER JOIN analytics.activity_summary AS activity_summary FINAL
+      INNER JOIN analytics.activity_summary AS activity_summary
         ON activity_summary.activity_id = power_curve.activity_id
        AND activity_summary.user_id = power_curve.user_id
       WHERE power_curve.user_id = {userId:UUID}
