@@ -116,8 +116,8 @@ importers:
         specifier: 2.7.1
         version: 2.7.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/winston-transport':
-        specifier: 0.28.0
-        version: 0.28.0
+        specifier: 0.29.0
+        version: 0.29.0
       '@sentry/node':
         specifier: 10.45.0
         version: 10.45.0
@@ -3880,8 +3880,8 @@ packages:
     peerDependencies:
       '@opentelemetry/api': ^1.1.0
 
-  '@opentelemetry/winston-transport@0.28.0':
-    resolution: {integrity: sha512-MHfFCGXB8UlIvIcqjmHQ8DwZa8ie7e9lKoddhfMvUOdT+sX04rsS2KG8zi8stdV7M9T+G4bbEZlrvZblpgqppA==}
+  '@opentelemetry/winston-transport@0.29.0':
+    resolution: {integrity: sha512-/VX3xYkWZIFWLasxqPSj/3JFu8Ea8zP22zFsiiSlM8cHQ9ciqmbuX8k2N2CTTezBknteCMeOxt255s59RN3Wkg==}
     engines: {node: ^18.19.0 || >=20.6.0}
 
   '@oslojs/asn1@1.0.0':
@@ -16682,9 +16682,9 @@ snapshots:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 2.8.0(@opentelemetry/api@1.9.1)
 
-  '@opentelemetry/winston-transport@0.28.0':
+  '@opentelemetry/winston-transport@0.29.0':
     dependencies:
-      '@opentelemetry/api-logs': 0.218.0
+      '@opentelemetry/api-logs': 0.219.0
       winston-transport: 4.9.0
 
   '@oslojs/asn1@1.0.0':
