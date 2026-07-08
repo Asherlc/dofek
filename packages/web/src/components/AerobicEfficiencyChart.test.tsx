@@ -110,6 +110,10 @@ describe("AerobicEfficiencyChart", () => {
     render(<AerobicEfficiencyChart activities={activities} maxHr={190} />);
     const chartElement = screen.getByTestId("echarts-mock");
     const option = JSON.parse(chartElement.dataset.option ?? "{}");
+
+    expect(option.series).toBeDefined();
+    expect(Array.isArray(option.series)).toBe(true);
+    expect(option.series.length).toBeGreaterThanOrEqual(2);
     const powerSeries = option.series.find((series: { name?: string }) => series.name === "Power");
 
     expect(powerSeries).toBeDefined();
