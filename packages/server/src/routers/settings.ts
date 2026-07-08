@@ -5,14 +5,14 @@ import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../t
 import { DISCONNECT_CHILD_TABLES } from "./provider-detail.ts";
 
 export const settingsRouter = router({
-  get: cachedProtectedQuery(CacheTTL.LONG)
+  get: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ key: z.string() }))
     .query(async ({ ctx, input }) => {
       const repo = new SettingsRepository(ctx.db, ctx.userId);
       return repo.get(input.key);
     }),
 
-  getAll: cachedProtectedQuery(CacheTTL.LONG).query(async ({ ctx }) => {
+  getAll: cachedProtectedQuery({ maxAge: CacheTTL.LONG }).query(async ({ ctx }) => {
     const repo = new SettingsRepository(ctx.db, ctx.userId);
     return repo.getAll();
   }),
@@ -30,7 +30,7 @@ export const settingsRouter = router({
       return result;
     }),
 
-  slackStatus: cachedProtectedQuery(CacheTTL.MEDIUM).query(async ({ ctx }) => {
+  slackStatus: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM }).query(async ({ ctx }) => {
     const repo = new SettingsRepository(ctx.db, ctx.userId);
     return repo.slackStatus();
   }),

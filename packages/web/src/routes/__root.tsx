@@ -9,7 +9,6 @@ import {
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { QueryErrorBoundary } from "../components/QueryErrorBoundary.tsx";
 import { AuthProvider, useAuth } from "../lib/auth-context.tsx";
-import { removeWebQueryCache, WebQueryPersistenceProvider } from "../lib/query-persistence.ts";
 
 const PUBLIC_PATHS = new Set(["/", "/login", "/privacy", "/reset-password"]);
 
@@ -39,7 +38,6 @@ function AuthGate() {
     const previousUserId = previousUserIdRef.current;
     const currentUserId = user?.id ?? null;
     if (previousUserId && previousUserId !== currentUserId) {
-      removeWebQueryCache(previousUserId);
       queryClient.clear();
     }
     previousUserIdRef.current = currentUserId;
@@ -106,11 +104,7 @@ function AuthGate() {
 
   if (!user) return content;
 
-  return (
-    <WebQueryPersistenceProvider key={user.id} queryClient={queryClient} userId={user.id}>
-      {content}
-    </WebQueryPersistenceProvider>
-  );
+  return content;
 }
 
 function parseReturnTo(value: unknown): string | undefined {

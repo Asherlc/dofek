@@ -28,7 +28,7 @@ export const pmcRouter = router({
    * when available, falling back to generic Bannister TRIMP normalization.
    * Derives CTL (42d), ATL (7d), TSB from daily TSS.
    */
-  chart: cachedProtectedQuery(CacheTTL.LONG)
+  chart: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }): Promise<PmcChartResult> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "pmc.chart");

@@ -764,15 +764,9 @@ importers:
       '@sentry/react':
         specifier: 10.45.0
         version: 10.45.0(react@19.2.3)
-      '@tanstack/query-async-storage-persister':
-        specifier: 5.101.2
-        version: 5.101.2
       '@tanstack/react-query':
         specifier: 5.101.2
         version: 5.101.2(react@19.2.3)
-      '@tanstack/react-query-persist-client':
-        specifier: 5.101.2
-        version: 5.101.2(@tanstack/react-query@5.101.2(react@19.2.3))(react@19.2.3)
       '@tanstack/react-router':
         specifier: 1.170.4
         version: 1.170.4(react-dom@19.2.3(react@19.2.3))(react@19.2.3)

@@ -128,7 +128,7 @@ const mobileDashboardOutputSchema = z.object({
 export type MobileDashboardResult = z.infer<typeof mobileDashboardOutputSchema>;
 
 export const mobileDashboardRouter = router({
-  dashboard: cachedProtectedQuery(CacheTTL.SHORT)
+  dashboard: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(z.object({ endDate: endDateSchema }))
     .output(mobileDashboardOutputSchema)
     .query(async ({ ctx, input }): Promise<MobileDashboardResult> => {
@@ -150,7 +150,7 @@ export const mobileDashboardRouter = router({
       return result;
     }),
 
-  recovery: cachedProtectedQuery(CacheTTL.MEDIUM)
+  recovery: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(dateWindowInput)
     .output(mobileRecoveryTabOutputSchema)
     .query(async ({ ctx, input }) => {
@@ -173,7 +173,7 @@ export const mobileDashboardRouter = router({
       return result;
     }),
 
-  training: cachedProtectedQuery(CacheTTL.MEDIUM)
+  training: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(dateWindowInput)
     .output(mobileTrainingTabOutputSchema)
     .query(async ({ ctx, input }) => {

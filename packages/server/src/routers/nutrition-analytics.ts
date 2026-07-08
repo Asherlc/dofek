@@ -49,7 +49,7 @@ export interface MacroRatioRow {
 // ── Router ───────────────────────────────────────────────────────────
 
 export const nutritionAnalyticsRouter = router({
-  micronutrientAdequacy: cachedProtectedQuery(CacheTTL.LONG)
+  micronutrientAdequacy: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ days: z.number().default(30) }))
     .query(async ({ ctx, input }): Promise<MicronutrientAdequacyRow[]> => {
       const repo = new NutritionAnalyticsRepository(
@@ -63,7 +63,7 @@ export const nutritionAnalyticsRouter = router({
       return models.map((model) => model.toDetail());
     }),
 
-  caloricBalance: cachedProtectedQuery(CacheTTL.MEDIUM)
+  caloricBalance: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(z.object({ days: z.number().default(30) }))
     .query(async ({ ctx, input }): Promise<CaloricBalanceRow[]> => {
       const repo = new NutritionAnalyticsRepository(
@@ -77,7 +77,7 @@ export const nutritionAnalyticsRouter = router({
       return models.map((model) => model.toDetail());
     }),
 
-  adaptiveTdee: cachedProtectedQuery(CacheTTL.LONG)
+  adaptiveTdee: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<AdaptiveTdeeResult> => {
       const repo = new NutritionAnalyticsRepository(
@@ -91,7 +91,7 @@ export const nutritionAnalyticsRouter = router({
       return estimate.toDetail();
     }),
 
-  macroRatios: cachedProtectedQuery(CacheTTL.MEDIUM)
+  macroRatios: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(z.object({ days: z.number().default(30) }))
     .query(async ({ ctx, input }): Promise<MacroRatioRow[]> => {
       const repo = new NutritionAnalyticsRepository(

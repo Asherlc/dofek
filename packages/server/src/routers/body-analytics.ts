@@ -48,14 +48,14 @@ function createBodyAnalyticsRepository(ctx: AuthenticatedContext) {
 // ── Router ───────────────────────────────────────────────────────────
 
 export const bodyAnalyticsRouter = router({
-  smoothedWeight: cachedProtectedQuery(CacheTTL.MEDIUM)
+  smoothedWeight: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(dateWindowInput)
     .query(({ ctx, input }) => {
       const repo = createBodyAnalyticsRepository(ctx);
       return repo.getSmoothedWeight(input.days, input.endDate);
     }),
 
-  weightOverview: cachedProtectedQuery(CacheTTL.MEDIUM)
+  weightOverview: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(dateWindowInput)
     .query(async ({ ctx, input }) => {
       const goalWeightKg = await readGoalWeightKg(ctx.db, ctx.userId);
@@ -79,21 +79,21 @@ export const bodyAnalyticsRouter = router({
       };
     }),
 
-  recomposition: cachedProtectedQuery(CacheTTL.MEDIUM)
+  recomposition: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(z.object({ days: z.number().default(180), endDate: endDateSchema }))
     .query(({ ctx, input }) => {
       const repo = createBodyAnalyticsRepository(ctx);
       return repo.getRecomposition(input.days, input.endDate);
     }),
 
-  weightTrend: cachedProtectedQuery(CacheTTL.MEDIUM)
+  weightTrend: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(z.object({}).default({}))
     .query(({ ctx }) => {
       const repo = createBodyAnalyticsRepository(ctx);
       return repo.getWeightTrend();
     }),
 
-  weightPrediction: cachedProtectedQuery(CacheTTL.MEDIUM)
+  weightPrediction: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(dateWindowInput)
     .query(async ({ ctx, input }) => {
       const goalWeightKg = await readGoalWeightKg(ctx.db, ctx.userId);

@@ -69,7 +69,7 @@ export const weeklyReportRouter = router({
    * Weekly Performance Report — mirrors Whoop's Weekly Performance Assessment.
    * Aggregates strain balance, sleep performance, readiness, and key vitals per Sunday-start week.
    */
-  report: cachedProtectedQuery(CacheTTL.LONG)
+  report: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ weeks: z.number().min(1).max(52).default(12), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<WeeklyReportResult> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "weeklyReport.report");

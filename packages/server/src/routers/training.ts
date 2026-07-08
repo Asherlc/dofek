@@ -57,7 +57,7 @@ export function uniqueStrings(values: string[]): string[] {
 }
 
 export const trainingRouter = router({
-  weeklyVolume: cachedProtectedQuery(CacheTTL.LONG)
+  weeklyVolume: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "training");
@@ -71,7 +71,7 @@ export const trainingRouter = router({
       return repo.getWeeklyVolume(input.days);
     }),
 
-  hrZones: cachedProtectedQuery(CacheTTL.LONG)
+  hrZones: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "training");
@@ -85,7 +85,7 @@ export const trainingRouter = router({
       return repo.getHrZones(input.days);
     }),
 
-  activityStats: cachedProtectedQuery(CacheTTL.LONG)
+  activityStats: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "training");

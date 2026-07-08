@@ -4,7 +4,9 @@ import { BreathworkRepository } from "../repositories/breathwork-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 export const breathworkRouter = router({
-  techniques: cachedProtectedQuery(CacheTTL.LONG).query((): BreathworkTechnique[] => TECHNIQUES),
+  techniques: cachedProtectedQuery({ maxAge: CacheTTL.LONG }).query(
+    (): BreathworkTechnique[] => TECHNIQUES,
+  ),
   logSession: protectedProcedure
     .input(
       z.object({
@@ -20,7 +22,7 @@ export const breathworkRouter = router({
       const session = await repo.logSession(input);
       return session?.toDetail() ?? null;
     }),
-  history: cachedProtectedQuery(CacheTTL.SHORT)
+  history: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(z.object({ days: z.number().min(1).max(365).default(30) }))
     .query(async ({ ctx, input }) => {
       const repo = new BreathworkRepository(ctx.db, ctx.userId);

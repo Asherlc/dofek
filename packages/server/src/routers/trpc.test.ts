@@ -490,7 +490,7 @@ describe("trpc", () => {
   describe("cached middleware", () => {
     function createCachedRouter() {
       const testRouter = router({
-        cachedQuery: cachedProtectedQuery(CacheTTL.SHORT).query(() => "db-result"),
+        cachedQuery: cachedProtectedQuery({ maxAge: CacheTTL.SHORT }).query(() => "db-result"),
       });
       const trpc = initTRPC.context<Context>().create();
       const createCaller = trpc.createCallerFactory(testRouter);
@@ -616,7 +616,7 @@ describe("trpc", () => {
         .mockReturnValueOnce(1735)
         .mockReturnValueOnce(1750);
       const testRouter = router({
-        cachedQuery: cachedProtectedQuery(CacheTTL.SHORT).query(() => "db-result"),
+        cachedQuery: cachedProtectedQuery({ maxAge: CacheTTL.SHORT }).query(() => "db-result"),
       });
       const trpc = initTRPC.context<Context>().create();
       const createCaller = trpc.createCallerFactory(testRouter);

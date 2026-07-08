@@ -69,9 +69,10 @@ export interface PedalDynamicsRow {
 }
 
 const daysInput = z.object({ days: z.number().default(90) });
+const rollingWindowCache = { maxAge: CacheTTL.LONG, expiresAt: "localDayBoundary" } as const;
 
 export const cyclingAdvancedRouter = router({
-  rampRate: cachedProtectedQuery(CacheTTL.LONG)
+  rampRate: cachedProtectedQuery(rollingWindowCache)
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<RampRateResult> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "cyclingAdvanced");
@@ -84,7 +85,7 @@ export const cyclingAdvancedRouter = router({
       };
     }),
 
-  trainingMonotony: cachedProtectedQuery(CacheTTL.LONG)
+  trainingMonotony: cachedProtectedQuery(rollingWindowCache)
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<TrainingMonotonyWeek[]> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "cyclingAdvanced");
@@ -93,7 +94,7 @@ export const cyclingAdvancedRouter = router({
       return models.map((model) => model.toDetail());
     }),
 
-  activityVariability: cachedProtectedQuery(CacheTTL.LONG)
+  activityVariability: cachedProtectedQuery(rollingWindowCache)
     .input(
       z.object({
         days: z.number().default(90),
@@ -115,7 +116,7 @@ export const cyclingAdvancedRouter = router({
       };
     }),
 
-  verticalAscentRate: cachedProtectedQuery(CacheTTL.LONG)
+  verticalAscentRate: cachedProtectedQuery(rollingWindowCache)
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<VerticalAscentRow[]> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "cyclingAdvanced");
@@ -124,7 +125,7 @@ export const cyclingAdvancedRouter = router({
       return models.map((model) => model.toDetail());
     }),
 
-  pedalDynamics: cachedProtectedQuery(CacheTTL.LONG)
+  pedalDynamics: cachedProtectedQuery(rollingWindowCache)
     .input(daysInput)
     .query(async ({ ctx, input }): Promise<PedalDynamicsRow[]> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "cyclingAdvanced");
