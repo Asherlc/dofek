@@ -66,6 +66,10 @@ vi.mock("../../lib/useTodayQueryDate", () => ({
   useTodayQueryDate: () => "2026-03-28",
 }));
 
+vi.mock("../../lib/telemetry", () => ({
+  captureException: vi.fn(),
+}));
+
 vi.mock("../../lib/units", async () => {
   const { UnitConverter } = await import("@dofek/format/units");
   const actual = await vi.importActual<typeof import("../../lib/units")>("../../lib/units");
@@ -75,9 +79,12 @@ vi.mock("../../lib/units", async () => {
   };
 });
 
+import { captureException } from "../../lib/telemetry";
+
 describe("StrainScreen recent activity navigation", () => {
   beforeEach(() => {
     mockRouterPush.mockReset();
+    vi.mocked(captureException).mockReset();
     mockTrainingData = defaultMockTrainingData();
     mockTrainingFetching = false;
     mockTrainingLoading = false;
@@ -94,6 +101,17 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.getByText("30d")).toBeTruthy();
     expect(screen.getByTestId("query-state-loading")).toBeTruthy();
     expect(screen.queryByText("Loading strain data...")).toBeNull();
+  });
+
+  it("does not report response parse errors before training data loads", async () => {
+    mockTrainingLoading = true;
+    mockTrainingData = undefined;
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByTestId("query-state-loading")).toBeTruthy();
+    expect(captureException).not.toHaveBeenCalled();
   });
 
   it("keeps cached training data visible while refreshing", async () => {
