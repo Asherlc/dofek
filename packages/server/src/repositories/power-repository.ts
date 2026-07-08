@@ -1,5 +1,6 @@
 import {
   type CriticalPowerModel,
+  computeNormalizedPower,
   computePowerCurve,
   DURATION_LABELS,
   fitCriticalPower,
@@ -178,10 +179,26 @@ export class PowerRepository {
       },
     );
 
-    const trend = rows.map((row) => ({
-      date: row.activity_date,
-      eftp: Math.round(row.normalized_power * 0.95),
-      activityName: row.activity_name,
+    const normalizedPowerRows =
+      rows.length > 0
+        ? rows.map((row) => ({
+            activityDate: row.activity_date,
+            activityName: row.activity_name,
+            normalizedPower: row.normalized_power,
+          }))
+        : computeNormalizedPower(
+            await this.#sensorStore.getNormalizedPowerSamples(
+              days,
+              this.#userId,
+              this.#timezone,
+              CYCLING_TYPES,
+            ),
+          );
+
+    const trend = normalizedPowerRows.map((row) => ({
+      date: row.activityDate,
+      eftp: Math.round(row.normalizedPower * 0.95),
+      activityName: row.activityName,
     }));
 
     // Compute current eFTP via CP model from last 90 days' power curve

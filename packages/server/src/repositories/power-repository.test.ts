@@ -17,7 +17,7 @@ function makeAnalyticsStore() {
     getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
     getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
     getPowerCurveSamples: vi.fn(),
-    getNormalizedPowerSamples: vi.fn(),
+    getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
     query: vi.fn().mockResolvedValue([]),
     getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
     getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
@@ -32,6 +32,7 @@ function makeAnalyticsStoreFromDb(db: ReturnType<typeof makeDb>) {
     getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
     getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
     getPowerCurveSamples: vi.fn(() => db.execute()),
+    getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
     query: vi.fn(async (_schema: unknown, queryText?: string) => {
       if (queryText?.includes("activity_power_curve")) {
         return [];
@@ -179,6 +180,7 @@ describe("PowerRepository", () => {
     it("returns empty trend when no samples", async () => {
       const analyticsStore = makeAnalyticsStore();
       analyticsStore.query.mockResolvedValueOnce([]);
+      analyticsStore.getNormalizedPowerSamples.mockResolvedValueOnce([]);
       analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
       const result = await repo.getEftpTrend(365);
@@ -186,6 +188,34 @@ describe("PowerRepository", () => {
       expect(result.trend).toEqual([]);
       expect(result.currentEftp).toBeNull();
       expect(result.model).toBeNull();
+    });
+
+    it("computes eFTP from raw power samples when the activity summary has no normalized power", async () => {
+      const rawPowerSamples = Array.from({ length: 60 }, () => ({
+        activity_id: "act-raw-power",
+        activity_date: "2026-07-01",
+        activity_name: "Power Meter Ride",
+        power: 200,
+        interval_s: 1,
+      }));
+      const analyticsStore = makeAnalyticsStore();
+      analyticsStore.query.mockResolvedValueOnce([]);
+      analyticsStore.getNormalizedPowerSamples.mockResolvedValueOnce(rawPowerSamples);
+      analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
+      const repo = new PowerRepository("user-1", "UTC", analyticsStore);
+      const result = await repo.getEftpTrend(365);
+
+      expect(analyticsStore.getNormalizedPowerSamples).toHaveBeenCalledWith(365, "user-1", "UTC", [
+        ...CYCLING_ACTIVITY_TYPES,
+      ]);
+      expect(result.trend).toStrictEqual([
+        {
+          date: "2026-07-01",
+          activityName: "Power Meter Ride",
+          eftp: 190,
+        },
+      ]);
+      expect(result.currentEftp).toBe(190);
     });
 
     it("does not scan normalized power or power curve samples when no raw activities exist", async () => {

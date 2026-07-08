@@ -174,8 +174,9 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
     days: number,
     userId: string,
     timezone: string,
+    activityTypes: readonly string[],
   ): Promise<NormalizedPowerSampleRow[]> {
-    return getClickHouseNormalizedPowerSamples(this.#client, days, userId, timezone);
+    return getClickHouseNormalizedPowerSamples(this.#client, days, userId, timezone, activityTypes);
   }
 
   async getVo2MaxEstimates(

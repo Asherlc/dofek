@@ -188,6 +188,7 @@ export interface ActivitySensorStore {
     days: number,
     userId: string,
     timezone: string,
+    activityTypes: readonly string[],
   ): Promise<z.infer<typeof normalizedPowerSampleSchema>[]>;
   getVo2MaxEstimates(
     endDate: string,

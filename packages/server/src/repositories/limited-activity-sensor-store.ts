@@ -146,9 +146,14 @@ export class LimitedActivitySensorStore implements ActivitySensorStore {
     );
   }
 
-  getNormalizedPowerSamples(days: number, userId: string, timezone: string) {
+  getNormalizedPowerSamples(
+    days: number,
+    userId: string,
+    timezone: string,
+    activityTypes: readonly string[],
+  ) {
     return this.#regularLimiter.run(() =>
-      this.#delegate.getNormalizedPowerSamples(days, userId, timezone),
+      this.#delegate.getNormalizedPowerSamples(days, userId, timezone, activityTypes),
     );
   }
 
