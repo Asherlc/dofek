@@ -71,6 +71,37 @@ describe("processMetricStream", () => {
       },
     ]);
   });
+
+  it("publishes HealthKit cycling power samples as power stream rows", async () => {
+    const execute = vi.fn(async () => []);
+    const publisher: MetricStreamEventPublisher = {
+      publishRows: vi.fn(async () => []),
+    };
+
+    const inserted = await processMetricStream(
+      { execute },
+      "00000000-0000-0000-0000-000000000001",
+      [
+        {
+          ...heartRateSample,
+          type: "HKQuantityTypeIdentifierCyclingPower",
+          value: 247.8,
+          unit: "W",
+          uuid: "cycling-power-1",
+        },
+      ],
+      publisher,
+    );
+
+    expect(inserted).toBe(1);
+    expect(publisher.publishRows).toHaveBeenCalledWith([
+      expect.objectContaining({
+        externalId: "hk:cycling-power-1",
+        channel: "power",
+        scalar: 248,
+      }),
+    ]);
+  });
 });
 
 describe("processBodyMeasurements", () => {

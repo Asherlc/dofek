@@ -67,6 +67,11 @@ let readTypes: Set<HKObjectType> = {
             types.insert(type)
         }
     }
+    if #available(iOS 17.0, macOS 14.0, *) {
+        if let type = HKQuantityType.quantityType(forIdentifier: .cyclingPower) {
+            types.insert(type)
+        }
+    }
     // Category types
     let categoryTypes: [HKCategoryTypeIdentifier] = [
         .sleepAnalysis,
