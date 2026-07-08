@@ -39,12 +39,14 @@ interface FakeActivityOverrides {
 }
 
 function fakeActivity(overrides: FakeActivityOverrides = {}) {
+  const startTimestamp = overrides.startTimestamp ?? 1709280000;
+  const endTimestamp = overrides.endTimestamp ?? startTimestamp + 3600;
   return {
     id: 9001,
     name: "Threshold Intervals",
     sport: "Cycling",
-    startTimestamp: 1709280000, // 2024-03-01T08:00:00Z (seconds)
-    endTimestamp: 1709283600, // 2024-03-01T09:00:00Z
+    startTimestamp, // Unix timestamp (seconds)
+    endTimestamp,
     duration: 3600,
     distance: 38000,
     power_avg: 230,

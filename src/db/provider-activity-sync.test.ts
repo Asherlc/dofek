@@ -57,18 +57,20 @@ describe("upsertProviderActivity", () => {
   });
 
   it("throws when upserting an activity with a whitespace-only external id", async () => {
-    await expect(
-      upsertProviderActivity(
-        makeMockDb(),
-        {
-          providerId: "apple_health",
-          externalId: "   ",
-          activityType: "running",
-          startedAt: new Date("2026-06-20T21:49:00Z"),
-        },
-        { activityType: "running" },
-      ),
-    ).rejects.toThrow("Provider activity upsert requires externalId");
+    for (const externalId of ["", "   "]) {
+      await expect(
+        upsertProviderActivity(
+          makeMockDb(),
+          {
+            providerId: "apple_health",
+            externalId,
+            activityType: "running",
+            startedAt: new Date("2026-06-20T21:49:00Z"),
+          },
+          { activityType: "running" },
+        ),
+      ).rejects.toThrow("Provider activity upsert requires externalId");
+    }
   });
 
   it("trims external ids before insert", async () => {
@@ -200,6 +202,12 @@ describe("finishProviderActivityListSync", () => {
       presentExternalIds: new Set(["123"]),
     });
 
-    expect(mockReconcile).toHaveBeenCalledTimes(1);
+    expect(mockReconcile).toHaveBeenCalledWith(db, {
+      providerId: "strava",
+      userId: "user-1",
+      windowStart: new Date("2026-06-01T00:00:00Z"),
+      windowEnd: new Date("2026-06-21T00:00:00Z"),
+      presentExternalIds: new Set(["123"]),
+    });
   });
 });

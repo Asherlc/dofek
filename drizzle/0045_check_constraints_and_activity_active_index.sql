@@ -12,7 +12,9 @@
 -- never reached the activity table).
 UPDATE fitness.activity
 SET ended_at = started_at + INTERVAL '1 second'
-WHERE ended_at IS NOT NULL AND ended_at <= started_at;
+WHERE
+  provider_id = 'peloton'
+  AND ended_at = started_at;
 
 -- activity: ended_at (when present) must be strictly after started_at.
 ALTER TABLE fitness.activity
@@ -129,10 +131,11 @@ VALIDATE CONSTRAINT lab_result_range_order_chk;
 
 -- dexa_scan: body composition percentages cannot be negative when present.
 ALTER TABLE fitness.dexa_scan
-ADD CONSTRAINT dexa_scan_body_fat_pct_nonneg_chk CHECK (body_fat_pct IS NULL OR body_fat_pct >= 0) NOT VALID;
+ADD CONSTRAINT dexa_scan_body_fat_pct_range_chk
+CHECK (body_fat_pct IS NULL OR (body_fat_pct >= 0 AND body_fat_pct <= 100)) NOT VALID;
 
 ALTER TABLE fitness.dexa_scan
-VALIDATE CONSTRAINT dexa_scan_body_fat_pct_nonneg_chk;
+VALIDATE CONSTRAINT dexa_scan_body_fat_pct_range_chk;
 
 -- Partial index for dashboard activity visibility: every user-facing query
 -- filters out soft-deleted and provider-absent rows. A partial index on the

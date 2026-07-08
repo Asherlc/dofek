@@ -77,12 +77,32 @@ OPTIMIZE TABLE analytics.deduped_sensor FINAL;
 `,
     );
 
-    expect(violations.map((violation) => violation.ruleName)).toEqual([
-      "system-refresh-view",
-      "system-wait-view",
-      "refresh-every",
-      "clickhouse-alter-table-update",
-      "optimize-final",
+    expect(violations).toEqual([
+      expect.objectContaining({
+        filePath: "src/db/clickhouse-sql/bad_mutation.sql",
+        lineNumber: 2,
+        ruleName: "system-refresh-view",
+      }),
+      expect.objectContaining({
+        filePath: "src/db/clickhouse-sql/bad_mutation.sql",
+        lineNumber: 3,
+        ruleName: "system-wait-view",
+      }),
+      expect.objectContaining({
+        filePath: "src/db/clickhouse-sql/bad_mutation.sql",
+        lineNumber: 4,
+        ruleName: "refresh-every",
+      }),
+      expect.objectContaining({
+        filePath: "src/db/clickhouse-sql/bad_mutation.sql",
+        lineNumber: 5,
+        ruleName: "clickhouse-alter-table-update",
+      }),
+      expect.objectContaining({
+        filePath: "src/db/clickhouse-sql/bad_mutation.sql",
+        lineNumber: 6,
+        ruleName: "optimize-final",
+      }),
     ]);
   });
 

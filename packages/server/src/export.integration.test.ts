@@ -88,6 +88,9 @@ describe("Data Export", () => {
     );
 
     const session = await createSession(testCtx.db, TEST_USER_ID);
+    if (!session.sessionId) {
+      throw new Error("Failed to create session for test user");
+    }
     authorizationHeader = `Bearer ${session.sessionId}`;
 
     const exportQueue = {

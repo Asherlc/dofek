@@ -17,13 +17,19 @@ import { ZwiftProvider } from "./zwift.ts";
 // ============================================================
 
 function fakeZwiftActivitySummary(overrides: Record<string, unknown> = {}) {
+  const startDate =
+    typeof overrides.startDate === "string" ? overrides.startDate : "2026-03-01T10:00:00Z";
+  const endDate =
+    typeof overrides.endDate === "string"
+      ? overrides.endDate
+      : new Date(new Date(startDate).getTime() + 60 * 60 * 1000).toISOString();
   return {
     id: 100001,
     id_str: "100001",
     profileId: 42,
     name: "Watopia Hilly Route",
-    startDate: "2026-03-01T10:00:00Z",
-    endDate: "2026-03-01T11:00:00Z",
+    startDate,
+    endDate,
     distanceInMeters: 35000,
     avgHeartRate: 155,
     maxHeartRate: 182,

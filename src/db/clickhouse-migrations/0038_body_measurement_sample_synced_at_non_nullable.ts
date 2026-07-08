@@ -3,13 +3,23 @@ import type { ClickHouseCommandClient } from "../clickhouse.ts";
 import { runClickHouseMigrationStatement } from "./statement-runner.ts";
 import type { ClickHouseMigration } from "./types.ts";
 
-interface ColumnTypeRow {
+interface ColumnSchema {
   type: string;
+  default_kind: string | null;
+  default_expression: string | null;
 }
 
-const columnTypeRowSchema = z.object({
+const columnSchemaRowSchema = z.object({
   type: z.string(),
+  default_kind: z.string().nullable(),
+  default_expression: z.string().nullable(),
 });
+
+const targetColumnSchema = {
+  type: "DateTime64(9)",
+  defaultKind: "DEFAULT",
+  defaultExpression: "now()",
+};
 
 const statements = [
   "ALTER TABLE analytics.body_measurement_sample MODIFY COLUMN _peerdb_synced_at DateTime64(9) DEFAULT now()",
@@ -24,7 +34,14 @@ export function createMigration(): ClickHouseMigration {
         return;
       }
 
-      await backfillNullSyncedAt(client);
+      const currentSchema = await fetchCurrentColumnSchema(client);
+      if (hasTargetColumnSchema(currentSchema)) {
+        return;
+      }
+
+      if (currentSchema?.type !== targetColumnSchema.type) {
+        await backfillNullSyncedAt(client);
+      }
       await tightenColumnToNonNullable(client);
     },
   };
@@ -56,9 +73,8 @@ async function tightenColumnToNonNullable(client: ClickHouseCommandClient): Prom
     throw new Error("ClickHouse migrations require a query-capable client");
   }
 
-  const currentType = await fetchCurrentColumnType(client);
-  const targetType = "DateTime64(9)";
-  if (currentType === targetType) {
+  const currentSchema = await fetchCurrentColumnSchema(client);
+  if (hasTargetColumnSchema(currentSchema)) {
     return;
   }
 
@@ -67,20 +83,28 @@ async function tightenColumnToNonNullable(client: ClickHouseCommandClient): Prom
   }
 }
 
-async function fetchCurrentColumnType(
+function hasTargetColumnSchema(schema: ColumnSchema | undefined): boolean {
+  return (
+    schema?.type === targetColumnSchema.type &&
+    schema.default_kind === targetColumnSchema.defaultKind &&
+    schema.default_expression === targetColumnSchema.defaultExpression
+  );
+}
+
+async function fetchCurrentColumnSchema(
   client: ClickHouseCommandClient,
-): Promise<string | undefined> {
+): Promise<ColumnSchema | undefined> {
   if (!client.query) {
     throw new Error("ClickHouse migrations require a query-capable client");
   }
-  const result = await client.query<ColumnTypeRow>({
+  const result = await client.query<ColumnSchema>({
     query:
-      "SELECT type FROM system.columns WHERE database = 'analytics' AND table = 'body_measurement_sample' AND name = '_peerdb_synced_at'",
+      "SELECT type, default_kind, default_expression FROM system.columns WHERE database = 'analytics' AND table = 'body_measurement_sample' AND name = '_peerdb_synced_at'",
     format: "JSONEachRow",
   });
   const rows = await result.json();
   if (!rows[0]) {
     return undefined;
   }
-  return columnTypeRowSchema.parse(rows[0]).type;
+  return columnSchemaRowSchema.parse(rows[0]);
 }
