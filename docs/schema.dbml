@@ -332,7 +332,7 @@ table fitness.activity {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   provider_id text [not null]
   user_id uuid [not null]
-  external_id text
+  external_id text [not null]
   activity_type activity_type [not null]
   started_at "timestamp with time zone" [not null]
   ended_at "timestamp with time zone"
@@ -440,6 +440,7 @@ table fitness.sleep_session {
   awake_minutes integer
   efficiency_pct real
   sleep_type text
+  is_nap boolean [not null, default: false]
   sleep_need_baseline_minutes integer
   sleep_need_from_debt_minutes integer
   sleep_need_from_strain_minutes integer
@@ -1051,6 +1052,7 @@ table fitness.sync_log {
   record_count integer [default: 0]
   error_message text
   auth_failure_reason text
+  degradation_kind text
   duration_ms integer
   synced_at "timestamp with time zone" [not null, default: `now()`]
 
@@ -1060,7 +1062,7 @@ table fitness.sync_log {
   }
 }
 
-ref exercise_alias_exercise_id_exercise_id_fk: fitness.exercise_alias.exercise_id > fitness.exercise.id [delete: no action, update: no action]
+ref exercise_alias_exercise_id_exercise_id_fk: fitness.exercise_alias.exercise_id > fitness.exercise.id [delete: cascade, update: no action]
 
 ref exercise_alias_provider_id_provider_id_fk: fitness.exercise_alias.provider_id > fitness.provider.id [delete: no action, update: no action]
 
@@ -1080,7 +1082,7 @@ ref activity_interval_activity_id_activity_id_fk: fitness.activity_interval.acti
 
 ref daily_metric_value_daily_metrics_id_daily_metrics_id_fk: fitness.daily_metric_value.daily_metrics_id > fitness.daily_metrics.id [delete: cascade, update: no action]
 
-ref daily_metric_value_metric_type_id_daily_metric_type_id_fk: fitness.daily_metric_value.metric_type_id > fitness.daily_metric_type.id [delete: no action, update: no action]
+ref daily_metric_value_metric_type_id_daily_metric_type_id_fk: fitness.daily_metric_value.metric_type_id > fitness.daily_metric_type.id [delete: restrict, update: no action]
 
 ref daily_metrics_provider_id_provider_id_fk: fitness.daily_metrics.provider_id > fitness.provider.id [delete: no action, update: no action]
 
@@ -1096,7 +1098,7 @@ ref sport_settings_user_id_user_profile_id_fk: fitness.sport_settings.user_id > 
 
 ref strength_set_activity_id_activity_id_fk: fitness.strength_set.activity_id > fitness.activity.id [delete: cascade, update: no action]
 
-ref strength_set_exercise_id_exercise_id_fk: fitness.strength_set.exercise_id > fitness.exercise.id [delete: no action, update: no action]
+ref strength_set_exercise_id_exercise_id_fk: fitness.strength_set.exercise_id > fitness.exercise.id [delete: cascade, update: no action]
 
 ref food_entry_provider_id_provider_id_fk: fitness.food_entry.provider_id > fitness.provider.id [delete: no action, update: no action]
 
@@ -1132,7 +1134,7 @@ ref lab_result_provider_id_provider_id_fk: fitness.lab_result.provider_id > fitn
 
 ref lab_result_user_id_user_profile_id_fk: fitness.lab_result.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
-ref lab_result_panel_id_lab_panel_id_fk: fitness.lab_result.panel_id > fitness.lab_panel.id [delete: no action, update: no action]
+ref lab_result_panel_id_lab_panel_id_fk: fitness.lab_result.panel_id > fitness.lab_panel.id [delete: cascade, update: no action]
 
 ref medication_provider_id_provider_id_fk: fitness.medication.provider_id > fitness.provider.id [delete: no action, update: no action]
 

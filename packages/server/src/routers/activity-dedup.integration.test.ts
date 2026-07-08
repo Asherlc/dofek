@@ -63,9 +63,9 @@ describe("Activity summary deduplication", () => {
     for (const daysAgo of activityOffsetsDaysAgo) {
       const wahooResult = await testCtx.db.execute<{ id: string }>(
         sql`INSERT INTO fitness.activity (
-              provider_id, user_id, activity_type, started_at, ended_at, name
+              provider_id, user_id, external_id, activity_type, started_at, ended_at, name
             ) VALUES (
-              'wahoo', ${TEST_USER_ID}, 'cycling',
+              'wahoo', ${TEST_USER_ID}, ${`wahoo-overlap-${daysAgo}`}, 'cycling',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + ${durationSec}::int * INTERVAL '1 second',
               'Morning Ride'
@@ -75,9 +75,9 @@ describe("Activity summary deduplication", () => {
 
       const appleResult = await testCtx.db.execute<{ id: string }>(
         sql`INSERT INTO fitness.activity (
-              provider_id, user_id, activity_type, started_at, ended_at, name
+              provider_id, user_id, external_id, activity_type, started_at, ended_at, name
             ) VALUES (
-              'apple_health', ${TEST_USER_ID}, 'cycling',
+              'apple_health', ${TEST_USER_ID}, ${`apple-overlap-${daysAgo}`}, 'cycling',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + INTERVAL '10 seconds',
               CURRENT_TIMESTAMP - ${daysAgo}::int * INTERVAL '1 day' + ${durationSec}::int * INTERVAL '1 second' - INTERVAL '10 seconds',
               'Morning Ride'
@@ -225,9 +225,9 @@ describe("Activity summary deduplication", () => {
 
     const inserted = await testCtx.db.execute<{ id: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, activity_type, started_at, ended_at, name
           ) VALUES (
-            'wahoo', ${TEST_USER_ID}, 'cycling',
+            'wahoo', ${TEST_USER_ID}, 'fresh-ride-visible-in-view', 'cycling',
             CURRENT_TIMESTAMP + INTERVAL '1 day',
             CURRENT_TIMESTAMP + INTERVAL '1 day' + INTERVAL '30 minutes',
             'Fresh Ride'
@@ -280,18 +280,20 @@ describe("Activity summary deduplication", () => {
 
     await testCtx.db.execute(
       sql`INSERT INTO fitness.activity (
-            id, provider_id, user_id, activity_type, started_at, ended_at, name
+            id, provider_id, user_id, external_id, activity_type, started_at, ended_at, name
           ) VALUES
             (
               ${activityIds[0]}::uuid,
-              'apple_health', ${TEST_USER_ID}, 'running',
+              'apple_health', ${TEST_USER_ID}, 'apple-contained-run',
+              'running',
               TIMESTAMPTZ '2026-01-12 14:00:00+00',
               TIMESTAMPTZ '2026-01-12 15:00:00+00',
               'Outdoor Run'
             ),
             (
               ${activityIds[1]}::uuid,
-              'whoop', ${TEST_USER_ID}, 'running',
+              'whoop', ${TEST_USER_ID}, 'whoop-contained-run',
+              'running',
               TIMESTAMPTZ '2026-01-12 14:15:00+00',
               TIMESTAMPTZ '2026-01-12 15:00:00+00',
               'Outdoor Run'
@@ -429,32 +431,36 @@ describe("Activity summary deduplication", () => {
 
     await testCtx.db.execute(
       sql`INSERT INTO fitness.activity (
-            id, provider_id, user_id, activity_type, started_at, ended_at, name
+            id, provider_id, user_id, external_id, activity_type, started_at, ended_at, name
           ) VALUES
             (
               ${chainActivityIds[0]}::uuid,
-              'wahoo', ${TEST_USER_ID}, 'cycling',
+              'wahoo', ${TEST_USER_ID}, 'chain-activity-a',
+              'cycling',
               TIMESTAMPTZ '2026-01-10 10:00:00+00',
               TIMESTAMPTZ '2026-01-10 10:30:00+00',
               'Two-hop chain A'
             ),
             (
               ${chainActivityIds[1]}::uuid,
-              'wahoo', ${TEST_USER_ID}, 'cycling',
+              'wahoo', ${TEST_USER_ID}, 'chain-activity-b',
+              'cycling',
               TIMESTAMPTZ '2026-01-10 10:02:00+00',
               TIMESTAMPTZ '2026-01-10 10:32:00+00',
               'Two-hop chain B'
             ),
             (
               ${chainActivityIds[2]}::uuid,
-              'wahoo', ${TEST_USER_ID}, 'cycling',
+              'wahoo', ${TEST_USER_ID}, 'chain-activity-c',
+              'cycling',
               TIMESTAMPTZ '2026-01-10 10:04:00+00',
               TIMESTAMPTZ '2026-01-10 10:34:00+00',
               'Two-hop chain C'
             ),
             (
               ${chainActivityIds[3]}::uuid,
-              'wahoo', ${TEST_USER_ID}, 'cycling',
+              'wahoo', ${TEST_USER_ID}, 'chain-activity-d',
+              'cycling',
               TIMESTAMPTZ '2026-01-10 10:06:00+00',
               TIMESTAMPTZ '2026-01-10 10:36:00+00',
               'Two-hop chain D'
@@ -556,9 +562,9 @@ describe("Activity summary deduplication", () => {
     const endedAt = "2026-01-15T10:30:00Z";
     const wahooInsert = await testCtx.db.execute<{ id: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, activity_type, started_at, ended_at, name
           ) VALUES (
-            'wahoo', ${TEST_USER_ID}, 'cycling',
+            'wahoo', ${TEST_USER_ID}, 'wahoo-tombstone-dedup', 'cycling',
             ${startedAt}::timestamptz,
             ${endedAt}::timestamptz,
             'Tombstone Dedup Ride'
@@ -603,16 +609,18 @@ describe("Activity summary deduplication", () => {
   it("soft-deletes all raw member rows when deleting a deduped activity member", async () => {
     const inserted = await testCtx.db.execute<{ id: string; provider_id: string }>(
       sql`INSERT INTO fitness.activity (
-            provider_id, user_id, activity_type, started_at, ended_at, name
+            provider_id, user_id, external_id, activity_type, started_at, ended_at, name
           ) VALUES
           (
-            'wahoo', ${TEST_USER_ID}, 'cycling',
+            'wahoo', ${TEST_USER_ID}, 'wahoo-delete-me',
+            'cycling',
             CURRENT_TIMESTAMP + INTERVAL '3 days',
             CURRENT_TIMESTAMP + INTERVAL '3 days' + INTERVAL '30 minutes',
             'Delete Me'
           ),
           (
-            'apple_health', ${TEST_USER_ID}, 'cycling',
+            'apple_health', ${TEST_USER_ID}, 'apple-delete-me',
+            'cycling',
             CURRENT_TIMESTAMP + INTERVAL '3 days' + INTERVAL '10 seconds',
             CURRENT_TIMESTAMP + INTERVAL '3 days' + INTERVAL '29 minutes 50 seconds',
             'Delete Me'

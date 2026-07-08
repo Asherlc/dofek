@@ -16,7 +16,7 @@ ORDER BY (user_id, activity_id)`;
 
 export function createMigration(): ClickHouseMigration {
   return {
-    id: "0038_create_daily_endurance_load_table",
+    id: "0039_create_daily_endurance_load_table",
     statements: [dailyEnduranceLoadTableSql],
   };
 }

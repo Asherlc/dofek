@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createMigration } from "./0039_create_weekly_endurance_training_tables.ts";
+import { createMigration } from "./0040_create_weekly_endurance_training_tables.ts";
 
-describe("0039_create_weekly_endurance_training_tables", () => {
+describe("0040_create_weekly_endurance_training_tables", () => {
   it("creates weekly ramp rate and training monotony table migrations", () => {
     const migration = createMigration();
 
-    expect(migration.id).toBe("0039_create_weekly_endurance_training_tables");
+    expect(migration.id).toBe("0040_create_weekly_endurance_training_tables");
     expect(migration.statements).toHaveLength(2);
     expect(migration.statements[0]).toContain(
       "CREATE TABLE IF NOT EXISTS analytics.weekly_endurance_ramp_rate",

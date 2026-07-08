@@ -28,7 +28,7 @@ ORDER BY (user_id, week)`;
 
 export function createMigration(): ClickHouseMigration {
   return {
-    id: "0039_create_weekly_endurance_training_tables",
+    id: "0040_create_weekly_endurance_training_tables",
     statements: [weeklyEnduranceRampRateTableSql, weeklyTrainingMonotonyTableSql],
   };
 }
