@@ -25,12 +25,19 @@ function dateWindowStartString(endDate: string, days: number): string {
   return formatDateYmdInTimeZone(windowStart, "UTC");
 }
 
-function isInDateWindow(date: string, days: number, endDate: string): boolean {
+type SelectedRangeDays = number | null;
+
+function isInDateWindow(date: string, days: SelectedRangeDays, endDate: string): boolean {
+  if (days === null) return date <= endDate;
   const startStr = dateWindowStartString(endDate, days);
   return date > startStr && date <= endDate;
 }
 
-function filterToWindow<T extends DatedValue>(rows: T[], days: number, endDate: string): T[] {
+function filterToWindow<T extends DatedValue>(
+  rows: T[],
+  days: SelectedRangeDays,
+  endDate: string,
+): T[] {
   return rows.filter((row) => isInDateWindow(row.date, days, endDate));
 }
 
@@ -58,7 +65,7 @@ export function buildBodyHealthMetrics({
   trendData: BodyTrendRow | undefined;
   weightData: Array<{ date: string; smoothedWeight: number }>;
   recompData: Array<{ date: string; bodyFatPct: number }>;
-  days: number;
+  days: SelectedRangeDays;
   endDate: string;
   units: UnitConverter;
 }): BodyHealthMetricEntry[] {

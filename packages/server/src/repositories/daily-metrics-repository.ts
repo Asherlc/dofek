@@ -148,7 +148,7 @@ export class DailyMetricsRepository extends BaseRepository {
           ORDER BY date ASC`,
     );
 
-    if (days === null) return rows;
+    if (days === null) return rows.filter((row) => row.date <= endDate);
 
     // Discard warmup rows — only return the requested date range
     const cutoffDate = new Date(`${endDate}T00:00:00`);

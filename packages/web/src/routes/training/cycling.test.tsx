@@ -279,25 +279,19 @@ describe("CyclingTab", () => {
 
     await renderCyclingTab();
 
-    expect(state.queryCalls).toEqual(
-      expect.arrayContaining([
-        { name: "powerCurve", input: { days: 365 } },
-        { name: "eftpTrend", input: { days: 365 } },
-        { name: "pmc", input: { days: 365 } },
-        { name: "aerobicEfficiency", input: { days: 365 } },
-        {
-          name: "activityVariability",
-          input: { days: 365, limit: 20, offset: 0 },
-        },
-        { name: "verticalAscentRate", input: { days: 365 } },
-      ]),
-    );
-    expect(state.queryCalls).toEqual(
-      expect.arrayContaining([
-        { name: "powerCurve", input: { days: 365 } },
-        { name: "bodyList", input: { days: 365 } },
-      ]),
-    );
+    expect(state.queryCalls).toEqual([
+      { name: "powerCurve", input: { days: 365 } },
+      { name: "powerCurve", input: { days: 365 } },
+      { name: "eftpTrend", input: { days: 365 } },
+      { name: "pmc", input: { days: 365 } },
+      { name: "aerobicEfficiency", input: { days: 365 } },
+      {
+        name: "activityVariability",
+        input: { days: 365, limit: 20, offset: 0 },
+      },
+      { name: "verticalAscentRate", input: { days: 365 } },
+      { name: "bodyList", input: { days: 365 } },
+    ]);
   });
 
   it("passes null for All to selected-range chart queries while keeping fixed support windows", async () => {

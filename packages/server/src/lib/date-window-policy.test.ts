@@ -45,6 +45,7 @@ describe("selected chart range policy", () => {
       "repositories/nutrition-analytics-repository.ts",
       "repositories/pmc-repository.ts",
       "repositories/power-repository.ts",
+      "repositories/predictions-repository.ts",
       "repositories/running-repository.ts",
       "repositories/sleep-repository.ts",
       "repositories/stress-repository.ts",
@@ -53,10 +54,10 @@ describe("selected chart range policy", () => {
     ];
 
     const forbiddenPatterns = [
-      /INTERVAL \{days:Int32\} DAY/,
-      /toIntervalDay\(\{days:UInt32\}\)/,
-      /CURRENT_TIMESTAMP - \$\{[^}]*days[^}]*\}/,
-      /NOW\(\) - \$\{[^}]*days[^}]*\}/,
+      /INTERVAL\s*\{\s*days\s*:\s*Int32\s*\}\s*DAY/i,
+      /toIntervalDay\s*\(\s*\{\s*days\s*:\s*UInt32\s*\}\s*\)/i,
+      /CURRENT_TIMESTAMP\s*-\s*\$\{[^}]*days[^}]*\}/i,
+      /NOW\s*\(\s*\)\s*-\s*\$\{[^}]*days[^}]*\}/i,
     ];
 
     for (const productionFile of productionFiles) {

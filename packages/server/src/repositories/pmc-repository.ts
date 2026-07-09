@@ -176,11 +176,17 @@ export class PmcRepository extends BaseRepository {
       acuteTrainingLoadDays,
       trainingLoadCalculator,
     });
+    const activityHistoryDays =
+      queryRange.days === null || range.days === null
+        ? daysSinceEarliestActivity(visibleActivityRows)
+        : null;
     return chartCalculator.buildChart({
       activityRows: visibleActivityRows,
       normalizedPowerRows,
-      queryDays: queryRange.days ?? daysSinceEarliestActivity(visibleActivityRows),
-      displayDays: range.days ?? daysSinceEarliestActivity(visibleActivityRows),
+      queryDays:
+        queryRange.days ?? activityHistoryDays ?? daysSinceEarliestActivity(visibleActivityRows),
+      displayDays:
+        range.days ?? activityHistoryDays ?? daysSinceEarliestActivity(visibleActivityRows),
     });
   }
 

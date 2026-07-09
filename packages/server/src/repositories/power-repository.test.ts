@@ -882,6 +882,7 @@ describe("PowerRepository", () => {
       const result = await repo.getPowerCurve(ChartRange.fromDays(90));
       expect(Array.isArray(result.points)).toBe(true);
       expect(result.points).toStrictEqual([]);
+      expect(result.model).toBeNull();
     });
 
     it("getEftpTrend trend maps date from activity_date (not activityName)", async () => {

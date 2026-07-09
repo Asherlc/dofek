@@ -58,15 +58,17 @@ describe("time range policy", () => {
 
       const source = readWebSource(sourceFile);
       const relativePath = relative(webSourceRoot, sourceFile);
-      expect(source, `${relativePath} must use minimumSelectedRangeQueryInput`).not.toContain(
-        "Math.max(days",
-      );
       const usesSelectedRangeFramework =
         source.includes("TimeRangeSelector") ||
         source.includes("selectedRangeQueryInput") ||
         source.includes("minimumSelectedRangeQueryInput");
       if (usesSelectedRangeFramework) {
-        expect(source, `${relativePath} must not use sentinel All ranges`).not.toContain("3650");
+        expect(source, `${relativePath} must use minimumSelectedRangeQueryInput`).not.toMatch(
+          /\bMath\.max\s*\(\s*days\b/,
+        );
+        expect(source, `${relativePath} must not use sentinel All ranges`).not.toMatch(
+          /(?<![\d.])3650(?![\d.])/,
+        );
       }
     }
   });

@@ -380,7 +380,10 @@ export const recoveryRouter = router({
         const windowRows = rows.slice(Math.max(0, rowIndex - 6), rowIndex + 1);
         const rollingDurations = windowRows.map(computeSleepMinutes);
         const rollingAvgDuration =
-          rollingDurations.reduce((sum, duration) => sum + duration, 0) / rollingDurations.length;
+          rollingDurations.length > 0
+            ? rollingDurations.reduce((sum, duration) => sum + duration, 0) /
+              rollingDurations.length
+            : 0;
         return {
           date: row.date,
           durationMinutes,

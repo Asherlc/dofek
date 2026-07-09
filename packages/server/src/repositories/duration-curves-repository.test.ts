@@ -428,6 +428,12 @@ describe("DurationCurvesRepository", () => {
       expect(sensorStore.getPaceCurveRows).toHaveBeenCalledWith(null, "user-1", "UTC");
     });
 
+    it("passes null days through to heart rate rows for unbounded selected ranges", async () => {
+      const { repo, sensorStore } = makeRepository([]);
+      await repo.getHrCurve(ChartRange.fromDays(null));
+      expect(sensorStore.getHeartRateCurveRows).toHaveBeenCalledWith(null, "user-1", "UTC");
+    });
+
     it("converts numeric string fields to proper numbers", async () => {
       const { repo } = makeRepository([
         { duration_seconds: "60", best_pace: "300.0", activity_date: "2025-06-15" },

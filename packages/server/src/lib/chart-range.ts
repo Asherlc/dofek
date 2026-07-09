@@ -145,7 +145,7 @@ export function selectedChartRangeQuery<TResult>(
   options: { min?: number; max?: number } = {},
 ) {
   assertSelectedChartInputKind(endpoint, "days");
-  return cachedProtectedQuery(ttlMs)
+  return cachedProtectedQuery({ maxAge: ttlMs })
     .input(selectedChartRangeInput(endpoint, options))
     .query(({ ctx, input }) =>
       resolve({
@@ -164,25 +164,28 @@ export function selectedChartRangeSchema(
 }
 
 export function selectedChartCustomRangeQuery<
-  TInput extends { days: RangeDays },
+  TInputSchema extends z.ZodType<{ days: RangeDays }>,
   TResult,
-  TInputSchema extends z.ZodType<TInput>,
 >(
   endpoint: SelectedChartRangeEndpoint,
   ttlMs: number,
   inputSchema: TInputSchema,
-  resolve: (args: SelectedChartRangeResolveArgs<TInput>) => MaybePromise<TResult>,
+  resolve: (args: SelectedChartRangeResolveArgs<z.output<TInputSchema>>) => MaybePromise<TResult>,
 ) {
   assertSelectedChartInputKind(endpoint, "custom");
-  return cachedProtectedQuery(ttlMs)
+  return cachedProtectedQuery({ maxAge: ttlMs })
     .input(inputSchema)
-    .query(({ ctx, input }) =>
-      resolve({
+    .query(({ ctx, input }) => {
+      if (input === undefined) {
+        throw new Error(`${endpoint} selected chart range input is required`);
+      }
+      const parsedInput = inputSchema.parse(input);
+      return resolve({
         ctx,
-        input,
-        range: ChartRange.fromDays(input.days),
-      }),
-    );
+        input: parsedInput,
+        range: ChartRange.fromDays(parsedInput.days),
+      });
+    });
 }
 
 export function selectedChartDateRangeQuery<TResult>(
@@ -194,7 +197,7 @@ export function selectedChartDateRangeQuery<TResult>(
   options: { min?: number; max?: number } = {},
 ) {
   assertSelectedChartInputKind(endpoint, "dateRange");
-  return cachedProtectedQuery(ttlMs)
+  return cachedProtectedQuery({ maxAge: ttlMs })
     .input(selectedChartDateRangeInput(endpoint, options))
     .query(({ ctx, input }) =>
       resolve({
