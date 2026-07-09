@@ -418,6 +418,8 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).toContain("FROM current_activity WHERE (SELECT is_empty FROM target_state)");
     expect(sql).toContain("arraySort");
     expect(sql).toContain("groupArray(tuple(");
+    expect(normalizedSql).toContain("argMax(lat, tuple(refresh_version, source_metric_stream_id))");
+    expect(normalizedSql).toContain("argMax(lng, tuple(refresh_version, source_metric_stream_id))");
     expect(sql).toContain("toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version");
     expect(normalizedSql).toContain("LIMIT 1 BY user_id, activity_id, channel, recorded_at");
     expect(normalizedSql).toContain("LIMIT 1 BY source_metric_stream_id");

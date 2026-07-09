@@ -192,8 +192,14 @@ location_points AS (
         activity_id,
         user_id,
         recorded_at,
-        CAST(any(lat), 'Nullable(Float64)') AS lat,
-        CAST(any(lng), 'Nullable(Float64)') AS lng
+        CAST(
+            argMax(lat, tuple(refresh_version, source_metric_stream_id)),
+            'Nullable(Float64)'
+        ) AS lat,
+        CAST(
+            argMax(lng, tuple(refresh_version, source_metric_stream_id)),
+            'Nullable(Float64)'
+        ) AS lng
     FROM latest_location_samples
     WHERE lat IS NOT null
         AND lng IS NOT null

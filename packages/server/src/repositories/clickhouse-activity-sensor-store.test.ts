@@ -326,6 +326,23 @@ describe("ClickHouseActivitySensorStore", () => {
     ]);
   });
 
+  it("rejects invalid numeric ClickHouse stream values", async () => {
+    const { store } = makeStore([
+      {
+        recorded_at: "2024-01-15 10:00:00.000",
+        heart_rate: "not-a-number",
+        power: null,
+        speed: null,
+        cadence: null,
+        altitude: null,
+        lat: null,
+        lng: null,
+      },
+    ]);
+
+    await expect(store.getStream(window, 500)).rejects.toThrow();
+  });
+
   it("coerces heart-rate zone rows at runtime", async () => {
     const { store } = makeStore([{ zone: "2", seconds: "15" }]);
 
