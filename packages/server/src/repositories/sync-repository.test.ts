@@ -138,7 +138,7 @@ describe("SyncRepository", () => {
       const rawSql = collectSqlText(execute.mock.calls[0]?.[0]);
       expect(rawSql).toContain("SELECT DISTINCT ON (provider_id)");
       expect(rawSql).toContain("ORDER BY provider_id, synced_at DESC");
-      expect(rawSql).toContain("WHERE status = 'error'");
+      expect(rawSql).toContain("WHERE latest_sync_log.status = 'error'");
       expect(rawSql).not.toContain("SELECT MAX(synced_at)");
     });
   });

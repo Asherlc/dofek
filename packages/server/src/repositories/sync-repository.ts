@@ -304,7 +304,7 @@ export class SyncRepository {
             WHERE user_id = ${this.#userId}
             ORDER BY provider_id, synced_at DESC
           ) latest_sync_log
-          WHERE status = 'error'
+          WHERE latest_sync_log.status = 'error'
           ORDER BY provider_id`,
     );
     return rows.map((row) => ({
