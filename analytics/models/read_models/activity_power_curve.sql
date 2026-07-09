@@ -123,7 +123,7 @@ candidate_duration_windows AS (
         max(window_sample.recorded_at) AS window_ended_at,
         max(dateDiff('millisecond', start_sample.recorded_at, window_sample.recorded_at)) / 1000.0 AS elapsed_seconds,
         max(segment.segment_seconds) AS max_gap_seconds,
-        (max(window_sample.cumulative_sum) - start_sample.cumulative_sum + start_sample.power) / toFloat64(max(window_sample.row_number) - toInt64(start_sample.row_number) + 1) AS avg_power
+        sum(segment.power * segment.segment_seconds) / sum(segment.segment_seconds) AS avg_power
     FROM power_samples AS start_sample
     CROSS JOIN duration_values
     INNER JOIN power_samples AS window_sample
@@ -140,9 +140,6 @@ candidate_duration_windows AS (
         start_sample.user_id,
         start_sample.started_at,
         start_sample.recorded_at,
-        start_sample.cumulative_sum,
-        start_sample.power,
-        start_sample.row_number,
         duration_values.duration_seconds
 ),
 
