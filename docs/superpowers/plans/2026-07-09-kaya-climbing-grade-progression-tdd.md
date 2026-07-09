@@ -1,7 +1,5 @@
 # Kaya Rock Climbing Grade Progression TDD Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:test-driven-development` before implementation. If executing this plan task-by-task, also use `superpowers:executing-plans` or `superpowers:subagent-driven-development` as appropriate. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Add a rock climbing training surface backed by Kaya export imports, with full route/problem attempt logs and grade progression for boulders and routes.
 
 **Behavior:** Users can import Kaya CSV export files, the app stores one canonical activity-linked climbing entry per Kaya CSV row, and web/mobile training surfaces show best sent grade progression, volume by grade, and recent climbing sessions.

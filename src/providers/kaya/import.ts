@@ -77,7 +77,7 @@ export interface KayaRawEntry {
 export interface KayaClimbingEntry {
   externalId: string;
   climbType: "boulder" | "route";
-  gradeSystem: "v_scale" | "yds" | "font" | "french";
+  gradeSystem: "v_scale" | "yds";
   grade: string;
   sent: boolean;
   routeName: string | null;
@@ -108,8 +108,14 @@ interface ParsedKayaRow {
   entry: KayaClimbingEntry;
 }
 
+export interface KayaImportDatabase extends SyncDatabase {
+  transaction: <TResult>(
+    callback: (transactionDb: SyncDatabase) => Promise<TResult>,
+  ) => Promise<TResult>;
+}
+
 export async function importKayaExportFile(
-  db: SyncDatabase,
+  db: KayaImportDatabase,
   csvText: string,
   userId: string,
 ): Promise<SyncResult> {
@@ -117,23 +123,32 @@ export async function importKayaExportFile(
 }
 
 class KayaExportImporter {
-  readonly #db: SyncDatabase;
+  readonly #db: KayaImportDatabase;
   readonly #userId: string;
 
-  constructor(db: SyncDatabase, userId: string) {
+  constructor(db: KayaImportDatabase, userId: string) {
     this.#db = db;
     this.#userId = userId;
   }
 
   async import(csvText: string): Promise<SyncResult> {
     const startedAt = Date.now();
-    await ensureProvider(this.#db, KAYA_PROVIDER_ID, KAYA_PROVIDER_NAME, undefined, this.#userId);
-
     const parsed = parseKayaExport(csvText);
-    let recordsSynced = 0;
-    for (const activity of parsed.activities) {
-      recordsSynced += await this.#upsertActivity(activity);
-    }
+    const recordsSynced = await this.#db.transaction(async (transactionDb) => {
+      await ensureProvider(
+        transactionDb,
+        KAYA_PROVIDER_ID,
+        KAYA_PROVIDER_NAME,
+        undefined,
+        this.#userId,
+      );
+
+      let syncedRecords = 0;
+      for (const activity of parsed.activities) {
+        syncedRecords += await this.#upsertActivity(transactionDb, activity);
+      }
+      return syncedRecords;
+    });
 
     return {
       provider: KAYA_PROVIDER_ID,
@@ -143,9 +158,9 @@ class KayaExportImporter {
     };
   }
 
-  async #upsertActivity(kayaActivity: KayaClimbingActivity): Promise<number> {
+  async #upsertActivity(db: SyncDatabase, kayaActivity: KayaClimbingActivity): Promise<number> {
     const row = await upsertProviderActivity(
-      this.#db,
+      db,
       {
         providerId: KAYA_PROVIDER_ID,
         userId: this.#userId,
@@ -174,10 +189,10 @@ class KayaExportImporter {
     );
     if (!row) return 0;
 
-    await this.#db.delete(climbingEntry).where(eq(climbingEntry.activityId, row.id));
+    await db.delete(climbingEntry).where(eq(climbingEntry.activityId, row.id));
     if (kayaActivity.entries.length === 0) return 0;
 
-    await this.#db.insert(climbingEntry).values(
+    await db.insert(climbingEntry).values(
       kayaActivity.entries.map((entry) => ({
         activityId: row.id,
         externalId: entry.externalId,
@@ -224,7 +239,7 @@ class KayaExportParser {
     }
 
     const [header, ...dataRows] = decodedCsv.rows;
-    if (!header || header.join(",") !== KAYA_HEADER.join(",")) {
+    if (!header || header.fields.join(",") !== KAYA_HEADER.join(",")) {
       return {
         activities: [],
         errors: [{ rowNumber: null, message: "header does not match Kaya export format" }],
@@ -234,8 +249,7 @@ class KayaExportParser {
     const errors: KayaParseError[] = [];
     const parsedRows: ParsedKayaRow[] = [];
 
-    dataRows.forEach((fields, rowIndex) => {
-      const rowNumber = rowIndex + 2;
+    dataRows.forEach(({ fields, rowNumber }) => {
       if (fields.length !== KAYA_HEADER.length) {
         errors.push({ rowNumber, message: `row ${rowNumber}: malformed CSV row` });
         return;
@@ -250,7 +264,7 @@ class KayaExportParser {
         return;
       }
 
-      const parsedRow = this.#parseRow(parseResult.data, rowNumber, rowIndex);
+      const parsedRow = this.#parseRow(parseResult.data, rowNumber);
       if ("message" in parsedRow) {
         errors.push(parsedRow);
         return;
@@ -265,11 +279,7 @@ class KayaExportParser {
     };
   }
 
-  #parseRow(
-    row: KayaDecodedRow,
-    rowNumber: number,
-    rowIndex: number,
-  ): ParsedKayaRow | KayaParseError {
+  #parseRow(row: KayaDecodedRow, rowNumber: number): ParsedKayaRow | KayaParseError {
     const dateText = row.date.trim();
     if (dateText === "") {
       return { rowNumber, message: `row ${rowNumber}: date is required` };
@@ -315,7 +325,7 @@ class KayaExportParser {
       parsedGrade.grade,
       nullableText(row.color) ?? "",
       row.ascent_type,
-      String(rowIndex),
+      String(rowNumber),
     ]);
 
     return {
@@ -386,12 +396,12 @@ function stableHash(parts: readonly string[]): string {
 }
 
 type DecodeCsvResult =
-  | { ok: true; rows: string[][] }
+  | { ok: true; rows: Array<{ fields: string[]; rowNumber: number }> }
   | { ok: false; rowNumber: number | null; message: string };
 
 function decodeCsv(csvText: string): DecodeCsvResult {
   const text = csvText.replace(/^\uFEFF/, "");
-  const rows: string[][] = [];
+  const rows: Array<{ fields: string[]; rowNumber: number }> = [];
   let row: string[] = [];
   let field = "";
   let inQuotes = false;
@@ -427,7 +437,7 @@ function decodeCsv(csvText: string): DecodeCsvResult {
 
     if (character === "\n") {
       row.push(field);
-      rows.push(row);
+      rows.push({ fields: row, rowNumber });
       row = [];
       field = "";
       rowNumber++;
@@ -446,10 +456,10 @@ function decodeCsv(csvText: string): DecodeCsvResult {
   }
 
   row.push(field);
-  rows.push(row);
+  rows.push({ fields: row, rowNumber });
 
   return {
     ok: true,
-    rows: rows.filter((fields) => fields.some((value) => value.trim() !== "")),
+    rows: rows.filter((row) => row.fields.some((value) => value.trim() !== "")),
   };
 }

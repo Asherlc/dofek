@@ -2,6 +2,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
+import type { KayaImportDatabase } from "../providers/kaya/import.ts";
 import type { ImportJobData } from "./queues.ts";
 
 const mockCaptureException = vi.fn();
@@ -90,11 +91,12 @@ vi.mock("../providers/zos-app/provider.ts", () => ({
 const { processImportJob } = await import("./process-import-job.ts");
 
 // All DB functions are mocked at module level, so the db object is never actually called.
-const mockDb: SyncDatabase = {
+const mockDb: KayaImportDatabase = {
   select: vi.fn(),
   insert: vi.fn(),
   delete: vi.fn(),
   execute: vi.fn(),
+  transaction: vi.fn(),
 };
 
 interface MockJob {

@@ -88,10 +88,13 @@ describe("ClimbingSessionSummary", () => {
 });
 
 describe("ClimbingRepository", () => {
+  function executeDb(execute: ReturnType<typeof vi.fn>) {
+    return { execute };
+  }
+
   function makeRepository(rows: Record<string, unknown>[] = []) {
     const execute = vi.fn().mockResolvedValue(rows);
-    const db = { execute };
-    const repo = new ClimbingRepository(db, "user-1", "America/Los_Angeles");
+    const repo = new ClimbingRepository(executeDb(execute), "user-1", "America/Los_Angeles");
     return { repo, execute };
   }
 
@@ -156,6 +159,24 @@ describe("ClimbingRepository", () => {
       expect(text).toContain("IS NOT NULL");
       expect(text).toContain("NOW() - ");
     });
+
+    it("applies limited entitlement access windows to activity timestamps", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const repo = new ClimbingRepository(executeDb(execute), "user-1", "UTC", {
+        kind: "limited",
+        paid: false,
+        reason: "free_signup_week",
+        startDate: "2026-07-01",
+        endDateExclusive: "2026-07-08",
+      });
+
+      await repo.getGradeProgression(30);
+
+      const text = queryText(execute.mock.calls[0]?.[0]);
+      expect(text).toContain("a.started_at");
+      expect(text).toContain("2026-07-01");
+      expect(text).toContain("2026-07-08");
+    });
   });
 
   describe("getVolumeByGrade", () => {
@@ -179,7 +200,7 @@ describe("ClimbingRepository", () => {
           climb_type: "route",
           grade_system: "yds",
           grade: "5.12-",
-          grade_sort_value: 5119,
+          grade_sort_value: 5117,
           attempts: 2,
           sends: 1,
         },
@@ -200,7 +221,7 @@ describe("ClimbingRepository", () => {
           climbType: "route",
           gradeSystem: "yds",
           grade: "5.12-",
-          gradeSortValue: 5119,
+          gradeSortValue: 5117,
           attempts: 2,
           sends: 1,
         },

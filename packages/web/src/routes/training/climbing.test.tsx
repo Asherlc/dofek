@@ -25,7 +25,9 @@ vi.mock("../../components/ClimbingVolumeByGradeChart.tsx", () => ({
 }));
 
 vi.mock("../../components/ClimbingSessionSummaryTable.tsx", () => ({
-  ClimbingSessionSummaryTable: () => <div>Recent Climbing Sessions component</div>,
+  ClimbingSessionSummaryTable: (props: { loading?: boolean }) => (
+    <div>Recent Climbing Sessions component {String(props.loading)}</div>
+  ),
 }));
 
 vi.mock("../../components/RecentActivitiesSection.tsx", () => ({
@@ -109,6 +111,28 @@ describe("ClimbingTab", () => {
 
     expect(screen.getByText("Error: Volume query failed")).toBeTruthy();
     expect(screen.getByText("Grade Progression component")).toBeTruthy();
-    expect(screen.getByText("Recent Climbing Sessions component")).toBeTruthy();
+    expect(screen.getByText("Recent Climbing Sessions component false")).toBeTruthy();
+  });
+
+  it("shows errors when cached section data is an empty array", async () => {
+    gradeProgressionQuery.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: new Error("Grade query failed"),
+    });
+
+    const ClimbingTab = await importClimbingTab();
+    render(<ClimbingTab />);
+
+    expect(screen.getByText("Error: Grade query failed")).toBeTruthy();
+  });
+
+  it("passes session loading state to the sessions table", async () => {
+    sessionSummaryQuery.mockReturnValue({ data: [], isLoading: true, error: null });
+
+    const ClimbingTab = await importClimbingTab();
+    render(<ClimbingTab />);
+
+    expect(screen.getByText("Recent Climbing Sessions component true")).toBeTruthy();
   });
 });

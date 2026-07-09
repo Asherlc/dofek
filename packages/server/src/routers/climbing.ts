@@ -1,39 +1,14 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { ClimbingRepository } from "../repositories/climbing-repository.ts";
+import {
+  type ClimbingGradeProgressionRow,
+  ClimbingRepository,
+  type ClimbingSessionSummaryRow,
+  type ClimbingVolumeByGradeRow,
+} from "../repositories/climbing-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
-export interface ClimbingGradeProgressionRow {
-  date: string;
-  climbType: "boulder" | "route";
-  gradeSystem: "v_scale" | "yds" | "font" | "french";
-  grade: string;
-  gradeSortValue: number;
-}
-
-export interface ClimbingVolumeByGradeRow {
-  climbType: "boulder" | "route";
-  gradeSystem: "v_scale" | "yds" | "font" | "french";
-  grade: string;
-  gradeSortValue: number;
-  attempts: number;
-  sends: number;
-}
-
-export interface ClimbingSessionSummaryRow {
-  activityId: string;
-  date: string;
-  name: string;
-  locationName: string | null;
-  attempts: number;
-  sends: number;
-  hardestBoulderGrade: string | null;
-  hardestBoulderGradeSortValue: number | null;
-  hardestRouteGrade: string | null;
-  hardestRouteGradeSortValue: number | null;
-}
-
-const daysInputSchema = z.object({ days: z.number().default(90) });
+const daysInputSchema = z.object({ days: z.number().int().min(1).max(365).default(90) });
 
 async function runClimbingQuery<T>(query: () => Promise<T>): Promise<T> {
   try {
@@ -51,7 +26,7 @@ export const climbingRouter = router({
   gradeProgression: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(daysInputSchema)
     .query(async ({ ctx, input }): Promise<ClimbingGradeProgressionRow[]> => {
-      const repository = new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone);
+      const repository = new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       const rows = await runClimbingQuery(() => repository.getGradeProgression(input.days));
       return rows.map((row) => row.toDetail());
     }),
@@ -59,7 +34,7 @@ export const climbingRouter = router({
   volumeByGrade: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(daysInputSchema)
     .query(async ({ ctx, input }): Promise<ClimbingVolumeByGradeRow[]> => {
-      const repository = new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone);
+      const repository = new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       const rows = await runClimbingQuery(() => repository.getVolumeByGrade(input.days));
       return rows.map((row) => row.toDetail());
     }),
@@ -67,7 +42,7 @@ export const climbingRouter = router({
   sessionSummary: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(daysInputSchema)
     .query(async ({ ctx, input }): Promise<ClimbingSessionSummaryRow[]> => {
-      const repository = new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone);
+      const repository = new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       const rows = await runClimbingQuery(() => repository.getSessionSummaries(input.days));
       return rows.map((row) => row.toDetail());
     }),

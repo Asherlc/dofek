@@ -22,6 +22,13 @@ describe("ClimbingSessionSummaryTable", () => {
     expect(screen.getByText("No climbing sessions")).toBeTruthy();
   });
 
+  it("renders loading before empty state while sessions are loading", () => {
+    render(<ClimbingSessionSummaryTable data={[]} loading />);
+
+    expect(screen.getByTestId("query-state-loading")).toBeTruthy();
+    expect(screen.queryByText("No climbing sessions")).toBeNull();
+  });
+
   it("renders session location, volume, and hardest grades", () => {
     render(
       <ClimbingSessionSummaryTable

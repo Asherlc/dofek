@@ -194,7 +194,7 @@ export async function loadMobileTrainingTab(
     ctx.timezone,
     ctx.sensorStore,
   );
-  const climbingRepo = new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone);
+  const climbingRepo = new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
 
   const windowStart = dateWindowStartString(endDate, days);
   const accessParams = strainAccessParams(ctx.accessWindow);
@@ -354,7 +354,7 @@ export const mobileTrainingTabOutputSchema = z.object({
       z.object({
         date: z.string(),
         climbType: z.enum(["boulder", "route"]),
-        gradeSystem: z.enum(["v_scale", "yds", "font", "french"]),
+        gradeSystem: z.enum(["v_scale", "yds"]),
         grade: z.string(),
         gradeSortValue: z.number(),
       }),
@@ -362,7 +362,7 @@ export const mobileTrainingTabOutputSchema = z.object({
     volumeByGrade: z.array(
       z.object({
         climbType: z.enum(["boulder", "route"]),
-        gradeSystem: z.enum(["v_scale", "yds", "font", "french"]),
+        gradeSystem: z.enum(["v_scale", "yds"]),
         grade: z.string(),
         gradeSortValue: z.number(),
         attempts: z.number(),

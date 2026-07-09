@@ -34,12 +34,7 @@ export const setTypeEnum = fitness.enum("set_type", ["working", "warmup", "drops
 
 export const climbingClimbTypeEnum = fitness.enum("climbing_climb_type", ["boulder", "route"]);
 
-export const climbingGradeSystemEnum = fitness.enum("climbing_grade_system", [
-  "v_scale",
-  "yds",
-  "font",
-  "french",
-]);
+export const climbingGradeSystemEnum = fitness.enum("climbing_grade_system", ["v_scale", "yds"]);
 
 export const labResultStatusEnum = fitness.enum("lab_result_status", [
   "final",

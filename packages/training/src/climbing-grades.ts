@@ -88,11 +88,11 @@ class ClimbingGradeParser {
     }
 
     if (modifier === "-") {
-      return baseSortValue - 1;
+      return baseSortValue - 3;
     }
 
     if (modifier === "+") {
-      return baseSortValue + 1;
+      return baseSortValue + 5;
     }
 
     const letterSortOffset = yosemiteLetterSortOffsets.get(modifier);

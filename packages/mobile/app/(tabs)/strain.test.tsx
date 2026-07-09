@@ -50,7 +50,7 @@ function defaultMockTrainingData(): MockTrainingData {
 }
 
 function resetMockTrainingState() {
-  mockTrainingState.data = defaultMockTrainingData();
+  mockTrainingState.data = structuredClone(defaultMockTrainingData());
   mockTrainingState.isLoading = false;
   mockTrainingState.isFetching = false;
   mockTrainingState.isError = false;
@@ -402,6 +402,38 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.getByText("8 attempts")).toBeTruthy();
     expect(screen.getByText("5 sends")).toBeTruthy();
     expect(screen.getByText("Kaya climbing at Touchstone Pacific Pipe")).toBeTruthy();
+  });
+
+  it("shows the best climbing grade instead of the most recent lower grade", async () => {
+    mockTrainingState.data = {
+      ...defaultMockTrainingData(),
+      climbing: {
+        gradeProgression: [
+          {
+            date: "2026-07-08",
+            climbType: "boulder",
+            gradeSystem: "v_scale",
+            grade: "V5",
+            gradeSortValue: 5,
+          },
+          {
+            date: "2026-07-09",
+            climbType: "boulder",
+            gradeSystem: "v_scale",
+            grade: "V3",
+            gradeSortValue: 3,
+          },
+        ],
+        volumeByGrade: [],
+        sessionSummary: [],
+      },
+    };
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByText("Best Boulder Grade")).toBeTruthy();
+    expect(screen.getByText("V5")).toBeTruthy();
   });
 
   it("renders climbing empty states from empty server arrays", async () => {

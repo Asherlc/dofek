@@ -85,9 +85,14 @@ class ClimbingSectionModel {
     this.#data = data;
   }
 
-  latestGrade(climbType: ClimbingClimbType): string | null {
-    const matchingRows = this.#data.gradeProgression.filter((row) => row.climbType === climbType);
-    return matchingRows[matchingRows.length - 1]?.grade ?? null;
+  bestGrade(climbType: ClimbingClimbType): string | null {
+    const bestRow = this.#data.gradeProgression
+      .filter((row) => row.climbType === climbType)
+      .reduce<MobileClimbingGradeProgressionRow | null>(
+        (best, row) => (best === null || row.gradeSortValue > best.gradeSortValue ? row : best),
+        null,
+      );
+    return bestRow?.grade ?? null;
   }
 
   get volumeRows(): MobileClimbingVolumeByGradeRow[] {
@@ -443,15 +448,15 @@ function ClimbingSection({ model }: { model: ClimbingSectionModel }) {
       <View style={styles.climbingGradeGrid}>
         <View style={styles.climbingGradeItem}>
           <Text style={styles.loadLabel}>Best Boulder Grade</Text>
-          <Text style={styles.loadValue}>{model.latestGrade("boulder") ?? "None"}</Text>
+          <Text style={styles.loadValue}>{model.bestGrade("boulder") ?? "None"}</Text>
         </View>
         <View style={styles.climbingGradeItem}>
           <Text style={styles.loadLabel}>Best Route Grade</Text>
-          <Text style={styles.loadValue}>{model.latestGrade("route") ?? "None"}</Text>
+          <Text style={styles.loadValue}>{model.bestGrade("route") ?? "None"}</Text>
         </View>
       </View>
 
-      {model.latestGrade("boulder") == null && model.latestGrade("route") == null && (
+      {model.bestGrade("boulder") == null && model.bestGrade("route") == null && (
         <Text style={styles.activitiesEmpty}>No climbing grade progression</Text>
       )}
 

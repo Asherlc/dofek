@@ -1,6 +1,6 @@
 CREATE TYPE fitness.climbing_climb_type AS ENUM ('boulder', 'route');
 
-CREATE TYPE fitness.climbing_grade_system AS ENUM ('v_scale', 'yds', 'font', 'french');
+CREATE TYPE fitness.climbing_grade_system AS ENUM ('v_scale', 'yds');
 
 CREATE TABLE IF NOT EXISTS fitness.climbing_entry (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

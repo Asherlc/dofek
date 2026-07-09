@@ -64,7 +64,7 @@ describe("parseClimbingGrade", () => {
     expect(parseClimbingGrade(" 5.12- ")).toEqual({
       gradeSystem: "yds",
       grade: "5.12-",
-      sortValue: 5119,
+      sortValue: 5117,
     });
     expect(parseClimbingGrade("5.12")).toEqual({
       gradeSystem: "yds",
@@ -74,7 +74,7 @@ describe("parseClimbingGrade", () => {
     expect(parseClimbingGrade("5.12+")).toEqual({
       gradeSystem: "yds",
       grade: "5.12+",
-      sortValue: 5121,
+      sortValue: 5125,
     });
   });
 
@@ -83,6 +83,8 @@ describe("parseClimbingGrade", () => {
     expect(parseClimbingGrade("5.16")).toBeNull();
     expect(parseClimbingGrade("5.99")).toBeNull();
     expect(parseClimbingGrade("5.x")).toBeNull();
+    expect(parseClimbingGrade("5.10aa")).toBeNull();
+    expect(parseClimbingGrade("5.10b+")).toBeNull();
     expect(parseClimbingGrade("6.1")).toBeNull();
   });
 

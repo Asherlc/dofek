@@ -53,4 +53,30 @@ describe("ClimbingGradeProgressionChart", () => {
     expect(screen.getByText("5.10a")).toBeTruthy();
     expect(screen.queryByText("5101")).toBeNull();
   });
+
+  it("uses the newest row per climb type regardless of input order", () => {
+    render(
+      <ClimbingGradeProgressionChart
+        data={[
+          {
+            date: "2026-07-10",
+            climbType: "boulder",
+            gradeSystem: "v_scale",
+            grade: "V3",
+            gradeSortValue: 3,
+          },
+          {
+            date: "2026-07-09",
+            climbType: "boulder",
+            gradeSystem: "v_scale",
+            grade: "V5",
+            gradeSortValue: 5,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("V3")).toBeTruthy();
+    expect(screen.queryByText("V5")).toBeNull();
+  });
 });

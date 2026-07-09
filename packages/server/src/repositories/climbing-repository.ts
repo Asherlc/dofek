@@ -1,11 +1,11 @@
 import { parseClimbingGrade } from "@dofek/training/climbing-grades";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import type { Database } from "../../../../src/db/index.ts";
+import { BaseRepository } from "../lib/base-repository.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 
 export type ClimbingClimbType = "boulder" | "route";
-export type ClimbingGradeSystem = "v_scale" | "yds" | "font" | "french";
+export type ClimbingGradeSystem = "v_scale" | "yds";
 
 export interface ClimbingGradeProgressionRow {
   date: string;
@@ -98,7 +98,7 @@ export class ClimbingSessionSummary {
 }
 
 const climbTypeSchema = z.enum(["boulder", "route"]);
-const gradeSystemSchema = z.enum(["v_scale", "yds", "font", "french"]);
+const gradeSystemSchema = z.enum(["v_scale", "yds"]);
 
 const progressionRowSchema = z.object({
   session_date: dateStringSchema,
@@ -142,46 +142,37 @@ const climbingGradeSortSql = sql`
           WHEN 'd' THEN 4
         END
     WHEN ce.grade_system = 'yds' AND ce.grade ~ '^5\\.[0-9]+-$' THEN
-      5000 + (substring(ce.grade from '^5\\.([0-9]+)')::int * 10) - 1
+      5000 + (substring(ce.grade from '^5\\.([0-9]+)')::int * 10) - 3
     WHEN ce.grade_system = 'yds' AND ce.grade ~ '^5\\.[0-9]+\\+$' THEN
-      5000 + (substring(ce.grade from '^5\\.([0-9]+)')::int * 10) + 1
+      5000 + (substring(ce.grade from '^5\\.([0-9]+)')::int * 10) + 5
     WHEN ce.grade_system = 'yds' AND ce.grade ~ '^5\\.[0-9]+$' THEN
       5000 + (substring(ce.grade from '^5\\.([0-9]+)')::int * 10)
     ELSE NULL
   END
 `;
 
-export class ClimbingRepository {
-  readonly #db: Pick<Database, "execute">;
-  readonly #userId: string;
-  readonly #timezone: string;
-
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
-    this.#db = db;
-    this.#userId = userId;
-    this.#timezone = timezone;
-  }
-
+export class ClimbingRepository extends BaseRepository {
   async getGradeProgression(days: number): Promise<ClimbingGradeProgression[]> {
     const rows = await executeWithSchema(
-      this.#db,
+      this.db,
       progressionRowSchema,
       sql`WITH ranked_sent AS (
             SELECT
-              (a.started_at AT TIME ZONE ${this.#timezone})::date::text AS session_date,
+              (a.started_at AT TIME ZONE ${this.timezone})::date::text AS session_date,
               ce.climb_type,
               ce.grade_system,
               ce.grade,
               ${climbingGradeSortSql} AS grade_sort_value,
               ROW_NUMBER() OVER (
-                PARTITION BY (a.started_at AT TIME ZONE ${this.#timezone})::date, ce.climb_type
+                PARTITION BY (a.started_at AT TIME ZONE ${this.timezone})::date, ce.climb_type
                 ORDER BY ${climbingGradeSortSql} DESC NULLS LAST
               ) AS grade_rank
             FROM fitness.v_activity a
             JOIN fitness.climbing_entry ce ON ce.activity_id = ANY(a.member_activity_ids)
-            WHERE a.user_id = ${this.#userId}
+            WHERE a.user_id = ${this.userId}
               AND a.activity_type IN ('climbing', 'rock_climbing')
               AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+              ${this.timestampAccessPredicate(sql`a.started_at`)}
               AND ce.sent = true
               AND ${climbingGradeSortSql} IS NOT NULL
           )
@@ -205,7 +196,7 @@ export class ClimbingRepository {
 
   async getVolumeByGrade(days: number): Promise<ClimbingVolumeByGrade[]> {
     const rows = await executeWithSchema(
-      this.#db,
+      this.db,
       volumeByGradeRowSchema,
       sql`SELECT
             ce.climb_type,
@@ -216,9 +207,10 @@ export class ClimbingRepository {
             COUNT(*) FILTER (WHERE ce.sent)::int AS sends
           FROM fitness.v_activity a
           JOIN fitness.climbing_entry ce ON ce.activity_id = ANY(a.member_activity_ids)
-          WHERE a.user_id = ${this.#userId}
+          WHERE a.user_id = ${this.userId}
             AND a.activity_type IN ('climbing', 'rock_climbing')
             AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+            ${this.timestampAccessPredicate(sql`a.started_at`)}
             AND ${climbingGradeSortSql} IS NOT NULL
           GROUP BY ce.climb_type, ce.grade_system, ce.grade, grade_sort_value
           ORDER BY grade_sort_value`,
@@ -239,12 +231,12 @@ export class ClimbingRepository {
 
   async getSessionSummaries(days: number): Promise<ClimbingSessionSummary[]> {
     const rows = await executeWithSchema(
-      this.#db,
+      this.db,
       sessionSummaryRowSchema,
       sql`WITH climbing_entries AS (
             SELECT
               a.id AS activity_id,
-              (a.started_at AT TIME ZONE ${this.#timezone})::date::text AS session_date,
+              (a.started_at AT TIME ZONE ${this.timezone})::date::text AS session_date,
               COALESCE(a.name, 'Climbing') AS name,
               ce.location_name,
               ce.id AS entry_id,
@@ -254,9 +246,10 @@ export class ClimbingRepository {
               ${climbingGradeSortSql} AS grade_sort_value
             FROM fitness.v_activity a
             JOIN fitness.climbing_entry ce ON ce.activity_id = ANY(a.member_activity_ids)
-            WHERE a.user_id = ${this.#userId}
+            WHERE a.user_id = ${this.userId}
               AND a.activity_type IN ('climbing', 'rock_climbing')
               AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+              ${this.timestampAccessPredicate(sql`a.started_at`)}
               AND ${climbingGradeSortSql} IS NOT NULL
           )
           SELECT

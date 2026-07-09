@@ -3,12 +3,24 @@ import type { SyncDatabase } from "../db/index.ts";
 import { logSync } from "../db/sync-log.ts";
 import { runWithTokenUser } from "../db/token-user-context.ts";
 import { logger } from "../logger.ts";
+import type { KayaImportDatabase } from "../providers/kaya/import.ts";
 import type { ImportJobData } from "./queues.ts";
 
 /** Minimal Job interface — only the subset processImportJob actually uses. */
 interface ImportJob {
   data: ImportJobData;
   updateProgress: (data: object) => Promise<void>;
+}
+
+function isKayaImportDatabase(db: SyncDatabase): db is KayaImportDatabase {
+  return "transaction" in db && typeof db.transaction === "function";
+}
+
+function requireKayaImportDatabase(db: SyncDatabase): KayaImportDatabase {
+  if (!isKayaImportDatabase(db)) {
+    throw new Error("Kaya export import requires a transactional database");
+  }
+  return db;
 }
 
 export async function processImportJob(job: ImportJob, db: SyncDatabase): Promise<void> {
@@ -104,7 +116,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
         const { readFile } = await import("node:fs/promises");
         const csvText = await readFile(filePath, "utf-8");
         const { importKayaExportFile } = await import("../providers/kaya/import.ts");
-        const result = await importKayaExportFile(db, csvText, userId);
+        const result = await importKayaExportFile(requireKayaImportDatabase(db), csvText, userId);
 
         const durationSec = ((Date.now() - importStart) / 1000).toFixed(1);
         const msg = `${result.recordsSynced} climbing entries imported, ${result.errors.length} errors in ${durationSec}s`;

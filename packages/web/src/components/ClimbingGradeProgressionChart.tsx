@@ -24,7 +24,10 @@ class ClimbingGradeProgressionChartModel {
   get latestRows(): ClimbingGradeProgressionRow[] {
     const latestByType = new Map<string, ClimbingGradeProgressionRow>();
     for (const row of this.#rows) {
-      latestByType.set(row.climbType, row);
+      const existing = latestByType.get(row.climbType);
+      if (!existing || row.date > existing.date) {
+        latestByType.set(row.climbType, row);
+      }
     }
     return [...latestByType.values()].sort((left, right) =>
       left.climbType.localeCompare(right.climbType),
@@ -33,11 +36,11 @@ class ClimbingGradeProgressionChartModel {
 
   option(): Record<string, unknown> {
     return {
-      grid: dofekGrid("single", { top: 36, bottom: 42, left: 48 }),
+      grid: dofekGrid("dualAxis", { top: 36, bottom: 42, left: 48 }),
       legend: dofekLegend(true),
       tooltip: dofekTooltip(),
       xAxis: dofekAxis.time(),
-      yAxis: dofekAxis.value({ name: "Grade" }),
+      yAxis: [dofekAxis.value({ name: "Boulder Grade" }), dofekAxis.value({ name: "Route Grade" })],
       series: [
         dofekSeries.line("Boulder", this.#seriesData("boulder"), {
           color: chartColors.emerald,
@@ -46,6 +49,7 @@ class ClimbingGradeProgressionChartModel {
         }),
         dofekSeries.line("Route", this.#seriesData("route"), {
           color: chartColors.blue,
+          yAxisIndex: 1,
           symbol: "circle",
           symbolSize: 6,
         }),

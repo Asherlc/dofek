@@ -25,7 +25,7 @@ describe("loadMobileTrainingTab", () => {
     accessWindow?: import("../billing/entitlement.ts").AccessWindow,
   ) {
     return {
-      db: { execute: vi.fn() },
+      db: { execute: vi.fn().mockResolvedValue([]) },
       userId: "user-1",
       timezone: "UTC",
       accessWindow,

@@ -15,6 +15,12 @@ export const Route = createFileRoute("/training/climbing")({
 
 const CLIMBING_ACTIVITY_TYPES = ["climbing", "rock_climbing"] as const;
 
+function shouldShowQueryError(query: { error: unknown; data: unknown }): boolean {
+  if (!query.error) return false;
+  if (Array.isArray(query.data)) return query.data.length === 0;
+  return !query.data;
+}
+
 export function ClimbingTab() {
   const { days } = useTrainingDays();
   const gradeProgression = trpc.climbing.gradeProgression.useQuery(
@@ -31,7 +37,7 @@ export function ClimbingTab() {
     <>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Section title="Grade Progression" subtitle="Best sent grade by session">
-          {gradeProgression.error && !gradeProgression.data ? (
+          {shouldShowQueryError(gradeProgression) ? (
             <QueryStatePanel error={gradeProgression.error} />
           ) : (
             <ClimbingGradeProgressionChart
@@ -42,7 +48,7 @@ export function ClimbingTab() {
         </Section>
 
         <Section title="Volume by Grade" subtitle="Attempts and sends grouped by grade">
-          {volumeByGrade.error && !volumeByGrade.data ? (
+          {shouldShowQueryError(volumeByGrade) ? (
             <QueryStatePanel error={volumeByGrade.error} />
           ) : (
             <ClimbingVolumeByGradeChart
@@ -54,10 +60,13 @@ export function ClimbingTab() {
       </div>
 
       <Section title="Recent Climbing Sessions" subtitle="Recent sessions with hardest grades">
-        {sessionSummary.error && !sessionSummary.data ? (
+        {shouldShowQueryError(sessionSummary) ? (
           <QueryStatePanel error={sessionSummary.error} />
         ) : (
-          <ClimbingSessionSummaryTable data={sessionSummary.data ?? []} />
+          <ClimbingSessionSummaryTable
+            data={sessionSummary.data ?? []}
+            loading={sessionSummary.isLoading}
+          />
         )}
       </Section>
 
