@@ -10,6 +10,7 @@ import { ChartRangeProvider } from "../components/DofekChart.tsx";
 import { Hypnogram } from "../components/Hypnogram.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { PageSection } from "../components/PageSection.tsx";
+import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { SleepChart } from "../components/SleepChart.tsx";
 import { SleepDataSourcesTable } from "../components/SleepDataSourcesTable.tsx";
 import { SleepNeedCard } from "../components/SleepNeedCard.tsx";
@@ -83,6 +84,14 @@ export function SleepPage() {
         subtitle="Sleep stages, debt, and patterns over time"
       >
         {/* Sleep Performance Score + Bedtime Recommendation */}
+        {(sleepPerformance.isError || sleepNeed.isError) && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {sleepPerformance.isError && (
+              <QueryStatePanel error={sleepPerformance.error} height={72} />
+            )}
+            {sleepNeed.isError && <QueryStatePanel error={sleepNeed.error} height={72} />}
+          </div>
+        )}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <SleepPerformanceCard data={sleepPerformance.data} loading={sleepPerformance.isLoading} />
           <SleepNeedCard data={sleepNeed.data} loading={sleepNeed.isLoading} />
@@ -90,6 +99,7 @@ export function SleepPage() {
 
         {/* Sleep Stage Chart */}
         <PageSection title="Sleep Stages">
+          {sleepData.isError && <QueryStatePanel error={sleepData.error} height={72} />}
           <SleepChart data={sleepRows} loading={sleepData.isLoading} />
         </PageSection>
 
@@ -103,10 +113,17 @@ export function SleepPage() {
 
         {/* Last Night Hypnogram */}
         <PageSection title="Last Night">
+          {latestStages.isError && <QueryStatePanel error={latestStages.error} height={72} />}
           <Hypnogram data={latestStages.data ?? []} loading={latestStages.isLoading} />
         </PageSection>
 
         {/* Sleep Insights */}
+        {insightsQuery.isError && (
+          <PageSection title="Sleep Insights" card={false}>
+            <QueryStatePanel error={insightsQuery.error} height={72} />
+          </PageSection>
+        )}
+
         {insightsQuery.isLoading && (
           <PageSection title="Sleep Insights" card={false}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

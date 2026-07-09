@@ -19,7 +19,7 @@
 
 import { formatDateYmd } from "@dofek/format/format";
 import ReactECharts from "echarts-for-react";
-import { createContext, type ReactNode, useContext } from "react";
+import { createContext, type ReactNode, useContext, useMemo } from "react";
 import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import { useFetchingCount } from "../lib/FetchingContext.tsx";
 import type { TimeRangeDays } from "../lib/timeRange.ts";
@@ -41,9 +41,8 @@ export function ChartRangeProvider({
   children: ReactNode;
 }) {
   const endDate = useTodayQueryDate();
-  return (
-    <ChartRangeContext.Provider value={{ days, endDate }}>{children}</ChartRangeContext.Provider>
-  );
+  const contextValue = useMemo(() => ({ days, endDate }), [days, endDate]);
+  return <ChartRangeContext.Provider value={contextValue}>{children}</ChartRangeContext.Provider>;
 }
 
 interface DofekChartProps {
@@ -148,7 +147,7 @@ function applyBoundsToXAxis(xAxis: unknown, bounds: { min: string; max: string }
 function applyBoundsToTimeAxis(axis: unknown, bounds: { min: string; max: string }): unknown {
   if (!isChartAxis(axis)) return axis;
   if (axis.type !== "time") return axis;
-  if (axis.min !== undefined || axis.max !== undefined) return axis;
+  if (axis.min != null || axis.max != null) return axis;
   return { ...axis, min: bounds.min, max: bounds.max };
 }
 

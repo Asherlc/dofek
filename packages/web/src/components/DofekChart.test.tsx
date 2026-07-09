@@ -257,6 +257,26 @@ describe("DofekChart", () => {
     expect(option.xAxis).toEqual({ type: "time", min: "2026-01-01", max: "2026-02-01" });
   });
 
+  it("treats null time x-axis bounds as unset", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 6, 9, 12));
+
+    render(
+      <ChartRangeProvider days={90}>
+        <DofekChart
+          option={{
+            xAxis: { type: "time", min: null, max: null },
+            series: [],
+          }}
+        />
+      </ChartRangeProvider>,
+    );
+
+    const chart = screen.getByTestId("echarts-mock");
+    const option = JSON.parse(chart.getAttribute("data-option") ?? "{}");
+    expect(option.xAxis).toEqual({ type: "time", min: "2026-04-10", max: "2026-07-09" });
+  });
+
   it("leaves chart axes data-driven for All ranges", () => {
     render(
       <ChartRangeProvider days={null}>

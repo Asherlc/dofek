@@ -4,6 +4,7 @@ import { CaloricBalanceChart } from "../components/CaloricBalanceChart.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { ChartRangeProvider } from "../components/DofekChart.tsx";
 import { MicronutrientChart } from "../components/MicronutrientChart.tsx";
+import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import {
   formatTimeRangeLabel,
@@ -43,6 +44,7 @@ export function NutritionAnalyticsPage() {
           title="Adaptive TDEE"
           subtitle="True daily energy expenditure estimated from calorie intake vs weight change"
         >
+          {adaptiveTdee.isError && <QueryStatePanel error={adaptiveTdee.error} height={72} />}
           <AdaptiveTdeeChart data={adaptiveTdee.data} loading={adaptiveTdee.isLoading} />
         </Section>
 
@@ -51,11 +53,14 @@ export function NutritionAnalyticsPage() {
           title="Caloric Balance"
           subtitle="Daily calories in vs estimated expenditure (active + basal energy)"
         >
+          {caloricBalance.isError && <QueryStatePanel error={caloricBalance.error} height={72} />}
           <CaloricBalanceChart
             data={caloricBalance.data ?? []}
             loading={caloricBalance.isLoading}
           />
         </Section>
+
+        {macroRatios.isError && <QueryStatePanel error={macroRatios.error} height={72} />}
 
         {/* Macro summary */}
         {latestProteinPerKg != null && (
@@ -79,6 +84,7 @@ export function NutritionAnalyticsPage() {
           title="Micronutrient Adequacy"
           subtitle={`Average daily intake as % of Recommended Dietary Allowance (${formatTimeRangeLabel(days)})`}
         >
+          {micronutrients.isError && <QueryStatePanel error={micronutrients.error} height={72} />}
           <MicronutrientChart data={micronutrients.data ?? []} loading={micronutrients.isLoading} />
         </Section>
       </div>

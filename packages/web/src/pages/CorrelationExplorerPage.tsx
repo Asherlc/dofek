@@ -4,6 +4,7 @@ import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.t
 import { CorrelationStrengthBar } from "../components/CorrelationStrengthBar.tsx";
 import { ChartRangeProvider, DofekChart } from "../components/DofekChart.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
+import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { chartThemeColors, dofekAxis, dofekGrid, dofekTooltip } from "../lib/chartTheme.ts";
 import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
@@ -104,6 +105,7 @@ export function CorrelationExplorerPage() {
 
   const grouped = metricsQuery.data ? groupByDomain(metricsQuery.data) : {};
   const data = correlationQuery.data;
+  const dataPoints = Array.isArray(data?.dataPoints) ? data.dataPoints : [];
 
   const xMetric = metricsQuery.data?.find((m) => m.id === metricX);
   const yMetric = metricsQuery.data?.find((m) => m.id === metricY);
@@ -167,6 +169,12 @@ export function CorrelationExplorerPage() {
           <div className="rounded-lg border border-amber-900/30 bg-amber-950/20 p-4 text-sm text-amber-400">
             Select two different metrics to compare.
           </div>
+        )}
+
+        {metricsQuery.isError && <QueryStatePanel error={metricsQuery.error} height={72} />}
+
+        {correlationQuery.isError && metricX !== metricY && (
+          <QueryStatePanel error={correlationQuery.error} height={72} />
         )}
 
         {/* Loading */}
@@ -243,7 +251,7 @@ export function CorrelationExplorerPage() {
             </div>
 
             {/* Scatter plot */}
-            {data.dataPoints.length > 0 && (
+            {dataPoints.length > 0 && (
               <div
                 className="card p-4"
                 title="This chart plots each data point and overlays a trend line so you can see whether two metrics move together."
@@ -253,7 +261,7 @@ export function CorrelationExplorerPage() {
                   <ChartDescriptionTooltip description="This chart plots each data point and overlays a trend line so you can see whether two metrics move together." />
                 </div>
                 <ScatterPlot
-                  dataPoints={data.dataPoints}
+                  dataPoints={dataPoints}
                   regression={data.regression}
                   rho={data.spearmanRho}
                   xLabel={`${xMetric?.label ?? metricX} (${xMetric?.unit ?? ""})`}
