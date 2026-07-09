@@ -15,6 +15,7 @@ import {
 const testUserId = "00000000-0000-0000-0000-000000000001";
 const regularActivityStartedAt = "2026-07-01T12:00:00.000Z";
 const gappedActivityStartedAt = "2026-07-01T13:00:00.000Z";
+const varyingPowerStartedAt = "2026-07-01T14:00:00.000Z";
 const readModelRowSchema = z.object({
   activity_id: z.string(),
   duration_seconds: z.coerce.number(),
@@ -145,6 +146,52 @@ describe("activity_power_curve read model", () => {
       {
         activity_id: regularActivityId,
         best_power: 200,
+        duration_seconds: 5,
+        is_deleted: 0,
+      },
+    ]);
+  });
+
+  it("computes average power correctly for varying-power windows", async () => {
+    const varyingActivityId = randomUUID();
+    const renderedSql = renderNonIncrementalActivityPowerCurveSql();
+
+    await insertActivity(
+      testContext,
+      varyingActivityId,
+      "varying-power",
+      varyingPowerStartedAt,
+      "2026-07-01T14:00:05.000Z",
+    );
+    await syncClickHouseTestActivitySensorStore(testContext);
+    await seedClickHouseMetricStreamRows(testContext, [
+      ...powerSampleRows(varyingActivityId, varyingPowerStartedAt, [
+        { offsetSeconds: 0, power: 100 },
+        { offsetSeconds: 1, power: 200 },
+        { offsetSeconds: 2, power: 300 },
+        { offsetSeconds: 3, power: 400 },
+        { offsetSeconds: 4, power: 500 },
+      ]),
+    ]);
+
+    const rows = await sensorStore.query(
+      readModelRowSchema,
+      `
+        SELECT
+          toString(activity_id) AS activity_id,
+          duration_seconds,
+          best_power,
+          is_deleted
+        FROM (${renderedSql}) AS power_curve
+        WHERE duration_seconds = 5
+        ORDER BY activity_id
+      `,
+    );
+
+    expect(rows).toEqual([
+      {
+        activity_id: varyingActivityId,
+        best_power: 300,
         duration_seconds: 5,
         is_deleted: 0,
       },
