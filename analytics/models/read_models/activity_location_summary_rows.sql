@@ -153,23 +153,35 @@ active_dirty_keys AS (
         AND user_id IS NOT null
 ),
 
-gps_points AS (
-    SELECT
-        location_samples.activity_id AS activity_id,
-        location_samples.user_id AS user_id,
-        location_samples.recorded_at AS recorded_at,
-        location_samples.lat AS lat,
-        location_samples.lng AS lng
-    FROM {{ ref('activity_location_sample') }} AS location_samples
-    WHERE location_samples.is_deleted = 0
-        AND location_samples.lat IS NOT null
-        AND location_samples.lng IS NOT null
-        AND (location_samples.user_id, location_samples.activity_id) IN (
+latest_location_samples AS (
+    SELECT *
+    FROM (
+        SELECT *
+        FROM {{ ref('activity_location_sample') }}
+        WHERE (user_id, activity_id) IN (
             SELECT
                 user_id,
                 activity_id
             FROM active_dirty_keys
         )
+        ORDER BY
+            source_metric_stream_id ASC,
+            refresh_version DESC
+        LIMIT 1 BY source_metric_stream_id
+    )
+    WHERE is_deleted = 0
+),
+
+gps_points AS (
+    SELECT
+        activity_id,
+        user_id,
+        recorded_at,
+        lat,
+        lng
+    FROM latest_location_samples
+    WHERE lat IS NOT null
+        AND lng IS NOT null
 ),
 
 gps_deltas AS (

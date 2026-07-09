@@ -81,3 +81,15 @@ final API responses. `daily_recovery`, `daily_strain`,
 lower-level recovery, activity-load, and zone-minute models remain internal
 ingredients. `provider_stats` remains the route-facing provider inventory model
 so request paths do not recompute provider counts from raw source tables.
+
+Append-incremental models backed by `ReplacingMergeTree(refresh_version)` must
+handle row lifecycle explicitly. A model that can lose a previously emitted row
+at its `ORDER BY` grain must emit a newer tombstone row with `is_deleted = 1`,
+and serving queries must read `FINAL` plus `is_deleted = 0`. Downstream dbt models
+that read another append table must first choose the latest row for the upstream
+grain with `ORDER BY refresh_version DESC LIMIT 1 BY ...`, then filter
+`is_deleted = 0`; filtering before selecting the latest row can preserve stale
+active rows until ClickHouse background merges finish. This follows ClickHouse's
+documented `ReplacingMergeTree` behavior, where replacement occurs during merges
+and `FINAL` forces query-time replacement:
+<https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree>.

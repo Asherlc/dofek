@@ -393,6 +393,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
           ARRAY JOIN points AS point
           WHERE user_id = {userId:UUID}
             AND activity_id IN {activityIds:Array(UUID)}
+            AND is_deleted = 0
             AND point.1 >= parseDateTime64BestEffort({windowStartedAt:String})
             AND point.1 <= parseDateTime64BestEffort({windowEndedAt:String})
         ),
@@ -498,6 +499,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
         ARRAY JOIN zones AS zone_tuple
         WHERE user_id = {userId:UUID}
           AND activity_id IN {activityIds:Array(UUID)}
+          AND is_deleted = 0
         GROUP BY zone_tuple.1
         ORDER BY zone_tuple.1
       `,

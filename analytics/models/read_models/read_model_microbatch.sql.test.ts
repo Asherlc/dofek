@@ -359,7 +359,11 @@ describe("production analytics read-model build", () => {
     const normalizedSql = compactWhitespace(sql);
 
     expect(sql).toContain("ref('activity_sensor_sample')");
-    expect(normalizedSql).toContain("(sensor_samples.user_id, sensor_samples.activity_id) IN");
+    expect(sql).toContain("latest_sensor_samples AS");
+    expect(normalizedSql).toContain("(user_id, activity_id) IN");
+    expect(normalizedSql).toContain(
+      "LIMIT 1 BY user_id, activity_id, recorded_date, channel, recorded_at",
+    );
     expect(sql).toContain("source('postgres_fitness', 'activity') }} FINAL");
     expect(sql).toContain("provider_absent_at IS null");
     expect(sql).toContain("deleted_at IS null");
@@ -378,7 +382,9 @@ describe("production analytics read-model build", () => {
     const normalizedSql = compactWhitespace(sql);
 
     expect(sql).toContain("ref('activity_location_sample')");
-    expect(normalizedSql).toContain("(location_samples.user_id, location_samples.activity_id) IN");
+    expect(sql).toContain("latest_location_samples AS");
+    expect(normalizedSql).toContain("(user_id, activity_id) IN");
+    expect(normalizedSql).toContain("LIMIT 1 BY source_metric_stream_id");
     expect(sql).toContain("source('postgres_fitness', 'activity') }} FINAL");
     expect(sql).toContain("provider_absent_at IS null");
     expect(sql).toContain("deleted_at IS null");
@@ -405,12 +411,18 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("ref('activity_location_sample')");
     expect(sql).toContain("sample_dirty_keys AS");
     expect(sql).toContain("location_dirty_keys AS");
+    expect(sql).toContain("existing_stream_points AS");
+    expect(sql).toContain("stale_dirty_keys AS");
+    expect(sql).toContain("latest_sensor_samples AS");
+    expect(sql).toContain("latest_location_samples AS");
     expect(normalizedSql).toContain("FROM current_activity WHERE (SELECT is_empty FROM target_state)");
     expect(sql).toContain("arraySort");
     expect(sql).toContain("groupArray(tuple(");
     expect(sql).toContain("toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version");
-    expect(normalizedSql).toContain("(sensor_samples.user_id, sensor_samples.activity_id) IN");
-    expect(normalizedSql).toContain("(location_samples.user_id, location_samples.activity_id) IN");
+    expect(normalizedSql).toContain("LIMIT 1 BY user_id, activity_id, recorded_date, channel, recorded_at");
+    expect(normalizedSql).toContain("LIMIT 1 BY source_metric_stream_id");
+    expect(normalizedSql).toContain("if(points_by_activity.activity_id IS null, 1, 0) AS is_deleted");
+    expect(sql).toContain("refresh_clock.refreshed_at AS refreshed_at");
     expect(sql).not.toContain("activity_stream_points_max_points");
     expect(normalizedSql).not.toContain("modulo( point_index - 1");
     expect(normalizedSql).not.toContain("intDiv(point_count");
@@ -433,13 +445,18 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("groupArray(tuple(");
     expect(sql).toContain("zone_seconds AS");
     expect(sql).toContain("channel = 'heart_rate'");
+    expect(sql).toContain("existing_zone_rows AS");
+    expect(sql).toContain("stale_dirty_keys AS");
+    expect(sql).toContain("latest_sensor_samples AS");
     expect(normalizedSql).toContain("FROM current_activity WHERE (SELECT is_empty FROM target_state)");
     expect(normalizedSql).toContain("ORDER BY resting.ended_at DESC");
     expect(normalizedSql).toContain("resting.ended_at <= activity_bounds.started_at");
     expect(normalizedSql).not.toContain(
       "toDate(resting.ended_at) <= toDate(activity_bounds.started_at)",
     );
-    expect(normalizedSql).toContain("(sensor_samples.user_id, sensor_samples.activity_id) IN");
+    expect(normalizedSql).toContain("LIMIT 1 BY user_id, activity_id, recorded_date, channel, recorded_at");
+    expect(normalizedSql).toContain("if(zones_by_activity.activity_id IS null, 1, 0) AS is_deleted");
+    expect(sql).toContain("refresh_clock.refreshed_at AS refreshed_at");
     expect(normalizedSql).not.toContain("ref('deduped_sensor')");
     expect(normalizedSql).not.toContain("source('postgres_fitness', 'metric_stream')");
   });
@@ -489,6 +506,30 @@ describe("production analytics read-model build", () => {
     );
     expect(normalizedSql).toContain(
       "FROM {{ ref('activity_location_summary_rows') }} WHERE (user_id, activity_id) IN",
+    );
+  });
+
+  it("collapses activity sample versions before aggregate models filter deletions", () => {
+    const sensorSummarySql = readModel("activity_sensor_summary_rows");
+    const locationSummarySql = readModel("activity_location_summary_rows");
+    const normalizedSensorSql = compactWhitespace(sensorSummarySql);
+    const normalizedLocationSql = compactWhitespace(locationSummarySql);
+
+    expect(sensorSummarySql).toContain("latest_sensor_samples AS");
+    expect(normalizedSensorSql).toContain(
+      "LIMIT 1 BY user_id, activity_id, recorded_date, channel, recorded_at",
+    );
+    expect(normalizedSensorSql).toContain("FROM latest_sensor_samples WHERE scalar IS NOT null");
+    expect(normalizedSensorSql).toContain("FROM latest_sensor_samples WHERE channel = 'power'");
+    expect(normalizedSensorSql).toContain("FROM latest_sensor_samples WHERE channel = 'altitude'");
+    expect(normalizedSensorSql).toContain("FROM latest_sensor_samples WHERE channel = 'grade'");
+    expect(normalizedSensorSql).not.toContain("FROM {{ ref('activity_sensor_sample') }} WHERE is_deleted = 0 AND");
+
+    expect(locationSummarySql).toContain("latest_location_samples AS");
+    expect(normalizedLocationSql).toContain("LIMIT 1 BY source_metric_stream_id");
+    expect(normalizedLocationSql).toContain("FROM latest_location_samples WHERE lat IS NOT null");
+    expect(normalizedLocationSql).not.toContain(
+      "FROM {{ ref('activity_location_sample') }} AS location_samples WHERE location_samples.is_deleted = 0",
     );
   });
 

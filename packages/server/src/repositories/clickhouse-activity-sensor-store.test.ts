@@ -69,6 +69,7 @@ describe("ClickHouseActivitySensorStore", () => {
     );
     const queryText = query.mock.calls[0]?.[0]?.query;
     expect(queryText).toContain("ARRAY JOIN points AS point");
+    expect(queryText).toContain("AND is_deleted = 0");
     expect(queryText).toContain(
       "any(tuple(heart_rate, power, speed, cadence, altitude, lat, lng)) AS point_values",
     );
@@ -275,6 +276,7 @@ describe("ClickHouseActivitySensorStore", () => {
     const queryText = query.mock.calls[0]?.[0]?.query;
     expect(queryText).toContain("analytics.activity_heart_rate_zones");
     expect(queryText).toContain("ARRAY JOIN zones AS zone_tuple");
+    expect(queryText).toContain("AND is_deleted = 0");
     expect(queryText).toContain("sum(zone_tuple.2) AS seconds");
     expect(queryText).toContain("GROUP BY zone_tuple.1");
     expect(queryText).not.toContain("analytics.deduped_sensor");

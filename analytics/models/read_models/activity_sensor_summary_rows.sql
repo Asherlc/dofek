@@ -154,22 +154,38 @@ active_dirty_keys AS (
         AND user_id IS NOT null
 ),
 
-deduped_samples AS (
-    SELECT
-        sensor_samples.activity_id AS activity_id,
-        sensor_samples.user_id AS user_id,
-        sensor_samples.recorded_at AS recorded_at,
-        sensor_samples.channel AS channel,
-        sensor_samples.scalar AS scalar
-    FROM {{ ref('activity_sensor_sample') }} AS sensor_samples
-    WHERE sensor_samples.is_deleted = 0
-        AND sensor_samples.scalar IS NOT null
-        AND (sensor_samples.user_id, sensor_samples.activity_id) IN (
+latest_sensor_samples AS (
+    SELECT *
+    FROM (
+        SELECT *
+        FROM {{ ref('activity_sensor_sample') }}
+        WHERE (user_id, activity_id) IN (
             SELECT
                 user_id,
                 activity_id
             FROM active_dirty_keys
         )
+        ORDER BY
+            user_id ASC,
+            activity_id ASC,
+            recorded_date ASC,
+            channel ASC,
+            recorded_at ASC,
+            refresh_version DESC
+        LIMIT 1 BY user_id, activity_id, recorded_date, channel, recorded_at
+    )
+    WHERE is_deleted = 0
+),
+
+deduped_samples AS (
+    SELECT
+        activity_id,
+        user_id,
+        recorded_at,
+        channel,
+        scalar
+    FROM latest_sensor_samples
+    WHERE scalar IS NOT null
 ),
 
 altitude_deltas AS (
@@ -262,15 +278,8 @@ power_cumulative AS (
             PARTITION BY activity_id ORDER BY recorded_at
             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
         ) AS cumulative_power
-    FROM {{ ref('activity_sensor_sample') }}
-    WHERE is_deleted = 0
-        AND channel = 'power'
-        AND (user_id, activity_id) IN (
-            SELECT
-                user_id,
-                activity_id
-            FROM active_dirty_keys
-        )
+    FROM latest_sensor_samples
+    WHERE channel = 'power'
 ),
 
 power_sample_rate AS (
@@ -313,16 +322,9 @@ rolling_power AS (
             ORDER BY toUnixTimestamp(recorded_at)
             RANGE BETWEEN 29 PRECEDING AND CURRENT ROW
         ) AS rolling_30s_power
-    FROM {{ ref('activity_sensor_sample') }}
-    WHERE is_deleted = 0
-        AND channel = 'power'
+    FROM latest_sensor_samples
+    WHERE channel = 'power'
         AND scalar > 0
-        AND (user_id, activity_id) IN (
-            SELECT
-                user_id,
-                activity_id
-            FROM active_dirty_keys
-        )
 ),
 
 power_variability_per_activity AS (
@@ -346,30 +348,16 @@ altitude_points AS (
         lagInFrame(recorded_at) OVER (
             PARTITION BY activity_id ORDER BY recorded_at
         ) AS prev_recorded_at
-    FROM {{ ref('activity_sensor_sample') }}
-    WHERE is_deleted = 0
-        AND channel = 'altitude'
-        AND (user_id, activity_id) IN (
-            SELECT
-                user_id,
-                activity_id
-            FROM active_dirty_keys
-        )
+    FROM latest_sensor_samples
+    WHERE channel = 'altitude'
 ),
 
 grade_activities AS (
     SELECT DISTINCT
         activity_id,
         1 AS has_grade_samples
-    FROM {{ ref('activity_sensor_sample') }}
-    WHERE is_deleted = 0
-        AND channel = 'grade'
-        AND (user_id, activity_id) IN (
-            SELECT
-                user_id,
-                activity_id
-            FROM active_dirty_keys
-        )
+    FROM latest_sensor_samples
+    WHERE channel = 'grade'
 ),
 
 grade_points AS (
@@ -377,15 +365,8 @@ grade_points AS (
         activity_id,
         recorded_at,
         scalar AS grade
-    FROM {{ ref('activity_sensor_sample') }}
-    WHERE is_deleted = 0
-        AND channel = 'grade'
-        AND (user_id, activity_id) IN (
-            SELECT
-                user_id,
-                activity_id
-            FROM active_dirty_keys
-        )
+    FROM latest_sensor_samples
+    WHERE channel = 'grade'
 ),
 
 climbing_segments AS (

@@ -595,11 +595,15 @@ refreshed_at Nullable(DateTime64(6, 'UTC'))`,
     activity_stream_points: `user_id UUID,
 activity_id UUID,
 points Array(Tuple(recorded_at DateTime64(6, 'UTC'), heart_rate Nullable(Float64), power Nullable(Float64), speed Nullable(Float64), cadence Nullable(Float64), altitude Nullable(Float64), lat Nullable(Float64), lng Nullable(Float64))),
-refresh_version UInt64`,
+refresh_version UInt64,
+is_deleted UInt8,
+refreshed_at DateTime64(9)`,
     activity_heart_rate_zones: `user_id UUID,
 activity_id UUID,
 zones Array(Tuple(zone UInt8, seconds UInt32)),
-refresh_version UInt64`,
+refresh_version UInt64,
+is_deleted UInt8,
+refreshed_at DateTime64(9)`,
     activity_summary: `activity_id UUID,
 user_id UUID,
 activity_type String,
@@ -1029,7 +1033,33 @@ function buildTestActivitySummarySelectSql(databases: IsolatedClickHouseDatabase
 }
 
 function buildTestActivityStreamPointsSelectSql(databases: IsolatedClickHouseDatabases): string {
-  return `WITH scalar_points AS (
+  return `WITH latest_sensor_samples AS (
+  SELECT *
+  FROM (
+    SELECT *
+    FROM ${databases.analytics}.activity_sensor_sample
+    ORDER BY
+      user_id ASC,
+      activity_id ASC,
+      recorded_date ASC,
+      channel ASC,
+      recorded_at ASC,
+      refresh_version DESC
+    LIMIT 1 BY user_id, activity_id, recorded_date, channel, recorded_at
+  )
+  WHERE is_deleted = 0
+),
+latest_location_samples AS (
+  SELECT *
+  FROM (
+    SELECT *
+    FROM ${databases.analytics}.activity_location_sample
+    ORDER BY source_metric_stream_id ASC, refresh_version DESC
+    LIMIT 1 BY source_metric_stream_id
+  )
+  WHERE is_deleted = 0
+),
+scalar_points AS (
   SELECT
     user_id,
     activity_id,
@@ -1039,9 +1069,8 @@ function buildTestActivityStreamPointsSelectSql(databases: IsolatedClickHouseDat
     CAST(maxIf(scalar, channel = 'speed'), 'Nullable(Float64)') AS speed,
     CAST(maxIf(scalar, channel = 'cadence'), 'Nullable(Float64)') AS cadence,
     CAST(maxIf(scalar, channel = 'altitude'), 'Nullable(Float64)') AS altitude
-  FROM ${databases.analytics}.activity_sensor_sample
-  WHERE is_deleted = 0
-    AND scalar IS NOT NULL
+  FROM latest_sensor_samples
+  WHERE scalar IS NOT NULL
     AND channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude')
   GROUP BY user_id, activity_id, recorded_at
 ),
@@ -1052,9 +1081,8 @@ location_points AS (
     location_samples.recorded_at AS recorded_at,
     CAST(any(location_samples.lat), 'Nullable(Float64)') AS lat,
     CAST(any(location_samples.lng), 'Nullable(Float64)') AS lng
-  FROM ${databases.analytics}.activity_location_sample AS location_samples
-  WHERE location_samples.is_deleted = 0
-    AND location_samples.lat IS NOT NULL
+  FROM latest_location_samples AS location_samples
+  WHERE location_samples.lat IS NOT NULL
     AND location_samples.lng IS NOT NULL
   GROUP BY location_samples.user_id, location_samples.activity_id, location_samples.recorded_at
 ),
@@ -1086,7 +1114,9 @@ point_rows AS (
    AND location_points.recorded_at = combined_sample_times.recorded_at
 ),
 refresh_clock AS (
-  SELECT toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version
+  SELECT
+    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+    now64(9) AS refreshed_at
 )
 SELECT
   point_rows.user_id AS user_id,
@@ -1104,10 +1134,16 @@ SELECT
       point_rows.lng
     ))
   ) AS points,
-  refresh_clock.refresh_version AS refresh_version
+  refresh_clock.refresh_version AS refresh_version,
+  toUInt8(0) AS is_deleted,
+  refresh_clock.refreshed_at AS refreshed_at
 FROM point_rows
 CROSS JOIN refresh_clock
-GROUP BY point_rows.user_id, point_rows.activity_id, refresh_clock.refresh_version`;
+GROUP BY
+  point_rows.user_id,
+  point_rows.activity_id,
+  refresh_clock.refresh_version,
+  refresh_clock.refreshed_at`;
 }
 
 function buildTestHikingActivitySelectSql(databases: IsolatedClickHouseDatabases): string {
@@ -1253,14 +1289,29 @@ activity_metadata AS (
    AND resting_by_activity.user_id = activity_bounds.user_id
   WHERE user_profile.max_hr > 1
 ),
+latest_sensor_samples AS (
+  SELECT *
+  FROM (
+    SELECT *
+    FROM ${databases.analytics}.activity_sensor_sample
+    ORDER BY
+      user_id ASC,
+      activity_id ASC,
+      recorded_date ASC,
+      channel ASC,
+      recorded_at ASC,
+      refresh_version DESC
+    LIMIT 1 BY user_id, activity_id, recorded_date, channel, recorded_at
+  )
+  WHERE is_deleted = 0
+),
 heart_rate_samples AS (
   SELECT
     activity_id,
     user_id,
     scalar AS heart_rate
-  FROM ${databases.analytics}.activity_sensor_sample
-  WHERE is_deleted = 0
-    AND channel = 'heart_rate'
+  FROM latest_sensor_samples
+  WHERE channel = 'heart_rate'
     AND scalar IS NOT NULL
 ),
 zone_seconds AS (
@@ -1320,7 +1371,9 @@ zone_seconds AS (
   GROUP BY activity_metadata.user_id, activity_metadata.activity_id, zone_numbers.zone
 ),
 refresh_clock AS (
-  SELECT toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version
+  SELECT
+    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+    now64(9) AS refreshed_at
 )
 SELECT
   zone_seconds.user_id AS user_id,
@@ -1329,10 +1382,16 @@ SELECT
     zone -> zone.1,
     groupArray(tuple(toUInt8(zone_seconds.zone), toUInt32(zone_seconds.seconds)))
   ) AS zones,
-  refresh_clock.refresh_version AS refresh_version
+  refresh_clock.refresh_version AS refresh_version,
+  toUInt8(0) AS is_deleted,
+  refresh_clock.refreshed_at AS refreshed_at
 FROM zone_seconds
 CROSS JOIN refresh_clock
-GROUP BY zone_seconds.user_id, zone_seconds.activity_id, refresh_clock.refresh_version`;
+GROUP BY
+  zone_seconds.user_id,
+  zone_seconds.activity_id,
+  refresh_clock.refresh_version,
+  refresh_clock.refreshed_at`;
 }
 
 function buildTestDailyRecoveryInputsSelectSql(databases: IsolatedClickHouseDatabases): string {
@@ -2560,6 +2619,18 @@ export async function rebuildClickHouseSensorAnalytics(
   }
 
   await rebuildClickHouseSensorAnalyticsWithClient(handle.setupClient);
+}
+
+export async function executeClickHouseTestCommand(
+  testContext: ClickHouseSyncTestContext,
+  query: string,
+): Promise<void> {
+  const handle = handlesByContext.get(testContext);
+  if (!handle) {
+    throw new Error("ClickHouse test activity sensor store has not been created");
+  }
+
+  await handle.setupClient.command({ query });
 }
 
 export async function seedClickHouseMetricStreamRows(

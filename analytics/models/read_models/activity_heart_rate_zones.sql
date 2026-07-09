@@ -31,6 +31,21 @@ current_activity AS (
     WHERE is_deleted = 0
 ),
 
+existing_zone_rows AS (
+    {% if is_incremental() %}
+        SELECT
+            activity_id,
+            user_id
+        FROM {{ this }} FINAL
+        WHERE is_deleted = 0
+    {% else %}
+        SELECT
+            CAST(null, 'Nullable(UUID)') AS activity_id,
+            CAST(null, 'Nullable(UUID)') AS user_id
+        WHERE 1 = 0
+    {% endif %}
+),
+
 recent_current_activity AS (
     SELECT
         activity_id,
@@ -90,6 +105,17 @@ resting_heart_rate_dirty_keys AS (
         ON resting_heart_rate_dirty_users.user_id = recent_current_activity.user_id
 ),
 
+stale_dirty_keys AS (
+    SELECT
+        existing_zone_rows.activity_id AS activity_id,
+        existing_zone_rows.user_id AS user_id
+    FROM existing_zone_rows
+    LEFT JOIN current_activity
+        ON current_activity.activity_id = existing_zone_rows.activity_id
+        AND current_activity.user_id = existing_zone_rows.user_id
+    WHERE current_activity.activity_id IS null
+),
+
 dirty_keys AS (
     SELECT DISTINCT
         activity_id,
@@ -114,6 +140,11 @@ dirty_keys AS (
             activity_id,
             user_id
         FROM resting_heart_rate_dirty_keys
+        UNION ALL
+        SELECT
+            activity_id,
+            user_id
+        FROM stale_dirty_keys
     )
 ),
 
@@ -212,21 +243,37 @@ activity_metadata AS (
     WHERE user_profile.max_hr > 1
 ),
 
-heart_rate_samples AS (
-    SELECT
-        sensor_samples.activity_id AS activity_id,
-        sensor_samples.user_id AS user_id,
-        sensor_samples.scalar AS heart_rate
-    FROM {{ ref('activity_sensor_sample') }} AS sensor_samples
-    WHERE sensor_samples.is_deleted = 0
-        AND sensor_samples.channel = 'heart_rate'
-        AND sensor_samples.scalar IS NOT null
-        AND (sensor_samples.user_id, sensor_samples.activity_id) IN (
+latest_sensor_samples AS (
+    SELECT *
+    FROM (
+        SELECT *
+        FROM {{ ref('activity_sensor_sample') }}
+        WHERE (user_id, activity_id) IN (
             SELECT
                 user_id,
                 activity_id
             FROM active_dirty_keys
         )
+        ORDER BY
+            user_id ASC,
+            activity_id ASC,
+            recorded_date ASC,
+            channel ASC,
+            recorded_at ASC,
+            refresh_version DESC
+        LIMIT 1 BY user_id, activity_id, recorded_date, channel, recorded_at
+    )
+    WHERE is_deleted = 0
+),
+
+heart_rate_samples AS (
+    SELECT
+        activity_id,
+        user_id,
+        scalar AS heart_rate
+    FROM latest_sensor_samples
+    WHERE channel = 'heart_rate'
+        AND scalar IS NOT null
 ),
 
 zone_numbers AS (
@@ -301,13 +348,24 @@ zones_by_activity AS (
 ),
 
 refresh_clock AS (
-    SELECT toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version
+    SELECT
+        toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+        now64(9) AS refreshed_at
 )
 
 SELECT
-    zones_by_activity.user_id AS user_id,
-    zones_by_activity.activity_id AS activity_id,
-    zones_by_activity.zones AS zones,
-    refresh_clock.refresh_version AS refresh_version
-FROM zones_by_activity
+    assumeNotNull(dirty_keys.user_id) AS user_id,
+    assumeNotNull(dirty_keys.activity_id) AS activity_id,
+    if(
+        zones_by_activity.activity_id IS null,
+        CAST([], 'Array(Tuple(UInt8, UInt32))'),
+        zones_by_activity.zones
+    ) AS zones,
+    refresh_clock.refresh_version AS refresh_version,
+    if(zones_by_activity.activity_id IS null, 1, 0) AS is_deleted,
+    refresh_clock.refreshed_at AS refreshed_at
+FROM dirty_keys
 CROSS JOIN refresh_clock
+LEFT JOIN zones_by_activity
+    ON zones_by_activity.activity_id = dirty_keys.activity_id
+    AND zones_by_activity.user_id = dirty_keys.user_id
