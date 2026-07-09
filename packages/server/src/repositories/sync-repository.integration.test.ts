@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { SyncRepository } from "./sync-repository.ts";
 
@@ -19,6 +19,19 @@ describe("SyncRepository integration", () => {
 
   afterAll(async () => {
     await testContext?.cleanup();
+  });
+
+  afterEach(async () => {
+    await testContext.db.execute(
+      sql`DELETE FROM fitness.sync_log
+          WHERE user_id = ${SYNC_REPOSITORY_TEST_USER_ID}
+            AND provider_id = 'sync-repository-provider'`,
+    );
+    await testContext.db.execute(
+      sql`DELETE FROM fitness.provider
+          WHERE id = 'sync-repository-provider'
+            AND user_id = ${SYNC_REPOSITORY_TEST_USER_ID}`,
+    );
   });
 
   describe("getLatestErrors", () => {
