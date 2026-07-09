@@ -253,6 +253,7 @@ describe("PelotonProvider.sync() (integration)", () => {
       .where(eq(activity.externalId, "workout-zero-duration"));
 
     expect(rows).toHaveLength(1);
+    expect(rows[0]?.startedAt).toEqual(new Date(startedAtSeconds * 1000));
     expect(rows[0]?.endedAt).toEqual(new Date(startedAtSeconds * 1000));
   });
 
