@@ -15,10 +15,12 @@ const state = vi.hoisted<{
   capturedRouteComponent: ComponentType | null;
   queryCalls: QueryCall[];
   queryError: Error | null;
+  selectedDays: number;
 }>(() => ({
   capturedRouteComponent: null,
   queryCalls: [],
   queryError: null,
+  selectedDays: 90,
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -48,7 +50,7 @@ vi.mock("../../components/WalkingBiomechanicsChart.tsx", () => ({
 }));
 
 vi.mock("../../lib/trainingDaysContext.ts", () => ({
-  useTrainingDays: () => ({ days: 90 }),
+  useTrainingDays: () => ({ days: state.selectedDays }),
 }));
 
 function recordQuery(name: string) {
@@ -82,20 +84,23 @@ describe("HikingTab", () => {
     state.capturedRouteComponent = null;
     state.queryCalls.length = 0;
     state.queryError = null;
+    state.selectedDays = 90;
   });
 
   afterEach(() => {
     cleanup();
   });
 
-  it("uses exact selected days for pace and biomechanics, and cached 365-day windows for long-range queries", async () => {
+  it("uses the selected days for every chart query", async () => {
+    state.selectedDays = 30;
+
     await renderHikingTab();
 
     expect(state.queryCalls).toEqual([
-      { name: "gradeAdjustedPace", input: { days: 90 }, options: TRAINING_SLOW_QUERY_OPTIONS },
-      { name: "elevationProfile", input: { days: 365 }, options: TRAINING_SLOW_QUERY_OPTIONS },
-      { name: "walkingBiomechanics", input: { days: 90 }, options: TRAINING_SLOW_QUERY_OPTIONS },
-      { name: "activityComparison", input: { days: 365 }, options: TRAINING_SLOW_QUERY_OPTIONS },
+      { name: "gradeAdjustedPace", input: { days: 30 }, options: TRAINING_SLOW_QUERY_OPTIONS },
+      { name: "elevationProfile", input: { days: 30 }, options: TRAINING_SLOW_QUERY_OPTIONS },
+      { name: "walkingBiomechanics", input: { days: 30 }, options: TRAINING_SLOW_QUERY_OPTIONS },
+      { name: "activityComparison", input: { days: 30 }, options: TRAINING_SLOW_QUERY_OPTIONS },
     ]);
   });
 

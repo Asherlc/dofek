@@ -22,22 +22,18 @@ function shouldShowQueryError(query: { error: unknown; data: unknown }): boolean
 
 function HikingTab() {
   const { days } = useTrainingDays();
-  const hikingQueryDays = Math.max(days, 365);
 
   const gradeAdjustedPace = trpc.hiking.gradeAdjustedPace.useQuery(
     { days },
     TRAINING_SLOW_QUERY_OPTIONS,
   );
-  const elevation = trpc.hiking.elevationProfile.useQuery(
-    { days: hikingQueryDays },
-    TRAINING_SLOW_QUERY_OPTIONS,
-  );
+  const elevation = trpc.hiking.elevationProfile.useQuery({ days }, TRAINING_SLOW_QUERY_OPTIONS);
   const biomechanics = trpc.hiking.walkingBiomechanics.useQuery(
     { days },
     TRAINING_SLOW_QUERY_OPTIONS,
   );
   const routeComparison = trpc.hiking.activityComparison.useQuery(
-    { days: hikingQueryDays },
+    { days },
     TRAINING_SLOW_QUERY_OPTIONS,
   );
 

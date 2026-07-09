@@ -17,11 +17,15 @@ const state = vi.hoisted<{
     z2Samples: number;
   }>;
   capturedAerobicEfficiencyActivities: unknown[] | null;
+  queryCalls: Array<{ name: string; input: unknown }>;
+  selectedDays: number;
 }>(() => ({
   capturedRouteComponent: null,
   bodyRecords: [],
   efficiencyActivities: [],
   capturedAerobicEfficiencyActivities: null,
+  queryCalls: [],
+  selectedDays: 90,
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -66,7 +70,7 @@ vi.mock("../../lib/chartTheme.ts", () => ({
   chartThemeColors: { axisLabel: "gray" },
 }));
 vi.mock("../../lib/trainingDaysContext.ts", () => ({
-  useTrainingDays: () => ({ days: 90 }),
+  useTrainingDays: () => ({ days: state.selectedDays }),
 }));
 
 const emptyQuery = { data: [], isLoading: false, error: null };
@@ -76,6 +80,7 @@ vi.mock("../../lib/trpc.ts", () => ({
     power: {
       powerCurve: {
         useQuery: (input: { days: number }) => ({
+          ...recordQuery("powerCurve")(input),
           data: {
             points: [
               {
@@ -87,45 +92,59 @@ vi.mock("../../lib/trpc.ts", () => ({
             ],
             model: { cp: input.days === 365 ? 350 : 300, wPrime: 20_000, r2: 0.95 },
           },
-          isLoading: false,
-          error: null,
         }),
       },
       eftpTrend: {
-        useQuery: () => ({ data: { trend: [], currentEftp: null }, isLoading: false, error: null }),
+        useQuery: (input: unknown) => ({
+          ...recordQuery("eftpTrend")(input),
+          data: { trend: [], currentEftp: null },
+        }),
       },
     },
     pmc: {
       chart: {
-        useQuery: () => ({ data: { data: [], model: null }, isLoading: false, error: null }),
+        useQuery: (input: unknown) => ({
+          ...recordQuery("pmc")(input),
+          data: { data: [], model: null },
+        }),
       },
     },
     efficiency: {
       aerobicEfficiency: {
-        useQuery: () => ({
+        useQuery: (input: unknown) => ({
+          ...recordQuery("aerobicEfficiency")(input),
           data: { activities: state.efficiencyActivities, maxHr: null },
-          isLoading: false,
-          error: null,
         }),
       },
     },
     cyclingAdvanced: {
       activityVariability: {
-        useQuery: () => ({ data: { rows: [], totalCount: 0 }, isLoading: false, error: null }),
+        useQuery: (input: unknown) => ({
+          ...recordQuery("activityVariability")(input),
+          data: { rows: [], totalCount: 0 },
+        }),
       },
-      verticalAscentRate: { useQuery: () => emptyQuery },
+      verticalAscentRate: {
+        useQuery: (input: unknown) => recordQuery("verticalAscentRate")(input),
+      },
     },
     body: {
       list: {
-        useQuery: () => ({
+        useQuery: (input: unknown) => ({
+          ...recordQuery("bodyList")(input),
           data: state.bodyRecords,
-          isLoading: false,
-          error: null,
         }),
       },
     },
   },
 }));
+
+function recordQuery(name: string) {
+  return (input: unknown) => {
+    state.queryCalls.push({ name, input });
+    return emptyQuery;
+  };
+}
 
 async function renderCyclingTab() {
   await import("./cycling.tsx");
@@ -144,6 +163,8 @@ describe("CyclingTab", () => {
     ];
     state.efficiencyActivities = [];
     state.capturedAerobicEfficiencyActivities = null;
+    state.queryCalls.length = 0;
+    state.selectedDays = 90;
   });
 
   afterEach(() => {
@@ -211,5 +232,25 @@ describe("CyclingTab", () => {
     await renderCyclingTab();
 
     expect(state.capturedAerobicEfficiencyActivities).toEqual([cyclingActivity]);
+  });
+
+  it("uses the selected days for every selected-range chart query", async () => {
+    state.selectedDays = 3650;
+
+    await renderCyclingTab();
+
+    expect(state.queryCalls).toEqual(
+      expect.arrayContaining([
+        { name: "powerCurve", input: { days: 3650 } },
+        { name: "eftpTrend", input: { days: 3650 } },
+        { name: "pmc", input: { days: 3650 } },
+        { name: "aerobicEfficiency", input: { days: 3650 } },
+        {
+          name: "activityVariability",
+          input: { days: 3650, limit: 20, offset: 0 },
+        },
+        { name: "verticalAscentRate", input: { days: 3650 } },
+      ]),
+    );
   });
 });

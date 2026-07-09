@@ -58,7 +58,7 @@ function CyclingTab() {
   // Recent period = user-selected range
   const recentCurve = trpc.power.powerCurve.useQuery({ days }, TRAINING_SLOW_QUERY_OPTIONS);
   const seasonCurve = trpc.power.powerCurve.useQuery({ days: 365 }, TRAINING_SLOW_QUERY_OPTIONS);
-  const eftpTrend = trpc.power.eftpTrend.useQuery({ days: 365 });
+  const eftpTrend = trpc.power.eftpTrend.useQuery({ days });
   const pmc = trpc.pmc.chart.useQuery({ days });
   const efficiency = trpc.efficiency.aerobicEfficiency.useQuery(
     { days },
