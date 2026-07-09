@@ -12196,8 +12196,8 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   non-auth provider error to Sentry.
 - **Fix / mitigation:** Activity-summary ingestion remains non-fatal when the
   optional stream-detail request fails. A pending deployment attaches the
-  failed activity's ID, start time, sport, and distance to the Sentry event so
-  future occurrences can be compared with successful detail fetches.
+  failed activity's ID to the Sentry event so future occurrences can be
+  correlated with the already-stored provider activity.
 - **Remaining risk / follow-up:** Decide whether a missing Zwift activity detail
   is expected upstream absence (and should be recorded as a degradation without
   a Sentry exception) or should remain an alert-worthy partial-sync failure.
