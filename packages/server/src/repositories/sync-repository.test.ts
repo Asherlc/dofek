@@ -139,6 +139,7 @@ describe("SyncRepository", () => {
       expect(rawSql).toContain("WITH latest_sync_times AS");
       expect(rawSql).toContain("SELECT provider_id, MAX(synced_at) AS synced_at");
       expect(rawSql).toContain("GROUP BY provider_id");
+      expect(rawSql).toContain("DISTINCT ON (sync_log.provider_id)");
       expect(rawSql).toContain("INNER JOIN latest_sync_times");
       expect(rawSql).toContain("ORDER BY sync_log.provider_id, (sync_log.status = 'error') DESC");
       expect(rawSql).toContain("WHERE latest_sync_log.status = 'error'");
