@@ -2240,6 +2240,23 @@ describe("recoveryRouter.workloadRatio - mutation killers", () => {
     const result = await callerWith([]).workloadRatio({});
     expect(result.displayedDate).toBeNull();
   });
+
+  it("omits outputWindowStart when workloadRatio requests all history", async () => {
+    const sensorStore = makeSensorStore([]);
+    const caller = createCaller({
+      db: { execute: vi.fn() },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore,
+    });
+
+    await caller.workloadRatio({ days: null, endDate: "2026-03-31" });
+
+    const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
+    expect(queryText).not.toContain("outputWindowStart");
+    expect(queryParams).not.toHaveProperty("outputWindowStart");
+  });
 });
 
 // ── Mutation-killing tests for sleepAnalytics ──────────────────
@@ -2350,6 +2367,21 @@ describe("recoveryRouter.sleepAnalytics - mutation killers", () => {
     });
     const result = await caller.sleepAnalytics({});
     expect(result.nightly[0]?.rollingAvgDuration).toBe(455.8);
+  });
+
+  it("rollingAvgDuration averages multiple available nights", async () => {
+    const rows = [sleepDebtRow("2026-03-01", 400, 430), sleepDebtRow("2026-03-02", 500, 530)];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+
+    const result = await caller.sleepAnalytics({});
+
+    expect(result.nightly[0]?.sleepMinutes).toBe(400);
+    expect(result.nightly[1]?.sleepMinutes).toBe(500);
+    expect(result.nightly[1]?.rollingAvgDuration).toBe(450);
   });
 
   it("durationMinutes preserves the numeric value", async () => {
@@ -2720,6 +2752,63 @@ describe("recoveryRouter.readinessScore - mutation killers", () => {
     });
     const result = await caller.readinessScore({});
     expect(result[0]?.date).toBe(dateStr);
+  });
+
+  it("excludes the exact selected-range cutoff date after warmup loading", async () => {
+    const rows = [
+      {
+        date: "2026-04-01",
+        hrv: null,
+        resting_hr: null,
+        respiratory_rate: null,
+        hrv_mean_30d: null,
+        hrv_sd_30d: null,
+        rhr_mean_30d: null,
+        rhr_sd_30d: null,
+        rr_mean_30d: null,
+        rr_sd_30d: null,
+        efficiency_pct: null,
+      },
+      {
+        date: "2026-04-02",
+        hrv: null,
+        resting_hr: null,
+        respiratory_rate: null,
+        hrv_mean_30d: null,
+        hrv_sd_30d: null,
+        rhr_mean_30d: null,
+        rhr_sd_30d: null,
+        rr_mean_30d: null,
+        rr_sd_30d: null,
+        efficiency_pct: null,
+      },
+    ];
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      sensorStore: makeSensorStore(rows),
+    });
+
+    const result = await caller.readinessScore({ days: 30, endDate: "2026-05-01" });
+
+    expect(result.map((row) => row.date)).toEqual(["2026-04-02"]);
+  });
+
+  it("omits windowStart when readinessScore requests all history", async () => {
+    const sensorStore = makeSensorStore([]);
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore,
+    });
+
+    await caller.readinessScore({ days: null, endDate: "2026-05-01" });
+
+    const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
+    expect(queryText).not.toContain("windowStart");
+    expect(queryParams).not.toHaveProperty("windowStart");
   });
 });
 

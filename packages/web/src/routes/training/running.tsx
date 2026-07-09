@@ -15,6 +15,7 @@ import {
   dofekSeries,
   dofekTooltip,
 } from "../../lib/chartTheme.ts";
+import { selectedRangeQueryInput } from "../../lib/timeRange.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
 import { TRAINING_SLOW_QUERY_OPTIONS } from "../../lib/trainingQueryOptions.ts";
 import { trpc } from "../../lib/trpc.ts";
@@ -30,9 +31,12 @@ export function RunningTab() {
   const { days } = useTrainingDays();
   const units = useUnitConverter();
 
-  const paceCurve = trpc.durationCurves.paceCurve.useQuery({ days }, TRAINING_SLOW_QUERY_OPTIONS);
-  const paceTrend = trpc.running.paceTrend.useQuery({ days });
-  const dynamics = trpc.running.dynamics.useQuery({ days });
+  const paceCurve = trpc.durationCurves.paceCurve.useQuery(
+    selectedRangeQueryInput(days),
+    TRAINING_SLOW_QUERY_OPTIONS,
+  );
+  const paceTrend = trpc.running.paceTrend.useQuery(selectedRangeQueryInput(days));
+  const dynamics = trpc.running.dynamics.useQuery(selectedRangeQueryInput(days));
 
   return (
     <>

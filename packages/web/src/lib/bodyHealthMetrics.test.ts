@@ -100,6 +100,27 @@ describe("buildBodyHealthMetrics", () => {
     expect(metrics[1]?.avg).toBe(18);
   });
 
+  it("excludes measurements after the selected end date for all-time ranges", () => {
+    const metrics = buildMetrics({
+      days: null,
+      weightData: [
+        { date: "2026-06-01", smoothedWeight: 81 },
+        { date: "2026-06-30", smoothedWeight: 80 },
+        { date: "2026-07-01", smoothedWeight: 60 },
+      ],
+      recompData: [
+        { date: "2026-06-01", bodyFatPct: 19 },
+        { date: "2026-06-30", bodyFatPct: 18 },
+        { date: "2026-07-01", bodyFatPct: 10 },
+      ],
+    });
+
+    expect(metrics[0]?.value).toBe(80);
+    expect(metrics[0]?.avg).toBe(80.5);
+    expect(metrics[1]?.value).toBe(18);
+    expect(metrics[1]?.avg).toBe(18.5);
+  });
+
   it("returns null body metrics when the selected window has no measurements", () => {
     const metrics = buildMetrics({
       weightData: [{ date: "2026-01-01", smoothedWeight: 90 }],

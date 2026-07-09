@@ -2,6 +2,12 @@ import { computeGradeAdjustedPace } from "@dofek/training/grade-adjusted-pace";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { ChartRange } from "../lib/chart-range.ts";
+import {
+  clickHouseIntervalDayLowerBound,
+  type RangeDays,
+  rangeDaysParams,
+} from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 
@@ -236,7 +242,8 @@ export class HikingRepository {
   }
 
   /** Grade-adjusted pace for walking/hiking/trail running activities. */
-  async getGradeAdjustedPaces(days: number): Promise<HikingActivity[]> {
+  async getGradeAdjustedPaces(days: RangeDays): Promise<HikingActivity[]> {
+    const rangeFilter = clickHouseIntervalDayLowerBound(days, "hiking.started_at");
     const rows = await this.#sensorStore.query(
       gradeRowSchema,
       `SELECT
@@ -252,12 +259,12 @@ export class HikingRepository {
       FROM analytics.hiking_activity AS hiking FINAL
       WHERE hiking.user_id = {userId:UUID}
         AND hiking.is_deleted = 0
-        AND hiking.started_at > now() - INTERVAL {days:Int32} DAY
+        ${rangeFilter}
         AND hiking.activity_type IN ('walking', 'hiking', 'trail_running')
         AND hiking.distance_m > 0
         AND hiking.duration_seconds > 0
       ORDER BY hiking.started_at`,
-      { userId: this.#userId, timezone: this.#timezone, days },
+      { userId: this.#userId, timezone: this.#timezone, ...rangeDaysParams(days) },
     );
 
     return rows.map(
@@ -277,7 +284,8 @@ export class HikingRepository {
   }
 
   /** Weekly cumulative elevation gain from hiking and walking activities. */
-  async getElevationProfile(days: number): Promise<ElevationWeek[]> {
+  async getElevationProfile(days: RangeDays): Promise<ElevationWeek[]> {
+    const rangeFilter = clickHouseIntervalDayLowerBound(days, "hiking.started_at");
     const rows = await this.#sensorStore.query(
       elevationRowSchema,
       `SELECT
@@ -288,11 +296,11 @@ export class HikingRepository {
       FROM analytics.hiking_activity AS hiking FINAL
       WHERE hiking.user_id = {userId:UUID}
         AND hiking.is_deleted = 0
-        AND hiking.started_at > now() - INTERVAL {days:Int32} DAY
+        ${rangeFilter}
         AND hiking.activity_type IN ('walking', 'hiking')
       GROUP BY week
       ORDER BY week`,
-      { userId: this.#userId, timezone: this.#timezone, days },
+      { userId: this.#userId, timezone: this.#timezone, ...rangeDaysParams(days) },
     );
 
     return rows.map(
@@ -307,7 +315,8 @@ export class HikingRepository {
   }
 
   /** Walking biomechanics from daily health metrics. */
-  async getWalkingBiomechanics(days: number): Promise<WalkingBiomechanicsSnapshot[]> {
+  async getWalkingBiomechanics(days: RangeDays): Promise<WalkingBiomechanicsSnapshot[]> {
+    const rangeFilter = ChartRange.fromDays(days).postgresTimestampAfterNow(sql`date`);
     const rows = await executeWithSchema(
       this.#db,
       biomechanicsRowSchema,
@@ -320,7 +329,7 @@ export class HikingRepository {
             walking_steadiness AS steadiness
           FROM fitness.daily_metrics
           WHERE user_id = ${this.#userId}
-            AND date > NOW() - ${days}::int * INTERVAL '1 day'
+            ${rangeFilter}
             AND (walking_speed IS NOT NULL
               OR walking_step_length IS NOT NULL
               OR walking_double_support_pct IS NOT NULL
@@ -343,7 +352,8 @@ export class HikingRepository {
   }
 
   /** Named routes (trails, walks) that have been repeated 2+ times. */
-  async getRepeatedRoutes(days: number): Promise<RepeatedRoute[]> {
+  async getRepeatedRoutes(days: RangeDays): Promise<RepeatedRoute[]> {
+    const rangeFilter = clickHouseIntervalDayLowerBound(days, "hiking.started_at");
     const rows = await this.#sensorStore.query(
       comparisonRowSchema,
       `WITH activity_data AS (
@@ -357,7 +367,7 @@ export class HikingRepository {
         FROM analytics.hiking_activity AS hiking FINAL
         WHERE hiking.user_id = {userId:UUID}
           AND hiking.is_deleted = 0
-          AND hiking.started_at > now() - INTERVAL {days:Int32} DAY
+          ${rangeFilter}
           AND hiking.activity_type IN ('walking', 'hiking', 'trail_running')
           AND hiking.activity_name IS NOT NULL
           AND hiking.duration_seconds > 0
@@ -378,7 +388,7 @@ export class HikingRepository {
       FROM activity_data d
       INNER JOIN repeated_names rn ON rn.activity_name = d.activity_name
       ORDER BY d.activity_name, d.date`,
-      { userId: this.#userId, timezone: this.#timezone, days },
+      { userId: this.#userId, timezone: this.#timezone, ...rangeDaysParams(days) },
     );
 
     const grouped = new Map<string, RouteInstance[]>();

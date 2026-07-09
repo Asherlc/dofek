@@ -6,6 +6,7 @@ import { DofekChart } from "../components/DofekChart.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { chartThemeColors, dofekAxis, dofekGrid, dofekTooltip } from "../lib/chartTheme.ts";
+import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 
 const LAG_OPTIONS = [
@@ -90,14 +91,14 @@ function formatValue(v: number): string {
 }
 
 export function CorrelationExplorerPage() {
-  const [days, setDays] = useState(365);
+  const [days, setDays] = useState<TimeRangeDays>(365);
   const [metricX, setMetricX] = useState("protein");
   const [metricY, setMetricY] = useState("hrv");
   const [lag, setLag] = useState(0);
 
   const metricsQuery = trpc.correlation.metrics.useQuery({});
   const correlationQuery = trpc.correlation.compute.useQuery(
-    { metricX, metricY, days, lag },
+    { metricX, metricY, ...selectedRangeQueryInput(days), lag },
     { enabled: metricX !== metricY },
   );
 

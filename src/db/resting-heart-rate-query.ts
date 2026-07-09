@@ -22,7 +22,7 @@ interface FetchRestingHeartRateRowsInput {
   userId: string;
   timezone: string;
   endDate: string;
-  days: number;
+  days: number | null;
 }
 
 export async function fetchRestingHeartRateRowsFromClickHouse({
@@ -34,7 +34,7 @@ export async function fetchRestingHeartRateRowsFromClickHouse({
 }: FetchRestingHeartRateRowsInput): Promise<RestingHeartRateRow[]> {
   return queryStore.query(
     restingHeartRateRowSchema,
-    `WITH ${restingHeartRateClickHouseCte()}
+    `WITH ${restingHeartRateClickHouseCte({ includeWindowStart: days !== null })}
     SELECT date, resting_hr
     FROM resting_heart_rate
     ORDER BY date ASC`,
@@ -42,13 +42,19 @@ export async function fetchRestingHeartRateRowsFromClickHouse({
       userId,
       timezone,
       rhrEndDate: endDate,
-      rhrWindowStart: dateWindowStartString(endDate, days),
+      ...(days !== null ? { rhrWindowStart: dateWindowStartString(endDate, days) } : {}),
     },
   );
 }
 
-export function restingHeartRateClickHouseCte(): string {
-  return buildRestingHeartRateCteSql();
+interface RestingHeartRateClickHouseCteOptions {
+  includeWindowStart?: boolean;
+}
+
+export function restingHeartRateClickHouseCte(
+  options: RestingHeartRateClickHouseCteOptions = {},
+): string {
+  return buildRestingHeartRateCteSql(options);
 }
 
 export function restingHeartRateValuesCte(rows: RestingHeartRateRow[]): SQL {

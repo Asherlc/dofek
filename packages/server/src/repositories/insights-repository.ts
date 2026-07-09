@@ -8,9 +8,11 @@ import {
   sleepRowSchema,
 } from "../insights/schemas.ts";
 import {
-  dateWindowStart,
-  dateWindowStartString,
-  timestampWindowStart,
+  clickHouseWindowStartPredicate,
+  dateWindowStartPredicate,
+  dateWindowStartStringOrUndefined,
+  type RangeDays,
+  timestampWindowStartPredicate,
 } from "../lib/date-window.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
@@ -36,7 +38,8 @@ export class InsightsRepository {
     this.#sensorStore = sensorStore;
   }
 
-  async computeInsights(days: number, endDate: string) {
+  async computeInsights(days: RangeDays, endDate: string) {
+    const metricWindowStart = dateWindowStartStringOrUndefined(endDate, days);
     const [metricRows, restingHeartRateRows, sleep, activities, nutrition, bodyComp] =
       await Promise.all([
         this.#sensorStore.query(
@@ -51,11 +54,11 @@ export class InsightsRepository {
             skin_temp_c
           FROM analytics.v_daily_metrics AS daily_metrics
           WHERE daily_metrics.user_id = {userId:UUID}
-            AND daily_metrics.date > toDate({windowStart:String})
+            ${clickHouseWindowStartPredicate({ expression: "daily_metrics.date", days })}
           ORDER BY daily_metrics.date ASC`,
           {
             userId: this.#userId,
-            windowStart: dateWindowStartString(endDate, days),
+            ...(metricWindowStart !== undefined ? { windowStart: metricWindowStart } : {}),
           },
         ),
         fetchRestingHeartRateRows({
@@ -92,7 +95,7 @@ export class InsightsRepository {
           sql`SELECT started_at, ended_at, activity_type
             FROM fitness.v_activity
             WHERE user_id = ${this.#userId}
-              AND started_at > ${timestampWindowStart(endDate, days)}
+              ${timestampWindowStartPredicate(sql`started_at`, endDate, days)}
             ORDER BY started_at ASC`,
         ),
         executeWithSchema(
@@ -101,7 +104,7 @@ export class InsightsRepository {
           sql`SELECT date, calories, protein_g, carbs_g, fat_g, fiber_g, water_ml
             FROM fitness.v_nutrition_daily
             WHERE user_id = ${this.#userId}
-              AND date > ${dateWindowStart(endDate, days)}
+              ${dateWindowStartPredicate(sql`date`, endDate, days)}
             ORDER BY date ASC`,
         ),
         fetchBodyCompRows(this.#sensorStore, this.#userId, endDate, days),

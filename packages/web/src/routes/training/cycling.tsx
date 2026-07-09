@@ -12,6 +12,13 @@ import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import { VerticalAscentChart } from "../../components/VerticalAscentChart.tsx";
 import { chartColors, chartThemeColors } from "../../lib/chartTheme.ts";
+import {
+  fixedRangeQueryInput,
+  formatTimeRangeLabel,
+  formatTimeRangeShortLabel,
+  selectedRangeQueryInput,
+  type TimeRangeDays,
+} from "../../lib/timeRange.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
 import { TRAINING_SLOW_QUERY_OPTIONS } from "../../lib/trainingQueryOptions.ts";
 import { trpc } from "../../lib/trpc.ts";
@@ -56,27 +63,33 @@ function CyclingTab() {
   const [variabilityOffset, setVariabilityOffset] = useState(0);
 
   // Recent period = user-selected range
-  const recentCurve = trpc.power.powerCurve.useQuery({ days }, TRAINING_SLOW_QUERY_OPTIONS);
-  const seasonCurve = trpc.power.powerCurve.useQuery({ days: 365 }, TRAINING_SLOW_QUERY_OPTIONS);
-  const eftpTrend = trpc.power.eftpTrend.useQuery({ days: 365 });
-  const pmc = trpc.pmc.chart.useQuery({ days });
+  const recentCurve = trpc.power.powerCurve.useQuery(
+    selectedRangeQueryInput(days),
+    TRAINING_SLOW_QUERY_OPTIONS,
+  );
+  const seasonCurve = trpc.power.powerCurve.useQuery(
+    fixedRangeQueryInput(365),
+    TRAINING_SLOW_QUERY_OPTIONS,
+  );
+  const eftpTrend = trpc.power.eftpTrend.useQuery(selectedRangeQueryInput(days));
+  const pmc = trpc.pmc.chart.useQuery(selectedRangeQueryInput(days));
   const efficiency = trpc.efficiency.aerobicEfficiency.useQuery(
-    { days },
+    selectedRangeQueryInput(days),
     TRAINING_SLOW_QUERY_OPTIONS,
   );
   const variability = trpc.cyclingAdvanced.activityVariability.useQuery(
     {
-      days,
+      ...selectedRangeQueryInput(days),
       limit: VARIABILITY_PAGE_SIZE,
       offset: variabilityOffset,
     },
     TRAINING_SLOW_QUERY_OPTIONS,
   );
   const verticalAscent = trpc.cyclingAdvanced.verticalAscentRate.useQuery(
-    { days },
+    selectedRangeQueryInput(days),
     TRAINING_SLOW_QUERY_OPTIONS,
   );
-  const bodyData = trpc.body.list.useQuery({ days: 365 });
+  const bodyData = trpc.body.list.useQuery(fixedRangeQueryInput(365));
 
   type BodyRecord = NonNullable<typeof bodyData.data>[number];
   const latestBodyRecord = bodyData.data?.reduce<BodyRecord | null>((latestRecord, bodyRecord) => {
@@ -154,7 +167,11 @@ function CyclingTab() {
         </div>
         {/* Period labels */}
         <div className="mt-3 flex flex-wrap gap-4 text-xs">
-          <PeriodLabel color={chartColors.purple} label={`${days} days`} model={recentModel} />
+          <PeriodLabel
+            color={chartColors.purple}
+            label={formatTimeRangeLabel(days)}
+            model={recentModel}
+          />
           <PeriodLabel color={chartThemeColors.axisLabel} label="This season" model={seasonModel} />
         </div>
       </Section>
@@ -260,7 +277,7 @@ interface PowerSummaryTableProps {
   seasonTte: number | null;
   weightKg: number | null;
   loading: boolean;
-  recentDays: number;
+  recentDays: TimeRangeDays;
 }
 
 function PowerSummaryTable({
@@ -294,7 +311,7 @@ function PowerSummaryTable({
           <tr className="border-b border-border-strong text-subtle">
             <th className="text-left py-1 pr-3">Time</th>
             <th className="text-right px-2" colSpan={2}>
-              <span className="text-violet-400">{recentDays}d</span>
+              <span className="text-violet-400">{formatTimeRangeShortLabel(recentDays)}</span>
             </th>
             <th className="text-right pl-2" colSpan={2}>
               <span className="text-muted">Season</span>

@@ -1,7 +1,10 @@
 import { TRPCError } from "@trpc/server";
-import { dateWindowInput } from "../lib/date-window.ts";
+import { selectedChartDateRangeQuery } from "../lib/chart-range.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
-import { DailyMetricsRepository } from "../repositories/daily-metrics-repository.ts";
+import {
+  DailyMetricsRepository,
+  HRV_BASELINE_WARMUP_DAYS,
+} from "../repositories/daily-metrics-repository.ts";
 import { fetchRestingHeartRateValuesCte } from "../repositories/resting-heart-rate-query.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -21,43 +24,49 @@ function requireSensorStore(
 }
 
 export const dailyMetricsRouter = router({
-  list: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
-    .input(dateWindowInput)
-    .query(async ({ ctx, input }) => {
+  list: selectedChartDateRangeQuery(
+    "dailyMetrics.list",
+    CacheTTL.MEDIUM,
+    async ({ ctx, input, range }) => {
       const repo = new DailyMetricsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
-      return repo.list(input.days, input.endDate);
-    }),
+      return repo.list(range.days, input.endDate);
+    },
+  ),
 
   latest: cachedProtectedQuery({ maxAge: CacheTTL.SHORT }).query(async ({ ctx }) => {
     const repo = new DailyMetricsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
     return repo.getLatest();
   }),
 
-  hrvBaseline: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
-    .input(dateWindowInput)
-    .query(async ({ ctx, input }) => {
+  hrvBaseline: selectedChartDateRangeQuery(
+    "dailyMetrics.hrvBaseline",
+    CacheTTL.MEDIUM,
+    async ({ ctx, input, range }) => {
       const repo = new DailyMetricsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
         sensorStore: requireSensorStore(ctx.sensorStore, "dailyMetrics.hrvBaseline"),
         userId: ctx.userId,
         timezone: ctx.timezone,
         endDate: input.endDate,
-        days: input.days + 60,
+        days: range.withWarmupDays(HRV_BASELINE_WARMUP_DAYS).days,
       });
-      return repo.getHrvBaseline(input.days, input.endDate, restingHeartRateCte);
-    }),
+      return repo.getHrvBaseline(range.days, input.endDate, restingHeartRateCte);
+    },
+  ),
 
-  trends: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
-    .input(dateWindowInput)
-    .query(async ({ ctx, input }) => {
+  trends: selectedChartDateRangeQuery(
+    "dailyMetrics.trends",
+    CacheTTL.MEDIUM,
+    async ({ ctx, input, range }) => {
       const repo = new DailyMetricsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
         sensorStore: requireSensorStore(ctx.sensorStore, "dailyMetrics.trends"),
         userId: ctx.userId,
         timezone: ctx.timezone,
         endDate: input.endDate,
-        days: input.days,
+        days: range.days,
       });
-      return repo.getTrends(input.days, input.endDate, restingHeartRateCte);
-    }),
+      return repo.getTrends(range.days, input.endDate, restingHeartRateCte);
+    },
+  ),
 });

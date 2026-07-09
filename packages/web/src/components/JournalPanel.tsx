@@ -2,6 +2,7 @@ import { formatDateLong } from "@dofek/format/format";
 import { chartColors, statusColors } from "@dofek/scoring/colors";
 import { useMemo, useState } from "react";
 import { z } from "zod";
+import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 import { AddJournalEntryModal } from "./AddJournalEntryModal.tsx";
 import { TimeRangeSelector } from "./TimeRangeSelector.tsx";
@@ -21,7 +22,7 @@ type Tab = "log" | "trends";
 
 export function JournalPanel() {
   const [tab, setTab] = useState<Tab>("log");
-  const [days, setDays] = useState(30);
+  const [days, setDays] = useState<TimeRangeDays>(30);
 
   return (
     <div>
@@ -68,10 +69,10 @@ const entrySchema = z.object({
 
 type JournalEntry = z.infer<typeof entrySchema>;
 
-function JournalLog({ days }: { days: number }) {
+function JournalLog({ days }: { days: TimeRangeDays }) {
   const [showModal, setShowModal] = useState(false);
   const utils = trpc.useUtils();
-  const entriesQuery = trpc.journal.entries.useQuery({ days });
+  const entriesQuery = trpc.journal.entries.useQuery(selectedRangeQueryInput(days));
   const deleteMutation = trpc.journal.delete.useMutation({
     onSuccess: () => utils.journal.entries.invalidate(),
   });
@@ -257,9 +258,9 @@ const TREND_COLORS = [
   chartColors.purple,
 ];
 
-function JournalTrends({ days }: { days: number }) {
+function JournalTrends({ days }: { days: TimeRangeDays }) {
   const questionsQuery = trpc.journal.questions.useQuery();
-  const entriesQuery = trpc.journal.entries.useQuery({ days });
+  const entriesQuery = trpc.journal.entries.useQuery(selectedRangeQueryInput(days));
 
   const questions = useMemo(() => {
     if (!questionsQuery.data) return [];

@@ -1,7 +1,9 @@
 import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import { computePolarizationIndex, POLARIZATION_ZONES } from "@dofek/zones/zones";
 import * as Sentry from "@sentry/node";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
+import { ChartRange } from "../lib/chart-range.ts";
 import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { EfficiencyRepository } from "./efficiency-repository.ts";
@@ -118,6 +120,12 @@ function expectCyclingOnlyActivityTypes(activityTypes: unknown) {
   expect(activityTypes).not.toContain("hiking");
 }
 
+const postgresDialect = new PgDialect();
+
+function compiledSql(query: unknown): string {
+  return postgresDialect.sqlToQuery(query).sql;
+}
+
 // ---------------------------------------------------------------------------
 // getAerobicEfficiency
 // ---------------------------------------------------------------------------
@@ -125,7 +133,7 @@ function expectCyclingOnlyActivityTypes(activityTypes: unknown) {
 describe("EfficiencyRepository.getAerobicEfficiency", () => {
   it("returns null maxHr and empty activities when no data", async () => {
     const { repo } = makeRepository([]);
-    const result = await repo.getAerobicEfficiency(180);
+    const result = await repo.getAerobicEfficiency(ChartRange.fromDays(180));
     expect(result).toEqual({ maxHr: null, activities: [] });
   });
 
@@ -141,7 +149,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
     const { repo } = makeRepositoryWithSensorStore(sensorStore);
     const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
 
-    await repo.getAerobicEfficiency(90);
+    await repo.getAerobicEfficiency(ChartRange.fromDays(90));
 
     expect(sensorStore.query).toHaveBeenCalledTimes(1);
 
@@ -165,7 +173,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
         },
       ]);
 
-    await repo.getAerobicEfficiency(90);
+    await repo.getAerobicEfficiency(ChartRange.fromDays(90));
 
     expect(sensorStore.query).toHaveBeenCalledTimes(2);
     expect(vi.mocked(sensorStore.query).mock.calls[1]?.[1]).toContain(
@@ -173,6 +181,59 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
     );
     expect(vi.mocked(sensorStore.query).mock.calls[1]?.[1]).toContain("analytics.v_activity");
     expectCyclingOnlyActivityTypes(vi.mocked(sensorStore.query).mock.calls[1]?.[2]?.activityTypes);
+  });
+
+  it("keeps lower-bound filters for finite day ranges", async () => {
+    const { repo, execute, sensorStore } = makeRepository([]);
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+
+    await repo.getAerobicEfficiency(ChartRange.fromDays(90));
+
+    const readModelQuery = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    const activityDiagnosticQuery = compiledSql(execute.mock.calls[0]?.[0]);
+    expect(readModelQuery).toContain("started_at > now() - INTERVAL {days:Int32} DAY");
+    expect(activityDiagnosticQuery).toContain("started_at > CURRENT_TIMESTAMP - $");
+    expect(activityDiagnosticQuery).toContain("::int * INTERVAL '1 day'");
+
+    warnSpy.mockRestore();
+  });
+
+  it("omits all lower-bound filters when days is null", async () => {
+    const sensorStore = makeSequentialSensorStore([
+      [
+        {
+          max_hr: "192",
+          endurance_activities: "1",
+        },
+      ],
+      [],
+      [
+        {
+          activities_with_power: "0",
+          activities_with_hr: "0",
+        },
+      ],
+    ]);
+    const { repo, execute } = makeRepositoryWithSensorStore(sensorStore);
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+
+    await repo.getAerobicEfficiency(ChartRange.fromDays(null));
+
+    const readModelCall = vi.mocked(sensorStore.query).mock.calls[0];
+    const fallbackCall = vi.mocked(sensorStore.query).mock.calls[1];
+    const sampleDiagnosticCall = vi.mocked(sensorStore.query).mock.calls[2];
+    const activityDiagnosticQuery = compiledSql(execute.mock.calls[0]?.[0]);
+    expect(readModelCall?.[1]).not.toContain("started_at > now() - INTERVAL");
+    expect(fallbackCall?.[1]).not.toContain("asum.started_at > now() - INTERVAL");
+    expect(fallbackCall?.[1]).not.toContain("toDate({rhrWindowStart:String})");
+    expect(sampleDiagnosticCall?.[1]).not.toContain("asum.started_at > now() - INTERVAL");
+    expect(activityDiagnosticQuery).not.toContain("CURRENT_TIMESTAMP");
+    expect(readModelCall?.[2]).not.toHaveProperty("days");
+    expect(fallbackCall?.[2]).not.toHaveProperty("days");
+    expect(fallbackCall?.[2]).not.toHaveProperty("rhrWindowStart");
+    expect(sampleDiagnosticCall?.[2]).not.toHaveProperty("days");
+
+    warnSpy.mockRestore();
   });
 
   it("does not run diagnostics when the main aggregation returns rows", async () => {
@@ -198,7 +259,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
     ]);
     const { repo } = makeRepositoryWithSensorStore(sensorStore);
 
-    await repo.getAerobicEfficiency(90);
+    await repo.getAerobicEfficiency(ChartRange.fromDays(90));
 
     expect(sensorStore.query).toHaveBeenCalledTimes(2);
   });
@@ -222,7 +283,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
     const { repo } = makeRepositoryWithSensorStore(sensorStore);
     const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
 
-    const result = await repo.getAerobicEfficiency(90);
+    const result = await repo.getAerobicEfficiency(ChartRange.fromDays(90));
 
     expect(result).toEqual({ maxHr: 192, activities: [] });
     expect(warnSpy).toHaveBeenCalledWith(
@@ -256,7 +317,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
     const { repo } = makeRepositoryWithSensorStore(sensorStore);
     const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
 
-    const result = await repo.getAerobicEfficiency(90);
+    const result = await repo.getAerobicEfficiency(ChartRange.fromDays(90));
 
     expect(result).toEqual({ maxHr: null, activities: [] });
     expect(sensorStore.query).toHaveBeenCalledTimes(1);
@@ -274,7 +335,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
     const captureException = vi.mocked(Sentry.captureException);
     captureException.mockClear();
 
-    const result = await repo.getAerobicEfficiency(90);
+    const result = await repo.getAerobicEfficiency(ChartRange.fromDays(90));
 
     expect(result).toEqual({ maxHr: null, activities: [] });
     expect(warnSpy).not.toHaveBeenCalled();
@@ -295,7 +356,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
     const captureException = vi.mocked(Sentry.captureException);
     captureException.mockClear();
 
-    const result = await repo.getAerobicEfficiency(90);
+    const result = await repo.getAerobicEfficiency(ChartRange.fromDays(90));
 
     expect(result).toEqual({ maxHr: null, activities: [] });
     expect(captureException).toHaveBeenCalledWith(diagnosticError);
@@ -314,7 +375,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
         z2_samples: "1800",
       },
     ]);
-    const result = await repo.getAerobicEfficiency(180);
+    const result = await repo.getAerobicEfficiency(ChartRange.fromDays(180));
 
     expect(result.maxHr).toBe(190);
     expect(result.activities).toHaveLength(1);
@@ -342,7 +403,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
         z2_samples: "1800",
       },
     ]);
-    const result = await repo.getAerobicEfficiency(180);
+    const result = await repo.getAerobicEfficiency(ChartRange.fromDays(180));
     // Verify that Number() conversions actually happen
     expect(typeof result.activities[0]?.avgPowerZ2).toBe("number");
     expect(typeof result.activities[0]?.avgHrZ2).toBe("number");
@@ -369,7 +430,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
         z2_samples: "400",
       },
     ]);
-    const result = await repo.getAerobicEfficiency(180);
+    const result = await repo.getAerobicEfficiency(ChartRange.fromDays(180));
     expect(result.maxHr).toBe(192);
     expect(result.maxHr).not.toBeNull();
   });
@@ -397,7 +458,7 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
         z2_samples: "3600",
       },
     ]);
-    const result = await repo.getAerobicEfficiency(180);
+    const result = await repo.getAerobicEfficiency(ChartRange.fromDays(180));
     expect(result.maxHr).toBe(185);
     expect(result.activities).toHaveLength(2);
   });
@@ -410,25 +471,45 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
 describe("EfficiencyRepository.getAerobicDecoupling", () => {
   it("returns empty array when no data", async () => {
     const { repo } = makeRepository([]);
-    const result = await repo.getAerobicDecoupling(180);
+    const result = await repo.getAerobicDecoupling(ChartRange.fromDays(180));
     expect(result).toEqual([]);
   });
 
   it("issues exactly one CH query", async () => {
     const { repo, sensorStore } = makeRepository([]);
-    await repo.getAerobicDecoupling(90);
+    await repo.getAerobicDecoupling(ChartRange.fromDays(90));
     expect(sensorStore.query).toHaveBeenCalledTimes(1);
   });
 
   it("filters decoupling to cycling activity types", async () => {
     const { repo, sensorStore } = makeRepository([]);
 
-    await repo.getAerobicDecoupling(90);
+    await repo.getAerobicDecoupling(ChartRange.fromDays(90));
 
     const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
     expect(queryText).toContain("has({activityTypes:Array(String)}, asum.activity_type)");
     expect(queryText).not.toContain("enduranceTypes");
     expectCyclingOnlyActivityTypes(vi.mocked(sensorStore.query).mock.calls[0]?.[2]?.activityTypes);
+  });
+
+  it("keeps lower-bound filters for finite day ranges", async () => {
+    const { repo, sensorStore } = makeRepository([]);
+
+    await repo.getAerobicDecoupling(ChartRange.fromDays(90));
+
+    const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    expect(queryText).toContain("asum.started_at > now() - INTERVAL {days:Int32} DAY");
+    expect(vi.mocked(sensorStore.query).mock.calls[0]?.[2]).toHaveProperty("days", 90);
+  });
+
+  it("omits lower-bound filters when days is null", async () => {
+    const { repo, sensorStore } = makeRepository([]);
+
+    await repo.getAerobicDecoupling(ChartRange.fromDays(null));
+
+    const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    expect(queryText).not.toContain("asum.started_at > now() - INTERVAL");
+    expect(vi.mocked(sensorStore.query).mock.calls[0]?.[2]).not.toHaveProperty("days");
   });
 
   it("maps rows to AerobicDecouplingActivity objects", async () => {
@@ -443,7 +524,7 @@ describe("EfficiencyRepository.getAerobicDecoupling", () => {
         total_samples: "7200",
       },
     ]);
-    const result = await repo.getAerobicDecoupling(180);
+    const result = await repo.getAerobicDecoupling(ChartRange.fromDays(180));
 
     expect(result).toHaveLength(1);
     expect(result[0]).toEqual({
@@ -478,7 +559,7 @@ describe("EfficiencyRepository.getAerobicDecoupling", () => {
         total_samples: "1800",
       },
     ]);
-    const result = await repo.getAerobicDecoupling(180);
+    const result = await repo.getAerobicDecoupling(ChartRange.fromDays(180));
     expect(result).toHaveLength(2);
     expect(result[0]?.activityType).toBe("cycling");
     expect(result[1]?.activityType).toBe("running");
@@ -492,20 +573,20 @@ describe("EfficiencyRepository.getAerobicDecoupling", () => {
 describe("EfficiencyRepository.getPolarizationTrend", () => {
   it("returns null maxHr and empty weeks when no data", async () => {
     const { repo } = makeRepository([]);
-    const result = await repo.getPolarizationTrend(180);
+    const result = await repo.getPolarizationTrend(ChartRange.fromDays(180));
     expect(result).toEqual({ maxHr: null, weeks: [] });
   });
 
   it("issues a read-model attempt plus a fallback CH query", async () => {
     const { repo, sensorStore } = makeRepository([]);
-    await repo.getPolarizationTrend(90);
+    await repo.getPolarizationTrend(ChartRange.fromDays(90));
     expect(sensorStore.query).toHaveBeenCalledTimes(2);
   });
 
   it("filters polarization read model and fallback to cycling activity types", async () => {
     const { repo, sensorStore } = makeRepository([]);
 
-    await repo.getPolarizationTrend(90);
+    await repo.getPolarizationTrend(ChartRange.fromDays(90));
 
     const readModelQuery = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
     const fallbackQuery = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
@@ -517,10 +598,36 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
     expectCyclingOnlyActivityTypes(vi.mocked(sensorStore.query).mock.calls[1]?.[2]?.activityTypes);
   });
 
+  it("keeps lower-bound filters for finite day ranges", async () => {
+    const { repo, sensorStore } = makeRepository([]);
+
+    await repo.getPolarizationTrend(ChartRange.fromDays(90));
+
+    const readModelCall = vi.mocked(sensorStore.query).mock.calls[0];
+    const fallbackCall = vi.mocked(sensorStore.query).mock.calls[1];
+    expect(readModelCall?.[1]).toContain("started_at > now() - INTERVAL {days:Int32} DAY");
+    expect(fallbackCall?.[1]).toContain("asum.started_at > now() - INTERVAL {days:Int32} DAY");
+    expect(readModelCall?.[2]).toHaveProperty("days", 90);
+    expect(fallbackCall?.[2]).toHaveProperty("days", 90);
+  });
+
+  it("omits lower-bound filters when days is null", async () => {
+    const { repo, sensorStore } = makeRepository([]);
+
+    await repo.getPolarizationTrend(ChartRange.fromDays(null));
+
+    const readModelCall = vi.mocked(sensorStore.query).mock.calls[0];
+    const fallbackCall = vi.mocked(sensorStore.query).mock.calls[1];
+    expect(readModelCall?.[1]).not.toContain("started_at > now() - INTERVAL");
+    expect(fallbackCall?.[1]).not.toContain("asum.started_at > now() - INTERVAL");
+    expect(readModelCall?.[2]).not.toHaveProperty("days");
+    expect(fallbackCall?.[2]).not.toHaveProperty("days");
+  });
+
   it("uses the canonical Treff polarization zone boundaries in the query params", async () => {
     const { repo, sensorStore } = makeRepository([]);
 
-    await repo.getPolarizationTrend(90);
+    await repo.getPolarizationTrend(ChartRange.fromDays(90));
 
     expect(sensorStore.query).toHaveBeenCalledWith(
       expect.anything(),
@@ -542,7 +649,7 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
         z3_seconds: "500",
       },
     ]);
-    const result = await repo.getPolarizationTrend(180);
+    const result = await repo.getPolarizationTrend(ChartRange.fromDays(180));
     expect(result.maxHr).toBe(188);
     expect(result.maxHr).not.toBeNull();
   });
@@ -557,7 +664,7 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
         z3_seconds: "500",
       },
     ]);
-    const result = await repo.getPolarizationTrend(180);
+    const result = await repo.getPolarizationTrend(ChartRange.fromDays(180));
 
     expect(result.maxHr).toBe(190);
     expect(result.weeks).toHaveLength(1);
@@ -581,7 +688,7 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
         z3_seconds: "0",
       },
     ]);
-    const result = await repo.getPolarizationTrend(180);
+    const result = await repo.getPolarizationTrend(ChartRange.fromDays(180));
     // computePolarizationIndex returns null when total is zero
     expect(result.weeks[0]?.polarizationIndex).toBe(computePolarizationIndex(0, 0, 0));
   });
@@ -603,7 +710,7 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
         z3_seconds: "300",
       },
     ]);
-    const result = await repo.getPolarizationTrend(180);
+    const result = await repo.getPolarizationTrend(ChartRange.fromDays(180));
     expect(result.maxHr).toBe(185);
     expect(result.weeks).toHaveLength(2);
     expect(result.weeks[0]?.week).toBe("2025-05-19");
@@ -614,7 +721,7 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
     // Specifically verifies that `rows.length > 0` is the condition, not `rows.length >= 0`
     // With 0 rows: maxHr must be null
     const { repo: emptyRepo } = makeRepository([]);
-    const emptyResult = await emptyRepo.getPolarizationTrend(180);
+    const emptyResult = await emptyRepo.getPolarizationTrend(ChartRange.fromDays(180));
     expect(emptyResult.maxHr).toBeNull();
 
     // With 1 row: maxHr must NOT be null
@@ -627,7 +734,7 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
         z3_seconds: "100",
       },
     ]);
-    const oneRowResult = await oneRowRepo.getPolarizationTrend(180);
+    const oneRowResult = await oneRowRepo.getPolarizationTrend(ChartRange.fromDays(180));
     expect(oneRowResult.maxHr).toBe(195);
     expect(oneRowResult.maxHr).not.toBeNull();
   });
@@ -642,7 +749,7 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
         z3_seconds: "1200",
       },
     ]);
-    const result = await repo.getPolarizationTrend(180);
+    const result = await repo.getPolarizationTrend(ChartRange.fromDays(180));
     const week = result.weeks[0];
     expect(week?.z1Seconds).toBe(7200);
     expect(week?.z2Seconds).toBe(600);
@@ -660,7 +767,7 @@ describe("EfficiencyRepository.getAerobicEfficiency (rows.length boundary)", () 
   it("returns null maxHr when rows.length is 0, non-null when >= 1", async () => {
     // 0 rows => null
     const { repo: repoEmpty } = makeRepository([]);
-    const emptyResult = await repoEmpty.getAerobicEfficiency(180);
+    const emptyResult = await repoEmpty.getAerobicEfficiency(ChartRange.fromDays(180));
     expect(emptyResult.maxHr).toBeNull();
 
     // 1 row => Number(rows[0].max_hr)
@@ -676,7 +783,7 @@ describe("EfficiencyRepository.getAerobicEfficiency (rows.length boundary)", () 
         z2_samples: "500",
       },
     ]);
-    const oneResult = await repoOne.getAerobicEfficiency(180);
+    const oneResult = await repoOne.getAerobicEfficiency(ChartRange.fromDays(180));
     expect(oneResult.maxHr).toBe(200);
     expect(oneResult.maxHr).not.toBeNull();
   });
@@ -700,7 +807,7 @@ describe("EfficiencyRepository.getAerobicEfficiency (String conversions)", () =>
         z2_samples: "500",
       },
     ]);
-    const result = await repo.getAerobicEfficiency(180);
+    const result = await repo.getAerobicEfficiency(ChartRange.fromDays(180));
     const activity = result.activities[0];
     expect(typeof activity?.date).toBe("string");
     expect(typeof activity?.activityType).toBe("string");
@@ -728,7 +835,7 @@ describe("EfficiencyRepository.getAerobicDecoupling (String conversions)", () =>
         total_samples: "2400",
       },
     ]);
-    const result = await repo.getAerobicDecoupling(180);
+    const result = await repo.getAerobicDecoupling(ChartRange.fromDays(180));
     const activity = result[0];
     expect(typeof activity?.date).toBe("string");
     expect(typeof activity?.activityType).toBe("string");
@@ -750,7 +857,7 @@ describe("EfficiencyRepository.getAerobicDecoupling (String conversions)", () =>
         total_samples: "5000",
       },
     ]);
-    const result = await repo.getAerobicDecoupling(180);
+    const result = await repo.getAerobicDecoupling(ChartRange.fromDays(180));
     const activity = result[0];
     expect(typeof activity?.firstHalfRatio).toBe("number");
     expect(typeof activity?.secondHalfRatio).toBe("number");
@@ -778,7 +885,7 @@ describe("EfficiencyRepository.getPolarizationTrend (String conversion)", () => 
         z3_seconds: "600",
       },
     ]);
-    const result = await repo.getPolarizationTrend(180);
+    const result = await repo.getPolarizationTrend(ChartRange.fromDays(180));
     expect(typeof result.weeks[0]?.week).toBe("string");
     expect(result.weeks[0]?.week).toBe("2025-06-02");
   });
@@ -793,7 +900,7 @@ describe("EfficiencyRepository.getPolarizationTrend (String conversion)", () => 
         z3_seconds: "100",
       },
     ]);
-    const result = await repo.getPolarizationTrend(180);
+    const result = await repo.getPolarizationTrend(ChartRange.fromDays(180));
     expect(typeof result.maxHr).toBe("number");
     expect(result.maxHr).toBe(193);
   });
@@ -806,7 +913,7 @@ describe("EfficiencyRepository.getPolarizationTrend (String conversion)", () => 
 describe("EfficiencyRepository.getAerobicEfficiency (object shape)", () => {
   it("returns result with exactly maxHr and activities keys", async () => {
     const { repo } = makeRepository([]);
-    const result = await repo.getAerobicEfficiency(180);
+    const result = await repo.getAerobicEfficiency(ChartRange.fromDays(180));
     expect(Object.keys(result).sort()).toStrictEqual(["activities", "maxHr"]);
   });
 
@@ -823,7 +930,7 @@ describe("EfficiencyRepository.getAerobicEfficiency (object shape)", () => {
         z2_samples: "500",
       },
     ]);
-    const result = await repo.getAerobicEfficiency(180);
+    const result = await repo.getAerobicEfficiency(ChartRange.fromDays(180));
     const activity = result.activities[0];
     expect(Object.keys(activity ?? {}).sort()).toStrictEqual([
       "activityType",
@@ -850,7 +957,7 @@ describe("EfficiencyRepository.getAerobicDecoupling (object shape)", () => {
         total_samples: "7200",
       },
     ]);
-    const result = await repo.getAerobicDecoupling(180);
+    const result = await repo.getAerobicDecoupling(ChartRange.fromDays(180));
     expect(Object.keys(result[0] ?? {}).sort()).toStrictEqual([
       "activityType",
       "date",
@@ -866,7 +973,7 @@ describe("EfficiencyRepository.getAerobicDecoupling (object shape)", () => {
 describe("EfficiencyRepository.getPolarizationTrend (object shape)", () => {
   it("returns result with exactly maxHr and weeks keys", async () => {
     const { repo } = makeRepository([]);
-    const result = await repo.getPolarizationTrend(180);
+    const result = await repo.getPolarizationTrend(ChartRange.fromDays(180));
     expect(Object.keys(result).sort()).toStrictEqual(["maxHr", "weeks"]);
   });
 
@@ -880,7 +987,7 @@ describe("EfficiencyRepository.getPolarizationTrend (object shape)", () => {
         z3_seconds: "500",
       },
     ]);
-    const result = await repo.getPolarizationTrend(180);
+    const result = await repo.getPolarizationTrend(ChartRange.fromDays(180));
     expect(Object.keys(result.weeks[0] ?? {}).sort()).toStrictEqual([
       "polarizationIndex",
       "week",
@@ -901,7 +1008,7 @@ describe("EfficiencyRepository.getPolarizationTrend (object shape)", () => {
         z3_seconds: "1500",
       },
     ]);
-    const result = await repo.getPolarizationTrend(180);
+    const result = await repo.getPolarizationTrend(ChartRange.fromDays(180));
     const week = result.weeks[0];
     // Correct order: z1=7200, z2=300, z3=1500
     const expectedIndex = computePolarizationIndex(7200, 300, 1500);
@@ -930,7 +1037,7 @@ describe("EfficiencyRepository.getAerobicEfficiency (mutation: field mapping)", 
         z2_samples: "500",
       },
     ]);
-    const result = await repo.getAerobicEfficiency(180);
+    const result = await repo.getAerobicEfficiency(ChartRange.fromDays(180));
     const activity = result.activities[0];
     // If field mapping were swapped (avgPowerZ2 ↔ avgHrZ2), values would be wrong
     expect(activity?.avgPowerZ2).toBe(200);
@@ -952,7 +1059,7 @@ describe("EfficiencyRepository.getAerobicEfficiency (mutation: field mapping)", 
         z2_samples: "900",
       },
     ]);
-    const result = await repo.getAerobicEfficiency(180);
+    const result = await repo.getAerobicEfficiency(ChartRange.fromDays(180));
     const activity = result.activities[0];
     // These two fields should not be swapped
     expect(activity?.efficiencyFactor).toBe(1.333);
@@ -975,7 +1082,7 @@ describe("EfficiencyRepository.getAerobicDecoupling (mutation: field mapping)", 
         total_samples: "3000",
       },
     ]);
-    const result = await repo.getAerobicDecoupling(180);
+    const result = await repo.getAerobicDecoupling(ChartRange.fromDays(180));
     const activity = result[0];
     // If first/second were swapped, values would be wrong
     expect(activity?.firstHalfRatio).toBe(1.5);
@@ -996,7 +1103,7 @@ describe("EfficiencyRepository.getAerobicDecoupling (mutation: field mapping)", 
         total_samples: "7200",
       },
     ]);
-    const result = await repo.getAerobicDecoupling(180);
+    const result = await repo.getAerobicDecoupling(ChartRange.fromDays(180));
     const activity = result[0];
     expect(activity?.decouplingPct).toBe(5.19);
     expect(activity?.totalSamples).toBe(7200);
@@ -1016,7 +1123,7 @@ describe("EfficiencyRepository.getPolarizationTrend (mutation: field mapping)", 
         z3_seconds: "1000",
       },
     ]);
-    const result = await repo.getPolarizationTrend(180);
+    const result = await repo.getPolarizationTrend(ChartRange.fromDays(180));
     const week = result.weeks[0];
     // Each zone must map to its correct field
     expect(week?.z1Seconds).toBe(4000);
@@ -1038,7 +1145,7 @@ describe("EfficiencyRepository.getPolarizationTrend (mutation: field mapping)", 
         z3_seconds: "100",
       },
     ]);
-    const result = await repo.getPolarizationTrend(180);
+    const result = await repo.getPolarizationTrend(ChartRange.fromDays(180));
     // Number("187") = 187, not String("187")
     expect(result.maxHr).toStrictEqual(187);
     expect(typeof result.maxHr).toBe("number");
@@ -1069,7 +1176,7 @@ describe("EfficiencyRepository.getAerobicEfficiency (mutation: maxHr ternary)", 
         z2_samples: "400",
       },
     ]);
-    const result = await repo.getAerobicEfficiency(180);
+    const result = await repo.getAerobicEfficiency(ChartRange.fromDays(180));
     // Should come from rows[0].max_hr, not rows[1].max_hr
     expect(result.maxHr).toBe(185);
     expect(result.maxHr).not.toBe(190);

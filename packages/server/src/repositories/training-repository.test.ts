@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
-import { collectSqlText } from "./test-helpers.ts";
+import {
+  collectSqlText,
+  expectSensorStoreFiniteDaysFilter,
+  expectSensorStoreUnboundedDaysFilter,
+} from "./test-helpers.ts";
 import { TrainingRepository } from "./training-repository.ts";
 
 // ---------------------------------------------------------------------------
@@ -132,6 +136,33 @@ describe("TrainingRepository", () => {
       });
     });
 
+    it("applies inclusive finite selected-range lower-bound filters to the raw activity preflight", async () => {
+      const { repo, execute, sensorStore } = makeRepository([], undefined, 1);
+
+      await repo.getWeeklyVolume(30);
+
+      expect(executedSql(execute)).toContain("started_at::date >= (CURRENT_DATE -");
+      expect(executedSql(execute)).not.toContain("CURRENT_TIMESTAMP -");
+      expect(executedSql(execute)).toContain("ended_at IS NOT NULL");
+      expect(sensorStore.query).toHaveBeenCalled();
+    });
+
+    it("applies finite selected-range lower-bound filters to the weekly volume query", async () => {
+      const { repo, sensorStore } = makeRepository([], undefined, 1);
+
+      await repo.getWeeklyVolume(30);
+
+      expectSensorStoreFiniteDaysFilter(sensorStore);
+    });
+
+    it("omits selected-range lower-bound filters when days is null", async () => {
+      const { repo, sensorStore } = makeRepository([], undefined, 1);
+
+      await repo.getWeeklyVolume(null);
+
+      expectSensorStoreUnboundedDaysFilter(sensorStore);
+    });
+
     it("returns parsed weekly volume rows", async () => {
       const { repo } = makeRepository([
         { week: "2024-01-15", activity_type: "cycling", count: 3, hours: 4.5 },
@@ -196,6 +227,32 @@ describe("TrainingRepository", () => {
       expect(query).toContain(
         "AND ds.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)",
       );
+    });
+
+    it("applies finite selected-range lower-bound filters", async () => {
+      const { repo, sensorStore } = makeRepository([], undefined, 1);
+
+      await repo.getHrZones(30);
+
+      const query = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+      const params = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
+      expect(query).toContain("asum.started_at > today() - INTERVAL {days:Int32} DAY");
+      expect(query).toContain("toDate({rhrWindowStart:String})");
+      expect(params).toHaveProperty("days", 30);
+      expect(params).toHaveProperty("rhrWindowStart");
+    });
+
+    it("omits selected-range lower-bound filters when days is null", async () => {
+      const { repo, sensorStore } = makeRepository([], undefined, 1);
+
+      await repo.getHrZones(null);
+
+      const query = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+      const params = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
+      expect(query).not.toContain("asum.started_at > now() - INTERVAL {days:Int32} DAY");
+      expect(query).not.toContain("toDate({rhrWindowStart:String})");
+      expect(params).not.toHaveProperty("days");
+      expect(params).not.toHaveProperty("rhrWindowStart");
     });
   });
 

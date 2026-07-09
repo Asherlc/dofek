@@ -1,8 +1,9 @@
 import { createContext, useContext } from "react";
+import type { TimeRangeDays } from "./timeRange.ts";
 
 interface BodyDaysContextValue {
-  days: number;
-  setDays: (days: number) => void;
+  days: TimeRangeDays;
+  setDays: (days: TimeRangeDays) => void;
 }
 
 export const BodyDaysContext = createContext<BodyDaysContextValue>({

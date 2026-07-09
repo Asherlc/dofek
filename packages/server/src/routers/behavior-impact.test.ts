@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTestCallerFactory } from "./test-helpers.ts";
+import { collectSqlText, createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -115,6 +115,49 @@ describe("behaviorImpactRouter", () => {
       await caller.impactSummary({});
 
       expect(executeMock).toHaveBeenCalled();
+    });
+
+    it("uses lower date bounds for finite selected ranges", async () => {
+      const executeMock = vi.fn().mockResolvedValue([]);
+      const sensorStore = makeSensorStore();
+      const caller = createCaller({
+        db: { execute: executeMock },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore,
+      });
+
+      await caller.impactSummary({ days: 90 });
+
+      const restingHeartRateParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
+      expect(restingHeartRateParams).toHaveProperty("rhrWindowStart");
+      const queryText = collectSqlText(executeMock.mock.calls[0]?.[0]);
+      expect(queryText).toContain("je.user_id =");
+      expect(queryText).toContain("je.date >=");
+      expect(queryText).toContain("dm.date >=");
+    });
+
+    it("omits lower date bounds when days is null", async () => {
+      const executeMock = vi.fn().mockResolvedValue([]);
+      const sensorStore = makeSensorStore();
+      const caller = createCaller({
+        db: { execute: executeMock },
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore,
+      });
+
+      await caller.impactSummary({ days: null });
+
+      const restingHeartRateQueryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+      const restingHeartRateParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
+      expect(restingHeartRateQueryText).not.toContain("rhrWindowStart");
+      expect(restingHeartRateParams).not.toHaveProperty("rhrWindowStart");
+      const queryText = collectSqlText(executeMock.mock.calls[0]?.[0]);
+      expect(queryText).toContain("je.user_id =");
+      expect(queryText).toContain("dm.user_id =");
+      expect(queryText).not.toContain("je.date >=");
+      expect(queryText).not.toContain("dm.date >=");
     });
   });
 });

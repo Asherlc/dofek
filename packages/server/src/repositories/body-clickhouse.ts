@@ -1,5 +1,10 @@
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
+import {
+  clickHouseDateRangePredicate,
+  type RangeDays,
+  rangeDaysParams,
+} from "../lib/date-window.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 export interface BodyClickHouseStore {
@@ -84,8 +89,14 @@ function accessWindowParams(accessWindow: AccessWindow | undefined): Record<stri
 
 export function bodyWeightDedupClickHouseQuery(
   endDate: string,
+  days: RangeDays,
   options: BodyWeightOptions = {},
 ): string {
+  const localDateRangePredicate = clickHouseDateRangePredicate({
+    expression: "toDate(toTimeZone(recorded_at, {timezone:String}))",
+    days,
+    endDateExpression: endDateExpression(endDate),
+  });
   return `
     SELECT
       toString(local_date) AS date,
@@ -106,7 +117,7 @@ export function bodyWeightDedupClickHouseQuery(
           measurement_id
         FROM analytics.daily_body_measurement FINAL
         WHERE user_id = {userId:UUID}
-          AND toDate(toTimeZone(recorded_at, {timezone:String})) > subtractDays(${endDateExpression(endDate)}, {days:UInt32})
+          ${localDateRangePredicate}
           ${options.requireBodyFat ? "AND body_fat_pct IS NOT NULL" : ""}
       ) AS body_rows
       GROUP BY local_date
@@ -124,24 +135,33 @@ export async function fetchBodyWeightRows(
   userId: string,
   timezone: string,
   endDate: string,
-  days: number,
+  days: RangeDays,
   options: BodyWeightOptions = {},
 ): Promise<z.infer<typeof bodyWeightClickHouseSchema>[]> {
-  return store.query(bodyWeightClickHouseSchema, bodyWeightDedupClickHouseQuery(endDate, options), {
-    userId,
-    timezone,
-    endDate,
-    days,
-    ...accessWindowParams(options.accessWindow),
-  });
+  return store.query(
+    bodyWeightClickHouseSchema,
+    bodyWeightDedupClickHouseQuery(endDate, days, options),
+    {
+      userId,
+      timezone,
+      endDate,
+      ...rangeDaysParams(days),
+      ...accessWindowParams(options.accessWindow),
+    },
+  );
 }
 
 export async function fetchBodyCompRows(
   store: BodyClickHouseStore,
   userId: string,
   endDate: string,
-  days: number,
+  days: RangeDays,
 ): Promise<z.infer<typeof bodyCompClickHouseSchema>[]> {
+  const recordedAtRangePredicate = clickHouseDateRangePredicate({
+    expression: "recorded_at",
+    days,
+    endDateExpression: endTimestampExpression(endDate),
+  });
   return store.query(
     bodyCompClickHouseSchema,
     `
@@ -157,11 +177,11 @@ export async function fetchBodyCompRows(
         FROM analytics.v_body_measurement
         WHERE user_id = {userId:UUID}
           AND (weight_kg IS NULL OR weight_kg > 0)
-          AND recorded_at > subtractDays(${endTimestampExpression(endDate)}, {days:UInt32})
+          ${recordedAtRangePredicate}
       ) AS body_measurements
       ORDER BY body_measurements.recorded_at ASC
     `,
-    { userId, endDate, days },
+    { userId, endDate, ...rangeDaysParams(days) },
   );
 }
 

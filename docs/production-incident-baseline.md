@@ -12084,6 +12084,50 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Validation:** `python:3.13-alpine` with the same pinned latest dbt packages
   runs `dbt --version` successfully.
 
+## 2026-07-09 — PR Knip Failure on Dead Range Exports
+
+- **Symptoms:** PR #1566 failed in `Test / Knip`.
+- **User impact:** Pull request CI was blocked; no production runtime impact.
+- **Evidence:** GitHub job `86178016848` failed on `pnpm knip` with
+  `Unused exports (2)`: `selectedChartDefaultDays` in
+  `packages/server/src/lib/chart-range.ts` and `FIXED_RANGE_QUERY_REGISTRY` in
+  `packages/web/src/lib/timeRange.ts`.
+- **Root cause:** Two previously exported chart range helpers no longer had
+  production or test consumers, so Knip correctly reported them as dead public
+  API.
+- **Fix / mitigation:** Deleted the two unused exports instead of suppressing
+  Knip.
+- **Validation:** Local `pnpm knip`, `pnpm lint`, `pnpm typecheck`, and
+  targeted unit tests for `chart-range` and `timeRange` passed. Remote CI run
+  `29035575010` showed `Test / Knip` passing on commit `25276d530`.
+- **Remaining risk / follow-up:** Local `pnpm test:changed` could not complete
+  because Docker/Testcontainers integration setup exhausted local disk space,
+  but the directly affected unit tests passed before the environmental failure.
+
+## 2026-07-09 — CI Stryker Shards Failing on Date-Window Mutants
+
+- **Symptoms:** `Test / Stryker (6)` and `Test / Stryker (11)` failed during
+  mutation testing.
+- **User impact:** Pull request CI was blocked; no production runtime impact.
+- **Evidence:** Attached GitHub logs ended with `Final mutation score 28.57
+  under breaking threshold 75` for shard 6 and `Final mutation score 60.00
+  under breaking threshold 75` for shard 11. Surviving mutants were in
+  `packages/web/src/lib/bodyHealthMetrics.ts`,
+  `packages/server/src/repositories/daily-metrics-repository.ts`, and
+  `src/db/clickhouse-resting-heart-rate.ts`.
+- **Root cause:** Unit tests covered finite selected ranges but did not assert
+  that all-time ranges still exclude rows after the selected end date, and did
+  not assert the default resting-heart-rate CTE includes the start-window
+  predicate.
+- **Fix / mitigation:** Added focused regression assertions to the existing
+  colocated tests for web body health metrics, daily metrics HRV baseline, and
+  the resting-heart-rate ClickHouse CTE.
+- **Validation:** Targeted unit tests passed, targeted Stryker runs for the
+  affected files passed thresholds (`96.97` and `90.00`), and local
+  `pnpm lint` plus `pnpm typecheck` passed.
+- **Remaining risk / follow-up:** Full CI rerun still needs to confirm the
+  exact computed mutation shards pass remotely.
+
 ## 2026-07-09 — Mobile Strong CSV Share Import Hidden by Data Sources Loading
 
 - **Symptoms:** Sharing a Strong CSV export to the iOS app opened the Data

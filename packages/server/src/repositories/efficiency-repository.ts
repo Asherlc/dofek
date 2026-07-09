@@ -6,7 +6,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
-import { dateWindowStartString } from "../lib/date-window.ts";
+import type { ChartRange } from "../lib/chart-range.ts";
 import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
@@ -120,6 +120,16 @@ const aerobicEfficiencySampleDiagnosticSchema = z.object({
 
 type AerobicEfficiencyDiagnostic = z.infer<typeof aerobicEfficiencyDiagnosticSchema>;
 
+function restingHeartRateRangeParams(
+  endDate: string,
+  range: ChartRange,
+): { rhrEndDate: string; rhrWindowStart?: string } {
+  const rhrWindowStart = range.windowStartString(endDate);
+  return rhrWindowStart === undefined
+    ? { rhrEndDate: endDate }
+    : { rhrEndDate: endDate, rhrWindowStart };
+}
+
 // ---------------------------------------------------------------------------
 // Repository
 // ---------------------------------------------------------------------------
@@ -145,8 +155,11 @@ export class EfficiencyRepository extends BaseRepository {
    * Only includes activities with at least 5 minutes (300 samples) of Z2 data.
    * Reads from the pre-computed activity_aerobic_efficiency read model when available.
    */
-  async getAerobicEfficiency(days: number): Promise<AerobicEfficiencyResult> {
+  async getAerobicEfficiency(range: ChartRange): Promise<AerobicEfficiencyResult> {
     const today = new Date().toISOString().slice(0, 10);
+    const lowerBoundPredicate = range.clickHouseTimestampAfter("started_at");
+    const activitySummaryLowerBoundPredicate = range.clickHouseTimestampAfter("asum.started_at");
+    const rangeParams = range.clickHouseParams();
 
     // Try pre-computed read model first (avoids expensive deduped_sensor scan)
     const readModelRows = await this.#sensorStore.query(
@@ -163,13 +176,13 @@ export class EfficiencyRepository extends BaseRepository {
       FROM analytics.activity_aerobic_efficiency FINAL
       WHERE user_id = {userId:UUID}
         AND has({activityTypes:Array(String)}, activity_type)
-        AND started_at > now() - INTERVAL {days:Int32} DAY
+        ${lowerBoundPredicate}
         AND is_deleted = 0
       ORDER BY started_at`,
       {
         userId: this.userId,
         timezone: this.timezone,
-        days,
+        ...rangeParams,
         activityTypes: CYCLING_TYPES,
       },
     );
@@ -190,10 +203,10 @@ export class EfficiencyRepository extends BaseRepository {
     }
 
     // Fall back to live deduped_sensor computation
-    const activityDiagnostic = await this.#loadAerobicEfficiencyActivityDiagnostics(days);
+    const activityDiagnostic = await this.#loadAerobicEfficiencyActivityDiagnostics(range);
 
     if (activityDiagnostic?.endurance_activities === 0) {
-      this.#logAerobicEfficiencyEmptyDiagnostic(activityDiagnostic, days, {
+      this.#logAerobicEfficiencyEmptyDiagnostic(activityDiagnostic, range, {
         activities_with_power: 0,
         activities_with_hr: 0,
       });
@@ -205,7 +218,7 @@ export class EfficiencyRepository extends BaseRepository {
 
     const rows = await this.#sensorStore.query(
       efficiencyRowSchema,
-      `WITH ${restingHeartRateClickHouseCte()},
+      `WITH ${restingHeartRateClickHouseCte({ includeWindowStart: !range.isAll() })},
       activity_meta AS (
         SELECT
           asum.activity_id AS id,
@@ -226,7 +239,7 @@ export class EfficiencyRepository extends BaseRepository {
           ON drhr.date = toString(toDate(toTimeZone(asum.started_at, {timezone:String})))
         WHERE asum.user_id = {userId:UUID}
           AND has({activityTypes:Array(String)}, asum.activity_type)
-          AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+          ${activitySummaryLowerBoundPredicate}
           AND up.max_hr IS NOT NULL
       )
       SELECT
@@ -259,19 +272,18 @@ export class EfficiencyRepository extends BaseRepository {
       {
         userId: this.userId,
         timezone: this.timezone,
-        days,
+        ...rangeParams,
         activityTypes: CYCLING_TYPES,
         b1: aerobicEfficiencyZone.minPctHrr,
         b2: aerobicEfficiencyZone.maxPctHrr,
-        rhrEndDate: today,
-        rhrWindowStart: dateWindowStartString(today, days),
+        ...restingHeartRateRangeParams(today, range),
       },
     );
 
     let emptyResultMaxHr: number | null = null;
     if (rows.length === 0) {
       emptyResultMaxHr = await this.#loadAerobicEfficiencyDiagnostics(
-        days,
+        range,
         activityDiagnostic,
       ).catch((error) => {
         Sentry.captureException(error);
@@ -298,7 +310,7 @@ export class EfficiencyRepository extends BaseRepository {
 
   /** Log a brief diagnostic when aerobic efficiency returns no results. */
   async #loadAerobicEfficiencyActivityDiagnostics(
-    days: number,
+    range: ChartRange,
   ): Promise<AerobicEfficiencyDiagnostic | null> {
     const rows = await this.query(
       aerobicEfficiencyDiagnosticSchema,
@@ -310,7 +322,7 @@ export class EfficiencyRepository extends BaseRepository {
                 CYCLING_TYPES.map((activityType) => sql`${activityType}`),
                 sql`, `,
               )})
-              AND started_at > CURRENT_TIMESTAMP - ${days}::int * INTERVAL '1 day'
+              ${range.postgresTimestampAfterCurrentTimestamp(sql`started_at`)}
           )
           SELECT
             (SELECT max_hr FROM fitness.user_profile WHERE id = ${this.userId}::uuid) AS max_hr,
@@ -323,17 +335,17 @@ export class EfficiencyRepository extends BaseRepository {
 
   /** Log a brief diagnostic when aerobic efficiency returns no results. */
   async #loadAerobicEfficiencyDiagnostics(
-    days: number,
+    range: ChartRange,
     knownActivityDiagnostic: AerobicEfficiencyDiagnostic | null,
   ): Promise<number | null> {
     const activityDiagnostic =
-      knownActivityDiagnostic ?? (await this.#loadAerobicEfficiencyActivityDiagnostics(days));
+      knownActivityDiagnostic ?? (await this.#loadAerobicEfficiencyActivityDiagnostics(range));
     if (!activityDiagnostic) {
       return null;
     }
 
     if (activityDiagnostic.endurance_activities === 0) {
-      this.#logAerobicEfficiencyEmptyDiagnostic(activityDiagnostic, days, {
+      this.#logAerobicEfficiencyEmptyDiagnostic(activityDiagnostic, range, {
         activities_with_power: 0,
         activities_with_hr: 0,
       });
@@ -354,7 +366,7 @@ export class EfficiencyRepository extends BaseRepository {
          AND va.user_id = asum.user_id
         WHERE asum.user_id = {userId:UUID}
           AND has({activityTypes:Array(String)}, asum.activity_type)
-          AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+          ${range.clickHouseTimestampAfter("asum.started_at")}
       ),
       sensor_samples_by_activity AS (
         SELECT
@@ -378,23 +390,23 @@ export class EfficiencyRepository extends BaseRepository {
         ON sensor_samples.activity_id = ea.id`,
       {
         userId: this.userId,
-        days,
+        ...range.clickHouseParams(),
         activityTypes: CYCLING_TYPES,
       },
     );
 
     const sampleDiagnostic = sampleRows[0] ?? { activities_with_power: 0, activities_with_hr: 0 };
-    this.#logAerobicEfficiencyEmptyDiagnostic(activityDiagnostic, days, sampleDiagnostic);
+    this.#logAerobicEfficiencyEmptyDiagnostic(activityDiagnostic, range, sampleDiagnostic);
     return activityDiagnostic.max_hr;
   }
 
   #logAerobicEfficiencyEmptyDiagnostic(
     activityDiagnostic: AerobicEfficiencyDiagnostic,
-    days: number,
+    range: ChartRange,
     sampleDiagnostic: z.infer<typeof aerobicEfficiencySampleDiagnosticSchema>,
   ): void {
     logger.warn(
-      `[aerobicEfficiency] Empty result for user=${this.userId} days=${days}: ` +
+      `[aerobicEfficiency] Empty result for user=${this.userId} days=${range.days}: ` +
         `max_hr=${activityDiagnostic.max_hr}, ` +
         `endurance_activities=${activityDiagnostic.endurance_activities}, ` +
         `with_power=${sampleDiagnostic.activities_with_power}, ` +
@@ -407,7 +419,7 @@ export class EfficiencyRepository extends BaseRepository {
    * Compares power:HR ratio in first half vs second half of each activity.
    * Decoupling < 5% indicates a strong aerobic base.
    */
-  async getAerobicDecoupling(days: number): Promise<AerobicDecouplingActivity[]> {
+  async getAerobicDecoupling(range: ChartRange): Promise<AerobicDecouplingActivity[]> {
     const rows = await this.#sensorStore.query(
       decouplingRowSchema,
       `WITH activity_meta AS (
@@ -425,7 +437,7 @@ export class EfficiencyRepository extends BaseRepository {
          AND va.user_id = asum.user_id
         WHERE asum.user_id = {userId:UUID}
           AND has({activityTypes:Array(String)}, asum.activity_type)
-          AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+          ${range.clickHouseTimestampAfter("asum.started_at")}
       ),
       activity_halves AS (
         SELECT
@@ -473,7 +485,7 @@ export class EfficiencyRepository extends BaseRepository {
       {
         userId: this.userId,
         timezone: this.timezone,
-        days,
+        ...range.clickHouseParams(),
         activityTypes: CYCLING_TYPES,
       },
     );
@@ -495,7 +507,11 @@ export class EfficiencyRepository extends BaseRepository {
    * PI > 2.0 indicates a well-polarized training distribution.
    * Reads from the pre-computed activity_polarization_zones read model when available.
    */
-  async getPolarizationTrend(days: number): Promise<PolarizationTrendResult> {
+  async getPolarizationTrend(range: ChartRange): Promise<PolarizationTrendResult> {
+    const lowerBoundPredicate = range.clickHouseTimestampAfter("started_at");
+    const activitySummaryLowerBoundPredicate = range.clickHouseTimestampAfter("asum.started_at");
+    const rangeParams = range.clickHouseParams();
+
     // Try pre-computed read model first (avoids expensive deduped_sensor scan)
     const readModelRows = await this.#sensorStore.query(
       polarizationRowSchema,
@@ -508,14 +524,14 @@ export class EfficiencyRepository extends BaseRepository {
       FROM analytics.activity_polarization_zones FINAL
       WHERE user_id = {userId:UUID}
         AND has({activityTypes:Array(String)}, activity_type)
-        AND started_at > now() - INTERVAL {days:Int32} DAY
+        ${lowerBoundPredicate}
         AND is_deleted = 0
       GROUP BY toMonday(toTimeZone(started_at, {timezone:String}))
       ORDER BY week`,
       {
         userId: this.userId,
         timezone: this.timezone,
-        days,
+        ...rangeParams,
         activityTypes: CYCLING_TYPES,
       },
     );
@@ -559,7 +575,7 @@ export class EfficiencyRepository extends BaseRepository {
         INNER JOIN postgres_fitness.user_profile_current up ON up.id = asum.user_id
         WHERE asum.user_id = {userId:UUID}
           AND has({activityTypes:Array(String)}, asum.activity_type)
-          AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+          ${activitySummaryLowerBoundPredicate}
           AND up.max_hr IS NOT NULL
       )
       SELECT
@@ -581,7 +597,7 @@ export class EfficiencyRepository extends BaseRepository {
       {
         userId: this.userId,
         timezone: this.timezone,
-        days,
+        ...rangeParams,
         activityTypes: CYCLING_TYPES,
         p1: polZ1,
         p2: polZ2,

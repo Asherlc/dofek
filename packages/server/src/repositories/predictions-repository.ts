@@ -3,6 +3,11 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { joinByDate } from "../insights/data-join.ts";
 import type { BodyCompRow, DailyRow, NutritionRow, SleepRow } from "../insights/types.ts";
+import {
+  clickHouseDateRangeLowerBound,
+  clickHouseRangeLowerBound,
+  rangeDaysParams,
+} from "../lib/date-window.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import {
   ACTIVITY_PREDICTION_TARGETS,
@@ -279,10 +284,10 @@ export class PredictionsRepository {
         dateDiff('second', first_sample_at, last_sample_at) / 60 AS duration_min
       FROM analytics.activity_summary AS activity_summary
       WHERE activity_summary.user_id = {userId:UUID}
-        AND activity_summary.started_at > now() - INTERVAL {days:Int32} DAY
+        ${clickHouseRangeLowerBound(days, "activity_summary.started_at")}
         AND avg_power IS NOT NULL
       ORDER BY activity_summary.started_at ASC`,
-      { userId: this.#userId, days },
+      { userId: this.#userId, ...rangeDaysParams(days) },
     );
 
     const visibleActivityRows = await activityRepositoryFor(
@@ -451,10 +456,10 @@ export class PredictionsRepository {
         ON va.id = asum.activity_id
        AND va.user_id = asum.user_id
       WHERE asum.user_id = {userId:UUID}
-        AND asum.started_at > today() - INTERVAL {days:Int32} DAY
+        ${clickHouseDateRangeLowerBound(days, "asum.started_at")}
       GROUP BY toDate(asum.started_at)
       ORDER BY toDate(asum.started_at) ASC`,
-      { userId: this.#userId, days },
+      { userId: this.#userId, ...rangeDaysParams(days) },
     );
   }
 }

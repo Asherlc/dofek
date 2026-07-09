@@ -2,10 +2,10 @@ import type { PmcChartResult, PmcDataPoint, TssModelInfo } from "@dofek/training
 export type { PmcChartResult, PmcDataPoint, TssModelInfo };
 
 import { TRPCError } from "@trpc/server";
-import { z } from "zod";
+import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { PmcRepository } from "../repositories/pmc-repository.ts";
-import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+import { CacheTTL, router } from "../trpc.ts";
 
 function requireSensorStore(
   sensorStore: ActivitySensorStore | undefined,
@@ -28,9 +28,10 @@ export const pmcRouter = router({
    * when available, falling back to generic Bannister TRIMP normalization.
    * Derives CTL (42d), ATL (7d), TSB from daily TSS.
    */
-  chart: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
-    .input(z.object({ days: z.number().default(180) }))
-    .query(async ({ ctx, input }): Promise<PmcChartResult> => {
+  chart: selectedChartRangeQuery(
+    "pmc.chart",
+    CacheTTL.LONG,
+    async ({ ctx, range }): Promise<PmcChartResult> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "pmc.chart");
       const repo = new PmcRepository(
         ctx.db,
@@ -39,6 +40,7 @@ export const pmcRouter = router({
         sensorStore,
         ctx.accessWindow,
       );
-      return repo.getChart(input.days);
-    }),
+      return repo.getChart(range);
+    },
+  ),
 });

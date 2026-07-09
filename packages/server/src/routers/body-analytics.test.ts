@@ -192,6 +192,42 @@ describe("bodyAnalyticsRouter", () => {
       expect(result.prediction?.periodDeltas).toBeDefined();
     });
 
+    it("uses a lower date bound for finite selected ranges", async () => {
+      const sensorStore = makeMockSensorStore([]);
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.weightOverview({ days: 90, endDate: "2026-03-15" });
+
+      const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+      const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
+      expect(queryText).toContain("subtractDays(toDate({endDate:String}), {days:UInt32})");
+      expect(queryParams).toMatchObject({ endDate: "2026-03-15", days: 90 });
+    });
+
+    it("omits the lower date bound when days is null", async () => {
+      const sensorStore = makeMockSensorStore([]);
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.weightOverview({ days: null, endDate: "2026-03-15" });
+
+      const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+      const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
+      expect(queryText).toContain("WHERE user_id = {userId:UUID}");
+      expect(queryText).not.toContain("subtractDays");
+      expect(queryParams).toMatchObject({ endDate: "2026-03-15" });
+      expect(queryParams).not.toHaveProperty("days");
+    });
+
     it("propagates the underlying error when the smoothed weight fetch fails", async () => {
       const sensorStore = makeMockSensorStore([]);
       sensorStore.query = vi.fn().mockRejectedValue(new Error("connection reset"));
@@ -338,6 +374,26 @@ describe("bodyAnalyticsRouter", () => {
       expect(result.goal).toBeNull();
       expect(result.ratePerWeek).not.toBeNull();
       expect(captureException).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("recomposition selected range", () => {
+    it("omits the lower date bound when days is null", async () => {
+      const sensorStore = makeMockSensorStore([]);
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.recomposition({ days: null, endDate: "2026-03-15" });
+
+      const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+      const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
+      expect(queryText).toContain("body_fat_pct IS NOT NULL");
+      expect(queryText).not.toContain("subtractDays");
+      expect(queryParams).not.toHaveProperty("days");
     });
   });
 

@@ -8,6 +8,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UnitContext } from "../../lib/unitContext.ts";
 
 const capturedOptions: Array<Record<string, unknown>> = [];
+const state = vi.hoisted<{
+  queryCalls: Array<{ name: string; input: unknown }>;
+  selectedDays: number | null;
+}>(() => ({
+  queryCalls: [],
+  selectedDays: 90,
+}));
 
 vi.mock("echarts-for-react", () => ({
   default: (props: { option: Record<string, unknown> }) => {
@@ -82,7 +89,7 @@ let dynamicsQuery: QueryResult<typeof mockDynamicsData> = {
 };
 
 vi.mock("../../lib/trainingDaysContext.ts", () => ({
-  useTrainingDays: () => ({ days: 90 }),
+  useTrainingDays: () => ({ days: state.selectedDays }),
 }));
 
 vi.mock("../../lib/trpc.ts", () => ({
@@ -93,11 +100,26 @@ vi.mock("../../lib/trpc.ts", () => ({
       },
     }),
     durationCurves: {
-      paceCurve: { useQuery: () => paceCurveQuery },
+      paceCurve: {
+        useQuery: (input: unknown) => {
+          state.queryCalls.push({ name: "paceCurve", input });
+          return paceCurveQuery;
+        },
+      },
     },
     running: {
-      paceTrend: { useQuery: () => paceTrendQuery },
-      dynamics: { useQuery: () => dynamicsQuery },
+      paceTrend: {
+        useQuery: (input: unknown) => {
+          state.queryCalls.push({ name: "paceTrend", input });
+          return paceTrendQuery;
+        },
+      },
+      dynamics: {
+        useQuery: (input: unknown) => {
+          state.queryCalls.push({ name: "dynamics", input });
+          return dynamicsQuery;
+        },
+      },
     },
     activity: {
       list: { useQuery: () => ({ data: { items: [], totalCount: 0 }, isLoading: false }) },
@@ -129,6 +151,8 @@ async function importRunningTab() {
 describe("RunningTab", () => {
   beforeEach(() => {
     mockNavigate.mockReset();
+    state.queryCalls.length = 0;
+    state.selectedDays = 90;
     paceCurveQuery = { data: mockPaceCurveData, isLoading: false, error: null };
     paceTrendQuery = { data: mockPaceTrendData, isLoading: false, error: null };
     dynamicsQuery = { data: mockDynamicsData, isLoading: false, error: null };
@@ -136,6 +160,34 @@ describe("RunningTab", () => {
 
   afterEach(() => {
     cleanup();
+  });
+
+  describe("selected range queries", () => {
+    it("uses the selected finite days for every chart query", async () => {
+      state.selectedDays = 30;
+
+      const RunningTab = await importRunningTab();
+      renderWithUnits(<RunningTab />);
+
+      expect(state.queryCalls).toEqual([
+        { name: "paceCurve", input: { days: 30 } },
+        { name: "paceTrend", input: { days: 30 } },
+        { name: "dynamics", input: { days: 30 } },
+      ]);
+    });
+
+    it("passes null for All to every selected-range chart query", async () => {
+      state.selectedDays = null;
+
+      const RunningTab = await importRunningTab();
+      renderWithUnits(<RunningTab />);
+
+      expect(state.queryCalls).toEqual([
+        { name: "paceCurve", input: { days: null } },
+        { name: "paceTrend", input: { days: null } },
+        { name: "dynamics", input: { days: null } },
+      ]);
+    });
   });
 
   describe("RunningDynamicsTable unit display", () => {

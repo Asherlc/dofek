@@ -1,5 +1,10 @@
 import type { Database } from "dofek/db";
 import { z } from "zod";
+import {
+  clickHouseIntervalDayLowerBound,
+  type RangeDays,
+  rangeDaysParams,
+} from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 
@@ -189,7 +194,8 @@ export class RunningRepository {
   }
 
   /** Running dynamics per activity: cadence, stride length, stance time, vertical oscillation, pace, distance. */
-  async getDynamics(days: number): Promise<RunningDynamicsActivity[]> {
+  async getDynamics(days: RangeDays): Promise<RunningDynamicsActivity[]> {
+    const rangeFilter = clickHouseIntervalDayLowerBound(days, "started_at");
     const rows = await this.#sensorStore.query(
       dynamicsRowSchema,
       `SELECT
@@ -204,7 +210,7 @@ export class RunningRepository {
         total_distance
       FROM analytics.activity_summary
       WHERE user_id = {userId:UUID}
-        AND started_at > now() - INTERVAL {days:Int32} DAY
+        ${rangeFilter}
         AND activity_type IN {runningTypes:Array(String)}
         AND avg_speed > 0
         AND avg_cadence > 0
@@ -212,7 +218,7 @@ export class RunningRepository {
       {
         userId: this.#userId,
         timezone: this.#timezone,
-        days,
+        ...rangeDaysParams(days),
         runningTypes: [...RUNNING_TYPES],
       },
     );
@@ -239,7 +245,8 @@ export class RunningRepository {
   }
 
   /** Pace trend per running activity: average pace, distance, duration. */
-  async getPaceTrend(days: number): Promise<PaceTrendActivity[]> {
+  async getPaceTrend(days: RangeDays): Promise<PaceTrendActivity[]> {
+    const rangeFilter = clickHouseIntervalDayLowerBound(days, "started_at");
     const rows = await this.#sensorStore.query(
       paceTrendRowSchema,
       `SELECT
@@ -251,7 +258,7 @@ export class RunningRepository {
         toInt32(dateDiff('second', started_at, ended_at)) AS duration_seconds
       FROM analytics.activity_summary
       WHERE user_id = {userId:UUID}
-        AND started_at > now() - INTERVAL {days:Int32} DAY
+        ${rangeFilter}
         AND activity_type IN {runningTypes:Array(String)}
         AND avg_speed > 0
         AND ended_at IS NOT NULL
@@ -259,7 +266,7 @@ export class RunningRepository {
       {
         userId: this.#userId,
         timezone: this.#timezone,
-        days,
+        ...rangeDaysParams(days),
         runningTypes: [...RUNNING_TYPES],
       },
     );

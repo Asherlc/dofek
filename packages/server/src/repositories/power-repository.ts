@@ -9,6 +9,7 @@ import {
 import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import type { Database } from "dofek/db";
 import { z } from "zod";
+import { ChartRange } from "../lib/chart-range.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 
@@ -54,7 +55,7 @@ export class PowerRepository {
    * Reads from the pre-computed activity_power_curve read model when available,
    * falling back to raw sample fetch + client-side computation.
    */
-  async getPowerCurve(days: number): Promise<{
+  async getPowerCurve(range: ChartRange): Promise<{
     points: {
       durationSeconds: number;
       label: string;
@@ -63,7 +64,7 @@ export class PowerRepository {
     }[];
     model: CriticalPowerModel | null;
   }> {
-    if ((await this.#loadRawActivityCount(days)) === 0) {
+    if ((await this.#loadRawActivityCount(range)) === 0) {
       return { points: [], model: null };
     }
 
@@ -83,12 +84,12 @@ export class PowerRepository {
       WHERE power_curve.user_id = {userId:UUID}
         AND power_curve.is_deleted = 0
         AND has({activityTypes:Array(String)}, activity_summary.activity_type)
-        AND power_curve.started_at > now() - INTERVAL {days:Int32} DAY
+        ${range.clickHouseTimestampAfter("power_curve.started_at")}
       ORDER BY power_curve.duration_seconds`,
       {
         userId: this.#userId,
         timezone: this.#timezone,
-        days,
+        ...range.clickHouseParams(),
         activityTypes: CYCLING_TYPES,
       },
     );
@@ -126,7 +127,7 @@ export class PowerRepository {
 
     // Fall back to raw sample fetch + client-side computation
     const samples = await this.#sensorStore.getPowerCurveSamples(
-      days,
+      range.days,
       this.#userId,
       this.#timezone,
       CYCLING_TYPES,
@@ -149,12 +150,12 @@ export class PowerRepository {
    * eFTP trend: estimated Functional Threshold Power over time.
    * Uses per-activity Normalized Power (NP) x 0.95.
    */
-  async getEftpTrend(days: number): Promise<{
+  async getEftpTrend(range: ChartRange): Promise<{
     trend: { date: string; eftp: number; activityName: string | null }[];
     currentEftp: number | null;
     model: CriticalPowerModel | null;
   }> {
-    if ((await this.#loadRawActivityCount(days)) === 0) {
+    if ((await this.#loadRawActivityCount(range)) === 0) {
       return { trend: [], currentEftp: null, model: null };
     }
 
@@ -167,14 +168,14 @@ export class PowerRepository {
         round(normalized_power, 1) AS normalized_power
       FROM analytics.activity_summary
       WHERE user_id = {userId:UUID}
-        AND started_at > now() - INTERVAL {days:Int32} DAY
+        ${range.clickHouseTimestampAfter("started_at")}
         AND normalized_power IS NOT NULL
         AND has({activityTypes:Array(String)}, activity_type)
       ORDER BY started_at`,
       {
         userId: this.#userId,
         timezone: this.#timezone,
-        days,
+        ...range.clickHouseParams(),
         activityTypes: CYCLING_TYPES,
       },
     );
@@ -188,7 +189,7 @@ export class PowerRepository {
           }))
         : computeNormalizedPower(
             await this.#sensorStore.getNormalizedPowerSamples(
-              days,
+              range.days,
               this.#userId,
               this.#timezone,
               CYCLING_TYPES,
@@ -202,7 +203,7 @@ export class PowerRepository {
     }));
 
     // Compute current eFTP via CP model from last 90 days' power curve
-    const { model } = await this.getPowerCurve(90);
+    const { model } = await this.getPowerCurve(ChartRange.fromDays(90));
 
     // Fall back to 95% of best recent 20-min power if CP model can't fit
     let currentEftp: number | null = model?.cp ?? null;
@@ -217,10 +218,10 @@ export class PowerRepository {
     return { trend, currentEftp, model };
   }
 
-  async #loadRawActivityCount(days: number): Promise<number> {
+  async #loadRawActivityCount(range: ChartRange): Promise<number> {
     if (!this.#db) return 1;
     return activityRepositoryFor(this.#db, this.#userId).countVisibleInWindow({
-      days,
+      days: range.days,
       activityTypes: CYCLING_TYPES,
     });
   }

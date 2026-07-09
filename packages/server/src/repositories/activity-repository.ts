@@ -3,7 +3,11 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
-import { timestampWindowStart } from "../lib/date-window.ts";
+import {
+  postgresCurrentTimestampRangeLowerBound,
+  postgresEndDateTimestampRangeLowerBound,
+  type RangeDays,
+} from "../lib/date-window.ts";
 import { osmTilePreview } from "../lib/osm-tile.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivityRow } from "../models/activity.ts";
@@ -170,13 +174,13 @@ export interface ActivitySensorStore {
     activityIds: string[],
   ): Promise<z.infer<typeof activitySummaryReadModelRowSchema>[]>;
   getPowerCurveSamples(
-    days: number,
+    days: number | null,
     userId: string,
     timezone: string,
     activityTypes: readonly string[],
   ): Promise<z.infer<typeof powerCurveSampleSchema>[]>;
   getNormalizedPowerSamples(
-    days: number,
+    days: number | null,
     userId: string,
     timezone: string,
     activityTypes: readonly string[],
@@ -188,12 +192,12 @@ export interface ActivitySensorStore {
     timezone: string,
   ): Promise<z.infer<typeof vo2MaxEstimateSchema>[]>;
   getHeartRateCurveRows(
-    days: number,
+    days: RangeDays,
     userId: string,
     timezone: string,
   ): Promise<Array<{ duration_seconds: number; best_hr: number; activity_date: string }>>;
   getPaceCurveRows(
-    days: number,
+    days: RangeDays,
     userId: string,
     timezone: string,
   ): Promise<Array<{ duration_seconds: number; best_pace: number; activity_date: string }>>;
@@ -234,7 +238,7 @@ export class StreamPoint {
 
 /** Input parameters for the activity list query. */
 export interface ListInput {
-  days: number;
+  days: RangeDays;
   endDate: string;
   limit: number;
   offset: number;
@@ -242,7 +246,7 @@ export interface ListInput {
 }
 
 export interface CountVisibleInWindowInput {
-  days: number;
+  days: RangeDays;
   activityTypes?: string[];
   requireEndedAt?: boolean;
   accessWindow?: AccessWindow;
@@ -334,13 +338,17 @@ export class ActivityRepository extends BaseRepository {
         ? sql`AND started_at >= ${accessWindow.startDate}::timestamptz
               AND started_at < ${accessWindow.endDateExclusive}::timestamptz`
         : sql``;
+    const dateWindowPredicate = postgresCurrentTimestampRangeLowerBound(
+      input.days,
+      sql`started_at`,
+    );
 
     const rows = await this.query(
       z.object({ activity_count: z.coerce.number() }),
       sql`SELECT count(*)::int AS activity_count
           FROM fitness.v_activity
           WHERE user_id = ${this.userId}::uuid
-            AND started_at > CURRENT_TIMESTAMP - ${input.days}::int * INTERVAL '1 day'
+            ${dateWindowPredicate}
             ${endedAtPredicate}
             ${activityTypePredicate}
             ${accessWindowPredicate}`,
@@ -367,6 +375,11 @@ export class ActivityRepository extends BaseRepository {
             sql`, `,
           )})`
         : sql``;
+    const rangeFilter = postgresEndDateTimestampRangeLowerBound(
+      input.days,
+      sql`a.started_at`,
+      input.endDate,
+    );
     return this.query(
       activityListRowSchema,
       sql`SELECT
@@ -385,7 +398,7 @@ export class ActivityRepository extends BaseRepository {
             COUNT(*) OVER()::int AS total_count
           FROM fitness.v_activity a
           WHERE a.user_id = ${this.userId}
-            AND a.started_at > ${timestampWindowStart(input.endDate, input.days)}
+            ${rangeFilter}
             ${typeFilter}
             ${this.timestampAccessPredicate(sql`a.started_at`)}
           ORDER BY a.started_at DESC

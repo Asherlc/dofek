@@ -13,10 +13,12 @@ import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateAccessPredicate } from "../billing/entitlement.ts";
+import { selectedChartDateRangeQuery } from "../lib/chart-range.ts";
 import { computeCurrentStrain } from "../lib/current-strain.ts";
 import {
+  clickHouseWindowStartPredicate,
   dateWindowEnd,
-  dateWindowStart,
+  dateWindowStartPredicate,
   dateWindowStartString,
   endDateSchema,
 } from "../lib/date-window.ts";
@@ -206,10 +208,11 @@ export const recoveryRouter = router({
    * Rolling 7-day coefficient of variation of HRV (stddev/mean * 100).
    * Fetches extra warmup rows to ensure window functions have data from day 1.
    */
-  hrvVariability: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
-    .input(z.object({ days: z.number().default(90), endDate: endDateSchema }))
-    .query(async ({ ctx, input }): Promise<HrvVariabilityRow[]> => {
-      const queryDays = input.days + 7;
+  hrvVariability: selectedChartDateRangeQuery(
+    "recovery.hrvVariability",
+    CacheTTL.MEDIUM,
+    async ({ ctx, input, range }): Promise<HrvVariabilityRow[]> => {
+      const queryRange = range.withWarmupDays(7);
       const hrvRowSchema = z.object({
         date: dateStringSchema,
         hrv: z.coerce.number().nullable(),
@@ -225,7 +228,7 @@ export const recoveryRouter = router({
                 hrv
               FROM fitness.v_daily_metrics
               WHERE user_id = ${ctx.userId}
-                AND date > ${dateWindowStart(input.endDate, queryDays)}
+                ${dateWindowStartPredicate(sql`date`, input.endDate, queryRange.days)}
                 AND date <= ${dateWindowEnd(input.endDate)}
                 AND hrv IS NOT NULL
                 ${dateAccessPredicate(ctx.accessWindow, sql`date`)}
@@ -243,7 +246,8 @@ export const recoveryRouter = router({
                 ELSE NULL
               END AS rolling_cv
             FROM daily
-            WHERE date > ${dateWindowStart(input.endDate, input.days)}
+            WHERE TRUE
+              ${dateWindowStartPredicate(sql`date`, input.endDate, range.days)}
             ORDER BY date ASC`,
       );
 
@@ -255,7 +259,8 @@ export const recoveryRouter = router({
         rollingMean:
           row.rolling_mean != null ? Math.round(Number(row.rolling_mean) * 10) / 10 : null,
       }));
-    }),
+    },
+  ),
 
   /**
    * Acute:Chronic Workload Ratio.
@@ -263,9 +268,10 @@ export const recoveryRouter = router({
    * Daily load = sum of (duration_min * avg_hr / max_hr) per activity.
    * Acute = 7-day sum, Chronic = 28-day average of daily load.
    */
-  workloadRatio: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
-    .input(z.object({ days: z.number().default(90), endDate: endDateSchema }))
-    .query(async ({ ctx, input }): Promise<WorkloadRatioResult> => {
+  workloadRatio: selectedChartDateRangeQuery(
+    "recovery.workloadRatio",
+    CacheTTL.MEDIUM,
+    async ({ ctx, input, range }): Promise<WorkloadRatioResult> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "recovery.workloadRatio");
       const workloadRowSchema = z.object({
         date: z.string(),
@@ -279,6 +285,7 @@ export const recoveryRouter = router({
           ? `AND strain.date >= toDate({accessStartDate:String})
           AND strain.date < toDate({accessEndDateExclusive:String})`
           : "";
+      const outputWindowStart = range.windowStartString(input.endDate);
       const rows = await sensorStore.query(
         workloadRowSchema,
         `SELECT
@@ -289,7 +296,11 @@ export const recoveryRouter = router({
           strain.workload_ratio AS workload_ratio
         FROM analytics.daily_strain AS strain FINAL
         WHERE strain.user_id = {userId:UUID}
-          AND strain.date > toDate({outputWindowStart:String})
+          ${clickHouseWindowStartPredicate({
+            expression: "strain.date",
+            days: range.days,
+            paramName: "outputWindowStart",
+          })}
           AND strain.date <= toDate({endDate:String})
           ${accessWindowClause}
         ORDER BY date ASC`,
@@ -297,7 +308,7 @@ export const recoveryRouter = router({
           userId: ctx.userId,
           timezone: ctx.timezone,
           endDate: input.endDate,
-          outputWindowStart: dateWindowStartString(input.endDate, input.days),
+          ...(outputWindowStart === undefined ? {} : { outputWindowStart }),
           ...(ctx.accessWindow?.kind === "limited"
             ? {
                 accessStartDate: ctx.accessWindow.startDate,
@@ -328,23 +339,25 @@ export const recoveryRouter = router({
         displayedStrain: displayed?.strain ?? 0,
         displayedDate: displayed?.date ?? null,
       };
-    }),
+    },
+  ),
 
   /**
    * Sleep analytics: stage percentages, rolling avg duration, sleep debt.
    * Excludes naps. Sleep debt = cumulative deficit vs 8hr target over 14 days.
    */
-  sleepAnalytics: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
-    .input(z.object({ days: z.number().default(90), endDate: z.string().optional() }))
-    .query(async ({ ctx, input }): Promise<SleepAnalyticsResult> => {
+  sleepAnalytics: selectedChartDateRangeQuery(
+    "recovery.sleepAnalytics",
+    CacheTTL.MEDIUM,
+    async ({ ctx, input, range }): Promise<SleepAnalyticsResult> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "recovery.sleepAnalytics");
-      const endDate = input.endDate ?? new Date().toISOString().slice(0, 10);
+      const endDate = input.endDate;
       const rows = await fetchSleepNights({
         sensorStore,
         userId: ctx.userId,
         timezone: ctx.timezone,
         endDate,
-        days: input.days,
+        days: range.days,
         accessWindow: ctx.accessWindow,
         order: "asc",
       });
@@ -367,7 +380,10 @@ export const recoveryRouter = router({
         const windowRows = rows.slice(Math.max(0, rowIndex - 6), rowIndex + 1);
         const rollingDurations = windowRows.map(computeSleepMinutes);
         const rollingAvgDuration =
-          rollingDurations.reduce((sum, duration) => sum + duration, 0) / rollingDurations.length;
+          rollingDurations.length > 0
+            ? rollingDurations.reduce((sum, duration) => sum + duration, 0) /
+              rollingDurations.length
+            : 0;
         return {
           date: row.date,
           durationMinutes,
@@ -406,7 +422,8 @@ export const recoveryRouter = router({
         nightly,
         sleepDebt: Math.round(sleepDebt),
       };
-    }),
+    },
+  ),
 
   /**
    * Composite readiness score 0-100 modeled after Whoop's recovery algorithm:
@@ -414,15 +431,16 @@ export const recoveryRouter = router({
    *   sleep efficiency (15%), respiratory rate vs baseline (15%).
    * Uses asymmetric sigmoid mapping instead of linear z-score for more natural scaling.
    */
-  readinessScore: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
-    .input(z.object({ days: z.number().default(30), endDate: endDateSchema }))
-    .query(async ({ ctx, input }): Promise<ReadinessRow[]> => {
+  readinessScore: selectedChartDateRangeQuery(
+    "recovery.readinessScore",
+    CacheTTL.MEDIUM,
+    async ({ ctx, input, range }): Promise<ReadinessRow[]> => {
       // Load personalized readiness weights
       const storedParams = await loadPersonalizedParams(ctx.db, ctx.userId);
       const effective = getEffectiveParams(storedParams);
       const weights = effective.readinessWeights;
 
-      const queryDays = input.days + 30;
+      const queryRange = range.withWarmupDays(30);
 
       // Fetch HRV + resting HR + respiratory rate baselines and sleep efficiency
       const readinessRowSchema = z.object({
@@ -445,6 +463,7 @@ export const recoveryRouter = router({
             AND recovery_inputs.date >= toDate({accessStartDate:String})
             AND recovery_inputs.date < toDate({accessEndDateExclusive:String})`
           : "";
+      const windowStart = queryRange.windowStartString(input.endDate);
       const combinedRows = await sensorStore.query(
         readinessRowSchema,
         `SELECT
@@ -461,13 +480,17 @@ export const recoveryRouter = router({
           efficiency_pct
         FROM analytics.daily_recovery AS recovery_inputs FINAL
         WHERE recovery_inputs.user_id = {userId:UUID}
-          AND recovery_inputs.date > toDate({windowStart:String})
+          ${clickHouseWindowStartPredicate({
+            expression: "recovery_inputs.date",
+            days: queryRange.days,
+            paramName: "windowStart",
+          })}
           AND recovery_inputs.date <= toDate({endDate:String})
           ${accessWindowClause}
         ORDER BY recovery_inputs.date ASC`,
         {
           userId: ctx.userId,
-          windowStart: dateWindowStartString(input.endDate, queryDays),
+          ...(windowStart === undefined ? {} : { windowStart }),
           endDate: input.endDate,
           ...(ctx.accessWindow?.kind === "limited"
             ? {
@@ -478,14 +501,12 @@ export const recoveryRouter = router({
         },
         { priority: "dashboard" },
       );
-      const cutoffDate = new Date(input.endDate);
-      cutoffDate.setDate(cutoffDate.getDate() - input.days);
-      const cutoffStr = cutoffDate.toISOString().split("T")[0] ?? "";
+      const cutoffDate = range.windowStartString(input.endDate);
 
       const results: ReadinessRow[] = [];
 
       for (const metrics of combinedRows) {
-        if (metrics.date <= cutoffStr) continue;
+        if (cutoffDate !== undefined && metrics.date <= cutoffDate) continue;
         if (metrics.date > input.endDate) continue;
 
         // HRV score: higher HRV = better recovery (positive z = good)
@@ -552,7 +573,8 @@ export const recoveryRouter = router({
       }
 
       return results;
-    }),
+    },
+  ),
 
   /**
    * Daily strain target based on current readiness and training loads.

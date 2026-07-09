@@ -6,6 +6,7 @@ import { GradeAdjustedPaceTable } from "../../components/GradeAdjustedPaceTable.
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import { WalkingBiomechanicsChart } from "../../components/WalkingBiomechanicsChart.tsx";
+import { selectedRangeQueryInput } from "../../lib/timeRange.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
 import { TRAINING_SLOW_QUERY_OPTIONS } from "../../lib/trainingQueryOptions.ts";
 import { trpc } from "../../lib/trpc.ts";
@@ -22,22 +23,21 @@ function shouldShowQueryError(query: { error: unknown; data: unknown }): boolean
 
 function HikingTab() {
   const { days } = useTrainingDays();
-  const hikingQueryDays = Math.max(days, 365);
 
   const gradeAdjustedPace = trpc.hiking.gradeAdjustedPace.useQuery(
-    { days },
+    selectedRangeQueryInput(days),
     TRAINING_SLOW_QUERY_OPTIONS,
   );
   const elevation = trpc.hiking.elevationProfile.useQuery(
-    { days: hikingQueryDays },
+    selectedRangeQueryInput(days),
     TRAINING_SLOW_QUERY_OPTIONS,
   );
   const biomechanics = trpc.hiking.walkingBiomechanics.useQuery(
-    { days },
+    selectedRangeQueryInput(days),
     TRAINING_SLOW_QUERY_OPTIONS,
   );
   const routeComparison = trpc.hiking.activityComparison.useQuery(
-    { days: hikingQueryDays },
+    selectedRangeQueryInput(days),
     TRAINING_SLOW_QUERY_OPTIONS,
   );
 

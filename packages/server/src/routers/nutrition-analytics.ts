@@ -1,6 +1,6 @@
-import { z } from "zod";
+import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { NutritionAnalyticsRepository } from "../repositories/nutrition-analytics-repository.ts";
-import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+import { CacheTTL, router } from "../trpc.ts";
 
 // ── Types (kept here for backward compatibility with web/mobile imports) ─
 
@@ -49,9 +49,10 @@ export interface MacroRatioRow {
 // ── Router ───────────────────────────────────────────────────────────
 
 export const nutritionAnalyticsRouter = router({
-  micronutrientAdequacy: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
-    .input(z.object({ days: z.number().default(30) }))
-    .query(async ({ ctx, input }): Promise<MicronutrientAdequacyRow[]> => {
+  micronutrientAdequacy: selectedChartRangeQuery(
+    "nutritionAnalytics.micronutrientAdequacy",
+    CacheTTL.LONG,
+    async ({ ctx, range }): Promise<MicronutrientAdequacyRow[]> => {
       const repo = new NutritionAnalyticsRepository(
         ctx.db,
         ctx.userId,
@@ -59,13 +60,15 @@ export const nutritionAnalyticsRouter = router({
         ctx.accessWindow,
         ctx.sensorStore,
       );
-      const models = await repo.getMicronutrientAdequacy(input.days);
+      const models = await repo.getMicronutrientAdequacy(range.days);
       return models.map((model) => model.toDetail());
-    }),
+    },
+  ),
 
-  caloricBalance: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
-    .input(z.object({ days: z.number().default(30) }))
-    .query(async ({ ctx, input }): Promise<CaloricBalanceRow[]> => {
+  caloricBalance: selectedChartRangeQuery(
+    "nutritionAnalytics.caloricBalance",
+    CacheTTL.MEDIUM,
+    async ({ ctx, range }): Promise<CaloricBalanceRow[]> => {
       const repo = new NutritionAnalyticsRepository(
         ctx.db,
         ctx.userId,
@@ -73,13 +76,15 @@ export const nutritionAnalyticsRouter = router({
         ctx.accessWindow,
         ctx.sensorStore,
       );
-      const models = await repo.getCaloricBalance(input.days);
+      const models = await repo.getCaloricBalance(range.days);
       return models.map((model) => model.toDetail());
-    }),
+    },
+  ),
 
-  adaptiveTdee: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
-    .input(z.object({ days: z.number().default(90) }))
-    .query(async ({ ctx, input }): Promise<AdaptiveTdeeResult> => {
+  adaptiveTdee: selectedChartRangeQuery(
+    "nutritionAnalytics.adaptiveTdee",
+    CacheTTL.LONG,
+    async ({ ctx, range }): Promise<AdaptiveTdeeResult> => {
       const repo = new NutritionAnalyticsRepository(
         ctx.db,
         ctx.userId,
@@ -87,13 +92,15 @@ export const nutritionAnalyticsRouter = router({
         ctx.accessWindow,
         ctx.sensorStore,
       );
-      const estimate = await repo.getAdaptiveTdee(input.days);
+      const estimate = await repo.getAdaptiveTdee(range.days);
       return estimate.toDetail();
-    }),
+    },
+  ),
 
-  macroRatios: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
-    .input(z.object({ days: z.number().default(30) }))
-    .query(async ({ ctx, input }): Promise<MacroRatioRow[]> => {
+  macroRatios: selectedChartRangeQuery(
+    "nutritionAnalytics.macroRatios",
+    CacheTTL.MEDIUM,
+    async ({ ctx, range }): Promise<MacroRatioRow[]> => {
       const repo = new NutritionAnalyticsRepository(
         ctx.db,
         ctx.userId,
@@ -101,7 +108,8 @@ export const nutritionAnalyticsRouter = router({
         ctx.accessWindow,
         ctx.sensorStore,
       );
-      const models = await repo.getMacroRatios(input.days);
+      const models = await repo.getMacroRatios(range.days);
       return models.map((model) => model.toDetail());
-    }),
+    },
+  ),
 });

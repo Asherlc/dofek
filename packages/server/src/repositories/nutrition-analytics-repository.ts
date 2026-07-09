@@ -3,6 +3,11 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
+import {
+  currentDateRangePredicate,
+  type RangeDays,
+  rangeDaysOrNullAdd,
+} from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import {
   type BodyClickHouseStore,
@@ -318,7 +323,7 @@ export class NutritionAnalyticsRepository extends BaseRepository {
   }
 
   /** Micronutrient adequacy: average daily intake as % of RDA. */
-  async getMicronutrientAdequacy(days: number): Promise<MicronutrientAdequacy[]> {
+  async getMicronutrientAdequacy(days: RangeDays): Promise<MicronutrientAdequacy[]> {
     const rows = await executeWithSchema(
       this.db,
       z.object({
@@ -341,7 +346,7 @@ export class NutritionAnalyticsRepository extends BaseRepository {
             JOIN fitness.nutrient n ON n.id = fen.nutrient_id
             WHERE fe.user_id = ${this.userId}
               AND fe.confirmed = true
-              AND fe.date > CURRENT_DATE - ${days}::int
+              ${currentDateRangePredicate(sql`fe.date`, days)}
               AND n.rda IS NOT NULL
               ${this.dateAccessPredicate(sql`fe.date`)}
             GROUP BY fe.date, n.id, n.display_name, n.unit, n.rda
@@ -372,8 +377,8 @@ export class NutritionAnalyticsRepository extends BaseRepository {
   }
 
   /** Caloric balance: daily calories in vs estimated expenditure. */
-  async getCaloricBalance(days: number): Promise<CaloricBalanceDay[]> {
-    const queryDays = days + 7; // extra for rolling average warmup
+  async getCaloricBalance(days: RangeDays): Promise<CaloricBalanceDay[]> {
+    const queryDays = rangeDaysOrNullAdd(days, 7); // extra for rolling average warmup
 
     const rows = await this.query(
       caloricBalanceRowSchema,
@@ -381,7 +386,7 @@ export class NutritionAnalyticsRepository extends BaseRepository {
             SELECT date, SUM(calories) AS calories_in
             FROM fitness.v_nutrition_daily
             WHERE user_id = ${this.userId}
-              AND date > CURRENT_DATE - ${queryDays}::int
+              ${currentDateRangePredicate(sql`date`, queryDays)}
               ${this.dateAccessPredicate(sql`date`)}
             GROUP BY date
           ),
@@ -392,7 +397,7 @@ export class NutritionAnalyticsRepository extends BaseRepository {
               basal_energy_kcal
             FROM fitness.v_daily_metrics
             WHERE user_id = ${this.userId}
-              AND date > CURRENT_DATE - ${queryDays}::int
+              ${currentDateRangePredicate(sql`date`, queryDays)}
               ${this.dateAccessPredicate(sql`date`)}
           ),
           combined AS (
@@ -416,7 +421,8 @@ export class NutritionAnalyticsRepository extends BaseRepository {
               ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
             ) AS rolling_avg_balance
           FROM combined
-          WHERE date > CURRENT_DATE - ${days}::int
+          WHERE true
+            ${currentDateRangePredicate(sql`date`, days)}
           ORDER BY date ASC`,
     );
 
@@ -436,7 +442,7 @@ export class NutritionAnalyticsRepository extends BaseRepository {
   }
 
   /** Raw daily calorie + weight data for adaptive TDEE estimation. */
-  async getAdaptiveTdeeData(days: number): Promise<AdaptiveTdeeDataPoint[]> {
+  async getAdaptiveTdeeData(days: RangeDays): Promise<AdaptiveTdeeDataPoint[]> {
     const [nutritionRows, weightRows] = await Promise.all([
       this.query(
         z.object({
@@ -446,7 +452,7 @@ export class NutritionAnalyticsRepository extends BaseRepository {
         sql`SELECT date, SUM(calories) AS calories_in
             FROM fitness.v_nutrition_daily
             WHERE user_id = ${this.userId}
-              AND date > CURRENT_DATE - ${days}::int
+              ${currentDateRangePredicate(sql`date`, days)}
               ${this.dateAccessPredicate(sql`date`)}
             GROUP BY date
             ORDER BY date ASC`,
@@ -470,7 +476,7 @@ export class NutritionAnalyticsRepository extends BaseRepository {
   }
 
   /** Adaptive TDEE estimation using weight smoothing and rolling regression. */
-  async getAdaptiveTdee(days: number): Promise<AdaptiveTdeeEstimate> {
+  async getAdaptiveTdee(days: RangeDays): Promise<AdaptiveTdeeEstimate> {
     const data = await this.getAdaptiveTdeeData(days);
     const smoothedData = smoothWeightData(data);
     const result = estimateTdee(smoothedData);
@@ -478,7 +484,7 @@ export class NutritionAnalyticsRepository extends BaseRepository {
   }
 
   /** Macro ratio trends: daily protein/carbs/fat split as percentages. */
-  async getMacroRatios(days: number): Promise<MacroRatioDay[]> {
+  async getMacroRatios(days: RangeDays): Promise<MacroRatioDay[]> {
     const [rows, latestBodyMeasurement] = await Promise.all([
       this.query(
         macroRatioRowSchema.omit({ weight_kg: true }),
@@ -491,7 +497,7 @@ export class NutritionAnalyticsRepository extends BaseRepository {
                 nd.fat_g
               FROM fitness.v_nutrition_daily nd
               WHERE nd.user_id = ${this.userId}
-                AND nd.date > CURRENT_DATE - ${days}::int
+                ${currentDateRangePredicate(sql`nd.date`, days)}
                 AND nd.calories > 0
                 ${this.dateAccessPredicate(sql`nd.date`)}
             )

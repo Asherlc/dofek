@@ -9,7 +9,11 @@ import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
-import { dateWindowStartString } from "../lib/date-window.ts";
+import {
+  clickHouseWindowStartPredicate,
+  dateWindowStartStringOrUndefined,
+  type RangeDays,
+} from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorQueryOptions, ActivitySensorStore } from "./activity-repository.ts";
 
@@ -105,7 +109,7 @@ export class StressRepository extends BaseRepository {
   }
 
   async getStressScores(
-    days: number,
+    days: RangeDays,
     endDate: string,
     queryOptions?: ActivitySensorQueryOptions,
   ): Promise<StressResult> {
@@ -129,13 +133,18 @@ export class StressRepository extends BaseRepository {
         efficiency_pct
       FROM analytics.daily_recovery AS recovery_inputs FINAL
       WHERE recovery_inputs.user_id = {userId:UUID}
-        AND recovery_inputs.date > toDate({windowStart:String})
+        ${clickHouseWindowStartPredicate({
+          expression: "recovery_inputs.date",
+          days,
+        })}
         AND recovery_inputs.date <= toDate({endDate:String})
         ${accessWindowClause}
       ORDER BY recovery_inputs.date ASC`,
       {
         userId: this.userId,
-        windowStart: dateWindowStartString(endDate, days),
+        ...(dateWindowStartStringOrUndefined(endDate, days) !== undefined
+          ? { windowStart: dateWindowStartStringOrUndefined(endDate, days) }
+          : {}),
         endDate,
         ...(this.accessWindow.kind === "full"
           ? {}

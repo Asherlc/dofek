@@ -160,6 +160,18 @@ describe("strengthRouter", () => {
       expect(result[0]?.name).toBe("Push Day");
       expect(result[0]?.durationMinutes).toBe(65);
     });
+
+    it("accepts an unbounded selected range", async () => {
+      const caller = makeCaller([]);
+
+      await expect(caller.workoutSummary({ days: null })).resolves.toEqual([]);
+    });
+
+    it("rejects invalid selected range days", async () => {
+      const caller = makeCaller([]);
+
+      await expect(caller.workoutSummary({ days: -1 })).rejects.toThrow();
+    });
   });
 });
 

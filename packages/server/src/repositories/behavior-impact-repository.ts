@@ -1,6 +1,11 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import {
+  currentDateRangePredicate,
+  type RangeDays,
+  rangeDaysOrNullAdd,
+} from "../lib/date-window.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { fetchRestingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
@@ -107,14 +112,14 @@ export class BehaviorImpactRepository {
   }
 
   /** Impact of boolean journal behaviors on next-day readiness. */
-  async getImpactSummary(days: number): Promise<BehaviorImpact[]> {
+  async getImpactSummary(days: RangeDays): Promise<BehaviorImpact[]> {
     const sensorStore = this.#requireSensorStore();
     const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
       sensorStore,
       userId: this.#userId,
       timezone: this.#timezone,
       endDate: new Date().toISOString().slice(0, 10),
-      days: days + 1,
+      days: rangeDaysOrNullAdd(days, 1),
     });
     const rows = await executeWithSchema(
       this.#db,
@@ -134,7 +139,7 @@ export class BehaviorImpactRepository {
             FROM fitness.journal_entry je
             JOIN fitness.journal_question jq ON jq.slug = je.question_slug
             WHERE je.user_id = ${this.#userId}
-              AND je.date >= (CURRENT_DATE - ${days}::int)
+              ${currentDateRangePredicate(sql`je.date`, days, ">=")}
               AND jq.data_type = 'boolean'
           ),
           readiness AS (
@@ -155,7 +160,7 @@ export class BehaviorImpactRepository {
 	            LEFT JOIN resting_heart_rate drhr
 	              ON drhr.date = dm.date
             WHERE dm.user_id = ${this.#userId}
-              AND dm.date >= (CURRENT_DATE - ${days}::int)
+              ${currentDateRangePredicate(sql`dm.date`, days, ">=")}
             GROUP BY dm.date
           ),
           joined AS (

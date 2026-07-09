@@ -1,5 +1,6 @@
 import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import { describe, expect, it, vi } from "vitest";
+import { ChartRange } from "../lib/chart-range.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { PmcRepository } from "./pmc-repository.ts";
 
@@ -108,6 +109,15 @@ function findQueryCall(
 }
 
 describe("PmcRepository", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-09T12:00:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   function expectCyclingOnlyActivityTypes(activityTypes: unknown) {
     expect(activityTypes).toEqual([...CYCLING_ACTIVITY_TYPES]);
     expect(activityTypes).not.toContain("walking");
@@ -119,7 +129,7 @@ describe("PmcRepository", () => {
     it("returns empty data with generic model when no raw activities exist", async () => {
       const { repo } = makeRepoHarness([], [], "UTC", 0);
 
-      const result = await repo.getChart(180);
+      const result = await repo.getChart(ChartRange.fromDays(180));
 
       expect(result.data).toEqual([]);
       expect(result.model).toEqual({
@@ -133,7 +143,7 @@ describe("PmcRepository", () => {
     it("does not scan activity_summary or deduped_sensor when no raw activities exist", async () => {
       const { repo, execute, query } = makeRepoHarness([], [], "UTC", 0);
 
-      const result = await repo.getChart(180);
+      const result = await repo.getChart(ChartRange.fromDays(180));
 
       expect(result.data).toEqual([]);
       expect(execute).toHaveBeenCalledTimes(1);
@@ -147,7 +157,7 @@ describe("PmcRepository", () => {
         "America/Los_Angeles",
       );
 
-      await repo.getChart(30);
+      await repo.getChart(ChartRange.fromDays(30));
 
       const { queryText: activityQuery, params: activityParams } = findQueryCall(
         query,
@@ -173,7 +183,7 @@ describe("PmcRepository", () => {
     it("filters fallback max heart rate baseline to cycling activity types", async () => {
       const { repo, query } = makeRepoHarness([makeActivityRow()], []);
 
-      await repo.getChart(30);
+      await repo.getChart(ChartRange.fromDays(30));
 
       const activityQuery = vi.mocked(query).mock.calls[0]?.[1];
       expect(activityQuery).toContain("SELECT maxIf(max_hr, max_hr > 0)");
@@ -184,7 +194,7 @@ describe("PmcRepository", () => {
     it("extends query history when requested display days exceed the minimum history", async () => {
       const { repo, query } = makeRepoHarness([], [], "UTC", 1);
 
-      await repo.getChart(400);
+      await repo.getChart(ChartRange.fromDays(400));
 
       const { queryText: activityQuery, params: activityParams } = findQueryCall(
         query,
@@ -201,13 +211,91 @@ describe("PmcRepository", () => {
       expect(normalizedPowerParams).toMatchObject({ queryDays: 442 });
     });
 
+    it("applies finite selected-range lower-bound filters with expanded history", async () => {
+      const { repo, query } = makeRepoHarness([], [], "UTC", 1);
+
+      await repo.getChart(ChartRange.fromDays(30));
+
+      const { queryText: activityQuery, params: activityParams } = findQueryCall(
+        query,
+        "CROSS JOIN user_baseline ub",
+      );
+      expect(activityQuery).toContain("asum.started_at > now() - INTERVAL {queryDays:Int32} DAY");
+      expect(activityParams).toHaveProperty("queryDays", 407);
+
+      const { queryText: normalizedPowerQuery, params: normalizedPowerParams } = findQueryCall(
+        query,
+        "normalized_power",
+      );
+      expect(normalizedPowerQuery).toContain("started_at > now() - INTERVAL {queryDays:Int32} DAY");
+      expect(normalizedPowerParams).toHaveProperty("queryDays", 407);
+    });
+
+    it("omits selected-range lower-bound filters when days is null", async () => {
+      const { repo, query } = makeRepoHarness(
+        [makeActivityRow()],
+        [{ activity_id: "activity-1", np: 220 }],
+      );
+
+      await repo.getChart(ChartRange.fromDays(null));
+
+      const { queryText: activityQuery, params: activityParams } = findQueryCall(
+        query,
+        "CROSS JOIN user_baseline ub",
+      );
+      expect(activityQuery).not.toContain(
+        "asum.started_at > now() - INTERVAL {queryDays:Int32} DAY",
+      );
+      expect(activityParams).not.toHaveProperty("queryDays");
+
+      const { queryText: normalizedPowerQuery, params: normalizedPowerParams } = findQueryCall(
+        query,
+        "normalized_power",
+      );
+      expect(normalizedPowerQuery).not.toContain(
+        "started_at > now() - INTERVAL {queryDays:Int32} DAY",
+      );
+      expect(normalizedPowerParams).not.toHaveProperty("queryDays");
+    });
+
+    it("uses days since earliest visible activity for all-history chart length", async () => {
+      const { repo } = makeRepoHarness(
+        [
+          makeActivityRow({ id: "recent-activity", date: "2026-07-07" }),
+          makeActivityRow({ id: "earliest-activity", date: "2026-06-29" }),
+        ],
+        [],
+      );
+
+      const result = await repo.getChart(ChartRange.fromDays(null));
+
+      expect(result.data).toHaveLength(11);
+      expect(result.data[0]?.date).toBe("2026-06-29");
+      expect(result.data.at(-1)?.date).toBe("2026-07-09");
+    });
+
+    it("sorts activity dates before computing all-history chart length", async () => {
+      const { repo } = makeRepoHarness(
+        [
+          makeActivityRow({ id: "recent-activity", date: "2026-07-07" }),
+          makeActivityRow({ id: "middle-activity", date: "2026-07-03" }),
+          makeActivityRow({ id: "earliest-activity", date: "2026-06-29" }),
+        ],
+        [],
+      );
+
+      const result = await repo.getChart(ChartRange.fromDays(null));
+
+      expect(result.data).toHaveLength(11);
+    });
+
     it("reads sample counts from the activity summary read model", async () => {
       const { repo, query } = makeRepoHarness(
         [makeActivityRow()],
         [{ activity_id: "activity-1", np: 220 }],
       );
 
-      await repo.getChart(90);
+      await repo.getChart(ChartRange.fromDays(90));
 
       expect(query).toHaveBeenNthCalledWith(
         1,
@@ -234,7 +322,7 @@ describe("PmcRepository", () => {
         [{ activity_id: "power-activity", np: 220 }],
       );
 
-      const result = await repo.getChart(90);
+      const result = await repo.getChart(ChartRange.fromDays(90));
 
       expect(result.model.ftp).toBe(190);
       expect(result.data.length).toBeGreaterThan(0);

@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { selectedChartRangeQuery } from "../lib/chart-range.ts";
+import { rangeDaysSchema } from "../lib/date-window.ts";
 import { JournalRepository } from "../repositories/journal-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
@@ -10,19 +12,17 @@ export const journalRouter = router({
   }),
 
   /** Get journal entries for a date range, joined with question metadata */
-  entries: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
-    .input(z.object({ days: z.number().default(30) }))
-    .query(async ({ ctx, input }) => {
-      const repository = new JournalRepository(ctx.db, ctx.userId);
-      return repository.listEntries(input.days);
-    }),
+  entries: selectedChartRangeQuery("journal.entries", CacheTTL.SHORT, async ({ ctx, range }) => {
+    const repository = new JournalRepository(ctx.db, ctx.userId);
+    return repository.listEntries(range.days);
+  }),
 
   /** Time-series trend data for a specific question */
   trends: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(
       z.object({
         questionSlug: z.string(),
-        days: z.number().default(90),
+        days: rangeDaysSchema(90),
       }),
     )
     .query(async ({ ctx, input }) => {

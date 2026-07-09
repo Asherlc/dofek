@@ -4,15 +4,27 @@ import { CaloricBalanceChart } from "../components/CaloricBalanceChart.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { MicronutrientChart } from "../components/MicronutrientChart.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
+import {
+  formatTimeRangeLabel,
+  minimumSelectedRangeQueryInput,
+  selectedRangeQueryInput,
+  type TimeRangeDays,
+} from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 
 export function NutritionAnalyticsPage() {
-  const [days, setDays] = useState(30);
+  const [days, setDays] = useState<TimeRangeDays>(30);
 
-  const micronutrients = trpc.nutritionAnalytics.micronutrientAdequacy.useQuery({ days });
-  const caloricBalance = trpc.nutritionAnalytics.caloricBalance.useQuery({ days });
-  const adaptiveTdee = trpc.nutritionAnalytics.adaptiveTdee.useQuery({ days: Math.max(days, 90) });
-  const macroRatios = trpc.nutritionAnalytics.macroRatios.useQuery({ days });
+  const micronutrients = trpc.nutritionAnalytics.micronutrientAdequacy.useQuery(
+    selectedRangeQueryInput(days),
+  );
+  const caloricBalance = trpc.nutritionAnalytics.caloricBalance.useQuery(
+    selectedRangeQueryInput(days),
+  );
+  const adaptiveTdee = trpc.nutritionAnalytics.adaptiveTdee.useQuery(
+    minimumSelectedRangeQueryInput(days, 90),
+  );
+  const macroRatios = trpc.nutritionAnalytics.macroRatios.useQuery(selectedRangeQueryInput(days));
 
   // Compute average protein per kg from macro data
   const latestProteinPerKg = macroRatios.data?.length
@@ -60,7 +72,7 @@ export function NutritionAnalyticsPage() {
       {/* Micronutrient Adequacy */}
       <Section
         title="Micronutrient Adequacy"
-        subtitle={`Average daily intake as % of Recommended Dietary Allowance (${days} days)`}
+        subtitle={`Average daily intake as % of Recommended Dietary Allowance (${formatTimeRangeLabel(days)})`}
       >
         <MicronutrientChart data={micronutrients.data ?? []} loading={micronutrients.isLoading} />
       </Section>

@@ -1249,7 +1249,8 @@ describe("activityRouter", () => {
       });
       const result = await caller.powerZones({ id: "00000000-0000-0000-0000-000000000001" });
 
-      expect(getEftpTrendSpy).toHaveBeenCalledWith(90);
+      const [range] = getEftpTrendSpy.mock.calls[0] ?? [];
+      expect(range?.days).toBe(90);
       expect(getPowerZonesSpy).toHaveBeenCalledWith("00000000-0000-0000-0000-000000000001", 265);
       expect(result).toEqual({ zones, ftp: 265 });
 
