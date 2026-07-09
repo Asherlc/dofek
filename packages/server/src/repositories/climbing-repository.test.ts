@@ -258,7 +258,9 @@ describe("ClimbingRepository", () => {
           attempts: 12,
           sends: 8,
           hardest_boulder_grade: "V4",
+          hardest_boulder_grade_sort_value: 4,
           hardest_route_grade: null,
+          hardest_route_grade_sort_value: null,
         },
         {
           activity_id: "activity-2",
@@ -268,7 +270,9 @@ describe("ClimbingRepository", () => {
           attempts: 5,
           sends: 2,
           hardest_boulder_grade: null,
+          hardest_boulder_grade_sort_value: null,
           hardest_route_grade: "5.10c",
+          hardest_route_grade_sort_value: 5103,
         },
       ]);
 

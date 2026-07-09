@@ -203,6 +203,11 @@ describe("drizzleSchema", () => {
           name: "climbing_entry_grade_lookup_idx",
           unique: false,
         },
+        {
+          columns: ["activity_id", "external_id"],
+          name: "climbing_entry_activity_external_id_idx",
+          unique: true,
+        },
       ]),
     );
   });

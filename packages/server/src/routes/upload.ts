@@ -38,6 +38,14 @@ const uploadRateLimiter = rateLimit({
   message: "Too many upload requests; please try again later",
 });
 
+const uploadStatusRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 1_800,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: "Too many upload status requests; please try again later",
+});
+
 async function setUploadStatus(
   uploadId: string,
   status: UploadStatus,
@@ -96,7 +104,7 @@ async function enqueueImport(
   importQueue: Queue<ImportJobData>,
   filePath: string,
   since: Date,
-  importType: "apple-health" | "strong-csv" | "cronometer-csv" | "kaya-export" | "zos-app",
+  importType: ImportJobData["importType"],
   userId: string,
   opts?: { weightUnit?: "kg" | "lbs"; jobId?: string },
 ): Promise<string> {
@@ -508,7 +516,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
   });
 
   // ── Kaya CSV export upload ──
-  router.get("/kaya-export/status/:jobId", uploadRateLimiter, async (req, res) => {
+  router.get("/kaya-export/status/:jobId", uploadStatusRateLimiter, async (req, res) => {
     const userId = await authenticate(req, res, db);
     if (!userId) return;
 

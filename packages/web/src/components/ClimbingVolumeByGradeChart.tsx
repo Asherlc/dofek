@@ -40,7 +40,7 @@ class ClimbingVolumeByGradeChartModel {
       legend: dofekLegend(true),
       tooltip: dofekTooltip(),
       xAxis: dofekAxis.category({ data: grades }),
-      yAxis: dofekAxis.value({ name: "Entries" }),
+      yAxis: dofekAxis.value({ name: "Attempts and sends" }),
       series: [
         dofekSeries.bar(
           "Attempts",

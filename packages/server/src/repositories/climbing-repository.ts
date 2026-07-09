@@ -125,7 +125,9 @@ const sessionSummaryRowSchema = z.object({
   attempts: z.coerce.number(),
   sends: z.coerce.number(),
   hardest_boulder_grade: z.string().nullable(),
+  hardest_boulder_grade_sort_value: z.coerce.number().nullable(),
   hardest_route_grade: z.string().nullable(),
+  hardest_route_grade_sort_value: z.coerce.number().nullable(),
 });
 
 const climbingGradeSortSql = sql`
@@ -152,6 +154,15 @@ const climbingGradeSortSql = sql`
 `;
 
 export class ClimbingRepository extends BaseRepository {
+  #activityWindowPredicate(days: number) {
+    return sql`
+      a.user_id = ${this.userId}
+      AND a.activity_type IN ('climbing', 'rock_climbing')
+      AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+      ${this.timestampAccessPredicate(sql`a.started_at`)}
+    `;
+  }
+
   async getGradeProgression(days: number): Promise<ClimbingGradeProgression[]> {
     const rows = await executeWithSchema(
       this.db,
@@ -169,10 +180,7 @@ export class ClimbingRepository extends BaseRepository {
               ) AS grade_rank
             FROM fitness.v_activity a
             JOIN fitness.climbing_entry ce ON ce.activity_id = ANY(a.member_activity_ids)
-            WHERE a.user_id = ${this.userId}
-              AND a.activity_type IN ('climbing', 'rock_climbing')
-              AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-              ${this.timestampAccessPredicate(sql`a.started_at`)}
+            WHERE ${this.#activityWindowPredicate(days)}
               AND ce.sent = true
               AND ${climbingGradeSortSql} IS NOT NULL
           )
@@ -207,10 +215,7 @@ export class ClimbingRepository extends BaseRepository {
             COUNT(*) FILTER (WHERE ce.sent)::int AS sends
           FROM fitness.v_activity a
           JOIN fitness.climbing_entry ce ON ce.activity_id = ANY(a.member_activity_ids)
-          WHERE a.user_id = ${this.userId}
-            AND a.activity_type IN ('climbing', 'rock_climbing')
-            AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-            ${this.timestampAccessPredicate(sql`a.started_at`)}
+          WHERE ${this.#activityWindowPredicate(days)}
             AND ${climbingGradeSortSql} IS NOT NULL
           GROUP BY ce.climb_type, ce.grade_system, ce.grade, grade_sort_value
           ORDER BY grade_sort_value`,
@@ -246,10 +251,7 @@ export class ClimbingRepository extends BaseRepository {
               ${climbingGradeSortSql} AS grade_sort_value
             FROM fitness.v_activity a
             JOIN fitness.climbing_entry ce ON ce.activity_id = ANY(a.member_activity_ids)
-            WHERE a.user_id = ${this.userId}
-              AND a.activity_type IN ('climbing', 'rock_climbing')
-              AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-              ${this.timestampAccessPredicate(sql`a.started_at`)}
+            WHERE ${this.#activityWindowPredicate(days)}
               AND ${climbingGradeSortSql} IS NOT NULL
           )
           SELECT
@@ -261,8 +263,12 @@ export class ClimbingRepository extends BaseRepository {
             COUNT(*) FILTER (WHERE sent)::int AS sends,
             (ARRAY_AGG(grade ORDER BY grade_sort_value DESC NULLS LAST)
               FILTER (WHERE sent AND climb_type = 'boulder'))[1] AS hardest_boulder_grade,
+            (ARRAY_AGG(grade_sort_value ORDER BY grade_sort_value DESC NULLS LAST)
+              FILTER (WHERE sent AND climb_type = 'boulder'))[1] AS hardest_boulder_grade_sort_value,
             (ARRAY_AGG(grade ORDER BY grade_sort_value DESC NULLS LAST)
-              FILTER (WHERE sent AND climb_type = 'route'))[1] AS hardest_route_grade
+              FILTER (WHERE sent AND climb_type = 'route'))[1] AS hardest_route_grade,
+            (ARRAY_AGG(grade_sort_value ORDER BY grade_sort_value DESC NULLS LAST)
+              FILTER (WHERE sent AND climb_type = 'route'))[1] AS hardest_route_grade_sort_value
           FROM climbing_entries
           GROUP BY activity_id, session_date, name
           ORDER BY session_date DESC`,
@@ -278,9 +284,9 @@ export class ClimbingRepository extends BaseRepository {
           attempts: row.attempts,
           sends: row.sends,
           hardestBoulderGrade: nullableNormalizedGrade(row.hardest_boulder_grade),
-          hardestBoulderGradeSortValue: nullableGradeSortValue(row.hardest_boulder_grade),
+          hardestBoulderGradeSortValue: row.hardest_boulder_grade_sort_value,
           hardestRouteGrade: nullableNormalizedGrade(row.hardest_route_grade),
-          hardestRouteGradeSortValue: nullableGradeSortValue(row.hardest_route_grade),
+          hardestRouteGradeSortValue: row.hardest_route_grade_sort_value,
         }),
     );
   }
@@ -297,17 +303,4 @@ function normalizedGrade(grade: string): string {
 
 function nullableNormalizedGrade(grade: string | null): string | null {
   return grade === null ? null : normalizedGrade(grade);
-}
-
-function gradeSortValue(grade: string): number {
-  const parsedGrade = parseClimbingGrade(grade);
-  if (!parsedGrade) {
-    throw new Error(`Unsupported climbing grade: ${grade}`);
-  }
-
-  return parsedGrade.sortValue;
-}
-
-function nullableGradeSortValue(grade: string | null): number | null {
-  return grade === null ? null : gradeSortValue(grade);
 }

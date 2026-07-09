@@ -115,7 +115,9 @@ describe("climbingRouter", () => {
         attempts: 9,
         sends: 6,
         hardest_boulder_grade: "V4",
+        hardest_boulder_grade_sort_value: 4,
         hardest_route_grade: null,
+        hardest_route_grade_sort_value: null,
       },
     ]);
 

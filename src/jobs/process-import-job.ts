@@ -23,6 +23,37 @@ function requireKayaImportDatabase(db: SyncDatabase): KayaImportDatabase {
   return db;
 }
 
+interface ImportCompletionResult {
+  recordsSynced: number;
+  errors?: readonly { message: string }[];
+}
+
+async function logImportCompletion(
+  db: SyncDatabase,
+  providerId: string,
+  logLabel: string,
+  entityLabel: string,
+  result: ImportCompletionResult,
+  importStart: number,
+  userId: string,
+): Promise<void> {
+  const errors = result.errors ?? [];
+  const durationMs = Date.now() - importStart;
+  const durationSec = (durationMs / 1000).toFixed(1);
+  const message = `${result.recordsSynced} ${entityLabel} imported, ${errors.length} errors in ${durationSec}s`;
+  logger.info(`[worker] ${logLabel} import complete: ${message}`);
+
+  await logSync(db, {
+    providerId,
+    dataType: "import",
+    status: errors.length ? "error" : "success",
+    recordCount: result.recordsSynced,
+    errorMessage: errors.length ? errors.map((error) => error.message).join("; ") : undefined,
+    durationMs,
+    userId,
+  });
+}
+
 export async function processImportJob(job: ImportJob, db: SyncDatabase): Promise<void> {
   const { filePath, since, userId, importType, weightUnit } = job.data;
   const sinceDate = new Date(since);
@@ -55,105 +86,75 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
           }
         });
 
-        const durationSec = ((Date.now() - importStart) / 1000).toFixed(1);
-        const msg = `${result.recordsSynced} records imported, ${result.errors?.length ?? 0} errors in ${durationSec}s`;
-        logger.info(`[worker] Apple Health import complete: ${msg}`);
-
-        await logSync(db, {
-          providerId: "apple_health",
-          dataType: "import",
-          status: result.errors?.length ? "error" : "success",
-          recordCount: result.recordsSynced,
-          errorMessage: result.errors?.length
-            ? result.errors.map((e) => e.message).join("; ")
-            : undefined,
-          durationMs: Date.now() - importStart,
+        await logImportCompletion(
+          db,
+          "apple_health",
+          "Apple Health",
+          "records",
+          result,
+          importStart,
           userId,
-        });
+        );
       } else if (importType === "strong-csv") {
         const { readFile } = await import("node:fs/promises");
         const csvText = await readFile(filePath, "utf-8");
         const { importStrongCsv } = await import("../providers/strong-csv.ts");
         const result = await importStrongCsv(db, csvText, userId, weightUnit ?? "kg");
 
-        const durationSec = ((Date.now() - importStart) / 1000).toFixed(1);
-        const msg = `${result.recordsSynced} workouts imported, ${result.errors.length} errors in ${durationSec}s`;
-        logger.info(`[worker] Strong CSV import complete: ${msg}`);
-
-        await logSync(db, {
-          providerId: "strong-csv",
-          dataType: "import",
-          status: result.errors.length ? "error" : "success",
-          recordCount: result.recordsSynced,
-          errorMessage: result.errors.length
-            ? result.errors.map((e) => e.message).join("; ")
-            : undefined,
-          durationMs: Date.now() - importStart,
+        await logImportCompletion(
+          db,
+          "strong-csv",
+          "Strong CSV",
+          "workouts",
+          result,
+          importStart,
           userId,
-        });
+        );
       } else if (importType === "cronometer-csv") {
         const { readFile } = await import("node:fs/promises");
         const csvText = await readFile(filePath, "utf-8");
         const { importCronometerCsv } = await import("../providers/cronometer-csv.ts");
         const result = await importCronometerCsv(db, csvText, userId);
 
-        const durationSec = ((Date.now() - importStart) / 1000).toFixed(1);
-        const msg = `${result.recordsSynced} food entries imported, ${result.errors.length} errors in ${durationSec}s`;
-        logger.info(`[worker] Cronometer CSV import complete: ${msg}`);
-
-        await logSync(db, {
-          providerId: "cronometer-csv",
-          dataType: "import",
-          status: result.errors.length ? "error" : "success",
-          recordCount: result.recordsSynced,
-          errorMessage: result.errors.length
-            ? result.errors.map((e: { message: string }) => e.message).join("; ")
-            : undefined,
-          durationMs: Date.now() - importStart,
+        await logImportCompletion(
+          db,
+          "cronometer-csv",
+          "Cronometer CSV",
+          "food entries",
+          result,
+          importStart,
           userId,
-        });
+        );
       } else if (importType === "kaya-export") {
         const { readFile } = await import("node:fs/promises");
         const csvText = await readFile(filePath, "utf-8");
         const { importKayaExportFile } = await import("../providers/kaya/import.ts");
         const result = await importKayaExportFile(requireKayaImportDatabase(db), csvText, userId);
 
-        const durationSec = ((Date.now() - importStart) / 1000).toFixed(1);
-        const msg = `${result.recordsSynced} climbing entries imported, ${result.errors.length} errors in ${durationSec}s`;
-        logger.info(`[worker] Kaya export import complete: ${msg}`);
-
-        await logSync(db, {
-          providerId: "kaya-export",
-          dataType: "import",
-          status: result.errors.length ? "error" : "success",
-          recordCount: result.recordsSynced,
-          errorMessage: result.errors.length
-            ? result.errors.map((error: { message: string }) => error.message).join("; ")
-            : undefined,
-          durationMs: Date.now() - importStart,
+        await logImportCompletion(
+          db,
+          "kaya-export",
+          "Kaya export",
+          "climbing entries",
+          result,
+          importStart,
           userId,
-        });
+        );
       } else if (importType === "zos-app") {
         const { readFile } = await import("node:fs/promises");
         const binData = await readFile(filePath);
         const { importZosAppBin } = await import("../providers/zos-app/provider.ts");
         const result = await importZosAppBin(db, binData, userId);
 
-        const durationSec = ((Date.now() - importStart) / 1000).toFixed(1);
-        const msg = `${result.recordsSynced} sessions imported, ${result.errors.length} errors in ${durationSec}s`;
-        logger.info(`[worker] ZOS App import complete: ${msg}`);
-
-        await logSync(db, {
-          providerId: "zos-app",
-          dataType: "import",
-          status: result.errors.length ? "error" : "success",
-          recordCount: result.recordsSynced,
-          errorMessage: result.errors.length
-            ? result.errors.map((e: { message: string }) => e.message).join("; ")
-            : undefined,
-          durationMs: Date.now() - importStart,
+        await logImportCompletion(
+          db,
+          "zos-app",
+          "ZOS App",
+          "sessions",
+          result,
+          importStart,
           userId,
-        });
+        );
 
         if (result.recordsSynced === 0 && result.errors.length > 0) {
           throw new Error(

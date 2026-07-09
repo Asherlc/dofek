@@ -55,3 +55,10 @@ export const Empty: Story = {
     data: [],
   },
 };
+
+export const Loading: Story = {
+  args: {
+    data: [],
+    loading: true,
+  },
+};

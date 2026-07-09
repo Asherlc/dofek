@@ -22,6 +22,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { z } from "zod";
 import { ActivityCard } from "../../components/ActivityCard";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { SparkLine } from "../../components/charts/SparkLine";
@@ -40,37 +41,44 @@ import { ActivityRowSchema, WeeklyVolumeRowSchema } from "../../types/api";
 
 type ClimbingClimbType = "boulder" | "route";
 
-interface MobileClimbingGradeProgressionRow {
-  date: string;
-  climbType: ClimbingClimbType;
-  grade: string;
-  gradeSortValue: number;
-}
+const climbingClimbTypeSchema = z.enum(["boulder", "route"]);
 
-interface MobileClimbingVolumeByGradeRow {
-  climbType: ClimbingClimbType;
-  grade: string;
-  gradeSortValue: number;
-  attempts: number;
-  sends: number;
-}
+const mobileClimbingGradeProgressionRowSchema = z.object({
+  date: z.string(),
+  climbType: climbingClimbTypeSchema,
+  grade: z.string(),
+  gradeSortValue: z.number(),
+});
 
-interface MobileClimbingSessionSummaryRow {
-  activityId: string;
-  date: string;
-  name: string;
-  locationName: string | null;
-  attempts: number;
-  sends: number;
-  hardestBoulderGrade: string | null;
-  hardestRouteGrade: string | null;
-}
+const mobileClimbingVolumeByGradeRowSchema = z.object({
+  climbType: climbingClimbTypeSchema,
+  grade: z.string(),
+  gradeSortValue: z.number(),
+  attempts: z.number(),
+  sends: z.number(),
+});
 
-interface MobileClimbingData {
-  gradeProgression: MobileClimbingGradeProgressionRow[];
-  volumeByGrade: MobileClimbingVolumeByGradeRow[];
-  sessionSummary: MobileClimbingSessionSummaryRow[];
-}
+const mobileClimbingSessionSummaryRowSchema = z.object({
+  activityId: z.string(),
+  date: z.string(),
+  name: z.string(),
+  locationName: z.string().nullable(),
+  attempts: z.number(),
+  sends: z.number(),
+  hardestBoulderGrade: z.string().nullable(),
+  hardestRouteGrade: z.string().nullable(),
+});
+
+const mobileClimbingDataSchema = z.object({
+  gradeProgression: z.array(mobileClimbingGradeProgressionRowSchema),
+  volumeByGrade: z.array(mobileClimbingVolumeByGradeRowSchema),
+  sessionSummary: z.array(mobileClimbingSessionSummaryRowSchema),
+});
+
+type MobileClimbingGradeProgressionRow = z.infer<typeof mobileClimbingGradeProgressionRowSchema>;
+type MobileClimbingVolumeByGradeRow = z.infer<typeof mobileClimbingVolumeByGradeRowSchema>;
+type MobileClimbingSessionSummaryRow = z.infer<typeof mobileClimbingSessionSummaryRowSchema>;
+type MobileClimbingData = z.infer<typeof mobileClimbingDataSchema>;
 
 const emptyClimbingData: MobileClimbingData = {
   gradeProgression: [],
@@ -79,6 +87,11 @@ const emptyClimbingData: MobileClimbingData = {
 };
 
 const reportedTrainingErrors = new WeakSet<object>();
+
+function parseMobileClimbingData(value: unknown): MobileClimbingData {
+  const parseResult = mobileClimbingDataSchema.safeParse(value ?? emptyClimbingData);
+  return parseResult.success ? parseResult.data : emptyClimbingData;
+}
 
 class ClimbingSectionModel {
   readonly #data: MobileClimbingData;
@@ -149,7 +162,7 @@ export default function StrainScreen() {
   );
   const weeklyVolume = weeklyVolumeParsed.data;
   const verticalAscent = trainingData?.verticalAscent ?? [];
-  const climbingModel = new ClimbingSectionModel(trainingData?.climbing ?? emptyClimbingData);
+  const climbingModel = new ClimbingSectionModel(parseMobileClimbingData(trainingData?.climbing));
   const collapsedWeeklyVolume = collapseWeeklyVolumeActivityTypes(weeklyVolume, 6);
   const activityTypeTotalsMap = new Map<string, number>();
   for (const row of collapsedWeeklyVolume) {

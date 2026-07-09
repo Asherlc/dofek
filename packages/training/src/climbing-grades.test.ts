@@ -47,6 +47,7 @@ describe("parseClimbingGrade", () => {
     expect(parseClimbingGrade("V")).toBeNull();
     expect(parseClimbingGrade("V01")).toBeNull();
     expect(parseClimbingGrade("V-easy")).toBeNull();
+    expect(parseClimbingGrade("V9007199254740993")).toBeNull();
     expect(parseClimbingGrade("not a grade")).toBeNull();
   });
 

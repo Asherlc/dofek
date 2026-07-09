@@ -129,6 +129,28 @@ describe("ClimbingTab", () => {
     expect(screen.getByText("Error: Grade query failed")).toBeTruthy();
   });
 
+  it("shows server errors alongside stale cached section data", async () => {
+    gradeProgressionQuery.mockReturnValue({
+      data: [
+        {
+          date: "2026-07-09",
+          climbType: "boulder",
+          gradeSystem: "v_scale",
+          grade: "V4",
+          gradeSortValue: 4,
+        },
+      ],
+      isLoading: false,
+      error: new Error("Grade query failed"),
+    });
+
+    const ClimbingTab = await importClimbingTab();
+    render(<ClimbingTab />);
+
+    expect(screen.getByText("Error: Grade query failed")).toBeTruthy();
+    expect(screen.getByText("Grade Progression component")).toBeTruthy();
+  });
+
   it("passes session loading state to the sessions table", async () => {
     sessionSummaryQuery.mockReturnValue({ data: [], isLoading: true, error: null });
 

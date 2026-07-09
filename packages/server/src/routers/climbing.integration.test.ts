@@ -1,11 +1,20 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { climbingRouter } from "./climbing.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 const createCaller = createTestCallerFactory(climbingRouter);
+const activityIdRowSchema = z.object({
+  id: z.string(),
+  external_id: z.string(),
+});
+const countRowSchema = z.object({
+  count: z.string(),
+});
 
 describe("climbing router integration", () => {
   let testContext: TestContext;
@@ -21,7 +30,9 @@ describe("climbing router integration", () => {
           ON CONFLICT DO NOTHING`,
     );
 
-    const insertedActivities = await testContext.db.execute<{ id: string; external_id: string }>(
+    const insertedActivities = await executeWithSchema(
+      testContext.db,
+      activityIdRowSchema,
       sql`INSERT INTO fitness.activity (
             provider_id, user_id, external_id, activity_type, started_at, ended_at, name
           ) VALUES
@@ -177,7 +188,9 @@ describe("climbing router integration", () => {
       sql`DELETE FROM fitness.activity WHERE id = ${climbingActivityId}`,
     );
 
-    const rows = await testContext.db.execute<{ count: string }>(
+    const rows = await executeWithSchema(
+      testContext.db,
+      countRowSchema,
       sql`SELECT COUNT(*)::text AS count
           FROM fitness.climbing_entry
           WHERE activity_id = ${climbingActivityId}`,
@@ -185,7 +198,9 @@ describe("climbing router integration", () => {
 
     expect(rows[0]?.count).toBe("0");
 
-    const remainingActivities = await testContext.db.execute<{ count: string }>(
+    const remainingActivities = await executeWithSchema(
+      testContext.db,
+      countRowSchema,
       sql`SELECT COUNT(*)::text AS count
           FROM fitness.activity
           WHERE id = ${climbingActivityId}`,

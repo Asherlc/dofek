@@ -41,7 +41,7 @@ class ClimbingGradeParser {
     }
 
     const sortValue = Number.parseInt(matchedGrade, 10);
-    if (!Number.isInteger(sortValue)) {
+    if (!Number.isSafeInteger(sortValue)) {
       return null;
     }
 

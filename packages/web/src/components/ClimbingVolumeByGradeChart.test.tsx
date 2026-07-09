@@ -3,8 +3,18 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./DofekChart.tsx", () => ({
-  DofekChart: ({ empty, emptyMessage }: { empty?: boolean; emptyMessage?: string }) => (
-    <div data-testid="chart">{empty ? emptyMessage : "volume chart"}</div>
+  DofekChart: ({
+    empty,
+    emptyMessage,
+    loading,
+  }: {
+    empty?: boolean;
+    emptyMessage?: string;
+    loading?: boolean;
+  }) => (
+    <div data-testid="chart">
+      {loading ? "Loading chart" : empty ? emptyMessage : "volume chart"}
+    </div>
   ),
 }));
 
@@ -17,6 +27,12 @@ describe("ClimbingVolumeByGradeChart", () => {
     render(<ClimbingVolumeByGradeChart data={[]} />);
 
     expect(screen.getByText("No climbing volume by grade")).toBeTruthy();
+  });
+
+  it("passes loading state to the chart", () => {
+    render(<ClimbingVolumeByGradeChart data={[]} loading />);
+
+    expect(screen.getByText("Loading chart")).toBeTruthy();
   });
 
   it("renders sends, attempts, and total entries ordered by sort value", () => {
