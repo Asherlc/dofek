@@ -90,12 +90,48 @@ describe("0043_activity_stream_lifecycle_columns", () => {
   });
 
   it("skips lifecycle statements when the table does not exist", async () => {
-    const client = new TestClickHouseClient([[], [{ count: 0 }]]);
+    const client = TestClickHouseClient.withTableCounts([0, 0]);
 
     await createMigration().run?.(client, "postgres://test");
 
     expect(client.queryCalls).toHaveLength(2);
     expect(mockRunClickHouseMigrationStatement).not.toHaveBeenCalled();
+  });
+
+  it("runs only stream point statements when the zone table does not exist", async () => {
+    const client = TestClickHouseClient.withTableCounts([1, 0]);
+
+    await createMigration().run?.(client, "postgres://test");
+
+    expect(mockRunClickHouseMigrationStatement).toHaveBeenCalledTimes(2);
+    expect(mockRunClickHouseMigrationStatement).toHaveBeenNthCalledWith(
+      1,
+      client,
+      "ALTER TABLE analytics.activity_stream_points ADD COLUMN IF NOT EXISTS is_deleted UInt8 AFTER refresh_version",
+    );
+    expect(mockRunClickHouseMigrationStatement).toHaveBeenNthCalledWith(
+      2,
+      client,
+      "ALTER TABLE analytics.activity_stream_points ADD COLUMN IF NOT EXISTS refreshed_at DateTime64(9, 'UTC') AFTER is_deleted",
+    );
+  });
+
+  it("runs only heart-rate zone statements when the stream point table does not exist", async () => {
+    const client = TestClickHouseClient.withTableCounts([0, 1]);
+
+    await createMigration().run?.(client, "postgres://test");
+
+    expect(mockRunClickHouseMigrationStatement).toHaveBeenCalledTimes(2);
+    expect(mockRunClickHouseMigrationStatement).toHaveBeenNthCalledWith(
+      1,
+      client,
+      "ALTER TABLE analytics.activity_heart_rate_zones ADD COLUMN IF NOT EXISTS is_deleted UInt8 AFTER refresh_version",
+    );
+    expect(mockRunClickHouseMigrationStatement).toHaveBeenNthCalledWith(
+      2,
+      client,
+      "ALTER TABLE analytics.activity_heart_rate_zones ADD COLUMN IF NOT EXISTS refreshed_at DateTime64(9, 'UTC') AFTER is_deleted",
+    );
   });
 
   it("requires a query-capable client", async () => {

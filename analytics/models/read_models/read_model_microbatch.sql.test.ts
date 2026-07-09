@@ -384,7 +384,10 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("ref('activity_location_sample')");
     expect(sql).toContain("affected_location_sample_ids AS");
     expect(sql).toContain("latest_location_samples AS");
-    expect(normalizedSql).toContain("(user_id, activity_id) IN");
+    expect(sql).toContain("current_dirty_keys AS");
+    expect(normalizedSql).toContain(
+      "FROM {{ ref('activity_location_sample') }} AS location_samples INNER JOIN current_dirty_keys",
+    );
     expect(normalizedSql).toContain("LIMIT 1 BY source_metric_stream_id");
     expect(sql).toContain("source('postgres_fitness', 'activity') }} FINAL");
     expect(sql).toContain("provider_absent_at IS null");
@@ -531,8 +534,16 @@ describe("production analytics read-model build", () => {
     expect(normalizedSensorSql).not.toContain("FROM {{ ref('activity_sensor_sample') }} WHERE is_deleted = 0 AND");
 
     expect(locationSummarySql).toContain("latest_location_samples AS");
+    expect(locationSummarySql).toContain("current_dirty_keys AS");
+    expect(normalizedLocationSql).toContain(
+      "FROM {{ ref('activity_location_sample') }} AS location_samples INNER JOIN current_dirty_keys",
+    );
+    expect(normalizedLocationSql).toContain(
+      "current_activity.activity_id = active_dirty_keys.activity_id",
+    );
     expect(normalizedLocationSql).toContain("LIMIT 1 BY source_metric_stream_id");
     expect(normalizedLocationSql).toContain("FROM latest_location_samples WHERE lat IS NOT null");
+    expect(normalizedLocationSql).not.toContain("WHERE (user_id, activity_id) IN");
     expect(normalizedLocationSql).not.toContain(
       "FROM {{ ref('activity_location_sample') }} AS location_samples WHERE location_samples.is_deleted = 0",
     );

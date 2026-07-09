@@ -153,15 +153,22 @@ active_dirty_keys AS (
         AND user_id IS NOT null
 ),
 
+current_dirty_keys AS (
+    SELECT
+        active_dirty_keys.activity_id AS activity_id,
+        active_dirty_keys.user_id AS user_id
+    FROM active_dirty_keys
+    INNER JOIN current_activity
+        ON current_activity.activity_id = active_dirty_keys.activity_id
+        AND current_activity.user_id = active_dirty_keys.user_id
+),
+
 affected_location_sample_ids AS (
-    SELECT DISTINCT source_metric_stream_id
-    FROM {{ ref('activity_location_sample') }}
-    WHERE (user_id, activity_id) IN (
-        SELECT
-            user_id,
-            activity_id
-        FROM active_dirty_keys
-    )
+    SELECT DISTINCT location_samples.source_metric_stream_id AS source_metric_stream_id
+    FROM {{ ref('activity_location_sample') }} AS location_samples
+    INNER JOIN current_dirty_keys
+        ON current_dirty_keys.activity_id = location_samples.activity_id
+        AND current_dirty_keys.user_id = location_samples.user_id
 ),
 
 latest_location_samples AS (

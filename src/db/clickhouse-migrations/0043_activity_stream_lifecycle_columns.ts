@@ -6,7 +6,7 @@ import type { ClickHouseMigration } from "./types.ts";
 const streamPointsTable = "activity_stream_points";
 const heartRateZonesTable = "activity_heart_rate_zones";
 type LifecycleTable = typeof streamPointsTable | typeof heartRateZonesTable;
-const tableCountRowsSchema = z.array(z.object({ count: z.union([z.string(), z.number()]) }));
+const tableCountRowsSchema = z.tuple([z.object({ count: z.union([z.string(), z.number()]) })]);
 
 const streamPointsStatements = [
   "ALTER TABLE analytics.activity_stream_points ADD COLUMN IF NOT EXISTS is_deleted UInt8 AFTER refresh_version",
@@ -52,6 +52,5 @@ async function tableExists(
     query_params: { name },
   });
   const rows = tableCountRowsSchema.parse(await result.json());
-  const [row] = rows;
-  return Number(row?.count ?? 0) > 0;
+  return Number(rows[0].count) > 0;
 }
