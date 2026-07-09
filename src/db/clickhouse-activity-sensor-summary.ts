@@ -41,7 +41,7 @@ ORDER BY (user_id, activity_id)`;
 }
 
 export function extractClickHouseTableColumnNames(createTableSql: string): string[] {
-  const bodyMatch = createTableSql.match(/\(([\s\S]+)\)\s*ENGINE/m);
+  const bodyMatch = createTableSql.match(/\(\s*([\s\S]+?)\s*\)\s*ENGINE/im);
   if (!bodyMatch?.[1]) {
     throw new Error("Could not parse ClickHouse CREATE TABLE column list");
   }
@@ -49,7 +49,7 @@ export function extractClickHouseTableColumnNames(createTableSql: string): strin
   const columnNames: string[] = [];
   for (const line of bodyMatch[1].split("\n")) {
     const trimmed = line.trim();
-    if (!trimmed) {
+    if (!trimmed || trimmed.startsWith("--")) {
       continue;
     }
 
@@ -63,13 +63,13 @@ export function extractClickHouseTableColumnNames(createTableSql: string): strin
 }
 
 export function extractDbtFinalSelectColumnNames(modelSql: string, fromTable: string): string[] {
-  const selectMatch = modelSql.match(new RegExp(`\\nSELECT\\n([\\s\\S]+?)\\nFROM ${fromTable}\\n`));
-  if (!selectMatch?.[1]) {
+  const selectBody = findSelectBodyForFromTable(modelSql, fromTable);
+  if (!selectBody) {
     throw new Error(`Could not parse dbt final SELECT for FROM ${fromTable}`);
   }
 
   const columns: string[] = [];
-  for (const line of selectMatch[1].split("\n")) {
+  for (const line of selectBody.split("\n")) {
     const trimmedLine = line.trim();
     if (!trimmedLine) {
       continue;
@@ -86,4 +86,28 @@ export function extractDbtFinalSelectColumnNames(modelSql: string, fromTable: st
   }
 
   return columns;
+}
+
+function findSelectBodyForFromTable(modelSql: string, fromTable: string): string | undefined {
+  const fromTablePattern = /^[a-z_][a-z0-9_]*$/;
+  if (!fromTablePattern.test(fromTable)) {
+    throw new Error(`Invalid dbt FROM table name: ${fromTable}`);
+  }
+
+  const fromMatches = modelSql.matchAll(/\bFROM\s+([a-z_][a-z0-9_]*)\b/gi);
+  let selectBody: string | undefined;
+  for (const fromMatch of fromMatches) {
+    if (fromMatch[1] !== fromTable || fromMatch.index === undefined) {
+      continue;
+    }
+
+    const beforeFrom = modelSql.slice(0, fromMatch.index);
+    const selectIndex = beforeFrom.toUpperCase().lastIndexOf("SELECT");
+    if (selectIndex === -1) {
+      continue;
+    }
+    selectBody = modelSql.slice(selectIndex + "SELECT".length, fromMatch.index);
+  }
+
+  return selectBody;
 }

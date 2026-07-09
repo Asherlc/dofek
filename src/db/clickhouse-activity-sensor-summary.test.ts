@@ -50,6 +50,11 @@ describe("clickhouse-activity-sensor-summary", () => {
       expect(extractClickHouseTableColumnNames(sql)).toEqual(["id", "name"]);
     });
 
+    it("filters out SQL comments between column definitions", () => {
+      const sql = `CREATE TABLE foo (\n  id UInt64,\n  -- model-owned lifecycle columns\n  name String\n) ENGINE = ReplacingMergeTree(ver)`;
+      expect(extractClickHouseTableColumnNames(sql)).toEqual(["id", "name"]);
+    });
+
     it("returns only column names from complex type definitions", () => {
       const sql = `CREATE TABLE foo (\n  avg_hr Nullable(Float64),\n  tags Nested(key String, val Int32)\n) ENGINE = ReplacingMergeTree(ver)`;
       const columns = extractClickHouseTableColumnNames(sql);
@@ -66,6 +71,17 @@ describe("clickhouse-activity-sensor-summary", () => {
     it("skips blank lines in the SELECT body", () => {
       const sql = "\nSELECT\n  t.col1 AS a,\n\n  t.col2 AS b\nFROM data\n";
       expect(extractDbtFinalSelectColumnNames(sql, "data")).toEqual(["a", "b"]);
+    });
+
+    it("allows whitespace before the FROM table", () => {
+      const sql = "\nSELECT\n  t.col1 AS a,\n  t.col2 AS b\nFROM   data\n";
+      expect(extractDbtFinalSelectColumnNames(sql, "data")).toEqual(["a", "b"]);
+    });
+
+    it("rejects invalid FROM table names", () => {
+      expect(() =>
+        extractDbtFinalSelectColumnNames("\nSELECT\n  t.col1 AS a\nFROM data\n", "data.*"),
+      ).toThrow("Invalid dbt FROM table name: data.*");
     });
 
     it("throws when the SELECT body has no column aliases", () => {

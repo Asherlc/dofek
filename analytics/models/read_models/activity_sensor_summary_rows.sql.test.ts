@@ -31,15 +31,18 @@ describe("activity_sensor_summary_rows model", () => {
       // sample count down to 0 and emit NaN from `0 / 0` or a self-match join.
       const guardedDivisorMatches =
         modelSql.match(
-          /greatest\(round\(1200\.0 \/ power_sample_rate\.interval_seconds\), 1\)/g,
+          /greatest\s*\(\s*round\s*\(\s*1200\.0\s*\/\s*power_sample_rate\.interval_seconds\s*\)\s*,\s*1\s*\)/g,
         ) ?? [];
       expect(guardedDivisorMatches).toHaveLength(3);
     });
 
     it("leaves no unguarded 20-minute window sample count expression", () => {
+      const guardedDivisorPattern =
+        /greatest\s*\(\s*round\s*\(\s*1200\.0\s*\/\s*power_sample_rate\.interval_seconds\s*\)\s*,\s*1\s*\)/g;
+      const sqlWithoutGuardedDivisors = modelSql.replaceAll(guardedDivisorPattern, "");
       const unguardedMatches =
-        modelSql.match(
-          /(?<!greatest\()round\(1200\.0 \/ power_sample_rate\.interval_seconds\)(?!, 1\))/g,
+        sqlWithoutGuardedDivisors.match(
+          /round\s*\(\s*1200\.0\s*\/\s*power_sample_rate\.interval_seconds\s*\)/g,
         ) ?? [];
       expect(unguardedMatches).toHaveLength(0);
     });
