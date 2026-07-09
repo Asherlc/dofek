@@ -109,6 +109,15 @@ function findQueryCall(
 }
 
 describe("PmcRepository", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-09T12:00:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   function expectCyclingOnlyActivityTypes(activityTypes: unknown) {
     expect(activityTypes).toEqual([...CYCLING_ACTIVITY_TYPES]);
     expect(activityTypes).not.toContain("walking");
@@ -247,6 +256,37 @@ describe("PmcRepository", () => {
         "started_at > now() - INTERVAL {queryDays:Int32} DAY",
       );
       expect(normalizedPowerParams).not.toHaveProperty("queryDays");
+    });
+
+    it("uses days since earliest visible activity for all-history chart length", async () => {
+      const { repo } = makeRepoHarness(
+        [
+          makeActivityRow({ id: "recent-activity", date: "2026-07-07" }),
+          makeActivityRow({ id: "earliest-activity", date: "2026-06-29" }),
+        ],
+        [],
+      );
+
+      const result = await repo.getChart(ChartRange.fromDays(null));
+
+      expect(result.data).toHaveLength(11);
+      expect(result.data[0]?.date).toBe("2026-06-29");
+      expect(result.data.at(-1)?.date).toBe("2026-07-09");
+    });
+
+    it("sorts activity dates before computing all-history chart length", async () => {
+      const { repo } = makeRepoHarness(
+        [
+          makeActivityRow({ id: "recent-activity", date: "2026-07-07" }),
+          makeActivityRow({ id: "middle-activity", date: "2026-07-03" }),
+          makeActivityRow({ id: "earliest-activity", date: "2026-06-29" }),
+        ],
+        [],
+      );
+
+      const result = await repo.getChart(ChartRange.fromDays(null));
+
+      expect(result.data).toHaveLength(11);
     });
 
     it("reads sample counts from the activity summary read model", async () => {

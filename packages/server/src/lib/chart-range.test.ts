@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createTestCallerFactory } from "../routers/test-helpers.ts";
 import { router } from "../trpc.ts";
@@ -13,6 +13,18 @@ import {
 } from "./chart-range.ts";
 
 const dialect = new PgDialect();
+const cacheSetCalls = vi.hoisted((): Array<{ key: string; data: unknown; ttlMs: number }> => []);
+
+vi.mock("dofek/lib/cache", () => ({
+  queryCache: {
+    get: vi.fn().mockResolvedValue(undefined),
+    set: vi.fn(async (key: string, data: unknown, ttlMs: number) => {
+      cacheSetCalls.push({ key, data, ttlMs });
+    }),
+    invalidateByPrefix: vi.fn(),
+    invalidateAll: vi.fn(),
+  },
+}));
 
 describe("ChartRange", () => {
   it("models finite and all-history selected chart ranges as a value object", () => {
@@ -55,9 +67,30 @@ describe("ChartRange", () => {
     expect(allQuery.sql).toBe("");
     expect(allQuery.params).toEqual([]);
   });
+
+  it("builds ClickHouse date predicates from explicit window start params", () => {
+    const finiteRange = ChartRange.fromDays(30);
+    const allRange = ChartRange.fromDays(null);
+
+    expect(finiteRange.clickHouseDateAfterWindowStart({ expression: "strain.date" })).toBe(
+      "AND strain.date > toDate({windowStart:String})",
+    );
+    expect(
+      finiteRange.clickHouseDateAfterWindowStart({
+        expression: "strain.date",
+        operator: ">=",
+        paramName: "outputWindowStart",
+      }),
+    ).toBe("AND strain.date >= toDate({outputWindowStart:String})");
+    expect(allRange.clickHouseDateAfterWindowStart({ expression: "strain.date" })).toBe("");
+  });
 });
 
 describe("selected chart range query builders", () => {
+  beforeEach(() => {
+    cacheSetCalls.length = 0;
+  });
+
   it("injects ChartRange into days-only selected chart handlers", async () => {
     const testRouter = router({
       powerCurve: selectedChartRangeQuery("power.powerCurve", 1, ({ range }) => ({
@@ -76,6 +109,7 @@ describe("selected chart range query builders", () => {
       all: true,
     });
     await expect(caller.powerCurve({})).resolves.toEqual({ days: 90, all: false });
+    expect(cacheSetCalls.at(-1)?.ttlMs).toBe(1);
   });
 
   it("injects ChartRange into date-window selected chart handlers", async () => {
@@ -95,6 +129,7 @@ describe("selected chart range query builders", () => {
       days: null,
       endDate: "2026-07-09",
     });
+    expect(cacheSetCalls.at(-1)?.ttlMs).toBe(1);
   });
 
   it("injects ChartRange into selected chart handlers with custom inputs", async () => {
@@ -119,6 +154,7 @@ describe("selected chart range query builders", () => {
       days: null,
       limit: 20,
     });
+    expect(cacheSetCalls.at(-1)?.ttlMs).toBe(1);
   });
 
   it("rejects a builder that does not match the endpoint contract", () => {
