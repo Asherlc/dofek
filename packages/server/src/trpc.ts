@@ -259,7 +259,7 @@ export function requestCacheKey(
   rawInput: unknown,
   timezone: string,
 ): string {
-  return `${userId ?? "anon"}:${timezone}:${path}:${JSON.stringify(rawInput)}`;
+  return `${userId ?? "anon"}:${path}:${timezone}:${JSON.stringify(rawInput)}`;
 }
 
 function cached(policy: CachePolicy) {

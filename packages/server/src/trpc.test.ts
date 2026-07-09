@@ -2,6 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CacheTTL, requestCacheKey, requestCacheTtl } from "./trpc.ts";
 
 describe("requestCacheKey", () => {
+  it("keeps the user and route path prefix stable for invalidation", () => {
+    expect(requestCacheKey("user-1", "settings.get", { key: "units" }, "UTC")).toMatch(
+      /^user-1:settings\.get:/,
+    );
+  });
+
   it("separates cache entries by request timezone", () => {
     const rawInput = { days: 30 };
 
