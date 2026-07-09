@@ -250,8 +250,8 @@ UPDATE fitness.provider SET "display;name" = 'safe' WHERE id = 'provider-3';
     );
     expect(migrationSql).toContain("CREATE TABLE IF NOT EXISTS fitness.climbing_entry");
     expect(migrationSql).toContain("id uuid PRIMARY KEY DEFAULT gen_random_uuid()");
-    expect(migrationSql).toContain(
-      "activity_id uuid NOT NULL REFERENCES fitness.activity(id) ON DELETE CASCADE",
+    expect(migrationSql).toMatch(
+      /activity_id uuid NOT NULL REFERENCES fitness\.activity\s*\(id\) ON DELETE CASCADE/,
     );
     expect(migrationSql).toContain("external_id text");
     expect(migrationSql).toContain("climb_type fitness.climbing_climb_type NOT NULL");
@@ -278,14 +278,14 @@ UPDATE fitness.provider SET "display;name" = 'safe' WHERE id = 'provider-3';
     expect(migrationSql).toContain(
       "CONSTRAINT climbing_entry_source_name_nonempty CHECK (source_name IS NULL OR btrim(source_name) <> '')",
     );
-    expect(migrationSql).toContain(
-      "CREATE UNIQUE INDEX IF NOT EXISTS climbing_entry_activity_external_id_idx ON fitness.climbing_entry (activity_id, external_id) WHERE external_id IS NOT NULL",
+    expect(migrationSql).toMatch(
+      /CREATE UNIQUE INDEX IF NOT EXISTS climbing_entry_activity_external_id_idx\s+ON fitness\.climbing_entry \(activity_id, external_id\)\s+WHERE external_id IS NOT NULL/,
     );
-    expect(migrationSql).toContain(
-      "CREATE INDEX IF NOT EXISTS climbing_entry_activity_idx ON fitness.climbing_entry (activity_id)",
+    expect(migrationSql).toMatch(
+      /CREATE INDEX IF NOT EXISTS climbing_entry_activity_idx(?: -- noqa: PG01)?\s+ON fitness\.climbing_entry \(activity_id\)/,
     );
-    expect(migrationSql).toContain(
-      "CREATE INDEX IF NOT EXISTS climbing_entry_grade_lookup_idx ON fitness.climbing_entry (climb_type, grade_system, grade)",
+    expect(migrationSql).toMatch(
+      /CREATE INDEX IF NOT EXISTS climbing_entry_grade_lookup_idx(?: -- noqa: PG01)?\s+ON fitness\.climbing_entry \(climb_type, grade_system, grade\)/,
     );
     expect(migrationSql).not.toMatch(/NOT NULL DEFAULT ''/);
   });
