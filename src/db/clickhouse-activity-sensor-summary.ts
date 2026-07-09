@@ -75,6 +75,10 @@ export function extractDbtFinalSelectColumnNames(modelSql: string, fromTable: st
       continue;
     }
 
+    if (/^(FROM|JOIN|WHERE|ORDER|GROUP|LIMIT|HAVING|WINDOW)\b/i.test(trimmedLine)) {
+      break;
+    }
+
     const aliasMatch = trimmedLine.match(/\s+AS\s+([a-z_][a-z0-9_]*)\s*,?\s*$/i);
     if (aliasMatch?.[1]) {
       columns.push(aliasMatch[1]);
@@ -97,10 +101,13 @@ function findSelectBodyForFromTable(modelSql: string, fromTable: string): string
   const normalizedFromTable = fromTable.toLowerCase();
   let selectBody: string | undefined;
   let cursorIndex = 0;
+  let depth = 0;
+  let lastSelectStart: number | undefined;
 
   while (cursorIndex < modelSql.length) {
     const currentChar = modelSql[cursorIndex];
     const nextChar = modelSql[cursorIndex + 1];
+
     if (currentChar === "-" && nextChar === "-") {
       cursorIndex = skipSqlLineComment(modelSql, cursorIndex);
       continue;
@@ -109,33 +116,49 @@ function findSelectBodyForFromTable(modelSql: string, fromTable: string): string
       cursorIndex = skipSqlBlockComment(modelSql, cursorIndex);
       continue;
     }
-    if (currentChar === "'") {
+    if (c === "'") {
       cursorIndex = skipSqlStringLiteral(modelSql, cursorIndex);
       continue;
     }
 
-    const fromEndIndex = matchSqlKeyword(modelSql, "FROM", cursorIndex);
-    if (fromEndIndex === null) {
+    if (c === "(") {
+      depth += 1;
+      cursorIndex += 1;
+      continue;
+    }
+    if (c === ")") {
+      depth = Math.max(0, depth - 1);
       cursorIndex += 1;
       continue;
     }
 
-    const tableStartIndex = skipWhitespace(modelSql, fromEndIndex);
-    const tableEndIndex = readSqlIdentifierEndIndex(modelSql, tableStartIndex);
-    const tableName = modelSql.slice(tableStartIndex, tableEndIndex).toLowerCase();
-    if (tableName !== normalizedFromTable) {
-      cursorIndex = tableEndIndex;
+    if (depth > 0) {
+      cursorIndex += 1;
       continue;
     }
 
-    const beforeFrom = modelSql.slice(0, cursorIndex);
-    const selectIndex = beforeFrom.toUpperCase().lastIndexOf("SELECT");
-    if (selectIndex === -1) {
-      cursorIndex = tableEndIndex;
+    const selectEnd = matchSqlKeyword(modelSql, "SELECT", cursorIndex);
+    if (selectEnd !== null) {
+      lastSelectStart = cursorIndex;
+      cursorIndex = selectEnd;
       continue;
     }
-    selectBody = modelSql.slice(selectIndex + "SELECT".length, cursorIndex);
-    cursorIndex = tableEndIndex;
+
+    const fromEnd =
+      matchSqlKeyword(modelSql, "FROM", cursorIndex) ??
+      matchSqlKeyword(modelSql, "JOIN", cursorIndex);
+    if (fromEnd !== null) {
+      const tableStart = skipWhitespace(modelSql, fromEnd);
+      const tableEnd = readSqlIdentifierEndIndex(modelSql, tableStart);
+      const tableName = modelSql.slice(tableStart, tableEnd).toLowerCase();
+      if (tableName === normalizedFromTable && lastSelectStart !== undefined) {
+        selectBody = modelSql.slice(lastSelectStart + "SELECT".length, cursorIndex);
+      }
+      cursorIndex = tableEnd;
+      continue;
+    }
+
+    cursorIndex += 1;
   }
 
   return selectBody;

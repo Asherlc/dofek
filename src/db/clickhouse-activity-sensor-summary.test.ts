@@ -62,17 +62,20 @@ describe("clickhouse-activity-sensor-summary", () => {
     });
 
     it("handles tab-indented column definitions", () => {
-      const sql = "CREATE TABLE foo (\n\tid UInt64,\n\tname String\n) ENGINE = ReplacingMergeTree(ver)";
+      const sql =
+        "CREATE TABLE foo (\n\tid UInt64,\n\tname String\n) ENGINE = ReplacingMergeTree(ver)";
       expect(extractClickHouseTableColumnNames(sql)).toEqual(["id", "name"]);
     });
 
     it("handles multi-space between column name and type", () => {
-      const sql = "CREATE TABLE foo (\n  id   UInt64,\n  name  String\n) ENGINE = ReplacingMergeTree(ver)";
+      const sql =
+        "CREATE TABLE foo (\n  id   UInt64,\n  name  String\n) ENGINE = ReplacingMergeTree(ver)";
       expect(extractClickHouseTableColumnNames(sql)).toEqual(["id", "name"]);
     });
 
     it("handles columns without trailing commas", () => {
-      const sql = "CREATE TABLE foo (\n  id UInt64,\n  name String\n) ENGINE = ReplacingMergeTree(ver)";
+      const sql =
+        "CREATE TABLE foo (\n  id UInt64,\n  name String\n) ENGINE = ReplacingMergeTree(ver)";
       expect(extractClickHouseTableColumnNames(sql)).toEqual(["id", "name"]);
     });
   });
