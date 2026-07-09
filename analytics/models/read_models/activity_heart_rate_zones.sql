@@ -250,12 +250,13 @@ latest_sensor_samples AS (
     FROM (
         SELECT *
         FROM {{ ref('activity_sensor_sample') }}
-        WHERE (user_id, activity_id) IN (
-            SELECT
-                user_id,
-                activity_id
-            FROM active_dirty_keys
-        )
+        WHERE channel = 'heart_rate'
+            AND (user_id, activity_id) IN (
+                SELECT
+                    user_id,
+                    activity_id
+                FROM active_dirty_keys
+            )
         ORDER BY
             user_id ASC,
             activity_id ASC,

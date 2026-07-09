@@ -81,6 +81,36 @@ stale_dirty_keys AS (
     WHERE current_activity.activity_id IS null
 ),
 
+restored_dirty_keys AS (
+    {% if is_incremental() %}
+        SELECT
+            tombstoned_stream_points.activity_id AS activity_id,
+            tombstoned_stream_points.user_id AS user_id
+        FROM (
+            SELECT
+                activity_id,
+                user_id
+            FROM {{ this }} FINAL
+            WHERE is_deleted = 1
+        ) AS tombstoned_stream_points
+        INNER JOIN current_activity
+            ON current_activity.activity_id = tombstoned_stream_points.activity_id
+            AND current_activity.user_id = tombstoned_stream_points.user_id
+        WHERE EXISTS (
+            SELECT 1
+            FROM {{ this }} AS prior_stream_points FINAL
+            WHERE prior_stream_points.activity_id = tombstoned_stream_points.activity_id
+                AND prior_stream_points.user_id = tombstoned_stream_points.user_id
+                AND prior_stream_points.is_deleted = 0
+        )
+    {% else %}
+        SELECT
+            CAST(null, 'Nullable(UUID)') AS activity_id,
+            CAST(null, 'Nullable(UUID)') AS user_id
+        WHERE 1 = 0
+    {% endif %}
+),
+
 dirty_keys AS (
     SELECT DISTINCT
         assumeNotNull(activity_id) AS activity_id,
@@ -105,6 +135,11 @@ dirty_keys AS (
             activity_id,
             user_id
         FROM stale_dirty_keys
+        UNION ALL
+        SELECT
+            activity_id,
+            user_id
+        FROM restored_dirty_keys
     )
     WHERE activity_id IS NOT null
         AND user_id IS NOT null

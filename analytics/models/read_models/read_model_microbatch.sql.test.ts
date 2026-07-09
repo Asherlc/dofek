@@ -382,6 +382,7 @@ describe("production analytics read-model build", () => {
     const normalizedSql = compactWhitespace(sql);
 
     expect(sql).toContain("ref('activity_location_sample')");
+    expect(sql).toContain("affected_location_sample_ids AS");
     expect(sql).toContain("latest_location_samples AS");
     expect(normalizedSql).toContain("(user_id, activity_id) IN");
     expect(normalizedSql).toContain("LIMIT 1 BY source_metric_stream_id");
@@ -413,6 +414,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("location_dirty_keys AS");
     expect(sql).toContain("existing_stream_points AS");
     expect(sql).toContain("stale_dirty_keys AS");
+    expect(sql).toContain("restored_dirty_keys AS");
     expect(sql).toContain("latest_sensor_samples AS");
     expect(sql).toContain("latest_location_samples AS");
     expect(normalizedSql).toContain("FROM current_activity WHERE (SELECT is_empty FROM target_state)");
@@ -450,6 +452,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("existing_zone_rows AS");
     expect(sql).toContain("stale_dirty_keys AS");
     expect(sql).toContain("latest_sensor_samples AS");
+    expect(normalizedSql).toContain("WHERE channel = 'heart_rate' AND (user_id, activity_id) IN");
     expect(normalizedSql).toContain("FROM current_activity WHERE (SELECT is_empty FROM target_state)");
     expect(normalizedSql).toContain("ORDER BY resting.ended_at DESC");
     expect(normalizedSql).toContain("resting.ended_at <= activity_bounds.started_at");
