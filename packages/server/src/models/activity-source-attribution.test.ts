@@ -296,6 +296,9 @@ describe("ActivitySourceAttribution", () => {
     expect(attribution.partialAbsenceSummary(mockLookup)).toMatch(
       /unknown_provider removed · Mar 5,/,
     );
+    expect(
+      attribution.tombstoneSummary(null, "unknown_provider", "2026-03-05T14:30:00.000Z"),
+    ).toMatch(/Removed from unknown_provider · Mar 5,/);
     expect(attribution.toSourceLinks(mockLookup)).toEqual([
       {
         providerId: "garmin",

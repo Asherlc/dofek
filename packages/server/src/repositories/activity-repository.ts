@@ -14,23 +14,21 @@ import { getActivityRoutePreviews } from "./activity-route-preview.ts";
 // Zod schemas for raw DB rows
 // ---------------------------------------------------------------------------
 
-const activityListRowSchema = z
-  .object({
-    id: z.string(),
-    activity_type: z.string(),
-    started_at: timestampStringSchema,
-    ended_at: timestampStringSchema.nullable(),
-    name: z.string().nullable(),
-    provider_id: z.string(),
-    source_providers: z.array(z.string()),
-    member_activity_ids: z.array(z.string()).optional().default([]),
-    avg_hr: z.number().nullable(),
-    max_hr: z.number().nullable(),
-    avg_power: z.number().nullable(),
-    distance_meters: z.number().nullable(),
-    total_count: z.coerce.number(),
-  })
-  .passthrough();
+const activityListRowSchema = z.object({
+  id: z.string(),
+  activity_type: z.string(),
+  started_at: timestampStringSchema,
+  ended_at: timestampStringSchema.nullable(),
+  name: z.string().nullable(),
+  provider_id: z.string(),
+  source_providers: z.array(z.string()),
+  member_activity_ids: z.array(z.string()).optional().default([]),
+  avg_hr: z.number().nullable(),
+  max_hr: z.number().nullable(),
+  avg_power: z.number().nullable(),
+  distance_meters: z.number().nullable(),
+  total_count: z.coerce.number(),
+});
 
 const activityDetailRowSchema = z.object({
   id: z.string(),
@@ -43,7 +41,7 @@ const activityDetailRowSchema = z.object({
   subsource: z.string().nullable(),
   source_providers: z.array(z.string()),
   source_external_ids: z.array(activitySourceSchema).nullable(),
-  absent_source_external_ids: z.array(activitySourceSchema).nullable().optional().default(null),
+  absent_source_external_ids: z.array(activitySourceSchema).nullable().default(null),
   member_activity_ids: z.array(z.string()).optional().default([]),
   avg_hr: z.number().nullable(),
   max_hr: z.number().nullable(),

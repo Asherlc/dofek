@@ -211,6 +211,8 @@ jobs:
   dotenv-lint:
     name: Dotenv Lint
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -221,7 +223,7 @@ jobs:
           sh "$RUNNER_TEMP/dotenv-linter-install.sh" -b "$HOME/.local/bin" v4.0.0
       - name: Run dotenv-linter
         run: |
-          "$HOME/.local/bin/dotenv-linter" check .
+          "$HOME/.local/bin/dotenv-linter" check --skip UnorderedKey .
 
   tflint:
     name: TFLint

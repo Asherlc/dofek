@@ -18,14 +18,13 @@ export function parseClickHouseActivitySourceMaps(
     const providerId = map.providerId;
     const externalId = map.externalId;
     if (!providerId || !externalId) return [];
-    return [
-      activitySourceSchema.parse({
-        providerId,
-        externalId,
-        memberActivityId: map.memberActivityId ?? undefined,
-        providerAbsentAt: map.providerAbsentAt ?? null,
-        subsource: map.subsource ?? null,
-      }),
-    ];
+    const result = activitySourceSchema.safeParse({
+      providerId,
+      externalId,
+      memberActivityId: map.memberActivityId ?? undefined,
+      providerAbsentAt: map.providerAbsentAt ?? null,
+      subsource: map.subsource || null,
+    });
+    return result.success ? [result.data] : [];
   });
 }

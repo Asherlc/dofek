@@ -29,6 +29,10 @@ describe("ActivitySource", () => {
       parseClickHouseActivitySourceMaps([
         { providerId: "", externalId: "activity-1" },
         { providerId: "garmin", externalId: "" },
+        { providerId: null, externalId: "activity-2" },
+        { providerId: "whoop", externalId: null },
+        { externalId: "activity-3" },
+        { providerId: "strava" },
       ]),
     ).toEqual([]);
   });
