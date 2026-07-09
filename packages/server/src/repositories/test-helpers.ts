@@ -18,9 +18,10 @@ export function collectSqlText(value: unknown): string {
 export function expectClickHouseFiniteDaysFilter(
   query: string | undefined,
   params: Record<string, unknown> | undefined,
+  expectedDays = 30,
 ): void {
   expect(query).toContain("INTERVAL {days:Int32} DAY");
-  expect(params).toHaveProperty("days", 30);
+  expect(params).toHaveProperty("days", expectedDays);
 }
 
 export function expectClickHouseUnboundedDaysFilter(
@@ -38,10 +39,13 @@ export function expectSensorStoreFiniteDaysFilter(
     };
   },
   callIndex = 0,
+  expectedDays = 30,
 ): void {
-  const query = sensorStore.query.mock.calls[callIndex]?.[1];
-  const params = sensorStore.query.mock.calls[callIndex]?.[2];
-  expectClickHouseFiniteDaysFilter(query, params);
+  const call = sensorStore.query.mock.calls[callIndex];
+  expect(call).toBeDefined();
+  if (!call) return;
+  const [, query, params] = call;
+  expectClickHouseFiniteDaysFilter(query, params, expectedDays);
 }
 
 export function expectSensorStoreUnboundedDaysFilter(
@@ -52,7 +56,9 @@ export function expectSensorStoreUnboundedDaysFilter(
   },
   callIndex = 0,
 ): void {
-  const query = sensorStore.query.mock.calls[callIndex]?.[1];
-  const params = sensorStore.query.mock.calls[callIndex]?.[2];
+  const call = sensorStore.query.mock.calls[callIndex];
+  expect(call).toBeDefined();
+  if (!call) return;
+  const [, query, params] = call;
   expectClickHouseUnboundedDaysFilter(query, params);
 }

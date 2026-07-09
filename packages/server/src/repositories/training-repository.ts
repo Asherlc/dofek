@@ -1,5 +1,6 @@
 import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
 import type { Database } from "dofek/db";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
@@ -64,6 +65,10 @@ const activityStatsRowSchema = z.object({
 });
 
 export type ActivityStatsRow = z.infer<typeof activityStatsRowSchema>;
+
+const rawActivityCountRowSchema = z.object({
+  activity_count: z.coerce.number(),
+});
 
 // ---------------------------------------------------------------------------
 // Repository
@@ -300,16 +305,31 @@ export class TrainingRepository extends BaseRepository {
     requireEndedAt = false,
     accessWindow?: AccessWindow,
   ): Promise<number> {
-    return activityRepositoryFor(
-      this.db,
-      this.userId,
-      this.timezone,
-      this.accessWindow,
-    ).countVisibleInWindow({
-      days,
-      activityTypes,
-      requireEndedAt,
-      accessWindow,
-    });
+    const activityTypePredicate =
+      activityTypes && activityTypes.length > 0
+        ? sql`AND activity_type IN (${sql.join(
+            activityTypes.map((activityType) => sql`${activityType}`),
+            sql`, `,
+          )})`
+        : sql``;
+    const endedAtPredicate = requireEndedAt ? sql`AND ended_at IS NOT NULL` : sql``;
+    const resolvedAccessWindow = accessWindow ?? this.accessWindow;
+    const accessWindowPredicate =
+      resolvedAccessWindow.kind === "limited"
+        ? sql`AND started_at >= ${resolvedAccessWindow.startDate}::timestamptz
+              AND started_at < ${resolvedAccessWindow.endDateExclusive}::timestamptz`
+        : sql``;
+    const rangeFilter = ChartRange.fromDays(days).currentDateAfter(sql`started_at::date`);
+    const rows = await this.query(
+      rawActivityCountRowSchema,
+      sql`SELECT count(*)::int AS activity_count
+          FROM fitness.v_activity
+          WHERE user_id = ${this.userId}::uuid
+            ${rangeFilter}
+            ${endedAtPredicate}
+            ${activityTypePredicate}
+            ${accessWindowPredicate}`,
+    );
+    return rows[0]?.activity_count ?? 0;
   }
 }

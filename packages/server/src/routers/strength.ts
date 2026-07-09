@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
+import { rangeDaysSchema } from "../lib/date-window.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -94,7 +95,7 @@ export const strengthRouter = router({
   ),
 
   workoutSummary: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
-    .input(z.object({ days: z.number().default(90) }))
+    .input(z.object({ days: rangeDaysSchema(90) }))
     .query(async ({ ctx, input }): Promise<WorkoutSummaryRow[]> => {
       const repo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);
       const summaries = await repo.getWorkoutSummaries(input.days);

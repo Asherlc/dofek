@@ -137,10 +137,12 @@ describe("TrainingRepository", () => {
     });
 
     it("applies finite selected-range lower-bound filters", async () => {
-      const { repo, sensorStore } = makeRepository([], undefined, 1);
+      const { repo, execute, sensorStore } = makeRepository([], undefined, 1);
 
       await repo.getWeeklyVolume(30);
 
+      expect(executedSql(execute)).toContain("started_at::date > CURRENT_DATE -");
+      expect(executedSql(execute)).not.toContain("CURRENT_TIMESTAMP -");
       expectSensorStoreFiniteDaysFilter(sensorStore);
     });
 

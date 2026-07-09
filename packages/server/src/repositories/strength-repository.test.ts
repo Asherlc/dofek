@@ -580,5 +580,15 @@ describe("StrengthRepository", () => {
       expect(result[0]?.toDetail().name).toBe("Upper Body");
       expect(result[0]?.toDetail().durationMinutes).toBe(65);
     });
+
+    it("omits selected-range lower-bound filters when days is null", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await repo.getWorkoutSummaries(null);
+
+      const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).not.toContain("CURRENT_TIMESTAMP -");
+      expect(compiledQuery.params).toEqual(["UTC", "user-1"]);
+    });
   });
 });

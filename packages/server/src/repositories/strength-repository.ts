@@ -497,7 +497,7 @@ export class StrengthRepository {
   }
 
   /** Recent workout summaries. */
-  async getWorkoutSummaries(days: number): Promise<WorkoutSummary[]> {
+  async getWorkoutSummaries(days: RangeDays): Promise<WorkoutSummary[]> {
     const rangeFilter = ChartRange.fromDays(days).postgresTimestampAfterNow(sql`a.started_at`);
     const rows = await executeWithSchema(
       this.#db,
