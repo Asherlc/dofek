@@ -64,6 +64,35 @@ export function createMigration(): ClickHouseMigration {
         "DROP VIEW IF EXISTS analytics.activity_summary",
       );
 
+      const hasOldSensorSummary = await tableExists(
+        client,
+        "analytics",
+        "activity_sensor_summary_rows_old",
+      );
+      if (hasOldSensorSummary) {
+        await runClickHouseMigrationStatement(client, `DROP TABLE IF EXISTS ${sensorSummaryTable}`);
+        await runClickHouseMigrationStatement(
+          client,
+          `RENAME TABLE ${sensorSummaryTable}_old TO ${sensorSummaryTable}`,
+        );
+      }
+
+      const hasOldActivitySummary = await tableExists(
+        client,
+        "analytics",
+        "activity_summary_rows_old",
+      );
+      if (hasOldActivitySummary) {
+        await runClickHouseMigrationStatement(
+          client,
+          `DROP TABLE IF EXISTS ${activitySummaryTable}`,
+        );
+        await runClickHouseMigrationStatement(
+          client,
+          `RENAME TABLE ${activitySummaryTable}_old TO ${activitySummaryTable}`,
+        );
+      }
+
       const hasSensorSummary = await tableExists(
         client,
         "analytics",

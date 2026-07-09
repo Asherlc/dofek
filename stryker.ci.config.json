@@ -41,7 +41,6 @@
     "!**/test-helpers.ts",
     "!**/fixtures/**",
     "!src/db/clickhouse-migrations.ts",
-    "!src/db/clickhouse-migrations/0042_recreate_activity_sensor_summary_column_order.ts",
     "!src/db/drizzle-schema.ts",
     "!src/db/schema/**/*.ts",
     "!packages/server/src/types.ts",

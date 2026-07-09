@@ -31,6 +31,22 @@ function makeQueryClient(
     commands,
     command: async (options) => {
       commands.push({ query: options.query });
+      if (options.query.startsWith("DROP TABLE IF EXISTS ")) {
+        tables.delete(options.query.replace("DROP TABLE IF EXISTS ", ""));
+      }
+      if (options.query.startsWith("RENAME TABLE ")) {
+        const renamePairs = options.query
+          .replace("RENAME TABLE ", "")
+          .split(",")
+          .map((renamePair) => renamePair.trim());
+        for (const renamePair of renamePairs) {
+          const [source, destination] = renamePair.split(" TO ", 2);
+          if (source && destination && tables.has(source)) {
+            tables.delete(source);
+            tables.add(destination);
+          }
+        }
+      }
     },
     query: async (options) => {
       const databaseMatch = /database = '([^']+)'/.exec(options.query);
@@ -151,6 +167,37 @@ describe("0042_recreate_activity_sensor_summary_column_order", () => {
       "DROP VIEW IF EXISTS analytics.activity_summary",
       buildActivitySensorSummaryRowsTableSql(),
       buildActivitySummaryRowsTableSql(),
+      expect.stringContaining("CREATE VIEW IF NOT EXISTS analytics.activity_summary"),
+    ]);
+  });
+
+  it("restores old tables before retrying when a previous run failed after rename", async () => {
+    const migration = createMigration();
+    const client = makeQueryClient(
+      new Set([`${sensorSummaryTable}_old`, `${activitySummaryTable}_old`]),
+    );
+    const sensorColumns = extractClickHouseTableColumnNames(
+      buildActivitySensorSummaryRowsTableSql(),
+    ).join(", ");
+    const summaryColumns = extractClickHouseTableColumnNames(
+      buildActivitySummaryRowsTableSql(),
+    ).join(", ");
+
+    await migration.run?.(client, "");
+
+    expect(client.commands.map((command) => command.query)).toEqual([
+      "DROP VIEW IF EXISTS analytics.activity_summary",
+      `DROP TABLE IF EXISTS ${sensorSummaryTable}`,
+      `RENAME TABLE ${sensorSummaryTable}_old TO ${sensorSummaryTable}`,
+      `DROP TABLE IF EXISTS ${activitySummaryTable}`,
+      `RENAME TABLE ${activitySummaryTable}_old TO ${activitySummaryTable}`,
+      `RENAME TABLE ${sensorSummaryTable} TO ${sensorSummaryTable}_old, ${activitySummaryTable} TO ${activitySummaryTable}_old`,
+      buildActivitySensorSummaryRowsTableSql(),
+      buildActivitySummaryRowsTableSql(),
+      `INSERT INTO ${sensorSummaryTable} (${sensorColumns}) SELECT ${sensorColumns} FROM ${sensorSummaryTable}_old`,
+      `DROP TABLE IF EXISTS ${sensorSummaryTable}_old`,
+      `INSERT INTO ${activitySummaryTable} (${summaryColumns}) SELECT ${summaryColumns} FROM ${activitySummaryTable}_old`,
+      `DROP TABLE IF EXISTS ${activitySummaryTable}_old`,
       expect.stringContaining("CREATE VIEW IF NOT EXISTS analytics.activity_summary"),
     ]);
   });
