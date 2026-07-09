@@ -201,6 +201,14 @@ jobs:
             echo "::error::Missing EXPO_PUBLIC_SENTRY_DSN secret required by packages/mobile/lib/telemetry.ts"
             exit 1
           fi
+          if [ -z "${EXPO_PUBLIC_OTEL_ENDPOINT:-}" ]; then
+            echo "::error::Missing EXPO_PUBLIC_OTEL_ENDPOINT secret required by packages/mobile/lib/telemetry.ts"
+            exit 1
+          fi
+          if [ -z "${EXPO_PUBLIC_OTEL_HEADERS:-}" ]; then
+            echo "::error::Missing EXPO_PUBLIC_OTEL_HEADERS secret required by packages/mobile/lib/telemetry.ts"
+            exit 1
+          fi
           if [ -z "${SENTRY_AUTH_TOKEN:-}" ]; then
             echo "::error::Missing SENTRY_AUTH_TOKEN secret required for mobile sourcemap upload"
             exit 1
