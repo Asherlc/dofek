@@ -404,6 +404,35 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.getByText("Kaya climbing at Touchstone Pacific Pipe")).toBeTruthy();
   });
 
+  it("reports malformed climbing rows while rendering valid partial climbing data", async () => {
+    mockTrainingState.data = {
+      ...defaultMockTrainingData(),
+      climbing: {
+        gradeProgression: [
+          {
+            date: "2026-07-09",
+            climbType: "boulder",
+            grade: "V4",
+            gradeSortValue: 4,
+          },
+        ],
+        volumeByGrade: [{ climbType: "boulder", grade: "V4", gradeSortValue: "bad" }],
+        sessionSummary: [],
+      },
+    };
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByText("Best Boulder Grade")).toBeTruthy();
+    expect(screen.getByText("V4")).toBeTruthy();
+    expect(screen.getByText(/strain:climbing.volumeByGrade/)).toBeTruthy();
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+      context: "strain:climbing.volumeByGrade",
+      zodError: expect.any(Object),
+    });
+  });
+
   it("shows the best climbing grade instead of the most recent lower grade", async () => {
     mockTrainingState.data = {
       ...defaultMockTrainingData(),

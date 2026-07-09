@@ -19,10 +19,6 @@ function climbingRangeInput(days: number | null): { days?: number } {
   return days === null ? {} : { days };
 }
 
-function QueryError({ error }: { error: unknown }) {
-  return error ? <QueryStatePanel error={error} /> : null;
-}
-
 export function ClimbingTab() {
   const { days } = useTrainingDays();
   const rangeInput = climbingRangeInput(days);
@@ -43,8 +39,9 @@ export function ClimbingTab() {
     <>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Section title="Grade Progression" subtitle="Best sent grade by session">
-          {gradeProgression.error && <QueryError error={gradeProgression.error} />}
-          {(!gradeProgression.error || gradeProgression.data) && (
+          {gradeProgression.error && !gradeProgression.data ? (
+            <QueryStatePanel error={gradeProgression.error} />
+          ) : (
             <ClimbingGradeProgressionChart
               data={gradeProgression.data ?? []}
               loading={gradeProgression.isLoading}
@@ -53,8 +50,9 @@ export function ClimbingTab() {
         </Section>
 
         <Section title="Volume by Grade" subtitle="Attempts and sends grouped by grade">
-          {volumeByGrade.error && <QueryError error={volumeByGrade.error} />}
-          {(!volumeByGrade.error || volumeByGrade.data) && (
+          {volumeByGrade.error && !volumeByGrade.data ? (
+            <QueryStatePanel error={volumeByGrade.error} />
+          ) : (
             <ClimbingVolumeByGradeChart
               data={volumeByGrade.data ?? []}
               loading={volumeByGrade.isLoading}
@@ -64,8 +62,9 @@ export function ClimbingTab() {
       </div>
 
       <Section title="Recent Climbing Sessions" subtitle="Recent sessions with hardest grades">
-        {sessionSummary.error && <QueryError error={sessionSummary.error} />}
-        {(!sessionSummary.error || sessionSummary.data) && (
+        {sessionSummary.error && !sessionSummary.data ? (
+          <QueryStatePanel error={sessionSummary.error} />
+        ) : (
           <ClimbingSessionSummaryTable
             data={sessionSummary.data ?? []}
             loading={sessionSummary.isLoading}

@@ -129,7 +129,7 @@ describe("ClimbingTab", () => {
     expect(screen.getByText("Recent Climbing Sessions component false")).toBeTruthy();
   });
 
-  it("shows errors when cached section data is an empty array", async () => {
+  it("keeps empty cached section data visible during refetch errors", async () => {
     gradeProgressionQuery.mockReturnValue({
       data: [],
       isLoading: false,
@@ -139,10 +139,11 @@ describe("ClimbingTab", () => {
     const ClimbingTab = await importClimbingTab();
     render(<ClimbingTab />);
 
-    expect(screen.getByText("Error: Grade query failed")).toBeTruthy();
+    expect(screen.queryByText("Error: Grade query failed")).toBeNull();
+    expect(screen.getByText("Grade Progression component")).toBeTruthy();
   });
 
-  it("shows server errors alongside stale cached section data", async () => {
+  it("keeps stale cached section data visible during refetch errors", async () => {
     gradeProgressionQuery.mockReturnValue({
       data: [
         {
@@ -160,7 +161,7 @@ describe("ClimbingTab", () => {
     const ClimbingTab = await importClimbingTab();
     render(<ClimbingTab />);
 
-    expect(screen.getByText("Error: Grade query failed")).toBeTruthy();
+    expect(screen.queryByText("Error: Grade query failed")).toBeNull();
     expect(screen.getByText("Grade Progression component")).toBeTruthy();
   });
 

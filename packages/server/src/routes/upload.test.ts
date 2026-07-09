@@ -676,6 +676,17 @@ describe("createUploadRouter", () => {
       expect(data.status).toBe("processing");
     });
 
+    it("accepts CSV upload with content type parameters", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/kaya-export", {
+        headers: { "Content-Type": "text/csv ; charset=utf-8", "x-file-ext": ".csv" },
+        body: Buffer.from("date,grade,gym\n2026-07-09,v3,Touchstone Pacific Pipe"),
+      });
+
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body)).toMatchObject({ status: "processing", jobId: "job-123" });
+    });
+
     it("accepts CSV upload when optional content type and extension headers are absent", async () => {
       const { app } = createTestApp();
       const res = await request(app, "post", "/api/upload/kaya-export", {

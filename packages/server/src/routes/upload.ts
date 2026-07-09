@@ -63,10 +63,6 @@ function stripExpiry(status: UploadStatus): Omit<UploadStatus, "expiresAt"> {
   };
 }
 
-function routeParam(value: string | string[] | undefined): string | null {
-  return typeof value === "string" ? value : null;
-}
-
 function inProgressStatus(
   status: "uploading" | "assembling",
   progress: number,
@@ -197,7 +193,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
   const router = Router();
   const { importQueue, db } = deps;
   // Poll job status — checks BullMQ first, falls back to upload-phase status
-  router.get("/apple-health/status/:jobId", async (req, res) => {
+  router.get<{ jobId: string }>("/apple-health/status/:jobId", async (req, res) => {
     const userId = await authenticate(req, res, db);
     if (!userId) return;
 
@@ -215,11 +211,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
       return;
     }
 
-    const jobId = routeParam(req.params.jobId);
-    if (!jobId) {
-      res.status(400).json({ error: "Missing job id" });
-      return;
-    }
+    const jobId = req.params.jobId;
 
     const status = await getImportJobStatus(importQueue, jobId);
     if (!status) {
@@ -403,27 +395,27 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
   });
 
   // ── Strong CSV upload ──
-  router.get("/strong-csv/status/:jobId", uploadStatusRateLimiter, async (req, res) => {
-    const userId = await authenticate(req, res, db);
-    if (!userId) return;
+  router.get<{ jobId: string }>(
+    "/strong-csv/status/:jobId",
+    uploadStatusRateLimiter,
+    async (req, res) => {
+      const userId = await authenticate(req, res, db);
+      if (!userId) return;
 
-    const jobId = routeParam(req.params.jobId);
-    if (!jobId) {
-      res.status(400).json({ error: "Missing job id" });
-      return;
-    }
+      const jobId = req.params.jobId;
 
-    const status = await getImportJobStatus(importQueue, jobId);
-    if (!status) {
-      res.status(404).json({ error: "Unknown job" });
-      return;
-    }
-    if (status.userId && status.userId !== userId) {
-      res.status(403).json({ error: "Forbidden" });
-      return;
-    }
-    res.json(status);
-  });
+      const status = await getImportJobStatus(importQueue, jobId);
+      if (!status) {
+        res.status(404).json({ error: "Unknown job" });
+        return;
+      }
+      if (status.userId && status.userId !== userId) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
+      res.json(status);
+    },
+  );
 
   router.post("/strong-csv", async (req, res) => {
     const userId = await authenticate(req, res, db);
@@ -458,27 +450,27 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
   });
 
   // ── Cronometer CSV upload ──
-  router.get("/cronometer-csv/status/:jobId", uploadStatusRateLimiter, async (req, res) => {
-    const userId = await authenticate(req, res, db);
-    if (!userId) return;
+  router.get<{ jobId: string }>(
+    "/cronometer-csv/status/:jobId",
+    uploadStatusRateLimiter,
+    async (req, res) => {
+      const userId = await authenticate(req, res, db);
+      if (!userId) return;
 
-    const jobId = routeParam(req.params.jobId);
-    if (!jobId) {
-      res.status(400).json({ error: "Missing job id" });
-      return;
-    }
+      const jobId = req.params.jobId;
 
-    const status = await getImportJobStatus(importQueue, jobId);
-    if (!status) {
-      res.status(404).json({ error: "Unknown job" });
-      return;
-    }
-    if (status.userId && status.userId !== userId) {
-      res.status(403).json({ error: "Forbidden" });
-      return;
-    }
-    res.json(status);
-  });
+      const status = await getImportJobStatus(importQueue, jobId);
+      if (!status) {
+        res.status(404).json({ error: "Unknown job" });
+        return;
+      }
+      if (status.userId && status.userId !== userId) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
+      res.json(status);
+    },
+  );
 
   router.post("/cronometer-csv", async (req, res) => {
     const userId = await authenticate(req, res, db);
@@ -516,34 +508,34 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
   });
 
   // ── Kaya CSV export upload ──
-  router.get("/kaya-export/status/:jobId", uploadStatusRateLimiter, async (req, res) => {
-    const userId = await authenticate(req, res, db);
-    if (!userId) return;
+  router.get<{ jobId: string }>(
+    "/kaya-export/status/:jobId",
+    uploadStatusRateLimiter,
+    async (req, res) => {
+      const userId = await authenticate(req, res, db);
+      if (!userId) return;
 
-    const jobId = routeParam(req.params.jobId);
-    if (!jobId) {
-      res.status(400).json({ error: "Missing job id" });
-      return;
-    }
+      const jobId = req.params.jobId;
 
-    const status = await getImportJobStatus(importQueue, jobId);
-    if (!status) {
-      res.status(404).json({ error: "Unknown job" });
-      return;
-    }
-    if (status.userId && status.userId !== userId) {
-      res.status(403).json({ error: "Forbidden" });
-      return;
-    }
-    res.json(status);
-  });
+      const status = await getImportJobStatus(importQueue, jobId);
+      if (!status) {
+        res.status(404).json({ error: "Unknown job" });
+        return;
+      }
+      if (status.userId && status.userId !== userId) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
+      res.json(status);
+    },
+  );
 
   router.post("/kaya-export", uploadRateLimiter, async (req, res) => {
     const userId = await authenticate(req, res, db);
     if (!userId) return;
 
     const guidance = "Kaya imports require a CSV export";
-    const contentType = req.headers["content-type"]?.split(";")[0]?.trim().toLowerCase();
+    const contentType = req.headers["content-type"]?.split(";").at(0)?.trim().toLowerCase();
     if (
       contentType &&
       !["text/csv", "application/octet-stream", "text/plain"].includes(contentType)
@@ -552,8 +544,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
       return;
     }
 
-    const fileExt =
-      (typeof req.headers["x-file-ext"] === "string" ? req.headers["x-file-ext"] : "") || ".csv";
+    const fileExt = req.get("x-file-ext") || ".csv";
     if (fileExt.toLowerCase() !== ".csv") {
       res.status(400).json({ error: guidance });
       return;
@@ -574,15 +565,11 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
   });
 
   // ── ZOS App bin upload ──
-  router.get("/zos-app/status/:jobId", async (req, res) => {
+  router.get<{ jobId: string }>("/zos-app/status/:jobId", async (req, res) => {
     const userId = await authenticate(req, res, db);
     if (!userId) return;
 
-    const jobId = routeParam(req.params.jobId);
-    if (!jobId) {
-      res.status(400).json({ error: "Missing job id" });
-      return;
-    }
+    const jobId = req.params.jobId;
 
     const status = await getImportJobStatus(importQueue, jobId);
     if (!status) {

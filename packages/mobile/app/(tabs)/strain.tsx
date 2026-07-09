@@ -75,10 +75,21 @@ const mobileClimbingDataSchema = z.object({
   sessionSummary: z.array(mobileClimbingSessionSummaryRowSchema),
 });
 
+const mobileClimbingPayloadSchema = z.object({
+  gradeProgression: z.unknown().optional(),
+  volumeByGrade: z.unknown().optional(),
+  sessionSummary: z.unknown().optional(),
+});
+
 type MobileClimbingGradeProgressionRow = z.infer<typeof mobileClimbingGradeProgressionRowSchema>;
 type MobileClimbingVolumeByGradeRow = z.infer<typeof mobileClimbingVolumeByGradeRowSchema>;
 type MobileClimbingSessionSummaryRow = z.infer<typeof mobileClimbingSessionSummaryRowSchema>;
 type MobileClimbingData = z.infer<typeof mobileClimbingDataSchema>;
+
+interface MobileClimbingParseResult {
+  data: MobileClimbingData;
+  error: Error | null;
+}
 
 const emptyClimbingData: MobileClimbingData = {
   gradeProgression: [],
@@ -88,9 +99,47 @@ const emptyClimbingData: MobileClimbingData = {
 
 const reportedTrainingErrors = new WeakSet<object>();
 
-function parseMobileClimbingData(value: unknown): MobileClimbingData {
-  const parseResult = mobileClimbingDataSchema.safeParse(value ?? emptyClimbingData);
-  return parseResult.success ? parseResult.data : emptyClimbingData;
+function parseMobileClimbingData(value: unknown): MobileClimbingParseResult {
+  if (value == null) {
+    return { data: emptyClimbingData, error: null };
+  }
+
+  const payloadResult = mobileClimbingPayloadSchema.safeParse(value);
+  if (!payloadResult.success) {
+    const parseError = new Error(
+      `strain:climbing: Zod parse failed: ${payloadResult.error.message}`,
+    );
+    captureException(parseError, {
+      context: "strain:climbing",
+      zodError: payloadResult.error.format(),
+    });
+    return { data: emptyClimbingData, error: parseError };
+  }
+
+  const gradeProgression = safeParseRows(
+    mobileClimbingGradeProgressionRowSchema,
+    payloadResult.data.gradeProgression ?? [],
+    "strain:climbing.gradeProgression",
+  );
+  const volumeByGrade = safeParseRows(
+    mobileClimbingVolumeByGradeRowSchema,
+    payloadResult.data.volumeByGrade ?? [],
+    "strain:climbing.volumeByGrade",
+  );
+  const sessionSummary = safeParseRows(
+    mobileClimbingSessionSummaryRowSchema,
+    payloadResult.data.sessionSummary ?? [],
+    "strain:climbing.sessionSummary",
+  );
+
+  return {
+    data: {
+      gradeProgression: gradeProgression.data,
+      volumeByGrade: volumeByGrade.data,
+      sessionSummary: sessionSummary.data,
+    },
+    error: gradeProgression.error ?? volumeByGrade.error ?? sessionSummary.error,
+  };
 }
 
 class ClimbingSectionModel {
@@ -162,7 +211,8 @@ export default function StrainScreen() {
   );
   const weeklyVolume = weeklyVolumeParsed.data;
   const verticalAscent = trainingData?.verticalAscent ?? [];
-  const climbingModel = new ClimbingSectionModel(parseMobileClimbingData(trainingData?.climbing));
+  const climbingParsed = parseMobileClimbingData(trainingData?.climbing);
+  const climbingModel = new ClimbingSectionModel(climbingParsed.data);
   const collapsedWeeklyVolume = collapseWeeklyVolumeActivityTypes(weeklyVolume, 6);
   const activityTypeTotalsMap = new Map<string, number>();
   for (const row of collapsedWeeklyVolume) {
@@ -356,13 +406,14 @@ export default function StrainScreen() {
 
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Climbing</Text>
-            {trainingQuery.isError ? (
+            {trainingQuery.isError || climbingParsed.error ? (
               <Text style={styles.errorText}>
-                {trainingQuery.error?.message ?? "Failed to load climbing data."}
+                {trainingQuery.error?.message ??
+                  climbingParsed.error?.message ??
+                  "Failed to load climbing data."}
               </Text>
-            ) : (
-              <ClimbingSection model={climbingModel} />
-            )}
+            ) : null}
+            {!trainingQuery.isError ? <ClimbingSection model={climbingModel} /> : null}
           </View>
 
           {/* Weekly volume summary */}
