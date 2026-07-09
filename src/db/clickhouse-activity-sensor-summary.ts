@@ -116,17 +116,17 @@ function findSelectBodyForFromTable(modelSql: string, fromTable: string): string
       cursorIndex = skipSqlBlockComment(modelSql, cursorIndex);
       continue;
     }
-    if (c === "'") {
+    if (currentChar === "'") {
       cursorIndex = skipSqlStringLiteral(modelSql, cursorIndex);
       continue;
     }
 
-    if (c === "(") {
+    if (currentChar === "(") {
       depth += 1;
       cursorIndex += 1;
       continue;
     }
-    if (c === ")") {
+    if (currentChar === ")") {
       depth = Math.max(0, depth - 1);
       cursorIndex += 1;
       continue;
