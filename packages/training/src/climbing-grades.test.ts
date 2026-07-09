@@ -45,6 +45,7 @@ describe("parseClimbingGrade", () => {
 
   it("returns null for invalid V-scale labels instead of treating them as zero", () => {
     expect(parseClimbingGrade("V")).toBeNull();
+    expect(parseClimbingGrade("V01")).toBeNull();
     expect(parseClimbingGrade("V-easy")).toBeNull();
     expect(parseClimbingGrade("not a grade")).toBeNull();
   });
@@ -79,6 +80,8 @@ describe("parseClimbingGrade", () => {
 
   it("returns null for invalid Yosemite Decimal System labels", () => {
     expect(parseClimbingGrade("5")).toBeNull();
+    expect(parseClimbingGrade("5.16")).toBeNull();
+    expect(parseClimbingGrade("5.99")).toBeNull();
     expect(parseClimbingGrade("5.x")).toBeNull();
     expect(parseClimbingGrade("6.1")).toBeNull();
   });

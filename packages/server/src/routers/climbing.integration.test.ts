@@ -30,8 +30,8 @@ describe("climbing router integration", () => {
             ${TEST_USER_ID},
             'climbing-router-boulder-session',
             'rock_climbing',
-            CURRENT_TIMESTAMP - INTERVAL '3 days',
-            CURRENT_TIMESTAMP - INTERVAL '3 days' + INTERVAL '90 minutes',
+            '2026-07-06T10:00:00Z'::timestamptz,
+            '2026-07-06T11:30:00Z'::timestamptz,
             'Kaya climbing at Touchstone Pacific Pipe'
           ),
           (
@@ -39,8 +39,8 @@ describe("climbing router integration", () => {
             ${TEST_USER_ID},
             'climbing-router-route-session',
             'rock_climbing',
-            CURRENT_TIMESTAMP - INTERVAL '2 days',
-            CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '90 minutes',
+            '2026-07-07T10:00:00Z'::timestamptz,
+            '2026-07-07T11:30:00Z'::timestamptz,
             'Kaya climbing at Mission Cliffs'
           )
           RETURNING id, external_id`,
@@ -184,5 +184,13 @@ describe("climbing router integration", () => {
     );
 
     expect(rows[0]?.count).toBe("0");
+
+    const remainingActivities = await testContext.db.execute<{ count: string }>(
+      sql`SELECT COUNT(*)::text AS count
+          FROM fitness.activity
+          WHERE id = ${climbingActivityId}`,
+    );
+
+    expect(remainingActivities[0]?.count).toBe("0");
   });
 });

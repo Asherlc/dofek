@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { ClimbingRepository } from "../repositories/climbing-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
@@ -34,12 +35,24 @@ export interface ClimbingSessionSummaryRow {
 
 const daysInputSchema = z.object({ days: z.number().default(90) });
 
+async function runClimbingQuery<T>(query: () => Promise<T>): Promise<T> {
+  try {
+    return await query();
+  } catch (error: unknown) {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: error instanceof Error ? error.message : "Failed to load climbing data",
+      cause: error,
+    });
+  }
+}
+
 export const climbingRouter = router({
   gradeProgression: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(daysInputSchema)
     .query(async ({ ctx, input }): Promise<ClimbingGradeProgressionRow[]> => {
       const repository = new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone);
-      const rows = await repository.getGradeProgression(input.days);
+      const rows = await runClimbingQuery(() => repository.getGradeProgression(input.days));
       return rows.map((row) => row.toDetail());
     }),
 
@@ -47,7 +60,7 @@ export const climbingRouter = router({
     .input(daysInputSchema)
     .query(async ({ ctx, input }): Promise<ClimbingVolumeByGradeRow[]> => {
       const repository = new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone);
-      const rows = await repository.getVolumeByGrade(input.days);
+      const rows = await runClimbingQuery(() => repository.getVolumeByGrade(input.days));
       return rows.map((row) => row.toDetail());
     }),
 
@@ -55,7 +68,7 @@ export const climbingRouter = router({
     .input(daysInputSchema)
     .query(async ({ ctx, input }): Promise<ClimbingSessionSummaryRow[]> => {
       const repository = new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone);
-      const rows = await repository.getSessionSummaries(input.days);
+      const rows = await runClimbingQuery(() => repository.getSessionSummaries(input.days));
       return rows.map((row) => row.toDetail());
     }),
 });

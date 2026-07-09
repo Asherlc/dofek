@@ -105,12 +105,14 @@ const progressionRowSchema = z.object({
   climb_type: climbTypeSchema,
   grade_system: gradeSystemSchema,
   grade: z.string(),
+  grade_sort_value: z.coerce.number(),
 });
 
 const volumeByGradeRowSchema = z.object({
   climb_type: climbTypeSchema,
   grade_system: gradeSystemSchema,
   grade: z.string(),
+  grade_sort_value: z.coerce.number(),
   attempts: z.coerce.number(),
   sends: z.coerce.number(),
 });
@@ -170,6 +172,7 @@ export class ClimbingRepository {
               ce.climb_type,
               ce.grade_system,
               ce.grade,
+              ${climbingGradeSortSql} AS grade_sort_value,
               ROW_NUMBER() OVER (
                 PARTITION BY (a.started_at AT TIME ZONE ${this.#timezone})::date, ce.climb_type
                 ORDER BY ${climbingGradeSortSql} DESC NULLS LAST
@@ -180,8 +183,9 @@ export class ClimbingRepository {
               AND a.activity_type IN ('climbing', 'rock_climbing')
               AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
               AND ce.sent = true
+              AND ${climbingGradeSortSql} IS NOT NULL
           )
-          SELECT session_date, climb_type, grade_system, grade
+          SELECT session_date, climb_type, grade_system, grade, grade_sort_value
           FROM ranked_sent
           WHERE grade_rank = 1
           ORDER BY session_date, climb_type`,
@@ -194,7 +198,7 @@ export class ClimbingRepository {
           climbType: row.climb_type,
           gradeSystem: row.grade_system,
           grade: normalizedGrade(row.grade),
-          gradeSortValue: gradeSortValue(row.grade),
+          gradeSortValue: row.grade_sort_value,
         }),
     );
   }
@@ -207,6 +211,7 @@ export class ClimbingRepository {
             ce.climb_type,
             ce.grade_system,
             ce.grade,
+            ${climbingGradeSortSql} AS grade_sort_value,
             COUNT(ce.id)::int AS attempts,
             COUNT(*) FILTER (WHERE ce.sent)::int AS sends
           FROM fitness.v_activity a
@@ -214,23 +219,22 @@ export class ClimbingRepository {
           WHERE a.user_id = ${this.#userId}
             AND a.activity_type IN ('climbing', 'rock_climbing')
             AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
-          GROUP BY ce.climb_type, ce.grade_system, ce.grade
-          ORDER BY ce.climb_type, ce.grade_system, ce.grade`,
+            AND ${climbingGradeSortSql} IS NOT NULL
+          GROUP BY ce.climb_type, ce.grade_system, ce.grade, grade_sort_value
+          ORDER BY grade_sort_value`,
     );
 
-    return rows
-      .map(
-        (row) =>
-          new ClimbingVolumeByGrade({
-            climbType: row.climb_type,
-            gradeSystem: row.grade_system,
-            grade: normalizedGrade(row.grade),
-            gradeSortValue: gradeSortValue(row.grade),
-            attempts: row.attempts,
-            sends: row.sends,
-          }),
-      )
-      .sort((left, right) => left.toDetail().gradeSortValue - right.toDetail().gradeSortValue);
+    return rows.map(
+      (row) =>
+        new ClimbingVolumeByGrade({
+          climbType: row.climb_type,
+          gradeSystem: row.grade_system,
+          grade: normalizedGrade(row.grade),
+          gradeSortValue: row.grade_sort_value,
+          attempts: row.attempts,
+          sends: row.sends,
+        }),
+    );
   }
 
   async getSessionSummaries(days: number): Promise<ClimbingSessionSummary[]> {
@@ -253,6 +257,7 @@ export class ClimbingRepository {
             WHERE a.user_id = ${this.#userId}
               AND a.activity_type IN ('climbing', 'rock_climbing')
               AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+              AND ${climbingGradeSortSql} IS NOT NULL
           )
           SELECT
             activity_id,

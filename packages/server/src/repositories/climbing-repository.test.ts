@@ -109,12 +109,14 @@ describe("ClimbingRepository", () => {
           climb_type: "boulder",
           grade_system: "v_scale",
           grade: "V3",
+          grade_sort_value: 3,
         },
         {
           session_date: "2026-07-09",
           climb_type: "route",
           grade_system: "yds",
           grade: "5.10c",
+          grade_sort_value: 5103,
         },
       ]);
 
@@ -151,6 +153,7 @@ describe("ClimbingRepository", () => {
       expect(text).toContain("a.user_id = ");
       expect(text).toContain("AT TIME ZONE");
       expect(text).toContain("ce.sent = true");
+      expect(text).toContain("IS NOT NULL");
       expect(text).toContain("NOW() - ");
     });
   });
@@ -168,6 +171,7 @@ describe("ClimbingRepository", () => {
           climb_type: "boulder",
           grade_system: "v_scale",
           grade: "V2",
+          grade_sort_value: 2,
           attempts: 6,
           sends: 4,
         },
@@ -175,6 +179,7 @@ describe("ClimbingRepository", () => {
           climb_type: "route",
           grade_system: "yds",
           grade: "5.12-",
+          grade_sort_value: 5119,
           attempts: 2,
           sends: 1,
         },
@@ -210,7 +215,8 @@ describe("ClimbingRepository", () => {
       const text = queryText(execute.mock.calls[0]?.[0]);
       expect(text).toContain("COUNT(ce.id)::int AS attempts");
       expect(text).toContain("COUNT(*) FILTER (WHERE ce.sent)::int AS sends");
-      expect(text).toContain("GROUP BY ce.climb_type, ce.grade_system, ce.grade");
+      expect(text).toContain("GROUP BY ce.climb_type, ce.grade_system, ce.grade, grade_sort_value");
+      expect(text).toContain("ORDER BY grade_sort_value");
     });
   });
 
@@ -285,6 +291,7 @@ describe("ClimbingRepository", () => {
       expect(text).toContain("fitness.v_activity");
       expect(text).toContain("ce.activity_id = ANY(a.member_activity_ids)");
       expect(text).toContain("a.activity_type IN ('climbing', 'rock_climbing')");
+      expect(text).toContain("IS NOT NULL");
       expect(text).toContain("COUNT(entry_id)::int AS attempts");
       expect(text).toContain("COUNT(*) FILTER (WHERE sent)::int AS sends");
     });

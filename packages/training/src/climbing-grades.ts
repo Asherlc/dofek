@@ -6,7 +6,7 @@ export interface ParsedClimbingGrade {
   sortValue: number;
 }
 
-const vScalePattern = /^V(?<grade>B|\d+)$/i;
+const vScalePattern = /^V(?<grade>B|0|[1-9]\d*)$/i;
 const yosemiteDecimalSystemPattern = /^5\.(?<majorGrade>\d{1,2})(?<modifier>[ABCD]|[+-])?$/i;
 
 const yosemiteLetterSortOffsets = new Map<string, number>([
@@ -60,7 +60,7 @@ class ClimbingGradeParser {
     }
 
     const majorGrade = Number.parseInt(matchedMajorGrade, 10);
-    if (!Number.isInteger(majorGrade) || majorGrade <= 0) {
+    if (!Number.isInteger(majorGrade) || majorGrade < 0 || majorGrade > 15) {
       return null;
     }
 

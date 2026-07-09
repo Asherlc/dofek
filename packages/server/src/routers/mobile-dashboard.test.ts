@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createTestCallerFactory,
   dateDaysBefore,
@@ -23,6 +23,10 @@ vi.mock("../trpc.ts", async () => {
     cachedProtectedQuery: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 type SensorStore = import("../repositories/activity-repository.ts").ActivitySensorStore;

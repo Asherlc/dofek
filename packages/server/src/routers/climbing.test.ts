@@ -1,3 +1,4 @@
+import type { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
 import type {
   ClimbingGradeProgressionRow,
@@ -43,26 +44,29 @@ const createCaller = createTestCallerFactory(climbingRouter);
 
 function makeCaller(rows: Record<string, unknown>[] = []) {
   const execute = vi.fn().mockResolvedValue(rows);
-  return createCaller({
+  const caller = createCaller({
     db: { execute },
     userId: "user-1",
     timezone: "America/Los_Angeles",
   });
+  return { caller, execute };
 }
 
 describe("climbingRouter", () => {
   it("returns grade progression rows", async () => {
-    const caller = makeCaller([
+    const { caller, execute } = makeCaller([
       {
         session_date: "2026-07-09",
         climb_type: "boulder",
         grade_system: "v_scale",
         grade: "V4",
+        grade_sort_value: 4,
       },
     ]);
 
     const result: ClimbingGradeProgressionRow[] = await caller.gradeProgression({ days: 90 });
 
+    expect(execute).toHaveBeenCalledTimes(1);
     expect(result).toEqual([
       {
         date: "2026-07-09",
@@ -75,11 +79,12 @@ describe("climbingRouter", () => {
   });
 
   it("returns volume by grade rows", async () => {
-    const caller = makeCaller([
+    const { caller, execute } = makeCaller([
       {
         climb_type: "route",
         grade_system: "yds",
         grade: "5.10c",
+        grade_sort_value: 5103,
         attempts: 3,
         sends: 2,
       },
@@ -87,6 +92,7 @@ describe("climbingRouter", () => {
 
     const result: ClimbingVolumeByGradeRow[] = await caller.volumeByGrade({ days: 90 });
 
+    expect(execute).toHaveBeenCalledTimes(1);
     expect(result).toEqual([
       {
         climbType: "route",
@@ -100,7 +106,7 @@ describe("climbingRouter", () => {
   });
 
   it("returns session summary rows", async () => {
-    const caller = makeCaller([
+    const { caller, execute } = makeCaller([
       {
         activity_id: "activity-1",
         session_date: "2026-07-09",
@@ -115,6 +121,7 @@ describe("climbingRouter", () => {
 
     const result: ClimbingSessionSummaryRow[] = await caller.sessionSummary({ days: 90 });
 
+    expect(execute).toHaveBeenCalledTimes(1);
     expect(result).toEqual([
       {
         activityId: "activity-1",
@@ -132,10 +139,24 @@ describe("climbingRouter", () => {
   });
 
   it("returns empty arrays when there is no climbing data", async () => {
-    const caller = makeCaller([]);
+    const { caller } = makeCaller([]);
 
     await expect(caller.gradeProgression({ days: 90 })).resolves.toEqual([]);
     await expect(caller.volumeByGrade({ days: 90 })).resolves.toEqual([]);
     await expect(caller.sessionSummary({ days: 90 })).resolves.toEqual([]);
+  });
+
+  it("returns a controlled error when climbing data cannot load", async () => {
+    const execute = vi.fn().mockRejectedValue(new Error("database unavailable"));
+    const caller = createCaller({
+      db: { execute },
+      userId: "user-1",
+      timezone: "America/Los_Angeles",
+    });
+
+    await expect(caller.gradeProgression({ days: 90 })).rejects.toMatchObject<Partial<TRPCError>>({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "database unavailable",
+    });
   });
 });

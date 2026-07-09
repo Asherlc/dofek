@@ -1,11 +1,12 @@
 import { mkdirSync } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rm, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Queue } from "bullmq";
 import type { Database } from "dofek/db";
 import type { ImportJobData } from "dofek/jobs/queues";
 import { type Request, type Response, Router } from "express";
+import rateLimit from "express-rate-limit";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
 import { assembleChunks, streamToFile } from "../lib/server-utils.ts";
@@ -28,6 +29,14 @@ mkdirSync(JOB_FILES_DIR, { recursive: true });
 const IN_PROGRESS_UPLOAD_STATUS_TTL_MS = UPLOAD_SESSION_TTL_MS + UPLOAD_STATUS_TTL_MS;
 
 const uploadStateStore = getUploadStateStore();
+
+const uploadRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 120,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: "Too many upload requests; please try again later",
+});
 
 async function setUploadStatus(
   uploadId: string,
@@ -100,6 +109,12 @@ async function enqueueImport(
   );
   startWorker();
   return job.id ?? `job-${Date.now()}`;
+}
+
+async function cleanupTempFile(filePath: string): Promise<void> {
+  await unlink(filePath).catch((error: unknown) => {
+    logger.warn("Failed to clean up tmp file %s: %s", filePath, error);
+  });
 }
 
 async function getImportJobStatus(importQueue: Queue<ImportJobData>, jobId: string) {
@@ -471,7 +486,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
   });
 
   // ── Kaya CSV export upload ──
-  router.get("/kaya-export/status/:jobId", async (req, res) => {
+  router.get("/kaya-export/status/:jobId", uploadRateLimiter, async (req, res) => {
     const userId = await authenticate(req, res, db);
     if (!userId) return;
 
@@ -487,7 +502,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
     res.json(status);
   });
 
-  router.post("/kaya-export", async (req, res) => {
+  router.post("/kaya-export", uploadRateLimiter, async (req, res) => {
     const userId = await authenticate(req, res, db);
     if (!userId) return;
 
@@ -517,6 +532,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
       res.json({ status: "processing", jobId });
     } catch (err: unknown) {
       logger.error(`[kaya-export] Upload failed: ${err}`);
+      await cleanupTempFile(tmpFile);
       res.status(500).json({ error: "Upload failed" });
     }
   });
@@ -559,10 +575,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
       res.json({ status: "processing", jobId });
     } catch (err: unknown) {
       logger.error(`[zos-app] Upload failed: ${err}`);
-      const { unlink } = await import("node:fs/promises");
-      await unlink(tmpFile).catch((unlinkError: unknown) => {
-        logger.warn("Failed to clean up tmp file %s: %s", tmpFile, unlinkError);
-      });
+      await cleanupTempFile(tmpFile);
       res.status(500).json({ error: "Upload failed" });
     }
   });

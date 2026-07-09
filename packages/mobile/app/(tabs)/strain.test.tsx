@@ -422,5 +422,6 @@ describe("StrainScreen recent activity navigation", () => {
     render(<StrainScreen />);
 
     expect(screen.getAllByText("Climbing data failed to load").length).toBeGreaterThan(0);
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error));
   });
 });

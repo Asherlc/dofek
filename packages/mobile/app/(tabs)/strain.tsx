@@ -12,7 +12,7 @@ import {
   formatActivityTypeLabel,
 } from "@dofek/training/training";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -30,6 +30,7 @@ import { VerticalAscentChart } from "../../components/charts/VerticalAscentChart
 import { DaySelector } from "../../components/DaySelector";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
 import { safeParseRows } from "../../lib/safe-parse";
+import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useRefresh } from "../../lib/useRefresh";
@@ -111,6 +112,13 @@ export default function StrainScreen() {
     { days, endDate },
     { placeholderData: (previousData) => previousData },
   );
+
+  useEffect(() => {
+    if (trainingQuery.isError && trainingQuery.error) {
+      captureException(trainingQuery.error);
+    }
+  }, [trainingQuery.isError, trainingQuery.error]);
+
   const trainingData = trainingQuery.data;
 
   const workloadResult = trainingData?.workloadRatio;
