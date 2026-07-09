@@ -215,10 +215,12 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: dotenv-linter/action-dotenv-linter@afde61cfda2ecffe7bea35837b6f20b956c88689 # v3.0.0
-        with:
-          reporter: github-check
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install dotenv-linter
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/dotenv-linter/dotenv-linter/v4.0.0/install.sh | sh -s -- -b "$HOME/.local/bin" v4.0.0
+      - name: Run dotenv-linter
+        run: |
+          "$HOME/.local/bin/dotenv-linter" check .
 
   tflint:
     name: TFLint
