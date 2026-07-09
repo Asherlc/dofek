@@ -161,7 +161,7 @@ describe("activity_power_curve read model", () => {
       varyingActivityId,
       "varying-power",
       varyingPowerStartedAt,
-      "2026-07-01T14:00:05.000Z",
+      "2026-07-01T14:00:06.000Z",
     );
     await syncClickHouseTestActivitySensorStore(testContext);
     await seedClickHouseMetricStreamRows(testContext, [
@@ -171,6 +171,7 @@ describe("activity_power_curve read model", () => {
         { offsetSeconds: 2, power: 300 },
         { offsetSeconds: 3, power: 400 },
         { offsetSeconds: 4, power: 500 },
+        { offsetSeconds: 5, power: 300 },
       ]),
     ]);
 
@@ -183,7 +184,8 @@ describe("activity_power_curve read model", () => {
           best_power,
           is_deleted
         FROM (${renderedSql}) AS power_curve
-        WHERE duration_seconds = 5
+        WHERE activity_id = '${varyingActivityId}'
+          AND duration_seconds = 5
         ORDER BY activity_id
       `,
     );
