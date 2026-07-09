@@ -86,20 +86,17 @@ describe("clickhouse-activity-sensor-summary", () => {
     });
 
     it("parses column names containing commas correctly", () => {
-      const sql =
-        "CREATE TABLE foo (\n  `foo,bar` UInt64\n) ENGINE = ReplacingMergeTree(ver)";
+      const sql = "CREATE TABLE foo (\n  `foo,bar` UInt64\n) ENGINE = ReplacingMergeTree(ver)";
       expect(extractClickHouseTableColumnNames(sql)).toEqual(["`foo,bar`"]);
     });
 
     it("handles extra whitespace between closing paren and ENGINE keyword", () => {
-      const sql =
-        "CREATE TABLE foo (\n  id UInt64\n)  ENGINE = ReplacingMergeTree(ver)";
+      const sql = "CREATE TABLE foo (\n  id UInt64\n)  ENGINE = ReplacingMergeTree(ver)";
       expect(extractClickHouseTableColumnNames(sql)).toEqual(["id"]);
     });
 
     it("handles no whitespace between opening paren and column list", () => {
-      const sql =
-        "CREATE TABLE foo (id UInt64\n) ENGINE = ReplacingMergeTree(ver)";
+      const sql = "CREATE TABLE foo (id UInt64\n) ENGINE = ReplacingMergeTree(ver)";
       expect(extractClickHouseTableColumnNames(sql)).toEqual(["id"]);
     });
   });
