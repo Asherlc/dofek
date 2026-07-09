@@ -87,6 +87,20 @@ describe("drizzleSchema", () => {
 
     expect(config.schema).toBe("fitness");
     expect(config.name).toBe("climbing_entry");
+    expect(Object.keys(columns)).toEqual([
+      "id",
+      "activity_id",
+      "external_id",
+      "climb_type",
+      "grade_system",
+      "grade",
+      "sent",
+      "route_name",
+      "location_name",
+      "source_name",
+      "raw",
+      "created_at",
+    ]);
     expect(columns).toMatchObject({
       id: {
         columnType: "PgUUID",

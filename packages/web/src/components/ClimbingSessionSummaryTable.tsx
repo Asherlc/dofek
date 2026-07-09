@@ -55,7 +55,9 @@ export function ClimbingSessionSummaryTable({ data, loading }: ClimbingSessionSu
         <output
           className="w-5 h-5 border-2 border-border-strong border-t-muted rounded-full animate-spin"
           aria-label="Loading climbing sessions"
-        />
+        >
+          <span className="sr-only">Loading climbing sessions</span>
+        </output>
       </div>
     );
   }
