@@ -78,6 +78,12 @@ describe("clickhouse-activity-sensor-summary", () => {
         "CREATE TABLE foo (\n  id UInt64,\n  name String\n) ENGINE = ReplacingMergeTree(ver)";
       expect(extractClickHouseTableColumnNames(sql)).toEqual(["id", "name"]);
     });
+
+    it("skips column definition lines that produce an empty column name", () => {
+      const sql =
+        "CREATE TABLE foo (\n  id UInt64,\n  ,\n  name String\n) ENGINE = ReplacingMergeTree(ver)";
+      expect(extractClickHouseTableColumnNames(sql)).toEqual(["id", "name"]);
+    });
   });
 
   describe("extractDbtFinalSelectColumnNames", () => {
@@ -172,6 +178,15 @@ FROM sub AS s
 JOIN data ON s.col = data.id
 `;
       expect(extractDbtFinalSelectColumnNames(sql, "data")).toEqual(["a", "b"]);
+    });
+
+    it("does not break on column aliases that end with a SQL keyword", () => {
+      const sql = `SELECT
+  t.col1 AS a,
+  t.col2 AS avg_group
+FROM data
+`;
+      expect(extractDbtFinalSelectColumnNames(sql, "data")).toEqual(["a", "avg_group"]);
     });
   });
 });
