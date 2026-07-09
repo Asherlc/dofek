@@ -254,6 +254,7 @@ Databasus backup state:
 Required Infisical keys for mobile pipelines:
 
 - `EXPO_PUBLIC_SENTRY_DSN`
+- `SENTRY_AUTH_TOKEN` (Sentry sourcemap upload for native and OTA mobile releases)
 - `EXPO_PUBLIC_OTEL_ENDPOINT`
 - `EXPO_PUBLIC_OTEL_HEADERS`
 - `EXPO_TOKEN` (OTA publish workflows)

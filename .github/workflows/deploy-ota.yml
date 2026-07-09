@@ -92,9 +92,20 @@ jobs:
         with:
           keys: |
             EXPO_TOKEN
+            SENTRY_AUTH_TOKEN
             EXPO_PUBLIC_SENTRY_DSN
             EXPO_PUBLIC_OTEL_ENDPOINT
             EXPO_PUBLIC_OTEL_HEADERS
+      - name: Validate mobile runtime env
+        run: |
+          if [ -z "${EXPO_PUBLIC_SENTRY_DSN:-}" ]; then
+            echo "::error::Missing EXPO_PUBLIC_SENTRY_DSN secret required by packages/mobile/lib/telemetry.ts"
+            exit 1
+          fi
+          if [ -z "${SENTRY_AUTH_TOKEN:-}" ]; then
+            echo "::error::Missing SENTRY_AUTH_TOKEN secret required for mobile OTA sourcemap upload"
+            exit 1
+          fi
       - name: Wait for OTA server
         run: |
           for attempt in $(seq 1 30); do
@@ -120,6 +131,9 @@ jobs:
           DEBUG: true
           RELEASE_CHANNEL: production
         run: npx eoas@2.3.17 publish --branch main --platform ios --nonInteractive --packageRunner pnpm
+      - name: Upload OTA sourcemaps to Sentry
+        working-directory: packages/mobile
+        run: pnpm exec sentry-expo-upload-sourcemaps dist
 
       - uses: ./.github/actions/append-dispatcher-run-summary
         if: always()
