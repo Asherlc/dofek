@@ -256,13 +256,16 @@ Required Infisical keys for mobile pipelines:
 - `EXPO_PUBLIC_SENTRY_DSN`
 - `SENTRY_AUTH_TOKEN` (Sentry sourcemap upload for native and OTA mobile releases)
 - `EXPO_PUBLIC_OTEL_ENDPOINT`
-- `EXPO_PUBLIC_OTEL_HEADERS`
 - `EXPO_TOKEN` (OTA publish workflows)
 - `APP_STORE_CONNECT_KEY_ID` (TestFlight deploy)
 - `APP_STORE_CONNECT_ISSUER_ID` (TestFlight deploy)
 - `APP_STORE_CONNECT_KEY_BASE64` (TestFlight deploy)
 - `IOS_DISTRIBUTION_CERT_BASE64` (TestFlight deploy)
 - `IOS_DISTRIBUTION_CERT_PASSWORD` (TestFlight deploy)
+
+Optional Infisical keys for mobile pipelines:
+
+- `EXPO_PUBLIC_OTEL_HEADERS` (public client-side OTLP headers; use only write-only ingest credentials because Expo inlines `EXPO_PUBLIC_*` values into the app bundle: https://docs.expo.dev/guides/environment-variables/#reading-environment-variables-from-env-files)
 
 Missing keys fail the workflow immediately with an explicit key name.
 

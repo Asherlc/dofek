@@ -47,19 +47,20 @@ pnpm start
 
 `lib/telemetry.ts` always reports exceptions to Sentry via `EXPO_PUBLIC_SENTRY_DSN`.
 
-To export mobile OpenTelemetry logs to Axiom, set both of these public env vars in Infisical (`prod`):
+To export mobile OpenTelemetry logs to Axiom, set this public env var in Infisical (`prod`):
 
 - `EXPO_PUBLIC_OTEL_ENDPOINT` (for example, `https://api.axiom.co/v1/logs`)
-- `EXPO_PUBLIC_OTEL_HEADERS` (for example, `Authorization=Bearer <token>,x-axiom-dataset=<dataset>`)
+
+If the collector requires headers, set `EXPO_PUBLIC_OTEL_HEADERS` (for example, `Authorization=Bearer <token>,x-axiom-dataset=<dataset>`). Expo embeds `EXPO_PUBLIC_*` values in the client bundle, so only use write-only ingest credentials here (https://docs.expo.dev/guides/environment-variables/#reading-environment-variables-from-env-files).
 
 Mobile workflows load all runtime env values from Infisical via GitHub OIDC (`.github/actions/load-infisical-secrets`), including:
 
 - `EXPO_PUBLIC_SENTRY_DSN`
 - `EXPO_PUBLIC_OTEL_ENDPOINT`
-- `EXPO_PUBLIC_OTEL_HEADERS`
+- `EXPO_PUBLIC_OTEL_HEADERS` (optional)
 - `EXPO_TOKEN` (OTA workflows)
 
-Use a dedicated write-only ingest token for mobile OTEL headers (do not reuse broad admin/read tokens).
+Use a dedicated write-only ingest token for mobile OTEL headers if the collector needs authentication. Do not reuse broad admin/read tokens.
 
 Workflows that must include these vars:
 
