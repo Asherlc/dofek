@@ -35,7 +35,7 @@ describe("ClimbingVolumeByGradeChart", () => {
     expect(screen.getByText("Loading chart")).toBeTruthy();
   });
 
-  it("renders sends, attempts, and total entries ordered by sort value", () => {
+  it("renders aggregate totals and per-grade sends/attempts ordered by sort value", () => {
     render(
       <ClimbingVolumeByGradeChart
         data={[

@@ -403,7 +403,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
   });
 
   // ── Strong CSV upload ──
-  router.get("/strong-csv/status/:jobId", async (req, res) => {
+  router.get("/strong-csv/status/:jobId", uploadStatusRateLimiter, async (req, res) => {
     const userId = await authenticate(req, res, db);
     if (!userId) return;
 
@@ -458,7 +458,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
   });
 
   // ── Cronometer CSV upload ──
-  router.get("/cronometer-csv/status/:jobId", async (req, res) => {
+  router.get("/cronometer-csv/status/:jobId", uploadStatusRateLimiter, async (req, res) => {
     const userId = await authenticate(req, res, db);
     if (!userId) return;
 

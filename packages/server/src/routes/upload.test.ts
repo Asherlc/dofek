@@ -77,7 +77,7 @@ async function request(
   method: "get" | "post",
   path: string,
   opts?: { headers?: Record<string, string>; body?: Buffer },
-): Promise<{ status: number; body: string }> {
+): Promise<{ status: number; body: string; headers: Headers }> {
   return new Promise((resolve) => {
     const server = app.listen(0, () => {
       const port = getPort(server);
@@ -88,11 +88,11 @@ async function request(
       };
       fetch(`http://localhost:${port}${path}`, fetchOpts)
         .then(async (res) => {
-          resolve({ status: res.status, body: await res.text() });
+          resolve({ status: res.status, body: await res.text(), headers: res.headers });
           server.close();
         })
         .catch((_error: unknown) => {
-          resolve({ status: 500, body: "fetch error" });
+          resolve({ status: 500, body: "fetch error", headers: new Headers() });
           server.close();
         });
     });
@@ -533,6 +533,15 @@ describe("createUploadRouter", () => {
   });
 
   describe("GET /api/upload/strong-csv/status/:jobId", () => {
+    it("applies the upload status rate limiter", async () => {
+      const { app, queue } = createTestApp();
+      queue.getJob.mockResolvedValueOnce(null);
+
+      const res = await request(app, "get", "/api/upload/strong-csv/status/unknown");
+
+      expect(res.headers.has("ratelimit")).toBe(true);
+    });
+
     it("returns 404 for unknown job", async () => {
       const { app, queue } = createTestApp();
       queue.getJob.mockResolvedValueOnce(null);
@@ -572,6 +581,15 @@ describe("createUploadRouter", () => {
   });
 
   describe("GET /api/upload/cronometer-csv/status/:jobId", () => {
+    it("applies the upload status rate limiter", async () => {
+      const { app, queue } = createTestApp();
+      queue.getJob.mockResolvedValueOnce(null);
+
+      const res = await request(app, "get", "/api/upload/cronometer-csv/status/unknown");
+
+      expect(res.headers.has("ratelimit")).toBe(true);
+    });
+
     it("returns 404 for unknown job", async () => {
       const { app, queue } = createTestApp();
       queue.getJob.mockResolvedValueOnce(null);
