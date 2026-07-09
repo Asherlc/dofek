@@ -136,13 +136,22 @@ describe("TrainingRepository", () => {
       });
     });
 
-    it("applies finite selected-range lower-bound filters", async () => {
+    it("applies inclusive finite selected-range lower-bound filters to the raw activity preflight", async () => {
       const { repo, execute, sensorStore } = makeRepository([], undefined, 1);
 
       await repo.getWeeklyVolume(30);
 
-      expect(executedSql(execute)).toContain("started_at::date > CURRENT_DATE -");
+      expect(executedSql(execute)).toContain("started_at::date >= (CURRENT_DATE -");
       expect(executedSql(execute)).not.toContain("CURRENT_TIMESTAMP -");
+      expect(executedSql(execute)).toContain("ended_at IS NOT NULL");
+      expect(sensorStore.query).toHaveBeenCalled();
+    });
+
+    it("applies finite selected-range lower-bound filters to the weekly volume query", async () => {
+      const { repo, sensorStore } = makeRepository([], undefined, 1);
+
+      await repo.getWeeklyVolume(30);
+
       expectSensorStoreFiniteDaysFilter(sensorStore);
     });
 

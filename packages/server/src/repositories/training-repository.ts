@@ -319,7 +319,7 @@ export class TrainingRepository extends BaseRepository {
         ? sql`AND started_at >= ${resolvedAccessWindow.startDate}::timestamptz
               AND started_at < ${resolvedAccessWindow.endDateExclusive}::timestamptz`
         : sql``;
-    const rangeFilter = ChartRange.fromDays(days).currentDateAfter(sql`started_at::date`);
+    const rangeFilter = ChartRange.fromDays(days).currentDateAfter(sql`started_at::date`, ">=");
     const rows = await this.query(
       rawActivityCountRowSchema,
       sql`SELECT count(*)::int AS activity_count
