@@ -224,21 +224,36 @@ latest_location_samples AS (
 
 location_points AS (
     SELECT
-        activity_id,
-        user_id,
-        recorded_at,
+        location_samples.activity_id,
+        location_samples.user_id,
+        location_samples.recorded_at,
         CAST(
-            argMax(location_samples.lat, tuple(refresh_version, source_metric_stream_id)),
+            argMax(
+                location_samples.lat,
+                tuple(
+                    location_samples.refresh_version,
+                    location_samples.source_metric_stream_id
+                )
+            ),
             'Nullable(Float64)'
         ) AS lat,
         CAST(
-            argMax(location_samples.lng, tuple(refresh_version, source_metric_stream_id)),
+            argMax(
+                location_samples.lng,
+                tuple(
+                    location_samples.refresh_version,
+                    location_samples.source_metric_stream_id
+                )
+            ),
             'Nullable(Float64)'
         ) AS lng
     FROM latest_location_samples AS location_samples
     WHERE location_samples.lat IS NOT null
         AND location_samples.lng IS NOT null
-    GROUP BY user_id, activity_id, recorded_at
+    GROUP BY
+        location_samples.user_id,
+        location_samples.activity_id,
+        location_samples.recorded_at
 ),
 
 combined_sample_times AS (
