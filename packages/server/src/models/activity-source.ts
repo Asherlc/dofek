@@ -25,6 +25,14 @@ export function parseClickHouseActivitySourceMaps(
       providerAbsentAt: map.providerAbsentAt ?? null,
       subsource: map.subsource || null,
     });
-    return result.success ? [result.data] : [];
+    if (!result.success) {
+      console.warn(
+        "Invalid activity source map entry dropped:",
+        result.error.format(),
+        map,
+      );
+      return [];
+    }
+    return [result.data];
   });
 }
