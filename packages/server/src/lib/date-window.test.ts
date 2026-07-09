@@ -85,6 +85,11 @@ describe("rangeDaysInput", () => {
   it("preserves null days as an unbounded all-time range", () => {
     expect(rangeDaysInput(90).parse({ days: null })).toEqual({ days: null });
   });
+
+  it("rejects non-positive finite days", () => {
+    expect(() => rangeDaysInput(90).parse({ days: 0 })).toThrow(z.ZodError);
+    expect(() => rangeDaysInput(90).parse({ days: -1 })).toThrow(z.ZodError);
+  });
 });
 
 describe("selected chart range contracts", () => {

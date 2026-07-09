@@ -166,6 +166,12 @@ describe("strengthRouter", () => {
 
       await expect(caller.workoutSummary({ days: null })).resolves.toEqual([]);
     });
+
+    it("rejects invalid selected range days", async () => {
+      const caller = makeCaller([]);
+
+      await expect(caller.workoutSummary({ days: -1 })).rejects.toThrow();
+    });
   });
 });
 

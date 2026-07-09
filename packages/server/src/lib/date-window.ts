@@ -130,8 +130,10 @@ export const SELECTED_CHART_RANGE_ENDPOINTS = {
 export type SelectedChartRangeEndpoint = keyof typeof SELECTED_CHART_RANGE_ENDPOINTS;
 
 export function rangeDaysSchema(defaultDays: number, options: { min?: number; max?: number } = {}) {
-  let finiteDaysSchema = z.number();
-  if (options.min !== undefined) finiteDaysSchema = finiteDaysSchema.min(options.min);
+  let finiteDaysSchema = z
+    .number()
+    .int()
+    .min(options.min ?? 1);
   if (options.max !== undefined) finiteDaysSchema = finiteDaysSchema.max(options.max);
   return finiteDaysSchema.nullable().default(defaultDays);
 }
