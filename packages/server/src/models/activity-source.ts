@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { timestampStringSchema } from "../lib/typed-sql.ts";
+import { logger } from "../logger.ts";
 
 export const activitySourceSchema = z.object({
   providerId: z.string(),
@@ -26,9 +27,9 @@ export function parseClickHouseActivitySourceMaps(
       subsource: map.subsource || null,
     });
     if (!result.success) {
-      console.warn(
-        "Invalid activity source map entry dropped:",
-        result.error.format(),
+      logger.warn(
+        "Invalid activity source map entry dropped: %s %o",
+        JSON.stringify(result.error.format()),
         map,
       );
       return [];
