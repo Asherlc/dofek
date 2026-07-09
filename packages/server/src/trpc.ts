@@ -203,12 +203,71 @@ export const CacheTTL = {
   LONG: 60 * 60 * 1000, // 1 hour
 } as const;
 
-function cached(ttlMs: number) {
+type CacheExpiry = "localDayBoundary";
+
+interface CachePolicy {
+  maxAge: number;
+  expiresAt?: CacheExpiry;
+}
+
+function localDateString(date: Date, timezone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+  if (!year || !month || !day) return date.toISOString().slice(0, 10);
+  return `${year}-${month}-${day}`;
+}
+
+function millisecondsUntilNextLocalDay(now: Date, timezone: string): number {
+  const currentDate = localDateString(now, timezone);
+  const nowMs = now.getTime();
+  let lowerMs = nowMs;
+  let upperMs = nowMs + 48 * 60 * 60 * 1000;
+
+  while (upperMs - lowerMs > 1000) {
+    const midpointMs = Math.floor((lowerMs + upperMs) / 2);
+    if (localDateString(new Date(midpointMs), timezone) === currentDate) {
+      lowerMs = midpointMs;
+    } else {
+      upperMs = midpointMs;
+    }
+  }
+
+  return Math.max(1000, upperMs - nowMs);
+}
+
+export function requestCacheTtl(policy: CachePolicy, timezone: string, now = new Date()): number {
+  if (policy.expiresAt !== "localDayBoundary") return policy.maxAge;
+
+  try {
+    return Math.min(policy.maxAge, millisecondsUntilNextLocalDay(now, timezone));
+  } catch (error) {
+    if (error instanceof RangeError) return policy.maxAge;
+    throw error;
+  }
+}
+
+export function requestCacheKey(
+  userId: string | null,
+  path: string,
+  rawInput: unknown,
+  timezone: string,
+): string {
+  return `${userId ?? "anon"}:${path}:${timezone}:${JSON.stringify(rawInput)}`;
+}
+
+function cached(policy: CachePolicy) {
   return trpc.middleware(async ({ ctx, path, type, getRawInput, next }) => {
     const start = performance.now();
     const rawInput = await getRawInput();
     // Include userId in cache key to prevent cross-user data leaks
-    const key = `${ctx.userId ?? "anon"}:${path}:${JSON.stringify(rawInput)}`;
+    const key = requestCacheKey(ctx.userId, path, rawInput, ctx.timezone);
 
     // Cache lookup
     const cacheLookupStart = performance.now();
@@ -247,11 +306,11 @@ function cached(ttlMs: number) {
       totalDurationMs / 1000,
     );
     if (result.ok) {
-      await queryCache.set(key, result.data, ttlMs);
+      await queryCache.set(key, result.data, requestCacheTtl(policy, ctx.timezone));
     }
     return result;
   });
 }
 
 /** Cached protected query (requires auth, cache scoped by userId). */
-export const cachedProtectedQuery = (ttl: number) => protectedProcedure.use(cached(ttl));
+export const cachedProtectedQuery = (policy: CachePolicy) => protectedProcedure.use(cached(policy));

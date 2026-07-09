@@ -93,7 +93,7 @@ const activityOverviewSchema = z.object({
 });
 
 export const calendarRouter = router({
-  calendarData: cachedProtectedQuery(CacheTTL.LONG)
+  calendarData: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ days: z.number().default(365) }))
     .query(async ({ ctx, input }): Promise<CalendarDay[]> => {
       const repo = new CalendarRepository(ctx.db, ctx.userId, ctx.timezone);
@@ -101,7 +101,7 @@ export const calendarRouter = router({
       return days.map((day) => day.toDetail());
     }),
 
-  weekList: cachedProtectedQuery(CacheTTL.MEDIUM)
+  weekList: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(activityListInputSchema)
     .output(z.array(calendarDayActivitiesSchema))
     .query(async ({ ctx, input }) => {
@@ -123,7 +123,7 @@ export const calendarRouter = router({
       return repo.getWeekList(input);
     }),
 
-  activityOverview: cachedProtectedQuery(CacheTTL.MEDIUM)
+  activityOverview: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(activityListInputSchema)
     .output(activityOverviewSchema)
     .query(async ({ ctx, input }) => {

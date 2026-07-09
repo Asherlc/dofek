@@ -52,7 +52,7 @@ export interface WorkoutSummaryRow {
 }
 
 export const strengthRouter = router({
-  volumeOverTime: cachedProtectedQuery(CacheTTL.LONG)
+  volumeOverTime: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<VolumeOverTimeRow[]> => {
       const repo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);
@@ -60,7 +60,7 @@ export const strengthRouter = router({
       return weeks.map((week) => week.toDetail());
     }),
 
-  estimatedOneRepMax: cachedProtectedQuery(CacheTTL.LONG)
+  estimatedOneRepMax: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<EstimatedOneRepMaxRow[]> => {
       const repo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);
@@ -68,7 +68,7 @@ export const strengthRouter = router({
       return exercises.map((exercise) => exercise.toDetail());
     }),
 
-  muscleGroupVolume: cachedProtectedQuery(CacheTTL.LONG)
+  muscleGroupVolume: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<MuscleGroupVolumeRow[]> => {
       const repo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);
@@ -76,7 +76,7 @@ export const strengthRouter = router({
       return groups.map((group) => group.toDetail());
     }),
 
-  progressiveOverload: cachedProtectedQuery(CacheTTL.LONG)
+  progressiveOverload: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<ProgressiveOverloadRow[]> => {
       const repo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);
@@ -84,7 +84,7 @@ export const strengthRouter = router({
       return overloads.map((overload) => overload.toDetail());
     }),
 
-  workoutSummary: cachedProtectedQuery(CacheTTL.LONG)
+  workoutSummary: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<WorkoutSummaryRow[]> => {
       const repo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);

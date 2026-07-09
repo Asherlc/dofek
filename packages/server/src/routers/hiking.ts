@@ -63,7 +63,7 @@ export interface ActivityComparisonRow {
 // ---------------------------------------------------------------------------
 
 export const hikingRouter = router({
-  gradeAdjustedPace: cachedProtectedQuery(CacheTTL.LONG)
+  gradeAdjustedPace: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "hiking.gradeAdjustedPace");
@@ -72,7 +72,7 @@ export const hikingRouter = router({
       return activities.map((activity) => activity.toDetail());
     }),
 
-  elevationProfile: cachedProtectedQuery(CacheTTL.LONG)
+  elevationProfile: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ days: z.number().default(365) }))
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "hiking.elevationProfile");
@@ -81,7 +81,7 @@ export const hikingRouter = router({
       return weeks.map((week) => week.toDetail());
     }),
 
-  walkingBiomechanics: cachedProtectedQuery(CacheTTL.LONG)
+  walkingBiomechanics: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "hiking.walkingBiomechanics");
@@ -90,7 +90,7 @@ export const hikingRouter = router({
       return snapshots.map((snapshot) => snapshot.toDetail());
     }),
 
-  activityComparison: cachedProtectedQuery(CacheTTL.LONG)
+  activityComparison: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ days: z.number().default(365) }))
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "hiking.activityComparison");

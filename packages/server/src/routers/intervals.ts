@@ -22,7 +22,7 @@ export const intervalsRouter = router({
    * Get intervals/laps for a specific activity.
    * Computes per-interval metrics from sensor stream based on interval time ranges.
    */
-  byActivity: cachedProtectedQuery(CacheTTL.LONG)
+  byActivity: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ activityId: z.guid() }))
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "intervals.byActivity");
@@ -34,7 +34,7 @@ export const intervalsRouter = router({
    * Auto-detect intervals from sensor stream data for an activity.
    * Splits activity into intervals based on significant changes in intensity.
    */
-  detect: cachedProtectedQuery(CacheTTL.LONG)
+  detect: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ activityId: z.guid() }))
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "intervals.detect");

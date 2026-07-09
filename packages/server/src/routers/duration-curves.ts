@@ -10,7 +10,7 @@ export const durationCurvesRouter = router({
    * Heart Rate Duration Curve: best sustained HR for standard durations.
    * Uses cumulative sums over metric_stream heart_rate, same approach as power curves.
    */
-  hrCurve: cachedProtectedQuery(CacheTTL.LONG)
+  hrCurve: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(daysInput)
     .query(async ({ ctx, input }) => {
       if (!ctx.sensorStore) {
@@ -29,7 +29,7 @@ export const durationCurvesRouter = router({
    * Uses speed (m/s) from metric_stream, converts to pace (s/km) for output.
    * Higher speed = better pace (lower s/km), so we want MAX average speed.
    */
-  paceCurve: cachedProtectedQuery(CacheTTL.LONG)
+  paceCurve: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(daysInput)
     .query(async ({ ctx, input }) => {
       if (!ctx.sensorStore) {

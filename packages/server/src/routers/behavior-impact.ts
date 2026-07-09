@@ -12,7 +12,7 @@ export interface BehaviorImpact {
 }
 
 export const behaviorImpactRouter = router({
-  impactSummary: cachedProtectedQuery(CacheTTL.LONG)
+  impactSummary: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ days: z.number().min(7).max(365).default(90) }))
     .query(async ({ ctx, input }): Promise<BehaviorImpact[]> => {
       const repo = new BehaviorImpactRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);

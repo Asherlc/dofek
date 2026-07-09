@@ -154,7 +154,7 @@ export const recoveryRouter = router({
    * Lower stddev = more consistent schedule. Consistency score 0-100 based on how
    * tight the schedule is (< 30 min stddev = 100, > 90 min = 0).
    */
-  sleepConsistency: cachedProtectedQuery(CacheTTL.MEDIUM)
+  sleepConsistency: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<SleepConsistencyRow[]> => {
       const queryDays = input.days + 14;
@@ -206,7 +206,7 @@ export const recoveryRouter = router({
    * Rolling 7-day coefficient of variation of HRV (stddev/mean * 100).
    * Fetches extra warmup rows to ensure window functions have data from day 1.
    */
-  hrvVariability: cachedProtectedQuery(CacheTTL.MEDIUM)
+  hrvVariability: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(z.object({ days: z.number().default(90), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<HrvVariabilityRow[]> => {
       const queryDays = input.days + 7;
@@ -263,7 +263,7 @@ export const recoveryRouter = router({
    * Daily load = sum of (duration_min * avg_hr / max_hr) per activity.
    * Acute = 7-day sum, Chronic = 28-day average of daily load.
    */
-  workloadRatio: cachedProtectedQuery(CacheTTL.MEDIUM)
+  workloadRatio: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(z.object({ days: z.number().default(90), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<WorkloadRatioResult> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "recovery.workloadRatio");
@@ -334,7 +334,7 @@ export const recoveryRouter = router({
    * Sleep analytics: stage percentages, rolling avg duration, sleep debt.
    * Excludes naps. Sleep debt = cumulative deficit vs 8hr target over 14 days.
    */
-  sleepAnalytics: cachedProtectedQuery(CacheTTL.MEDIUM)
+  sleepAnalytics: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(z.object({ days: z.number().default(90), endDate: z.string().optional() }))
     .query(async ({ ctx, input }): Promise<SleepAnalyticsResult> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "recovery.sleepAnalytics");
@@ -414,7 +414,7 @@ export const recoveryRouter = router({
    *   sleep efficiency (15%), respiratory rate vs baseline (15%).
    * Uses asymmetric sigmoid mapping instead of linear z-score for more natural scaling.
    */
-  readinessScore: cachedProtectedQuery(CacheTTL.MEDIUM)
+  readinessScore: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(z.object({ days: z.number().default(30), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<ReadinessRow[]> => {
       // Load personalized readiness weights
@@ -558,7 +558,7 @@ export const recoveryRouter = router({
    * Daily strain target based on current readiness and training loads.
    * Returns a recommended strain level and progress toward it.
    */
-  strainTarget: cachedProtectedQuery(CacheTTL.MEDIUM)
+  strainTarget: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(z.object({ days: z.number().default(30), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<StrainTargetResult> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "recovery.strainTarget");

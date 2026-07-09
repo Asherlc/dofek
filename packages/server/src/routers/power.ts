@@ -7,7 +7,7 @@ import { PowerRepository } from "../repositories/power-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export const powerRouter = router({
-  powerCurve: cachedProtectedQuery(CacheTTL.LONG)
+  powerCurve: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }) => {
       if (!ctx.sensorStore) {
@@ -20,7 +20,7 @@ export const powerRouter = router({
       const repo = new PowerRepository(ctx.userId, ctx.timezone, ctx.sensorStore, ctx.db);
       return repo.getPowerCurve(input.days);
     }),
-  eftpTrend: cachedProtectedQuery(CacheTTL.LONG)
+  eftpTrend: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ days: z.number().default(365) }))
     .query(async ({ ctx, input }) => {
       if (!ctx.sensorStore) {

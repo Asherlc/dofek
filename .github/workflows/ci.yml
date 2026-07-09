@@ -27,6 +27,7 @@ jobs:
   build-mobile:
     name: Build Mobile
     needs: detect-changes
+    if: needs.detect-changes.outputs.mobile == 'true'
     uses: ./.github/workflows/build-mobile.yml
     secrets: inherit
 
@@ -45,7 +46,12 @@ jobs:
 
   test:
     name: Test
+    needs: detect-changes
     uses: ./.github/workflows/test.yml
+    with:
+      run_e2e_web: ${{ needs.detect-changes.outputs.e2e_web == 'true' }}
+      run_image_scan: ${{ needs.detect-changes.outputs.docker_server == 'true' }}
+      run_mobile_checks: ${{ needs.detect-changes.outputs.mobile == 'true' }}
     secrets: inherit
 
   ci-gate:

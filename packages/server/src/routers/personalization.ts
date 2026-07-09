@@ -18,7 +18,7 @@ function requireSensorStore(
 
 export const personalizationRouter = router({
   /** Current personalization status: learned params, effective params, and quality indicators */
-  status: cachedProtectedQuery(CacheTTL.MEDIUM).query(async ({ ctx }) => {
+  status: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM }).query(async ({ ctx }) => {
     const sensorStore = requireSensorStore(ctx.sensorStore, "personalization.status");
     const repo = new PersonalizationRepository(ctx.db, ctx.userId, sensorStore);
     return repo.getStatus();
