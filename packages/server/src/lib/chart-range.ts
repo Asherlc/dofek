@@ -1,3 +1,4 @@
+import type { UnsetMarker } from "@trpc/server/unstable-core-do-not-import";
 import { type SQL, sql } from "drizzle-orm";
 import type { z } from "zod";
 import type { AuthenticatedContext } from "../trpc.ts";
@@ -16,11 +17,22 @@ import {
 } from "./date-window.ts";
 
 type MaybePromise<T> = T | Promise<T>;
+type ProcedureInput<TInput> = TInput extends UnsetMarker ? undefined : TInput;
+type ParsedChartRangeInput<TInput extends { days: RangeDays }> = Exclude<
+  ProcedureInput<TInput>,
+  undefined
+>;
 
 interface SelectedChartRangeResolveArgs<TInput> {
   ctx: AuthenticatedContext;
   input: TInput;
   range: ChartRange;
+}
+
+function hasSelectedChartRangeInput<TInput extends { days: RangeDays }>(
+  input: ProcedureInput<TInput>,
+): input is ParsedChartRangeInput<TInput> {
+  return input !== undefined;
 }
 
 export class ChartRange {
@@ -163,27 +175,25 @@ export function selectedChartRangeSchema(
   return selectedChartRangeDaysSchema(endpoint, options);
 }
 
-export function selectedChartCustomRangeQuery<
-  TInputSchema extends z.ZodType<{ days: RangeDays }>,
-  TResult,
->(
+export function selectedChartCustomRangeQuery<TInput extends { days: RangeDays }, TResult>(
   endpoint: SelectedChartRangeEndpoint,
   ttlMs: number,
-  inputSchema: TInputSchema,
-  resolve: (args: SelectedChartRangeResolveArgs<z.output<TInputSchema>>) => MaybePromise<TResult>,
+  inputSchema: z.ZodType<TInput>,
+  resolve: (
+    args: SelectedChartRangeResolveArgs<ParsedChartRangeInput<TInput>>,
+  ) => MaybePromise<TResult>,
 ) {
   assertSelectedChartInputKind(endpoint, "custom");
   return cachedProtectedQuery({ maxAge: ttlMs })
     .input(inputSchema)
     .query(({ ctx, input }) => {
-      if (input === undefined) {
+      if (!hasSelectedChartRangeInput(input)) {
         throw new Error(`${endpoint} selected chart range input is required`);
       }
-      const parsedInput = inputSchema.parse(input);
       return resolve({
         ctx,
-        input: parsedInput,
-        range: ChartRange.fromDays(parsedInput.days),
+        input,
+        range: ChartRange.fromDays(input.days),
       });
     });
 }
