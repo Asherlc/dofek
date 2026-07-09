@@ -486,6 +486,33 @@ describe("StrainScreen recent activity navigation", () => {
     expect(captureException).toHaveBeenCalledWith(expect.any(Error));
   });
 
+  it("keeps cached climbing data visible during background refetch failures", async () => {
+    mockTrainingState.data = {
+      ...defaultMockTrainingData(),
+      climbing: {
+        gradeProgression: [
+          {
+            date: "2026-07-09",
+            climbType: "boulder",
+            grade: "V4",
+            gradeSortValue: 4,
+          },
+        ],
+        volumeByGrade: [],
+        sessionSummary: [],
+      },
+    };
+    mockTrainingState.isError = true;
+    mockTrainingState.error = new Error("Climbing refresh failed");
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.getAllByText("Climbing refresh failed").length).toBeGreaterThan(0);
+    expect(screen.getByText("Best Boulder Grade")).toBeTruthy();
+    expect(screen.getByText("V4")).toBeTruthy();
+  });
+
   it("reports the same cached training query error only once across remounts", async () => {
     const cachedError = new Error("Cached climbing data failed to load");
     mockTrainingState.data = undefined;

@@ -213,6 +213,7 @@ export default function StrainScreen() {
   const verticalAscent = trainingData?.verticalAscent ?? [];
   const climbingParsed = parseMobileClimbingData(trainingData?.climbing);
   const climbingModel = new ClimbingSectionModel(climbingParsed.data);
+  const shouldShowClimbingSection = !trainingQuery.isError || trainingData?.climbing != null;
   const collapsedWeeklyVolume = collapseWeeklyVolumeActivityTypes(weeklyVolume, 6);
   const activityTypeTotalsMap = new Map<string, number>();
   for (const row of collapsedWeeklyVolume) {
@@ -413,7 +414,7 @@ export default function StrainScreen() {
                   "Failed to load climbing data."}
               </Text>
             ) : null}
-            {!trainingQuery.isError ? <ClimbingSection model={climbingModel} /> : null}
+            {shouldShowClimbingSection ? <ClimbingSection model={climbingModel} /> : null}
           </View>
 
           {/* Weekly volume summary */}
