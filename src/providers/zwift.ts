@@ -335,7 +335,7 @@ export class ZwiftProvider implements SyncProvider {
                       externalId: parsed.externalId,
                       cause: streamErr,
                       context: {
-                        activityId: raw.id,
+                        activityId: parsed.externalId,
                       },
                     });
                   }

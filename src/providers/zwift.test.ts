@@ -499,7 +499,7 @@ describe("ZwiftProvider.sync() — activity sync", () => {
         externalId: "456",
         cause: expect.any(Error),
         context: {
-          activityId: 456,
+          activityId: "456",
         },
       },
     ]);
