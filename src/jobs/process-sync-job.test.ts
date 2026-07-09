@@ -797,13 +797,14 @@ describe("processSyncJob", () => {
 
   it("reports returned sync errors to Sentry", async () => {
     const cause = new Error("original cause");
+    const context = { activityId: 456, activitySport: "CYCLING" };
     const provider = createMockProvider({
       id: "partial",
       name: "Partial",
       sync: vi.fn().mockResolvedValue({
         provider: "partial",
         recordsSynced: 3,
-        errors: [{ message: "bad record 1", cause }, { message: "bad record 2" }],
+        errors: [{ message: "bad record 1", cause, context }, { message: "bad record 2" }],
         duration: 50,
       }),
     });
@@ -814,6 +815,7 @@ describe("processSyncJob", () => {
     // First error: uses the cause as the exception
     expect(mockCaptureException).toHaveBeenCalledWith(cause, {
       tags: { provider: "partial" },
+      extra: context,
     });
     // Second error: creates an Error from the message
     expect(mockCaptureException).toHaveBeenCalledWith(

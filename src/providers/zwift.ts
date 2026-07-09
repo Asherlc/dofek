@@ -334,6 +334,12 @@ export class ZwiftProvider implements SyncProvider {
                       message: `streams ${parsed.externalId}: ${streamErr instanceof Error ? streamErr.message : String(streamErr)}`,
                       externalId: parsed.externalId,
                       cause: streamErr,
+                      context: {
+                        activityId: raw.id,
+                        activityStart: raw.startDate,
+                        activitySport: raw.sport,
+                        activityDistanceMeters: raw.distanceInMeters,
+                      },
                     });
                   }
                 } catch (err) {

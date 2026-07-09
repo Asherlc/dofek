@@ -79,6 +79,7 @@ export interface SyncError {
   message: string;
   externalId?: string;
   cause?: unknown;
+  context?: Record<string, string | number | boolean | null>;
 }
 
 // ============================================================

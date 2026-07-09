@@ -12176,3 +12176,28 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   requests fail, but they should no longer restart the web process through this
   in-flight cache path. Continue monitoring ClickHouse queue pressure and the
   body read model query cost separately.
+
+## 2026-07-09 — Zwift Activity Detail Requests Return 404
+
+- **Symptoms:** Scheduled production Zwift sync reported ten handled
+  `Zwift API error (404)` exceptions at `2026-07-09T22:55:46.647Z`.
+- **User impact:** The activity summaries synced successfully, but sensor-stream
+  data was unavailable for the ten activities whose detail requests returned
+  404.
+- **Evidence:** [Sentry issue DOFEK-SERVER-4H](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-4H)
+  shows the activity-list request succeeded, two later activity-detail requests
+  succeeded, and the failing request path was
+  `/api/activities/{id}?fetchSnapshots=true`. Its stack trace follows
+  `ZwiftClient.getActivityDetail()` through `ZwiftProvider.sync()` to the sync
+  worker's per-error Sentry capture.
+- **Root cause:** Zwift's activity-list endpoint returned activity identifiers
+  whose activity-detail endpoint responded 404; the sync deliberately records
+  failed stream fetches as provider errors, and the worker reports each
+  non-auth provider error to Sentry.
+- **Fix / mitigation:** Activity-summary ingestion remains non-fatal when the
+  optional stream-detail request fails. A pending deployment attaches the
+  failed activity's ID, start time, sport, and distance to the Sentry event so
+  future occurrences can be compared with successful detail fetches.
+- **Remaining risk / follow-up:** Decide whether a missing Zwift activity detail
+  is expected upstream absence (and should be recorded as a degradation without
+  a Sentry exception) or should remain an alert-worthy partial-sync failure.

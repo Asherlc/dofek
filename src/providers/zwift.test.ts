@@ -457,7 +457,9 @@ describe("ZwiftProvider.sync() — activity sync", () => {
   it("handles stream fetch error gracefully (non-fatal)", async () => {
     MockZwiftClient.activities = [
       {
+        ...sampleActivity,
         id: 456,
+        id_str: "456",
         name: "Error Ride",
         startDate: "2026-03-15T18:00:00Z",
         endDate: "2026-03-15T19:00:00Z",
@@ -485,6 +487,16 @@ describe("ZwiftProvider.sync() — activity sync", () => {
     );
     // The activity itself still counted even if streams fail
     expect(result.provider).toBe("zwift");
+    expect(result.errors).toEqual([
+      expect.objectContaining({
+        context: {
+          activityId: 456,
+          activityStart: "2026-03-15T18:00:00Z",
+          activitySport: "CYCLING",
+          activityDistanceMeters: expect.any(Number),
+        },
+      }),
+    ]);
   });
 
   it("stops syncing when activity is before since date", async () => {
