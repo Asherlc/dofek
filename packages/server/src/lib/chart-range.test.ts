@@ -183,6 +183,7 @@ describe("selected chart range query builders", () => {
     });
 
     await expect(caller.impactSummary({ days: 6 })).rejects.toThrow();
+    await expect(caller.impactSummary({ days: 366 })).rejects.toThrow();
     await expect(caller.impactSummary({ days: null })).resolves.toEqual({ days: null });
   });
 });

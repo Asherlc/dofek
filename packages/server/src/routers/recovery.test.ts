@@ -2379,6 +2379,8 @@ describe("recoveryRouter.sleepAnalytics - mutation killers", () => {
 
     const result = await caller.sleepAnalytics({});
 
+    expect(result.nightly[0]?.sleepMinutes).toBe(400);
+    expect(result.nightly[1]?.sleepMinutes).toBe(500);
     expect(result.nightly[1]?.rollingAvgDuration).toBe(450);
   });
 
