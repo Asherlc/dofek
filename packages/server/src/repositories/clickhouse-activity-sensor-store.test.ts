@@ -85,6 +85,12 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).not.toContain("analytics.deduped_location");
   });
 
+  it("returns no stream points when the read model has no rows", async () => {
+    const { store } = makeStore([]);
+
+    await expect(store.getStream(window, 500)).resolves.toEqual([]);
+  });
+
   it("queries activity summaries from the ClickHouse analytics schema", async () => {
     const { store, query } = makeStore([
       {
@@ -282,6 +288,12 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).not.toContain("analytics.deduped_sensor");
     expect(queryText).not.toContain("analytics.activity_sensor_sample");
     expect(queryText).not.toContain("FROM (SELECT number AS zone FROM numbers(6)) AS zones");
+  });
+
+  it("returns no heart-rate zones when the read model has no rows", async () => {
+    const { store } = makeStore([]);
+
+    await expect(store.getHeartRateZoneSeconds(window)).resolves.toEqual([]);
   });
 
   it("coerces numeric ClickHouse read-model rows at runtime", async () => {
