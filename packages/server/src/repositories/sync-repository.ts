@@ -292,18 +292,28 @@ export class SyncRepository {
     const rows = await executeWithSchema(
       this.#db,
       latestErrorRowSchema,
-      sql`SELECT provider_id, error_message, auth_failure_reason, synced_at
-          FROM (
-            SELECT DISTINCT ON (provider_id)
-              provider_id,
-              status,
-              error_message,
-              auth_failure_reason,
-              synced_at
+      sql`WITH latest_sync_times AS (
+            SELECT provider_id, MAX(synced_at) AS synced_at
             FROM fitness.sync_log
             WHERE user_id = ${this.#userId}
-            ORDER BY provider_id, synced_at DESC
-          ) latest_sync_log
+            GROUP BY provider_id
+          ),
+          latest_sync_log AS (
+            SELECT DISTINCT ON (sync_log.provider_id)
+              sync_log.provider_id,
+              sync_log.status,
+              sync_log.error_message,
+              sync_log.auth_failure_reason,
+              sync_log.synced_at
+            FROM fitness.sync_log
+            INNER JOIN latest_sync_times
+              ON latest_sync_times.provider_id = sync_log.provider_id
+              AND latest_sync_times.synced_at = sync_log.synced_at
+            WHERE sync_log.user_id = ${this.#userId}
+            ORDER BY sync_log.provider_id, (sync_log.status = 'error') DESC, sync_log.id DESC
+          )
+          SELECT provider_id, error_message, auth_failure_reason, synced_at
+          FROM latest_sync_log
           WHERE latest_sync_log.status = 'error'
           ORDER BY provider_id`,
     );
