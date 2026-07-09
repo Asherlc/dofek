@@ -96,6 +96,12 @@ describe("clickhouse-activity-sensor-summary", () => {
         "CREATE TABLE foo (\n  id UInt64\n)  ENGINE = ReplacingMergeTree(ver)";
       expect(extractClickHouseTableColumnNames(sql)).toEqual(["id"]);
     });
+
+    it("handles no whitespace between opening paren and column list", () => {
+      const sql =
+        "CREATE TABLE foo (id UInt64\n) ENGINE = ReplacingMergeTree(ver)";
+      expect(extractClickHouseTableColumnNames(sql)).toEqual(["id"]);
+    });
   });
 
   describe("extractDbtFinalSelectColumnNames", () => {
