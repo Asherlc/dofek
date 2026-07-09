@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AdaptiveTdeeChart } from "../components/AdaptiveTdeeChart.tsx";
 import { CaloricBalanceChart } from "../components/CaloricBalanceChart.tsx";
 import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
+import { ChartRangeProvider } from "../components/DofekChart.tsx";
 import { MicronutrientChart } from "../components/MicronutrientChart.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import {
@@ -32,51 +33,56 @@ export function NutritionAnalyticsPage() {
     : null;
 
   return (
-    <div className="space-y-6 sm:space-y-8">
-      <div className="flex justify-end">
-        <TimeRangeSelector days={days} onChange={setDays} />
-      </div>
-      {/* Adaptive TDEE */}
-      <Section
-        title="Adaptive TDEE"
-        subtitle="True daily energy expenditure estimated from calorie intake vs weight change"
-      >
-        <AdaptiveTdeeChart data={adaptiveTdee.data} loading={adaptiveTdee.isLoading} />
-      </Section>
-
-      {/* Caloric Balance */}
-      <Section
-        title="Caloric Balance"
-        subtitle="Daily calories in vs estimated expenditure (active + basal energy)"
-      >
-        <CaloricBalanceChart data={caloricBalance.data ?? []} loading={caloricBalance.isLoading} />
-      </Section>
-
-      {/* Macro summary */}
-      {latestProteinPerKg != null && (
-        <div className="card p-4">
-          <div className="flex items-baseline gap-2">
-            <span className="text-xl font-bold text-foreground">{latestProteinPerKg}</span>
-            <span className="text-sm text-muted">g protein / kg bodyweight</span>
-            <span className="text-xs text-dim">
-              {latestProteinPerKg >= 1.6
-                ? "(meets muscle-building target)"
-                : latestProteinPerKg >= 1.2
-                  ? "(adequate for general fitness)"
-                  : "(below recommended for active individuals)"}
-            </span>
-          </div>
+    <ChartRangeProvider days={days}>
+      <div className="space-y-6 sm:space-y-8">
+        <div className="flex justify-end">
+          <TimeRangeSelector days={days} onChange={setDays} />
         </div>
-      )}
+        {/* Adaptive TDEE */}
+        <Section
+          title="Adaptive TDEE"
+          subtitle="True daily energy expenditure estimated from calorie intake vs weight change"
+        >
+          <AdaptiveTdeeChart data={adaptiveTdee.data} loading={adaptiveTdee.isLoading} />
+        </Section>
 
-      {/* Micronutrient Adequacy */}
-      <Section
-        title="Micronutrient Adequacy"
-        subtitle={`Average daily intake as % of Recommended Dietary Allowance (${formatTimeRangeLabel(days)})`}
-      >
-        <MicronutrientChart data={micronutrients.data ?? []} loading={micronutrients.isLoading} />
-      </Section>
-    </div>
+        {/* Caloric Balance */}
+        <Section
+          title="Caloric Balance"
+          subtitle="Daily calories in vs estimated expenditure (active + basal energy)"
+        >
+          <CaloricBalanceChart
+            data={caloricBalance.data ?? []}
+            loading={caloricBalance.isLoading}
+          />
+        </Section>
+
+        {/* Macro summary */}
+        {latestProteinPerKg != null && (
+          <div className="card p-4">
+            <div className="flex items-baseline gap-2">
+              <span className="text-xl font-bold text-foreground">{latestProteinPerKg}</span>
+              <span className="text-sm text-muted">g protein / kg bodyweight</span>
+              <span className="text-xs text-dim">
+                {latestProteinPerKg >= 1.6
+                  ? "(meets muscle-building target)"
+                  : latestProteinPerKg >= 1.2
+                    ? "(adequate for general fitness)"
+                    : "(below recommended for active individuals)"}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Micronutrient Adequacy */}
+        <Section
+          title="Micronutrient Adequacy"
+          subtitle={`Average daily intake as % of Recommended Dietary Allowance (${formatTimeRangeLabel(days)})`}
+        >
+          <MicronutrientChart data={micronutrients.data ?? []} loading={micronutrients.isLoading} />
+        </Section>
+      </div>
+    </ChartRangeProvider>
   );
 }
 

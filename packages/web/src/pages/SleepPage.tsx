@@ -6,6 +6,7 @@ import {
   CorrelationCardSkeleton,
   type Insight,
 } from "../components/CorrelationCard.tsx";
+import { ChartRangeProvider } from "../components/DofekChart.tsx";
 import { Hypnogram } from "../components/Hypnogram.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { PageSection } from "../components/PageSection.tsx";
@@ -75,55 +76,57 @@ export function SleepPage() {
   );
 
   return (
-    <PageLayout
-      headerChildren={<TimeRangeSelector days={days} onChange={setDays} />}
-      title="Sleep"
-      subtitle="Sleep stages, debt, and patterns over time"
-    >
-      {/* Sleep Performance Score + Bedtime Recommendation */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <SleepPerformanceCard data={sleepPerformance.data} loading={sleepPerformance.isLoading} />
-        <SleepNeedCard data={sleepNeed.data} loading={sleepNeed.isLoading} />
-      </div>
-
-      {/* Sleep Stage Chart */}
-      <PageSection title="Sleep Stages">
-        <SleepChart data={sleepRows} loading={sleepData.isLoading} />
-      </PageSection>
-
-      {/* Data Sources */}
-      <PageSection
-        title="Data Sources"
-        subtitle="Which provider and device supplied each night's sleep data"
+    <ChartRangeProvider days={days}>
+      <PageLayout
+        headerChildren={<TimeRangeSelector days={days} onChange={setDays} />}
+        title="Sleep"
+        subtitle="Sleep stages, debt, and patterns over time"
       >
-        <SleepDataSourcesTable rows={sourceRows} loading={sleepData.isLoading} />
-      </PageSection>
+        {/* Sleep Performance Score + Bedtime Recommendation */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <SleepPerformanceCard data={sleepPerformance.data} loading={sleepPerformance.isLoading} />
+          <SleepNeedCard data={sleepNeed.data} loading={sleepNeed.isLoading} />
+        </div>
 
-      {/* Last Night Hypnogram */}
-      <PageSection title="Last Night">
-        <Hypnogram data={latestStages.data ?? []} loading={latestStages.isLoading} />
-      </PageSection>
-
-      {/* Sleep Insights */}
-      {insightsQuery.isLoading && (
-        <PageSection title="Sleep Insights" card={false}>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {["s1", "s2"].map((id) => (
-              <CorrelationCardSkeleton key={id} />
-            ))}
-          </div>
+        {/* Sleep Stage Chart */}
+        <PageSection title="Sleep Stages">
+          <SleepChart data={sleepRows} loading={sleepData.isLoading} />
         </PageSection>
-      )}
 
-      {!insightsQuery.isLoading && sleepInsights.length > 0 && (
-        <PageSection title="Sleep Insights" card={false}>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {sleepInsights.map((insight) => (
-              <CorrelationCard key={insight.id} insight={insight} />
-            ))}
-          </div>
+        {/* Data Sources */}
+        <PageSection
+          title="Data Sources"
+          subtitle="Which provider and device supplied each night's sleep data"
+        >
+          <SleepDataSourcesTable rows={sourceRows} loading={sleepData.isLoading} />
         </PageSection>
-      )}
-    </PageLayout>
+
+        {/* Last Night Hypnogram */}
+        <PageSection title="Last Night">
+          <Hypnogram data={latestStages.data ?? []} loading={latestStages.isLoading} />
+        </PageSection>
+
+        {/* Sleep Insights */}
+        {insightsQuery.isLoading && (
+          <PageSection title="Sleep Insights" card={false}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {["s1", "s2"].map((id) => (
+                <CorrelationCardSkeleton key={id} />
+              ))}
+            </div>
+          </PageSection>
+        )}
+
+        {!insightsQuery.isLoading && sleepInsights.length > 0 && (
+          <PageSection title="Sleep Insights" card={false}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {sleepInsights.map((insight) => (
+                <CorrelationCard key={insight.id} insight={insight} />
+              ))}
+            </div>
+          </PageSection>
+        )}
+      </PageLayout>
+    </ChartRangeProvider>
   );
 }
