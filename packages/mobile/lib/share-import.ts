@@ -122,6 +122,22 @@ function parseErrorMessage(data: unknown, fallback: string): string {
   return parsed.data.error ?? parsed.data.message ?? fallback;
 }
 
+async function parseJsonResponse(response: Response, source: string): Promise<unknown> {
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  if (!response.ok && !contentType.includes("json")) {
+    return {};
+  }
+
+  return response.json().catch((error: unknown) => {
+    captureException(error, {
+      source,
+      url: response.url,
+      status: response.status,
+    });
+    return {};
+  });
+}
+
 function getContentTypeForUpload(providerId: ImportProviderId, fileExtension: string): string {
   if (providerId === "apple-health") {
     return fileExtension === ".xml" ? "application/xml" : "application/zip";
@@ -224,14 +240,7 @@ async function readBlob(fetchImpl: typeof fetch, fileUri: string): Promise<Blob>
 }
 
 async function parseUploadResponse(response: Response): Promise<{ jobId: string }> {
-  const json: unknown = await response.json().catch((error: unknown) => {
-    captureException(error, {
-      source: "share-import-upload-response-json-parse",
-      url: response.url,
-      status: response.status,
-    });
-    return {};
-  });
+  const json = await parseJsonResponse(response, "share-import-upload-response-json-parse");
   const parsed = uploadResponseSchema.safeParse(json);
   if (!response.ok) {
     throw new Error(parseErrorMessage(json, `Upload failed (HTTP ${response.status})`));
@@ -338,14 +347,7 @@ async function pollImportStatus(
         Authorization: `Bearer ${sessionToken}`,
       },
     });
-    const json: unknown = await response.json().catch((error: unknown) => {
-      captureException(error, {
-        source: "share-import-status-response-json-parse",
-        url: response.url,
-        status: response.status,
-      });
-      return {};
-    });
+    const json = await parseJsonResponse(response, "share-import-status-response-json-parse");
     if (!response.ok) {
       throw new Error(parseErrorMessage(json, `Status check failed (HTTP ${response.status})`));
     }
