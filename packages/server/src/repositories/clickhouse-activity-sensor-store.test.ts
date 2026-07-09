@@ -125,6 +125,12 @@ describe("ClickHouseActivitySensorStore", () => {
     );
   });
 
+  it("returns no activity summaries when ClickHouse returns no rows", async () => {
+    const { store } = makeStore([]);
+
+    await expect(store.getActivitySummaries([window.activityId])).resolves.toEqual([]);
+  });
+
   it("loads power curve samples from activity summary", async () => {
     const { store, query } = makeStore([]);
 
@@ -349,6 +355,12 @@ describe("ClickHouseActivitySensorStore", () => {
     const rows = await store.getHeartRateZoneSeconds(window);
 
     expect(rows).toEqual([{ zone: 2, seconds: 15 }]);
+  });
+
+  it("rejects invalid numeric ClickHouse heart-rate zone values", async () => {
+    const { store } = makeStore([{ zone: "not-a-number", seconds: "15" }]);
+
+    await expect(store.getHeartRateZoneSeconds(window)).rejects.toThrow();
   });
 
   it("clamps heart-rate duration windows to at least one sample", async () => {
