@@ -12103,3 +12103,27 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Local `pnpm test:changed` could not complete
   because Docker/Testcontainers integration setup exhausted local disk space,
   but the directly affected unit tests passed before the environmental failure.
+
+## 2026-07-09 — CI Stryker Shards Failing on Date-Window Mutants
+
+- **Symptoms:** `Test / Stryker (6)` and `Test / Stryker (11)` failed during
+  mutation testing.
+- **User impact:** Pull request CI was blocked; no production runtime impact.
+- **Evidence:** Attached GitHub logs ended with `Final mutation score 28.57
+  under breaking threshold 75` for shard 6 and `Final mutation score 60.00
+  under breaking threshold 75` for shard 11. Surviving mutants were in
+  `packages/web/src/lib/bodyHealthMetrics.ts`,
+  `packages/server/src/repositories/daily-metrics-repository.ts`, and
+  `src/db/clickhouse-resting-heart-rate.ts`.
+- **Root cause:** Unit tests covered finite selected ranges but did not assert
+  that all-time ranges still exclude rows after the selected end date, and did
+  not assert the default resting-heart-rate CTE includes the start-window
+  predicate.
+- **Fix / mitigation:** Added focused regression assertions to the existing
+  colocated tests for web body health metrics, daily metrics HRV baseline, and
+  the resting-heart-rate ClickHouse CTE.
+- **Validation:** Targeted unit tests passed, targeted Stryker runs for the
+  affected files passed thresholds (`96.97` and `90.00`), and local
+  `pnpm lint` plus `pnpm typecheck` passed.
+- **Remaining risk / follow-up:** Full CI rerun still needs to confirm the
+  exact computed mutation shards pass remotely.

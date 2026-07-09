@@ -219,6 +219,18 @@ describe("DailyMetricsRepository", () => {
       expect(result[0]?.hrv).toBeNull();
       expect(result[0]?.mean_60d).toBeNull();
     });
+
+    it("excludes rows after the selected end date when days is null", async () => {
+      const { repo } = makeRepository([
+        makeHrvBaselineRow({ date: "2025-03-14", hrv: "44" }),
+        makeHrvBaselineRow({ date: "2025-03-15", hrv: "45" }),
+        makeHrvBaselineRow({ date: "2025-03-16", hrv: "46" }),
+      ]);
+
+      const result = await repo.getHrvBaseline(null, "2025-03-15");
+
+      expect(result.map((row) => row.date)).toEqual(["2025-03-14", "2025-03-15"]);
+    });
   });
 
   describe("getTrends", () => {
