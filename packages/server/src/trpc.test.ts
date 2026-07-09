@@ -22,6 +22,13 @@ describe("requestCacheTtl", () => {
     vi.restoreAllMocks();
   });
 
+  function expectTtlWithinBoundarySearchPrecision(ttl: number, now: Date, nextBoundary: Date) {
+    const expectedTtl = nextBoundary.getTime() - now.getTime();
+
+    expect(ttl).toBeGreaterThanOrEqual(expectedTtl);
+    expect(ttl).toBeLessThanOrEqual(expectedTtl + 1000);
+  }
+
   it("keeps the configured TTL when the local day boundary is farther away", () => {
     const ttl = requestCacheTtl(
       { maxAge: CacheTTL.LONG, expiresAt: "localDayBoundary" },
@@ -43,25 +50,25 @@ describe("requestCacheTtl", () => {
   });
 
   it("caps the TTL at the next UTC day boundary", () => {
+    const now = new Date("2026-07-08T23:45:00.000Z");
     const ttl = requestCacheTtl(
       { maxAge: CacheTTL.LONG, expiresAt: "localDayBoundary" },
       "UTC",
-      new Date("2026-07-08T23:45:00.000Z"),
+      now,
     );
 
-    expect(ttl).toBeLessThanOrEqual(15 * 60 * 1000 + 1000);
-    expect(ttl).toBeGreaterThan(14 * 60 * 1000);
+    expectTtlWithinBoundarySearchPrecision(ttl, now, new Date("2026-07-09T00:00:00.000Z"));
   });
 
   it("uses the request timezone day boundary", () => {
+    const now = new Date("2026-07-09T06:50:00.000Z");
     const ttl = requestCacheTtl(
       { maxAge: CacheTTL.LONG, expiresAt: "localDayBoundary" },
       "America/Los_Angeles",
-      new Date("2026-07-09T06:50:00.000Z"),
+      now,
     );
 
-    expect(ttl).toBeLessThanOrEqual(10 * 60 * 1000 + 1000);
-    expect(ttl).toBeGreaterThan(9 * 60 * 1000);
+    expectTtlWithinBoundarySearchPrecision(ttl, now, new Date("2026-07-09T07:00:00.000Z"));
   });
 
   it("falls back to the configured TTL for invalid timezones", () => {
