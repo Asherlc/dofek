@@ -1,0 +1,315 @@
+import { parseClimbingGrade } from "@dofek/training/climbing-grades";
+import { sql } from "drizzle-orm";
+import { z } from "zod";
+import type { Database } from "../../../../src/db/index.ts";
+import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
+
+export type ClimbingClimbType = "boulder" | "route";
+export type ClimbingGradeSystem = "v_scale" | "yds" | "font" | "french";
+
+export interface ClimbingGradeProgressionRow {
+  date: string;
+  climbType: ClimbingClimbType;
+  gradeSystem: ClimbingGradeSystem;
+  grade: string;
+  gradeSortValue: number;
+}
+
+export class ClimbingGradeProgression {
+  readonly #row: ClimbingGradeProgressionRow;
+
+  constructor(row: ClimbingGradeProgressionRow) {
+    this.#row = row;
+  }
+
+  toDetail() {
+    return {
+      date: this.#row.date,
+      climbType: this.#row.climbType,
+      gradeSystem: this.#row.gradeSystem,
+      grade: this.#row.grade,
+      gradeSortValue: this.#row.gradeSortValue,
+    };
+  }
+}
+
+export interface ClimbingVolumeByGradeRow {
+  climbType: ClimbingClimbType;
+  gradeSystem: ClimbingGradeSystem;
+  grade: string;
+  gradeSortValue: number;
+  attempts: number;
+  sends: number;
+}
+
+export class ClimbingVolumeByGrade {
+  readonly #row: ClimbingVolumeByGradeRow;
+
+  constructor(row: ClimbingVolumeByGradeRow) {
+    this.#row = row;
+  }
+
+  toDetail() {
+    return {
+      climbType: this.#row.climbType,
+      gradeSystem: this.#row.gradeSystem,
+      grade: this.#row.grade,
+      gradeSortValue: this.#row.gradeSortValue,
+      attempts: this.#row.attempts,
+      sends: this.#row.sends,
+    };
+  }
+}
+
+export interface ClimbingSessionSummaryRow {
+  activityId: string;
+  date: string;
+  name: string;
+  locationName: string | null;
+  attempts: number;
+  sends: number;
+  hardestBoulderGrade: string | null;
+  hardestBoulderGradeSortValue: number | null;
+  hardestRouteGrade: string | null;
+  hardestRouteGradeSortValue: number | null;
+}
+
+export class ClimbingSessionSummary {
+  readonly #row: ClimbingSessionSummaryRow;
+
+  constructor(row: ClimbingSessionSummaryRow) {
+    this.#row = row;
+  }
+
+  toDetail() {
+    return {
+      activityId: this.#row.activityId,
+      date: this.#row.date,
+      name: this.#row.name,
+      locationName: this.#row.locationName,
+      attempts: this.#row.attempts,
+      sends: this.#row.sends,
+      hardestBoulderGrade: this.#row.hardestBoulderGrade,
+      hardestBoulderGradeSortValue: this.#row.hardestBoulderGradeSortValue,
+      hardestRouteGrade: this.#row.hardestRouteGrade,
+      hardestRouteGradeSortValue: this.#row.hardestRouteGradeSortValue,
+    };
+  }
+}
+
+const climbTypeSchema = z.enum(["boulder", "route"]);
+const gradeSystemSchema = z.enum(["v_scale", "yds", "font", "french"]);
+
+const progressionRowSchema = z.object({
+  session_date: dateStringSchema,
+  climb_type: climbTypeSchema,
+  grade_system: gradeSystemSchema,
+  grade: z.string(),
+});
+
+const volumeByGradeRowSchema = z.object({
+  climb_type: climbTypeSchema,
+  grade_system: gradeSystemSchema,
+  grade: z.string(),
+  attempts: z.coerce.number(),
+  sends: z.coerce.number(),
+});
+
+const sessionSummaryRowSchema = z.object({
+  activity_id: z.string(),
+  session_date: dateStringSchema,
+  name: z.string(),
+  location_name: z.string().nullable(),
+  attempts: z.coerce.number(),
+  sends: z.coerce.number(),
+  hardest_boulder_grade: z.string().nullable(),
+  hardest_route_grade: z.string().nullable(),
+});
+
+const climbingGradeSortSql = sql`
+  CASE
+    WHEN ce.grade_system = 'v_scale' AND ce.grade = 'VB' THEN -1
+    WHEN ce.grade_system = 'v_scale' AND ce.grade ~ '^V[0-9]+$' THEN substring(ce.grade from 2)::int
+    WHEN ce.grade_system = 'yds' AND ce.grade ~ '^5\\.[0-9]+[abcd]$' THEN
+      5000
+      + (substring(ce.grade from '^5\\.([0-9]+)')::int * 10)
+      + CASE right(ce.grade, 1)
+          WHEN 'a' THEN 1
+          WHEN 'b' THEN 2
+          WHEN 'c' THEN 3
+          WHEN 'd' THEN 4
+        END
+    WHEN ce.grade_system = 'yds' AND ce.grade ~ '^5\\.[0-9]+-$' THEN
+      5000 + (substring(ce.grade from '^5\\.([0-9]+)')::int * 10) - 1
+    WHEN ce.grade_system = 'yds' AND ce.grade ~ '^5\\.[0-9]+\\+$' THEN
+      5000 + (substring(ce.grade from '^5\\.([0-9]+)')::int * 10) + 1
+    WHEN ce.grade_system = 'yds' AND ce.grade ~ '^5\\.[0-9]+$' THEN
+      5000 + (substring(ce.grade from '^5\\.([0-9]+)')::int * 10)
+    ELSE NULL
+  END
+`;
+
+export class ClimbingRepository {
+  readonly #db: Pick<Database, "execute">;
+  readonly #userId: string;
+  readonly #timezone: string;
+
+  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
+    this.#db = db;
+    this.#userId = userId;
+    this.#timezone = timezone;
+  }
+
+  async getGradeProgression(days: number): Promise<ClimbingGradeProgression[]> {
+    const rows = await executeWithSchema(
+      this.#db,
+      progressionRowSchema,
+      sql`WITH ranked_sent AS (
+            SELECT
+              (a.started_at AT TIME ZONE ${this.#timezone})::date::text AS session_date,
+              ce.climb_type,
+              ce.grade_system,
+              ce.grade,
+              ROW_NUMBER() OVER (
+                PARTITION BY (a.started_at AT TIME ZONE ${this.#timezone})::date, ce.climb_type
+                ORDER BY ${climbingGradeSortSql} DESC NULLS LAST
+              ) AS grade_rank
+            FROM fitness.v_activity a
+            JOIN fitness.climbing_entry ce ON ce.activity_id = ANY(a.member_activity_ids)
+            WHERE a.user_id = ${this.#userId}
+              AND a.activity_type IN ('climbing', 'rock_climbing')
+              AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+              AND ce.sent = true
+          )
+          SELECT session_date, climb_type, grade_system, grade
+          FROM ranked_sent
+          WHERE grade_rank = 1
+          ORDER BY session_date, climb_type`,
+    );
+
+    return rows.map(
+      (row) =>
+        new ClimbingGradeProgression({
+          date: row.session_date,
+          climbType: row.climb_type,
+          gradeSystem: row.grade_system,
+          grade: normalizedGrade(row.grade),
+          gradeSortValue: gradeSortValue(row.grade),
+        }),
+    );
+  }
+
+  async getVolumeByGrade(days: number): Promise<ClimbingVolumeByGrade[]> {
+    const rows = await executeWithSchema(
+      this.#db,
+      volumeByGradeRowSchema,
+      sql`SELECT
+            ce.climb_type,
+            ce.grade_system,
+            ce.grade,
+            COUNT(ce.id)::int AS attempts,
+            COUNT(*) FILTER (WHERE ce.sent)::int AS sends
+          FROM fitness.v_activity a
+          JOIN fitness.climbing_entry ce ON ce.activity_id = ANY(a.member_activity_ids)
+          WHERE a.user_id = ${this.#userId}
+            AND a.activity_type IN ('climbing', 'rock_climbing')
+            AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+          GROUP BY ce.climb_type, ce.grade_system, ce.grade
+          ORDER BY ce.climb_type, ce.grade_system, ce.grade`,
+    );
+
+    return rows
+      .map(
+        (row) =>
+          new ClimbingVolumeByGrade({
+            climbType: row.climb_type,
+            gradeSystem: row.grade_system,
+            grade: normalizedGrade(row.grade),
+            gradeSortValue: gradeSortValue(row.grade),
+            attempts: row.attempts,
+            sends: row.sends,
+          }),
+      )
+      .sort((left, right) => left.toDetail().gradeSortValue - right.toDetail().gradeSortValue);
+  }
+
+  async getSessionSummaries(days: number): Promise<ClimbingSessionSummary[]> {
+    const rows = await executeWithSchema(
+      this.#db,
+      sessionSummaryRowSchema,
+      sql`WITH climbing_entries AS (
+            SELECT
+              a.id AS activity_id,
+              (a.started_at AT TIME ZONE ${this.#timezone})::date::text AS session_date,
+              COALESCE(a.name, 'Climbing') AS name,
+              ce.location_name,
+              ce.id AS entry_id,
+              ce.sent,
+              ce.climb_type,
+              ce.grade,
+              ${climbingGradeSortSql} AS grade_sort_value
+            FROM fitness.v_activity a
+            JOIN fitness.climbing_entry ce ON ce.activity_id = ANY(a.member_activity_ids)
+            WHERE a.user_id = ${this.#userId}
+              AND a.activity_type IN ('climbing', 'rock_climbing')
+              AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+          )
+          SELECT
+            activity_id,
+            session_date,
+            name,
+            MAX(location_name) FILTER (WHERE location_name IS NOT NULL) AS location_name,
+            COUNT(entry_id)::int AS attempts,
+            COUNT(*) FILTER (WHERE sent)::int AS sends,
+            (ARRAY_AGG(grade ORDER BY grade_sort_value DESC NULLS LAST)
+              FILTER (WHERE sent AND climb_type = 'boulder'))[1] AS hardest_boulder_grade,
+            (ARRAY_AGG(grade ORDER BY grade_sort_value DESC NULLS LAST)
+              FILTER (WHERE sent AND climb_type = 'route'))[1] AS hardest_route_grade
+          FROM climbing_entries
+          GROUP BY activity_id, session_date, name
+          ORDER BY session_date DESC`,
+    );
+
+    return rows.map(
+      (row) =>
+        new ClimbingSessionSummary({
+          activityId: row.activity_id,
+          date: row.session_date,
+          name: row.name,
+          locationName: row.location_name,
+          attempts: row.attempts,
+          sends: row.sends,
+          hardestBoulderGrade: nullableNormalizedGrade(row.hardest_boulder_grade),
+          hardestBoulderGradeSortValue: nullableGradeSortValue(row.hardest_boulder_grade),
+          hardestRouteGrade: nullableNormalizedGrade(row.hardest_route_grade),
+          hardestRouteGradeSortValue: nullableGradeSortValue(row.hardest_route_grade),
+        }),
+    );
+  }
+}
+
+function normalizedGrade(grade: string): string {
+  const parsedGrade = parseClimbingGrade(grade);
+  if (!parsedGrade) {
+    throw new Error(`Unsupported climbing grade: ${grade}`);
+  }
+
+  return parsedGrade.grade;
+}
+
+function nullableNormalizedGrade(grade: string | null): string | null {
+  return grade === null ? null : normalizedGrade(grade);
+}
+
+function gradeSortValue(grade: string): number {
+  const parsedGrade = parseClimbingGrade(grade);
+  if (!parsedGrade) {
+    throw new Error(`Unsupported climbing grade: ${grade}`);
+  }
+
+  return parsedGrade.sortValue;
+}
+
+function nullableGradeSortValue(grade: string | null): number | null {
+  return grade === null ? null : gradeSortValue(grade);
+}

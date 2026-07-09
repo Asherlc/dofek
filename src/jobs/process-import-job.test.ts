@@ -70,6 +70,14 @@ vi.mock("../providers/cronometer-csv.ts", () => ({
   importCronometerCsv: (...args: unknown[]) => mockImportCronometerCsv(...args),
 }));
 
+const mockImportKayaExportFile = vi.fn().mockResolvedValue({
+  recordsSynced: 4,
+  errors: [],
+});
+vi.mock("../providers/kaya/import.ts", () => ({
+  importKayaExportFile: (...args: unknown[]) => mockImportKayaExportFile(...args),
+}));
+
 const mockImportZosAppBin = vi.fn().mockResolvedValue({
   recordsSynced: 3,
   errors: [],
@@ -132,6 +140,7 @@ describe("processImportJob", () => {
     mockImportAppleHealthFile.mockResolvedValue({ recordsSynced: 42, errors: [] });
     mockImportStrongCsv.mockResolvedValue({ recordsSynced: 10, errors: [] });
     mockImportCronometerCsv.mockResolvedValue({ recordsSynced: 7, errors: [] });
+    mockImportKayaExportFile.mockResolvedValue({ recordsSynced: 4, errors: [] });
     mockImportZosAppBin.mockResolvedValue({ recordsSynced: 3, errors: [] });
     mockEnqueueDebouncedPostSyncMaintenance.mockResolvedValue(undefined);
     mockEnqueueDebouncedUserRefit.mockResolvedValue(undefined);
@@ -381,6 +390,47 @@ describe("processImportJob", () => {
       );
       expect(mockLoggerInfo).toHaveBeenCalledWith(
         expect.stringContaining("7 food entries imported"),
+      );
+    });
+  });
+
+  describe("kaya-export import", () => {
+    it("reads file and calls importKayaExportFile with correct args", async () => {
+      await writeFile(
+        tempFilePath,
+        "date,stiffness,rating,ascent_type,attempts,grade,color,climb_name,gym,location,country\nThu Jul 09 2026 15:17:17 GMT+0000 (GMT+00:00),0,,Onsight,1,v3,Pink,,Touchstone Pacific Pipe,,",
+      );
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "kaya-export" });
+      await runImportJob(job, mockDb);
+
+      expect(mockImportKayaExportFile).toHaveBeenCalledWith(
+        mockDb,
+        expect.stringContaining("Touchstone Pacific Pipe"),
+        "user-1",
+      );
+    });
+
+    it("logs sync and completion message on success", async () => {
+      await writeFile(tempFilePath, "csv data");
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "kaya-export" });
+      await runImportJob(job, mockDb);
+
+      expect(mockLogSync).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({
+          providerId: "kaya-export",
+          dataType: "import",
+          status: "success",
+          recordCount: 4,
+        }),
+      );
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        expect.stringContaining("Kaya export import complete"),
+      );
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        expect.stringContaining("4 climbing entries imported"),
       );
     });
   });

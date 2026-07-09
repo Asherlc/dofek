@@ -11,6 +11,7 @@ const subtabs = [
   { to: "/training/running", label: "Running", exact: false },
   { to: "/training/strength", label: "Strength", exact: false },
   { to: "/training/hiking", label: "Hiking", exact: false },
+  { to: "/training/climbing", label: "Climbing", exact: false },
   { to: "/training/recovery", label: "Recovery", exact: false },
 ] as const;
 

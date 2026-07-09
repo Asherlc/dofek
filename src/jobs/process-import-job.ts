@@ -100,6 +100,27 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
           durationMs: Date.now() - importStart,
           userId,
         });
+      } else if (importType === "kaya-export") {
+        const { readFile } = await import("node:fs/promises");
+        const csvText = await readFile(filePath, "utf-8");
+        const { importKayaExportFile } = await import("../providers/kaya/import.ts");
+        const result = await importKayaExportFile(db, csvText, userId);
+
+        const durationSec = ((Date.now() - importStart) / 1000).toFixed(1);
+        const msg = `${result.recordsSynced} climbing entries imported, ${result.errors.length} errors in ${durationSec}s`;
+        logger.info(`[worker] Kaya export import complete: ${msg}`);
+
+        await logSync(db, {
+          providerId: "kaya-export",
+          dataType: "import",
+          status: result.errors.length ? "error" : "success",
+          recordCount: result.recordsSynced,
+          errorMessage: result.errors.length
+            ? result.errors.map((error: { message: string }) => error.message).join("; ")
+            : undefined,
+          durationMs: Date.now() - importStart,
+          userId,
+        });
       } else if (importType === "zos-app") {
         const { readFile } = await import("node:fs/promises");
         const binData = await readFile(filePath);

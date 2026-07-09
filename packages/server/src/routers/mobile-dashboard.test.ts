@@ -909,7 +909,7 @@ describe("mobileDashboard.training", () => {
       }
       return [];
     });
-    const execute = vi.fn(async () => [{ raw_activity_count: 0 }]);
+    const execute = vi.fn(async () => []);
 
     const caller = createCaller({
       db: { execute },
@@ -937,6 +937,11 @@ describe("mobileDashboard.training", () => {
     expect(result.strainTarget.dailyLoad).toBe(50);
     expect(result.activities).toEqual([]);
     expect(result.weeklyVolume).toEqual([]);
+    expect(result.climbing).toEqual({
+      gradeProgression: [],
+      volumeByGrade: [],
+      sessionSummary: [],
+    });
     const timingCall = vi
       .mocked(logger.info)
       .mock.calls.find((call) => String(call[0]).includes("[mobile-dashboard] training timings"));
@@ -968,6 +973,11 @@ describe("mobileDashboard.training", () => {
       activities: [],
       weeklyVolume: [],
       verticalAscent: [],
+      climbing: {
+        gradeProgression: [],
+        volumeByGrade: [],
+        sessionSummary: [],
+      },
     });
 
     const caller = createCaller({
@@ -1032,6 +1042,11 @@ describe("mobileDashboard.training", () => {
       activities: [],
       weeklyVolume: [],
       verticalAscent: [],
+      climbing: {
+        gradeProgression: [],
+        volumeByGrade: [],
+        sessionSummary: [],
+      },
     });
 
     const caller = createCaller({

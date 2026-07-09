@@ -8,6 +8,12 @@ export type { ActivityHrZones, StreamPoint } from "./routers/activity.ts";
 
 // Calendar router types
 export type { CalendarDay } from "./routers/calendar.ts";
+// Climbing router types
+export type {
+  ClimbingGradeProgressionRow,
+  ClimbingSessionSummaryRow,
+  ClimbingVolumeByGradeRow,
+} from "./routers/climbing.ts";
 // Cycling advanced router types
 export type {
   ActivityVariabilityEmptyReason,

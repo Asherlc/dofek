@@ -37,6 +37,69 @@ import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors } from "../../theme";
 import { ActivityRowSchema, WeeklyVolumeRowSchema } from "../../types/api";
 
+type ClimbingClimbType = "boulder" | "route";
+
+interface MobileClimbingGradeProgressionRow {
+  date: string;
+  climbType: ClimbingClimbType;
+  grade: string;
+  gradeSortValue: number;
+}
+
+interface MobileClimbingVolumeByGradeRow {
+  climbType: ClimbingClimbType;
+  grade: string;
+  gradeSortValue: number;
+  attempts: number;
+  sends: number;
+}
+
+interface MobileClimbingSessionSummaryRow {
+  activityId: string;
+  date: string;
+  name: string;
+  locationName: string | null;
+  attempts: number;
+  sends: number;
+  hardestBoulderGrade: string | null;
+  hardestRouteGrade: string | null;
+}
+
+interface MobileClimbingData {
+  gradeProgression: MobileClimbingGradeProgressionRow[];
+  volumeByGrade: MobileClimbingVolumeByGradeRow[];
+  sessionSummary: MobileClimbingSessionSummaryRow[];
+}
+
+const emptyClimbingData: MobileClimbingData = {
+  gradeProgression: [],
+  volumeByGrade: [],
+  sessionSummary: [],
+};
+
+class ClimbingSectionModel {
+  readonly #data: MobileClimbingData;
+
+  constructor(data: MobileClimbingData) {
+    this.#data = data;
+  }
+
+  latestGrade(climbType: ClimbingClimbType): string | null {
+    const matchingRows = this.#data.gradeProgression.filter((row) => row.climbType === climbType);
+    return matchingRows[matchingRows.length - 1]?.grade ?? null;
+  }
+
+  get volumeRows(): MobileClimbingVolumeByGradeRow[] {
+    return [...this.#data.volumeByGrade].sort(
+      (left, right) => left.gradeSortValue - right.gradeSortValue,
+    );
+  }
+
+  get sessions(): MobileClimbingSessionSummaryRow[] {
+    return this.#data.sessionSummary;
+  }
+}
+
 export default function StrainScreen() {
   const router = useRouter();
   const utils = trpc.useUtils();
@@ -69,6 +132,7 @@ export default function StrainScreen() {
   );
   const weeklyVolume = weeklyVolumeParsed.data;
   const verticalAscent = trainingData?.verticalAscent ?? [];
+  const climbingModel = new ClimbingSectionModel(trainingData?.climbing ?? emptyClimbingData);
   const collapsedWeeklyVolume = collapseWeeklyVolumeActivityTypes(weeklyVolume, 6);
   const activityTypeTotalsMap = new Map<string, number>();
   for (const row of collapsedWeeklyVolume) {
@@ -260,6 +324,17 @@ export default function StrainScreen() {
             </View>
           )}
 
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Climbing</Text>
+            {trainingQuery.isError ? (
+              <Text style={styles.errorText}>
+                {trainingQuery.error?.message ?? "Failed to load climbing data."}
+              </Text>
+            ) : (
+              <ClimbingSection model={climbingModel} />
+            )}
+          </View>
+
           {/* Weekly volume summary */}
           {(trainingQuery.isError || weeklyVolumeParsed.error) && (
             <View style={styles.card}>
@@ -351,6 +426,65 @@ export default function StrainScreen() {
         </>
       )}
     </ScrollView>
+  );
+}
+
+function ClimbingSection({ model }: { model: ClimbingSectionModel }) {
+  return (
+    <View style={styles.climbingStack}>
+      <View style={styles.climbingGradeGrid}>
+        <View style={styles.climbingGradeItem}>
+          <Text style={styles.loadLabel}>Best Boulder Grade</Text>
+          <Text style={styles.loadValue}>{model.latestGrade("boulder") ?? "None"}</Text>
+        </View>
+        <View style={styles.climbingGradeItem}>
+          <Text style={styles.loadLabel}>Best Route Grade</Text>
+          <Text style={styles.loadValue}>{model.latestGrade("route") ?? "None"}</Text>
+        </View>
+      </View>
+
+      {model.latestGrade("boulder") == null && model.latestGrade("route") == null && (
+        <Text style={styles.activitiesEmpty}>No climbing grade progression</Text>
+      )}
+
+      <View style={styles.climbingSubsection}>
+        <Text style={styles.climbingSubsectionTitle}>Volume by Grade</Text>
+        {model.volumeRows.length === 0 ? (
+          <Text style={styles.activitiesEmpty}>No climbing volume by grade</Text>
+        ) : (
+          model.volumeRows.map((row) => (
+            <View key={`${row.climbType}-${row.grade}`} style={styles.climbingVolumeRow}>
+              <Text style={styles.climbingGradeText}>{row.grade}</Text>
+              <Text style={styles.climbingMetaText}>{row.attempts} attempts</Text>
+              <Text style={styles.climbingMetaText}>{row.sends} sends</Text>
+            </View>
+          ))
+        )}
+      </View>
+
+      <View style={styles.climbingSubsection}>
+        <Text style={styles.climbingSubsectionTitle}>Recent Climbing Sessions</Text>
+        {model.sessions.length === 0 ? (
+          <Text style={styles.activitiesEmpty}>No climbing sessions</Text>
+        ) : (
+          model.sessions.slice(0, 3).map((session) => (
+            <View key={session.activityId} style={styles.climbingSessionRow}>
+              <Text style={styles.climbingSessionName}>{session.name}</Text>
+              {session.locationName && (
+                <Text style={styles.climbingMetaText}>{session.locationName}</Text>
+              )}
+              <Text style={styles.climbingMetaText}>
+                {session.attempts} attempts · {session.sends} sends
+              </Text>
+              <Text style={styles.climbingMetaText}>
+                Boulder {session.hardestBoulderGrade ?? "None"} · Route{" "}
+                {session.hardestRouteGrade ?? "None"}
+              </Text>
+            </View>
+          ))
+        )}
+      </View>
+    </View>
   );
 }
 
@@ -547,6 +681,55 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: "center",
     paddingVertical: 24,
+  },
+  climbingStack: {
+    gap: 14,
+  },
+  climbingGradeGrid: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  climbingGradeItem: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 12,
+    flex: 1,
+    gap: 4,
+    padding: 12,
+  },
+  climbingSubsection: {
+    borderTopColor: colors.surfaceSecondary,
+    borderTopWidth: 1,
+    gap: 8,
+    paddingTop: 12,
+  },
+  climbingSubsectionTitle: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  climbingVolumeRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+  },
+  climbingGradeText: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "700",
+    minWidth: 48,
+  },
+  climbingMetaText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  climbingSessionRow: {
+    gap: 3,
+  },
+  climbingSessionName: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
   },
   errorText: {
     color: "#f87171",

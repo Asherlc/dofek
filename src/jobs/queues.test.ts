@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ImportJobData } from "./queues.ts";
 
 const mockQueueAdd = vi.fn();
 const mockQueueInstance = { name: "mock-queue", add: mockQueueAdd };
@@ -134,6 +135,19 @@ describe("queues", () => {
       expect(MockQueue).toHaveBeenCalledWith(IMPORT_QUEUE, {
         connection: expect.objectContaining({ host: "localhost", port: 6379 }),
       });
+    });
+  });
+
+  describe("ImportJobData", () => {
+    it("allows kaya-export as an import job type", () => {
+      const jobData = {
+        filePath: "/tmp/kaya.csv",
+        since: "1970-01-01T00:00:00.000Z",
+        userId: "user-1",
+        importType: "kaya-export",
+      } satisfies ImportJobData;
+
+      expect(jobData.importType).toBe("kaya-export");
     });
   });
 

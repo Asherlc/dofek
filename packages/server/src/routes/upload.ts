@@ -83,7 +83,7 @@ async function enqueueImport(
   importQueue: Queue<ImportJobData>,
   filePath: string,
   since: Date,
-  importType: "apple-health" | "strong-csv" | "cronometer-csv" | "zos-app",
+  importType: "apple-health" | "strong-csv" | "cronometer-csv" | "kaya-export" | "zos-app",
   userId: string,
   opts?: { weightUnit?: "kg" | "lbs"; jobId?: string },
 ): Promise<string> {
@@ -466,6 +466,57 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
       res.json({ status: "processing", jobId });
     } catch (err: unknown) {
       logger.error(`[cronometer-csv] Upload failed: ${err}`);
+      res.status(500).json({ error: "Upload failed" });
+    }
+  });
+
+  // ── Kaya CSV export upload ──
+  router.get("/kaya-export/status/:jobId", async (req, res) => {
+    const userId = await authenticate(req, res, db);
+    if (!userId) return;
+
+    const status = await getImportJobStatus(importQueue, req.params.jobId);
+    if (!status) {
+      res.status(404).json({ error: "Unknown job" });
+      return;
+    }
+    if (status.userId && status.userId !== userId) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    res.json(status);
+  });
+
+  router.post("/kaya-export", async (req, res) => {
+    const userId = await authenticate(req, res, db);
+    if (!userId) return;
+
+    const guidance = "Kaya imports require a CSV export";
+    const contentType = req.headers["content-type"]?.split(";")[0]?.trim().toLowerCase();
+    if (
+      contentType &&
+      !["text/csv", "application/octet-stream", "text/plain"].includes(contentType)
+    ) {
+      res.status(415).json({ error: guidance });
+      return;
+    }
+
+    const fileExt =
+      (typeof req.headers["x-file-ext"] === "string" ? req.headers["x-file-ext"] : "") || ".csv";
+    if (fileExt.toLowerCase() !== ".csv") {
+      res.status(400).json({ error: guidance });
+      return;
+    }
+
+    const tmpId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const tmpFile = join(JOB_FILES_DIR, `kaya-export-${tmpId}.csv`);
+
+    try {
+      await streamToFile(req, tmpFile);
+      const jobId = await enqueueImport(importQueue, tmpFile, new Date(0), "kaya-export", userId);
+      res.json({ status: "processing", jobId });
+    } catch (err: unknown) {
+      logger.error(`[kaya-export] Upload failed: ${err}`);
       res.status(500).json({ error: "Upload failed" });
     }
   });
