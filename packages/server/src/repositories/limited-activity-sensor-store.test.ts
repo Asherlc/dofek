@@ -206,6 +206,29 @@ describe("LimitedActivitySensorStore", () => {
     await expect(secondDashboardPromise).resolves.toEqual([{ value: 1 }]);
   });
 
+  it("does not create an unhandled rejection when a cached in-flight query rejects", async () => {
+    const clickHouseError = new Error("Timeout error.");
+    const delegate = makeDelegate({
+      query: vi.fn().mockRejectedValue(clickHouseError),
+    });
+    const store = new LimitedActivitySensorStore(delegate, 1);
+    const unhandledReasons: unknown[] = [];
+    const onUnhandledRejection = (reason: unknown) => {
+      unhandledReasons.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandledRejection);
+
+    try {
+      await expect(store.query(z.object({ value: z.number() }), "SELECT value")).rejects.toThrow(
+        "Timeout error.",
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(unhandledReasons).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandledRejection);
+    }
+  });
+
   it("does not attach dashboard-priority reads to regular in-flight work", async () => {
     const rows = deferred<Array<{ value: number }>>();
     const delegate = makeDelegate({

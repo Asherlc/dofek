@@ -12083,3 +12083,52 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   copied the matching Python 3.13 runtime files into the server image.
 - **Validation:** `python:3.13-alpine` with the same pinned latest dbt packages
   runs `dbt --version` successfully.
+
+## 2026-07-09 — Mobile Strong CSV Share Import Hidden by Data Sources Loading
+
+- **Symptoms:** Sharing a Strong CSV export to the iOS app opened the Data
+  Sources screen, but the screen stayed on a spinner and did not show import
+  progress or completion.
+- **User impact:** The Strong import could complete successfully while the user
+  saw no confirmation and could not tell whether the share import was still
+  running, failed, or finished.
+- **Evidence:** Sentry issue `DOFEK-MOBILE-16` captured a handled
+  `SyntaxError: JSON Parse error: Unexpected character: <` from
+  `share-import-status-response-json-parse` for
+  `/api/upload/strong-csv/status/1` returning HTTP 502 with an HTML body at
+  `2026-07-09T16:47:02Z`. Sentry breadcrumbs showed the Strong status poll and
+  two tRPC batches all received HTML 502 responses in the same second. Docker
+  task history showed `dofek_web.1` exited with code 1 at
+  `2026-07-09T16:46:50Z`, three seconds before the Strong upload, and
+  `dofek_web.2` exited with code 1 at `2026-07-09T16:49:04Z`. Direct container
+  logs showed both exits followed a ClickHouse `Timeout error` from
+  `body.list`, then `[web] Unhandled rejection: Timeout error.` Production
+  worker logs later showed `Strong CSV import complete: 99 workouts imported,
+  0 errors in 1.1s`.
+- **Root cause:** `LimitedActivitySensorStore` deduped in-flight ClickHouse
+  reads by storing `promise.then(...)` in an internal cache. When a ClickHouse
+  query timed out, the tRPC route handled the original promise rejection, but
+  the cached derived promise rejected without a consumer. The web
+  `unhandledRejection` handler intentionally exits the process on unhandled
+  promises, so both web replicas restarted during the share-import status
+  poll. The mobile providers screen compounded the incident by returning a
+  full-screen loading spinner whenever `sync.providers` was loading, hiding the
+  share-import progress/error card even though the import effect was running.
+  The mobile status poll also parsed non-JSON HTTP errors as JSON, producing a
+  misleading Sentry parse exception instead of the real HTTP 502.
+- **Fix / mitigation:** Store the original in-flight ClickHouse promise in
+  `LimitedActivitySensorStore` so handled query failures do not create a
+  second unhandled rejection. Made provider-list loading section-local so the
+  share import card remains visible while providers load. Updated share-import
+  response parsing to skip JSON parsing for non-JSON HTTP failures and surface
+  the real HTTP status error instead.
+- **Validation:** `pnpm vitest run --project mobile
+  packages/mobile/app/providers/index.test.tsx packages/mobile/lib/share-import.test.ts`
+  and `pnpm vitest run --project unit
+  packages/server/src/repositories/limited-activity-sensor-store.test.ts`
+  passed. `pnpm --filter dofek-mobile typecheck` completed with no TypeScript
+  errors.
+- **Remaining risk / follow-up:** ClickHouse timeouts can still make individual
+  requests fail, but they should no longer restart the web process through this
+  in-flight cache path. Continue monitoring ClickHouse queue pressure and the
+  body read model query cost separately.

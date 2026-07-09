@@ -117,10 +117,7 @@ export class LimitedActivitySensorStore implements ActivitySensorStore {
       options.priority === "dashboard" ? this.#dashboardLimiter : this.#regularLimiter;
     const promise = limiter.run(() => this.#delegate.query(schema, query, params, options));
     if (!options.abortSignal) {
-      this.#inFlightQueries.set(
-        key,
-        promise.then((rows): unknown[] => rows),
-      );
+      this.#inFlightQueries.set(key, promise);
     }
     try {
       return await promise;

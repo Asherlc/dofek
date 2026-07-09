@@ -497,14 +497,6 @@ export default function ProvidersScreen() {
   const enabledProviders = providerList.filter((p) => p.enabled);
   const appleHealthProvider = appleHealth.model.toProviderCard();
 
-  if (isLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator color={colors.accent} size="large" />
-      </View>
-    );
-  }
-
   return (
     <ScrollView
       style={styles.container}
@@ -626,6 +618,11 @@ export default function ProvidersScreen() {
             title="Could not load provider stats"
             message={getQueryErrorMessage(stats.error, "Failed to load provider stats.")}
           />
+        </View>
+      ) : null}
+      {isLoading && !providers.error ? (
+        <View style={styles.card}>
+          <ActivityIndicator color={colors.accent} size="small" />
         </View>
       ) : null}
       {providerList.map((provider) => (
