@@ -456,4 +456,19 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.getAllByText("Climbing data failed to load").length).toBeGreaterThan(0);
     expect(captureException).toHaveBeenCalledWith(expect.any(Error));
   });
+
+  it("reports the same cached training query error only once across remounts", async () => {
+    const cachedError = new Error("Cached climbing data failed to load");
+    mockTrainingState.data = undefined;
+    mockTrainingState.isError = true;
+    mockTrainingState.error = cachedError;
+
+    const { default: StrainScreen } = await import("./strain");
+    const firstRender = render(<StrainScreen />);
+    firstRender.unmount();
+    render(<StrainScreen />);
+
+    expect(captureException).toHaveBeenCalledTimes(1);
+    expect(captureException).toHaveBeenCalledWith(cachedError);
+  });
 });

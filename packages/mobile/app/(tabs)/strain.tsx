@@ -78,6 +78,8 @@ const emptyClimbingData: MobileClimbingData = {
   sessionSummary: [],
 };
 
+const reportedTrainingErrors = new WeakSet<object>();
+
 class ClimbingSectionModel {
   readonly #data: MobileClimbingData;
 
@@ -120,6 +122,8 @@ export default function StrainScreen() {
 
   useEffect(() => {
     if (trainingQuery.isError && trainingQuery.error) {
+      if (reportedTrainingErrors.has(trainingQuery.error)) return;
+      reportedTrainingErrors.add(trainingQuery.error);
       captureException(trainingQuery.error);
     }
   }, [trainingQuery.isError, trainingQuery.error]);

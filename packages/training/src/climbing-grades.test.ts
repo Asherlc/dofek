@@ -55,6 +55,7 @@ describe("parseClimbingGrade", () => {
     const parsedGrades = labels.map((label) => parseClimbingGrade(label));
     const sortValues = parsedGrades.map((grade) => grade?.sortValue);
 
+    expect(parsedGrades.every((grade) => grade !== null)).toBe(true);
     expect(parsedGrades.map((grade) => grade?.grade)).toEqual(labels);
     expect(parsedGrades.every((grade) => grade?.gradeSystem === "yds")).toBe(true);
     expect(sortValues).toEqual([...sortValues].sort((left, right) => Number(left) - Number(right)));

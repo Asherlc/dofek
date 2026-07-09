@@ -1,4 +1,4 @@
-import type { TRPCError } from "@trpc/server";
+import { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
 import type {
   ClimbingGradeProgressionRow,
@@ -139,11 +139,12 @@ describe("climbingRouter", () => {
   });
 
   it("returns empty arrays when there is no climbing data", async () => {
-    const { caller } = makeCaller([]);
+    const { caller, execute } = makeCaller([]);
 
     await expect(caller.gradeProgression({ days: 90 })).resolves.toEqual([]);
     await expect(caller.volumeByGrade({ days: 90 })).resolves.toEqual([]);
     await expect(caller.sessionSummary({ days: 90 })).resolves.toEqual([]);
+    expect(execute).toHaveBeenCalledTimes(3);
   });
 
   it("returns a controlled error when climbing data cannot load", async () => {
@@ -157,6 +158,22 @@ describe("climbingRouter", () => {
     await expect(caller.gradeProgression({ days: 90 })).rejects.toMatchObject<Partial<TRPCError>>({
       code: "INTERNAL_SERVER_ERROR",
       message: "database unavailable",
+    });
+  });
+
+  it("preserves semantic tRPC errors from climbing data helpers", async () => {
+    const execute = vi
+      .fn()
+      .mockRejectedValue(new TRPCError({ code: "PRECONDITION_FAILED", message: "sync first" }));
+    const caller = createCaller({
+      db: { execute },
+      userId: "user-1",
+      timezone: "America/Los_Angeles",
+    });
+
+    await expect(caller.gradeProgression({ days: 90 })).rejects.toMatchObject<Partial<TRPCError>>({
+      code: "PRECONDITION_FAILED",
+      message: "sync first",
     });
   });
 });

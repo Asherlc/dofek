@@ -14,6 +14,7 @@ async function runClimbingQuery<T>(query: () => Promise<T>): Promise<T> {
   try {
     return await query();
   } catch (error: unknown) {
+    if (error instanceof TRPCError) throw error;
     throw new TRPCError({
       code: "INTERNAL_SERVER_ERROR",
       message: error instanceof Error ? error.message : "Failed to load climbing data",
