@@ -13,11 +13,16 @@ describe("selected chart range policy", () => {
   it("requires every selected chart range endpoint to name its central range contract in its router", () => {
     for (const [endpoint, contract] of Object.entries(SELECTED_CHART_RANGE_ENDPOINTS)) {
       const routerSource = readServerSource(join("routers", contract.routerFile));
+      const builderByInput = {
+        days: "selectedChartRangeQuery",
+        dateRange: "selectedChartDateRangeQuery",
+        custom: "selectedChartCustomRangeQuery",
+      } as const;
+      const builder = builderByInput[contract.input];
 
-      expect(
-        routerSource,
-        `${endpoint} must use an endpoint-named selected chart range schema`,
-      ).toContain(`"${endpoint}"`);
+      expect(routerSource, `${endpoint} must be declared through ${builder}`).toMatch(
+        new RegExp(`${builder}\\(\\s*"${endpoint.replace(".", "\\.")}"`),
+      );
     }
   });
 

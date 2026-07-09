@@ -1,16 +1,17 @@
 import { TRPCError } from "@trpc/server";
-import { selectedChartRangeInput } from "../lib/date-window.ts";
+import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { DurationCurvesRepository } from "../repositories/duration-curves-repository.ts";
-import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+import { CacheTTL, router } from "../trpc.ts";
 
 export const durationCurvesRouter = router({
   /**
    * Heart Rate Duration Curve: best sustained HR for standard durations.
    * Uses cumulative sums over metric_stream heart_rate, same approach as power curves.
    */
-  hrCurve: cachedProtectedQuery(CacheTTL.LONG)
-    .input(selectedChartRangeInput("durationCurves.hrCurve"))
-    .query(async ({ ctx, input }) => {
+  hrCurve: selectedChartRangeQuery(
+    "durationCurves.hrCurve",
+    CacheTTL.LONG,
+    async ({ ctx, range }) => {
       if (!ctx.sensorStore) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
@@ -19,17 +20,19 @@ export const durationCurvesRouter = router({
         });
       }
       const repo = new DurationCurvesRepository(ctx.userId, ctx.timezone, ctx.sensorStore);
-      return repo.getHrCurve(input.days);
-    }),
+      return repo.getHrCurve(range);
+    },
+  ),
 
   /**
    * Pace Duration Curve: best sustained pace for standard durations.
    * Uses speed (m/s) from metric_stream, converts to pace (s/km) for output.
    * Higher speed = better pace (lower s/km), so we want MAX average speed.
    */
-  paceCurve: cachedProtectedQuery(CacheTTL.LONG)
-    .input(selectedChartRangeInput("durationCurves.paceCurve"))
-    .query(async ({ ctx, input }) => {
+  paceCurve: selectedChartRangeQuery(
+    "durationCurves.paceCurve",
+    CacheTTL.LONG,
+    async ({ ctx, range }) => {
       if (!ctx.sensorStore) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
@@ -38,6 +41,7 @@ export const durationCurvesRouter = router({
         });
       }
       const repo = new DurationCurvesRepository(ctx.userId, ctx.timezone, ctx.sensorStore);
-      return repo.getPaceCurve(input.days);
-    }),
+      return repo.getPaceCurve(range);
+    },
+  ),
 });

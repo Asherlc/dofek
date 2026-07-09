@@ -2,7 +2,8 @@ import { captureException } from "@sentry/node";
 import type { Database } from "dofek/db";
 import { queryCache } from "dofek/lib/cache";
 import { z } from "zod";
-import { selectedChartDateRangeInput, selectedDateRangeInput } from "../lib/date-window.ts";
+import { selectedChartDateRangeQuery } from "../lib/chart-range.ts";
+import { selectedDateRangeInput } from "../lib/date-window.ts";
 import { BodyAnalyticsRepository } from "../repositories/body-analytics-repository.ts";
 import { SettingsRepository } from "../repositories/settings-repository.ts";
 import {
@@ -55,14 +56,15 @@ export const bodyAnalyticsRouter = router({
       return repo.getSmoothedWeight(input.days, input.endDate);
     }),
 
-  weightOverview: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(selectedChartDateRangeInput("bodyAnalytics.weightOverview"))
-    .query(async ({ ctx, input }) => {
+  weightOverview: selectedChartDateRangeQuery(
+    "bodyAnalytics.weightOverview",
+    CacheTTL.MEDIUM,
+    async ({ ctx, input, range }) => {
       const goalWeightKg = await readGoalWeightKg(ctx.db, ctx.userId);
       const repo = createBodyAnalyticsRepository(ctx);
       const [smoothedWeightResult, predictionResult] = await Promise.allSettled([
-        repo.getSmoothedWeight(input.days, input.endDate),
-        repo.getWeightPrediction(input.days, input.endDate, goalWeightKg),
+        repo.getSmoothedWeight(range.days, input.endDate),
+        repo.getWeightPrediction(range.days, input.endDate, goalWeightKg),
       ]);
 
       if (smoothedWeightResult.status === "rejected") {
@@ -77,14 +79,17 @@ export const bodyAnalyticsRouter = router({
         smoothedWeight: smoothedWeightResult.value,
         prediction: predictionResult.status === "fulfilled" ? predictionResult.value : null,
       };
-    }),
+    },
+  ),
 
-  recomposition: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(selectedChartDateRangeInput("bodyAnalytics.recomposition"))
-    .query(({ ctx, input }) => {
+  recomposition: selectedChartDateRangeQuery(
+    "bodyAnalytics.recomposition",
+    CacheTTL.MEDIUM,
+    ({ ctx, input, range }) => {
       const repo = createBodyAnalyticsRepository(ctx);
-      return repo.getRecomposition(input.days, input.endDate);
-    }),
+      return repo.getRecomposition(range.days, input.endDate);
+    },
+  ),
 
   weightTrend: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({}).default({}))

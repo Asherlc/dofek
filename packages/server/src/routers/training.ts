@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { selectedChartRangeInput } from "../lib/date-window.ts";
+import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import {
   cardioPlan,
@@ -17,7 +17,7 @@ import {
   shouldPreferRest,
 } from "../repositories/training-recommendation.ts";
 import { TrainingRepository } from "../repositories/training-repository.ts";
-import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+import { CacheTTL, router } from "../trpc.ts";
 
 function requireSensorStore(
   sensorStore: ActivitySensorStore | undefined,
@@ -57,9 +57,10 @@ export function uniqueStrings(values: string[]): string[] {
 }
 
 export const trainingRouter = router({
-  weeklyVolume: cachedProtectedQuery(CacheTTL.LONG)
-    .input(selectedChartRangeInput("training.weeklyVolume"))
-    .query(async ({ ctx, input }) => {
+  weeklyVolume: selectedChartRangeQuery(
+    "training.weeklyVolume",
+    CacheTTL.LONG,
+    async ({ ctx, range }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "training");
       const repo = new TrainingRepository(
         ctx.db,
@@ -68,26 +69,26 @@ export const trainingRouter = router({
         sensorStore,
         ctx.accessWindow,
       );
-      return repo.getWeeklyVolume(input.days);
-    }),
+      return repo.getWeeklyVolume(range.days);
+    },
+  ),
 
-  hrZones: cachedProtectedQuery(CacheTTL.LONG)
-    .input(selectedChartRangeInput("training.hrZones"))
-    .query(async ({ ctx, input }) => {
-      const sensorStore = requireSensorStore(ctx.sensorStore, "training");
-      const repo = new TrainingRepository(
-        ctx.db,
-        ctx.userId,
-        ctx.timezone,
-        sensorStore,
-        ctx.accessWindow,
-      );
-      return repo.getHrZones(input.days);
-    }),
+  hrZones: selectedChartRangeQuery("training.hrZones", CacheTTL.LONG, async ({ ctx, range }) => {
+    const sensorStore = requireSensorStore(ctx.sensorStore, "training");
+    const repo = new TrainingRepository(
+      ctx.db,
+      ctx.userId,
+      ctx.timezone,
+      sensorStore,
+      ctx.accessWindow,
+    );
+    return repo.getHrZones(range.days);
+  }),
 
-  activityStats: cachedProtectedQuery(CacheTTL.LONG)
-    .input(selectedChartRangeInput("training.activityStats"))
-    .query(async ({ ctx, input }) => {
+  activityStats: selectedChartRangeQuery(
+    "training.activityStats",
+    CacheTTL.LONG,
+    async ({ ctx, range }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "training");
       const repo = new TrainingRepository(
         ctx.db,
@@ -96,6 +97,7 @@ export const trainingRouter = router({
         sensorStore,
         ctx.accessWindow,
       );
-      return repo.getActivityStats(input.days);
-    }),
+      return repo.getActivityStats(range.days);
+    },
+  ),
 });

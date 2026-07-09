@@ -9,7 +9,12 @@ import {
 import { queryCache } from "dofek/lib/cache";
 import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";
-import { endDateSchema, selectedChartRangeDaysSchema } from "../lib/date-window.ts";
+import {
+  ChartRange,
+  selectedChartCustomRangeQuery,
+  selectedChartRangeSchema,
+} from "../lib/chart-range.ts";
+import { endDateSchema } from "../lib/date-window.ts";
 import { Activity, type ActivityDetail } from "../models/activity.ts";
 import {
   ActivityRepository,
@@ -94,17 +99,17 @@ export interface ActivityPowerZonesResult {
 }
 
 export const activityRouter = router({
-  list: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(
-      z.object({
-        days: selectedChartRangeDaysSchema("activity.list"),
-        endDate: endDateSchema,
-        limit: z.number().min(1).max(100).default(20),
-        offset: z.number().min(0).default(0),
-        activityTypes: z.array(z.string()).optional(),
-      }),
-    )
-    .query(async ({ ctx, input }) => {
+  list: selectedChartCustomRangeQuery(
+    "activity.list",
+    CacheTTL.MEDIUM,
+    z.object({
+      days: selectedChartRangeSchema("activity.list"),
+      endDate: endDateSchema,
+      limit: z.number().min(1).max(100).default(20),
+      offset: z.number().min(0).default(0),
+      activityTypes: z.array(z.string()).optional(),
+    }),
+    async ({ ctx, input }) => {
       const repo = new ActivityRepository(
         ctx.db,
         ctx.userId,
@@ -124,7 +129,8 @@ export const activityRouter = router({
         }
         throw error;
       }
-    }),
+    },
+  ),
 
   byId: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ id: z.guid() }))
@@ -217,7 +223,7 @@ export const activityRouter = router({
       }
 
       const powerRepo = new PowerRepository(ctx.userId, ctx.timezone, ctx.sensorStore);
-      const { currentEftp } = await powerRepo.getEftpTrend(90);
+      const { currentEftp } = await powerRepo.getEftpTrend(ChartRange.fromDays(90));
       if (currentEftp == null) return null;
 
       const zones = await activityRepo.getPowerZones(input.id, currentEftp);

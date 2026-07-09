@@ -1,7 +1,6 @@
-import { z } from "zod";
-import { selectedChartRangeDaysSchema } from "../lib/date-window.ts";
+import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { BehaviorImpactRepository } from "../repositories/behavior-impact-repository.ts";
-import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+import { CacheTTL, router } from "../trpc.ts";
 
 export interface BehaviorImpact {
   questionSlug: string;
@@ -13,15 +12,14 @@ export interface BehaviorImpact {
 }
 
 export const behaviorImpactRouter = router({
-  impactSummary: cachedProtectedQuery(CacheTTL.LONG)
-    .input(
-      z.object({
-        days: selectedChartRangeDaysSchema("behaviorImpact.impactSummary", { min: 7, max: 365 }),
-      }),
-    )
-    .query(async ({ ctx, input }): Promise<BehaviorImpact[]> => {
+  impactSummary: selectedChartRangeQuery(
+    "behaviorImpact.impactSummary",
+    CacheTTL.LONG,
+    async ({ ctx, range }): Promise<BehaviorImpact[]> => {
       const repo = new BehaviorImpactRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
-      const impacts = await repo.getImpactSummary(input.days);
+      const impacts = await repo.getImpactSummary(range.days);
       return impacts.map((impact) => impact.toDetail());
-    }),
+    },
+    { min: 7, max: 365 },
+  ),
 });

@@ -6,7 +6,7 @@ export type RangeDays = number | null;
 export type RangeOperator = ">" | ">=";
 
 export const SELECTED_CHART_RANGE_ENDPOINTS = {
-  "activity.list": { defaultDays: 30, routerFile: "activity.ts", input: "dateRange" },
+  "activity.list": { defaultDays: 30, routerFile: "activity.ts", input: "custom" },
   "behaviorImpact.impactSummary": {
     defaultDays: 90,
     routerFile: "behavior-impact.ts",

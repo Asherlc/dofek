@@ -1,8 +1,8 @@
 import { TRPCError } from "@trpc/server";
-import { selectedChartRangeInput } from "../lib/date-window.ts";
+import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { RunningRepository } from "../repositories/running-repository.ts";
-import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
+import { CacheTTL, router } from "../trpc.ts";
 
 function requireSensorStore(
   sensorStore: ActivitySensorStore | undefined,
@@ -38,19 +38,15 @@ export interface PaceTrendRow {
 }
 
 export const runningRouter = router({
-  dynamics: cachedProtectedQuery(CacheTTL.LONG)
-    .input(selectedChartRangeInput("running.dynamics"))
-    .query(async ({ ctx, input }) => {
-      const sensorStore = requireSensorStore(ctx.sensorStore, "running.dynamics");
-      const repo = new RunningRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
-      return (await repo.getDynamics(input.days)).map((activity) => activity.toDetail());
-    }),
+  dynamics: selectedChartRangeQuery("running.dynamics", CacheTTL.LONG, async ({ ctx, range }) => {
+    const sensorStore = requireSensorStore(ctx.sensorStore, "running.dynamics");
+    const repo = new RunningRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
+    return (await repo.getDynamics(range.days)).map((activity) => activity.toDetail());
+  }),
 
-  paceTrend: cachedProtectedQuery(CacheTTL.LONG)
-    .input(selectedChartRangeInput("running.paceTrend"))
-    .query(async ({ ctx, input }) => {
-      const sensorStore = requireSensorStore(ctx.sensorStore, "running.paceTrend");
-      const repo = new RunningRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
-      return (await repo.getPaceTrend(input.days)).map((activity) => activity.toDetail());
-    }),
+  paceTrend: selectedChartRangeQuery("running.paceTrend", CacheTTL.LONG, async ({ ctx, range }) => {
+    const sensorStore = requireSensorStore(ctx.sensorStore, "running.paceTrend");
+    const repo = new RunningRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
+    return (await repo.getPaceTrend(range.days)).map((activity) => activity.toDetail());
+  }),
 });

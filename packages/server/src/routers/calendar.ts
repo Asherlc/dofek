@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { endDateSchema, selectedChartRangeInput } from "../lib/date-window.ts";
+import { selectedChartRangeQuery } from "../lib/chart-range.ts";
+import { endDateSchema } from "../lib/date-window.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { ActivitiesCalendarRepository } from "../repositories/activities-calendar-repository.ts";
 import { CalendarRepository } from "../repositories/calendar-repository.ts";
@@ -93,13 +94,15 @@ const activityOverviewSchema = z.object({
 });
 
 export const calendarRouter = router({
-  calendarData: cachedProtectedQuery(CacheTTL.LONG)
-    .input(selectedChartRangeInput("calendar.calendarData"))
-    .query(async ({ ctx, input }): Promise<CalendarDay[]> => {
+  calendarData: selectedChartRangeQuery(
+    "calendar.calendarData",
+    CacheTTL.LONG,
+    async ({ ctx, range }): Promise<CalendarDay[]> => {
       const repo = new CalendarRepository(ctx.db, ctx.userId, ctx.timezone);
-      const days = await repo.getCalendarData(input.days);
+      const days = await repo.getCalendarData(range.days);
       return days.map((day) => day.toDetail());
-    }),
+    },
+  ),
 
   weekList: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(activityListInputSchema)

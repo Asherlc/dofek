@@ -25,6 +25,7 @@ Human-facing architecture notes, provider research, and operational runbooks for
 | [schema.dbml](schema.dbml) / [schema.puml](schema.puml) | Generated schema diagrams for quick visual orientation. |
 | [adding-a-provider.md](adding-a-provider.md) | Step-by-step provider implementation guide. |
 | [exercise-metadata.md](exercise-metadata.md) | Strength exercise metadata source, override format, and upstream refresh workflow. |
+| [chart-range-framework.md](chart-range-framework.md) | Backend framework for selected chart ranges, endpoint defaults, and All-history semantics. |
 | [mcp.md](mcp.md) | Remote MCP endpoint setup, scopes, and tools. |
 | [nutrition-ai-input.md](nutrition-ai-input.md) | Web + iOS meal logging flow for natural-language AI input. |
 | [roadmap.md](roadmap.md) | Product-level roadmap notes, including first-run and onboarding opportunities. |

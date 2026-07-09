@@ -1,5 +1,6 @@
 import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import { describe, expect, it, vi } from "vitest";
+import { ChartRange } from "../lib/chart-range.ts";
 import { PowerRepository } from "./power-repository.ts";
 
 function makeDb(...callResults: Record<string, unknown>[][]) {
@@ -64,7 +65,7 @@ describe("PowerRepository", () => {
       const analyticsStore = makeAnalyticsStore();
       analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
-      const result = await repo.getPowerCurve(90);
+      const result = await repo.getPowerCurve(ChartRange.fromDays(90));
 
       expect(result.points).toEqual([]);
       expect(result.model).toBeNull();
@@ -74,7 +75,7 @@ describe("PowerRepository", () => {
       const analyticsStore = makeAnalyticsStore();
       const db = makeDb([{ activity_count: 0 }]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore, db);
-      const result = await repo.getPowerCurve(90);
+      const result = await repo.getPowerCurve(ChartRange.fromDays(90));
 
       expect(result).toEqual({ points: [], model: null });
       expect(db.execute).toHaveBeenCalledTimes(1);
@@ -85,7 +86,7 @@ describe("PowerRepository", () => {
       const analyticsStore = makeAnalyticsStore();
       analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
-      await repo.getPowerCurve(90);
+      await repo.getPowerCurve(ChartRange.fromDays(90));
 
       expect(analyticsStore.getPowerCurveSamples).toHaveBeenCalledWith(90, "user-1", "UTC", [
         ...CYCLING_ACTIVITY_TYPES,
@@ -99,7 +100,7 @@ describe("PowerRepository", () => {
       ]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
 
-      await repo.getPowerCurve(null);
+      await repo.getPowerCurve(ChartRange.fromDays(null));
 
       const queryText = analyticsStore.query.mock.calls[0]?.[1];
       const queryParams = analyticsStore.query.mock.calls[0]?.[2];
@@ -114,7 +115,7 @@ describe("PowerRepository", () => {
       analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
 
-      await repo.getPowerCurve(null);
+      await repo.getPowerCurve(ChartRange.fromDays(null));
 
       expect(analyticsStore.getPowerCurveSamples).toHaveBeenCalledWith(null, "user-1", "UTC", [
         ...CYCLING_ACTIVITY_TYPES,
@@ -132,7 +133,7 @@ describe("PowerRepository", () => {
       const analyticsStore = makeAnalyticsStore();
       analyticsStore.getPowerCurveSamples.mockResolvedValueOnce(samples);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
-      const result = await repo.getPowerCurve(90);
+      const result = await repo.getPowerCurve(ChartRange.fromDays(90));
 
       expect(result.points.length).toBeGreaterThan(0);
       expect(result.points[0]).toMatchObject({
@@ -154,7 +155,7 @@ describe("PowerRepository", () => {
       const analyticsStore = makeAnalyticsStore();
       analyticsStore.getPowerCurveSamples.mockResolvedValueOnce(samples);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
-      const result = await repo.getPowerCurve(90);
+      const result = await repo.getPowerCurve(ChartRange.fromDays(90));
       // Check that labels are either from DURATION_LABELS or end with "s"
       for (const point of result.points) {
         expect(point.label.length).toBeGreaterThan(0);
@@ -170,7 +171,7 @@ describe("PowerRepository", () => {
       const analyticsStore = makeAnalyticsStore();
       analyticsStore.query.mockResolvedValueOnce(readModelRows);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
-      const result = await repo.getPowerCurve(90);
+      const result = await repo.getPowerCurve(ChartRange.fromDays(90));
 
       expect(analyticsStore.getPowerCurveSamples).not.toHaveBeenCalled();
       expect(analyticsStore.query).toHaveBeenCalledWith(
@@ -213,7 +214,7 @@ describe("PowerRepository", () => {
       analyticsStore.getNormalizedPowerSamples.mockResolvedValueOnce([]);
       analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
-      const result = await repo.getEftpTrend(365);
+      const result = await repo.getEftpTrend(ChartRange.fromDays(365));
 
       expect(result.trend).toEqual([]);
       expect(result.currentEftp).toBeNull();
@@ -227,7 +228,7 @@ describe("PowerRepository", () => {
       analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
 
-      await repo.getEftpTrend(null);
+      await repo.getEftpTrend(ChartRange.fromDays(null));
 
       const queryText = analyticsStore.query.mock.calls[0]?.[1];
       const queryParams = analyticsStore.query.mock.calls[0]?.[2];
@@ -255,7 +256,7 @@ describe("PowerRepository", () => {
       analyticsStore.getNormalizedPowerSamples.mockResolvedValueOnce(rawPowerSamples);
       analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
-      const result = await repo.getEftpTrend(365);
+      const result = await repo.getEftpTrend(ChartRange.fromDays(365));
 
       expect(analyticsStore.getNormalizedPowerSamples).toHaveBeenCalledWith(365, "user-1", "UTC", [
         ...CYCLING_ACTIVITY_TYPES,
@@ -274,7 +275,7 @@ describe("PowerRepository", () => {
       const analyticsStore = makeAnalyticsStore();
       const db = makeDb([{ activity_count: 0 }]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore, db);
-      const result = await repo.getEftpTrend(365);
+      const result = await repo.getEftpTrend(ChartRange.fromDays(365));
 
       expect(result).toEqual({ trend: [], currentEftp: null, model: null });
       expect(db.execute).toHaveBeenCalledTimes(1);
@@ -287,7 +288,7 @@ describe("PowerRepository", () => {
       analyticsStore.query.mockResolvedValueOnce([]);
       analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
-      await repo.getEftpTrend(365);
+      await repo.getEftpTrend(ChartRange.fromDays(365));
 
       expect(analyticsStore.query).toHaveBeenCalledWith(
         expect.anything(),
@@ -318,7 +319,7 @@ describe("PowerRepository", () => {
       analyticsStore.query.mockResolvedValueOnce(npRows);
       analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
-      const result = await repo.getEftpTrend(365);
+      const result = await repo.getEftpTrend(ChartRange.fromDays(365));
 
       expect(result.trend).toHaveLength(1);
       expect(result.trend[0]?.date).toBe("2024-06-15");
@@ -341,7 +342,7 @@ describe("PowerRepository", () => {
       analyticsStore.query.mockResolvedValueOnce(npRows);
       analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
-      const result = await repo.getEftpTrend(365);
+      const result = await repo.getEftpTrend(ChartRange.fromDays(365));
       // NP = 251, eFTP = 251 * 0.95 = 238.45 → 238
       expect(result.trend[0]?.eftp).toBe(238);
       expect(Number.isInteger(result.trend[0]?.eftp)).toBe(true);
@@ -364,7 +365,7 @@ describe("PowerRepository", () => {
       analyticsStore.query.mockResolvedValueOnce(npRows);
       analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
-      const result = await repo.getEftpTrend(365);
+      const result = await repo.getEftpTrend(ChartRange.fromDays(365));
       // Trend exists but is outside 90-day window for currentEftp
       expect(result.trend).toHaveLength(1);
       expect(result.currentEftp).toBeNull();
@@ -386,7 +387,7 @@ describe("PowerRepository", () => {
       analyticsStore.query.mockResolvedValueOnce(npRows);
       analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
-      const result = await repo.getEftpTrend(365);
+      const result = await repo.getEftpTrend(ChartRange.fromDays(365));
 
       expect(result.model).toBeNull();
       // NP = 250, eFTP = 250 * 0.95 = 237.5 => 238
@@ -421,7 +422,7 @@ describe("PowerRepository", () => {
       analyticsStore.query.mockResolvedValueOnce(npRows).mockResolvedValueOnce([]);
       analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
-      const result = await repo.getEftpTrend(365);
+      const result = await repo.getEftpTrend(ChartRange.fromDays(365));
 
       expect(result.trend).toHaveLength(2);
       // Exactly 90 days ago is included; 91 days ago is excluded from the fallback window.
@@ -442,7 +443,7 @@ describe("PowerRepository", () => {
       analyticsStore.query.mockResolvedValueOnce(npRows);
       analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
-      const result = await repo.getEftpTrend(365);
+      const result = await repo.getEftpTrend(ChartRange.fromDays(365));
       // NP = 200, eFTP = 200 * 0.95 = 190 (not 180 if 0.9, not 200 if 1.0)
       expect(result.trend[0]?.eftp).toBe(190);
     });
@@ -460,7 +461,7 @@ describe("PowerRepository", () => {
       analyticsStore.query.mockResolvedValueOnce(npRows).mockResolvedValueOnce([]);
       analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
       const repo = new PowerRepository("user-1", "UTC", analyticsStore);
-      await repo.getEftpTrend(365);
+      await repo.getEftpTrend(ChartRange.fromDays(365));
       expect(analyticsStore.query).toHaveBeenCalledTimes(2);
       expect(analyticsStore.getPowerCurveSamples).toHaveBeenCalledTimes(1);
     });
@@ -477,7 +478,7 @@ describe("PowerRepository", () => {
       }));
       const db = makeDb(samples);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
-      const result = await repo.getPowerCurve(90);
+      const result = await repo.getPowerCurve(ChartRange.fromDays(90));
 
       // All points should have non-empty labels (either from DURATION_LABELS or fallback "Xs")
       if (result.points.length > 0) {
@@ -496,7 +497,7 @@ describe("PowerRepository", () => {
       }));
       const db = makeDb(samples);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
-      const result = await repo.getPowerCurve(90);
+      const result = await repo.getPowerCurve(ChartRange.fromDays(90));
 
       expect(result.points.length).toBeGreaterThan(0);
       for (const point of result.points) {
@@ -521,7 +522,7 @@ describe("PowerRepository", () => {
       }));
       const db = makeDb(samples);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
-      const result = await repo.getPowerCurve(90);
+      const result = await repo.getPowerCurve(ChartRange.fromDays(90));
       // With only one short activity, CP model cannot be fitted
       expect(result.model).toStrictEqual(null);
     });
@@ -540,7 +541,7 @@ describe("PowerRepository", () => {
       ];
       const db = makeDb(npRows, []);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
-      const result = await repo.getEftpTrend(365);
+      const result = await repo.getEftpTrend(ChartRange.fromDays(365));
 
       expect(result.trend).toHaveLength(1);
       expect(result.trend[0]?.activityName).toStrictEqual("Evening Ride");
@@ -561,7 +562,7 @@ describe("PowerRepository", () => {
       ];
       const db = makeDb(npRows, []);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
-      const result = await repo.getEftpTrend(365);
+      const result = await repo.getEftpTrend(ChartRange.fromDays(365));
 
       for (const entry of result.trend) {
         expect(entry.activityName).toStrictEqual(null);
@@ -596,7 +597,7 @@ describe("PowerRepository", () => {
 
       const db = makeDb(npRows, pcSamples);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
-      const result = await repo.getEftpTrend(365);
+      const result = await repo.getEftpTrend(ChartRange.fromDays(365));
 
       // If a CP model was fitted, currentEftp should equal model.cp
       if (result.model) {
@@ -616,7 +617,7 @@ describe("PowerRepository", () => {
       ];
       const db = makeDb(npRows, []);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
-      const result = await repo.getEftpTrend(365);
+      const result = await repo.getEftpTrend(ChartRange.fromDays(365));
       // NP=100, eFTP = 100 * 0.95 = 95 (if / instead of *, would be ~105)
       expect(result.trend[0]?.eftp).toBe(95);
       expect(result.trend[0]?.eftp).toBeLessThan(100);
@@ -637,7 +638,7 @@ describe("PowerRepository", () => {
       ];
       const db = makeDb(npRows, []);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
-      const result = await repo.getEftpTrend(365);
+      const result = await repo.getEftpTrend(ChartRange.fromDays(365));
 
       expect(result.trend).toHaveLength(1);
       expect(result.currentEftp).toBe(190);
@@ -646,7 +647,7 @@ describe("PowerRepository", () => {
     it("returns complete trend object with all three keys", async () => {
       const db = makeDb([], []);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
-      const result = await repo.getEftpTrend(365);
+      const result = await repo.getEftpTrend(ChartRange.fromDays(365));
       // ObjectLiteral mutation: ensure all keys are present
       expect(Object.keys(result).sort()).toStrictEqual(["currentEftp", "model", "trend"]);
     });
@@ -654,7 +655,7 @@ describe("PowerRepository", () => {
     it("returns complete power curve object with points and model keys", async () => {
       const db = makeDb([]);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
-      const result = await repo.getPowerCurve(90);
+      const result = await repo.getPowerCurve(ChartRange.fromDays(90));
       expect(Object.keys(result).sort()).toStrictEqual(["model", "points"]);
     });
 
@@ -670,7 +671,7 @@ describe("PowerRepository", () => {
       ];
       const db = makeDb(npRows, []);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
-      const result = await repo.getEftpTrend(365);
+      const result = await repo.getEftpTrend(ChartRange.fromDays(365));
 
       expect(result.trend).toHaveLength(1);
       expect(Object.keys(result.trend[0] ?? {}).sort()).toStrictEqual([
@@ -689,7 +690,7 @@ describe("PowerRepository", () => {
       }));
       const db = makeDb(samples);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
-      const result = await repo.getPowerCurve(90);
+      const result = await repo.getPowerCurve(ChartRange.fromDays(90));
       if (result.points.length > 0) {
         expect(Object.keys(result.points[0] ?? {}).sort()).toStrictEqual([
           "activityDate",
@@ -722,7 +723,7 @@ describe("PowerRepository", () => {
       ];
       const db = makeDb(npRows, []);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
-      const result = await repo.getEftpTrend(365);
+      const result = await repo.getEftpTrend(ChartRange.fromDays(365));
 
       expect(result.trend).toHaveLength(2);
       expect(result.model).toStrictEqual(null);
@@ -744,7 +745,7 @@ describe("PowerRepository", () => {
       ];
       const db = makeDb(npRows, []);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
-      const result = await repo.getEftpTrend(365);
+      const result = await repo.getEftpTrend(ChartRange.fromDays(365));
       // NP=210, 210*0.95=199.5, Math.round(199.5)=200
       expect(result.trend[0]?.eftp).toBe(200);
     });
@@ -771,7 +772,7 @@ describe("PowerRepository", () => {
       ];
       const db = makeDb(npRows, []);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
-      const result = await repo.getEftpTrend(365);
+      const result = await repo.getEftpTrend(ChartRange.fromDays(365));
 
       // Should pick max: 280*0.95=266 not min: 180*0.95=171
       expect(result.currentEftp).toBe(266);
@@ -783,7 +784,7 @@ describe("PowerRepository", () => {
       // If > mutated to >=, empty array would produce Math.max() = -Infinity
       const db = makeDb([], []);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
-      const result = await repo.getEftpTrend(365);
+      const result = await repo.getEftpTrend(ChartRange.fromDays(365));
       expect(result.currentEftp).toStrictEqual(null);
     });
 
@@ -804,7 +805,7 @@ describe("PowerRepository", () => {
         ];
         const db = makeDb(npRows, []);
         const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
-        const result = await repo.getEftpTrend(365);
+        const result = await repo.getEftpTrend(ChartRange.fromDays(365));
 
         // 240*0.95=228, should be included exactly at the 90-day cutoff.
         expect(result.currentEftp).toBe(228);
@@ -841,7 +842,7 @@ describe("PowerRepository", () => {
 
       const db = makeDb(npRows, pcSamples);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
-      const result = await repo.getEftpTrend(365);
+      const result = await repo.getEftpTrend(ChartRange.fromDays(365));
 
       if (result.model) {
         // currentEftp should equal model.cp (not the NP-based fallback)
@@ -859,7 +860,7 @@ describe("PowerRepository", () => {
       }));
       const db = makeDb(samples);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
-      const result = await repo.getPowerCurve(90);
+      const result = await repo.getPowerCurve(ChartRange.fromDays(90));
 
       for (const point of result.points) {
         // Every label should be non-empty
@@ -878,7 +879,7 @@ describe("PowerRepository", () => {
     it("getPowerCurve returns points array (not null or undefined) when no samples", async () => {
       const db = makeDb([]);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
-      const result = await repo.getPowerCurve(90);
+      const result = await repo.getPowerCurve(ChartRange.fromDays(90));
       expect(Array.isArray(result.points)).toBe(true);
       expect(result.points).toStrictEqual([]);
     });
@@ -895,7 +896,7 @@ describe("PowerRepository", () => {
       ];
       const db = makeDb(npRows, []);
       const repo = new PowerRepository("user-1", "UTC", makeAnalyticsStoreFromDb(db));
-      const result = await repo.getEftpTrend(365);
+      const result = await repo.getEftpTrend(ChartRange.fromDays(365));
 
       expect(result.trend[0]?.date).toBe(today);
       expect(result.trend[0]?.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);

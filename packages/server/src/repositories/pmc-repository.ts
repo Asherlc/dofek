@@ -7,13 +7,7 @@ import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
-import {
-  clickHouseIntervalDayLowerBound,
-  dateWindowStartStringOrUndefined,
-  type RangeDays,
-  rangeDaysOrNullAdd,
-  rangeDaysParams,
-} from "../lib/date-window.ts";
+import { ChartRange } from "../lib/chart-range.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { activityRepositoryFor } from "./activity-repository.ts";
 import { PmcChartCalculator } from "./pmc-chart-calculator.ts";
@@ -68,7 +62,7 @@ export class PmcRepository extends BaseRepository {
     this.#sensorStore = sensorStore;
   }
 
-  async getChart(days: RangeDays): Promise<PmcRepositoryChartResult> {
+  async getChart(range: ChartRange): Promise<PmcRepositoryChartResult> {
     // Load personalized algorithm parameters
     const storedParams = await loadPersonalizedParams(this.db, this.userId);
     const effective = getEffectiveParams(storedParams);
@@ -77,30 +71,27 @@ export class PmcRepository extends BaseRepository {
 
     // Fetch enough history for EWMA convergence, regardless of display range.
     const minHistoryDays = 365;
-    const displayRangeBaseDays = days === null ? null : Math.max(days, minHistoryDays);
-    const queryDays = rangeDaysOrNullAdd(displayRangeBaseDays, chronicTrainingLoadDays);
+    const displayRangeBaseDays = range.days === null ? null : Math.max(range.days, minHistoryDays);
+    const queryRange =
+      ChartRange.fromDays(displayRangeBaseDays).withWarmupDays(chronicTrainingLoadDays);
     const today = new Date().toISOString().slice(0, 10);
 
-    if ((await this.#loadRawActivityCount(queryDays)) === 0) {
+    if ((await this.#loadRawActivityCount(queryRange)) === 0) {
       return {
         data: [],
         model: { type: "generic", pairedActivities: 0, r2: null, ftp: null },
       };
     }
 
-    const activityRangeFilter = clickHouseIntervalDayLowerBound(
-      queryDays,
-      "asum.started_at",
-      "queryDays",
-    );
-    const rhrWindowStart = dateWindowStartStringOrUndefined(today, queryDays);
+    const activityRangeFilter = queryRange.clickHouseTimestampAfter("asum.started_at", "queryDays");
+    const rhrWindowStart = queryRange.windowStartString(today);
     // QUERY 1: activities with HR data from analytics.activity_summary in CH.
     // user_profile is accessed via ClickHouse read models.
     // Sample counts come from the activity summary read model; do not recompute
     // them by joining deduped_sensor on the request path.
     const activityRows = await this.#sensorStore.query(
       combinedActivityRowSchema,
-      `WITH ${restingHeartRateClickHouseCte({ includeWindowStart: queryDays !== null })},
+      `WITH ${restingHeartRateClickHouseCte({ includeWindowStart: !queryRange.isAll() })},
       user_baseline AS (
         SELECT
           coalesce(nullIf(up.max_hr, 0), (
@@ -137,7 +128,7 @@ export class PmcRepository extends BaseRepository {
       {
         userId: this.userId,
         timezone: this.timezone,
-        ...rangeDaysParams(queryDays, "queryDays"),
+        ...queryRange.clickHouseParams("queryDays"),
         activityTypes: CYCLING_TYPES,
         rhrEndDate: today,
         ...(rhrWindowStart ? { rhrWindowStart } : {}),
@@ -159,12 +150,12 @@ export class PmcRepository extends BaseRepository {
         round(normalized_power, 1) AS np
       FROM analytics.activity_summary
       WHERE user_id = {userId:UUID}
-        ${clickHouseIntervalDayLowerBound(queryDays, "started_at", "queryDays")}
+        ${queryRange.clickHouseTimestampAfter("started_at", "queryDays")}
         AND has({activityTypes:Array(String)}, activity_type)
         AND normalized_power IS NOT NULL`,
       {
         userId: this.userId,
-        ...rangeDaysParams(queryDays, "queryDays"),
+        ...queryRange.clickHouseParams("queryDays"),
         activityTypes: CYCLING_TYPES,
       },
     );
@@ -188,19 +179,19 @@ export class PmcRepository extends BaseRepository {
     return chartCalculator.buildChart({
       activityRows: visibleActivityRows,
       normalizedPowerRows,
-      queryDays: queryDays ?? daysSinceEarliestActivity(visibleActivityRows),
-      displayDays: days ?? daysSinceEarliestActivity(visibleActivityRows),
+      queryDays: queryRange.days ?? daysSinceEarliestActivity(visibleActivityRows),
+      displayDays: range.days ?? daysSinceEarliestActivity(visibleActivityRows),
     });
   }
 
-  async #loadRawActivityCount(days: RangeDays): Promise<number> {
+  async #loadRawActivityCount(range: ChartRange): Promise<number> {
     return activityRepositoryFor(
       this.db,
       this.userId,
       this.timezone,
       this.accessWindow,
     ).countVisibleInWindow({
-      days,
+      days: range.days,
       activityTypes: CYCLING_TYPES,
     });
   }

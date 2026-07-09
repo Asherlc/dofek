@@ -1,5 +1,6 @@
 import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import { describe, expect, it, vi } from "vitest";
+import { ChartRange } from "../lib/chart-range.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { PmcRepository } from "./pmc-repository.ts";
 
@@ -119,7 +120,7 @@ describe("PmcRepository", () => {
     it("returns empty data with generic model when no raw activities exist", async () => {
       const { repo } = makeRepoHarness([], [], "UTC", 0);
 
-      const result = await repo.getChart(180);
+      const result = await repo.getChart(ChartRange.fromDays(180));
 
       expect(result.data).toEqual([]);
       expect(result.model).toEqual({
@@ -133,7 +134,7 @@ describe("PmcRepository", () => {
     it("does not scan activity_summary or deduped_sensor when no raw activities exist", async () => {
       const { repo, execute, query } = makeRepoHarness([], [], "UTC", 0);
 
-      const result = await repo.getChart(180);
+      const result = await repo.getChart(ChartRange.fromDays(180));
 
       expect(result.data).toEqual([]);
       expect(execute).toHaveBeenCalledTimes(1);
@@ -147,7 +148,7 @@ describe("PmcRepository", () => {
         "America/Los_Angeles",
       );
 
-      await repo.getChart(30);
+      await repo.getChart(ChartRange.fromDays(30));
 
       const { queryText: activityQuery, params: activityParams } = findQueryCall(
         query,
@@ -173,7 +174,7 @@ describe("PmcRepository", () => {
     it("filters fallback max heart rate baseline to cycling activity types", async () => {
       const { repo, query } = makeRepoHarness([makeActivityRow()], []);
 
-      await repo.getChart(30);
+      await repo.getChart(ChartRange.fromDays(30));
 
       const activityQuery = vi.mocked(query).mock.calls[0]?.[1];
       expect(activityQuery).toContain("SELECT maxIf(max_hr, max_hr > 0)");
@@ -184,7 +185,7 @@ describe("PmcRepository", () => {
     it("extends query history when requested display days exceed the minimum history", async () => {
       const { repo, query } = makeRepoHarness([], [], "UTC", 1);
 
-      await repo.getChart(400);
+      await repo.getChart(ChartRange.fromDays(400));
 
       const { queryText: activityQuery, params: activityParams } = findQueryCall(
         query,
@@ -204,7 +205,7 @@ describe("PmcRepository", () => {
     it("applies finite selected-range lower-bound filters with expanded history", async () => {
       const { repo, query } = makeRepoHarness([], [], "UTC", 1);
 
-      await repo.getChart(30);
+      await repo.getChart(ChartRange.fromDays(30));
 
       const { queryText: activityQuery, params: activityParams } = findQueryCall(
         query,
@@ -227,7 +228,7 @@ describe("PmcRepository", () => {
         [{ activity_id: "activity-1", np: 220 }],
       );
 
-      await repo.getChart(null);
+      await repo.getChart(ChartRange.fromDays(null));
 
       const { queryText: activityQuery, params: activityParams } = findQueryCall(
         query,
@@ -254,7 +255,7 @@ describe("PmcRepository", () => {
         [{ activity_id: "activity-1", np: 220 }],
       );
 
-      await repo.getChart(90);
+      await repo.getChart(ChartRange.fromDays(90));
 
       expect(query).toHaveBeenNthCalledWith(
         1,
@@ -281,7 +282,7 @@ describe("PmcRepository", () => {
         [{ activity_id: "power-activity", np: 220 }],
       );
 
-      const result = await repo.getChart(90);
+      const result = await repo.getChart(ChartRange.fromDays(90));
 
       expect(result.model.ftp).toBe(190);
       expect(result.data.length).toBeGreaterThan(0);

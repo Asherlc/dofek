@@ -6,13 +6,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
-import {
-  clickHouseRangeLowerBound,
-  dateWindowStartStringOrUndefined,
-  postgresCurrentTimestampRangeLowerBound,
-  type RangeDays,
-  rangeDaysParams,
-} from "../lib/date-window.ts";
+import type { ChartRange } from "../lib/chart-range.ts";
 import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
@@ -128,9 +122,9 @@ type AerobicEfficiencyDiagnostic = z.infer<typeof aerobicEfficiencyDiagnosticSch
 
 function restingHeartRateRangeParams(
   endDate: string,
-  days: RangeDays,
+  range: ChartRange,
 ): { rhrEndDate: string; rhrWindowStart?: string } {
-  const rhrWindowStart = dateWindowStartStringOrUndefined(endDate, days);
+  const rhrWindowStart = range.windowStartString(endDate);
   return rhrWindowStart === undefined
     ? { rhrEndDate: endDate }
     : { rhrEndDate: endDate, rhrWindowStart };
@@ -161,11 +155,11 @@ export class EfficiencyRepository extends BaseRepository {
    * Only includes activities with at least 5 minutes (300 samples) of Z2 data.
    * Reads from the pre-computed activity_aerobic_efficiency read model when available.
    */
-  async getAerobicEfficiency(days: RangeDays): Promise<AerobicEfficiencyResult> {
+  async getAerobicEfficiency(range: ChartRange): Promise<AerobicEfficiencyResult> {
     const today = new Date().toISOString().slice(0, 10);
-    const lowerBoundPredicate = clickHouseRangeLowerBound(days, "started_at");
-    const activitySummaryLowerBoundPredicate = clickHouseRangeLowerBound(days, "asum.started_at");
-    const rangeParams = rangeDaysParams(days);
+    const lowerBoundPredicate = range.clickHouseTimestampAfter("started_at");
+    const activitySummaryLowerBoundPredicate = range.clickHouseTimestampAfter("asum.started_at");
+    const rangeParams = range.clickHouseParams();
 
     // Try pre-computed read model first (avoids expensive deduped_sensor scan)
     const readModelRows = await this.#sensorStore.query(
@@ -209,10 +203,10 @@ export class EfficiencyRepository extends BaseRepository {
     }
 
     // Fall back to live deduped_sensor computation
-    const activityDiagnostic = await this.#loadAerobicEfficiencyActivityDiagnostics(days);
+    const activityDiagnostic = await this.#loadAerobicEfficiencyActivityDiagnostics(range);
 
     if (activityDiagnostic?.endurance_activities === 0) {
-      this.#logAerobicEfficiencyEmptyDiagnostic(activityDiagnostic, days, {
+      this.#logAerobicEfficiencyEmptyDiagnostic(activityDiagnostic, range, {
         activities_with_power: 0,
         activities_with_hr: 0,
       });
@@ -224,7 +218,7 @@ export class EfficiencyRepository extends BaseRepository {
 
     const rows = await this.#sensorStore.query(
       efficiencyRowSchema,
-      `WITH ${restingHeartRateClickHouseCte({ includeWindowStart: days !== null })},
+      `WITH ${restingHeartRateClickHouseCte({ includeWindowStart: !range.isAll() })},
       activity_meta AS (
         SELECT
           asum.activity_id AS id,
@@ -282,14 +276,14 @@ export class EfficiencyRepository extends BaseRepository {
         activityTypes: CYCLING_TYPES,
         b1: aerobicEfficiencyZone.minPctHrr,
         b2: aerobicEfficiencyZone.maxPctHrr,
-        ...restingHeartRateRangeParams(today, days),
+        ...restingHeartRateRangeParams(today, range),
       },
     );
 
     let emptyResultMaxHr: number | null = null;
     if (rows.length === 0) {
       emptyResultMaxHr = await this.#loadAerobicEfficiencyDiagnostics(
-        days,
+        range,
         activityDiagnostic,
       ).catch((error) => {
         Sentry.captureException(error);
@@ -316,7 +310,7 @@ export class EfficiencyRepository extends BaseRepository {
 
   /** Log a brief diagnostic when aerobic efficiency returns no results. */
   async #loadAerobicEfficiencyActivityDiagnostics(
-    days: RangeDays,
+    range: ChartRange,
   ): Promise<AerobicEfficiencyDiagnostic | null> {
     const rows = await this.query(
       aerobicEfficiencyDiagnosticSchema,
@@ -328,7 +322,7 @@ export class EfficiencyRepository extends BaseRepository {
                 CYCLING_TYPES.map((activityType) => sql`${activityType}`),
                 sql`, `,
               )})
-              ${postgresCurrentTimestampRangeLowerBound(days, sql`started_at`)}
+              ${range.postgresTimestampAfterCurrentTimestamp(sql`started_at`)}
           )
           SELECT
             (SELECT max_hr FROM fitness.user_profile WHERE id = ${this.userId}::uuid) AS max_hr,
@@ -341,17 +335,17 @@ export class EfficiencyRepository extends BaseRepository {
 
   /** Log a brief diagnostic when aerobic efficiency returns no results. */
   async #loadAerobicEfficiencyDiagnostics(
-    days: RangeDays,
+    range: ChartRange,
     knownActivityDiagnostic: AerobicEfficiencyDiagnostic | null,
   ): Promise<number | null> {
     const activityDiagnostic =
-      knownActivityDiagnostic ?? (await this.#loadAerobicEfficiencyActivityDiagnostics(days));
+      knownActivityDiagnostic ?? (await this.#loadAerobicEfficiencyActivityDiagnostics(range));
     if (!activityDiagnostic) {
       return null;
     }
 
     if (activityDiagnostic.endurance_activities === 0) {
-      this.#logAerobicEfficiencyEmptyDiagnostic(activityDiagnostic, days, {
+      this.#logAerobicEfficiencyEmptyDiagnostic(activityDiagnostic, range, {
         activities_with_power: 0,
         activities_with_hr: 0,
       });
@@ -372,7 +366,7 @@ export class EfficiencyRepository extends BaseRepository {
          AND va.user_id = asum.user_id
         WHERE asum.user_id = {userId:UUID}
           AND has({activityTypes:Array(String)}, asum.activity_type)
-          ${clickHouseRangeLowerBound(days, "asum.started_at")}
+          ${range.clickHouseTimestampAfter("asum.started_at")}
       ),
       sensor_samples_by_activity AS (
         SELECT
@@ -396,23 +390,23 @@ export class EfficiencyRepository extends BaseRepository {
         ON sensor_samples.activity_id = ea.id`,
       {
         userId: this.userId,
-        ...rangeDaysParams(days),
+        ...range.clickHouseParams(),
         activityTypes: CYCLING_TYPES,
       },
     );
 
     const sampleDiagnostic = sampleRows[0] ?? { activities_with_power: 0, activities_with_hr: 0 };
-    this.#logAerobicEfficiencyEmptyDiagnostic(activityDiagnostic, days, sampleDiagnostic);
+    this.#logAerobicEfficiencyEmptyDiagnostic(activityDiagnostic, range, sampleDiagnostic);
     return activityDiagnostic.max_hr;
   }
 
   #logAerobicEfficiencyEmptyDiagnostic(
     activityDiagnostic: AerobicEfficiencyDiagnostic,
-    days: RangeDays,
+    range: ChartRange,
     sampleDiagnostic: z.infer<typeof aerobicEfficiencySampleDiagnosticSchema>,
   ): void {
     logger.warn(
-      `[aerobicEfficiency] Empty result for user=${this.userId} days=${days}: ` +
+      `[aerobicEfficiency] Empty result for user=${this.userId} days=${range.days}: ` +
         `max_hr=${activityDiagnostic.max_hr}, ` +
         `endurance_activities=${activityDiagnostic.endurance_activities}, ` +
         `with_power=${sampleDiagnostic.activities_with_power}, ` +
@@ -425,7 +419,7 @@ export class EfficiencyRepository extends BaseRepository {
    * Compares power:HR ratio in first half vs second half of each activity.
    * Decoupling < 5% indicates a strong aerobic base.
    */
-  async getAerobicDecoupling(days: RangeDays): Promise<AerobicDecouplingActivity[]> {
+  async getAerobicDecoupling(range: ChartRange): Promise<AerobicDecouplingActivity[]> {
     const rows = await this.#sensorStore.query(
       decouplingRowSchema,
       `WITH activity_meta AS (
@@ -443,7 +437,7 @@ export class EfficiencyRepository extends BaseRepository {
          AND va.user_id = asum.user_id
         WHERE asum.user_id = {userId:UUID}
           AND has({activityTypes:Array(String)}, asum.activity_type)
-          ${clickHouseRangeLowerBound(days, "asum.started_at")}
+          ${range.clickHouseTimestampAfter("asum.started_at")}
       ),
       activity_halves AS (
         SELECT
@@ -491,7 +485,7 @@ export class EfficiencyRepository extends BaseRepository {
       {
         userId: this.userId,
         timezone: this.timezone,
-        ...rangeDaysParams(days),
+        ...range.clickHouseParams(),
         activityTypes: CYCLING_TYPES,
       },
     );
@@ -513,10 +507,10 @@ export class EfficiencyRepository extends BaseRepository {
    * PI > 2.0 indicates a well-polarized training distribution.
    * Reads from the pre-computed activity_polarization_zones read model when available.
    */
-  async getPolarizationTrend(days: RangeDays): Promise<PolarizationTrendResult> {
-    const lowerBoundPredicate = clickHouseRangeLowerBound(days, "started_at");
-    const activitySummaryLowerBoundPredicate = clickHouseRangeLowerBound(days, "asum.started_at");
-    const rangeParams = rangeDaysParams(days);
+  async getPolarizationTrend(range: ChartRange): Promise<PolarizationTrendResult> {
+    const lowerBoundPredicate = range.clickHouseTimestampAfter("started_at");
+    const activitySummaryLowerBoundPredicate = range.clickHouseTimestampAfter("asum.started_at");
+    const rangeParams = range.clickHouseParams();
 
     // Try pre-computed read model first (avoids expensive deduped_sensor scan)
     const readModelRows = await this.#sensorStore.query(

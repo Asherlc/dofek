@@ -1,13 +1,14 @@
 import { z } from "zod";
-import { selectedChartDateRangeInput } from "../lib/date-window.ts";
+import { selectedChartDateRangeQuery } from "../lib/chart-range.ts";
 import { SleepRepository } from "../repositories/sleep-repository.ts";
 
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export const sleepRouter = router({
-  list: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(selectedChartDateRangeInput("sleep.list"))
-    .query(async ({ ctx, input }) => {
+  list: selectedChartDateRangeQuery(
+    "sleep.list",
+    CacheTTL.MEDIUM,
+    async ({ ctx, input, range }) => {
       const repo = new SleepRepository(
         ctx.db,
         ctx.userId,
@@ -15,8 +16,9 @@ export const sleepRouter = router({
         ctx.accessWindow,
         ctx.sensorStore,
       );
-      return repo.list(input.days, input.endDate);
-    }),
+      return repo.list(range.days, input.endDate);
+    },
+  ),
 
   stages: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(z.object({ sessionId: z.guid() }))
