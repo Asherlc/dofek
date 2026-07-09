@@ -37,7 +37,12 @@ activity_bounds AS (
         AND avg_hr IS NOT NULL
         AND avg_hr > 0
         {% if is_incremental() %}
-            AND (activity_id, user_id) IN (SELECT activity_id, user_id FROM changed_activity_keys)
+            AND (activity_id, user_id) IN (
+                SELECT
+                    activity_id,
+                    user_id
+                FROM changed_activity_keys
+            )
         {% endif %}
 ),
 
@@ -48,7 +53,12 @@ existing_activities AS (
         user_id
     FROM {{ this }} FINAL
     WHERE is_deleted = 0
-        AND (activity_id, user_id) IN (SELECT activity_id, user_id FROM changed_activity_keys)
+        AND (activity_id, user_id) IN (
+            SELECT
+                activity_id,
+                user_id
+            FROM changed_activity_keys
+        )
 ),
 {% endif %}
 

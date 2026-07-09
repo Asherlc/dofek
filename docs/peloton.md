@@ -46,6 +46,15 @@ The login page loads a PerimeterX script (`client.px-cloud.net`). As of March 20
 - **Workouts**: `GET /api/user/{userId}/workouts?page=0&limit=20&sort_by=-created_at&joins=ride`
 - **Performance Graph**: `GET /api/workout/{workoutId}/performance_graph?every_n=5`
 
+### Website Links
+
+Peloton workout instance IDs from the workout list map to the members website at
+`https://members.onepeloton.com/profile/workouts/{workoutId}`. Example:
+`https://members.onepeloton.com/profile/workouts/8c6e0c778aad4d30a935656605b46dbe`.
+
+Immediate-start/stop workout instances can legitimately have `end_time` equal
+to `start_time`; preserve those equal timestamps as a zero-duration activity.
+
 ### Workout List Response
 
 ```json
