@@ -58,6 +58,7 @@ Mobile workflows load all runtime env values from Infisical via GitHub OIDC (`.g
 - `EXPO_PUBLIC_SENTRY_DSN`
 - `EXPO_PUBLIC_OTEL_ENDPOINT`
 - `EXPO_PUBLIC_OTEL_HEADERS` (optional)
+- `SENTRY_AUTH_TOKEN` (iOS and OTA sourcemap uploads)
 - `EXPO_TOKEN` (OTA workflows)
 
 Use a dedicated write-only ingest token for mobile OTEL headers if the collector needs authentication. Do not reuse broad admin/read tokens.
