@@ -217,7 +217,8 @@ jobs:
           persist-credentials: false
       - name: Install dotenv-linter
         run: |
-          curl -sSfL https://raw.githubusercontent.com/dotenv-linter/dotenv-linter/v4.0.0/install.sh | sh -s -- -b "$HOME/.local/bin" v4.0.0
+          curl -sSfL https://raw.githubusercontent.com/dotenv-linter/dotenv-linter/v4.0.0/install.sh -o "$RUNNER_TEMP/dotenv-linter-install.sh"
+          sh "$RUNNER_TEMP/dotenv-linter-install.sh" -b "$HOME/.local/bin" v4.0.0
       - name: Run dotenv-linter
         run: |
           "$HOME/.local/bin/dotenv-linter" check .
