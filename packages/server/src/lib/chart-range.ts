@@ -1,19 +1,28 @@
 import type { UnsetMarker } from "@trpc/server/unstable-core-do-not-import";
-import { type SQL, sql } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import type { z } from "zod";
 import type { AuthenticatedContext } from "../trpc.ts";
 import { cachedProtectedQuery } from "../trpc.ts";
 import {
-  dateWindowStart,
+  clickHouseDateRangeLowerBound,
+  clickHouseDateRangePredicate,
+  clickHouseMondayDateRangeLowerBound,
+  clickHouseRangeLowerBound,
+  clickHouseToIntervalDayLowerBound,
+  clickHouseWindowStartPredicate,
+  currentDateRangePredicate,
+  dateWindowStartPredicate,
   dateWindowStartString,
+  postgresCurrentTimestampRangeLowerBound,
+  postgresEndDateTimestampRangeLowerBound,
   type RangeDays,
   type RangeOperator,
+  rangeDaysParams,
   SELECTED_CHART_RANGE_ENDPOINTS,
   type SelectedChartRangeEndpoint,
   selectedChartDateRangeInput,
   selectedChartRangeDaysSchema,
   selectedChartRangeInput,
-  timestampWindowStart,
 } from "./date-window.ts";
 
 type MaybePromise<T> = T | Promise<T>;
@@ -59,7 +68,7 @@ export class ChartRange {
   }
 
   params(parameterName = "days"): Record<string, number> {
-    return this.#days === null ? {} : { [parameterName]: this.#days };
+    return rangeDaysParams(this.#days, parameterName);
   }
 
   clickHouseParams(parameterName = "days"): Record<string, number> {
@@ -67,21 +76,15 @@ export class ChartRange {
   }
 
   clickHouseTimestampAfter(column: string, parameterName = "days"): string {
-    return this.#days === null
-      ? ""
-      : `AND ${column} > now() - INTERVAL {${parameterName}:Int32} DAY`;
+    return clickHouseRangeLowerBound(this.#days, column, parameterName);
   }
 
   clickHouseTimestampAfterToIntervalDay(column: string, parameterName = "days"): string {
-    return this.#days === null
-      ? ""
-      : `AND ${column} > now() - toIntervalDay({${parameterName}:UInt32})`;
+    return clickHouseToIntervalDayLowerBound(this.#days, column, parameterName);
   }
 
   clickHouseDateAfterToday(column: string, parameterName = "days"): string {
-    return this.#days === null
-      ? ""
-      : `AND ${column} > today() - INTERVAL {${parameterName}:Int32} DAY`;
+    return clickHouseDateRangeLowerBound(this.#days, column, parameterName);
   }
 
   clickHouseMondayAfterToday(
@@ -89,38 +92,27 @@ export class ChartRange {
     parameterName = "days",
     operator: RangeOperator = ">",
   ): string {
-    return this.#days === null
-      ? ""
-      : `AND ${column} ${operator} toMonday(today() - INTERVAL {${parameterName}:Int32} DAY)`;
+    return clickHouseMondayDateRangeLowerBound(this.#days, column, parameterName, operator);
   }
 
   postgresTimestampAfterNow(column: SQL): SQL {
-    if (this.#days === null) return sql``;
-    return sql`AND ${column} > NOW() - ${this.#days}::int * INTERVAL '1 day'`;
+    return postgresCurrentTimestampRangeLowerBound(this.#days, column);
   }
 
   postgresTimestampAfterCurrentTimestamp(column: SQL): SQL {
-    if (this.#days === null) return sql``;
-    return sql`AND ${column} > CURRENT_TIMESTAMP - ${this.#days}::int * INTERVAL '1 day'`;
+    return postgresCurrentTimestampRangeLowerBound(this.#days, column);
   }
 
   postgresTimestampAfterEndDate(column: SQL, endDate: string): SQL {
-    if (this.#days === null) return sql``;
-    return sql`AND ${column} > ${timestampWindowStart(endDate, this.#days)}`;
+    return postgresEndDateTimestampRangeLowerBound(this.#days, column, endDate);
   }
 
   postgresDateAfterEndDate(column: SQL, endDate: string, operator: RangeOperator = ">"): SQL {
-    if (this.#days === null) return sql``;
-    return operator === ">="
-      ? sql`AND ${column} >= ${dateWindowStart(endDate, this.#days)}`
-      : sql`AND ${column} > ${dateWindowStart(endDate, this.#days)}`;
+    return dateWindowStartPredicate(column, endDate, this.#days, operator);
   }
 
   currentDateAfter(column: SQL, operator: RangeOperator = ">"): SQL {
-    if (this.#days === null) return sql``;
-    return operator === ">="
-      ? sql`AND ${column} >= (CURRENT_DATE - ${this.#days}::int)`
-      : sql`AND ${column} > CURRENT_DATE - ${this.#days}::int`;
+    return currentDateRangePredicate(column, this.#days, operator);
   }
 
   windowStartString(endDate: string): string | undefined {
@@ -132,10 +124,12 @@ export class ChartRange {
     operator?: RangeOperator;
     endDateExpression?: string;
   }): string {
-    if (this.#days === null) return "";
-    const operator = input.operator ?? ">";
-    const endDateExpression = input.endDateExpression ?? "toDate({endDate:String})";
-    return `AND ${input.expression} ${operator} subtractDays(${endDateExpression}, {days:UInt32})`;
+    return clickHouseDateRangePredicate({
+      expression: input.expression,
+      days: this.#days,
+      operator: input.operator,
+      endDateExpression: input.endDateExpression,
+    });
   }
 
   clickHouseDateAfterWindowStart(input: {
@@ -143,10 +137,12 @@ export class ChartRange {
     operator?: RangeOperator;
     paramName?: string;
   }): string {
-    if (this.#days === null) return "";
-    const operator = input.operator ?? ">";
-    const paramName = input.paramName ?? "windowStart";
-    return `AND ${input.expression} ${operator} toDate({${paramName}:String})`;
+    return clickHouseWindowStartPredicate({
+      expression: input.expression,
+      days: this.#days,
+      operator: input.operator,
+      paramName: input.paramName,
+    });
   }
 }
 

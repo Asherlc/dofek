@@ -1,9 +1,10 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render } from "@testing-library/react";
+import { render } from "@testing-library/react";
 import type { ComponentType } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SELECTED_RANGE_QUERY_REGISTRY, type TimeRangeDays } from "../../lib/timeRange.ts";
+import { expect, vi } from "vitest";
+import { SELECTED_RANGE_QUERY_REGISTRY } from "../../lib/selectedRangeQueryRegistry.test-helper.ts";
+import type { TimeRangeDays } from "../../lib/timeRange.ts";
 
 const state = vi.hoisted<{
   days: TimeRangeDays;
@@ -14,6 +15,8 @@ const state = vi.hoisted<{
   queryCalls: [],
   routeComponents: {},
 }));
+
+export { state };
 
 function recordQuery(name: string) {
   return (input: unknown, options?: unknown) => {
@@ -107,14 +110,14 @@ vi.mock("../../lib/trpc.ts", () => ({
   },
 }));
 
-async function renderRoute(routePath: string, importRoute: () => Promise<unknown>) {
+export async function renderRoute(routePath: string, importRoute: () => Promise<unknown>) {
   await importRoute();
   const RouteComponent = state.routeComponents[routePath];
   if (!RouteComponent) throw new Error(`${routePath} route component was not captured`);
   return render(<RouteComponent />);
 }
 
-function expectRegistryInputs(
+export function expectRegistryInputs(
   registryKey: keyof typeof SELECTED_RANGE_QUERY_REGISTRY,
   days: TimeRangeDays,
 ) {
@@ -128,61 +131,7 @@ function expectRegistryInputs(
   }
 }
 
-describe("training range plumbing", () => {
-  beforeEach(() => {
-    state.days = 90;
-    state.queryCalls.length = 0;
-  });
-
-  afterEach(() => {
-    cleanup();
-  });
-
-  it("passes finite and All ranges to endurance selected-range chart queries", async () => {
-    state.days = 30;
-    await renderRoute("/training/endurance", () => import("./endurance.tsx"));
-    expectRegistryInputs("endurance", 30);
-
-    cleanup();
-    state.queryCalls.length = 0;
-    state.days = null;
-    await renderRoute("/training/endurance", () => import("./endurance.tsx"));
-    expectRegistryInputs("endurance", null);
-  });
-
-  it("passes finite and All ranges to recovery selected-range chart queries", async () => {
-    state.days = 30;
-    await renderRoute("/training/recovery", () => import("./recovery.tsx"));
-    expectRegistryInputs("recovery", 30);
-
-    cleanup();
-    state.queryCalls.length = 0;
-    state.days = null;
-    await renderRoute("/training/recovery", () => import("./recovery.tsx"));
-    expectRegistryInputs("recovery", null);
-  });
-
-  it("passes finite and All ranges to strength selected-range chart queries", async () => {
-    state.days = 30;
-    await renderRoute("/training/strength", () => import("./strength.lazy.tsx"));
-    expectRegistryInputs("strength", 30);
-
-    cleanup();
-    state.queryCalls.length = 0;
-    state.days = null;
-    await renderRoute("/training/strength", () => import("./strength.lazy.tsx"));
-    expectRegistryInputs("strength", null);
-  });
-
-  it("passes finite and All ranges to training insight panel selected-range chart queries", async () => {
-    const { TrainingInsightsPanel } = await import("../../components/TrainingInsightsPanel.tsx");
-
-    render(<TrainingInsightsPanel days={30} />);
-    expectRegistryInputs("trainingInsightsPanel", 30);
-
-    cleanup();
-    state.queryCalls.length = 0;
-    render(<TrainingInsightsPanel days={null} />);
-    expectRegistryInputs("trainingInsightsPanel", null);
-  });
-});
+export function resetRangePlumbingState() {
+  state.days = 90;
+  state.queryCalls.length = 0;
+}

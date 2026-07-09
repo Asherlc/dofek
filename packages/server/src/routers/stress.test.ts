@@ -63,9 +63,8 @@ function makeRow(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
-function makeCaller(rows: unknown[]) {
-  const query = vi.fn().mockResolvedValue(rows);
-  return createCaller({
+function makeCaller(rows: unknown[], query = vi.fn().mockResolvedValue(rows)) {
+  const caller = createCaller({
     db: { execute: vi.fn().mockResolvedValue([]) },
     userId: "user-1",
     timezone: "UTC",
@@ -82,11 +81,12 @@ function makeCaller(rows: unknown[]) {
       getPaceCurveRows: vi.fn().mockResolvedValue([]),
     },
   });
+  return { caller, query };
 }
 
 describe("Router transformation logic", () => {
   it("returns empty result when no rows", async () => {
-    const caller = makeCaller([]);
+    const { caller } = makeCaller([]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily).toEqual([]);
     expect(result.weekly).toEqual([]);
@@ -95,24 +95,7 @@ describe("Router transformation logic", () => {
   });
 
   it("reads daily recovery inputs from the ClickHouse read model", async () => {
-    const query = vi.fn().mockResolvedValue([]);
-    const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue([]) },
-      userId: "user-1",
-      timezone: "UTC",
-      sensorStore: {
-        query,
-        getActivitySummaries: vi.fn().mockResolvedValue([]),
-        getStream: vi.fn().mockResolvedValue([]),
-        getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
-        getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
-        getPowerCurveSamples: vi.fn().mockResolvedValue([]),
-        getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
-        getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
-        getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
-        getPaceCurveRows: vi.fn().mockResolvedValue([]),
-      },
-    });
+    const { caller, query } = makeCaller([]);
 
     await caller.scores({ days: 30, endDate: "2026-03-24" });
 
@@ -125,24 +108,7 @@ describe("Router transformation logic", () => {
   });
 
   it("uses a lower date bound for finite selected ranges", async () => {
-    const query = vi.fn().mockResolvedValue([]);
-    const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue([]) },
-      userId: "user-1",
-      timezone: "UTC",
-      sensorStore: {
-        query,
-        getActivitySummaries: vi.fn().mockResolvedValue([]),
-        getStream: vi.fn().mockResolvedValue([]),
-        getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
-        getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
-        getPowerCurveSamples: vi.fn().mockResolvedValue([]),
-        getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
-        getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
-        getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
-        getPaceCurveRows: vi.fn().mockResolvedValue([]),
-      },
-    });
+    const { caller, query } = makeCaller([]);
 
     await caller.scores({ days: 30, endDate: "2026-03-24" });
 
@@ -153,24 +119,7 @@ describe("Router transformation logic", () => {
   });
 
   it("omits the lower date bound when days is null", async () => {
-    const query = vi.fn().mockResolvedValue([]);
-    const caller = createCaller({
-      db: { execute: vi.fn().mockResolvedValue([]) },
-      userId: "user-1",
-      timezone: "UTC",
-      sensorStore: {
-        query,
-        getActivitySummaries: vi.fn().mockResolvedValue([]),
-        getStream: vi.fn().mockResolvedValue([]),
-        getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
-        getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
-        getPowerCurveSamples: vi.fn().mockResolvedValue([]),
-        getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
-        getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
-        getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
-        getPaceCurveRows: vi.fn().mockResolvedValue([]),
-      },
-    });
+    const { caller, query } = makeCaller([]);
 
     await caller.scores({ days: null, endDate: "2026-03-24" });
 
@@ -183,42 +132,42 @@ describe("Router transformation logic", () => {
   });
 
   it("rejects unbounded day windows", async () => {
-    const caller = makeCaller([]);
+    const { caller } = makeCaller([]);
     await expect(caller.scores({ days: 366, endDate: "2026-03-24" })).rejects.toThrow();
   });
 
   it("computes HRV z-score deviation when all values present and sd > 0", async () => {
     // hrv=40, mean=60, sd=10 → z = (40-60)/10 = -2.0
     const row = makeRow({ hrv: 40, hrv_mean_60d: 60, hrv_sd_60d: 10 });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.hrvDeviation).toBe(-2.0);
   });
 
   it("returns null HRV deviation when hrv is null", async () => {
     const row = makeRow({ hrv: null, hrv_mean_60d: 60, hrv_sd_60d: 10 });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.hrvDeviation).toBeNull();
   });
 
   it("returns null HRV deviation when hrv_mean_60d is null", async () => {
     const row = makeRow({ hrv: 40, hrv_mean_60d: null, hrv_sd_60d: 10 });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.hrvDeviation).toBeNull();
   });
 
   it("returns null HRV deviation when hrv_sd_60d is null", async () => {
     const row = makeRow({ hrv: 40, hrv_mean_60d: 60, hrv_sd_60d: null });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.hrvDeviation).toBeNull();
   });
 
   it("returns null HRV deviation when hrv_sd_60d is 0 (avoids division by zero)", async () => {
     const row = makeRow({ hrv: 40, hrv_mean_60d: 60, hrv_sd_60d: 0 });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.hrvDeviation).toBeNull();
   });
@@ -226,7 +175,7 @@ describe("Router transformation logic", () => {
   it("rounds HRV deviation to 2 decimal places", async () => {
     // hrv=45, mean=60, sd=7 → z = (45-60)/7 = -2.14285... → -2.14
     const row = makeRow({ hrv: 45, hrv_mean_60d: 60, hrv_sd_60d: 7 });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.hrvDeviation).toBe(-2.14);
   });
@@ -234,35 +183,35 @@ describe("Router transformation logic", () => {
   it("computes RHR z-score deviation when all values present and sd > 0", async () => {
     // resting_hr=70, mean=60, sd=5 → z = (70-60)/5 = 2.0
     const row = makeRow({ resting_hr: 70, rhr_mean_60d: 60, rhr_sd_60d: 5 });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.restingHrDeviation).toBe(2.0);
   });
 
   it("returns null RHR deviation when resting_hr is null", async () => {
     const row = makeRow({ resting_hr: null, rhr_mean_60d: 60, rhr_sd_60d: 5 });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.restingHrDeviation).toBeNull();
   });
 
   it("returns null RHR deviation when rhr_mean_60d is null", async () => {
     const row = makeRow({ resting_hr: 70, rhr_mean_60d: null, rhr_sd_60d: 5 });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.restingHrDeviation).toBeNull();
   });
 
   it("returns null RHR deviation when rhr_sd_60d is null", async () => {
     const row = makeRow({ resting_hr: 70, rhr_mean_60d: 60, rhr_sd_60d: null });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.restingHrDeviation).toBeNull();
   });
 
   it("returns null RHR deviation when rhr_sd_60d is 0", async () => {
     const row = makeRow({ resting_hr: 70, rhr_mean_60d: 60, rhr_sd_60d: 0 });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.restingHrDeviation).toBeNull();
   });
@@ -270,21 +219,21 @@ describe("Router transformation logic", () => {
   it("rounds RHR deviation to 2 decimal places", async () => {
     // resting_hr=67, mean=60, sd=3 → z = (67-60)/3 = 2.33333... → 2.33
     const row = makeRow({ resting_hr: 67, rhr_mean_60d: 60, rhr_sd_60d: 3 });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.restingHrDeviation).toBe(2.33);
   });
 
   it("converts efficiency_pct to sleepEfficiency and rounds to 1 decimal", async () => {
     const row = makeRow({ efficiency_pct: 87.654 });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.sleepEfficiency).toBe(87.7);
   });
 
   it("returns null sleepEfficiency when efficiency_pct is null", async () => {
     const row = makeRow({ efficiency_pct: null });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.sleepEfficiency).toBeNull();
   });
@@ -294,14 +243,14 @@ describe("Router transformation logic", () => {
       makeRow({ date: "2026-03-19", hrv: 40, hrv_mean_60d: 60, hrv_sd_60d: 10 }),
       makeRow({ date: "2026-03-20", hrv: 55, hrv_mean_60d: 60, hrv_sd_60d: 10 }),
     ];
-    const caller = makeCaller(rows);
+    const { caller } = makeCaller(rows);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily).toHaveLength(2);
     expect(result.latestScore).toBe(result.daily[1]?.stressScore);
   });
 
   it("returns null latestScore when daily is empty", async () => {
-    const caller = makeCaller([]);
+    const { caller } = makeCaller([]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.latestScore).toBeNull();
   });
@@ -323,14 +272,14 @@ describe("Router transformation logic", () => {
       rhr_sd_60d: 5,
       efficiency_pct: 75,
     });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.stressScore).toBe(2.3);
   });
 
   it("includes date from the row", async () => {
     const row = makeRow({ date: "2026-03-15" });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.date).toBe("2026-03-15");
   });
@@ -345,7 +294,7 @@ describe("Router transformation logic", () => {
         hrv_sd_60d: 10,
       }),
     );
-    const caller = makeCaller(rows);
+    const { caller } = makeCaller(rows);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.weekly.length).toBeGreaterThan(0);
     expect(result.weekly[0]).toHaveProperty("weekStart");
@@ -358,7 +307,7 @@ describe("Router transformation logic", () => {
     const rows = Array.from({ length: 5 }, (_, index) =>
       makeRow({ date: `2026-03-${String(16 + index).padStart(2, "0")}` }),
     );
-    const caller = makeCaller(rows);
+    const { caller } = makeCaller(rows);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.trend).toBe("stable");
   });
@@ -386,14 +335,14 @@ describe("Router transformation logic", () => {
         }),
       ),
     ];
-    const caller = makeCaller(rows);
+    const { caller } = makeCaller(rows);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.trend).toBe("improving");
   });
 
   it("handles all-null metrics (zero stress score)", async () => {
     const row = makeRow();
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.stressScore).toBe(0);
     expect(result.daily[0]?.hrvDeviation).toBeNull();
@@ -412,7 +361,7 @@ describe("Router transformation logic", () => {
       rhr_sd_60d: "5",
       efficiency_pct: "85.5",
     });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     // (45-60)/10 = -1.5 → rounds to -1.5
     expect(result.daily[0]?.hrvDeviation).toBe(-1.5);
@@ -433,7 +382,7 @@ describe("Router transformation logic", () => {
       rhr_sd_60d: 5,
       efficiency_pct: 50,
     });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     // (10-60)/10 = -5.0 → < -2.0 → 1.5
     // (90-60)/5 = 6.0 → > 2.0 → 1.0
@@ -449,7 +398,7 @@ describe("Router transformation logic", () => {
       hrv_mean_60d: 60,
       hrv_sd_60d: 10,
     });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.hrvDeviation).toBe(1.0);
     expect(result.daily[0]?.stressScore).toBe(0);
@@ -462,7 +411,7 @@ describe("Router transformation logic", () => {
       rhr_mean_60d: 60,
       rhr_sd_60d: 5,
     });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.restingHrDeviation).toBe(-1.0);
     expect(result.daily[0]?.stressScore).toBe(0);
@@ -471,7 +420,7 @@ describe("Router transformation logic", () => {
   it("good sleep efficiency produces zero sleep stress", async () => {
     // 90% > 85% → sleepStress = 0
     const row = makeRow({ efficiency_pct: 90 });
-    const caller = makeCaller([row]);
+    const { caller } = makeCaller([row]);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.daily[0]?.sleepEfficiency).toBe(90);
     expect(result.daily[0]?.stressScore).toBe(0);
@@ -499,7 +448,7 @@ describe("Router transformation logic", () => {
         }),
       ),
     ];
-    const caller = makeCaller(rows);
+    const { caller } = makeCaller(rows);
     const result = await caller.scores({ days: 30, endDate: "2026-03-24" });
     expect(result.trend).toBe("worsening");
   });

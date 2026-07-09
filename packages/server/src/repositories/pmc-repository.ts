@@ -176,11 +176,12 @@ export class PmcRepository extends BaseRepository {
       acuteTrainingLoadDays,
       trainingLoadCalculator,
     });
+    const allTimeActivityDays = daysSinceEarliestActivity(visibleActivityRows);
     return chartCalculator.buildChart({
       activityRows: visibleActivityRows,
       normalizedPowerRows,
-      queryDays: queryRange.days ?? daysSinceEarliestActivity(visibleActivityRows),
-      displayDays: range.days ?? daysSinceEarliestActivity(visibleActivityRows),
+      queryDays: queryRange.days ?? allTimeActivityDays,
+      displayDays: range.days ?? allTimeActivityDays,
     });
   }
 

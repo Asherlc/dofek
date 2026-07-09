@@ -3,12 +3,8 @@ import type { Database } from "dofek/db";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
-import {
-  clickHouseIntervalDayLowerBound,
-  dateWindowStartStringOrUndefined,
-  type RangeDays,
-  rangeDaysParams,
-} from "../lib/date-window.ts";
+import { ChartRange } from "../lib/chart-range.ts";
+import type { RangeDays } from "../lib/date-window.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 import {
@@ -110,8 +106,9 @@ export class TrainingRepository extends BaseRepository {
     }
 
     const today = new Date().toISOString().slice(0, 10);
-    const activityRangeFilter = clickHouseIntervalDayLowerBound(days, "asum.started_at");
-    const rhrWindowStart = dateWindowStartStringOrUndefined(today, days);
+    const range = ChartRange.fromDays(days);
+    const activityRangeFilter = range.clickHouseDateAfterToday("asum.started_at");
+    const rhrWindowStart = range.windowStartString(today);
     const rows = await this.#sensorStore.query(
       hrZoneRowSchema,
       `WITH ${restingHeartRateClickHouseCte({ includeWindowStart: days !== null })},
@@ -164,7 +161,7 @@ export class TrainingRepository extends BaseRepository {
         timezone: this.timezone,
         rhrEndDate: today,
         ...(rhrWindowStart ? { rhrWindowStart } : {}),
-        ...rangeDaysParams(days),
+        ...range.params(),
         enduranceTypes: ENDURANCE_TYPES,
         ...heartRateZoneSqlParams(),
       },
@@ -232,7 +229,8 @@ export class TrainingRepository extends BaseRepository {
 
   async #queryActivityStats(days: RangeDays): Promise<ActivityStatsRow[]> {
     const { predicate, params } = this.#activitySummaryAccessFilter("a");
-    const rangeFilter = clickHouseIntervalDayLowerBound(days, "a.started_at");
+    const range = ChartRange.fromDays(days);
+    const rangeFilter = range.clickHouseDateAfterToday("a.started_at");
     const rows = await this.#sensorStore.query(
       activityStatsRowSchema,
       `SELECT
@@ -254,7 +252,7 @@ export class TrainingRepository extends BaseRepository {
         ${rangeFilter}
         ${predicate}
       ORDER BY a.started_at DESC`,
-      { userId: this.userId, ...rangeDaysParams(days), ...params },
+      { userId: this.userId, ...range.params(), ...params },
     );
     return activityRepositoryFor(
       this.db,
@@ -266,7 +264,8 @@ export class TrainingRepository extends BaseRepository {
 
   async #queryWeeklyVolume(days: RangeDays): Promise<WeeklyVolumeRow[]> {
     const { predicate, params } = this.#activitySummaryAccessFilter("asum");
-    const rangeFilter = clickHouseIntervalDayLowerBound(days, "asum.started_at");
+    const range = ChartRange.fromDays(days);
+    const rangeFilter = range.clickHouseDateAfterToday("asum.started_at");
 
     return this.#sensorStore.query(
       weeklyVolumeRowSchema,
@@ -289,7 +288,7 @@ export class TrainingRepository extends BaseRepository {
       {
         userId: this.userId,
         timezone: this.timezone,
-        ...rangeDaysParams(days),
+        ...range.params(),
         ...params,
       },
     );

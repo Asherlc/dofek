@@ -1,7 +1,8 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { postgresRangeLowerBound, type RangeDays } from "../lib/date-window.ts";
+import { ChartRange } from "../lib/chart-range.ts";
+import type { RangeDays } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
@@ -65,7 +66,7 @@ export class CalendarRepository {
 
   /** Daily activity counts for calendar heatmap rendering. */
   async getCalendarData(days: RangeDays): Promise<CalendarDay[]> {
-    const rangeFilter = postgresRangeLowerBound(days, sql`a.started_at`);
+    const rangeFilter = ChartRange.fromDays(days).postgresTimestampAfterNow(sql`a.started_at`);
     const rows = await executeWithSchema(
       this.#db,
       calendarRowSchema,

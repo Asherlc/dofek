@@ -244,11 +244,6 @@ export function clickHouseMondayDateRangeLowerBound(
     : `AND ${column} ${operator} toMonday(today() - INTERVAL {${parameterName}:Int32} DAY)`;
 }
 
-export function postgresRangeLowerBound(days: RangeDays, column: SQL): SQL {
-  if (days === null) return sql``;
-  return sql`AND ${column} > NOW() - ${days}::int * INTERVAL '1 day'`;
-}
-
 export function postgresCurrentTimestampRangeLowerBound(days: RangeDays, column: SQL): SQL {
   if (days === null) return sql``;
   return sql`AND ${column} > CURRENT_TIMESTAMP - ${days}::int * INTERVAL '1 day'`;

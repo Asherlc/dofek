@@ -1,7 +1,10 @@
 import { TRPCError } from "@trpc/server";
 import { selectedChartDateRangeQuery } from "../lib/chart-range.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
-import { DailyMetricsRepository } from "../repositories/daily-metrics-repository.ts";
+import {
+  DailyMetricsRepository,
+  HRV_BASELINE_WARMUP_DAYS,
+} from "../repositories/daily-metrics-repository.ts";
 import { fetchRestingHeartRateValuesCte } from "../repositories/resting-heart-rate-query.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -45,7 +48,7 @@ export const dailyMetricsRouter = router({
         userId: ctx.userId,
         timezone: ctx.timezone,
         endDate: input.endDate,
-        days: range.withWarmupDays(60).days,
+        days: range.withWarmupDays(HRV_BASELINE_WARMUP_DAYS).days,
       });
       return repo.getHrvBaseline(range.days, input.endDate, restingHeartRateCte);
     },

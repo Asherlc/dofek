@@ -2,9 +2,9 @@ import { computeGradeAdjustedPace } from "@dofek/training/grade-adjusted-pace";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { ChartRange } from "../lib/chart-range.ts";
 import {
   clickHouseIntervalDayLowerBound,
-  postgresRangeLowerBound,
   type RangeDays,
   rangeDaysParams,
 } from "../lib/date-window.ts";
@@ -316,7 +316,7 @@ export class HikingRepository {
 
   /** Walking biomechanics from daily health metrics. */
   async getWalkingBiomechanics(days: RangeDays): Promise<WalkingBiomechanicsSnapshot[]> {
-    const rangeFilter = postgresRangeLowerBound(days, sql`date`);
+    const rangeFilter = ChartRange.fromDays(days).postgresTimestampAfterNow(sql`date`);
     const rows = await executeWithSchema(
       this.#db,
       biomechanicsRowSchema,

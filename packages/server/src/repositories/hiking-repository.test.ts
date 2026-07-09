@@ -8,6 +8,10 @@ import {
   RepeatedRoute,
   WalkingBiomechanicsSnapshot,
 } from "./hiking-repository.ts";
+import {
+  expectClickHouseFiniteDaysFilter,
+  expectClickHouseUnboundedDaysFilter,
+} from "./test-helpers.ts";
 
 // ---------------------------------------------------------------------------
 // Domain models
@@ -210,19 +214,6 @@ describe("HikingRepository", () => {
     return { repo, execute: sensorQuery, dbExecute: execute };
   }
 
-  function expectClickHouseFiniteDaysFilter(query: string, params: Record<string, unknown>): void {
-    expect(query).toContain("INTERVAL {days:Int32} DAY");
-    expect(params).toHaveProperty("days", 30);
-  }
-
-  function expectClickHouseUnboundedDaysFilter(
-    query: string,
-    params: Record<string, unknown>,
-  ): void {
-    expect(query).not.toContain("INTERVAL {days:Int32} DAY");
-    expect(params).not.toHaveProperty("days");
-  }
-
   describe("getGradeAdjustedPaces", () => {
     it("returns empty array when no data", async () => {
       const { repo } = makeRepository([]);
@@ -372,7 +363,7 @@ describe("HikingRepository", () => {
       await repo.getWalkingBiomechanics(30);
 
       const compiledQuery = dialect.sqlToQuery(dbExecute.mock.calls[0]?.[0]);
-      expect(compiledQuery.sql).toContain("date > NOW() - $2::int * INTERVAL '1 day'");
+      expect(compiledQuery.sql).toContain("date > CURRENT_TIMESTAMP - $2::int * INTERVAL '1 day'");
       expect(compiledQuery.params).toEqual(expect.arrayContaining(["user-1", 30]));
     });
 

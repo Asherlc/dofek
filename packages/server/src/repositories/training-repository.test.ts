@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
-import { collectSqlText } from "./test-helpers.ts";
+import {
+  collectSqlText,
+  expectSensorStoreFiniteDaysFilter,
+  expectSensorStoreUnboundedDaysFilter,
+} from "./test-helpers.ts";
 import { TrainingRepository } from "./training-repository.ts";
 
 // ---------------------------------------------------------------------------
@@ -54,23 +58,6 @@ describe("TrainingRepository", () => {
     const sensorStore = makeSensorStore(rows, rawActivityCount);
     const repo = new TrainingRepository(db, "user-1", "UTC", sensorStore, accessWindow);
     return { repo, execute, sensorStore };
-  }
-
-  function expectClickHouseFiniteDaysFilter(sensorStore: ActivitySensorStore, callIndex = 0): void {
-    const query = vi.mocked(sensorStore.query).mock.calls[callIndex]?.[1];
-    const params = vi.mocked(sensorStore.query).mock.calls[callIndex]?.[2];
-    expect(query).toContain("INTERVAL {days:Int32} DAY");
-    expect(params).toHaveProperty("days", 30);
-  }
-
-  function expectClickHouseUnboundedDaysFilter(
-    sensorStore: ActivitySensorStore,
-    callIndex = 0,
-  ): void {
-    const query = vi.mocked(sensorStore.query).mock.calls[callIndex]?.[1];
-    const params = vi.mocked(sensorStore.query).mock.calls[callIndex]?.[2];
-    expect(query).not.toContain("INTERVAL {days:Int32} DAY");
-    expect(params).not.toHaveProperty("days");
   }
 
   describe("getWeeklyVolume", () => {
@@ -154,7 +141,7 @@ describe("TrainingRepository", () => {
 
       await repo.getWeeklyVolume(30);
 
-      expectClickHouseFiniteDaysFilter(sensorStore);
+      expectSensorStoreFiniteDaysFilter(sensorStore);
     });
 
     it("omits selected-range lower-bound filters when days is null", async () => {
@@ -162,7 +149,7 @@ describe("TrainingRepository", () => {
 
       await repo.getWeeklyVolume(null);
 
-      expectClickHouseUnboundedDaysFilter(sensorStore);
+      expectSensorStoreUnboundedDaysFilter(sensorStore);
     });
 
     it("returns parsed weekly volume rows", async () => {
@@ -238,7 +225,7 @@ describe("TrainingRepository", () => {
 
       const query = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
       const params = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
-      expect(query).toContain("asum.started_at > now() - INTERVAL {days:Int32} DAY");
+      expect(query).toContain("asum.started_at > today() - INTERVAL {days:Int32} DAY");
       expect(query).toContain("toDate({rhrWindowStart:String})");
       expect(params).toHaveProperty("days", 30);
       expect(params).toHaveProperty("rhrWindowStart");

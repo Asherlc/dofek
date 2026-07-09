@@ -4,6 +4,10 @@ import {
   RunningDynamicsActivity,
   RunningRepository,
 } from "./running-repository.ts";
+import {
+  expectClickHouseFiniteDaysFilter,
+  expectClickHouseUnboundedDaysFilter,
+} from "./test-helpers.ts";
 
 // ---------------------------------------------------------------------------
 // Domain models
@@ -303,19 +307,6 @@ describe("RunningRepository", () => {
     };
     const repo = new RunningRepository(db, "user-1", "UTC", sensorStore);
     return { repo, execute: query, dbExecute: execute };
-  }
-
-  function expectClickHouseFiniteDaysFilter(query: string, params: Record<string, unknown>): void {
-    expect(query).toContain("INTERVAL {days:Int32} DAY");
-    expect(params).toHaveProperty("days", 30);
-  }
-
-  function expectClickHouseUnboundedDaysFilter(
-    query: string,
-    params: Record<string, unknown>,
-  ): void {
-    expect(query).not.toContain("INTERVAL {days:Int32} DAY");
-    expect(params).not.toHaveProperty("days");
   }
 
   describe("getDynamics", () => {

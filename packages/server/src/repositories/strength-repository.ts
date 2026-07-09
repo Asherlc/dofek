@@ -2,7 +2,8 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../../../../src/db/index.ts";
 import { lookupExerciseMuscleGroups } from "../../../../src/exercise-metadata.ts";
-import { postgresRangeLowerBound, type RangeDays } from "../lib/date-window.ts";
+import { ChartRange } from "../lib/chart-range.ts";
+import type { RangeDays } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
@@ -260,7 +261,7 @@ export class StrengthRepository {
 
   /** Weekly tonnage: SUM(weight_kg * reps) grouped by week. */
   async getVolumeOverTime(days: RangeDays): Promise<VolumeWeek[]> {
-    const rangeFilter = postgresRangeLowerBound(days, sql`a.started_at`);
+    const rangeFilter = ChartRange.fromDays(days).postgresTimestampAfterNow(sql`a.started_at`);
     const rows = await executeWithSchema(
       this.#db,
       volumeRowSchema,
@@ -291,7 +292,7 @@ export class StrengthRepository {
 
   /** Estimated 1RM using Epley formula, best e1RM per workout per exercise. */
   async getEstimatedOneRepMax(days: RangeDays): Promise<EstimatedOneRepMax[]> {
-    const rangeFilter = postgresRangeLowerBound(days, sql`a.started_at`);
+    const rangeFilter = ChartRange.fromDays(days).postgresTimestampAfterNow(sql`a.started_at`);
     const rows = await executeWithSchema(
       this.#db,
       oneRepMaxRowSchema,
@@ -354,7 +355,7 @@ export class StrengthRepository {
 
   /** Weekly sets per muscle group. */
   async getMuscleGroupVolume(days: RangeDays): Promise<MuscleGroupVolume[]> {
-    const rangeFilter = postgresRangeLowerBound(days, sql`a.started_at`);
+    const rangeFilter = ChartRange.fromDays(days).postgresTimestampAfterNow(sql`a.started_at`);
     const rows = await executeWithSchema(
       this.#db,
       muscleGroupRowSchema,
@@ -388,7 +389,7 @@ export class StrengthRepository {
 
   /** Weekly volume per exercise with linear regression slope. */
   async getProgressiveOverload(days: RangeDays): Promise<ProgressiveOverload[]> {
-    const rangeFilter = postgresRangeLowerBound(days, sql`a.started_at`);
+    const rangeFilter = ChartRange.fromDays(days).postgresTimestampAfterNow(sql`a.started_at`);
     const rows = await executeWithSchema(
       this.#db,
       overloadRowSchema,
@@ -497,7 +498,7 @@ export class StrengthRepository {
 
   /** Recent workout summaries. */
   async getWorkoutSummaries(days: number): Promise<WorkoutSummary[]> {
-    const rangeFilter = postgresRangeLowerBound(days, sql`a.started_at`);
+    const rangeFilter = ChartRange.fromDays(days).postgresTimestampAfterNow(sql`a.started_at`);
     const rows = await executeWithSchema(
       this.#db,
       summaryRowSchema,

@@ -10,6 +10,8 @@ import {
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import { restingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
 
+export const HRV_BASELINE_WARMUP_DAYS = 60;
+
 // ---------------------------------------------------------------------------
 // Zod schemas
 // ---------------------------------------------------------------------------
@@ -112,7 +114,7 @@ export class DailyMetricsRepository extends BaseRepository {
     endDate: string,
     restingHeartRateCte: SQL = restingHeartRateValuesCte([]),
   ): Promise<HrvBaselineRow[]> {
-    const warmupDays = rangeDaysOrNullAdd(days, 60);
+    const warmupDays = rangeDaysOrNullAdd(days, HRV_BASELINE_WARMUP_DAYS);
     const rows = await this.query(
       hrvBaselineRowSchema,
       sql`WITH ${restingHeartRateCte},

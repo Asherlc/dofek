@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { type ComponentType, type ReactNode, useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BodyDaysContext } from "../lib/bodyDaysContext.ts";
-import { SELECTED_RANGE_QUERY_REGISTRY } from "../lib/timeRange.ts";
+import { SELECTED_RANGE_QUERY_REGISTRY } from "../lib/selectedRangeQueryRegistry.test-helper.ts";
 
 const state = vi.hoisted<{
   queryCalls: Array<{ name: string; input: unknown }>;

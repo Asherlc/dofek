@@ -1,5 +1,6 @@
 import { type FormattedMeasurement, formatDateYmdInTimeZone } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
+import type { TimeRangeDays } from "./timeRange.ts";
 
 export type BodyHealthMetricEntry = {
   label: string;
@@ -25,9 +26,7 @@ function dateWindowStartString(endDate: string, days: number): string {
   return formatDateYmdInTimeZone(windowStart, "UTC");
 }
 
-type SelectedRangeDays = number | null;
-
-function isInDateWindow(date: string, days: SelectedRangeDays, endDate: string): boolean {
+function isInDateWindow(date: string, days: TimeRangeDays, endDate: string): boolean {
   if (days === null) return date <= endDate;
   const startStr = dateWindowStartString(endDate, days);
   return date > startStr && date <= endDate;
@@ -35,7 +34,7 @@ function isInDateWindow(date: string, days: SelectedRangeDays, endDate: string):
 
 function filterToWindow<T extends DatedValue>(
   rows: T[],
-  days: SelectedRangeDays,
+  days: TimeRangeDays,
   endDate: string,
 ): T[] {
   return rows.filter((row) => isInDateWindow(row.date, days, endDate));
@@ -65,7 +64,7 @@ export function buildBodyHealthMetrics({
   trendData: BodyTrendRow | undefined;
   weightData: Array<{ date: string; smoothedWeight: number }>;
   recompData: Array<{ date: string; bodyFatPct: number }>;
-  days: SelectedRangeDays;
+  days: TimeRangeDays;
   endDate: string;
   units: UnitConverter;
 }): BodyHealthMetricEntry[] {

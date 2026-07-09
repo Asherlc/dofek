@@ -8,6 +8,10 @@ import {
   VerticalAscentModel,
 } from "./cycling-advanced-models.ts";
 import { CyclingAdvancedRepository } from "./cycling-advanced-repository.ts";
+import {
+  expectClickHouseFiniteDaysFilter,
+  expectClickHouseUnboundedDaysFilter,
+} from "./test-helpers.ts";
 
 // ---------------------------------------------------------------------------
 // Domain models
@@ -239,19 +243,6 @@ describe("CyclingAdvancedRepository", () => {
     expect(activityTypes).not.toContain("walking");
     expect(activityTypes).not.toContain("running");
     expect(activityTypes).not.toContain("hiking");
-  }
-
-  function expectClickHouseFiniteDaysFilter(query: string, params: Record<string, unknown>): void {
-    expect(query).toContain("INTERVAL {days:Int32} DAY");
-    expect(params).toHaveProperty("days", 30);
-  }
-
-  function expectClickHouseUnboundedDaysFilter(
-    query: string,
-    params: Record<string, unknown>,
-  ): void {
-    expect(query).not.toContain("INTERVAL {days:Int32} DAY");
-    expect(params).not.toHaveProperty("days");
   }
 
   describe("getRampRate", () => {
