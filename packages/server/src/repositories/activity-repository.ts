@@ -11,36 +11,27 @@ import {
 import { osmTilePreview } from "../lib/osm-tile.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivityRow } from "../models/activity.ts";
+import { activitySourceSchema } from "../models/activity-source.ts";
 import { getActivityRoutePreviews } from "./activity-route-preview.ts";
 
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
 // ---------------------------------------------------------------------------
 
-const activityListRowSchema = z
-  .object({
-    id: z.string(),
-    activity_type: z.string(),
-    started_at: timestampStringSchema,
-    ended_at: timestampStringSchema.nullable(),
-    name: z.string().nullable(),
-    provider_id: z.string(),
-    source_providers: z.array(z.string()),
-    member_activity_ids: z.array(z.string()).optional().default([]),
-    avg_hr: z.number().nullable(),
-    max_hr: z.number().nullable(),
-    avg_power: z.number().nullable(),
-    distance_meters: z.number().nullable(),
-    total_count: z.coerce.number(),
-  })
-  .passthrough();
-
-const sourceExternalIdSchema = z.object({
-  providerId: z.string(),
-  externalId: z.string(),
-  memberActivityId: z.string().optional(),
-  providerAbsentAt: timestampStringSchema.nullable().optional(),
-  subsource: z.string().nullable().optional(),
+const activityListRowSchema = z.object({
+  id: z.string(),
+  activity_type: z.string(),
+  started_at: timestampStringSchema,
+  ended_at: timestampStringSchema.nullable(),
+  name: z.string().nullable(),
+  provider_id: z.string(),
+  source_providers: z.array(z.string()),
+  member_activity_ids: z.array(z.string()).optional().default([]),
+  avg_hr: z.number().nullable(),
+  max_hr: z.number().nullable(),
+  avg_power: z.number().nullable(),
+  distance_meters: z.number().nullable(),
+  total_count: z.coerce.number(),
 });
 
 const activityDetailRowSchema = z.object({
@@ -53,8 +44,8 @@ const activityDetailRowSchema = z.object({
   provider_id: z.string(),
   subsource: z.string().nullable(),
   source_providers: z.array(z.string()),
-  source_external_ids: z.array(sourceExternalIdSchema).nullable(),
-  absent_source_external_ids: z.array(sourceExternalIdSchema).nullable().optional().default(null),
+  source_external_ids: z.array(activitySourceSchema).nullable(),
+  absent_source_external_ids: z.array(activitySourceSchema).nullable().default(null),
   member_activity_ids: z.array(z.string()).optional().default([]),
   avg_hr: z.number().nullable(),
   max_hr: z.number().nullable(),

@@ -89,12 +89,16 @@ describe("Activity", () => {
     expect(activity.sourceLinks).toEqual([
       {
         providerId: "strava",
+        externalId: "99999",
+        subsource: null,
         label: "Strava",
         url: "https://www.strava.com/activities/99999",
         providerAbsentAt: null,
       },
       {
         providerId: "wahoo",
+        externalId: "42",
+        subsource: null,
         label: "Wahoo",
         url: "https://systm.wahoofitness.com/history/activity-details/42",
         providerAbsentAt: null,
@@ -122,12 +126,16 @@ describe("Activity", () => {
     expect(activity.sourceLinks).toEqual([
       {
         providerId: "garmin",
+        externalId: "123",
+        subsource: null,
         label: "Garmin",
         url: "https://connect.garmin.com/modern/activity/123",
         providerAbsentAt: null,
       },
       {
         providerId: "strava",
+        externalId: "99999",
+        subsource: null,
         label: "Strava",
         url: "https://www.strava.com/activities/99999",
         providerAbsentAt: "2026-03-05T14:30:00.000Z",
@@ -149,12 +157,16 @@ describe("Activity", () => {
     expect(activity.sourceLinks).toEqual([
       {
         providerId: "apple_health",
+        externalId: "ah:workout:2024-01-01",
+        subsource: null,
         label: "Apple Health",
         url: null,
         providerAbsentAt: null,
       },
       {
         providerId: "strava",
+        externalId: "12345",
+        subsource: null,
         label: "Strava",
         url: "https://www.strava.com/activities/12345",
         providerAbsentAt: null,
@@ -193,6 +205,8 @@ describe("Activity", () => {
     expect(activity.sourceLinks).toEqual([
       {
         providerId: "apple_health",
+        externalId: "hk:workout:strong",
+        subsource: "Strong",
         label: "Strong (via Apple Health)",
         url: null,
         providerAbsentAt: null,
@@ -200,6 +214,8 @@ describe("Activity", () => {
       },
       {
         providerId: "apple_health",
+        externalId: "hk:workout:whoop",
+        subsource: "WHOOP",
         label: "WHOOP (via Apple Health)",
         url: null,
         providerAbsentAt: null,
@@ -207,6 +223,8 @@ describe("Activity", () => {
       },
       {
         providerId: "whoop",
+        externalId: "whoop-cloud",
+        subsource: null,
         label: "WHOOP (Cloud)",
         url: null,
         providerAbsentAt: null,
@@ -304,12 +322,16 @@ describe("Activity", () => {
         sourceLinks: [
           {
             providerId: "strava",
+            externalId: "99999",
+            subsource: null,
             label: "Strava",
             url: "https://www.strava.com/activities/99999",
             providerAbsentAt: null,
           },
           {
             providerId: "wahoo",
+            externalId: "42",
+            subsource: null,
             label: "Wahoo",
             url: "https://systm.wahoofitness.com/history/activity-details/42",
             providerAbsentAt: null,

@@ -156,7 +156,7 @@ export const recoveryRouter = router({
    * Lower stddev = more consistent schedule. Consistency score 0-100 based on how
    * tight the schedule is (< 30 min stddev = 100, > 90 min = 0).
    */
-  sleepConsistency: cachedProtectedQuery(CacheTTL.MEDIUM)
+  sleepConsistency: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<SleepConsistencyRow[]> => {
       const queryDays = input.days + 14;
@@ -577,7 +577,7 @@ export const recoveryRouter = router({
    * Daily strain target based on current readiness and training loads.
    * Returns a recommended strain level and progress toward it.
    */
-  strainTarget: cachedProtectedQuery(CacheTTL.MEDIUM)
+  strainTarget: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(z.object({ days: z.number().default(30), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<StrainTargetResult> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "recovery.strainTarget");

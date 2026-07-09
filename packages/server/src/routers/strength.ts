@@ -93,7 +93,7 @@ export const strengthRouter = router({
     },
   ),
 
-  workoutSummary: cachedProtectedQuery(CacheTTL.LONG)
+  workoutSummary: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ days: z.number().default(90) }))
     .query(async ({ ctx, input }): Promise<WorkoutSummaryRow[]> => {
       const repo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);

@@ -3,7 +3,7 @@ import { LifeEventsRepository } from "../repositories/life-events-repository.ts"
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 export const lifeEventsRouter = router({
-  list: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
+  list: cachedProtectedQuery({ maxAge: CacheTTL.SHORT }).query(async ({ ctx }) => {
     const repo = new LifeEventsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
     return repo.list();
   }),
@@ -48,7 +48,7 @@ export const lifeEventsRouter = router({
   }),
 
   /** Analyze: compare metrics before vs after (or during vs outside) a life event */
-  analyze: cachedProtectedQuery(CacheTTL.SHORT)
+  analyze: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(
       z.object({
         id: z.guid(),

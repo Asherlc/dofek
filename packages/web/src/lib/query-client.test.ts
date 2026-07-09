@@ -1,4 +1,3 @@
-import { QUERY_CACHE_MAX_AGE_MS } from "@dofek/scoring/query-cache";
 import { describe, expect, it, vi } from "vitest";
 import { createAppQueryClient } from "./query-client.ts";
 
@@ -35,8 +34,8 @@ describe("createAppQueryClient", () => {
     const defaults = queryClient.getDefaultOptions();
 
     expect(defaults.queries).toMatchObject({
-      staleTime: 5 * 60 * 1000,
-      gcTime: QUERY_CACHE_MAX_AGE_MS,
+      staleTime: 0,
+      gcTime: 0,
       refetchOnWindowFocus: false,
     });
   });

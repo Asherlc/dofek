@@ -49,7 +49,7 @@ function createBodyAnalyticsRepository(ctx: AuthenticatedContext) {
 // ── Router ───────────────────────────────────────────────────────────
 
 export const bodyAnalyticsRouter = router({
-  smoothedWeight: cachedProtectedQuery(CacheTTL.MEDIUM)
+  smoothedWeight: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(dateWindowInput)
     .query(({ ctx, input }) => {
       const repo = createBodyAnalyticsRepository(ctx);
@@ -91,14 +91,14 @@ export const bodyAnalyticsRouter = router({
     },
   ),
 
-  weightTrend: cachedProtectedQuery(CacheTTL.MEDIUM)
+  weightTrend: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(z.object({}).default({}))
     .query(({ ctx }) => {
       const repo = createBodyAnalyticsRepository(ctx);
       return repo.getWeightTrend();
     }),
 
-  weightPrediction: cachedProtectedQuery(CacheTTL.MEDIUM)
+  weightPrediction: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(dateWindowInput)
     .query(async ({ ctx, input }) => {
       const goalWeightKg = await readGoalWeightKg(ctx.db, ctx.userId);

@@ -132,7 +132,7 @@ export const activityRouter = router({
     },
   ),
 
-  byId: cachedProtectedQuery(CacheTTL.MEDIUM)
+  byId: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<ActivityDetail> => {
       const repo = new ActivityRepository(
@@ -152,7 +152,7 @@ export const activityRouter = router({
       return new Activity(row, getProvider).toDetail();
     }),
 
-  stream: cachedProtectedQuery(CacheTTL.MEDIUM)
+  stream: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(
       z.object({
         id: z.guid(),
@@ -178,7 +178,7 @@ export const activityRouter = router({
       return points.map((point) => point.toDetail());
     }),
 
-  hrZones: cachedProtectedQuery(CacheTTL.MEDIUM)
+  hrZones: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<ActivityHrZones> => {
       if (!ctx.sensorStore) {
@@ -198,7 +198,7 @@ export const activityRouter = router({
       return repo.getHrZones(input.id);
     }),
 
-  powerZones: cachedProtectedQuery(CacheTTL.MEDIUM)
+  powerZones: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<ActivityPowerZonesResult | null> => {
       const activityRepo = new ActivityRepository(
@@ -230,7 +230,7 @@ export const activityRouter = router({
       return { zones, ftp: currentEftp };
     }),
 
-  strengthExercises: cachedProtectedQuery(CacheTTL.MEDIUM)
+  strengthExercises: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<StrengthExerciseDetail[]> => {
       const activityRepo = new ActivityRepository(

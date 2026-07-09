@@ -115,7 +115,7 @@ async function revokeTokensOnDisconnect(
 
 export const providerDetailRouter = router({
   /** Paginated sync logs for a specific provider */
-  logs: cachedProtectedQuery(CacheTTL.SHORT)
+  logs: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(
       z.object({
         providerId: z.string(),
@@ -155,7 +155,7 @@ export const providerDetailRouter = router({
     }),
 
   /** Distinct dropdown values for sync history filters */
-  logFilterOptions: cachedProtectedQuery(CacheTTL.SHORT)
+  logFilterOptions: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(z.object({ providerId: z.string() }))
     .query(async ({ ctx, input }) => {
       const repo = new ProviderDetailRepository(ctx.db, ctx.userId);
@@ -163,7 +163,7 @@ export const providerDetailRouter = router({
     }),
 
   /** Paginated records for a provider by data type */
-  records: cachedProtectedQuery(CacheTTL.SHORT)
+  records: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(
       z.object({
         providerId: z.string(),
@@ -190,7 +190,7 @@ export const providerDetailRouter = router({
     }),
 
   /** Distinct dropdown values for record filters */
-  recordFilterOptions: cachedProtectedQuery(CacheTTL.SHORT)
+  recordFilterOptions: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(
       z.object({
         providerId: z.string(),
@@ -203,7 +203,7 @@ export const providerDetailRouter = router({
     }),
 
   /** Single record detail with raw data */
-  recordDetail: cachedProtectedQuery(CacheTTL.SHORT)
+  recordDetail: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(
       z.object({
         providerId: z.string(),

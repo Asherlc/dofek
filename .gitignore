@@ -69,3 +69,4 @@ ios-xcarchive/
 .gemini/
 .worktrees/
 coverage-integration/
+coverage-integration-*/

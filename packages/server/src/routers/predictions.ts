@@ -19,7 +19,7 @@ function requireSensorStore(
 
 export const predictionsRouter = router({
   /** Available prediction targets */
-  targets: cachedProtectedQuery(CacheTTL.LONG).query(({ ctx }) => {
+  targets: cachedProtectedQuery({ maxAge: CacheTTL.LONG }).query(({ ctx }) => {
     const sensorStore = requireSensorStore(ctx.sensorStore, "predictions.targets");
     const repo = new PredictionsRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
     return repo.getTargets().map((target) => target.toDetail());
@@ -30,7 +30,7 @@ export const predictionsRouter = router({
    * (HRV, resting HR, sleep, weight) and activity-level targets
    * (cardio power, strength volume).
    */
-  predict: cachedProtectedQuery(CacheTTL.LONG)
+  predict: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(
       z.object({
         target: z.string().default("hrv"),

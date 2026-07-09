@@ -1,15 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
+const { mockCachedProtectedQuery } = vi.hoisted(() => ({
+  mockCachedProtectedQuery: vi.fn(),
+}));
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
     .context<{ db: unknown; sensorStore?: unknown; userId: string | null; timezone: string }>()
     .create();
+  mockCachedProtectedQuery.mockImplementation(() => trpc.procedure);
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: mockCachedProtectedQuery,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -65,6 +70,15 @@ describe("trendsRouter", () => {
     power_samples: "3400",
     activity_count: "2",
   };
+
+  it("uses long caches for trend read queries", async () => {
+    await import("./trends.ts");
+
+    expect(mockCachedProtectedQuery.mock.calls.map((call) => call[0])).toEqual([
+      { maxAge: 3_600_000 },
+      { maxAge: 3_600_000 },
+    ]);
+  });
 
   describe("daily", () => {
     it("returns empty array when no data", async () => {

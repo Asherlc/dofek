@@ -2,15 +2,20 @@ import { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
+const { mockCachedProtectedQuery } = vi.hoisted(() => ({
+  mockCachedProtectedQuery: vi.fn(),
+}));
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const trpc = initTRPC
     .context<{ db: unknown; userId: string | null; timezone: string }>()
     .create();
+  mockCachedProtectedQuery.mockImplementation(() => trpc.procedure);
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: () => trpc.procedure,
+    cachedProtectedQuery: mockCachedProtectedQuery,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
 });
@@ -39,6 +44,26 @@ import { authRouter } from "./auth.ts";
 const createCaller = createTestCallerFactory(authRouter);
 
 describe("authRouter", () => {
+  it("uses short caches for auth read queries", () => {
+    const routerConstructionCachePolicies = mockCachedProtectedQuery.mock.calls.map(
+      (call) => call[0],
+    );
+
+    expect(routerConstructionCachePolicies).toEqual([{ maxAge: 120_000 }, { maxAge: 120_000 }]);
+  });
+
+  describe("passwordCredentialStatus", () => {
+    it("returns whether the user has a password credential", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([{ user_id: "user-1" }]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.passwordCredentialStatus()).resolves.toEqual({ hasPassword: true });
+    });
+  });
+
   describe("linkedAccounts", () => {
     it("returns mapped account rows", async () => {
       const rows = [

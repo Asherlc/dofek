@@ -30,7 +30,7 @@ export const dailyMetricsRouter = router({
     },
   ),
 
-  latest: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
+  latest: cachedProtectedQuery({ maxAge: CacheTTL.SHORT }).query(async ({ ctx }) => {
     const repo = new DailyMetricsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
     return repo.getLatest();
   }),

@@ -110,7 +110,7 @@ const updateFoodEntrySchema = z
 
 export const foodRouter = router({
   /** List food entries for a date range, optionally filtered by meal */
-  list: cachedProtectedQuery(CacheTTL.SHORT)
+  list: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(
       z.object({
         startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -125,7 +125,7 @@ export const foodRouter = router({
     }),
 
   /** Get all food entries for a specific date, ordered by meal */
-  byDate: cachedProtectedQuery(CacheTTL.SHORT)
+  byDate: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }))
     .query(async ({ ctx, input }) => {
       const repo = new FoodRepository(ctx.db, ctx.userId, ctx.timezone);
@@ -137,7 +137,7 @@ export const foodRouter = router({
     }),
 
   /** Get daily calorie/macro totals aggregated by day */
-  dailyTotals: cachedProtectedQuery(CacheTTL.SHORT)
+  dailyTotals: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(z.object({ days: z.number().default(30) }))
     .query(async ({ ctx, input }) => {
       const repo = new FoodRepository(ctx.db, ctx.userId, ctx.timezone);
@@ -146,7 +146,7 @@ export const foodRouter = router({
     }),
 
   /** Search food entries by name for quick re-logging */
-  search: cachedProtectedQuery(CacheTTL.MEDIUM)
+  search: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(
       z.object({
         query: z.string().min(1).max(200),

@@ -6,7 +6,7 @@ import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 export type { BodyMeasurementRow } from "../repositories/body-repository.ts";
 
 export const bodyRouter = router({
-  list: cachedProtectedQuery(CacheTTL.MEDIUM)
+  list: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(z.object({ days: z.number().int().nonnegative().default(90) }))
     .query(async ({ ctx, input }) => {
       if (!ctx.sensorStore) {

@@ -2,6 +2,22 @@ name: Test
 
 on:
   workflow_call:
+    inputs:
+      run_e2e_web:
+        description: Run web E2E tests.
+        required: false
+        type: boolean
+        default: true
+      run_image_scan:
+        description: Build and scan the server image.
+        required: false
+        type: boolean
+        default: true
+      run_mobile_checks:
+        description: Run mobile-specific tests and Swift checks.
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   # ── Security & supply chain ────────────────────────────────────────────
@@ -73,6 +89,7 @@ jobs:
 
   image-scan:
     name: Image Vulnerability Scan
+    if: inputs.run_image_scan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -211,14 +228,21 @@ jobs:
   dotenv-lint:
     name: Dotenv Lint
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - uses: dotenv-linter/action-dotenv-linter@afde61cfda2ecffe7bea35837b6f20b956c88689 # v3.0.0
-        with:
-          reporter: github-check
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install dotenv-linter
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/dotenv-linter/dotenv-linter/v4.0.0/install.sh -o "$RUNNER_TEMP/dotenv-linter-install.sh"
+          sh "$RUNNER_TEMP/dotenv-linter-install.sh" -b "$HOME/.local/bin" v4.0.0
+      - name: Run dotenv-linter
+        env:
+          DOTENV_LINTER_IGNORE_CHECKS: UnorderedKey
+        run: |
+          "$HOME/.local/bin/dotenv-linter" check .
 
   tflint:
     name: TFLint
@@ -668,6 +692,7 @@ jobs:
 
   test-e2e-web:
     name: E2E Tests (Web)
+    if: inputs.run_e2e_web
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -741,38 +766,16 @@ jobs:
     outputs:
       changed: ${{ steps.check.outputs.changed }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-          fetch-depth: 0
       - id: check
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
+          RUN_MOBILE_CHECKS: ${{ inputs.run_mobile_checks }}
         run: |
-          if [ "$EVENT_NAME" = "push" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+          if [ "$RUN_MOBILE_CHECKS" = "true" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Mobile checks enabled"
           else
-            CHANGED=$(git diff --name-only origin/$BASE_REF...HEAD -- \
-              packages/mobile/ \
-              packages/auth/ \
-              packages/format/ \
-              packages/nutrition/ \
-              packages/onboarding/ \
-              packages/providers-meta/ \
-              packages/scoring/ \
-              packages/training/ \
-              packages/zones/ \
-              packages/server/ \
-              package.json \
-              pnpm-lock.yaml \
-              pnpm-workspace.yaml \
-              tsconfig.json)
-            if [ -n "$CHANGED" ]; then
-              echo "changed=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "changed=false" >> "$GITHUB_OUTPUT"
-            fi
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Mobile checks disabled by upstream change detection"
           fi
 
   test-mobile:

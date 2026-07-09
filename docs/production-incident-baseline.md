@@ -12048,3 +12048,38 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Existing corrupted production rows need a
   post-deploy read-model rebuild or targeted backfill so already-affected
   activities receive corrected power aggregates.
+
+## 2026-07-08 — CI Docker Image Build Failing on Python Runtime Copy
+
+- **Symptoms:** CI jobs that build the server image failed before E2E tests and
+  image vulnerability scanning could run.
+- **User impact:** Pull request CI was blocked; no production runtime impact.
+- **Evidence:** The image build failed in the server stage with
+  `"/usr/local/bin/python3.13": not found` and
+  `"/usr/local/lib/python3.13": not found` while copying from the `dbt-tools`
+  stage.
+- **Root cause:** The `dbt-tools` stage had moved to `python:3.14-alpine`, but
+  the server stage still copied hardcoded Python 3.13 binary and library paths.
+- **Fix / mitigation:** Updated the server-stage copy paths to Python 3.14 and
+  tightened `.dockerignore` so local nested `node_modules` and `dist` artifacts
+  cannot overwrite the clean in-image pnpm install during Docker validation.
+- **Validation:** `docker build --target server --progress=plain .` completed
+  successfully after the fix.
+
+## 2026-07-08 — CI E2E Analytics Failing on dbt Import Under Python 3.14
+
+- **Symptoms:** The web E2E job failed during the analytics dbt build step
+  after the server image started copying Python 3.14 paths successfully.
+- **User impact:** Pull request CI remained blocked; no production runtime
+  impact.
+- **Evidence:** The analytics container crashed immediately on `dbt` startup
+  with `mashumaro.exceptions.UnserializableField: Field "schema" of type
+  Optional[str] in JSONObjectSchema is not serializable`.
+- **Root cause:** Current latest `dbt-core==1.11.12` and
+  `dbt-clickhouse==1.10.1` resolve `mashumaro==3.14`, which imports under
+  Python 3.13 but fails under Python 3.14. Newer `mashumaro` cannot be used
+  directly because dbt's dependency constraints reject it.
+- **Fix / mitigation:** Kept the dbt tooling stage on `python:3.13-alpine` and
+  copied the matching Python 3.13 runtime files into the server image.
+- **Validation:** `python:3.13-alpine` with the same pinned latest dbt packages
+  runs `dbt --version` successfully.

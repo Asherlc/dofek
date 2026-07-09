@@ -1,3 +1,4 @@
+import type { ActivitySource } from "./activity-source.ts";
 import {
   ActivitySourceAttribution,
   type ProviderLookup,
@@ -5,7 +6,7 @@ import {
   type SourceLink,
 } from "./activity-source-attribution.ts";
 
-export type { ProviderLookup, SourceExternalIdEntry, SourceLink };
+export type { ActivitySource, ProviderLookup, SourceExternalIdEntry, SourceLink };
 
 export interface ActivityDetail {
   id: string;

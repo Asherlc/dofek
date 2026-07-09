@@ -395,7 +395,7 @@ function SourceLinks({ activity }: { activity: ActivityDetail }) {
     return (
       <>
         {activity.sourceLinks.map((link, index) => (
-          <span key={`${link.providerId}:${link.memberActivityId ?? link.label}`}>
+          <span key={`${link.providerId}:${link.externalId}:${link.memberActivityId ?? ""}`}>
             {index > 0 && ", "}
             <SourceLinkLabel link={link} />
           </span>

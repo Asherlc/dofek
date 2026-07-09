@@ -3,7 +3,7 @@
     incremental_strategy='append',
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, activity_id)',
-    on_schema_change='append_new_columns',
+    on_schema_change='fail',
     query_settings={
         'max_threads': 1
     }
@@ -463,14 +463,14 @@ SELECT
     channel_aggs.power_sample_count AS power_sample_count,
     channel_aggs.first_sample_at AS first_sample_at,
     channel_aggs.last_sample_at AS last_sample_at,
-    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
-    if(channel_aggs.activity_id IS null, 1, 0) AS is_deleted,
-    now64(9) AS refreshed_at,
     best_twenty_minute_power_per_activity.best_twenty_minute_power AS best_twenty_minute_power,
     power_variability_per_activity.normalized_power AS normalized_power,
     power_variability_per_activity.smoothed_avg_power AS smoothed_avg_power,
     climbing_per_activity.climbing_elevation_gain_m AS climbing_elevation_gain_m,
-    climbing_per_activity.climbing_seconds AS climbing_seconds
+    climbing_per_activity.climbing_seconds AS climbing_seconds,
+    toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
+    if(channel_aggs.activity_id IS null, 1, 0) AS is_deleted,
+    now64(9) AS refreshed_at
 FROM dirty_keys
 LEFT JOIN channel_aggs
     ON channel_aggs.activity_id = dirty_keys.activity_id

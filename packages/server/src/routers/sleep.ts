@@ -20,7 +20,7 @@ export const sleepRouter = router({
     },
   ),
 
-  stages: cachedProtectedQuery(CacheTTL.MEDIUM)
+  stages: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(z.object({ sessionId: z.guid() }))
     .query(({ ctx, input }) => {
       const repo = new SleepRepository(
@@ -33,7 +33,7 @@ export const sleepRouter = router({
       return repo.getStages(input.sessionId);
     }),
 
-  latestStages: cachedProtectedQuery(CacheTTL.SHORT).query(({ ctx }) => {
+  latestStages: cachedProtectedQuery({ maxAge: CacheTTL.SHORT }).query(({ ctx }) => {
     const repo = new SleepRepository(
       ctx.db,
       ctx.userId,
@@ -44,7 +44,7 @@ export const sleepRouter = router({
     return repo.getLatestStages();
   }),
 
-  latest: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
+  latest: cachedProtectedQuery({ maxAge: CacheTTL.SHORT }).query(async ({ ctx }) => {
     const repo = new SleepRepository(
       ctx.db,
       ctx.userId,

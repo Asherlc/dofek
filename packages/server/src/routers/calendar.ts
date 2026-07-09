@@ -104,7 +104,7 @@ export const calendarRouter = router({
     },
   ),
 
-  weekList: cachedProtectedQuery(CacheTTL.MEDIUM)
+  weekList: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(activityListInputSchema)
     .output(z.array(calendarDayActivitiesSchema))
     .query(async ({ ctx, input }) => {
@@ -126,7 +126,7 @@ export const calendarRouter = router({
       return repo.getWeekList(input);
     }),
 
-  activityOverview: cachedProtectedQuery(CacheTTL.MEDIUM)
+  activityOverview: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(activityListInputSchema)
     .output(activityOverviewSchema)
     .query(async ({ ctx, input }) => {

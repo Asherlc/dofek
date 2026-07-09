@@ -356,12 +356,16 @@ describe("activityRouter", () => {
       expect(result.sourceLinks).toEqual([
         {
           providerId: "strava",
+          externalId: "99999",
+          subsource: null,
           label: "Strava",
           url: "https://www.strava.com/activities/99999",
           providerAbsentAt: null,
         },
         {
           providerId: "wahoo",
+          externalId: "42",
+          subsource: null,
           label: "Wahoo",
           url: "https://systm.wahoofitness.com/history/activity-details/42",
           providerAbsentAt: null,
@@ -1245,7 +1249,8 @@ describe("activityRouter", () => {
       });
       const result = await caller.powerZones({ id: "00000000-0000-0000-0000-000000000001" });
 
-      expect(getEftpTrendSpy).toHaveBeenCalledWith(90);
+      const [range] = getEftpTrendSpy.mock.calls[0] ?? [];
+      expect(range?.days).toBe(90);
       expect(getPowerZonesSpy).toHaveBeenCalledWith("00000000-0000-0000-0000-000000000001", 265);
       expect(result).toEqual({ zones, ftp: 265 });
 

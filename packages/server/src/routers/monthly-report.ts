@@ -28,7 +28,7 @@ export const monthlyReportRouter = router({
    * Monthly Performance Report — aggregates training, sleep, and vitals per calendar month
    * with month-over-month trends.
    */
-  report: cachedProtectedQuery(CacheTTL.LONG)
+  report: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ months: z.number().min(1).max(24).default(6) }))
     .query(async ({ ctx, input }): Promise<MonthlyReportResult> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "monthlyReport.report");

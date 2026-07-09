@@ -18,8 +18,11 @@ const baseActivity: ActivityDetail = {
   sourceLinks: [
     {
       providerId: "wahoo",
+      externalId: "42",
+      subsource: null,
       label: "Wahoo",
       url: "https://systm.wahoofitness.com/history/activity-details/42",
+      providerAbsentAt: null,
     },
   ],
   avgHr: 145,

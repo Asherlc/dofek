@@ -79,43 +79,86 @@ power_samples AS (
         AND sensor.is_deleted = 0
 ),
 
-sample_rate AS (
+power_segments AS (
+    SELECT
+        current_sample.activity_id AS activity_id,
+        current_sample.user_id AS user_id,
+        current_sample.started_at AS started_at,
+        current_sample.recorded_at AS recorded_at,
+        next_sample.recorded_at AS next_recorded_at,
+        current_sample.power AS power,
+        current_sample.row_number AS row_number,
+        dateDiff('millisecond', current_sample.recorded_at, next_sample.recorded_at) / 1000.0 AS segment_seconds
+    FROM power_samples AS current_sample
+    INNER JOIN power_samples AS next_sample
+        ON next_sample.activity_id = current_sample.activity_id
+        AND toInt64(next_sample.row_number) = toInt64(current_sample.row_number) + 1
+    WHERE next_sample.recorded_at > current_sample.recorded_at
+),
+
+sample_gap_stats AS (
     SELECT
         activity_id,
-        greatest(
-            toInt32(round(
-                dateDiff('second', min(recorded_at), max(recorded_at))
-                / nullIf(count() - 1, 0)
-            )),
-            1
-        ) AS interval_s
-    FROM power_samples
+        greatest(5.0, quantileExact(0.5) (segment_seconds) * 2.0) AS max_continuous_gap_seconds
+    FROM power_segments
     GROUP BY activity_id
-    HAVING count() > 1
 ),
 
 duration_values AS (
-    SELECT arrayJoin([5, 15, 30, 60, 120, 180, 300, 420, 600, 1200, 1800, 3600, 5400, 7200]) AS duration_seconds
+    SELECT
+        duration_seconds,
+        toInt64(duration_seconds) * 1000 AS duration_milliseconds
+    FROM (
+        SELECT arrayJoin([5, 15, 30, 60, 120, 180, 300, 420, 600, 1200, 1800, 3600, 5400, 7200]) AS duration_seconds
+    )
+),
+
+candidate_duration_windows AS (
+    SELECT
+        start_sample.activity_id AS activity_id,
+        start_sample.user_id AS user_id,
+        start_sample.started_at AS started_at,
+        duration_values.duration_seconds AS duration_seconds,
+        start_sample.recorded_at AS window_started_at,
+        max(window_sample.recorded_at) AS window_ended_at,
+        max(dateDiff('millisecond', start_sample.recorded_at, window_sample.recorded_at)) / 1000.0 AS elapsed_seconds,
+        max(segment.segment_seconds) AS max_gap_seconds,
+        sum(segment.power * segment.segment_seconds) / sum(segment.segment_seconds) AS avg_power
+    FROM power_samples AS start_sample
+    CROSS JOIN duration_values
+    INNER JOIN power_samples AS window_sample
+        ON window_sample.activity_id = start_sample.activity_id
+        AND toInt64(window_sample.row_number) >= toInt64(start_sample.row_number)
+    INNER JOIN power_segments AS segment
+        ON segment.activity_id = start_sample.activity_id
+        AND toInt64(segment.row_number) >= toInt64(start_sample.row_number)
+        AND toInt64(segment.row_number) < toInt64(window_sample.row_number)
+    WHERE dateDiff('millisecond', start_sample.recorded_at, window_sample.recorded_at)
+        <= duration_values.duration_milliseconds
+    GROUP BY
+        start_sample.activity_id,
+        start_sample.user_id,
+        start_sample.started_at,
+        start_sample.recorded_at,
+        window_sample.row_number,
+        duration_values.duration_seconds
 ),
 
 duration_windows AS (
     SELECT
-        ps.activity_id AS activity_id,
-        ps.user_id AS user_id,
-        ps.started_at AS started_at,
-        duration_values.duration_seconds AS duration_seconds,
-        greatest(1, toInt32(round(duration_values.duration_seconds / sr.interval_s))) AS window_samples,
-        (
-            ps.cumulative_sum - coalesce(prev_sample.cumulative_sum, 0)
-        ) / toFloat64(greatest(1, toInt32(round(duration_values.duration_seconds / sr.interval_s)))) AS avg_power
-    FROM duration_values
-    CROSS JOIN power_samples AS ps
-    INNER JOIN sample_rate AS sr
-        ON sr.activity_id = ps.activity_id
-    LEFT JOIN power_samples AS prev_sample
-        ON prev_sample.activity_id = ps.activity_id
-        AND toInt64(prev_sample.row_number) = toInt64(ps.row_number) - toInt64(greatest(1, toInt32(round(duration_values.duration_seconds / sr.interval_s))))
-    WHERE toInt64(ps.row_number) >= greatest(1, toInt32(round(duration_values.duration_seconds / sr.interval_s)))
+        candidate_duration_windows.activity_id AS activity_id,
+        candidate_duration_windows.user_id AS user_id,
+        candidate_duration_windows.started_at AS started_at,
+        candidate_duration_windows.duration_seconds AS duration_seconds,
+        candidate_duration_windows.window_started_at AS window_started_at,
+        candidate_duration_windows.window_ended_at AS window_ended_at,
+        candidate_duration_windows.elapsed_seconds AS covered_seconds,
+        candidate_duration_windows.avg_power AS avg_power
+    FROM candidate_duration_windows
+    INNER JOIN sample_gap_stats AS gap_stats
+        ON gap_stats.activity_id = candidate_duration_windows.activity_id
+    WHERE candidate_duration_windows.elapsed_seconds >= toFloat64(candidate_duration_windows.duration_seconds)
+        AND candidate_duration_windows.max_gap_seconds <= gap_stats.max_continuous_gap_seconds
 ),
 
 best_powers AS (
