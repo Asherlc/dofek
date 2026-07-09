@@ -81,19 +81,31 @@ async function request(
   return new Promise((resolve) => {
     const server = app.listen(0, () => {
       const port = getPort(server);
+      const abortController = new AbortController();
+      let settled = false;
+      const timeout = setTimeout(() => {
+        abortController.abort();
+        finish({ status: 504, body: "timeout", headers: new Headers() });
+      }, 5_000);
+      const finish = (result: { status: number; body: string; headers: Headers }) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        resolve(result);
+        server.close();
+      };
       const fetchOpts: RequestInit = {
         method: method.toUpperCase(),
         headers: opts?.headers,
         body: opts?.body,
+        signal: abortController.signal,
       };
       fetch(`http://localhost:${port}${path}`, fetchOpts)
         .then(async (res) => {
-          resolve({ status: res.status, body: await res.text(), headers: res.headers });
-          server.close();
+          finish({ status: res.status, body: await res.text(), headers: res.headers });
         })
         .catch((_error: unknown) => {
-          resolve({ status: 500, body: "fetch error", headers: new Headers() });
-          server.close();
+          finish({ status: 500, body: "fetch error", headers: new Headers() });
         });
     });
   });
