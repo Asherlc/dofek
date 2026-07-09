@@ -39,6 +39,11 @@ export const syncLog = fitness.table(
     syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    index("sync_log_user_provider_synced_at_idx").on(
+      table.userId,
+      table.providerId,
+      table.syncedAt.desc(),
+    ),
     index("sync_log_provider_type_idx").on(table.providerId, table.dataType, table.syncedAt),
     index("sync_log_synced_at_idx").on(table.syncedAt),
   ],
