@@ -356,12 +356,16 @@ describe("activityRouter", () => {
       expect(result.sourceLinks).toEqual([
         {
           providerId: "strava",
+          externalId: "99999",
+          subsource: null,
           label: "Strava",
           url: "https://www.strava.com/activities/99999",
           providerAbsentAt: null,
         },
         {
           providerId: "wahoo",
+          externalId: "42",
+          subsource: null,
           label: "Wahoo",
           url: "https://systm.wahoofitness.com/history/activity-details/42",
           providerAbsentAt: null,

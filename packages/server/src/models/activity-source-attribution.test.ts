@@ -34,12 +34,16 @@ describe("ActivitySourceAttribution", () => {
     expect(attribution.toSourceLinks(mockLookup)).toEqual([
       {
         providerId: "garmin",
+        externalId: "123",
+        subsource: null,
         label: "Garmin",
         url: "https://connect.garmin.com/modern/activity/123",
         providerAbsentAt: null,
       },
       {
         providerId: "strava",
+        externalId: "99999",
+        subsource: null,
         label: "Strava",
         url: "https://www.strava.com/activities/99999",
         providerAbsentAt: "2026-03-05T14:30:00.000Z",
@@ -64,6 +68,8 @@ describe("ActivitySourceAttribution", () => {
     expect(attribution.toSourceLinks(mockLookup)).toEqual([
       {
         providerId: "strava",
+        externalId: "active-123",
+        subsource: null,
         label: "Strava",
         url: "https://www.strava.com/activities/active-123",
         providerAbsentAt: null,
@@ -88,6 +94,8 @@ describe("ActivitySourceAttribution", () => {
     expect(attribution.toSourceLinks(mockLookup)).toEqual([
       {
         providerId: "apple_health",
+        externalId: "removed-strong",
+        subsource: "Strong",
         label: "Strong (via Apple Health)",
         url: null,
         providerAbsentAt: "2026-03-05T14:30:00.000Z",
@@ -95,6 +103,8 @@ describe("ActivitySourceAttribution", () => {
       },
       {
         providerId: "apple_health",
+        externalId: "active-whoop",
+        subsource: "WHOOP",
         label: "WHOOP (via Apple Health)",
         url: null,
         providerAbsentAt: null,
@@ -231,6 +241,17 @@ describe("ActivitySourceAttribution", () => {
     expect(attribution.partialAbsenceSummary(mockLookup)).toBeNull();
   });
 
+  it("handles null absentMaps in fromClickHouseRow", () => {
+    const attribution = ActivitySourceAttribution.fromClickHouseRow(
+      [{ providerId: "garmin", externalId: "123" }],
+      null,
+    );
+
+    expect(attribution.providerIds()).toEqual(["garmin"]);
+    expect(attribution.hasPartialAbsence).toBe(false);
+    expect(attribution.hasFullAbsence).toBe(false);
+  });
+
   it("ignores ClickHouse source maps without provider ids or external ids", () => {
     const attribution = ActivitySourceAttribution.fromClickHouseRow(
       [
@@ -275,15 +296,22 @@ describe("ActivitySourceAttribution", () => {
     expect(attribution.partialAbsenceSummary(mockLookup)).toMatch(
       /unknown_provider removed · Mar 5,/,
     );
+    expect(
+      attribution.tombstoneSummary(null, "unknown_provider", "2026-03-05T14:30:00.000Z"),
+    ).toMatch(/Removed from unknown_provider · Mar 5,/);
     expect(attribution.toSourceLinks(mockLookup)).toEqual([
       {
         providerId: "garmin",
+        externalId: "123",
+        subsource: null,
         label: "Garmin",
         url: "https://connect.garmin.com/modern/activity/123",
         providerAbsentAt: null,
       },
       {
         providerId: "unknown_provider",
+        externalId: "99999",
+        subsource: null,
         label: "unknown_provider",
         url: null,
         providerAbsentAt: "2026-03-05T14:30:00.000Z",
@@ -300,6 +328,8 @@ describe("ActivitySourceAttribution", () => {
     expect(attribution.toSourceLinks(mockLookup)).toEqual([
       {
         providerId: "apple_health",
+        externalId: "ah:workout:1",
+        subsource: null,
         label: "Apple Health",
         url: null,
         providerAbsentAt: null,
