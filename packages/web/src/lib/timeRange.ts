@@ -66,10 +66,6 @@ export const SELECTED_RANGE_QUERY_REGISTRY = {
   trainingInsightsPanel: ["training.weeklyVolume", "training.hrZones"],
 } as const;
 
-export const FIXED_RANGE_QUERY_REGISTRY = {
-  cycling: ["power.powerCurve:365", "body.list:365"],
-} as const;
-
 export function selectedRangeQueryInput(days: TimeRangeDays): { days: TimeRangeDays } {
   return { days };
 }

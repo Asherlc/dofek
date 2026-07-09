@@ -208,10 +208,6 @@ export function selectedChartDateRangeQuery<TResult>(
     );
 }
 
-export function selectedChartDefaultDays(endpoint: SelectedChartRangeEndpoint): number {
-  return SELECTED_CHART_RANGE_ENDPOINTS[endpoint].defaultDays;
-}
-
 function assertSelectedChartInputKind(
   endpoint: SelectedChartRangeEndpoint,
   expectedInputKind: "days" | "dateRange" | "custom",
