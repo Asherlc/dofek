@@ -193,37 +193,41 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
   const router = Router();
   const { importQueue, db } = deps;
   // Poll job status — checks BullMQ first, falls back to upload-phase status
-  router.get<{ jobId: string }>("/apple-health/status/:jobId", async (req, res) => {
-    const userId = await authenticate(req, res, db);
-    if (!userId) return;
+  router.get<{ jobId: string }>(
+    "/apple-health/status/:jobId",
+    uploadStatusRateLimiter,
+    async (req, res) => {
+      const userId = await authenticate(req, res, db);
+      if (!userId) return;
 
-    const uploadStatus = await uploadStateStore.getUploadStatus(req.params.jobId);
-    if (uploadStatus) {
-      if (uploadStatus.userId !== userId) {
+      const uploadStatus = await uploadStateStore.getUploadStatus(req.params.jobId);
+      if (uploadStatus) {
+        if (uploadStatus.userId !== userId) {
+          res.status(403).json({ error: "Forbidden" });
+          return;
+        }
+        if (uploadStatus.expiresAt && uploadStatus.expiresAt <= Date.now()) {
+          res.json(stripExpiry(await expireStaleUpload(req.params.jobId, userId)));
+          return;
+        }
+        res.json(stripExpiry(uploadStatus));
+        return;
+      }
+
+      const jobId = req.params.jobId;
+
+      const status = await getImportJobStatus(importQueue, jobId);
+      if (!status) {
+        res.status(404).json({ error: "Unknown job" });
+        return;
+      }
+      if (status.userId && status.userId !== userId) {
         res.status(403).json({ error: "Forbidden" });
         return;
       }
-      if (uploadStatus.expiresAt && uploadStatus.expiresAt <= Date.now()) {
-        res.json(stripExpiry(await expireStaleUpload(req.params.jobId, userId)));
-        return;
-      }
-      res.json(stripExpiry(uploadStatus));
-      return;
-    }
-
-    const jobId = req.params.jobId;
-
-    const status = await getImportJobStatus(importQueue, jobId);
-    if (!status) {
-      res.status(404).json({ error: "Unknown job" });
-      return;
-    }
-    if (status.userId && status.userId !== userId) {
-      res.status(403).json({ error: "Forbidden" });
-      return;
-    }
-    res.json(status);
-  });
+      res.json(status);
+    },
+  );
 
   // Chunked upload endpoint
   router.post("/apple-health", async (req, res) => {
@@ -565,23 +569,27 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
   });
 
   // ── ZOS App bin upload ──
-  router.get<{ jobId: string }>("/zos-app/status/:jobId", async (req, res) => {
-    const userId = await authenticate(req, res, db);
-    if (!userId) return;
+  router.get<{ jobId: string }>(
+    "/zos-app/status/:jobId",
+    uploadStatusRateLimiter,
+    async (req, res) => {
+      const userId = await authenticate(req, res, db);
+      if (!userId) return;
 
-    const jobId = req.params.jobId;
+      const jobId = req.params.jobId;
 
-    const status = await getImportJobStatus(importQueue, jobId);
-    if (!status) {
-      res.status(404).json({ error: "Unknown job" });
-      return;
-    }
-    if (status.userId && status.userId !== userId) {
-      res.status(403).json({ error: "Forbidden" });
-      return;
-    }
-    res.json(status);
-  });
+      const status = await getImportJobStatus(importQueue, jobId);
+      if (!status) {
+        res.status(404).json({ error: "Unknown job" });
+        return;
+      }
+      if (status.userId && status.userId !== userId) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
+      res.json(status);
+    },
+  );
 
   router.post("/zos-app", async (req, res) => {
     const userId = await authenticate(req, res, db);

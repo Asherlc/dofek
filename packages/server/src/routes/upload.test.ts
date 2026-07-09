@@ -284,6 +284,15 @@ describe("createUploadRouter", () => {
   });
 
   describe("GET /api/upload/apple-health/status/:jobId", () => {
+    it("applies the upload status rate limiter", async () => {
+      const { app, queue } = createTestApp();
+      queue.getJob.mockResolvedValueOnce(null);
+
+      const res = await request(app, "get", "/api/upload/apple-health/status/unknown");
+
+      expect(res.headers.has("ratelimit")).toBe(true);
+    });
+
     it("returns 404 for unknown job", async () => {
       const { app, queue } = createTestApp();
       queue.getJob.mockResolvedValueOnce(null);
@@ -755,6 +764,17 @@ describe("createUploadRouter", () => {
       const res = await request(app, "get", "/api/upload/kaya-export/status/job-other");
       expect(res.status).toBe(403);
       expect(res.body).toContain("Forbidden");
+    });
+  });
+
+  describe("GET /api/upload/zos-app/status/:jobId", () => {
+    it("applies the upload status rate limiter", async () => {
+      const { app, queue } = createTestApp();
+      queue.getJob.mockResolvedValueOnce(null);
+
+      const res = await request(app, "get", "/api/upload/zos-app/status/unknown");
+
+      expect(res.headers.has("ratelimit")).toBe(true);
     });
   });
 
