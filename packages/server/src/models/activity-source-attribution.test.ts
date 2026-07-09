@@ -241,6 +241,17 @@ describe("ActivitySourceAttribution", () => {
     expect(attribution.partialAbsenceSummary(mockLookup)).toBeNull();
   });
 
+  it("handles null absentMaps in fromClickHouseRow", () => {
+    const attribution = ActivitySourceAttribution.fromClickHouseRow(
+      [{ providerId: "garmin", externalId: "123" }],
+      null,
+    );
+
+    expect(attribution.providerIds()).toEqual(["garmin"]);
+    expect(attribution.hasPartialAbsence).toBe(false);
+    expect(attribution.hasFullAbsence).toBe(false);
+  });
+
   it("ignores ClickHouse source maps without provider ids or external ids", () => {
     const attribution = ActivitySourceAttribution.fromClickHouseRow(
       [

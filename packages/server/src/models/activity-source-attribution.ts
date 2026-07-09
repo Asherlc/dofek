@@ -47,8 +47,8 @@ export class ActivitySourceAttribution {
     absentMaps: Array<Record<string, string | null>> | null | undefined,
   ): ActivitySourceAttribution {
     return new ActivitySourceAttribution(
-      parseClickHouseActivitySourceMaps(activeMaps ?? []),
-      parseClickHouseActivitySourceMaps(absentMaps ?? []),
+      activeMaps ? parseClickHouseActivitySourceMaps(activeMaps) : [],
+      absentMaps ? parseClickHouseActivitySourceMaps(absentMaps) : [],
     );
   }
 
