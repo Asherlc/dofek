@@ -109,6 +109,7 @@ export function Hypnogram({ data, loading }: HypnogramProps) {
       empty={data.length === 0}
       height={200}
       emptyMessage="No sleep stage data available"
+      timeRangeMode="data"
     />
   );
 }
