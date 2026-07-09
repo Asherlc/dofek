@@ -15,19 +15,27 @@ export const Route = createFileRoute("/training/climbing")({
 
 const CLIMBING_ACTIVITY_TYPES = ["climbing", "rock_climbing"] as const;
 
+function climbingRangeInput(days: number | null): { days?: number } {
+  return days === null ? {} : { days };
+}
+
 function QueryError({ error }: { error: unknown }) {
   return error ? <QueryStatePanel error={error} /> : null;
 }
 
 export function ClimbingTab() {
   const { days } = useTrainingDays();
+  const rangeInput = climbingRangeInput(days);
   const gradeProgression = trpc.climbing.gradeProgression.useQuery(
-    { days },
+    rangeInput,
     TRAINING_SLOW_QUERY_OPTIONS,
   );
-  const volumeByGrade = trpc.climbing.volumeByGrade.useQuery({ days }, TRAINING_SLOW_QUERY_OPTIONS);
+  const volumeByGrade = trpc.climbing.volumeByGrade.useQuery(
+    rangeInput,
+    TRAINING_SLOW_QUERY_OPTIONS,
+  );
   const sessionSummary = trpc.climbing.sessionSummary.useQuery(
-    { days },
+    rangeInput,
     TRAINING_SLOW_QUERY_OPTIONS,
   );
 

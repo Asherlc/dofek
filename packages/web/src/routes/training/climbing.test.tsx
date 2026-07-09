@@ -7,13 +7,14 @@ const gradeProgressionQuery = vi.hoisted(() => vi.fn());
 const volumeByGradeQuery = vi.hoisted(() => vi.fn());
 const sessionSummaryQuery = vi.hoisted(() => vi.fn());
 const recentActivitiesSection = vi.hoisted(() => vi.fn());
+const trainingDaysState = vi.hoisted<{ days: number | null }>(() => ({ days: 90 }));
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => () => null,
 }));
 
 vi.mock("../../lib/trainingDaysContext.ts", () => ({
-  useTrainingDays: () => ({ days: 90 }),
+  useTrainingDays: () => trainingDaysState,
 }));
 
 vi.mock("../../components/ClimbingGradeProgressionChart.tsx", () => ({
@@ -68,6 +69,7 @@ describe("ClimbingTab", () => {
     volumeByGradeQuery.mockReset();
     sessionSummaryQuery.mockReset();
     recentActivitiesSection.mockReset();
+    trainingDaysState.days = 90;
     gradeProgressionQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     volumeByGradeQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     sessionSummaryQuery.mockReturnValue({ data: [], isLoading: false, error: null });
@@ -87,6 +89,17 @@ describe("ClimbingTab", () => {
     expect(recentActivitiesSection).toHaveBeenCalledWith({
       activityTypes: ["climbing", "rock_climbing"],
     });
+  });
+
+  it("omits days when the selected training range is all time", async () => {
+    trainingDaysState.days = null;
+
+    const ClimbingTab = await importClimbingTab();
+    render(<ClimbingTab />);
+
+    expect(gradeProgressionQuery).toHaveBeenCalledWith({}, expect.any(Object));
+    expect(volumeByGradeQuery).toHaveBeenCalledWith({}, expect.any(Object));
+    expect(sessionSummaryQuery).toHaveBeenCalledWith({}, expect.any(Object));
   });
 
   it("renders the four climbing sections", async () => {
