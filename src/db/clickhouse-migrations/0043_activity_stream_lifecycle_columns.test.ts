@@ -12,20 +12,26 @@ vi.mock("./statement-runner.ts", () => ({
 import { createMigration } from "./0043_activity_stream_lifecycle_columns.ts";
 
 type QueryOptions = Parameters<NonNullable<ClickHouseCommandClient["query"]>>[0];
+type TableCountRow = { count: number | string };
+type QueryRows = readonly TableCountRow[];
 
 class TestClickHouseClient implements ClickHouseCommandClient {
   readonly command = vi.fn(async () => undefined);
   readonly queryCalls: QueryOptions[] = [];
   #queryCount = 0;
 
-  constructor(readonly tableCounts: readonly number[]) {}
+  constructor(readonly queryResponses: readonly QueryRows[]) {}
+
+  static withTableCounts(tableCounts: readonly number[]): TestClickHouseClient {
+    return new TestClickHouseClient(tableCounts.map((count) => [{ count }]));
+  }
 
   async query<TRow extends object>(options: QueryOptions): Promise<{ json(): Promise<TRow[]> }> {
     this.queryCalls.push(options);
-    const count = this.tableCounts[this.#queryCount] ?? 0;
+    const rows = this.queryResponses[this.#queryCount] ?? [];
     this.#queryCount += 1;
     return {
-      json: async () => JSON.parse(JSON.stringify([{ count }])),
+      json: async () => JSON.parse(JSON.stringify(rows)),
     };
   }
 }
@@ -35,8 +41,17 @@ describe("0043_activity_stream_lifecycle_columns", () => {
     mockRunClickHouseMigrationStatement.mockReset();
   });
 
+  it("exposes the guarded lifecycle column statements", () => {
+    expect(createMigration().statements).toEqual([
+      "ALTER TABLE analytics.activity_stream_points ADD COLUMN IF NOT EXISTS is_deleted UInt8 AFTER refresh_version",
+      "ALTER TABLE analytics.activity_stream_points ADD COLUMN IF NOT EXISTS refreshed_at DateTime64(9, 'UTC') AFTER is_deleted",
+      "ALTER TABLE analytics.activity_heart_rate_zones ADD COLUMN IF NOT EXISTS is_deleted UInt8 AFTER refresh_version",
+      "ALTER TABLE analytics.activity_heart_rate_zones ADD COLUMN IF NOT EXISTS refreshed_at DateTime64(9, 'UTC') AFTER is_deleted",
+    ]);
+  });
+
   it("checks lifecycle tables through query parameters", async () => {
-    const client = new TestClickHouseClient([1, 1]);
+    const client = TestClickHouseClient.withTableCounts([1, 1]);
 
     await createMigration().run?.(client, "postgres://test");
 
@@ -52,6 +67,44 @@ describe("0043_activity_stream_lifecycle_columns", () => {
         query_params: { name: "activity_heart_rate_zones" },
       }),
     ]);
-    expect(mockRunClickHouseMigrationStatement).toHaveBeenCalledTimes(4);
+    expect(mockRunClickHouseMigrationStatement).toHaveBeenNthCalledWith(
+      1,
+      client,
+      "ALTER TABLE analytics.activity_stream_points ADD COLUMN IF NOT EXISTS is_deleted UInt8 AFTER refresh_version",
+    );
+    expect(mockRunClickHouseMigrationStatement).toHaveBeenNthCalledWith(
+      2,
+      client,
+      "ALTER TABLE analytics.activity_stream_points ADD COLUMN IF NOT EXISTS refreshed_at DateTime64(9, 'UTC') AFTER is_deleted",
+    );
+    expect(mockRunClickHouseMigrationStatement).toHaveBeenNthCalledWith(
+      3,
+      client,
+      "ALTER TABLE analytics.activity_heart_rate_zones ADD COLUMN IF NOT EXISTS is_deleted UInt8 AFTER refresh_version",
+    );
+    expect(mockRunClickHouseMigrationStatement).toHaveBeenNthCalledWith(
+      4,
+      client,
+      "ALTER TABLE analytics.activity_heart_rate_zones ADD COLUMN IF NOT EXISTS refreshed_at DateTime64(9, 'UTC') AFTER is_deleted",
+    );
+  });
+
+  it("skips lifecycle statements when the table does not exist", async () => {
+    const client = new TestClickHouseClient([[], [{ count: 0 }]]);
+
+    await createMigration().run?.(client, "postgres://test");
+
+    expect(client.queryCalls).toHaveLength(2);
+    expect(mockRunClickHouseMigrationStatement).not.toHaveBeenCalled();
+  });
+
+  it("requires a query-capable client", async () => {
+    const client: ClickHouseCommandClient = {
+      command: vi.fn(async () => undefined),
+    };
+
+    await expect(createMigration().run?.(client, "postgres://test")).rejects.toThrow(
+      "ClickHouse migrations require a query-capable client",
+    );
   });
 });

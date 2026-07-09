@@ -154,8 +154,7 @@ active_dirty_keys AS (
 ),
 
 affected_location_sample_ids AS (
-    SELECT DISTINCT
-        source_metric_stream_id
+    SELECT DISTINCT source_metric_stream_id
     FROM {{ ref('activity_location_sample') }}
     WHERE (user_id, activity_id) IN (
         SELECT

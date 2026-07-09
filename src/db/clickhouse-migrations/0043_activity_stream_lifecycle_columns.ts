@@ -52,5 +52,6 @@ async function tableExists(
     query_params: { name },
   });
   const rows = tableCountRowsSchema.parse(await result.json());
-  return rows.length > 0 && Number(rows[0]?.count ?? 0) > 0;
+  const [row] = rows;
+  return Number(row?.count ?? 0) > 0;
 }
