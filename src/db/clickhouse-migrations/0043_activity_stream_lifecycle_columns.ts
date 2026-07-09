@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { ClickHouseCommandClient } from "../clickhouse.ts";
 import { runClickHouseMigrationStatement } from "./statement-runner.ts";
 import type { ClickHouseMigration } from "./types.ts";
@@ -5,6 +6,7 @@ import type { ClickHouseMigration } from "./types.ts";
 const streamPointsTable = "activity_stream_points";
 const heartRateZonesTable = "activity_heart_rate_zones";
 type LifecycleTable = typeof streamPointsTable | typeof heartRateZonesTable;
+const tableCountRowsSchema = z.array(z.object({ count: z.union([z.string(), z.number()]) }));
 
 const streamPointsStatements = [
   "ALTER TABLE analytics.activity_stream_points ADD COLUMN IF NOT EXISTS is_deleted UInt8 AFTER refresh_version",
@@ -49,6 +51,6 @@ async function tableExists(
     format: "JSONEachRow",
     query_params: { name },
   });
-  const rows = await result.json();
+  const rows = tableCountRowsSchema.parse(await result.json());
   return rows.length > 0 && Number(rows[0]?.count ?? 0) > 0;
 }
