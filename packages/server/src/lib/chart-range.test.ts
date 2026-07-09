@@ -83,7 +83,9 @@ describe("ChartRange", () => {
       ChartRange.fromDays(null).postgresTimestampAfterNow(sql`a.started_at`),
     );
 
-    expect(finiteQuery.sql).toBe("AND a.started_at > NOW() - $1::int * INTERVAL '1 day'");
+    expect(finiteQuery.sql).toBe(
+      "AND a.started_at > CURRENT_TIMESTAMP - $1::int * INTERVAL '1 day'",
+    );
     expect(finiteQuery.params).toEqual([30]);
     expect(allQuery.sql).toBe("");
     expect(allQuery.params).toEqual([]);

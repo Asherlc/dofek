@@ -61,7 +61,7 @@ describe("CalendarRepository", () => {
     await repo.getCalendarData(30);
 
     const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
-    expect(compiledQuery.sql).toContain("a.started_at > NOW() -");
+    expect(compiledQuery.sql).toContain("a.started_at > CURRENT_TIMESTAMP -");
     expect(compiledQuery.sql).toContain("::int * INTERVAL '1 day'");
     expect(compiledQuery.params).toEqual(expect.arrayContaining(["user-1", 30]));
   });
@@ -73,7 +73,7 @@ describe("CalendarRepository", () => {
 
     const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
     expect(compiledQuery.sql).toContain("FROM fitness.v_activity a");
-    expect(compiledQuery.sql).not.toContain("NOW() -");
+    expect(compiledQuery.sql).not.toContain("CURRENT_TIMESTAMP -");
     expect(compiledQuery.params).not.toContain(null);
   });
 });
