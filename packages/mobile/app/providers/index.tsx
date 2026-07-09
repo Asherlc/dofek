@@ -621,9 +621,7 @@ export default function ProvidersScreen() {
         </View>
       ) : null}
       {isLoading && !providers.error ? (
-        <View style={styles.card}>
-          <ActivityIndicator color={colors.accent} size="small" />
-        </View>
+        <QueryStatePanel variant="loading" style={styles.card} />
       ) : null}
       {providerList.map((provider) => (
         <ProviderCard

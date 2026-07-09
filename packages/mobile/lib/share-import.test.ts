@@ -292,7 +292,10 @@ describe("importSharedFile", () => {
           sleep: async () => {},
         },
       ),
-    ).rejects.toThrow("Status check failed (HTTP 502)");
+    ).rejects.toMatchObject({
+      name: "Error",
+      message: expect.stringContaining("Status check failed (HTTP 502)"),
+    });
 
     const jsonParseCapture = mockCaptureException.mock.calls.find(([, context]) => {
       return (

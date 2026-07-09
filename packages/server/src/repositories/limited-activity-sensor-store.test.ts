@@ -241,6 +241,7 @@ describe("LimitedActivitySensorStore", () => {
 
     const regularPromise = store.query(schema, query, params);
     const dashboardPromise = store.query(schema, query, params, { priority: "dashboard" });
+    expect(regularPromise).not.toBe(dashboardPromise);
     for (let microtaskTurn = 0; microtaskTurn < 5; microtaskTurn += 1) {
       await Promise.resolve();
     }
