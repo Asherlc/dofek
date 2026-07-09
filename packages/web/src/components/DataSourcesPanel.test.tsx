@@ -44,6 +44,7 @@ const mockSyncMutateAsync = vi.hoisted(() => vi.fn());
 const mockPollSyncJob = vi.hoisted(() => vi.fn());
 const mockInvalidate = vi.hoisted(() => vi.fn());
 const mockSyncStatusFetch = vi.hoisted(() => vi.fn());
+const mockFileImportZone = vi.hoisted(() => vi.fn());
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
@@ -85,7 +86,22 @@ vi.mock("./DataSourcesAuthModals.tsx", () => ({
 }));
 
 vi.mock("./FileImportZone.tsx", () => ({
-  FileImportZone: ({ title }: { title: string }) => <section>{title}</section>,
+  FileImportZone: (props: {
+    providerId?: string;
+    title: string;
+    description: string;
+    accept: string;
+    uploadUrl: string;
+    statusUrl: string;
+  }) => {
+    mockFileImportZone(props);
+    return (
+      <section data-testid={`file-import-${props.providerId ?? props.title}`}>
+        <h4>{props.title}</h4>
+        <p>{props.description}</p>
+      </section>
+    );
+  },
 }));
 
 vi.mock("./SyncProviderCard.tsx", () => ({
@@ -164,6 +180,7 @@ describe("DataSourcesPanel", () => {
     mockPollSyncJob.mockResolvedValue(undefined);
     mockInvalidate.mockReset();
     mockSyncStatusFetch.mockReset();
+    mockFileImportZone.mockClear();
   });
 
   it("shows server data readiness messages above provider cards", () => {
@@ -282,5 +299,39 @@ describe("DataSourcesPanel", () => {
       );
     });
     expect(mockPollSyncJob).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows Kaya as a file import source with export upload routes", () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "kaya-export",
+          name: "Kaya",
+          authorized: true,
+          authType: "file-import",
+          importOnly: true,
+          pushOnly: false,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    render(<DataSourcesPanel />);
+
+    expect(screen.getByTestId("file-import-kaya-export")).toBeTruthy();
+    expect(screen.getByText("Kaya")).toBeTruthy();
+    expect(screen.getByText(".csv export from Kaya")).toBeTruthy();
+    expect(mockFileImportZone).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "kaya-export",
+        title: "Kaya",
+        description: ".csv export from Kaya",
+        accept: ".csv",
+        uploadUrl: "/api/upload/kaya-export",
+        statusUrl: "/api/upload/kaya-export/status",
+      }),
+    );
   });
 });

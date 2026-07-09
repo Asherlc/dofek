@@ -10,12 +10,16 @@ type MockTrainingState = {
   data: MockTrainingData | undefined;
   isLoading: boolean;
   isFetching: boolean;
+  isError: boolean;
+  error: Error | null;
 };
 
 const mockTrainingState: MockTrainingState = {
   data: undefined,
   isLoading: false,
   isFetching: false,
+  isError: false,
+  error: null,
 };
 
 function defaultMockTrainingData(): MockTrainingData {
@@ -37,13 +41,20 @@ function defaultMockTrainingData(): MockTrainingData {
     activities: [],
     weeklyVolume: [],
     verticalAscent: [],
+    climbing: {
+      gradeProgression: [],
+      volumeByGrade: [],
+      sessionSummary: [],
+    },
   };
 }
 
 function resetMockTrainingState() {
-  mockTrainingState.data = defaultMockTrainingData();
+  mockTrainingState.data = structuredClone(defaultMockTrainingData());
   mockTrainingState.isLoading = false;
   mockTrainingState.isFetching = false;
+  mockTrainingState.isError = false;
+  mockTrainingState.error = null;
 }
 
 vi.mock("expo-router", () => ({
@@ -58,8 +69,8 @@ vi.mock("../../lib/trpc", () => ({
           data: mockTrainingState.data,
           isLoading: mockTrainingState.isLoading,
           isFetching: mockTrainingState.isFetching,
-          isError: false,
-          error: null,
+          isError: mockTrainingState.isError,
+          error: mockTrainingState.error,
         }),
       },
     },
@@ -340,5 +351,180 @@ describe("StrainScreen recent activity navigation", () => {
     fireEvent.click(screen.getByText("View all"));
 
     expect(mockRouterPush).toHaveBeenCalledWith("/activities");
+  });
+
+  it("renders server-provided climbing grade progression, volume, and sessions", async () => {
+    mockTrainingState.data = {
+      ...defaultMockTrainingData(),
+      climbing: {
+        gradeProgression: [
+          {
+            date: "2026-07-09",
+            climbType: "boulder",
+            gradeSystem: "v_scale",
+            grade: "V4",
+            gradeSortValue: 4,
+          },
+        ],
+        volumeByGrade: [
+          {
+            climbType: "boulder",
+            gradeSystem: "v_scale",
+            grade: "V4",
+            gradeSortValue: 4,
+            attempts: 8,
+            sends: 5,
+          },
+        ],
+        sessionSummary: [
+          {
+            activityId: "activity-1",
+            date: "2026-07-09",
+            name: "Kaya climbing at Touchstone Pacific Pipe",
+            locationName: "Touchstone Pacific Pipe",
+            attempts: 8,
+            sends: 5,
+            hardestBoulderGrade: "V4",
+            hardestBoulderGradeSortValue: 4,
+            hardestRouteGrade: null,
+            hardestRouteGradeSortValue: null,
+          },
+        ],
+      },
+    };
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByText("Climbing")).toBeTruthy();
+    expect(screen.getByText("Best Boulder Grade")).toBeTruthy();
+    expect(screen.getAllByText("V4").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("8 attempts")).toBeTruthy();
+    expect(screen.getByText("5 sends")).toBeTruthy();
+    expect(screen.getByText("Kaya climbing at Touchstone Pacific Pipe")).toBeTruthy();
+  });
+
+  it("reports malformed climbing rows while rendering valid partial climbing data", async () => {
+    mockTrainingState.data = {
+      ...defaultMockTrainingData(),
+      climbing: {
+        gradeProgression: [
+          {
+            date: "2026-07-09",
+            climbType: "boulder",
+            grade: "V4",
+            gradeSortValue: 4,
+          },
+        ],
+        volumeByGrade: [{ climbType: "boulder", grade: "V4", gradeSortValue: "bad" }],
+        sessionSummary: [],
+      },
+    };
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByText("Best Boulder Grade")).toBeTruthy();
+    expect(screen.getByText("V4")).toBeTruthy();
+    expect(screen.getByText(/strain:climbing.volumeByGrade/)).toBeTruthy();
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+      context: "strain:climbing.volumeByGrade",
+      zodError: expect.any(Object),
+    });
+  });
+
+  it("shows the best climbing grade instead of the most recent lower grade", async () => {
+    mockTrainingState.data = {
+      ...defaultMockTrainingData(),
+      climbing: {
+        gradeProgression: [
+          {
+            date: "2026-07-08",
+            climbType: "boulder",
+            gradeSystem: "v_scale",
+            grade: "V5",
+            gradeSortValue: 5,
+          },
+          {
+            date: "2026-07-09",
+            climbType: "boulder",
+            gradeSystem: "v_scale",
+            grade: "V3",
+            gradeSortValue: 3,
+          },
+        ],
+        volumeByGrade: [],
+        sessionSummary: [],
+      },
+    };
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByText("Best Boulder Grade")).toBeTruthy();
+    expect(screen.getByText("V5")).toBeTruthy();
+  });
+
+  it("renders climbing empty states from empty server arrays", async () => {
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByText("No climbing grade progression")).toBeTruthy();
+    expect(screen.getByText("No climbing volume by grade")).toBeTruthy();
+    expect(screen.getByText("No climbing sessions")).toBeTruthy();
+  });
+
+  it("shows the server error message for climbing data failures", async () => {
+    mockTrainingState.data = undefined;
+    mockTrainingState.isError = true;
+    mockTrainingState.error = new Error("Climbing data failed to load");
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.getAllByText("Climbing data failed to load").length).toBeGreaterThan(0);
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error));
+  });
+
+  it("keeps cached climbing data visible during background refetch failures", async () => {
+    mockTrainingState.data = {
+      ...defaultMockTrainingData(),
+      climbing: {
+        gradeProgression: [
+          {
+            date: "2026-07-09",
+            climbType: "boulder",
+            grade: "V4",
+            gradeSortValue: 4,
+          },
+        ],
+        volumeByGrade: [],
+        sessionSummary: [],
+      },
+    };
+    mockTrainingState.isError = true;
+    mockTrainingState.error = new Error("Climbing refresh failed");
+
+    const { default: StrainScreen } = await import("./strain");
+    render(<StrainScreen />);
+
+    expect(screen.queryByText("Climbing refresh failed")).toBeNull();
+    expect(screen.getByText("Best Boulder Grade")).toBeTruthy();
+    expect(screen.getByText("V4")).toBeTruthy();
+  });
+
+  it("reports the same cached training query error only once across remounts", async () => {
+    const cachedError = new Error("Cached climbing data failed to load");
+    mockTrainingState.data = undefined;
+    mockTrainingState.isError = true;
+    mockTrainingState.error = cachedError;
+
+    const { default: StrainScreen } = await import("./strain");
+    const firstRender = render(<StrainScreen />);
+    firstRender.unmount();
+    render(<StrainScreen />);
+
+    expect(captureException).toHaveBeenCalledTimes(1);
+    expect(captureException).toHaveBeenCalledWith(cachedError);
   });
 });

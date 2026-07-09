@@ -2,6 +2,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
+import type { KayaImportDatabase } from "../providers/kaya/import.ts";
 import type { ImportJobData } from "./queues.ts";
 
 const mockCaptureException = vi.fn();
@@ -70,6 +71,14 @@ vi.mock("../providers/cronometer-csv.ts", () => ({
   importCronometerCsv: (...args: unknown[]) => mockImportCronometerCsv(...args),
 }));
 
+const mockImportKayaExportFile = vi.fn().mockResolvedValue({
+  recordsSynced: 4,
+  errors: [],
+});
+vi.mock("../providers/kaya/import.ts", () => ({
+  importKayaExportFile: (...args: unknown[]) => mockImportKayaExportFile(...args),
+}));
+
 const mockImportZosAppBin = vi.fn().mockResolvedValue({
   recordsSynced: 3,
   errors: [],
@@ -82,11 +91,12 @@ vi.mock("../providers/zos-app/provider.ts", () => ({
 const { processImportJob } = await import("./process-import-job.ts");
 
 // All DB functions are mocked at module level, so the db object is never actually called.
-const mockDb: SyncDatabase = {
+const mockDb: KayaImportDatabase = {
   select: vi.fn(),
   insert: vi.fn(),
   delete: vi.fn(),
   execute: vi.fn(),
+  transaction: vi.fn(),
 };
 
 interface MockJob {
@@ -132,6 +142,7 @@ describe("processImportJob", () => {
     mockImportAppleHealthFile.mockResolvedValue({ recordsSynced: 42, errors: [] });
     mockImportStrongCsv.mockResolvedValue({ recordsSynced: 10, errors: [] });
     mockImportCronometerCsv.mockResolvedValue({ recordsSynced: 7, errors: [] });
+    mockImportKayaExportFile.mockResolvedValue({ recordsSynced: 4, errors: [] });
     mockImportZosAppBin.mockResolvedValue({ recordsSynced: 3, errors: [] });
     mockEnqueueDebouncedPostSyncMaintenance.mockResolvedValue(undefined);
     mockEnqueueDebouncedUserRefit.mockResolvedValue(undefined);
@@ -382,6 +393,94 @@ describe("processImportJob", () => {
       expect(mockLoggerInfo).toHaveBeenCalledWith(
         expect.stringContaining("7 food entries imported"),
       );
+    });
+  });
+
+  describe("kaya-export import", () => {
+    it("reads file and calls importKayaExportFile with correct args", async () => {
+      await writeFile(
+        tempFilePath,
+        "date,stiffness,rating,ascent_type,attempts,grade,color,climb_name,gym,location,country\nThu Jul 09 2026 15:17:17 GMT+0000 (GMT+00:00),0,,Onsight,1,v3,Pink,,Touchstone Pacific Pipe,,",
+      );
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "kaya-export" });
+      await runImportJob(job, mockDb);
+
+      expect(mockImportKayaExportFile).toHaveBeenCalledWith(
+        mockDb,
+        expect.stringContaining("Touchstone Pacific Pipe"),
+        "user-1",
+      );
+    });
+
+    it("logs sync and completion message on success", async () => {
+      await writeFile(tempFilePath, "csv data");
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "kaya-export" });
+      await runImportJob(job, mockDb);
+
+      expect(mockLogSync).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({
+          providerId: "kaya-export",
+          dataType: "import",
+          status: "success",
+          recordCount: 4,
+        }),
+      );
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        expect.stringContaining("Kaya export import complete"),
+      );
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        expect.stringContaining("4 climbing entries imported"),
+      );
+    });
+
+    it("fails loudly when Kaya import runs without transactional database support", async () => {
+      await writeFile(tempFilePath, "csv data");
+      const nonTransactionalDb: SyncDatabase = {
+        select: vi.fn(),
+        insert: vi.fn(),
+        delete: vi.fn(),
+        execute: vi.fn(),
+      };
+      const job = createMockJob({ filePath: tempFilePath, importType: "kaya-export" });
+
+      await expect(runImportJob(job, nonTransactionalDb)).rejects.toThrow(
+        "Kaya export import requires a transactional database",
+      );
+      expect(mockImportKayaExportFile).not.toHaveBeenCalled();
+    });
+
+    it("logs Kaya errors and duration precisely", async () => {
+      await writeFile(tempFilePath, "csv data");
+      mockImportKayaExportFile.mockResolvedValueOnce({
+        recordsSynced: 0,
+        errors: [{ message: "row 2: grade is unsupported" }],
+      });
+      let callCount = 0;
+      const dateNowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
+        return callCount++ === 0 ? 10_000 : 12_500;
+      });
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "kaya-export" });
+      await runImportJob(job, mockDb);
+
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        expect.stringContaining("0 climbing entries imported, 1 errors in 2.5s"),
+      );
+      expect(mockLogSync).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({
+          providerId: "kaya-export",
+          status: "error",
+          recordCount: 0,
+          errorMessage: "row 2: grade is unsupported",
+          durationMs: 2500,
+        }),
+      );
+
+      dateNowSpy.mockRestore();
     });
   });
 

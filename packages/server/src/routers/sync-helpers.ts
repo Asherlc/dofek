@@ -145,6 +145,7 @@ const importTypeToProviderId: Record<ImportJobData["importType"], string> = {
   "apple-health": "apple_health",
   "strong-csv": "strong-csv",
   "cronometer-csv": "cronometer-csv",
+  "kaya-export": "kaya-export",
   "zos-app": "zos-app",
 };
 

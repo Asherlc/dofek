@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createTestCallerFactory,
   dateDaysBefore,
@@ -23,6 +23,10 @@ vi.mock("../trpc.ts", async () => {
     cachedProtectedQuery: () => trpc.procedure,
     CacheTTL: { SHORT: 120_000, MEDIUM: 600_000, LONG: 3_600_000 },
   };
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 type SensorStore = import("../repositories/activity-repository.ts").ActivitySensorStore;
@@ -909,7 +913,7 @@ describe("mobileDashboard.training", () => {
       }
       return [];
     });
-    const execute = vi.fn(async () => [{ raw_activity_count: 0 }]);
+    const execute = vi.fn(async () => []);
 
     const caller = createCaller({
       db: { execute },
@@ -937,6 +941,11 @@ describe("mobileDashboard.training", () => {
     expect(result.strainTarget.dailyLoad).toBe(50);
     expect(result.activities).toEqual([]);
     expect(result.weeklyVolume).toEqual([]);
+    expect(result.climbing).toEqual({
+      gradeProgression: [],
+      volumeByGrade: [],
+      sessionSummary: [],
+    });
     const timingCall = vi
       .mocked(logger.info)
       .mock.calls.find((call) => String(call[0]).includes("[mobile-dashboard] training timings"));
@@ -968,6 +977,11 @@ describe("mobileDashboard.training", () => {
       activities: [],
       weeklyVolume: [],
       verticalAscent: [],
+      climbing: {
+        gradeProgression: [],
+        volumeByGrade: [],
+        sessionSummary: [],
+      },
     });
 
     const caller = createCaller({
@@ -1032,6 +1046,11 @@ describe("mobileDashboard.training", () => {
       activities: [],
       weeklyVolume: [],
       verticalAscent: [],
+      climbing: {
+        gradeProgression: [],
+        volumeByGrade: [],
+        sessionSummary: [],
+      },
     });
 
     const caller = createCaller({

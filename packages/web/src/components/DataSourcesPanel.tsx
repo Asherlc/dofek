@@ -308,6 +308,13 @@ export function DataSourcesPanel() {
       uploadUrl: "/api/upload/cronometer-csv",
       statusUrl: "/api/upload/cronometer-csv/status",
     },
+    "kaya-export": {
+      title: "Kaya",
+      description: ".csv export from Kaya",
+      accept: ".csv",
+      uploadUrl: "/api/upload/kaya-export",
+      statusUrl: "/api/upload/kaya-export/status",
+    },
   };
 
   // Build unified list: server providers + Apple Health (file-import-only, not registered on server)

@@ -1,5 +1,7 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   date,
   index,
   integer,
@@ -13,7 +15,13 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { fitness, resolveImplicitUserId } from "./core.ts";
-import { activityTypeEnum, setTypeEnum, sleepStageNameEnum } from "./enums.ts";
+import {
+  activityTypeEnum,
+  climbingClimbTypeEnum,
+  climbingGradeSystemEnum,
+  setTypeEnum,
+  sleepStageNameEnum,
+} from "./enums.ts";
 import { exercise, provider, userProfile } from "./reference.ts";
 
 // ============================================================
@@ -44,6 +52,54 @@ export const strengthSet = fitness.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("strength_set_activity_idx").on(table.activityId)],
+);
+
+// ============================================================
+// Rock climbing
+// ============================================================
+
+export const climbingEntry = fitness.table(
+  "climbing_entry",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    activityId: uuid("activity_id")
+      .notNull()
+      .references(() => activity.id, { onDelete: "cascade" }),
+    externalId: text("external_id"),
+    climbType: climbingClimbTypeEnum("climb_type").notNull(),
+    gradeSystem: climbingGradeSystemEnum("grade_system").notNull(),
+    grade: text("grade").notNull(),
+    sent: boolean("sent").notNull(),
+    routeName: text("route_name"),
+    locationName: text("location_name"),
+    sourceName: text("source_name"),
+    raw: jsonb("raw"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("climbing_entry_activity_idx").on(table.activityId),
+    index("climbing_entry_grade_lookup_idx").on(table.climbType, table.gradeSystem, table.grade),
+    uniqueIndex("climbing_entry_activity_external_id_idx")
+      .on(table.activityId, table.externalId)
+      .where(sql`${table.externalId} IS NOT NULL`),
+    check("climbing_entry_grade_nonempty", sql`btrim(${table.grade}) <> ''`),
+    check(
+      "climbing_entry_external_id_nonempty",
+      sql`${table.externalId} IS NULL OR btrim(${table.externalId}) <> ''`,
+    ),
+    check(
+      "climbing_entry_route_name_nonempty",
+      sql`${table.routeName} IS NULL OR btrim(${table.routeName}) <> ''`,
+    ),
+    check(
+      "climbing_entry_location_name_nonempty",
+      sql`${table.locationName} IS NULL OR btrim(${table.locationName}) <> ''`,
+    ),
+    check(
+      "climbing_entry_source_name_nonempty",
+      sql`${table.sourceName} IS NULL OR btrim(${table.sourceName}) <> ''`,
+    ),
+  ],
 );
 
 // ============================================================
