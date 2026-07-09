@@ -110,6 +110,8 @@ describe("ClimbingTab", () => {
     render(<ClimbingTab />);
 
     expect(screen.getByText("Error: Volume query failed")).toBeTruthy();
+    expect(screen.queryByText("Error: Grade query failed")).toBeNull();
+    expect(screen.queryByText("Error: Session query failed")).toBeNull();
     expect(screen.getByText("Grade Progression component")).toBeTruthy();
     expect(screen.getByText("Recent Climbing Sessions component false")).toBeTruthy();
   });

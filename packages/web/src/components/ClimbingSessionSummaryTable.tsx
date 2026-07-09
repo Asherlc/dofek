@@ -52,7 +52,10 @@ export function ClimbingSessionSummaryTable({ data, loading }: ClimbingSessionSu
         aria-busy="true"
         data-testid="query-state-loading"
       >
-        <div className="w-5 h-5 border-2 border-border-strong border-t-muted rounded-full animate-spin" />
+        <output
+          className="w-5 h-5 border-2 border-border-strong border-t-muted rounded-full animate-spin"
+          aria-label="Loading climbing sessions"
+        />
       </div>
     );
   }

@@ -23,10 +23,30 @@ describe("ClimbingSessionSummaryTable", () => {
   });
 
   it("renders loading before empty state while sessions are loading", () => {
-    render(<ClimbingSessionSummaryTable data={[]} loading />);
+    render(
+      <ClimbingSessionSummaryTable
+        data={[
+          {
+            activityId: "activity-1",
+            date: "2026-07-09",
+            name: "Kaya climbing at Touchstone Pacific Pipe",
+            locationName: "Touchstone Pacific Pipe",
+            attempts: 8,
+            sends: 5,
+            hardestBoulderGrade: "V4",
+            hardestBoulderGradeSortValue: 4,
+            hardestRouteGrade: null,
+            hardestRouteGradeSortValue: null,
+          },
+        ]}
+        loading
+      />,
+    );
 
     expect(screen.getByTestId("query-state-loading")).toBeTruthy();
+    expect(screen.getByRole("status", { name: "Loading climbing sessions" })).toBeTruthy();
     expect(screen.queryByText("No climbing sessions")).toBeNull();
+    expect(screen.queryByText("Kaya climbing at Touchstone Pacific Pipe")).toBeNull();
   });
 
   it("renders session location, volume, and hardest grades", () => {

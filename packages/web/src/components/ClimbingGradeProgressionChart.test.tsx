@@ -59,6 +59,20 @@ describe("ClimbingGradeProgressionChart", () => {
       <ClimbingGradeProgressionChart
         data={[
           {
+            date: "2026-07-09",
+            climbType: "boulder",
+            gradeSystem: "v_scale",
+            grade: "V5",
+            gradeSortValue: 5,
+          },
+          {
+            date: "2026-07-08",
+            climbType: "route",
+            gradeSystem: "yds",
+            grade: "5.11a",
+            gradeSortValue: 5111,
+          },
+          {
             date: "2026-07-10",
             climbType: "boulder",
             gradeSystem: "v_scale",
@@ -66,17 +80,19 @@ describe("ClimbingGradeProgressionChart", () => {
             gradeSortValue: 3,
           },
           {
-            date: "2026-07-09",
-            climbType: "boulder",
-            gradeSystem: "v_scale",
-            grade: "V5",
-            gradeSortValue: 5,
+            date: "2026-07-11",
+            climbType: "route",
+            gradeSystem: "yds",
+            grade: "5.10a",
+            gradeSortValue: 5101,
           },
         ]}
       />,
     );
 
     expect(screen.getByText("V3")).toBeTruthy();
+    expect(screen.getByText("5.10a")).toBeTruthy();
     expect(screen.queryByText("V5")).toBeNull();
+    expect(screen.queryByText("5.11a")).toBeNull();
   });
 });

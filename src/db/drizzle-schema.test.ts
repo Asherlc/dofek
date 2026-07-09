@@ -26,7 +26,7 @@ interface ColumnSummary {
 }
 
 function indexedColumnNames(columns: readonly unknown[]): string[] {
-  return columns.map((column) => {
+  return columns.map((column, index) => {
     if (
       typeof column === "object" &&
       column !== null &&
@@ -36,7 +36,9 @@ function indexedColumnNames(columns: readonly unknown[]): string[] {
       return column.name;
     }
 
-    throw new Error("Expected index metadata to reference named table columns");
+    throw new Error(
+      `Expected index metadata at position ${index} to reference named table columns`,
+    );
   });
 }
 

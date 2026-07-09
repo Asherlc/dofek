@@ -23,6 +23,8 @@ const kayaHeader =
 
 function makeTransactionalImportDb(): {
   db: KayaImportDatabase;
+  deleteWhere: ReturnType<typeof vi.fn>;
+  insertValues: ReturnType<typeof vi.fn>;
   transactionDb: SyncDatabase;
 } {
   const deleteWhere = vi.fn().mockResolvedValue(undefined);
@@ -41,7 +43,7 @@ function makeTransactionalImportDb(): {
     transaction: vi.fn(async (callback) => callback(transactionDb)),
   };
 
-  return { db, transactionDb };
+  return { db, deleteWhere, insertValues, transactionDb };
 }
 
 describe("parseKayaExport", () => {
@@ -223,7 +225,7 @@ not-a-date,0,,Redpoint,,v3,Pink,,Touchstone Pacific Pipe,,`;
   });
 
   it("imports provider activity and climbing entries inside a transaction", async () => {
-    const { db, transactionDb } = makeTransactionalImportDb();
+    const { db, deleteWhere, insertValues, transactionDb } = makeTransactionalImportDb();
 
     const result = await importKayaExportFile(db, fixtureText, "user-1");
 
@@ -239,6 +241,18 @@ not-a-date,0,,Redpoint,,v3,Pink,,Touchstone Pacific Pipe,,`;
       transactionDb,
       expect.objectContaining({ providerId: "kaya-export", userId: "user-1" }),
       expect.any(Object),
+    );
+    expect(transactionDb.delete).toHaveBeenCalledTimes(3);
+    expect(deleteWhere).toHaveBeenCalledTimes(3);
+    expect(transactionDb.insert).toHaveBeenCalledTimes(3);
+    expect(insertValues).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          activityId: "activity-1",
+          grade: "V0",
+          sourceName: "Kaya",
+        }),
+      ]),
     );
     expect(result.recordsSynced).toBe(6);
   });

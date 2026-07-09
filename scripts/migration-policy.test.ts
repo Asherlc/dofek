@@ -246,7 +246,7 @@ UPDATE fitness.provider SET "display;name" = 'safe' WHERE id = 'provider-3';
       /CREATE TYPE fitness\.climbing_climb_type AS ENUM \('boulder', 'route'\)/,
     );
     expect(migrationSql).toMatch(
-      /CREATE TYPE fitness\.climbing_grade_system AS ENUM \('v_scale', 'yds', 'font', 'french'\)/,
+      /CREATE TYPE fitness\.climbing_grade_system AS ENUM \('v_scale', 'yds'\)/,
     );
     expect(migrationSql).toContain("CREATE TABLE IF NOT EXISTS fitness.climbing_entry");
     expect(migrationSql).toContain("id uuid PRIMARY KEY DEFAULT gen_random_uuid()");
