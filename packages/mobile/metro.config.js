@@ -9,7 +9,7 @@ const monorepoRoot = path.resolve(projectRoot, "../..");
 const config = getSentryExpoConfig(projectRoot);
 
 // Watch all files in the monorepo so workspace deps resolve
-config.watchFolders = [monorepoRoot];
+config.watchFolders = Array.from(new Set([...(config.watchFolders || []), monorepoRoot]));
 
 // Resolve modules from both the project and the monorepo root
 config.resolver.nodeModulesPaths = [
