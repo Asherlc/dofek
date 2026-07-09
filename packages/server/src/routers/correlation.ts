@@ -16,14 +16,14 @@ export type { CorrelationInput } from "../repositories/correlation-repository.ts
 // ── tRPC Router ─────────────────────────────────────────────────────────
 
 export const correlationRouter = router({
-  metrics: cachedProtectedQuery(CacheTTL.LONG)
+  metrics: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({}).optional())
     .query(({ ctx }) => {
       const repo = new CorrelationRepository(ctx.db, ctx.userId, ctx.timezone, ctx.sensorStore);
       return repo.getMetrics();
     }),
 
-  compute: cachedProtectedQuery(CacheTTL.MEDIUM)
+  compute: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(
       z.object({
         metricX: z.string(),

@@ -49,6 +49,10 @@ type MockAdminDb = {
   execute: (query: unknown) => Promise<Array<{ is_admin: boolean }>>;
 };
 
+interface MockCachePolicy {
+  maxAge: number;
+}
+
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
   const { TRPCError } = await import("@trpc/server");
@@ -65,7 +69,7 @@ vi.mock("../trpc.ts", async () => {
     }
     return next({ ctx });
   });
-  mockCachedProtectedQuery.mockImplementation((ttlMs: number) =>
+  mockCachedProtectedQuery.mockImplementation((policy: MockCachePolicy) =>
     trpc.procedure.use(async ({ ctx, path, getRawInput, next }) => {
       const rawInput = await getRawInput();
       const key = `${ctx.userId ?? "anon"}:${path}:${JSON.stringify(rawInput)}`;
@@ -76,7 +80,10 @@ vi.mock("../trpc.ts", async () => {
 
       const result = await next();
       if (result.ok) {
-        mockProtectedQueryCache.set(key, { data: result.data, expiresAt: Date.now() + ttlMs });
+        mockProtectedQueryCache.set(key, {
+          data: result.data,
+          expiresAt: Date.now() + policy.maxAge,
+        });
       }
       return result;
     }),
@@ -242,7 +249,12 @@ describe("syncRouter", () => {
   const createCaller = createTestCallerFactory(syncRouter);
 
   it("uses a short cache for read-heavy protected queries", () => {
-    expect(routerConstructionCachedTtlValues).toEqual([120_000, 120_000, 120_000, 120_000]);
+    expect(routerConstructionCachedTtlValues).toEqual([
+      { maxAge: 120_000 },
+      { maxAge: 120_000 },
+      { maxAge: 120_000 },
+      { maxAge: 120_000 },
+    ]);
   });
 
   beforeEach(() => {

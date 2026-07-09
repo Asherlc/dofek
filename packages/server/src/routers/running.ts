@@ -40,7 +40,7 @@ export interface PaceTrendRow {
 const daysInput = z.object({ days: z.number().default(90) });
 
 export const runningRouter = router({
-  dynamics: cachedProtectedQuery(CacheTTL.LONG)
+  dynamics: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(daysInput)
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "running.dynamics");
@@ -48,7 +48,7 @@ export const runningRouter = router({
       return (await repo.getDynamics(input.days)).map((activity) => activity.toDetail());
     }),
 
-  paceTrend: cachedProtectedQuery(CacheTTL.LONG)
+  paceTrend: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(daysInput)
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "running.paceTrend");

@@ -162,7 +162,7 @@ export const sleepNeedRouter = router({
    * Sleep Need Calculator — like Whoop's Sleep Coach.
    * Computes personalized sleep need and accumulated debt.
    */
-  calculate: cachedProtectedQuery(CacheTTL.SHORT)
+  calculate: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(z.object({ endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<SleepNeedResult> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "sleepNeed.calculate");
@@ -313,7 +313,7 @@ export const sleepNeedRouter = router({
    * Sleep performance score for last night: how well did you sleep relative to need.
    * Returns score (0-100), tier (Peak/Perform/Get By/Low), and recommended bedtime.
    */
-  performance: cachedProtectedQuery(CacheTTL.MEDIUM)
+  performance: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(z.object({ endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<SleepPerformanceInfo | null> => {
       const tz = ctx.timezone ?? "UTC";

@@ -14,9 +14,11 @@ import { AuthRepository } from "../repositories/auth-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 
 export const authRouter = router({
-  passwordCredentialStatus: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
-    return getPasswordCredentialStatus(ctx.db, ctx.userId);
-  }),
+  passwordCredentialStatus: cachedProtectedQuery({ maxAge: CacheTTL.SHORT }).query(
+    async ({ ctx }) => {
+      return getPasswordCredentialStatus(ctx.db, ctx.userId);
+    },
+  ),
 
   setPassword: protectedProcedure
     .input(SetPasswordRequestSchema)
@@ -38,7 +40,7 @@ export const authRouter = router({
       }
     }),
 
-  linkedAccounts: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
+  linkedAccounts: cachedProtectedQuery({ maxAge: CacheTTL.SHORT }).query(async ({ ctx }) => {
     const repo = new AuthRepository(ctx.db, ctx.userId);
     return repo.getLinkedAccounts();
   }),

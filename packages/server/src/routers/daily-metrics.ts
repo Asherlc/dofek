@@ -21,19 +21,19 @@ function requireSensorStore(
 }
 
 export const dailyMetricsRouter = router({
-  list: cachedProtectedQuery(CacheTTL.MEDIUM)
+  list: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(dateWindowInput)
     .query(async ({ ctx, input }) => {
       const repo = new DailyMetricsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
       return repo.list(input.days, input.endDate);
     }),
 
-  latest: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
+  latest: cachedProtectedQuery({ maxAge: CacheTTL.SHORT }).query(async ({ ctx }) => {
     const repo = new DailyMetricsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
     return repo.getLatest();
   }),
 
-  hrvBaseline: cachedProtectedQuery(CacheTTL.MEDIUM)
+  hrvBaseline: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(dateWindowInput)
     .query(async ({ ctx, input }) => {
       const repo = new DailyMetricsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
@@ -47,7 +47,7 @@ export const dailyMetricsRouter = router({
       return repo.getHrvBaseline(input.days, input.endDate, restingHeartRateCte);
     }),
 
-  trends: cachedProtectedQuery(CacheTTL.MEDIUM)
+  trends: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(dateWindowInput)
     .query(async ({ ctx, input }) => {
       const repo = new DailyMetricsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);

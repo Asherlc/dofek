@@ -5,7 +5,7 @@ import { SleepRepository } from "../repositories/sleep-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export const sleepRouter = router({
-  list: cachedProtectedQuery(CacheTTL.MEDIUM)
+  list: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(dateWindowInput)
     .query(async ({ ctx, input }) => {
       const repo = new SleepRepository(
@@ -18,7 +18,7 @@ export const sleepRouter = router({
       return repo.list(input.days, input.endDate);
     }),
 
-  stages: cachedProtectedQuery(CacheTTL.MEDIUM)
+  stages: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(z.object({ sessionId: z.guid() }))
     .query(({ ctx, input }) => {
       const repo = new SleepRepository(
@@ -31,7 +31,7 @@ export const sleepRouter = router({
       return repo.getStages(input.sessionId);
     }),
 
-  latestStages: cachedProtectedQuery(CacheTTL.SHORT).query(({ ctx }) => {
+  latestStages: cachedProtectedQuery({ maxAge: CacheTTL.SHORT }).query(({ ctx }) => {
     const repo = new SleepRepository(
       ctx.db,
       ctx.userId,
@@ -42,7 +42,7 @@ export const sleepRouter = router({
     return repo.getLatestStages();
   }),
 
-  latest: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
+  latest: cachedProtectedQuery({ maxAge: CacheTTL.SHORT }).query(async ({ ctx }) => {
     const repo = new SleepRepository(
       ctx.db,
       ctx.userId,

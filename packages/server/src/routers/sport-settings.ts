@@ -24,7 +24,7 @@ export const sportSettingsRouter = router({
    * List all sport settings for the user, grouped by sport.
    * Returns the most recent effective setting per sport.
    */
-  list: cachedProtectedQuery(CacheTTL.LONG).query(async ({ ctx }) => {
+  list: cachedProtectedQuery({ maxAge: CacheTTL.LONG }).query(async ({ ctx }) => {
     const repository = new SportSettingsRepository(ctx.db, ctx.userId);
     return repository.list();
   }),
@@ -33,7 +33,7 @@ export const sportSettingsRouter = router({
    * Get sport settings for a specific sport, optionally at a specific date.
    * Returns the most recent setting effective on or before the given date.
    */
-  getBySport: cachedProtectedQuery(CacheTTL.LONG)
+  getBySport: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(
       z.object({
         sport: z.string(),
@@ -51,7 +51,7 @@ export const sportSettingsRouter = router({
   /**
    * Get full history of sport settings for a specific sport.
    */
-  history: cachedProtectedQuery(CacheTTL.LONG)
+  history: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ sport: z.string() }))
     .query(async ({ ctx, input }) => {
       const repository = new SportSettingsRepository(ctx.db, ctx.userId);

@@ -31,7 +31,7 @@ function requireSensorStore(
 }
 
 export const efficiencyRouter = router({
-  aerobicEfficiency: cachedProtectedQuery(CacheTTL.LONG)
+  aerobicEfficiency: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }): Promise<AerobicEfficiencyResult> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "efficiency.aerobicEfficiency");
@@ -45,7 +45,7 @@ export const efficiencyRouter = router({
       return repo.getAerobicEfficiency(input.days);
     }),
 
-  aerobicDecoupling: cachedProtectedQuery(CacheTTL.LONG)
+  aerobicDecoupling: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }): Promise<AerobicDecouplingActivity[]> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "efficiency.aerobicDecoupling");
@@ -64,7 +64,7 @@ export const efficiencyRouter = router({
    *   Z1 (easy) = < 80% HRmax; Z2 (threshold) = 80-90%; Z3 (high) = >= 90%.
    * PI = log10((f1 / (f2 * f3)) * 100); PI > 2.0 indicates well-polarized training.
    */
-  polarizationTrend: cachedProtectedQuery(CacheTTL.LONG)
+  polarizationTrend: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ days: z.number().default(180) }))
     .query(async ({ ctx, input }): Promise<PolarizationTrendResult> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "efficiency.polarizationTrend");

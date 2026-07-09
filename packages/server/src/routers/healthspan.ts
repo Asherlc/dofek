@@ -231,7 +231,7 @@ export const healthspanRouter = router({
    * Healthspan Score — composite longevity metric inspired by Whoop's Healthspan.
    * Updates weekly from rolling 4-week data windows.
    */
-  score: cachedProtectedQuery(CacheTTL.LONG)
+  score: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(z.object({ weeks: z.number().min(4).max(52).default(12), endDate: endDateSchema }))
     .query(async ({ ctx, input }): Promise<HealthspanResult> => {
       const totalDays = input.weeks * 7;

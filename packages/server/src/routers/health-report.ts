@@ -33,7 +33,7 @@ export const healthReportRouter = router({
     }),
 
   /** List the current user's shared reports */
-  myReports: cachedProtectedQuery(CacheTTL.SHORT).query(async ({ ctx }) => {
+  myReports: cachedProtectedQuery({ maxAge: CacheTTL.SHORT }).query(async ({ ctx }) => {
     const repo = new HealthReportRepository(ctx.db, ctx.userId);
     return (await repo.myReports()).map((report) => report.toDetail());
   }),

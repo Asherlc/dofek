@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const mockNavigate = vi.hoisted(() => vi.fn());
 const mockUseAuth = vi.hoisted(() => vi.fn());
 const mockUseLocation = vi.hoisted(() => vi.fn());
-const mockRemoveWebQueryCache = vi.hoisted(() => vi.fn());
 
 // Capture the component and validateSearch passed to createRootRoute so we can
 // test them directly, avoiding type assertions on the mocked Route object.
@@ -48,11 +47,6 @@ vi.mock("../lib/auth-context.tsx", () => ({
   useAuth: mockUseAuth,
 }));
 
-vi.mock("../lib/query-persistence.ts", () => ({
-  WebQueryPersistenceProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  removeWebQueryCache: mockRemoveWebQueryCache,
-}));
-
 // Import triggers createRootRoute, which captures the component.
 import "./__root.tsx";
 
@@ -75,7 +69,6 @@ const authenticatedUser = { id: "u1", name: "Alice", email: null };
 afterEach(() => {
   cleanup();
   mockNavigate.mockClear();
-  mockRemoveWebQueryCache.mockClear();
 });
 
 describe("validateSearch", () => {
@@ -300,7 +293,7 @@ describe("AuthGate", () => {
     expect(getByTestId("outlet")).toBeTruthy();
   });
 
-  it("clears the previous user's persisted cache when the active user changes", () => {
+  it("clears in-memory query data when the active user changes", () => {
     mockUseAuth.mockReturnValue({
       user: { id: "user-1", name: "Alice", email: null },
       isLoading: false,
@@ -324,7 +317,6 @@ describe("AuthGate", () => {
       </QueryClientProvider>,
     );
 
-    expect(mockRemoveWebQueryCache).toHaveBeenCalledWith("user-1");
     expect(queryClient.getQueryData(["dashboard"])).toBeUndefined();
   });
 });

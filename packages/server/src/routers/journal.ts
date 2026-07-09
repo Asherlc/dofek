@@ -4,13 +4,13 @@ import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../t
 
 export const journalRouter = router({
   /** List all available journal questions ordered by sort_order */
-  questions: cachedProtectedQuery(CacheTTL.MEDIUM).query(async ({ ctx }) => {
+  questions: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM }).query(async ({ ctx }) => {
     const repository = new JournalRepository(ctx.db, ctx.userId);
     return repository.listQuestions();
   }),
 
   /** Get journal entries for a date range, joined with question metadata */
-  entries: cachedProtectedQuery(CacheTTL.SHORT)
+  entries: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(z.object({ days: z.number().default(30) }))
     .query(async ({ ctx, input }) => {
       const repository = new JournalRepository(ctx.db, ctx.userId);
@@ -18,7 +18,7 @@ export const journalRouter = router({
     }),
 
   /** Time-series trend data for a specific question */
-  trends: cachedProtectedQuery(CacheTTL.SHORT)
+  trends: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(
       z.object({
         questionSlug: z.string(),

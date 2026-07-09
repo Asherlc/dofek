@@ -409,7 +409,7 @@ export const syncRouter = router({
   }),
 
   /** List all providers and whether they're enabled (have valid config) */
-  providers: cachedProtectedQuery(CacheTTL.SHORT)
+  providers: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .output(z.array(syncProviderRowOutputSchema))
     .query(async ({ ctx }) => {
       await ensureProvidersRegistered();
@@ -750,7 +750,7 @@ export const syncRouter = router({
   }),
 
   /** Get sync log history */
-  logs: cachedProtectedQuery(CacheTTL.SHORT)
+  logs: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(logsInput)
     .query(async ({ ctx, input }) => {
       const repo = new SyncRepository(ctx.db, ctx.userId);
@@ -763,7 +763,7 @@ export const syncRouter = router({
     }),
 
   /** Per-provider record counts broken down by table */
-  providerStats: cachedProtectedQuery(CacheTTL.SHORT)
+  providerStats: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .output(providerStatsOutputSchema)
     .query(async ({ ctx }) => {
       if (!ctx.sensorStore) {
@@ -778,7 +778,7 @@ export const syncRouter = router({
     }),
 
   /** User-facing freshness/readiness state for primary dashboard datasets. */
-  dataHealth: cachedProtectedQuery(CacheTTL.SHORT)
+  dataHealth: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .output(dataHealthOutputSchema)
     .query(async ({ ctx }) => {
       const sensorStore = hasDataHealthSensorStore(ctx.sensorStore) ? ctx.sensorStore : null;
