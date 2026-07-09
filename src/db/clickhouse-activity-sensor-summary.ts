@@ -94,20 +94,114 @@ function findSelectBodyForFromTable(modelSql: string, fromTable: string): string
     throw new Error(`Invalid dbt FROM table name: ${fromTable}`);
   }
 
-  const fromMatches = modelSql.matchAll(/\bFROM\s+([a-z_][a-z0-9_]*)\b/gi);
+  const normalizedFromTable = fromTable.toLowerCase();
   let selectBody: string | undefined;
-  for (const fromMatch of fromMatches) {
-    if (fromMatch[1] !== fromTable || fromMatch.index === undefined) {
+  let cursorIndex = 0;
+
+  while (cursorIndex < modelSql.length) {
+    const currentChar = modelSql[cursorIndex];
+    const nextChar = modelSql[cursorIndex + 1];
+    if (currentChar === "-" && nextChar === "-") {
+      cursorIndex = skipSqlLineComment(modelSql, cursorIndex);
+      continue;
+    }
+    if (currentChar === "/" && nextChar === "*") {
+      cursorIndex = skipSqlBlockComment(modelSql, cursorIndex);
+      continue;
+    }
+    if (currentChar === "'") {
+      cursorIndex = skipSqlStringLiteral(modelSql, cursorIndex);
       continue;
     }
 
-    const beforeFrom = modelSql.slice(0, fromMatch.index);
-    const selectIndex = beforeFrom.toUpperCase().lastIndexOf("SELECT");
-    if (selectIndex === -1) {
+    const fromEndIndex = matchSqlKeyword(modelSql, "FROM", cursorIndex);
+    if (fromEndIndex === null) {
+      cursorIndex += 1;
       continue;
     }
-    selectBody = modelSql.slice(selectIndex + "SELECT".length, fromMatch.index);
+
+    const tableStartIndex = skipWhitespace(modelSql, fromEndIndex);
+    const tableEndIndex = readSqlIdentifierEndIndex(modelSql, tableStartIndex);
+    const tableName = modelSql.slice(tableStartIndex, tableEndIndex).toLowerCase();
+    if (tableName !== normalizedFromTable) {
+      cursorIndex = tableEndIndex;
+      continue;
+    }
+
+    const beforeFrom = modelSql.slice(0, cursorIndex);
+    const selectIndex = beforeFrom.toUpperCase().lastIndexOf("SELECT");
+    if (selectIndex === -1) {
+      cursorIndex = tableEndIndex;
+      continue;
+    }
+    selectBody = modelSql.slice(selectIndex + "SELECT".length, cursorIndex);
+    cursorIndex = tableEndIndex;
   }
 
   return selectBody;
+}
+
+function skipSqlLineComment(sql: string, startIndex: number): number {
+  let cursorIndex = startIndex + 2;
+  while (cursorIndex < sql.length && sql[cursorIndex] !== "\n") {
+    cursorIndex += 1;
+  }
+  return cursorIndex;
+}
+
+function skipSqlBlockComment(sql: string, startIndex: number): number {
+  let cursorIndex = startIndex + 2;
+  while (cursorIndex < sql.length - 1) {
+    if (sql[cursorIndex] === "*" && sql[cursorIndex + 1] === "/") {
+      return cursorIndex + 2;
+    }
+    cursorIndex += 1;
+  }
+  return sql.length;
+}
+
+function skipSqlStringLiteral(sql: string, startIndex: number): number {
+  let cursorIndex = startIndex + 1;
+  while (cursorIndex < sql.length) {
+    if (sql[cursorIndex] === "'" && sql[cursorIndex + 1] === "'") {
+      cursorIndex += 2;
+      continue;
+    }
+    if (sql[cursorIndex] === "'") {
+      return cursorIndex + 1;
+    }
+    cursorIndex += 1;
+  }
+  return sql.length;
+}
+
+function skipWhitespace(sql: string, startIndex: number): number {
+  let cursorIndex = startIndex;
+  while (cursorIndex < sql.length && /\s/.test(sql[cursorIndex] ?? "")) {
+    cursorIndex += 1;
+  }
+  return cursorIndex;
+}
+
+function isSqlIdentifierChar(value: string | undefined): boolean {
+  return value !== undefined && /[A-Za-z0-9_]/.test(value);
+}
+
+function readSqlIdentifierEndIndex(sql: string, startIndex: number): number {
+  let cursorIndex = startIndex;
+  while (isSqlIdentifierChar(sql[cursorIndex])) {
+    cursorIndex += 1;
+  }
+  return cursorIndex;
+}
+
+function matchSqlKeyword(sql: string, keyword: string, startIndex: number): number | null {
+  if (isSqlIdentifierChar(sql[startIndex - 1])) {
+    return null;
+  }
+  const endIndex = startIndex + keyword.length;
+  if (sql.slice(startIndex, endIndex).toLowerCase() !== keyword.toLowerCase()) {
+    return null;
+  }
+  return isSqlIdentifierChar(sql[endIndex]) ? null : endIndex;
 }

@@ -78,6 +78,25 @@ describe("clickhouse-activity-sensor-summary", () => {
       expect(extractDbtFinalSelectColumnNames(sql, "data")).toEqual(["a", "b"]);
     });
 
+    it("matches uppercase unquoted FROM table names", () => {
+      const sql = "\nSELECT\n  t.col1 AS a,\n  t.col2 AS b\nFROM DATA\n";
+      expect(extractDbtFinalSelectColumnNames(sql, "data")).toEqual(["a", "b"]);
+    });
+
+    it("ignores FROM table mentions inside comments and string literals", () => {
+      const sql = `
+-- SELECT bad.col AS bad_alias FROM data
+SELECT 'FROM data' AS string_literal
+FROM ignored
+
+SELECT
+  t.col1 AS a,
+  t.col2 AS b
+FROM data
+`;
+      expect(extractDbtFinalSelectColumnNames(sql, "data")).toEqual(["a", "b"]);
+    });
+
     it("rejects invalid FROM table names", () => {
       expect(() =>
         extractDbtFinalSelectColumnNames("\nSELECT\n  t.col1 AS a\nFROM data\n", "data.*"),
