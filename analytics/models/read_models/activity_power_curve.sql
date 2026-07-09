@@ -140,6 +140,7 @@ candidate_duration_windows AS (
         start_sample.user_id,
         start_sample.started_at,
         start_sample.recorded_at,
+        window_sample.row_number,
         duration_values.duration_seconds
 ),
 
