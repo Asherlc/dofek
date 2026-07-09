@@ -28,9 +28,8 @@ export function parseClickHouseActivitySourceMaps(
     });
     if (!result.success) {
       logger.warn(
-        "Invalid activity source map entry dropped: %s %o",
-        JSON.stringify(result.error.format()),
-        map,
+        `Invalid activity source map entry dropped: ${JSON.stringify(result.error.format())}`,
+        { map },
       );
       return [];
     }
