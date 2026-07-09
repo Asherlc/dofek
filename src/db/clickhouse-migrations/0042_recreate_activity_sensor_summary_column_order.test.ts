@@ -216,6 +216,8 @@ describe("0042_recreate_activity_sensor_summary_column_order", () => {
       const refreshVersionIndex = columns.indexOf("refresh_version");
       const climbingSecondsIndex = columns.indexOf("climbing_seconds");
 
+      expect(refreshVersionIndex).not.toBe(-1);
+      expect(climbingSecondsIndex).not.toBe(-1);
       expect(refreshVersionIndex).toBeGreaterThan(climbingSecondsIndex);
       expect(columns.slice(-3)).toEqual(["refresh_version", "is_deleted", "refreshed_at"]);
     });
@@ -225,6 +227,8 @@ describe("0042_recreate_activity_sensor_summary_column_order", () => {
       const refreshVersionIndex = columns.indexOf("refresh_version");
       const climbingSecondsIndex = columns.indexOf("climbing_seconds");
 
+      expect(refreshVersionIndex).not.toBe(-1);
+      expect(climbingSecondsIndex).not.toBe(-1);
       expect(refreshVersionIndex).toBeGreaterThan(climbingSecondsIndex);
       expect(columns.slice(-3)).toEqual(["refresh_version", "is_deleted", "refreshed_at"]);
     });
