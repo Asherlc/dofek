@@ -42,10 +42,13 @@ import { queryCache } from "dofek/lib/cache";
 import { authRouter } from "./auth.ts";
 
 const createCaller = createTestCallerFactory(authRouter);
-const routerConstructionCachePolicies = mockCachedProtectedQuery.mock.calls.map((call) => call[0]);
 
 describe("authRouter", () => {
   it("uses short caches for auth read queries", () => {
+    const routerConstructionCachePolicies = mockCachedProtectedQuery.mock.calls.map(
+      (call) => call[0],
+    );
+
     expect(routerConstructionCachePolicies).toEqual([{ maxAge: 120_000 }, { maxAge: 120_000 }]);
   });
 

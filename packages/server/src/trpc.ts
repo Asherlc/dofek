@@ -253,12 +253,21 @@ export function requestCacheTtl(policy: CachePolicy, timezone: string, now = new
   }
 }
 
+export function requestCacheKey(
+  userId: string | null,
+  path: string,
+  rawInput: unknown,
+  timezone: string,
+): string {
+  return `${userId ?? "anon"}:${timezone}:${path}:${JSON.stringify(rawInput)}`;
+}
+
 function cached(policy: CachePolicy) {
   return trpc.middleware(async ({ ctx, path, type, getRawInput, next }) => {
     const start = performance.now();
     const rawInput = await getRawInput();
     // Include userId in cache key to prevent cross-user data leaks
-    const key = `${ctx.userId ?? "anon"}:${path}:${JSON.stringify(rawInput)}`;
+    const key = requestCacheKey(ctx.userId, path, rawInput, ctx.timezone);
 
     // Cache lookup
     const cacheLookupStart = performance.now();

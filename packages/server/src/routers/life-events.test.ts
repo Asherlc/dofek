@@ -41,7 +41,6 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
 import { lifeEventsRouter } from "./life-events.ts";
 
 const createCaller = createTestCallerFactory(lifeEventsRouter);
-const routerConstructionCachePolicies = mockCachedProtectedQuery.mock.calls.map((call) => call[0]);
 
 function makeCaller(rows: Record<string, unknown>[] = []) {
   return createCaller({
@@ -84,6 +83,10 @@ function makeSensorStore(bodyRows: Record<string, unknown>[] = [], sleepRows: un
 
 describe("lifeEventsRouter", () => {
   it("uses short caches for life event read queries", () => {
+    const routerConstructionCachePolicies = mockCachedProtectedQuery.mock.calls.map(
+      (call) => call[0],
+    );
+
     expect(routerConstructionCachePolicies).toEqual([{ maxAge: 120_000 }, { maxAge: 120_000 }]);
   });
 

@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CacheTTL, requestCacheTtl } from "./trpc.ts";
+import { CacheTTL, requestCacheKey, requestCacheTtl } from "./trpc.ts";
+
+describe("requestCacheKey", () => {
+  it("separates cache entries by request timezone", () => {
+    const rawInput = { days: 30 };
+
+    expect(requestCacheKey("user-1", "training.rolling", rawInput, "UTC")).not.toBe(
+      requestCacheKey("user-1", "training.rolling", rawInput, "America/Los_Angeles"),
+    );
+  });
+});
 
 describe("requestCacheTtl", () => {
   afterEach(() => {

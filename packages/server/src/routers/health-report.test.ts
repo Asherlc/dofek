@@ -35,10 +35,13 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
 import { healthReportRouter } from "./health-report.ts";
 
 const createCaller = createTestCallerFactory(healthReportRouter);
-const routerConstructionCachePolicies = mockCachedProtectedQuery.mock.calls.map((call) => call[0]);
 
 describe("healthReportRouter", () => {
   it("uses a short cache for report list queries", () => {
+    const routerConstructionCachePolicies = mockCachedProtectedQuery.mock.calls.map(
+      (call) => call[0],
+    );
+
     expect(routerConstructionCachePolicies).toEqual([{ maxAge: 120_000 }]);
   });
 
