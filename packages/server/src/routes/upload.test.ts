@@ -657,6 +657,34 @@ describe("createUploadRouter", () => {
       const data = JSON.parse(res.body);
       expect(data.status).toBe("processing");
     });
+
+    it("accepts CSV upload when optional content type and extension headers are absent", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/kaya-export", {
+        body: Buffer.from("date,grade,gym\n2026-07-09,v3,Touchstone Pacific Pipe"),
+      });
+
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body)).toMatchObject({ status: "processing", jobId: "job-123" });
+    });
+
+    it("returns 500 and cleans up when Kaya upload fails", async () => {
+      vi.mocked(streamToFile).mockRejectedValueOnce(new Error("disk full"));
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/kaya-export", {
+        headers: { "Content-Type": "text/csv", "x-file-ext": ".csv" },
+        body: Buffer.from("data"),
+      });
+
+      expect(res.status).toBe(500);
+      expect(res.body).toContain("Upload failed");
+      expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("[kaya-export]"));
+      expect(logger.warn).toHaveBeenCalledWith(
+        "Failed to clean up tmp file %s: %s",
+        expect.stringContaining("kaya-export-"),
+        expect.any(Error),
+      );
+    });
   });
 
   describe("GET /api/upload/kaya-export/status/:jobId", () => {
@@ -665,6 +693,7 @@ describe("createUploadRouter", () => {
       queue.getJob.mockResolvedValueOnce(null);
       const res = await request(app, "get", "/api/upload/kaya-export/status/unknown");
       expect(res.status).toBe(404);
+      expect(res.body).toContain("Unknown job");
     });
 
     it("returns job status only for the authenticated user", async () => {
@@ -696,6 +725,7 @@ describe("createUploadRouter", () => {
       queue.getJob.mockResolvedValueOnce(mockJob);
       const res = await request(app, "get", "/api/upload/kaya-export/status/job-other");
       expect(res.status).toBe(403);
+      expect(res.body).toContain("Forbidden");
     });
   });
 

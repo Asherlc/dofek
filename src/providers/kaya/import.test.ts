@@ -172,6 +172,49 @@ describe("parseKayaExport", () => {
     ).toEqual(
       second.activities.flatMap((activity) => activity.entries.map((entry) => entry.externalId)),
     );
+    expect(first.activities.every((activity) => activity.externalId.length === 29)).toBe(true);
+    expect(
+      first.activities.every((activity) =>
+        activity.entries.every((entry) => entry.externalId.length === 27),
+      ),
+    ).toBe(true);
+  });
+
+  it("uses stable entry hash inputs that distinguish route name, color, and row number", () => {
+    const csv = `${kayaHeader}
+Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,Route A,Touchstone Pacific Pipe,,
+Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Blue,Route A,Touchstone Pacific Pipe,,
+Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,Route B,Touchstone Pacific Pipe,,`;
+
+    const entryIds = parseKayaExport(csv).activities.flatMap((activity) =>
+      activity.entries.map((entry) => entry.externalId),
+    );
+
+    expect(new Set(entryIds).size).toBe(3);
+  });
+
+  it("maps Yosemite Decimal System rows to route climbs and trims nullable text fields", () => {
+    const csv = `${kayaHeader}
+ Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00) ,0,,Redpoint,,5.10a, Green , Lead Route , Touchstone Pacific Pipe , Oakland , USA `;
+
+    const result = parseKayaExport(csv);
+
+    expect(result.errors).toEqual([]);
+    expect(result.activities[0]?.startedAt.toISOString()).toBe("2026-07-09T14:22:19.000Z");
+    expect(result.activities[0]?.locationName).toBe("Touchstone Pacific Pipe");
+    expect(result.activities[0]?.entries[0]).toMatchObject({
+      climbType: "route",
+      gradeSystem: "yds",
+      grade: "5.10a",
+      routeName: "Lead Route",
+      locationName: "Touchstone Pacific Pipe",
+      raw: {
+        color: "Green",
+        climbName: "Lead Route",
+        location: "Oakland",
+        country: "USA",
+      },
+    });
   });
 
   it("reports invalid rows with specific messages", () => {
@@ -224,6 +267,20 @@ not-a-date,0,,Redpoint,,v3,Pink,,Touchstone Pacific Pipe,,`;
     );
   });
 
+  it("handles BOM, CRLF rows, quoted commas, escaped quotes, and unterminated quotes", () => {
+    const csv = `\uFEFF${kayaHeader}\r
+Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,"Route, With ""Quote""",Touchstone Pacific Pipe,,\r
+`;
+
+    const result = parseKayaExport(csv);
+    expect(result.errors).toEqual([]);
+    expect(result.activities[0]?.entries[0]?.routeName).toBe('Route, With "Quote"');
+    expect(parseKayaExport(`${kayaHeader}\n"unterminated`).errors).toEqual([
+      { rowNumber: 2, message: "row 2: malformed CSV row" },
+    ]);
+    expect(parseKayaExport(`${kayaHeader}\n   ,   ,   `).activities).toEqual([]);
+  });
+
   it("imports provider activity and climbing entries inside a transaction", async () => {
     const { db, deleteWhere, insertValues, transactionDb } = makeTransactionalImportDb();
 
@@ -242,6 +299,15 @@ not-a-date,0,,Redpoint,,v3,Pink,,Touchstone Pacific Pipe,,`;
       expect.objectContaining({ providerId: "kaya-export", userId: "user-1" }),
       expect.any(Object),
     );
+    expect(mockUpsertProviderActivity).toHaveBeenCalledWith(
+      transactionDb,
+      expect.objectContaining({
+        raw: { locationName: "Touchstone Great Western Power Company", source: "kaya-export" },
+      }),
+      expect.objectContaining({
+        raw: { locationName: "Touchstone Great Western Power Company", source: "kaya-export" },
+      }),
+    );
     expect(transactionDb.delete).toHaveBeenCalledTimes(3);
     expect(deleteWhere).toHaveBeenCalledTimes(3);
     expect(transactionDb.insert).toHaveBeenCalledTimes(3);
@@ -249,11 +315,65 @@ not-a-date,0,,Redpoint,,v3,Pink,,Touchstone Pacific Pipe,,`;
       expect.arrayContaining([
         expect.objectContaining({
           activityId: "activity-1",
+          externalId: expect.stringMatching(/^kaya:entry:[a-f0-9]{16}$/),
           grade: "V0",
           sourceName: "Kaya",
         }),
       ]),
     );
     expect(result.recordsSynced).toBe(6);
+  });
+
+  it("returns parse errors with row external ids and import duration", async () => {
+    const { db, transactionDb } = makeTransactionalImportDb();
+    mockUpsertProviderActivity.mockResolvedValueOnce(undefined);
+    const dateNowSpy = vi
+      .spyOn(Date, "now")
+      .mockReturnValueOnce(10_000)
+      .mockReturnValueOnce(12_500);
+
+    const result = await importKayaExportFile(
+      db,
+      `${kayaHeader}
+not-a-date,0,,Redpoint,,v3,Pink,,Touchstone Pacific Pipe,,
+Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Project,,v3,Pink,,Touchstone Pacific Pipe,,`,
+      "user-1",
+    );
+
+    expect(result).toMatchObject({
+      provider: "kaya-export",
+      recordsSynced: 0,
+      duration: 2500,
+      errors: [
+        { message: "row 2: date is not a valid Kaya date", externalId: "row-2" },
+        { message: "row 3: ascent_type is unsupported", externalId: "row-3" },
+      ],
+    });
+    expect(mockEnsureProvider).toHaveBeenCalledWith(
+      transactionDb,
+      "kaya-export",
+      "Kaya",
+      undefined,
+      "user-1",
+    );
+    expect(transactionDb.delete).not.toHaveBeenCalled();
+    expect(transactionDb.insert).not.toHaveBeenCalled();
+
+    dateNowSpy.mockRestore();
+  });
+
+  it("returns header parse errors without row external ids", async () => {
+    const result = await importKayaExportFile(
+      makeTransactionalImportDb().db,
+      "wrong,header\nvalue",
+      "user-1",
+    );
+
+    expect(result.errors).toEqual([
+      {
+        message: "header does not match Kaya export format",
+        externalId: undefined,
+      },
+    ]);
   });
 });

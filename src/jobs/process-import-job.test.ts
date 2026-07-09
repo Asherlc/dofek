@@ -435,6 +435,53 @@ describe("processImportJob", () => {
         expect.stringContaining("4 climbing entries imported"),
       );
     });
+
+    it("fails loudly when Kaya import runs without transactional database support", async () => {
+      await writeFile(tempFilePath, "csv data");
+      const nonTransactionalDb: SyncDatabase = {
+        select: vi.fn(),
+        insert: vi.fn(),
+        delete: vi.fn(),
+        execute: vi.fn(),
+      };
+      const job = createMockJob({ filePath: tempFilePath, importType: "kaya-export" });
+
+      await expect(runImportJob(job, nonTransactionalDb)).rejects.toThrow(
+        "Kaya export import requires a transactional database",
+      );
+      expect(mockImportKayaExportFile).not.toHaveBeenCalled();
+    });
+
+    it("logs Kaya errors and duration precisely", async () => {
+      await writeFile(tempFilePath, "csv data");
+      mockImportKayaExportFile.mockResolvedValueOnce({
+        recordsSynced: 0,
+        errors: [{ message: "row 2: grade is unsupported" }],
+      });
+      let callCount = 0;
+      const dateNowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
+        return callCount++ === 0 ? 10_000 : 12_500;
+      });
+
+      const job = createMockJob({ filePath: tempFilePath, importType: "kaya-export" });
+      await runImportJob(job, mockDb);
+
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        expect.stringContaining("0 climbing entries imported, 1 errors in 2.5s"),
+      );
+      expect(mockLogSync).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({
+          providerId: "kaya-export",
+          status: "error",
+          recordCount: 0,
+          errorMessage: "row 2: grade is unsupported",
+          durationMs: 2500,
+        }),
+      );
+
+      dateNowSpy.mockRestore();
+    });
   });
 
   describe("zos-app import", () => {

@@ -1,5 +1,10 @@
 import { StrainScore } from "@dofek/scoring/scoring";
 import { describe, expect, it, vi } from "vitest";
+import {
+  ClimbingGradeProgression,
+  ClimbingSessionSummary,
+  ClimbingVolumeByGrade,
+} from "../repositories/climbing-repository.ts";
 import { VerticalAscentModel } from "../repositories/cycling-advanced-models.ts";
 import { loadMobileTrainingTab } from "./mobile-training-tab.ts";
 
@@ -57,6 +62,45 @@ describe("loadMobileTrainingTab", () => {
     return { trainingSpy, cyclingSpy };
   }
 
+  async function mockClimbingRepos() {
+    const repository = (await import("../repositories/climbing-repository.ts")).ClimbingRepository
+      .prototype;
+    const gradeProgressionSpy = vi.spyOn(repository, "getGradeProgression").mockResolvedValue([
+      new ClimbingGradeProgression({
+        date: "2026-03-28",
+        climbType: "boulder",
+        gradeSystem: "v_scale",
+        grade: "V4",
+        gradeSortValue: 4,
+      }),
+    ]);
+    const volumeByGradeSpy = vi.spyOn(repository, "getVolumeByGrade").mockResolvedValue([
+      new ClimbingVolumeByGrade({
+        climbType: "route",
+        gradeSystem: "yds",
+        grade: "5.10a",
+        gradeSortValue: 5101,
+        attempts: 3,
+        sends: 2,
+      }),
+    ]);
+    const sessionSummarySpy = vi.spyOn(repository, "getSessionSummaries").mockResolvedValue([
+      new ClimbingSessionSummary({
+        activityId: "climb-1",
+        date: "2026-03-28",
+        name: "Kaya climbing at Touchstone Pacific Pipe",
+        locationName: "Touchstone Pacific Pipe",
+        attempts: 8,
+        sends: 5,
+        hardestBoulderGrade: "V4",
+        hardestBoulderGradeSortValue: 4,
+        hardestRouteGrade: "5.10a",
+        hardestRouteGradeSortValue: 5101,
+      }),
+    ]);
+    return { gradeProgressionSpy, volumeByGradeSpy, sessionSummarySpy };
+  }
+
   it("returns workload ratio, strain target, activities, weekly volume, and vertical ascent", async () => {
     const query = makeQuery(
       [
@@ -106,6 +150,7 @@ describe("loadMobileTrainingTab", () => {
         }),
       ],
     );
+    const climbingRepos = await mockClimbingRepos();
 
     const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
 
@@ -118,9 +163,47 @@ describe("loadMobileTrainingTab", () => {
     expect(result.activities).toHaveLength(1);
     expect(result.weeklyVolume).toHaveLength(1);
     expect(result.verticalAscent[0]?.verticalAscentRate).toBe(1000);
+    expect(result.climbing).toEqual({
+      gradeProgression: [
+        {
+          date: "2026-03-28",
+          climbType: "boulder",
+          gradeSystem: "v_scale",
+          grade: "V4",
+          gradeSortValue: 4,
+        },
+      ],
+      volumeByGrade: [
+        {
+          climbType: "route",
+          gradeSystem: "yds",
+          grade: "5.10a",
+          gradeSortValue: 5101,
+          attempts: 3,
+          sends: 2,
+        },
+      ],
+      sessionSummary: [
+        {
+          activityId: "climb-1",
+          date: "2026-03-28",
+          name: "Kaya climbing at Touchstone Pacific Pipe",
+          locationName: "Touchstone Pacific Pipe",
+          attempts: 8,
+          sends: 5,
+          hardestBoulderGrade: "V4",
+          hardestBoulderGradeSortValue: 4,
+          hardestRouteGrade: "5.10a",
+          hardestRouteGradeSortValue: 5101,
+        },
+      ],
+    });
 
     repos.trainingSpy.mockRestore();
     repos.cyclingSpy.mockRestore();
+    climbingRepos.gradeProgressionSpy.mockRestore();
+    climbingRepos.volumeByGradeSpy.mockRestore();
+    climbingRepos.sessionSummarySpy.mockRestore();
   });
 
   it("returns empty workload ratio defaults when no strain rows exist", async () => {

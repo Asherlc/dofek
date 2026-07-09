@@ -55,6 +55,10 @@ function stripExpiry(status: UploadStatus): Omit<UploadStatus, "expiresAt"> {
   };
 }
 
+function routeParam(value: string | string[] | undefined): string | null {
+  return typeof value === "string" ? value : null;
+}
+
 function inProgressStatus(
   status: "uploading" | "assembling",
   progress: number,
@@ -203,7 +207,13 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
       return;
     }
 
-    const status = await getImportJobStatus(importQueue, req.params.jobId);
+    const jobId = routeParam(req.params.jobId);
+    if (!jobId) {
+      res.status(400).json({ error: "Missing job id" });
+      return;
+    }
+
+    const status = await getImportJobStatus(importQueue, jobId);
     if (!status) {
       res.status(404).json({ error: "Unknown job" });
       return;
@@ -389,7 +399,13 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
     const userId = await authenticate(req, res, db);
     if (!userId) return;
 
-    const status = await getImportJobStatus(importQueue, req.params.jobId);
+    const jobId = routeParam(req.params.jobId);
+    if (!jobId) {
+      res.status(400).json({ error: "Missing job id" });
+      return;
+    }
+
+    const status = await getImportJobStatus(importQueue, jobId);
     if (!status) {
       res.status(404).json({ error: "Unknown job" });
       return;
@@ -438,7 +454,13 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
     const userId = await authenticate(req, res, db);
     if (!userId) return;
 
-    const status = await getImportJobStatus(importQueue, req.params.jobId);
+    const jobId = routeParam(req.params.jobId);
+    if (!jobId) {
+      res.status(400).json({ error: "Missing job id" });
+      return;
+    }
+
+    const status = await getImportJobStatus(importQueue, jobId);
     if (!status) {
       res.status(404).json({ error: "Unknown job" });
       return;
@@ -490,7 +512,13 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
     const userId = await authenticate(req, res, db);
     if (!userId) return;
 
-    const status = await getImportJobStatus(importQueue, req.params.jobId);
+    const jobId = routeParam(req.params.jobId);
+    if (!jobId) {
+      res.status(400).json({ error: "Missing job id" });
+      return;
+    }
+
+    const status = await getImportJobStatus(importQueue, jobId);
     if (!status) {
       res.status(404).json({ error: "Unknown job" });
       return;
@@ -542,7 +570,13 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
     const userId = await authenticate(req, res, db);
     if (!userId) return;
 
-    const status = await getImportJobStatus(importQueue, req.params.jobId);
+    const jobId = routeParam(req.params.jobId);
+    if (!jobId) {
+      res.status(400).json({ error: "Missing job id" });
+      return;
+    }
+
+    const status = await getImportJobStatus(importQueue, jobId);
     if (!status) {
       res.status(404).json({ error: "Unknown job" });
       return;
