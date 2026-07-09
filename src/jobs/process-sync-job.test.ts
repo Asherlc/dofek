@@ -812,16 +812,15 @@ describe("processSyncJob", () => {
 
     await runSyncJob(createMockJob(), mockDb);
 
-    // First error: uses the cause as the exception
-    expect(mockCaptureException).toHaveBeenCalledWith(cause, {
-      tags: { provider: "partial" },
-      extra: context,
-    });
-    // Second error: creates an Error from the message
-    expect(mockCaptureException).toHaveBeenCalledWith(
+    expect(mockCaptureException).toHaveBeenCalledTimes(2);
+    expect(mockCaptureException.mock.calls[0]).toEqual([
+      cause,
+      { tags: { provider: "partial" }, extra: context },
+    ]);
+    expect(mockCaptureException.mock.calls[1]).toEqual([
       expect.objectContaining({ message: "bad record 2" }),
       { tags: { provider: "partial" } },
-    );
+    ]);
   });
 
   it("does not report returned provider auth errors to Sentry", async () => {

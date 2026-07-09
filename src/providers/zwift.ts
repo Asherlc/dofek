@@ -336,9 +336,6 @@ export class ZwiftProvider implements SyncProvider {
                       cause: streamErr,
                       context: {
                         activityId: raw.id,
-                        activityStart: raw.startDate,
-                        activitySport: raw.sport,
-                        activityDistanceMeters: raw.distanceInMeters,
                       },
                     });
                   }
