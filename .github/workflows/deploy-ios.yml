@@ -191,6 +191,7 @@ jobs:
             APP_STORE_CONNECT_KEY_BASE64
             IOS_DISTRIBUTION_CERT_BASE64
             IOS_DISTRIBUTION_CERT_PASSWORD
+            SENTRY_AUTH_TOKEN
             EXPO_PUBLIC_SENTRY_DSN
             EXPO_PUBLIC_OTEL_ENDPOINT
             EXPO_PUBLIC_OTEL_HEADERS
@@ -198,6 +199,14 @@ jobs:
         run: |
           if [ -z "${EXPO_PUBLIC_SENTRY_DSN:-}" ]; then
             echo "::error::Missing EXPO_PUBLIC_SENTRY_DSN secret required by packages/mobile/lib/telemetry.ts"
+            exit 1
+          fi
+          if [ -z "${EXPO_PUBLIC_OTEL_ENDPOINT:-}" ]; then
+            echo "::error::Missing EXPO_PUBLIC_OTEL_ENDPOINT secret required by packages/mobile/lib/telemetry.ts"
+            exit 1
+          fi
+          if [ -z "${SENTRY_AUTH_TOKEN:-}" ]; then
+            echo "::error::Missing SENTRY_AUTH_TOKEN secret required for mobile sourcemap upload"
             exit 1
           fi
       - name: Generate native project
@@ -229,8 +238,6 @@ jobs:
           mkdir -p ~/private_keys
           echo -n "$APP_STORE_CONNECT_KEY_BASE64" | base64 --decode > ~/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8
       - name: Archive (Release, signed)
-        env:
-          SENTRY_DISABLE_AUTO_UPLOAD: "true"
         run: |
           set -o pipefail
           TEAM_ID=$(/usr/libexec/PlistBuddy -c "Print :teamID" packages/mobile/build/ExportOptions.plist)

@@ -47,23 +47,30 @@ pnpm start
 
 `lib/telemetry.ts` always reports exceptions to Sentry via `EXPO_PUBLIC_SENTRY_DSN`.
 
-To export mobile OpenTelemetry logs to Axiom, set both of these public env vars in Infisical (`prod`):
+To export mobile OpenTelemetry logs to Axiom, set this public env var in Infisical (`prod`):
 
 - `EXPO_PUBLIC_OTEL_ENDPOINT` (for example, `https://api.axiom.co/v1/logs`)
-- `EXPO_PUBLIC_OTEL_HEADERS` (for example, `Authorization=Bearer <token>,x-axiom-dataset=<dataset>`)
 
-Mobile workflows load all runtime env values from Infisical via GitHub OIDC (`.github/actions/load-infisical-secrets`), including:
+If the collector requires headers, set `EXPO_PUBLIC_OTEL_HEADERS` (for example, `Authorization=Bearer <token>,x-axiom-dataset=<dataset>`). Expo embeds `EXPO_PUBLIC_*` values in the client bundle, so only use write-only ingest credentials here (https://docs.expo.dev/guides/environment-variables/#reading-environment-variables-from-env-files).
+
+Mobile workflows load secrets from Infisical via GitHub OIDC ([`load-infisical-secrets`](../../.github/actions/load-infisical-secrets/action.yml)). Runtime env vars loaded into the app bundle:
 
 - `EXPO_PUBLIC_SENTRY_DSN`
 - `EXPO_PUBLIC_OTEL_ENDPOINT`
-- `EXPO_PUBLIC_OTEL_HEADERS`
+- `EXPO_PUBLIC_OTEL_HEADERS` (optional)
+
+Workflow-only secrets loaded by iOS and OTA workflows ([iOS](../../.github/workflows/deploy-ios.yml), [OTA](../../.github/workflows/deploy-ota.yml)):
+
+- `SENTRY_AUTH_TOKEN` (iOS and OTA sourcemap uploads)
 - `EXPO_TOKEN` (OTA workflows)
 
-Use a dedicated write-only ingest token for mobile OTEL headers (do not reuse broad admin/read tokens).
+The shared Infisical action fails when a requested secret is missing, so keep this list aligned with each workflow's `keys` block ([source](../../.github/actions/load-infisical-secrets/action.yml)).
 
-Workflows that must include these vars:
+Use a dedicated write-only ingest token for mobile OTEL headers if the collector needs authentication. Do not reuse broad admin/read tokens.
 
-- `.github/workflows/build-mobile.yml`
-- `.github/workflows/deploy-ios.yml`
-- `.github/workflows/deploy-ota.yml`
-- `.github/workflows/mobile-preview-ota.yml`
+Workflow key requirements:
+
+- `.github/workflows/build-mobile.yml`: `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
+- `.github/workflows/deploy-ios.yml`: `SENTRY_AUTH_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
+- `.github/workflows/deploy-ota.yml`: `EXPO_TOKEN`, `SENTRY_AUTH_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
+- `.github/workflows/mobile-preview-ota.yml`: `EXPO_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
