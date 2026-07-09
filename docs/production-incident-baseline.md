@@ -12048,3 +12048,20 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Existing corrupted production rows need a
   post-deploy read-model rebuild or targeted backfill so already-affected
   activities receive corrected power aggregates.
+
+## 2026-07-08 — CI Docker Image Build Failing on Python Runtime Copy
+
+- **Symptoms:** CI jobs that build the server image failed before E2E tests and
+  image vulnerability scanning could run.
+- **User impact:** Pull request CI was blocked; no production runtime impact.
+- **Evidence:** The image build failed in the server stage with
+  `"/usr/local/bin/python3.13": not found` and
+  `"/usr/local/lib/python3.13": not found` while copying from the `dbt-tools`
+  stage.
+- **Root cause:** The `dbt-tools` stage had moved to `python:3.14-alpine`, but
+  the server stage still copied hardcoded Python 3.13 binary and library paths.
+- **Fix / mitigation:** Updated the server-stage copy paths to Python 3.14 and
+  tightened `.dockerignore` so local nested `node_modules` and `dist` artifacts
+  cannot overwrite the clean in-image pnpm install during Docker validation.
+- **Validation:** `docker build --target server --progress=plain .` completed
+  successfully after the fix.
