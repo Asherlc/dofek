@@ -213,7 +213,12 @@ export default function StrainScreen() {
   const verticalAscent = trainingData?.verticalAscent ?? [];
   const climbingParsed = parseMobileClimbingData(trainingData?.climbing);
   const climbingModel = new ClimbingSectionModel(climbingParsed.data);
-  const shouldShowClimbingSection = !trainingQuery.isError || trainingData?.climbing != null;
+  const hasCachedTrainingData = trainingData != null;
+  const hasCachedClimbingData = trainingData?.climbing != null;
+  const shouldShowTrainingQueryError = trainingQuery.isError && !hasCachedTrainingData;
+  const shouldShowClimbingError =
+    climbingParsed.error !== null || (trainingQuery.isError && !hasCachedClimbingData);
+  const shouldShowClimbingSection = !trainingQuery.isError || hasCachedClimbingData;
   const collapsedWeeklyVolume = collapseWeeklyVolumeActivityTypes(weeklyVolume, 6);
   const activityTypeTotalsMap = new Map<string, number>();
   for (const row of collapsedWeeklyVolume) {
@@ -407,10 +412,10 @@ export default function StrainScreen() {
 
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Climbing</Text>
-            {trainingQuery.isError || climbingParsed.error ? (
+            {shouldShowClimbingError ? (
               <Text style={styles.errorText}>
-                {trainingQuery.error?.message ??
-                  climbingParsed.error?.message ??
+                {climbingParsed.error?.message ??
+                  trainingQuery.error?.message ??
                   "Failed to load climbing data."}
               </Text>
             ) : null}
@@ -418,7 +423,7 @@ export default function StrainScreen() {
           </View>
 
           {/* Weekly volume summary */}
-          {(trainingQuery.isError || weeklyVolumeParsed.error) && (
+          {(shouldShowTrainingQueryError || weeklyVolumeParsed.error) && (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Weekly Volume</Text>
               <Text style={styles.errorText}>
@@ -428,38 +433,42 @@ export default function StrainScreen() {
               </Text>
             </View>
           )}
-          {!trainingQuery.isError && !weeklyVolumeParsed.error && weeklyVolume.length > 0 && (
-            <View style={styles.card}>
-              <ChartTitleWithTooltip
-                title="Weekly Volume"
-                description="This chart shows your total training hours by week."
-                textStyle={styles.cardTitle}
-              />
-              <View style={styles.volumeStack}>
-                {aggregateWeeklyVolume(weeklyVolume).map((week) => (
-                  <View key={week.week} style={styles.volumeRow}>
-                    <Text style={styles.volumeDate}>{formatDateShort(week.week)}</Text>
-                    <View style={styles.volumeBarTrack}>
-                      <View style={[styles.volumeBarFill, { width: `${week.fraction * 100}%` }]} />
+          {!shouldShowTrainingQueryError &&
+            !weeklyVolumeParsed.error &&
+            weeklyVolume.length > 0 && (
+              <View style={styles.card}>
+                <ChartTitleWithTooltip
+                  title="Weekly Volume"
+                  description="This chart shows your total training hours by week."
+                  textStyle={styles.cardTitle}
+                />
+                <View style={styles.volumeStack}>
+                  {aggregateWeeklyVolume(weeklyVolume).map((week) => (
+                    <View key={week.week} style={styles.volumeRow}>
+                      <Text style={styles.volumeDate}>{formatDateShort(week.week)}</Text>
+                      <View style={styles.volumeBarTrack}>
+                        <View
+                          style={[styles.volumeBarFill, { width: `${week.fraction * 100}%` }]}
+                        />
+                      </View>
+                      <Text style={styles.volumeHours} numberOfLines={1} ellipsizeMode="tail">
+                        {formatDurationMinutes(week.hours * 60)}
+                      </Text>
                     </View>
-                    <Text style={styles.volumeHours} numberOfLines={1} ellipsizeMode="tail">
-                      {formatDurationMinutes(week.hours * 60)}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-              {activityTypeTotals.length > 0 && (
-                <View style={styles.activityTypeSummary}>
-                  {activityTypeTotals.map((entry) => (
-                    <Text key={entry.activityType} style={styles.activityTypeSummaryItem}>
-                      {formatActivityTypeLabel(entry.activityType)}:{" "}
-                      {formatDurationMinutes(entry.hours * 60)}
-                    </Text>
                   ))}
                 </View>
-              )}
-            </View>
-          )}
+                {activityTypeTotals.length > 0 && (
+                  <View style={styles.activityTypeSummary}>
+                    {activityTypeTotals.map((entry) => (
+                      <Text key={entry.activityType} style={styles.activityTypeSummaryItem}>
+                        {formatActivityTypeLabel(entry.activityType)}:{" "}
+                        {formatDurationMinutes(entry.hours * 60)}
+                      </Text>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
 
           {/* Recent activities */}
           <View style={styles.section}>
@@ -475,7 +484,7 @@ export default function StrainScreen() {
             </View>
             {isLoading ? (
               <ActivityIndicator color={colors.accent} style={styles.activitiesLoader} />
-            ) : trainingQuery.isError || activitiesParsed.error ? (
+            ) : shouldShowTrainingQueryError || activitiesParsed.error ? (
               <Text style={styles.errorText}>
                 {trainingQuery.error?.message ?? "Failed to load activities."}
               </Text>

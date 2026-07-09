@@ -508,7 +508,7 @@ describe("StrainScreen recent activity navigation", () => {
     const { default: StrainScreen } = await import("./strain");
     render(<StrainScreen />);
 
-    expect(screen.getAllByText("Climbing refresh failed").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Climbing refresh failed")).toBeNull();
     expect(screen.getByText("Best Boulder Grade")).toBeTruthy();
     expect(screen.getByText("V4")).toBeTruthy();
   });
