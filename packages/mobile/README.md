@@ -68,9 +68,9 @@ The shared Infisical action fails when a requested secret is missing, so keep th
 
 Use a dedicated write-only ingest token for mobile OTEL headers if the collector needs authentication. Do not reuse broad admin/read tokens.
 
-Workflows that must include these values:
+Workflow key requirements:
 
-- `.github/workflows/build-mobile.yml`
-- `.github/workflows/deploy-ios.yml`
-- `.github/workflows/deploy-ota.yml`
-- `.github/workflows/mobile-preview-ota.yml`
+- `.github/workflows/build-mobile.yml`: `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
+- `.github/workflows/deploy-ios.yml`: `SENTRY_AUTH_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
+- `.github/workflows/deploy-ota.yml`: `EXPO_TOKEN`, `SENTRY_AUTH_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
+- `.github/workflows/mobile-preview-ota.yml`: `EXPO_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
