@@ -1,5 +1,5 @@
 import { StrainScore } from "@dofek/scoring/scoring";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ClimbingGradeProgression,
   ClimbingSessionSummary,
@@ -13,6 +13,10 @@ vi.mock("dofek/personalization/storage", () => ({
 }));
 
 describe("loadMobileTrainingTab", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   function makeQuery(
     strainRows: unknown[] = [],
     readinessRows: unknown[] = [],
@@ -122,7 +126,7 @@ describe("loadMobileTrainingTab", () => {
         },
       ],
     );
-    const repos = await mockTrainingRepos(
+    await mockTrainingRepos(
       [
         {
           id: "act-1",
@@ -150,7 +154,7 @@ describe("loadMobileTrainingTab", () => {
         }),
       ],
     );
-    const climbingRepos = await mockClimbingRepos();
+    await mockClimbingRepos();
 
     const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
 
@@ -198,16 +202,10 @@ describe("loadMobileTrainingTab", () => {
         },
       ],
     });
-
-    repos.trainingSpy.mockRestore();
-    repos.cyclingSpy.mockRestore();
-    climbingRepos.gradeProgressionSpy.mockRestore();
-    climbingRepos.volumeByGradeSpy.mockRestore();
-    climbingRepos.sessionSummarySpy.mockRestore();
   });
 
   it("returns empty workload ratio defaults when no strain rows exist", async () => {
-    const repos = await mockTrainingRepos();
+    await mockTrainingRepos();
 
     const result = await loadMobileTrainingTab(makeCtx(makeQuery()), 30, "2026-03-28");
 
@@ -216,13 +214,10 @@ describe("loadMobileTrainingTab", () => {
     expect(result.workloadRatio.displayedDate).toBeNull();
     expect(result.strainTarget.currentStrain).toBe(0);
     expect(result.strainTarget.progressPercent).toBe(0);
-
-    repos.trainingSpy.mockRestore();
-    repos.cyclingSpy.mockRestore();
   });
 
   it("rounds workload ratio fields to expected precision", async () => {
-    const repos = await mockTrainingRepos();
+    await mockTrainingRepos();
     const query = makeQuery([
       {
         date: "2026-03-01",
@@ -241,13 +236,10 @@ describe("loadMobileTrainingTab", () => {
     expect(row?.chronicLoad).toBe(400.8);
     expect(row?.workloadRatio).toBe(1.26);
     expect(row?.strain).toBe(StrainScore.fromRawLoad(125.7).value);
-
-    repos.trainingSpy.mockRestore();
-    repos.cyclingSpy.mockRestore();
   });
 
   it("handles null workload_ratio in strain rows", async () => {
-    const repos = await mockTrainingRepos();
+    await mockTrainingRepos();
     const query = makeQuery([
       {
         date: "2026-03-01",
@@ -261,13 +253,10 @@ describe("loadMobileTrainingTab", () => {
     const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
 
     expect(result.workloadRatio.timeSeries[0]?.workloadRatio).toBeNull();
-
-    repos.trainingSpy.mockRestore();
-    repos.cyclingSpy.mockRestore();
   });
 
   it("uses default readiness score when no recovery summary exists", async () => {
-    const repos = await mockTrainingRepos();
+    await mockTrainingRepos();
     const query = makeQuery([
       {
         date: "2026-03-28",
@@ -281,13 +270,10 @@ describe("loadMobileTrainingTab", () => {
     const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
 
     expect(result.strainTarget.readinessScore).toBe(50);
-
-    repos.trainingSpy.mockRestore();
-    repos.cyclingSpy.mockRestore();
   });
 
   it("workloadRatio is null when chronicLoad is zero", async () => {
-    const repos = await mockTrainingRepos();
+    await mockTrainingRepos();
     const query = makeQuery([
       {
         date: "2026-03-28",
@@ -301,14 +287,11 @@ describe("loadMobileTrainingTab", () => {
     const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
 
     expect(result.strainTarget.workloadRatio).toBeNull();
-
-    repos.trainingSpy.mockRestore();
-    repos.cyclingSpy.mockRestore();
   });
 
   it("passes limited access windows to strain and recovery queries", async () => {
     const query = makeQuery();
-    const repos = await mockTrainingRepos();
+    await mockTrainingRepos();
     const accessWindow = {
       kind: "limited" as const,
       paid: false as const,
@@ -345,14 +328,11 @@ describe("loadMobileTrainingTab", () => {
       accessStartDate: "2026-03-10",
       accessEndDateExclusive: "2026-03-20",
     });
-
-    repos.trainingSpy.mockRestore();
-    repos.cyclingSpy.mockRestore();
   });
 
   it("passes dashboard priority to training dashboard read-model queries", async () => {
     const query = makeQuery();
-    const repos = await mockTrainingRepos();
+    await mockTrainingRepos();
 
     await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
 
@@ -365,13 +345,10 @@ describe("loadMobileTrainingTab", () => {
     for (const queryCall of dashboardQueryCalls) {
       expect(queryCall[3]).toEqual({ priority: "dashboard" });
     }
-
-    repos.trainingSpy.mockRestore();
-    repos.cyclingSpy.mockRestore();
   });
 
   it("sets displayedDate from the most recent strain row", async () => {
-    const repos = await mockTrainingRepos();
+    await mockTrainingRepos();
     const query = makeQuery([
       {
         date: "2026-03-27",
@@ -393,14 +370,11 @@ describe("loadMobileTrainingTab", () => {
 
     expect(result.workloadRatio.displayedDate).toBe("2026-03-28");
     expect(result.strainTarget.progressPercent).toBeGreaterThan(0);
-
-    repos.trainingSpy.mockRestore();
-    repos.cyclingSpy.mockRestore();
   });
 
   it("does not add access filters when access window is full", async () => {
     const query = makeQuery();
-    const repos = await mockTrainingRepos();
+    await mockTrainingRepos();
 
     await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
 
@@ -413,13 +387,10 @@ describe("loadMobileTrainingTab", () => {
 
     expect(String(strainQuery?.[1])).not.toContain("accessStartDate");
     expect(String(recoveryQuery?.[1])).not.toContain("accessStartDate");
-
-    repos.trainingSpy.mockRestore();
-    repos.cyclingSpy.mockRestore();
   });
 
   it("uses default readiness component scores when recovery fields are null", async () => {
-    const repos = await mockTrainingRepos();
+    await mockTrainingRepos();
     const query = makeQuery(
       [
         {
@@ -444,13 +415,10 @@ describe("loadMobileTrainingTab", () => {
     const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
 
     expect(result.strainTarget.readinessScore).toBeGreaterThan(62);
-
-    repos.trainingSpy.mockRestore();
-    repos.cyclingSpy.mockRestore();
   });
 
   it("computes acute and chronic loads from rolling daily loads", async () => {
-    const repos = await mockTrainingRepos();
+    await mockTrainingRepos();
     const query = makeQuery([
       {
         date: "2026-03-28",
@@ -481,13 +449,10 @@ describe("loadMobileTrainingTab", () => {
     expect(result.strainTarget.acuteLoad).toBe(20);
     expect(result.strainTarget.chronicLoad).toBe(15);
     expect(result.strainTarget.workloadRatio).toBe(1.33);
-
-    repos.trainingSpy.mockRestore();
-    repos.cyclingSpy.mockRestore();
   });
 
   it("uses the end-date row for daily load instead of the first strain row", async () => {
-    const repos = await mockTrainingRepos();
+    await mockTrainingRepos();
     const query = makeQuery([
       {
         date: "2026-03-27",
@@ -509,13 +474,10 @@ describe("loadMobileTrainingTab", () => {
 
     expect(result.strainTarget.dailyLoad).toBe(42);
     expect(result.strainTarget.currentStrain).toBe(StrainScore.fromRawLoad(42).value);
-
-    repos.trainingSpy.mockRestore();
-    repos.cyclingSpy.mockRestore();
   });
 
   it("computes progress percent from current and target strain", async () => {
-    const repos = await mockTrainingRepos();
+    await mockTrainingRepos();
     const query = makeQuery([
       {
         date: "2026-03-28",
@@ -530,13 +492,10 @@ describe("loadMobileTrainingTab", () => {
 
     expect(result.strainTarget.progressPercent).toBeGreaterThan(0);
     expect(result.strainTarget.progressPercent).toBeLessThanOrEqual(200);
-
-    repos.trainingSpy.mockRestore();
-    repos.cyclingSpy.mockRestore();
   });
 
   it("excludes loads exactly seven days ago from the acute window", async () => {
-    const repos = await mockTrainingRepos();
+    await mockTrainingRepos();
     const query = makeQuery([
       {
         date: "2026-03-21",
@@ -551,13 +510,10 @@ describe("loadMobileTrainingTab", () => {
 
     expect(result.strainTarget.acuteLoad).toBe(0);
     expect(result.strainTarget.chronicLoad).toBe(2.5);
-
-    repos.trainingSpy.mockRestore();
-    repos.cyclingSpy.mockRestore();
   });
 
   it("includes loads six days ago in the acute window", async () => {
-    const repos = await mockTrainingRepos();
+    await mockTrainingRepos();
     const query = makeQuery([
       {
         date: "2026-03-22",
@@ -571,13 +527,10 @@ describe("loadMobileTrainingTab", () => {
     const result = await loadMobileTrainingTab(makeCtx(query), 30, "2026-03-28");
 
     expect(result.strainTarget.acuteLoad).toBe(10);
-
-    repos.trainingSpy.mockRestore();
-    repos.cyclingSpy.mockRestore();
   });
 
   it("rounds strain target load fields to one decimal place", async () => {
-    const repos = await mockTrainingRepos();
+    await mockTrainingRepos();
     const query = makeQuery([
       {
         date: "2026-03-28",
@@ -600,8 +553,5 @@ describe("loadMobileTrainingTab", () => {
     expect(result.strainTarget.dailyLoad).toBe(125.7);
     expect(result.strainTarget.currentStrain).toBe(StrainScore.fromRawLoad(125.7).value);
     expect(result.strainTarget.acuteLoad).toBe(22.7);
-
-    repos.trainingSpy.mockRestore();
-    repos.cyclingSpy.mockRestore();
   });
 });
