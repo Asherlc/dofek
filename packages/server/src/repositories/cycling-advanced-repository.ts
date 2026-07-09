@@ -1,6 +1,14 @@
 import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import type { Database } from "dofek/db";
 import { z } from "zod";
+import {
+  clickHouseDateRangeLowerBound,
+  clickHouseIntervalDayLowerBound,
+  clickHouseMondayDateRangeLowerBound,
+  type RangeDays,
+  rangeDaysOrNullAdd,
+  rangeDaysParams,
+} from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { activityRepositoryFor } from "./activity-repository.ts";
@@ -90,8 +98,10 @@ export class CyclingAdvancedRepository {
   }
 
   /** Ramp rate: week-over-week CTL change based on HR TRIMP load. */
-  async getRampRate(days: number): Promise<RampRateResultData> {
-    const loadDays = days + 42;
+  async getRampRate(days: RangeDays): Promise<RampRateResultData> {
+    const loadDays = rangeDaysOrNullAdd(days, 42);
+    const loadRangeFilter = clickHouseDateRangeLowerBound(loadDays, "load.date", "loadDays");
+    const displayRangeFilter = clickHouseMondayDateRangeLowerBound(days, "ramp.week");
     const rows = await this.#sensorStore.query(
       rampRateRowSchema,
       `WITH cycling_daily_load AS (
@@ -106,7 +116,7 @@ export class CyclingAdvancedRepository {
         WHERE load.user_id = {userId:UUID}
           AND load.is_deleted = 0
           AND load.date IS NOT NULL
-          AND load.date > today() - INTERVAL {loadDays:Int32} DAY
+          ${loadRangeFilter}
           AND has({activityTypes:Array(String)}, activity.activity_type)
         GROUP BY
           load.user_id,
@@ -185,13 +195,13 @@ export class CyclingAdvancedRepository {
       FROM ramp
       WHERE ramp.user_id = {userId:UUID}
         AND ramp.is_deleted = 0
-        AND ramp.week > toMonday(today() - INTERVAL {days:Int32} DAY)
+        ${displayRangeFilter}
       ORDER BY ramp.week`,
       {
         userId: this.#userId,
         timezone: this.#timezone,
-        days,
-        loadDays,
+        ...rangeDaysParams(days),
+        ...rangeDaysParams(loadDays, "loadDays"),
         activityTypes: CYCLING_TYPES,
       },
     );
@@ -223,7 +233,8 @@ export class CyclingAdvancedRepository {
   }
 
   /** Training monotony: weekly monotony (mean daily load / stdev) and strain. */
-  async getTrainingMonotony(days: number): Promise<TrainingMonotonyWeekModel[]> {
+  async getTrainingMonotony(days: RangeDays): Promise<TrainingMonotonyWeekModel[]> {
+    const rangeFilter = clickHouseMondayDateRangeLowerBound(days, "monotony.week", "days", ">=");
     const rows = await this.#sensorStore.query(
       monotonyRowSchema,
       `WITH cycling_daily_load AS (
@@ -299,12 +310,12 @@ export class CyclingAdvancedRepository {
       FROM monotony
       WHERE monotony.user_id = {userId:UUID}
         AND monotony.is_deleted = 0
-        AND monotony.week >= toMonday(today() - INTERVAL {days:Int32} DAY)
+        ${rangeFilter}
       ORDER BY monotony.week`,
       {
         userId: this.#userId,
         timezone: this.#timezone,
-        days,
+        ...rangeDaysParams(days),
         activityTypes: CYCLING_TYPES,
       },
     );
@@ -321,7 +332,8 @@ export class CyclingAdvancedRepository {
   }
 
   /** Estimate FTP as 95% of best 20-minute average power. */
-  async getEstimatedFtp(days: number): Promise<number | null> {
+  async getEstimatedFtp(days: RangeDays): Promise<number | null> {
+    const rangeFilter = clickHouseIntervalDayLowerBound(days, "asum.started_at");
     const ftpResult = await this.#sensorStore.query(
       ftpSchema,
       `SELECT
@@ -329,11 +341,11 @@ export class CyclingAdvancedRepository {
       FROM analytics.activity_summary asum
       WHERE asum.user_id = {userId:UUID}
         AND has({activityTypes:Array(String)}, asum.activity_type)
-        AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+        ${rangeFilter}
         AND asum.best_twenty_minute_power IS NOT NULL`,
       {
         userId: this.#userId,
-        days,
+        ...rangeDaysParams(days),
         activityTypes: CYCLING_TYPES,
       },
     );
@@ -342,7 +354,7 @@ export class CyclingAdvancedRepository {
 
   /** Activity variability: NP, VI, IF per activity. */
   async getActivityVariability(
-    days: number,
+    days: RangeDays,
     limit: number,
     offset: number,
   ): Promise<{
@@ -357,6 +369,7 @@ export class CyclingAdvancedRepository {
     const ftp = await this.getEstimatedFtp(days);
     if (!ftp) return { models: [], totalCount: 0, emptyReason: "no_ftp_estimate" };
 
+    const rangeFilter = clickHouseIntervalDayLowerBound(days, "asum.started_at");
     const rows = await this.#sensorStore.query(
       variabilityRowSchema,
       `SELECT
@@ -369,7 +382,7 @@ export class CyclingAdvancedRepository {
       FROM analytics.activity_summary asum
       WHERE asum.user_id = {userId:UUID}
         AND has({activityTypes:Array(String)}, asum.activity_type)
-        AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+        ${rangeFilter}
         AND asum.normalized_power IS NOT NULL
       ORDER BY asum.started_at DESC
       LIMIT {limit:Int32}
@@ -377,7 +390,7 @@ export class CyclingAdvancedRepository {
       {
         userId: this.#userId,
         timezone: this.#timezone,
-        days,
+        ...rangeDaysParams(days),
         activityTypes: CYCLING_TYPES,
         limit,
         offset,
@@ -398,11 +411,11 @@ export class CyclingAdvancedRepository {
         FROM analytics.activity_summary asum
         WHERE asum.user_id = {userId:UUID}
           AND has({activityTypes:Array(String)}, asum.activity_type)
-          AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+          ${rangeFilter}
           AND asum.normalized_power IS NOT NULL`,
         {
           userId: this.#userId,
-          days,
+          ...rangeDaysParams(days),
           activityTypes: CYCLING_TYPES,
         },
       );
@@ -431,11 +444,12 @@ export class CyclingAdvancedRepository {
 
   /** Vertical ascent rate (VAM) for climbing segments. Uses grade samples when
    *  available, falling back to altitude-only diffs otherwise. */
-  async getVerticalAscentRates(days: number): Promise<VerticalAscentModel[]> {
+  async getVerticalAscentRates(days: RangeDays): Promise<VerticalAscentModel[]> {
     if ((await this.#loadRawActivityCount(days)) === 0) {
       return [];
     }
 
+    const rangeFilter = clickHouseIntervalDayLowerBound(days, "asum.started_at");
     const rows = await this.#sensorStore.query(
       vamRowSchema,
       `SELECT
@@ -446,13 +460,13 @@ export class CyclingAdvancedRepository {
       FROM analytics.activity_summary asum
       WHERE asum.user_id = {userId:UUID}
         AND has({activityTypes:Array(String)}, asum.activity_type)
-        AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+        ${rangeFilter}
         AND asum.climbing_seconds > 60
       ORDER BY asum.started_at`,
       {
         userId: this.#userId,
         timezone: this.#timezone,
-        days,
+        ...rangeDaysParams(days),
         activityTypes: CYCLING_TYPES,
       },
     );
@@ -469,7 +483,8 @@ export class CyclingAdvancedRepository {
   }
 
   /** Pedal dynamics: left/right balance, torque effectiveness, pedal smoothness. */
-  async getPedalDynamics(days: number): Promise<PedalDynamicsModel[]> {
+  async getPedalDynamics(days: RangeDays): Promise<PedalDynamicsModel[]> {
+    const rangeFilter = clickHouseIntervalDayLowerBound(days, "asum.started_at");
     const rows = await this.#sensorStore.query(
       pedalRowSchema,
       `SELECT
@@ -484,13 +499,13 @@ export class CyclingAdvancedRepository {
        AND va.user_id = asum.user_id
       WHERE asum.user_id = {userId:UUID}
         AND has({activityTypes:Array(String)}, asum.activity_type)
-        AND asum.started_at > now() - INTERVAL {days:Int32} DAY
+        ${rangeFilter}
         AND asum.avg_left_balance IS NOT NULL
       ORDER BY asum.started_at`,
       {
         userId: this.#userId,
         timezone: this.#timezone,
-        days,
+        ...rangeDaysParams(days),
         activityTypes: CYCLING_TYPES,
       },
     );
@@ -507,7 +522,7 @@ export class CyclingAdvancedRepository {
     );
   }
 
-  async #loadRawActivityCount(days: number): Promise<number> {
+  async #loadRawActivityCount(days: RangeDays): Promise<number> {
     return activityRepositoryFor(this.#db, this.#userId).countVisibleInWindow({
       days,
       activityTypes: CYCLING_TYPES,

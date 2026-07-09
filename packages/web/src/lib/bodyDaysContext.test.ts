@@ -20,4 +20,15 @@ describe("bodyDaysContext", () => {
     result.current.setDays(90);
     expect(setDays).toHaveBeenCalledWith(90);
   });
+
+  it("allows All to be represented as null", () => {
+    const setDays = vi.fn();
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      createElement(BodyDaysContext.Provider, { value: { days: null, setDays } }, children);
+
+    const { result } = renderHook(() => useBodyDays(), { wrapper });
+    expect(result.current.days).toBeNull();
+    result.current.setDays(null);
+    expect(setDays).toHaveBeenCalledWith(null);
+  });
 });

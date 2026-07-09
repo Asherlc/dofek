@@ -6,6 +6,7 @@ import { ProgressiveOverloadCards } from "../../components/ProgressiveOverloadCa
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import { StrengthVolumeChart } from "../../components/StrengthVolumeChart.tsx";
+import { selectedRangeQueryInput } from "../../lib/timeRange.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
 import { TRAINING_SLOW_QUERY_OPTIONS } from "../../lib/trainingQueryOptions.ts";
 import { trpc } from "../../lib/trpc.ts";
@@ -25,19 +26,19 @@ function StrengthTab() {
   const { days } = useTrainingDays();
 
   const strengthVolume = trpc.strength.volumeOverTime.useQuery(
-    { days },
+    selectedRangeQueryInput(days),
     TRAINING_SLOW_QUERY_OPTIONS,
   );
   const estimatedMax = trpc.strength.estimatedOneRepMax.useQuery(
-    { days },
+    selectedRangeQueryInput(days),
     TRAINING_SLOW_QUERY_OPTIONS,
   );
   const muscleVolume = trpc.strength.muscleGroupVolume.useQuery(
-    { days },
+    selectedRangeQueryInput(days),
     TRAINING_SLOW_QUERY_OPTIONS,
   );
   const overload = trpc.strength.progressiveOverload.useQuery(
-    { days },
+    selectedRangeQueryInput(days),
     TRAINING_SLOW_QUERY_OPTIONS,
   );
 

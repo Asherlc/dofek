@@ -128,9 +128,22 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).not.toContain("analytics.v_activity");
     expect(queryText).toContain("activity.activity_id AS activity_id");
     expect(queryText).toContain("analytics.deduped_sensor");
+    expect(queryText).toContain("activity.started_at > now() - toIntervalDay({days:UInt32})");
     expect(query.mock.calls[0]?.[0]?.query_params).toMatchObject({
+      days: 90,
       activityTypes: ["cycling"],
     });
+  });
+
+  it("omits the activity date lower bound for unbounded power curve samples", async () => {
+    const { store, query } = makeStore([]);
+
+    await store.getPowerCurveSamples(null, window.userId, "UTC", ["cycling"]);
+
+    const queryText = query.mock.calls[0]?.[0]?.query;
+    expect(queryText).toContain("analytics.deduped_activities");
+    expect(queryText).not.toContain("activity.started_at > now() - toIntervalDay");
+    expect(query.mock.calls[0]?.[0]?.query_params).not.toHaveProperty("days");
   });
 
   it("loads normalized power samples from activity summary", async () => {
@@ -144,10 +157,23 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).toContain("activity.activity_id AS activity_id");
     expect(queryText).toContain("analytics.deduped_sensor");
     expect(queryText).toContain("has({activityTypes:Array(String)}, activity.activity_type)");
+    expect(queryText).toContain("activity.started_at > now() - toIntervalDay({days:UInt32})");
     expect(queryText).not.toContain("enduranceActivityTypes");
     expect(query.mock.calls[0]?.[0]?.query_params).toMatchObject({
+      days: 365,
       activityTypes: ["cycling"],
     });
+  });
+
+  it("omits the activity date lower bound for unbounded normalized power samples", async () => {
+    const { store, query } = makeStore([]);
+
+    await store.getNormalizedPowerSamples(null, window.userId, "UTC", ["cycling"]);
+
+    const queryText = query.mock.calls[0]?.[0]?.query;
+    expect(queryText).toContain("analytics.deduped_activities");
+    expect(queryText).not.toContain("activity.started_at > now() - toIntervalDay");
+    expect(query.mock.calls[0]?.[0]?.query_params).not.toHaveProperty("days");
   });
 
   it("loads VO2 max estimates from the compact activity read model", async () => {
@@ -308,6 +334,18 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).not.toContain("analytics.v_activity");
   });
 
+  it("omits lower-bound filters from heart-rate duration rows when days is null", async () => {
+    const { store, query } = makeStore([]);
+
+    await store.getHeartRateCurveRows(null, window.userId, "UTC");
+
+    const queryOptions = query.mock.calls[0]?.[0];
+    expect(queryOptions?.query).not.toContain(
+      "activity.started_at > now() - toIntervalDay({days:UInt32})",
+    );
+    expect(queryOptions?.query_params).not.toHaveProperty("days");
+  });
+
   it("clamps pace duration windows to at least one sample", async () => {
     const { store, query } = makeStore([]);
 
@@ -320,5 +358,29 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).toContain("analytics.deduped_activities");
     expect(queryText).toContain("activity.activity_id AS activity_id");
     expect(queryText).not.toContain("analytics.v_activity");
+  });
+
+  it("applies finite lower-bound filters to pace duration rows", async () => {
+    const { store, query } = makeStore([]);
+
+    await store.getPaceCurveRows(30, window.userId, "UTC");
+
+    const queryOptions = query.mock.calls[0]?.[0];
+    expect(queryOptions?.query).toContain(
+      "activity.started_at > now() - toIntervalDay({days:UInt32})",
+    );
+    expect(queryOptions?.query_params).toMatchObject({ days: 30, userId: window.userId });
+  });
+
+  it("omits lower-bound filters from pace duration rows when days is null", async () => {
+    const { store, query } = makeStore([]);
+
+    await store.getPaceCurveRows(null, window.userId, "UTC");
+
+    const queryOptions = query.mock.calls[0]?.[0];
+    expect(queryOptions?.query).not.toContain(
+      "activity.started_at > now() - toIntervalDay({days:UInt32})",
+    );
+    expect(queryOptions?.query_params).not.toHaveProperty("days");
   });
 });

@@ -8,6 +8,7 @@ import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { ReadinessScoreCard } from "../../components/ReadinessScoreCard.tsx";
 import { SleepAnalyticsChart } from "../../components/SleepAnalyticsChart.tsx";
 import { WorkloadRatioChart } from "../../components/WorkloadRatioChart.tsx";
+import { selectedRangeQueryInput } from "../../lib/timeRange.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
 import { TRAINING_SLOW_QUERY_OPTIONS } from "../../lib/trainingQueryOptions.ts";
 import { trpc } from "../../lib/trpc.ts";
@@ -21,23 +22,23 @@ function RecoveryTab() {
   const endDate = useMemo(() => formatDateYmd(new Date()), []);
 
   const hrvVariability = trpc.recovery.hrvVariability.useQuery(
-    { days, endDate },
+    { ...selectedRangeQueryInput(days), endDate },
     TRAINING_SLOW_QUERY_OPTIONS,
   );
   const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery(
-    { days, endDate },
+    { ...selectedRangeQueryInput(days), endDate },
     TRAINING_SLOW_QUERY_OPTIONS,
   );
   const workloadRatio = trpc.recovery.workloadRatio.useQuery(
-    { days, endDate },
+    { ...selectedRangeQueryInput(days), endDate },
     TRAINING_SLOW_QUERY_OPTIONS,
   );
   const sleepData = trpc.recovery.sleepAnalytics.useQuery(
-    { days, endDate },
+    { ...selectedRangeQueryInput(days), endDate },
     TRAINING_SLOW_QUERY_OPTIONS,
   );
   const readiness = trpc.recovery.readinessScore.useQuery(
-    { days, endDate },
+    { ...selectedRangeQueryInput(days), endDate },
     TRAINING_SLOW_QUERY_OPTIONS,
   );
 

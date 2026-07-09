@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
+import { collectSqlText, createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -62,6 +62,37 @@ describe("dailyMetricsRouter", () => {
     it("rejects invalid endDate parameter", async () => {
       const caller = makeCaller([]);
       await expect(caller.list({ days: 30, endDate: "not-a-date" })).rejects.toThrow();
+    });
+
+    it("uses a lower date bound for finite selected ranges", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute },
+        sensorStore: makeMockSensorStore([]),
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.list({ days: 30, endDate: "2024-01-16" });
+
+      expect(collectSqlText(execute.mock.calls[0]?.[0])).toContain("AND date >");
+    });
+
+    it("omits the lower date bound when days is null", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute },
+        sensorStore: makeMockSensorStore([]),
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await caller.list({ days: null, endDate: "2024-01-16" });
+
+      const queryText = collectSqlText(execute.mock.calls[0]?.[0]);
+      expect(queryText).toContain("WHERE user_id =");
+      expect(queryText).toContain("AND date <=");
+      expect(queryText).not.toContain("AND date >");
     });
   });
 
@@ -158,6 +189,42 @@ describe("dailyMetricsRouter", () => {
       expect(result.some((r) => r.date === "2023-12-17")).toBe(true);
       // 2024-01-16 is after cutoff, should be included
       expect(result.some((r) => r.date === "2024-01-16")).toBe(true);
+    });
+
+    it("fetches unbounded resting heart rate and skips baseline cutoff when days is null", async () => {
+      const rows = [
+        {
+          date: "2023-01-01",
+          hrv: 50,
+          resting_hr: 57,
+          mean_60d: 52,
+          sd_60d: 5,
+          mean_7d: 51,
+          resting_hr_mean_7d: 56,
+        },
+      ];
+      const execute = vi.fn().mockResolvedValue(rows);
+      const sensorStore = makeMockSensorStore([{ date: "2023-01-01", resting_hr: 57 }]);
+      const caller = createCaller({
+        db: { execute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "America/Los_Angeles",
+      });
+
+      const result = await caller.hrvBaseline({ days: null, endDate: "2024-01-16" });
+
+      expect(result).toEqual(rows);
+      const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+      const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
+      expect(queryText).not.toContain("rhrWindowStart");
+      expect(queryParams).toMatchObject({
+        userId: "user-1",
+        timezone: "America/Los_Angeles",
+        rhrEndDate: "2024-01-16",
+      });
+      expect(queryParams).not.toHaveProperty("rhrWindowStart");
+      expect(collectSqlText(execute.mock.calls[0]?.[0])).not.toContain("date >");
     });
   });
 
@@ -284,6 +351,50 @@ describe("dailyMetricsRouter", () => {
         rhrEndDate: "2024-01-16",
         rhrWindowStart: "2023-12-17",
       });
+    });
+
+    it("omits lower bounds for trend aggregation when days is null", async () => {
+      const execute = vi.fn().mockResolvedValue([
+        {
+          avg_hrv: 60,
+          avg_resting_hr: 54,
+          avg_spo2: 98,
+          avg_steps: 8000,
+          avg_active_energy: 500,
+          avg_skin_temp: 36.5,
+          stddev_hrv: 10.5,
+          stddev_resting_hr: 2.5,
+          stddev_spo2: 0.5,
+          stddev_skin_temp: 0.3,
+          latest_hrv: 62,
+          latest_resting_hr: 53,
+          latest_spo2: 98,
+          latest_steps: 9000,
+          latest_active_energy: 550,
+          latest_skin_temp: 36.6,
+          latest_date: "2024-01-16",
+          latest_steps_date: "2024-01-16",
+          latest_active_energy_date: "2024-01-16",
+        },
+      ]);
+      const sensorStore = makeMockSensorStore([{ date: "2024-01-16", resting_hr: 53 }]);
+      const caller = createCaller({
+        db: { execute },
+        sensorStore,
+        userId: "user-1",
+        timezone: "America/Los_Angeles",
+      });
+
+      await caller.trends({ days: null, endDate: "2024-01-16" });
+
+      const restingHeartRateQueryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+      const restingHeartRateQueryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
+      expect(restingHeartRateQueryText).not.toContain("rhrWindowStart");
+      expect(restingHeartRateQueryParams).not.toHaveProperty("rhrWindowStart");
+      const queryText = collectSqlText(execute.mock.calls[0]?.[0]);
+      expect(queryText).toContain("dm.user_id =");
+      expect(queryText).not.toContain("date >");
+      expect(queryText).not.toContain("base_dates.date >");
     });
 
     it("requires a sensor store for resting heart rate trend aggregation", async () => {

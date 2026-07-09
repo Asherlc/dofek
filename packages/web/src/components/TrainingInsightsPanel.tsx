@@ -19,6 +19,7 @@ import {
   dofekLegend,
   dofekTooltip,
 } from "../lib/chartTheme.ts";
+import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 import { ChartDescriptionTooltip } from "./ChartDescriptionTooltip.tsx";
 import { DofekChart } from "./DofekChart.tsx";
@@ -62,12 +63,12 @@ const hrZoneWeekSchema = z.object({
 type HrZoneWeek = z.infer<typeof hrZoneWeekSchema>;
 
 interface TrainingInsightsPanelProps {
-  days: number;
+  days: TimeRangeDays;
 }
 
 export function TrainingInsightsPanel({ days }: TrainingInsightsPanelProps) {
-  const volume = trpc.training.weeklyVolume.useQuery({ days });
-  const hrZones = trpc.training.hrZones.useQuery({ days });
+  const volume = trpc.training.weeklyVolume.useQuery(selectedRangeQueryInput(days));
+  const hrZones = trpc.training.hrZones.useQuery(selectedRangeQueryInput(days));
 
   // tRPC infers raw SQL result types as Record<string, unknown>;
   // narrow to known row shapes via typed identity function

@@ -16,7 +16,7 @@ interface FetchRestingHeartRateRowsInput {
   userId: string;
   timezone: string;
   endDate: string;
-  days: number;
+  days: number | null;
 }
 
 export async function fetchRestingHeartRateRows({

@@ -1,9 +1,7 @@
 import { TRPCError } from "@trpc/server";
-import { z } from "zod";
+import { selectedChartRangeInput } from "../lib/date-window.ts";
 import { DurationCurvesRepository } from "../repositories/duration-curves-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
-
-const daysInput = z.object({ days: z.number().default(90) });
 
 export const durationCurvesRouter = router({
   /**
@@ -11,7 +9,7 @@ export const durationCurvesRouter = router({
    * Uses cumulative sums over metric_stream heart_rate, same approach as power curves.
    */
   hrCurve: cachedProtectedQuery(CacheTTL.LONG)
-    .input(daysInput)
+    .input(selectedChartRangeInput("durationCurves.hrCurve"))
     .query(async ({ ctx, input }) => {
       if (!ctx.sensorStore) {
         throw new TRPCError({
@@ -30,7 +28,7 @@ export const durationCurvesRouter = router({
    * Higher speed = better pace (lower s/km), so we want MAX average speed.
    */
   paceCurve: cachedProtectedQuery(CacheTTL.LONG)
-    .input(daysInput)
+    .input(selectedChartRangeInput("durationCurves.paceCurve"))
     .query(async ({ ctx, input }) => {
       if (!ctx.sensorStore) {
         throw new TRPCError({

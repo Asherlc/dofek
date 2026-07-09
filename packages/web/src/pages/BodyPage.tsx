@@ -25,6 +25,7 @@ import { useBodyDays } from "../lib/bodyDaysContext.ts";
 import { buildBodyHealthMetrics } from "../lib/bodyHealthMetrics.ts";
 import { chartColors } from "../lib/chartTheme.ts";
 import { enrichWeightPrediction } from "../lib/enrichWeightPrediction.ts";
+import { minimumSelectedRangeQueryInput, selectedRangeQueryInput } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 import { assertRows } from "../lib/utils.ts";
@@ -75,19 +76,28 @@ export function BodyPage() {
   const { days, setDays } = useBodyDays();
   const endDate = useTodayQueryDate();
 
-  const trends = trpc.dailyMetrics.trends.useQuery({ days, endDate });
-  const dailyMetrics = trpc.dailyMetrics.list.useQuery({ days, endDate });
-  const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({ days, endDate });
-  const stressData = trpc.stress.scores.useQuery({ days, endDate });
+  const trends = trpc.dailyMetrics.trends.useQuery({ ...selectedRangeQueryInput(days), endDate });
+  const dailyMetrics = trpc.dailyMetrics.list.useQuery({
+    ...selectedRangeQueryInput(days),
+    endDate,
+  });
+  const hrvBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({
+    ...selectedRangeQueryInput(days),
+    endDate,
+  });
+  const stressData = trpc.stress.scores.useQuery({ ...selectedRangeQueryInput(days), endDate });
   const weightOverview = trpc.bodyAnalytics.weightOverview.useQuery({
-    days: Math.max(days, 90),
+    ...minimumSelectedRangeQueryInput(days, 90),
     endDate,
   });
   const bodyRecomp = trpc.bodyAnalytics.recomposition.useQuery({
-    days,
+    ...selectedRangeQueryInput(days),
     endDate,
   });
-  const insightsQuery = trpc.insights.compute.useQuery({ days: Math.max(days, 90), endDate });
+  const insightsQuery = trpc.insights.compute.useQuery({
+    ...minimumSelectedRangeQueryInput(days, 90),
+    endDate,
+  });
 
   const trendData = trends.data ? trendRowSchema.parse(trends.data) : undefined;
   const metrics = assertRows(dailyMetrics.data, dailyMetricRowSchema);

@@ -15,7 +15,11 @@ import {
   sleepRowSchema,
 } from "../insights/schemas.ts";
 import { spearmanCorrelation } from "../insights/stats.ts";
-import { dateWindowStart, timestampWindowStart } from "../lib/date-window.ts";
+import {
+  dateWindowStartPredicate,
+  type RangeDays,
+  timestampWindowStartPredicate,
+} from "../lib/date-window.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { fetchBodyCompRows } from "./body-clickhouse.ts";
@@ -68,7 +72,7 @@ export function extractMetricValue(day: JoinedDay, metricId: string): number | n
 export interface CorrelationInput {
   metricX: string;
   metricY: string;
-  days: number;
+  days: RangeDays;
   lag: number;
 }
 
@@ -213,7 +217,7 @@ export class CorrelationRepository {
     }));
   }
 
-  async compute(metricX: string, metricY: string, days: number, lag: number, endDate: string) {
+  async compute(metricX: string, metricY: string, days: RangeDays, lag: number, endDate: string) {
     const effectiveEndDate = endDate || new Date().toISOString().slice(0, 10);
     const sensorStore = this.#requireSensorStore();
     const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
@@ -233,7 +237,7 @@ export class CorrelationRepository {
 	            LEFT JOIN resting_heart_rate drhr
 	              ON drhr.date = dm.date
             WHERE dm.user_id = ${this.#userId}
-              AND dm.date > ${dateWindowStart(effectiveEndDate, days)}
+              ${dateWindowStartPredicate(sql`dm.date`, effectiveEndDate, days)}
               AND dm.date <= ${effectiveEndDate}::date
             ORDER BY dm.date ASC`,
       ),
@@ -264,7 +268,7 @@ export class CorrelationRepository {
         sql`SELECT started_at, ended_at, activity_type
             FROM fitness.v_activity
             WHERE user_id = ${this.#userId}
-              AND started_at > ${timestampWindowStart(effectiveEndDate, days)}
+              ${timestampWindowStartPredicate(sql`started_at`, effectiveEndDate, days)}
             ORDER BY started_at ASC`,
       ),
       executeWithSchema(
@@ -273,7 +277,7 @@ export class CorrelationRepository {
         sql`SELECT date, calories, protein_g, carbs_g, fat_g, fiber_g, water_ml
             FROM fitness.v_nutrition_daily
             WHERE user_id = ${this.#userId}
-              AND date > ${dateWindowStart(effectiveEndDate, days)}
+              ${dateWindowStartPredicate(sql`date`, effectiveEndDate, days)}
               AND date <= ${effectiveEndDate}::date
             ORDER BY date ASC`,
       ),

@@ -157,6 +157,60 @@ describe("efficiencyRouter", () => {
       expect(result.activities).toEqual([]);
     });
 
+    it("defaults omitted days to the existing finite window", async () => {
+      const sensorStore = makeSensorStore([
+        {
+          max_hr: 190,
+          date: "2024-01-15",
+          activity_type: "cycling",
+          name: "Ride",
+          avg_power_z2: 180,
+          avg_hr_z2: 140,
+          efficiency_factor: 1.286,
+          z2_samples: 600,
+        },
+      ]);
+      const caller = createCaller({
+        db: makeAerobicEfficiencyDb([]),
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore,
+      });
+
+      await caller.aerobicEfficiency({});
+
+      const queryCall = vi.mocked(sensorStore.query).mock.calls[0];
+      expect(queryCall?.[1]).toContain("started_at > now() - INTERVAL {days:Int32} DAY");
+      expect(queryCall?.[2]).toHaveProperty("days", 180);
+    });
+
+    it("accepts null days as an unbounded range", async () => {
+      const sensorStore = makeSensorStore([
+        {
+          max_hr: 190,
+          date: "2024-01-15",
+          activity_type: "cycling",
+          name: "Ride",
+          avg_power_z2: 180,
+          avg_hr_z2: 140,
+          efficiency_factor: 1.286,
+          z2_samples: 600,
+        },
+      ]);
+      const caller = createCaller({
+        db: makeAerobicEfficiencyDb([]),
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore,
+      });
+
+      await caller.aerobicEfficiency({ days: null });
+
+      const queryCall = vi.mocked(sensorStore.query).mock.calls[0];
+      expect(queryCall?.[1]).not.toContain("started_at > now() - INTERVAL");
+      expect(queryCall?.[2]).not.toHaveProperty("days");
+    });
+
     it("preserves the YYYY-MM-DD date string emitted by ClickHouse", async () => {
       // CH SQL uses toString(toDate(toTimeZone(...))), so the JSONEachRow
       // payload includes date as a "YYYY-MM-DD" string. Verify the schema

@@ -1,4 +1,5 @@
 import { computeGradeAdjustedPace } from "@dofek/training/grade-adjusted-pace";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import {
   ElevationWeek,
@@ -187,6 +188,8 @@ describe("RepeatedRoute", () => {
 // ---------------------------------------------------------------------------
 
 describe("HikingRepository", () => {
+  const dialect = new PgDialect();
+
   function makeRepository(rows: Record<string, unknown>[] = []) {
     const execute = vi.fn().mockResolvedValue(rows);
     const db = { execute };
@@ -205,6 +208,19 @@ describe("HikingRepository", () => {
     };
     const repo = new HikingRepository(db, "user-1", "UTC", sensorStore);
     return { repo, execute: sensorQuery, dbExecute: execute };
+  }
+
+  function expectClickHouseFiniteDaysFilter(query: string, params: Record<string, unknown>): void {
+    expect(query).toContain("INTERVAL {days:Int32} DAY");
+    expect(params).toHaveProperty("days", 30);
+  }
+
+  function expectClickHouseUnboundedDaysFilter(
+    query: string,
+    params: Record<string, unknown>,
+  ): void {
+    expect(query).not.toContain("INTERVAL {days:Int32} DAY");
+    expect(params).not.toHaveProperty("days");
   }
 
   describe("getGradeAdjustedPaces", () => {
@@ -249,6 +265,24 @@ describe("HikingRepository", () => {
       expect(query).toContain("FROM analytics.hiking_activity");
       expect(query).not.toContain("FROM analytics.activity_summary");
     });
+
+    it("applies finite selected-range lower-bound filters", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await repo.getGradeAdjustedPaces(30);
+
+      const [, query, params] = execute.mock.calls[0];
+      expectClickHouseFiniteDaysFilter(query, params);
+    });
+
+    it("omits selected-range lower-bound filters when days is null", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await repo.getGradeAdjustedPaces(null);
+
+      const [, query, params] = execute.mock.calls[0];
+      expectClickHouseUnboundedDaysFilter(query, params);
+    });
   });
 
   describe("getElevationProfile", () => {
@@ -270,6 +304,24 @@ describe("HikingRepository", () => {
       const query = execute.mock.calls[0]?.[1];
       expect(query).toContain("FROM analytics.hiking_activity");
       expect(query).not.toContain("FROM analytics.activity_summary");
+    });
+
+    it("applies finite selected-range lower-bound filters", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await repo.getElevationProfile(30);
+
+      const [, query, params] = execute.mock.calls[0];
+      expectClickHouseFiniteDaysFilter(query, params);
+    });
+
+    it("omits selected-range lower-bound filters when days is null", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await repo.getElevationProfile(null);
+
+      const [, query, params] = execute.mock.calls[0];
+      expectClickHouseUnboundedDaysFilter(query, params);
     });
   });
 
@@ -312,6 +364,27 @@ describe("HikingRepository", () => {
         asymmetryPct: 1.2,
         steadiness: 92,
       });
+    });
+
+    it("applies finite selected-range lower-bound filters", async () => {
+      const { repo, dbExecute } = makeRepository([]);
+
+      await repo.getWalkingBiomechanics(30);
+
+      const compiledQuery = dialect.sqlToQuery(dbExecute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain("date > NOW() - $2::int * INTERVAL '1 day'");
+      expect(compiledQuery.params).toEqual(expect.arrayContaining(["user-1", 30]));
+    });
+
+    it("omits selected-range lower-bound filters when days is null", async () => {
+      const { repo, dbExecute } = makeRepository([]);
+
+      await repo.getWalkingBiomechanics(null);
+
+      const compiledQuery = dialect.sqlToQuery(dbExecute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain("FROM fitness.daily_metrics");
+      expect(compiledQuery.sql).not.toContain("NOW() -");
+      expect(compiledQuery.params).not.toContain(null);
     });
   });
 
@@ -375,6 +448,24 @@ describe("HikingRepository", () => {
       expect(query).toContain("FROM analytics.hiking_activity");
       expect(query).toContain("hiking.duration_seconds > 0");
       expect(query).not.toContain("FROM analytics.activity_summary");
+    });
+
+    it("applies finite selected-range lower-bound filters", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await repo.getRepeatedRoutes(30);
+
+      const [, query, params] = execute.mock.calls[0];
+      expectClickHouseFiniteDaysFilter(query, params);
+    });
+
+    it("omits selected-range lower-bound filters when days is null", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await repo.getRepeatedRoutes(null);
+
+      const [, query, params] = execute.mock.calls[0];
+      expectClickHouseUnboundedDaysFilter(query, params);
     });
   });
 });

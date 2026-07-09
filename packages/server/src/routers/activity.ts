@@ -9,7 +9,7 @@ import {
 import { queryCache } from "dofek/lib/cache";
 import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";
-import { endDateSchema } from "../lib/date-window.ts";
+import { endDateSchema, selectedChartRangeDaysSchema } from "../lib/date-window.ts";
 import { Activity, type ActivityDetail } from "../models/activity.ts";
 import {
   ActivityRepository,
@@ -97,7 +97,7 @@ export const activityRouter = router({
   list: cachedProtectedQuery(CacheTTL.MEDIUM)
     .input(
       z.object({
-        days: z.number().default(30),
+        days: selectedChartRangeDaysSchema("activity.list"),
         endDate: endDateSchema,
         limit: z.number().min(1).max(100).default(20),
         offset: z.number().min(0).default(0),

@@ -1,5 +1,6 @@
 import { DURATION_LABELS, linearRegression } from "@dofek/training/power-analysis";
 import { z } from "zod";
+import type { RangeDays } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 
 // ── Zod schemas for DB results ───────────────────────────────
@@ -92,7 +93,7 @@ export class DurationCurvesRepository {
    * Heart Rate Duration Curve: best sustained HR for standard durations.
    * Uses cumulative sums over metric_stream heart_rate, same approach as power curves.
    */
-  async getHrCurve(days: number): Promise<{
+  async getHrCurve(days: RangeDays): Promise<{
     points: HrCurvePoint[];
     model: CriticalHeartRateModel | null;
   }> {
@@ -118,7 +119,7 @@ export class DurationCurvesRepository {
    * Uses speed (m/s) from metric_stream, converts to pace (s/km) for output.
    * Higher speed = better pace (lower s/km), so we want MAX average speed.
    */
-  async getPaceCurve(days: number): Promise<{ points: PaceCurvePoint[] }> {
+  async getPaceCurve(days: RangeDays): Promise<{ points: PaceCurvePoint[] }> {
     const rows = await this.#requireSensorStore()
       .getPaceCurveRows(days, this.#userId, this.#timezone)
       .then((curveRows) => curveRows.map((row) => paceCurveRowSchema.parse(row)));

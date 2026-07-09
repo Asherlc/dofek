@@ -1,3 +1,4 @@
+import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 
 function ImpactBar({
@@ -53,8 +54,10 @@ function ImpactBar({
   );
 }
 
-export function BehaviorImpactChart({ days }: { days: number }) {
-  const { data, isLoading, error } = trpc.behaviorImpact.impactSummary.useQuery({ days });
+export function BehaviorImpactChart({ days }: { days: TimeRangeDays }) {
+  const { data, isLoading, error } = trpc.behaviorImpact.impactSummary.useQuery(
+    selectedRangeQueryInput(days),
+  );
 
   if (isLoading) {
     return (

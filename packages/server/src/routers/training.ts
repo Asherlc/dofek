@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { z } from "zod";
+import { selectedChartRangeInput } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import {
   cardioPlan,
@@ -58,7 +58,7 @@ export function uniqueStrings(values: string[]): string[] {
 
 export const trainingRouter = router({
   weeklyVolume: cachedProtectedQuery(CacheTTL.LONG)
-    .input(z.object({ days: z.number().default(90) }))
+    .input(selectedChartRangeInput("training.weeklyVolume"))
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "training");
       const repo = new TrainingRepository(
@@ -72,7 +72,7 @@ export const trainingRouter = router({
     }),
 
   hrZones: cachedProtectedQuery(CacheTTL.LONG)
-    .input(z.object({ days: z.number().default(90) }))
+    .input(selectedChartRangeInput("training.hrZones"))
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "training");
       const repo = new TrainingRepository(
@@ -86,7 +86,7 @@ export const trainingRouter = router({
     }),
 
   activityStats: cachedProtectedQuery(CacheTTL.LONG)
-    .input(z.object({ days: z.number().default(90) }))
+    .input(selectedChartRangeInput("training.activityStats"))
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "training");
       const repo = new TrainingRepository(

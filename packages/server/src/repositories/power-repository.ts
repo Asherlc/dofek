@@ -9,6 +9,7 @@ import {
 import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import type { Database } from "dofek/db";
 import { z } from "zod";
+import { clickHouseRangeLowerBound, type RangeDays, rangeDaysParams } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 
@@ -54,7 +55,7 @@ export class PowerRepository {
    * Reads from the pre-computed activity_power_curve read model when available,
    * falling back to raw sample fetch + client-side computation.
    */
-  async getPowerCurve(days: number): Promise<{
+  async getPowerCurve(days: RangeDays): Promise<{
     points: {
       durationSeconds: number;
       label: string;
@@ -83,12 +84,12 @@ export class PowerRepository {
       WHERE power_curve.user_id = {userId:UUID}
         AND power_curve.is_deleted = 0
         AND has({activityTypes:Array(String)}, activity_summary.activity_type)
-        AND power_curve.started_at > now() - INTERVAL {days:Int32} DAY
+        ${clickHouseRangeLowerBound(days, "power_curve.started_at")}
       ORDER BY power_curve.duration_seconds`,
       {
         userId: this.#userId,
         timezone: this.#timezone,
-        days,
+        ...rangeDaysParams(days),
         activityTypes: CYCLING_TYPES,
       },
     );
@@ -149,7 +150,7 @@ export class PowerRepository {
    * eFTP trend: estimated Functional Threshold Power over time.
    * Uses per-activity Normalized Power (NP) x 0.95.
    */
-  async getEftpTrend(days: number): Promise<{
+  async getEftpTrend(days: RangeDays): Promise<{
     trend: { date: string; eftp: number; activityName: string | null }[];
     currentEftp: number | null;
     model: CriticalPowerModel | null;
@@ -167,14 +168,14 @@ export class PowerRepository {
         round(normalized_power, 1) AS normalized_power
       FROM analytics.activity_summary
       WHERE user_id = {userId:UUID}
-        AND started_at > now() - INTERVAL {days:Int32} DAY
+        ${clickHouseRangeLowerBound(days, "started_at")}
         AND normalized_power IS NOT NULL
         AND has({activityTypes:Array(String)}, activity_type)
       ORDER BY started_at`,
       {
         userId: this.#userId,
         timezone: this.#timezone,
-        days,
+        ...rangeDaysParams(days),
         activityTypes: CYCLING_TYPES,
       },
     );
@@ -217,7 +218,7 @@ export class PowerRepository {
     return { trend, currentEftp, model };
   }
 
-  async #loadRawActivityCount(days: number): Promise<number> {
+  async #loadRawActivityCount(days: RangeDays): Promise<number> {
     if (!this.#db) return 1;
     return activityRepositoryFor(this.#db, this.#userId).countVisibleInWindow({
       days,

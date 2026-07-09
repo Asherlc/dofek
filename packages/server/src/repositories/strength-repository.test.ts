@@ -1,3 +1,4 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import {
   EstimatedOneRepMax,
@@ -216,11 +217,39 @@ describe("linearRegressionSlope", () => {
 // ---------------------------------------------------------------------------
 
 describe("StrengthRepository", () => {
+  const dialect = new PgDialect();
+
   function makeRepository(rows: Record<string, unknown>[] = []) {
     const execute = vi.fn().mockResolvedValue(rows);
     const db = { execute };
     const repo = new StrengthRepository(db, "user-1", "UTC");
     return { repo, execute };
+  }
+
+  async function expectFiniteDaysFilter(
+    runQuery: (repo: StrengthRepository) => Promise<unknown>,
+  ): Promise<void> {
+    const { repo, execute } = makeRepository([]);
+
+    await runQuery(repo);
+
+    const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+    expect(compiledQuery.sql).toContain("a.started_at > NOW() -");
+    expect(compiledQuery.sql).toContain("::int * INTERVAL '1 day'");
+    expect(compiledQuery.params).toEqual(expect.arrayContaining(["user-1", 30]));
+  }
+
+  async function expectUnboundedDaysFilter(
+    runQuery: (repo: StrengthRepository) => Promise<unknown>,
+  ): Promise<void> {
+    const { repo, execute } = makeRepository([]);
+
+    await runQuery(repo);
+
+    const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+    expect(compiledQuery.sql).toContain("a.user_id =");
+    expect(compiledQuery.sql).not.toContain("NOW() -");
+    expect(compiledQuery.params).not.toContain(null);
   }
 
   describe("getVolumeOverTime", () => {
@@ -244,6 +273,14 @@ describe("StrengthRepository", () => {
       const { repo, execute } = makeRepository([]);
       await repo.getVolumeOverTime(30);
       expect(execute).toHaveBeenCalledTimes(1);
+    });
+
+    it("applies finite selected-range lower-bound filters", async () => {
+      await expectFiniteDaysFilter((repo) => repo.getVolumeOverTime(30));
+    });
+
+    it("omits selected-range lower-bound filters when days is null", async () => {
+      await expectUnboundedDaysFilter((repo) => repo.getVolumeOverTime(null));
     });
   });
 
@@ -286,6 +323,14 @@ describe("StrengthRepository", () => {
       expect(result[1]?.toDetail().exerciseName).toBe("Squat");
       expect(result[1]?.toDetail().history).toHaveLength(1);
     });
+
+    it("applies finite selected-range lower-bound filters", async () => {
+      await expectFiniteDaysFilter((repo) => repo.getEstimatedOneRepMax(30));
+    });
+
+    it("omits selected-range lower-bound filters when days is null", async () => {
+      await expectUnboundedDaysFilter((repo) => repo.getEstimatedOneRepMax(null));
+    });
   });
 
   describe("getMuscleGroupVolume", () => {
@@ -306,6 +351,14 @@ describe("StrengthRepository", () => {
       expect(result[0]).toBeInstanceOf(MuscleGroupVolume);
       expect(result[0]?.toDetail().muscleGroup).toBe("chest");
       expect(result[0]?.toDetail().weeklyData).toHaveLength(2);
+    });
+
+    it("applies finite selected-range lower-bound filters", async () => {
+      await expectFiniteDaysFilter((repo) => repo.getMuscleGroupVolume(30));
+    });
+
+    it("omits selected-range lower-bound filters when days is null", async () => {
+      await expectUnboundedDaysFilter((repo) => repo.getMuscleGroupVolume(null));
     });
   });
 
@@ -334,6 +387,14 @@ describe("StrengthRepository", () => {
       expect(result).toHaveLength(1);
       expect(result[0]).toBeInstanceOf(ProgressiveOverload);
       expect(result[0]?.toDetail().isProgressing).toBe(true);
+    });
+
+    it("applies finite selected-range lower-bound filters", async () => {
+      await expectFiniteDaysFilter((repo) => repo.getProgressiveOverload(30));
+    });
+
+    it("omits selected-range lower-bound filters when days is null", async () => {
+      await expectUnboundedDaysFilter((repo) => repo.getProgressiveOverload(null));
     });
   });
 

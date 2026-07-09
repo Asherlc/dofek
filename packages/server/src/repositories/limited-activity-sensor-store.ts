@@ -1,5 +1,6 @@
 import { trace } from "@opentelemetry/api";
 import type { z } from "zod";
+import type { RangeDays } from "../lib/date-window.ts";
 import { logger } from "../logger.ts";
 import type {
   ActivitySensorQueryOptions,
@@ -136,7 +137,7 @@ export class LimitedActivitySensorStore implements ActivitySensorStore {
   }
 
   getPowerCurveSamples(
-    days: number,
+    days: number | null,
     userId: string,
     timezone: string,
     activityTypes: readonly string[],
@@ -147,7 +148,7 @@ export class LimitedActivitySensorStore implements ActivitySensorStore {
   }
 
   getNormalizedPowerSamples(
-    days: number,
+    days: number | null,
     userId: string,
     timezone: string,
     activityTypes: readonly string[],
@@ -163,13 +164,13 @@ export class LimitedActivitySensorStore implements ActivitySensorStore {
     );
   }
 
-  getHeartRateCurveRows(days: number, userId: string, timezone: string) {
+  getHeartRateCurveRows(days: RangeDays, userId: string, timezone: string) {
     return this.#regularLimiter.run(() =>
       this.#delegate.getHeartRateCurveRows(days, userId, timezone),
     );
   }
 
-  getPaceCurveRows(days: number, userId: string, timezone: string) {
+  getPaceCurveRows(days: RangeDays, userId: string, timezone: string) {
     return this.#regularLimiter.run(() => this.#delegate.getPaceCurveRows(days, userId, timezone));
   }
 

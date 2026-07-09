@@ -2,13 +2,13 @@ import type { CriticalPowerModel } from "@dofek/training/power-analysis";
 export type { CriticalPowerModel };
 
 import { TRPCError } from "@trpc/server";
-import { z } from "zod";
+import { selectedChartRangeInput } from "../lib/date-window.ts";
 import { PowerRepository } from "../repositories/power-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export const powerRouter = router({
   powerCurve: cachedProtectedQuery(CacheTTL.LONG)
-    .input(z.object({ days: z.number().default(90) }))
+    .input(selectedChartRangeInput("power.powerCurve"))
     .query(async ({ ctx, input }) => {
       if (!ctx.sensorStore) {
         throw new TRPCError({
@@ -21,7 +21,7 @@ export const powerRouter = router({
       return repo.getPowerCurve(input.days);
     }),
   eftpTrend: cachedProtectedQuery(CacheTTL.LONG)
-    .input(z.object({ days: z.number().default(365) }))
+    .input(selectedChartRangeInput("power.eftpTrend"))
     .query(async ({ ctx, input }) => {
       if (!ctx.sensorStore) {
         throw new TRPCError({

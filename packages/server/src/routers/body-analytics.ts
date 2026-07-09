@@ -2,7 +2,7 @@ import { captureException } from "@sentry/node";
 import type { Database } from "dofek/db";
 import { queryCache } from "dofek/lib/cache";
 import { z } from "zod";
-import { endDateSchema } from "../lib/date-window.ts";
+import { selectedChartDateRangeInput, selectedDateRangeInput } from "../lib/date-window.ts";
 import { BodyAnalyticsRepository } from "../repositories/body-analytics-repository.ts";
 import { SettingsRepository } from "../repositories/settings-repository.ts";
 import {
@@ -33,7 +33,7 @@ export type {
   WeightPrediction,
 } from "../repositories/body-analytics-repository.ts";
 
-const dateWindowInput = z.object({ days: z.number().default(90), endDate: endDateSchema });
+const dateWindowInput = selectedDateRangeInput(90);
 
 function createBodyAnalyticsRepository(ctx: AuthenticatedContext) {
   return new BodyAnalyticsRepository(
@@ -56,7 +56,7 @@ export const bodyAnalyticsRouter = router({
     }),
 
   weightOverview: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(dateWindowInput)
+    .input(selectedChartDateRangeInput("bodyAnalytics.weightOverview"))
     .query(async ({ ctx, input }) => {
       const goalWeightKg = await readGoalWeightKg(ctx.db, ctx.userId);
       const repo = createBodyAnalyticsRepository(ctx);
@@ -80,7 +80,7 @@ export const bodyAnalyticsRouter = router({
     }),
 
   recomposition: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ days: z.number().default(180), endDate: endDateSchema }))
+    .input(selectedChartDateRangeInput("bodyAnalytics.recomposition"))
     .query(({ ctx, input }) => {
       const repo = createBodyAnalyticsRepository(ctx);
       return repo.getRecomposition(input.days, input.endDate);

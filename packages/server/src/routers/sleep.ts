@@ -1,12 +1,12 @@
 import { z } from "zod";
-import { dateWindowInput } from "../lib/date-window.ts";
+import { selectedChartDateRangeInput } from "../lib/date-window.ts";
 import { SleepRepository } from "../repositories/sleep-repository.ts";
 
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
 export const sleepRouter = router({
   list: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(dateWindowInput)
+    .input(selectedChartDateRangeInput("sleep.list"))
     .query(async ({ ctx, input }) => {
       const repo = new SleepRepository(
         ctx.db,

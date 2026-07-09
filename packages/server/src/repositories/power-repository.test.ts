@@ -92,6 +92,35 @@ describe("PowerRepository", () => {
       ]);
     });
 
+    it("omits the read-model lower-bound predicate for an unbounded power curve", async () => {
+      const analyticsStore = makeAnalyticsStore();
+      analyticsStore.query.mockResolvedValueOnce([
+        { duration_seconds: 300, best_power: 300, activity_date: "2024-06-16" },
+      ]);
+      const repo = new PowerRepository("user-1", "UTC", analyticsStore);
+
+      await repo.getPowerCurve(null);
+
+      const queryText = analyticsStore.query.mock.calls[0]?.[1];
+      const queryParams = analyticsStore.query.mock.calls[0]?.[2];
+      expect(queryText).toContain("FROM analytics.activity_power_curve AS power_curve FINAL");
+      expect(queryText).not.toContain("power_curve.started_at > now() - INTERVAL");
+      expect(queryParams).not.toHaveProperty("days");
+    });
+
+    it("passes null to raw sample fallback for an unbounded power curve", async () => {
+      const analyticsStore = makeAnalyticsStore();
+      analyticsStore.query.mockResolvedValueOnce([]);
+      analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
+      const repo = new PowerRepository("user-1", "UTC", analyticsStore);
+
+      await repo.getPowerCurve(null);
+
+      expect(analyticsStore.getPowerCurveSamples).toHaveBeenCalledWith(null, "user-1", "UTC", [
+        ...CYCLING_ACTIVITY_TYPES,
+      ]);
+    });
+
     it("computes power curve from samples", async () => {
       // Build enough samples to cover 5s duration at 1s intervals
       const samples = Array.from({ length: 10 }, (_, index) => ({
@@ -155,6 +184,7 @@ describe("PowerRepository", () => {
       );
       expectCyclingOnlyActivityTypes(analyticsStore.query.mock.calls[0]?.[2]?.activityTypes);
       const queryText = analyticsStore.query.mock.calls[0]?.[1];
+      expect(queryText).toContain("power_curve.started_at > now() - INTERVAL {days:Int32} DAY");
       expect(queryText).toContain("INNER JOIN analytics.activity_summary AS activity_summary");
       expect(queryText).not.toContain("analytics.activity_summary AS activity_summary FINAL");
       expect(queryText).toContain(
@@ -188,6 +218,28 @@ describe("PowerRepository", () => {
       expect(result.trend).toEqual([]);
       expect(result.currentEftp).toBeNull();
       expect(result.model).toBeNull();
+    });
+
+    it("omits the read-model lower-bound predicate and uses unbounded fallback samples for all-time eFTP trend", async () => {
+      const analyticsStore = makeAnalyticsStore();
+      analyticsStore.query.mockResolvedValueOnce([]);
+      analyticsStore.getNormalizedPowerSamples.mockResolvedValueOnce([]);
+      analyticsStore.getPowerCurveSamples.mockResolvedValueOnce([]);
+      const repo = new PowerRepository("user-1", "UTC", analyticsStore);
+
+      await repo.getEftpTrend(null);
+
+      const queryText = analyticsStore.query.mock.calls[0]?.[1];
+      const queryParams = analyticsStore.query.mock.calls[0]?.[2];
+      expect(queryText).toContain("FROM analytics.activity_summary");
+      expect(queryText).not.toContain("started_at > now() - INTERVAL {days:Int32} DAY");
+      expect(queryParams).not.toHaveProperty("days");
+      expect(analyticsStore.getNormalizedPowerSamples).toHaveBeenCalledWith(null, "user-1", "UTC", [
+        ...CYCLING_ACTIVITY_TYPES,
+      ]);
+      expect(analyticsStore.getPowerCurveSamples).toHaveBeenCalledWith(90, "user-1", "UTC", [
+        ...CYCLING_ACTIVITY_TYPES,
+      ]);
     });
 
     it("computes eFTP from raw power samples when the activity summary has no normalized power", async () => {
@@ -244,6 +296,8 @@ describe("PowerRepository", () => {
           days: 365,
         }),
       );
+      const queryText = analyticsStore.query.mock.calls[0]?.[1];
+      expect(queryText).toContain("started_at > now() - INTERVAL {days:Int32} DAY");
       expectCyclingOnlyActivityTypes(analyticsStore.query.mock.calls[0]?.[2]?.activityTypes);
       expect(analyticsStore.getPowerCurveSamples).toHaveBeenCalledWith(90, "user-1", "UTC", [
         ...CYCLING_ACTIVITY_TYPES,

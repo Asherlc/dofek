@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { endDateSchema } from "../lib/date-window.ts";
+import { endDateSchema, selectedChartRangeDaysSchema } from "../lib/date-window.ts";
 import {
   type DailyStressRow,
   StressRepository,
@@ -17,7 +17,12 @@ export const stressRouter = router({
    * Mirrors Whoop's 0-3 stress scale with cumulative weekly tracking.
    */
   scores: cachedProtectedQuery(CacheTTL.MEDIUM)
-    .input(z.object({ days: z.number().min(1).max(365).default(90), endDate: endDateSchema }))
+    .input(
+      z.object({
+        days: selectedChartRangeDaysSchema("stress.scores", { min: 1, max: 365 }),
+        endDate: endDateSchema,
+      }),
+    )
     .query(async ({ ctx, input }): Promise<StressResult> => {
       if (!ctx.sensorStore) {
         throw new TRPCError({

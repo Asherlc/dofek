@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { selectedChartRangeDaysSchema } from "../lib/date-window.ts";
 import {
   CorrelationRepository,
   computeCorrelation,
@@ -28,7 +29,7 @@ export const correlationRouter = router({
       z.object({
         metricX: z.string(),
         metricY: z.string(),
-        days: z.number().default(365),
+        days: selectedChartRangeDaysSchema("correlation.compute"),
         lag: z.number().min(0).max(7).default(0),
       }),
     )

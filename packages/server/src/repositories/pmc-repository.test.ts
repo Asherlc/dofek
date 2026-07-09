@@ -201,6 +201,53 @@ describe("PmcRepository", () => {
       expect(normalizedPowerParams).toMatchObject({ queryDays: 442 });
     });
 
+    it("applies finite selected-range lower-bound filters with expanded history", async () => {
+      const { repo, query } = makeRepoHarness([], [], "UTC", 1);
+
+      await repo.getChart(30);
+
+      const { queryText: activityQuery, params: activityParams } = findQueryCall(
+        query,
+        "CROSS JOIN user_baseline ub",
+      );
+      expect(activityQuery).toContain("asum.started_at > now() - INTERVAL {queryDays:Int32} DAY");
+      expect(activityParams).toHaveProperty("queryDays", 407);
+
+      const { queryText: normalizedPowerQuery, params: normalizedPowerParams } = findQueryCall(
+        query,
+        "normalized_power",
+      );
+      expect(normalizedPowerQuery).toContain("started_at > now() - INTERVAL {queryDays:Int32} DAY");
+      expect(normalizedPowerParams).toHaveProperty("queryDays", 407);
+    });
+
+    it("omits selected-range lower-bound filters when days is null", async () => {
+      const { repo, query } = makeRepoHarness(
+        [makeActivityRow()],
+        [{ activity_id: "activity-1", np: 220 }],
+      );
+
+      await repo.getChart(null);
+
+      const { queryText: activityQuery, params: activityParams } = findQueryCall(
+        query,
+        "CROSS JOIN user_baseline ub",
+      );
+      expect(activityQuery).not.toContain(
+        "asum.started_at > now() - INTERVAL {queryDays:Int32} DAY",
+      );
+      expect(activityParams).not.toHaveProperty("queryDays");
+
+      const { queryText: normalizedPowerQuery, params: normalizedPowerParams } = findQueryCall(
+        query,
+        "normalized_power",
+      );
+      expect(normalizedPowerQuery).not.toContain(
+        "started_at > now() - INTERVAL {queryDays:Int32} DAY",
+      );
+      expect(normalizedPowerParams).not.toHaveProperty("queryDays");
+    });
+
     it("reads sample counts from the activity summary read model", async () => {
       const { repo, query } = makeRepoHarness(
         [makeActivityRow()],

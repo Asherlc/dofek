@@ -14,6 +14,7 @@ import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import { TrainingCalendar } from "../../components/TrainingCalendar.tsx";
 import { TrainingInsightsPanel } from "../../components/TrainingInsightsPanel.tsx";
+import { minimumSelectedRangeQueryInput, selectedRangeQueryInput } from "../../lib/timeRange.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
 import { filterTrainingInsights } from "../../lib/trainingInsights.ts";
 import { TRAINING_OVERVIEW_QUERY_OPTIONS } from "../../lib/trainingQueryOptions.ts";
@@ -27,13 +28,16 @@ export function TrainingOverview() {
   const { days } = useTrainingDays();
   const endDate = useMemo(() => formatDateYmd(new Date()), []);
 
-  const pmcData = trpc.pmc.chart.useQuery({ days }, TRAINING_OVERVIEW_QUERY_OPTIONS);
+  const pmcData = trpc.pmc.chart.useQuery(
+    selectedRangeQueryInput(days),
+    TRAINING_OVERVIEW_QUERY_OPTIONS,
+  );
   const calendarData = trpc.calendar.calendarData.useQuery(
-    { days },
+    selectedRangeQueryInput(days),
     TRAINING_OVERVIEW_QUERY_OPTIONS,
   );
   const insightsQuery = trpc.insights.compute.useQuery(
-    { days: Math.max(days, 90), endDate },
+    { ...minimumSelectedRangeQueryInput(days, 90), endDate },
     TRAINING_OVERVIEW_QUERY_OPTIONS,
   );
 

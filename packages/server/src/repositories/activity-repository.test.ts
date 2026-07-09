@@ -133,6 +133,44 @@ describe("ActivityRepository", () => {
       expect(compiledQuery.sql).toContain("FROM fitness.v_activity");
     });
 
+    it("countVisibleInWindow applies finite lower-bound filters", async () => {
+      const { repo, execute } = makeRepository([{ activity_count: 4 }]);
+
+      await repo.countVisibleInWindow({ days: 30 });
+
+      const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain(
+        "started_at > CURRENT_TIMESTAMP - $2::int * INTERVAL '1 day'",
+      );
+      expect(compiledQuery.params).toEqual(expect.arrayContaining(["user-1", 30]));
+    });
+
+    it("countVisibleInWindow omits lower-bound filters for unbounded ranges", async () => {
+      const { repo, execute } = makeRepository([{ activity_count: 4 }]);
+
+      await repo.countVisibleInWindow({
+        days: null,
+        activityTypes: ["cycling"],
+        requireEndedAt: true,
+        accessWindow: {
+          kind: "limited",
+          paid: false,
+          reason: "trial",
+          startDate: "2024-01-01",
+          endDateExclusive: "2024-02-01",
+        },
+      });
+
+      const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain("FROM fitness.v_activity");
+      expect(compiledQuery.sql).not.toContain("CURRENT_TIMESTAMP -");
+      expect(compiledQuery.sql).toContain("AND ended_at IS NOT NULL");
+      expect(compiledQuery.sql).toContain("AND activity_type IN");
+      expect(compiledQuery.sql).toContain("AND started_at >= $3::timestamptz");
+      expect(compiledQuery.sql).toContain("AND started_at < $4::timestamptz");
+      expect(compiledQuery.params).toEqual(["user-1", "cycling", "2024-01-01", "2024-02-01"]);
+    });
+
     it("resolveVisibleActivityIds skips the query when no ids are provided", async () => {
       const { repo, execute } = makeRepository([]);
 
@@ -371,6 +409,27 @@ describe("ActivityRepository", () => {
       expect(compiledQuery.sql).toContain("a.id");
       expect(compiledQuery.sql).toContain("a.member_activity_ids");
       expect(compiledQuery.sql).toContain("FROM fitness.v_activity a");
+    });
+
+    it("applies finite selected-range lower-bound filters", async () => {
+      const { repo, execute } = makeRepositoryWithSensorStore([]);
+
+      await repo.list({ days: 30, endDate: "2024-02-01", limit: 20, offset: 0 });
+
+      const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain("a.started_at > ($2::date - $3::int)::timestamp");
+      expect(compiledQuery.params).toEqual(expect.arrayContaining(["2024-02-01", 30]));
+    });
+
+    it("omits selected-range lower-bound filters when days is null", async () => {
+      const { repo, execute } = makeRepositoryWithSensorStore([]);
+
+      await repo.list({ days: null, endDate: "2024-02-01", limit: 20, offset: 0 });
+
+      const compiledQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(compiledQuery.sql).toContain("FROM fitness.v_activity a");
+      expect(compiledQuery.sql).not.toContain("a.started_at >");
+      expect(compiledQuery.params).not.toContain(null);
     });
 
     it("returns empty first pages without stale-view self-healing", async () => {

@@ -1,6 +1,7 @@
 import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
 import { computePolarizationIndex, POLARIZATION_ZONES } from "@dofek/zones/zones";
 import * as Sentry from "@sentry/node";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
@@ -118,6 +119,12 @@ function expectCyclingOnlyActivityTypes(activityTypes: unknown) {
   expect(activityTypes).not.toContain("hiking");
 }
 
+const postgresDialect = new PgDialect();
+
+function compiledSql(query: unknown): string {
+  return postgresDialect.sqlToQuery(query).sql;
+}
+
 // ---------------------------------------------------------------------------
 // getAerobicEfficiency
 // ---------------------------------------------------------------------------
@@ -173,6 +180,59 @@ describe("EfficiencyRepository.getAerobicEfficiency", () => {
     );
     expect(vi.mocked(sensorStore.query).mock.calls[1]?.[1]).toContain("analytics.v_activity");
     expectCyclingOnlyActivityTypes(vi.mocked(sensorStore.query).mock.calls[1]?.[2]?.activityTypes);
+  });
+
+  it("keeps lower-bound filters for finite day ranges", async () => {
+    const { repo, execute, sensorStore } = makeRepository([]);
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+
+    await repo.getAerobicEfficiency(90);
+
+    const readModelQuery = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    const activityDiagnosticQuery = compiledSql(execute.mock.calls[0]?.[0]);
+    expect(readModelQuery).toContain("started_at > now() - INTERVAL {days:Int32} DAY");
+    expect(activityDiagnosticQuery).toContain("started_at > CURRENT_TIMESTAMP - $");
+    expect(activityDiagnosticQuery).toContain("::int * INTERVAL '1 day'");
+
+    warnSpy.mockRestore();
+  });
+
+  it("omits all lower-bound filters when days is null", async () => {
+    const sensorStore = makeSequentialSensorStore([
+      [
+        {
+          max_hr: "192",
+          endurance_activities: "1",
+        },
+      ],
+      [],
+      [
+        {
+          activities_with_power: "0",
+          activities_with_hr: "0",
+        },
+      ],
+    ]);
+    const { repo, execute } = makeRepositoryWithSensorStore(sensorStore);
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+
+    await repo.getAerobicEfficiency(null);
+
+    const readModelCall = vi.mocked(sensorStore.query).mock.calls[0];
+    const fallbackCall = vi.mocked(sensorStore.query).mock.calls[1];
+    const sampleDiagnosticCall = vi.mocked(sensorStore.query).mock.calls[2];
+    const activityDiagnosticQuery = compiledSql(execute.mock.calls[0]?.[0]);
+    expect(readModelCall?.[1]).not.toContain("started_at > now() - INTERVAL");
+    expect(fallbackCall?.[1]).not.toContain("asum.started_at > now() - INTERVAL");
+    expect(fallbackCall?.[1]).not.toContain("toDate({rhrWindowStart:String})");
+    expect(sampleDiagnosticCall?.[1]).not.toContain("asum.started_at > now() - INTERVAL");
+    expect(activityDiagnosticQuery).not.toContain("CURRENT_TIMESTAMP");
+    expect(readModelCall?.[2]).not.toHaveProperty("days");
+    expect(fallbackCall?.[2]).not.toHaveProperty("days");
+    expect(fallbackCall?.[2]).not.toHaveProperty("rhrWindowStart");
+    expect(sampleDiagnosticCall?.[2]).not.toHaveProperty("days");
+
+    warnSpy.mockRestore();
   });
 
   it("does not run diagnostics when the main aggregation returns rows", async () => {
@@ -431,6 +491,26 @@ describe("EfficiencyRepository.getAerobicDecoupling", () => {
     expectCyclingOnlyActivityTypes(vi.mocked(sensorStore.query).mock.calls[0]?.[2]?.activityTypes);
   });
 
+  it("keeps lower-bound filters for finite day ranges", async () => {
+    const { repo, sensorStore } = makeRepository([]);
+
+    await repo.getAerobicDecoupling(90);
+
+    const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    expect(queryText).toContain("asum.started_at > now() - INTERVAL {days:Int32} DAY");
+    expect(vi.mocked(sensorStore.query).mock.calls[0]?.[2]).toHaveProperty("days", 90);
+  });
+
+  it("omits lower-bound filters when days is null", async () => {
+    const { repo, sensorStore } = makeRepository([]);
+
+    await repo.getAerobicDecoupling(null);
+
+    const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
+    expect(queryText).not.toContain("asum.started_at > now() - INTERVAL");
+    expect(vi.mocked(sensorStore.query).mock.calls[0]?.[2]).not.toHaveProperty("days");
+  });
+
   it("maps rows to AerobicDecouplingActivity objects", async () => {
     const { repo } = makeRepository([
       {
@@ -515,6 +595,32 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
     expect(fallbackQuery).not.toContain("enduranceTypes");
     expectCyclingOnlyActivityTypes(vi.mocked(sensorStore.query).mock.calls[0]?.[2]?.activityTypes);
     expectCyclingOnlyActivityTypes(vi.mocked(sensorStore.query).mock.calls[1]?.[2]?.activityTypes);
+  });
+
+  it("keeps lower-bound filters for finite day ranges", async () => {
+    const { repo, sensorStore } = makeRepository([]);
+
+    await repo.getPolarizationTrend(90);
+
+    const readModelCall = vi.mocked(sensorStore.query).mock.calls[0];
+    const fallbackCall = vi.mocked(sensorStore.query).mock.calls[1];
+    expect(readModelCall?.[1]).toContain("started_at > now() - INTERVAL {days:Int32} DAY");
+    expect(fallbackCall?.[1]).toContain("asum.started_at > now() - INTERVAL {days:Int32} DAY");
+    expect(readModelCall?.[2]).toHaveProperty("days", 90);
+    expect(fallbackCall?.[2]).toHaveProperty("days", 90);
+  });
+
+  it("omits lower-bound filters when days is null", async () => {
+    const { repo, sensorStore } = makeRepository([]);
+
+    await repo.getPolarizationTrend(null);
+
+    const readModelCall = vi.mocked(sensorStore.query).mock.calls[0];
+    const fallbackCall = vi.mocked(sensorStore.query).mock.calls[1];
+    expect(readModelCall?.[1]).not.toContain("started_at > now() - INTERVAL");
+    expect(fallbackCall?.[1]).not.toContain("asum.started_at > now() - INTERVAL");
+    expect(readModelCall?.[2]).not.toHaveProperty("days");
+    expect(fallbackCall?.[2]).not.toHaveProperty("days");
   });
 
   it("uses the canonical Treff polarization zone boundaries in the query params", async () => {

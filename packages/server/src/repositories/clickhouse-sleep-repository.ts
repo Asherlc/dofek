@@ -1,5 +1,10 @@
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
+import {
+  clickHouseDateRangePredicate,
+  type RangeDays,
+  rangeDaysParams,
+} from "../lib/date-window.ts";
 import type { ActivitySensorQueryOptions, ActivitySensorStore } from "./activity-repository.ts";
 
 const nullableNumberSchema = z.preprocess(
@@ -41,7 +46,7 @@ export interface FetchSleepNightsInput {
   userId: string;
   timezone: string;
   endDate: string;
-  days: number;
+  days: RangeDays;
   accessWindow?: AccessWindow;
   order?: "asc" | "desc";
   limit?: number;
@@ -98,6 +103,12 @@ export async function fetchSleepNights(
 ): Promise<ClickHouseSleepNight[]> {
   const orderDirection = input.order === "desc" ? "DESC" : "ASC";
   const limitClause = input.limit != null ? "\nLIMIT {limit:UInt32}" : "";
+  const sleepDateExpression = "toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR)";
+  const sleepLowerBoundClause = clickHouseDateRangePredicate({
+    expression: sleepDateExpression,
+    days: input.days,
+    operator: ">=",
+  });
   const rows = await input.sensorStore.query(
     clickHouseSleepNightSchema,
     `SELECT
@@ -134,7 +145,7 @@ export async function fetchSleepNights(
       FROM analytics.v_sleep
       WHERE user_id = {userId:UUID}
         AND is_nap = false
-        AND toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR) >= subtractDays(toDate({endDate:String}), {days:UInt32})
+        ${sleepLowerBoundClause}
         AND toDate(toTimeZone(started_at, {timezone:String}) - INTERVAL 6 HOUR) <= toDate({endDate:String})
         ${accessWindowClause(input.accessWindow)}
     )
@@ -144,7 +155,7 @@ export async function fetchSleepNights(
       userId: input.userId,
       timezone: input.timezone,
       endDate: input.endDate,
-      days: input.days,
+      ...rangeDaysParams(input.days),
       ...(input.limit != null ? { limit: input.limit } : {}),
       ...accessWindowParams(input.accessWindow),
     },

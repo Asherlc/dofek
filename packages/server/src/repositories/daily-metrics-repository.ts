@@ -1,7 +1,12 @@
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
-import { dateWindowEnd, dateWindowStart } from "../lib/date-window.ts";
+import {
+  dateWindowEnd,
+  dateWindowStartPredicate,
+  type RangeDays,
+  rangeDaysOrNullAdd,
+} from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import { restingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
 
@@ -72,12 +77,12 @@ export type TrendsRow = z.infer<typeof trendsRowSchema>;
 /** Data access for daily health metrics (vitals, activity, body). */
 export class DailyMetricsRepository extends BaseRepository {
   /** Daily metrics within the given date window, ordered by date ascending. */
-  async list(days: number, endDate: string): Promise<DailyMetricsViewRow[]> {
+  async list(days: RangeDays, endDate: string): Promise<DailyMetricsViewRow[]> {
     return this.query(
       dailyMetricsViewRowSchema,
       sql`SELECT * FROM fitness.v_daily_metrics
           WHERE user_id = ${this.userId}
-            AND date > ${dateWindowStart(endDate, days)}
+            ${dateWindowStartPredicate(sql`date`, endDate, days)}
             AND date <= ${dateWindowEnd(endDate)}
             ${this.dateAccessPredicate(sql`date`)}
           ORDER BY date ASC`,
@@ -103,11 +108,11 @@ export class DailyMetricsRepository extends BaseRepository {
    * filters down to the requested date range client-side.
    */
   async getHrvBaseline(
-    days: number,
+    days: RangeDays,
     endDate: string,
     restingHeartRateCte: SQL = restingHeartRateValuesCte([]),
   ): Promise<HrvBaselineRow[]> {
-    const warmupDays = days + 60;
+    const warmupDays = rangeDaysOrNullAdd(days, 60);
     const rows = await this.query(
       hrvBaselineRowSchema,
       sql`WITH ${restingHeartRateCte},
@@ -115,7 +120,7 @@ export class DailyMetricsRepository extends BaseRepository {
             SELECT date
             FROM fitness.v_daily_metrics
             WHERE user_id = ${this.userId}
-              AND date > ${dateWindowStart(endDate, warmupDays)}
+              ${dateWindowStartPredicate(sql`date`, endDate, warmupDays)}
             UNION
             SELECT date
             FROM resting_heart_rate
@@ -131,7 +136,8 @@ export class DailyMetricsRepository extends BaseRepository {
              AND dm.date = base_dates.date
             LEFT JOIN resting_heart_rate drhr
               ON drhr.date = base_dates.date
-            WHERE base_dates.date > ${dateWindowStart(endDate, warmupDays)}
+            WHERE true
+              ${dateWindowStartPredicate(sql`base_dates.date`, endDate, warmupDays)}
           )
           SELECT date, hrv, resting_hr,
             AVG(hrv) OVER (ORDER BY date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW) AS mean_60d,
@@ -142,6 +148,8 @@ export class DailyMetricsRepository extends BaseRepository {
           ORDER BY date ASC`,
     );
 
+    if (days === null) return rows;
+
     // Discard warmup rows — only return the requested date range
     const cutoffDate = new Date(`${endDate}T00:00:00`);
     cutoffDate.setDate(cutoffDate.getDate() - days);
@@ -151,7 +159,7 @@ export class DailyMetricsRepository extends BaseRepository {
 
   /** Aggregate trends (averages, standard deviations) and latest values for the date window. */
   async getTrends(
-    days: number,
+    days: RangeDays,
     endDate: string,
     restingHeartRateCte: SQL = restingHeartRateValuesCte([]),
   ): Promise<TrendsRow | null> {
@@ -162,7 +170,7 @@ export class DailyMetricsRepository extends BaseRepository {
             SELECT date
             FROM fitness.v_daily_metrics
             WHERE user_id = ${this.userId}
-              AND date > ${dateWindowStart(endDate, days)}
+              ${dateWindowStartPredicate(sql`date`, endDate, days)}
               AND date <= ${dateWindowEnd(endDate)}
             UNION
             SELECT date
@@ -183,7 +191,8 @@ export class DailyMetricsRepository extends BaseRepository {
              AND dm.date = base_dates.date
             LEFT JOIN resting_heart_rate drhr
               ON drhr.date = base_dates.date
-            WHERE base_dates.date > ${dateWindowStart(endDate, days)}
+            WHERE true
+              ${dateWindowStartPredicate(sql`base_dates.date`, endDate, days)}
               AND base_dates.date <= ${dateWindowEnd(endDate)}
               ${this.dateAccessPredicate(sql`base_dates.date`)}
           ),

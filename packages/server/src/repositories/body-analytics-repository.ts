@@ -2,6 +2,7 @@ import { captureException } from "@sentry/node";
 import type { Database } from "dofek/db";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
+import type { RangeDays } from "../lib/date-window.ts";
 import { type BodyClickHouseStore, fetchBodyWeightRows } from "./body-clickhouse.ts";
 
 // ── Types ───────────────────────────────────────────────────────────
@@ -240,7 +241,7 @@ export class BodyAnalyticsRepository extends BaseRepository {
    * Filters out daily fluctuations (water, food timing) to show the
    * real trend. Similar to MacroFactor / Happy Scale approach.
    */
-  async getSmoothedWeight(days: number, endDate: string): Promise<SmoothedWeightRow[]> {
+  async getSmoothedWeight(days: RangeDays, endDate: string): Promise<SmoothedWeightRow[]> {
     const rows = await this.#fetchBodyWeightRows(days, endDate, false);
 
     const data = rows
@@ -258,7 +259,7 @@ export class BodyAnalyticsRepository extends BaseRepository {
    * Derives fat mass (weight * body_fat_pct) and lean mass (weight - fat mass)
    * from measurements that have both weight and body fat data.
    */
-  async getRecomposition(days: number, endDate: string): Promise<BodyRecompositionRow[]> {
+  async getRecomposition(days: RangeDays, endDate: string): Promise<BodyRecompositionRow[]> {
     const rows = await this.#fetchBodyWeightRows(days, endDate, true);
 
     const data = rows
@@ -288,7 +289,7 @@ export class BodyAnalyticsRepository extends BaseRepository {
    * and a forward projection line for charting.
    */
   async getWeightPrediction(
-    days: number,
+    days: RangeDays,
     endDate: string,
     goalWeightKg: number | null,
   ): Promise<WeightPrediction> {
@@ -307,7 +308,7 @@ export class BodyAnalyticsRepository extends BaseRepository {
   // ── Private computation methods ─────────────────────────────────
 
   #fetchBodyWeightRows(
-    days: number,
+    days: RangeDays,
     endDate: string,
     requireBodyFat: boolean,
   ): Promise<Awaited<ReturnType<typeof fetchBodyWeightRows>>> {

@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { z } from "zod";
+import { selectedChartRangeInput } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { RunningRepository } from "../repositories/running-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
@@ -37,11 +37,9 @@ export interface PaceTrendRow {
   durationMinutes: number;
 }
 
-const daysInput = z.object({ days: z.number().default(90) });
-
 export const runningRouter = router({
   dynamics: cachedProtectedQuery(CacheTTL.LONG)
-    .input(daysInput)
+    .input(selectedChartRangeInput("running.dynamics"))
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "running.dynamics");
       const repo = new RunningRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
@@ -49,7 +47,7 @@ export const runningRouter = router({
     }),
 
   paceTrend: cachedProtectedQuery(CacheTTL.LONG)
-    .input(daysInput)
+    .input(selectedChartRangeInput("running.paceTrend"))
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "running.paceTrend");
       const repo = new RunningRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);

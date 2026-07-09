@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { selectedChartRangeDaysSchema, selectedChartRangeInput } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import {
   type ActivityVariabilityEmptyReason,
@@ -75,11 +76,9 @@ export interface PedalDynamicsRow {
   avgPedalSmoothness: number;
 }
 
-const daysInput = z.object({ days: z.number().default(90) });
-
 export const cyclingAdvancedRouter = router({
   rampRate: cachedProtectedQuery(CacheTTL.LONG)
-    .input(daysInput)
+    .input(selectedChartRangeInput("cyclingAdvanced.rampRate"))
     .query(async ({ ctx, input }): Promise<RampRateResult> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "cyclingAdvanced");
       const repo = new CyclingAdvancedRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
@@ -92,7 +91,7 @@ export const cyclingAdvancedRouter = router({
     }),
 
   trainingMonotony: cachedProtectedQuery(CacheTTL.LONG)
-    .input(daysInput)
+    .input(selectedChartRangeInput("cyclingAdvanced.trainingMonotony"))
     .query(async ({ ctx, input }): Promise<TrainingMonotonyWeek[]> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "cyclingAdvanced");
       const repo = new CyclingAdvancedRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
@@ -103,7 +102,7 @@ export const cyclingAdvancedRouter = router({
   activityVariability: cachedProtectedQuery(CacheTTL.LONG)
     .input(
       z.object({
-        days: z.number().default(90),
+        days: selectedChartRangeDaysSchema("cyclingAdvanced.activityVariability"),
         limit: z.number().min(1).max(100).default(20),
         offset: z.number().min(0).default(0),
       }),
@@ -124,7 +123,7 @@ export const cyclingAdvancedRouter = router({
     }),
 
   verticalAscentRate: cachedProtectedQuery(CacheTTL.LONG)
-    .input(daysInput)
+    .input(selectedChartRangeInput("cyclingAdvanced.verticalAscentRate"))
     .query(async ({ ctx, input }): Promise<VerticalAscentRow[]> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "cyclingAdvanced");
       const repo = new CyclingAdvancedRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
@@ -133,7 +132,7 @@ export const cyclingAdvancedRouter = router({
     }),
 
   pedalDynamics: cachedProtectedQuery(CacheTTL.LONG)
-    .input(daysInput)
+    .input(selectedChartRangeInput("cyclingAdvanced.pedalDynamics"))
     .query(async ({ ctx, input }): Promise<PedalDynamicsRow[]> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "cyclingAdvanced");
       const repo = new CyclingAdvancedRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);

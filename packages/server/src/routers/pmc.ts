@@ -2,7 +2,7 @@ import type { PmcChartResult, PmcDataPoint, TssModelInfo } from "@dofek/training
 export type { PmcChartResult, PmcDataPoint, TssModelInfo };
 
 import { TRPCError } from "@trpc/server";
-import { z } from "zod";
+import { selectedChartRangeInput } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { PmcRepository } from "../repositories/pmc-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
@@ -29,7 +29,7 @@ export const pmcRouter = router({
    * Derives CTL (42d), ATL (7d), TSB from daily TSS.
    */
   chart: cachedProtectedQuery(CacheTTL.LONG)
-    .input(z.object({ days: z.number().default(180) }))
+    .input(selectedChartRangeInput("pmc.chart"))
     .query(async ({ ctx, input }): Promise<PmcChartResult> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "pmc.chart");
       const repo = new PmcRepository(

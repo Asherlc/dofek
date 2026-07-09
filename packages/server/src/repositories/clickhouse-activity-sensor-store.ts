@@ -2,6 +2,11 @@ import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
 import type { ClickHouseCommandClient } from "dofek/db/clickhouse";
 import { refreshBodyMeasurementReadModel } from "dofek/db/clickhouse-read-model-refresh";
 import { z } from "zod";
+import {
+  clickHouseToIntervalDayLowerBound,
+  type RangeDays,
+  rangeDaysParams,
+} from "../lib/date-window.ts";
 import type {
   ActivitySensorQueryOptions,
   ActivitySensorStore,
@@ -59,9 +64,9 @@ function queryParams(window: ActivitySensorWindow, extra: Record<string, unknown
   };
 }
 
-function userWindowParams(days: number, userId: string, timezone: string) {
+function userWindowParams(days: RangeDays, userId: string, timezone: string) {
   return {
-    days,
+    ...rangeDaysParams(days),
     userId,
     timezone,
     enduranceActivityTypes: [...ENDURANCE_ACTIVITY_TYPES],
@@ -162,7 +167,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
   }
 
   async getPowerCurveSamples(
-    days: number,
+    days: number | null,
     userId: string,
     timezone: string,
     activityTypes: readonly string[],
@@ -171,7 +176,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
   }
 
   async getNormalizedPowerSamples(
-    days: number,
+    days: number | null,
     userId: string,
     timezone: string,
     activityTypes: readonly string[],
@@ -189,7 +194,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
   }
 
   async getHeartRateCurveRows(
-    days: number,
+    days: RangeDays,
     userId: string,
     timezone: string,
   ): Promise<Array<{ duration_seconds: number; best_hr: number; activity_date: string }>> {
@@ -223,7 +228,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             AND deduped_samples.is_deleted = 0
             AND deduped_samples.recorded_at >= activity.started_at
             AND deduped_samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
-            AND activity.started_at > now() - toIntervalDay({days:UInt32})
+            ${clickHouseToIntervalDayLowerBound(days, "activity.started_at")}
             AND activity.is_deleted = 0
             AND has({enduranceActivityTypes:Array(String)}, activity.activity_type)
         ),
@@ -277,7 +282,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
   }
 
   async getPaceCurveRows(
-    days: number,
+    days: RangeDays,
     userId: string,
     timezone: string,
   ): Promise<Array<{ duration_seconds: number; best_pace: number; activity_date: string }>> {
@@ -311,7 +316,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             AND deduped_samples.is_deleted = 0
             AND deduped_samples.recorded_at >= activity.started_at
             AND deduped_samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
-            AND activity.started_at > now() - toIntervalDay({days:UInt32})
+            ${clickHouseToIntervalDayLowerBound(days, "activity.started_at")}
             AND activity.is_deleted = 0
             AND has({enduranceActivityTypes:Array(String)}, activity.activity_type)
         ),

@@ -124,6 +124,64 @@ describe("Router transformation logic", () => {
     expect(queryText).not.toContain("analytics.v_sleep");
   });
 
+  it("uses a lower date bound for finite selected ranges", async () => {
+    const query = vi.fn().mockResolvedValue([]);
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: {
+        query,
+        getActivitySummaries: vi.fn().mockResolvedValue([]),
+        getStream: vi.fn().mockResolvedValue([]),
+        getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+        getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+        getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+        getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+        getPaceCurveRows: vi.fn().mockResolvedValue([]),
+      },
+    });
+
+    await caller.scores({ days: 30, endDate: "2026-03-24" });
+
+    const queryText = query.mock.calls[0]?.[1];
+    const queryParams = query.mock.calls[0]?.[2];
+    expect(queryText).toContain("recovery_inputs.date > toDate({windowStart:String})");
+    expect(queryParams).toMatchObject({ windowStart: "2026-02-22", endDate: "2026-03-24" });
+  });
+
+  it("omits the lower date bound when days is null", async () => {
+    const query = vi.fn().mockResolvedValue([]);
+    const caller = createCaller({
+      db: { execute: vi.fn().mockResolvedValue([]) },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: {
+        query,
+        getActivitySummaries: vi.fn().mockResolvedValue([]),
+        getStream: vi.fn().mockResolvedValue([]),
+        getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+        getPowerCurveSamples: vi.fn().mockResolvedValue([]),
+        getNormalizedPowerSamples: vi.fn().mockResolvedValue([]),
+        getVo2MaxEstimates: vi.fn().mockResolvedValue([]),
+        getHeartRateCurveRows: vi.fn().mockResolvedValue([]),
+        getPaceCurveRows: vi.fn().mockResolvedValue([]),
+      },
+    });
+
+    await caller.scores({ days: null, endDate: "2026-03-24" });
+
+    const queryText = query.mock.calls[0]?.[1];
+    const queryParams = query.mock.calls[0]?.[2];
+    expect(queryText).toContain("recovery_inputs.user_id = {userId:UUID}");
+    expect(queryText).not.toContain("windowStart");
+    expect(queryParams).toMatchObject({ userId: "user-1", endDate: "2026-03-24" });
+    expect(queryParams).not.toHaveProperty("windowStart");
+  });
+
   it("rejects unbounded day windows", async () => {
     const caller = makeCaller([]);
     await expect(caller.scores({ days: 366, endDate: "2026-03-24" })).rejects.toThrow();

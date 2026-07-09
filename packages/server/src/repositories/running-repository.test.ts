@@ -305,6 +305,19 @@ describe("RunningRepository", () => {
     return { repo, execute: query, dbExecute: execute };
   }
 
+  function expectClickHouseFiniteDaysFilter(query: string, params: Record<string, unknown>): void {
+    expect(query).toContain("INTERVAL {days:Int32} DAY");
+    expect(params).toHaveProperty("days", 30);
+  }
+
+  function expectClickHouseUnboundedDaysFilter(
+    query: string,
+    params: Record<string, unknown>,
+  ): void {
+    expect(query).not.toContain("INTERVAL {days:Int32} DAY");
+    expect(params).not.toHaveProperty("days");
+  }
+
   describe("getDynamics", () => {
     it("returns empty array when no data", async () => {
       const { repo } = makeRepository([]);
@@ -338,6 +351,24 @@ describe("RunningRepository", () => {
       await repo.getDynamics(30);
       expect(execute).toHaveBeenCalledTimes(1);
     });
+
+    it("applies finite selected-range lower-bound filters", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await repo.getDynamics(30);
+
+      const [, query, params] = execute.mock.calls[0];
+      expectClickHouseFiniteDaysFilter(query, params);
+    });
+
+    it("omits selected-range lower-bound filters when days is null", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await repo.getDynamics(null);
+
+      const [, query, params] = execute.mock.calls[0];
+      expectClickHouseUnboundedDaysFilter(query, params);
+    });
   });
 
   describe("getPaceTrend", () => {
@@ -370,6 +401,24 @@ describe("RunningRepository", () => {
       const { repo, execute } = makeRepository([]);
       await repo.getPaceTrend(60);
       expect(execute).toHaveBeenCalledTimes(1);
+    });
+
+    it("applies finite selected-range lower-bound filters", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await repo.getPaceTrend(30);
+
+      const [, query, params] = execute.mock.calls[0];
+      expectClickHouseFiniteDaysFilter(query, params);
+    });
+
+    it("omits selected-range lower-bound filters when days is null", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await repo.getPaceTrend(null);
+
+      const [, query, params] = execute.mock.calls[0];
+      expectClickHouseUnboundedDaysFilter(query, params);
     });
   });
 });

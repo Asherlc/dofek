@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { z } from "zod";
+import { selectedChartRangeInput } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import type { RouteInstance } from "../repositories/hiking-repository.ts";
 import { HikingRepository } from "../repositories/hiking-repository.ts";
@@ -64,7 +64,7 @@ export interface ActivityComparisonRow {
 
 export const hikingRouter = router({
   gradeAdjustedPace: cachedProtectedQuery(CacheTTL.LONG)
-    .input(z.object({ days: z.number().default(90) }))
+    .input(selectedChartRangeInput("hiking.gradeAdjustedPace"))
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "hiking.gradeAdjustedPace");
       const repo = new HikingRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
@@ -73,7 +73,7 @@ export const hikingRouter = router({
     }),
 
   elevationProfile: cachedProtectedQuery(CacheTTL.LONG)
-    .input(z.object({ days: z.number().default(365) }))
+    .input(selectedChartRangeInput("hiking.elevationProfile"))
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "hiking.elevationProfile");
       const repo = new HikingRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
@@ -82,7 +82,7 @@ export const hikingRouter = router({
     }),
 
   walkingBiomechanics: cachedProtectedQuery(CacheTTL.LONG)
-    .input(z.object({ days: z.number().default(90) }))
+    .input(selectedChartRangeInput("hiking.walkingBiomechanics"))
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "hiking.walkingBiomechanics");
       const repo = new HikingRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
@@ -91,7 +91,7 @@ export const hikingRouter = router({
     }),
 
   activityComparison: cachedProtectedQuery(CacheTTL.LONG)
-    .input(z.object({ days: z.number().default(365) }))
+    .input(selectedChartRangeInput("hiking.activityComparison"))
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "hiking.activityComparison");
       const repo = new HikingRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);

@@ -3,13 +3,14 @@ import { useState } from "react";
 import { BehaviorImpactChart } from "../components/BehaviorImpactChart.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
+import type { TimeRangeDays } from "../lib/timeRange.ts";
 
 export const Route = createFileRoute("/behavior-impact")({
   component: BehaviorImpactPage,
 });
 
 function BehaviorImpactPage() {
-  const [days, setDays] = useState(90);
+  const [days, setDays] = useState<TimeRangeDays>(90);
 
   return (
     <PageLayout

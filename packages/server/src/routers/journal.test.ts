@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTestCallerFactory } from "./test-helpers.ts";
+import { collectSqlText, createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -71,6 +71,32 @@ describe("journalRouter", () => {
       const result = await caller.entries({});
       expect(result).toEqual([]);
     });
+
+    it("uses a lower date bound for finite selected ranges", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+      });
+
+      await caller.entries({ days: 30 });
+
+      expect(collectSqlText(execute.mock.calls[0]?.[0])).toContain("AND je.date >=");
+    });
+
+    it("omits the lower date bound when days is null", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+      });
+
+      await caller.entries({ days: null });
+
+      const queryText = collectSqlText(execute.mock.calls[0]?.[0]);
+      expect(queryText).toContain("WHERE je.user_id =");
+      expect(queryText).not.toContain("je.date >=");
+    });
   });
 
   describe("trends", () => {
@@ -85,6 +111,33 @@ describe("journalRouter", () => {
       const caller = makeCaller([]);
       const result = await caller.trends({ questionSlug: "caffeine" });
       expect(result).toEqual([]);
+    });
+
+    it("uses a lower date bound for finite selected ranges", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+      });
+
+      await caller.trends({ questionSlug: "caffeine", days: 90 });
+
+      expect(collectSqlText(execute.mock.calls[0]?.[0])).toContain("AND je.date >=");
+    });
+
+    it("omits the lower date bound when days is null", async () => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const caller = createCaller({
+        db: { execute },
+        userId: "user-1",
+      });
+
+      await caller.trends({ questionSlug: "caffeine", days: null });
+
+      const queryText = collectSqlText(execute.mock.calls[0]?.[0]);
+      expect(queryText).toContain("WHERE je.user_id =");
+      expect(queryText).toContain("AND je.question_slug =");
+      expect(queryText).not.toContain("je.date >=");
     });
   });
 

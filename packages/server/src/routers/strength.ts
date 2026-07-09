@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { selectedChartRangeInput } from "../lib/date-window.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
@@ -53,7 +54,7 @@ export interface WorkoutSummaryRow {
 
 export const strengthRouter = router({
   volumeOverTime: cachedProtectedQuery(CacheTTL.LONG)
-    .input(z.object({ days: z.number().default(90) }))
+    .input(selectedChartRangeInput("strength.volumeOverTime"))
     .query(async ({ ctx, input }): Promise<VolumeOverTimeRow[]> => {
       const repo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);
       const weeks = await repo.getVolumeOverTime(input.days);
@@ -61,7 +62,7 @@ export const strengthRouter = router({
     }),
 
   estimatedOneRepMax: cachedProtectedQuery(CacheTTL.LONG)
-    .input(z.object({ days: z.number().default(90) }))
+    .input(selectedChartRangeInput("strength.estimatedOneRepMax"))
     .query(async ({ ctx, input }): Promise<EstimatedOneRepMaxRow[]> => {
       const repo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);
       const exercises = await repo.getEstimatedOneRepMax(input.days);
@@ -69,7 +70,7 @@ export const strengthRouter = router({
     }),
 
   muscleGroupVolume: cachedProtectedQuery(CacheTTL.LONG)
-    .input(z.object({ days: z.number().default(90) }))
+    .input(selectedChartRangeInput("strength.muscleGroupVolume"))
     .query(async ({ ctx, input }): Promise<MuscleGroupVolumeRow[]> => {
       const repo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);
       const groups = await repo.getMuscleGroupVolume(input.days);
@@ -77,7 +78,7 @@ export const strengthRouter = router({
     }),
 
   progressiveOverload: cachedProtectedQuery(CacheTTL.LONG)
-    .input(z.object({ days: z.number().default(90) }))
+    .input(selectedChartRangeInput("strength.progressiveOverload"))
     .query(async ({ ctx, input }): Promise<ProgressiveOverloadRow[]> => {
       const repo = new StrengthRepository(ctx.db, ctx.userId, ctx.timezone);
       const overloads = await repo.getProgressiveOverload(input.days);

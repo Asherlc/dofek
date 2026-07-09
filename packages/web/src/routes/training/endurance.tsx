@@ -6,6 +6,7 @@ import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { RampRateChart } from "../../components/RampRateChart.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
 import { TrainingMonotonyChart } from "../../components/TrainingMonotonyChart.tsx";
+import { selectedRangeQueryInput } from "../../lib/timeRange.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
 import { TRAINING_SLOW_QUERY_OPTIONS } from "../../lib/trainingQueryOptions.ts";
 import { trpc } from "../../lib/trpc.ts";
@@ -18,11 +19,11 @@ function EnduranceTab() {
   const { days } = useTrainingDays();
 
   const polarization = trpc.efficiency.polarizationTrend.useQuery(
-    { days },
+    selectedRangeQueryInput(days),
     TRAINING_SLOW_QUERY_OPTIONS,
   );
-  const rampRate = trpc.cyclingAdvanced.rampRate.useQuery({ days });
-  const monotony = trpc.cyclingAdvanced.trainingMonotony.useQuery({ days });
+  const rampRate = trpc.cyclingAdvanced.rampRate.useQuery(selectedRangeQueryInput(days));
+  const monotony = trpc.cyclingAdvanced.trainingMonotony.useQuery(selectedRangeQueryInput(days));
 
   return (
     <>

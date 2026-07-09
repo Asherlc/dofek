@@ -241,6 +241,19 @@ describe("CyclingAdvancedRepository", () => {
     expect(activityTypes).not.toContain("hiking");
   }
 
+  function expectClickHouseFiniteDaysFilter(query: string, params: Record<string, unknown>): void {
+    expect(query).toContain("INTERVAL {days:Int32} DAY");
+    expect(params).toHaveProperty("days", 30);
+  }
+
+  function expectClickHouseUnboundedDaysFilter(
+    query: string,
+    params: Record<string, unknown>,
+  ): void {
+    expect(query).not.toContain("INTERVAL {days:Int32} DAY");
+    expect(params).not.toHaveProperty("days");
+  }
+
   describe("getRampRate", () => {
     beforeEach(() => {
       vi.useFakeTimers();
@@ -283,6 +296,29 @@ describe("CyclingAdvancedRepository", () => {
         loadDays: 72,
       });
       expectCyclingOnlyActivityTypes(params.activityTypes);
+    });
+
+    it("applies finite selected-range lower-bound filters", async () => {
+      const { repo, sensorStore } = makeRepository([]);
+
+      await repo.getRampRate(30);
+
+      const [, query, params] = sensorStore.query.mock.calls[0];
+      expect(query).toContain("load.date > today() - INTERVAL {loadDays:Int32} DAY");
+      expect(query).toContain("ramp.week > toMonday(today() - INTERVAL {days:Int32} DAY)");
+      expect(params).toMatchObject({ days: 30, loadDays: 72 });
+    });
+
+    it("omits selected-range lower-bound filters when days is null", async () => {
+      const { repo, sensorStore } = makeRepository([]);
+
+      await repo.getRampRate(null);
+
+      const [, query, params] = sensorStore.query.mock.calls[0];
+      expect(query).not.toContain("load.date > today() - INTERVAL {loadDays:Int32} DAY");
+      expect(query).not.toContain("ramp.week > toMonday(today() - INTERVAL {days:Int32} DAY)");
+      expect(params).not.toHaveProperty("days");
+      expect(params).not.toHaveProperty("loadDays");
     });
 
     it("returns safe recommendation for low current ramp rate", async () => {
@@ -358,6 +394,26 @@ describe("CyclingAdvancedRepository", () => {
       });
       expectCyclingOnlyActivityTypes(params.activityTypes);
     });
+
+    it("applies finite selected-range lower-bound filters", async () => {
+      const { repo, sensorStore } = makeRepository([]);
+
+      await repo.getTrainingMonotony(30);
+
+      const [, query, params] = sensorStore.query.mock.calls[0];
+      expect(query).toContain("monotony.week >= toMonday(today() - INTERVAL {days:Int32} DAY)");
+      expect(params).toHaveProperty("days", 30);
+    });
+
+    it("omits selected-range lower-bound filters when days is null", async () => {
+      const { repo, sensorStore } = makeRepository([]);
+
+      await repo.getTrainingMonotony(null);
+
+      const [, query, params] = sensorStore.query.mock.calls[0];
+      expect(query).not.toContain("monotony.week >= toMonday(today() - INTERVAL {days:Int32} DAY)");
+      expect(params).not.toHaveProperty("days");
+    });
   });
 
   describe("getEstimatedFtp", () => {
@@ -385,6 +441,16 @@ describe("CyclingAdvancedRepository", () => {
         days: 60,
       });
       expectCyclingOnlyActivityTypes(params.activityTypes);
+    });
+
+    it("omits selected-range lower-bound filters when days is null", async () => {
+      const { repo, sensorStore } = makeRepository([]);
+
+      await repo.getEstimatedFtp(null);
+
+      const [, query, params] = sensorStore.query.mock.calls[0];
+      expect(query).not.toContain("asum.started_at > now() - INTERVAL {days:Int32} DAY");
+      expect(params).not.toHaveProperty("days");
     });
   });
 
@@ -459,6 +525,74 @@ describe("CyclingAdvancedRepository", () => {
         offset: 0,
       });
       expectCyclingOnlyActivityTypes(params.activityTypes);
+    });
+
+    it("applies finite selected-range lower-bound filters", async () => {
+      const sensorStore = makeSensorStore([]);
+      sensorStore.query = vi
+        .fn()
+        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
+          [{ ftp: 250 }].map((row) => schema.parse(row)),
+        )
+        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
+          [
+            {
+              activity_id: "ride-2",
+              date: "2024-03-15",
+              name: "Morning Ride",
+              np: 220,
+              avg_power: 200,
+              total_count: 1,
+            },
+          ].map((row) => schema.parse(row)),
+        );
+      const repo = new CyclingAdvancedRepository(
+        { execute: vi.fn().mockResolvedValue([{ activity_count: 1 }]) },
+        "user-1",
+        "UTC",
+        sensorStore,
+      );
+
+      await repo.getActivityVariability(30, 20, 0);
+
+      const [, ftpQuery, ftpParams] = sensorStore.query.mock.calls[0];
+      const [, variabilityQuery, variabilityParams] = sensorStore.query.mock.calls[1];
+      expectClickHouseFiniteDaysFilter(ftpQuery, ftpParams);
+      expectClickHouseFiniteDaysFilter(variabilityQuery, variabilityParams);
+    });
+
+    it("omits selected-range lower-bound filters when days is null", async () => {
+      const sensorStore = makeSensorStore([]);
+      sensorStore.query = vi
+        .fn()
+        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
+          [{ ftp: 250 }].map((row) => schema.parse(row)),
+        )
+        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
+          [
+            {
+              activity_id: "ride-2",
+              date: "2024-03-15",
+              name: "Morning Ride",
+              np: 220,
+              avg_power: 200,
+              total_count: 1,
+            },
+          ].map((row) => schema.parse(row)),
+        );
+      const repo = new CyclingAdvancedRepository(
+        { execute: vi.fn().mockResolvedValue([{ activity_count: 1 }]) },
+        "user-1",
+        "UTC",
+        sensorStore,
+      );
+
+      await repo.getActivityVariability(null, 20, 0);
+
+      const [, ftpQuery, ftpParams] = sensorStore.query.mock.calls[0];
+      const [, variabilityQuery, variabilityParams] = sensorStore.query.mock.calls[1];
+      expectClickHouseUnboundedDaysFilter(ftpQuery, ftpParams);
+      expectClickHouseUnboundedDaysFilter(variabilityQuery, variabilityParams);
     });
 
     it("reports missing normalized power when FTP exists but variability rows are empty", async () => {
@@ -576,6 +710,24 @@ describe("CyclingAdvancedRepository", () => {
         days: 90,
       });
       expectCyclingOnlyActivityTypes(params.activityTypes);
+    });
+
+    it("applies finite selected-range lower-bound filters", async () => {
+      const { repo, sensorStore } = makeRepository([], 1);
+
+      await repo.getVerticalAscentRates(30);
+
+      const [, query, params] = sensorStore.query.mock.calls[0];
+      expectClickHouseFiniteDaysFilter(query, params);
+    });
+
+    it("omits selected-range lower-bound filters when days is null", async () => {
+      const { repo, sensorStore } = makeRepository([], 1);
+
+      await repo.getVerticalAscentRates(null);
+
+      const [, query, params] = sensorStore.query.mock.calls[0];
+      expectClickHouseUnboundedDaysFilter(query, params);
     });
   });
 

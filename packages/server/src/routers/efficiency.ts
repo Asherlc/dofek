@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { z } from "zod";
+import { selectedChartRangeInput } from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import {
   type AerobicDecouplingActivity,
@@ -32,7 +32,7 @@ function requireSensorStore(
 
 export const efficiencyRouter = router({
   aerobicEfficiency: cachedProtectedQuery(CacheTTL.LONG)
-    .input(z.object({ days: z.number().default(180) }))
+    .input(selectedChartRangeInput("efficiency.aerobicEfficiency"))
     .query(async ({ ctx, input }): Promise<AerobicEfficiencyResult> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "efficiency.aerobicEfficiency");
       const repo = new EfficiencyRepository(
@@ -46,7 +46,7 @@ export const efficiencyRouter = router({
     }),
 
   aerobicDecoupling: cachedProtectedQuery(CacheTTL.LONG)
-    .input(z.object({ days: z.number().default(180) }))
+    .input(selectedChartRangeInput("efficiency.aerobicDecoupling"))
     .query(async ({ ctx, input }): Promise<AerobicDecouplingActivity[]> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "efficiency.aerobicDecoupling");
       const repo = new EfficiencyRepository(
@@ -65,7 +65,7 @@ export const efficiencyRouter = router({
    * PI = log10((f1 / (f2 * f3)) * 100); PI > 2.0 indicates well-polarized training.
    */
   polarizationTrend: cachedProtectedQuery(CacheTTL.LONG)
-    .input(z.object({ days: z.number().default(180) }))
+    .input(selectedChartRangeInput("efficiency.polarizationTrend"))
     .query(async ({ ctx, input }): Promise<PolarizationTrendResult> => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "efficiency.polarizationTrend");
       const repo = new EfficiencyRepository(

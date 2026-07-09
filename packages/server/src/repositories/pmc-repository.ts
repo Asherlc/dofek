@@ -7,7 +7,13 @@ import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
-import { dateWindowStartString } from "../lib/date-window.ts";
+import {
+  clickHouseIntervalDayLowerBound,
+  dateWindowStartStringOrUndefined,
+  type RangeDays,
+  rangeDaysOrNullAdd,
+  rangeDaysParams,
+} from "../lib/date-window.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { activityRepositoryFor } from "./activity-repository.ts";
 import { PmcChartCalculator } from "./pmc-chart-calculator.ts";
@@ -62,7 +68,7 @@ export class PmcRepository extends BaseRepository {
     this.#sensorStore = sensorStore;
   }
 
-  async getChart(days: number): Promise<PmcRepositoryChartResult> {
+  async getChart(days: RangeDays): Promise<PmcRepositoryChartResult> {
     // Load personalized algorithm parameters
     const storedParams = await loadPersonalizedParams(this.db, this.userId);
     const effective = getEffectiveParams(storedParams);
@@ -71,7 +77,8 @@ export class PmcRepository extends BaseRepository {
 
     // Fetch enough history for EWMA convergence, regardless of display range.
     const minHistoryDays = 365;
-    const queryDays = Math.max(days, minHistoryDays) + chronicTrainingLoadDays;
+    const displayRangeBaseDays = days === null ? null : Math.max(days, minHistoryDays);
+    const queryDays = rangeDaysOrNullAdd(displayRangeBaseDays, chronicTrainingLoadDays);
     const today = new Date().toISOString().slice(0, 10);
 
     if ((await this.#loadRawActivityCount(queryDays)) === 0) {
@@ -81,13 +88,19 @@ export class PmcRepository extends BaseRepository {
       };
     }
 
+    const activityRangeFilter = clickHouseIntervalDayLowerBound(
+      queryDays,
+      "asum.started_at",
+      "queryDays",
+    );
+    const rhrWindowStart = dateWindowStartStringOrUndefined(today, queryDays);
     // QUERY 1: activities with HR data from analytics.activity_summary in CH.
     // user_profile is accessed via ClickHouse read models.
     // Sample counts come from the activity summary read model; do not recompute
     // them by joining deduped_sensor on the request path.
     const activityRows = await this.#sensorStore.query(
       combinedActivityRowSchema,
-      `WITH ${restingHeartRateClickHouseCte()},
+      `WITH ${restingHeartRateClickHouseCte({ includeWindowStart: queryDays !== null })},
       user_baseline AS (
         SELECT
           coalesce(nullIf(up.max_hr, 0), (
@@ -117,17 +130,17 @@ export class PmcRepository extends BaseRepository {
       FROM analytics.activity_summary asum
       CROSS JOIN user_baseline ub
       WHERE asum.user_id = {userId:UUID}
-        AND asum.started_at > now() - INTERVAL {queryDays:Int32} DAY
+        ${activityRangeFilter}
         AND has({activityTypes:Array(String)}, asum.activity_type)
         AND asum.ended_at IS NOT NULL
         AND coalesce(asum.hr_sample_count, 0) > 0`,
       {
         userId: this.userId,
         timezone: this.timezone,
-        queryDays,
+        ...rangeDaysParams(queryDays, "queryDays"),
         activityTypes: CYCLING_TYPES,
         rhrEndDate: today,
-        rhrWindowStart: dateWindowStartString(today, queryDays),
+        ...(rhrWindowStart ? { rhrWindowStart } : {}),
       },
     );
 
@@ -146,10 +159,14 @@ export class PmcRepository extends BaseRepository {
         round(normalized_power, 1) AS np
       FROM analytics.activity_summary
       WHERE user_id = {userId:UUID}
-        AND started_at > now() - INTERVAL {queryDays:Int32} DAY
+        ${clickHouseIntervalDayLowerBound(queryDays, "started_at", "queryDays")}
         AND has({activityTypes:Array(String)}, activity_type)
         AND normalized_power IS NOT NULL`,
-      { userId: this.userId, queryDays, activityTypes: CYCLING_TYPES },
+      {
+        userId: this.userId,
+        ...rangeDaysParams(queryDays, "queryDays"),
+        activityTypes: CYCLING_TYPES,
+      },
     );
 
     const trainingStressCalculator = new TrainingStressCalculator(genderFactor, exponent);
@@ -171,12 +188,12 @@ export class PmcRepository extends BaseRepository {
     return chartCalculator.buildChart({
       activityRows: visibleActivityRows,
       normalizedPowerRows,
-      queryDays,
-      displayDays: days,
+      queryDays: queryDays ?? daysSinceEarliestActivity(visibleActivityRows),
+      displayDays: days ?? daysSinceEarliestActivity(visibleActivityRows),
     });
   }
 
-  async #loadRawActivityCount(days: number): Promise<number> {
+  async #loadRawActivityCount(days: RangeDays): Promise<number> {
     return activityRepositoryFor(
       this.db,
       this.userId,
@@ -187,4 +204,14 @@ export class PmcRepository extends BaseRepository {
       activityTypes: CYCLING_TYPES,
     });
   }
+}
+
+function daysSinceEarliestActivity(activityRows: Array<{ date: string }>): number {
+  const earliestDate = activityRows
+    .map((row) => row.date)
+    .sort((left, right) => left.localeCompare(right))[0];
+  if (!earliestDate) return 0;
+  const earliest = new Date(`${earliestDate}T00:00:00Z`).getTime();
+  const today = new Date(new Date().toISOString().slice(0, 10)).getTime();
+  return Math.max(0, Math.ceil((today - earliest) / 86_400_000));
 }

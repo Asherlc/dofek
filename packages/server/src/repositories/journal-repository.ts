@@ -1,6 +1,7 @@
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { currentDateRangePredicate, type RangeDays } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
@@ -96,7 +97,7 @@ export class JournalRepository {
   }
 
   /** Get journal entries for a date range, joined with question metadata. */
-  async listEntries(days: number): Promise<JournalEntryRow[]> {
+  async listEntries(days: RangeDays): Promise<JournalEntryRow[]> {
     return executeWithSchema(
       this.#db,
       journalEntryRowSchema,
@@ -115,13 +116,13 @@ export class JournalRepository {
           FROM fitness.journal_entry je
           JOIN fitness.journal_question jq ON jq.slug = je.question_slug
           WHERE je.user_id = ${this.#userId}
-            AND je.date >= (CURRENT_DATE - ${days}::int)
+            ${currentDateRangePredicate(sql`je.date`, days, ">=")}
           ORDER BY je.date DESC, jq.sort_order, jq.display_name`,
     );
   }
 
   /** Time-series trend data for a specific question. */
-  async listTrends(questionSlug: string, days: number): Promise<TrendPoint[]> {
+  async listTrends(questionSlug: string, days: RangeDays): Promise<TrendPoint[]> {
     return executeWithSchema(
       this.#db,
       trendPointSchema,
@@ -131,7 +132,7 @@ export class JournalRepository {
           FROM fitness.journal_entry je
           WHERE je.user_id = ${this.#userId}
             AND je.question_slug = ${questionSlug}
-            AND je.date >= (CURRENT_DATE - ${days}::int)
+            ${currentDateRangePredicate(sql`je.date`, days, ">=")}
             AND je.answer_numeric IS NOT NULL
           ORDER BY je.date`,
     );

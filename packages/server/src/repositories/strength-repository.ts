@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "../../../../src/db/index.ts";
 import { lookupExerciseMuscleGroups } from "../../../../src/exercise-metadata.ts";
+import { postgresRangeLowerBound, type RangeDays } from "../lib/date-window.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
@@ -258,7 +259,8 @@ export class StrengthRepository {
   }
 
   /** Weekly tonnage: SUM(weight_kg * reps) grouped by week. */
-  async getVolumeOverTime(days: number): Promise<VolumeWeek[]> {
+  async getVolumeOverTime(days: RangeDays): Promise<VolumeWeek[]> {
+    const rangeFilter = postgresRangeLowerBound(days, sql`a.started_at`);
     const rows = await executeWithSchema(
       this.#db,
       volumeRowSchema,
@@ -271,7 +273,7 @@ export class StrengthRepository {
           JOIN fitness.strength_set ss ON ss.activity_id = ANY(a.member_activity_ids)
           WHERE a.user_id = ${this.#userId}
             AND a.activity_type IN ('strength', 'strength_training')
-            AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+            ${rangeFilter}
           GROUP BY 1
           ORDER BY week`,
     );
@@ -288,7 +290,8 @@ export class StrengthRepository {
   }
 
   /** Estimated 1RM using Epley formula, best e1RM per workout per exercise. */
-  async getEstimatedOneRepMax(days: number): Promise<EstimatedOneRepMax[]> {
+  async getEstimatedOneRepMax(days: RangeDays): Promise<EstimatedOneRepMax[]> {
+    const rangeFilter = postgresRangeLowerBound(days, sql`a.started_at`);
     const rows = await executeWithSchema(
       this.#db,
       oneRepMaxRowSchema,
@@ -308,7 +311,7 @@ export class StrengthRepository {
             JOIN fitness.exercise e ON e.id = ss.exercise_id
           WHERE a.user_id = ${this.#userId}
             AND a.activity_type IN ('strength', 'strength_training')
-            AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+            ${rangeFilter}
             AND ss.set_type = 'working'
             AND ss.weight_kg > 0
               AND ss.reps BETWEEN 1 AND 12
@@ -350,7 +353,8 @@ export class StrengthRepository {
   }
 
   /** Weekly sets per muscle group. */
-  async getMuscleGroupVolume(days: number): Promise<MuscleGroupVolume[]> {
+  async getMuscleGroupVolume(days: RangeDays): Promise<MuscleGroupVolume[]> {
+    const rangeFilter = postgresRangeLowerBound(days, sql`a.started_at`);
     const rows = await executeWithSchema(
       this.#db,
       muscleGroupRowSchema,
@@ -364,7 +368,7 @@ export class StrengthRepository {
           CROSS JOIN LATERAL unnest(e.muscle_groups) AS mg
           WHERE a.user_id = ${this.#userId}
             AND a.activity_type IN ('strength', 'strength_training')
-            AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+            ${rangeFilter}
             AND e.muscle_groups IS NOT NULL
           GROUP BY mg, 2
           ORDER BY mg, week`,
@@ -383,7 +387,8 @@ export class StrengthRepository {
   }
 
   /** Weekly volume per exercise with linear regression slope. */
-  async getProgressiveOverload(days: number): Promise<ProgressiveOverload[]> {
+  async getProgressiveOverload(days: RangeDays): Promise<ProgressiveOverload[]> {
+    const rangeFilter = postgresRangeLowerBound(days, sql`a.started_at`);
     const rows = await executeWithSchema(
       this.#db,
       overloadRowSchema,
@@ -396,7 +401,7 @@ export class StrengthRepository {
           JOIN fitness.exercise e ON e.id = ss.exercise_id
           WHERE a.user_id = ${this.#userId}
             AND a.activity_type IN ('strength', 'strength_training')
-            AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+            ${rangeFilter}
             AND ss.weight_kg > 0
           GROUP BY e.name, 2
           ORDER BY e.name, week`,
@@ -492,6 +497,7 @@ export class StrengthRepository {
 
   /** Recent workout summaries. */
   async getWorkoutSummaries(days: number): Promise<WorkoutSummary[]> {
+    const rangeFilter = postgresRangeLowerBound(days, sql`a.started_at`);
     const rows = await executeWithSchema(
       this.#db,
       summaryRowSchema,
@@ -506,7 +512,7 @@ export class StrengthRepository {
           LEFT JOIN fitness.strength_set ss ON ss.activity_id = ANY(a.member_activity_ids)
           WHERE a.user_id = ${this.#userId}
             AND a.activity_type IN ('strength', 'strength_training')
-            AND a.started_at > NOW() - ${days}::int * INTERVAL '1 day'
+            ${rangeFilter}
             AND a.ended_at IS NOT NULL
           GROUP BY a.id, a.started_at, a.ended_at, a.name
           ORDER BY a.started_at DESC`,

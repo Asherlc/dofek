@@ -15,7 +15,7 @@ const state = vi.hoisted<{
   capturedRouteComponent: ComponentType | null;
   queryCalls: QueryCall[];
   queryError: Error | null;
-  selectedDays: number;
+  selectedDays: number | null;
 }>(() => ({
   capturedRouteComponent: null,
   queryCalls: [],
@@ -101,6 +101,19 @@ describe("HikingTab", () => {
       { name: "elevationProfile", input: { days: 30 }, options: TRAINING_SLOW_QUERY_OPTIONS },
       { name: "walkingBiomechanics", input: { days: 30 }, options: TRAINING_SLOW_QUERY_OPTIONS },
       { name: "activityComparison", input: { days: 30 }, options: TRAINING_SLOW_QUERY_OPTIONS },
+    ]);
+  });
+
+  it("passes null for All to every selected-range chart query", async () => {
+    state.selectedDays = null;
+
+    await renderHikingTab();
+
+    expect(state.queryCalls).toEqual([
+      { name: "gradeAdjustedPace", input: { days: null }, options: TRAINING_SLOW_QUERY_OPTIONS },
+      { name: "elevationProfile", input: { days: null }, options: TRAINING_SLOW_QUERY_OPTIONS },
+      { name: "walkingBiomechanics", input: { days: null }, options: TRAINING_SLOW_QUERY_OPTIONS },
+      { name: "activityComparison", input: { days: null }, options: TRAINING_SLOW_QUERY_OPTIONS },
     ]);
   });
 

@@ -1,3 +1,8 @@
+import {
+  clickHouseToIntervalDayLowerBound,
+  type RangeDays,
+  rangeDaysParams,
+} from "../lib/date-window.ts";
 import type {
   ClickHouseQueryClient,
   NormalizedPowerSampleRow,
@@ -6,13 +11,13 @@ import type {
 } from "./clickhouse-activity-sensor-types.ts";
 
 function userWindowParams(
-  days: number,
+  days: RangeDays,
   userId: string,
   timezone: string,
   activityTypes: readonly string[],
 ) {
   return {
-    days,
+    ...rangeDaysParams(days),
     userId,
     timezone,
     activityTypes: [...activityTypes],
@@ -30,7 +35,7 @@ function userDateWindowParams(endDate: string, days: number, userId: string, tim
 
 export async function getClickHousePowerCurveSamples(
   client: ClickHouseQueryClient,
-  days: number,
+  days: RangeDays,
   userId: string,
   timezone: string,
   activityTypes: readonly string[],
@@ -59,7 +64,7 @@ export async function getClickHousePowerCurveSamples(
           WHERE deduped_samples.user_id = {userId:UUID}
             AND deduped_samples.channel = 'power'
             AND deduped_samples.is_deleted = 0
-            AND activity.started_at > now() - toIntervalDay({days:UInt32})
+            ${clickHouseToIntervalDayLowerBound(days, "activity.started_at")}
             AND activity.is_deleted = 0
             AND has({activityTypes:Array(String)}, activity.activity_type)
           GROUP BY activity.activity_id, activity.user_id, activity.started_at, activity.ended_at
@@ -87,7 +92,7 @@ export async function getClickHousePowerCurveSamples(
 
 export async function getClickHouseNormalizedPowerSamples(
   client: ClickHouseQueryClient,
-  days: number,
+  days: RangeDays,
   userId: string,
   timezone: string,
   activityTypes: readonly string[],
@@ -118,7 +123,7 @@ export async function getClickHouseNormalizedPowerSamples(
             AND deduped_samples.channel = 'power'
             AND deduped_samples.scalar > 0
             AND deduped_samples.is_deleted = 0
-            AND activity.started_at > now() - toIntervalDay({days:UInt32})
+            ${clickHouseToIntervalDayLowerBound(days, "activity.started_at")}
             AND activity.is_deleted = 0
             AND has({activityTypes:Array(String)}, activity.activity_type)
           GROUP BY activity.activity_id, activity.user_id, activity.started_at, activity.ended_at, activity.name

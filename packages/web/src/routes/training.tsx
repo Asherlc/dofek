@@ -2,6 +2,7 @@ import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
+import type { TimeRangeDays } from "../lib/timeRange.ts";
 import { TrainingDaysContext } from "../lib/trainingDaysContext.ts";
 
 const subtabs = [
@@ -19,7 +20,7 @@ export const Route = createFileRoute("/training")({
 });
 
 function TrainingLayout() {
-  const [days, setDays] = useState(90);
+  const [days, setDays] = useState<TimeRangeDays>(90);
 
   return (
     <TrainingDaysContext.Provider value={{ days, setDays }}>
