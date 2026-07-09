@@ -53,17 +53,22 @@ To export mobile OpenTelemetry logs to Axiom, set this public env var in Infisic
 
 If the collector requires headers, set `EXPO_PUBLIC_OTEL_HEADERS` (for example, `Authorization=Bearer <token>,x-axiom-dataset=<dataset>`). Expo embeds `EXPO_PUBLIC_*` values in the client bundle, so only use write-only ingest credentials here (https://docs.expo.dev/guides/environment-variables/#reading-environment-variables-from-env-files).
 
-Mobile workflows load all runtime env values from Infisical via GitHub OIDC (`.github/actions/load-infisical-secrets`), including:
+Mobile workflows load secrets from Infisical via GitHub OIDC ([`load-infisical-secrets`](../../.github/actions/load-infisical-secrets/action.yml)). Runtime env vars loaded into the app bundle:
 
 - `EXPO_PUBLIC_SENTRY_DSN`
 - `EXPO_PUBLIC_OTEL_ENDPOINT`
 - `EXPO_PUBLIC_OTEL_HEADERS` (optional)
+
+Workflow-only secrets loaded by iOS and OTA workflows ([iOS](../../.github/workflows/deploy-ios.yml), [OTA](../../.github/workflows/deploy-ota.yml)):
+
 - `SENTRY_AUTH_TOKEN` (iOS and OTA sourcemap uploads)
 - `EXPO_TOKEN` (OTA workflows)
 
+The shared Infisical action fails when a requested secret is missing, so keep this list aligned with each workflow's `keys` block ([source](../../.github/actions/load-infisical-secrets/action.yml)).
+
 Use a dedicated write-only ingest token for mobile OTEL headers if the collector needs authentication. Do not reuse broad admin/read tokens.
 
-Workflows that must include these vars:
+Workflows that must include these values:
 
 - `.github/workflows/build-mobile.yml`
 - `.github/workflows/deploy-ios.yml`
