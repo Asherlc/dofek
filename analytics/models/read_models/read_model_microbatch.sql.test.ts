@@ -362,7 +362,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("latest_sensor_samples AS");
     expect(normalizedSql).toContain("(user_id, activity_id) IN");
     expect(normalizedSql).toContain(
-      "LIMIT 1 BY user_id, activity_id, recorded_date, channel, recorded_at",
+      "LIMIT 1 BY user_id, activity_id, channel, recorded_at",
     );
     expect(sql).toContain("source('postgres_fitness', 'activity') }} FINAL");
     expect(sql).toContain("provider_absent_at IS null");
@@ -419,7 +419,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("arraySort");
     expect(sql).toContain("groupArray(tuple(");
     expect(sql).toContain("toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version");
-    expect(normalizedSql).toContain("LIMIT 1 BY user_id, activity_id, recorded_date, channel, recorded_at");
+    expect(normalizedSql).toContain("LIMIT 1 BY user_id, activity_id, channel, recorded_at");
     expect(normalizedSql).toContain("LIMIT 1 BY source_metric_stream_id");
     expect(normalizedSql).toContain("if(points_by_activity.activity_id IS null, 1, 0) AS is_deleted");
     expect(sql).toContain("refresh_clock.refreshed_at AS refreshed_at");
@@ -454,7 +454,7 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).not.toContain(
       "toDate(resting.ended_at) <= toDate(activity_bounds.started_at)",
     );
-    expect(normalizedSql).toContain("LIMIT 1 BY user_id, activity_id, recorded_date, channel, recorded_at");
+    expect(normalizedSql).toContain("LIMIT 1 BY user_id, activity_id, channel, recorded_at");
     expect(normalizedSql).toContain("if(zones_by_activity.activity_id IS null, 1, 0) AS is_deleted");
     expect(sql).toContain("refresh_clock.refreshed_at AS refreshed_at");
     expect(normalizedSql).not.toContain("ref('deduped_sensor')");
@@ -517,7 +517,7 @@ describe("production analytics read-model build", () => {
 
     expect(sensorSummarySql).toContain("latest_sensor_samples AS");
     expect(normalizedSensorSql).toContain(
-      "LIMIT 1 BY user_id, activity_id, recorded_date, channel, recorded_at",
+      "LIMIT 1 BY user_id, activity_id, channel, recorded_at",
     );
     expect(normalizedSensorSql).toContain("FROM latest_sensor_samples WHERE scalar IS NOT null");
     expect(normalizedSensorSql).toContain("FROM latest_sensor_samples WHERE channel = 'power'");

@@ -1041,11 +1041,10 @@ function buildTestActivityStreamPointsSelectSql(databases: IsolatedClickHouseDat
     ORDER BY
       user_id ASC,
       activity_id ASC,
-      recorded_date ASC,
       channel ASC,
       recorded_at ASC,
       refresh_version DESC
-    LIMIT 1 BY user_id, activity_id, recorded_date, channel, recorded_at
+    LIMIT 1 BY user_id, activity_id, channel, recorded_at
   )
   WHERE is_deleted = 0
 ),
@@ -1297,11 +1296,10 @@ latest_sensor_samples AS (
     ORDER BY
       user_id ASC,
       activity_id ASC,
-      recorded_date ASC,
       channel ASC,
       recorded_at ASC,
       refresh_version DESC
-    LIMIT 1 BY user_id, activity_id, recorded_date, channel, recorded_at
+    LIMIT 1 BY user_id, activity_id, channel, recorded_at
   )
   WHERE is_deleted = 0
 ),

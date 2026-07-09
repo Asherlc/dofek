@@ -83,8 +83,8 @@ stale_dirty_keys AS (
 
 dirty_keys AS (
     SELECT DISTINCT
-        activity_id,
-        user_id
+        assumeNotNull(activity_id) AS activity_id,
+        assumeNotNull(user_id) AS user_id
     FROM (
         SELECT
             activity_id,
@@ -106,6 +106,8 @@ dirty_keys AS (
             user_id
         FROM stale_dirty_keys
     )
+    WHERE activity_id IS NOT null
+        AND user_id IS NOT null
 ),
 
 active_dirty_keys AS (
@@ -132,11 +134,10 @@ latest_sensor_samples AS (
         ORDER BY
             user_id ASC,
             activity_id ASC,
-            recorded_date ASC,
             channel ASC,
             recorded_at ASC,
             refresh_version DESC
-        LIMIT 1 BY user_id, activity_id, recorded_date, channel, recorded_at
+        LIMIT 1 BY user_id, activity_id, channel, recorded_at
     )
     WHERE is_deleted = 0
 ),
@@ -272,8 +273,8 @@ refresh_clock AS (
 )
 
 SELECT
-    assumeNotNull(dirty_keys.user_id) AS user_id,
-    assumeNotNull(dirty_keys.activity_id) AS activity_id,
+    dirty_keys.user_id AS user_id,
+    dirty_keys.activity_id AS activity_id,
     if(
         points_by_activity.activity_id IS null,
         CAST([], 'Array(Tuple(DateTime64(6, ''UTC''), Nullable(Float64), Nullable(Float64), Nullable(Float64), Nullable(Float64), Nullable(Float64), Nullable(Float64), Nullable(Float64)))'),
