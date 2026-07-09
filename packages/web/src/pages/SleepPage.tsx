@@ -84,12 +84,15 @@ export function SleepPage() {
         subtitle="Sleep stages, debt, and patterns over time"
       >
         {/* Sleep Performance Score + Bedtime Recommendation */}
-        {(sleepPerformance.isError || sleepNeed.isError) && (
+        {((sleepPerformance.isError && !sleepPerformance.data) ||
+          (sleepNeed.isError && !sleepNeed.data)) && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {sleepPerformance.isError && (
+            {sleepPerformance.isError && !sleepPerformance.data && (
               <QueryStatePanel error={sleepPerformance.error} height={72} />
             )}
-            {sleepNeed.isError && <QueryStatePanel error={sleepNeed.error} height={72} />}
+            {sleepNeed.isError && !sleepNeed.data && (
+              <QueryStatePanel error={sleepNeed.error} height={72} />
+            )}
           </div>
         )}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -99,7 +102,9 @@ export function SleepPage() {
 
         {/* Sleep Stage Chart */}
         <PageSection title="Sleep Stages">
-          {sleepData.isError && <QueryStatePanel error={sleepData.error} height={72} />}
+          {sleepData.isError && !sleepData.data && (
+            <QueryStatePanel error={sleepData.error} height={72} />
+          )}
           <SleepChart data={sleepRows} loading={sleepData.isLoading} />
         </PageSection>
 
@@ -113,12 +118,14 @@ export function SleepPage() {
 
         {/* Last Night Hypnogram */}
         <PageSection title="Last Night">
-          {latestStages.isError && <QueryStatePanel error={latestStages.error} height={72} />}
+          {latestStages.isError && !latestStages.data && (
+            <QueryStatePanel error={latestStages.error} height={72} />
+          )}
           <Hypnogram data={latestStages.data ?? []} loading={latestStages.isLoading} />
         </PageSection>
 
         {/* Sleep Insights */}
-        {insightsQuery.isError && (
+        {insightsQuery.isError && !insightsQuery.data && (
           <PageSection title="Sleep Insights" card={false}>
             <QueryStatePanel error={insightsQuery.error} height={72} />
           </PageSection>
