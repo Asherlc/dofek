@@ -12083,3 +12083,23 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   copied the matching Python 3.13 runtime files into the server image.
 - **Validation:** `python:3.13-alpine` with the same pinned latest dbt packages
   runs `dbt --version` successfully.
+
+## 2026-07-09 — PR Knip Failure on Dead Range Exports
+
+- **Symptoms:** PR #1566 failed in `Test / Knip`.
+- **User impact:** Pull request CI was blocked; no production runtime impact.
+- **Evidence:** GitHub job `86178016848` failed on `pnpm knip` with
+  `Unused exports (2)`: `selectedChartDefaultDays` in
+  `packages/server/src/lib/chart-range.ts` and `FIXED_RANGE_QUERY_REGISTRY` in
+  `packages/web/src/lib/timeRange.ts`.
+- **Root cause:** Two previously exported chart range helpers no longer had
+  production or test consumers, so Knip correctly reported them as dead public
+  API.
+- **Fix / mitigation:** Deleted the two unused exports instead of suppressing
+  Knip.
+- **Validation:** Local `pnpm knip`, `pnpm lint`, `pnpm typecheck`, and
+  targeted unit tests for `chart-range` and `timeRange` passed. Remote CI run
+  `29035575010` showed `Test / Knip` passing on commit `25276d530`.
+- **Remaining risk / follow-up:** Local `pnpm test:changed` could not complete
+  because Docker/Testcontainers integration setup exhausted local disk space,
+  but the directly affected unit tests passed before the environmental failure.
