@@ -60,6 +60,21 @@ describe("clickhouse-activity-sensor-summary", () => {
       const columns = extractClickHouseTableColumnNames(sql);
       expect(columns).toEqual(["avg_hr", "tags"]);
     });
+
+    it("handles tab-indented column definitions", () => {
+      const sql = "CREATE TABLE foo (\n\tid UInt64,\n\tname String\n) ENGINE = ReplacingMergeTree(ver)";
+      expect(extractClickHouseTableColumnNames(sql)).toEqual(["id", "name"]);
+    });
+
+    it("handles multi-space between column name and type", () => {
+      const sql = "CREATE TABLE foo (\n  id   UInt64,\n  name  String\n) ENGINE = ReplacingMergeTree(ver)";
+      expect(extractClickHouseTableColumnNames(sql)).toEqual(["id", "name"]);
+    });
+
+    it("handles columns without trailing commas", () => {
+      const sql = "CREATE TABLE foo (\n  id UInt64,\n  name String\n) ENGINE = ReplacingMergeTree(ver)";
+      expect(extractClickHouseTableColumnNames(sql)).toEqual(["id", "name"]);
+    });
   });
 
   describe("extractDbtFinalSelectColumnNames", () => {
@@ -114,6 +129,46 @@ FROM data
       expect(() =>
         extractDbtFinalSelectColumnNames("\nSELECT\n  t.col1 AS a\nFROM other\n", "data"),
       ).toThrow("Could not parse dbt final SELECT for FROM data");
+    });
+
+    it("handles FROM at the start of the SQL string", () => {
+      const sql = "SELECT\n  t.col1 AS a,\n  t.col2 AS b\nFROM data";
+      expect(extractDbtFinalSelectColumnNames(sql, "data")).toEqual(["a", "b"]);
+    });
+
+    it("handles aliases with trailing commas", () => {
+      const sql = "\nSELECT\n  t.col1 AS a,\n  t.col2 AS b\nFROM data\n";
+      expect(extractDbtFinalSelectColumnNames(sql, "data")).toEqual(["a", "b"]);
+    });
+
+    it("skips FROM inside a subquery before the real FROM", () => {
+      const sql = `SELECT
+  x.col1 AS a,
+  x.col2 AS b
+FROM (
+  SELECT inner.col AS c FROM inner_table
+) AS x
+JOIN data ON x.col1 = data.id
+`;
+      expect(extractDbtFinalSelectColumnNames(sql, "data")).toEqual(["a", "b"]);
+    });
+
+    it("handles escaped single quotes in string literals inside the SQL", () => {
+      const sql = "SELECT\n  'it''s fine' AS escaped,\n  t.col2 AS b\nFROM data\n";
+      expect(extractDbtFinalSelectColumnNames(sql, "data")).toEqual(["escaped", "b"]);
+    });
+
+    it("handles a subquery with FROM in a CTE before the main FROM", () => {
+      const sql = `WITH sub AS (
+  SELECT inner.col AS c FROM inner_table
+)
+SELECT
+  s.col AS a,
+  s.col2 AS b
+FROM sub AS s
+JOIN data ON s.col = data.id
+`;
+      expect(extractDbtFinalSelectColumnNames(sql, "data")).toEqual(["a", "b"]);
     });
   });
 });
