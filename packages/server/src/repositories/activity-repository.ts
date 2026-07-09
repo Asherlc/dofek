@@ -7,6 +7,7 @@ import { timestampWindowStart } from "../lib/date-window.ts";
 import { osmTilePreview } from "../lib/osm-tile.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import type { ActivityRow } from "../models/activity.ts";
+import { activitySourceSchema } from "../models/activity-source.ts";
 import { getActivityRoutePreviews } from "./activity-route-preview.ts";
 
 // ---------------------------------------------------------------------------
@@ -31,14 +32,6 @@ const activityListRowSchema = z
   })
   .passthrough();
 
-const sourceExternalIdSchema = z.object({
-  providerId: z.string(),
-  externalId: z.string(),
-  memberActivityId: z.string().optional(),
-  providerAbsentAt: timestampStringSchema.nullable().optional(),
-  subsource: z.string().nullable().optional(),
-});
-
 const activityDetailRowSchema = z.object({
   id: z.string(),
   activity_type: z.string(),
@@ -49,8 +42,8 @@ const activityDetailRowSchema = z.object({
   provider_id: z.string(),
   subsource: z.string().nullable(),
   source_providers: z.array(z.string()),
-  source_external_ids: z.array(sourceExternalIdSchema).nullable(),
-  absent_source_external_ids: z.array(sourceExternalIdSchema).nullable().optional().default(null),
+  source_external_ids: z.array(activitySourceSchema).nullable(),
+  absent_source_external_ids: z.array(activitySourceSchema).nullable().optional().default(null),
   member_activity_ids: z.array(z.string()).optional().default([]),
   avg_hr: z.number().nullable(),
   max_hr: z.number().nullable(),

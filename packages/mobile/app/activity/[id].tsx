@@ -49,6 +49,8 @@ function activityIcon(type: string): string {
 
 interface ActivitySourceLink {
   providerId: string;
+  externalId: string;
+  subsource: string | null;
   label: string;
   url: string | null;
   providerAbsentAt?: string | null;
@@ -67,7 +69,7 @@ function ActivitySourceLinks({ activity }: { activity: ActivitySourceSummary }) 
       <>
         {activity.sourceLinks.map((link, index) => (
           <ActivitySourceLinkLabel
-            key={`${link.providerId}:${link.memberActivityId ?? link.label}`}
+            key={`${link.providerId}:${link.externalId}:${link.memberActivityId ?? ""}`}
             link={link}
             prefix={index > 0 ? ", " : ""}
           />

@@ -1,17 +1,14 @@
 import { formatDateTime } from "@dofek/format/format";
 import { type ProviderAbsentSource, providerSourceLabel } from "@dofek/providers/providers";
+import { type ActivitySource, parseClickHouseActivitySourceMaps } from "./activity-source.ts";
 
-export interface SourceExternalIdEntry {
-  providerId: string;
-  externalId: string;
-  memberActivityId?: string;
-  providerAbsentAt?: string | null;
-  subsource?: string | null;
-}
+export type SourceExternalIdEntry = ActivitySource;
 
 /** Resolved provider source shown on activity detail and list cards. */
 export interface SourceLink {
   providerId: string;
+  externalId: string;
+  subsource: string | null;
   label: string;
   url: string | null;
   providerAbsentAt?: string | null;
@@ -42,7 +39,7 @@ export class ActivitySourceAttribution {
   static fromClickHouseAbsentMaps(
     maps: Array<Record<string, string | null>>,
   ): ActivitySourceAttribution {
-    return new ActivitySourceAttribution([], ActivitySourceAttribution.#parseClickHouseMaps(maps));
+    return new ActivitySourceAttribution([], parseClickHouseActivitySourceMaps(maps));
   }
 
   static fromClickHouseRow(
@@ -50,26 +47,9 @@ export class ActivitySourceAttribution {
     absentMaps: Array<Record<string, string | null>> | null | undefined,
   ): ActivitySourceAttribution {
     return new ActivitySourceAttribution(
-      ActivitySourceAttribution.#parseClickHouseMaps(activeMaps ?? []),
-      ActivitySourceAttribution.#parseClickHouseMaps(absentMaps ?? []),
+      parseClickHouseActivitySourceMaps(activeMaps ?? []),
+      parseClickHouseActivitySourceMaps(absentMaps ?? []),
     );
-  }
-
-  static #parseClickHouseMaps(maps: Array<Record<string, string | null>>): SourceExternalIdEntry[] {
-    return maps.flatMap((map) => {
-      const providerId = map.providerId;
-      const externalId = map.externalId;
-      if (!providerId || !externalId) return [];
-      return [
-        {
-          providerId,
-          externalId,
-          memberActivityId: map.memberActivityId ?? undefined,
-          providerAbsentAt: map.providerAbsentAt ?? null,
-          subsource: map.subsource ?? null,
-        },
-      ];
-    });
   }
 
   get hasPartialAbsence(): boolean {
@@ -115,6 +95,8 @@ export class ActivitySourceAttribution {
 
     return {
       providerId: entry.providerId,
+      externalId: entry.externalId,
+      subsource: entry.subsource ?? null,
       label,
       url,
       providerAbsentAt: entry.providerAbsentAt ?? null,
