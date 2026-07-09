@@ -84,6 +84,18 @@ describe("clickhouse-activity-sensor-summary", () => {
         "CREATE TABLE foo (\n  id UInt64,\n  ,\n  name String\n) ENGINE = ReplacingMergeTree(ver)";
       expect(extractClickHouseTableColumnNames(sql)).toEqual(["id", "name"]);
     });
+
+    it("parses column names containing commas correctly", () => {
+      const sql =
+        "CREATE TABLE foo (\n  `foo,bar` UInt64\n) ENGINE = ReplacingMergeTree(ver)";
+      expect(extractClickHouseTableColumnNames(sql)).toEqual(["`foo,bar`"]);
+    });
+
+    it("handles extra whitespace between closing paren and ENGINE keyword", () => {
+      const sql =
+        "CREATE TABLE foo (\n  id UInt64\n)  ENGINE = ReplacingMergeTree(ver)";
+      expect(extractClickHouseTableColumnNames(sql)).toEqual(["id"]);
+    });
   });
 
   describe("extractDbtFinalSelectColumnNames", () => {
