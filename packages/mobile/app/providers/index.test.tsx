@@ -1212,6 +1212,35 @@ describe("ProvidersScreen", () => {
     });
   });
 
+  it("shows shared import progress while providers are still loading", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      error: null,
+    });
+    mockImportSharedFile.mockImplementation(
+      async (args: { onProgress?: (state: unknown) => void }) => {
+        args.onProgress?.({
+          status: "processing",
+          progress: 50,
+          message: "Processing import...",
+          providerId: "strong-csv",
+        });
+        return { providerId: "strong-csv", jobId: "job-share" };
+      },
+    );
+    mockUseLocalSearchParams.mockReturnValue({
+      sharedFile: "file:///tmp/Strong%20Export.csv",
+    });
+
+    await renderProvidersScreen();
+
+    await waitFor(() => {
+      expect(screen.getByText("Strong import processing")).toBeTruthy();
+    });
+    expect(screen.getByText("Processing import...")).toBeTruthy();
+  });
+
   it("does not call router.replace before import completes", async () => {
     let resolveImport!: (value: unknown) => void;
     mockImportSharedFile.mockImplementation(
