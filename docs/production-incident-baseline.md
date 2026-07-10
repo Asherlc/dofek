@@ -12481,3 +12481,30 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `assets.dofek.fit` must be bound to the `dofek-web-assets` R2 bucket in
   Cloudflare before the first CDN-backed deploy. Old build prefixes expire
   after 90 days.
+
+## 2026-07-10 — PR CI Stryker Sandbox and E2E Analytics Stall
+
+- **Symptoms:** PR CI failed in `Test / Stryker` with an `EISDIR` sandbox copy
+  error, and the E2E web job previously stalled while building analytics models.
+- **User impact:** PR #1584 could not merge until mutation testing and E2E CI
+  completed reliably.
+- **Evidence:** `Test / Stryker (0)` and `Test / Stryker (1)` failed while
+  running `pnpm exec stryker run stryker.ci.config.json --mutate
+  "$MUTATE_FILES"` with fatal `EISDIR: illegal operation on a directory,
+  copyfile ... .windsurf/skills/...` errors. The E2E workflow reached
+  `Build e2e analytics models` but dbt microbatch defaults enumerated historical
+  daily windows instead of the bounded E2E fixture window.
+- **Root cause:** Stryker copied hidden agent skill directories containing
+  nested directories into its sandbox because those dot-directories were not
+  ignored, while E2E analytics builds inherited production historical
+  microbatch defaults.
+- **Fix / mitigation:** Added `.qwen/**` and `.windsurf/**` to Stryker ignore
+  patterns, and introduced an `analytics-e2e` entrypoint path with bounded dbt
+  microbatch variables for E2E analytics model builds.
+- **Validation:** Local validation passed with the focused Stryker dry run,
+  `pnpm vitest run analytics/models/read_models/read_model_microbatch.sql.test.ts`,
+  `pnpm lint`, and `pnpm tsc --noEmit`. The rerun for PR head `6f6c01fc8`
+  passed `Test / Stryker (0)`, `Test / Stryker (1)`, `Test / Mutation Testing`,
+  and `Test / E2E Tests (Web)`.
+- **Remaining risk / follow-up:** Keep hidden agent-only dot-directories out of
+  Stryker sandboxes, and keep E2E dbt microbatch windows explicitly bounded.
