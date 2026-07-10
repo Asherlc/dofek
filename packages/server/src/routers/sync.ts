@@ -24,7 +24,6 @@ import {
   type DataHealthSensorStore,
   dataHealthDatasets,
   type ProviderStatRow,
-  type PushProviderLastReceived,
   SyncRepository,
 } from "../repositories/sync-repository.ts";
 import {
@@ -417,22 +416,17 @@ export const syncRouter = router({
       const repo = new SyncRepository(ctx.db, ctx.userId, ctx.sensorStore);
 
       // Batch: load all tokens, last sync times, and recent auth errors in 3 queries instead of 3N
-      const [allTokens, lastSyncs, latestErrors, providerStats, pushLastReceived] =
-        await Promise.all([
-          repo.getConnectedProviderIds(),
-          repo.getLastSyncTimes(),
-          repo.getLatestErrors(),
-          ctx.sensorStore
-            ? repo.getProviderStats().catch((error): ProviderStatRow[] => {
-                logProvidersQueryFailure("provider stats lookup", error);
-                return [];
-              })
-            : Promise.resolve([] satisfies ProviderStatRow[]),
-          repo.getPushProviderLastReceived().catch((error): PushProviderLastReceived[] => {
-            logProvidersQueryFailure("push provider last-received lookup", error);
-            return [];
-          }),
-        ]);
+      const [allTokens, lastSyncs, latestErrors, providerStats] = await Promise.all([
+        repo.getConnectedProviderIds(),
+        repo.getLastSyncTimes(),
+        repo.getLatestErrors(),
+        ctx.sensorStore
+          ? repo.getProviderStats().catch((error): ProviderStatRow[] => {
+              logProvidersQueryFailure("provider stats lookup", error);
+              return [];
+            })
+          : Promise.resolve([] satisfies ProviderStatRow[]),
+      ]);
 
       const tokenSet = new Set(allTokens.map((r) => r.providerId));
       const tokenUpdatedAtMap = new Map(allTokens.map((r) => [r.providerId, r.updatedAt]));
@@ -449,9 +443,6 @@ export const syncRouter = router({
           .map((r) => r.providerId),
       );
       const statsByProvider = new Map(providerStats.map((row) => [row.providerId, row]));
-      const lastReceivedByProvider = new Map(
-        pushLastReceived.map((row) => [row.providerId, row.lastReceived]),
-      );
 
       const registeredProviders = all
         .filter((p) => p.validate() === null)
@@ -472,8 +463,7 @@ export const syncRouter = router({
 
       const pushProviders = PUSH_PROVIDERS.map((provider) => {
         const stats = statsByProvider.get(provider.id);
-        const lastReceived = lastReceivedByProvider.get(provider.id) ?? null;
-        const hasData = (stats?.metricStream ?? 0) > 0 || lastReceived != null;
+        const hasData = (stats?.metricStream ?? 0) > 0;
 
         return {
           id: provider.id,
@@ -481,7 +471,7 @@ export const syncRouter = router({
           description: provider.description,
           authType: provider.authType,
           authorized: hasData,
-          lastSyncedAt: lastReceived,
+          lastSyncedAt: null,
           importOnly: false,
           pushOnly: true,
           needsReauth: false,

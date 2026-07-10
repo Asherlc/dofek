@@ -12271,3 +12271,50 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Decide whether a missing Zwift activity detail
   is expected upstream absence (and should be recorded as a degradation without
   a Sentry exception) or should remain an alert-worthy partial-sync failure.
+
+## 2026-07-10 — Settings Providers Blocked by Raw Metric Stream Scan and ClickHouse Saturation
+
+- **Symptoms:** `https://dofek.asherlc.com/settings` loaded the static SPA
+  quickly, but the providers/settings data panel took roughly 30 seconds to
+  return provider state.
+- **User impact:** Users could open the settings route, but provider connection
+  state and related settings panels were delayed by the batched tRPC request.
+- **Evidence:** Axiom was unavailable for this investigation because bounded
+  `dofek-logs` queries were rejected by the query limiter with trace IDs
+  `82ce8563af5f7d770b840dcc3137fef6`,
+  `37030df9add1b31db04988eccfa16bef`, and
+  `a13d5f692af0654677e5a4706ab781c4`. Direct production timing showed
+  `GET /settings` returned `200` in `126ms`, ruling out static page delivery.
+  Web logs showed a batched settings request containing `sync.providers`,
+  `sync.providerStats`, `sync.logs`, `sync.dataHealth`, and other settings
+  procedures returning in `31979ms`. The same logs showed
+  `[sync.providers] push provider last-received lookup failed: Timeout error`.
+  ClickHouse `system.query_log` showed that lookup running
+  `SELECT provider_id, max(recorded_at) ... FROM ingest.metric_stream FINAL`,
+  reading about `49.7M` to `51.2M` rows before timing out. ClickHouse
+  `system.processes` also showed six dbt `analytics.activity_power_curve`
+  inserts active for `15h` to `20h`, with ClickHouse at about `99%` CPU and
+  `7.7GiB / 13GiB` memory.
+- **Root cause:** `sync.providers` attempted to compute push-provider
+  `lastSyncedAt` by scanning raw `ingest.metric_stream FINAL` on page load.
+  That expensive raw scan was batched with the rest of the settings page and
+  was amplified by long-running dbt `activity_power_curve` queries consuming
+  ClickHouse capacity.
+- **Fix / mitigation:** Cancelled the six runaway ClickHouse
+  `activity_power_curve` queries in production, then cancelled one reappearing
+  `activity_power_curve` query after it stopped making progress. Removed the raw
+  metric-stream last-received lookup from `sync.providers`; push-provider
+  connected state now depends only on the existing `analytics.provider_stats`
+  metric-stream row count, and push-provider `lastSyncedAt` remains `null`
+  instead of triggering a serving-path raw scan.
+- **Validation:** After cancelling the runaway queries, web and Postgres CPU
+  dropped near idle, while ClickHouse memory fell from about `7.7GiB` to
+  `2.1GiB`, ClickHouse CPU fell to about `7%`, and `system.processes` showed no
+  active long-running user query. Focused local validation passed:
+  `pnpm vitest run packages/server/src/repositories/sync-repository.test.ts
+  packages/server/src/routers/sync.test.ts` (`127` tests).
+- **Remaining risk / follow-up:** The analytics worker can still start the
+  expensive `activity_power_curve` model again, and other detail routes still
+  contain raw `ingest.metric_stream` reads. Monitor ClickHouse saturation after
+  deploy and investigate why `activity_power_curve` accumulated overlapping
+  long-running inserts.
