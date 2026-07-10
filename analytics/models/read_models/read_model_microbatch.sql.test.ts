@@ -2,7 +2,14 @@ import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 function readProjectFile(path: string): string {
-  return readFileSync(new URL(`../../../${path}`, import.meta.url), "utf8");
+  const projectFileUrl = new URL(`../../../${path}`, import.meta.url);
+  try {
+    const contents = readFileSync(projectFileUrl, "utf8");
+    expect(contents.length).toBeGreaterThan(0);
+    return contents;
+  } catch (error) {
+    throw new Error(`Failed to read project file: ${path}`, { cause: error });
+  }
 }
 
 function readModel(name: string): string {
@@ -31,6 +38,15 @@ describe("production analytics read-model build", () => {
     const analyticsWorkerBlockMatch = entrypoint.match(/  analytics-worker\)\n(?<body>[\s\S]*?)\n    ;;/);
 
     expect(analyticsWorkerBlockMatch?.groups?.body).toContain("ANALYTICS_BUILD_STARTUP_DELAY_SECONDS:-120");
+    expect(analyticsWorkerBlockMatch?.groups?.body).toContain(
+      'require_non_negative_integer "ANALYTICS_BUILD_INTERVAL_SECONDS" "$interval_seconds"',
+    );
+    expect(analyticsWorkerBlockMatch?.groups?.body).toContain(
+      'require_non_negative_integer "ANALYTICS_BUILD_RETRY_DELAY_SECONDS" "$retry_delay_seconds"',
+    );
+    expect(analyticsWorkerBlockMatch?.groups?.body).toContain(
+      'require_non_negative_integer "ANALYTICS_BUILD_STARTUP_DELAY_SECONDS" "$startup_delay_seconds"',
+    );
     expect(analyticsWorkerBlockMatch?.groups?.body).toContain("sleep \"$startup_delay_seconds\"");
     expect(analyticsWorkerBlockMatch?.groups?.body).toContain("dbt build");
   });
