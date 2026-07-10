@@ -217,7 +217,10 @@ async function loadActivityRows(
   return z.array(activityRowSchema).parse(rows);
 }
 
-async function applyPlan(db: Database, plan: RideWithGpsActivityBackfillPlan): Promise<number> {
+export async function applyRideWithGpsActivityBackfillPlan(
+  db: Pick<Database, "execute">,
+  plan: RideWithGpsActivityBackfillPlan,
+): Promise<number> {
   if (plan.shouldUpdateActivityType) {
     await db.execute(sql`
       UPDATE fitness.activity
@@ -225,8 +228,6 @@ async function applyPlan(db: Database, plan: RideWithGpsActivityBackfillPlan): P
       WHERE id = ${plan.id}
     `);
   }
-
-  if (plan.metricRows.length === 0) return 0;
 
   return replaceMetricStreamBatch(db, { activityId: plan.id }, plan.metricRows, SOURCE_TYPE_API);
 }
@@ -263,7 +264,7 @@ async function runBackfill(options: BackfillOptions): Promise<void> {
   let publishedRows = 0;
   await runWithTokenUser(userId, async () => {
     for (const plan of plans) {
-      publishedRows += await applyPlan(db, plan);
+      publishedRows += await applyRideWithGpsActivityBackfillPlan(db, plan);
     }
   });
 

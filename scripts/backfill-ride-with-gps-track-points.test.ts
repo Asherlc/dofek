@@ -1,5 +1,23 @@
-import { describe, expect, it } from "vitest";
-import { planRideWithGpsActivityBackfill } from "./backfill-ride-with-gps-track-points.ts";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  applyRideWithGpsActivityBackfillPlan,
+  planRideWithGpsActivityBackfill,
+} from "./backfill-ride-with-gps-track-points.ts";
+
+const replaceMetricStreamBatchMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../src/db/metric-stream-writer.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/db/metric-stream-writer.ts")>();
+  return {
+    ...actual,
+    replaceMetricStreamBatch: replaceMetricStreamBatchMock,
+  };
+});
+
+beforeEach(() => {
+  replaceMetricStreamBatchMock.mockReset();
+  replaceMetricStreamBatchMock.mockResolvedValue(0);
+});
 
 describe("planRideWithGpsActivityBackfill", () => {
   it("builds metric rows from stored descriptive RideWithGPS track points", () => {
@@ -154,5 +172,27 @@ describe("planRideWithGpsActivityBackfill", () => {
         },
       }),
     ).toThrow();
+  });
+
+  it("publishes an empty replacement for activities with no valid metric rows", async () => {
+    const db = { execute: vi.fn() };
+    const plan = planRideWithGpsActivityBackfill({
+      id: "activity-1",
+      userId: "user-1",
+      activityType: "cycling",
+      raw: {
+        activity_type: "cycling:generic",
+        track_points: [],
+      },
+    });
+
+    await applyRideWithGpsActivityBackfillPlan(db, plan);
+
+    expect(replaceMetricStreamBatchMock).toHaveBeenCalledWith(
+      db,
+      { activityId: "activity-1" },
+      [],
+      "api",
+    );
   });
 });
