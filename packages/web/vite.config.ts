@@ -21,7 +21,22 @@ if (process.env.REQUIRE_SENTRY_AUTH_TOKEN === "true" && !process.env.SENTRY_AUTH
 }
 
 function isPackage(id: string, packageName: string): boolean {
-  return id.includes(`/node_modules/${packageName}/`);
+  const nodeModulesMarker = "/node_modules/";
+  let searchStart = 0;
+  while (searchStart < id.length) {
+    const nodeModulesIndex = id.indexOf(nodeModulesMarker, searchStart);
+    if (nodeModulesIndex === -1) {
+      return false;
+    }
+
+    const packagePath = id.slice(nodeModulesIndex + nodeModulesMarker.length);
+    if (packagePath === packageName || packagePath.startsWith(`${packageName}/`)) {
+      return true;
+    }
+    searchStart = nodeModulesIndex + nodeModulesMarker.length;
+  }
+
+  return false;
 }
 
 function manualChunks(id: string): string | undefined {
