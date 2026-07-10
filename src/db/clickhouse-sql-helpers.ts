@@ -37,7 +37,7 @@ function assertClickHouseQualifiedName(value: string): void {
 }
 
 function assertClickHouseOrderBy(value: string): void {
-  if (!/^\([A-Za-z0-9_,\s]+\)$/.test(value)) {
+  if (!/^\([A-Za-z_][A-Za-z0-9_]*(?:,\s*[A-Za-z_][A-Za-z0-9_]*)*\)$/.test(value)) {
     throw new Error(`Invalid ClickHouse ORDER BY expression: ${value}`);
   }
 }

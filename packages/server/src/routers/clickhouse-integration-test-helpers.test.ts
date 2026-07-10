@@ -433,5 +433,12 @@ SELECT 1`.match(CLICKHOUSE_TEST_VIEW_REGEX);
       expect(match?.[1]).toBe("db.view_plain");
       expect(match?.[2]?.trim()).toBe("SELECT 1");
     });
+
+    it("does not match malformed or unrelated SQL", () => {
+      expect("CREATE VIEW db.view AS").not.toMatch(CLICKHOUSE_TEST_VIEW_REGEX);
+      expect(`CREATE VIEW IF NOT EXISTS db.view
+SELECT 1`).not.toMatch(CLICKHOUSE_TEST_VIEW_REGEX);
+      expect("DROP VIEW db.view").not.toMatch(CLICKHOUSE_TEST_VIEW_REGEX);
+    });
   });
 });
