@@ -410,7 +410,8 @@ jobs:
           asset_tags="$(
             grep -oE 'https://assets\.dofek\.fit/web/[^/?#"]+' "$web_dist_dir/index.html" \
               | sed -E 's#https://assets\.dofek\.fit/web/([^/?#"]+)#\1#' \
-              | sort -u
+              | sort -u \
+              || true
           )"
           asset_tag_count="$(printf '%s\n' "$asset_tags" | sed '/^$/d' | wc -l | tr -d ' ')"
           if [ "$asset_tag_count" -eq 0 ]; then
