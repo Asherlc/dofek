@@ -14,6 +14,8 @@ function getCommitHash(): string {
   }
 }
 
+const commitHash = getCommitHash();
+
 function isPackage(id: string, packageName: string): boolean {
   return id.includes(`/node_modules/${packageName}/`);
 }
@@ -41,7 +43,7 @@ function manualChunks(id: string): string | undefined {
 export default defineConfig({
   base: process.env.VITE_ASSET_BASE_URL || "/",
   define: {
-    __COMMIT_HASH__: JSON.stringify(getCommitHash()),
+    __COMMIT_HASH__: JSON.stringify(commitHash),
   },
   plugins: [
     tanstackRouter({
@@ -53,7 +55,7 @@ export default defineConfig({
     sentryVitePlugin({
       org: "east-bay-software",
       project: "dofek-web",
-      release: { name: getCommitHash() },
+      release: { name: commitHash },
       sourcemaps: { filesToDeleteAfterUpload: ["../dist/**/*.map"] },
       disable: !process.env.SENTRY_AUTH_TOKEN,
     }),

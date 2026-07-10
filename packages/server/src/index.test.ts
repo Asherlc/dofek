@@ -39,10 +39,17 @@ vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
   return {
     ...actual,
-    existsSync: vi.fn(
-      (path: string) => path.endsWith("/web/dist") || path.endsWith("/web/dist/index.html"),
+    existsSync: vi.fn((path: Parameters<typeof actual.existsSync>[0]) =>
+      typeof path === "string" &&
+      (path.endsWith("/web/dist") || path.endsWith("/web/dist/index.html"))
+        ? true
+        : actual.existsSync(path),
     ),
-    readFileSync: vi.fn(() => "<!doctype html><html><body>Dofek</body></html>"),
+    readFileSync: vi.fn((...args: Parameters<typeof actual.readFileSync>) =>
+      typeof args[0] === "string" && args[0].endsWith("/web/dist/index.html")
+        ? "<!doctype html><html><body>Dofek</body></html>"
+        : actual.readFileSync(...args),
+    ),
   };
 });
 

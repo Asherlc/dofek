@@ -407,14 +407,21 @@ jobs:
             exit 1
           fi
 
-          asset_tag="$(
-            sed -nE 's#.*https://assets\.dofek\.fit/web/([^/]+)/.*#\1#p' "$web_dist_dir/index.html" \
-              | head -n 1
+          asset_tags="$(
+            grep -oE 'https://assets\.dofek\.fit/web/[^/?#"]+' "$web_dist_dir/index.html" \
+              | sed -E 's#https://assets\.dofek\.fit/web/([^/?#"]+)#\1#' \
+              | sort -u
           )"
-          if [ -z "$asset_tag" ]; then
+          asset_tag_count="$(printf '%s\n' "$asset_tags" | sed '/^$/d' | wc -l | tr -d ' ')"
+          if [ "$asset_tag_count" -eq 0 ]; then
             echo "::error::Built web index.html does not reference https://assets.dofek.fit/web/<tag>/"
             exit 1
           fi
+          if [ "$asset_tag_count" -gt 1 ]; then
+            echo "::error::Built web index.html references multiple asset tags: $asset_tags"
+            exit 1
+          fi
+          asset_tag="$asset_tags"
 
           aws s3 sync "$web_dist_dir/" "s3://${WEB_ASSETS_R2_BUCKET}/web/${asset_tag}/" \
             --region auto \
