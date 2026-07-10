@@ -76,6 +76,31 @@ vi.mock("../fit/parser.ts", () => ({
   parseFitFile: (...args: unknown[]) => mockParseFitFile(...args),
 }));
 
+const mockParseFitFileInWorkerThread = vi.fn().mockResolvedValue({
+  session: {
+    sport: "cycling",
+    startTime: new Date("2026-07-01T12:00:00.000Z"),
+    totalElapsedTime: 1800,
+    totalTimerTime: 1800,
+    totalDistance: 5000,
+    totalCalories: 200,
+    raw: { sport: "cycling" },
+  },
+  records: [
+    {
+      recordedAt: new Date("2026-07-01T12:01:00.000Z"),
+      heartRate: 130,
+      power: 180,
+      raw: { heart_rate: 130, power: 180 },
+    },
+  ],
+  laps: [],
+  events: [],
+});
+vi.mock("../fit/parser-worker.ts", () => ({
+  parseFitFileInWorkerThread: (...args: unknown[]) => mockParseFitFileInWorkerThread(...args),
+}));
+
 const mockDb: SyncDatabase = {
   select: vi.fn(),
   insert: vi.fn(),
@@ -149,6 +174,27 @@ describe("Garmin dump provider", () => {
     mockReplaceMetricStreamBatch.mockResolvedValue(undefined);
     mockEnsureProvider.mockResolvedValue(undefined);
     mockParseFitFile.mockResolvedValue({
+      session: {
+        sport: "cycling",
+        startTime: new Date("2026-07-01T12:00:00.000Z"),
+        totalElapsedTime: 1800,
+        totalTimerTime: 1800,
+        totalDistance: 5000,
+        totalCalories: 200,
+        raw: { sport: "cycling" },
+      },
+      records: [
+        {
+          recordedAt: new Date("2026-07-01T12:01:00.000Z"),
+          heartRate: 130,
+          power: 180,
+          raw: { heart_rate: 130, power: 180 },
+        },
+      ],
+      laps: [],
+      events: [],
+    });
+    mockParseFitFileInWorkerThread.mockResolvedValue({
       session: {
         sport: "cycling",
         startTime: new Date("2026-07-01T12:00:00.000Z"),
@@ -317,7 +363,8 @@ describe("Garmin dump provider", () => {
         name: "Morning Ride",
       }),
     );
-    expect(mockParseFitFile).toHaveBeenCalledWith(Buffer.from("fit-bytes"));
+    expect(mockParseFitFileInWorkerThread).toHaveBeenCalledWith(Buffer.from("fit-bytes"));
+    expect(mockParseFitFile).not.toHaveBeenCalled();
     expect(mockReplaceMetricStreamBatch).toHaveBeenCalledWith(
       mockDb,
       { activityId: "activity-row-1" },
@@ -415,7 +462,8 @@ describe("Garmin dump provider", () => {
     const result = await importGarminDumpFile(mockDb, filePath, "user-1");
 
     expect(result.recordsSynced).toBe(1);
-    expect(mockParseFitFile).toHaveBeenCalledTimes(1);
+    expect(mockParseFitFileInWorkerThread).toHaveBeenCalledTimes(1);
+    expect(mockParseFitFile).not.toHaveBeenCalled();
     expect(mockUpsertProviderActivity).toHaveBeenCalledWith(
       mockDb,
       expect.objectContaining({ externalId: "12345" }),
@@ -424,7 +472,7 @@ describe("Garmin dump provider", () => {
   });
 
   it("reports FIT parse failures with the extracted external id", async () => {
-    mockParseFitFile.mockRejectedValue(new Error("bad fit"));
+    mockParseFitFileInWorkerThread.mockRejectedValue(new Error("bad fit"));
     const zip = await createZip({
       "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345.fit": "fit-bytes",
     });
