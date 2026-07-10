@@ -35,6 +35,24 @@ vi.mock("@bull-board/api/bullMQAdapter", () => ({
   BullMQAdapter: vi.fn(() => ({})),
 }));
 
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...actual,
+    existsSync: vi.fn((path: Parameters<typeof actual.existsSync>[0]) =>
+      typeof path === "string" &&
+      (path.endsWith("/web/dist") || path.endsWith("/web/dist/index.html"))
+        ? true
+        : actual.existsSync(path),
+    ),
+    readFileSync: vi.fn((...args: Parameters<typeof actual.readFileSync>) =>
+      typeof args[0] === "string" && args[0].endsWith("/web/dist/index.html")
+        ? "<!doctype html><html><body>Dofek</body></html>"
+        : actual.readFileSync(...args),
+    ),
+  };
+});
+
 // Return a defined sentinel object so wiring tests can distinguish `{}` (mutant)
 // from `{ db: fakeDb }` (real wiring). Without this, `toHaveBeenCalledWith({ db: fakeDb })`
 // passes even when `{ db }` is mutated to `{}` because `fakeDb` was `undefined` and
@@ -153,6 +171,28 @@ describe("createApp", () => {
     const app = createApp(fakeDb, makeMockSensorStore());
     const res = await request(app, "GET", "/api/nonexistent");
     expect(res.status).toBe(404);
+  });
+
+  it("does not serve the SPA shell for missing JavaScript assets", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const fakeDb = createDatabaseFromEnv();
+    const app = createApp(fakeDb, makeMockSensorStore());
+
+    const res = await request(app, "GET", "/assets/strength.lazy-missing.js");
+
+    expect(res.status).toBe(404);
+    expect(res.body).not.toContain("<!doctype html>");
+  });
+
+  it("serves the SPA shell for client-side routes", async () => {
+    const { createDatabaseFromEnv } = await import("dofek/db");
+    const fakeDb = createDatabaseFromEnv();
+    const app = createApp(fakeDb, makeMockSensorStore());
+
+    const res = await request(app, "GET", "/strength");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toContain("<!doctype html>");
   });
 
   it("registers the ingest route using createIngestZosHealthRouter", async () => {
