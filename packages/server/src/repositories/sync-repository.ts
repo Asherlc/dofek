@@ -1,10 +1,10 @@
-import { PUSH_PROVIDERS } from "@dofek/providers/push-providers";
 import type { Database } from "dofek/db";
+import { syncLog } from "dofek/db/schema/events";
 import {
   type ProviderAuthFailureReason,
   providerAuthFailureReasonSchema,
 } from "dofek/providers/auth-errors";
-import { type SQL, sql } from "drizzle-orm";
+import { desc, eq, type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
@@ -111,11 +111,6 @@ export interface ProviderToken {
 export interface LastSync {
   providerId: string;
   lastSynced: string;
-}
-
-export interface PushProviderLastReceived {
-  providerId: string;
-  lastReceived: string;
 }
 
 export interface LatestError {
@@ -325,45 +320,8 @@ export class SyncRepository {
     }));
   }
 
-  /** Get the most recent metric stream sample timestamp for push-only providers. */
-  async getPushProviderLastReceived(): Promise<PushProviderLastReceived[]> {
-    if (!this.#providerStatsStore || PUSH_PROVIDERS.length === 0) {
-      return [];
-    }
-
-    const providerIds = PUSH_PROVIDERS.map((provider) => provider.id);
-    const lastReceivedRowSchema = z.object({
-      provider_id: z.string(),
-      last_received: z.string(),
-    });
-
-    const rows = await this.#providerStatsStore.query(
-      lastReceivedRowSchema,
-      // FINAL keeps is_deleted/recorded_at aligned with the latest ReplacingMergeTree row.
-      `
-        SELECT
-          provider_id,
-          max(recorded_at) AS last_received
-        FROM ingest.metric_stream FINAL
-        WHERE user_id = {userId:UUID}
-          AND provider_id IN {providerIds:Array(String)}
-          AND is_deleted = 0
-        GROUP BY provider_id
-      `,
-      { userId: this.#userId, providerIds },
-    );
-
-    return rows.map((row) => ({
-      providerId: row.provider_id,
-      lastReceived: row.last_received,
-    }));
-  }
-
   /** Fetch sync logs ordered by most recent first. */
   async getLogs(limit: number): Promise<SyncLogRow[]> {
-    const { syncLog } = await import("dofek/db/schema/events");
-    const { desc, eq } = await import("drizzle-orm");
-
     const rows = await this.#db
       .select()
       .from(syncLog)
