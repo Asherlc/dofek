@@ -1,9 +1,10 @@
 import type { Database } from "dofek/db";
+import { syncLog } from "dofek/db/schema/events";
 import {
   type ProviderAuthFailureReason,
   providerAuthFailureReasonSchema,
 } from "dofek/providers/auth-errors";
-import { type SQL, sql } from "drizzle-orm";
+import { desc, eq, type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
@@ -321,9 +322,6 @@ export class SyncRepository {
 
   /** Fetch sync logs ordered by most recent first. */
   async getLogs(limit: number): Promise<SyncLogRow[]> {
-    const { syncLog } = await import("dofek/db/schema/events");
-    const { desc, eq } = await import("drizzle-orm");
-
     const rows = await this.#db
       .select()
       .from(syncLog)

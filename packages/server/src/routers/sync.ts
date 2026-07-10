@@ -463,6 +463,7 @@ export const syncRouter = router({
 
       const pushProviders = PUSH_PROVIDERS.map((provider) => {
         const stats = statsByProvider.get(provider.id);
+        // Push providers have no OAuth token; data presence is their connection signal.
         const hasData = (stats?.metricStream ?? 0) > 0;
 
         return {
