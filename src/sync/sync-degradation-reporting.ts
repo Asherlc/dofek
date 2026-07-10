@@ -1,5 +1,5 @@
-import { captureMessage } from "@sentry/node";
 import { logger } from "../logger.ts";
+import { syncDegradationsTotal } from "../sync-metrics.ts";
 import type { SyncDegradation, SyncDegradationContext } from "./sync-degradation.ts";
 
 function isSafeContextKey(key: string): boolean {
@@ -34,13 +34,9 @@ export function reportSyncDegradation(degradation: SyncDegradation): void {
   };
 
   logger.warn("[provider-sync] Degraded provider sync step", details);
-  captureMessage("Provider sync degraded", {
-    level: "warning",
-    tags: {
-      providerId: degradation.providerId,
-      stepName: degradation.stepName,
-      degradationKind: degradation.kind,
-    },
-    extra: details,
+  syncDegradationsTotal.add(1, {
+    provider: degradation.providerId,
+    step_name: degradation.stepName,
+    degradation_kind: degradation.kind,
   });
 }

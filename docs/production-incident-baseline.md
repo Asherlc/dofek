@@ -12386,3 +12386,30 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   shapes. If Wahoo returns distinct structured 401 bodies for non-expiry auth
   failures, add targeted classification for those bodies instead of broadening
   generic HTTP handling.
+
+## 2026-07-10 — Provider Sync Degradation Reported as Sentry Error
+
+- **Symptoms:** Production Sentry issue
+  [DOFEK-SERVER-49](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-49)
+  grouped recoverable provider sync degradations as warning-level error events
+  titled `Provider sync degraded`.
+- **User impact:** No users were marked impacted in Sentry, but recurring
+  recoverable provider API anomalies created issue noise instead of an
+  aggregate operational signal.
+- **Evidence:** The latest sampled event at `2026-07-10T17:30:08.223Z` had
+  `providerId=whoop`, `stepName=developer_workouts`,
+  `degradationKind=pagination_stalled`, and the message `WHOOP returned a
+  repeated developer workout pagination cursor`.
+- **Root cause:** `reportSyncDegradation()` sent every recoverable degradation
+  through `Sentry.captureMessage()`, which made expected degraded-but-usable
+  sync states look like Sentry errors.
+- **Fix / mitigation:** `reportSyncDegradation()` now keeps the structured warn
+  log for diagnostic context and increments the OpenTelemetry counter
+  `sync.degradations.total` with `provider`, `step_name`, and
+  `degradation_kind` attributes instead of sending a Sentry message.
+- **Validation:** Focused unit tests passed for sync metrics, degradation
+  reporting, and WHOOP sync behavior. TypeScript passed with no errors, and
+  Biome passed on the touched files.
+- **Remaining risk / follow-up:** Configure or update the production metric
+  alert/dashboard for `sync.degradations.total` after deployment so recurring
+  provider anomalies remain visible without Sentry issue noise.

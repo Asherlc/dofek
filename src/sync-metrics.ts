@@ -23,6 +23,12 @@ export const syncDuration = meter.createHistogram("sync.duration", {
   },
 });
 
+/** Total number of degraded sync or import steps (by provider, step_name, degradation_kind). */
+export const syncDegradationsTotal = meter.createCounter("sync.degradations.total", {
+  description: "Total number of degraded sync or import steps",
+  unit: "{degradations}",
+});
+
 /** Total number of errors during sync or import (by provider, data_type). */
 export const syncErrorsTotal = meter.createCounter("sync.errors.total", {
   description: "Total number of errors during sync or import",

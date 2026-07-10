@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   healthKitPushTotal,
   healthKitRecordsTotal,
+  syncDegradationsTotal,
   syncDuration,
   syncErrorsTotal,
   syncOperationsTotal,
@@ -13,6 +14,7 @@ describe("sync-metrics", () => {
     expect(syncRecordsTotal).toBeDefined();
     expect(syncOperationsTotal).toBeDefined();
     expect(syncDuration).toBeDefined();
+    expect(syncDegradationsTotal).toBeDefined();
     expect(syncErrorsTotal).toBeDefined();
   });
 
@@ -25,6 +27,11 @@ describe("sync-metrics", () => {
     expect(() => {
       syncRecordsTotal.add(10, { provider: "garmin", data_type: "sync", status: "success" });
       syncOperationsTotal.add(1, { provider: "garmin", data_type: "sync", status: "success" });
+      syncDegradationsTotal.add(1, {
+        provider: "whoop",
+        step_name: "developer_workouts",
+        degradation_kind: "pagination_stalled",
+      });
       syncErrorsTotal.add(1, { provider: "garmin", data_type: "sync" });
       healthKitRecordsTotal.add(50, { endpoint: "pushQuantitySamples", category: "dailyMetric" });
       healthKitPushTotal.add(1, { endpoint: "pushQuantitySamples", status: "success" });

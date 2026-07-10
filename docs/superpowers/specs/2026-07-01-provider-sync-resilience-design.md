@@ -17,7 +17,7 @@ continuation planner kept inserting another `developer_workouts` step before
 - Add a shared, provider-neutral vocabulary for degraded sync progress.
 - Add a guarded pagination helper that prevents infinite or non-progressing
   provider pagination.
-- Emit structured logs, Sentry warning messages, and database sync-log rows for
+- Emit structured logs, degradation metrics, and database sync-log rows for
   recoverable anomalies.
 - Migrate WHOOP developer-workout pagination first, using production evidence as
   the regression target.
@@ -95,14 +95,14 @@ The first implementation should keep the existing `sync_log` table and add:
   recoverable anomaly
 - `status = "error"` for existing failing behavior
 
-### 3. Sentry and Logger Reporting
+### 3. Metric and Logger Reporting
 
 Add a small reporting helper in `src/providers/sync-degradation-reporting.ts`.
 It should:
 
 - log `logger.warn("[provider-sync] Degraded provider sync step", details)`
-- call `captureMessage("Provider sync degraded", "warning")`
-- set Sentry tags/context for `providerId`, `stepName`, `kind`, and safe counts
+- increment `sync.degradations.total`
+- set metric attributes for `provider`, `step_name`, and `degradation_kind`
 - never include raw cursor tokens
 
 The helper should be used by shared framework code, not copied into each
@@ -172,7 +172,7 @@ shared pagination guard:
 
 - current page fetch returns `presentIds`, `nextToken`, and `reachedWindowStart`
 - repeated or previously seen token creates a `pagination_stalled` degradation
-- the degradation is logged, sent to Sentry, added to the result, and written to
+- the degradation is logged, counted as a metric, added to the result, and written to
   sync-log for `developer_workouts`
 - pagination stops and the checkpoint advances to `persist_workouts`
 - `persist_workouts` and `weightlifting` still run
@@ -180,7 +180,7 @@ shared pagination guard:
 WHOOP-specific tests should prove:
 
 - a repeated `nextToken` does not insert another `developer_workouts` step
-- a repeated `nextToken` records a Sentry warning through the degradation helper
+- a repeated `nextToken` records a metric through the degradation helper
 - the next continuation advances to `persist_workouts`
 - already fetched present IDs are retained
 
@@ -213,10 +213,10 @@ Provider sync failures should map to one of these categories:
 - Unit-test the shared pagination helper with repeated cursor, historical
   repeated cursor, empty page with cursor, max pages, normal cursor exhaustion,
   and provider stop condition.
-- Unit-test degradation reporting with mocked `captureMessage` and `logger.warn`.
+- Unit-test degradation reporting with mocked metric counter and `logger.warn`.
 - Unit-test `withSyncLog` degraded status after the schema change.
 - Add WHOOP orchestrator regression tests for repeated developer-workout token
-  and Sentry warning.
+  and degradation metric reporting.
 - Run focused WHOOP tests and affected shared provider tests.
 
 ## Rollout

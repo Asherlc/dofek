@@ -79,7 +79,7 @@ bounded date-window iterations or stream chunking, not provider pagination:
 
 ### Phase 1: Foundation and WHOOP
 
-Ship the shared degradation model, sync-log degraded status, Sentry warning
+Ship the shared degradation model, sync-log degraded status, metric and logger
 reporting, cursor fingerprinting, and guarded pagination helper. Migrate WHOOP
 developer-workout pagination first because production evidence already proves
 the repeated-token failure mode.

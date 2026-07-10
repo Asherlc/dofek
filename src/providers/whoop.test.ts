@@ -1,5 +1,4 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
-import { captureMessage } from "@sentry/node";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WhoopClient, WhoopRateLimitError } from "whoop-whoop/client";
 import type {
@@ -77,7 +76,6 @@ vi.mock("../db/sync-log.ts", async () => {
 
 vi.mock("@sentry/node", () => ({
   captureException: vi.fn(),
-  captureMessage: vi.fn(),
 }));
 
 vi.mock("../db/tokens.ts", () => ({
@@ -122,7 +120,6 @@ vi.mock("../lib/provider-rate-limit-fetch.ts", async (importOriginal) => {
 });
 
 beforeEach(() => {
-  vi.mocked(captureMessage).mockClear();
   publishedMetricStreamBatches.length = 0;
   providerActivityAbsenceMocks.finishProviderActivityListSync.mockReset();
   providerActivityAbsenceMocks.finishProviderActivityListSync.mockResolvedValue(undefined);
@@ -1600,7 +1597,6 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
       duration: 0,
       continued: true,
     });
-    expect(captureMessage).not.toHaveBeenCalledWith("Provider sync degraded", expect.anything());
     expect(enqueueSyncContinuation).toHaveBeenCalledTimes(1);
 
     const savedCheckpoint = requireRecord(saved[0], "expected saved next-token checkpoint");
@@ -1684,17 +1680,6 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
       { type: "persist_workouts" },
     ]);
     expect(savedCheckpoint.presentExternalIds).toEqual(["previous-workout", "current-workout"]);
-    expect(captureMessage).toHaveBeenCalledWith(
-      "Provider sync degraded",
-      expect.objectContaining({
-        level: "warning",
-        tags: expect.objectContaining({
-          providerId: "whoop",
-          stepName: "developer_workouts",
-          degradationKind: "pagination_stalled",
-        }),
-      }),
-    );
   });
 
   it("degrades a repeated developer workout token when only the current step has seen it", async () => {
