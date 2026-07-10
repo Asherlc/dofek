@@ -20,6 +20,14 @@ describe("reportSyncDegradation", () => {
 
   it("logs and records a sync degradation metric without raw cursor context", () => {
     const warnSpy = vi.spyOn(logger, "warn").mockReturnValue(logger);
+    const sensitiveContext = {
+      accessToken: "do-not-log-token",
+      authHeader: "do-not-log-auth-header",
+      clientSecret: "do-not-log-client-secret",
+      cursor: "do-not-log-cursor",
+      password: "do-not-log-password",
+      rawCursor: "do-not-log-this",
+    };
 
     reportSyncDegradation({
       kind: "pagination_stalled",
@@ -28,16 +36,11 @@ describe("reportSyncDegradation", () => {
       message: "WHOOP returned a repeated workout cursor",
       externalId: "workout-123",
       context: {
-        accessToken: "do-not-log-token",
-        authHeader: "do-not-log-auth-header",
-        clientSecret: "do-not-log-client-secret",
-        cursor: "do-not-log-cursor",
+        ...sensitiveContext,
         cursorFingerprint: "abcdef123456",
         kind: "wrong-kind",
         message: "wrong message",
-        password: "do-not-log-password",
         providerId: "wrong-provider",
-        rawCursor: "do-not-log-this",
         pagesFetched: 1,
         stepName: "wrong-step",
       },
@@ -55,20 +58,12 @@ describe("reportSyncDegradation", () => {
         pagesFetched: 1,
       }),
     );
-    expect(warnSpy).not.toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ rawCursor: "do-not-log-this" }),
-    );
-    expect(warnSpy).not.toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        accessToken: "do-not-log-token",
-        authHeader: "do-not-log-auth-header",
-        clientSecret: "do-not-log-client-secret",
-        cursor: "do-not-log-cursor",
-        password: "do-not-log-password",
-      }),
-    );
+    for (const [sensitiveContextKey, sensitiveContextValue] of Object.entries(sensitiveContext)) {
+      expect(warnSpy).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ [sensitiveContextKey]: sensitiveContextValue }),
+      );
+    }
     expect(syncDegradationsTotal.add).toHaveBeenCalledWith(1, {
       provider: "whoop",
       step_name: "developer_workouts",

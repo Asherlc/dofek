@@ -88,7 +88,8 @@ Validation:
 
 - WHOOP repeated-token unit test advances to `persist_workouts`.
 - WHOOP sync-log records a degraded `developer_workouts` step.
-- Sentry receives a warning-level provider-sync-degraded message.
+- `sync.degradations.total` increments and the structured warn log records the
+  degraded step.
 - Production WHOOP activity ingestion reaches current activity data or records
   a clear degraded stop before persistence.
 
