@@ -650,7 +650,11 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
     const userId = await authenticate(req, res, db);
     if (!userId) return;
 
-    const contentType = req.headers["content-type"]?.split(";")[0].trim().toLowerCase();
+    const contentTypeHeader = req.headers["content-type"];
+    const contentType =
+      typeof contentTypeHeader === "string"
+        ? (contentTypeHeader.split(";")[0] ?? "").trim().toLowerCase()
+        : undefined;
     if (
       contentType &&
       !["application/zip", "application/x-zip-compressed", "application/octet-stream"].includes(
