@@ -78,6 +78,7 @@ sample_dirty_keys AS (
             AND existing_summary.user_id = sensor_sample.user_id
         WHERE
             NOT (SELECT is_empty FROM target_state LIMIT 1)
+            AND sensor_sample.refreshed_at > (SELECT last_refreshed_at FROM target_state LIMIT 1)
             AND (
                 existing_summary.activity_id IS null
                 OR sensor_sample.refreshed_at > existing_summary.refreshed_at

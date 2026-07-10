@@ -47,6 +47,10 @@ describe("parseRideWithGpsHistoryBackfillArgs", () => {
       message: "--start must be an ISO date or timestamp",
     },
     {
+      args: ["--start", "2026-02-30"],
+      message: "--start must be an ISO date or timestamp",
+    },
+    {
       args: ["--unknown"],
       message: "Unknown argument: --unknown",
     },

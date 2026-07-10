@@ -24,6 +24,19 @@ function parseDateArgument(value: string, name: string): Date {
   if (Number.isNaN(date.getTime())) {
     throw new Error(`${name} must be an ISO date or timestamp`);
   }
+  const dateOnlyMatch = /^(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})$/.exec(value);
+  if (dateOnlyMatch?.groups) {
+    const parsedYear = date.getUTCFullYear();
+    const parsedMonth = date.getUTCMonth() + 1;
+    const parsedDay = date.getUTCDate();
+    if (
+      parsedYear !== Number(dateOnlyMatch.groups.year) ||
+      parsedMonth !== Number(dateOnlyMatch.groups.month) ||
+      parsedDay !== Number(dateOnlyMatch.groups.day)
+    ) {
+      throw new Error(`${name} must be an ISO date or timestamp`);
+    }
+  }
   return date;
 }
 

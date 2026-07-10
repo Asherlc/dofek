@@ -268,6 +268,7 @@ export function parseTrackPoints(points: RideWithGpsTrackPoint[]): ParsedTrackPo
 
 export function buildRideWithGpsMetricRows(options: {
   activityId: string;
+  externalId: string;
   activityType: CanonicalActivityType;
   trackPoints: RideWithGpsTrackPoint[];
 }): MetricStreamSourceRow[] {
@@ -277,6 +278,7 @@ export function buildRideWithGpsMetricRows(options: {
   return parsedTrackPoints.map((point) => ({
     recordedAt: point.recordedAt,
     activityId: options.activityId,
+    externalId: options.externalId,
     providerId: RIDE_WITH_GPS_PROVIDER_ID,
     lat: point.lat,
     lng: point.lng,
@@ -610,6 +612,7 @@ export class RideWithGpsProvider implements SyncProvider {
 
         const metricRows = buildRideWithGpsMetricRows({
           activityId,
+          externalId: parsed.externalId,
           activityType: parsed.activityType,
           trackPoints: trip.track_points ?? [],
         });

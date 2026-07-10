@@ -22,6 +22,7 @@ interface BackfillOptions {
 
 interface RideWithGpsActivityRow {
   id: string;
+  externalId: string;
   userId: string;
   activityType: string;
   raw: unknown;
@@ -29,6 +30,7 @@ interface RideWithGpsActivityRow {
 
 export interface RideWithGpsActivityBackfillPlan {
   id: string;
+  externalId: string;
   userId: string;
   activityType: CanonicalActivityType;
   shouldUpdateActivityType: boolean;
@@ -83,9 +85,15 @@ const storedRawSchema = z
 
 const activityRowSchema = z.object({
   id: z.string(),
+  externalId: z.string(),
   userId: z.string(),
   activityType: z.string(),
   raw: z.unknown(),
+});
+
+const userRowSchema = z.object({
+  userId: z.string(),
+  activityCount: z.number(),
 });
 
 function parseDateArgument(value: string, name: string): Date {
@@ -159,11 +167,13 @@ export function planRideWithGpsActivityBackfill(
 
   return {
     id: row.id,
+    externalId: row.externalId,
     userId: row.userId,
     activityType,
     shouldUpdateActivityType: row.activityType !== activityType,
     metricRows: buildRideWithGpsMetricRows({
       activityId: row.id,
+      externalId: row.externalId,
       activityType,
       trackPoints: raw.track_points,
     }),
@@ -173,13 +183,15 @@ export function planRideWithGpsActivityBackfill(
 async function resolveUserId(db: Database, userId: string | undefined): Promise<string> {
   if (userId) return userId;
 
-  const rows = await db.execute<{ userId: string; activityCount: number }>(sql`
-    SELECT user_id::text AS "userId", count(*)::int AS "activityCount"
-    FROM fitness.activity
-    WHERE provider_id = 'ride-with-gps'
-    GROUP BY user_id
-    ORDER BY "activityCount" DESC
-  `);
+  const rows = z.array(userRowSchema).parse(
+    await db.execute(sql`
+      SELECT user_id::text AS "userId", count(*)::int AS "activityCount"
+      FROM fitness.activity
+      WHERE provider_id = 'ride-with-gps'
+      GROUP BY user_id
+      ORDER BY "activityCount" DESC
+    `),
+  );
 
   if (rows.length === 1 && rows[0]) return rows[0].userId;
 
@@ -205,6 +217,7 @@ async function loadActivityRows(
   const limitClause = options.limit ? sql`LIMIT ${options.limit}` : sql``;
   const rows = await db.execute(sql`
     SELECT id::text AS id,
+           external_id AS "externalId",
            user_id::text AS "userId",
            activity_type AS "activityType",
            raw

@@ -23,6 +23,7 @@ describe("planRideWithGpsActivityBackfill", () => {
   it("builds metric rows from stored descriptive RideWithGPS track points", () => {
     const plan = planRideWithGpsActivityBackfill({
       id: "activity-1",
+      externalId: "trip-1",
       userId: "user-1",
       activityType: "other",
       raw: {
@@ -45,6 +46,7 @@ describe("planRideWithGpsActivityBackfill", () => {
       {
         recordedAt: new Date(1_723_276_200 * 1000),
         activityId: "activity-1",
+        externalId: "trip-1",
         providerId: "ride-with-gps",
         lat: 45.5,
         lng: -122.6,
@@ -61,6 +63,7 @@ describe("planRideWithGpsActivityBackfill", () => {
   it("builds metric rows from compact RideWithGPS API track points", () => {
     const plan = planRideWithGpsActivityBackfill({
       id: "activity-1",
+      externalId: "trip-1",
       userId: "user-1",
       activityType: "cycling",
       raw: {
@@ -92,6 +95,7 @@ describe("planRideWithGpsActivityBackfill", () => {
   it("returns no metric rows for empty RideWithGPS track points", () => {
     const plan = planRideWithGpsActivityBackfill({
       id: "activity-1",
+      externalId: "trip-1",
       userId: "user-1",
       activityType: "cycling",
       raw: {
@@ -106,6 +110,7 @@ describe("planRideWithGpsActivityBackfill", () => {
   it("drops track points that are missing required stream fields", () => {
     const plan = planRideWithGpsActivityBackfill({
       id: "activity-1",
+      externalId: "trip-1",
       userId: "user-1",
       activityType: "cycling",
       raw: {
@@ -134,6 +139,7 @@ describe("planRideWithGpsActivityBackfill", () => {
     expect(() =>
       planRideWithGpsActivityBackfill({
         id: "activity-1",
+        externalId: "trip-1",
         userId: "user-1",
         activityType: "cycling",
       }),
@@ -144,6 +150,7 @@ describe("planRideWithGpsActivityBackfill", () => {
     expect(() =>
       planRideWithGpsActivityBackfill({
         id: "activity-1",
+        externalId: "trip-1",
         userId: "user-1",
         activityType: "cycling",
         raw: {
@@ -158,6 +165,7 @@ describe("planRideWithGpsActivityBackfill", () => {
     expect(() =>
       planRideWithGpsActivityBackfill({
         id: "activity-1",
+        externalId: "trip-1",
         userId: "user-1",
         activityType: "cycling",
         raw: {
@@ -178,6 +186,7 @@ describe("planRideWithGpsActivityBackfill", () => {
     const db = { execute: vi.fn() };
     const plan = planRideWithGpsActivityBackfill({
       id: "activity-1",
+      externalId: "trip-1",
       userId: "user-1",
       activityType: "cycling",
       raw: {
@@ -192,6 +201,45 @@ describe("planRideWithGpsActivityBackfill", () => {
       db,
       { activityId: "activity-1" },
       [],
+      "api",
+    );
+  });
+
+  it("updates the stored activity type before publishing metric rows when the mapped type differs", async () => {
+    const db = { execute: vi.fn().mockResolvedValue(undefined) };
+    const plan = planRideWithGpsActivityBackfill({
+      id: "activity-1",
+      externalId: "trip-1",
+      userId: "user-1",
+      activityType: "other",
+      raw: {
+        activity_type: "cycling:road",
+        track_points: [
+          {
+            x: -122.6,
+            y: 45.5,
+            t: 1_723_276_200,
+          },
+        ],
+      },
+    });
+
+    await applyRideWithGpsActivityBackfillPlan(db, plan);
+
+    expect(db.execute).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(db.execute.mock.calls[0]?.[0])).toContain("activity_type");
+    expect(JSON.stringify(db.execute.mock.calls[0]?.[0])).toContain("road_cycling");
+    expect(JSON.stringify(db.execute.mock.calls[0]?.[0])).toContain("activity-1");
+    expect(replaceMetricStreamBatchMock).toHaveBeenCalledWith(
+      db,
+      { activityId: "activity-1" },
+      expect.arrayContaining([
+        expect.objectContaining({
+          activityId: "activity-1",
+          externalId: "trip-1",
+          providerId: "ride-with-gps",
+        }),
+      ]),
       "api",
     );
   });

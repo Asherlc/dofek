@@ -225,6 +225,7 @@ describe("buildRideWithGpsMetricRows", () => {
   it("converts parsed track points to source rows for metric stream fan-out", () => {
     const rows = buildRideWithGpsMetricRows({
       activityId: "activity-1",
+      externalId: "trip-1",
       activityType: "road_cycling",
       trackPoints: [
         {
@@ -245,6 +246,7 @@ describe("buildRideWithGpsMetricRows", () => {
       {
         recordedAt: new Date(1723276200 * 1000),
         activityId: "activity-1",
+        externalId: "trip-1",
         providerId: "ride-with-gps",
         lat: 45.5,
         lng: -122.6,
@@ -261,6 +263,7 @@ describe("buildRideWithGpsMetricRows", () => {
   it("omits speed for indoor cycling activities", () => {
     const rows = buildRideWithGpsMetricRows({
       activityId: "activity-1",
+      externalId: "trip-1",
       activityType: "indoor_cycling",
       trackPoints: [
         {

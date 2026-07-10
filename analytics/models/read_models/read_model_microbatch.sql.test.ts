@@ -387,6 +387,9 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).toContain("(SELECT is_empty FROM target_state LIMIT 1)");
     expect(normalizedSql).toContain("NOT (SELECT is_empty FROM target_state LIMIT 1)");
     expect(normalizedSql).toContain(
+      "sensor_sample.refreshed_at > (SELECT last_refreshed_at FROM target_state LIMIT 1)",
+    );
+    expect(normalizedSql).toContain(
       "sensor_sample.refreshed_at > existing_summary.refreshed_at",
     );
     expect(sql).toContain("restored_dirty_keys AS");

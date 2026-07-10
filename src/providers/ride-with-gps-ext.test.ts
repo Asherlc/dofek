@@ -94,7 +94,7 @@ vi.mock("../auth/oauth.ts", async (importOriginal) => {
 
 describe("RideWithGpsClient — API calls", () => {
   it("sync sends correct URL with since parameter", async () => {
-    let capturedUrl = "";
+    let capturedUrl: string | undefined;
     let capturedHeaders: Record<string, string> = {};
     const mockFetch: typeof globalThis.fetch = async (
       input: RequestInfo | URL,
@@ -120,7 +120,7 @@ describe("RideWithGpsClient — API calls", () => {
   });
 
   it("getTrip sends correct URL with trip ID", async () => {
-    let capturedUrl = "";
+    let capturedUrl: string | undefined;
     const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
       capturedUrl = input.toString();
       return Response.json({
@@ -148,7 +148,7 @@ describe("RideWithGpsClient — API calls", () => {
   });
 
   it("listTrips sends page and page size query parameters", async () => {
-    let capturedUrl = "";
+    let capturedUrl: string | undefined;
     const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
       capturedUrl = input.toString();
       return Response.json({
@@ -167,6 +167,8 @@ describe("RideWithGpsClient — API calls", () => {
     const client = new RideWithGpsClient("test-token", mockFetch);
     await client.listTrips(3, 25);
 
+    expect(capturedUrl).toBeDefined();
+    if (!capturedUrl) throw new Error("Expected listTrips request URL to be captured");
     const capturedRequestUrl = new URL(capturedUrl);
     expect(capturedRequestUrl.pathname).toBe("/api/v1/trips.json");
     expect(capturedRequestUrl.searchParams.get("page")).toBe("3");
@@ -834,7 +836,7 @@ describe("RideWithGpsProvider — sync", () => {
     });
     vi.mocked(ensureProvider).mockResolvedValue("");
 
-    let capturedSyncUrl = "";
+    let capturedSyncUrl: string | undefined;
     const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
       const requestUrl = input.toString();
       if (requestUrl.includes("/sync.json")) {
@@ -870,7 +872,7 @@ describe("RideWithGpsProvider — sync", () => {
     });
     vi.mocked(ensureProvider).mockResolvedValue("");
 
-    let capturedSyncUrl = "";
+    let capturedSyncUrl: string | undefined;
     const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
       const requestUrl = input.toString();
       if (requestUrl.includes("/sync.json")) {
@@ -906,7 +908,7 @@ describe("RideWithGpsProvider — sync", () => {
     });
     vi.mocked(ensureProvider).mockResolvedValue("");
 
-    let capturedSyncUrl = "";
+    let capturedSyncUrl: string | undefined;
     const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
       const requestUrl = input.toString();
       if (requestUrl.includes("/sync.json")) {
