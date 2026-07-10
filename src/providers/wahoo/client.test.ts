@@ -245,12 +245,14 @@ describe("WahooClient", () => {
     const fetchFn = async () => new Response("server error", { status: 500 });
     const client = new WahooClient("token", fetchFn);
 
-    await expect(client.getWorkouts()).rejects.toMatchObject({
+    const error = await expectRejectedError(client.getWorkouts());
+
+    expect(error).toMatchObject({
       statusCode: 500,
       path: "/v1/workouts",
       responseBodyExcerpt: "server error",
     });
-    await expect(client.getWorkouts()).rejects.toBeInstanceOf(WahooApiError);
+    expect(error).toBeInstanceOf(WahooApiError);
   });
 
   it("does not truncate Wahoo API error bodies at the excerpt limit", async () => {
