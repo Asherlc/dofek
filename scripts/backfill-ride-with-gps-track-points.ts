@@ -286,7 +286,7 @@ function usage(): string {
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   runBackfill(parseArgs(process.argv.slice(2))).catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : String(error));
+    console.error(error instanceof Error ? error.stack : String(error));
     process.exit(1);
   });
 }
