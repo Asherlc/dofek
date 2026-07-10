@@ -12,6 +12,7 @@ const REALTIME_UPLOAD_BATCH_SIZE = 500;
 const DEFAULT_WHOOP_DEVICE_ID = "WHOOP Strap";
 
 type BufferedInertialMeasurementUnitSample = InertialMeasurementUnitSample & DeviceScopedSample;
+type ShouldContinueUploading = () => boolean;
 type RealtimeDataSample = {
   deviceId?: string;
   timestamp: string;
@@ -120,6 +121,7 @@ export async function initBackgroundWhoopBleSync(
     connectionStateSubscription.remove();
     connectionStateSubscription = null;
   }
+  stopPeriodicDrainTimer();
 
   // Listen for native BLE disconnects so we re-establish on next sync cycle.
   // Without this, the TS `connected` flag stays true after a disconnect
@@ -136,7 +138,11 @@ export async function initBackgroundWhoopBleSync(
 
   // Sync whenever the app comes to foreground
   appStateSubscription = AppState.addEventListener("change", (nextState: AppStateStatus) => {
-    if (nextState !== "active") return;
+    if (nextState !== "active") {
+      stopPeriodicDrainTimer();
+      return;
+    }
+    startPeriodicDrainTimer(trpcClient, whoopDeps, realtimeClient);
     if (syncing) {
       logger.info(LOG_CATEGORY, "foreground sync skipped — already syncing");
       return;
@@ -144,7 +150,7 @@ export async function initBackgroundWhoopBleSync(
 
     logger.info(LOG_CATEGORY, "app foregrounded — starting sync");
     syncing = true;
-    syncOnForeground(trpcClient, whoopDeps, realtimeClient)
+    syncOnForeground(trpcClient, whoopDeps, realtimeClient, shouldRunForegroundPeriodicDrain)
       .catch((error: unknown) => {
         logger.error(LOG_CATEGORY, `foreground sync error: ${error}`);
         Sentry.captureException(error, { tags: { source: "whoop-ble-foreground-sync" } });
@@ -160,7 +166,7 @@ export async function initBackgroundWhoopBleSync(
   // re-opens the app. Best-effort: don't let init failures propagate.
   logger.info(LOG_CATEGORY, "initializing background sync");
   try {
-    await syncOnForeground(trpcClient, whoopDeps, realtimeClient);
+    await syncOnForeground(trpcClient, whoopDeps, realtimeClient, shouldRunForegroundPeriodicDrain);
     logger.info(LOG_CATEGORY, "initial sync complete");
   } catch (error: unknown) {
     logger.error(LOG_CATEGORY, `initial sync error: ${error}`);
@@ -169,13 +175,39 @@ export async function initBackgroundWhoopBleSync(
 
   // Periodically drain the buffer while the app is active so samples
   // don't pile up waiting for a foreground transition.
-  if (periodicDrainTimer) {
-    clearInterval(periodicDrainTimer);
-  }
+  startPeriodicDrainTimer(trpcClient, whoopDeps, realtimeClient);
+}
+
+function shouldRunForegroundPeriodicDrain(): boolean {
+  return AppState.currentState === "active";
+}
+
+function shouldAlwaysContinueUploading(): boolean {
+  return true;
+}
+
+function stopPeriodicDrainTimer(): void {
+  if (!periodicDrainTimer) return;
+
+  clearInterval(periodicDrainTimer);
+  periodicDrainTimer = null;
+}
+
+function startPeriodicDrainTimer(
+  trpcClient: InertialMeasurementUnitUploadClient,
+  whoopDeps: WhoopBleSyncDeps,
+  realtimeClient?: WhoopBleRealtimeUploadClient,
+): void {
+  if (!shouldRunForegroundPeriodicDrain() || periodicDrainTimer) return;
+
   periodicDrainTimer = setInterval(() => {
+    if (!shouldRunForegroundPeriodicDrain()) {
+      stopPeriodicDrainTimer();
+      return;
+    }
     if (syncing || !connected) return;
     syncing = true;
-    drainBuffer(trpcClient, whoopDeps, realtimeClient)
+    drainBuffer(trpcClient, whoopDeps, realtimeClient, shouldRunForegroundPeriodicDrain)
       .catch((error: unknown) => {
         logger.error(LOG_CATEGORY, `periodic drain error: ${error}`);
         Sentry.captureException(error, { tags: { source: "whoop-ble-periodic-drain" } });
@@ -212,6 +244,7 @@ async function syncOnForeground(
   trpcClient: InertialMeasurementUnitUploadClient,
   whoopDeps: WhoopBleSyncDeps,
   realtimeClient?: WhoopBleRealtimeUploadClient,
+  shouldContinueUploading: ShouldContinueUploading = shouldAlwaysContinueUploading,
 ): Promise<void> {
   // Connect if not already connected.
   //
@@ -278,7 +311,7 @@ async function syncOnForeground(
     // Diagnostic-only, ignore errors
   }
 
-  await drainBuffer(trpcClient, whoopDeps, realtimeClient);
+  await drainBuffer(trpcClient, whoopDeps, realtimeClient, shouldContinueUploading);
 }
 
 /**
@@ -290,6 +323,7 @@ async function drainBuffer(
   trpcClient: InertialMeasurementUnitUploadClient,
   whoopDeps: WhoopBleSyncDeps,
   realtimeClient?: WhoopBleRealtimeUploadClient,
+  shouldContinueUploading: ShouldContinueUploading = shouldAlwaysContinueUploading,
 ): Promise<void> {
   // Log data path stats on every drain for diagnostics
   try {
@@ -334,6 +368,10 @@ async function drainBuffer(
 
       let inserted = 0;
       for (const [deviceId, uploadSamples] of groups.entries()) {
+        if (!shouldContinueUploading()) {
+          logger.info(LOG_CATEGORY, "IMU upload skipped — app is no longer active");
+          return;
+        }
         const result = await trpcClient.inertialMeasurementUnitSync.pushSamples.mutate({
           deviceId,
           deviceType: "whoop",
@@ -382,6 +420,10 @@ async function drainBuffer(
 
         let inserted = 0;
         for (const [deviceId, uploadSamples] of groups.entries()) {
+          if (!shouldContinueUploading()) {
+            logger.info(LOG_CATEGORY, "realtime upload skipped — app is no longer active");
+            return;
+          }
           const result = await effectiveRealtimeClient.whoopBleSync.pushRealtimeData.mutate({
             deviceId,
             samples: uploadSamples,
