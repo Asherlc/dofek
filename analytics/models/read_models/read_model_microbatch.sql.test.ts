@@ -3,13 +3,16 @@ import { describe, expect, it } from "vitest";
 
 function readProjectFile(path: string): string {
   const projectFileUrl = new URL(`../../../${path}`, import.meta.url);
+  let contents: string;
   try {
-    const contents = readFileSync(projectFileUrl, "utf8");
-    expect(contents.length).toBeGreaterThan(0);
-    return contents;
+    contents = readFileSync(projectFileUrl, "utf8");
   } catch (error) {
     throw new Error(`Failed to read project file: ${path}`, { cause: error });
   }
+  if (contents.length === 0) {
+    throw new Error(`Project file is empty: ${path}`);
+  }
+  return contents;
 }
 
 function readModel(name: string): string {
@@ -29,6 +32,7 @@ describe("production analytics read-model build", () => {
     const entrypoint = readProjectFile("entrypoint.sh");
     const workerBlockMatch = entrypoint.match(/  worker\)\n(?<body>[\s\S]*?)\n    ;;/);
 
+    expect(workerBlockMatch).not.toBeNull();
     expect(workerBlockMatch?.groups?.body).toContain("exec $NODE src/jobs/worker.ts");
     expect(workerBlockMatch?.groups?.body).not.toContain("dbt build");
   });
@@ -37,6 +41,7 @@ describe("production analytics read-model build", () => {
     const entrypoint = readProjectFile("entrypoint.sh");
     const analyticsWorkerBlockMatch = entrypoint.match(/  analytics-worker\)\n(?<body>[\s\S]*?)\n    ;;/);
 
+    expect(analyticsWorkerBlockMatch).not.toBeNull();
     expect(analyticsWorkerBlockMatch?.groups?.body).toContain("ANALYTICS_BUILD_STARTUP_DELAY_SECONDS:-120");
     expect(analyticsWorkerBlockMatch?.groups?.body).toContain(
       'require_non_negative_integer "ANALYTICS_BUILD_INTERVAL_SECONDS" "$interval_seconds"',
@@ -55,6 +60,7 @@ describe("production analytics read-model build", () => {
     const entrypoint = readProjectFile("entrypoint.sh");
     const migrateBlockMatch = entrypoint.match(/  migrate\)\n(?<body>[\s\S]*?)\n    ;;/);
 
+    expect(migrateBlockMatch).not.toBeNull();
     expect(migrateBlockMatch?.groups?.body).toContain("$NODE src/db/run-migrate.ts");
     expect(migrateBlockMatch?.groups?.body).not.toContain("dbt build");
   });
@@ -65,6 +71,8 @@ describe("production analytics read-model build", () => {
     const analyticsBlockMatch = entrypoint.match(/  analytics\)\n(?<body>[\s\S]*?)\n    ;;/);
     const analyticsE2eBlockMatch = entrypoint.match(/  analytics-e2e\)\n(?<body>[\s\S]*?)\n    ;;/);
 
+    expect(analyticsBlockMatch).not.toBeNull();
+    expect(analyticsE2eBlockMatch).not.toBeNull();
     expect(entrypoint).toContain("DBT_E2E_MICROBATCH_VARS=");
     expect(entrypoint).toContain('"sensor_scalar_sample_begin":"2026-01-01"');
     expect(entrypoint).toContain('"activity_sensor_sample_begin":"2026-01-01"');
@@ -122,8 +130,8 @@ describe("production analytics read-model build", () => {
     ]);
     expect(entrypoint).toContain('DBT_SAFE_MODELS="$DBT_ACTIVITY_MODELS $DBT_SLEEP_DASHBOARD_MODELS"');
     expect(entrypoint).toContain("run_dbt_safe_builds()");
-    expect(entrypoint).toContain("--select $DBT_ACTIVITY_MODELS &&");
-    expect(entrypoint).toContain("--select $DBT_SLEEP_DASHBOARD_MODELS");
+    expect(entrypoint).toContain('--select "$DBT_ACTIVITY_MODELS" &&');
+    expect(entrypoint).toContain('--select "$DBT_SLEEP_DASHBOARD_MODELS"');
   });
 
   it("materializes sleep heart-rate membership from dirty sleep, sensor, and activity keys", () => {
