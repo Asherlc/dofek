@@ -12428,3 +12428,49 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   or OTA update for any remaining `whoop-ble-imu-upload` cancellations. If they
   continue, inspect other upload entry points such as foreground sync and
   background refresh separately.
+
+## 2026-07-10 — R2 Web Asset Domain and CORS Missing
+
+- **Symptoms:** `https://dofek.asherlc.com/` returned an HTML shell that pointed
+  JavaScript and CSS chunks at `https://assets.dofek.fit/web/sha-b21f5e8/`, but
+  the browser could not load those module assets. The first failure was
+  `assets.dofek.fit` not resolving; after the custom domain was attached, module
+  fetches still failed CORS because the R2 asset responses did not include
+  `Access-Control-Allow-Origin`.
+- **User impact:** The production web app shell loaded, but the JavaScript
+  application did not boot.
+- **Evidence:** Before the fix, `dig +short assets.dofek.fit` returned no
+  records and direct asset requests failed with DNS resolution errors. Wrangler
+  showed `dofek-web-assets` existed,
+  `wrangler r2 bucket domain list dofek-web-assets` reported no custom domains,
+  and `wrangler r2 bucket cors list dofek-web-assets` reported no CORS
+  configuration. After CORS was set, cache-busted asset requests with
+  `Origin: https://dofek.asherlc.com` returned
+  `access-control-allow-origin: *`, while already cached asset responses still
+  lacked that header until refreshed.
+- **Root cause:** The new immutable web asset deploy path uploaded assets to the
+  `dofek-web-assets` R2 bucket and emitted HTML that referenced
+  `assets.dofek.fit`, but that hostname had not been connected to the R2 bucket
+  in Cloudflare and the bucket had no CORS policy for cross-origin browser
+  module loads.
+- **Fix / mitigation:** Authenticated Wrangler and connected
+  `assets.dofek.fit` to `dofek-web-assets` with
+  `wrangler r2 bucket domain add dofek-web-assets --domain assets.dofek.fit`.
+  Set a public web-asset CORS rule allowing `GET` and `HEAD` from all origins,
+  then added Terraform resources for the R2 custom domain and CORS policy.
+- **Validation:** `wrangler r2 bucket domain list dofek-web-assets` now reports
+  `assets.dofek.fit` enabled with active ownership and active SSL. Cloudflare
+  authoritative DNS returns `104.21.2.251` and `172.67.129.242` for
+  `assets.dofek.fit`, and `curl --resolve` against those addresses returns HTTP
+  200 for the live JavaScript and CSS assets with `content-type:
+  text/javascript` and `text/css`. Cache-busted JavaScript requests with an
+  `Origin` header return `access-control-allow-origin: *`.
+- **Remaining risk / follow-up:** Existing Cloudflare edge cache entries for the
+  current immutable asset URLs can continue serving responses without the new
+  CORS header until they are refreshed. The Wrangler and Terraform tokens used
+  during the incident did not have permission to purge the Cloudflare zone
+  cache, so immediate recovery for the current tag requires either a cache purge
+  from a token with zone cache-purge permission or a new deploy tag whose asset
+  URLs miss cache and pick up the CORS policy. Add a deploy preflight that fails
+  if the production HTML references `assets.dofek.fit` but the R2 custom domain,
+  DNS, or CORS policy is missing.

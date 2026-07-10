@@ -22,6 +22,29 @@ resource "cloudflare_r2_bucket" "web_assets" {
   location   = "WEUR"
 }
 
+resource "cloudflare_r2_custom_domain" "web_assets" {
+  account_id  = var.cloudflare_account_id
+  bucket_name = cloudflare_r2_bucket.web_assets.name
+  domain      = "assets.dofek.fit"
+  zone_id     = cloudflare_zone.dofek_fit.id
+  enabled     = true
+}
+
+resource "cloudflare_r2_bucket_cors" "web_assets" {
+  account_id  = var.cloudflare_account_id
+  bucket_name = cloudflare_r2_bucket.web_assets.name
+
+  rules = [{
+    id = "public-web-assets"
+    allowed = {
+      origins = ["*"]
+      methods = ["GET", "HEAD"]
+      headers = ["*"]
+    }
+    max_age_seconds = 86400
+  }]
+}
+
 resource "cloudflare_r2_bucket" "db_backups" {
   account_id = var.cloudflare_account_id
   name       = "dofek-db-backups"
@@ -139,10 +162,6 @@ resource "cloudflare_r2_bucket_lifecycle" "ota_preview_cleanup" {
     }
   }]
 }
-
-# Managed manually — cloudflare_r2_custom_domain does not support import.
-# The storybook.dofek.fit custom domain is configured in the Cloudflare dashboard.
-# Re-add this resource after the existing domain is removed or import is supported.
 
 # NOTE: S3-compatible API credentials for R2 must be created manually in
 # the Cloudflare dashboard. Store R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY

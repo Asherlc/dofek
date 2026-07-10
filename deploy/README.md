@@ -33,7 +33,13 @@ Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle C
 ### Terraform (`*.tf`)
 - `oracle-free/`: Separate Terraform root for the OCI production host. The reserved public IP is copied into the `ORACLE_SERVER_HOST` GitHub Actions variable and into the main `deploy/` root as `var.oracle_server_host`.
 - `dns.tf`: Configures Cloudflare DNS records. Root domains (`dofek.fit`, `dofek.live`) are proxied (CDN enabled), while management subdomains (`ota.dofek.asherlc.com`, `portainer.dofek.asherlc.com`) are unproxied for direct access.
-- `storage.tf`: Manages Cloudflare R2 buckets and preview/build-object lifecycle rules. Custom domains for Storybook and web assets are configured manually in the Cloudflare dashboard; Cloudflare documents R2 custom domains as bucket-level domain bindings, not ordinary origin `CNAME` records: https://developers.cloudflare.com/r2/buckets/public-buckets/#custom-domains.
+- `storage.tf`: Manages Cloudflare R2 buckets, lifecycle rules, the `assets.dofek.fit` bucket-level custom domain, and the CORS policy required for browser module loads from that cross-origin asset hostname. Cloudflare documents R2 custom domains as bucket-level domain bindings, not ordinary origin `CNAME` records, and documents that custom domains return CORS headers only when the bucket has a matching CORS policy: https://developers.cloudflare.com/r2/buckets/public-buckets/#custom-domains and https://developers.cloudflare.com/r2/buckets/cors/#use-cors-with-a-custom-domain. The `storybook.dofek.fit` custom domain is still configured manually in the Cloudflare dashboard.
+  The `assets.dofek.fit` custom domain was first restored manually during the
+  2026-07-10 production incident, so the first Terraform apply after this
+  resource was added must either import/adopt that existing Cloudflare object if
+  the provider supports it or remove and recreate it in a controlled apply;
+  creating the same R2 custom domain twice returns Cloudflare error `10052`
+  (`Domain already in use`).
 
 ### Server Configuration (`server/`)
 - `cloud-init.yml`: Installs Docker CE, configures Docker log rotation (10m, 3 files), and idempotently runs `docker swarm init`. No deploy helpers, no Infisical CLI.
@@ -159,6 +165,15 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
       remains in the server image and is served by Express with `no-cache`; old
       asset prefixes are retained by lifecycle for 90 days so cached HTML can
       still load its hashed chunks and public build files after newer deploys.
+      The `dofek-web-assets` bucket must keep Terraform-managed CORS allowing
+      cross-origin `GET` and `HEAD` requests, because Vite module scripts and
+      module preloads are loaded from `assets.dofek.fit` while the HTML is
+      served from domains such as `dofek.asherlc.com`. If the CORS policy
+      changes while objects are already cached at Cloudflare, purge the
+      `assets.dofek.fit` cache hostname so cached asset responses refresh with
+      the current `Access-Control-Allow-Origin` header. Cloudflare documents
+      this cache behavior for R2 custom-domain CORS here:
+      https://developers.cloudflare.com/r2/buckets/cors/#use-cors-with-a-custom-domain.
       Cloudflare documents R2 lifecycle object expiration rules here:
       https://developers.cloudflare.com/r2/buckets/object-lifecycles/.
    6. Apply the stack configuration before migrations with a non-prune,
