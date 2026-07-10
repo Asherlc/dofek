@@ -36,22 +36,32 @@ current_activity AS (
         AND deleted_at IS null
 ),
 
-existing_summary AS (
+existing_summary_state AS (
     {% if is_incremental() %}
         SELECT
             activity_id,
             user_id,
-            argMax(refreshed_at, refresh_version) AS refreshed_at
+            argMax(refreshed_at, refresh_version) AS refreshed_at,
+            argMax(is_deleted, refresh_version) AS is_deleted
         FROM {{ this }}
         GROUP BY activity_id, user_id
-        HAVING argMax(is_deleted, refresh_version) = 0
     {% else %}
         SELECT
             CAST(null, 'Nullable(UUID)') AS activity_id,
             CAST(null, 'Nullable(UUID)') AS user_id,
-            CAST(null, 'Nullable(DateTime64(9, ''UTC''))') AS refreshed_at
+            CAST(null, 'Nullable(DateTime64(9, ''UTC''))') AS refreshed_at,
+            CAST(null, 'Nullable(UInt8)') AS is_deleted
         WHERE 1 = 0
     {% endif %}
+),
+
+existing_summary AS (
+    SELECT
+        activity_id,
+        user_id,
+        refreshed_at
+    FROM existing_summary_state
+    WHERE is_deleted = 0
 ),
 
 initial_dirty_keys AS (
@@ -101,10 +111,10 @@ missing_summary_dirty_keys AS (
         INNER JOIN current_activity
             ON current_activity.activity_id = sensor_sample.activity_id
             AND current_activity.user_id = sensor_sample.user_id
-        LEFT JOIN existing_summary
-            ON existing_summary.activity_id = sensor_sample.activity_id
-            AND existing_summary.user_id = sensor_sample.user_id
-        WHERE existing_summary.activity_id IS null
+        LEFT JOIN existing_summary_state
+            ON existing_summary_state.activity_id = sensor_sample.activity_id
+            AND existing_summary_state.user_id = sensor_sample.user_id
+        WHERE existing_summary_state.activity_id IS null
     {% else %}
         SELECT
             CAST(null, 'Nullable(UUID)') AS activity_id,

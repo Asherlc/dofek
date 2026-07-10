@@ -375,6 +375,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("changed_sample_dirty_keys AS");
     expect(sql).toContain("missing_summary_dirty_keys AS");
     expect(sql).toContain("'join_use_nulls': 1");
+    expect(sql).toContain("existing_summary_state AS");
     expect(normalizedSql).toContain("(user_id, activity_id) IN");
     expect(normalizedSql).toContain(
       "LIMIT 1 BY user_id, activity_id, channel, recorded_at",
@@ -386,7 +387,8 @@ describe("production analytics read-model build", () => {
       "LEFT JOIN existing_summary ON existing_summary.activity_id = sensor_sample.activity_id",
     );
     expect(normalizedSql).toContain("argMax(refreshed_at, refresh_version) AS refreshed_at");
-    expect(normalizedSql).toContain("HAVING argMax(is_deleted, refresh_version) = 0");
+    expect(normalizedSql).toContain("argMax(is_deleted, refresh_version) AS is_deleted");
+    expect(normalizedSql).toContain("FROM existing_summary_state WHERE is_deleted = 0");
     expect(normalizedSql).toContain("(SELECT is_empty FROM target_state LIMIT 1)");
     expect(normalizedSql).toContain("NOT (SELECT is_empty FROM target_state LIMIT 1)");
     expect(normalizedSql).toContain(
@@ -397,7 +399,7 @@ describe("production analytics read-model build", () => {
     );
     expect(normalizedSql).toContain("FROM missing_summary_dirty_keys");
     expect(normalizedSql).toContain("INNER JOIN current_activity");
-    expect(normalizedSql).toContain("WHERE existing_summary.activity_id IS null");
+    expect(normalizedSql).toContain("WHERE existing_summary_state.activity_id IS null");
     expect(sql).toContain("restored_dirty_keys AS");
     expect(sql).toContain("prior_summary.is_deleted = 0");
     expect(sql).not.toContain("source('analytics', 'v_activity')");

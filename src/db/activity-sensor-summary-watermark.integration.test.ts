@@ -6,6 +6,7 @@ import { buildActivitySensorSummaryRowsTableSql } from "./clickhouse-activity-se
 
 const historicalActivityId = "00000000-0000-0000-0000-000000000901";
 const unrelatedActivityId = "00000000-0000-0000-0000-000000000902";
+const tombstonedActivityId = "00000000-0000-0000-0000-000000000903";
 const testUserId = "00000000-0000-0000-0000-000000000001";
 
 type ClickHouseClient = ReturnType<typeof createClient>;
@@ -63,6 +64,17 @@ ${renderActivitySensorSummaryRowsSelectSql(targetSchema)}`,
         power_sample_count: 2,
       },
     ]);
+
+    const tombstoneResult = await activeClient.query({
+      query: `SELECT count() AS tombstone_count
+        FROM ${targetSchema}.activity_sensor_summary_rows
+        WHERE activity_id = '${tombstonedActivityId}'
+          AND is_deleted = 1`,
+      format: "JSONEachRow",
+    });
+    const tombstoneRows = await tombstoneResult.json<{ tombstone_count: number }>();
+
+    expect(tombstoneRows).toEqual([{ tombstone_count: 1 }]);
   }, 180_000);
 });
 
@@ -178,7 +190,9 @@ async function seedHistoricalBackfillFixture(
     buildActivitySensorSummaryRowsTableSql().replaceAll("analytics.", `${targetSchema}.`),
     insertCurrentActivitiesSql(targetSchema),
     insertHistoricalPowerSamplesSql(targetSchema),
+    insertDeletedPowerSampleSql(targetSchema),
     insertUnrelatedFreshSummarySql(targetSchema),
+    insertExistingTombstoneSql(targetSchema),
   ]);
 }
 
@@ -228,13 +242,19 @@ ORDER BY (user_id, activity_id, recorded_date, channel, recorded_at)`;
 function insertCurrentActivitiesSql(targetSchema: string): string {
   return `INSERT INTO ${targetSchema}.source_activity VALUES
   ('${historicalActivityId}', '${testUserId}', toDateTime64('2019-07-16 14:56:37', 6, 'UTC'), NULL, NULL, 0),
-  ('${unrelatedActivityId}', '${testUserId}', toDateTime64('2026-07-04 01:00:00', 6, 'UTC'), NULL, NULL, 0)`;
+  ('${unrelatedActivityId}', '${testUserId}', toDateTime64('2026-07-04 01:00:00', 6, 'UTC'), NULL, NULL, 0),
+  ('${tombstonedActivityId}', '${testUserId}', toDateTime64('2026-07-05 01:00:00', 6, 'UTC'), NULL, NULL, 0)`;
 }
 
 function insertHistoricalPowerSamplesSql(targetSchema: string): string {
   return `INSERT INTO ${targetSchema}.activity_sensor_sample VALUES
   ('${historicalActivityId}', '${testUserId}', toDateTime64('2019-07-16 14:56:37', 6, 'UTC'), toDate('2019-07-16'), 'power', 200.0, 100, 0, toDateTime64('2026-07-10 05:31:41', 9, 'UTC')),
   ('${historicalActivityId}', '${testUserId}', toDateTime64('2019-07-16 14:56:38', 6, 'UTC'), toDate('2019-07-16'), 'power', 220.0, 100, 0, toDateTime64('2026-07-10 05:31:41', 9, 'UTC'))`;
+}
+
+function insertDeletedPowerSampleSql(targetSchema: string): string {
+  return `INSERT INTO ${targetSchema}.activity_sensor_sample VALUES
+  ('${tombstonedActivityId}', '${testUserId}', toDateTime64('2026-07-05 01:00:00', 6, 'UTC'), toDate('2026-07-05'), 'power', 180.0, 100, 1, toDateTime64('2026-07-10 05:31:41', 9, 'UTC'))`;
 }
 
 function insertUnrelatedFreshSummarySql(targetSchema: string): string {
@@ -251,6 +271,24 @@ function insertUnrelatedFreshSummarySql(targetSchema: string): string {
     1,
     200,
     0,
+    toDateTime64('2026-07-10 15:00:00', 9, 'UTC')
+  )`;
+}
+
+function insertExistingTombstoneSql(targetSchema: string): string {
+  return `INSERT INTO ${targetSchema}.activity_sensor_summary_rows (
+    activity_id,
+    user_id,
+    sample_count,
+    refresh_version,
+    is_deleted,
+    refreshed_at
+  ) VALUES (
+    '${tombstonedActivityId}',
+    '${testUserId}',
+    0,
+    200,
+    1,
     toDateTime64('2026-07-10 15:00:00', 9, 'UTC')
   )`;
 }
