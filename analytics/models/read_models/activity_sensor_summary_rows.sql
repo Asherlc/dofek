@@ -5,7 +5,8 @@
     order_by='(user_id, activity_id)',
     on_schema_change='fail',
     query_settings={
-        'max_threads': 1
+        'max_threads': 1,
+        'join_use_nulls': 1
     }
 ) }}
 
@@ -67,7 +68,7 @@ initial_dirty_keys AS (
         {% endif %}
 ),
 
-sample_dirty_keys AS (
+changed_sample_dirty_keys AS (
     {% if is_incremental() %}
         SELECT DISTINCT
             sensor_sample.activity_id AS activity_id,
@@ -83,6 +84,27 @@ sample_dirty_keys AS (
                 existing_summary.activity_id IS null
                 OR sensor_sample.refreshed_at > existing_summary.refreshed_at
             )
+    {% else %}
+        SELECT
+            CAST(null, 'Nullable(UUID)') AS activity_id,
+            CAST(null, 'Nullable(UUID)') AS user_id
+        WHERE 1 = 0
+    {% endif %}
+),
+
+missing_summary_dirty_keys AS (
+    {% if is_incremental() %}
+        SELECT DISTINCT
+            sensor_sample.activity_id AS activity_id,
+            sensor_sample.user_id AS user_id
+        FROM {{ ref('activity_sensor_sample') }} AS sensor_sample
+        INNER JOIN current_activity
+            ON current_activity.activity_id = sensor_sample.activity_id
+            AND current_activity.user_id = sensor_sample.user_id
+        LEFT JOIN existing_summary
+            ON existing_summary.activity_id = sensor_sample.activity_id
+            AND existing_summary.user_id = sensor_sample.user_id
+        WHERE existing_summary.activity_id IS null
     {% else %}
         SELECT
             CAST(null, 'Nullable(UUID)') AS activity_id,
@@ -144,7 +166,12 @@ dirty_keys AS (
         SELECT
             activity_id,
             user_id
-        FROM sample_dirty_keys
+        FROM changed_sample_dirty_keys
+        UNION ALL
+        SELECT
+            activity_id,
+            user_id
+        FROM missing_summary_dirty_keys
         UNION ALL
         SELECT
             activity_id,

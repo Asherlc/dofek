@@ -372,6 +372,9 @@ describe("production analytics read-model build", () => {
 
     expect(sql).toContain("ref('activity_sensor_sample')");
     expect(sql).toContain("latest_sensor_samples AS");
+    expect(sql).toContain("changed_sample_dirty_keys AS");
+    expect(sql).toContain("missing_summary_dirty_keys AS");
+    expect(sql).toContain("'join_use_nulls': 1");
     expect(normalizedSql).toContain("(user_id, activity_id) IN");
     expect(normalizedSql).toContain(
       "LIMIT 1 BY user_id, activity_id, channel, recorded_at",
@@ -392,6 +395,9 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).toContain(
       "sensor_sample.refreshed_at > existing_summary.refreshed_at",
     );
+    expect(normalizedSql).toContain("FROM missing_summary_dirty_keys");
+    expect(normalizedSql).toContain("INNER JOIN current_activity");
+    expect(normalizedSql).toContain("WHERE existing_summary.activity_id IS null");
     expect(sql).toContain("restored_dirty_keys AS");
     expect(sql).toContain("prior_summary.is_deleted = 0");
     expect(sql).not.toContain("source('analytics', 'v_activity')");

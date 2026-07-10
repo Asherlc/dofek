@@ -105,7 +105,8 @@ function renderActivitySensorSummaryRowsSelectSql(targetSchema: string): string 
     .replaceAll("{{ initial_lookback_days }}", "120")
     .replaceAll("{{ this }}", `${targetSchema}.activity_sensor_summary_rows`)
     .replaceAll("{{ ref('activity_sensor_sample') }}", `${targetSchema}.activity_sensor_sample`)
-    .replaceAll("{{ source('postgres_fitness', 'activity') }}", `${targetSchema}.source_activity`);
+    .replaceAll("{{ source('postgres_fitness', 'activity') }}", `${targetSchema}.source_activity`)
+    .concat("\nSETTINGS join_use_nulls = 1");
 }
 
 function renderIncrementalDbtModelForFixture(modelSql: string): string {

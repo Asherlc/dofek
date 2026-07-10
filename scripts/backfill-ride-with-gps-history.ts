@@ -34,7 +34,7 @@ function parseDateArgument(value: string, name: string): Date {
       parsedMonth !== Number(dateOnlyMatch.groups.month) ||
       parsedDay !== Number(dateOnlyMatch.groups.day)
     ) {
-      throw new Error(`${name} must be an ISO date or timestamp`);
+      throw new Error(`${name} must be a valid calendar date`);
     }
   }
   return date;
