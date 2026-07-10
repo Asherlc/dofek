@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { useState } from "react";
+import { ChartRangeProvider } from "../components/DofekChart.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { BodyDaysContext } from "../lib/bodyDaysContext.ts";
 import type { TimeRangeDays } from "../lib/timeRange.ts";
@@ -18,13 +19,15 @@ function BodyLayout() {
 
   return (
     <BodyDaysContext.Provider value={{ days, setDays }}>
-      <PageLayout
-        title="Body"
-        subtitle="Recovery metrics, vitals, and body composition"
-        tabs={subtabs}
-      >
-        <Outlet />
-      </PageLayout>
+      <ChartRangeProvider days={days}>
+        <PageLayout
+          title="Body"
+          subtitle="Recovery metrics, vitals, and body composition"
+          tabs={subtabs}
+        >
+          <Outlet />
+        </PageLayout>
+      </ChartRangeProvider>
     </BodyDaysContext.Provider>
   );
 }

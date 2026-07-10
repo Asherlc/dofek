@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { ChartRangeProvider } from "../components/DofekChart.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import type { TimeRangeDays } from "../lib/timeRange.ts";
@@ -22,15 +23,18 @@ export const Route = createFileRoute("/training")({
 
 function TrainingLayout() {
   const [days, setDays] = useState<TimeRangeDays>(90);
+  const trainingDays = useMemo(() => ({ days, setDays }), [days]);
 
   return (
-    <TrainingDaysContext.Provider value={{ days, setDays }}>
-      <PageLayout
-        headerChildren={<TimeRangeSelector days={days} onChange={setDays} />}
-        tabs={subtabs}
-      >
-        <Outlet />
-      </PageLayout>
+    <TrainingDaysContext.Provider value={trainingDays}>
+      <ChartRangeProvider days={days}>
+        <PageLayout
+          headerChildren={<TimeRangeSelector days={days} onChange={setDays} />}
+          tabs={subtabs}
+        >
+          <Outlet />
+        </PageLayout>
+      </ChartRangeProvider>
     </TrainingDaysContext.Provider>
   );
 }

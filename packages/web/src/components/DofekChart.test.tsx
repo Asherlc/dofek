@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { mockUseFetchingCount } = vi.hoisted(() => ({
   mockUseFetchingCount: vi.fn(() => 0),
@@ -39,9 +39,13 @@ vi.mock("./LoadingSkeleton.tsx", () => ({
   ),
 }));
 
-const { DofekChart } = await import("./DofekChart.tsx");
+const { ChartRangeProvider, DofekChart } = await import("./DofekChart.tsx");
 
 describe("DofekChart", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("renders loading skeleton when loading is true", () => {
     render(<DofekChart option={{}} loading={true} />);
     expect(screen.getByTestId("loading-skeleton")).toBeDefined();
@@ -190,5 +194,113 @@ describe("DofekChart", () => {
     const { container } = render(<DofekChart option={{ series: [] }} />);
     expect(screen.getByTestId("echarts-mock")).toBeDefined();
     expect(container.querySelector(".animate-spin")).toBeNull();
+  });
+
+  it("applies selected finite range bounds to a time x-axis", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 6, 9, 12));
+
+    render(
+      <ChartRangeProvider days={90}>
+        <DofekChart option={{ xAxis: { type: "time" }, series: [] }} />
+      </ChartRangeProvider>,
+    );
+
+    const chart = screen.getByTestId("echarts-mock");
+    const option = JSON.parse(chart.getAttribute("data-option") ?? "{}");
+    expect(option.xAxis).toEqual({ type: "time", min: "2026-04-10", max: "2026-07-09" });
+  });
+
+  it("applies selected finite range bounds to each time axis in an x-axis array", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 6, 9, 12));
+
+    render(
+      <ChartRangeProvider days={365}>
+        <DofekChart
+          option={{
+            xAxis: [
+              { type: "time", gridIndex: 0 },
+              { type: "time", gridIndex: 1 },
+            ],
+            series: [],
+          }}
+        />
+      </ChartRangeProvider>,
+    );
+
+    const chart = screen.getByTestId("echarts-mock");
+    const option = JSON.parse(chart.getAttribute("data-option") ?? "{}");
+    expect(option.xAxis).toEqual([
+      { type: "time", gridIndex: 0, min: "2025-07-09", max: "2026-07-09" },
+      { type: "time", gridIndex: 1, min: "2025-07-09", max: "2026-07-09" },
+    ]);
+  });
+
+  it("does not override explicit time x-axis bounds", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 6, 9, 12));
+
+    render(
+      <ChartRangeProvider days={90}>
+        <DofekChart
+          option={{
+            xAxis: { type: "time", min: "2026-01-01", max: "2026-02-01" },
+            series: [],
+          }}
+        />
+      </ChartRangeProvider>,
+    );
+
+    const chart = screen.getByTestId("echarts-mock");
+    const option = JSON.parse(chart.getAttribute("data-option") ?? "{}");
+    expect(option.xAxis).toEqual({ type: "time", min: "2026-01-01", max: "2026-02-01" });
+  });
+
+  it("treats null time x-axis bounds as unset", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 6, 9, 12));
+
+    render(
+      <ChartRangeProvider days={90}>
+        <DofekChart
+          option={{
+            xAxis: { type: "time", min: null, max: null },
+            series: [],
+          }}
+        />
+      </ChartRangeProvider>,
+    );
+
+    const chart = screen.getByTestId("echarts-mock");
+    const option = JSON.parse(chart.getAttribute("data-option") ?? "{}");
+    expect(option.xAxis).toEqual({ type: "time", min: "2026-04-10", max: "2026-07-09" });
+  });
+
+  it("leaves chart axes data-driven for All ranges", () => {
+    render(
+      <ChartRangeProvider days={null}>
+        <DofekChart option={{ xAxis: { type: "time" }, series: [] }} />
+      </ChartRangeProvider>,
+    );
+
+    const chart = screen.getByTestId("echarts-mock");
+    const option = JSON.parse(chart.getAttribute("data-option") ?? "{}");
+    expect(option.xAxis).toEqual({ type: "time" });
+  });
+
+  it("allows charts to opt out of automatic selected range bounds", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 6, 9, 12));
+
+    render(
+      <ChartRangeProvider days={90}>
+        <DofekChart option={{ xAxis: { type: "time" }, series: [] }} timeRangeMode="data" />
+      </ChartRangeProvider>,
+    );
+
+    const chart = screen.getByTestId("echarts-mock");
+    const option = JSON.parse(chart.getAttribute("data-option") ?? "{}");
+    expect(option.xAxis).toEqual({ type: "time" });
   });
 });

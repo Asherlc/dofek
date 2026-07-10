@@ -5,6 +5,7 @@ import { z } from "zod";
 import { selectedRangeQueryInput, type TimeRangeDays } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 import { AddJournalEntryModal } from "./AddJournalEntryModal.tsx";
+import { ChartRangeProvider } from "./DofekChart.tsx";
 import { TimeRangeSelector } from "./TimeRangeSelector.tsx";
 import { TimeSeriesChart } from "./TimeSeriesChart.tsx";
 
@@ -25,29 +26,31 @@ export function JournalPanel() {
   const [days, setDays] = useState<TimeRangeDays>(30);
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex gap-2">
-          <button
-            type="button"
-            className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === "log" ? "bg-accent/15 text-accent" : "text-muted hover:text-foreground"}`}
-            onClick={() => setTab("log")}
-          >
-            Log
-          </button>
-          <button
-            type="button"
-            className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === "trends" ? "bg-accent/15 text-accent" : "text-muted hover:text-foreground"}`}
-            onClick={() => setTab("trends")}
-          >
-            Trends
-          </button>
+    <ChartRangeProvider days={days}>
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === "log" ? "bg-accent/15 text-accent" : "text-muted hover:text-foreground"}`}
+              onClick={() => setTab("log")}
+            >
+              Log
+            </button>
+            <button
+              type="button"
+              className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === "trends" ? "bg-accent/15 text-accent" : "text-muted hover:text-foreground"}`}
+              onClick={() => setTab("trends")}
+            >
+              Trends
+            </button>
+          </div>
+          <TimeRangeSelector days={days} onChange={setDays} />
         </div>
-        <TimeRangeSelector days={days} onChange={setDays} />
-      </div>
 
-      {tab === "log" ? <JournalLog days={days} /> : <JournalTrends days={days} />}
-    </div>
+        {tab === "log" ? <JournalLog days={days} /> : <JournalTrends days={days} />}
+      </div>
+    </ChartRangeProvider>
   );
 }
 
