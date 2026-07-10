@@ -42,7 +42,7 @@ MUTATING_SHELL_PATTERN = re.compile(
     r"(^|[;&|]\s*)("
     r"apply_patch|build|chmod|chown|commit|cp|curl|deploy|docker|gh|install|"
     r"ln|make|mkdir|mv|npm|pnpm|python|python3|rm|rsync|tee|touch|write"
-    r")\b|>|<\(|\bfind\b[^;&|]*\s-delete\b|\bsed\b[^;&|]*\s-i\b"
+    r")\b|>|<\(|\$\(|`|\bfind\b[^;&|]*\s-delete\b|\bsed\b[^;&|]*\s-i\b"
 )
 
 
