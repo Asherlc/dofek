@@ -43,6 +43,23 @@ describe("production analytics read-model build", () => {
     expect(migrateBlockMatch?.groups?.body).not.toContain("dbt build");
   });
 
+  it("bounds e2e analytics microbatch builds without changing production analytics defaults", () => {
+    const entrypoint = readProjectFile("entrypoint.sh");
+    const compose = readProjectFile("docker-compose.e2e.yml");
+    const analyticsBlockMatch = entrypoint.match(/  analytics\)\n(?<body>[\s\S]*?)\n    ;;/);
+    const analyticsE2eBlockMatch = entrypoint.match(/  analytics-e2e\)\n(?<body>[\s\S]*?)\n    ;;/);
+
+    expect(entrypoint).toContain("DBT_E2E_MICROBATCH_VARS=");
+    expect(entrypoint).toContain("sensor_scalar_sample_begin: '2026-01-01'");
+    expect(entrypoint).toContain("activity_sensor_sample_begin: '2026-01-01'");
+    expect(entrypoint).toContain("activity_location_sample_begin: '2026-01-01'");
+    expect(entrypoint).toContain("deduped_sensor_begin: '2026-01-01'");
+    expect(analyticsBlockMatch?.groups?.body).toContain("run_dbt_safe_builds");
+    expect(analyticsBlockMatch?.groups?.body).not.toContain("DBT_E2E_MICROBATCH_VARS");
+    expect(analyticsE2eBlockMatch?.groups?.body).toContain("run_dbt_e2e_builds");
+    expect(compose).toContain('command: ["analytics-e2e"]');
+  });
+
   it("runs activity read models before sleep and dashboard models", () => {
     const entrypoint = readProjectFile("entrypoint.sh");
     const activityMatch = entrypoint.match(/^DBT_ACTIVITY_MODELS="([^"]+)"$/m);
