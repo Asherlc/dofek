@@ -16,6 +16,10 @@ function getCommitHash(): string {
 
 const commitHash = getCommitHash();
 
+if (process.env.REQUIRE_SENTRY_AUTH_TOKEN === "true" && !process.env.SENTRY_AUTH_TOKEN) {
+  throw new Error("SENTRY_AUTH_TOKEN is required when REQUIRE_SENTRY_AUTH_TOKEN is true.");
+}
+
 function isPackage(id: string, packageName: string): boolean {
   return id.includes(`/node_modules/${packageName}/`);
 }

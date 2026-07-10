@@ -57,7 +57,7 @@ ARG VITE_ASSET_BASE_URL=/
 ENV VITE_ASSET_BASE_URL=${VITE_ASSET_BASE_URL}
 RUN --mount=type=secret,id=SENTRY_AUTH_TOKEN,required=false \
     SENTRY_AUTH_TOKEN="$(cat /run/secrets/SENTRY_AUTH_TOKEN 2>/dev/null || true)" \
-    && export SENTRY_AUTH_TOKEN \
+    && export SENTRY_AUTH_TOKEN REQUIRE_SENTRY_AUTH_TOKEN=true \
     && cd packages/web && pnpm run build
 RUN pnpm --filter dofek-server deploy --legacy --prod /prod/server
 
