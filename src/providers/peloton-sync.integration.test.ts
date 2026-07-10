@@ -223,6 +223,40 @@ describe("PelotonProvider.sync() (integration)", () => {
     expect(run.activityType).toBe("running");
   });
 
+  it("preserves zero-duration source timestamps", async () => {
+    await saveTokens(ctx.db, "peloton", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "offline_access openid peloton-api.members:default",
+    });
+
+    const startedAtSeconds = 1773275085;
+    const workouts = [
+      fakeWorkout({
+        id: "workout-zero-duration",
+        start_time: startedAtSeconds,
+        end_time: startedAtSeconds,
+      }),
+    ];
+
+    server.use(...pelotonHandlers(workouts));
+
+    const provider = new PelotonProvider();
+    const result = await syncProvider(provider, new Date("2026-01-01T00:00:00Z"));
+
+    expect(result.errors).toHaveLength(0);
+
+    const rows = await ctx.db
+      .select()
+      .from(activity)
+      .where(eq(activity.externalId, "workout-zero-duration"));
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.startedAt).toEqual(new Date(startedAtSeconds * 1000));
+    expect(rows[0]?.endedAt).toEqual(new Date(startedAtSeconds * 1000));
+  });
+
   it("publishes metric stream events from performance graph", async () => {
     const workouts = [
       fakeWorkout({ id: "workout-stream-001", start_time: 1709280000, end_time: 1709281800 }),

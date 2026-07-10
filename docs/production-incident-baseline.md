@@ -83,8 +83,7 @@ could remain null.
 The runbook compared production data against the Drizzle schema and intended
 domain invariants before generating migrations. Existing data was compatible
 with the new nullability constraints except two Peloton activity rows where
-`ended_at == started_at`. Those rows had source duration data that had not
-reached the `fitness.activity` table.
+`ended_at == started_at`.
 
 ### Root Cause
 
@@ -101,7 +100,9 @@ add check constraints for timestamp ordering and non-negative measurement
 ranges, create the active-activity dashboard index, and backfill/tighten
 `analytics.body_measurement_sample._peerdb_synced_at`. The migration also
 remediates the two zero-duration Peloton rows with a one-second `ended_at`
-floor so the new activity ordering constraint can be applied.
+floor so the strict activity ordering constraint can be applied. This strict
+constraint was later relaxed because zero-duration activities are legitimate
+for immediate-start/stop workouts.
 
 ### Validation
 
@@ -120,9 +121,9 @@ migrations applied.
 
 ### Remaining Risk
 
-The Peloton provider still needs a follow-up fix so real provider durations are
-written to `fitness.activity` instead of relying on the one-time migration
-repair for historical zero-duration rows.
+The strict activity ordering constraint was later corrected to allow
+zero-duration activities while still rejecting activities that end before they
+start.
 
 ## 2026-06-30: CI failed on pre-dbt ClickHouse migration and stale seed columns
 
@@ -11982,17 +11983,19 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   - `daily_metric_value.metric_type_id → daily_metric_type.id` (RESTRICT)
   Drizzle `.references(... { onDelete: "..." })` updated to match.
 - **CHECK constraints:** None existed in prod. Migration `0045` adds:
-  - `activity.ended_at > started_at` (when ended_at present)
+  - `activity.ended_at > started_at` (when ended_at present; later relaxed to
+    `activity.ended_at >= started_at` because zero-duration activities are
+    valid)
   - Non-negative ranges on `strength_set`, `daily_metrics`, `sleep_session`
   - 0–100 range on `sleep_session.efficiency_pct`
   - Positive `food_entry.serving_weight_grams`, non-negative `number_of_units`
   - Lab range ordering `lab_result.reference_range_high >= reference_range_low`
   - Non-negative `dexa_scan.body_fat_pct`
 - **Existing data remediation:** 2 `fitness.activity` rows had
-  `ended_at == started_at` (Peloton zero-duration artefacts — Peloton
-  source-side duration parsing bug is tracked separately). Migrated
-  to `started_at + INTERVAL '1 second'` as a minimal-inflation placeholder
-  to satisfy the new CHECK.
+  `ended_at == started_at`. They were migrated to
+  `started_at + INTERVAL '1 second'` as a minimal-inflation placeholder to
+  satisfy the original strict CHECK; the CHECK was later corrected to allow
+  zero-duration activities.
 - **Partial index:** Created `activity_active_user_started_idx` on
   `fitness.activity (user_id, started_at DESC) WHERE deleted_at IS NULL
   AND provider_absent_at IS NULL` to back the high-frequency dashboard
@@ -12014,11 +12017,9 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   ClickHouse stack. `pnpm vitest run --project unit` reports 10,999 passed
   / 21 skipped / 0 failed. Integration tests for `predictions`,
   `router-coverage`, and `export` pass.
-- **Remaining risk / follow-up:** Peloton provider produces
-  zero-duration activities (3 known cases including 2 Peloton rows
-  remediated in this migration) — source-side duration parsing bug is
-  tracked as a separate follow-up. Migration `0045` includes a comment
-  pointing future maintainers to investigate.
+- **Remaining risk / follow-up:** Migration `0045` includes historical
+  one-second placeholder remediation for two Peloton rows; the later corrected
+  invariant allows future zero-duration activities directly.
 
 ## 2026-07-08 — Cycling Variability Empty Despite Power Samples
 
@@ -12176,6 +12177,32 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   requests fail, but they should no longer restart the web process through this
   in-flight cache path. Continue monitoring ClickHouse queue pressure and the
   body read model query cost separately.
+
+## 2026-07-09 — Peloton Zero-Duration Activity Violates Activity Constraint
+
+- **Symptoms:** Sentry issue `DOFEK-SERVER-4J` reported handled production
+  Peloton sync errors from `upsertProviderActivity` while inserting
+  `fitness.activity` rows.
+- **User impact:** Affected Peloton activities were skipped during sync; no
+  users were counted as impacted in Sentry at triage time.
+- **Evidence:** The failing insert had identical
+  `started_at = 2026-03-12T00:24:45.000Z` and
+  `ended_at = 2026-03-12T00:24:45.000Z`, and Postgres rejected it with
+  `activity_ended_after_started_chk`.
+- **Root cause:** The activity check constraint required `ended_at` to be
+  strictly greater than `started_at`, but legitimate immediate-start/stop
+  workout instances can have provider timestamps that collapse to
+  `end_time === start_time`.
+- **Fix / mitigation:** The activity check constraint was relaxed to allow
+  `ended_at >= started_at`, preserving legitimate zero-duration provider
+  timestamps while still rejecting activities that end before they start.
+- **Validation:** `pnpm vitest run src/providers/peloton.test.ts` and
+  `pnpm vitest run src/providers/peloton-sync.integration.test.ts` passed,
+  including a DB-backed regression that syncs a zero-duration Peloton workout
+  with no errors and preserves `ended_at == started_at`.
+- **Remaining risk / follow-up:** Existing rows previously inflated to one
+  second by migration `0045` remain as historical remediation data. Monitor
+  Sentry for new `DOFEK-SERVER-4J` occurrences after deploy.
 
 ## 2026-07-09 — Settings and Provider Pages Blocked by Slow Provider Summary
 

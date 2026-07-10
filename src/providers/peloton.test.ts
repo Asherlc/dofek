@@ -342,6 +342,17 @@ describe("Peloton Provider", () => {
       expect(result.name).toBe("30 min Power Zone Ride");
     });
 
+    it("preserves zero-duration source timestamps", () => {
+      const zeroDuration: PelotonWorkout = {
+        ...sampleWorkout,
+        end_time: sampleWorkout.start_time,
+      };
+
+      const result = parseWorkout(zeroDuration);
+      expect(result.startedAt).toEqual(new Date(sampleWorkout.start_time * 1000));
+      expect(result.endedAt).toEqual(new Date(sampleWorkout.start_time * 1000));
+    });
+
     it("computes duration from start/end when both present", () => {
       const result = parseWorkout(sampleWorkout);
       expect(result.name).toBe("30 min Power Zone Ride");

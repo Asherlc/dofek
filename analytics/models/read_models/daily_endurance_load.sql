@@ -32,13 +32,13 @@ activity_bounds AS (
         ended_at,
         avg_hr
     FROM {{ ref('activity_summary_rows') }} FINAL
+        {% if is_incremental() %}
+        INNER JOIN changed_activity_keys USING (activity_id, user_id)
+        {% endif %}
     WHERE is_deleted = 0
         AND ended_at IS NOT NULL
         AND avg_hr IS NOT NULL
         AND avg_hr > 0
-        {% if is_incremental() %}
-            AND (activity_id, user_id) IN (SELECT activity_id, user_id FROM changed_activity_keys)
-        {% endif %}
 ),
 
 {% if is_incremental() %}
@@ -47,8 +47,8 @@ existing_activities AS (
         activity_id,
         user_id
     FROM {{ this }} FINAL
+    INNER JOIN changed_activity_keys USING (activity_id, user_id)
     WHERE is_deleted = 0
-        AND (activity_id, user_id) IN (SELECT activity_id, user_id FROM changed_activity_keys)
 ),
 {% endif %}
 
