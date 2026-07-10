@@ -589,6 +589,16 @@ describe("processImportJob", () => {
         }),
       );
     });
+
+    it("does not treat unknown import types as Garmin dump imports", async () => {
+      const job = createMockJob({ filePath: tempFilePath });
+      // @ts-expect-error Queued payloads are runtime data; this verifies malformed payloads do not hit Garmin.
+      job.data.importType = "unsupported-import";
+
+      await runImportJob(job, mockDb);
+
+      expect(mockImportGarminDumpFile).not.toHaveBeenCalled();
+    });
   });
 
   describe("file cleanup", () => {

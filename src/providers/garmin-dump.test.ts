@@ -1,4 +1,4 @@
-import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -193,6 +193,9 @@ describe("Garmin dump provider", () => {
     expect(mapGarminDumpActivityType("cycling")).toBe("cycling");
     expect(mapGarminDumpActivityType("virtual_ride")).toBe("indoor_cycling");
     expect(mapGarminDumpActivityType(undefined, "HIKING")).toBe("hiking");
+    expect(mapGarminDumpActivityType("Trail  Running")).toBe("trail_running");
+    expect(mapGarminDumpActivityType("mountain-biking")).toBe("cycling");
+    expect(mapGarminDumpActivityType(undefined, undefined)).toBe("other");
   });
 
   it("parses summarized activities and nested uploaded FIT zip entries", async () => {
@@ -206,6 +209,55 @@ describe("Garmin dump provider", () => {
     expect(parsed.fitFiles.map((entry) => entry.path)).toEqual([
       "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip/asher@example.com_12345.fit",
     ]);
+  });
+
+  it("parses extracted Garmin dump directories recursively", async () => {
+    const directory = await createTempDirectory();
+    const nestedDirectory = join(directory, "DI_CONNECT", "DI-Connect-Fitness");
+    await mkdir(nestedDirectory, { recursive: true });
+    await writeFile(
+      join(nestedDirectory, "asher_0_summarizedActivities.json"),
+      JSON.stringify([
+        {
+          summarizedActivitiesExport: [
+            {
+              activityId: "dir-activity",
+              activityType: "running",
+              beginTimestamp: Date.parse("2026-07-02T12:00:00.000Z"),
+              elapsedDuration: 1200000,
+            },
+          ],
+        },
+      ]),
+    );
+    await writeFile(join(nestedDirectory, "asher@example.com_dir-activity.fit"), "fit-bytes");
+
+    const parsed = await parseGarminDumpFile(directory);
+
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.summaries[0]?.activityId).toBe("dir-activity");
+    expect(parsed.fitFiles.map((entry) => entry.path)).toEqual([
+      "DI_CONNECT/DI-Connect-Fitness/asher@example.com_dir-activity.fit",
+    ]);
+  });
+
+  it("reports malformed summarized activity files without dropping valid FIT files", async () => {
+    const zip = await createZip({
+      "DI_CONNECT/DI-Connect-Fitness/asher_0_summarizedActivities.json": "{broken",
+      "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345.fit": "fit-bytes",
+    });
+    const directory = await createTempDirectory();
+    const filePath = join(directory, "garmin-export.zip");
+    await writeFile(filePath, zip);
+
+    const parsed = await parseGarminDumpFile(filePath);
+
+    expect(parsed.summaries).toEqual([]);
+    expect(parsed.fitFiles.map((entry) => entry.path)).toEqual([
+      "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345.fit",
+    ]);
+    expect(parsed.errors).toHaveLength(1);
+    expect(parsed.errors[0]?.message).toContain("Failed to parse Garmin summarized activities");
   });
 
   it("rejects oversized Garmin dump files before reading them", async () => {
@@ -280,5 +332,115 @@ describe("Garmin dump provider", () => {
       ],
       "file",
     );
+    expect(mockUpsertProviderActivity.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        endedAt: new Date("2026-07-01T12:30:00.000Z"),
+        raw: expect.objectContaining({ activityId: 12345 }),
+      }),
+    );
+    expect(result.duration).toBeGreaterThanOrEqual(0);
+  });
+
+  it("keeps parse errors in import results and imports FIT-only activities", async () => {
+    const zip = await createZip({
+      "DI_CONNECT/DI-Connect-Fitness/asher_0_summarizedActivities.json": "{broken",
+      "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_activity.fit": "fit-bytes",
+    });
+    const directory = await createTempDirectory();
+    const filePath = join(directory, "garmin-export.zip");
+    await writeFile(filePath, zip);
+
+    const result = await importGarminDumpFile(mockDb, filePath, "user-1");
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors[0]?.message).toContain("Failed to parse Garmin summarized activities");
+    expect(mockUpsertProviderActivity).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({
+        externalId: expect.stringMatching(/^fit:[a-f0-9]{32}$/),
+        activityType: "cycling",
+        name: "Garmin cycling",
+        raw: {
+          fitPath: "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_activity.fit",
+          session: { sport: "cycling" },
+        },
+      }),
+      expect.objectContaining({
+        name: "Garmin cycling",
+        raw: {
+          fitPath: "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_activity.fit",
+          session: { sport: "cycling" },
+        },
+      }),
+    );
+  });
+
+  it("records summary validation errors and skips unmatched FIT files when summaries exist", async () => {
+    const zip = await createZip({
+      "DI_CONNECT/DI-Connect-Fitness/asher_0_summarizedActivities.json": JSON.stringify([
+        {
+          summarizedActivitiesExport: [
+            {
+              activityId: 12345,
+              activityType: "cycling",
+            },
+          ],
+        },
+      ]),
+      "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_99999.fit": "fit-bytes",
+    });
+    const directory = await createTempDirectory();
+    const filePath = join(directory, "garmin-export.zip");
+    await writeFile(filePath, zip);
+
+    const result = await importGarminDumpFile(mockDb, filePath, "user-1");
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toEqual([
+      { message: "Garmin activity 12345 is missing a valid start time" },
+    ]);
+    expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
+    expect(mockParseFitFile).not.toHaveBeenCalled();
+  });
+
+  it("deduplicates repeated FIT files by extracted Garmin activity id", async () => {
+    const zip = await createZip({
+      "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345.fit": "fit-bytes",
+      "DI_CONNECT/DI-Connect-Uploaded-Files/copy/asher@example.com_12345_extra.fit": "fit-bytes",
+    });
+    const directory = await createTempDirectory();
+    const filePath = join(directory, "garmin-export.zip");
+    await writeFile(filePath, zip);
+
+    const result = await importGarminDumpFile(mockDb, filePath, "user-1");
+
+    expect(result.recordsSynced).toBe(1);
+    expect(mockParseFitFile).toHaveBeenCalledTimes(1);
+    expect(mockUpsertProviderActivity).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({ externalId: "12345" }),
+      expect.any(Object),
+    );
+  });
+
+  it("reports FIT parse failures with the extracted external id", async () => {
+    mockParseFitFile.mockRejectedValue(new Error("bad fit"));
+    const zip = await createZip({
+      "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345.fit": "fit-bytes",
+    });
+    const directory = await createTempDirectory();
+    const filePath = join(directory, "garmin-export.zip");
+    await writeFile(filePath, zip);
+
+    const result = await importGarminDumpFile(mockDb, filePath, "user-1");
+
+    expect(result.recordsSynced).toBe(0);
+    expect(result.errors).toEqual([
+      expect.objectContaining({
+        externalId: "12345",
+        message:
+          "Failed to import Garmin FIT file DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345.fit: bad fit",
+      }),
+    ]);
   });
 });
