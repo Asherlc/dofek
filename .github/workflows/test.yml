@@ -173,6 +173,7 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     services:
@@ -549,6 +550,7 @@ jobs:
   test-integration:
     name: Integration Tests (${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
     strategy:

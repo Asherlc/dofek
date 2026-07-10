@@ -69,6 +69,7 @@ describe("ClickHouseActivitySensorStore", () => {
     );
     const queryText = query.mock.calls[0]?.[0]?.query;
     expect(queryText).toContain("ARRAY JOIN points AS point");
+    expect(queryText).toContain("AND is_deleted = 0");
     expect(queryText).toContain(
       "any(tuple(heart_rate, power, speed, cadence, altitude, lat, lng)) AS point_values",
     );
@@ -82,6 +83,12 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).not.toContain("fitness.deduped_sensor");
     expect(queryText).not.toContain("analytics.deduped_sensor");
     expect(queryText).not.toContain("analytics.deduped_location");
+  });
+
+  it("returns no stream points when the read model has no rows", async () => {
+    const { store } = makeStore([]);
+
+    await expect(store.getStream(window, 500)).resolves.toEqual([]);
   });
 
   it("queries activity summaries from the ClickHouse analytics schema", async () => {
@@ -116,6 +123,12 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).toContain(
       "activity_id IN (\n          SELECT arrayJoin(CAST({activityIds:Array(String)}, 'Array(UUID)'))",
     );
+  });
+
+  it("returns no activity summaries when ClickHouse returns no rows", async () => {
+    const { store } = makeStore([]);
+
+    await expect(store.getActivitySummaries([window.activityId])).resolves.toEqual([]);
   });
 
   it("loads power curve samples from activity summary", async () => {
@@ -275,11 +288,18 @@ describe("ClickHouseActivitySensorStore", () => {
     const queryText = query.mock.calls[0]?.[0]?.query;
     expect(queryText).toContain("analytics.activity_heart_rate_zones");
     expect(queryText).toContain("ARRAY JOIN zones AS zone_tuple");
+    expect(queryText).toContain("AND is_deleted = 0");
     expect(queryText).toContain("sum(zone_tuple.2) AS seconds");
     expect(queryText).toContain("GROUP BY zone_tuple.1");
     expect(queryText).not.toContain("analytics.deduped_sensor");
     expect(queryText).not.toContain("analytics.activity_sensor_sample");
     expect(queryText).not.toContain("FROM (SELECT number AS zone FROM numbers(6)) AS zones");
+  });
+
+  it("returns no heart-rate zones when the read model has no rows", async () => {
+    const { store } = makeStore([]);
+
+    await expect(store.getHeartRateZoneSeconds(window)).resolves.toEqual([]);
   });
 
   it("coerces numeric ClickHouse read-model rows at runtime", async () => {
@@ -312,12 +332,35 @@ describe("ClickHouseActivitySensorStore", () => {
     ]);
   });
 
+  it("rejects invalid numeric ClickHouse stream values", async () => {
+    const { store } = makeStore([
+      {
+        recorded_at: "2024-01-15 10:00:00.000",
+        heart_rate: "not-a-number",
+        power: null,
+        speed: null,
+        cadence: null,
+        altitude: null,
+        lat: null,
+        lng: null,
+      },
+    ]);
+
+    await expect(store.getStream(window, 500)).rejects.toThrow();
+  });
+
   it("coerces heart-rate zone rows at runtime", async () => {
     const { store } = makeStore([{ zone: "2", seconds: "15" }]);
 
     const rows = await store.getHeartRateZoneSeconds(window);
 
     expect(rows).toEqual([{ zone: 2, seconds: 15 }]);
+  });
+
+  it("rejects invalid numeric ClickHouse heart-rate zone values", async () => {
+    const { store } = makeStore([{ zone: "not-a-number", seconds: "15" }]);
+
+    await expect(store.getHeartRateZoneSeconds(window)).rejects.toThrow();
   });
 
   it("clamps heart-rate duration windows to at least one sample", async () => {
