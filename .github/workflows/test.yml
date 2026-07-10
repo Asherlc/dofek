@@ -99,7 +99,7 @@ jobs:
         with:
           driver-opts: |
             image=mirror.gcr.io/moby/buildkit:buildx-stable-1
-          config-inline: |
+          buildkitd-config-inline: |
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
       - name: Build server image with cache
@@ -715,7 +715,7 @@ jobs:
         with:
           driver-opts: |
             image=mirror.gcr.io/moby/buildkit:buildx-stable-1
-          config-inline: |
+          buildkitd-config-inline: |
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
       - name: Build E2E images with cache

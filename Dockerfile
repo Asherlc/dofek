@@ -55,9 +55,11 @@ ARG COMMIT_HASH
 ENV COMMIT_HASH=${COMMIT_HASH}
 ARG VITE_ASSET_BASE_URL=/
 ENV VITE_ASSET_BASE_URL=${VITE_ASSET_BASE_URL}
+ARG REQUIRE_SENTRY_RELEASE_UPLOAD=false
 RUN --mount=type=secret,id=SENTRY_AUTH_TOKEN,required=false \
     SENTRY_AUTH_TOKEN="$(cat /run/secrets/SENTRY_AUTH_TOKEN 2>/dev/null || true)" \
-    && export SENTRY_AUTH_TOKEN REQUIRE_SENTRY_AUTH_TOKEN=true \
+    && REQUIRE_SENTRY_AUTH_TOKEN="$REQUIRE_SENTRY_RELEASE_UPLOAD" \
+    && export SENTRY_AUTH_TOKEN REQUIRE_SENTRY_AUTH_TOKEN \
     && cd packages/web && pnpm run build
 RUN pnpm --filter dofek-server deploy --legacy --prod /prod/server
 
