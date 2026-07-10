@@ -12,3 +12,16 @@ export function standardViewHeader(viewName: string): string {
   return `CREATE VIEW IF NOT EXISTS ${viewName}
 AS`;
 }
+
+export function refreshableMergeTreeViewHeader(
+  viewName: string,
+  orderBy: string,
+  refreshEvery: string,
+): string {
+  return `CREATE MATERIALIZED VIEW IF NOT EXISTS ${viewName}
+REFRESH EVERY ${refreshEvery}
+ENGINE = MergeTree
+ORDER BY ${orderBy}
+SETTINGS allow_nullable_key = 1
+AS`;
+}

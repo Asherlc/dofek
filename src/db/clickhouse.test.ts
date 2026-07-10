@@ -155,7 +155,7 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).not.toContain("ENGINE = MaterializedPostgreSQL");
     expect(sql).not.toContain("materialized_postgresql_tables_list = 'metric_stream'");
     expect(sql).not.toContain("ENGINE = PostgreSQL");
-    expect(sql).not.toContain("REFRESH EVERY");
+    expect(sql).toContain("REFRESH EVERY 15 MINUTE");
     expect(sql).not.toContain("SYSTEM REFRESH VIEW");
     expect(sql).not.toContain("SYSTEM WAIT VIEW");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.sensor_scalar_sample");
@@ -190,7 +190,7 @@ describe("buildClickHouseBootstrapStatements", () => {
     expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.deduped_location");
     expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.deduped_location");
     expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.deduped_location");
-    expect(sql).toContain("CREATE VIEW IF NOT EXISTS analytics.v_body_measurement");
+    expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.v_body_measurement");
     expect(sql).not.toContain("SYSTEM REFRESH VIEW analytics.v_body_measurement");
     expect(sql).not.toContain("SYSTEM WAIT VIEW analytics.v_body_measurement");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.body_measurement_sample");

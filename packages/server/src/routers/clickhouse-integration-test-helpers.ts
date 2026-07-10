@@ -2199,7 +2199,7 @@ function rewriteClickHouseTestCommand(
 ): string[] {
   const rewrittenQuery = rewriteClickHouseDatabaseNames(query, databases).trim();
   const viewMatch = rewrittenQuery.match(
-    /^CREATE VIEW IF NOT EXISTS ([A-Za-z0-9_]+\.[A-Za-z0-9_]+)\nAS\n?([\s\S]*)$/,
+    /^CREATE (?:MATERIALIZED )?VIEW IF NOT EXISTS ([A-Za-z0-9_]+\.[A-Za-z0-9_]+)(?:\n[\s\S]*?)?\nAS\n?([\s\S]*)$/,
   );
 
   if (viewMatch) {

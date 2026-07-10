@@ -2,6 +2,7 @@ import { METRIC_STREAM_TABLE } from "../metric-stream/clickhouse-table.ts";
 import { buildProviderStatsTableSql } from "./clickhouse-provider-stats.ts";
 import {
   peerDbMetadataColumnDefinitions,
+  refreshableMergeTreeViewHeader,
   replacingMergeTreeTable,
   standardViewHeader,
 } from "./clickhouse-sql-helpers.ts";
@@ -585,7 +586,7 @@ GROUP BY
 }
 
 function buildBodyMeasurementReadModelSql(): string {
-  return `${standardViewHeader("analytics.v_body_measurement")}
+  return `${refreshableMergeTreeViewHeader("analytics.v_body_measurement", "(user_id, recorded_at)", "15 MINUTE")}
 WITH RECURSIVE
 body_measurement_samples AS (
   SELECT
