@@ -79,7 +79,7 @@ bounded date-window iterations or stream chunking, not provider pagination:
 
 ### Phase 1: Foundation and WHOOP
 
-Ship the shared degradation model, sync-log degraded status, Sentry warning
+Ship the shared degradation model, sync-log degraded status, metric and logger
 reporting, cursor fingerprinting, and guarded pagination helper. Migrate WHOOP
 developer-workout pagination first because production evidence already proves
 the repeated-token failure mode.
@@ -88,7 +88,8 @@ Validation:
 
 - WHOOP repeated-token unit test advances to `persist_workouts`.
 - WHOOP sync-log records a degraded `developer_workouts` step.
-- Sentry receives a warning-level provider-sync-degraded message.
+- `sync.degradations.total` increments and the structured warn log records the
+  degraded step.
 - Production WHOOP activity ingestion reaches current activity data or records
   a clear degraded stop before persistence.
 

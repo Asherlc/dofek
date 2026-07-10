@@ -12387,6 +12387,58 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   failures, add targeted classification for those bodies instead of broadening
   generic HTTP handling.
 
+## 2026-07-10 — Provider Sync Degradation Reported as Sentry Error
+
+- **Symptoms:** Production Sentry issue
+  [DOFEK-SERVER-49](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-49)
+  grouped recoverable provider sync degradations as warning-level error events
+  titled `Provider sync degraded`.
+- **User impact:** No users were marked impacted in Sentry, but recurring
+  recoverable provider API anomalies created issue noise instead of an
+  aggregate operational signal.
+- **Evidence:** The latest sampled event at `2026-07-10T17:30:08.223Z` had
+  `providerId=whoop`, `stepName=developer_workouts`,
+  `degradationKind=pagination_stalled`, and the message `WHOOP returned a
+  repeated developer workout pagination cursor`.
+- **Root cause:** `reportSyncDegradation()` sent every recoverable degradation
+  through `Sentry.captureMessage()`, which made expected degraded-but-usable
+  sync states look like Sentry errors.
+- **Fix / mitigation:** `reportSyncDegradation()` now keeps the structured warn
+  log for diagnostic context and increments the OpenTelemetry counter
+  `sync.degradations.total` with `provider`, `step_name`, and
+  `degradation_kind` attributes instead of sending a Sentry message.
+- **Validation:** Focused unit tests passed for sync metrics, degradation
+  reporting, and WHOOP sync behavior. TypeScript passed with no errors, and
+  Biome passed on the touched files.
+- **Remaining risk / follow-up:** Configure or update the production metric
+  alert/dashboard for `sync.degradations.total` after deployment so recurring
+  provider anomalies remain visible without Sentry issue noise.
+
+## 2026-07-10 — Sync Metrics Stryker CI Failure
+
+- **Symptoms:** PR CI failed `Test / Stryker (1)` for PR #1586.
+- **User impact:** The PR could not merge while the mutation shard remained
+  below the required score.
+- **Evidence:** Attached job log `86431750105` reported the first fatal line:
+  `Final mutation score 0.00 under breaking threshold 75, setting exit code to
+  1`. The surviving mutant replaced the `sync.degradations.total` counter
+  metadata object with `{}` in `src/sync-metrics.ts`.
+- **Root cause:** `src/sync-metrics.test.ts` only verified that metric
+  instruments existed and could be called; it did not assert the OpenTelemetry
+  names, descriptions, units, or histogram bucket advice, so Stryker could
+  remove the new counter metadata without any test failure.
+- **Fix / mitigation:** Added a focused module-load test that mocks the
+  OpenTelemetry meter and asserts every `src/sync-metrics.ts` instrument
+  definition, including `sync.degradations.total` metadata and histogram bucket
+  boundaries.
+- **Validation:** `pnpm vitest run --project unit src/sync-metrics.test.ts`,
+  `pnpm exec stryker run stryker.ci.config.json --mutate "src/sync-metrics.ts"`,
+  `pnpm lint`, and `pnpm typecheck` passed locally. The targeted Stryker run
+  reached a 100.00 mutation score.
+- **Remaining risk / follow-up:** Low. Future metric additions should include
+  metadata assertions in `src/sync-metrics.test.ts` when the metric definition
+  itself matters operationally.
+
 ## 2026-07-10 — WHOOP BLE Periodic Upload Runs in Background
 
 - **Symptoms:** Production Sentry issue
