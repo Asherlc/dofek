@@ -16,7 +16,7 @@ vi.mock("../logger.ts", () => ({
 const mockRm = vi
   .fn<(path: string, options?: object) => Promise<void>>()
   .mockResolvedValue(undefined);
-const mockUnlink = vi.fn<(path: string) => Promise<void>>().mockRejectedValue(new Error("ENOENT"));
+const mockUnlink = vi.fn<(path: string) => Promise<void>>().mockResolvedValue(undefined);
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
   return {
@@ -774,6 +774,7 @@ describe("createUploadRouter", () => {
 
     it("returns 500 and cleans up when Kaya upload fails", async () => {
       vi.mocked(streamToFile).mockRejectedValueOnce(new Error("disk full"));
+      mockUnlink.mockRejectedValueOnce(new Error("ENOENT"));
       const { app } = createTestApp();
       const res = await request(app, "post", "/api/upload/kaya-export", {
         headers: { "Content-Type": "text/csv", "x-file-ext": ".csv" },
