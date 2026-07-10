@@ -76,7 +76,8 @@ function isClickHouseInfrastructureError(error: unknown): boolean {
       message.includes("getaddrinfo enotfound clickhouse") ||
       (message.includes("connect econnrefused") && message.includes("clickhouse")) ||
       message.includes("overcommittracker") ||
-      (message.includes("clickhouse") && message.includes("memory limit exceeded")),
+      (message.includes("clickhouse") && message.includes("memory limit exceeded")) ||
+      (message.includes("clickhouse") && message.includes("timeout")),
   );
 }
 

@@ -621,8 +621,10 @@ describe("Router coverage", () => {
       const inBedDuration = deep + rem + light + awake; // 480
       const expectedSleepMinutes = deep + rem + light; // 390
 
-      // Use today's sleep date with a non-overlapping window so v_sleep keeps this
-      // row alongside the seeded fixture, then the per-date duration tie-break picks it.
+      const sleepDate = "2099-01-02";
+
+      // Use an explicit future sleep date so the query window contains only this
+      // row and does not depend on the suite's seeded current-date fixture.
       await testCtx.db.execute(
         sql`INSERT INTO fitness.sleep_session (
               provider_id, user_id, started_at, ended_at,
@@ -630,8 +632,8 @@ describe("Router coverage", () => {
               awake_minutes, efficiency_pct, sleep_type
             ) VALUES (
               'apple_health', ${TEST_USER_ID},
-              CURRENT_DATE + INTERVAL '13 hours',
-              CURRENT_DATE + INTERVAL '21 hours',
+              ${sleepDate}::date + INTERVAL '13 hours',
+              ${sleepDate}::date + INTERVAL '21 hours',
               ${inBedDuration}, ${deep}, ${rem}, ${light}, ${awake}, 81, 'sleep'
             )`,
       );
@@ -649,13 +651,13 @@ describe("Router coverage", () => {
           sleepMinutes: number;
         }[];
         sleepDebt: number;
-      }>("recovery.sleepAnalytics", { days: 1 });
+      }>("recovery.sleepAnalytics", { days: 1, endDate: sleepDate });
 
-      // Find the Apple Health night (latest entry)
-      const latest = result.nightly[result.nightly.length - 1];
-      expect(latest).toBeDefined();
-      expect(latest?.durationMinutes).toBe(inBedDuration);
-      expect(latest?.sleepMinutes).toBe(expectedSleepMinutes);
+      const appleHealthNight = result.nightly.find(
+        (night) =>
+          night.durationMinutes === inBedDuration && night.sleepMinutes === expectedSleepMinutes,
+      );
+      expect(appleHealthNight).toBeDefined();
     });
 
     it("readinessScore returns composite scores with component breakdown", async () => {

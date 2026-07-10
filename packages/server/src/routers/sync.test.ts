@@ -228,18 +228,11 @@ function createProvidersDbMock() {
   };
 }
 
-function createSensorStoreQuery(responses: {
-  providerStats?: Record<string, unknown>[] | Error;
-  pushLastReceived?: Record<string, unknown>[] | Error;
-}) {
+function createSensorStoreQuery(responses: { providerStats?: Record<string, unknown>[] | Error }) {
   return vi.fn(async (_schema: unknown, sql: string) => {
     if (sql.includes("provider_stats")) {
       if (responses.providerStats instanceof Error) throw responses.providerStats;
       return responses.providerStats ?? [];
-    }
-    if (sql.includes("ingest.metric_stream")) {
-      if (responses.pushLastReceived instanceof Error) throw responses.pushLastReceived;
-      return responses.pushLastReceived ?? [];
     }
     return [];
   });
@@ -611,31 +604,6 @@ describe("syncRouter", () => {
       expect(whoopBle?.lastSyncedAt).toBeNull();
     });
 
-    it("marks push provider authorized when last received timestamp exists", async () => {
-      mockGetAllProviders.mockReturnValue([]);
-
-      const caller = createCaller({
-        db: createProvidersDbMock(),
-        sensorStore: {
-          query: createSensorStoreQuery({
-            pushLastReceived: [
-              {
-                provider_id: "whoop_ble",
-                last_received: "2026-06-20T12:00:00.000Z",
-              },
-            ],
-          }),
-        },
-        userId: "user-1",
-        timezone: "UTC",
-      });
-
-      const result = await caller.providers();
-      const whoopBle = result.find((provider: { id: string }) => provider.id === "whoop_ble");
-      expect(whoopBle?.authorized).toBe(true);
-      expect(whoopBle?.lastSyncedAt).toBe("2026-06-20T12:00:00.000Z");
-    });
-
     it("logs and continues when provider stats lookup fails", async () => {
       mockGetAllProviders.mockReturnValue([]);
 
@@ -657,33 +625,6 @@ describe("syncRouter", () => {
       );
       expect(mockCaptureException).toHaveBeenCalledWith(
         expect.objectContaining({ message: "ClickHouse provider stats unavailable" }),
-      );
-      expect(
-        result.find((provider: { id: string }) => provider.id === "whoop_ble")?.authorized,
-      ).toBe(false);
-    });
-
-    it("logs and continues when push provider last-received lookup fails", async () => {
-      mockGetAllProviders.mockReturnValue([]);
-
-      const caller = createCaller({
-        db: createProvidersDbMock(),
-        sensorStore: {
-          query: createSensorStoreQuery({
-            pushLastReceived: new Error("ClickHouse metric stream unavailable"),
-          }),
-        },
-        userId: "user-1",
-        timezone: "UTC",
-      });
-
-      const result = await caller.providers();
-
-      expect(mockLoggerWarn).toHaveBeenCalledWith(
-        "[sync.providers] push provider last-received lookup failed: ClickHouse metric stream unavailable",
-      );
-      expect(mockCaptureException).toHaveBeenCalledWith(
-        expect.objectContaining({ message: "ClickHouse metric stream unavailable" }),
       );
       expect(
         result.find((provider: { id: string }) => provider.id === "whoop_ble")?.authorized,

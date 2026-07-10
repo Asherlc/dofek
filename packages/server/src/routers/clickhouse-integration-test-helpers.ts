@@ -287,6 +287,9 @@ const rawTableSyncs: RawTableSync[] = [
     ],
   },
 ];
+
+export const CLICKHOUSE_TEST_VIEW_REGEX =
+  /^CREATE (?:MATERIALIZED )?VIEW IF NOT EXISTS ([A-Za-z0-9_]+\.[A-Za-z0-9_]+)(?:\n[\s\S]*?)?\nAS\n?([\s\S]*)$/;
 export const clickHouseMigrationAnalyticsViewNames = [
   "analytics.v_activity",
   "analytics.v_activity_members",
@@ -2198,9 +2201,7 @@ function rewriteClickHouseTestCommand(
   precomputedAnalyticsSelectByName: Map<string, string>,
 ): string[] {
   const rewrittenQuery = rewriteClickHouseDatabaseNames(query, databases).trim();
-  const viewMatch = rewrittenQuery.match(
-    /^CREATE VIEW IF NOT EXISTS ([A-Za-z0-9_]+\.[A-Za-z0-9_]+)\nAS\n?([\s\S]*)$/,
-  );
+  const viewMatch = rewrittenQuery.match(CLICKHOUSE_TEST_VIEW_REGEX);
 
   if (viewMatch) {
     const viewName = viewMatch[1];
