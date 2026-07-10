@@ -617,5 +617,59 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
     }
   });
 
+  // ── Garmin account export dump upload ──
+  router.get<{ jobId: string }>(
+    "/garmin-dump/status/:jobId",
+    uploadStatusRateLimiter,
+    async (req, res) => {
+      const userId = await authenticate(req, res, db);
+      if (!userId) return;
+
+      const jobId = req.params.jobId;
+
+      const status = await getImportJobStatus(importQueue, jobId);
+      if (!status) {
+        res.status(404).json({ error: "Unknown job" });
+        return;
+      }
+      if (status.userId && status.userId !== userId) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
+      res.json(status);
+    },
+  );
+
+  router.post("/garmin-dump", uploadRateLimiter, async (req, res) => {
+    const userId = await authenticate(req, res, db);
+    if (!userId) return;
+
+    const contentType = req.headers["content-type"]?.split(";")[0]?.trim().toLowerCase();
+    if (
+      contentType &&
+      !["application/zip", "application/x-zip-compressed", "application/octet-stream"].includes(
+        contentType,
+      )
+    ) {
+      res.status(415).json({
+        error: "Unsupported Content-Type. Expected application/zip or application/octet-stream",
+      });
+      return;
+    }
+
+    const tmpId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const tmpFile = join(JOB_FILES_DIR, `garmin-dump-${tmpId}.zip`);
+
+    try {
+      await streamToFile(req, tmpFile);
+      const jobId = await enqueueImport(importQueue, tmpFile, new Date(0), "garmin-dump", userId);
+      res.json({ status: "processing", jobId });
+    } catch (err: unknown) {
+      logger.error(`[garmin-dump] Upload failed: ${err}`);
+      await cleanupTempFile(tmpFile);
+      res.status(500).json({ error: "Upload failed" });
+    }
+  });
+
   return router;
 }

@@ -161,6 +161,19 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
             `ZOS App import failed: ${result.errors.map((error: { message: string }) => error.message).join("; ")}`,
           );
         }
+      } else if (importType === "garmin-dump") {
+        const { importGarminDumpFile } = await import("../providers/garmin-dump.ts");
+        const result = await importGarminDumpFile(db, filePath, userId);
+
+        await logImportCompletion(
+          db,
+          "garmin-dump",
+          "Garmin dump",
+          "activities",
+          result,
+          importStart,
+          userId,
+        );
       }
     });
   } finally {

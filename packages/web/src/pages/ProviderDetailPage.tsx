@@ -16,6 +16,8 @@ import { Link, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import { DataReadinessBanner } from "../components/DataReadinessBanner.tsx";
+import { FileImportZone } from "../components/FileImportZone.tsx";
+import { fileImportConfigs } from "../components/file-import-configs.ts";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { ProviderDisconnectControl } from "../components/ProviderDisconnectControl.tsx";
 import { ProviderLogo } from "../components/ProviderLogo.tsx";
@@ -62,6 +64,7 @@ export function ProviderDetailPage() {
 
   const provider = (providers.data ?? []).find((p) => p.id === providerId);
   const providerStats = (stats.data ?? []).find((s) => s.providerId === providerId);
+  const importConfig = fileImportConfigs[providerId];
   const pushOnly = provider?.pushOnly === true;
   const lastSyncedRelative = provider?.lastSyncedAt
     ? formatRelativeTime(provider.lastSyncedAt)
@@ -260,6 +263,18 @@ export function ProviderDetailPage() {
         loading={dataHealth.isLoading}
       />
 
+      {provider?.importOnly && importConfig && (
+        <section className="space-y-2">
+          <h2 className="text-sm font-medium text-foreground">Import</h2>
+          <FileImportZone
+            providerId={providerId}
+            {...importConfig}
+            stats={providerStats}
+            showDetailsLink={false}
+          />
+        </section>
+      )}
+
       {pushOnly && (
         <section className="card p-4 space-y-3">
           <div>
@@ -394,11 +409,11 @@ export function ProviderDetailPage() {
       {providerStats && <ProviderStatsBreakdown stats={providerStats} variant="full" />}
 
       {/* Sync history */}
-      {!pushOnly && <SyncHistory key={providerId} providerId={providerId} />}
+      {!pushOnly && <SyncHistory key={`sync-history-${providerId}`} providerId={providerId} />}
 
       {/* Records browser */}
       <RecordsBrowser
-        key={providerId}
+        key={`records-browser-${providerId}`}
         providerId={providerId}
         stats={providerStats}
         statsLoading={stats.isLoading}

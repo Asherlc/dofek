@@ -42,6 +42,7 @@ describe("providerIdForImportType", () => {
     expect(providerIdForImportType("cronometer-csv")).toBe("cronometer-csv");
     expect(providerIdForImportType("kaya-export")).toBe("kaya-export");
     expect(providerIdForImportType("zos-app")).toBe("zos-app");
+    expect(providerIdForImportType("garmin-dump")).toBe("garmin-dump");
   });
 
   it("returns undefined for unknown import types", () => {

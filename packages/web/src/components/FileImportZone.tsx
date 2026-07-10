@@ -17,6 +17,7 @@ export interface FileImportZoneProps {
   chunked?: boolean;
   stats?: ProviderStats;
   recentLogs?: SyncLogEntry[];
+  showDetailsLink?: boolean;
 }
 
 export function FileImportZone({
@@ -29,6 +30,7 @@ export function FileImportZone({
   chunked,
   stats,
   recentLogs = [],
+  showDetailsLink = true,
 }: FileImportZoneProps) {
   const [state, setState] = useState<{ status: SyncStatus; progress?: number; message?: string }>({
     status: "idle",
@@ -280,7 +282,7 @@ export function FileImportZone({
             />
           ))}
         </div>
-        {providerId && (
+        {providerId && showDetailsLink && (
           <Link
             to="/providers/$id"
             params={{ id: providerId }}

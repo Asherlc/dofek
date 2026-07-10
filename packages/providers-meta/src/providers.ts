@@ -13,6 +13,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   "intervals.icu": "Intervals.icu",
   withings: "Withings",
   garmin: "Garmin",
+  "garmin-dump": "Garmin Dump",
   polar: "Polar",
   whoop: "WHOOP (Cloud)",
   peloton: "Peloton",
@@ -153,6 +154,7 @@ export const BRAND_COLORS: Readonly<Record<string, string>> = {
 /** Providers that reuse another provider's logo asset. */
 const LOGO_ALIASES: Readonly<Record<string, string>> = {
   whoop_ble: "whoop",
+  "garmin-dump": "garmin",
 };
 
 function resolveLogoId(id: string): string {

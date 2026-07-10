@@ -71,6 +71,8 @@ export function importProviderLabel(providerId: string | undefined): string {
       return "Strong";
     case "cronometer-csv":
       return "Cronometer";
+    case "garmin-dump":
+      return "Garmin Dump";
     default:
       return "Shared file";
   }
