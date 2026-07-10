@@ -383,6 +383,7 @@ describe("background-whoop-ble-sync", () => {
 
     await vi.advanceTimersByTimeAsync(30_000);
 
+    expect(whoopDeps.peekBufferedSamples).toHaveBeenCalledWith(500);
     expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).not.toHaveBeenCalled();
     expect(whoopDeps.confirmSamplesDrain).not.toHaveBeenCalled();
 
