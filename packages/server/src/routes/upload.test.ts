@@ -1345,7 +1345,7 @@ describe("createUploadRouter", () => {
 
     it("allows content length exactly at the Garmin dump limit", async () => {
       const { app } = createTestApp();
-      const res = await request(app, "post", "/api/upload/garmin-dump", {
+      const res = await rawRequest(app, "POST", "/api/upload/garmin-dump", {
         headers: {
           "Content-Type": "application/zip",
           "Content-Length": String(2 * 1024 * 1024 * 1024),
@@ -1370,6 +1370,55 @@ describe("createUploadRouter", () => {
         expect.stringContaining("[garmin-dump] Upload failed: Error: disk full"),
       );
       expect(mockUnlink).toHaveBeenCalledWith(vi.mocked(streamToFile).mock.calls[0][1]);
+    });
+  });
+
+  describe("GET /api/upload/garmin-dump/status/:jobId", () => {
+    it("returns 404 for unknown job", async () => {
+      const { app, queue } = createTestApp();
+      queue.getJob.mockResolvedValueOnce(null);
+
+      const res = await request(app, "get", "/api/upload/garmin-dump/status/unknown");
+
+      expect(res.status).toBe(404);
+      expect(JSON.parse(res.body)).toEqual({ error: "Unknown job" });
+    });
+
+    it("returns job status for the authenticated user", async () => {
+      const { app, queue } = createTestApp();
+      queue.getJob.mockResolvedValueOnce({
+        data: { userId: "user-1" },
+        getState: vi.fn(() => Promise.resolve("completed")),
+        progress: 100,
+        failedReason: null,
+        returnvalue: { records: 3 },
+      });
+
+      const res = await request(app, "get", "/api/upload/garmin-dump/status/job-garmin");
+
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body)).toEqual({
+        status: "done",
+        progress: 100,
+        result: { records: 3 },
+        userId: "user-1",
+      });
+    });
+
+    it("returns 403 when the job belongs to another user", async () => {
+      const { app, queue } = createTestApp();
+      queue.getJob.mockResolvedValueOnce({
+        data: { userId: "user-2" },
+        getState: vi.fn(() => Promise.resolve("active")),
+        progress: 50,
+        failedReason: null,
+        returnvalue: null,
+      });
+
+      const res = await request(app, "get", "/api/upload/garmin-dump/status/job-other");
+
+      expect(res.status).toBe(403);
+      expect(JSON.parse(res.body)).toEqual({ error: "Forbidden" });
     });
   });
 });

@@ -80,9 +80,7 @@ function inProgressStatus(
 }
 
 function exceedsContentLengthLimit(req: Request, maxBytes: number): boolean {
-  const contentLength = req.get("content-length");
-  if (!contentLength) return false;
-  const parsedContentLength = Number.parseInt(contentLength, 10);
+  const parsedContentLength = Number.parseInt(req.get("content-length") ?? "", 10);
   return Number.isFinite(parsedContentLength) && parsedContentLength > maxBytes;
 }
 
@@ -652,7 +650,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
     const userId = await authenticate(req, res, db);
     if (!userId) return;
 
-    const contentType = req.headers["content-type"]?.split(";")[0]?.trim().toLowerCase();
+    const contentType = req.headers["content-type"]?.split(";")[0].trim().toLowerCase();
     if (
       contentType &&
       !["application/zip", "application/x-zip-compressed", "application/octet-stream"].includes(
