@@ -267,6 +267,9 @@ function setupRoutes(
       "/assets",
       express.static(join(webDistPath, "assets"), { maxAge: "1y", immutable: true }),
     );
+    app.use("/assets", (_req, res) => {
+      res.status(404).send("Not Found");
+    });
 
     // Other static files (favicon, manifest, etc.)
     app.use(express.static(webDistPath, { index: false }));

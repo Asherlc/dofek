@@ -82,6 +82,13 @@ jobs:
           tags: |
             type=sha,value=${{ github.sha }}
             type=raw,value=latest
+      - name: Compute web asset base URL
+        id: web-assets
+        env:
+          IMAGE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          echo "base_url=https://assets.dofek.fit/web/${IMAGE_TAG}/" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: .
@@ -90,7 +97,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: COMMIT_HASH=${{ github.sha }}
+          build-args: |
+            COMMIT_HASH=${{ github.sha }}
+            VITE_ASSET_BASE_URL=${{ steps.web-assets.outputs.base_url }}
           secrets: |
             SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           cache-from: type=gha,scope=server

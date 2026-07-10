@@ -16,7 +16,7 @@ Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle C
   - **DB data path**: The `db` service bind-mounts Postgres data to `/mnt/dofek-data/postgres`.
   - **Databasus state path**: The `databasus` service bind-mounts its internal state to `/mnt/dofek-data/databasus` so backup schedules and storage config survive Docker volume churn.
   - **CloudBeaver state path**: The `cloudbeaver` service bind-mounts its workspace to `/mnt/dofek-data/cloudbeaver`, including the Terraform-synced preconfigured Postgres and ClickHouse datasource file.
-  - **S3 (R2)**: Cloudflare R2 buckets for training data (`dofek-training-data`), OTA updates (`dofek-ota`), Storybook (`dofek-storybook`), DB backups (`dofek-db-backups`), and canonical metric-stream replay archives (`dofek-metric-stream-archive`).
+  - **S3 (R2)**: Cloudflare R2 buckets for training data (`dofek-training-data`), web build assets (`dofek-web-assets`), OTA updates (`dofek-ota`), Storybook (`dofek-storybook`), DB backups (`dofek-db-backups`), and canonical metric-stream replay archives (`dofek-metric-stream-archive`).
 - **Networking**:
   - **Firewall**: OCI security lists allow production SSH/HTTP/HTTPS.
   - **DNS**: Cloudflare manages multiple zones: `dofek.fit`, `dofek.live`, and subdomains on `asherlc.com`.
@@ -33,7 +33,7 @@ Dofek production is deployed as a **single-node Docker Swarm** stack on Oracle C
 ### Terraform (`*.tf`)
 - `oracle-free/`: Separate Terraform root for the OCI production host. The reserved public IP is copied into the `ORACLE_SERVER_HOST` GitHub Actions variable and into the main `deploy/` root as `var.oracle_server_host`.
 - `dns.tf`: Configures Cloudflare DNS records. Root domains (`dofek.fit`, `dofek.live`) are proxied (CDN enabled), while management subdomains (`ota.dofek.asherlc.com`, `portainer.dofek.asherlc.com`) are unproxied for direct access.
-- `storage.tf`: Manages Cloudflare R2 buckets and preview-object lifecycle rules. Custom domains for Storybook are configured manually in the Cloudflare dashboard.
+- `storage.tf`: Manages Cloudflare R2 buckets and preview/build-object lifecycle rules. Custom domains for Storybook and web assets are configured manually in the Cloudflare dashboard; Cloudflare documents R2 custom domains as bucket-level domain bindings, not ordinary origin `CNAME` records: https://developers.cloudflare.com/r2/buckets/public-buckets/#custom-domains.
 
 ### Server Configuration (`server/`)
 - `cloud-init.yml`: Installs Docker CE, configures Docker log rotation (10m, 3 files), and idempotently runs `docker swarm init`. No deploy helpers, no Infisical CLI.
@@ -128,7 +128,7 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
               -> prune deploy <stack> with requested app image tag
 ```
 
-1. **Build**: GitHub Actions builds the `server` image for every `main` push and pushes it to GHCR with the commit-derived tag, because `Deploy Web` is triggered by the successful `CI` `workflow_run` for `main` and deploys that tag. See GitHub's `workflow_run` event documentation for the trigger behavior: https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run. The `ml` image is built only when ML image inputs change.
+1. **Build**: GitHub Actions builds the `server` image for every `main` push and pushes it to GHCR with the commit-derived tag, because `Deploy Web` is triggered by the successful `CI` `workflow_run` for `main` and deploys that tag. The web build inside the image uses `VITE_ASSET_BASE_URL=https://assets.dofek.fit/web/<image-tag>/`, so Vite-generated JavaScript and CSS references point at immutable R2-backed CDN assets instead of the Express origin; Vite's `base` option controls the public base path for built assets: https://vite.dev/config/shared-options.html#base. See GitHub's `workflow_run` event documentation for the trigger behavior: https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run. The `ml` image is built only when ML image inputs change.
 2. **Terraform apply** (if infra changed): updates Cloudflare-managed production DNS and storage. `ORACLE_SERVER_HOST` is required for production DNS and deploy targeting.
 3. **Deploy Web Stack** (`deploy-web-stack.yml`):
    1. Install the Infisical CLI, login with OIDC machine identity (`identity-id=46b66f72-0c77-4cfe-be1b-a43395e77be7`), and render `${{ github.workspace }}/.env.<env>` from `.github/templates/infisical-dotenv.tmpl`.
@@ -151,7 +151,17 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
       successful stack deploy. Do not run a continuous background image pruner
       on the production host, because newly pulled deploy images are not
       referenced by a service until after migrations complete.
-   5. Apply the stack configuration before migrations with a non-prune,
+   5. Extract `/app/packages/web/dist` from the pulled deploy image, read the
+      `https://assets.dofek.fit/web/<tag>/` prefix embedded in `index.html`,
+      and upload every file except `index.html` to
+      `s3://dofek-web-assets/web/<tag>/` through the R2 S3-compatible API with
+      `Cache-Control: public, max-age=31536000, immutable`. `index.html`
+      remains in the server image and is served by Express with `no-cache`; old
+      asset prefixes are retained by lifecycle for 90 days so cached HTML can
+      still load its hashed chunks and public build files after newer deploys.
+      Cloudflare documents R2 lifecycle object expiration rules here:
+      https://developers.cloudflare.com/r2/buckets/object-lifecycles/.
+   6. Apply the stack configuration before migrations with a non-prune,
       detached `docker stack deploy` and a temporary overlay that sets web,
       worker and analytics-worker replicas to zero.
       On existing stacks this uses the currently
@@ -165,15 +175,15 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
       for Postgres and ClickHouse before running migrations instead of keeping a
       long-lived Docker-over-SSH stack-deploy wait open while the single-node
       host restarts services.
-   6. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`).
-   7. Run **schema migrations** as a one-shot container attached to the swarm overlay network:
+   7. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`).
+   8. Run **schema migrations** as a one-shot container attached to the swarm overlay network:
       `docker run --rm --network <stack>_default --env-file .env.<env> ghcr.io/…:<tag> migrate`.
       When `CLICKHOUSE_URL` is present, this also runs tracked ClickHouse
       analytics migrations before the stack update.
-   8. Validate required host bind-mount directories before deploying the stack. This must fail before `docker stack deploy` if paths such as `/mnt/dofek-data/redis` are missing, because Swarm rejects tasks with missing bind sources.
-   9. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=true <stack>` — swarm performs a single stack-wide update and CI then polls the key services until their desired replicas are running and any update state is complete. The deploy workflow bounds this wait at 20 minutes so a wedged Swarm rollback fails CI instead of running indefinitely.
+   9. Validate required host bind-mount directories before deploying the stack. This must fail before `docker stack deploy` if paths such as `/mnt/dofek-data/redis` are missing, because Swarm rejects tasks with missing bind sources.
+   10. `docker stack deploy -c deploy/stack.yml --with-registry-auth --prune --detach=true <stack>` — swarm performs a single stack-wide update and CI then polls the key services until their desired replicas are running and any update state is complete. The deploy workflow bounds this wait at 20 minutes so a wedged Swarm rollback fails CI instead of running indefinitely.
       The workflow parses the Infisical dotenv file inside a child process for stack interpolation. Do not append the full dotenv file to `GITHUB_ENV`; GitHub Actions prints step environments and can expose Infisical-only secrets that GitHub does not automatically mask.
-   10. Wait for PeerDB and run the one-shot ClickHouse CDC setup command. The command loads `src/db/peerdb/metric-stream-cdc.sql`, substitutes deployment connection values, creates the Postgres and ClickHouse peers if missing, and applies the metric-stream, raw analytics, and provider inventory mirrors.
+   11. Wait for PeerDB and run the one-shot ClickHouse CDC setup command. The command loads `src/db/peerdb/metric-stream-cdc.sql`, substitutes deployment connection values, creates the Postgres and ClickHouse peers if missing, and applies the metric-stream, raw analytics, and provider inventory mirrors.
 
 When adding a new host bind mount under `/mnt/dofek-data`, update both
 `deploy/stack.yml` and the Terraform provisioner that creates the directory. If

@@ -12318,3 +12318,38 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   contain raw `ingest.metric_stream` reads. Monitor ClickHouse saturation after
   deploy and investigate why `activity_power_curve` accumulated overlapping
   long-running inserts.
+
+## 2026-07-10 — Missing Vite Chunks Served as HTML
+
+- **Symptoms:** Browser console reported dynamic module loads blocked for
+  `/assets/strength.lazy-xdzvTGuE.js`,
+  `/assets/muscle-groups-FiCObU3-.js`, and
+  `/assets/react-body-highlighter.esm-6rNgIZV5.js` because the response MIME
+  type was `text/html`.
+- **User impact:** The strength route failed to load its lazily imported
+  JavaScript chunks.
+- **Evidence:** Direct production request to
+  `https://dofek.asherlc.com/assets/strength.lazy-xdzvTGuE.js` returned
+  `HTTP/2 200` with `content-type: text/html; charset=utf-8` and an
+  `index.html` body. The current production `index.html` referenced newer
+  chunks such as `/assets/react-D1B3AANt.js`, while the browser was requesting
+  older hashed chunk names.
+- **Root cause:** Express served the SPA fallback for file-like asset URLs after
+  `express.static("/assets")` missed the requested hash, masking missing assets
+  as successful HTML responses.
+- **Fix / mitigation:** The `/assets` static namespace now has an explicit
+  miss handler after `express.static`, so missing Vite assets return real 404s
+  instead of falling through to the SPA fallback. Production web images now
+  build Vite with an immutable R2-backed asset base at
+  `https://assets.dofek.fit/web/<image-tag>/`, and the deploy workflow uploads
+  the image's built web files, except `index.html`, to `dofek-web-assets`
+  before rolling the stack.
+- **Validation:** Focused unit coverage verifies missing
+  `/assets/*.js` requests return 404 while client-side routes such as
+  `/strength` still receive the SPA shell. `pnpm vitest run
+  packages/server/src/index.test.ts` and `pnpm --filter dofek-server typecheck`
+  passed locally.
+- **Remaining risk / follow-up:** The code change still needs deployment and
+  `assets.dofek.fit` must be bound to the `dofek-web-assets` R2 bucket in
+  Cloudflare before the first CDN-backed deploy. Old build prefixes expire
+  after 90 days.

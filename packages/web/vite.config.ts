@@ -39,6 +39,7 @@ function manualChunks(id: string): string | undefined {
 }
 
 export default defineConfig({
+  base: process.env.VITE_ASSET_BASE_URL || "/",
   define: {
     __COMMIT_HASH__: JSON.stringify(getCommitHash()),
   },

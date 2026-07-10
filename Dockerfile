@@ -53,6 +53,8 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
 COPY . .
 ARG COMMIT_HASH
 ENV COMMIT_HASH=${COMMIT_HASH}
+ARG VITE_ASSET_BASE_URL=/
+ENV VITE_ASSET_BASE_URL=${VITE_ASSET_BASE_URL}
 RUN --mount=type=secret,id=SENTRY_AUTH_TOKEN,required=false \
     SENTRY_AUTH_TOKEN="$(cat /run/secrets/SENTRY_AUTH_TOKEN 2>/dev/null || true)" \
     && export SENTRY_AUTH_TOKEN \
@@ -157,7 +159,7 @@ COPY --from=source --chown=node:node /app/scripts ./scripts
 # Non-secret config (.env)
 COPY --from=source --chown=node:node /app/.env .
 
-# Built web assets for static serving (Express serves these in production)
+# Built web shell for Express; Vite assets may be served from the configured CDN base.
 COPY --from=client-build --chown=node:node /app/packages/web/dist ./packages/web/dist
 
 COPY --chown=node:node entrypoint.sh .
