@@ -12204,6 +12204,49 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   second by migration `0045` remain as historical remediation data. Monitor
   Sentry for new `DOFEK-SERVER-4J` occurrences after deploy.
 
+## 2026-07-09 — Settings and Provider Pages Blocked by Slow Provider Summary
+
+- **Symptoms:** `https://dofek.asherlc.com/settings` providers took a long time
+  to load, and individual provider pages were similarly slow.
+- **User impact:** Settings and provider detail pages showed loading states for
+  provider connection/status data before users could inspect or act on provider
+  state.
+- **Evidence:** Axiom was unavailable for this investigation because bounded
+  `dofek-logs` queries were rejected by the query limiter with trace IDs
+  `c14170271432e393911a30e7263e5e47`,
+  `f1249eb92cd9ec024ed18aef0d025588`,
+  `8fda35eee0074cf747ac5e2cc98c6181`,
+  `27e9cb7879903e72a3c3a2aef9075820`,
+  `7efeda52cd7090d59568bc73f3a33b63`, and
+  `74e784e7582cd44abaa9574a1ca84fdc`. Production Postgres slow logs showed
+  repeated `SELECT DISTINCT ON (provider_id)` statements from
+  `SyncRepository.getLatestErrors()` taking 2.9-4.3s. `EXPLAIN ANALYZE`
+  showed the deployed query scanning 136,240 `fitness.sync_log` rows and
+  running 11,702 correlated `MAX(synced_at)` index probes, for 2,683ms on the
+  measured run.
+- **Root cause:** `sync.providers`, which is mounted by both the settings
+  provider panel and provider detail pages, computed current provider auth
+  errors with a correlated latest-sync subquery and no index matching
+  `(user_id, provider_id, synced_at DESC)`.
+- **Fix / mitigation:** Added `sync_log_user_provider_synced_at_idx` on
+  `fitness.sync_log (user_id, provider_id, synced_at DESC)` and rewrote
+  `getLatestErrors()` to select each provider's latest sync row once, then
+  filter those latest rows to current errors. The index was also applied
+  directly in production with `CREATE INDEX CONCURRENTLY IF NOT EXISTS` to
+  mitigate the currently deployed code before the application deploy.
+- **Validation:** After the live index, the currently deployed query plan fell
+  from 2,683ms to 104ms. The rewritten query planned against production data at
+  0.2ms using the new index. Local focused validation passed:
+  `pnpm vitest run packages/server/src/repositories/sync-repository.test.ts`,
+  `pnpm exec biome check` on changed TypeScript files,
+  `pnpm exec tsc --noEmit --pretty false -p packages/server/tsconfig.json`,
+  and `pnpm tsx scripts/migration-policy.ts
+  drizzle/0047_sync_log_user_provider_synced_at_index.sql`.
+- **Remaining risk / follow-up:** Full `pnpm lint` could not complete locally
+  because analytics SQL lint attempted to connect to ClickHouse at
+  `127.0.0.1:8123` with invalid local credentials. The permanent application
+  query rewrite still needs to be deployed after commit/CI.
+
 ## 2026-07-09 — Zwift Activity Detail Requests Return 404
 
 - **Symptoms:** Scheduled production Zwift sync reported ten handled
