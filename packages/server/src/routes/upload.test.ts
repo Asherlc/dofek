@@ -16,9 +16,14 @@ vi.mock("../logger.ts", () => ({
 const mockRm = vi
   .fn<(path: string, options?: object) => Promise<void>>()
   .mockResolvedValue(undefined);
+const mockUnlink = vi.fn<(path: string) => Promise<void>>().mockRejectedValue(new Error("ENOENT"));
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
-  return { ...actual, rm: (...args: [string, object?]) => mockRm(...args) };
+  return {
+    ...actual,
+    rm: (...args: [string, object?]) => mockRm(...args),
+    unlink: (path: string) => mockUnlink(path),
+  };
 });
 
 vi.mock("../auth/cookies.ts", () => ({
@@ -29,6 +34,7 @@ vi.mock("../auth/session.ts", () => ({
   validateSession: vi.fn(() => Promise.resolve(null)),
 }));
 
+import { request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -111,6 +117,43 @@ async function request(
   });
 }
 
+async function rawRequest(
+  app: express.Express,
+  method: "GET" | "POST",
+  path: string,
+  opts?: { headers?: Record<string, string>; body?: Buffer },
+): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const server = app.listen(0, () => {
+      const port = getPort(server);
+      const req = httpRequest(
+        {
+          port,
+          path,
+          method,
+          headers: opts?.headers,
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on("data", (chunk: Buffer) => chunks.push(chunk));
+          res.on("end", () => {
+            server.close();
+            resolve({
+              status: res.statusCode ?? 0,
+              body: Buffer.concat(chunks).toString("utf8"),
+            });
+          });
+        },
+      );
+      req.on("error", (error) => {
+        server.close();
+        reject(error);
+      });
+      req.end(opts?.body);
+    });
+  });
+}
+
 describe("createUploadRouter", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -189,6 +232,7 @@ describe("createUploadRouter", () => {
         body: Buffer.from("data"),
       });
       expect(res.status).toBe(401);
+      expect(streamToFile).not.toHaveBeenCalled();
     });
 
     it("returns 401 for unauthenticated GET /apple-health/status", async () => {
@@ -1181,16 +1225,111 @@ describe("createUploadRouter", () => {
       });
 
       expect(res.status).toBe(200);
+      expect(JSON.parse(res.body)).toEqual({ status: "processing", jobId: "job-123" });
       expect(streamToFile).toHaveBeenCalledWith(
         expect.anything(),
         expect.stringContaining("garmin-dump-"),
         2 * 1024 * 1024 * 1024,
+      );
+      expect(vi.mocked(streamToFile).mock.calls[0][1]).toMatch(
+        /garmin-dump-job-\d+-[a-z0-9]{4}\.zip$/,
       );
       expect(queue.add).toHaveBeenCalledWith(
         "garmin-dump",
         expect.objectContaining({ importType: "garmin-dump", userId: "user-1" }),
         undefined,
       );
+    });
+
+    it("accepts zip content type with parameters and mixed case", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/garmin-dump", {
+        headers: { "Content-Type": "APPLICATION/ZIP ; charset=binary" },
+        body: Buffer.from("zip-data"),
+      });
+
+      expect(res.status).toBe(200);
+      expect(streamToFile).toHaveBeenCalled();
+    });
+
+    it("accepts uploads without a content type", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/garmin-dump", {
+        body: Buffer.from("zip-data"),
+      });
+
+      expect(res.status).toBe(200);
+      expect(streamToFile).toHaveBeenCalled();
+    });
+
+    it("accepts uploads without content length", async () => {
+      const { app } = createTestApp();
+      const res = await rawRequest(app, "POST", "/api/upload/garmin-dump", {
+        headers: { "Content-Type": "application/zip" },
+        body: Buffer.from("zip-data"),
+      });
+
+      expect(res.status).toBe(200);
+      expect(streamToFile).toHaveBeenCalled();
+    });
+
+    it("rejects unsupported content type before streaming", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/garmin-dump", {
+        headers: { "Content-Type": "text/plain" },
+        body: Buffer.from("not-zip"),
+      });
+
+      expect(res.status).toBe(415);
+      expect(JSON.parse(res.body)).toEqual({
+        error: "Unsupported Content-Type. Expected application/zip or application/octet-stream",
+      });
+      expect(streamToFile).not.toHaveBeenCalled();
+    });
+
+    it("rejects content length above the Garmin dump limit before streaming", async () => {
+      const { app } = createTestApp();
+      const res = await rawRequest(app, "POST", "/api/upload/garmin-dump", {
+        headers: {
+          "Content-Type": "application/zip",
+          "Content-Length": String(2 * 1024 * 1024 * 1024 + 1),
+        },
+      });
+
+      expect(res.status).toBe(413);
+      expect(JSON.parse(res.body)).toEqual({
+        error: "Garmin dump upload exceeds maximum size of 2147483648 bytes",
+      });
+      expect(streamToFile).not.toHaveBeenCalled();
+    });
+
+    it("allows content length exactly at the Garmin dump limit", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/garmin-dump", {
+        headers: {
+          "Content-Type": "application/zip",
+          "Content-Length": String(2 * 1024 * 1024 * 1024),
+        },
+      });
+
+      expect(res.status).toBe(200);
+      expect(streamToFile).toHaveBeenCalled();
+    });
+
+    it("cleans up the temp file and returns upload failure when streaming fails", async () => {
+      vi.mocked(streamToFile).mockRejectedValueOnce(new Error("disk full"));
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/garmin-dump", {
+        headers: { "Content-Type": "application/zip" },
+        body: Buffer.from("zip-data"),
+      });
+
+      expect(res.status).toBe(500);
+      expect(JSON.parse(res.body)).toEqual({ error: "Upload failed" });
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining("[garmin-dump] Upload failed: Error: disk full"),
+      );
+      expect(mockUnlink).toHaveBeenCalledWith(vi.mocked(streamToFile).mock.calls[0][1]);
     });
   });
 });
