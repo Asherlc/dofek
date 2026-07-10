@@ -1,9 +1,11 @@
+{% set deduped_sensor_begin = var('deduped_sensor_begin', '2000-01-01') %}
+
 {{ config(
     materialized='incremental',
     incremental_strategy='microbatch',
     unique_key=['user_id', 'channel', 'recorded_at'],
     event_time='refreshed_at',
-    begin='2026-01-01',
+    begin=deduped_sensor_begin,
     batch_size='day',
     lookback=3,
     full_refresh=false,

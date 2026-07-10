@@ -2,11 +2,25 @@ import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 function readProjectFile(path: string): string {
-  return readFileSync(new URL(`../../../${path}`, import.meta.url), "utf8");
+  const projectFileUrl = new URL(`../../../${path}`, import.meta.url);
+  let contents: string;
+  try {
+    contents = readFileSync(projectFileUrl, "utf8");
+  } catch (error) {
+    throw new Error(`Failed to read project file: ${path}`, { cause: error });
+  }
+  if (contents.length === 0) {
+    throw new Error(`Project file is empty: ${path}`);
+  }
+  return contents;
 }
 
 function readModel(name: string): string {
-  return readFileSync(new URL(`./${name}.sql`, import.meta.url), "utf8");
+  const modelUrl = new URL(`./${name}.sql`, import.meta.url);
+  expect(existsSync(modelUrl)).toBe(true);
+  const sql = readFileSync(modelUrl, "utf8");
+  expect(sql.length).toBeGreaterThan(0);
+  return sql;
 }
 
 function compactWhitespace(value: string): string {
@@ -18,6 +32,7 @@ describe("production analytics read-model build", () => {
     const entrypoint = readProjectFile("entrypoint.sh");
     const workerBlockMatch = entrypoint.match(/  worker\)\n(?<body>[\s\S]*?)\n    ;;/);
 
+    expect(workerBlockMatch).not.toBeNull();
     expect(workerBlockMatch?.groups?.body).toContain("exec $NODE src/jobs/worker.ts");
     expect(workerBlockMatch?.groups?.body).not.toContain("dbt build");
   });
@@ -26,7 +41,17 @@ describe("production analytics read-model build", () => {
     const entrypoint = readProjectFile("entrypoint.sh");
     const analyticsWorkerBlockMatch = entrypoint.match(/  analytics-worker\)\n(?<body>[\s\S]*?)\n    ;;/);
 
+    expect(analyticsWorkerBlockMatch).not.toBeNull();
     expect(analyticsWorkerBlockMatch?.groups?.body).toContain("ANALYTICS_BUILD_STARTUP_DELAY_SECONDS:-120");
+    expect(analyticsWorkerBlockMatch?.groups?.body).toContain(
+      'require_non_negative_integer "ANALYTICS_BUILD_INTERVAL_SECONDS" "$interval_seconds"',
+    );
+    expect(analyticsWorkerBlockMatch?.groups?.body).toContain(
+      'require_non_negative_integer "ANALYTICS_BUILD_RETRY_DELAY_SECONDS" "$retry_delay_seconds"',
+    );
+    expect(analyticsWorkerBlockMatch?.groups?.body).toContain(
+      'require_non_negative_integer "ANALYTICS_BUILD_STARTUP_DELAY_SECONDS" "$startup_delay_seconds"',
+    );
     expect(analyticsWorkerBlockMatch?.groups?.body).toContain("sleep \"$startup_delay_seconds\"");
     expect(analyticsWorkerBlockMatch?.groups?.body).toContain("dbt build");
   });
@@ -35,8 +60,28 @@ describe("production analytics read-model build", () => {
     const entrypoint = readProjectFile("entrypoint.sh");
     const migrateBlockMatch = entrypoint.match(/  migrate\)\n(?<body>[\s\S]*?)\n    ;;/);
 
+    expect(migrateBlockMatch).not.toBeNull();
     expect(migrateBlockMatch?.groups?.body).toContain("$NODE src/db/run-migrate.ts");
     expect(migrateBlockMatch?.groups?.body).not.toContain("dbt build");
+  });
+
+  it("bounds e2e analytics microbatch builds without changing production analytics defaults", () => {
+    const entrypoint = readProjectFile("entrypoint.sh");
+    const compose = readProjectFile("docker-compose.e2e.yml");
+    const analyticsBlockMatch = entrypoint.match(/  analytics\)\n(?<body>[\s\S]*?)\n    ;;/);
+    const analyticsE2eBlockMatch = entrypoint.match(/  analytics-e2e\)\n(?<body>[\s\S]*?)\n    ;;/);
+
+    expect(analyticsBlockMatch).not.toBeNull();
+    expect(analyticsE2eBlockMatch).not.toBeNull();
+    expect(entrypoint).toContain("DBT_E2E_MICROBATCH_VARS=");
+    expect(entrypoint).toContain('"sensor_scalar_sample_begin":"2026-01-01"');
+    expect(entrypoint).toContain('"activity_sensor_sample_begin":"2026-01-01"');
+    expect(entrypoint).toContain('"activity_location_sample_begin":"2026-01-01"');
+    expect(entrypoint).toContain('"deduped_sensor_begin":"2026-01-01"');
+    expect(analyticsBlockMatch?.groups?.body).toContain("run_dbt_safe_builds");
+    expect(analyticsBlockMatch?.groups?.body).not.toContain("DBT_E2E_MICROBATCH_VARS");
+    expect(analyticsE2eBlockMatch?.groups?.body).toContain("run_dbt_e2e_builds");
+    expect(compose).toContain('command: ["analytics-e2e"]');
   });
 
   it("runs activity read models before sleep and dashboard models", () => {
@@ -85,8 +130,8 @@ describe("production analytics read-model build", () => {
     ]);
     expect(entrypoint).toContain('DBT_SAFE_MODELS="$DBT_ACTIVITY_MODELS $DBT_SLEEP_DASHBOARD_MODELS"');
     expect(entrypoint).toContain("run_dbt_safe_builds()");
-    expect(entrypoint).toContain("--select $DBT_ACTIVITY_MODELS &&");
-    expect(entrypoint).toContain("--select $DBT_SLEEP_DASHBOARD_MODELS");
+    expect(entrypoint).toContain('--select "$DBT_ACTIVITY_MODELS" &&');
+    expect(entrypoint).toContain('--select "$DBT_SLEEP_DASHBOARD_MODELS"');
   });
 
   it("materializes sleep heart-rate membership from dirty sleep, sensor, and activity keys", () => {
@@ -254,6 +299,8 @@ describe("production analytics read-model build", () => {
     const sql = readModel("activity_sensor_sample");
 
     expect(sql).toContain("incremental_strategy='microbatch'");
+    expect(sql).toContain("activity_sensor_sample_begin = var('activity_sensor_sample_begin', '2000-01-01')");
+    expect(sql).toContain("begin=activity_sensor_sample_begin");
     expect(sql).toContain("event_time='refreshed_at'");
     expect(sql).toContain("lookback=3");
     expect(sql).toContain("ref('deduped_sensor')");
@@ -276,8 +323,12 @@ describe("production analytics read-model build", () => {
     expect(sourcesYaml).toContain("name: ingest");
     expect(sourcesYaml).toContain("event_time: ingested_at");
     expect(sensorScalarSampleSql).toContain("event_time='_peerdb_synced_at'");
+    expect(sensorScalarSampleSql).toContain("sensor_scalar_sample_begin = var('sensor_scalar_sample_begin', '2000-01-01')");
+    expect(sensorScalarSampleSql).toContain("begin=sensor_scalar_sample_begin");
     expect(sensorScalarSampleSql).toContain("source('ingest', 'metric_stream_freshness')");
     expect(dedupedSensorSql).toContain("event_time='refreshed_at'");
+    expect(dedupedSensorSql).toContain("deduped_sensor_begin = var('deduped_sensor_begin', '2000-01-01')");
+    expect(dedupedSensorSql).toContain("begin=deduped_sensor_begin");
     expect(dedupedSensorSql).toContain("max(samples._peerdb_synced_at) AS source_refreshed_at");
     expect(dedupedSensorSql).toContain("source_refreshed_at AS refreshed_at");
     expect(activityLocationSampleSql).toContain("source('ingest', 'metric_stream_freshness')");
@@ -289,6 +340,8 @@ describe("production analytics read-model build", () => {
     const sql = readModel("activity_location_sample");
 
     expect(sql).toContain("incremental_strategy='microbatch'");
+    expect(sql).toContain("activity_location_sample_begin = var('activity_location_sample_begin', '2000-01-01')");
+    expect(sql).toContain("begin=activity_location_sample_begin");
     expect(sql).toContain("event_time='refreshed_at'");
     expect(sql).toContain("lookback=3");
     expect(sql).toContain("source('ingest', 'metric_stream_freshness')");
@@ -360,6 +413,10 @@ describe("production analytics read-model build", () => {
 
     expect(sql).toContain("ref('activity_sensor_sample')");
     expect(sql).toContain("latest_sensor_samples AS");
+    expect(sql).toContain("changed_sample_dirty_keys AS");
+    expect(sql).toContain("missing_summary_dirty_keys AS");
+    expect(sql).toContain("'join_use_nulls': 1");
+    expect(sql).toContain("existing_summary_state AS");
     expect(normalizedSql).toContain("(user_id, activity_id) IN");
     expect(normalizedSql).toContain(
       "LIMIT 1 BY user_id, activity_id, channel, recorded_at",
@@ -367,6 +424,23 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("source('postgres_fitness', 'activity') }} FINAL");
     expect(sql).toContain("provider_absent_at IS null");
     expect(sql).toContain("deleted_at IS null");
+    expect(normalizedSql).toContain(
+      "LEFT JOIN existing_summary ON existing_summary.activity_id = sensor_sample.activity_id",
+    );
+    expect(normalizedSql).toContain("argMax(refreshed_at, refresh_version) AS refreshed_at");
+    expect(normalizedSql).toContain("argMax(is_deleted, refresh_version) AS is_deleted");
+    expect(normalizedSql).toContain("FROM existing_summary_state WHERE is_deleted = 0");
+    expect(normalizedSql).toContain("(SELECT is_empty FROM target_state LIMIT 1)");
+    expect(normalizedSql).toContain("NOT (SELECT is_empty FROM target_state LIMIT 1)");
+    expect(normalizedSql).toContain(
+      "sensor_sample.refreshed_at > (SELECT last_refreshed_at FROM target_state LIMIT 1)",
+    );
+    expect(normalizedSql).toContain(
+      "sensor_sample.refreshed_at > existing_summary.refreshed_at",
+    );
+    expect(normalizedSql).toContain("FROM missing_summary_dirty_keys");
+    expect(normalizedSql).toContain("INNER JOIN current_activity");
+    expect(normalizedSql).toContain("WHERE existing_summary_state.activity_id IS null");
     expect(sql).toContain("restored_dirty_keys AS");
     expect(sql).toContain("prior_summary.is_deleted = 0");
     expect(sql).not.toContain("source('analytics', 'v_activity')");

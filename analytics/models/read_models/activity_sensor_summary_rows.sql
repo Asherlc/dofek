@@ -5,7 +5,8 @@
     order_by='(user_id, activity_id)',
     on_schema_change='fail',
     query_settings={
-        'max_threads': 1
+        'max_threads': 1,
+        'join_use_nulls': 1
     }
 ) }}
 
@@ -35,19 +36,32 @@ current_activity AS (
         AND deleted_at IS null
 ),
 
-existing_summary AS (
+existing_summary_state AS (
     {% if is_incremental() %}
         SELECT
             activity_id,
-            user_id
-        FROM {{ this }} FINAL
-        WHERE is_deleted = 0
+            user_id,
+            argMax(refreshed_at, refresh_version) AS refreshed_at,
+            argMax(is_deleted, refresh_version) AS is_deleted
+        FROM {{ this }}
+        GROUP BY activity_id, user_id
     {% else %}
         SELECT
             CAST(null, 'Nullable(UUID)') AS activity_id,
-            CAST(null, 'Nullable(UUID)') AS user_id
+            CAST(null, 'Nullable(UUID)') AS user_id,
+            CAST(null, 'Nullable(DateTime64(9, ''UTC''))') AS refreshed_at,
+            CAST(null, 'Nullable(UInt8)') AS is_deleted
         WHERE 1 = 0
     {% endif %}
+),
+
+existing_summary AS (
+    SELECT
+        activity_id,
+        user_id,
+        refreshed_at
+    FROM existing_summary_state
+    WHERE is_deleted = 0
 ),
 
 initial_dirty_keys AS (
@@ -57,25 +71,56 @@ initial_dirty_keys AS (
     FROM current_activity
     WHERE
         {% if is_incremental() %}
-            (SELECT is_empty FROM target_state)
+            (SELECT is_empty FROM target_state LIMIT 1)
             AND started_at >= now64(6, 'UTC') - INTERVAL {{ initial_lookback_days }} DAY
         {% else %}
             started_at >= now64(6, 'UTC') - INTERVAL {{ initial_lookback_days }} DAY
         {% endif %}
 ),
 
-sample_dirty_keys AS (
-    SELECT DISTINCT
-        activity_id,
-        user_id
-    FROM {{ ref('activity_sensor_sample') }}
-    WHERE
-        {% if is_incremental() %}
-            NOT (SELECT is_empty FROM target_state)
-            AND refreshed_at > (SELECT last_refreshed_at FROM target_state)
-        {% else %}
-            1 = 0
-        {% endif %}
+changed_sample_dirty_keys AS (
+    {% if is_incremental() %}
+        SELECT DISTINCT
+            sensor_sample.activity_id AS activity_id,
+            sensor_sample.user_id AS user_id
+        FROM {{ ref('activity_sensor_sample') }} AS sensor_sample
+        LEFT JOIN existing_summary
+            ON existing_summary.activity_id = sensor_sample.activity_id
+            AND existing_summary.user_id = sensor_sample.user_id
+        WHERE
+            NOT (SELECT is_empty FROM target_state LIMIT 1)
+            AND sensor_sample.refreshed_at > (SELECT last_refreshed_at FROM target_state LIMIT 1)
+            AND (
+                existing_summary.activity_id IS null
+                OR sensor_sample.refreshed_at > existing_summary.refreshed_at
+            )
+    {% else %}
+        SELECT
+            CAST(null, 'Nullable(UUID)') AS activity_id,
+            CAST(null, 'Nullable(UUID)') AS user_id
+        WHERE 1 = 0
+    {% endif %}
+),
+
+missing_summary_dirty_keys AS (
+    {% if is_incremental() %}
+        SELECT DISTINCT
+            sensor_sample.activity_id AS activity_id,
+            sensor_sample.user_id AS user_id
+        FROM {{ ref('activity_sensor_sample') }} AS sensor_sample
+        INNER JOIN current_activity
+            ON current_activity.activity_id = sensor_sample.activity_id
+            AND current_activity.user_id = sensor_sample.user_id
+        LEFT JOIN existing_summary_state
+            ON existing_summary_state.activity_id = sensor_sample.activity_id
+            AND existing_summary_state.user_id = sensor_sample.user_id
+        WHERE existing_summary_state.activity_id IS null
+    {% else %}
+        SELECT
+            CAST(null, 'Nullable(UUID)') AS activity_id,
+            CAST(null, 'Nullable(UUID)') AS user_id
+        WHERE 1 = 0
+    {% endif %}
 ),
 
 stale_dirty_keys AS (
@@ -131,7 +176,12 @@ dirty_keys AS (
         SELECT
             activity_id,
             user_id
-        FROM sample_dirty_keys
+        FROM changed_sample_dirty_keys
+        UNION ALL
+        SELECT
+            activity_id,
+            user_id
+        FROM missing_summary_dirty_keys
         UNION ALL
         SELECT
             activity_id,

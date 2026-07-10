@@ -63,6 +63,8 @@
     ".context/**",
     ".gemini/**",
     ".kilocode/**",
+    ".qwen/**",
+    ".windsurf/**",
     ".agents/**",
     "**/skills/stripe-projects"
   ],

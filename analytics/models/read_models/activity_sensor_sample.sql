@@ -1,9 +1,11 @@
+{% set activity_sensor_sample_begin = var('activity_sensor_sample_begin', '2000-01-01') %}
+
 {{ config(
     materialized='incremental',
     incremental_strategy='microbatch',
     unique_key=['activity_id', 'channel', 'recorded_at'],
     event_time='refreshed_at',
-    begin='2026-01-01',
+    begin=activity_sensor_sample_begin,
     batch_size='day',
     lookback=3,
     full_refresh=false,

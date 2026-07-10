@@ -1,9 +1,11 @@
+{% set activity_location_sample_begin = var('activity_location_sample_begin', '2000-01-01') %}
+
 {{ config(
     materialized='incremental',
     incremental_strategy='microbatch',
     unique_key='source_metric_stream_id',
     event_time='refreshed_at',
-    begin='2026-01-01',
+    begin=activity_location_sample_begin,
     batch_size='day',
     lookback=3,
     full_refresh=false,

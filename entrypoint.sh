@@ -21,10 +21,27 @@ NODE="node --experimental-strip-types --enable-source-maps --disable-warning=Exp
 DBT_ACTIVITY_MODELS="sensor_scalar_sample deduped_sensor activity_source_records activity_duplicate_matches activity_duplicate_groups deduped_activities deduped_activity_members activity_sensor_sample activity_location_sample activity_sensor_summary_rows activity_location_summary_rows activity_stream_points activity_heart_rate_zones activity_summary_rows hiking_activity activity_vo2max_estimate activity_aerobic_efficiency activity_polarization_zones activity_power_curve provider_stats"
 DBT_SLEEP_DASHBOARD_MODELS="sleep_heart_rate_sample resting_heart_rate_sleep_window daily_sleep daily_recovery_inputs daily_recovery daily_endurance_load weekly_endurance_ramp_rate weekly_training_monotony daily_activity_load daily_strain daily_body_measurement healthspan_activity_zone_minutes weekly_healthspan"
 DBT_SAFE_MODELS="$DBT_ACTIVITY_MODELS $DBT_SLEEP_DASHBOARD_MODELS"
+DBT_E2E_MICROBATCH_VARS='{"sensor_scalar_sample_begin":"2026-01-01","deduped_sensor_begin":"2026-01-01","activity_sensor_sample_begin":"2026-01-01","activity_location_sample_begin":"2026-01-01"}'
 
 run_dbt_safe_builds() {
-  dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_ACTIVITY_MODELS &&
-  dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select $DBT_SLEEP_DASHBOARD_MODELS
+  dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select "$DBT_ACTIVITY_MODELS" &&
+  dbt build --project-dir analytics --profiles-dir analytics --threads 1 --select "$DBT_SLEEP_DASHBOARD_MODELS"
+}
+
+run_dbt_e2e_builds() {
+  dbt build --project-dir analytics --profiles-dir analytics --threads 1 --vars "$DBT_E2E_MICROBATCH_VARS" --select "$DBT_ACTIVITY_MODELS" &&
+  dbt build --project-dir analytics --profiles-dir analytics --threads 1 --vars "$DBT_E2E_MICROBATCH_VARS" --select "$DBT_SLEEP_DASHBOARD_MODELS"
+}
+
+require_non_negative_integer() {
+  name="$1"
+  value="$2"
+  case "$value" in
+    '' | *[!0-9]*)
+      echo "analytics-worker: $name must be a non-negative integer, got '$value'" >&2
+      exit 1
+      ;;
+  esac
 }
 
 case "${1:-sync}" in
@@ -46,16 +63,16 @@ case "${1:-sync}" in
   analytics)
     run_dbt_safe_builds
     ;;
+  analytics-e2e)
+    run_dbt_e2e_builds
+    ;;
   analytics-worker)
     interval_seconds="${ANALYTICS_BUILD_INTERVAL_SECONDS:-900}"
     retry_delay_seconds="${ANALYTICS_BUILD_RETRY_DELAY_SECONDS:-300}"
     startup_delay_seconds="${ANALYTICS_BUILD_STARTUP_DELAY_SECONDS:-120}"
-    case "$startup_delay_seconds" in
-      '' | *[!0-9]*)
-        echo "analytics-worker: ANALYTICS_BUILD_STARTUP_DELAY_SECONDS must be a non-negative integer, got '$startup_delay_seconds'" >&2
-        exit 1
-        ;;
-    esac
+    require_non_negative_integer "ANALYTICS_BUILD_INTERVAL_SECONDS" "$interval_seconds"
+    require_non_negative_integer "ANALYTICS_BUILD_RETRY_DELAY_SECONDS" "$retry_delay_seconds"
+    require_non_negative_integer "ANALYTICS_BUILD_STARTUP_DELAY_SECONDS" "$startup_delay_seconds"
     if [ "$startup_delay_seconds" -gt 0 ]; then
       echo "analytics-worker: waiting ${startup_delay_seconds}s before first dbt build"
       sleep "$startup_delay_seconds"
@@ -98,7 +115,7 @@ case "${1:-sync}" in
     exec $NODE scripts/seed-review-clickhouse.ts
     ;;
   *)
-    echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', 'migrate', 'analytics', 'analytics-worker', 'cdc-health', 'metric-stream-clickhouse-sink', 'seed', or 'review-seed-clickhouse')" >&2
+    echo "Unknown mode: $1 (expected 'web', 'sync', 'worker', 'migrate', 'analytics', 'analytics-e2e', 'analytics-worker', 'cdc-health', 'metric-stream-clickhouse-sink', 'seed', or 'review-seed-clickhouse')" >&2
     exit 1
     ;;
 esac

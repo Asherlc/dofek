@@ -6,6 +6,7 @@ import {
   RideWithGpsClient,
   RideWithGpsProvider,
   type RideWithGpsTrackPoint,
+  type RideWithGpsTripListResponse,
   type RideWithGpsTripSummary,
   rideWithGpsOAuthConfig,
 } from "./ride-with-gps.ts";
@@ -93,7 +94,7 @@ vi.mock("../auth/oauth.ts", async (importOriginal) => {
 
 describe("RideWithGpsClient — API calls", () => {
   it("sync sends correct URL with since parameter", async () => {
-    let capturedUrl = "";
+    let capturedUrl: string | undefined;
     let capturedHeaders: Record<string, string> = {};
     const mockFetch: typeof globalThis.fetch = async (
       input: RequestInfo | URL,
@@ -119,7 +120,7 @@ describe("RideWithGpsClient — API calls", () => {
   });
 
   it("getTrip sends correct URL with trip ID", async () => {
-    let capturedUrl = "";
+    let capturedUrl: string | undefined;
     const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
       capturedUrl = input.toString();
       return Response.json({
@@ -144,6 +145,34 @@ describe("RideWithGpsClient — API calls", () => {
     expect(capturedUrl).toContain("/api/v1/trips/42.json");
     expect(result.trip.id).toBe(42);
     expect(result.trip.name).toBe("Test Ride");
+  });
+
+  it("listTrips sends page and page size query parameters", async () => {
+    let capturedUrl: string | undefined;
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      capturedUrl = input.toString();
+      return Response.json({
+        trips: [],
+        meta: {
+          pagination: {
+            record_count: 0,
+            page_count: 0,
+            page_size: 25,
+            next_page_url: null,
+          },
+        },
+      });
+    };
+
+    const client = new RideWithGpsClient("test-token", mockFetch);
+    await client.listTrips(3, 25);
+
+    expect(capturedUrl).toBeDefined();
+    if (!capturedUrl) throw new Error("Expected listTrips request URL to be captured");
+    const capturedRequestUrl = new URL(capturedUrl);
+    expect(capturedRequestUrl.pathname).toBe("/api/v1/trips.json");
+    expect(capturedRequestUrl.searchParams.get("page")).toBe("3");
+    expect(capturedRequestUrl.searchParams.get("page_size")).toBe("25");
   });
 
   it("getTrip transforms compact track point keys to descriptive names", async () => {
@@ -623,11 +652,38 @@ function createSyncMockDb(
   return db;
 }
 
+const emptyTripInventoryResponse: RideWithGpsTripListResponse = {
+  trips: [],
+  meta: {
+    pagination: {
+      record_count: 0,
+      page_count: 1,
+      page_size: 100,
+      next_page_url: null,
+    },
+  },
+};
+
+function isTripInventoryRequest(requestUrl: string): boolean {
+  return requestUrl.includes("/api/v1/trips.json");
+}
+
+function createEmptyTripInventoryResponse(): Response {
+  return Response.json(emptyTripInventoryResponse);
+}
+
 describe("RideWithGpsProvider — sync", () => {
   const originalEnv = { ...process.env };
 
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    publishedMetricStreamBatches.length = 0;
+    vi.clearAllMocks();
+  });
+
   afterEach(() => {
     process.env = { ...originalEnv };
+    publishedMetricStreamBatches.length = 0;
     vi.clearAllMocks();
   });
 
@@ -665,6 +721,9 @@ describe("RideWithGpsProvider — sync", () => {
       if (url.includes("/sync.json")) {
         return Response.json({ items: [], meta: { rwgps_datetime: "2026-03-15T00:00:00Z" } });
       }
+      if (isTripInventoryRequest(url)) {
+        return createEmptyTripInventoryResponse();
+      }
       return Response.json({});
     };
 
@@ -695,8 +754,12 @@ describe("RideWithGpsProvider — sync", () => {
     vi.mocked(ensureProvider).mockResolvedValue("");
 
     const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
-      if (input.toString().includes("/sync.json")) {
+      const requestUrl = input.toString();
+      if (requestUrl.includes("/sync.json")) {
         return Response.json({ items: [], meta: {} });
+      }
+      if (isTripInventoryRequest(requestUrl)) {
+        return createEmptyTripInventoryResponse();
       }
       return Response.json({});
     };
@@ -773,9 +836,16 @@ describe("RideWithGpsProvider — sync", () => {
     });
     vi.mocked(ensureProvider).mockResolvedValue("");
 
-    let capturedUrl = "";
+    let capturedSyncUrl: string | undefined;
     const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
-      capturedUrl = input.toString();
+      const requestUrl = input.toString();
+      if (requestUrl.includes("/sync.json")) {
+        capturedSyncUrl = requestUrl;
+        return Response.json({ items: [], meta: { rwgps_datetime: "2026-03-15T00:00:00Z" } });
+      }
+      if (isTripInventoryRequest(requestUrl)) {
+        return createEmptyTripInventoryResponse();
+      }
       return Response.json({ items: [], meta: { rwgps_datetime: "2026-03-15T00:00:00Z" } });
     };
 
@@ -788,7 +858,7 @@ describe("RideWithGpsProvider — sync", () => {
       }),
     );
 
-    expect(capturedUrl).toContain("since=2026-03-01");
+    expect(capturedSyncUrl).toContain("since=2026-03-01");
   });
 
   it("uses stored sync cursor when available", async () => {
@@ -802,9 +872,16 @@ describe("RideWithGpsProvider — sync", () => {
     });
     vi.mocked(ensureProvider).mockResolvedValue("");
 
-    let capturedUrl = "";
+    let capturedSyncUrl: string | undefined;
     const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
-      capturedUrl = input.toString();
+      const requestUrl = input.toString();
+      if (requestUrl.includes("/sync.json")) {
+        capturedSyncUrl = requestUrl;
+        return Response.json({ items: [], meta: { rwgps_datetime: "2026-03-15T00:00:00Z" } });
+      }
+      if (isTripInventoryRequest(requestUrl)) {
+        return createEmptyTripInventoryResponse();
+      }
       return Response.json({ items: [], meta: { rwgps_datetime: "2026-03-15T00:00:00Z" } });
     };
 
@@ -817,7 +894,7 @@ describe("RideWithGpsProvider — sync", () => {
       }),
     );
 
-    expect(capturedUrl).toContain("since=2026-02-14");
+    expect(capturedSyncUrl).toContain("since=2026-02-14");
   });
 
   it("falls back to since when stored cursor payload is malformed", async () => {
@@ -831,9 +908,16 @@ describe("RideWithGpsProvider — sync", () => {
     });
     vi.mocked(ensureProvider).mockResolvedValue("");
 
-    let capturedUrl = "";
+    let capturedSyncUrl: string | undefined;
     const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
-      capturedUrl = input.toString();
+      const requestUrl = input.toString();
+      if (requestUrl.includes("/sync.json")) {
+        capturedSyncUrl = requestUrl;
+        return Response.json({ items: [], meta: { rwgps_datetime: "2026-03-15T00:00:00Z" } });
+      }
+      if (isTripInventoryRequest(requestUrl)) {
+        return createEmptyTripInventoryResponse();
+      }
       return Response.json({ items: [], meta: { rwgps_datetime: "2026-03-15T00:00:00Z" } });
     };
 
@@ -846,7 +930,7 @@ describe("RideWithGpsProvider — sync", () => {
       }),
     );
 
-    expect(capturedUrl).toContain("since=2026-03-01");
+    expect(capturedSyncUrl).toContain("since=2026-03-01");
   });
 
   it("does not fail when sync response omits meta", async () => {
@@ -860,7 +944,10 @@ describe("RideWithGpsProvider — sync", () => {
     });
     vi.mocked(ensureProvider).mockResolvedValue("");
 
-    const mockFetch: typeof globalThis.fetch = async () => {
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      if (isTripInventoryRequest(input.toString())) {
+        return createEmptyTripInventoryResponse();
+      }
       return Response.json({ items: [] });
     };
 
@@ -914,6 +1001,9 @@ describe("RideWithGpsProvider — sync", () => {
           items: [{ item_type: "trip", item_id: 42, action: "created" }],
           meta: { rwgps_datetime: "2026-03-15T12:00:00Z" },
         });
+      }
+      if (isTripInventoryRequest(url)) {
+        return createEmptyTripInventoryResponse();
       }
       if (url.includes("/trips/42.json")) {
         return Response.json({ trip: tripDetail });
@@ -1045,6 +1135,9 @@ describe("RideWithGpsProvider — sync", () => {
           meta: {},
         });
       }
+      if (isTripInventoryRequest(url)) {
+        return createEmptyTripInventoryResponse();
+      }
       if (url.includes("/trips/42.json")) {
         return Response.json({ trip: tripDetail });
       }
@@ -1101,6 +1194,9 @@ describe("RideWithGpsProvider — sync", () => {
           meta: {},
         });
       }
+      if (isTripInventoryRequest(url)) {
+        return createEmptyTripInventoryResponse();
+      }
       if (url.includes("/trips/99.json")) {
         return Response.json({ trip: tripDetail });
       }
@@ -1131,11 +1227,15 @@ describe("RideWithGpsProvider — sync", () => {
     vi.mocked(ensureProvider).mockResolvedValue("");
 
     const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
-      if (input.toString().includes("/sync.json")) {
+      const requestUrl = input.toString();
+      if (requestUrl.includes("/sync.json")) {
         return Response.json({
           items: [{ item_type: "trip", item_id: 99, action: "deleted" }],
           meta: { rwgps_datetime: "2026-03-15T12:00:00Z" },
         });
+      }
+      if (isTripInventoryRequest(requestUrl)) {
+        return createEmptyTripInventoryResponse();
       }
       return Response.json({});
     };
@@ -1162,11 +1262,15 @@ describe("RideWithGpsProvider — sync", () => {
     vi.mocked(ensureProvider).mockResolvedValue("");
 
     const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
-      if (input.toString().includes("/sync.json")) {
+      const requestUrl = input.toString();
+      if (requestUrl.includes("/sync.json")) {
         return Response.json({
           items: [{ item_type: "route", item_id: 50, action: "created" }],
           meta: {},
         });
+      }
+      if (isTripInventoryRequest(requestUrl)) {
+        return createEmptyTripInventoryResponse();
       }
       return Response.json({});
     };
@@ -1200,6 +1304,9 @@ describe("RideWithGpsProvider — sync", () => {
           meta: {},
         });
       }
+      if (isTripInventoryRequest(url)) {
+        return createEmptyTripInventoryResponse();
+      }
       return new Response("Not Found", { status: 404 });
     };
 
@@ -1211,7 +1318,49 @@ describe("RideWithGpsProvider — sync", () => {
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain("Failed to sync trip 42");
+    expect(result.errors[0]).toMatchObject({
+      externalId: "42",
+      cause: expect.any(Error),
+    });
+  });
+
+  it("does not advance the sync cursor after a sync-feed trip error", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    const { loadTokens, ensureProvider } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "valid",
+      refreshToken: "refresh",
+      expiresAt: new Date("2099-01-01"),
+      scopes: "user",
+    });
+    vi.mocked(ensureProvider).mockResolvedValue("");
+
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const requestUrl = input.toString();
+      if (requestUrl.includes("/sync.json")) {
+        return Response.json({
+          items: [{ item_type: "trip", item_id: 42, action: "created" }],
+          meta: { rwgps_datetime: "2026-03-15T12:00:00Z" },
+        });
+      }
+      if (isTripInventoryRequest(requestUrl)) {
+        return createEmptyTripInventoryResponse();
+      }
+      return new Response("Not Found", { status: 404 });
+    };
+
+    const provider = new RideWithGpsProvider(mockFetch);
+    const db = createSyncMockDb();
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toMatchObject({
+      externalId: "42",
+      cause: expect.any(Error),
+    });
+    expect(db.insert).not.toHaveBeenCalled();
   });
 
   it("catches and records delete errors", async () => {
@@ -1226,11 +1375,15 @@ describe("RideWithGpsProvider — sync", () => {
     vi.mocked(ensureProvider).mockResolvedValue("");
 
     const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
-      if (input.toString().includes("/sync.json")) {
+      const requestUrl = input.toString();
+      if (requestUrl.includes("/sync.json")) {
         return Response.json({
           items: [{ item_type: "trip", item_id: 77, action: "removed" }],
           meta: {},
         });
+      }
+      if (isTripInventoryRequest(requestUrl)) {
+        return createEmptyTripInventoryResponse();
       }
       return Response.json({});
     };
@@ -1243,7 +1396,50 @@ describe("RideWithGpsProvider — sync", () => {
     );
 
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain("Failed to delete trip 77");
+    expect(result.errors[0]).toMatchObject({
+      externalId: "77",
+      cause: expect.any(Error),
+    });
+  });
+
+  it("does not advance the sync cursor after a sync-feed delete error", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    const { loadTokens, ensureProvider } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "valid",
+      refreshToken: "refresh",
+      expiresAt: new Date("2099-01-01"),
+      scopes: "user",
+    });
+    vi.mocked(ensureProvider).mockResolvedValue("");
+
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const requestUrl = input.toString();
+      if (requestUrl.includes("/sync.json")) {
+        return Response.json({
+          items: [{ item_type: "trip", item_id: 77, action: "removed" }],
+          meta: { rwgps_datetime: "2026-03-15T12:00:00Z" },
+        });
+      }
+      if (isTripInventoryRequest(requestUrl)) {
+        return createEmptyTripInventoryResponse();
+      }
+      return Response.json({});
+    };
+
+    const provider = new RideWithGpsProvider(mockFetch);
+    const db = createSyncMockDb();
+    db.execute.mockRejectedValue(new Error("DB error"));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toMatchObject({
+      externalId: "77",
+      cause: expect.any(Error),
+    });
+    expect(db.insert).not.toHaveBeenCalled();
   });
 
   it("saves sync cursor when rwgps_datetime is present", async () => {
@@ -1258,11 +1454,15 @@ describe("RideWithGpsProvider — sync", () => {
     vi.mocked(ensureProvider).mockResolvedValue("");
 
     const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
-      if (input.toString().includes("/sync.json")) {
+      const requestUrl = input.toString();
+      if (requestUrl.includes("/sync.json")) {
         return Response.json({
           items: [],
           meta: { rwgps_datetime: "2026-03-15T12:00:00Z" },
         });
+      }
+      if (isTripInventoryRequest(requestUrl)) {
+        return createEmptyTripInventoryResponse();
       }
       return Response.json({});
     };

@@ -1,7 +1,8 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { userSettings } from "../db/schema/account.ts";
 import { activity } from "../db/schema/activity.ts";
 import { oauthToken } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
@@ -14,6 +15,7 @@ import {
   RideWithGpsProvider,
   type RideWithGpsSyncItem,
   type RideWithGpsSyncResponse,
+  type RideWithGpsTripListResponse,
 } from "./ride-with-gps.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
@@ -75,6 +77,26 @@ function fakeTripDetail(
   };
 }
 
+function fakeTripListResponse(
+  trips: RideWithGpsApiTripDetail[],
+  page = 1,
+  pageSize = 100,
+): RideWithGpsTripListResponse {
+  const pageStartIndex = (page - 1) * pageSize;
+  const pageTrips = trips.slice(pageStartIndex, pageStartIndex + pageSize);
+  return {
+    trips: pageTrips,
+    meta: {
+      pagination: {
+        record_count: trips.length,
+        page_count: Math.ceil(trips.length / pageSize),
+        page_size: pageSize,
+        next_page_url: null,
+      },
+    },
+  };
+}
+
 function rwgpsHandlers(
   syncResponse: RideWithGpsSyncResponse,
   trips: Map<number, RideWithGpsApiTripDetail>,
@@ -92,6 +114,14 @@ function rwgpsHandlers(
     // Sync endpoint
     http.get("https://ridewithgps.com/api/v1/sync.json", () => {
       return HttpResponse.json(syncResponse);
+    }),
+
+    // Trip inventory endpoint
+    http.get("https://ridewithgps.com/api/v1/trips.json", ({ request }) => {
+      const url = new URL(request.url);
+      const page = Number(url.searchParams.get("page") ?? "1");
+      const pageSize = Number(url.searchParams.get("page_size") ?? "100");
+      return HttpResponse.json(fakeTripListResponse([...trips.values()], page, pageSize));
     }),
 
     // Trip detail endpoint
@@ -207,6 +237,317 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     expect(locationSamples.every((sample) => sample.point !== null)).toBe(true);
   });
 
+  it("syncs trips discovered by trips inventory even when sync feed has no items", async () => {
+    await saveTokens(ctx.db, "ride-with-gps", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user",
+    });
+
+    const trip = fakeTripDetail(5101);
+    const trips = new Map<number, RideWithGpsApiTripDetail>();
+    trips.set(5101, trip);
+
+    server.use(...rwgpsHandlers(fakeSyncResponse([]), trips));
+
+    const provider = new RideWithGpsProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromIsoRange({
+          sinceIso: "2026-03-01T00:00:00.000Z",
+          untilIso: "2026-03-02T00:00:00.000Z",
+        }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(1);
+
+    const rows = await ctx.db.select().from(activity).where(eq(activity.externalId, "5101"));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.activityType).toBe("cycling");
+  });
+
+  it("includes inventory trips exactly on sync window boundaries and excludes outside trips", async () => {
+    await saveTokens(ctx.db, "ride-with-gps", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user",
+    });
+
+    const trips = new Map<number, RideWithGpsApiTripDetail>();
+    trips.set(
+      5501,
+      fakeTripDetail(5501, {
+        departed_at: "2026-05-01T00:00:00.000Z",
+        track_points: [],
+      }),
+    );
+    trips.set(
+      5502,
+      fakeTripDetail(5502, {
+        departed_at: "2026-05-02T00:00:00.000Z",
+        track_points: [],
+      }),
+    );
+    trips.set(
+      5503,
+      fakeTripDetail(5503, {
+        departed_at: "2026-04-30T23:59:59.000Z",
+        track_points: [],
+      }),
+    );
+    trips.set(
+      5504,
+      fakeTripDetail(5504, {
+        departed_at: "2026-05-02T00:00:01.000Z",
+        track_points: [],
+      }),
+    );
+
+    server.use(...rwgpsHandlers(fakeSyncResponse([]), trips));
+
+    const provider = new RideWithGpsProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromIsoRange({
+          sinceIso: "2026-05-01T00:00:00.000Z",
+          untilIso: "2026-05-02T00:00:00.000Z",
+        }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(2);
+
+    const rows = await ctx.db
+      .select({ externalId: activity.externalId })
+      .from(activity)
+      .where(eq(activity.providerId, "ride-with-gps"));
+    const syncedExternalIds = new Set(rows.map((row) => row.externalId));
+    expect(syncedExternalIds.has("5501")).toBe(true);
+    expect(syncedExternalIds.has("5502")).toBe(true);
+    expect(syncedExternalIds.has("5503")).toBe(false);
+    expect(syncedExternalIds.has("5504")).toBe(false);
+  });
+
+  it("requests every trips inventory page with the expected page parameters", async () => {
+    await saveTokens(ctx.db, "ride-with-gps", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user",
+    });
+
+    const inventoryTrips = Array.from({ length: 101 }, (_, index) =>
+      fakeTripDetail(5601 + index, { track_points: [] }),
+    );
+    const trips = new Map<number, RideWithGpsApiTripDetail>(
+      inventoryTrips.map((trip) => [trip.id, trip]),
+    );
+    const requestedTripPages: number[] = [];
+
+    server.use(
+      http.get("https://ridewithgps.com/api/v1/sync.json", () => {
+        return HttpResponse.json(fakeSyncResponse([]));
+      }),
+      http.get("https://ridewithgps.com/api/v1/trips.json", ({ request }) => {
+        const url = new URL(request.url);
+        const page = Number(url.searchParams.get("page") ?? "1");
+        const pageSize = Number(url.searchParams.get("page_size") ?? "100");
+        requestedTripPages.push(page);
+        return HttpResponse.json(fakeTripListResponse(inventoryTrips, page, pageSize));
+      }),
+      http.get("https://ridewithgps.com/api/v1/trips/:tripId.json", ({ params }) => {
+        const tripId = Number(params.tripId);
+        const trip = trips.get(tripId);
+        if (trip) return HttpResponse.json({ trip });
+        return new HttpResponse("Not found", { status: 404 });
+      }),
+    );
+
+    const provider = new RideWithGpsProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromIsoRange({
+          sinceIso: "2026-03-01T00:00:00.000Z",
+          untilIso: "2026-03-02T00:00:00.000Z",
+        }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(101);
+    expect(requestedTripPages).toEqual([1, 2]);
+  });
+
+  it("processes sync-feed updates outside the requested inventory window before advancing cursor", async () => {
+    const userId = "00000000-0000-0000-0000-000000000001";
+    await saveTokens(ctx.db, "ride-with-gps", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user",
+    });
+
+    const historicalTrip = fakeTripDetail(5201, {
+      name: "Corrected Historical Ride",
+      departed_at: "2019-06-01T10:00:00Z",
+      updated_at: "2026-03-01T11:00:00Z",
+      track_points: [],
+    });
+    const trips = new Map<number, RideWithGpsApiTripDetail>();
+    trips.set(5201, historicalTrip);
+
+    server.use(...rwgpsHandlers(fakeSyncResponse([{ item_id: 5201 }]), trips));
+
+    const provider = new RideWithGpsProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromIsoRange({
+          sinceIso: "2026-03-01T00:00:00.000Z",
+          untilIso: "2026-03-02T00:00:00.000Z",
+        }),
+        userId,
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(1);
+
+    const activities = await ctx.db.select().from(activity).where(eq(activity.externalId, "5201"));
+    expect(activities).toHaveLength(1);
+    expect(activities[0]?.name).toBe("Corrected Historical Ride");
+
+    const settings = await ctx.db
+      .select()
+      .from(userSettings)
+      .where(and(eq(userSettings.userId, userId), eq(userSettings.key, "rwgps_sync_cursor")));
+    expect(settings[0]?.value).toEqual({ cursor: "2026-03-01T12:00:00Z" });
+  });
+
+  it("reconciles missing in-window activities after a complete trip inventory scan", async () => {
+    const userId = "00000000-0000-0000-0000-000000000001";
+    await saveTokens(ctx.db, "ride-with-gps", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user",
+    });
+
+    await ctx.db.insert(activity).values([
+      {
+        providerId: "ride-with-gps",
+        userId,
+        externalId: "5301",
+        activityType: "cycling",
+        startedAt: new Date("2026-04-01T08:00:00Z"),
+        endedAt: new Date("2026-04-01T09:00:00Z"),
+      },
+      {
+        providerId: "ride-with-gps",
+        userId,
+        externalId: "5302",
+        activityType: "cycling",
+        startedAt: new Date("2026-04-02T08:00:00Z"),
+        endedAt: new Date("2026-04-02T09:00:00Z"),
+      },
+    ]);
+
+    const trips = new Map<number, RideWithGpsApiTripDetail>();
+    trips.set(
+      5302,
+      fakeTripDetail(5302, {
+        departed_at: "2026-04-02T08:00:00Z",
+        track_points: [],
+      }),
+    );
+
+    server.use(...rwgpsHandlers(fakeSyncResponse([]), trips));
+
+    const provider = new RideWithGpsProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromIsoRange({
+          sinceIso: "2026-04-01T00:00:00.000Z",
+          untilIso: "2026-04-03T00:00:00.000Z",
+        }),
+        userId,
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+
+    const rows = await ctx.db
+      .select({
+        externalId: activity.externalId,
+        providerAbsentAt: activity.providerAbsentAt,
+      })
+      .from(activity)
+      .where(eq(activity.providerId, "ride-with-gps"));
+    const missing = rows.find((row) => row.externalId === "5301");
+    const present = rows.find((row) => row.externalId === "5302");
+    expect(missing?.providerAbsentAt).toBeInstanceOf(Date);
+    expect(present?.providerAbsentAt).toBeNull();
+  });
+
+  it("continues sync-feed updates when trip inventory fails", async () => {
+    const userId = "00000000-0000-0000-0000-000000000001";
+    await saveTokens(ctx.db, "ride-with-gps", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user",
+    });
+
+    const syncResp = fakeSyncResponse([{ item_id: 5401 }]);
+    const trip = fakeTripDetail(5401, { track_points: [] });
+
+    server.use(
+      http.get("https://ridewithgps.com/api/v1/sync.json", () => {
+        return HttpResponse.json(syncResp);
+      }),
+      http.get("https://ridewithgps.com/api/v1/trips.json", () => {
+        return new HttpResponse("Service Unavailable", { status: 503 });
+      }),
+      http.get("https://ridewithgps.com/api/v1/trips/:tripId.json", ({ params }) => {
+        if (Number(params.tripId) === 5401) return HttpResponse.json({ trip });
+        return new HttpResponse("Not found", { status: 404 });
+      }),
+    );
+
+    const provider = new RideWithGpsProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromIsoRange({
+          sinceIso: "2026-03-01T00:00:00.000Z",
+          untilIso: "2026-03-02T00:00:00.000Z",
+        }),
+        userId,
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors[0]?.message).toContain("Trip inventory endpoint failed");
+
+    const rows = await ctx.db.select().from(activity).where(eq(activity.externalId, "5401"));
+    expect(rows).toHaveLength(1);
+  });
+
   it("upserts on re-sync (no duplicates)", async () => {
     await saveTokens(ctx.db, "ride-with-gps", {
       accessToken: "valid-token",
@@ -286,6 +627,50 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0]?.providerAbsentAt).toBeInstanceOf(Date);
+  });
+
+  it("does not re-fetch a trip id deleted earlier in the same sync feed", async () => {
+    await ctx.db.delete(activity).where(eq(activity.externalId, "5701"));
+
+    await saveTokens(ctx.db, "ride-with-gps", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user",
+    });
+
+    const syncResp = fakeSyncResponse([
+      { item_id: 5701, action: "deleted" },
+      { item_id: 5701, action: "created" },
+    ]);
+    const deletedTrip = fakeTripDetail(5701, { track_points: [] });
+
+    server.use(
+      http.get("https://ridewithgps.com/api/v1/sync.json", () => {
+        return HttpResponse.json(syncResp);
+      }),
+      http.get("https://ridewithgps.com/api/v1/trips.json", () => {
+        return HttpResponse.json(fakeTripListResponse([]));
+      }),
+      http.get("https://ridewithgps.com/api/v1/trips/5701.json", () => {
+        return HttpResponse.json({ trip: deletedTrip });
+      }),
+    );
+
+    const provider = new RideWithGpsProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(0);
+
+    const rows = await ctx.db.select().from(activity).where(eq(activity.externalId, "5701"));
+    expect(rows).toHaveLength(0);
   });
 
   it("skips route items (only processes trips)", async () => {
@@ -463,6 +848,9 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
       http.get("https://ridewithgps.com/api/v1/sync.json", () => {
         return HttpResponse.json(syncResp);
       }),
+      http.get("https://ridewithgps.com/api/v1/trips.json", () => {
+        return HttpResponse.json(fakeTripListResponse([]));
+      }),
     );
 
     const provider = new RideWithGpsProvider();
@@ -506,6 +894,9 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
       http.get("https://ridewithgps.com/api/v1/sync.json", ({ request }) => {
         tokenUsedForSync = request.headers.get("Authorization");
         return HttpResponse.json(syncResp);
+      }),
+      http.get("https://ridewithgps.com/api/v1/trips.json", () => {
+        return HttpResponse.json(fakeTripListResponse([...trips.values()]));
       }),
       http.get("https://ridewithgps.com/api/v1/trips/:tripId.json", ({ params }) => {
         const tripId = Number(params.tripId);
@@ -588,6 +979,9 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     server.use(
       http.get("https://ridewithgps.com/api/v1/sync.json", () => {
         return HttpResponse.json(syncResp);
+      }),
+      http.get("https://ridewithgps.com/api/v1/trips.json", () => {
+        return HttpResponse.json(fakeTripListResponse([]));
       }),
     );
 
