@@ -41,6 +41,7 @@ import { createMigration as createMigration0040 } from "./0040_create_weekly_end
 import { createMigration as createMigration0041 } from "./0041_drop_daily_metrics_cycling_distance.ts";
 import { createMigration as createMigration0042 } from "./0042_recreate_activity_sensor_summary_column_order.ts";
 import { createMigration as createMigration0043 } from "./0043_activity_stream_lifecycle_columns.ts";
+import { createMigration as createMigration0044 } from "./0044_materialize_body_measurement_view.ts";
 import type { ClickHouseMigration, ClickHouseMigrationFactory } from "./types.ts";
 
 const migrationFactories: ClickHouseMigrationFactory[] = [
@@ -87,8 +88,38 @@ const migrationFactories: ClickHouseMigrationFactory[] = [
   createMigration0041,
   createMigration0042,
   createMigration0043,
+  createMigration0044,
 ];
 
 export function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigration[] {
-  return migrationFactories.map((createMigration) => createMigration(postgresConnectionString));
+  const migrations = migrationFactories.map((createMigration) =>
+    createMigration(postgresConnectionString),
+  );
+  validateClickHouseMigrations(migrations);
+  return migrations;
+}
+
+function validateClickHouseMigrations(migrations: ClickHouseMigration[]): void {
+  const seenMigrationIds = new Set<string>();
+  let previousMigrationNumber = 0;
+
+  for (const migration of migrations) {
+    if (seenMigrationIds.has(migration.id)) {
+      throw new Error(`Duplicate ClickHouse migration id: ${migration.id}`);
+    }
+    seenMigrationIds.add(migration.id);
+
+    const migrationNumberMatch = migration.id.match(/^([0-9]{4})_/);
+    if (!migrationNumberMatch) {
+      throw new Error(
+        `ClickHouse migration id must start with a four digit prefix: ${migration.id}`,
+      );
+    }
+
+    const migrationNumber = Number(migrationNumberMatch[1]);
+    if (migrationNumber < previousMigrationNumber) {
+      throw new Error(`ClickHouse migration id is out of order: ${migration.id}`);
+    }
+    previousMigrationNumber = migrationNumber;
+  }
 }
