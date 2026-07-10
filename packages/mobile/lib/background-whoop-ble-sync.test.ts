@@ -684,6 +684,32 @@ describe("syncWhoopBle", () => {
     });
   });
 
+  it("uploads buffered samples when invoked by background refresh while app is backgrounded", async () => {
+    AppState.currentState = "background";
+    const samples = [
+      {
+        timestamp: "2026-03-25T08:00:00.000Z",
+        x: 100,
+        y: -200,
+        z: 300,
+        gyroscopeX: 10,
+        gyroscopeY: -20,
+        gyroscopeZ: 30,
+      },
+    ];
+    vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValueOnce(samples);
+
+    await syncWhoopBle(trpcClient, whoopDeps);
+
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
+      deviceId: "WHOOP Strap",
+      deviceType: "whoop",
+      samples: expect.arrayContaining([
+        expect.objectContaining({ timestamp: "2026-03-25T08:00:00.000Z" }),
+      ]),
+    });
+  });
+
   it("skips when WHOOP not found", async () => {
     vi.mocked(whoopDeps.findWhoop).mockResolvedValue(null);
 

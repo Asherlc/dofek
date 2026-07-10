@@ -12402,15 +12402,20 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `com.dofek.app@1.0.0+1783546283`. The periodic drain callback in
   `packages/mobile/lib/background-whoop-ble-sync.ts` only checked `syncing` and
   `connected`, not `AppState.currentState`.
-- **Root cause:** The WHOOP BLE periodic drain timer could attempt tRPC uploads
-  after iOS moved the app to the background, where the fetch was cancelled by
-  the platform.
-- **Fix / mitigation:** Guard the periodic drain timer with
-  `AppState.currentState === "active"` before reading buffered samples or
-  starting network uploads.
-- **Validation:** Added a failing mobile unit test that backgrounds
+- **Root cause:** The foreground-owned WHOOP BLE periodic drain timer could
+  attempt tRPC uploads after iOS moved the app to the background, where the
+  fetch was cancelled by the platform. The native background refresh path is a
+  separate entry point that should still sync when iOS grants background
+  execution.
+- **Fix / mitigation:** Guard only the foreground-owned periodic drain timer
+  with `AppState.currentState === "active"` before reading buffered samples or
+  starting network uploads. Keep the explicit `syncWhoopBle()` background
+  refresh entry point able to upload while the app state is backgrounded.
+- **Validation:** Added mobile unit coverage that backgrounds
   `AppState.currentState` and advances the periodic timer, then confirmed the
-  timer no longer drains while backgrounded. `pnpm vitest run
+  foreground-owned timer no longer drains while backgrounded. Added explicit
+  coverage that `syncWhoopBle()` still uploads when invoked by background
+  refresh while the app is backgrounded. `pnpm vitest run
   packages/mobile/lib/background-whoop-ble-sync.test.ts`,
   `pnpm --filter dofek-mobile lint`, and `pnpm --filter dofek-mobile
   typecheck` passed locally.
