@@ -673,8 +673,15 @@ function createEmptyTripInventoryResponse(): Response {
 describe("RideWithGpsProvider — sync", () => {
   const originalEnv = { ...process.env };
 
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    publishedMetricStreamBatches.length = 0;
+    vi.clearAllMocks();
+  });
+
   afterEach(() => {
     process.env = { ...originalEnv };
+    publishedMetricStreamBatches.length = 0;
     vi.clearAllMocks();
   });
 
@@ -1309,7 +1316,10 @@ describe("RideWithGpsProvider — sync", () => {
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain("Failed to sync trip 42");
+    expect(result.errors[0]).toMatchObject({
+      externalId: "42",
+      cause: expect.any(Error),
+    });
   });
 
   it("does not advance the sync cursor after a sync-feed trip error", async () => {
@@ -1344,7 +1354,10 @@ describe("RideWithGpsProvider — sync", () => {
     );
 
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain("Failed to sync trip 42");
+    expect(result.errors[0]).toMatchObject({
+      externalId: "42",
+      cause: expect.any(Error),
+    });
     expect(db.insert).not.toHaveBeenCalled();
   });
 
@@ -1381,7 +1394,10 @@ describe("RideWithGpsProvider — sync", () => {
     );
 
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain("Failed to delete trip 77");
+    expect(result.errors[0]).toMatchObject({
+      externalId: "77",
+      cause: expect.any(Error),
+    });
   });
 
   it("does not advance the sync cursor after a sync-feed delete error", async () => {
@@ -1417,7 +1433,10 @@ describe("RideWithGpsProvider — sync", () => {
     );
 
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain("Failed to delete trip 77");
+    expect(result.errors[0]).toMatchObject({
+      externalId: "77",
+      cause: expect.any(Error),
+    });
     expect(db.insert).not.toHaveBeenCalled();
   });
 
