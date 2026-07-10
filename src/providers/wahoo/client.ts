@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AccessTokenExpiredError } from "../auth-errors.ts";
+import { AccessTokenExpiredError, ProviderAuthenticationFailedError } from "../auth-errors.ts";
 import { ProviderHttpClient } from "../http-client.ts";
 
 export const WAHOO_API_BASE = "https://api.wahooligan.com";
@@ -136,6 +136,9 @@ export class WahooClient extends ProviderHttpClient {
     const apiError = new Error(`API error ${response.status} on ${path}: ${truncated}`);
     if (response.status === 401 && isAccessTokenExpiredResponse(text)) {
       throw new AccessTokenExpiredError("Wahoo", { cause: apiError });
+    }
+    if (response.status === 401 && text.trim() === "") {
+      throw new ProviderAuthenticationFailedError("Wahoo", { cause: apiError });
     }
     throw apiError;
   }

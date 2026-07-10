@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AccessTokenExpiredError } from "../auth-errors.ts";
+import { AccessTokenExpiredError, ProviderAuthenticationFailedError } from "../auth-errors.ts";
 import {
   createWahooNumeric,
   createWahooSingleWorkoutResponseSchema,
@@ -187,5 +187,12 @@ describe("WahooClient", () => {
     const client = new WahooClient("expired-token", fetchFn);
 
     await expect(client.getWorkouts()).rejects.toBeInstanceOf(AccessTokenExpiredError);
+  });
+
+  it("throws an authentication failure for Wahoo's empty 401 response", async () => {
+    const fetchFn = async () => new Response("", { status: 401 });
+    const client = new WahooClient("expired-token", fetchFn);
+
+    await expect(client.getWorkouts()).rejects.toBeInstanceOf(ProviderAuthenticationFailedError);
   });
 });
