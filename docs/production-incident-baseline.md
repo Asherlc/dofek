@@ -12353,3 +12353,36 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   `assets.dofek.fit` must be bound to the `dofek-web-assets` R2 bucket in
   Cloudflare before the first CDN-backed deploy. Old build prefixes expire
   after 90 days.
+
+## 2026-07-10 — Wahoo Empty 401 Reported as Generic Sync Error
+
+- **Symptoms:** Production Sentry reported one handled Wahoo sync exception at
+  `2026-07-10T14:00:02.075Z`: `API error 401 on /v1/workouts:` with an empty
+  response body.
+- **User impact:** The Wahoo sync failed for the affected run, and the worker
+  reported it as an unexpected provider error instead of recording an
+  auth failure that can drive reconnect state.
+- **Evidence:** [Sentry issue DOFEK-SERVER-4K](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-4K)
+  shows the error at `WahooClient.handleErrorResponse()` with tags
+  `environment=production` and `provider=wahoo`. Sentry event search for
+  `issue:DOFEK-SERVER-4K environment:production` over the last 30 days returned
+  one event.
+- **Root cause:** Wahoo's client only classified 401 responses as expired access
+  tokens when the response body parsed as JSON with
+  `error: "Access token has expired"`. Wahoo returned the same 401 status with
+  a blank body, so the client threw a plain `Error`; `processSyncJob()` only
+  suppresses Sentry reporting and records auth failure state for typed
+  `ProviderAuthError` causes.
+- **Fix / mitigation:** Treat blank Wahoo 401 response bodies as
+  `ProviderAuthenticationFailedError`, preserving the existing explicit
+  JSON-body `AccessTokenExpiredError` classification and non-401 error
+  behavior.
+- **Validation:** Reproduced the bug with a failing Wahoo client unit test for a
+  blank 401 response, then confirmed it passes after the fix. Local pre-push
+  checks passed: `pnpm lint`, root/server/web `pnpm tsc --noEmit`, and
+  `pnpm test` (`749` files passed, `2` skipped; `13172` tests passed, `21`
+  skipped).
+- **Remaining risk / follow-up:** Monitor Sentry after deploy for new Wahoo 401
+  shapes. If Wahoo returns distinct structured 401 bodies for non-expiry auth
+  failures, add targeted classification for those bodies instead of broadening
+  generic HTTP handling.
