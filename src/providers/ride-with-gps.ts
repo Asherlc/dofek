@@ -10,7 +10,10 @@ import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { replaceMetricStreamBatch } from "../db/metric-stream-writer.ts";
+import {
+  type MetricStreamSourceRow,
+  replaceMetricStreamBatch,
+} from "../db/metric-stream-writer.ts";
 import {
   markProviderActivityAbsent,
   markProviderActivityPresent,
@@ -29,6 +32,8 @@ import type {
   SyncProvider,
   SyncResult,
 } from "./types.ts";
+
+const RIDE_WITH_GPS_PROVIDER_ID = "ride-with-gps";
 
 // ============================================================
 // RideWithGPS API types
@@ -97,8 +102,7 @@ export interface RideWithGpsTripSummary {
   source?: string | null;
 }
 
-// Zod schema for the full trip detail response, including track point transform
-const rideWithGpsTripDetailSchema = z.object({
+const rideWithGpsTripSummarySchema = z.object({
   id: z.number(),
   name: z.string(),
   description: z.string().nullable().optional(),
@@ -112,6 +116,10 @@ const rideWithGpsTripDetailSchema = z.object({
   created_at: z.string(),
   updated_at: z.string(),
   source: z.string().nullable().optional(),
+});
+
+// Zod schema for the full trip detail response, including track point transform
+const rideWithGpsTripDetailSchema = rideWithGpsTripSummarySchema.extend({
   track_points: z.array(rideWithGpsTrackPointSchema).default([]),
 });
 
@@ -131,6 +139,30 @@ export interface RideWithGpsSyncResponse {
   items: RideWithGpsSyncItem[];
   meta: { rwgps_datetime: string };
 }
+
+export interface RideWithGpsTripListResponse {
+  trips: RideWithGpsTripSummary[];
+  meta: {
+    pagination: {
+      record_count: number;
+      page_count: number;
+      page_size: number;
+      next_page_url?: string | null;
+    };
+  };
+}
+
+const rideWithGpsTripListResponseSchema = z.object({
+  trips: z.array(rideWithGpsTripSummarySchema),
+  meta: z.object({
+    pagination: z.object({
+      record_count: z.number(),
+      page_count: z.number(),
+      page_size: z.number(),
+      next_page_url: z.string().nullable().optional(),
+    }),
+  }),
+});
 
 // ============================================================
 // OAuth configuration
@@ -233,6 +265,29 @@ export function parseTrackPoints(points: RideWithGpsTrackPoint[]): ParsedTrackPo
   return result;
 }
 
+export function buildRideWithGpsMetricRows(options: {
+  activityId: string;
+  activityType: CanonicalActivityType;
+  trackPoints: RideWithGpsTrackPoint[];
+}): MetricStreamSourceRow[] {
+  const parsedTrackPoints = parseTrackPoints(options.trackPoints);
+  const indoor = isIndoorCycling(options.activityType);
+
+  return parsedTrackPoints.map((point) => ({
+    recordedAt: point.recordedAt,
+    activityId: options.activityId,
+    providerId: RIDE_WITH_GPS_PROVIDER_ID,
+    lat: point.lat,
+    lng: point.lng,
+    altitude: point.altitude,
+    speed: indoor ? undefined : point.speed,
+    temperature: point.temperature,
+    heartRate: point.heartRate,
+    cadence: point.cadence,
+    power: point.power,
+  }));
+}
+
 // ============================================================
 // API client
 // ============================================================
@@ -273,6 +328,14 @@ export class RideWithGpsClient {
       since,
       assets: "trips",
     });
+  }
+
+  async listTrips(page: number, pageSize = 100): Promise<RideWithGpsTripListResponse> {
+    const data = await this.#get<unknown>("/api/v1/trips.json", {
+      page: String(page),
+      page_size: String(pageSize),
+    });
+    return rideWithGpsTripListResponseSchema.parse(data);
   }
 
   async getTrip(id: number): Promise<{ trip: RideWithGpsTripDetail }> {
@@ -324,12 +387,16 @@ async function saveSyncCursor(db: SyncDatabase, cursor: string, userId?: string)
     });
 }
 
+function isInWindow(date: Date, since: Date, until: Date): boolean {
+  return date.getTime() >= since.getTime() && date.getTime() <= until.getTime();
+}
+
 // ============================================================
 // Provider
 // ============================================================
 
 export class RideWithGpsProvider implements SyncProvider {
-  readonly id = "ride-with-gps";
+  readonly id = RIDE_WITH_GPS_PROVIDER_ID;
   readonly name = "RideWithGPS";
   #fetchFn: typeof globalThis.fetch;
 
@@ -442,11 +509,13 @@ export class RideWithGpsProvider implements SyncProvider {
       };
     }
 
-    for (const item of syncResponse.items) {
-      // Only process trips, not routes
-      if (item.item_type !== "trip") continue;
+    const tripIdsToSync = new Set<number>();
+    const deletedTripIds = new Set<number>();
 
+    for (const item of syncResponse.items) {
+      if (item.item_type !== "trip") continue;
       if (item.action === "deleted" || item.action === "removed") {
+        deletedTripIds.add(item.item_id);
         try {
           await markProviderActivityAbsent(db, {
             providerId: this.id,
@@ -463,12 +532,46 @@ export class RideWithGpsProvider implements SyncProvider {
         continue;
       }
 
-      // created, updated, added
-      try {
-        const { trip } = await client.getTrip(item.item_id);
-        const parsed = parseTripToActivity(trip);
+      tripIdsToSync.add(item.item_id);
+    }
 
-        // Upsert activity
+    try {
+      let page = 1;
+      while (true) {
+        const tripListResponse = await client.listTrips(page);
+        for (const trip of tripListResponse.trips) {
+          const parsed = parseTripToActivity(trip);
+          if (isInWindow(parsed.startedAt, since, window.until)) {
+            tripIdsToSync.add(trip.id);
+          }
+        }
+
+        const pageCount = tripListResponse.meta.pagination.page_count;
+        if (tripListResponse.trips.length === 0 || page >= pageCount) break;
+        page++;
+      }
+    } catch (err) {
+      return {
+        provider: this.id,
+        recordsSynced: 0,
+        errors: [
+          {
+            message: `Trip inventory endpoint failed: ${err instanceof Error ? err.message : String(err)}`,
+            cause: err,
+          },
+        ],
+        duration: Date.now() - start,
+      };
+    }
+
+    for (const tripId of tripIdsToSync) {
+      if (deletedTripIds.has(tripId)) continue;
+
+      try {
+        const { trip } = await client.getTrip(tripId);
+        const parsed = parseTripToActivity(trip);
+        if (!isInWindow(parsed.startedAt, since, window.until)) continue;
+
         const activityRow = await upsertProviderActivity(
           db,
           {
@@ -502,22 +605,11 @@ export class RideWithGpsProvider implements SyncProvider {
         const activityId = activityRow?.id;
         if (!activityId) continue;
 
-        // Parse and batch-insert track points
-        const trackPoints = parseTrackPoints(trip.track_points ?? []);
-        const indoor = isIndoorCycling(parsed.activityType);
-        const metricRows = trackPoints.map((point) => ({
-          recordedAt: point.recordedAt,
+        const metricRows = buildRideWithGpsMetricRows({
           activityId,
-          providerId: this.id,
-          lat: point.lat,
-          lng: point.lng,
-          altitude: point.altitude,
-          speed: indoor ? undefined : point.speed,
-          temperature: point.temperature,
-          heartRate: point.heartRate,
-          cadence: point.cadence,
-          power: point.power,
-        }));
+          activityType: parsed.activityType,
+          trackPoints: trip.track_points ?? [],
+        });
         // metricRows still use the legacy shape; convert and publish to metric stream.
         await replaceMetricStreamBatch(
           db,
@@ -530,8 +622,8 @@ export class RideWithGpsProvider implements SyncProvider {
         recordsSynced++;
       } catch (err) {
         errors.push({
-          message: `Failed to sync trip ${item.item_id}: ${err instanceof Error ? err.message : String(err)}`,
-          externalId: String(item.item_id),
+          message: `Failed to sync trip ${tripId}: ${err instanceof Error ? err.message : String(err)}`,
+          externalId: String(tripId),
           cause: err,
         });
       }

@@ -12271,3 +12271,99 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Decide whether a missing Zwift activity detail
   is expected upstream absence (and should be recorded as a degradation without
   a Sentry exception) or should remain an alert-worthy partial-sync failure.
+
+## 2026-07-10 — Cycling Training Analytics Missing Historical Sensor Data
+
+- **Symptoms:** `https://dofek.asherlc.com/training/cycling` showed cycling
+  training analytics with much shorter history than expected: fitness/load-like
+  data only reached back to March 2026, and power-derived metrics only reached
+  recent 2026 rides.
+- **User impact:** Cycling activity history existed, but charts that require
+  heart-rate, power, normalized-power, or load fields looked sparse and recent
+  instead of decade-scale.
+- **Evidence:** Production Postgres `fitness.v_activity` had 450 cycling
+  activities for the active user, ranging from `2009-07-08 17:59:28+00` through
+  `2026-07-04 00:39:22+00`. ClickHouse `analytics.activity_summary` had 437
+  cycling rows over the same historical range, but only 36 rows had
+  `hr_sample_count > 0`, starting `2026-03-11 19:40:30.91+00`; only 3 rows had
+  `power_sample_count > 0`, starting `2026-05-24 15:52:04+00`; only 2 rows had
+  `normalized_power IS NOT NULL`, starting `2026-06-26 21:28:44+00`.
+  `analytics.activity_power_curve FINAL` had 60 rows, ranging only from
+  `2026-05-24 15:52:04+00` through `2026-07-04 00:39:22+00`.
+  `analytics.daily_endurance_load FINAL` had dated rows only from
+  `2026-03-11` through `2026-07-07`, and cycling load rows only from
+  `2026-03-11` through `2026-07-04`. By contrast,
+  `analytics.activity_sensor_sample` already contained activity-linked sensor
+  rows back to `2020-05-21`, including 139,881 power rows, so at least the
+  2020-2026 stream-derived gap is downstream of the linked-sample table.
+- **Root cause:** The raw cycling activity rows were not missing. The
+  downstream dbt read models that populate chartable sample summaries were
+  initially built with bounded history: `activity_sensor_sample` is a
+  microbatch model with `begin='2026-01-01'`, and
+  `activity_sensor_summary_rows`, `activity_summary_rows`, and related models
+  use `initial_lookback_days = 120`. That left older historical sensor rows
+  absent from summary/load/power read models unless a dedicated historical
+  backfill or full-refresh rebuild is run. Older pre-2020 Strava cycling rows
+  also have activity-level power-like fields in `fitness.activity.raw`, but the
+  current power curve/eFTP path only uses stream-derived ClickHouse models.
+- **Initial mitigation plan:** Before the RideWithGPS-specific repair below,
+  the next mitigation was an explicitly bounded analytics backfill for
+  downstream activity sensor summary, activity summary, power curve, daily load,
+  and dependent cycling read models, sized for the single-node ClickHouse memory
+  limits.
+- **Remaining risk / follow-up:** Decide whether the product should treat
+  provider activity-level power summaries, such as Strava `average_watts`, as a
+  separate historical signal or keep power curve/eFTP strictly stream-derived.
+  PeerDB worker logs were also reporting repeated ClickHouse normalization
+  errors, but the three current Postgres replication slots were active and
+  `wal_status = reserved`; inspect PeerDB catalog flow logs separately if
+  freshness starts diverging again.
+- **RideWithGPS follow-up evidence:** Production had 70 `ride-with-gps`
+  activities: 69 historical rows from `2009-07-10` through `2016-04-16` and one
+  2026 row. The historical rows were all stored as `activity_type = 'other'`,
+  even though their raw RideWithGPS activity types were `cycling:generic` for 40
+  rows and `cycling:road` for 23 rows. Historical `raw.track_points` existed for
+  69 rows with 146,887 total points containing timestamp, latitude, longitude,
+  elevation, and sometimes speed, but no heart-rate, cadence, or power keys.
+  `ingest.metric_stream` had no pre-2026 `ride-with-gps` rows; only one 2026
+  RideWithGPS activity had metric-stream rows. The provider currently relies on
+  `/api/v1/sync.json` plus a stored `rwgps_sync_cursor`, which was
+  `2026-07-10T03:00:00+00:00`, so routine syncs poll recent changes and do not
+  enumerate the full historical trip library.
+- **2026-07-10 production repair:** Ran a one-time RideWithGPS historical
+  backfill from a separate app container rather than the memory-limited worker.
+  The first worker-based attempts were killed by the worker's 400 MiB memory
+  limit, so the backfill was replayed idempotently from a one-shot container.
+  Validation showed Postgres `fitness.activity` had 865 active `ride-with-gps`
+  activities from `2009-07-08 17:59:28+00` through
+  `2026-06-22 00:00:50+00`. ClickHouse `ingest.metric_stream FINAL` had
+  13,219,543 active RideWithGPS metric rows over 771 activities, including
+  historical location/speed/elevation rows and power rows from 2019-2021.
+- **CDC repair:** The raw PeerDB mirror `postgres_fitness.activity` still had
+  only 70 RideWithGPS rows after the stream backfill. PeerDB logs showed
+  `dofek_fitness_raw_analytics` normalization failing on
+  `postgres_fitness.daily_metrics`: `No such column cycling_distance_km`, a
+  stale queued batch from before the ClickHouse destination column was dropped.
+  Temporarily re-added `cycling_distance_km Nullable(Float32)`, confirmed the
+  mirror still would not normalize, then followed the CDC runbook: dropped
+  `dofek_fitness_raw_analytics`, explicitly truncated its eight destination
+  tables, reran `setupClickHouseCdcFromEnv()`, and dropped the temporary column
+  after the initial copy completed. Validation showed
+  `postgres_fitness.activity FINAL` had the same 865 active RideWithGPS rows as
+  Postgres, with latest `_peerdb_synced_at = 2026-07-10 05:31:41`.
+- **Analytics repair:** The scheduled analytics worker had already started a
+  retry before the raw mirror was repaired. After that partial run timed out in
+  `activity_power_curve`, canceled stale zero-write ClickHouse dbt queries and
+  ran a focused activity dbt build excluding `activity_power_curve` and
+  `hiking_activity`. The focused build completed successfully at
+  `2026-07-10 06:04:11` with `PASS=16 ERROR=0`. Validation showed
+  `analytics.activity_summary` could see RideWithGPS member activities across
+  2009, 2011-2026, and `analytics.activity_sensor_sample` had RideWithGPS-linked
+  power samples in 2019-2021 plus canonical deduped power rows in later overlap
+  years.
+- **Remaining risk / follow-up:** `activity_power_curve` still times out after
+  the dbt HTTP 300-second read timeout and leaves a server-side zero-write
+  ClickHouse insert unless canceled. Its SQL recomputes against all eligible
+  activities instead of dirty activity keys, so it needs a separate model fix
+  before the scheduled analytics worker can complete the full activity model
+  set cleanly after large backfills.

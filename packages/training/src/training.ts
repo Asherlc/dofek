@@ -352,6 +352,12 @@ export const OURA_ACTIVITY_TYPE_MAP: Record<string, CanonicalActivityType> = {
 /** RideWithGPS activity_type → canonical activity type */
 export const RIDE_WITH_GPS_ACTIVITY_TYPE_MAP: Record<string, CanonicalActivityType> = {
   cycling: "cycling",
+  "cycling:generic": "cycling",
+  "cycling:road": "road_cycling",
+  "cycling:mountain": "mountain_biking",
+  "cycling:gravel": "gravel_cycling",
+  "cycling:cyclocross": "cyclocross",
+  "cycling:track": "track_cycling",
   mountain_biking: "mountain_biking",
   road_cycling: "road_cycling",
   gravel_cycling: "gravel_cycling",

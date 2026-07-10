@@ -2,6 +2,7 @@ import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it } from "vitest";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import {
+  buildRideWithGpsMetricRows,
   mapActivityType,
   parseTrackPoints,
   parseTripToActivity,
@@ -20,6 +21,11 @@ describe("mapActivityType", () => {
     expect(mapActivityType("mountain_biking")).toBe("mountain_biking");
     expect(mapActivityType("road_cycling")).toBe("road_cycling");
     expect(mapActivityType("gravel_cycling")).toBe("gravel_cycling");
+  });
+
+  it("maps colon-delimited RideWithGPS cycling types", () => {
+    expect(mapActivityType("cycling:generic")).toBe("cycling");
+    expect(mapActivityType("cycling:road")).toBe("road_cycling");
   });
 
   it("maps running types", () => {
@@ -212,6 +218,63 @@ describe("parseTrackPoints", () => {
     expect(result).toHaveLength(1);
     expect(result[0]?.lng).toBe(-122.8);
     expect(result[0]?.lat).toBe(45.7);
+  });
+});
+
+describe("buildRideWithGpsMetricRows", () => {
+  it("converts parsed track points to source rows for metric stream fan-out", () => {
+    const rows = buildRideWithGpsMetricRows({
+      activityId: "activity-1",
+      activityType: "road_cycling",
+      trackPoints: [
+        {
+          longitude: -122.6,
+          latitude: 45.5,
+          elevationMeters: 150,
+          epochSeconds: 1723276200,
+          speedKph: 36,
+          temperatureCelsius: 22,
+          heartRateBpm: 145,
+          cadenceRpm: 90,
+          powerWatts: 200,
+        },
+      ],
+    });
+
+    expect(rows).toEqual([
+      {
+        recordedAt: new Date(1723276200 * 1000),
+        activityId: "activity-1",
+        providerId: "ride-with-gps",
+        lat: 45.5,
+        lng: -122.6,
+        altitude: 150,
+        speed: 10,
+        temperature: 22,
+        heartRate: 145,
+        cadence: 90,
+        power: 200,
+      },
+    ]);
+  });
+
+  it("omits speed for indoor cycling activities", () => {
+    const rows = buildRideWithGpsMetricRows({
+      activityId: "activity-1",
+      activityType: "indoor_cycling",
+      trackPoints: [
+        {
+          longitude: -122.6,
+          latitude: 45.5,
+          epochSeconds: 1723276200,
+          speedKph: 36,
+        },
+      ],
+    });
+
+    expect(rows[0]?.speed).toBeUndefined();
+    expect(rows[0]?.lat).toBe(45.5);
+    expect(rows[0]?.lng).toBe(-122.6);
   });
 });
 
