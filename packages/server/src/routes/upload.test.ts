@@ -126,55 +126,70 @@ async function rawRequest(
   return new Promise((resolve, reject) => {
     let settled = false;
     let timeout: ReturnType<typeof setTimeout> | undefined;
+    let server: ReturnType<express.Express["listen"]> | undefined;
     const finish = (result: { status: number; body: string } | Error) => {
       if (settled) return;
       settled = true;
       if (timeout) clearTimeout(timeout);
-      server.close(() => {
+      const complete = () => {
         if (result instanceof Error) {
           reject(result);
           return;
         }
         resolve(result);
-      });
-    };
-    const server = app.listen(0, () => {
-      timeout = setTimeout(() => {
-        finish(new Error("raw request timed out"));
-      }, 5_000);
-      let port: number;
-      try {
-        port = getPort(server);
-      } catch (error) {
-        finish(error instanceof Error ? error : new Error(String(error)));
+      };
+      if (!server?.listening) {
+        complete();
         return;
       }
-      const req = httpRequest(
-        {
-          port,
-          path,
-          method,
-          headers: opts?.headers,
-        },
-        (res) => {
-          const chunks: Buffer[] = [];
-          res.on("data", (chunk: Buffer) => chunks.push(chunk));
-          res.on("end", () => {
-            finish({
-              status: res.statusCode ?? 0,
-              body: Buffer.concat(chunks).toString("utf8"),
+      server.close(complete);
+    };
+    try {
+      server = app.listen(0, () => {
+        timeout = setTimeout(() => {
+          finish(new Error("raw request timed out"));
+        }, 5_000);
+        const listeningServer = server;
+        if (!listeningServer) {
+          finish(new Error("raw request server was not initialized"));
+          return;
+        }
+        let port: number;
+        try {
+          port = getPort(listeningServer);
+        } catch (error) {
+          finish(error instanceof Error ? error : new Error(String(error)));
+          return;
+        }
+        const req = httpRequest(
+          {
+            port,
+            path,
+            method,
+            headers: opts?.headers,
+          },
+          (res) => {
+            const chunks: Buffer[] = [];
+            res.on("data", (chunk: Buffer) => chunks.push(chunk));
+            res.on("end", () => {
+              finish({
+                status: res.statusCode ?? 0,
+                body: Buffer.concat(chunks).toString("utf8"),
+              });
             });
-          });
-        },
-      );
-      req.on("error", (error) => {
+          },
+        );
+        req.on("error", (error) => {
+          finish(error);
+        });
+        req.end(opts?.body);
+      });
+      server.on("error", (error) => {
         finish(error);
       });
-      req.end(opts?.body);
-    });
-    server.on("error", (error) => {
-      finish(error);
-    });
+    } catch (error) {
+      finish(error instanceof Error ? error : new Error(String(error)));
+    }
   });
 }
 
