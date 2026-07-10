@@ -195,7 +195,7 @@ async function loadActivityRows(
   const conditions = [
     sql`provider_id = 'ride-with-gps'`,
     sql`user_id = ${options.userId}`,
-    sql`absent_at IS NULL`,
+    sql`provider_absent_at IS NULL`,
     sql`raw ? 'track_points'`,
   ];
 
@@ -221,7 +221,7 @@ async function applyPlan(db: Database, plan: RideWithGpsActivityBackfillPlan): P
   if (plan.shouldUpdateActivityType) {
     await db.execute(sql`
       UPDATE fitness.activity
-      SET activity_type = ${plan.activityType}, updated_at = now()
+      SET activity_type = ${plan.activityType}
       WHERE id = ${plan.id}
     `);
   }

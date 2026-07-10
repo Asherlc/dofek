@@ -15,6 +15,7 @@ import {
   replaceMetricStreamBatch,
 } from "../db/metric-stream-writer.ts";
 import {
+  finishProviderActivityListSync,
   markProviderActivityAbsent,
   markProviderActivityPresent,
   upsertProviderActivity,
@@ -510,7 +511,11 @@ export class RideWithGpsProvider implements SyncProvider {
     }
 
     const tripIdsToSync = new Set<number>();
+    const syncFeedTripIds = new Set<number>();
     const deletedTripIds = new Set<number>();
+    const presentInventoryExternalIds = new Set<string>();
+    let completedInventoryScan = true;
+    let syncCursorSafeToAdvance = true;
 
     for (const item of syncResponse.items) {
       if (item.item_type !== "trip") continue;
@@ -523,6 +528,7 @@ export class RideWithGpsProvider implements SyncProvider {
             userId: scopedUserId,
           });
         } catch (err) {
+          syncCursorSafeToAdvance = false;
           errors.push({
             message: `Failed to delete trip ${item.item_id}: ${err instanceof Error ? err.message : String(err)}`,
             externalId: String(item.item_id),
@@ -532,6 +538,7 @@ export class RideWithGpsProvider implements SyncProvider {
         continue;
       }
 
+      syncFeedTripIds.add(item.item_id);
       tripIdsToSync.add(item.item_id);
     }
 
@@ -543,6 +550,7 @@ export class RideWithGpsProvider implements SyncProvider {
           const parsed = parseTripToActivity(trip);
           if (isInWindow(parsed.startedAt, since, window.until)) {
             tripIdsToSync.add(trip.id);
+            presentInventoryExternalIds.add(String(trip.id));
           }
         }
 
@@ -551,17 +559,11 @@ export class RideWithGpsProvider implements SyncProvider {
         page++;
       }
     } catch (err) {
-      return {
-        provider: this.id,
-        recordsSynced: 0,
-        errors: [
-          {
-            message: `Trip inventory endpoint failed: ${err instanceof Error ? err.message : String(err)}`,
-            cause: err,
-          },
-        ],
-        duration: Date.now() - start,
-      };
+      completedInventoryScan = false;
+      errors.push({
+        message: `Trip inventory endpoint failed: ${err instanceof Error ? err.message : String(err)}`,
+        cause: err,
+      });
     }
 
     for (const tripId of tripIdsToSync) {
@@ -570,7 +572,8 @@ export class RideWithGpsProvider implements SyncProvider {
       try {
         const { trip } = await client.getTrip(tripId);
         const parsed = parseTripToActivity(trip);
-        if (!isInWindow(parsed.startedAt, since, window.until)) continue;
+        const fromSyncFeed = syncFeedTripIds.has(tripId);
+        if (!fromSyncFeed && !isInWindow(parsed.startedAt, since, window.until)) continue;
 
         const activityRow = await upsertProviderActivity(
           db,
@@ -621,6 +624,9 @@ export class RideWithGpsProvider implements SyncProvider {
 
         recordsSynced++;
       } catch (err) {
+        if (syncFeedTripIds.has(tripId)) {
+          syncCursorSafeToAdvance = false;
+        }
         errors.push({
           message: `Failed to sync trip ${tripId}: ${err instanceof Error ? err.message : String(err)}`,
           externalId: String(tripId),
@@ -629,8 +635,18 @@ export class RideWithGpsProvider implements SyncProvider {
       }
     }
 
+    if (completedInventoryScan) {
+      await finishProviderActivityListSync(db, {
+        providerId: this.id,
+        userId: scopedUserId,
+        windowStart: since,
+        windowEnd: window.until,
+        presentExternalIds: presentInventoryExternalIds,
+      });
+    }
+
     // Save sync cursor for next run
-    if (syncResponse.meta?.rwgps_datetime) {
+    if (syncCursorSafeToAdvance && syncResponse.meta?.rwgps_datetime) {
       await saveSyncCursor(db, syncResponse.meta.rwgps_datetime, scopedUserId);
     }
 

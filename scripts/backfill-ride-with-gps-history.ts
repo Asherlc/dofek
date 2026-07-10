@@ -27,6 +27,14 @@ function parseDateArgument(value: string, name: string): Date {
   return date;
 }
 
+function parseInclusiveEndDateArgument(value: string, name: string): Date {
+  const date = parseDateArgument(value, name);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return new Date(date.getTime() + 86_400_000 - 1);
+  }
+  return date;
+}
+
 function readOptionValue(args: string[], index: number, name: string): string {
   const value = args[index + 1];
   if (!value || value.startsWith("--")) {
@@ -61,7 +69,7 @@ export function parseRideWithGpsHistoryBackfillArgs(
       continue;
     }
     if (arg === "--end") {
-      options.until = parseDateArgument(readOptionValue(args, index, arg), arg);
+      options.until = parseInclusiveEndDateArgument(readOptionValue(args, index, arg), arg);
       index++;
       continue;
     }
@@ -148,10 +156,10 @@ function usage(): string {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  runBackfill(parseRideWithGpsHistoryBackfillArgs(process.argv.slice(2))).catch(
-    (error: unknown) => {
+  runBackfill(parseRideWithGpsHistoryBackfillArgs(process.argv.slice(2)))
+    .then(() => process.exit(0))
+    .catch((error: unknown) => {
       console.error(error instanceof Error ? error.message : String(error));
       process.exit(1);
-    },
-  );
+    });
 }

@@ -64,4 +64,10 @@ describe("parseRideWithGpsHistoryBackfillArgs", () => {
 
     expect(options.since).toEqual(new Date("2010-01-01T00:00:00.000Z"));
   });
+
+  it("treats a date-only end value as the inclusive UTC day end", () => {
+    const options = parseRideWithGpsHistoryBackfillArgs(["--end", "2026-07-11"]);
+
+    expect(options.until).toEqual(new Date("2026-07-11T23:59:59.999Z"));
+  });
 });
