@@ -178,6 +178,16 @@ describe("Garmin dump provider", () => {
     );
   });
 
+  it("rejects non-zip file paths with a clear message", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "garmin-dump-test-"));
+    const filePath = join(directory, "activity.fit");
+    await writeFile(filePath, "fit-bytes");
+
+    await expect(parseGarminDumpFile(filePath)).rejects.toThrow(
+      "Garmin dump import expects a .zip file or extracted export directory",
+    );
+  });
+
   it("imports summaries and replaces metric stream samples from matching FIT files", async () => {
     const filePath = await createGarminDumpZip();
 

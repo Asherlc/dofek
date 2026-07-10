@@ -297,6 +297,9 @@ async function collectDirectoryEntries(rootPath: string): Promise<GarminDumpEntr
 export async function parseGarminDumpFile(filePath: string): Promise<ParsedGarminDump> {
   const fileStats = await stat(filePath);
   if (fileStats.isFile()) {
+    if (!filePath.toLowerCase().endsWith(".zip")) {
+      throw new Error("Garmin dump import expects a .zip file or extracted export directory");
+    }
     assertGarminDumpSize(fileStats.size, MAX_GARMIN_DUMP_INPUT_BYTES, "Garmin dump upload");
   }
   const entries = fileStats.isDirectory()
