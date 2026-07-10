@@ -2,9 +2,39 @@ import { Worker } from "node:worker_threads";
 import { z } from "zod";
 import type { ParsedFitActivity } from "./parser.ts";
 
+const FIT_PARSER_WORKER_TIMEOUT_MS = 10_000;
+
+const parsedFitRawRecordSchema = z.record(z.string(), z.unknown());
+
+const parsedFitSessionSchema = z
+  .object({
+    sport: z.string(),
+    startTime: z.date(),
+    totalElapsedTime: z.number(),
+    totalTimerTime: z.number(),
+    totalDistance: z.number(),
+    totalCalories: z.number(),
+    raw: parsedFitRawRecordSchema,
+  })
+  .passthrough();
+
+const parsedFitRecordSchema = z
+  .object({
+    recordedAt: z.date(),
+    raw: parsedFitRawRecordSchema,
+  })
+  .passthrough();
+
+const parsedFitActivitySchema = z.object({
+  session: parsedFitSessionSchema,
+  records: z.array(parsedFitRecordSchema),
+  laps: z.array(parsedFitRawRecordSchema),
+  events: z.array(parsedFitRawRecordSchema),
+}) satisfies z.ZodType<ParsedFitActivity>;
+
 const workerSuccessMessageSchema = z.object({
   status: z.literal("ok"),
-  activity: z.custom<ParsedFitActivity>((value) => typeof value === "object" && value !== null),
+  activity: parsedFitActivitySchema,
 });
 
 const workerErrorMessageSchema = z.object({
@@ -42,10 +72,12 @@ export function parseFitFileInWorkerThread(buffer: Buffer): Promise<ParsedFitAct
       execArgv: fitParserWorkerExecArgv(),
       workerData: buffer,
     });
+    const timeoutId = setTimeout(handleTimeout, FIT_PARSER_WORKER_TIMEOUT_MS);
 
     let settled = false;
 
     function cleanup(): void {
+      clearTimeout(timeoutId);
       worker.off("message", handleMessage);
       worker.off("error", handleError);
       worker.off("exit", handleExit);
@@ -99,6 +131,12 @@ export function parseFitFileInWorkerThread(buffer: Buffer): Promise<ParsedFitAct
         return;
       }
       settleWithReject(new Error("FIT parser worker exited without sending a message"));
+    }
+
+    function handleTimeout(): void {
+      settleWithReject(
+        new Error(`FIT parser worker timed out after ${FIT_PARSER_WORKER_TIMEOUT_MS}ms`),
+      );
     }
 
     worker.once("message", handleMessage);

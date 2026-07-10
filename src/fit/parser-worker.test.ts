@@ -59,6 +59,7 @@ async function importParserWorkerWithRealWorker(): Promise<typeof import("./pars
 
 afterEach(() => {
   process.execArgv = [...originalExecArgv];
+  vi.useRealTimers();
   vi.doUnmock("node:worker_threads");
   vi.resetModules();
   vi.restoreAllMocks();
@@ -90,7 +91,7 @@ describe("parseFitFileInWorkerThread", () => {
     const worker = expectWorkerInstance();
     worker.emit("message", { status: "ok", activity });
 
-    await expect(resultPromise).resolves.toBe(activity);
+    await expect(resultPromise).resolves.toStrictEqual(activity);
     expect(worker.terminate).toHaveBeenCalledOnce();
     expect(worker.listenerCount("message")).toBe(0);
     expect(worker.listenerCount("error")).toBe(0);
@@ -118,6 +119,17 @@ describe("parseFitFileInWorkerThread", () => {
     const resultPromise = parseFitFileInWorkerThread(Buffer.from("fit"));
     const worker = expectWorkerInstance();
     worker.emit("message", { status: "ok", activity: null });
+
+    await expect(resultPromise).rejects.toThrow(/invalid message/i);
+    expect(worker.terminate).toHaveBeenCalledOnce();
+  });
+
+  it("rejects malformed parsed activity messages", async () => {
+    const { parseFitFileInWorkerThread } = await importParserWorkerWithMockWorker();
+
+    const resultPromise = parseFitFileInWorkerThread(Buffer.from("fit"));
+    const worker = expectWorkerInstance();
+    worker.emit("message", { status: "ok", activity: { session: { sport: "cycling" } } });
 
     await expect(resultPromise).rejects.toThrow(/invalid message/i);
     expect(worker.terminate).toHaveBeenCalledOnce();
@@ -156,6 +168,21 @@ describe("parseFitFileInWorkerThread", () => {
       "FIT parser worker exited without sending a message",
     );
     expect(worker.terminate).toHaveBeenCalledOnce();
+  });
+
+  it("rejects and terminates workers that time out", async () => {
+    vi.useFakeTimers();
+    const { parseFitFileInWorkerThread } = await importParserWorkerWithMockWorker();
+
+    const resultPromise = parseFitFileInWorkerThread(Buffer.from("fit"));
+    const worker = expectWorkerInstance();
+    vi.advanceTimersByTime(10_000);
+
+    await expect(resultPromise).rejects.toThrow("FIT parser worker timed out after 10000ms");
+    expect(worker.terminate).toHaveBeenCalledOnce();
+    expect(worker.listenerCount("message")).toBe(0);
+    expect(worker.listenerCount("error")).toBe(0);
+    expect(worker.listenerCount("exit")).toBe(0);
   });
 
   it("removes loader imports from worker exec arguments", async () => {
