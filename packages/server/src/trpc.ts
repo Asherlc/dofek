@@ -77,7 +77,7 @@ function isClickHouseInfrastructureError(error: unknown): boolean {
       (message.includes("connect econnrefused") && message.includes("clickhouse")) ||
       message.includes("overcommittracker") ||
       (message.includes("clickhouse") && message.includes("memory limit exceeded")) ||
-      message === "timeout error.",
+      (message.includes("clickhouse") && message.includes("timeout")),
   );
 }
 

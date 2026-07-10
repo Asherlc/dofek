@@ -599,7 +599,7 @@ body_measurement_samples AS (
     channel,
     scalar,
     ifNull(
-      external_id,
+      concat(provider_id, ':', external_id),
       concat(provider_id, ':', toString(user_id), ':', toString(recorded_at), ':', ifNull(device_id, ''))
     ) AS measurement_key
   FROM analytics.body_measurement_sample FINAL

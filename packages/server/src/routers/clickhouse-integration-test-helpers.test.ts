@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runClickHouseMigrations } from "../../../../src/db/clickhouse-migrations.ts";
 import {
+  CLICKHOUSE_TEST_VIEW_REGEX,
   clickHouseMigrationAnalyticsViewNames,
   createClickHouseTestActivitySensorStore,
   syncClickHouseTestActivitySensorStore,
@@ -399,5 +400,38 @@ describe("clickhouse integration test helpers", () => {
           command.includes("FROM postgresql("),
       ),
     ).toBe(false);
+  });
+
+  describe("CLICKHOUSE_TEST_VIEW_REGEX", () => {
+    it("matches a materialized view without extra header clauses", () => {
+      const match = `CREATE MATERIALIZED VIEW IF NOT EXISTS db.view
+AS
+SELECT * FROM db.table`.match(CLICKHOUSE_TEST_VIEW_REGEX);
+
+      expect(match?.[1]).toBe("db.view");
+      expect(match?.[2]?.trim()).toBe("SELECT * FROM db.table");
+    });
+
+    it("matches a materialized view with refresh and engine clauses", () => {
+      const match = `CREATE MATERIALIZED VIEW IF NOT EXISTS db.mv
+REFRESH EVERY 5 MINUTE
+ENGINE = MergeTree()
+ORDER BY (id)
+SETTINGS populate = 1
+AS
+SELECT id, col FROM db.source`.match(CLICKHOUSE_TEST_VIEW_REGEX);
+
+      expect(match?.[1]).toBe("db.mv");
+      expect(match?.[2]?.trim()).toBe("SELECT id, col FROM db.source");
+    });
+
+    it("matches a standard view", () => {
+      const match = `CREATE VIEW IF NOT EXISTS db.view_plain
+AS
+SELECT 1`.match(CLICKHOUSE_TEST_VIEW_REGEX);
+
+      expect(match?.[1]).toBe("db.view_plain");
+      expect(match?.[2]?.trim()).toBe("SELECT 1");
+    });
   });
 });

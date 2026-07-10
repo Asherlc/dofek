@@ -92,5 +92,34 @@ const migrationFactories: ClickHouseMigrationFactory[] = [
 ];
 
 export function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigration[] {
-  return migrationFactories.map((createMigration) => createMigration(postgresConnectionString));
+  const migrations = migrationFactories.map((createMigration) =>
+    createMigration(postgresConnectionString),
+  );
+  validateClickHouseMigrations(migrations);
+  return migrations;
+}
+
+function validateClickHouseMigrations(migrations: ClickHouseMigration[]): void {
+  const seenMigrationIds = new Set<string>();
+  let previousMigrationNumber = 0;
+
+  for (const migration of migrations) {
+    if (seenMigrationIds.has(migration.id)) {
+      throw new Error(`Duplicate ClickHouse migration id: ${migration.id}`);
+    }
+    seenMigrationIds.add(migration.id);
+
+    const migrationNumberMatch = migration.id.match(/^([0-9]{4})_/);
+    if (!migrationNumberMatch) {
+      throw new Error(
+        `ClickHouse migration id must start with a four digit prefix: ${migration.id}`,
+      );
+    }
+
+    const migrationNumber = Number(migrationNumberMatch[1]);
+    if (migrationNumber < previousMigrationNumber) {
+      throw new Error(`ClickHouse migration id is out of order: ${migration.id}`);
+    }
+    previousMigrationNumber = migrationNumber;
+  }
 }

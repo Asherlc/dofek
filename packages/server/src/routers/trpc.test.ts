@@ -416,6 +416,12 @@ describe("trpc", () => {
       await expectSanitizedClickHouseError(internalError);
     });
 
+    it("hides ClickHouse timeout errors detected by message text", async () => {
+      const internalError = new Error("ClickHouse timeout error while executing query");
+
+      await expectSanitizedClickHouseError(internalError);
+    });
+
     it("does not hide timeout errors when the message is not from ClickHouse", async () => {
       const timeoutError = Object.assign(new Error("postgres request timed out"), {
         code: "ETIMEDOUT",
