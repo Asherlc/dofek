@@ -7,6 +7,7 @@ import {
   createWahooWorkoutListResponseSchema,
   createWahooWorkoutSchema,
   createWahooWorkoutSummarySchema,
+  WahooApiError,
   WahooClient,
 } from "./client.ts";
 
@@ -194,5 +195,17 @@ describe("WahooClient", () => {
     const client = new WahooClient("expired-token", fetchFn);
 
     await expect(client.getWorkouts()).rejects.toBeInstanceOf(ProviderAuthenticationFailedError);
+  });
+
+  it("throws a typed API error for non-auth Wahoo failures", async () => {
+    const fetchFn = async () => new Response("server error", { status: 500 });
+    const client = new WahooClient("token", fetchFn);
+
+    await expect(client.getWorkouts()).rejects.toMatchObject({
+      statusCode: 500,
+      path: "/v1/workouts",
+      responseBodyExcerpt: "server error",
+    });
+    await expect(client.getWorkouts()).rejects.toBeInstanceOf(WahooApiError);
   });
 });
