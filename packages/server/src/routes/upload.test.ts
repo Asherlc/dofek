@@ -77,23 +77,35 @@ async function request(
   method: "get" | "post",
   path: string,
   opts?: { headers?: Record<string, string>; body?: Buffer },
-): Promise<{ status: number; body: string }> {
+): Promise<{ status: number; body: string; headers: Headers }> {
   return new Promise((resolve) => {
     const server = app.listen(0, () => {
       const port = getPort(server);
+      const abortController = new AbortController();
+      let settled = false;
+      const timeout = setTimeout(() => {
+        abortController.abort();
+        finish({ status: 504, body: "timeout", headers: new Headers() });
+      }, 5_000);
+      const finish = (result: { status: number; body: string; headers: Headers }) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        resolve(result);
+        server.close();
+      };
       const fetchOpts: RequestInit = {
         method: method.toUpperCase(),
         headers: opts?.headers,
         body: opts?.body,
+        signal: abortController.signal,
       };
       fetch(`http://localhost:${port}${path}`, fetchOpts)
         .then(async (res) => {
-          resolve({ status: res.status, body: await res.text() });
-          server.close();
+          finish({ status: res.status, body: await res.text(), headers: res.headers });
         })
         .catch((_error: unknown) => {
-          resolve({ status: 500, body: "fetch error" });
-          server.close();
+          finish({ status: 500, body: "fetch error", headers: new Headers() });
         });
     });
   });
@@ -159,6 +171,16 @@ describe("createUploadRouter", () => {
       expect(res.status).toBe(401);
     });
 
+    it("returns 401 for unauthenticated POST /kaya-export", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/kaya-export", {
+        headers: { "Content-Type": "text/csv" },
+        body: Buffer.from("data"),
+      });
+      expect(res.status).toBe(401);
+    });
+
     it("returns 401 for unauthenticated GET /apple-health/status", async () => {
       vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
       const { app } = createTestApp();
@@ -177,6 +199,13 @@ describe("createUploadRouter", () => {
       vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
       const { app } = createTestApp();
       const res = await request(app, "get", "/api/upload/cronometer-csv/status/job-1");
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 401 for unauthenticated GET /kaya-export/status", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+      const { app } = createTestApp();
+      const res = await request(app, "get", "/api/upload/kaya-export/status/job-1");
       expect(res.status).toBe(401);
     });
 
@@ -218,6 +247,19 @@ describe("createUploadRouter", () => {
         undefined,
       );
     });
+
+    it("uses authenticated userId for kaya-export upload", async () => {
+      const { app, queue } = createTestApp();
+      await request(app, "post", "/api/upload/kaya-export", {
+        headers: { "Content-Type": "text/csv", "x-file-ext": ".csv" },
+        body: Buffer.from("date,grade,gym\n2026-07-09,v3,Touchstone Pacific Pipe"),
+      });
+      expect(queue.add).toHaveBeenCalledWith(
+        "kaya-export",
+        expect.objectContaining({ userId: "user-1" }),
+        undefined,
+      );
+    });
   });
 
   describe("POST /api/upload/apple-health", () => {
@@ -254,6 +296,15 @@ describe("createUploadRouter", () => {
   });
 
   describe("GET /api/upload/apple-health/status/:jobId", () => {
+    it("applies the upload status rate limiter", async () => {
+      const { app, queue } = createTestApp();
+      queue.getJob.mockResolvedValueOnce(null);
+
+      const res = await request(app, "get", "/api/upload/apple-health/status/unknown");
+
+      expect(res.headers.has("ratelimit")).toBe(true);
+    });
+
     it("returns 404 for unknown job", async () => {
       const { app, queue } = createTestApp();
       queue.getJob.mockResolvedValueOnce(null);
@@ -503,6 +554,15 @@ describe("createUploadRouter", () => {
   });
 
   describe("GET /api/upload/strong-csv/status/:jobId", () => {
+    it("applies the upload status rate limiter", async () => {
+      const { app, queue } = createTestApp();
+      queue.getJob.mockResolvedValueOnce(null);
+
+      const res = await request(app, "get", "/api/upload/strong-csv/status/unknown");
+
+      expect(res.headers.has("ratelimit")).toBe(true);
+    });
+
     it("returns 404 for unknown job", async () => {
       const { app, queue } = createTestApp();
       queue.getJob.mockResolvedValueOnce(null);
@@ -542,6 +602,15 @@ describe("createUploadRouter", () => {
   });
 
   describe("GET /api/upload/cronometer-csv/status/:jobId", () => {
+    it("applies the upload status rate limiter", async () => {
+      const { app, queue } = createTestApp();
+      queue.getJob.mockResolvedValueOnce(null);
+
+      const res = await request(app, "get", "/api/upload/cronometer-csv/status/unknown");
+
+      expect(res.headers.has("ratelimit")).toBe(true);
+    });
+
     it("returns 404 for unknown job", async () => {
       const { app, queue } = createTestApp();
       queue.getJob.mockResolvedValueOnce(null);
@@ -593,6 +662,131 @@ describe("createUploadRouter", () => {
         body: Buffer.from("data"),
       });
       expect(res.status).toBe(500);
+    });
+  });
+
+  describe("POST /api/upload/kaya-export", () => {
+    it("rejects unsupported content type with Kaya-specific guidance", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/kaya-export", {
+        headers: { "Content-Type": "application/json", "x-file-ext": ".csv" },
+        body: Buffer.from("{}"),
+      });
+      expect(res.status).toBe(415);
+      expect(res.body).toContain("Kaya imports require a CSV export");
+    });
+
+    it("rejects non-CSV file extensions with Kaya-specific guidance", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/kaya-export", {
+        headers: { "Content-Type": "text/csv", "x-file-ext": ".json" },
+        body: Buffer.from("data"),
+      });
+      expect(res.status).toBe(400);
+      expect(res.body).toContain("Kaya imports require a CSV export");
+    });
+
+    it("accepts CSV upload", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/kaya-export", {
+        headers: { "Content-Type": "text/csv", "x-file-ext": ".csv" },
+        body: Buffer.from("date,grade,gym\n2026-07-09,v3,Touchstone Pacific Pipe"),
+      });
+      expect(res.status).toBe(200);
+      const data = JSON.parse(res.body);
+      expect(data.status).toBe("processing");
+    });
+
+    it("accepts CSV upload with content type parameters", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/kaya-export", {
+        headers: { "Content-Type": "text/csv ; charset=utf-8", "x-file-ext": ".csv" },
+        body: Buffer.from("date,grade,gym\n2026-07-09,v3,Touchstone Pacific Pipe"),
+      });
+
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body)).toMatchObject({ status: "processing", jobId: "job-123" });
+    });
+
+    it("accepts CSV upload when optional content type and extension headers are absent", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/kaya-export", {
+        body: Buffer.from("date,grade,gym\n2026-07-09,v3,Touchstone Pacific Pipe"),
+      });
+
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body)).toMatchObject({ status: "processing", jobId: "job-123" });
+    });
+
+    it("returns 500 and cleans up when Kaya upload fails", async () => {
+      vi.mocked(streamToFile).mockRejectedValueOnce(new Error("disk full"));
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/kaya-export", {
+        headers: { "Content-Type": "text/csv", "x-file-ext": ".csv" },
+        body: Buffer.from("data"),
+      });
+
+      expect(res.status).toBe(500);
+      expect(res.body).toContain("Upload failed");
+      expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("[kaya-export]"));
+      expect(logger.warn).toHaveBeenCalledWith(
+        "Failed to clean up tmp file %s: %s",
+        expect.stringContaining("kaya-export-"),
+        expect.any(Error),
+      );
+    });
+  });
+
+  describe("GET /api/upload/kaya-export/status/:jobId", () => {
+    it("returns 404 for unknown job", async () => {
+      const { app, queue } = createTestApp();
+      queue.getJob.mockResolvedValueOnce(null);
+      const res = await request(app, "get", "/api/upload/kaya-export/status/unknown");
+      expect(res.status).toBe(404);
+      expect(res.body).toContain("Unknown job");
+    });
+
+    it("returns job status only for the authenticated user", async () => {
+      const { app, queue } = createTestApp();
+      const mockJob = {
+        data: { userId: "user-1" },
+        getState: vi.fn(() => Promise.resolve("completed")),
+        progress: 100,
+        failedReason: null,
+        returnvalue: { records: 4 },
+      };
+      queue.getJob.mockResolvedValueOnce(mockJob);
+
+      const res = await request(app, "get", "/api/upload/kaya-export/status/job-kaya");
+
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body).status).toBe("done");
+    });
+
+    it("returns 403 when job belongs to another user", async () => {
+      const { app, queue } = createTestApp();
+      const mockJob = {
+        data: { userId: "user-2" },
+        getState: vi.fn(() => Promise.resolve("active")),
+        progress: 50,
+        failedReason: null,
+        returnvalue: null,
+      };
+      queue.getJob.mockResolvedValueOnce(mockJob);
+      const res = await request(app, "get", "/api/upload/kaya-export/status/job-other");
+      expect(res.status).toBe(403);
+      expect(res.body).toContain("Forbidden");
+    });
+  });
+
+  describe("GET /api/upload/zos-app/status/:jobId", () => {
+    it("applies the upload status rate limiter", async () => {
+      const { app, queue } = createTestApp();
+      queue.getJob.mockResolvedValueOnce(null);
+
+      const res = await request(app, "get", "/api/upload/zos-app/status/unknown");
+
+      expect(res.headers.has("ratelimit")).toBe(true);
     });
   });
 
@@ -911,6 +1105,17 @@ describe("createUploadRouter", () => {
       const filePath = vi.mocked(streamToFile).mock.calls[0][1];
       expect(filePath.startsWith(EXPECTED_JOB_FILES_DIR)).toBe(true);
       expect(filePath).toContain("cronometer-csv-");
+    });
+
+    it("writes Kaya export upload to JOB_FILES_DIR", async () => {
+      const { app } = createTestApp();
+      await request(app, "post", "/api/upload/kaya-export", {
+        headers: { "Content-Type": "text/csv", "x-file-ext": ".csv" },
+        body: Buffer.from("date,grade,gym\n2026-07-09,v3,Touchstone Pacific Pipe"),
+      });
+      const filePath = vi.mocked(streamToFile).mock.calls[0][1];
+      expect(filePath.startsWith(EXPECTED_JOB_FILES_DIR)).toBe(true);
+      expect(filePath).toContain("kaya-export-");
     });
   });
 

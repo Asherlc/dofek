@@ -1,11 +1,12 @@
 import { mkdirSync } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rm, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Queue } from "bullmq";
 import type { Database } from "dofek/db";
 import type { ImportJobData } from "dofek/jobs/queues";
 import { type Request, type Response, Router } from "express";
+import rateLimit from "express-rate-limit";
 import { getSessionIdFromRequest } from "../auth/cookies.ts";
 import { validateSession } from "../auth/session.ts";
 import { assembleChunks, streamToFile } from "../lib/server-utils.ts";
@@ -28,6 +29,22 @@ mkdirSync(JOB_FILES_DIR, { recursive: true });
 const IN_PROGRESS_UPLOAD_STATUS_TTL_MS = UPLOAD_SESSION_TTL_MS + UPLOAD_STATUS_TTL_MS;
 
 const uploadStateStore = getUploadStateStore();
+
+const uploadRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 120,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: "Too many upload requests; please try again later",
+});
+
+const uploadStatusRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 1_800,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: "Too many upload status requests; please try again later",
+});
 
 async function setUploadStatus(
   uploadId: string,
@@ -83,7 +100,7 @@ async function enqueueImport(
   importQueue: Queue<ImportJobData>,
   filePath: string,
   since: Date,
-  importType: "apple-health" | "strong-csv" | "cronometer-csv" | "zos-app",
+  importType: ImportJobData["importType"],
   userId: string,
   opts?: { weightUnit?: "kg" | "lbs"; jobId?: string },
 ): Promise<string> {
@@ -100,6 +117,12 @@ async function enqueueImport(
   );
   startWorker();
   return job.id ?? `job-${Date.now()}`;
+}
+
+async function cleanupTempFile(filePath: string): Promise<void> {
+  await unlink(filePath).catch((error: unknown) => {
+    logger.warn("Failed to clean up tmp file %s: %s", filePath, error);
+  });
 }
 
 async function getImportJobStatus(importQueue: Queue<ImportJobData>, jobId: string) {
@@ -170,35 +193,41 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
   const router = Router();
   const { importQueue, db } = deps;
   // Poll job status — checks BullMQ first, falls back to upload-phase status
-  router.get("/apple-health/status/:jobId", async (req, res) => {
-    const userId = await authenticate(req, res, db);
-    if (!userId) return;
+  router.get<{ jobId: string }>(
+    "/apple-health/status/:jobId",
+    uploadStatusRateLimiter,
+    async (req, res) => {
+      const userId = await authenticate(req, res, db);
+      if (!userId) return;
 
-    const uploadStatus = await uploadStateStore.getUploadStatus(req.params.jobId);
-    if (uploadStatus) {
-      if (uploadStatus.userId !== userId) {
+      const uploadStatus = await uploadStateStore.getUploadStatus(req.params.jobId);
+      if (uploadStatus) {
+        if (uploadStatus.userId !== userId) {
+          res.status(403).json({ error: "Forbidden" });
+          return;
+        }
+        if (uploadStatus.expiresAt && uploadStatus.expiresAt <= Date.now()) {
+          res.json(stripExpiry(await expireStaleUpload(req.params.jobId, userId)));
+          return;
+        }
+        res.json(stripExpiry(uploadStatus));
+        return;
+      }
+
+      const jobId = req.params.jobId;
+
+      const status = await getImportJobStatus(importQueue, jobId);
+      if (!status) {
+        res.status(404).json({ error: "Unknown job" });
+        return;
+      }
+      if (status.userId && status.userId !== userId) {
         res.status(403).json({ error: "Forbidden" });
         return;
       }
-      if (uploadStatus.expiresAt && uploadStatus.expiresAt <= Date.now()) {
-        res.json(stripExpiry(await expireStaleUpload(req.params.jobId, userId)));
-        return;
-      }
-      res.json(stripExpiry(uploadStatus));
-      return;
-    }
-
-    const status = await getImportJobStatus(importQueue, req.params.jobId);
-    if (!status) {
-      res.status(404).json({ error: "Unknown job" });
-      return;
-    }
-    if (status.userId && status.userId !== userId) {
-      res.status(403).json({ error: "Forbidden" });
-      return;
-    }
-    res.json(status);
-  });
+      res.json(status);
+    },
+  );
 
   // Chunked upload endpoint
   router.post("/apple-health", async (req, res) => {
@@ -370,21 +399,27 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
   });
 
   // ── Strong CSV upload ──
-  router.get("/strong-csv/status/:jobId", async (req, res) => {
-    const userId = await authenticate(req, res, db);
-    if (!userId) return;
+  router.get<{ jobId: string }>(
+    "/strong-csv/status/:jobId",
+    uploadStatusRateLimiter,
+    async (req, res) => {
+      const userId = await authenticate(req, res, db);
+      if (!userId) return;
 
-    const status = await getImportJobStatus(importQueue, req.params.jobId);
-    if (!status) {
-      res.status(404).json({ error: "Unknown job" });
-      return;
-    }
-    if (status.userId && status.userId !== userId) {
-      res.status(403).json({ error: "Forbidden" });
-      return;
-    }
-    res.json(status);
-  });
+      const jobId = req.params.jobId;
+
+      const status = await getImportJobStatus(importQueue, jobId);
+      if (!status) {
+        res.status(404).json({ error: "Unknown job" });
+        return;
+      }
+      if (status.userId && status.userId !== userId) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
+      res.json(status);
+    },
+  );
 
   router.post("/strong-csv", async (req, res) => {
     const userId = await authenticate(req, res, db);
@@ -419,21 +454,27 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
   });
 
   // ── Cronometer CSV upload ──
-  router.get("/cronometer-csv/status/:jobId", async (req, res) => {
-    const userId = await authenticate(req, res, db);
-    if (!userId) return;
+  router.get<{ jobId: string }>(
+    "/cronometer-csv/status/:jobId",
+    uploadStatusRateLimiter,
+    async (req, res) => {
+      const userId = await authenticate(req, res, db);
+      if (!userId) return;
 
-    const status = await getImportJobStatus(importQueue, req.params.jobId);
-    if (!status) {
-      res.status(404).json({ error: "Unknown job" });
-      return;
-    }
-    if (status.userId && status.userId !== userId) {
-      res.status(403).json({ error: "Forbidden" });
-      return;
-    }
-    res.json(status);
-  });
+      const jobId = req.params.jobId;
+
+      const status = await getImportJobStatus(importQueue, jobId);
+      if (!status) {
+        res.status(404).json({ error: "Unknown job" });
+        return;
+      }
+      if (status.userId && status.userId !== userId) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
+      res.json(status);
+    },
+  );
 
   router.post("/cronometer-csv", async (req, res) => {
     const userId = await authenticate(req, res, db);
@@ -470,22 +511,85 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
     }
   });
 
-  // ── ZOS App bin upload ──
-  router.get("/zos-app/status/:jobId", async (req, res) => {
+  // ── Kaya CSV export upload ──
+  router.get<{ jobId: string }>(
+    "/kaya-export/status/:jobId",
+    uploadStatusRateLimiter,
+    async (req, res) => {
+      const userId = await authenticate(req, res, db);
+      if (!userId) return;
+
+      const jobId = req.params.jobId;
+
+      const status = await getImportJobStatus(importQueue, jobId);
+      if (!status) {
+        res.status(404).json({ error: "Unknown job" });
+        return;
+      }
+      if (status.userId && status.userId !== userId) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
+      res.json(status);
+    },
+  );
+
+  router.post("/kaya-export", uploadRateLimiter, async (req, res) => {
     const userId = await authenticate(req, res, db);
     if (!userId) return;
 
-    const status = await getImportJobStatus(importQueue, req.params.jobId);
-    if (!status) {
-      res.status(404).json({ error: "Unknown job" });
+    const guidance = "Kaya imports require a CSV export";
+    const contentType = req.headers["content-type"]?.split(";").at(0)?.trim().toLowerCase();
+    if (
+      contentType &&
+      !["text/csv", "application/octet-stream", "text/plain"].includes(contentType)
+    ) {
+      res.status(415).json({ error: guidance });
       return;
     }
-    if (status.userId && status.userId !== userId) {
-      res.status(403).json({ error: "Forbidden" });
+
+    const fileExt = req.get("x-file-ext") || ".csv";
+    if (fileExt.toLowerCase() !== ".csv") {
+      res.status(400).json({ error: guidance });
       return;
     }
-    res.json(status);
+
+    const tmpId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const tmpFile = join(JOB_FILES_DIR, `kaya-export-${tmpId}.csv`);
+
+    try {
+      await streamToFile(req, tmpFile);
+      const jobId = await enqueueImport(importQueue, tmpFile, new Date(0), "kaya-export", userId);
+      res.json({ status: "processing", jobId });
+    } catch (err: unknown) {
+      logger.error(`[kaya-export] Upload failed: ${err}`);
+      await cleanupTempFile(tmpFile);
+      res.status(500).json({ error: "Upload failed" });
+    }
   });
+
+  // ── ZOS App bin upload ──
+  router.get<{ jobId: string }>(
+    "/zos-app/status/:jobId",
+    uploadStatusRateLimiter,
+    async (req, res) => {
+      const userId = await authenticate(req, res, db);
+      if (!userId) return;
+
+      const jobId = req.params.jobId;
+
+      const status = await getImportJobStatus(importQueue, jobId);
+      if (!status) {
+        res.status(404).json({ error: "Unknown job" });
+        return;
+      }
+      if (status.userId && status.userId !== userId) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
+      res.json(status);
+    },
+  );
 
   router.post("/zos-app", async (req, res) => {
     const userId = await authenticate(req, res, db);
@@ -508,10 +612,7 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
       res.json({ status: "processing", jobId });
     } catch (err: unknown) {
       logger.error(`[zos-app] Upload failed: ${err}`);
-      const { unlink } = await import("node:fs/promises");
-      await unlink(tmpFile).catch((unlinkError: unknown) => {
-        logger.warn("Failed to clean up tmp file %s: %s", tmpFile, unlinkError);
-      });
+      await cleanupTempFile(tmpFile);
       res.status(500).json({ error: "Upload failed" });
     }
   });
