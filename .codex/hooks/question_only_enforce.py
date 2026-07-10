@@ -37,6 +37,7 @@ READ_ONLY_GIT_SUBCOMMANDS = {
     "show",
     "status",
 }
+READ_ONLY_COMMAND_UTILITY_OPTIONS = {"--help", "-V", "-v"}
 MUTATING_SHELL_PATTERN = re.compile(
     r"(^|[;&|]\s*)("
     r"apply_patch|build|chmod|chown|commit|cp|curl|deploy|docker|gh|install|"
@@ -87,6 +88,16 @@ def unwrap_rtk(tokens: list[str]) -> list[str]:
     return tokens
 
 
+def is_read_only_command_utility(tokens: list[str]) -> bool:
+    if len(tokens) == 2 and tokens[1] in READ_ONLY_COMMAND_UTILITY_OPTIONS:
+        return True
+    if len(tokens) > 2 and tokens[1] in READ_ONLY_COMMAND_UTILITY_OPTIONS:
+        return True
+    if len(tokens) > 3 and tokens[1] == "-p" and tokens[2] in {"-V", "-v"}:
+        return True
+    return False
+
+
 def is_read_only_segment(segment: str) -> bool:
     tokens = unwrap_rtk(command_tokens(segment))
     if not tokens:
@@ -96,7 +107,7 @@ def is_read_only_segment(segment: str) -> bool:
     if command == "git":
         return len(tokens) > 1 and tokens[1] in READ_ONLY_GIT_SUBCOMMANDS
     if command == "command":
-        return len(tokens) > 2 and tokens[1] == "-v"
+        return is_read_only_command_utility(tokens)
     return command in READ_ONLY_COMMANDS
 
 
