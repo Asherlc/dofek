@@ -21,6 +21,23 @@ vi.mock("../components/ProviderLogo.tsx", () => ({
   ProviderLogo: () => <div data-testid="provider-logo" />,
 }));
 
+vi.mock("../components/FileImportZone.tsx", () => ({
+  FileImportZone: ({
+    title,
+    description,
+    showDetailsLink,
+  }: {
+    title: string;
+    description: string;
+    showDetailsLink?: boolean;
+  }) => (
+    <div data-testid="file-import-zone" data-show-details-link={String(showDetailsLink)}>
+      <span>{title}</span>
+      <span>{description}</span>
+    </div>
+  ),
+}));
+
 interface MockProvider {
   id: string;
   name: string;
@@ -113,6 +130,7 @@ vi.mock("../lib/poll-sync-job.ts", () => ({
 
 beforeEach(() => {
   vi.useFakeTimers();
+  mockUseParams.mockReturnValue({ id: "strong-csv" });
   mockDataHealth.data = null;
   mockDataHealth.isLoading = false;
   mockDataHealth.error = null;
@@ -313,6 +331,31 @@ describe("ProviderDetailPage import-only providers", () => {
 
     expect(screen.getByText("Import only")).toBeTruthy();
     expect(screen.queryByText("Connected")).toBeNull();
+  });
+
+  it("shows the upload card for Garmin dump on the provider detail page", async () => {
+    mockUseParams.mockReturnValue({ id: "garmin-dump" });
+    mockProviders.data = [
+      {
+        id: "garmin-dump",
+        name: "Garmin Dump",
+        authorized: true,
+        authType: "file-import",
+        lastSyncedAt: null,
+        importOnly: true,
+      },
+    ];
+
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+
+    expect(screen.getByRole("heading", { name: "Garmin Dump" })).toBeTruthy();
+    expect(screen.getByText("Import")).toBeTruthy();
+    expect(screen.getByTestId("file-import-zone").getAttribute("data-show-details-link")).toBe(
+      "false",
+    );
+    expect(screen.getByText(".zip account export from Garmin")).toBeTruthy();
+    expect(screen.queryByText("Sync Controls")).toBeNull();
   });
 
   it("shows sync controls for non-import-only providers", async () => {

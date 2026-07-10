@@ -87,6 +87,14 @@ vi.mock("../providers/zos-app/provider.ts", () => ({
   importZosAppBin: (...args: unknown[]) => mockImportZosAppBin(...args),
 }));
 
+const mockImportGarminDumpFile = vi.fn().mockResolvedValue({
+  recordsSynced: 5,
+  errors: [],
+});
+vi.mock("../providers/garmin-dump.ts", () => ({
+  importGarminDumpFile: (...args: unknown[]) => mockImportGarminDumpFile(...args),
+}));
+
 // Import after mocks
 const { processImportJob } = await import("./process-import-job.ts");
 
@@ -144,6 +152,7 @@ describe("processImportJob", () => {
     mockImportCronometerCsv.mockResolvedValue({ recordsSynced: 7, errors: [] });
     mockImportKayaExportFile.mockResolvedValue({ recordsSynced: 4, errors: [] });
     mockImportZosAppBin.mockResolvedValue({ recordsSynced: 3, errors: [] });
+    mockImportGarminDumpFile.mockResolvedValue({ recordsSynced: 5, errors: [] });
     mockEnqueueDebouncedPostSyncMaintenance.mockResolvedValue(undefined);
     mockEnqueueDebouncedUserRefit.mockResolvedValue(undefined);
   });
@@ -559,6 +568,36 @@ describe("processImportJob", () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "zos-app" });
 
       await expect(runImportJob(job, mockDb)).resolves.toBeUndefined();
+    });
+  });
+
+  describe("garmin-dump import", () => {
+    it("imports Garmin dump zip files and logs completion", async () => {
+      const job = createMockJob({ filePath: tempFilePath, importType: "garmin-dump" });
+
+      await runImportJob(job, mockDb);
+
+      expect(mockImportGarminDumpFile).toHaveBeenCalledWith(mockDb, tempFilePath, "user-1");
+      expect(mockLogSync).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({
+          providerId: "garmin-dump",
+          dataType: "import",
+          status: "success",
+          recordCount: 5,
+          userId: "user-1",
+        }),
+      );
+    });
+
+    it("does not treat unknown import types as Garmin dump imports", async () => {
+      const job = createMockJob({ filePath: tempFilePath });
+      // @ts-expect-error Queued payloads are runtime data; this verifies malformed payloads do not hit Garmin.
+      job.data.importType = "unsupported-import";
+
+      await runImportJob(job, mockDb);
+
+      expect(mockImportGarminDumpFile).not.toHaveBeenCalled();
     });
   });
 

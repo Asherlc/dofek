@@ -12438,3 +12438,45 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Remaining risk / follow-up:** Low. Future metric additions should include
   metadata assertions in `src/sync-metrics.test.ts` when the metric definition
   itself matters operationally.
+
+## 2026-07-10 — WHOOP BLE Periodic Upload Runs in Background
+
+- **Symptoms:** Production Sentry issue
+  [DOFEK-MOBILE-Z](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-Z)
+  reported `TRPCClientError: fetch failed: cancelled` from
+  `whoop-ble-imu-upload`. The latest inspected event occurred at
+  `2026-07-10T01:18:12.155Z`.
+- **User impact:** Buffered WHOOP BLE inertial samples were retained for retry,
+  but the affected user saw repeated mobile error reporting while the app was
+  backgrounded.
+- **Evidence:** Sentry showed `app.in_foreground=false`, source
+  `whoop-ble-imu-upload`, `bufferedSampleCount=500`, and production release
+  `com.dofek.app@1.0.0+1783546283`. The periodic drain callback in
+  `packages/mobile/lib/background-whoop-ble-sync.ts` only checked `syncing` and
+  `connected`, not `AppState.currentState`.
+- **Root cause:** The foreground-owned WHOOP BLE periodic drain timer could
+  attempt tRPC uploads after iOS moved the app to the background, where the
+  fetch was cancelled by the platform. The native background refresh path is a
+  separate entry point that should still sync when iOS grants background
+  execution.
+- **Fix / mitigation:** Start the foreground-owned periodic drain timer only
+  while `AppState.currentState === "active"` and clear it when the app
+  backgrounds. Foreground-owned drains also recheck active state immediately
+  before each network upload so an app-state change after reading buffered
+  samples still leaves those samples retained for retry. Keep the explicit
+  `syncWhoopBle()` background refresh entry point able to upload while the app
+  state is backgrounded.
+- **Validation:** Added mobile unit coverage that backgrounds
+  `AppState.currentState` and advances the periodic timer, then confirmed the
+  foreground-owned timer no longer drains while backgrounded and is cleared on
+  a background AppState transition. Added coverage that a foreground-owned
+  drain skips upload if the app backgrounds after samples are read, plus
+  explicit coverage that `syncWhoopBle()` still uploads when invoked by
+  background refresh while the app is backgrounded. `pnpm vitest run
+  packages/mobile/lib/background-whoop-ble-sync.test.ts`,
+  `pnpm --filter dofek-mobile lint`, and `pnpm --filter dofek-mobile
+  typecheck` passed locally.
+- **Remaining risk / follow-up:** Monitor Sentry after the next mobile release
+  or OTA update for any remaining `whoop-ble-imu-upload` cancellations. If they
+  continue, inspect other upload entry points such as foreground sync and
+  background refresh separately.

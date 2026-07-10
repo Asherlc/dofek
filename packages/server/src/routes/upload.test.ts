@@ -16,9 +16,14 @@ vi.mock("../logger.ts", () => ({
 const mockRm = vi
   .fn<(path: string, options?: object) => Promise<void>>()
   .mockResolvedValue(undefined);
+const mockUnlink = vi.fn<(path: string) => Promise<void>>().mockResolvedValue(undefined);
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
-  return { ...actual, rm: (...args: [string, object?]) => mockRm(...args) };
+  return {
+    ...actual,
+    rm: (...args: [string, object?]) => mockRm(...args),
+    unlink: (path: string) => mockUnlink(path),
+  };
 });
 
 vi.mock("../auth/cookies.ts", () => ({
@@ -29,6 +34,7 @@ vi.mock("../auth/session.ts", () => ({
   validateSession: vi.fn(() => Promise.resolve(null)),
 }));
 
+import { request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -111,6 +117,82 @@ async function request(
   });
 }
 
+async function rawRequest(
+  app: express.Express,
+  method: "GET" | "POST",
+  path: string,
+  opts?: { headers?: Record<string, string>; body?: Buffer },
+): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let server: ReturnType<express.Express["listen"]> | undefined;
+    const finish = (result: { status: number; body: string } | Error) => {
+      if (settled) return;
+      settled = true;
+      if (timeout) clearTimeout(timeout);
+      const complete = () => {
+        if (result instanceof Error) {
+          reject(result);
+          return;
+        }
+        resolve(result);
+      };
+      if (!server?.listening) {
+        complete();
+        return;
+      }
+      server.close(complete);
+    };
+    try {
+      server = app.listen(0, () => {
+        timeout = setTimeout(() => {
+          finish(new Error("raw request timed out"));
+        }, 5_000);
+        const listeningServer = server;
+        if (!listeningServer) {
+          finish(new Error("raw request server was not initialized"));
+          return;
+        }
+        let port: number;
+        try {
+          port = getPort(listeningServer);
+        } catch (error) {
+          finish(error instanceof Error ? error : new Error(String(error)));
+          return;
+        }
+        const req = httpRequest(
+          {
+            port,
+            path,
+            method,
+            headers: opts?.headers,
+          },
+          (res) => {
+            const chunks: Buffer[] = [];
+            res.on("data", (chunk: Buffer) => chunks.push(chunk));
+            res.on("end", () => {
+              finish({
+                status: res.statusCode ?? 0,
+                body: Buffer.concat(chunks).toString("utf8"),
+              });
+            });
+          },
+        );
+        req.on("error", (error) => {
+          finish(error);
+        });
+        req.end(opts?.body);
+      });
+      server.on("error", (error) => {
+        finish(error);
+      });
+    } catch (error) {
+      finish(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
+}
+
 describe("createUploadRouter", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -179,6 +261,17 @@ describe("createUploadRouter", () => {
         body: Buffer.from("data"),
       });
       expect(res.status).toBe(401);
+    });
+
+    it("returns 401 for unauthenticated POST /garmin-dump", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/garmin-dump", {
+        headers: { "Content-Type": "application/zip" },
+        body: Buffer.from("data"),
+      });
+      expect(res.status).toBe(401);
+      expect(streamToFile).not.toHaveBeenCalled();
     });
 
     it("returns 401 for unauthenticated GET /apple-health/status", async () => {
@@ -720,6 +813,7 @@ describe("createUploadRouter", () => {
 
     it("returns 500 and cleans up when Kaya upload fails", async () => {
       vi.mocked(streamToFile).mockRejectedValueOnce(new Error("disk full"));
+      mockUnlink.mockRejectedValueOnce(new Error("ENOENT"));
       const { app } = createTestApp();
       const res = await request(app, "post", "/api/upload/kaya-export", {
         headers: { "Content-Type": "text/csv", "x-file-ext": ".csv" },
@@ -1159,6 +1253,172 @@ describe("createUploadRouter", () => {
       // since should be approximately 7 days before the request
       expect(sinceMs).toBeGreaterThan(before - sevenDaysMs - 5000);
       expect(sinceMs).toBeLessThan(before - sevenDaysMs + 5000);
+    });
+  });
+
+  describe("POST /api/upload/garmin-dump", () => {
+    it("accepts zip upload with a bounded stream size", async () => {
+      const { app, queue } = createTestApp();
+      const res = await request(app, "post", "/api/upload/garmin-dump", {
+        headers: { "Content-Type": "application/zip" },
+        body: Buffer.from("zip-data"),
+      });
+
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body)).toEqual({ status: "processing", jobId: "job-123" });
+      expect(streamToFile).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining("garmin-dump-"),
+        2 * 1024 * 1024 * 1024,
+      );
+      expect(vi.mocked(streamToFile).mock.calls[0][1]).toMatch(
+        /garmin-dump-job-\d+-[a-z0-9]{4}\.zip$/,
+      );
+      expect(queue.add).toHaveBeenCalledWith(
+        "garmin-dump",
+        expect.objectContaining({ importType: "garmin-dump", userId: "user-1" }),
+        undefined,
+      );
+    });
+
+    it("accepts zip content type with parameters and mixed case", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/garmin-dump", {
+        headers: { "Content-Type": "APPLICATION/ZIP ; charset=binary" },
+        body: Buffer.from("zip-data"),
+      });
+
+      expect(res.status).toBe(200);
+      expect(streamToFile).toHaveBeenCalled();
+    });
+
+    it("accepts uploads without a content type", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/garmin-dump", {
+        body: Buffer.from("zip-data"),
+      });
+
+      expect(res.status).toBe(200);
+      expect(streamToFile).toHaveBeenCalled();
+    });
+
+    it("accepts uploads without content length", async () => {
+      const { app } = createTestApp();
+      const res = await rawRequest(app, "POST", "/api/upload/garmin-dump", {
+        headers: { "Content-Type": "application/zip" },
+        body: Buffer.from("zip-data"),
+      });
+
+      expect(res.status).toBe(200);
+      expect(streamToFile).toHaveBeenCalled();
+    });
+
+    it("rejects unsupported content type before streaming", async () => {
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/garmin-dump", {
+        headers: { "Content-Type": "text/plain" },
+        body: Buffer.from("not-zip"),
+      });
+
+      expect(res.status).toBe(415);
+      expect(JSON.parse(res.body)).toEqual({
+        error: "Unsupported Content-Type. Expected application/zip or application/octet-stream",
+      });
+      expect(streamToFile).not.toHaveBeenCalled();
+    });
+
+    it("rejects content length above the Garmin dump limit before streaming", async () => {
+      const { app } = createTestApp();
+      const res = await rawRequest(app, "POST", "/api/upload/garmin-dump", {
+        headers: {
+          "Content-Type": "application/zip",
+          "Content-Length": String(2 * 1024 * 1024 * 1024 + 1),
+        },
+      });
+
+      expect(res.status).toBe(413);
+      expect(JSON.parse(res.body)).toEqual({
+        error: "Garmin dump upload exceeds maximum size of 2147483648 bytes",
+      });
+      expect(streamToFile).not.toHaveBeenCalled();
+    });
+
+    it("allows content length exactly at the Garmin dump limit", async () => {
+      const { app } = createTestApp();
+      const res = await rawRequest(app, "POST", "/api/upload/garmin-dump", {
+        headers: {
+          "Content-Type": "application/zip",
+          "Content-Length": String(2 * 1024 * 1024 * 1024),
+        },
+      });
+
+      expect(res.status).toBe(200);
+      expect(streamToFile).toHaveBeenCalled();
+    });
+
+    it("cleans up the temp file and returns upload failure when streaming fails", async () => {
+      vi.mocked(streamToFile).mockRejectedValueOnce(new Error("disk full"));
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/garmin-dump", {
+        headers: { "Content-Type": "application/zip" },
+        body: Buffer.from("zip-data"),
+      });
+
+      expect(res.status).toBe(500);
+      expect(JSON.parse(res.body)).toEqual({ error: "Upload failed" });
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining("[garmin-dump] Upload failed: Error: disk full"),
+      );
+      expect(mockUnlink).toHaveBeenCalledWith(vi.mocked(streamToFile).mock.calls[0][1]);
+    });
+  });
+
+  describe("GET /api/upload/garmin-dump/status/:jobId", () => {
+    it("returns 404 for unknown job", async () => {
+      const { app, queue } = createTestApp();
+      queue.getJob.mockResolvedValueOnce(null);
+
+      const res = await request(app, "get", "/api/upload/garmin-dump/status/unknown");
+
+      expect(res.status).toBe(404);
+      expect(JSON.parse(res.body)).toEqual({ error: "Unknown job" });
+    });
+
+    it("returns job status for the authenticated user", async () => {
+      const { app, queue } = createTestApp();
+      queue.getJob.mockResolvedValueOnce({
+        data: { userId: "user-1" },
+        getState: vi.fn(() => Promise.resolve("completed")),
+        progress: 100,
+        failedReason: null,
+        returnvalue: { records: 3 },
+      });
+
+      const res = await request(app, "get", "/api/upload/garmin-dump/status/job-garmin");
+
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body)).toEqual({
+        status: "done",
+        progress: 100,
+        result: { records: 3 },
+        userId: "user-1",
+      });
+    });
+
+    it("returns 403 when the job belongs to another user", async () => {
+      const { app, queue } = createTestApp();
+      queue.getJob.mockResolvedValueOnce({
+        data: { userId: "user-2" },
+        getState: vi.fn(() => Promise.resolve("active")),
+        progress: 50,
+        failedReason: null,
+        returnvalue: null,
+      });
+
+      const res = await request(app, "get", "/api/upload/garmin-dump/status/job-other");
+
+      expect(res.status).toBe(403);
+      expect(JSON.parse(res.body)).toEqual({ error: "Forbidden" });
     });
   });
 });

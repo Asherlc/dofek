@@ -50,6 +50,7 @@ const mockRemove = vi.fn();
 
 vi.mock("react-native", () => ({
   AppState: {
+    currentState: "active",
     addEventListener: vi
       .fn()
       .mockImplementation((_event: string, callback: (state: string) => void) => {
@@ -81,6 +82,7 @@ describe("background-whoop-ble-sync", () => {
     whoopDeps = makeMockDeps();
     trpcClient = makeMockTrpcClient();
     appStateCallback = null;
+    AppState.currentState = "active";
     mockRemove.mockClear();
     vi.mocked(AppState.addEventListener).mockClear();
     teardownBackgroundWhoopBleSync();
@@ -318,6 +320,72 @@ describe("background-whoop-ble-sync", () => {
         expect.objectContaining({ timestamp: "2026-03-27T10:00:00.000Z" }),
       ]),
     });
+
+    vi.useRealTimers();
+  });
+
+  it("skips periodic drain while the app is backgrounded", async () => {
+    vi.useFakeTimers();
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    vi.mocked(whoopDeps.peekBufferedSamples).mockClear();
+    AppState.currentState = "background";
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(whoopDeps.peekBufferedSamples).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
+  });
+
+  it("stops the periodic drain timer when the app backgrounds", async () => {
+    vi.useFakeTimers();
+    const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval");
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    clearIntervalSpy.mockClear();
+    vi.mocked(whoopDeps.peekBufferedSamples).mockClear();
+    AppState.currentState = "background";
+    appStateCallback?.("background");
+
+    expect(clearIntervalSpy).toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(whoopDeps.peekBufferedSamples).not.toHaveBeenCalled();
+
+    clearIntervalSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it("stops periodic drain before upload when the app backgrounds after reading samples", async () => {
+    vi.useFakeTimers();
+    const samples = [
+      {
+        timestamp: "2026-03-27T10:00:00.000Z",
+        x: 1,
+        y: 2,
+        z: 3,
+        gyroscopeX: 10,
+        gyroscopeY: -20,
+        gyroscopeZ: 30,
+      },
+    ];
+
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    vi.mocked(whoopDeps.peekBufferedSamples).mockClear();
+    vi.mocked(whoopDeps.peekBufferedSamples).mockImplementationOnce(async () => {
+      AppState.currentState = "background";
+      return samples;
+    });
+    vi.mocked(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).mockClear();
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(whoopDeps.peekBufferedSamples).toHaveBeenCalledWith(500);
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).not.toHaveBeenCalled();
+    expect(whoopDeps.confirmSamplesDrain).not.toHaveBeenCalled();
 
     vi.useRealTimers();
   });
@@ -633,6 +701,7 @@ describe("syncWhoopBle", () => {
 
   beforeEach(() => {
     teardownBackgroundWhoopBleSync();
+    AppState.currentState = "active";
     whoopDeps = makeMockDeps();
     trpcClient = makeMockTrpcClient();
   });
@@ -659,6 +728,32 @@ describe("syncWhoopBle", () => {
 
     expect(whoopDeps.findWhoop).toHaveBeenCalled();
     expect(whoopDeps.connect).toHaveBeenCalledWith("whoop-123");
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
+      deviceId: "WHOOP Strap",
+      deviceType: "whoop",
+      samples: expect.arrayContaining([
+        expect.objectContaining({ timestamp: "2026-03-25T08:00:00.000Z" }),
+      ]),
+    });
+  });
+
+  it("uploads buffered samples when invoked by background refresh while app is backgrounded", async () => {
+    AppState.currentState = "background";
+    const samples = [
+      {
+        timestamp: "2026-03-25T08:00:00.000Z",
+        x: 100,
+        y: -200,
+        z: 300,
+        gyroscopeX: 10,
+        gyroscopeY: -20,
+        gyroscopeZ: 30,
+      },
+    ];
+    vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValueOnce(samples);
+
+    await syncWhoopBle(trpcClient, whoopDeps);
+
     expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
       deviceId: "WHOOP Strap",
       deviceType: "whoop",
@@ -703,6 +798,7 @@ describe("realtime data (beat interval + quaternion) sync", () => {
 
   beforeEach(() => {
     teardownBackgroundWhoopBleSync();
+    AppState.currentState = "active";
     whoopDeps = makeMockDeps();
     trpcClient = makeMockTrpcClient();
     realtimeClient = makeMockRealtimeClient();

@@ -60,6 +60,10 @@ async function doRegisterProviders() {
     ["polar", () => import("dofek/providers/polar").then((m) => new m.PolarProvider())],
     ["fitbit", () => import("dofek/providers/fitbit").then((m) => new m.FitbitProvider())],
     ["garmin", () => import("dofek/providers/garmin").then((m) => new m.GarminProvider())],
+    [
+      "garmin-dump",
+      () => import("dofek/providers/garmin-dump").then((m) => new m.GarminDumpProvider()),
+    ],
     ["strava", () => import("dofek/providers/strava").then((m) => new m.StravaProvider())],
     [
       "cronometer-csv",
@@ -147,6 +151,7 @@ const importTypeToProviderId: Record<ImportJobData["importType"], string> = {
   "cronometer-csv": "cronometer-csv",
   "kaya-export": "kaya-export",
   "zos-app": "zos-app",
+  "garmin-dump": "garmin-dump",
 };
 
 function isKnownImportType(importType: string): importType is ImportJobData["importType"] {
