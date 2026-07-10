@@ -375,6 +375,12 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("source('postgres_fitness', 'activity') }} FINAL");
     expect(sql).toContain("provider_absent_at IS null");
     expect(sql).toContain("deleted_at IS null");
+    expect(normalizedSql).toContain(
+      "LEFT JOIN existing_summary ON existing_summary.activity_id = sensor_sample.activity_id",
+    );
+    expect(normalizedSql).toContain(
+      "sensor_sample.refreshed_at > existing_summary.refreshed_at",
+    );
     expect(sql).toContain("restored_dirty_keys AS");
     expect(sql).toContain("prior_summary.is_deleted = 0");
     expect(sql).not.toContain("source('analytics', 'v_activity')");

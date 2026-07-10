@@ -12367,3 +12367,35 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   activities instead of dirty activity keys, so it needs a separate model fix
   before the scheduled analytics worker can complete the full activity model
   set cleanly after large backfills.
+- **2026-07-10 power coverage follow-up:** A read-only production check showed
+  the provider-source power cutoff is not identical across providers.
+  `ingest.metric_stream FINAL` had Wahoo power only for 9 activities / 41,801
+  rows in 2020, Strava power for one 1989 activity and 7 2026 activities, and
+  RideWithGPS power for 14 activities / 64,265 rows in 2019, 64 activities /
+  310,542 rows in 2020, and 4 activities / 13,423 rows in 2021. Strava's
+  Postgres inventory itself had no stored activities from 2017-2025, so a
+  Strava 2020 cutoff in the UI is likely an attribution/inventory artifact
+  rather than Strava streams literally ending at 2020. Wahoo's provider stores
+  streams only from downloaded FIT files and does not persist activity-summary
+  power fields such as `power_avg` into `fitness.activity.raw`.
+- **Read-model discrepancy:** Joining raw provider power rows through
+  `analytics.deduped_activity_members FINAL` to `analytics.activity_summary`
+  showed RideWithGPS 2019 source power rows are mapped to canonical activities
+  but all have `activity_summary.power_sample_count = 0`. That means the UI can
+  miss historical power even when raw streams and deduped member links exist.
+- **Remaining risk / follow-up:** Fix the activity summary/read-model refresh
+  path for historical dirty keys, then separately decide whether Wahoo summary
+  fields such as `power_avg` and `power_bike_np_last` should be persisted as
+  raw activity-level metrics distinct from stream-derived samples.
+- **Read-model fix:** `activity_sensor_summary_rows` used a table-wide
+  `max(refreshed_at)` watermark to discover changed `activity_sensor_sample`
+  rows. Historical backfill samples can have a `refreshed_at` earlier than an
+  unrelated newer summary row, so those activities never became dirty. Changed
+  dirty-key detection to compare each sample activity against that activity's
+  own latest summary row, including activities with no summary yet. Ran a
+  focused production dbt repair from the worker container with the patched model:
+  `dbt build --project-dir analytics --profiles-dir analytics --threads 1
+  --select activity_sensor_summary_rows activity_summary_rows`, which completed
+  with `PASS=2 WARN=0 ERROR=0` at 2026-07-10 16:38:11 UTC. Validation showed
+  RideWithGPS 2019 source power now maps to 14/14 canonical summaries with
+  power, up from 0/14 before the fix.

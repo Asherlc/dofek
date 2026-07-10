@@ -39,13 +39,15 @@ existing_summary AS (
     {% if is_incremental() %}
         SELECT
             activity_id,
-            user_id
+            user_id,
+            refreshed_at
         FROM {{ this }} FINAL
         WHERE is_deleted = 0
     {% else %}
         SELECT
             CAST(null, 'Nullable(UUID)') AS activity_id,
-            CAST(null, 'Nullable(UUID)') AS user_id
+            CAST(null, 'Nullable(UUID)') AS user_id,
+            CAST(null, 'Nullable(DateTime64(9, ''UTC''))') AS refreshed_at
         WHERE 1 = 0
     {% endif %}
 ),
@@ -65,17 +67,26 @@ initial_dirty_keys AS (
 ),
 
 sample_dirty_keys AS (
-    SELECT DISTINCT
-        activity_id,
-        user_id
-    FROM {{ ref('activity_sensor_sample') }}
-    WHERE
-        {% if is_incremental() %}
+    {% if is_incremental() %}
+        SELECT DISTINCT
+            sensor_sample.activity_id AS activity_id,
+            sensor_sample.user_id AS user_id
+        FROM {{ ref('activity_sensor_sample') }} AS sensor_sample
+        LEFT JOIN existing_summary
+            ON existing_summary.activity_id = sensor_sample.activity_id
+            AND existing_summary.user_id = sensor_sample.user_id
+        WHERE
             NOT (SELECT is_empty FROM target_state)
-            AND refreshed_at > (SELECT last_refreshed_at FROM target_state)
-        {% else %}
-            1 = 0
-        {% endif %}
+            AND (
+                existing_summary.activity_id IS null
+                OR sensor_sample.refreshed_at > existing_summary.refreshed_at
+            )
+    {% else %}
+        SELECT
+            CAST(null, 'Nullable(UUID)') AS activity_id,
+            CAST(null, 'Nullable(UUID)') AS user_id
+        WHERE 1 = 0
+    {% endif %}
 ),
 
 stale_dirty_keys AS (
