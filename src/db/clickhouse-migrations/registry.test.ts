@@ -13,6 +13,15 @@ describe("clickHouseMigrations", () => {
 
     expect(migrations.length).toBeGreaterThan(40);
     expect(migrations.at(0)?.id).toBe("0001_clickhouse_analytics_schema_cleanup");
+    const migrationIds = migrations.map((migration) => migration.id);
+    expect(new Set(migrationIds).size).toBe(migrationIds.length);
+    const migrationNumbers = migrationIds.map((migrationId) => Number(migrationId.slice(0, 4)));
+    expect(migrationNumbers).toEqual(
+      [...migrationNumbers].sort(
+        (firstMigrationNumber, secondMigrationNumber) =>
+          firstMigrationNumber - secondMigrationNumber,
+      ),
+    );
     expect(migrations.at(-1)).toMatchObject({
       id: "0044_materialize_body_measurement_view",
       statements: expect.arrayContaining([
