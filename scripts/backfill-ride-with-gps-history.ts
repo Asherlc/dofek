@@ -92,6 +92,10 @@ export function parseRideWithGpsHistoryBackfillArgs(
     throw new Error(`Unknown argument: ${arg}`);
   }
 
+  if (options.since > options.until) {
+    throw new Error("--start date must be before or equal to --end date");
+  }
+
   return options;
 }
 

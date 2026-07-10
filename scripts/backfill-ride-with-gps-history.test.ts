@@ -51,6 +51,10 @@ describe("parseRideWithGpsHistoryBackfillArgs", () => {
       message: "--start must be a valid calendar date",
     },
     {
+      args: ["--start", "2026-07-11", "--end", "2026-07-10"],
+      message: "--start date must be before or equal to --end date",
+    },
+    {
       args: ["--unknown"],
       message: "Unknown argument: --unknown",
     },
