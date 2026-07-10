@@ -27,6 +27,7 @@ import { logger } from "../logger.ts";
 const JOB_FILES_DIR = process.env.JOB_FILES_DIR || join(tmpdir(), "dofek-job-files");
 mkdirSync(JOB_FILES_DIR, { recursive: true });
 const IN_PROGRESS_UPLOAD_STATUS_TTL_MS = UPLOAD_SESSION_TTL_MS + UPLOAD_STATUS_TTL_MS;
+const GARMIN_DUMP_MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
 
 const uploadStateStore = getUploadStateStore();
 
@@ -76,6 +77,13 @@ function inProgressStatus(
     userId,
     expiresAt: Date.now() + UPLOAD_SESSION_TTL_MS,
   };
+}
+
+function exceedsContentLengthLimit(req: Request, maxBytes: number): boolean {
+  const contentLength = req.get("content-length");
+  if (!contentLength) return false;
+  const parsedContentLength = Number.parseInt(contentLength, 10);
+  return Number.isFinite(parsedContentLength) && parsedContentLength > maxBytes;
 }
 
 async function expireStaleUpload(uploadId: string, userId: string): Promise<UploadStatus> {
@@ -656,12 +664,18 @@ export function createUploadRouter(deps: UploadRouteDeps): Router {
       });
       return;
     }
+    if (exceedsContentLengthLimit(req, GARMIN_DUMP_MAX_UPLOAD_BYTES)) {
+      res.status(413).json({
+        error: `Garmin dump upload exceeds maximum size of ${GARMIN_DUMP_MAX_UPLOAD_BYTES} bytes`,
+      });
+      return;
+    }
 
     const tmpId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const tmpFile = join(JOB_FILES_DIR, `garmin-dump-${tmpId}.zip`);
 
     try {
-      await streamToFile(req, tmpFile);
+      await streamToFile(req, tmpFile, GARMIN_DUMP_MAX_UPLOAD_BYTES);
       const jobId = await enqueueImport(importQueue, tmpFile, new Date(0), "garmin-dump", userId);
       res.json({ status: "processing", jobId });
     } catch (err: unknown) {

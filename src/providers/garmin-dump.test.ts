@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -68,7 +68,7 @@ async function createZip(entries: Record<string, Buffer | string>): Promise<Buff
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   });
   const finished = new Promise<Buffer>((resolve, reject) => {
-    stream.on("end", () => resolve(Buffer.concat(chunks)));
+    stream.on("close", () => resolve(Buffer.concat(chunks)));
     stream.on("error", reject);
     archive.on("error", reject);
   });
@@ -165,6 +165,17 @@ describe("Garmin dump provider", () => {
     expect(parsed.fitFiles.map((entry) => entry.path)).toEqual([
       "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip/asher@example.com_12345.fit",
     ]);
+  });
+
+  it("rejects oversized Garmin dump files before reading them", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "garmin-dump-test-"));
+    const filePath = join(directory, "too-large.zip");
+    await writeFile(filePath, "");
+    await truncate(filePath, 2 * 1024 * 1024 * 1024 + 1);
+
+    await expect(parseGarminDumpFile(filePath)).rejects.toThrow(
+      "Garmin dump upload exceeds maximum size",
+    );
   });
 
   it("imports summaries and replaces metric stream samples from matching FIT files", async () => {

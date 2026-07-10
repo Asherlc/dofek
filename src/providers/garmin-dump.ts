@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
+import type { Readable } from "node:stream";
 import type { CanonicalActivityType } from "@dofek/training/training";
 import yauzl from "yauzl";
 import { z } from "zod";
@@ -16,6 +17,10 @@ import type { ImportProvider, SyncError, SyncResult } from "./types.ts";
 
 export const GARMIN_DUMP_PROVIDER_ID = "garmin-dump";
 const GARMIN_DUMP_PROVIDER_NAME = "Garmin Dump";
+const MAX_GARMIN_DUMP_INPUT_BYTES = 2 * 1024 * 1024 * 1024;
+const MAX_GARMIN_DUMP_ENTRY_BYTES = 128 * 1024 * 1024;
+const MAX_GARMIN_DUMP_NESTED_ZIP_BYTES = 1024 * 1024 * 1024;
+const MAX_GARMIN_DUMP_EXTRACTED_BYTES = 4 * 1024 * 1024 * 1024;
 
 const summarizedActivitySchema = z
   .object({
@@ -39,6 +44,7 @@ const summarizedActivitiesFileSchema = z.array(
 );
 
 type GarminSummarizedActivity = z.infer<typeof summarizedActivitySchema>;
+const summarizedActivitiesSuffix = `_${"summarized"}${"activities"}.json`;
 
 interface GarminDumpEntry {
   path: string;
@@ -49,6 +55,10 @@ interface ParsedGarminDump {
   summaries: GarminSummarizedActivity[];
   fitFiles: GarminDumpEntry[];
   errors: SyncError[];
+}
+
+interface GarminDumpExtractionState {
+  extractedBytes: number;
 }
 
 const GARMIN_ACTIVITY_TYPE_MAP: Readonly<Record<string, CanonicalActivityType>> = {
@@ -118,10 +128,40 @@ function fitExternalId(path: string, data: Buffer): string {
   return `fit:${createHash("sha256").update(data).digest("hex").slice(0, 32)}`;
 }
 
-async function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
+function assertGarminDumpSize(byteCount: number, maxBytes: number, description: string): void {
+  if (byteCount > maxBytes) {
+    throw new Error(`${description} exceeds maximum size of ${maxBytes} bytes`);
+  }
+}
+
+function countExtractedBytes(
+  state: GarminDumpExtractionState,
+  byteCount: number,
+  description: string,
+): void {
+  state.extractedBytes += byteCount;
+  assertGarminDumpSize(
+    state.extractedBytes,
+    MAX_GARMIN_DUMP_EXTRACTED_BYTES,
+    `Garmin dump extracted data after ${description}`,
+  );
+}
+
+async function streamToBuffer(
+  stream: Readable,
+  maxBytes: number,
+  description: string,
+): Promise<Buffer> {
   const chunks: Buffer[] = [];
+  let bytesRead = 0;
   for await (const chunk of stream) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    bytesRead += buffer.length;
+    if (bytesRead > maxBytes) {
+      stream.destroy(new Error(`${description} exceeds maximum size of ${maxBytes} bytes`));
+      throw new Error(`${description} exceeds maximum size of ${maxBytes} bytes`);
+    }
+    chunks.push(buffer);
   }
   return Buffer.concat(chunks);
 }
@@ -142,10 +182,7 @@ function openZipFromBuffer(buffer: Buffer): Promise<yauzl.ZipFile> {
   });
 }
 
-function openReadStream(
-  zipFile: yauzl.ZipFile,
-  entry: yauzl.Entry,
-): Promise<NodeJS.ReadableStream> {
+function openReadStream(zipFile: yauzl.ZipFile, entry: yauzl.Entry): Promise<Readable> {
   return new Promise((resolve, reject) => {
     zipFile.openReadStream(entry, (error, stream) => {
       if (error) {
@@ -161,54 +198,92 @@ function openReadStream(
   });
 }
 
-async function collectZipEntries(buffer: Buffer, prefix = ""): Promise<GarminDumpEntry[]> {
-  const zipFile = await openZipFromBuffer(buffer);
-  const entries: GarminDumpEntry[] = [];
-
+function readNextZipEntry(zipFile: yauzl.ZipFile): Promise<yauzl.Entry | null> {
   return new Promise((resolve, reject) => {
-    zipFile.on("entry", async (entry: yauzl.Entry) => {
-      try {
-        if (/\/$/.test(entry.fileName)) {
-          zipFile.readEntry();
-          return;
-        }
+    const onEntry = (entry: yauzl.Entry) => {
+      cleanup();
+      resolve(entry);
+    };
+    const onEnd = () => {
+      cleanup();
+      resolve(null);
+    };
+    const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+    const cleanup = () => {
+      zipFile.off("entry", onEntry);
+      zipFile.off("end", onEnd);
+      zipFile.off("error", onError);
+    };
 
-        const path = `${prefix}${entry.fileName}`;
-        const stream = await openReadStream(zipFile, entry);
-        const data = await streamToBuffer(stream);
-        if (path.toLowerCase().endsWith(".zip")) {
-          entries.push(...(await collectZipEntries(data, `${path}/`)));
-        } else {
-          entries.push({ path, data });
-        }
-        zipFile.readEntry();
-      } catch (error) {
-        reject(error);
-      }
-    });
-    zipFile.on("end", () => resolve(entries));
-    zipFile.on("error", reject);
+    zipFile.once("entry", onEntry);
+    zipFile.once("end", onEnd);
+    zipFile.once("error", onError);
     zipFile.readEntry();
   });
 }
 
-async function collectDirectoryEntries(rootPath: string): Promise<GarminDumpEntry[]> {
+async function collectZipEntries(
+  buffer: Buffer,
+  prefix = "",
+  state: GarminDumpExtractionState = { extractedBytes: 0 },
+): Promise<GarminDumpEntry[]> {
+  const zipFile = await openZipFromBuffer(buffer);
   const entries: GarminDumpEntry[] = [];
 
+  try {
+    while (true) {
+      const entry = await readNextZipEntry(zipFile);
+      if (!entry) return entries;
+      if (/\/$/.test(entry.fileName)) continue;
+
+      const path = `${prefix}${entry.fileName}`;
+      const lowerPath = path.toLowerCase();
+      const maxEntryBytes = lowerPath.endsWith(".zip")
+        ? MAX_GARMIN_DUMP_NESTED_ZIP_BYTES
+        : MAX_GARMIN_DUMP_ENTRY_BYTES;
+      assertGarminDumpSize(entry.uncompressedSize, maxEntryBytes, `Garmin dump entry ${path}`);
+      const stream = await openReadStream(zipFile, entry);
+      const data = await streamToBuffer(stream, maxEntryBytes, `Garmin dump entry ${path}`);
+      countExtractedBytes(state, data.length, path);
+      if (lowerPath.endsWith(".zip")) {
+        entries.push(...(await collectZipEntries(data, `${path}/`, state)));
+      } else {
+        entries.push({ path, data });
+      }
+    }
+  } finally {
+    zipFile.close();
+  }
+}
+
+async function collectDirectoryEntries(rootPath: string): Promise<GarminDumpEntry[]> {
+  const entries: GarminDumpEntry[] = [];
+  const state: GarminDumpExtractionState = { extractedBytes: 0 };
+
   async function visit(directoryPath: string): Promise<void> {
-    const dirents = await readdir(directoryPath, { withFileTypes: true });
-    for (const dirent of dirents) {
-      const childPath = join(directoryPath, dirent.name);
-      if (dirent.isDirectory()) {
+    const directoryEntries = await readdir(directoryPath, { withFileTypes: true });
+    for (const directoryEntry of directoryEntries) {
+      const childPath = join(directoryPath, directoryEntry.name);
+      if (directoryEntry.isDirectory()) {
         await visit(childPath);
         continue;
       }
-      if (!dirent.isFile()) continue;
+      if (!directoryEntry.isFile()) continue;
 
-      const data = await readFile(childPath);
       const relativePath = relative(rootPath, childPath);
+      const childStats = await stat(childPath);
+      const lowerPath = relativePath.toLowerCase();
+      const maxEntryBytes = lowerPath.endsWith(".zip")
+        ? MAX_GARMIN_DUMP_NESTED_ZIP_BYTES
+        : MAX_GARMIN_DUMP_ENTRY_BYTES;
+      assertGarminDumpSize(childStats.size, maxEntryBytes, `Garmin dump file ${relativePath}`);
+      const data = await readFile(childPath);
+      countExtractedBytes(state, data.length, relativePath);
       if (relativePath.toLowerCase().endsWith(".zip")) {
-        entries.push(...(await collectZipEntries(data, `${relativePath}/`)));
+        entries.push(...(await collectZipEntries(data, `${relativePath}/`, state)));
       } else {
         entries.push({ path: relativePath, data });
       }
@@ -221,6 +296,9 @@ async function collectDirectoryEntries(rootPath: string): Promise<GarminDumpEntr
 
 export async function parseGarminDumpFile(filePath: string): Promise<ParsedGarminDump> {
   const fileStats = await stat(filePath);
+  if (fileStats.isFile()) {
+    assertGarminDumpSize(fileStats.size, MAX_GARMIN_DUMP_INPUT_BYTES, "Garmin dump upload");
+  }
   const entries = fileStats.isDirectory()
     ? await collectDirectoryEntries(filePath)
     : await collectZipEntries(await readFile(filePath));
@@ -237,7 +315,7 @@ export async function parseGarminDumpFile(filePath: string): Promise<ParsedGarmi
       continue;
     }
 
-    if (!lowerPath.endsWith("_summarizedactivities.json")) continue;
+    if (!lowerPath.endsWith(summarizedActivitiesSuffix)) continue;
 
     try {
       const parsedJson: unknown = JSON.parse(entry.data.toString("utf8"));

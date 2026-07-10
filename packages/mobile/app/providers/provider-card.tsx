@@ -63,19 +63,15 @@ function formatDuration(ms: number): string {
   return formatDurationSeconds(ms / 1000);
 }
 
+const IMPORT_PROVIDER_LABELS: Readonly<Record<string, string>> = {
+  "apple-health": "Apple Health",
+  "strong-csv": "Strong",
+  "cronometer-csv": "Cronometer",
+  "garmin-dump": "Garmin Dump",
+};
+
 export function importProviderLabel(providerId: string | undefined): string {
-  switch (providerId) {
-    case "apple-health":
-      return "Apple Health";
-    case "strong-csv":
-      return "Strong";
-    case "cronometer-csv":
-      return "Cronometer";
-    case "garmin-dump":
-      return "Garmin Dump";
-    default:
-      return "Shared file";
-  }
+  return providerId ? (IMPORT_PROVIDER_LABELS[providerId] ?? "Shared file") : "Shared file";
 }
 
 export function ProviderCard({

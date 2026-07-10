@@ -54,6 +54,11 @@ function formatProviderName(id: string): string {
     .join(" ");
 }
 
+function hasValidDateInput(value: string | Date | null | undefined): value is string | Date {
+  if (!value) return false;
+  return !Number.isNaN(new Date(value).getTime());
+}
+
 export function ProviderDetailPage() {
   const { id: providerId } = useParams({ from: "/providers/$id" });
 
@@ -66,7 +71,7 @@ export function ProviderDetailPage() {
   const providerStats = (stats.data ?? []).find((s) => s.providerId === providerId);
   const importConfig = fileImportConfigs[providerId];
   const pushOnly = provider?.pushOnly === true;
-  const lastSyncedRelative = provider?.lastSyncedAt
+  const lastSyncedRelative = hasValidDateInput(provider?.lastSyncedAt)
     ? formatRelativeTime(provider.lastSyncedAt)
     : null;
 
@@ -280,8 +285,8 @@ export function ProviderDetailPage() {
           <div>
             <h2 className="text-sm font-medium text-foreground">Mobile sync</h2>
             <p className="text-xs text-subtle mt-1">
-              {provider.description} Open the Dofek app on your phone with your WHOOP nearby to
-              stream RR intervals and orientation data.
+              {provider.description ? `${provider.description} ` : null}Open the Dofek app on your
+              phone with your WHOOP nearby to stream RR intervals and orientation data.
             </p>
           </div>
           <ProviderDisconnectControl

@@ -39,6 +39,8 @@ export function FileImportZone({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cancelledRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const validProviderId =
+    typeof providerId === "string" && providerId.length > 0 ? providerId : null;
 
   useEffect(() => {
     return () => {
@@ -282,10 +284,10 @@ export function FileImportZone({
             />
           ))}
         </div>
-        {providerId && showDetailsLink && (
+        {validProviderId && showDetailsLink && (
           <Link
             to="/providers/$id"
-            params={{ id: providerId }}
+            params={{ id: validProviderId }}
             className="text-xs text-dim hover:text-muted transition-colors"
           >
             Details

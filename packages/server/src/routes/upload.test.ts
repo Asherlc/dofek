@@ -181,6 +181,16 @@ describe("createUploadRouter", () => {
       expect(res.status).toBe(401);
     });
 
+    it("returns 401 for unauthenticated POST /garmin-dump", async () => {
+      vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
+      const { app } = createTestApp();
+      const res = await request(app, "post", "/api/upload/garmin-dump", {
+        headers: { "Content-Type": "application/zip" },
+        body: Buffer.from("data"),
+      });
+      expect(res.status).toBe(401);
+    });
+
     it("returns 401 for unauthenticated GET /apple-health/status", async () => {
       vi.mocked(getSessionIdFromRequest).mockReturnValue(undefined);
       const { app } = createTestApp();
@@ -1159,6 +1169,28 @@ describe("createUploadRouter", () => {
       // since should be approximately 7 days before the request
       expect(sinceMs).toBeGreaterThan(before - sevenDaysMs - 5000);
       expect(sinceMs).toBeLessThan(before - sevenDaysMs + 5000);
+    });
+  });
+
+  describe("POST /api/upload/garmin-dump", () => {
+    it("accepts zip upload with a bounded stream size", async () => {
+      const { app, queue } = createTestApp();
+      const res = await request(app, "post", "/api/upload/garmin-dump", {
+        headers: { "Content-Type": "application/zip" },
+        body: Buffer.from("zip-data"),
+      });
+
+      expect(res.status).toBe(200);
+      expect(streamToFile).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining("garmin-dump-"),
+        2 * 1024 * 1024 * 1024,
+      );
+      expect(queue.add).toHaveBeenCalledWith(
+        "garmin-dump",
+        expect.objectContaining({ importType: "garmin-dump" }),
+        undefined,
+      );
     });
   });
 });
