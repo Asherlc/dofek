@@ -2,7 +2,7 @@ import { parentPort, workerData } from "node:worker_threads";
 import { parseFitFile } from "./parser.ts";
 
 function isBinaryWorkerData(value: unknown): value is NodeJS.ArrayBufferView {
-  return typeof value === "object" && value !== null && ArrayBuffer.isView(value);
+  return ArrayBuffer.isView(value);
 }
 
 async function runFitParserWorker(): Promise<void> {
@@ -10,11 +10,11 @@ async function runFitParserWorker(): Promise<void> {
     throw new Error("FIT parser worker requires a parent port");
   }
 
-  if (!isBinaryWorkerData(workerData)) {
-    throw new Error("FIT parser worker requires binary worker data");
-  }
-
   try {
+    if (!isBinaryWorkerData(workerData)) {
+      throw new Error("FIT parser worker requires binary worker data");
+    }
+
     const data = Buffer.from(workerData.buffer, workerData.byteOffset, workerData.byteLength);
     const activity = await parseFitFile(data);
     parentPort.postMessage({ status: "ok", activity });
