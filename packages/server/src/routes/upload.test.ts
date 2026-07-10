@@ -124,8 +124,31 @@ async function rawRequest(
   opts?: { headers?: Record<string, string>; body?: Buffer },
 ): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const finish = (result: { status: number; body: string } | Error) => {
+      if (settled) return;
+      settled = true;
+      if (timeout) clearTimeout(timeout);
+      server.close(() => {
+        if (result instanceof Error) {
+          reject(result);
+          return;
+        }
+        resolve(result);
+      });
+    };
     const server = app.listen(0, () => {
-      const port = getPort(server);
+      timeout = setTimeout(() => {
+        finish(new Error("raw request timed out"));
+      }, 5_000);
+      let port: number;
+      try {
+        port = getPort(server);
+      } catch (error) {
+        finish(error instanceof Error ? error : new Error(String(error)));
+        return;
+      }
       const req = httpRequest(
         {
           port,
@@ -137,8 +160,7 @@ async function rawRequest(
           const chunks: Buffer[] = [];
           res.on("data", (chunk: Buffer) => chunks.push(chunk));
           res.on("end", () => {
-            server.close();
-            resolve({
+            finish({
               status: res.statusCode ?? 0,
               body: Buffer.concat(chunks).toString("utf8"),
             });
@@ -146,10 +168,12 @@ async function rawRequest(
         },
       );
       req.on("error", (error) => {
-        server.close();
-        reject(error);
+        finish(error);
       });
       req.end(opts?.body);
+    });
+    server.on("error", (error) => {
+      finish(error);
     });
   });
 }
