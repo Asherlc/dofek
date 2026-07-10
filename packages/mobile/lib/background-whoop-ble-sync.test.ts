@@ -338,6 +338,26 @@ describe("background-whoop-ble-sync", () => {
     vi.useRealTimers();
   });
 
+  it("stops the periodic drain timer when the app backgrounds", async () => {
+    vi.useFakeTimers();
+    const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval");
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    clearIntervalSpy.mockClear();
+    vi.mocked(whoopDeps.peekBufferedSamples).mockClear();
+    AppState.currentState = "background";
+    appStateCallback?.("background");
+
+    expect(clearIntervalSpy).toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(whoopDeps.peekBufferedSamples).not.toHaveBeenCalled();
+
+    clearIntervalSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
   it("drains buffer in multiple batches until empty", async () => {
     const batch1 = [
       {

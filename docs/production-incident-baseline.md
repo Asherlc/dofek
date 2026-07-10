@@ -12407,15 +12407,18 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   fetch was cancelled by the platform. The native background refresh path is a
   separate entry point that should still sync when iOS grants background
   execution.
-- **Fix / mitigation:** Guard only the foreground-owned periodic drain timer
-  with `AppState.currentState === "active"` before reading buffered samples or
-  starting network uploads. Keep the explicit `syncWhoopBle()` background
-  refresh entry point able to upload while the app state is backgrounded.
+- **Fix / mitigation:** Start the foreground-owned periodic drain timer only
+  while `AppState.currentState === "active"` and clear it when the app
+  backgrounds, with an in-timer foreground guard as a final check before
+  reading buffered samples or starting network uploads. Keep the explicit
+  `syncWhoopBle()` background refresh entry point able to upload while the app
+  state is backgrounded.
 - **Validation:** Added mobile unit coverage that backgrounds
   `AppState.currentState` and advances the periodic timer, then confirmed the
-  foreground-owned timer no longer drains while backgrounded. Added explicit
-  coverage that `syncWhoopBle()` still uploads when invoked by background
-  refresh while the app is backgrounded. `pnpm vitest run
+  foreground-owned timer no longer drains while backgrounded and is cleared on
+  a background AppState transition. Added explicit coverage that
+  `syncWhoopBle()` still uploads when invoked by background refresh while the
+  app is backgrounded. `pnpm vitest run
   packages/mobile/lib/background-whoop-ble-sync.test.ts`,
   `pnpm --filter dofek-mobile lint`, and `pnpm --filter dofek-mobile
   typecheck` passed locally.

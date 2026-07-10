@@ -120,6 +120,7 @@ export async function initBackgroundWhoopBleSync(
     connectionStateSubscription.remove();
     connectionStateSubscription = null;
   }
+  stopPeriodicDrainTimer();
 
   // Listen for native BLE disconnects so we re-establish on next sync cycle.
   // Without this, the TS `connected` flag stays true after a disconnect
@@ -136,7 +137,11 @@ export async function initBackgroundWhoopBleSync(
 
   // Sync whenever the app comes to foreground
   appStateSubscription = AppState.addEventListener("change", (nextState: AppStateStatus) => {
-    if (nextState !== "active") return;
+    if (nextState !== "active") {
+      stopPeriodicDrainTimer();
+      return;
+    }
+    startPeriodicDrainTimer(trpcClient, whoopDeps, realtimeClient);
     if (syncing) {
       logger.info(LOG_CATEGORY, "foreground sync skipped — already syncing");
       return;
@@ -169,11 +174,32 @@ export async function initBackgroundWhoopBleSync(
 
   // Periodically drain the buffer while the app is active so samples
   // don't pile up waiting for a foreground transition.
-  if (periodicDrainTimer) {
-    clearInterval(periodicDrainTimer);
-  }
+  startPeriodicDrainTimer(trpcClient, whoopDeps, realtimeClient);
+}
+
+function shouldRunForegroundPeriodicDrain(): boolean {
+  return AppState.currentState === "active";
+}
+
+function stopPeriodicDrainTimer(): void {
+  if (!periodicDrainTimer) return;
+
+  clearInterval(periodicDrainTimer);
+  periodicDrainTimer = null;
+}
+
+function startPeriodicDrainTimer(
+  trpcClient: InertialMeasurementUnitUploadClient,
+  whoopDeps: WhoopBleSyncDeps,
+  realtimeClient?: WhoopBleRealtimeUploadClient,
+): void {
+  if (!shouldRunForegroundPeriodicDrain() || periodicDrainTimer) return;
+
   periodicDrainTimer = setInterval(() => {
-    if (AppState.currentState !== "active") return;
+    if (!shouldRunForegroundPeriodicDrain()) {
+      stopPeriodicDrainTimer();
+      return;
+    }
     if (syncing || !connected) return;
     syncing = true;
     drainBuffer(trpcClient, whoopDeps, realtimeClient)
