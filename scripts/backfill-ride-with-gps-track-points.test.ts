@@ -70,4 +70,89 @@ describe("planRideWithGpsActivityBackfill", () => {
       power: 200,
     });
   });
+
+  it("returns no metric rows for empty RideWithGPS track points", () => {
+    const plan = planRideWithGpsActivityBackfill({
+      id: "activity-1",
+      userId: "user-1",
+      activityType: "cycling",
+      raw: {
+        activity_type: "cycling:generic",
+        track_points: [],
+      },
+    });
+
+    expect(plan.metricRows).toEqual([]);
+  });
+
+  it("drops track points that are missing required stream fields", () => {
+    const plan = planRideWithGpsActivityBackfill({
+      id: "activity-1",
+      userId: "user-1",
+      activityType: "cycling",
+      raw: {
+        activity_type: "cycling:generic",
+        track_points: [
+          {
+            longitude: -122.6,
+            latitude: 45.5,
+          },
+          {
+            longitude: -122.6,
+            epochSeconds: 1_723_276_200,
+          },
+          {
+            latitude: 45.5,
+            epochSeconds: 1_723_276_200,
+          },
+        ],
+      },
+    });
+
+    expect(plan.metricRows).toEqual([]);
+  });
+
+  it("rejects stored rows with missing raw payloads", () => {
+    expect(() =>
+      planRideWithGpsActivityBackfill({
+        id: "activity-1",
+        userId: "user-1",
+        activityType: "cycling",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects stored rows with non-array track points", () => {
+    expect(() =>
+      planRideWithGpsActivityBackfill({
+        id: "activity-1",
+        userId: "user-1",
+        activityType: "cycling",
+        raw: {
+          activity_type: "cycling:generic",
+          track_points: "not-an-array",
+        },
+      }),
+    ).toThrow();
+  });
+
+  it("rejects track points with invalid field types", () => {
+    expect(() =>
+      planRideWithGpsActivityBackfill({
+        id: "activity-1",
+        userId: "user-1",
+        activityType: "cycling",
+        raw: {
+          activity_type: "cycling:generic",
+          track_points: [
+            {
+              x: "not-a-number",
+              y: 45.5,
+              t: 1_723_276_200,
+            },
+          ],
+        },
+      }),
+    ).toThrow();
+  });
 });

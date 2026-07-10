@@ -151,7 +151,7 @@ export function parseArgs(args: string[]): BackfillOptions {
 }
 
 export function planRideWithGpsActivityBackfill(
-  rowInput: RideWithGpsActivityRow,
+  rowInput: unknown,
 ): RideWithGpsActivityBackfillPlan {
   const row = activityRowSchema.parse(rowInput);
   const raw = storedRawSchema.parse(row.raw);

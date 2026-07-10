@@ -1,4 +1,4 @@
-{% set sensor_scalar_sample_begin = var('sensor_scalar_sample_begin', '2026-01-01') %}
+{% set sensor_scalar_sample_begin = var('sensor_scalar_sample_begin', '2000-01-01') %}
 
 {{ config(
     materialized='incremental',

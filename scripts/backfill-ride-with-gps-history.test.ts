@@ -28,4 +28,40 @@ describe("parseRideWithGpsHistoryBackfillArgs", () => {
       until: new Date("2026-07-11T00:00:00.000Z"),
     });
   });
+
+  it.each([
+    {
+      args: ["--user-id"],
+      message: "--user-id requires a value",
+    },
+    {
+      args: ["--start"],
+      message: "--start requires a value",
+    },
+    {
+      args: ["--end", "--execute"],
+      message: "--end requires a value",
+    },
+    {
+      args: ["--start", "not-a-date"],
+      message: "--start must be an ISO date or timestamp",
+    },
+    {
+      args: ["--unknown"],
+      message: "Unknown argument: --unknown",
+    },
+  ])("rejects malformed arguments: $message", ({ args, message }) => {
+    expect(() => parseRideWithGpsHistoryBackfillArgs(args)).toThrow(message);
+  });
+
+  it("uses the last duplicate date bound", () => {
+    const options = parseRideWithGpsHistoryBackfillArgs([
+      "--start",
+      "2009-01-01T00:00:00.000Z",
+      "--start",
+      "2010-01-01T00:00:00.000Z",
+    ]);
+
+    expect(options.since).toEqual(new Date("2010-01-01T00:00:00.000Z"));
+  });
 });

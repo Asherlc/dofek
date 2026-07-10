@@ -40,9 +40,10 @@ existing_summary AS (
         SELECT
             activity_id,
             user_id,
-            refreshed_at
-        FROM {{ this }} FINAL
-        WHERE is_deleted = 0
+            argMax(refreshed_at, refresh_version) AS refreshed_at
+        FROM {{ this }}
+        GROUP BY activity_id, user_id
+        HAVING argMax(is_deleted, refresh_version) = 0
     {% else %}
         SELECT
             CAST(null, 'Nullable(UUID)') AS activity_id,
@@ -59,7 +60,7 @@ initial_dirty_keys AS (
     FROM current_activity
     WHERE
         {% if is_incremental() %}
-            (SELECT is_empty FROM target_state)
+            (SELECT is_empty FROM target_state LIMIT 1)
             AND started_at >= now64(6, 'UTC') - INTERVAL {{ initial_lookback_days }} DAY
         {% else %}
             started_at >= now64(6, 'UTC') - INTERVAL {{ initial_lookback_days }} DAY
@@ -76,7 +77,7 @@ sample_dirty_keys AS (
             ON existing_summary.activity_id = sensor_sample.activity_id
             AND existing_summary.user_id = sensor_sample.user_id
         WHERE
-            NOT (SELECT is_empty FROM target_state)
+            NOT (SELECT is_empty FROM target_state LIMIT 1)
             AND (
                 existing_summary.activity_id IS null
                 OR sensor_sample.refreshed_at > existing_summary.refreshed_at

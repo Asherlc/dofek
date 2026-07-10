@@ -128,7 +128,10 @@ async function runBackfill(options: RideWithGpsHistoryBackfillOptions): Promise<
   console.log(JSON.stringify(result, null, 2));
 
   if (result.errors.length > 0) {
-    throw new Error(`RideWithGPS backfill completed with ${result.errors.length} errors`);
+    const errorMessages = result.errors.map((error) => error.message).join("; ");
+    throw new Error(
+      `RideWithGPS backfill completed with ${result.errors.length} errors: ${errorMessages}`,
+    );
   }
 }
 

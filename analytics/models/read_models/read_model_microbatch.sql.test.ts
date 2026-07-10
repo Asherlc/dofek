@@ -6,7 +6,11 @@ function readProjectFile(path: string): string {
 }
 
 function readModel(name: string): string {
-  return readFileSync(new URL(`./${name}.sql`, import.meta.url), "utf8");
+  const modelUrl = new URL(`./${name}.sql`, import.meta.url);
+  expect(existsSync(modelUrl)).toBe(true);
+  const sql = readFileSync(modelUrl, "utf8");
+  expect(sql.length).toBeGreaterThan(0);
+  return sql;
 }
 
 function compactWhitespace(value: string): string {
@@ -254,7 +258,7 @@ describe("production analytics read-model build", () => {
     const sql = readModel("activity_sensor_sample");
 
     expect(sql).toContain("incremental_strategy='microbatch'");
-    expect(sql).toContain("activity_sensor_sample_begin = var('activity_sensor_sample_begin', '2026-01-01')");
+    expect(sql).toContain("activity_sensor_sample_begin = var('activity_sensor_sample_begin', '2000-01-01')");
     expect(sql).toContain("begin=activity_sensor_sample_begin");
     expect(sql).toContain("event_time='refreshed_at'");
     expect(sql).toContain("lookback=3");
@@ -278,11 +282,11 @@ describe("production analytics read-model build", () => {
     expect(sourcesYaml).toContain("name: ingest");
     expect(sourcesYaml).toContain("event_time: ingested_at");
     expect(sensorScalarSampleSql).toContain("event_time='_peerdb_synced_at'");
-    expect(sensorScalarSampleSql).toContain("sensor_scalar_sample_begin = var('sensor_scalar_sample_begin', '2026-01-01')");
+    expect(sensorScalarSampleSql).toContain("sensor_scalar_sample_begin = var('sensor_scalar_sample_begin', '2000-01-01')");
     expect(sensorScalarSampleSql).toContain("begin=sensor_scalar_sample_begin");
     expect(sensorScalarSampleSql).toContain("source('ingest', 'metric_stream_freshness')");
     expect(dedupedSensorSql).toContain("event_time='refreshed_at'");
-    expect(dedupedSensorSql).toContain("deduped_sensor_begin = var('deduped_sensor_begin', '2026-01-01')");
+    expect(dedupedSensorSql).toContain("deduped_sensor_begin = var('deduped_sensor_begin', '2000-01-01')");
     expect(dedupedSensorSql).toContain("begin=deduped_sensor_begin");
     expect(dedupedSensorSql).toContain("max(samples._peerdb_synced_at) AS source_refreshed_at");
     expect(dedupedSensorSql).toContain("source_refreshed_at AS refreshed_at");
@@ -295,7 +299,7 @@ describe("production analytics read-model build", () => {
     const sql = readModel("activity_location_sample");
 
     expect(sql).toContain("incremental_strategy='microbatch'");
-    expect(sql).toContain("activity_location_sample_begin = var('activity_location_sample_begin', '2026-01-01')");
+    expect(sql).toContain("activity_location_sample_begin = var('activity_location_sample_begin', '2000-01-01')");
     expect(sql).toContain("begin=activity_location_sample_begin");
     expect(sql).toContain("event_time='refreshed_at'");
     expect(sql).toContain("lookback=3");
@@ -378,6 +382,10 @@ describe("production analytics read-model build", () => {
     expect(normalizedSql).toContain(
       "LEFT JOIN existing_summary ON existing_summary.activity_id = sensor_sample.activity_id",
     );
+    expect(normalizedSql).toContain("argMax(refreshed_at, refresh_version) AS refreshed_at");
+    expect(normalizedSql).toContain("HAVING argMax(is_deleted, refresh_version) = 0");
+    expect(normalizedSql).toContain("(SELECT is_empty FROM target_state LIMIT 1)");
+    expect(normalizedSql).toContain("NOT (SELECT is_empty FROM target_state LIMIT 1)");
     expect(normalizedSql).toContain(
       "sensor_sample.refreshed_at > existing_summary.refreshed_at",
     );

@@ -1,6 +1,5 @@
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildActivitySensorSummaryRowsTableSql } from "./clickhouse-activity-sensor-summary.ts";
@@ -97,7 +96,7 @@ async function waitForClickHouse(client: ClickHouseClient): Promise<void> {
 }
 
 function readProjectFile(relativePath: string): string {
-  return readFileSync(join(import.meta.dirname, "../..", relativePath), "utf8");
+  return readFileSync(new URL(`../../${relativePath}`, import.meta.url), "utf8");
 }
 
 function renderActivitySensorSummaryRowsSelectSql(targetSchema: string): string {
@@ -133,8 +132,16 @@ async function seedHistoricalBackfillFixture(
 }
 
 async function runStatements(client: ClickHouseClient, statements: string[]): Promise<void> {
-  for (const statement of statements) {
-    await client.command({ query: statement });
+  for (const [statementIndex, statement] of statements.entries()) {
+    try {
+      await client.command({ query: statement });
+    } catch (error) {
+      const statementPreview = statement.replace(/\s+/g, " ").slice(0, 240);
+      throw new Error(
+        `ClickHouse fixture statement ${statementIndex + 1} failed: ${statementPreview}`,
+        { cause: error },
+      );
+    }
   }
 }
 

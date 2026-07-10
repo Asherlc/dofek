@@ -1,4 +1,4 @@
-{% set activity_sensor_sample_begin = var('activity_sensor_sample_begin', '2026-01-01') %}
+{% set activity_sensor_sample_begin = var('activity_sensor_sample_begin', '2000-01-01') %}
 
 {{ config(
     materialized='incremental',
