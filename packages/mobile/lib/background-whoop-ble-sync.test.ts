@@ -358,6 +358,37 @@ describe("background-whoop-ble-sync", () => {
     vi.useRealTimers();
   });
 
+  it("stops periodic drain before upload when the app backgrounds after reading samples", async () => {
+    vi.useFakeTimers();
+    const samples = [
+      {
+        timestamp: "2026-03-27T10:00:00.000Z",
+        x: 1,
+        y: 2,
+        z: 3,
+        gyroscopeX: 10,
+        gyroscopeY: -20,
+        gyroscopeZ: 30,
+      },
+    ];
+
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    vi.mocked(whoopDeps.peekBufferedSamples).mockClear();
+    vi.mocked(whoopDeps.peekBufferedSamples).mockImplementationOnce(async () => {
+      AppState.currentState = "background";
+      return samples;
+    });
+    vi.mocked(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).mockClear();
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).not.toHaveBeenCalled();
+    expect(whoopDeps.confirmSamplesDrain).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
+  });
+
   it("drains buffer in multiple batches until empty", async () => {
     const batch1 = [
       {
@@ -669,6 +700,7 @@ describe("syncWhoopBle", () => {
 
   beforeEach(() => {
     teardownBackgroundWhoopBleSync();
+    AppState.currentState = "active";
     whoopDeps = makeMockDeps();
     trpcClient = makeMockTrpcClient();
   });
@@ -765,6 +797,7 @@ describe("realtime data (beat interval + quaternion) sync", () => {
 
   beforeEach(() => {
     teardownBackgroundWhoopBleSync();
+    AppState.currentState = "active";
     whoopDeps = makeMockDeps();
     trpcClient = makeMockTrpcClient();
     realtimeClient = makeMockRealtimeClient();

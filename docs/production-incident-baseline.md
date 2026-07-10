@@ -12409,16 +12409,18 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   execution.
 - **Fix / mitigation:** Start the foreground-owned periodic drain timer only
   while `AppState.currentState === "active"` and clear it when the app
-  backgrounds, with an in-timer foreground guard as a final check before
-  reading buffered samples or starting network uploads. Keep the explicit
+  backgrounds. Foreground-owned drains also recheck active state immediately
+  before each network upload so an app-state change after reading buffered
+  samples still leaves those samples retained for retry. Keep the explicit
   `syncWhoopBle()` background refresh entry point able to upload while the app
   state is backgrounded.
 - **Validation:** Added mobile unit coverage that backgrounds
   `AppState.currentState` and advances the periodic timer, then confirmed the
   foreground-owned timer no longer drains while backgrounded and is cleared on
-  a background AppState transition. Added explicit coverage that
-  `syncWhoopBle()` still uploads when invoked by background refresh while the
-  app is backgrounded. `pnpm vitest run
+  a background AppState transition. Added coverage that a foreground-owned
+  drain skips upload if the app backgrounds after samples are read, plus
+  explicit coverage that `syncWhoopBle()` still uploads when invoked by
+  background refresh while the app is backgrounded. `pnpm vitest run
   packages/mobile/lib/background-whoop-ble-sync.test.ts`,
   `pnpm --filter dofek-mobile lint`, and `pnpm --filter dofek-mobile
   typecheck` passed locally.
