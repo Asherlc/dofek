@@ -12,7 +12,7 @@ import {
   formatActivityTypeLabel,
 } from "@dofek/training/training";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -22,6 +22,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { z } from "zod";
 import { ActivityCard } from "../../components/ActivityCard";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { SparkLine } from "../../components/charts/SparkLine";
@@ -30,12 +31,144 @@ import { VerticalAscentChart } from "../../components/charts/VerticalAscentChart
 import { DaySelector } from "../../components/DaySelector";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
 import { safeParseRows } from "../../lib/safe-parse";
+import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useRefresh } from "../../lib/useRefresh";
 import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors } from "../../theme";
 import { ActivityRowSchema, WeeklyVolumeRowSchema } from "../../types/api";
+
+type ClimbingClimbType = "boulder" | "route";
+
+const climbingClimbTypeSchema = z.enum(["boulder", "route"]);
+
+const mobileClimbingGradeProgressionRowSchema = z.object({
+  date: z.string(),
+  climbType: climbingClimbTypeSchema,
+  grade: z.string(),
+  gradeSortValue: z.number(),
+});
+
+const mobileClimbingVolumeByGradeRowSchema = z.object({
+  climbType: climbingClimbTypeSchema,
+  grade: z.string(),
+  gradeSortValue: z.number(),
+  attempts: z.number(),
+  sends: z.number(),
+});
+
+const mobileClimbingSessionSummaryRowSchema = z.object({
+  activityId: z.string(),
+  date: z.string(),
+  name: z.string(),
+  locationName: z.string().nullable(),
+  attempts: z.number(),
+  sends: z.number(),
+  hardestBoulderGrade: z.string().nullable(),
+  hardestRouteGrade: z.string().nullable(),
+});
+
+const mobileClimbingDataSchema = z.object({
+  gradeProgression: z.array(mobileClimbingGradeProgressionRowSchema),
+  volumeByGrade: z.array(mobileClimbingVolumeByGradeRowSchema),
+  sessionSummary: z.array(mobileClimbingSessionSummaryRowSchema),
+});
+
+const mobileClimbingPayloadSchema = z.object({
+  gradeProgression: z.unknown().optional(),
+  volumeByGrade: z.unknown().optional(),
+  sessionSummary: z.unknown().optional(),
+});
+
+type MobileClimbingGradeProgressionRow = z.infer<typeof mobileClimbingGradeProgressionRowSchema>;
+type MobileClimbingVolumeByGradeRow = z.infer<typeof mobileClimbingVolumeByGradeRowSchema>;
+type MobileClimbingSessionSummaryRow = z.infer<typeof mobileClimbingSessionSummaryRowSchema>;
+type MobileClimbingData = z.infer<typeof mobileClimbingDataSchema>;
+
+interface MobileClimbingParseResult {
+  data: MobileClimbingData;
+  error: Error | null;
+}
+
+const emptyClimbingData: MobileClimbingData = {
+  gradeProgression: [],
+  volumeByGrade: [],
+  sessionSummary: [],
+};
+
+const reportedTrainingErrors = new WeakSet<object>();
+
+function parseMobileClimbingData(value: unknown): MobileClimbingParseResult {
+  if (value == null) {
+    return { data: emptyClimbingData, error: null };
+  }
+
+  const payloadResult = mobileClimbingPayloadSchema.safeParse(value);
+  if (!payloadResult.success) {
+    const parseError = new Error(
+      `strain:climbing: Zod parse failed: ${payloadResult.error.message}`,
+    );
+    captureException(parseError, {
+      context: "strain:climbing",
+      zodError: payloadResult.error.format(),
+    });
+    return { data: emptyClimbingData, error: parseError };
+  }
+
+  const gradeProgression = safeParseRows(
+    mobileClimbingGradeProgressionRowSchema,
+    payloadResult.data.gradeProgression ?? [],
+    "strain:climbing.gradeProgression",
+  );
+  const volumeByGrade = safeParseRows(
+    mobileClimbingVolumeByGradeRowSchema,
+    payloadResult.data.volumeByGrade ?? [],
+    "strain:climbing.volumeByGrade",
+  );
+  const sessionSummary = safeParseRows(
+    mobileClimbingSessionSummaryRowSchema,
+    payloadResult.data.sessionSummary ?? [],
+    "strain:climbing.sessionSummary",
+  );
+
+  return {
+    data: {
+      gradeProgression: gradeProgression.data,
+      volumeByGrade: volumeByGrade.data,
+      sessionSummary: sessionSummary.data,
+    },
+    error: gradeProgression.error ?? volumeByGrade.error ?? sessionSummary.error,
+  };
+}
+
+class ClimbingSectionModel {
+  readonly #data: MobileClimbingData;
+
+  constructor(data: MobileClimbingData) {
+    this.#data = data;
+  }
+
+  bestGrade(climbType: ClimbingClimbType): string | null {
+    const bestRow = this.#data.gradeProgression
+      .filter((row) => row.climbType === climbType)
+      .reduce<MobileClimbingGradeProgressionRow | null>(
+        (best, row) => (best === null || row.gradeSortValue > best.gradeSortValue ? row : best),
+        null,
+      );
+    return bestRow?.grade ?? null;
+  }
+
+  get volumeRows(): MobileClimbingVolumeByGradeRow[] {
+    return [...this.#data.volumeByGrade].sort(
+      (left, right) => left.gradeSortValue - right.gradeSortValue,
+    );
+  }
+
+  get sessions(): MobileClimbingSessionSummaryRow[] {
+    return this.#data.sessionSummary;
+  }
+}
 
 export default function StrainScreen() {
   const router = useRouter();
@@ -48,6 +181,15 @@ export default function StrainScreen() {
     { days, endDate },
     { placeholderData: (previousData) => previousData },
   );
+
+  useEffect(() => {
+    if (trainingQuery.isError && trainingQuery.error) {
+      if (reportedTrainingErrors.has(trainingQuery.error)) return;
+      reportedTrainingErrors.add(trainingQuery.error);
+      captureException(trainingQuery.error);
+    }
+  }, [trainingQuery.isError, trainingQuery.error]);
+
   const trainingData = trainingQuery.data;
 
   const workloadResult = trainingData?.workloadRatio;
@@ -69,6 +211,14 @@ export default function StrainScreen() {
   );
   const weeklyVolume = weeklyVolumeParsed.data;
   const verticalAscent = trainingData?.verticalAscent ?? [];
+  const climbingParsed = parseMobileClimbingData(trainingData?.climbing);
+  const climbingModel = new ClimbingSectionModel(climbingParsed.data);
+  const hasCachedTrainingData = trainingData != null;
+  const hasCachedClimbingData = trainingData?.climbing != null;
+  const shouldShowTrainingQueryError = trainingQuery.isError && !hasCachedTrainingData;
+  const shouldShowClimbingError =
+    climbingParsed.error !== null || (trainingQuery.isError && !hasCachedClimbingData);
+  const shouldShowClimbingSection = !trainingQuery.isError || hasCachedClimbingData;
   const collapsedWeeklyVolume = collapseWeeklyVolumeActivityTypes(weeklyVolume, 6);
   const activityTypeTotalsMap = new Map<string, number>();
   for (const row of collapsedWeeklyVolume) {
@@ -260,8 +410,20 @@ export default function StrainScreen() {
             </View>
           )}
 
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Climbing</Text>
+            {shouldShowClimbingError ? (
+              <Text style={styles.errorText}>
+                {climbingParsed.error?.message ??
+                  trainingQuery.error?.message ??
+                  "Failed to load climbing data."}
+              </Text>
+            ) : null}
+            {shouldShowClimbingSection ? <ClimbingSection model={climbingModel} /> : null}
+          </View>
+
           {/* Weekly volume summary */}
-          {(trainingQuery.isError || weeklyVolumeParsed.error) && (
+          {(shouldShowTrainingQueryError || weeklyVolumeParsed.error) && (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Weekly Volume</Text>
               <Text style={styles.errorText}>
@@ -271,38 +433,42 @@ export default function StrainScreen() {
               </Text>
             </View>
           )}
-          {!trainingQuery.isError && !weeklyVolumeParsed.error && weeklyVolume.length > 0 && (
-            <View style={styles.card}>
-              <ChartTitleWithTooltip
-                title="Weekly Volume"
-                description="This chart shows your total training hours by week."
-                textStyle={styles.cardTitle}
-              />
-              <View style={styles.volumeStack}>
-                {aggregateWeeklyVolume(weeklyVolume).map((week) => (
-                  <View key={week.week} style={styles.volumeRow}>
-                    <Text style={styles.volumeDate}>{formatDateShort(week.week)}</Text>
-                    <View style={styles.volumeBarTrack}>
-                      <View style={[styles.volumeBarFill, { width: `${week.fraction * 100}%` }]} />
+          {!shouldShowTrainingQueryError &&
+            !weeklyVolumeParsed.error &&
+            weeklyVolume.length > 0 && (
+              <View style={styles.card}>
+                <ChartTitleWithTooltip
+                  title="Weekly Volume"
+                  description="This chart shows your total training hours by week."
+                  textStyle={styles.cardTitle}
+                />
+                <View style={styles.volumeStack}>
+                  {aggregateWeeklyVolume(weeklyVolume).map((week) => (
+                    <View key={week.week} style={styles.volumeRow}>
+                      <Text style={styles.volumeDate}>{formatDateShort(week.week)}</Text>
+                      <View style={styles.volumeBarTrack}>
+                        <View
+                          style={[styles.volumeBarFill, { width: `${week.fraction * 100}%` }]}
+                        />
+                      </View>
+                      <Text style={styles.volumeHours} numberOfLines={1} ellipsizeMode="tail">
+                        {formatDurationMinutes(week.hours * 60)}
+                      </Text>
                     </View>
-                    <Text style={styles.volumeHours} numberOfLines={1} ellipsizeMode="tail">
-                      {formatDurationMinutes(week.hours * 60)}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-              {activityTypeTotals.length > 0 && (
-                <View style={styles.activityTypeSummary}>
-                  {activityTypeTotals.map((entry) => (
-                    <Text key={entry.activityType} style={styles.activityTypeSummaryItem}>
-                      {formatActivityTypeLabel(entry.activityType)}:{" "}
-                      {formatDurationMinutes(entry.hours * 60)}
-                    </Text>
                   ))}
                 </View>
-              )}
-            </View>
-          )}
+                {activityTypeTotals.length > 0 && (
+                  <View style={styles.activityTypeSummary}>
+                    {activityTypeTotals.map((entry) => (
+                      <Text key={entry.activityType} style={styles.activityTypeSummaryItem}>
+                        {formatActivityTypeLabel(entry.activityType)}:{" "}
+                        {formatDurationMinutes(entry.hours * 60)}
+                      </Text>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
 
           {/* Recent activities */}
           <View style={styles.section}>
@@ -318,7 +484,7 @@ export default function StrainScreen() {
             </View>
             {isLoading ? (
               <ActivityIndicator color={colors.accent} style={styles.activitiesLoader} />
-            ) : trainingQuery.isError || activitiesParsed.error ? (
+            ) : shouldShowTrainingQueryError || activitiesParsed.error ? (
               <Text style={styles.errorText}>
                 {trainingQuery.error?.message ?? "Failed to load activities."}
               </Text>
@@ -351,6 +517,65 @@ export default function StrainScreen() {
         </>
       )}
     </ScrollView>
+  );
+}
+
+function ClimbingSection({ model }: { model: ClimbingSectionModel }) {
+  return (
+    <View style={styles.climbingStack}>
+      <View style={styles.climbingGradeGrid}>
+        <View style={styles.climbingGradeItem}>
+          <Text style={styles.loadLabel}>Best Boulder Grade</Text>
+          <Text style={styles.loadValue}>{model.bestGrade("boulder") ?? "None"}</Text>
+        </View>
+        <View style={styles.climbingGradeItem}>
+          <Text style={styles.loadLabel}>Best Route Grade</Text>
+          <Text style={styles.loadValue}>{model.bestGrade("route") ?? "None"}</Text>
+        </View>
+      </View>
+
+      {model.bestGrade("boulder") == null && model.bestGrade("route") == null && (
+        <Text style={styles.activitiesEmpty}>No climbing grade progression</Text>
+      )}
+
+      <View style={styles.climbingSubsection}>
+        <Text style={styles.climbingSubsectionTitle}>Volume by Grade</Text>
+        {model.volumeRows.length === 0 ? (
+          <Text style={styles.activitiesEmpty}>No climbing volume by grade</Text>
+        ) : (
+          model.volumeRows.map((row) => (
+            <View key={`${row.climbType}-${row.grade}`} style={styles.climbingVolumeRow}>
+              <Text style={styles.climbingGradeText}>{row.grade}</Text>
+              <Text style={styles.climbingMetaText}>{row.attempts} attempts</Text>
+              <Text style={styles.climbingMetaText}>{row.sends} sends</Text>
+            </View>
+          ))
+        )}
+      </View>
+
+      <View style={styles.climbingSubsection}>
+        <Text style={styles.climbingSubsectionTitle}>Recent Climbing Sessions</Text>
+        {model.sessions.length === 0 ? (
+          <Text style={styles.activitiesEmpty}>No climbing sessions</Text>
+        ) : (
+          model.sessions.slice(0, 3).map((session) => (
+            <View key={session.activityId} style={styles.climbingSessionRow}>
+              <Text style={styles.climbingSessionName}>{session.name}</Text>
+              {session.locationName && (
+                <Text style={styles.climbingMetaText}>{session.locationName}</Text>
+              )}
+              <Text style={styles.climbingMetaText}>
+                {session.attempts} attempts · {session.sends} sends
+              </Text>
+              <Text style={styles.climbingMetaText}>
+                Boulder {session.hardestBoulderGrade ?? "None"} · Route{" "}
+                {session.hardestRouteGrade ?? "None"}
+              </Text>
+            </View>
+          ))
+        )}
+      </View>
+    </View>
   );
 }
 
@@ -547,6 +772,55 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: "center",
     paddingVertical: 24,
+  },
+  climbingStack: {
+    gap: 14,
+  },
+  climbingGradeGrid: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  climbingGradeItem: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: 12,
+    flex: 1,
+    gap: 4,
+    padding: 12,
+  },
+  climbingSubsection: {
+    borderTopColor: colors.surfaceSecondary,
+    borderTopWidth: 1,
+    gap: 8,
+    paddingTop: 12,
+  },
+  climbingSubsectionTitle: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  climbingVolumeRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+  },
+  climbingGradeText: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "700",
+    minWidth: 48,
+  },
+  climbingMetaText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  climbingSessionRow: {
+    gap: 3,
+  },
+  climbingSessionName: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
   },
   errorText: {
     color: "#f87171",

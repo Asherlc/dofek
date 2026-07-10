@@ -10,6 +10,7 @@ import { bodyRouter } from "./routers/body.ts";
 import { bodyAnalyticsRouter } from "./routers/body-analytics.ts";
 import { breathworkRouter } from "./routers/breathwork.ts";
 import { calendarRouter } from "./routers/calendar.ts";
+import { climbingRouter } from "./routers/climbing.ts";
 import { companionTokenRouter } from "./routers/companion-token.ts";
 import { correlationRouter } from "./routers/correlation.ts";
 import { credentialAuthRouter } from "./routers/credential-auth.ts";
@@ -92,6 +93,7 @@ export const appRouter = router({
   training: trainingRouter,
   trends: trendsRouter,
   calendar: calendarRouter,
+  climbing: climbingRouter,
   companionToken: companionTokenRouter,
   correlation: correlationRouter,
   credentialAuth: credentialAuthRouter,

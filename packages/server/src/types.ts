@@ -6,6 +6,12 @@ export type { ActivityHrZones, StreamPoint } from "./routers/activity.ts";
 
 // Recovery router types
 
+// Climbing router types
+export type {
+  ClimbingGradeProgressionRow,
+  ClimbingSessionSummaryRow,
+  ClimbingVolumeByGradeRow,
+} from "./repositories/climbing-repository.ts";
 // Calendar router types
 export type { CalendarDay } from "./routers/calendar.ts";
 // Cycling advanced router types

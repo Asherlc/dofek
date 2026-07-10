@@ -11,6 +11,12 @@ import { computeCurrentStrain } from "../lib/current-strain.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
+import {
+  type ClimbingGradeProgressionRow,
+  ClimbingRepository,
+  type ClimbingSessionSummaryRow,
+  type ClimbingVolumeByGradeRow,
+} from "../repositories/climbing-repository.ts";
 import { CyclingAdvancedRepository } from "../repositories/cycling-advanced-repository.ts";
 import {
   type ActivityStatsRow,
@@ -26,6 +32,11 @@ export interface MobileTrainingTabResult {
   activities: ActivityStatsRow[];
   weeklyVolume: WeeklyVolumeRow[];
   verticalAscent: VerticalAscentRow[];
+  climbing: {
+    gradeProgression: ClimbingGradeProgressionRow[];
+    volumeByGrade: ClimbingVolumeByGradeRow[];
+    sessionSummary: ClimbingSessionSummaryRow[];
+  };
 }
 
 interface MobileTrainingTabContext {
@@ -183,6 +194,7 @@ export async function loadMobileTrainingTab(
     ctx.timezone,
     ctx.sensorStore,
   );
+  const climbingRepo = new ClimbingRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
 
   const windowStart = dateWindowStartString(endDate, days);
   const accessParams = strainAccessParams(ctx.accessWindow);
@@ -246,9 +258,18 @@ export async function loadMobileTrainingTab(
     effective.readinessWeights,
   );
 
-  const [{ activities, weeklyVolume }, verticalAscentModels] = await Promise.all([
+  const [
+    { activities, weeklyVolume },
+    verticalAscentModels,
+    gradeProgressionModels,
+    volumeByGradeModels,
+    sessionSummaryModels,
+  ] = await Promise.all([
     trainingRepo.getActivityStatsAndWeeklyVolume(days),
     cyclingRepo.getVerticalAscentRates(days),
+    climbingRepo.getGradeProgression(days),
+    climbingRepo.getVolumeByGrade(days),
+    climbingRepo.getSessionSummaries(days),
   ]);
 
   return {
@@ -257,6 +278,11 @@ export async function loadMobileTrainingTab(
     activities,
     weeklyVolume,
     verticalAscent: verticalAscentModels.map((model) => model.toDetail()),
+    climbing: {
+      gradeProgression: gradeProgressionModels.map((model) => model.toDetail()),
+      volumeByGrade: volumeByGradeModels.map((model) => model.toDetail()),
+      sessionSummary: sessionSummaryModels.map((model) => model.toDetail()),
+    },
   };
 }
 
@@ -323,4 +349,39 @@ export const mobileTrainingTabOutputSchema = z.object({
       climbingMinutes: z.number(),
     }),
   ),
+  climbing: z.object({
+    gradeProgression: z.array(
+      z.object({
+        date: z.string(),
+        climbType: z.enum(["boulder", "route"]),
+        gradeSystem: z.enum(["v_scale", "yds"]),
+        grade: z.string(),
+        gradeSortValue: z.number(),
+      }),
+    ),
+    volumeByGrade: z.array(
+      z.object({
+        climbType: z.enum(["boulder", "route"]),
+        gradeSystem: z.enum(["v_scale", "yds"]),
+        grade: z.string(),
+        gradeSortValue: z.number(),
+        attempts: z.number(),
+        sends: z.number(),
+      }),
+    ),
+    sessionSummary: z.array(
+      z.object({
+        activityId: z.string(),
+        date: z.string(),
+        name: z.string(),
+        locationName: z.string().nullable(),
+        attempts: z.number(),
+        sends: z.number(),
+        hardestBoulderGrade: z.string().nullable(),
+        hardestBoulderGradeSortValue: z.number().nullable(),
+        hardestRouteGrade: z.string().nullable(),
+        hardestRouteGradeSortValue: z.number().nullable(),
+      }),
+    ),
+  }),
 }) satisfies z.ZodType<MobileTrainingTabResult>;

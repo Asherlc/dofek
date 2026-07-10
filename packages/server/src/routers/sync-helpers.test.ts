@@ -40,6 +40,7 @@ describe("providerIdForImportType", () => {
     expect(providerIdForImportType("apple-health")).toBe("apple_health");
     expect(providerIdForImportType("strong-csv")).toBe("strong-csv");
     expect(providerIdForImportType("cronometer-csv")).toBe("cronometer-csv");
+    expect(providerIdForImportType("kaya-export")).toBe("kaya-export");
     expect(providerIdForImportType("zos-app")).toBe("zos-app");
   });
 

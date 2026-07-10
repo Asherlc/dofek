@@ -22,7 +22,7 @@ export interface ImportJobData {
   filePath: string;
   since: string; // ISO date string
   userId: string;
-  importType: "apple-health" | "strong-csv" | "cronometer-csv" | "zos-app";
+  importType: "apple-health" | "strong-csv" | "cronometer-csv" | "kaya-export" | "zos-app";
   /** Weight unit for Strong CSV imports */
   weightUnit?: "kg" | "lbs";
 }
