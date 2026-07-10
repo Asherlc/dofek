@@ -241,7 +241,7 @@ const TrainingClimbingRoute = TrainingClimbingRouteImport.update({
   id: '/climbing',
   path: '/climbing',
   getParentRoute: () => TrainingRoute,
-} satisfies Parameters<typeof TrainingClimbingRouteImport.update>[0])
+} as any)
 const ProvidersIdRoute = ProvidersIdRouteImport.update({
   id: '/$id',
   path: '/$id',

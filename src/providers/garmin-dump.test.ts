@@ -471,6 +471,49 @@ describe("Garmin dump provider", () => {
     );
   });
 
+  it("retries duplicate FIT external ids when the first copy fails", async () => {
+    mockParseFitFileInWorkerThread
+      .mockRejectedValueOnce(new Error("bad first copy"))
+      .mockResolvedValueOnce({
+        session: {
+          sport: "cycling",
+          startTime: new Date("2026-07-01T12:00:00.000Z"),
+          totalElapsedTime: 1800,
+          totalTimerTime: 1800,
+          totalDistance: 5000,
+          totalCalories: 200,
+          raw: { sport: "cycling" },
+        },
+        records: [],
+        laps: [],
+        events: [],
+      });
+    const zip = await createZip({
+      "DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345.fit": "fit-bytes",
+      "DI_CONNECT/DI-Connect-Uploaded-Files/copy/asher@example.com_12345_extra.fit": "fit-bytes",
+    });
+    const directory = await createTempDirectory();
+    const filePath = join(directory, "garmin-export.zip");
+    await writeFile(filePath, zip);
+
+    const result = await importGarminDumpFile(mockDb, filePath, "user-1");
+
+    expect(result.recordsSynced).toBe(1);
+    expect(result.errors).toEqual([
+      expect.objectContaining({
+        externalId: "12345",
+        message:
+          "Failed to import Garmin FIT file DI_CONNECT/DI-Connect-Uploaded-Files/asher@example.com_12345.fit: bad first copy",
+      }),
+    ]);
+    expect(mockParseFitFileInWorkerThread).toHaveBeenCalledTimes(2);
+    expect(mockUpsertProviderActivity).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({ externalId: "12345" }),
+      expect.any(Object),
+    );
+  });
+
   it("reports FIT parse failures with the extracted external id", async () => {
     mockParseFitFileInWorkerThread.mockRejectedValue(new Error("bad fit"));
     const zip = await createZip({

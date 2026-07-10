@@ -18,6 +18,8 @@ describe("parseFitFileInWorkerThread", () => {
   });
 
   it("propagates parser errors from the worker thread", async () => {
-    await expect(parseFitFileInWorkerThread(Buffer.from("not a fit file"))).rejects.toThrow();
+    await expect(parseFitFileInWorkerThread(Buffer.from("not a fit file"))).rejects.toThrow(
+      /incorrect header size/i,
+    );
   });
 });

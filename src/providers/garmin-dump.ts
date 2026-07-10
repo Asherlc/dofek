@@ -398,7 +398,6 @@ export async function importGarminDumpFile(
     if (processedFitExternalIds.has(externalId)) {
       continue;
     }
-    processedFitExternalIds.add(externalId);
 
     try {
       const fitActivity = await parseFitFileInWorkerThread(fitFile.data);
@@ -449,6 +448,7 @@ export async function importGarminDumpFile(
         await replaceMetricStreamBatch(db, { activityId: activity.id }, rows, SOURCE_TYPE_FILE);
       }
 
+      processedFitExternalIds.add(externalId);
       if (!summary) recordsSynced++;
     } catch (error) {
       errors.push({

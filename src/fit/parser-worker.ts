@@ -43,10 +43,34 @@ export function parseFitFileInWorkerThread(buffer: Buffer): Promise<ParsedFitAct
       workerData: buffer,
     });
 
-    worker.once("message", (message: unknown) => {
+    let settled = false;
+
+    function cleanup(): void {
+      worker.off("message", handleMessage);
+      worker.off("error", handleError);
+      worker.off("exit", handleExit);
+    }
+
+    function settleWithResolve(activity: ParsedFitActivity): void {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      void worker.terminate();
+      resolve(activity);
+    }
+
+    function settleWithReject(error: Error): void {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      void worker.terminate();
+      reject(error);
+    }
+
+    function handleMessage(message: unknown): void {
       const parsedMessage = workerMessageSchema.safeParse(message);
       if (!parsedMessage.success) {
-        reject(
+        settleWithReject(
           new Error(
             `FIT parser worker returned an invalid message: ${parsedMessage.error.message}`,
           ),
@@ -57,19 +81,28 @@ export function parseFitFileInWorkerThread(buffer: Buffer): Promise<ParsedFitAct
       if (parsedMessage.data.status === "error") {
         const error = new Error(parsedMessage.data.message);
         error.stack = parsedMessage.data.stack;
-        reject(error);
+        settleWithReject(error);
         return;
       }
 
-      resolve(parsedMessage.data.activity);
-    });
+      settleWithResolve(parsedMessage.data.activity);
+    }
 
-    worker.once("error", reject);
+    function handleError(error: Error): void {
+      settleWithReject(error);
+    }
 
-    worker.once("exit", (code) => {
+    function handleExit(code: number): void {
+      if (settled) return;
       if (code !== 0) {
-        reject(new Error(`FIT parser worker exited with code ${code}`));
+        settleWithReject(new Error(`FIT parser worker exited with code ${code}`));
+        return;
       }
-    });
+      settleWithReject(new Error("FIT parser worker exited without sending a message"));
+    }
+
+    worker.once("message", handleMessage);
+    worker.once("error", handleError);
+    worker.once("exit", handleExit);
   });
 }
