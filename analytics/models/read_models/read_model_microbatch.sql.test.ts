@@ -66,10 +66,10 @@ describe("production analytics read-model build", () => {
     const analyticsE2eBlockMatch = entrypoint.match(/  analytics-e2e\)\n(?<body>[\s\S]*?)\n    ;;/);
 
     expect(entrypoint).toContain("DBT_E2E_MICROBATCH_VARS=");
-    expect(entrypoint).toContain("sensor_scalar_sample_begin: '2026-01-01'");
-    expect(entrypoint).toContain("activity_sensor_sample_begin: '2026-01-01'");
-    expect(entrypoint).toContain("activity_location_sample_begin: '2026-01-01'");
-    expect(entrypoint).toContain("deduped_sensor_begin: '2026-01-01'");
+    expect(entrypoint).toContain('"sensor_scalar_sample_begin":"2026-01-01"');
+    expect(entrypoint).toContain('"activity_sensor_sample_begin":"2026-01-01"');
+    expect(entrypoint).toContain('"activity_location_sample_begin":"2026-01-01"');
+    expect(entrypoint).toContain('"deduped_sensor_begin":"2026-01-01"');
     expect(analyticsBlockMatch?.groups?.body).toContain("run_dbt_safe_builds");
     expect(analyticsBlockMatch?.groups?.body).not.toContain("DBT_E2E_MICROBATCH_VARS");
     expect(analyticsE2eBlockMatch?.groups?.body).toContain("run_dbt_e2e_builds");
