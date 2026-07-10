@@ -147,6 +147,32 @@ describe("RideWithGpsClient — API calls", () => {
     expect(result.trip.name).toBe("Test Ride");
   });
 
+  it("listTrips sends page and page size query parameters", async () => {
+    let capturedUrl = "";
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      capturedUrl = input.toString();
+      return Response.json({
+        trips: [],
+        meta: {
+          pagination: {
+            record_count: 0,
+            page_count: 0,
+            page_size: 25,
+            next_page_url: null,
+          },
+        },
+      });
+    };
+
+    const client = new RideWithGpsClient("test-token", mockFetch);
+    await client.listTrips(3, 25);
+
+    const capturedRequestUrl = new URL(capturedUrl);
+    expect(capturedRequestUrl.pathname).toBe("/api/v1/trips.json");
+    expect(capturedRequestUrl.searchParams.get("page")).toBe("3");
+    expect(capturedRequestUrl.searchParams.get("page_size")).toBe("25");
+  });
+
   it("getTrip transforms compact track point keys to descriptive names", async () => {
     const mockFetch: typeof globalThis.fetch = async () => {
       return Response.json({
@@ -1286,6 +1312,42 @@ describe("RideWithGpsProvider — sync", () => {
     expect(result.errors[0]?.message).toContain("Failed to sync trip 42");
   });
 
+  it("does not advance the sync cursor after a sync-feed trip error", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    const { loadTokens, ensureProvider } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "valid",
+      refreshToken: "refresh",
+      expiresAt: new Date("2099-01-01"),
+      scopes: "user",
+    });
+    vi.mocked(ensureProvider).mockResolvedValue("");
+
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const requestUrl = input.toString();
+      if (requestUrl.includes("/sync.json")) {
+        return Response.json({
+          items: [{ item_type: "trip", item_id: 42, action: "created" }],
+          meta: { rwgps_datetime: "2026-03-15T12:00:00Z" },
+        });
+      }
+      if (isTripInventoryRequest(requestUrl)) {
+        return createEmptyTripInventoryResponse();
+      }
+      return new Response("Not Found", { status: 404 });
+    };
+
+    const provider = new RideWithGpsProvider(mockFetch);
+    const db = createSyncMockDb();
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("Failed to sync trip 42");
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
   it("catches and records delete errors", async () => {
     process.env.RWGPS_CLIENT_ID = "test-id";
     const { loadTokens, ensureProvider } = await import("../db/tokens.ts");
@@ -1320,6 +1382,43 @@ describe("RideWithGpsProvider — sync", () => {
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("Failed to delete trip 77");
+  });
+
+  it("does not advance the sync cursor after a sync-feed delete error", async () => {
+    process.env.RWGPS_CLIENT_ID = "test-id";
+    const { loadTokens, ensureProvider } = await import("../db/tokens.ts");
+    vi.mocked(loadTokens).mockResolvedValue({
+      accessToken: "valid",
+      refreshToken: "refresh",
+      expiresAt: new Date("2099-01-01"),
+      scopes: "user",
+    });
+    vi.mocked(ensureProvider).mockResolvedValue("");
+
+    const mockFetch: typeof globalThis.fetch = async (input: RequestInfo | URL) => {
+      const requestUrl = input.toString();
+      if (requestUrl.includes("/sync.json")) {
+        return Response.json({
+          items: [{ item_type: "trip", item_id: 77, action: "removed" }],
+          meta: { rwgps_datetime: "2026-03-15T12:00:00Z" },
+        });
+      }
+      if (isTripInventoryRequest(requestUrl)) {
+        return createEmptyTripInventoryResponse();
+      }
+      return Response.json({});
+    };
+
+    const provider = new RideWithGpsProvider(mockFetch);
+    const db = createSyncMockDb();
+    db.execute.mockRejectedValue(new Error("DB error"));
+    const result = await provider.sync(
+      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
+    );
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).toContain("Failed to delete trip 77");
+    expect(db.insert).not.toHaveBeenCalled();
   });
 
   it("saves sync cursor when rwgps_datetime is present", async () => {

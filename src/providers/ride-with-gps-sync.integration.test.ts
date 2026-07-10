@@ -271,6 +271,124 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     expect(rows[0]?.activityType).toBe("cycling");
   });
 
+  it("includes inventory trips exactly on sync window boundaries and excludes outside trips", async () => {
+    await saveTokens(ctx.db, "ride-with-gps", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user",
+    });
+
+    const trips = new Map<number, RideWithGpsApiTripDetail>();
+    trips.set(
+      5501,
+      fakeTripDetail(5501, {
+        departed_at: "2026-05-01T00:00:00.000Z",
+        track_points: [],
+      }),
+    );
+    trips.set(
+      5502,
+      fakeTripDetail(5502, {
+        departed_at: "2026-05-02T00:00:00.000Z",
+        track_points: [],
+      }),
+    );
+    trips.set(
+      5503,
+      fakeTripDetail(5503, {
+        departed_at: "2026-04-30T23:59:59.000Z",
+        track_points: [],
+      }),
+    );
+    trips.set(
+      5504,
+      fakeTripDetail(5504, {
+        departed_at: "2026-05-02T00:00:01.000Z",
+        track_points: [],
+      }),
+    );
+
+    server.use(...rwgpsHandlers(fakeSyncResponse([]), trips));
+
+    const provider = new RideWithGpsProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromIsoRange({
+          sinceIso: "2026-05-01T00:00:00.000Z",
+          untilIso: "2026-05-02T00:00:00.000Z",
+        }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(2);
+
+    const rows = await ctx.db
+      .select({ externalId: activity.externalId })
+      .from(activity)
+      .where(eq(activity.providerId, "ride-with-gps"));
+    const syncedExternalIds = new Set(rows.map((row) => row.externalId));
+    expect(syncedExternalIds.has("5501")).toBe(true);
+    expect(syncedExternalIds.has("5502")).toBe(true);
+    expect(syncedExternalIds.has("5503")).toBe(false);
+    expect(syncedExternalIds.has("5504")).toBe(false);
+  });
+
+  it("requests every trips inventory page with the expected page parameters", async () => {
+    await saveTokens(ctx.db, "ride-with-gps", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user",
+    });
+
+    const inventoryTrips = Array.from({ length: 101 }, (_, index) =>
+      fakeTripDetail(5601 + index, { track_points: [] }),
+    );
+    const trips = new Map<number, RideWithGpsApiTripDetail>(
+      inventoryTrips.map((trip) => [trip.id, trip]),
+    );
+    const requestedTripPages: number[] = [];
+
+    server.use(
+      http.get("https://ridewithgps.com/api/v1/sync.json", () => {
+        return HttpResponse.json(fakeSyncResponse([]));
+      }),
+      http.get("https://ridewithgps.com/api/v1/trips.json", ({ request }) => {
+        const url = new URL(request.url);
+        const page = Number(url.searchParams.get("page") ?? "1");
+        const pageSize = Number(url.searchParams.get("page_size") ?? "100");
+        requestedTripPages.push(page);
+        return HttpResponse.json(fakeTripListResponse(inventoryTrips, page, pageSize));
+      }),
+      http.get("https://ridewithgps.com/api/v1/trips/:tripId.json", ({ params }) => {
+        const tripId = Number(params.tripId);
+        const trip = trips.get(tripId);
+        if (trip) return HttpResponse.json({ trip });
+        return new HttpResponse("Not found", { status: 404 });
+      }),
+    );
+
+    const provider = new RideWithGpsProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromIsoRange({
+          sinceIso: "2026-03-01T00:00:00.000Z",
+          untilIso: "2026-03-02T00:00:00.000Z",
+        }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(101);
+    expect(requestedTripPages).toEqual([1, 2]);
+  });
+
   it("processes sync-feed updates outside the requested inventory window before advancing cursor", async () => {
     const userId = "00000000-0000-0000-0000-000000000001";
     await saveTokens(ctx.db, "ride-with-gps", {
@@ -509,6 +627,50 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0]?.providerAbsentAt).toBeInstanceOf(Date);
+  });
+
+  it("does not re-fetch a trip id deleted earlier in the same sync feed", async () => {
+    await ctx.db.delete(activity).where(eq(activity.externalId, "5701"));
+
+    await saveTokens(ctx.db, "ride-with-gps", {
+      accessToken: "valid-token",
+      refreshToken: "valid-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "user",
+    });
+
+    const syncResp = fakeSyncResponse([
+      { item_id: 5701, action: "deleted" },
+      { item_id: 5701, action: "created" },
+    ]);
+    const deletedTrip = fakeTripDetail(5701, { track_points: [] });
+
+    server.use(
+      http.get("https://ridewithgps.com/api/v1/sync.json", () => {
+        return HttpResponse.json(syncResp);
+      }),
+      http.get("https://ridewithgps.com/api/v1/trips.json", () => {
+        return HttpResponse.json(fakeTripListResponse([]));
+      }),
+      http.get("https://ridewithgps.com/api/v1/trips/5701.json", () => {
+        return HttpResponse.json({ trip: deletedTrip });
+      }),
+    );
+
+    const provider = new RideWithGpsProvider();
+    const result = await provider.sync(
+      new SyncRun({
+        db: ctx.db,
+        window: SyncWindow.fromSince({ since: new Date("2026-02-01T00:00:00Z") }),
+        metricStreamPublisher: metricStreamCapture.publisher,
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(0);
+
+    const rows = await ctx.db.select().from(activity).where(eq(activity.externalId, "5701"));
+    expect(rows).toHaveLength(0);
   });
 
   it("skips route items (only processes trips)", async () => {
