@@ -173,6 +173,7 @@ export async function initBackgroundWhoopBleSync(
     clearInterval(periodicDrainTimer);
   }
   periodicDrainTimer = setInterval(() => {
+    if (AppState.currentState !== "active") return;
     if (syncing || !connected) return;
     syncing = true;
     drainBuffer(trpcClient, whoopDeps, realtimeClient)

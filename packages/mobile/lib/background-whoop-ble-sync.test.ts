@@ -50,6 +50,7 @@ const mockRemove = vi.fn();
 
 vi.mock("react-native", () => ({
   AppState: {
+    currentState: "active",
     addEventListener: vi
       .fn()
       .mockImplementation((_event: string, callback: (state: string) => void) => {
@@ -81,6 +82,7 @@ describe("background-whoop-ble-sync", () => {
     whoopDeps = makeMockDeps();
     trpcClient = makeMockTrpcClient();
     appStateCallback = null;
+    AppState.currentState = "active";
     mockRemove.mockClear();
     vi.mocked(AppState.addEventListener).mockClear();
     teardownBackgroundWhoopBleSync();
@@ -318,6 +320,20 @@ describe("background-whoop-ble-sync", () => {
         expect.objectContaining({ timestamp: "2026-03-27T10:00:00.000Z" }),
       ]),
     });
+
+    vi.useRealTimers();
+  });
+
+  it("skips periodic drain while the app is backgrounded", async () => {
+    vi.useFakeTimers();
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
+
+    vi.mocked(whoopDeps.peekBufferedSamples).mockClear();
+    AppState.currentState = "background";
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(whoopDeps.peekBufferedSamples).not.toHaveBeenCalled();
 
     vi.useRealTimers();
   });

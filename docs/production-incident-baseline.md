@@ -12386,3 +12386,35 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   shapes. If Wahoo returns distinct structured 401 bodies for non-expiry auth
   failures, add targeted classification for those bodies instead of broadening
   generic HTTP handling.
+
+## 2026-07-10 — WHOOP BLE Periodic Upload Runs in Background
+
+- **Symptoms:** Production Sentry issue
+  [DOFEK-MOBILE-Z](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-Z)
+  reported `TRPCClientError: fetch failed: cancelled` from
+  `whoop-ble-imu-upload`. The latest inspected event occurred at
+  `2026-07-10T01:18:12.155Z`.
+- **User impact:** Buffered WHOOP BLE inertial samples were retained for retry,
+  but the affected user saw repeated mobile error reporting while the app was
+  backgrounded.
+- **Evidence:** Sentry showed `app.in_foreground=false`, source
+  `whoop-ble-imu-upload`, `bufferedSampleCount=500`, and production release
+  `com.dofek.app@1.0.0+1783546283`. The periodic drain callback in
+  `packages/mobile/lib/background-whoop-ble-sync.ts` only checked `syncing` and
+  `connected`, not `AppState.currentState`.
+- **Root cause:** The WHOOP BLE periodic drain timer could attempt tRPC uploads
+  after iOS moved the app to the background, where the fetch was cancelled by
+  the platform.
+- **Fix / mitigation:** Guard the periodic drain timer with
+  `AppState.currentState === "active"` before reading buffered samples or
+  starting network uploads.
+- **Validation:** Added a failing mobile unit test that backgrounds
+  `AppState.currentState` and advances the periodic timer, then confirmed the
+  timer no longer drains while backgrounded. `pnpm vitest run
+  packages/mobile/lib/background-whoop-ble-sync.test.ts`,
+  `pnpm --filter dofek-mobile lint`, and `pnpm --filter dofek-mobile
+  typecheck` passed locally.
+- **Remaining risk / follow-up:** Monitor Sentry after the next mobile release
+  or OTA update for any remaining `whoop-ble-imu-upload` cancellations. If they
+  continue, inspect other upload entry points such as foreground sync and
+  background refresh separately.
