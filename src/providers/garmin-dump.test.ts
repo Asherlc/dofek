@@ -1,9 +1,9 @@
-import { mkdtemp, truncate, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import archiver from "archiver";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import {
   GARMIN_DUMP_PROVIDER_ID,
@@ -12,6 +12,29 @@ import {
   mapGarminDumpActivityType,
   parseGarminDumpFile,
 } from "./garmin-dump.ts";
+
+type FileStats = Awaited<ReturnType<typeof stat>>;
+
+interface FsPromisesMock {
+  statOverride: ((filePath: string) => Promise<FileStats>) | null;
+}
+
+const fsPromisesMock = vi.hoisted<FsPromisesMock>(() => ({
+  statOverride: null,
+}));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    stat: (...args: Parameters<typeof actual.stat>) => {
+      if (fsPromisesMock.statOverride) {
+        return fsPromisesMock.statOverride(String(args[0]));
+      }
+      return actual.stat(...args);
+    },
+  };
+});
 
 const mockEnsureProvider = vi.fn().mockResolvedValue(undefined);
 vi.mock("../db/tokens.ts", () => ({
@@ -60,6 +83,14 @@ const mockDb: SyncDatabase = {
   execute: vi.fn(),
 };
 
+const createdDirectories: string[] = [];
+
+async function createTempDirectory(): Promise<string> {
+  const directory = await mkdtemp(join(tmpdir(), "garmin-dump-test-"));
+  createdDirectories.push(directory);
+  return directory;
+}
+
 async function createZip(entries: Record<string, Buffer | string>): Promise<Buffer> {
   const archive = archiver("zip", { zlib: { level: 1 } });
   const stream = new PassThrough();
@@ -104,7 +135,7 @@ async function createGarminDumpZip(): Promise<string> {
     "DI_CONNECT/DI-Connect-Uploaded-Files/UploadedFiles_0-_Part1.zip": nestedFitZip,
   });
 
-  const directory = await mkdtemp(join(tmpdir(), "garmin-dump-test-"));
+  const directory = await createTempDirectory();
   const filePath = join(directory, "garmin-export.zip");
   await writeFile(filePath, topLevelZip);
   return filePath;
@@ -113,6 +144,7 @@ async function createGarminDumpZip(): Promise<string> {
 describe("Garmin dump provider", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    fsPromisesMock.statOverride = null;
     mockUpsertProviderActivity.mockResolvedValue({ id: "activity-row-1" });
     mockReplaceMetricStreamBatch.mockResolvedValue(undefined);
     mockEnsureProvider.mockResolvedValue(undefined);
@@ -137,6 +169,15 @@ describe("Garmin dump provider", () => {
       laps: [],
       events: [],
     });
+  });
+
+  afterEach(async () => {
+    fsPromisesMock.statOverride = null;
+    await Promise.all(
+      createdDirectories
+        .splice(0)
+        .map((directory) => rm(directory, { recursive: true, force: true })),
+    );
   });
 
   it("is an import-only provider", () => {
@@ -168,10 +209,17 @@ describe("Garmin dump provider", () => {
   });
 
   it("rejects oversized Garmin dump files before reading them", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "garmin-dump-test-"));
+    const directory = await createTempDirectory();
     const filePath = join(directory, "too-large.zip");
     await writeFile(filePath, "");
-    await truncate(filePath, 2 * 1024 * 1024 * 1024 + 1);
+    const actualStats = await stat(filePath);
+    fsPromisesMock.statOverride = async () =>
+      new Proxy<FileStats>(actualStats, {
+        get(target, property, receiver) {
+          if (property === "size") return 2 * 1024 * 1024 * 1024 + 1;
+          return Reflect.get(target, property, receiver);
+        },
+      });
 
     await expect(parseGarminDumpFile(filePath)).rejects.toThrow(
       "Garmin dump upload exceeds maximum size",
@@ -179,7 +227,7 @@ describe("Garmin dump provider", () => {
   });
 
   it("rejects non-zip file paths with a clear message", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "garmin-dump-test-"));
+    const directory = await createTempDirectory();
     const filePath = join(directory, "activity.fit");
     await writeFile(filePath, "fit-bytes");
 
