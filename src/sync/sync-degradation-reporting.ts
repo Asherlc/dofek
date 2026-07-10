@@ -2,10 +2,13 @@ import { logger } from "../logger.ts";
 import { syncDegradationsTotal } from "../sync-metrics.ts";
 import type { SyncDegradation, SyncDegradationContext } from "./sync-degradation.ts";
 
+const sensitiveContextKeySubstrings = ["auth", "password", "raw", "secret", "token"];
+
 function isSafeContextKey(key: string): boolean {
   const lowerKey = key.toLowerCase();
-  if (lowerKey.includes("raw")) return false;
-  if (lowerKey.includes("token")) return false;
+  if (sensitiveContextKeySubstrings.some((substring) => lowerKey.includes(substring))) {
+    return false;
+  }
   if (lowerKey.includes("cursor") && !lowerKey.includes("fingerprint")) return false;
   return true;
 }

@@ -29,10 +29,13 @@ describe("reportSyncDegradation", () => {
       externalId: "workout-123",
       context: {
         accessToken: "do-not-log-token",
+        authHeader: "do-not-log-auth-header",
+        clientSecret: "do-not-log-client-secret",
         cursor: "do-not-log-cursor",
         cursorFingerprint: "abcdef123456",
         kind: "wrong-kind",
         message: "wrong message",
+        password: "do-not-log-password",
         providerId: "wrong-provider",
         rawCursor: "do-not-log-this",
         pagesFetched: 1,
@@ -60,7 +63,10 @@ describe("reportSyncDegradation", () => {
       expect.anything(),
       expect.objectContaining({
         accessToken: "do-not-log-token",
+        authHeader: "do-not-log-auth-header",
+        clientSecret: "do-not-log-client-secret",
         cursor: "do-not-log-cursor",
+        password: "do-not-log-password",
       }),
     );
     expect(syncDegradationsTotal.add).toHaveBeenCalledWith(1, {
