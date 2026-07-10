@@ -31,6 +31,10 @@ async function doRegisterProviders() {
     ["polar", () => import("../providers/polar/provider.ts").then((m) => new m.PolarProvider())],
     ["fitbit", () => import("../providers/fitbit/provider.ts").then((m) => new m.FitbitProvider())],
     ["garmin", () => import("../providers/garmin/provider.ts").then((m) => new m.GarminProvider())],
+    [
+      "garmin-dump",
+      () => import("../providers/garmin-dump.ts").then((m) => new m.GarminDumpProvider()),
+    ],
     ["strava", () => import("../providers/strava.ts").then((m) => new m.StravaProvider())],
     [
       "cronometer-csv",

@@ -18,6 +18,7 @@ const mockProviders = {
   polar: { id: "polar" },
   fitbit: { id: "fitbit" },
   garmin: { id: "garmin" },
+  "garmin-dump": { id: "garmin-dump" },
   strava: { id: "strava" },
   "cronometer-csv": { id: "cronometer-csv" },
   oura: { id: "oura" },
@@ -70,6 +71,9 @@ vi.mock("../providers/fitbit/provider.ts", () => ({
 }));
 vi.mock("../providers/garmin/provider.ts", () => ({
   GarminProvider: vi.fn(() => mockProviders.garmin),
+}));
+vi.mock("../providers/garmin-dump.ts", () => ({
+  GarminDumpProvider: vi.fn(() => mockProviders["garmin-dump"]),
 }));
 vi.mock("../providers/strava.ts", () => ({
   StravaProvider: vi.fn(() => mockProviders.strava),

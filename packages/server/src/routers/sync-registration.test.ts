@@ -82,6 +82,9 @@ vi.mock("dofek/providers/strong-csv", () => ({
 vi.mock("dofek/providers/polar", () => ({ PolarProvider: vi.fn(() => ({ id: "polar" })) }));
 vi.mock("dofek/providers/fitbit", () => ({ FitbitProvider: vi.fn(() => ({ id: "fitbit" })) }));
 vi.mock("dofek/providers/garmin", () => ({ GarminProvider: vi.fn(() => ({ id: "garmin" })) }));
+vi.mock("dofek/providers/garmin-dump", () => ({
+  GarminDumpProvider: vi.fn(() => ({ id: "garmin-dump" })),
+}));
 vi.mock("dofek/providers/strava", () => ({ StravaProvider: vi.fn(() => ({ id: "strava" })) }));
 vi.mock("dofek/providers/cronometer-csv", () => ({
   CronometerCsvProvider: vi.fn(() => ({ id: "cronometer-csv" })),

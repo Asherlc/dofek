@@ -5,8 +5,8 @@ import { trpc } from "../lib/trpc.ts";
 import { DataReadinessBanner } from "./DataReadinessBanner.tsx";
 import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./DataSourcesAuthModals.tsx";
 import type { ProviderState, SyncProviderSummary } from "./DataSourcesSyncTypes.ts";
-import type { FileImportZoneProps } from "./FileImportZone.tsx";
 import { FileImportZone } from "./FileImportZone.tsx";
+import { appleHealthFileImportConfig, fileImportConfigs } from "./file-import-configs.ts";
 import { SyncProviderCard } from "./SyncProviderCard.tsx";
 
 const oauthBroadcastMessage = z.object({
@@ -283,44 +283,10 @@ export function DataSourcesPanel() {
     [handleSync],
   );
 
-  // File-import config for import-only providers + Apple Health (not a registered sync provider)
-  const appleHealthConfig: FileImportZoneProps = {
-    title: "Apple Health",
-    description: ".zip or .xml from Health app export",
-    accept: ".zip,.xml",
-    uploadUrl: "/api/upload/apple-health?fullSync=true",
-    statusUrl: "/api/upload/apple-health/status",
-    chunked: true,
-  };
-  const fileImportConfigs: Record<string, FileImportZoneProps> = {
-    "apple-health": appleHealthConfig,
-    "strong-csv": {
-      title: "Strong",
-      description: ".csv export from Strong app",
-      accept: ".csv",
-      uploadUrl: "/api/upload/strong-csv?units=kg",
-      statusUrl: "/api/upload/strong-csv/status",
-    },
-    "cronometer-csv": {
-      title: "Cronometer",
-      description: ".csv servings export from Cronometer",
-      accept: ".csv",
-      uploadUrl: "/api/upload/cronometer-csv",
-      statusUrl: "/api/upload/cronometer-csv/status",
-    },
-    "kaya-export": {
-      title: "Kaya",
-      description: ".csv export from Kaya",
-      accept: ".csv",
-      uploadUrl: "/api/upload/kaya-export",
-      statusUrl: "/api/upload/kaya-export/status",
-    },
-  };
-
   // Build unified list: server providers + Apple Health (file-import-only, not registered on server)
   const unifiedProviders: Array<
     | { kind: "sync"; provider: (typeof allProviders)[number] }
-    | { kind: "import"; id: string; config: FileImportZoneProps }
+    | { kind: "import"; id: string; config: (typeof fileImportConfigs)[string] }
   > = [];
 
   // Add Apple Health first (always available, not in server provider list)
@@ -328,7 +294,7 @@ export function DataSourcesPanel() {
   unifiedProviders.push({
     kind: "import",
     id: "apple_health",
-    config: appleHealthConfig,
+    config: appleHealthFileImportConfig,
   });
 
   for (const p of allProviders) {

@@ -17,6 +17,7 @@ export interface FileImportZoneProps {
   chunked?: boolean;
   stats?: ProviderStats;
   recentLogs?: SyncLogEntry[];
+  showDetailsLink?: boolean;
 }
 
 export function FileImportZone({
@@ -29,6 +30,7 @@ export function FileImportZone({
   chunked,
   stats,
   recentLogs = [],
+  showDetailsLink = true,
 }: FileImportZoneProps) {
   const [state, setState] = useState<{ status: SyncStatus; progress?: number; message?: string }>({
     status: "idle",
@@ -37,6 +39,8 @@ export function FileImportZone({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cancelledRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const validProviderId =
+    typeof providerId === "string" && providerId.length > 0 ? providerId : null;
 
   useEffect(() => {
     return () => {
@@ -280,10 +284,10 @@ export function FileImportZone({
             />
           ))}
         </div>
-        {providerId && (
+        {validProviderId && showDetailsLink && (
           <Link
             to="/providers/$id"
-            params={{ id: providerId }}
+            params={{ id: validProviderId }}
             className="text-xs text-dim hover:text-muted transition-colors"
           >
             Details
